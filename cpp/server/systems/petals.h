@@ -152,21 +152,6 @@ struct PetalSlotState {
 /// nothing (reconcileSlots builds it with a count of zero).
 int liveMoonSlot(const ContentRegistry& registry, const Loadout& loadout);
 
-/// What a petal (or a projectile it fired) does to what it touches, resolved
-/// once at spawn.
-///
-/// The combat system owns damage; it does not own the rules for turning a
-/// config plus a rarity into these numbers. Publishing them on the entity keeps
-/// contact resolution to a component read, and keeps the two systems from
-/// disagreeing about what a tier means.
-struct PetalEffect {
-    double poisonPerSecond = 0;
-    double poisonDurationMillis = 0;
-    double knockback = 0;
-    double slowFactor = 1.0;      ///< multiplies the victim's speed; 1 = none
-    double slowDurationMillis = 0;
-};
-
 /// When a petal's scripted behaviour fires.
 ///
 /// The reference keeps four triggers rather than one because two of its entry
@@ -418,8 +403,9 @@ private:
                            double nowMillis);
     /// True once the petal's body overlaps any live wild mob IN ITS REALM,
     /// which is what arms a behaviour that parks until it hits something.
-    /// Every one of these three sweeps the world linearly rather than through
-    /// the broadphase, so the realm test is theirs to make: two maps'
+    /// This, compassBearing, collectMobsNear and revivePlayerNear sweep the
+    /// world linearly rather than through the broadphase (touchesGridMob alone
+    /// asks a grid), so the realm test is theirs to make: two maps'
     /// coordinates overlap numerically.
     bool touchesMob(World& world, Realm realm, Vec2 at, double radius);
     /// touchesMob asked of the attraction grid instead of the whole world, for
@@ -561,10 +547,11 @@ private:
     /// map, where the ground is open everywhere.
     const Terrain* terrain_ = nullptr;
 
-    /// Wild mobs, rebuilt once at the top of the tick. Its own grid rather
-    /// than the server's: the reference's attraction reads the enemy grid as
-    /// it stood at the START of the tick, and the grid the other systems share
-    /// is rebuilt twice more before this system runs.
+    /// Wild mobs and hostile NPCs, filed once at the top of this system's
+    /// pass. Its own grid rather than the server's: the reference's attraction
+    /// reads the enemy grid as it stood at the START of the tick, while the
+    /// grid the other systems share files every body and is not rebuilt until
+    /// after this system has run.
     SpatialGrid attractionGrid_;
     std::vector<Entity> attractionCandidates_;
 
@@ -583,4 +570,3 @@ private:
 } // namespace flix
 
 FLIX_COMPONENT(flix::PetalSlotState);
-FLIX_COMPONENT(flix::PetalEffect);

@@ -8,12 +8,8 @@
 #include "server_harness.h"
 #include "shared/game/config.h"
 
-#include <unistd.h>
-
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
-#include <fstream>
 #include <string>
 #include <vector>
 
@@ -27,14 +23,9 @@ namespace {
 
 using flix::testsupport::connectClient;
 using flix::testsupport::Harness;
-
-std::size_t playersVisibleTo(const NetClient& client) {
-    std::size_t n = 0;
-    for (const auto& e : client.view().entities()) {
-        if (e.second.kind == net::EntityKind::Player) ++n;
-    }
-    return n;
-}
+using flix::testsupport::onlyPlayer;
+using flix::testsupport::playersVisibleTo;
+using flix::testsupport::sawText;
 
 } // namespace
 
@@ -88,6 +79,70 @@ TEST(a_wrong_password_is_refused_and_a_right_one_is_not) {
     right.requestLogin("bob", "correct-horse");
     CHECK(h.stepUntil({&right}, [&] { return right.authAnswered; }));
     CHECK_EQ(static_cast<int>(right.authStatus), static_cast<int>(net::AuthStatus::Ok));
+}
+
+TEST(a_refused_registration_says_which_rule_it_broke) {
+    // Every refusal createUser made used to reach the client as UsernameTaken,
+    // which App::updateLogin reads as "that account exists, log in instead" --
+    // so a malformed name sent an auto-login off to sign in to an account that
+    // was never made. Worse, registration ran two validators that disagreed:
+    // a hyphenated name or a seven-character password got past the first and
+    // was refused by the second, as "taken".
+    Harness h("register-refusals");
+    if (!h.ready) { CHECK(false); return; }
+
+    const auto answer = [&](const std::string& name, const std::string& password) {
+        NetClient client;
+        CHECK(connectClient(h, client));
+        client.authAnswered = false;
+        client.requestRegister(name, password);
+        CHECK(h.stepUntil({&client}, [&] { return client.authAnswered; }));
+        CHECK(client.status() != NetClient::Status::LoggedIn);
+        CHECK(!client.authMessage.empty());
+        return static_cast<int>(client.authStatus);
+    };
+    const int usernameInvalid = static_cast<int>(net::AuthStatus::UsernameInvalid);
+    const int passwordInvalid = static_cast<int>(net::AuthStatus::PasswordInvalid);
+
+    CHECK_EQ(answer("my-name", "password7"), usernameInvalid);
+    CHECK_EQ(answer("_under", "password7"), usernameInvalid);
+    CHECK_EQ(answer("7seven", "password7"), usernameInvalid);
+    CHECK_EQ(answer("seventeen_letters", "password7"), usernameInvalid);
+    CHECK_EQ(answer("hasty", "seven77"), passwordInvalid);
+    CHECK_EQ(answer("verbose", std::string(73, 'x')), passwordInvalid);
+    for (const char* refused : {"my-name", "_under", "7seven", "seventeen_letters", "hasty",
+                                "verbose"}) {
+        CHECK(h.server.database().findUser(refused) == nullptr);
+    }
+
+    // A name that IS taken still says so, in any case.
+    NetClient first;
+    CHECK(loginNew(h, first, "claimed", "password7"));
+    CHECK_EQ(answer("Claimed", "password7"), static_cast<int>(net::AuthStatus::UsernameTaken));
+}
+
+TEST(an_account_made_under_an_older_rule_still_signs_in) {
+    // The rules are asked at registration and nowhere else. An account made
+    // before they tightened -- a hyphen, a leading digit, twenty characters, a
+    // six-character password -- is a real account with a real owner, and
+    // login must still let them in.
+    const std::string name = "9-lives-of-a-flowers";
+    const std::string password = "abc123";
+    Harness h("register-legacy", [&](const std::string& path) {
+        const std::string hash = crypto::bcryptHash(password, crypto::kBcryptMinCost);
+        flix::testsupport::writeText(
+            path, "{\"users\": {\"" + name + "\": {\"id\": \"u-legacy\", \"username\": \"" + name +
+                      "\", \"password\": \"" + hash + "\"}}, \"players\": {\"u-legacy\": {}}}");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.authAnswered = false;
+    client.requestLogin(name, password);
+    CHECK(h.stepUntil({&client}, [&] { return client.authAnswered; }));
+    CHECK_EQ(static_cast<int>(client.authStatus), static_cast<int>(net::AuthStatus::Ok));
+    CHECK_EQ(client.profile().username, name);
 }
 
 TEST(a_changed_password_replaces_the_old_one) {
@@ -408,28 +463,21 @@ TEST(chat_images_from_unlisted_hosts_never_reach_the_other_player) {
                bob.status() == NetClient::Status::LoggedIn;
     }));
 
-    const auto saw = [](const NetClient& client, const std::string& needle) {
-        for (const ChatLine& line : client.chat()) {
-            if (line.text.find(needle) != std::string::npos) return true;
-        }
-        return false;
-    };
-
     // Text and a listed picture survive; the unlisted one is cut, and only
     // the sender hears why.
     alice.sendChat("look <img src=\"https://evil.example/a.png\"> and "
                    "<img src=\"https://media.tenor.com/b.gif\">");
-    CHECK(h.stepUntil({&alice, &bob}, [&] { return saw(bob, "look"); }));
-    CHECK(saw(bob, "media.tenor.com/b.gif"));
-    CHECK(!saw(bob, "evil.example"));
-    CHECK(h.stepUntil({&alice, &bob}, [&] { return saw(alice, "known image host"); }));
-    CHECK(!saw(bob, "known image host"));
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return sawText(bob, "look"); }));
+    CHECK(sawText(bob, "media.tenor.com/b.gif"));
+    CHECK(!sawText(bob, "evil.example"));
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return sawText(alice, "known image host"); }));
+    CHECK(!sawText(bob, "known image host"));
 
     // A line that was nothing but a blocked picture is not sent at all.
     const std::size_t before = bob.chat().size();
     alice.sendChat("<img src=\"https://evil.example/c.png\">");
     alice.sendChat("after");
-    CHECK(h.stepUntil({&alice, &bob}, [&] { return saw(bob, "after"); }));
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return sawText(bob, "after"); }));
     CHECK_EQ(bob.chat().size(), before + 1);
 }
 
@@ -578,9 +626,8 @@ TEST(the_drawn_flower_tracks_the_server_without_ever_stepping_backwards) {
     const double reach = kPlayerMaxSpeed * net::kTickSeconds * 60.0 + kPlayerBaseRadius * 2;
     const Vec2 heading = Vec2::fromAngle(input.moveAngle, reach);
     World& world = h.server.world();
-    Entity body = NULL_ENTITY;
-    Query<PlayerTag, Transform> bodies{world};
-    bodies.each([&](Entity e, PlayerTag&, Transform&) { body = e; });
+    // By its account: the usual bots are running, and a bot is a flower too.
+    const Entity body = onlyPlayer(world);
     CHECK(body != NULL_ENTITY);
     if (body != NULL_ENTITY) {
         Vec2 open = world.get<Transform>(body).position;
@@ -598,8 +645,9 @@ TEST(the_drawn_flower_tracks_the_server_without_ever_stepping_backwards) {
         return distance(client.view().self().position, world.get<Transform>(body).position) < 1.0;
     }));
 
-    // A mob touching the flower displaces it 25 units on the spot, which is a
-    // real server-side reversal and not what this measures. Sweep the lane.
+    // A mob touching the flower bounces it back (gardn's contact bounce, a
+    // kick to its velocity), which is a real server-side reversal and not what
+    // this measures. Sweep the lane.
     const auto clearLane = [&] {
         if (body == NULL_ENTITY) return;
         const Vec2 at = world.get<Transform>(body).position;
@@ -649,10 +697,9 @@ TEST(the_drawn_flower_tracks_the_server_without_ever_stepping_backwards) {
 }
 
 TEST(a_disconnect_removes_the_player_from_everyone_else) {
-    // No bots: the world is one map with one small door, so the bot
-    // population stands in the same place a joining player does. "Alice sees
-    // exactly one flower once Bob is gone" is a statement about the
-    // disconnect, and it cannot be made in a crowd.
+    // No bots: a bot can be born in the same door a joining player is put
+    // down in. "Alice sees exactly one flower once Bob is gone" is a statement
+    // about the disconnect, and it cannot be made in a crowd.
     Harness h("disconnect", {}, flix::testsupport::dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
 
@@ -1070,7 +1117,6 @@ TEST(a_hornets_missile_reaches_the_client_at_the_size_it_was_fired_at) {
     world.add<ContactDamage>(hornet, ContactDamage{stats.damage, kMobHitIntervalMillis});
     MobAi brain;
     brain.kind = stats.ai;
-    brain.anchor = at + Vec2{160, 0};
     brain.aggroRange = stats.aggroRange;
     world.add<MobAi>(hornet, brain);
 
@@ -1155,7 +1201,6 @@ TEST(a_mantis_bursts_its_peas_through_the_real_server_loop) {
     world.add<ContactDamage>(mantis, ContactDamage{stats.damage, kMobHitIntervalMillis});
     MobAi brain;
     brain.kind = stats.ai;
-    brain.anchor = at + Vec2{420, 0};
     brain.aggroRange = stats.aggroRange;
     world.add<MobAi>(mantis, brain);
 
@@ -1458,8 +1503,20 @@ TEST(a_dandelion_sheds_a_seed_through_the_real_server_loop) {
     // Every seat is filled with a real entity by the spawner, not a count.
     for (const Entity seedSeat : ring->seats) CHECK(seedSeat != NULL_ENTITY);
 
-    // Put it in the flower's ring, where the petals will chew on it.
-    world.get<Transform>(dandelion).position = at;
+    // Read now, while the mob is certainly alive: the petals may kill it
+    // before the flight budget below is worked out, and World::get on a dead
+    // handle asserts -- which would take the whole test binary down with it
+    // instead of failing this one case.
+    const Rarity spawnedRarity = world.get<MobType>(dandelion).rarity;
+
+    // Into the client's view first, but well clear of the flower's petals.
+    // The client has to have seen the whole ring before a seed goes, or "one
+    // fewer" has nothing to be fewer than -- and the dandelion the spawner
+    // made can stand anywhere on the map, so the client has usually never
+    // seen it. Dropped straight into the ring it is hit on the very tick it
+    // arrives, before any snapshot has carried it, and the first the client
+    // ever knows of it is a ring already a seat short.
+    world.get<Transform>(dandelion).position = at + Vec2{600.0, 0.0};
     world.get<Transform>(dandelion).realm = realm;
 
     // What the CLIENT ends up believing, which is the only place the ring is
@@ -1476,6 +1533,8 @@ TEST(a_dandelion_sheds_a_seed_through_the_real_server_loop) {
         return seen;
     };
     CHECK(h.stepUntil({&client}, [&] { return seatsSeen() == 10; }, 200));
+    // Now into the flower's ring, where the petals will chew on it.
+    if (Transform* transform = world.tryGet<Transform>(dandelion)) transform->position = at;
     const bool shed = h.stepUntil({&client}, [&] { return seatsSeen() < 10; }, 400);
     CHECK(shed);
 
@@ -1502,13 +1561,17 @@ TEST(a_dandelion_sheds_a_seed_through_the_real_server_loop) {
     // spawned rather than assumed common, so the budget cannot silently go
     // short if the spawner hands this test a graded one.
     const std::size_t tier = static_cast<std::size_t>(
-        ladderIndex(clampRarity(rarityIndex(world.get<MobType>(dandelion).rarity))));
+        ladderIndex(clampRarity(rarityIndex(spawnedRarity))));
     const double tierScale = kMobSizeScale[tier] / kProjectileReachReferenceScale;
     const double flightMillis = spec.shotSpeed > 0.0
                                     ? 1000.0 * spec.shotDistance * tierScale / spec.shotSpeed
                                     : 1000.0;
     const int budget = static_cast<int>(flightMillis / net::kTickMillis) + 200;
-    world.get<Transform>(dandelion).position = at + Vec2{6000.0, 0.0};   // stop feeding it hits
+    // Stop feeding it hits -- unless the petals have already killed it, in
+    // which case nothing is feeding it anything.
+    if (Transform* transform = world.tryGet<Transform>(dandelion)) {
+        transform->position = at + Vec2{6000.0, 0.0};
+    }
     CHECK(h.stepUntil({&client}, [&] { return shotsInFlight() == 0; }, budget));
 }
 

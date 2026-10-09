@@ -2,9 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <string>
-#include <sys/stat.h>
 #include <vector>
 
 #include "shared/core/json.h"
@@ -12,6 +10,7 @@
 #include "shared/game/map_elements.h"
 #include "shared/game/terrain.h"
 #include "shared/game/tiled_map.h"
+#include "test_data.h"
 
 using namespace flix;
 
@@ -21,8 +20,8 @@ using namespace flix;
 // what is checked is the FORMAT rather than whatever the shipped map happens
 // to contain today -- a rule the shipped map never exercises (water under a
 // castle, a pond on a layer that does not collide, two tilesets fighting over
-// a gid) is exactly the rule that breaks silently. The shipped map gets one
-// test of its own at the bottom, which is about the map, not about the reader.
+// a gid) is exactly the rule that breaks silently. The shipped map gets tests
+// of its own (the_shipped_map_*), which are about the map, not about the reader.
 //
 // The rule every collision test here is about: a cell COLLIDES where the SHAPES
 // of its tile are, for each layer whose `has_collision` property is set; the
@@ -33,20 +32,11 @@ using namespace flix;
 
 namespace {
 
-std::string tempDir() {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_tiled_tests";
-    mkdir(base.c_str(), 0755);   // already there is fine
-    return base;
-}
-
-/// Writes a fixture file and hands back its path.
+/// Writes a fixture file into this file's scratch directory (test_data.h) and
+/// hands back its path.
 std::string write(const std::string& name, const std::string& text) {
-    const std::string path = tempDir() + "/" + name;
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
+    const std::string path = testsupport::tempDir("flix_tiled_tests") + "/" + name;
+    testsupport::writeText(path, text);
     return path;
 }
 
@@ -286,12 +276,7 @@ TiledCell cellAt(const TiledMap& map, std::size_t layerIndex, int x, int y) {
 
 /// The shipped map, straight out of the repository rather than out of a staged
 /// data directory: this test is about the file the user authors.
-std::string shippedMapPath() {
-    const std::string here = __FILE__;
-    const std::size_t slash = here.find_last_of('/');
-    const std::string tests = slash == std::string::npos ? std::string(".") : here.substr(0, slash);
-    return tests + "/../../maps/garden.tmj";
-}
+std::string shippedMapPath() { return testsupport::repoMap("garden.tmj"); }
 
 } // namespace
 

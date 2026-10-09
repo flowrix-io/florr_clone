@@ -15,8 +15,6 @@
 #include "shared/game/terrain.h"
 
 #include <algorithm>
-#include <cmath>
-#include <fstream>
 #include <string>
 #include <vector>
 
@@ -29,25 +27,10 @@ using namespace flix;
 
 namespace {
 
+using flix::testsupport::bodyNamed;
 using flix::testsupport::connectClient;
 using flix::testsupport::Harness;
-
-std::size_t playersVisibleTo(const NetClient& client) {
-    std::size_t n = 0;
-    for (const auto& e : client.view().entities()) {
-        if (e.second.kind == net::EntityKind::Player) ++n;
-    }
-    return n;
-}
-
-Entity bodyOf(World& world, const std::string& name) {
-    Entity found = NULL_ENTITY;
-    Query<PlayerTag, PlayerAccount> players{world};
-    players.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
-        if (account.username == name) found = e;
-    });
-    return found;
-}
+using flix::testsupport::playersVisibleTo;
 
 /// Logs a fresh account in and joins with a spawn choice.
 bool joinAs(Harness& h, NetClient& client, const char* name, const std::string& choice) {
@@ -208,6 +191,12 @@ TEST(replication_streams_a_viewer_only_its_own_realm) {
 }
 
 TEST(the_mode_spawner_fills_only_the_realms_someone_is_in) {
+    // Every mob the arena and the maze are stocked with is looked up in the
+    // process-wide content handed to the spawner below, so that content is
+    // loaded here rather than left to whichever harness test ran before this
+    // one -- run alone, none would have.
+    std::string error;
+    CHECK(loadContent(flix::testsupport::dataDir(), error));
     World world;
     CommandBuffer commands{world};
     Terrain terrain;
@@ -305,7 +294,7 @@ TEST(a_client_that_picks_the_maze_arrives_in_it_and_cannot_walk_through_its_wall
     CHECK(client.view().realm() == Realm::Maze);
 
     World& world = h.server.world();
-    const Entity body = bodyOf(world, "theseus");
+    const Entity body = bodyNamed(world, "theseus");
     CHECK(body != NULL_ENTITY);
     if (body == NULL_ENTITY) return;
     const Maze& maze = activeMaze();
@@ -387,7 +376,7 @@ TEST(a_client_that_picks_pvp_fights_in_the_ring_with_the_arena_kit) {
     CHECK(client.view().realm() == Realm::Arena);
 
     World& world = h.server.world();
-    const Entity body = bodyOf(world, "gladiator");
+    const Entity body = bodyNamed(world, "gladiator");
     CHECK(body != NULL_ENTITY);
     if (body == NULL_ENTITY) return;
     CHECK(world.get<Transform>(body).realm == Realm::Arena);
@@ -454,7 +443,7 @@ TEST(a_client_that_picks_pvp_fights_in_the_ring_with_the_arena_kit) {
     // the arena kit is gone with the body.
     client.leaveGame();
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
-    CHECK(bodyOf(world, "gladiator") == NULL_ENTITY);
+    CHECK(bodyNamed(world, "gladiator") == NULL_ENTITY);
 }
 
 TEST(a_maze_run_is_played_one_rarity_down_on_the_mazes_own_track) {
@@ -467,15 +456,15 @@ TEST(a_maze_run_is_played_one_rarity_down_on_the_mazes_own_track) {
         // becomes uncommon; the orbiting super would become an ultra, which is
         // over the maze's mythic ceiling, so it is benched -- while the one in
         // storage shifts and stays, because storage orbits nothing.
-        std::ofstream out(path, std::ios::binary | std::ios::trunc);
-        out << R"({"users":{"weaver":{"id":"u-weaver","username":"weaver",)"
-            << R"("password":"mazepass9"}},)"
-            << R"("players":{"u-weaver":{"totalXP":1000000,"mazeTotalXP":0,)"
-            << R"("inventory":{"common":{"petal_basic":5}},"loadout":[)"
-            << R"({"type":"petal","rarity":"rare","petalType":"basic"},)"
-            << R"({"type":"petal","rarity":"super","petalType":"basic"},)"
-            << R"(null,null,null,null,null,null,null,null,)"
-            << R"({"type":"petal","rarity":"super","petalType":"basic"}]}}})";
+        flix::testsupport::writeText(path,
+                                     R"({"users":{"weaver":{"id":"u-weaver","username":"weaver",)"
+                                     R"("password":"mazepass9"}},)"
+                                     R"("players":{"u-weaver":{"totalXP":1000000,"mazeTotalXP":0,)"
+                                     R"("inventory":{"common":{"petal_basic":5}},"loadout":[)"
+                                     R"({"type":"petal","rarity":"rare","petalType":"basic"},)"
+                                     R"({"type":"petal","rarity":"super","petalType":"basic"},)"
+                                     R"(null,null,null,null,null,null,null,null,)"
+                                     R"({"type":"petal","rarity":"super","petalType":"basic"}]}}})");
     });
     if (!h.ready) { CHECK(false); return; }
 
@@ -491,7 +480,7 @@ TEST(a_maze_run_is_played_one_rarity_down_on_the_mazes_own_track) {
     CHECK(h.stepUntil({&client}, [&] { return client.view().self().netId != 0; }));
 
     World& world = h.server.world();
-    const Entity body = bodyOf(world, "weaver");
+    const Entity body = bodyNamed(world, "weaver");
     CHECK(body != NULL_ENTITY);
     if (body == NULL_ENTITY) return;
     CHECK(world.get<Transform>(body).realm == Realm::Maze);
@@ -553,7 +542,7 @@ TEST(an_arena_run_never_touches_the_account_it_is_played_from) {
     NetClient client;
     CHECK(joinAs(h, client, "duellist", kArenaSpawnChoice));
     World& world = h.server.world();
-    const Entity body = bodyOf(world, "duellist");
+    const Entity body = bodyNamed(world, "duellist");
     CHECK(body != NULL_ENTITY);
     if (body == NULL_ENTITY) return;
 
@@ -609,9 +598,9 @@ TEST(an_arena_run_never_touches_the_account_it_is_played_from) {
 }
 
 TEST(a_maze_flower_and_an_overworld_flower_never_see_each_other) {
-    // No bots: the world is one map with one door on it, so the bot
-    // population stands exactly where a joining player is put down and "each
-    // sees exactly one flower" could not otherwise be said at all.
+    // No bots: a bot can be born in the very door a joining player is put
+    // down in, and "each sees exactly one flower" could not otherwise be said
+    // at all.
     Harness h("two-realms", {}, flix::testsupport::dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
 
@@ -633,7 +622,7 @@ TEST(a_maze_flower_and_an_overworld_flower_never_see_each_other) {
     // Respawning keeps the choice: a flower that died in the maze comes back
     // to its entrance, still in the maze.
     World& world = h.server.world();
-    const Entity body = bodyOf(world, "minotaur");
+    const Entity body = bodyNamed(world, "minotaur");
     CHECK(body != NULL_ENTITY);
     if (body != NULL_ENTITY) {
         world.get<Health>(body).current = 0;
@@ -641,10 +630,10 @@ TEST(a_maze_flower_and_an_overworld_flower_never_see_each_other) {
         CHECK(h.stepUntil({&outside, &inside}, [&] { return inside.dead(); }));
         inside.requestRespawn();
         CHECK(h.stepUntil({&outside, &inside}, [&] {
-            const Entity reborn = bodyOf(world, "minotaur");
+            const Entity reborn = bodyNamed(world, "minotaur");
             return reborn != NULL_ENTITY && reborn != body && world.has<Transform>(reborn);
         }));
-        const Entity reborn = bodyOf(world, "minotaur");
+        const Entity reborn = bodyNamed(world, "minotaur");
         CHECK(reborn != NULL_ENTITY);
         if (reborn != NULL_ENTITY) {
             CHECK(world.get<Transform>(reborn).realm == Realm::Maze);
@@ -820,9 +809,9 @@ TEST(a_respawn_into_another_realm_sends_the_client_that_realms_map) {
     // the overworld -- and the client has to be told, or it keeps drawing the
     // second map under a flower that is walking the first.
     //
-    // A fixture world, because the shipped data is ONE map with no pads on it.
-    // What is under test is the RealmChange a cross-realm respawn sends, which
-    // needs two realms and does not care which maps they are.
+    // A fixture world, because the shipped maps have no pads on them. What is
+    // under test is the RealmChange a cross-realm respawn sends, which needs
+    // two realms and does not care which maps they are.
     const std::string dir = flix::testsupport::twoMapDataDir("respawnrealm");
     CHECK(!dir.empty());
     if (dir.empty()) return;
@@ -848,31 +837,31 @@ TEST(a_respawn_into_another_realm_sends_the_client_that_realms_map) {
     CHECK(pad != nullptr);
     if (pad == nullptr) { flix::testsupport::removeDataDir(dir); return; }
     bool found = false;
-    const Realm sewers = h.server.worldMaps().realmOfId("warren", found);
+    const Realm warren = h.server.worldMaps().realmOfId("warren", found);
     CHECK(found);
 
     World& world = h.server.world();
-    const Entity body = bodyOf(world, "spelunker");
+    const Entity body = bodyNamed(world, "spelunker");
     CHECK(body != NULL_ENTITY);
     if (body == NULL_ENTITY) return;
     world.get<Transform>(body).position = pad->centre();
-    CHECK(h.stepUntil({&client}, [&] { return world.get<Transform>(body).realm == sewers; }, 120));
-    CHECK(h.stepUntil({&client}, [&] { return client.view().realm() == sewers; }));
-    CHECK_EQ(client.terrain().tileCols(sewers), h.server.terrain().tileCols(sewers));
+    CHECK(h.stepUntil({&client}, [&] { return world.get<Transform>(body).realm == warren; }, 120));
+    CHECK(h.stepUntil({&client}, [&] { return client.view().realm() == warren; }));
+    CHECK_EQ(client.terrain().tileCols(warren), h.server.terrain().tileCols(warren));
     // The client's drawn body catches up with the arrival: it is placed by a
     // snapshot, and until then the arrival stands in for it.
     CHECK(h.stepUntil({&client}, [&] { return client.selfPlaced(); }));
 
-    // Death in the sewers.
+    // Death in the warren.
     world.get<Health>(body).current = 0;
     world.add<Dead>(body, Dead{NULL_ENTITY});
     CHECK(h.stepUntil({&client}, [&] { return client.dead(); }));
     client.requestRespawn();
     CHECK(h.stepUntil({&client}, [&] {
-        const Entity reborn = bodyOf(world, "spelunker");
+        const Entity reborn = bodyNamed(world, "spelunker");
         return reborn != NULL_ENTITY && reborn != body && world.has<Transform>(reborn);
     }));
-    const Entity reborn = bodyOf(world, "spelunker");
+    const Entity reborn = bodyNamed(world, "spelunker");
     CHECK(reborn != NULL_ENTITY);
     if (reborn == NULL_ENTITY) return;
     CHECK(world.get<Transform>(reborn).realm == Realm::Overworld);

@@ -71,13 +71,6 @@ bool slotEmpty(const NetClient& client, int slot) {
            loadout[static_cast<std::size_t>(slot)].empty();
 }
 
-bool heard(const NetClient& client, const std::string& needle) {
-    for (const ChatLine& line : client.chat()) {
-        if (line.text.find(needle) != std::string::npos) return true;
-    }
-    return false;
-}
-
 const PlayerRecord* keeperRecord(Harness& h) {
     const Account* account = h.server.database().findUser(kName);
     return account == nullptr ? nullptr : h.server.database().findProgress(account->id);
@@ -176,7 +169,7 @@ TEST(a_saved_loadout_loads_back_out_of_the_bag_and_the_bar_alike) {
     NetClient client;
     CHECK(login(h, client));
     client.saveLoadoutPreset(0);
-    CHECK(h.stepUntil({&client}, [&] { return heard(client, "Saved loadout K1."); }));
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Saved loadout K1."); }));
     // The profile carries it back, which is what the K row is drawn from.
     const std::vector<Profile::Slot>& k1 = client.profile().presets[0];
     CHECK_EQ(k1.size(), static_cast<std::size_t>(kLoadoutSlots));
@@ -209,7 +202,7 @@ TEST(a_saved_loadout_loads_back_out_of_the_bag_and_the_bar_alike) {
     // nothing the load moved was left behind in it.
     CHECK_EQ(client.profile().stackCount(content().petalIndex("basic"), Rarity::Common), 0u);
     CHECK_EQ(client.profile().stackCount(content().petalIndex("rose"), Rarity::Rare), 0u);
-    CHECK(heard(client, "Loaded loadout K1."));
+    CHECK(sawText(client, "Loaded loadout K1."));
 
     const PlayerRecord* record = keeperRecord(h);
     CHECK(record != nullptr);
@@ -252,7 +245,7 @@ TEST(a_petal_the_account_no_longer_has_comes_back_a_rarity_down) {
     CHECK_EQ(client.profile().stackCount(content().petalIndex("rose"), Rarity::Rare), 0u);
     CHECK_EQ(client.profile().stackCount(content().petalIndex("basic"), Rarity::Common), 0u);
     CHECK(h.stepUntil({&client}, [&] {
-        return heard(client, "Loaded loadout L3 (2 petals at a lower rarity, 1 petal not found).");
+        return sawText(client, "Loaded loadout L3 (2 petals at a lower rarity, 1 petal not found).");
     }));
 }
 
@@ -273,5 +266,5 @@ TEST(loading_a_preset_that_was_never_saved_empties_the_loadout) {
     // Both petals went back into the bag rather than vanishing.
     CHECK_EQ(client.profile().stackCount(content().petalIndex("rose"), Rarity::Rare), 1u);
     CHECK_EQ(client.profile().stackCount(content().petalIndex("basic"), Rarity::Common), 1u);
-    CHECK(h.stepUntil({&client}, [&] { return heard(client, "Loaded loadout L0."); }));
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Loaded loadout L0."); }));
 }

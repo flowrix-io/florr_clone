@@ -595,7 +595,7 @@
                         {
                          "name":"biome",
                          "type":"string",
-                         "value":"Sewers"
+                         "value":"sewers"
                         }, 
                         {
                          "name":"color",

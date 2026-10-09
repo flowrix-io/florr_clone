@@ -1,7 +1,6 @@
 #include "server/systems/npcs.h"
 
 #include <algorithm>
-#include <cmath>
 
 #include "server/systems/mob_ai.h"
 #include "server/systems/movement.h"

@@ -189,7 +189,9 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // same space first.
     const Realm realm = viewerTransform->realm;
     Vec2 viewport{kViewportWidth, kViewportHeight};
-    if (const PlayerLocation* location = world.tryGet<PlayerLocation>(viewer)) {
+    if (frame.viewport) {
+        viewport = *frame.viewport;
+    } else if (const PlayerLocation* location = world.tryGet<PlayerLocation>(viewer)) {
         viewport = location->viewport;
     }
     // A RECTANGLE, per axis, sized off the window the client says it is
@@ -258,7 +260,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             if (claimed(drop->pickedUpBy, viewer, viewerOwner)) return;
         }
         // The viewer's own body is always replicated, however the camera sits:
-        // losing it would leave the client with nothing to anchor prediction to.
+        // losing it would leave the client with no flower of its own to draw,
+        // and no SpawnIsSelf record to learn which net id is its own.
         // A squadmate is exempt for its own reason -- see Frame::alwaysVisible
         // -- but only within the viewer's realm: a party member in the maze has
         // no position that means anything on an overworld screen.
@@ -286,17 +289,21 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     out.u32(frame.tick);
     out.f64(frame.nowMillis);
 
-    // The last input the simulation has consumed. The client discards its
-    // predicted inputs up to here and replays only what is still outstanding.
+    // The last input the simulation has consumed (see GameServer::tick). The
+    // client used to reconcile its predicted inputs against it; it predicts
+    // nothing now and reads past it, but the field stays where the layout has
+    // always had it.
     std::uint32_t acknowledged = 0;
     if (const PlayerInput* input = world.tryGet<PlayerInput>(viewer)) {
         acknowledged = input->lastAppliedSequence;
     }
     out.u32(acknowledged);
 
-    // The viewer's own authoritative state, always in full. It is the one
-    // entity whose exact values the client must reconcile against, so it never
-    // goes through the change-mask path.
+    // The viewer's own authoritative state, always in full: the client's HUD
+    // reads these exact values every frame and its camera eases toward this
+    // position, so it never goes through the change-mask path. The velocity
+    // beside the position went unread when the client stopped predicting, and
+    // stays for the layout's sake, as the input echo above does.
     out.position(viewerTransform->position);
     if (const Motion* motion = world.tryGet<Motion>(viewer)) {
         out.position(motion->velocity);
@@ -645,16 +652,14 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     const std::size_t eventCountAt = out.reserveU16();
     std::uint16_t eventCount = 0;
     if (frame.events) {
-        // Which hits are this viewer's own. By connection as well as by body:
-        // a splitter's two halves are one person, and the parked half's ring
-        // is still theirs. A bot's connection is 0, and so matches nobody.
-        const PlayerAccount* viewerAccount = world.tryGet<PlayerAccount>(viewer);
-        const net::ConnectionId viewerConnection =
-            viewerAccount != nullptr ? viewerAccount->connection : 0;
+        // Which hits are this viewer's own. By connection as well as by body
+        // -- the viewerOwner the gather above read -- because a splitter's two
+        // halves are one person, and the parked half's ring is still theirs.
+        // A bot's connection is 0, and so matches nobody.
         const auto dealtByViewer = [&](const WireEvent& event) {
             if (event.kind != net::EventKind::Damage || event.dealtBy == NULL_ENTITY) return false;
             return event.dealtBy == viewer ||
-                   (event.dealtByConnection != 0 && event.dealtByConnection == viewerConnection);
+                   (event.dealtByConnection != 0 && event.dealtByConnection == viewerOwner);
         };
         // Events are cosmetic and one-shot. Scoping them to the same reach as
         // entities keeps a busy fight on the far side of the map from costing

@@ -95,8 +95,11 @@ bool centerPathCrossesWall(const Terrain& terrain, Vec2 a, Vec2 b, Realm realm) 
 /// Drains the pending positional offset written by combat.
 ///
 /// TypeScript's mob knockback is not velocity: it is `x += knockbackX`, then
-/// `y += knockbackY` on the next movement step. Clearing it here makes the
-/// effect one-shot and lets the normal movement velocity continue unchanged.
+/// `y += knockbackY` on the next movement step. This reads and clears the
+/// impulse combat queued, so each queued push is taken once. How it is
+/// delivered is the caller's: a flower's becomes momentum its friction spends
+/// (shoveSpeed), a mob's is owed to Knockback::carry and spent over about a
+/// third of a second (kKnockbackSpendDecay).
 Vec2 takeKnockback(World& world, Entity e) {
     Knockback* kb = world.tryGet<Knockback>(e);
     if (!kb) return {0, 0};
@@ -337,7 +340,7 @@ void MovementSystem::collectLooseDiscs() {
         disc.entity = e;
         disc.position = p;
         disc.radius = sanitizeCollisionRadius(body.radius);
-        disc.mass = body.mass > 1e-6 ? body.mass : 1.0;
+        disc.mass = bodyMass(&body);
         disc.realm = transform.realm;
         looseDiscs_.push_back(disc);
     });
@@ -380,10 +383,6 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
 
     queries_->players.each([&](Entity e, PlayerTag&, Transform& transform, Motion& motion,
                                Body& body, PlayerInput& input) {
-        // The cursor is one value with two readers -- movement and petal aim --
-        // so it is derived once, here, before anything downstream looks at it.
-        input.aimDirection = Vec2::fromAngle(input.current.aimAngle);
-
         // Facing is the WALK heading, and it is frozen while the flower is
         // standing still: it is where the flower went, not where its owner is
         // pointing. Under cursor control the two are the same value, so this
@@ -438,11 +437,11 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
             }
         }
         const Vec2 velocity = sanitizeMovementVelocity(state.velocity);
-        // The containment guard is the flower's alone, as it is in the
-        // reference: it lives in stepPlayerMovement, and mobs and projectiles
-        // take the resolver's word for it. A player arrives here from a
-        // contact knockback that already overlapped wall geometry often
-        // enough that without it, diagonal seams are passable.
+        // The containment guard is the flower's, as it is in the reference:
+        // it lives in stepPlayerMovement, and a mob's own step and a
+        // projectile take the resolver's word for it. A player arrives here
+        // from a contact knockback that already overlapped wall geometry
+        // often enough that without it, diagonal seams are passable.
         stepCollide(terrain, transform.realm, transform.position, velocity, body.radius, dt, true,
                     true);
         // Loose petals before NPCs: a wax gives way and an NPC does not, so an
@@ -462,7 +461,7 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
 void MovementSystem::shoveLooseBodies(const Terrain& terrain, Transform& transform,
                                       const Body& body) {
     const double radius = sanitizeCollisionRadius(body.radius);
-    const double mass = body.mass > 1e-6 ? body.mass : 1.0;
+    const double mass = bodyMass(&body);
     for (LooseDisc& disc : looseDiscs_) {
         if (disc.realm != transform.realm) continue;
         const double reach = disc.radius + radius;
@@ -519,8 +518,7 @@ void MovementSystem::collideLooseBodies(World& world, const Terrain& terrain) {
             // Everything else gives way by mass. A mob meets walls as a point,
             // as it does everywhere else.
             const bool anchored = anchoredAgainstKnockback(world, registry, mob);
-            const Body* body = world.tryGet<Body>(mob);
-            const double mobMass = body != nullptr && body->mass > 1e-6 ? body->mass : 1.0;
+            const double mobMass = bodyMass(world.tryGet<Body>(mob));
             softLooseContact(terrain, disc.realm, disc.position, disc.radius,
                              anchored ? 1.0 : mobMass / (mobMass + disc.mass),
                              transform->position, kMobWallRadius, !anchored, out,
@@ -607,7 +605,11 @@ void MovementSystem::stepTeleporters(World& world, double nowMillis, double dt) 
         // The state is per flower and starts empty, so it is created on the
         // first tick this runs for a player rather than by the prefab -- one
         // more component on every flower for a feature a handful of pads use.
+        // Creating it MOVES the flower to another archetype, and the last
+        // flower of the one it left is swapped into the row `transform` still
+        // points at, so the Transform is fetched again after.
         TeleporterState& state = world.ensure<TeleporterState>(e);
+        transform = world.tryGet<Transform>(e);
         const MapData::TeleportStep step =
             map->stepTeleporters(transform->position, dt, nowMillis, state);
         // The suction is committed raw, with no wall resolution and no world
@@ -693,10 +695,10 @@ void MovementSystem::moveMobs(World& world, const Terrain& terrain,
         const StepOutcome out = stepCollide(terrain, transform.realm, transform.position, attempted,
                                             kMobWallRadius, dt);
 
-        // No friction is applied here. The AI phase runs the shared
-        // integrateVelocity() against its desired heading and so owns a mob's
-        // acceleration and coast-down. A knockback is positional, so it does
-        // not alter this stored velocity at all.
+        // No friction is applied here: the AI phase owns a mob's velocity --
+        // published raw, or carried under gardn's friction or the drift
+        // machine's own (mob_ai.h) -- and a knockback is positional, so it
+        // does not alter this stored velocity at all.
         motion.velocity = velocityAfterStep(attempted, out, dt, envScale);
     });
 }

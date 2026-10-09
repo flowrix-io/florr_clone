@@ -162,12 +162,6 @@ std::string abbreviateNumber(double value) {
     return out + suffix;
 }
 
-std::string formatFixed(double value, int decimals) {
-    char buffer[32];
-    std::snprintf(buffer, sizeof buffer, "%.*f", decimals, value);
-    return buffer;
-}
-
 // ---------------------------------------------------------------------------
 // Drop tables
 // ---------------------------------------------------------------------------
@@ -550,7 +544,7 @@ void drawDropCard(Canvas& canvas, const SpriteCache& sprites, double cellX, doub
     // the display caps at 100% rather than printing a number no roll can mean.
     const std::string label = cell.probability < 0.01
                                   ? std::string("<0.01%")
-                                  : formatFixed(std::min(100.0, cell.probability), 2) + "%";
+                                  : fixedDecimals(std::min(100.0, cell.probability), 2) + "%";
     TextStyle probability = galleryStyle(10.0, kPaper);
     probability.align = Align::Centre;
     probability.baseline = Baseline::Top;
@@ -677,11 +671,9 @@ bool GalleryPanel::render(MenuContext& ctx) {
     int hovered = -1;
     if (overPanel && !drag.active && !ctx.window.touchScrolling() && mouse.y >= view.y &&
         mouse.y <= view.bottom()) {
-        const double yInGrid = mouse.y - panel.y + scroll_.offset;
+        const Vec2 inGrid{mouse.x, mouse.y - panel.y + scroll_.offset};
         for (std::size_t i = 0; i < cells.size(); ++i) {
-            const Rect& r = cells[i].rect;
-            if (mouse.x >= r.x && mouse.x <= r.right() && yInGrid >= r.y &&
-                yInGrid <= r.bottom()) {
+            if (insideInclusive(cells[i].rect, inGrid)) {
                 hovered = static_cast<int>(i);
                 break;
             }
@@ -799,12 +791,14 @@ bool GalleryPanel::render(MenuContext& ctx) {
         if (stats.armor != 0.0) stat("Armor: " + abbreviateNumber(stats.armor), 0.0);
         // Only the evasive few carry one, and it is the reason the fly takes
         // ten swings to kill -- the card is the one place that can say so.
-        if (stats.evasion > 0.0) stat("Evasion: " + formatFixed(stats.evasion * 100.0, 0) + "%", 0.0);
+        if (stats.evasion > 0.0) {
+            stat("Evasion: " + fixedDecimals(stats.evasion * 100.0, 0) + "%", 0.0);
+        }
         // The raw config figure, not the units-per-second the simulation runs
         // on, and the AUTHORED sign with it: the tooltip reads straight off
         // mobs.json, where the moth's -0.48 is what a player sees. The unit is
         // a flower's top speed, so two places: a bee is 0.1, a fly 0.48.
-        stat("Speed: " + formatFixed(mobRows().speed[cell.mobIndex], 2), 0.0);
+        stat("Speed: " + fixedDecimals(mobRows().speed[cell.mobIndex], 2), 0.0);
         stat("XP: " + abbreviateNumber(stats.xp), 0.0);
 
         std::array<bool, kDropTiers> usedTiers{};

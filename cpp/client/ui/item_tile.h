@@ -125,8 +125,6 @@ struct ItemTile {
     /// that caption a tile themselves -- the shop's price bar, a tile riding
     /// the cursor.
     bool showName = true;
-    /// Empty takes the petal's own name.
-    std::string nameOverride;
     /// Top-right, over the icon. gardn has no badge; the inventory needs one.
     std::string badge;
     /// Centre the badge on a point just inside the tile's corner instead of

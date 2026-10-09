@@ -26,13 +26,6 @@ constexpr double kOwnerMovingSpeed = 1.0;
 /// reclaims -- ten seconds of them is a few dozen entries.
 constexpr std::uint64_t kLedgerSweepTicks = 300;
 
-bool entityUsable(World& world, Entity e) {
-    if (!world.isAlive(e)) return false;
-    if (world.tryGet<Dead>(e) != nullptr) return false;
-    const Health* health = world.tryGet<Health>(e);
-    return health == nullptr || health->alive();
-}
-
 /// Whether a flower is wearing something that makes it MORE conspicuous -- a
 /// bulb's glow -- rather than less (poo) or neither. Only such a flower is
 /// noticed by a neutral mob; see steerAggressive.
@@ -470,7 +463,6 @@ void MobAiSystem::layWeb(World& world, Entity self, double nowMillis,
     web.rarity = type->rarity;
     web.identified = static_cast<bool>(allocateNetId);
     web.netId = web.identified ? allocateNetId() : 0;
-    ++stats_.webs;
     commands.defer([web](World& deferred) { spawnWeb(deferred, web); });
 }
 
@@ -528,7 +520,6 @@ void MobAiSystem::dropProjectile(World& world, Entity self, double nowMillis,
     shot.glitchInfecting = config.glitchInfecting;
     shot.identified = static_cast<bool>(allocateNetId);
     shot.netId = shot.identified ? allocateNetId() : 0;
-    ++stats_.drops;
     commands.defer([shot](World& deferred) { spawnShot(deferred, shot); });
 }
 
@@ -541,7 +532,7 @@ Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const Sp
                                   bool raisedOnly) {
     ++stats_.targetScans;
 
-    // Never acquire what targetHeld() drops on the very next tick. A range
+    // Never acquire what holdTarget() drops on the very next tick. A range
     // that grows with body size passes the retention radius at the top of the
     // ladder -- a unique queen ant's is over 14,000 units against 9,600 -- and
     // past it the mob would lock on, let go and scan again every tick.
@@ -551,7 +542,7 @@ Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const Sp
     for (const Entity candidate : gridScratch_) {
         if (candidate == self) continue;
         if (!world.has<PlayerTag>(candidate)) continue;
-        if (!entityUsable(world, candidate)) continue;
+        if (!isStanding(world, candidate)) continue;
         const Transform* transform = world.tryGet<Transform>(candidate);
         if (transform == nullptr) continue;
 
@@ -624,7 +615,7 @@ Entity MobAiSystem::nearestAttacker(World& world, Entity self, Vec2 from, Realm 
     // Bounty is the ledger combat already keeps of who hurt this mob, so
     // working out who to turn on is a walk over a handful of entries rather
     // than another broadphase query -- which is what lets retaliation happen on
-    // the tick the hit lands instead of waiting for the decision clock.
+    // the tick the hit lands.
     const Bounty* bounty = world.tryGet<Bounty>(self);
     if (bounty == nullptr) return NULL_ENTITY;
 
@@ -632,7 +623,7 @@ Entity MobAiSystem::nearestAttacker(World& world, Entity self, Vec2 from, Realm 
     double bestSq = radius * radius;
     for (const Bounty::Share& share : bounty->contributors) {
         if (share.damage <= 0.0) continue;
-        if (!entityUsable(world, share.player)) continue;
+        if (!isStanding(world, share.player)) continue;
         const Transform* transform = world.tryGet<Transform>(share.player);
         if (transform == nullptr) continue;
         if (transform->realm != realm) continue;
@@ -652,7 +643,7 @@ Entity MobAiSystem::nearestAttacker(World& world, Entity self, Vec2 from, Realm 
 bool MobAiSystem::holdTarget(World& world, const Terrain& terrain, Vec2 from, Realm realm,
                              MobAi& ai, double range, double nowMillis) const {
     const Entity target = ai.target;
-    if (!entityUsable(world, target)) return false;
+    if (!isStanding(world, target)) return false;
     const Transform* transform = world.tryGet<Transform>(target);
     if (transform == nullptr) return false;
     // Another map is gone for good, as it is over there.
@@ -935,7 +926,6 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     if (drive.stingerShooter) {
         ai.stingLoadedAtMillis = nowMillis + (ai.burstRemaining > 0 ? burstInterval : cooldown);
     }
-    ++stats_.volleys;
 
     const int count = std::max(1, spec.count);
     for (int i = 0; i < count; ++i) {
@@ -964,8 +954,7 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
         // Re-fetched rather than reusing shooterBody: the defers above only
         // queue work, but a component pointer held across anything that could
         // touch the world is the bug this file is one archetype away from.
-        const Body* body = world.tryGet<Body>(shooter);
-        const double mass = body != nullptr && body->mass > 1e-6 ? body->mass : 1.0;
+        const double mass = bodyMass(world.tryGet<Body>(shooter));
         const double kick = std::min(
             kProjectileMaxRecoil,
             kProjectileRecoilScale * count *
@@ -1225,7 +1214,7 @@ void MobAiSystem::suckPlayers(World& world, const SpatialGrid& grid, Vec2 from, 
     grid.query(realm, from, kSandstormSuckRange, gridScratch_);
     for (const Entity candidate : gridScratch_) {
         if (!world.has<PlayerTag>(candidate)) continue;
-        if (!entityUsable(world, candidate)) continue;
+        if (!isStanding(world, candidate)) continue;
         Transform* at = world.tryGet<Transform>(candidate);
         if (at == nullptr) continue;
 
@@ -1253,7 +1242,7 @@ bool MobAiSystem::walkHome(World& world, Entity self, const Transform& transform
     // unparented and roams free from here on rather than guarding a hole that
     // no longer exists. Deferred, because dropping a component relocates the
     // very rows the mob walk above is holding.
-    if (!entityUsable(world, tether->hole)) {
+    if (!isStanding(world, tether->hole)) {
         tether->hole = NULL_ENTITY;
         tether->returning = false;
         commands.removeComponent<HoleTether>(self);
@@ -1470,43 +1459,52 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
         // any of the swing -- the client eases a mob's facing rather than
         // replaying it -- and the mob would read as shooting out of its face
         // after all.
-        const double cooldown = drive.attackCooldownMillis > 0.0 ? drive.attackCooldownMillis
-                                                                 : kDefaultVolleyCooldownMillis;
-        // A mob idle for longer than its cooldown is due a volley the instant it
-        // comes round, so the OPENING shot of an engagement would leave a mob
-        // the client has not finished turning -- the one shot a player is most
-        // likely to be looking straight at. Defer readiness to the end of a
-        // full wind-up and hold instead, so the first missile is telegraphed
-        // like every other one. `stingerSide` is what says the mob is at rest
-        // rather than part way through a swing, and the clock only ever moves
-        // FORWARD from one that had already expired, so this can neither grant
-        // a shot early nor accumulate across ticks.
-        if (ai.stingerSide == 0 && nowMillis - ai.lastProjectileMillis > cooldown) {
-            ai.lastProjectileMillis =
-                nowMillis - cooldown + kStingerWindupMillis + kStingerAimHoldMillis;
-        }
-        // A burst still owing shots counts as wound up whatever the clock says:
-        // the mob is already rear-on with the flower in its sights, and sending
-        // it back through a full swing between two shots of the same burst
-        // would be a different weapon -- three separate volleys, not a burst.
-        const bool winding =
-            ai.burstRemaining > 0 ||
-            nowMillis - ai.lastProjectileMillis >=
-                cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
-        // Off the mob's own angle and the bearing, never off `desired`: a mob
-        // slowed to a standstill by a web still has a flower to swing about,
-        // and a zero desired would hand it to the fallback in steerMob.
-        facing = Vec2::fromAngle(
-            stingerFacing(bearing, transform.angle, winding, kStingerTurnRate * dt,
-                          ai.stingerSide));
-        // fireVolley re-checks the cooldown, so a mob that comes round early
-        // simply holds the pose until its volley is due.
-        if (winding && stingerAimed(bearing, transform.angle)) {
-            fireVolley(world, self, type, ai, drive, transform.position, bearing, travel,
-                       nowMillis, commands);
-        }
+        facing = stingerVolley(world, self, type, ai, drive, transform, bearing, travel,
+                               nowMillis, dt, commands);
     }
     return true;
+}
+
+Vec2 MobAiSystem::stingerVolley(World& world, Entity self, const MobType& type, MobAi& ai,
+                                const Drive& drive, const Transform& transform, double bearing,
+                                Vec2 travel, double nowMillis, double dt,
+                                CommandBuffer& commands) {
+    const double cooldown = drive.attackCooldownMillis > 0.0 ? drive.attackCooldownMillis
+                                                             : kDefaultVolleyCooldownMillis;
+    // A mob idle for longer than its cooldown is due a volley the instant it
+    // comes round, so the OPENING shot of an engagement would leave a mob
+    // the client has not finished turning -- the one shot a player is most
+    // likely to be looking straight at. Defer readiness to the end of a
+    // full wind-up and hold instead, so the first missile is telegraphed
+    // like every other one. `stingerSide` is what says the mob is at rest
+    // rather than part way through a swing, and the clock only ever moves
+    // FORWARD from one that had already expired, so this can neither grant
+    // a shot early nor accumulate across ticks.
+    if (ai.stingerSide == 0 && nowMillis - ai.lastProjectileMillis > cooldown) {
+        ai.lastProjectileMillis =
+            nowMillis - cooldown + kStingerWindupMillis + kStingerAimHoldMillis;
+    }
+    // A burst still owing shots counts as wound up whatever the clock says:
+    // the mob is already rear-on with the flower in its sights, and sending
+    // it back through a full swing between two shots of the same burst
+    // would be a different weapon -- three separate volleys, not a burst.
+    const bool winding =
+        ai.burstRemaining > 0 ||
+        nowMillis - ai.lastProjectileMillis >=
+            cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
+    // Off the mob's own angle and the bearing, never off `desired`: a mob
+    // slowed to a standstill by a web still has a flower to swing about,
+    // and a zero desired would hand it to the fallback in steerMob.
+    const Vec2 facing = Vec2::fromAngle(
+        stingerFacing(bearing, transform.angle, winding, kStingerTurnRate * dt,
+                      ai.stingerSide));
+    // fireVolley re-checks the cooldown, so a mob that comes round early
+    // simply holds the pose until its volley is due.
+    if (winding && stingerAimed(bearing, transform.angle)) {
+        fireVolley(world, self, type, ai, drive, transform.position, bearing, travel,
+                   nowMillis, commands);
+    }
+    return facing;
 }
 
 // ---------------------------------------------------------------------------
@@ -1675,7 +1673,7 @@ Entity MobAiSystem::acquirePetPrey(World& world, const Terrain& terrain, const S
     if (ai.target != NULL_ENTITY) {
         const Transform* at = world.tryGet<Transform>(ai.target);
         if (at != nullptr && world.has<MobTag>(ai.target) && !world.has<Pet>(ai.target) &&
-            entityUsable(world, ai.target) &&
+            isStanding(world, ai.target) &&
             at->realm == realm && visible(at->position, distanceSq(from, at->position)) &&
             !terrain.segmentBlocked(from, at->position, realm)) {
             return ai.target;
@@ -1699,7 +1697,7 @@ Entity MobAiSystem::acquirePetPrey(World& world, const Terrain& terrain, const S
         // Wild mobs only: pets do not fight each other, and a pet chasing its
         // owner's other summon is a squad that never reaches anything.
         if (!world.has<MobTag>(candidate) || world.has<Pet>(candidate)) continue;
-        if (!entityUsable(world, candidate)) continue;
+        if (!isStanding(world, candidate)) continue;
         const Transform* at = world.tryGet<Transform>(candidate);
         if (at == nullptr) continue;
         const double gapSq = distanceSq(from, at->position);
@@ -1877,28 +1875,10 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
                 fireVolley(world, self, type, ai, drive, transform.position, bearing,
                            motion.velocity, nowMillis, commands);
             } else if (armed && toPrey.lengthSq() > kDirectionEpsilonSq) {
-                const double cooldown = drive.attackCooldownMillis > 0.0
-                                            ? drive.attackCooldownMillis
-                                            : kDefaultVolleyCooldownMillis;
-                // See steerAggressive: the opening shot of an engagement is
-                // telegraphed like the rest rather than going the instant the
-                // mob comes round.
-                if (ai.stingerSide == 0 && nowMillis - ai.lastProjectileMillis > cooldown) {
-                    ai.lastProjectileMillis =
-                        nowMillis - cooldown + kStingerWindupMillis + kStingerAimHoldMillis;
-                }
-                // A burst in progress holds the pose; see steerAggressive.
-                const bool winding =
-                    ai.burstRemaining > 0 ||
-                    nowMillis - ai.lastProjectileMillis >=
-                        cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
-                facing = Vec2::fromAngle(
-                    stingerFacing(bearing, transform.angle, winding, kStingerTurnRate * dt,
-                                  ai.stingerSide));
-                if (winding && stingerAimed(bearing, transform.angle)) {
-                    fireVolley(world, self, type, ai, drive, transform.position, bearing,
-                               motion.velocity, nowMillis, commands);
-                }
+                // The same cycle as a wild one, opening shot and bursts
+                // included; see steerAggressive.
+                facing = stingerVolley(world, self, type, ai, drive, transform, bearing,
+                                       motion.velocity, nowMillis, dt, commands);
             }
         }
     }
@@ -1919,7 +1899,7 @@ void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialG
         if (type == nullptr || pet == nullptr) continue;
         const Drive drive = driveFor(type->configIndex, type->rarity);
         const Entity owner = pet->owner;
-        const bool ownerAlive = entityUsable(world, owner);
+        const bool ownerAlive = isStanding(world, owner);
 
         // Structural, so it happens before any component pointer is taken: only
         // an ownerless pet needs somewhere to walk to.
@@ -2085,15 +2065,15 @@ void MobAiSystem::placeFollower(World& world, const Terrain& terrain, Entity sel
 // Nests
 // ---------------------------------------------------------------------------
 
-void MobAiSystem::driveSpawners(World& world, const Terrain& terrain, double nowMillis,
-                                CommandBuffer& commands) {
-    // Deliberately not LOD-gated. maxAlive bounds the work whatever happens,
-    // and a nest that stopped topping up while nobody was looking would be
-    // standing empty for the first player who walked in on it.
-    nests_.each([&](Entity self, Spawner& nest, Transform& transform, MobType& type) {
-        // Pruned first and unconditionally. A nest that went on counting
-        // corpses reaches maxAlive once and then never spawns again -- and
-        // because nothing else touches this list, nothing else would fix it.
+void MobAiSystem::pruneBroods(World& world) {
+    // Deliberately not LOD-gated: SpawnSystem::runNests, which is what spawns
+    // escorts, counts this list against maxAlive wherever the nest stands.
+    nests_.each([&](Entity self, Spawner& nest, Transform&, MobType&) {
+        // Pruned unconditionally, and of corpses as well as of the gone: a
+        // nest that went on counting corpses would hold a slot for every
+        // escort that died this tick. runNests' own pass, later in the tick,
+        // drops only children that no longer exist, and a corpse still does
+        // until the reaper has run.
         std::size_t kept = 0;
         for (const Entity child : nest.children) {
             if (world.isAlive(child) && world.tryGet<Dead>(child) == nullptr) {
@@ -2107,39 +2087,7 @@ void MobAiSystem::driveSpawners(World& world, const Terrain& terrain, double now
             // the world and go on living without it, so the list is RELEASED
             // rather than destroyed.
             nest.children.clear();
-            return;
         }
-
-        if (!spawnHook_ || nest.maxAlive <= 0) return;
-        if (static_cast<int>(nest.children.size()) >= nest.maxAlive) return;
-        if (nowMillis < nest.nextSpawnMillis) return;
-        nest.nextSpawnMillis = nowMillis + std::max(nest.intervalMillis, kMinSpawnIntervalMillis);
-
-        MobSpawnRequest request;
-        request.parent = self;
-        request.configIndex = nest.childConfigIndex;
-        // Offsets are relative to the parent, so a rare queen fields uncommon
-        // soldiers; clamping keeps a hand-edited -9 from wrapping to apex, and
-        // no minion is ever above ultra.
-        request.rarity =
-            minionRarity(clampLadderRarity(rarityIndex(type.rarity) + nest.rarityOffset));
-        const Body* body = world.tryGet<Body>(self);
-        const double margin = (body != nullptr ? body->radius : 0.0) + kNestSpawnMargin;
-        request.position = terrain.findOpenSpawn(rng_, transform.position, margin, transform.realm);
-        request.realm = transform.realm;
-        request.lifetimeMillis = nest.childLifetimeMillis;
-        ++stats_.spawnRequests;
-
-        commands.defer([this, request](World& deferred) {
-            Spawner* nest2 = deferred.tryGet<Spawner>(request.parent);
-            if (nest2 == nullptr) return;                                   // died before the flush
-            if (deferred.tryGet<Dead>(request.parent) != nullptr) return;
-            // Re-checked here because several ticks' commands can be flushed
-            // together, and a nest must never overshoot its cap.
-            if (static_cast<int>(nest2->children.size()) >= nest2->maxAlive) return;
-            const Entity child = spawnHook_(deferred, request);
-            if (child != NULL_ENTITY) nest2->children.push_back(child);
-        });
     });
 }
 
@@ -2205,7 +2153,6 @@ void MobAiSystem::fireRingPetal(World& world, Entity self, const PetalRingSpec& 
     shot.rarity = type.rarity;
     shot.identified = static_cast<bool>(allocateNetId);
     shot.netId = shot.identified ? allocateNetId() : 0;
-    ++stats_.volleys;
     commands.defer([shot](World& deferred) { spawnShot(deferred, shot); });
 }
 
@@ -2350,7 +2297,7 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     // not from wherever the pet pass below has since carried it.
     petList_.clear();
     pets_.each([&](Entity self, Pet&, Transform& transform, Motion&, Body&, MobType&, MobAi&) {
-        if (!entityUsable(world, self)) return;
+        if (!isStanding(world, self)) return;
         petList_.push_back(Candidate{self, transform.position, 0.0, transform.realm});
     });
 
@@ -2375,7 +2322,6 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
             driftUnwatched(world, self, nowMillis, dt);
             continue;
         }
-        ++stats_.thought;
 
         const Drive drive = driveFor(type->configIndex, type->rarity);
         equipBehaviour(world, self, drive, nowMillis);
@@ -2399,7 +2345,7 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
 
     steerPets(world, terrain, grid, nowMillis, dt, commands);
     followChains(world, terrain, activePlayers);
-    driveSpawners(world, terrain, nowMillis, commands);
+    pruneBroods(world);
 }
 
 } // namespace flix

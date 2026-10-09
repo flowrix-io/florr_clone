@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "client/render/mob_art.h"
 #include "shared/game/config.h"
 
 namespace flix {
@@ -80,10 +81,14 @@ void pushSample(RemoteEntity& e, double timeMillis) {
 bool WorldView::applySnapshot(ByteReader& reader) {
     const std::uint32_t tick = reader.u32();
     const double serverTime = reader.f64();
-    const std::uint32_t acknowledged = reader.u32();
+    // The last input sequence the server applied, and below it the flower's
+    // velocity: both still on the wire, and neither read since the client
+    // stopped predicting (client/interpolation.h). Consumed, so the rest of
+    // the self block lines up.
+    reader.u32();
 
     const Vec2 selfPosition = reader.position();
-    const Vec2 selfVelocity = reader.position();
+    reader.position();   // velocity, as above
     const double health = reader.f32();
     const double maxHealth = reader.f32();
     const double mana = reader.f32();
@@ -255,13 +260,11 @@ bool WorldView::applySnapshot(ByteReader& reader) {
 
     // --- commit ------------------------------------------------------------
     tick_ = tick;
-    serverTimeMillis_ = serverTime;
     // Mob samples are stamped on the server's own timeline, mapped onto this
     // client's render clock. See toRenderClock().
     const double sampleMillis = toRenderClock(serverTime, renderClockMillis());
 
     self_.position = selfPosition;
-    self_.velocity = selfVelocity;
     self_.health = health;
     self_.maxHealth = maxHealth;
     self_.mana = mana;
@@ -269,7 +272,6 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     self_.totalXp = totalXp;
     self_.level = level;
     self_.stars = stars;
-    self_.acknowledgedInput = acknowledged;
     self_.slotReloadRemainingMillis = slotReload;
     self_.slotHealthFraction = slotHealth;
     self_.slotCounter = slotCounter;
@@ -473,13 +475,7 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
         selfDrawnPosition_ = self_.position;
         selfSnapPending_ = false;
     } else {
-        const Vec2 gap = self_.position - selfDrawnPosition_;
-        if (gap.lengthSq() > kTeleportSnapDistance * kTeleportSnapDistance ||
-            (std::fabs(gap.x) < kSettleEpsilon && std::fabs(gap.y) < kSettleEpsilon)) {
-            selfDrawnPosition_ = self_.position;
-        } else {
-            selfDrawnPosition_ += gap * t;
-        }
+        easePosition(selfDrawnPosition_, self_.position, t, true);
     }
 
     // --- everything that is not a petal -----------------------------------
@@ -511,8 +507,8 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
             e.angle = e.targetAngle;
         }
 
-        e.eyeX += (std::cos(e.angle) * 2.0 - e.eyeX) * eyeT;
-        e.eyeY += (std::sin(e.angle) * 4.4 - e.eyeY) * eyeT;
+        e.eyeX += (std::cos(e.angle) * kFlowerEyeTravelX - e.eyeX) * eyeT;
+        e.eyeY += (std::sin(e.angle) * kFlowerEyeTravelY - e.eyeY) * eyeT;
     }
 
     // The viewer's flower reads the same position the camera and its ring use,

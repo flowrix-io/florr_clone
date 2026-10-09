@@ -46,8 +46,9 @@ class WorldMaps;
 /// on the content and would freeze the answer at load, which is exactly what
 /// made the old nine hard-coded section presets impossible to add to.
 struct ZoneMobEntry {
-    /// A mob GROUP (content.h) if the content defines one by this name, and a
-    /// mob id otherwise. Groups win, so naming a group is never ambiguous.
+    /// A mob GROUP (MobGroup, config.h) if the content defines one by this
+    /// name, and a mob id otherwise. Groups win, so naming a group is never
+    /// ambiguous.
     std::string name;
     /// Relative weight. Authored as percentages, but nothing requires them to
     /// sum to a hundred: they are normalised against each other.
@@ -317,8 +318,10 @@ public:
     /// being read a second time somewhere else.
     const std::string& sourcePath() const { return sourcePath_; }
 
-    /// What the spawn picker calls this map, from its `displayName` property.
-    /// Empty falls back to the id.
+    /// What this map is called on screen, from its `displayName` property.
+    /// Empty falls back to the id. The minimap's caption is its one reader
+    /// (App::drawMinimap); the spawn picker labels doors by their own `label`
+    /// and files them by biome, and never reads this.
     const std::string& displayName() const { return displayName_; }
 
     /// The biome this map belongs to: what the picker files its doors under
@@ -339,8 +342,8 @@ public:
     /// where the content registry is; it cannot be checked here.
     const std::string& defaultMobGroup() const { return defaultMobGroup_; }
 
-    /// The map's size in TILES. The map decides: a corridor level is a hundred
-    /// tiles across and the overworld is sixty-four, and nothing here assumes
+    /// The map's size in TILES. The map decides: the overworld is 128 tiles
+    /// across and a termite mound's dungeon 32, and nothing here assumes
     /// either.
     int width() const { return width_; }
     int height() const { return height_; }
@@ -408,15 +411,9 @@ public:
         /// A pad that FIRED does not set this: the destination is in another
         /// map, and only the caller can move a body between realms.
         Vec2 position;
-        /// Element index whose charge-up began this tick, or -1. The caller
-        /// owns the wire event; the pad's dwell and destination are read back
-        /// out of elements()[entered].
-        int entered = -1;
         /// The pad that fired this tick, or -1. Its destination is
         /// elements()[fired]'s targetMap/targetSpawn, which WorldMaps resolves.
         int fired = -1;
-        /// The flower stepped off the pad it was charging, cancelling it.
-        bool exited = false;
     };
 
     /// Runs every pad against one flower for one tick, as the reference's
@@ -433,8 +430,9 @@ public:
 
 private:
     /// Turns one MAP_ELEMENTS-shaped JSON array into elements_, and derives the
-    /// spawn point list from it. Both formats funnel through here, so there is
-    /// one answer to what an annotation means rather than two.
+    /// spawn point list from it. The Tiled reader rebuilds a map's objects into
+    /// that shape rather than parsing them a second way, so there is one
+    /// answer to what an annotation means.
     void adopt(const Json& array);
 
     /// Resets everything a load replaces, so a failed load cannot leave half
@@ -517,9 +515,9 @@ public:
     /// which spawn points the picker offers, and where the teleporter dots go
     /// on the minimap.
     ///
-    /// Without a manifest this loads exactly one map -- the world -- from
-    /// whichever format the directory was staged with, which is what every
-    /// test harness and the offline build get.
+    /// A directory without maps.json is refused: the manifest is what names
+    /// the maps and their realm order. The test harnesses and the offline
+    /// build stage one like any other data directory.
     bool load(const std::string& dataDir, Terrain* terrain, std::string& errorOut);
 
     /// Installs a single already-loaded map as the overworld. For harnesses

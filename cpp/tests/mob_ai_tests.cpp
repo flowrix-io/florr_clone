@@ -12,11 +12,12 @@
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 
-#include <sys/stat.h>
+#include "fixture_content.h"
+#include "test_data.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <string>
 #include <vector>
 
@@ -28,61 +29,53 @@ namespace {
 //
 // The AI reads mob speed, attack cadence and the two art flags out of the
 // process-wide registry, so these tests steer REAL mobs rather than invented
-// ones. Paths are derived from this source file's own location because the test
-// binary runs from wherever ctest puts it.
+// ones -- all but the one whose flag no shipped mob that moves carries any
+// more, which gets a fixture (FixtureContent, below).
 
-std::string testsDir() {
-    const std::string path = __FILE__;
-    const std::size_t slash = path.find_last_of('/');
-    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
-}
-
-std::string firstExisting(const std::vector<std::string>& candidates) {
-    for (const std::string& candidate : candidates) {
-        std::ifstream probe(candidate, std::ios::binary);
-        if (probe) return candidate;
-    }
-    return {};
-}
-
-bool readText(const std::string& path, std::string& out) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return false;
-    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    return true;
-}
-
-bool writeText(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
-    return out.good();
-}
-
-/// loadContent() takes one directory and the two files do not live in one,
-/// so they are staged into a scratch directory here. The staged copy is the
-/// shipped bytes verbatim, so a test file that loads content before or after
-/// this one ends up with exactly the same registry.
+/// Loaded from the staged content directory, the one a harness server boots
+/// on (test_data.h), so a test file that loads content before or after this
+/// one ends up with exactly the same registry.
 bool contentReady() {
     static const bool ok = [] {
-        std::string mobs, petals;
-        if (!readText(firstExisting({testsDir() + "/../../src/mobs.json", "data/mobs.json",
-                                     "../src/mobs.json", "../../src/mobs.json", "src/mobs.json"}), mobs)) return false;
-        if (!readText(firstExisting({testsDir() + "/../../src/petals.json", "data/petals.json",
-                                     "../src/petals.json", "../../src/petals.json", "src/petals.json"}), petals)) return false;
-
-        const char* env = std::getenv("TMPDIR");
-        std::string dir = (env != nullptr && *env != '\0') ? env : "/tmp";
-        if (dir.back() != '/') dir.push_back('/');
-        dir += "flix_mob_ai_tests";
-        mkdir(dir.c_str(), 0755);
-        if (!writeText(dir + "/mobs.json", mobs)) return false;
-        if (!writeText(dir + "/petals.json", petals)) return false;
-
         std::string error;
-        return loadContent(dir, error);
+        return loadContent(testsupport::dataDir(), error);
     }();
     return ok;
 }
+
+/// A fixture pair in the PROCESS-WIDE registry -- the one the AI reads -- for
+/// as long as this lives, and the shipped content put back when it goes.
+///
+/// For a property no shipped mob the AI can steer carries any more. Every
+/// other test here steers shipped mobs out of that same registry and expects
+/// to find them there, so a fixture must never outlive the test that loaded
+/// it: the shipped content goes back on every way out of the test, an early
+/// return included. Declared before the Sim, so the Sim -- whose AI caches
+/// what it read off the fixture -- is gone first.
+class FixtureContent {
+public:
+    FixtureContent(const std::string& mobs, const std::string& petals) {
+        const std::string dir = testsupport::tempDir("flix_mob_ai_fixture");
+        std::string error;
+        loaded_ = testsupport::writeText(dir + "/mobs.json", test::fixtureMobs(mobs)) &&
+                  testsupport::writeText(dir + "/petals.json", test::fixturePetals(petals)) &&
+                  loadContent(dir, error);
+        if (!loaded_) std::printf("    (the fixture content did not load: %s)\n", error.c_str());
+    }
+    ~FixtureContent() {
+        std::string error;
+        if (!loadContent(testsupport::dataDir(), error)) {
+            std::printf("    (the shipped content did not load back: %s)\n", error.c_str());
+        }
+    }
+    FixtureContent(const FixtureContent&) = delete;
+    FixtureContent& operator=(const FixtureContent&) = delete;
+
+    bool loaded() const { return loaded_; }
+
+private:
+    bool loaded_ = false;
+};
 
 // --- the harness ------------------------------------------------------------
 
@@ -100,9 +93,9 @@ struct Sim {
     Query<PlayerTag, Transform> players;
 
     std::vector<RealmPoint> active;
-    /// The clock starts well after zero on purpose: MobAi::lastAttackMillis and
-    /// nextDecisionMillis both default to 0, and a clock that also starts at 0
-    /// would make "never attacked" indistinguishable from "attacked just now".
+    /// The clock starts well after zero on purpose: MobAi::lastAttackMillis
+    /// defaults to 0, and a clock that also starts at 0 would make "never
+    /// attacked" indistinguishable from "attacked just now".
     double now = 10000.0;
     double dt = net::kTickSeconds;
     bool autoActive = true;
@@ -112,7 +105,6 @@ struct Sim {
     std::uint64_t totalScans = 0;
     std::uint64_t totalAttacks = 0;
     std::uint64_t totalPromotions = 0;
-    std::uint64_t totalSpawnRequests = 0;
 
     Sim() : ai(world), movers(world), placed(world), players(world) {}
 
@@ -138,7 +130,6 @@ struct Sim {
 
         MobAi brain;
         brain.kind = stats.ai;
-        brain.anchor = at;
         brain.aggroRange = stats.aggroRange;
         world.add<MobAi>(e, brain);
 
@@ -236,7 +227,6 @@ struct Sim {
         totalScans += s.targetScans;
         totalAttacks += s.attacks;
         totalPromotions += s.promotions;
-        totalSpawnRequests += s.spawnRequests;
     }
 
     /// The intent phase alone. Chain geometry and facing are invariants that
@@ -342,9 +332,24 @@ TEST(a_mob_faces_its_new_heading_on_the_tick_it_picks_it) {
 }
 
 TEST(reversed_mobs_face_away_from_where_they_are_going) {
-    CHECK(contentReady());
+    // A neutral mob that hops, drawn reversed. No shipped mob is both any
+    // more: the roach this was written against was redrawn facing forwards,
+    // and the one reversed mob left, garbage, never moves at all. So the flag
+    // goes on a fixture mob built like the roach.
+    FixtureContent fixture(R"({
+        "hopper": {"name": "Hopper", "health": 50, "damage": 20, "size": 2.3, "speed": 1,
+                   "cooldown": 2000, "range": 300, "ai_type": "neutral", "groups": ["sewers"],
+                   "reversed": true, "color": "#914911", "image": "<svg/>"}
+    })",
+                           R"({
+        "basic": {"name": "Basic", "damage": 10, "health": 10, "size": 1, "cooldown": 2500,
+                  "count": 1, "color": "#ffffff", "image": "<svg/>"}
+    })");
+    CHECK(fixture.loaded());
+    if (!fixture.loaded()) return;
+    CHECK(content().mob(content().mobIndex("hopper")).reversed);
     Sim sim;
-    const Entity mob = sim.spawnMob("roach", kOrigin);          // neutral, reversed art
+    const Entity mob = sim.spawnMob("hopper", kOrigin);         // neutral, reversed art
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{400, 0});
     sim.hurt(mob, player);
 
@@ -1015,17 +1020,29 @@ TEST(sandstorm_ignores_a_player_standing_in_it) {
     CHECK_NEAR(sim.angleOf(mob), 0.0, 1e-12);
 }
 
-TEST(a_sandstorm_heading_drifts_rather_than_being_re_rolled) {
+TEST(a_sandstorm_holds_its_heading_until_its_own_clock_re_rolls_it) {
+    // Re-rolled outright, three times a second, and never in between: a storm
+    // that swung its old heading instead would cross the map as a cloud on a
+    // course rather than churning about where it is (see steerSandstorm).
     CHECK(contentReady());
     Sim sim;
     const Entity mob = sim.spawnMob("sandstorm", kOrigin);
     sim.spawnPlayer(kOrigin + Vec2{300, 0});
 
     sim.tickIntent();
-    const double first = sim.brainOf(mob).wanderAngle;
-    sim.tickIntent(25);                                         // one second: one or two decisions
-    const double later = sim.brainOf(mob).wanderAngle;
-    CHECK(std::fabs(angleDelta(first, later)) <= kSandstormTurnPerDecision * 3.0 + 1e-9);
+    const double held = sim.brainOf(mob).wanderAngle;
+    const double due = sim.brainOf(mob).nextHeadingMillis;
+    CHECK(due > sim.now);
+    for (int i = 0; i < 100 && sim.now < due; ++i) {
+        sim.tickIntent();
+        CHECK_NEAR(sim.brainOf(mob).wanderAngle, held, 0.0);
+    }
+    // The first tick on or past the clock rolls a new one, and sets the clock
+    // a full interval on from that tick.
+    sim.tickIntent();
+    CHECK(sim.brainOf(mob).wanderAngle != held);
+    CHECK_NEAR(sim.brainOf(mob).nextHeadingMillis,
+               sim.now - net::kTickMillis + kSandstormHeadingMillis, 1e-6);
 }
 
 TEST(a_stationary_mob_never_moves) {
@@ -1314,23 +1331,6 @@ TEST(a_distant_chain_is_still_walked_so_it_is_never_mistaken_for_a_cycle) {
 
 namespace {
 
-/// A stand-in for the spawning system's mob factory.
-struct Hatchery {
-    int calls = 0;
-    MobSpawnRequest last;
-
-    MobAiSystem::SpawnHook hook() {
-        return [this](World& world, const MobSpawnRequest& request) {
-            ++calls;
-            last = request;
-            const Entity child = world.create();
-            world.add<MobTag>(child);
-            world.add<Transform>(child, Transform{request.position, 0.0});
-            return child;
-        };
-    }
-};
-
 Entity makeNest(Sim& sim, const char* childId, int maxAlive, int rarityOffset,
                 Rarity rarity = Rarity::Rare) {
     const Entity nest = sim.spawnMob("ant_hole", kOrigin, rarity);
@@ -1347,108 +1347,51 @@ Entity makeNest(Sim& sim, const char* childId, int maxAlive, int rarityOffset,
     return nest;
 }
 
-} // namespace
-
-TEST(a_nest_fills_to_max_alive_and_then_stops) {
-    CHECK(contentReady());
-    Sim sim;
-    Hatchery hatchery;
-    sim.ai.setSpawnHook(hatchery.hook());
-    const Entity nest = makeNest(sim, "baby_ant", 3, -1);
-    sim.spawnPlayer(kOrigin + Vec2{100, 0});
-
-    sim.tick(40);                                   // 1.6s, room for eight intervals
-    CHECK_EQ(hatchery.calls, 3);
-    CHECK_EQ(sim.world.get<Spawner>(nest).children.size(), std::size_t(3));
-    // A rare nest fields uncommon soldiers.
-    CHECK_EQ(hatchery.last.rarity, Rarity::Uncommon);
-    CHECK_EQ(hatchery.last.parent, nest);
-    CHECK_EQ(hatchery.last.configIndex, content().mobIndex("baby_ant"));
-    CHECK_NEAR(hatchery.last.lifetimeMillis, 8000.0, 1e-12);
-
-    sim.tick(200);
-    CHECK_EQ(hatchery.calls, 3);
-    CHECK_EQ(sim.totalSpawnRequests, std::uint64_t(3));
+/// One escort on `nest`'s brood list, as SpawnSystem::runNests would have put
+/// it there. The AI spawns nothing; all it does with the list is prune it.
+Entity addEscort(Sim& sim, Entity nest) {
+    const Entity child = sim.world.create();
+    sim.world.add<MobTag>(child);
+    sim.world.add<Transform>(child, Transform{kOrigin + Vec2{200, 0}, 0.0});
+    sim.world.get<Spawner>(nest).children.push_back(child);
+    return child;
 }
 
-TEST(a_nest_tops_up_after_a_child_dies_and_never_counts_a_corpse) {
+} // namespace
+
+TEST(a_nests_brood_never_counts_a_corpse_or_a_gone_escort) {
     CHECK(contentReady());
     Sim sim;
-    Hatchery hatchery;
-    sim.ai.setSpawnHook(hatchery.hook());
-    const Entity nest = makeNest(sim, "baby_ant", 2, 0);
+    const Entity nest = makeNest(sim, "baby_ant", 3, 0);
     sim.spawnPlayer(kOrigin + Vec2{100, 0});
+    const Entity standing = addEscort(sim, nest);
+    const Entity tagged = addEscort(sim, nest);
+    const Entity destroyed = addEscort(sim, nest);
 
-    sim.tick(20);
-    CHECK_EQ(sim.world.get<Spawner>(nest).children.size(), std::size_t(2));
-
-    // One escort is tagged dead (still in the world), the other is destroyed
-    // outright. Neither may go on occupying a slot.
-    const Entity tagged = sim.world.get<Spawner>(nest).children[0];
-    const Entity destroyed = sim.world.get<Spawner>(nest).children[1];
+    // One escort is tagged dead (still in the world, not yet reaped), another
+    // is destroyed outright. Neither may go on occupying one of the slots
+    // SpawnSystem::runNests counts against maxAlive.
     sim.world.add<Dead>(tagged, Dead{NULL_ENTITY});
     sim.world.destroy(destroyed);
 
-    sim.tick(20);
-    CHECK_EQ(hatchery.calls, 4);
-    CHECK_EQ(sim.world.get<Spawner>(nest).children.size(), std::size_t(2));
-    for (const Entity child : sim.world.get<Spawner>(nest).children) {
-        CHECK(child != tagged);
-        CHECK(child != destroyed);
-    }
+    sim.tick();
+    const std::vector<Entity>& brood = sim.world.get<Spawner>(nest).children;
+    CHECK_EQ(brood.size(), std::size_t(1));
+    if (!brood.empty()) CHECK_EQ(brood.front(), standing);
 }
 
 TEST(a_dying_nest_releases_its_brood_rather_than_taking_it_along) {
     CHECK(contentReady());
     Sim sim;
-    Hatchery hatchery;
-    sim.ai.setSpawnHook(hatchery.hook());
     const Entity nest = makeNest(sim, "baby_ant", 3, 0);
     sim.spawnPlayer(kOrigin + Vec2{100, 0});
-    sim.tick(40);
-    const std::vector<Entity> brood = sim.world.get<Spawner>(nest).children;
-    CHECK_EQ(brood.size(), std::size_t(3));
+    std::vector<Entity> brood;
+    for (int i = 0; i < 3; ++i) brood.push_back(addEscort(sim, nest));
 
     sim.world.add<Dead>(nest, Dead{NULL_ENTITY});
     sim.tick(10);
     CHECK(sim.world.get<Spawner>(nest).children.empty());
     for (const Entity child : brood) CHECK(sim.world.isAlive(child));
-    CHECK_EQ(hatchery.calls, 3);                    // and it spawned nothing more
-}
-
-TEST(a_nest_with_no_spawn_hook_keeps_its_cadence_and_produces_nothing) {
-    CHECK(contentReady());
-    Sim sim;
-    const Entity nest = makeNest(sim, "baby_ant", 3, 0);
-    sim.spawnPlayer(kOrigin + Vec2{100, 0});
-
-    sim.tick(40);
-    CHECK(sim.world.get<Spawner>(nest).children.empty());
-    CHECK_EQ(sim.totalSpawnRequests, std::uint64_t(0));
-}
-
-TEST(a_nest_cannot_overshoot_when_several_ticks_flush_at_once) {
-    CHECK(contentReady());
-    Sim sim;
-    Hatchery hatchery;
-    sim.ai.setSpawnHook(hatchery.hook());
-    const Entity nest = makeNest(sim, "baby_ant", 2, 0);
-    sim.spawnPlayer(kOrigin + Vec2{100, 0});
-
-    // Four ticks' worth of requests, all deferred into one flush -- the
-    // children list is empty for every one of the decisions.
-    CommandBuffer commands(sim.world);
-    for (int i = 0; i < 4; ++i) {
-        sim.rebuildGrid();
-        sim.refreshActive();
-        sim.ai.run(sim.world, sim.terrain, sim.grid, sim.active, sim.now, sim.dt, commands);
-        sim.accumulate();
-        sim.now += 250.0;
-    }
-    CHECK_EQ(sim.totalSpawnRequests, std::uint64_t(4));
-    commands.flush();
-    CHECK_EQ(hatchery.calls, 2);
-    CHECK_EQ(sim.world.get<Spawner>(nest).children.size(), std::size_t(2));
 }
 
 TEST(a_big_nests_escorts_are_leashed_from_its_rim_not_its_centre) {
@@ -1517,7 +1460,6 @@ TEST(a_mob_type_outside_the_content_tables_is_inert_rather_than_undefined) {
     sim.world.add<MobType>(e, MobType{60000, Rarity::Common, 1.0});
     MobAi brain;
     brain.kind = AiKind::Hostile;
-    brain.anchor = kOrigin;
     brain.aggroRange = 400.0;
     sim.world.add<MobAi>(e, brain);
     sim.spawnPlayer(kOrigin + Vec2{100, 0});
@@ -2429,9 +2371,6 @@ DriftSpeeds driftSpeeds(const char* id, int ticks = 120) {
     return out;
 }
 
-/// The ceiling on any cruise: gardn's flat rate, whatever the mob.
-double cruiseCeiling(const char*) { return kBeeCruiseSpeed; }
-
 } // namespace
 
 TEST(hornets_and_wasps_cruise_instead_of_hopping) {
@@ -2456,18 +2395,19 @@ TEST(a_cruise_is_flown_at_the_bees_rate_whatever_the_mob_is_authored_at) {
     // The cruise is sustained where the hop is pulsed, so the same authored
     // speed carries a cruising mob some six times as fast as a hopping one. A
     // hornet is authored at four times a bee's speed; uncapped it would drift
-    // at 280 u/s, faster than it chases.
+    // at 280 u/s, faster than it chases. The ceiling is gardn's flat rate,
+    // kBeeCruiseSpeed, whatever the mob.
     for (const char* id : {"hornet", "wasp"}) {
         const DriftSpeeds drift = driftSpeeds(id);
-        CHECK(drift.fastest <= cruiseCeiling(id) + 1e-9);
+        CHECK(drift.fastest <= kBeeCruiseSpeed + 1e-9);
         CHECK(drift.fastest < content().mobStats(content().mobIndex(id), Rarity::Common).speed);
     }
     // And the ceiling is the BEE's own cruise restated, so the mob it was
     // tuned on is untouched by it: a bee still reaches the speed it always
     // flew at rather than being clipped down to a new one.
     const DriftSpeeds bee = driftSpeeds("bee");
-    CHECK(bee.fastest > 0.95 * cruiseCeiling("bee"));
-    CHECK(bee.fastest <= cruiseCeiling("bee") + 1e-9);
+    CHECK(bee.fastest > 0.95 * kBeeCruiseSpeed);
+    CHECK(bee.fastest <= kBeeCruiseSpeed + 1e-9);
 }
 
 TEST(a_stated_cruise_speed_sets_both_the_thrust_and_the_ceiling) {

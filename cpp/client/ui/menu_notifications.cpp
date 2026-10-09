@@ -16,8 +16,6 @@
 // so ClientSettings carries them and this panel is their only writer.
 
 #include <algorithm>
-#include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <set>
 #include <string>
@@ -110,7 +108,7 @@ const std::set<std::string>& readMarks(const std::vector<std::string>& readIds) 
 ///
 /// At file scope because it lives entirely between one press and the release
 /// that ends it, and because the panel's own declaration sits in a header
-/// twelve panels share.
+/// every panel shares.
 struct ThumbDrag {
     bool active = false;
     double startY = 0;
@@ -141,12 +139,12 @@ std::uint32_t stripeColor(const NotificationEntry& notice, bool isRead) {
 
 /// The star a redeemed star code's notice is written with, U+2B50.
 ///
-/// The row stored on the server holds the browser's exact characters, because
-/// the same save file is read by both builds -- but the shipped face has no
-/// glyph for this one, and typing it would draw the empty box every font uses
-/// for what it cannot render. The shop has the same problem with the same
-/// character and solves it the same way: the star is a PATH, measured and
-/// painted in the run of text where it sits.
+/// The server writes the browser's exact characters into the row -- as the
+/// TypeScript server did, and rows it stored still hold them -- but the
+/// shipped face has no glyph for this one, and typing it would draw the empty
+/// box every font uses for what it cannot render. The shop has the same
+/// problem with the same character and solves it the same way: the star is a
+/// PATH, measured and painted in the run of text where it sits.
 const char kStar[] = "\xE2\xAD\x90";
 constexpr std::size_t kStarBytes = sizeof kStar - 1;
 /// The star's advance and its diameter, both in multiples of the type size.
@@ -183,22 +181,6 @@ double measureMessage(const std::string& s, double size) {
     return width;
 }
 
-void drawStarGlyph(Canvas& canvas, double cx, double cy, double radius) {
-    setFill(canvas, kStarGold);
-    canvas.beginPath();
-    for (int i = 0; i < 10; ++i) {
-        // Five points and five notches, alternating, starting at the top.
-        const double r = (i % 2 == 0) ? radius : radius * 0.45;
-        const double angle = -kPi * 0.5 + i * kPi / 5.0;
-        const auto x = static_cast<float>(cx + std::cos(angle) * r);
-        const auto y = static_cast<float>(cy + std::sin(angle) * r);
-        if (i == 0) canvas.moveTo(x, y);
-        else canvas.lineTo(x, y);
-    }
-    canvas.closePath();
-    canvas.fill();
-}
-
 /// text(), with the star drawn where the face has nothing to type. Left
 /// aligned only, which is what every card's body is.
 void messageText(Canvas& canvas, const std::string& s, double x, double y,
@@ -221,7 +203,8 @@ void messageText(Canvas& canvas, const std::string& s, double x, double y,
         },
         [&] {
             const double advance = style.size * kStarAdvance;
-            drawStarGlyph(canvas, pen + advance * 0.5, y, style.size * kStarDiameter * 0.5);
+            fillStar(canvas, {pen + advance * 0.5, y}, style.size * kStarDiameter * 0.5,
+                     kStarGold);
             pen += advance;
         });
 }
@@ -317,22 +300,6 @@ std::string timeAgo(double stampMillis, double nowMillis) {
     if (hours > 0) return phrase(hours, "hour");
     if (minutes > 0) return phrase(minutes, "minute");
     return "Just now";
-}
-
-double nowMillis() {
-    using namespace std::chrono;
-    return static_cast<double>(
-        duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
-}
-
-/// White at an alpha, which TextStyle cannot express -- it carries a colour,
-/// not a coverage -- and which a pre-mixed grey would get wrong over a
-/// saturated panel.
-void dimText(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style,
-             double alpha) {
-    canvas.setGlobalAlpha(static_cast<float>(alpha));
-    text(canvas, s, x, y, style);
-    canvas.setGlobalAlpha(1.0f);
 }
 
 } // namespace
@@ -472,10 +439,13 @@ bool NotificationsPanel::render(MenuContext& ctx) {
     if (entries.empty() && !loading) {
         TextStyle empty = faint;
         empty.align = Align::Centre;
-        dimText(canvas, "No notifications yet", panel.x + panel.w * 0.5, contentY + 20.0, empty,
-                0.7);
+        textAtAlpha(canvas, "No notifications yet", panel.x + panel.w * 0.5, contentY + 20.0,
+                    empty, 0.7);
     } else {
-        const double now = nowMillis();
+        // The wall clock, not the render clock: a notice carries the Unix time
+        // it was posted (NotificationEntry::timestampMillis), and "3 days ago"
+        // is measured against that.
+        const double now = static_cast<double>(wallClockMillis());
         for (const NotificationEntry& notice : entries) {
             const bool isRead = read.count(notice.id) != 0;
             const std::vector<std::string> lines = wrapMessage(notice.message, maxTextWidth);
@@ -508,8 +478,8 @@ bool NotificationsPanel::render(MenuContext& ctx) {
 
                 TextStyle stamp = faint;
                 stamp.size = 12.0;
-                dimText(canvas, timeAgo(notice.timestampMillis, now), card.x + kTextInset,
-                        card.bottom() - 20.0, stamp, 0.7);
+                textAtAlpha(canvas, timeAgo(notice.timestampMillis, now), card.x + kTextInset,
+                            card.bottom() - 20.0, stamp, 0.7);
             }
             contentY += height + kCardGap;
         }
@@ -517,8 +487,8 @@ bool NotificationsPanel::render(MenuContext& ctx) {
         if (hasMore) {
             TextStyle footer = faint;
             footer.align = Align::Centre;
-            dimText(canvas, loading ? "Loading..." : "Scroll for more",
-                    panel.x + panel.w * 0.5, contentY + 10.0, footer, 0.7);
+            textAtAlpha(canvas, loading ? "Loading..." : "Scroll for more",
+                        panel.x + panel.w * 0.5, contentY + 10.0, footer, 0.7);
         }
     }
     canvas.restore();

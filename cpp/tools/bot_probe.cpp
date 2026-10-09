@@ -556,7 +556,6 @@ int main(int argc, char** argv) {
             ++censusSamples;
         }
 
-        // Crowding, once a second.
         // Crowding, once a second -- WITHIN A BIOME. Both numbers are about
         // a crowd, and bots in two maps are not a crowd however close their
         // coordinates happen to be. Each biome that holds more than one bot
@@ -705,9 +704,6 @@ int main(int argc, char** argv) {
                         mobToHumanSum / mobToHumanSamples);
         }
     }
-    // A snapshot of where everything ended up, for a probe run that wants to
-    // be looked at rather than compared. `BOT_PROBE_DUMP=<path>` writes one
-    // CSV row per body: kind, x, y.
     if (dense) {
         // The last few activity lines the console sent back.
         int shown = 0;
@@ -717,6 +713,9 @@ int main(int argc, char** argv) {
             ++shown;
         }
     }
+    // A snapshot of where everything ended up, for a probe run that wants to
+    // be looked at rather than compared. `BOT_PROBE_DUMP=<path>` writes one
+    // CSV row per body: kind, x, y.
     if (const char* dump = std::getenv("BOT_PROBE_DUMP")) {
         if (std::FILE* out = std::fopen(dump, "w")) {
             std::fprintf(out, "kind,x,y\n");

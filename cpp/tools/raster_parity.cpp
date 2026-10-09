@@ -172,7 +172,7 @@ void text(Canvas& canvas, Rng& rng) {
 
 }   // namespace
 
-void scene(Canvas& canvas) {
+static void scene(Canvas& canvas) {
     canvas.clear(Color{12, 14, 18});
 
     // One generator threaded through every stage, so adding a stage changes

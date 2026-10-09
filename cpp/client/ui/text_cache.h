@@ -38,11 +38,12 @@ void paintRunDirect(Canvas& canvas, const std::string& s, double penX, double ba
                     const TextStyle& style, double strokeWidth, double strokeAlpha,
                     double fillAlpha, bool fillFirst);
 
-/// Drops every entry. For a font change -- the display scale does not need it,
-/// being part of the key already.
+/// Drops every entry, so that a test starts from an empty cache. Nothing in
+/// the client needs it: the face never changes once loaded, and the display
+/// scale is part of the key already.
 void clearTextCache();
 
-/// Entries held and bytes they occupy, for the stats readout and the tests.
+/// Entries held and the bytes they occupy, for the tests.
 void textCacheStats(std::size_t& entries, std::size_t& bytes);
 
 } // namespace flix::ui

@@ -20,7 +20,9 @@
 #include <string>
 
 #include "shared/core/json.h"
+#include "shared/game/config.h"
 #include "shared/game/rarity.h"
+#include "test_data.h"
 
 namespace flix {
 namespace test {
@@ -55,6 +57,26 @@ inline std::string fixtureMobs(const std::string& text) {
 
 inline std::string fixturePetals(const std::string& text) {
     return withDefault(text, "price", Json(10));
+}
+
+/// Writes a fixture pair into `dir` as mobs.json and petals.json, filled in as
+/// above, and loads it into `registry`. False, with `error` saying why, when a
+/// file cannot be written or the loader refuses the pair. The loader reads
+/// files rather than strings, which is the only reason a fixture goes through
+/// the disk at all; a file holding more than one fixture gives each its own
+/// `dir` (testsupport::tempDir), so what a failed run leaves behind can still
+/// be read back.
+inline bool loadFixtureContent(ContentRegistry& registry, const std::string& dir,
+                               const std::string& mobs, const std::string& petals,
+                               std::string& error) {
+    const std::string mobsPath = dir + "/mobs.json";
+    const std::string petalsPath = dir + "/petals.json";
+    if (!testsupport::writeText(mobsPath, fixtureMobs(mobs)) ||
+        !testsupport::writeText(petalsPath, fixturePetals(petals))) {
+        error = "could not write the fixture content into " + dir;
+        return false;
+    }
+    return registry.loadFiles(mobsPath, petalsPath, error);
 }
 
 } // namespace test

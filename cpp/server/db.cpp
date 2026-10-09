@@ -4,30 +4,43 @@
 #include <chrono>
 #include <cerrno>
 #include <cstdio>
-#include <cstring>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
+#include "shared/core/text.h"
 #include "shared/game/constants.h"
 
 namespace flix {
 namespace {
 
-std::string toLower(std::string text) {
-    for (char& c : text) {
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-    }
-    return text;
+#ifdef __EMSCRIPTEN__
+/// The size of `file` on the HOST's filesystem, asked of Node's own fs: -1
+/// when the host has no such file, -2 when there is no Node to ask -- a page,
+/// whose only lasting storage is the browser's. Under emscripten the wasm's
+/// own stat() answers for its virtual filesystem, where a directory nothing
+/// mounted from the host is MEMFS: a file written there opens, fills, flushes
+/// and stats exactly like a real one, and is gone when the process is. Only
+/// the host can say a file is on disk. The path is the same on both sides
+/// because server/main.cpp mounts each host directory at its own absolute
+/// path.
+double hostFileSize(const std::string& file) {
+    return EM_ASM_DOUBLE({
+        if (typeof process !== "object" || typeof require !== "function") return -2;
+        try {
+            const stat = require("fs").statSync(UTF8ToString($0));
+            return stat.isFile() ? stat.size : -1;
+        } catch (e) {
+            return -1;
+        }
+    }, file.c_str());
 }
-
-// Project owner account. This account always receives the permanent database
-// admin flag; authentication is still required, so this does not bypass the
-// account password or hand admin to an anonymous connection.
-bool isOwnerAdmin(const std::string& username) {
-    return toLower(username) == "a19kisme";
-}
+#endif
 
 /// Days since the Unix epoch for a proleptic-Gregorian y/m/d, and back again.
 /// Hinnant's civil-calendar algorithms: the streak rule is per UTC calendar
@@ -80,6 +93,15 @@ bool fileExists(const std::string& path) {
     return ::stat(path.c_str(), &info) == 0;
 }
 
+/// The database's own whole-file read, deliberately not flix::readFile
+/// (shared/core/file.h). That one reads through an iostream, and a filebuf
+/// turns a failed read into an early end of file: it hands back what it got
+/// and calls it a success. For a content file the parse that follows says the
+/// rest. For the database the message a failed load leaves is what an operator
+/// acts on -- "read error" says the disk failed and the file may well be fine,
+/// where a parse error says the file itself is damaged -- so this reads
+/// through stdio and asks ferror. Either way the load fails and writes stay
+/// blocked.
 bool readWholeFile(const std::string& path, std::string& out, std::string& errorOut) {
     std::FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) { errorOut = path + ": cannot open for reading"; return false; }
@@ -234,8 +256,9 @@ Json playerToJson(const PlayerRecord& record) {
     const Json skills = writeSkills(record.skills, Json::object());
     if (skills.size() > 0) {
         out["skills"] = skills;
-        // `tp` is derived here and never read back, but the TypeScript build
-        // and every backup tool expect to find it beside `skills`.
+        // `tp` is derived here and never read back. It is still written
+        // because files the TypeScript build wrote carry it beside `skills`,
+        // so a save diffs cleanly against an old backup instead of dropping it.
         out["tp"] = record.talentPoints();
     }
     // The maze track, on the same terms and only when it carries anything.
@@ -265,7 +288,7 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.username = value["username"].asString(storedKey);
     account.passwordHash = value["password"].asString();
     account.isPlainText = value["isPlainText"].asBool(false);
-    account.admin = value["admin"].asBool(false) || isOwnerAdmin(account.username);
+    account.admin = value["admin"].asBool(false);
     account.lastActiveAtMillis = static_cast<std::int64_t>(value["lastActiveAt"].asDouble(0));
     account.muted = value["muted"].asBool(false);
     account.mutedAtMillis = static_cast<std::int64_t>(value["mutedAt"].asDouble(0));
@@ -683,13 +706,15 @@ bool Database::save() {
     return true;
 }
 
-std::string Database::backupDirectory() const {
+std::string Database::backupDirectoryFor(const std::string& databasePath) {
     // One level above the runtime directory, which is what puts snapshots
     // outside dist/ and therefore out of reach of a redeploy that replaces it.
-    const std::size_t slash = path_.find_last_of('/');
+    const std::size_t slash = databasePath.find_last_of('/');
     // A bare `inventory.json`: the working directory IS the level above.
     if (slash == std::string::npos) return "db_backups";
-    const std::string directory = path_.substr(0, slash);
+    // A database at the very root ("/inventory.json") has no level above.
+    if (slash == 0) return "/db_backups";
+    const std::string directory = databasePath.substr(0, slash);
     const std::size_t parent = directory.find_last_of('/');
     // A single relative component ("dist/inventory.json"), so again the
     // working directory.
@@ -699,6 +724,34 @@ std::string Database::backupDirectory() const {
     // own directory is as far up as this can usefully go.
     if (parent == 0) return directory + "/db_backups";
     return directory.substr(0, parent) + "/db_backups";
+}
+
+bool Database::isOwnSnapshotName(const std::string& name) {
+    // inventory-YYYY-MM-DDTHH-MM-SS-mmmZ-<label>.snapshot.json, exactly as
+    // backup() spells it below: the time in one fixed shape, then a label of
+    // one to forty of [a-z0-9_-]. Strict on purpose. A pattern that merely
+    // started and ended right would also take a copy an operator named to
+    // look like one, and the cost of a miss is only a file nobody prunes.
+    static const std::string prefix = "inventory-";
+    static const std::string suffix = kSnapshotSuffix;
+    static const char shape[] = "dddd-dd-ddTdd-dd-dd-dddZ-";
+    const std::size_t stampLength = sizeof shape - 1;
+    if (name.size() <= prefix.size() + stampLength + suffix.size()) return false;
+    if (name.compare(0, prefix.size(), prefix) != 0) return false;
+    if (name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) return false;
+    for (std::size_t i = 0; i < stampLength; ++i) {
+        const char c = name[prefix.size() + i];
+        if (shape[i] == 'd' ? !(c >= '0' && c <= '9') : c != shape[i]) return false;
+    }
+    const std::size_t labelStart = prefix.size() + stampLength;
+    const std::size_t labelLength = name.size() - suffix.size() - labelStart;
+    if (labelLength == 0 || labelLength > 40) return false;
+    for (std::size_t i = labelStart; i < labelStart + labelLength; ++i) {
+        const char c = name[i];
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+        if (!ok) return false;
+    }
+    return true;
 }
 
 bool Database::backup(const std::string& label, BackupInfo& out, std::string& errorOut) {
@@ -711,7 +764,7 @@ bool Database::backup(const std::string& label, BackupInfo& out, std::string& er
     }
 
     std::string safeLabel;
-    for (const char c : toLower(label)) {
+    for (const char c : lowerCase(label)) {
         const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
         if (ok) safeLabel.push_back(c);
         else if (!safeLabel.empty() && safeLabel.back() != '-') safeLabel.push_back('-');
@@ -736,7 +789,8 @@ bool Database::backup(const std::string& label, BackupInfo& out, std::string& er
                   static_cast<int>(rest / 3600000), static_cast<int>(rest / 60000 % 60),
                   static_cast<int>(rest / 1000 % 60), static_cast<int>(rest % 1000));
 
-    const std::string file = directory + "/inventory-" + stamp + "-" + safeLabel + ".json";
+    const std::string file =
+        directory + "/inventory-" + stamp + "-" + safeLabel + kSnapshotSuffix;
     // Pretty-printed, as the reference writes it: a backup is read by a person
     // trying to rescue an account, not by the loader's hot path.
     const std::string text = toJson().dump(2);
@@ -759,14 +813,47 @@ bool Database::backup(const std::string& label, BackupInfo& out, std::string& er
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Closed, not open, when the host cannot vouch for it. Every check above
+    // passes on MEMFS, which is where a directory nothing mounted lands -- and
+    // until server/main.cpp mounted this one, that was every Node server's
+    // db_backups: `backup_db` and `update`'s mandatory first step reported a
+    // real-looking path, and the snapshot went with the restart it was taken
+    // for. A refusal here is what stops `update` going ahead on one. The
+    // offline page has no host at all: only its database file is mirrored to
+    // browser storage, so a snapshot there would be gone at the next reload,
+    // and it is refused in the same way, in words that fit.
+    const double onHost = hostFileSize(file);
+    if (onHost != static_cast<double>(text.size())) {
+        std::remove(file.c_str());
+        errorOut = onHost == -2
+                       ? std::string("this build keeps its database in browser storage and has no "
+                                     "disk to keep a snapshot on")
+                       : "the snapshot did not reach the host's disk (" + directory +
+                             " is not mounted from it), so it would not survive a restart";
+        return false;
+    }
+#endif
+
     out.file = file;
     out.bytes = text.size();
     out.modifiedMillis = millis;
 
     // Pruning is best-effort: it must never turn a good backup into a failure.
-    std::vector<BackupInfo> existing = listBackups();
-    for (std::size_t i = kMaxDatabaseBackups; i < existing.size(); ++i) {
-        std::remove(existing[i].file.c_str());
+    // And it reaches only this server's own snapshots, by name: the directory
+    // also holds the TypeScript server's, under the old pattern, and whatever
+    // an operator keeps there, and neither is this server's to delete. Those
+    // are listed and left alone, so they do not count towards the thirty.
+    std::vector<BackupInfo> own;
+    for (BackupInfo& info : listBackups()) {
+        const std::size_t slash = info.file.find_last_of('/');
+        if (isOwnSnapshotName(slash == std::string::npos ? info.file
+                                                          : info.file.substr(slash + 1))) {
+            own.push_back(std::move(info));
+        }
+    }
+    for (std::size_t i = kMaxDatabaseBackups; i < own.size(); ++i) {
+        std::remove(own[i].file.c_str());
     }
     return true;
 }
@@ -824,14 +911,14 @@ void Database::indexUser(const std::string& storedKey, const Account& account) {
     // as separate accounts. Both records are kept -- deleting one on load
     // would be data loss -- and the first spelling wins the lookup. New
     // registrations can no longer create that situation.
-    usersByLowerName_.emplace(toLower(storedKey), storedKey);
+    usersByLowerName_.emplace(lowerCase(storedKey), storedKey);
     if (!account.id.empty()) usersById_.emplace(account.id, storedKey);
 }
 
 Account* Database::findUser(const std::string& username) {
     if (username.empty()) return nullptr;
     if (Account* exact = users_.find(username)) return exact;
-    auto it = usersByLowerName_.find(toLower(username));
+    auto it = usersByLowerName_.find(lowerCase(username));
     if (it == usersByLowerName_.end()) return nullptr;
     return users_.find(it->second);
 }
@@ -841,7 +928,7 @@ const Account* Database::findUser(const std::string& username) const {
     // a read must not cost the next save a re-serialise of the row.
     if (username.empty()) return nullptr;
     if (const Account* exact = users_.find(username)) return exact;
-    auto it = usersByLowerName_.find(toLower(username));
+    auto it = usersByLowerName_.find(lowerCase(username));
     if (it == usersByLowerName_.end()) return nullptr;
     return users_.find(it->second);
 }
@@ -864,8 +951,8 @@ std::string Database::canonicalUsername(const std::string& username) const {
 }
 
 bool Database::validUsername(const std::string& username, std::string& reasonOut) {
-    if (username.size() < 3 || username.size() > 20) {
-        reasonOut = "usernames must be 3 to 20 characters";
+    if (username.size() < 3 || username.size() > 16) {
+        reasonOut = "Username must be 3 to 16 characters.";
         return false;
     }
     // Names are drawn on nameplates and typed at admin commands, so anything
@@ -876,12 +963,15 @@ bool Database::validUsername(const std::string& username, std::string& reasonOut
         const bool allowed = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
                              (c >= '0' && c <= '9') || c == '_';
         if (!allowed) {
-            reasonOut = "usernames may use letters, digits and underscore only";
+            reasonOut = "Username may only contain letters, digits and underscore.";
             return false;
         }
     }
-    if (username[0] == '_') {
-        reasonOut = "usernames must start with a letter or a digit";
+    // A leading digit or symbol makes a name that reads like a system message
+    // in chat, so require it to start with a letter.
+    const char first = username[0];
+    if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z'))) {
+        reasonOut = "Username must start with a letter.";
         return false;
     }
     return true;
@@ -889,7 +979,7 @@ bool Database::validUsername(const std::string& username, std::string& reasonOut
 
 bool Database::validPassword(const std::string& password, std::string& reasonOut) {
     if (password.size() < 8) {
-        reasonOut = "passwords must be at least 8 characters";
+        reasonOut = "Password must be at least 8 characters.";
         return false;
     }
     // bcrypt silently ignores everything past its 72nd byte. Accepting a
@@ -897,13 +987,13 @@ bool Database::validPassword(const std::string& password, std::string& reasonOut
     // in -- so the limit is enforced here, where it can be explained, rather
     // than hidden inside the hash.
     if (password.size() > crypto::kBcryptMaxPasswordBytes) {
-        reasonOut = "passwords must be at most 72 bytes";
+        reasonOut = "Password must be at most 72 bytes.";
         return false;
     }
     for (char c : password) {
         const auto byte = static_cast<unsigned char>(c);
         if (byte < 0x20 || byte == 0x7F) {
-            reasonOut = "passwords may not contain control characters";
+            reasonOut = "Password may not contain control characters.";
             return false;
         }
     }
@@ -946,8 +1036,9 @@ std::string Database::serverSecret() {
 std::string Database::accountAddressHash(const std::string& addressKey) {
     if (addressKey.empty()) return {};
     const std::string salt = serverSecret();
-    // Same construction as the browser server's database.accountAddressHash,
-    // so both builds reading one file agree on which accounts an address made.
+    // Same construction the TypeScript server's database.accountAddressHash
+    // used, so the createdFromHash values it stored still count against the
+    // address that made them.
     return crypto::sha256Hex(salt + "|" + addressKey).substr(0, 24);
 }
 
@@ -996,7 +1087,6 @@ CreateResult Database::createUser(const std::string& username, const std::string
     account.id = id;
     account.username = username;
     account.passwordHash = crypto::bcryptHash(password, passwordCost_);
-    account.admin = isOwnerAdmin(username);
     account.createdAtMillis = nowMillis();
     account.createdFromHash = createdFromHash;
     indexUser(username, account);
@@ -1032,7 +1122,7 @@ bool Database::eraseUser(const std::string& username) {
 
     users_.erase(storedKey);
     if (!userId.empty()) players_.erase(userId);
-    usersByLowerName_.erase(toLower(storedKey));
+    usersByLowerName_.erase(lowerCase(storedKey));
     if (!userId.empty()) usersById_.erase(userId);
     markDirty();
     return true;

@@ -28,7 +28,6 @@
 #include "client/ui/draw.h"
 #include "client/ui/text_input.h"
 #include "shared/game/constants.h"
-#include "shared/game/tiled_map.h"
 
 namespace flix {
 
@@ -99,29 +98,6 @@ constexpr double kJoinTimeoutSeconds = 10.0;
 constexpr std::uint32_t kStreakPanel = 0x66FFFFu;
 /// How long its star wobbles after a fresh claim.
 constexpr double kStreakPulseSeconds = 3.0;
-
-/// The title screen's own hit test, inclusive on all four edges. The browser
-/// writes every one of these as `x >= left && x <= left + width` (index.ts:877,
-/// 900, 915-916, 955-956), so its rightmost column and bottom row are live
-/// where ui::hit -- half-open, because the world's collision code needs it that
-/// way -- leaves them dead.
-bool hitInclusive(Rect r, Vec2 p) {
-    return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
-}
-
-/// The name field's overflow rule: drop trailing characters until the string
-/// plus an ellipsis fits, then append one. Measured at the `size` the field
-/// draws in, because a narrower measure would cut too much.
-std::string ellipsised(Canvas& canvas, std::string value, double maxWidth, double size) {
-    if (textWidth(canvas, value, size) <= maxWidth) return value;
-    while (!value.empty() && textWidth(canvas, value + "...", size) > maxWidth) {
-        // Whole UTF-8 sequences, so a cut never leaves a broken character.
-        std::size_t at = value.size() - 1;
-        while (at > 0 && (static_cast<unsigned char>(value[at]) & 0xC0) == 0x80) --at;
-        value.erase(at);
-    }
-    return value + "...";
-}
 
 /// "17h 34m" / "4m 12s" / "9s", as the streak widget formats a countdown.
 std::string formatDuration(std::int64_t millis) {
@@ -219,10 +195,7 @@ void App::updateLobby() {
         return;
     }
 
-    if (config_.autoJoin && !config_.autoUsername.empty() &&
-        net_.status() != NetClient::Status::Playing) {
-        startGame();
-    }
+    if (config_.autoJoin && !config_.autoUsername.empty()) startGame();
 
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
     const LobbyLayout layout = lobbyLayout(window_.width(), window_.height());
@@ -263,14 +236,19 @@ void App::updateLobby() {
     if (!menus_.capturesMouse(mouse)) {
         if (window_.mousePressed(MouseButton::Left)) {
             pressedControl_.clear();
-            if (hitInclusive(layout.ready, mouse)) pressedControl_ = "start";
+            // Every title-screen control is hit inclusive on all four edges:
+            // the browser wrote each test as `x >= left && x <= left + width`
+            // (index.ts:877, 900, 915-916, 955-956), so its rightmost column
+            // and bottom row are live where ui::hit -- half-open, because the
+            // world's collision code needs it that way -- leaves them dead.
+            if (insideInclusive(layout.ready, mouse)) pressedControl_ = "start";
             for (std::size_t i = 0; i < layout.tabs.size(); ++i) {
-                if (hitInclusive(layout.tabs[i], mouse)) {
+                if (insideInclusive(layout.tabs[i], mouse)) {
                     pressedControl_ = "tab_" + std::to_string(i);
                 }
             }
             for (std::size_t i = 0; i < layout.doors.size(); ++i) {
-                if (hitInclusive(layout.doors[i], mouse)) {
+                if (insideInclusive(layout.doors[i], mouse)) {
                     pressedControl_ = "door_" + std::to_string(i);
                 }
             }
@@ -286,7 +264,7 @@ void App::updateLobby() {
             bool onPicker = false;
             const std::vector<PickerTab> tabs = pickerTabs();
             for (std::size_t i = 0; i < layout.tabs.size() && i < tabs.size(); ++i) {
-                if (!hitInclusive(layout.tabs[i], mouse)) continue;
+                if (!insideInclusive(layout.tabs[i], mouse)) continue;
                 onPicker = true;
                 pickerTab_ = tabs[i].id;
                 // A tab with one door IS that door -- Default, the arena, the
@@ -299,7 +277,7 @@ void App::updateLobby() {
                 if (tab.id == pickerTab_) open = &tab;
             }
             for (std::size_t i = 0; i < layout.doors.size(); ++i) {
-                if (!hitInclusive(layout.doors[i], mouse)) continue;
+                if (!insideInclusive(layout.doors[i], mouse)) continue;
                 onPicker = true;
                 if (open != nullptr && i < open->choices.size()) choose(open->choices[i]);
             }
@@ -311,9 +289,9 @@ void App::updateLobby() {
             // focused selects it, so the first keystroke replaces the old name
             // rather than appending to it -- which is what a browser does and
             // what this box, capped at twenty characters, wants.
-            if (hitInclusive(layout.name, mouse)) {
+            if (insideInclusive(layout.name, mouse)) {
                 if (!nameField_.focused) nameField_.focus(playerName_, timeSeconds_);
-            } else if (!onPicker && !hitInclusive(layout.ready, mouse)) {
+            } else if (!onPicker && !insideInclusive(layout.ready, mouse)) {
                 nameField_.blur();
             }
             // A press on the slot opens the line and one elsewhere closes it
@@ -325,7 +303,7 @@ void App::updateLobby() {
                 chatOpen_ = false;
             }
 
-            if (hitInclusive(layout.ready, mouse)) startGame();
+            if (insideInclusive(layout.ready, mouse)) startGame();
         }
     }
 }
@@ -348,9 +326,10 @@ void App::enterGame() {
     // reaching the world is what a Game exists for.
     //
     // A scripted login is not a player, and the card would cover a quarter
-    // of every other capture -- which is precisely why the browser's own
-    // harness writes `tutorial_completed` before those joins and clears it
-    // for the one shot that wants the card. --tutorial is that shot.
+    // of every other capture -- which is precisely why the TypeScript
+    // client's parity harness wrote `tutorial_completed` before those joins
+    // and cleared it for the one shot that wanted the card. --tutorial is
+    // that shot.
     if (config_.autoTutorial || config_.autoUsername.empty()) {
         tutorial_.beginGame(menus_.settings(), timeSeconds_, config_.autoTutorial);
     }
@@ -665,18 +644,20 @@ void App::drawLobby(Canvas& canvas, double time) {
     nameBox_ = layout.name;
     // The raw value while it is being edited, so the caret and the highlight
     // land on the glyphs actually drawn; the ellipsised form once the caret
-    // has gone, which is what keeps a long name inside its box.
+    // has gone, which is what keeps a long name inside its box. Measured at
+    // the size the field draws in, because a narrower measure would cut too
+    // much.
     const double nameSpan = inputFieldBand(layout.name).w - kInputPadding * 2;
     inputField(canvas, layout.name,
                nameField_.focused
                    ? playerName_
-                   : ellipsised(canvas, playerName_, nameSpan, inputTextSize(layout.name)),
+                   : ellipsize(playerName_, inputTextSize(layout.name), nameSpan),
                "This flower is called...", nameField_.focused, time, &nameField_);
 
     ButtonStyle readyStyle;
     readyStyle.fill = 0x1DD129u;
     readyStyle.textSize = 18.0;
-    button(canvas, layout.ready, "Ready", freeMouse && hitInclusive(layout.ready, mouse),
+    button(canvas, layout.ready, "Ready", freeMouse && insideInclusive(layout.ready, mouse),
            freeMouse && pressedControl_ == "start", readyStyle);
 
     TextStyle label;
@@ -697,7 +678,7 @@ void App::drawLobby(Canvas& canvas, double time) {
         // still fits inside one. A row at its natural width keeps the
         // reference's 14.
         style.textSize = box.w < kPickerNaturalWidth ? 12.0 : 14.0;
-        button(canvas, box, text_, freeMouse && !chosen && hitInclusive(box, mouse),
+        button(canvas, box, text_, freeMouse && !chosen && insideInclusive(box, mouse),
                freeMouse && pressedControl_ == id, style);
     };
     const std::vector<PickerTab> tabs = pickerTabs();
@@ -730,7 +711,7 @@ void App::drawLobby(Canvas& canvas, double time) {
         "Arrow keys to move",
         "Hold space to extend petals",
         "Press Z to open the inventory.",
-        "Press U + number keys 1-9 to use items.",
+        "Click a loadout item to use it.",
         "Press number keys 1-9 to swap items with secondary loadout",
         "Press K to switch between mouse and keyboard controls",
         "Use Q and E to swap petals",

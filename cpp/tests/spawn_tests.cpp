@@ -1,21 +1,21 @@
 #include "test.h"
 
-#include "server/db.h"
 #include "server_harness.h"
-#include "shared/core/json.h"
 #include "shared/game/map_elements.h"
 
-#include <sys/stat.h>
-
-#include <fstream>
-#include <iterator>
 #include <set>
 
 using namespace flix;
+using flix::testsupport::bodyNamed;
 using flix::testsupport::connectClient;
 using flix::testsupport::dataDir;
 using flix::testsupport::Harness;
 using flix::testsupport::loginNew;
+// The tests below that run the usual bot population find their own flower by
+// its account (onlyPlayer skips the bots), not as the last PlayerTag a query
+// happens to visit.
+using flix::testsupport::onlyPlayer;
+using flix::testsupport::seedUser;
 
 // Where a player appears.
 //
@@ -133,13 +133,6 @@ double hardestBandOn(const MapData& map) {
     return hardest;
 }
 
-Entity onlyPlayer(World& world) {
-    Entity found = NULL_ENTITY;
-    Query<PlayerTag, Transform> bodies{world};
-    bodies.each([&](Entity e, PlayerTag&, Transform&) { found = e; });
-    return found;
-}
-
 const MapData& overworld(const Harness& h) {
     static const MapData kEmpty;
     const MapData* map = h.server.worldMaps().forRealm(Realm::Overworld);
@@ -151,14 +144,20 @@ const MapData& overworld(const Harness& h) {
 TEST(the_shipped_catalogue_loads_and_resolves_its_defaults) {
     // THE INVARIANT IS DERIVED FROM THE FILES, NOT PINNED TO THEM.
     //
-    // maps/maps.json is the author's to grow -- it named one map, it names
-    // garden.tmj and desert.tmj today, and it will name more -- so nothing
-    // here counts maps, layers, bands or doors. What is pinned is that the
+    // maps/maps.json is the author's to grow -- it once named one map, it
+    // names a good many today, and it will name more -- so nothing here
+    // counts maps, layers, bands or doors. What is pinned is that the
     // catalogue is non-empty and SELF-CONSISTENT: every map the manifest names
     // loads without a warning, realm i is the manifest's i'th entry both ways
     // round, and each map resolves the defaults that make an unedited Tiled
     // file work -- `biome` falls back to the map id and `defaultMobGroup`
-    // falls back to `biome`, neither of which the shipped files write.
+    // falls back to `biome`, which the shipped files leave to those fallbacks
+    // (all but the dungeon's, below).
+    //
+    // A band's roster is checked against the content, so the content is loaded
+    // here rather than left to whichever harness test happened to run first.
+    std::string contentError;
+    CHECK(loadContent(dataDir(), contentError));
     WorldMaps maps;
     std::string error;
     CHECK(maps.load(dataDir(), nullptr, error));
@@ -330,10 +329,13 @@ TEST(the_shipped_catalogue_loads_and_resolves_its_defaults) {
 }
 
 TEST(every_shipped_door_is_named_by_its_label_and_is_offered) {
-    // Doors are DERIVED FROM THE FILES too. Not one shipped door has a Tiled
-    // name or a `spawnId`; all each says is a `label`, and that is enough,
-    // because the id falls back to a slug of the label. Before that fallback
-    // such an object was dropped at load and its map had no doors at all.
+    // Doors are DERIVED FROM THE FILES too. No shipped door has a `spawnId`,
+    // and all but the termite mound's say nothing but a `label`, which is
+    // enough, because the id falls back to a slug of the label. (The mound's
+    // three -- `spawn`, `termites` and `overmind` -- carry Tiled names,
+    // which the reader takes as the id first, and share one label.) Before
+    // that fallback an unnamed object was dropped at load and its map had no
+    // doors at all.
     //
     // So what is pinned is the round trip, for however many doors the
     // catalogue has: every player-spawn rectangle on every map resolves to a
@@ -392,20 +394,19 @@ TEST(every_shipped_door_is_named_by_its_label_and_is_offered) {
 TEST(the_shipped_door_stands_on_open_ground) {
     // THE test of the shipped data under the layer collision rule. Collision
     // is now a property of the LAYER -- water, dirt and castle all have
-    // `has_collision` ticked, so around three fifths of garden.tmj is solid
-    // (the background and sand layers are painted over all of it and block
-    // nothing, which is the rule working) -- and the
-    // one thing that has to survive that is the door: a player must be able to
-    // be put down inside it.
+    // `has_collision` ticked, so about half of garden.tmj is solid (the
+    // background layer is painted over all of it and blocks nothing, which is
+    // the rule working) -- and the one thing that has to survive that is the
+    // door: a player must be able to be put down inside it.
     //
     // The door is NOT wall-free to its last millimetre, and that is fine. Its
-    // rectangle is 1900 x 1833 at (1166.67, 16800), which is not tile-aligned:
-    // it overhangs the wall in column 3 by 33 units on the left and the wall in
-    // row 62 by 33 units at the bottom. What matters is that the room inside it
-    // is open -- 42 of the 56 cells it touches are ground -- and that every
-    // real placement lands clear, which is what findOpenPoint's body test
-    // guarantees. So this pins the two facts a player depends on: the great
-    // majority of the rectangle is standable, and a placement never is not.
+    // rectangle is the author's and is not tile-aligned, so it can overhang
+    // the walls round its edges by part of a cell. What matters is that the
+    // room inside it is open -- most of the cells it touches are ground -- and
+    // that every real placement lands clear, which is what findOpenPoint's
+    // body test guarantees. So this pins the two facts a player depends on:
+    // the great majority of the rectangle is standable, and a placement never
+    // is not.
     Terrain terrain;
     WorldMaps maps;
     std::string error;
@@ -558,11 +559,12 @@ TEST(the_live_server_grows_what_the_ground_under_each_mob_declares) {
         const MobConfig& config = content().mob(type.configIndex);
         // An escort and a body segment are not ambient spawns and the ground
         // they stand on did not choose them: a nest is placed by a band at that
-        // band's tier and then lays its brood out on a ring around itself, and
-        // a centipede's body trails its head. Both routinely reach over the
-        // band's edge onto ground no band covers. The parent answers for the
-        // tier; the ring is just where the children fit. Same exemption -- and
-        // the same reason -- as spawning_tests.cpp's shipped-map test.
+        // band's tier and its brood comes up at the nest's own centre
+        // (escortSpawnPoint) and walks out from there, and a centipede's body
+        // trails its head. Both routinely reach over the band's edge onto
+        // ground no band covers. The parent answers for the tier; where the
+        // children stand is theirs. Same exemption -- and the same reason -- as
+        // spawning_tests.cpp's shipped-map test.
         if (world.has<HoleTether>(e) || config.id.find("_body") != std::string::npos) {
             ++borrowed;
             return;
@@ -650,11 +652,12 @@ namespace {
 // A two-map world, built here rather than taken from the shipped data
 // ---------------------------------------------------------------------------
 //
-// The game ships ONE map with ONE door on it. Everything about several realms
-// -- choosing between doors, a pad that lands somewhere, a door an admin may
-// name and nobody else may -- therefore needs a world of its own. Bending the
-// shipped map into that shape would make the game's art a test fixture and
-// stop an author from ever changing it.
+// The shipped maps have few doors -- most of them one -- and no pads at all,
+// and they are the author's to redraw. Everything about choosing between
+// doors, a pad that lands somewhere, or a door an admin may name and nobody
+// else may therefore gets a world of its own. Bending the shipped maps into
+// that shape would make the game's art a test fixture and stop an author from
+// ever changing it.
 //
 // `meadow` is the overworld: two pickable doors and a pad into `warren`.
 // `warren` is a second, differently-sized realm whose only door is NOT
@@ -663,26 +666,9 @@ namespace {
 
 using flix::testsupport::twoMapDataDir;
 
-/// An admin account, seeded before the server opens the database.
-void seedAdminAccount(const std::string& path) {
-    Database db;
-    std::string error;
-    db.load(path, error);
-    db.setPasswordCost(4);
-    CreateResult created = db.createUser("boss", "password7");
-    if (created.ok()) created.account->admin = true;
-    db.markDirty();
-    db.save();
-}
-
-Entity bodyNamed(World& world, const std::string& name) {
-    Entity found = NULL_ENTITY;
-    Query<PlayerTag, PlayerAccount> players{world};
-    players.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
-        if (account.username == name) found = e;
-    });
-    return found;
-}
+/// The admin account these tests log in as, seeded before the server opens
+/// the database.
+void seedAdminAccount(const std::string& path) { seedUser(path, "boss", "password7", true); }
 
 } // namespace
 
@@ -953,13 +939,17 @@ TEST(a_broken_distribution_is_reported_not_guessed_at) {
 
 TEST(the_shipped_map_falls_back_to_its_own_mob_group_wherever_nothing_says_otherwise) {
     // world.tmj carried two hundred bands and nine regions and the spawner was
-    // only ever exercised through them; the shipped map is the other extreme --
-    // an author paints art, drops a door, and brushes difficulty onto a few
-    // shapes without ever saying WHAT lives in them. So the chain that has to
-    // hold is the fallback one: a non-empty default group that the content
-    // actually defines, reached by every band that names no roster of its own.
-    // A map that resolved to an empty group would spawn nothing at all,
-    // silently.
+    // only ever exercised through them. The shipped maps are an author's art
+    // with a door dropped on and difficulty brushed over it, a roster named on
+    // a band or left to the map -- so the chain that has to hold is the
+    // fallback one: a non-empty default group that the content actually
+    // defines, reached by every band that names no roster of its own. A map
+    // that resolved to an empty group would spawn nothing at all, silently.
+    //
+    // The default group is looked up in the content, which is loaded here
+    // rather than left to whichever harness test happened to run first.
+    std::string contentError;
+    CHECK(loadContent(dataDir(), contentError));
     MapData map;
     std::string error;
     CHECK(map.loadTiled(dataDir() + "/garden.tmj", error));
@@ -982,10 +972,10 @@ TEST(the_shipped_map_falls_back_to_its_own_mob_group_wherever_nothing_says_other
 }
 
 TEST(an_authored_band_and_region_still_parse) {
-    // Bands and regions are not gone, only unused by the shipped art. This is
-    // the coverage the old world.tmj gave for free, kept alive against a map
-    // written here: a `spawn` object WITH a difficulty is a band that owns a
-    // population, one WITHOUT is a region that only says what grows there.
+    // The coverage the old world.tmj gave for free, kept alive against a map
+    // written here rather than the shipped ones, which the author rebalances:
+    // a `spawn` object WITH a difficulty is a band that owns a population, one
+    // WITHOUT is a region that only says what grows there.
     //
     // The difficulty is authored as an `int`, which is what Tiled's own spinner
     // writes; a `float` lands in the same place. 40 is rare-ish ground on the
@@ -1145,8 +1135,8 @@ TEST(a_door_that_is_not_pickable_is_joined_only_by_an_admin) {
     // title screen never offers it, a player naming it anyway starts at the
     // default, and an admin naming it arrives there.
     //
-    // The shipped data has no such door any more -- one map, one door, and it
-    // is pickable -- so the arrangement is staged here rather than deleted.
+    // The shipped termite mound has doors like that, but it is the author's
+    // to redraw, so the arrangement is staged here instead.
     const std::string dir = twoMapDataDir("sublevel");
     CHECK(!dir.empty());
     if (dir.empty()) return;
@@ -1207,13 +1197,13 @@ TEST(a_door_that_is_not_pickable_is_joined_only_by_an_admin) {
 // ---------------------------------------------------------------------------
 //
 // Collision is a property of the LAYER now, and the shipped map ticks it on
-// three of its five: about three fifths of garden.tmj is solid. That is the
+// three of its five: about half of garden.tmj's cells collide. That is the
 // author's design, and it moved every placement path from "the map is mostly
 // open, a rejected sample is bad luck" to "a rejected sample is the common
-// case". These run the whole set on a fixture built to the same density, with
-// a deliberately badly-placed door on it, because a path that quietly gives up
-// on a dense map does not look like a bug -- it looks like a player standing
-// in a wall.
+// case". These run the whole set on a fixture built denser still
+// (denseMapDataDir), with a deliberately badly-placed door on it, because a
+// path that quietly gives up on a dense map does not look like a bug -- it
+// looks like a player standing in a wall.
 
 TEST(a_door_drawn_over_solid_ground_still_lands_a_body_on_open_ground) {
     // `cellar` is one cell and every point in it is wall. Fifty

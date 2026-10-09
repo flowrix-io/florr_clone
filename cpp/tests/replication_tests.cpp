@@ -7,10 +7,6 @@
 #include "server/systems/petals.h"
 #include "shared/game/components.h"
 
-#include <sys/stat.h>
-
-#include <cstdlib>
-#include <fstream>
 #include <string>
 
 #include "fixture_content.h"
@@ -39,7 +35,7 @@ struct Fixture {
         world.add<Body>(e, Body{kPlayerBaseRadius, 1.0});
         world.add<Health>(e, Health{100, 100, 0, 0});
         world.add<PlayerInput>(e);
-        world.add<PlayerProgress>(e, PlayerProgress{500, 5, 3, false});
+        world.add<PlayerProgress>(e, PlayerProgress{500, 5, 3});
         world.add<PlayerLocation>(e);
         world.add<PlayerAccount>(e, PlayerAccount{"u-" + name, name, 1, false});
         world.add<NetId>(e, NetId{ids.next()});
@@ -616,8 +612,8 @@ TEST(the_ease_rate_is_frame_rate_independent) {
     const double half = easeFraction(tau, 1.0 / 60.0);
     CHECK_NEAR(1.0 - (1.0 - half) * (1.0 - half), whole, 1e-12);
 
-    // And the amount is the browser build's definition: the fraction of the
-    // gap closed in one 60 fps frame.
+    // And the amount is the TypeScript client's definition: the fraction of
+    // the gap closed in one 60 fps frame.
     CHECK_NEAR(easeFraction(easeTimeConstant(0.3), 1.0 / 60.0), 0.3, 1e-12);
 }
 
@@ -678,8 +674,8 @@ TEST(a_flower_cuts_rather_than_glides_across_a_teleport) {
     WorldView view;
     view.seedForTest(easedFlower({0, 0}, {0, kTeleportSnapDistance + 1}));
     view.interpolate(1000, 1.0 / 60.0);
-    // A portal, a respawn or the maze at (200000, 200000): easing would drag
-    // the flower across every screen in between.
+    // A portal, a respawn or a realm change: easing would drag the flower
+    // across every screen in between.
     CHECK_NEAR(view.entities().at(1).position.y, kTeleportSnapDistance + 1, 1e-9);
 }
 
@@ -923,23 +919,16 @@ namespace {
 const ContentRegistry& moonContent() {
     static const ContentRegistry registry = [] {
         ContentRegistry r;
-        const char* env = std::getenv("TMPDIR");
-        std::string dir = (env != nullptr && *env != '\0') ? env : "/tmp";
-        if (dir.back() != '/') dir.push_back('/');
-        dir += "flix_moon_view";
-        mkdir(dir.c_str(), 0755);
-        const std::string mobs = dir + "/mobs.json";
-        const std::string petals = dir + "/petals.json";
-        std::ofstream(mobs, std::ios::trunc) << test::fixtureMobs(R"JSON({
+        std::string error;
+        if (!test::loadFixtureContent(r, testsupport::tempDir("flix_moon_view"), R"JSON({
   "critter": {"name":"Critter","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#FF0000","section":[0],"ai_type":"hostile"}
-})JSON");
-        std::ofstream(petals, std::ios::trunc) << test::fixturePetals(R"JSON({
+})JSON",
+                                      R"JSON({
   "basic": {"name":"Basic","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"color":"#FFFFFF"},
   "moon":  {"name":"Moon","damage":1,"health":1000,"size":2.6,"cooldown":10000,"count":1,"color":"#878787"},
   "gazer": {"name":"Gazer","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"range":0,"fixedDirection":0,"noPhysics":true,"color":"#000000"}
-})JSON");
-        std::string error;
-        if (!r.loadFiles(mobs, petals, error)) {
+})JSON",
+                                      error)) {
             ::testing::reportFailure(__FILE__, __LINE__, "moon fixture failed: " + error);
         }
         return r;
@@ -1308,9 +1297,12 @@ TEST(a_mobs_ring_seed_is_replicated_as_a_petal_anchored_to_it) {
     // rather than a snapshot-old position.
     CHECK_EQ(seen.ownerNetId, netIdOf(f.world, mob));
 
-    // And a broken seat leaves: the client is told, as it is for any entity.
+    // And a broken seat leaves: the client is told, as it is for any entity,
+    // and the mob it sat on stays.
+    const std::uint32_t seedId = netIdOf(f.world, seed);
     f.world.destroy(seed);
     f.tick(client, 2, 1033.0);
+    CHECK(client.entities().count(seedId) == 0);
     CHECK(client.entities().count(netIdOf(f.world, mob)) == 1);
 }
 

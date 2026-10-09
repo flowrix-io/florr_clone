@@ -5,55 +5,22 @@
 
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
-#include <fstream>
 #include <string>
 #include <vector>
 #include "fixture_content.h"
+#include "test_data.h"
 
 using namespace flix;
 
 namespace {
 
-// The test binary runs from wherever ctest puts it and the content files are
-// not staged next to it, so every path is derived from this source file's own
-// location rather than from the working directory.
-std::string testsDir() {
-    const std::string path = __FILE__;
-    const std::size_t slash = path.find_last_of('/');
-    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
-}
-
-std::string firstExisting(const std::vector<std::string>& candidates) {
-    for (const std::string& candidate : candidates) {
-        std::ifstream probe(candidate, std::ios::binary);
-        if (probe) return candidate;
-    }
-    return {};   // loadFiles() then reports it as an unreadable file
-}
-
-// CMake compiles sources by absolute path, so the first candidate normally
-// wins. The rest cover a hand-run binary, whose __FILE__ is whatever relative
-// path the compiler was given, and the build tree, where the content is staged
-// into ./data.
-std::string mobsPath() {
-    static const std::string path = firstExisting({
-        testsDir() + "/../../src/mobs.json",
-        "data/mobs.json", "../src/mobs.json", "../../src/mobs.json", "src/mobs.json",
-    });
-    return path;
-}
-
-std::string petalsPath() {
-    static const std::string path = firstExisting({
-        testsDir() + "/../../src/petals.json",
-        "data/petals.json", "../src/petals.json", "../../src/petals.json", "src/petals.json",
-    });
-    return path;
-}
+// The shipped files, as the build staged them (see test_data.h).
+std::string mobsPath() { return testsupport::dataFile("mobs.json"); }
+std::string petalsPath() { return testsupport::dataFile("petals.json"); }
 
 /// The shipped content, loaded once: parsing 220KB of JSON with inline SVG in
 /// every entry is not something to repeat per test case.
@@ -72,28 +39,27 @@ const Shipped& shipped() {
     return state;
 }
 
-std::string tempDir() {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_config_tests";
-    mkdir(base.c_str(), 0755);   // already exists is fine
-    return base;
-}
-
+// This file's scratch directory, and the shared file helpers (test_data.h).
+std::string tempDir() { return testsupport::tempDir("flix_config_tests"); }
 std::string tempPath(const char* name) { return tempDir() + "/" + name; }
+using testsupport::readText;
+using testsupport::shippedJson;
+using testsupport::writeText;
 
-bool writeText(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
-    return out.good();
-}
-
-bool readText(const std::string& path, std::string& out) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return false;
-    out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    return true;
+/// The mobs the loader has to synthesise a `<mob>_egg` for, in mobs.json's
+/// own order, read off the two files: every mob that is not a pet -- a pet is
+/// not something that lays an egg -- and has no hand-written egg in
+/// petals.json, which wins over a generated one. The rule src/petals.ts
+/// applied when it appended the eggs to BASE_PETAL_CONFIGS.
+std::vector<std::string> generatedEggMobs() {
+    const Json& petals = shippedJson("petals.json");
+    std::vector<std::string> out;
+    for (const std::string& id : shippedJson("mobs.json").keys()) {
+        const bool pet = id.size() >= 4 && id.compare(id.size() - 4, 4, "_pet") == 0;
+        if (pet || petals.contains(id + "_egg")) continue;
+        out.push_back(id);
+    }
+    return out;
 }
 
 bool warned(const ContentRegistry& r, const std::string& needle) {
@@ -140,14 +106,8 @@ struct Synthetic {
 /// did not name one -- see fixture_content.h. A case that is ABOUT those
 /// fields writes them, and is passed through untouched.
 bool loadSynthetic(ContentRegistry& out, const Synthetic& files, std::string& error) {
-    const std::string mobs = tempPath("synthetic_mobs.json");
-    const std::string petals = tempPath("synthetic_petals.json");
-    if (!writeText(mobs, test::fixtureMobs(files.mobs)) ||
-        !writeText(petals, test::fixturePetals(files.petals))) {
-        error = "could not write the synthetic content";
-        return false;
-    }
-    return out.loadFiles(mobs, petals, error);
+    return test::loadFixtureContent(out, testsupport::tempDir("flix_config_synthetic"), files.mobs,
+                                    files.petals, error);
 }
 
 /// The same, written EXACTLY as given. For the cases that are about a
@@ -172,11 +132,16 @@ TEST(shipped_content_loads) {
     const Shipped& s = shipped();
     if (!s.ok) std::printf("    (load error: %s)\n", s.error.c_str());
     CHECK(s.ok);
-    CHECK_EQ(s.registry.mobCount(), std::size_t(55));
-    // 74 written in petals.json plus one generated egg for each of the 53 mobs
-    // that is not a pet and has no hand-written egg -- exactly what the browser
-    // build appends to BASE_PETAL_CONFIGS at import time.
-    CHECK_EQ(s.registry.petalCount(), std::size_t(127));
+    // Every entry in mobs.json loads: nothing is dropped on the way in.
+    CHECK_EQ(s.registry.mobCount(), shippedJson("mobs.json").size());
+    // Every entry written in petals.json plus one generated egg for each mob
+    // that is not a pet and has no hand-written egg -- exactly what the
+    // TypeScript build appended to BASE_PETAL_CONFIGS at import time. Counted
+    // off the files rather than written down: the author adds mobs and petals
+    // all the time, and a pinned count only ever said when it was last bumped.
+    const std::size_t eggs = generatedEggMobs().size();
+    CHECK(eggs > 0);
+    CHECK_EQ(s.registry.petalCount(), shippedJson("petals.json").size() + eggs);
     CHECK(s.registry.loaded());
     CHECK(s.registry.contentHash() != 0u);
 }
@@ -195,18 +160,30 @@ TEST(the_catalogue_is_the_files_own_order_with_the_eggs_appended) {
         seen[index] = true;
     }
 
-    // petals.json's own first two keys, which is what the browser's
-    // Object.keys(PETAL_CONFIG) yields -- NOT the alphabetical order the wire
-    // indices are assigned in, which would open the shop on `air`.
-    CHECK_EQ(r.petal(order[0]).id, std::string("basic"));
-    CHECK_EQ(r.petal(order[1]).id, std::string("rose"));
+    // petals.json's own key order, entry for entry, which is what the
+    // TypeScript build's Object.keys(PETAL_CONFIG) yielded -- NOT the
+    // alphabetical order the wire indices are assigned in, which would open
+    // the shop on `air`.
+    const std::vector<std::string>& written = shippedJson("petals.json").keys();
+    CHECK(written.size() < order.size());
+    for (std::size_t i = 0; i < written.size() && i < order.size(); ++i) {
+        CHECK_EQ(r.petal(order[i]).id, written[i]);
+    }
+    // ...which can only tell the two orders apart while the file is not in
+    // alphabetical order itself.
+    CHECK(!std::is_sorted(written.begin(), written.end()));
 
-    // The eggs come last, because that is where the reference appends them.
-    // 75 hand-written petals, so `shell` -- the file's last key -- is the last
-    // entry before the generated block starts.
-    CHECK_EQ(r.petal(order[74]).id, std::string("shell"));
-    CHECK(r.petal(order[75]).id.size() > 4);
-    CHECK_EQ(r.petal(order[75]).id.substr(r.petal(order[75]).id.size() - 4), std::string("_egg"));
+    // The eggs come last, because that is where the reference appends them:
+    // straight after the file's own last key, one per laying mob, in
+    // mobs.json's order -- and nothing after them.
+    std::size_t next = written.size();
+    for (const std::string& mobId : generatedEggMobs()) {
+        CHECK(next < order.size());
+        if (next >= order.size()) break;
+        CHECK_EQ(r.petal(order[next]).id, mobId + "_egg");
+        ++next;
+    }
+    CHECK_EQ(next, order.size());
 
     // A generated egg carries the mob's colour in its art and hatches the pet
     // variant where the mob has one.
@@ -368,9 +345,10 @@ TEST(mob_speed_is_converted_to_units_per_second) {
     const MobStats bee = r.mobStats(r.mobIndex("bee"), Rarity::Common);
     CHECK_NEAR(bee.speed, 0.1 * kPlayerMaxSpeed, 1e-9);
     CHECK_NEAR(bee.speed, 30.0, 1e-9);
-    // Speed 1 IS the player's: a fly at 0.48 flies at 48% of a flower.
-    CHECK_NEAR(r.mobStats(r.mobIndex("fly"), Rarity::Common).speed, 0.48 * kPlayerMaxSpeed,
-               1e-9);
+    // Speed 1 IS the player's: a fly flies at whatever fraction of a flower its
+    // entry states, read off the file because that fraction is the author's.
+    CHECK_NEAR(r.mobStats(r.mobIndex("fly"), Rarity::Common).speed,
+               shippedJson("mobs.json")["fly"]["speed"].asDouble() * kPlayerMaxSpeed, 1e-9);
     // A bee chases at gardn's neutral 0.975 of a flower (`chase_speed`), but
     // that replaces the PURSUIT step only: an unprovoked bee still drifts at
     // its own 30, which is why the chase lives on a separate field.
@@ -397,21 +375,32 @@ TEST(petal_stats_scale_across_rarities) {
     const std::uint16_t basic = r.petalIndex("basic");
     CHECK(basic != kInvalidIndex);
 
+    // The common figures are the entry's own, read off the file: what is under
+    // test is the ladder they are run up, not the numbers the author chose.
+    const Json& petals = shippedJson("petals.json");
+    const double damage = petals["basic"]["damage"].asDouble();
+    const double health = petals["basic"]["health"].asDouble();
+    const double reload = petals["basic"]["cooldown"].asDouble();
+    CHECK(damage > 0.0);
+    CHECK(health > 0.0);
+    CHECK(reload > 0.0);
     for (int tier = 0; tier < kRarityCount; ++tier) {
         const Rarity rarity = static_cast<Rarity>(tier);
         const PetalStats s = r.petalStats(basic, rarity);
-        CHECK_NEAR(s.damage, 10.0 * petalStrengthScale(rarity), std::fabs(s.damage) * 1e-9);
-        CHECK_NEAR(s.health, 10.0 * petalStrengthScale(rarity), std::fabs(s.health) * 1e-9);
-        CHECK_NEAR(s.reloadMillis, 1200.0, 1e-9);   // reload is flat across tiers
+        CHECK_NEAR(s.damage, damage * petalStrengthScale(rarity), std::fabs(s.damage) * 1e-9);
+        CHECK_NEAR(s.health, health * petalStrengthScale(rarity), std::fabs(s.health) * 1e-9);
+        CHECK_NEAR(s.reloadMillis, reload, 1e-9);   // reload is flat across tiers
         CHECK(s.breakable);
     }
 
     // Healing rides the softer curve, or a maxed loadout is unkillable.
     const std::uint16_t rose = r.petalIndex("rose");
     CHECK(rose != kInvalidIndex);
-    CHECK_NEAR(r.petalStats(rose, Rarity::Common).heal, 10.0, 1e-9);
-    CHECK_NEAR(r.petalStats(rose, Rarity::Apex).heal, 10.0 * petalHealScale(Rarity::Apex), 1e-6);
-    CHECK(r.petalStats(rose, Rarity::Apex).heal < 10.0 * petalStatScale(Rarity::Apex));
+    const double heal = petals["rose"]["burstHeal"].asDouble();
+    CHECK(heal > 0.0);
+    CHECK_NEAR(r.petalStats(rose, Rarity::Common).heal, heal, 1e-9);
+    CHECK_NEAR(r.petalStats(rose, Rarity::Apex).heal, heal * petalHealScale(Rarity::Apex), 1e-6);
+    CHECK(r.petalStats(rose, Rarity::Apex).heal < heal * petalStatScale(Rarity::Apex));
     CHECK(r.petal(rose).defendOnly);
 }
 
@@ -520,7 +509,6 @@ TEST(player_modifiers_scale_by_kind) {
 
     // A petal with no playerModifiers block is neutral in every field.
     const PetalStats basic = r.petalStats(r.petalIndex("basic"), Rarity::Apex);
-    CHECK(!basic.modifiers.any);
     CHECK_NEAR(basic.modifiers.maxHealth, 1.0, 1e-12);
     CHECK_NEAR(basic.modifiers.luck, 0.0, 1e-12);
     CHECK_NEAR(basic.modifiers.aggroRange, 1.0, 1e-12);
@@ -682,23 +670,40 @@ TEST(the_ocean_group_holds_every_ocean_mob) {
 }
 
 TEST(min_rarity_makes_a_mob_unspawnable_below_its_tier) {
-    const ContentRegistry& r = shipped().registry;
-    const std::uint16_t centipede = r.mobIndex("evil_centipede");
-    CHECK(centipede != kInvalidIndex);
-    CHECK_EQ(rarityIndex(r.mob(centipede).minRarity), rarityIndex(Rarity::Rare));
-    CHECK(!r.mob(centipede).groups.empty());   // it does belong to a group
+    // A mob that belongs to a group but may only exist from some tier up. No
+    // shipped mob is both any more -- the evil centipede this was written
+    // against lost its floor when it moved to the jungle, and the two that
+    // carry one now, the queen ant and the termite overmind, are put down by
+    // their nests and belong to no group at all -- so a fixture carries it.
+    ContentRegistry r;
+    std::string error;
+    Synthetic files;
+    files.mobs = R"JSON({
+      "floored": {"name": "Floored", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "hostile", "groups": ["garden"], "min_rarity": "rare"}
+    })JSON";
+    files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+        "cooldown": 1, "count": 1, "description": "", "color": "#fff", "image": "<svg/>"}})JSON";
+    CHECK(loadSynthetic(r, files, error));
+    const std::uint16_t floored = r.mobIndex("floored");
+    CHECK(floored != kInvalidIndex);
+    if (floored == kInvalidIndex) return;
+    CHECK_EQ(rarityIndex(r.mob(floored).minRarity), rarityIndex(Rarity::Rare));
+    CHECK(!r.mob(floored).groups.empty());   // it does belong to a group
 
-    CHECK(!r.mobStats(centipede, Rarity::Common).spawnable());
-    CHECK(!r.mobStats(centipede, Rarity::Uncommon).spawnable());
-    CHECK(r.mobStats(centipede, Rarity::Rare).spawnable());
-    CHECK(r.mobStats(centipede, Rarity::Apex).spawnable());
-    CHECK(!r.mobStats(centipede, Rarity::Common).ambient);
-    CHECK(r.mobStats(centipede, Rarity::Rare).ambient);
+    CHECK(!r.mobStats(floored, Rarity::Common).spawnable());
+    CHECK(!r.mobStats(floored, Rarity::Uncommon).spawnable());
+    CHECK(r.mobStats(floored, Rarity::Rare).spawnable());
+    CHECK(r.mobStats(floored, Rarity::Apex).spawnable());
+    CHECK(!r.mobStats(floored, Rarity::Common).ambient);
+    CHECK(r.mobStats(floored, Rarity::Rare).ambient);
 
     // A mob in no group at all is its own kind of unspawnable and is
     // unaffected.
-    const std::uint16_t spawner = r.mobIndex("item_spawner");
-    CHECK(!r.mobStats(spawner, Rarity::Apex).spawnable());
+    const ContentRegistry& shippedRegistry = shipped().registry;
+    const std::uint16_t spawner = shippedRegistry.mobIndex("item_spawner");
+    CHECK(!shippedRegistry.mobStats(spawner, Rarity::Apex).spawnable());
 }
 
 TEST(mob_xp_comes_off_the_mob_and_apex_is_derived) {
@@ -731,7 +736,6 @@ TEST(cross_references_resolve_to_indices) {
     const MobConfig& hornet = r.mob(r.mobIndex("hornet"));
     CHECK(hornet.projectile.present);
     CHECK_EQ(hornet.projectile.ammoPetalIndex, r.petalIndex("hornet_missile"));
-    CHECK_EQ(rarityIndex(hornet.projectile.ammoRarity), rarityIndex(Rarity::Uncommon));
 
     const MobConfig& queen = r.mob(r.mobIndex("queen_ant"));
     CHECK(queen.periodicSpawn.present);
@@ -739,13 +743,31 @@ TEST(cross_references_resolve_to_indices) {
     CHECK_EQ(queen.periodicSpawn.rarityOffset, -1);
     CHECK_NEAR(queen.periodicSpawn.intervalMillis, 2000.0, 1e-9);
 
+    // The hole's guard and its waves, name for name and in the order written:
+    // each id the entry lists resolves to that mob's index. Compared with the
+    // entry itself rather than with a count, so a wave the author adds is
+    // checked like the rest instead of breaking a number written down here.
     const MobConfig& hole = r.mob(r.mobIndex("ant_hole"));
-    CHECK_EQ(hole.initialSpawns.size(), std::size_t(6));
-    CHECK_EQ(hole.spawnWaves.size(), std::size_t(9));
-    for (const std::uint16_t child : hole.initialSpawns) CHECK(child != kInvalidIndex);
-    for (const auto& wave : hole.spawnWaves) {
+    const Json& authored = shippedJson("mobs.json")["ant_hole"];
+    const std::vector<Json>& guard = authored["initial_spawns"].items();
+    const std::vector<Json>& waves = authored["spawn_waves"].items();
+    CHECK(!guard.empty());
+    CHECK(!waves.empty());
+    CHECK_EQ(hole.initialSpawns.size(), guard.size());
+    for (std::size_t i = 0; i < guard.size() && i < hole.initialSpawns.size(); ++i) {
+        CHECK(hole.initialSpawns[i] != kInvalidIndex);
+        CHECK_EQ(hole.initialSpawns[i], r.mobIndex(guard[i].asString()));
+    }
+    CHECK_EQ(hole.spawnWaves.size(), waves.size());
+    for (std::size_t w = 0; w < waves.size() && w < hole.spawnWaves.size(); ++w) {
+        const auto& wave = hole.spawnWaves[w];
+        const std::vector<Json>& names = waves[w].items();
         CHECK(!wave.empty());
-        for (const std::uint16_t child : wave) CHECK(child < r.mobCount());
+        CHECK_EQ(wave.size(), names.size());
+        for (std::size_t k = 0; k < names.size() && k < wave.size(); ++k) {
+            CHECK(wave[k] < r.mobCount());
+            CHECK_EQ(wave[k], r.mobIndex(names[k].asString()));
+        }
     }
     // Drawn beneath the ants it lets out; nothing else is a hole.
     CHECK(hole.hole);
@@ -811,8 +833,9 @@ TEST(enums_and_colours_are_parsed_not_stored_as_text) {
 
     CHECK_EQ(r.petal(r.petalIndex("cutter")).equipFlags, std::uint8_t(EquipCutter));
     // Both bits, and the second one is DERIVED from the id: petals.json says
-    // plain "Cutter" because the browser build's loader throws on a name its
-    // frozen enum lacks. Losing this leaves the cyan blade painted black.
+    // plain "Cutter" because the TypeScript build's loader, which read the same
+    // file, threw on a name its frozen enum lacked. Losing this leaves the cyan
+    // blade painted black.
     CHECK_EQ(r.petal(r.petalIndex("lightning_cutter")).equipFlags,
              std::uint8_t(EquipCutter | EquipLightningCutter));
     // The body-damage grant rides the petal damage ladder: 3x a tier, so it
@@ -893,25 +916,52 @@ TEST(finite_enormous_damage_keeps_typescript_semantics) {
 }
 
 TEST(mob_visual_offset_is_read) {
+    // Every shipped mob, along both axes: the offset is exactly what its entry
+    // says, and an axis it says nothing about is zero -- absent means centred.
+    // The file decides which mobs are off centre and by how much -- hitbox_fit
+    // measures a new set whenever the art is redrawn -- so nothing names one
+    // here.
     const ContentRegistry& r = shipped().registry;
-    const MobConfig& fly = r.mob(r.mobIndex("fly"));
-    CHECK_NEAR(fly.visualOffsetX, 0.3, 1e-12);
-    CHECK_NEAR(fly.visualOffsetY, 0.0, 1e-12);
-    // Absent means centred.
-    const MobConfig& ladybug = r.mob(r.mobIndex("ladybug"));
-    CHECK_NEAR(ladybug.visualOffsetX, 0.0, 1e-12);
-    CHECK_NEAR(ladybug.visualOffsetY, 0.0, 1e-12);
+    const Json& mobs = shippedJson("mobs.json");
+    int stated = 0;
+    for (const std::string& id : mobs.keys()) {
+        const std::uint16_t index = r.mobIndex(id);
+        CHECK(index != kInvalidIndex);
+        if (index == kInvalidIndex) continue;
+        const Json& entry = mobs[id];
+        CHECK_NEAR(r.mob(index).visualOffsetX, entry["visualOffsetX"].asDouble(0.0), 1e-12);
+        CHECK_NEAR(r.mob(index).visualOffsetY, entry["visualOffsetY"].asDouble(0.0), 1e-12);
+        if (entry.contains("visualOffsetX") || entry.contains("visualOffsetY")) ++stated;
+    }
+    // ...which reads nothing unless some entry states one.
+    CHECK(stated > 0);
 }
 
-TEST(finite_zero_placeholder_mobs_keep_typescript_semantics) {
-    const ContentRegistry& r = shipped().registry;
-    for (const char* id : {"bush", "leafbug", "mantis"}) {
-        const MobConfig& m = r.mob(r.mobIndex(id));
-        CHECK_NEAR(m.size, 0.0, 1e-12);
-        CHECK_NEAR(m.health, 0.0, 1e-12);
-        CHECK_NEAR(m.visualScale, 0.0, 1e-12);
-        CHECK_NEAR(r.mobStats(r.mobIndex(id), Rarity::Common).radius, 0.0, 1e-12);
-    }
+TEST(a_finite_zero_size_health_or_visual_scale_keeps_typescript_semantics) {
+    // The TypeScript build read these as `value ?? default` (src/mobs.ts), not
+    // with `||`: a finite zero is a value, and only a MISSING field falls back
+    // to the default. The shipped mobs that once stood in mobs.json as zero
+    // placeholders (bush, leafbug, mantis) are real animals now, so a fixture
+    // carries the rule.
+    ContentRegistry r;
+    std::string error;
+    Synthetic files;
+    files.mobs = R"JSON({
+      "placeholder": {"name": "Placeholder", "health": 0, "damage": 1, "size": 0,
+        "visual_scale": 0, "speed": 0.2, "cooldown": 1, "range": 1, "description": "",
+        "color": "#fff", "image": "<svg/>", "ai_type": "hostile", "groups": ["garden"]}
+    })JSON";
+    files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+        "cooldown": 1, "count": 1, "description": "", "color": "#fff", "image": "<svg/>"}})JSON";
+    CHECK(loadSynthetic(r, files, error));
+    const std::uint16_t placeholder = r.mobIndex("placeholder");
+    CHECK(placeholder != kInvalidIndex);
+    if (placeholder == kInvalidIndex) return;
+    const MobConfig& m = r.mob(placeholder);
+    CHECK_NEAR(m.size, 0.0, 1e-12);
+    CHECK_NEAR(m.health, 0.0, 1e-12);
+    CHECK_NEAR(m.visualScale, 0.0, 1e-12);
+    CHECK_NEAR(r.mobStats(placeholder, Rarity::Common).radius, 0.0, 1e-12);
 }
 
 TEST(the_shipped_content_states_the_armor_exceptions) {
@@ -1461,21 +1511,23 @@ TEST(global_content_registry_loads_from_one_directory) {
     std::string error;
     CHECK(loadContent(dir, error));
     CHECK(error.empty());
-    CHECK_EQ(content().mobCount(), std::size_t(55));
-    CHECK_EQ(content().petalCount(), std::size_t(127));
     // The same two files in the same order as the shipped registry, so the two
-    // must agree on every index and on the hash.
-    CHECK_EQ(content().contentHash(), shipped().registry.contentHash());
-    CHECK_EQ(content().mobIndex("bee"), shipped().registry.mobIndex("bee"));
+    // must agree on every count, every index and the hash.
+    const ContentRegistry& files = shipped().registry;
+    CHECK(files.loaded());
+    CHECK_EQ(content().mobCount(), files.mobCount());
+    CHECK_EQ(content().petalCount(), files.petalCount());
+    CHECK_EQ(content().contentHash(), files.contentHash());
+    CHECK_EQ(content().mobIndex("bee"), files.mobIndex("bee"));
 
     // A failed reload of the global registry keeps what it already had.
     CHECK(!loadContent(dir + "/nowhere", error));
     CHECK(!error.empty());
-    CHECK_EQ(content().mobCount(), std::size_t(55));
+    CHECK_EQ(content().mobCount(), files.mobCount());
 
     // A trailing slash names the same directory.
     CHECK(loadContent(dir + "/", error));
-    CHECK_EQ(content().mobCount(), std::size_t(55));
+    CHECK_EQ(content().mobCount(), files.mobCount());
 }
 
 TEST(the_content_hash_covers_the_staged_maps) {
@@ -1490,6 +1542,7 @@ TEST(the_content_hash_covers_the_staged_maps) {
     CHECK(writeText(dir + "/mobs.json", mobs));
     CHECK(writeText(dir + "/petals.json", petals));
     std::remove((dir + "/maps.json").c_str());
+    std::remove((dir + "/mob_drops.json").c_str());
 
     std::string error;
     ContentRegistry plain;
@@ -1542,11 +1595,27 @@ TEST(the_content_hash_covers_the_staged_maps) {
     CHECK(withShapes.load(dir, error));
     CHECK(withShapes.contentHash() != withTileset.contentHash());
 
+    // And the drop table. The server's loot rolls it and the client's gallery
+    // prints its odds, so a client staged with a re-weighted table would show
+    // drops the server never makes; it is folded in like the maps, and one
+    // byte of it is as visible as one byte of a map.
+    std::string drops;
+    CHECK(readText(testsupport::dataFile("mob_drops.json"), drops));
+    CHECK(writeText(dir + "/mob_drops.json", drops));
+    ContentRegistry withDrops;
+    CHECK(withDrops.load(dir, error));
+    CHECK(withDrops.contentHash() != withShapes.contentHash());
+    CHECK(writeText(dir + "/mob_drops.json", drops + "\n"));
+    ContentRegistry reweighted;
+    CHECK(reweighted.load(dir, error));
+    CHECK(reweighted.contentHash() != withDrops.contentHash());
+
     // Both files named explicitly, no directory: nothing to fold, as before.
     ContentRegistry files;
     CHECK(files.loadFiles(dir + "/mobs.json", dir + "/petals.json", error));
     CHECK_EQ(files.contentHash(), plain.contentHash());
     std::remove((dir + "/maps.json").c_str());
+    std::remove((dir + "/mob_drops.json").c_str());
     std::remove((dir + "/tiny.tmj").c_str());
     std::remove((dir + "/tiny.tsj").c_str());
 }

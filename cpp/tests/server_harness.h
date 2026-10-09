@@ -5,64 +5,91 @@
 // here is a stub: below the socket it is the shipping code path, which is the
 // whole point -- a test that mocks the server tests the mock.
 
-#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <functional>
-#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "client/net_client.h"
+#include "server/db.h"
 #include "server/game_server.h"
+#include "shared/core/world.h"
+#include "shared/game/components.h"
 #include "shared/game/config.h"
+#include "test_data.h"   // dataDir(), and the scratch files every fixture here is written to
 
 namespace flix::testsupport {
 
+/// A scratch database path for a test that opens a Database of its own: one
+/// per test name and per process, so two runs at once never share it.
 inline std::string tempPath(const char* name) {
-    return std::string("/tmp/florr-itest-") + name + "-" + std::to_string(::getpid()) + ".json";
+    return tempUnique(std::string("florr-itest-") + name, ".json");
 }
 
-/// The content directory, found relative to THIS source file rather than to
-/// the working directory: the test binary is run from the build tree, from the
-/// project root, and from ctest, and all three must work.
-inline const std::string& dataDir() {
-    static const std::string resolved = [] {
-#ifdef FLIX_TEST_DATA_DIR
-        {
-            // The staged directory is the one the shipping server reads, so it
-            // is preferred whenever it exists. Probed on maps.json, which is
-            // what says the directory holds maps at all.
-            const std::string staged = FLIX_TEST_DATA_DIR;
-            std::ifstream mapProbe(staged + "/maps.json", std::ios::binary);
-            if (mapProbe) return staged;
-        }
-#endif
-        const std::string here = __FILE__;
-        const std::size_t slash = here.find_last_of('/');
-        const std::string tests = slash == std::string::npos ? std::string(".") : here.substr(0, slash);
-        const std::string candidates[] = {
-            tests + "/../build/data",   // staged beside the binaries
-            "data",
-        };
-        for (const std::string& candidate : candidates) {
-            std::ifstream probe(candidate + "/mobs.json", std::ios::binary);
-            if (probe) return candidate;
-        }
-        return std::string("data");
-    }();
-    return resolved;
+/// The directory a harness keeps its server's files in: one per test name and
+/// per process, so two runs at once never share an account table.
+///
+/// The database is `<home>/db/inventory.json`, one level down, because a
+/// server writes beside its database as well as into it: `backup_db` and
+/// `update` put their snapshots one level ABOVE the database's own directory
+/// (Database::backupDirectoryFor), which for a database sitting directly in
+/// TMPDIR was TMPDIR's PARENT -- shared by every run and every other program,
+/// and, for a relative TMPDIR, the repo root's own db_backups/. One level down,
+/// that is `<home>/db_backups`, and nothing a harness's server writes ever
+/// reaches past `<home>`.
+inline std::string harnessHome(const char* name) {
+    return tempRoot() + "/florr-itest-" + name + "-" + std::to_string(::getpid());
 }
+
+/// What a harness puts on disk, and the cleanup of it.
+///
+/// A member of Harness declared BEFORE its server, so it is destroyed AFTER
+/// it -- which is the whole point. ~GameServer destroys the Database, and
+/// ~Database saves a dirty database on the way out (one is dirty at the end of
+/// almost every test: a login, a registration, the first load of a missing
+/// file). A removal in ~Harness's own body ran before that save, which then
+/// wrote the file straight back, so every harness test left its database
+/// behind. Only the files a harness writes are removed by name; the
+/// directories are rmdir'd, which leaves alone one that still holds anything
+/// -- a backup a test did not clean up says so by staying.
+struct HarnessFiles {
+    std::string home;
+    std::string dbPath;
+
+    explicit HarnessFiles(const char* name)
+        : home(harnessHome(name)), dbPath(home + "/db/inventory.json") {
+        // Both levels before anything opens the database: save() writes a
+        // temporary file beside it and renames it into place, which needs the
+        // directory to be there already.
+        ::mkdir(home.c_str(), 0755);
+        ::mkdir((home + "/db").c_str(), 0755);
+        // A run that crashed with this pid left its file behind.
+        std::remove(dbPath.c_str());
+    }
+    ~HarnessFiles() {
+        std::remove(dbPath.c_str());
+        std::remove((dbPath + ".tmp").c_str());
+        ::rmdir((home + "/db").c_str());
+        ::rmdir((home + "/db_backups").c_str());
+        ::rmdir(home.c_str());
+    }
+    HarnessFiles(const HarnessFiles&) = delete;
+    HarnessFiles& operator=(const HarnessFiles&) = delete;
+};
 
 /// A server on a free port with an empty database, plus the plumbing to step
 /// it and its clients forward together.
 struct Harness {
+    /// Must stay ABOVE `server`: see HarnessFiles for why the order is the
+    /// cleanup.
+    HarnessFiles files;
     GameServer server;
+    /// `files.dbPath`, kept under the name every test already reads.
     std::string dbPath;
     std::uint16_t port = 0;
     bool ready = false;
@@ -77,22 +104,23 @@ struct Harness {
     /// `contentDir` is the data directory to boot on, defaulting to the staged
     /// one. A test that needs a map the shipped data does not have -- a second
     /// realm to teleport into, a door that is not pickable -- stages one of its
-    /// own with mapFixture() below and passes it here. The alternative is
-    /// bending the shipped map into a test rig, which makes the game's own data
-    /// a test fixture and stops an author from changing it.
+    /// own with stageDataDir() or twoMapDataDir() below and passes it here. The
+    /// alternative is bending the shipped map into a test rig, which makes the
+    /// game's own data a test fixture and stops an author from changing it.
     /// `bots` is the bot population to run with, or -1 for the server's usual
-    /// one. The world is ONE map now and its only door is small, so the bots
-    /// stand exactly where a joining player is put down -- which is right for
-    /// a live server and fatal to any test that says "these are the only
+    /// one. The bots are spread over every biome a player can pick, and each
+    /// is born in one of its map's doors or beginner bands, so one can be
+    /// standing exactly where a joining player is put down -- which is right
+    /// for a live server and fatal to any test that says "these are the only
     /// flowers in sight" or "this mob lived long enough to act". Those pass 0;
     /// bot_tests.cpp leaves it alone. `configure`, if given, sees the config
     /// last, for a field none of the above covers.
     explicit Harness(const char* dbName,
                      const std::function<void(const std::string&)>& seed = {},
                      const std::string& contentDir = dataDir(), int bots = -1,
-                     const std::function<void(ServerConfig&)>& configure = {}) {
-        dbPath = tempPath(dbName);
-        std::remove(dbPath.c_str());
+                     const std::function<void(ServerConfig&)>& configure = {})
+        : files(dbName) {
+        dbPath = files.dbPath;
         if (seed) seed(dbPath);
 
         ServerConfig config;
@@ -109,8 +137,6 @@ struct Harness {
         }
         if (!ready) std::printf("  harness could not start a server: %s\n", error.c_str());
     }
-
-    ~Harness() { std::remove(dbPath.c_str()); }
 
     /// Advances the simulation by `ticks`, servicing both ends each step.
     ///
@@ -144,26 +170,12 @@ struct Harness {
 // ---------------------------------------------------------------------------
 //
 // A data directory the server can boot on, built out of the staged content's
-// mobs and petals plus maps written here. The shipped world is ONE map now, so
-// anything about several realms -- a teleporter that lands somewhere, a door
-// an admin may name but the picker may not offer -- needs a world of its own,
-// and a fixture the test can read is a better statement of the invariant than
-// a rectangle hidden in the game's art.
-
-/// Writes `text` to `path`, creating nothing: the directory must exist.
-inline bool writeFile(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return false;
-    out.write(text.data(), static_cast<std::streamsize>(text.size()));
-    return out.good();
-}
-
-inline bool copyFile(const std::string& from, const std::string& to) {
-    std::ifstream in(from, std::ios::binary);
-    if (!in) return false;
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    return writeFile(to, text);
-}
+// mobs and petals plus maps written here. Anything that depends on how the
+// maps are laid out -- a teleporter that lands somewhere, a door an admin may
+// name but the picker may not offer -- gets a world of its own, so the test
+// holds still while the author redraws the shipped maps, and a fixture the
+// test can read is a better statement of the invariant than a rectangle
+// hidden in the game's art.
 
 /// The tileset every fixture map paints from: ground, wall, water, and one
 /// DIAGONAL wall whose collision is half its cell.
@@ -250,23 +262,12 @@ inline std::string fixtureDoor(const std::string& spawnId, const std::string& la
     return out;
 }
 
-/// One `spawns` object with no difficulty: a mob REGION, which only says what
-/// lives on this ground and owns no population of its own.
-///
-/// It answers a BAND standing on it that named no roster. On its own it spawns
-/// nothing: ground no band covers grows nothing at all, so a fixture map that
-/// wants mobs needs a fixtureBand() whatever else it carries.
-inline std::string fixtureRegion(double x, double y, double w, double h,
-                                 const std::string& mobs) {
-    return "{ \"id\": 80, \"name\": \"\", \"type\": \"spawn\", \"visible\": true,"
-           " \"rotation\": 0, \"x\": " + std::to_string(x) +
-           ", \"y\": " + std::to_string(y) + ", \"width\": " + std::to_string(w) +
-           ", \"height\": " + std::to_string(h) + ", \"properties\": ["
-           "{ \"name\": \"mobs\", \"type\": \"string\", \"value\": \"" + mobs + "\" }]}";
-}
-
 /// One `spawns` object WITH a difficulty: a spawn BAND, which owns a
-/// population of its own at the tier that difficulty buys.
+/// population of its own at the tier that difficulty buys. Ground no band
+/// covers grows nothing at all, so a fixture map that wants mobs needs one of
+/// these whatever else it carries. (The same object with no difficulty is a
+/// mob REGION, which only answers a band standing on it that named no roster;
+/// no fixture here needs one.)
 ///
 /// A number, not a rarity name -- zero is fully common and three hundred is
 /// unique with a little apex in it; see the difficulty curve in
@@ -394,15 +395,15 @@ inline std::string fixtureMap(int cols, int rows, const std::string& doors,
     return out;
 }
 
-/// The wall pattern for a map as SOLID as the shipped one.
+/// The wall pattern for a map at least as SOLID as the shipped ones.
 ///
-/// garden.tmj is about three fifths solid -- water, dirt and castle all
-/// collide -- and every placement path on the server has to survive that. So
-/// does this: a solid border, one clear room at the top left for the door, and
-/// everywhere else walls except a grid of corridors, one row in four and one
-/// column in five. That is 60% solid and, unlike a scatter of open cells, it
-/// is CONNECTED: a body can walk from any open cell to any other, which is
-/// what makes it a map rather than a set of pockets.
+/// garden.tmj paints a colliding tile on about half its cells -- water, dirt
+/// and castle all collide -- and every placement path on the server has to
+/// survive that. So does this: a solid border, one clear room at the top left
+/// for the door, and everywhere else walls except a grid of corridors, one row
+/// in four and one column in five. That is 60% solid and, unlike a scatter of
+/// open cells, it is CONNECTED: a body can walk from any open cell to any
+/// other, which is what makes it a map rather than a set of pockets.
 inline std::function<bool(int, int)> denseWalls(int cols, int rows, int roomCols, int roomRows) {
     return [cols, rows, roomCols, roomRows](int x, int y) {
         if (x == 0 || y == 0 || x == cols - 1 || y == rows - 1) return true;
@@ -419,20 +420,18 @@ inline std::function<bool(int, int)> denseWalls(int cols, int rows, int roomCols
 /// be staged.
 inline std::string stageDataDir(const std::string& name,
                                 const std::vector<std::pair<std::string, std::string>>& maps) {
-    const std::string dir =
-        "/tmp/florr-fixture-" + name + "-" + std::to_string(::getpid());
-    ::mkdir(dir.c_str(), 0755);
-    ::mkdir((dir + "/tiles").c_str(), 0755);
+    const std::string dir = tempDir("florr-fixture-" + name + "-" + std::to_string(::getpid()));
+    // All three are what a server boots on -- a directory with no drop table
+    // is refused at start like one with no mobs -- so a failed copy of any of
+    // them fails the staging rather than the server a test then starts.
     for (const char* file : {"mobs.json", "petals.json", "mob_drops.json"}) {
-        // mob_drops is optional in some staged trees; the rest are not.
-        if (!copyFile(dataDir() + "/" + file, dir + "/" + file) &&
-            std::string(file) != "mob_drops.json") {
-            return std::string();
-        }
+        if (!copyFile(dataDir() + "/" + file, dir + "/" + file)) return std::string();
     }
-    if (!writeFile(dir + "/fixture.tsj", fixtureTileset())) return std::string();
+    if (!writeText(dir + "/fixture.tsj", fixtureTileset())) return std::string();
     // The art itself is optional: a missing tile file is one warning in the
-    // client's sprite cache, never a failure, and no test here renders.
+    // client's sprite cache, never a failure, and no test here renders. It is
+    // copied flat, beside the tileset, because the loader resolves a tile's
+    // image by its file name alone.
     copyFile(dataDir() + "/grass_c_0.svg", dir + "/grass_c_0.svg");
     copyFile(dataDir() + "/castle_c_0.svg", dir + "/castle_c_0.svg");
     copyFile(dataDir() + "/water_c_0.svg", dir + "/water_c_0.svg");
@@ -440,12 +439,12 @@ inline std::string stageDataDir(const std::string& name,
 
     std::string manifest = "{\n  \"maps\": [";
     for (std::size_t i = 0; i < maps.size(); ++i) {
-        if (!writeFile(dir + "/" + maps[i].first + ".tmj", maps[i].second)) return std::string();
+        if (!writeText(dir + "/" + maps[i].first + ".tmj", maps[i].second)) return std::string();
         if (i != 0) manifest += ",";
         manifest += "\n    { \"file\": \"" + maps[i].first + ".tmj\" }";
     }
     manifest += "\n  ]\n}\n";
-    if (!writeFile(dir + "/maps.json", manifest)) return std::string();
+    if (!writeText(dir + "/maps.json", manifest)) return std::string();
     return dir;
 }
 
@@ -454,8 +453,9 @@ inline std::string stageDataDir(const std::string& name,
 /// `meadow` is the overworld: two pickable doors, `meadow` first in button
 /// order, and a pad in cell (12, 3) into `warren`. `warren` is a second,
 /// differently-sized realm whose only door, `warren_gate`, is NOT pickable --
-/// the arrangement the picker's two lists exist for, which the shipped data no
-/// longer contains.
+/// the arrangement the picker's two lists exist for. The shipped termite mound
+/// has doors like that too, but this keeps its own, so a test of the picker
+/// does not move when the mound is redrawn.
 inline std::string twoMapDataDir(const std::string& name) {
     // Placed in CELLS times the cell size rather than in spelled-out pixels:
     // a door is meant to sit on particular ground, and only the cell says
@@ -477,7 +477,7 @@ inline std::string twoMapDataDir(const std::string& name) {
     return stageDataDir(name, {{"meadow", meadow}, {"warren", warren}});
 }
 
-/// A one-map world that is MOSTLY WALL, as the shipped map is.
+/// A one-map world that is MOSTLY WALL, denser still than the shipped garden.
 ///
 /// 32x32 cells, three fifths of it solid, with two doors:
 ///
@@ -516,11 +516,64 @@ inline std::string denseMapDataDir(const std::string& name) {
     return stageDataDir(name, {{"hollow", world}});
 }
 
-/// Deletes a directory stageDataDir() made, files and all.
+/// A copy of the staged data directory -- the shipped content and every
+/// shipped map, the very files a server boots on -- with ONE map edited, for a
+/// test that needs the real world with something in it the shipped files no
+/// longer carry.
+///
+/// `edit` is handed `mapStem`'s parsed document to change in place, and false
+/// from it fails the staging. Every other file is copied byte for byte, and
+/// only what a server reads is copied at all: the content, the drop table, the
+/// manifest, its maps and the tilesets they name -- not the tile art or the
+/// font, which no harness server draws. Returns the directory, or "" when it
+/// could not be staged.
+inline std::string stageShippedDataDir(const std::string& name, const std::string& mapStem,
+                                       const std::function<bool(Json&)>& edit) {
+    const std::string dir = tempDir("florr-fixture-" + name + "-" + std::to_string(::getpid()));
+    for (const char* file : {"mobs.json", "petals.json", "mob_drops.json", "maps.json"}) {
+        if (!copyFile(dataDir() + "/" + file, dir + "/" + file)) return std::string();
+    }
+    Json manifest;
+    std::string error;
+    if (!Json::parseFile(dataDir() + "/maps.json", manifest, error)) return std::string();
+    std::vector<std::string> tilesets;
+    bool edited = false;
+    for (const Json& entry : manifest["maps"].items()) {
+        const std::string file = entry["file"].asString();
+        Json map;
+        if (file.empty() || !Json::parseFile(dataDir() + "/" + file, map, error)) {
+            return std::string();
+        }
+        const Json& read = map;
+        for (const Json& tileset : read["tilesets"].items()) {
+            const std::string source = tileset["source"].asString();
+            if (source.empty()) continue;
+            if (std::find(tilesets.begin(), tilesets.end(), source) == tilesets.end()) {
+                tilesets.push_back(source);
+            }
+        }
+        if (file != mapStem + ".tmj") {
+            if (!copyFile(dataDir() + "/" + file, dir + "/" + file)) return std::string();
+            continue;
+        }
+        if (!edit(map) || !map.writeFile(dir + "/" + file)) return std::string();
+        edited = true;
+    }
+    // A stem the manifest does not name edits nothing, and a test that
+    // thought it had changed the world would be testing the shipped one.
+    if (!edited) return std::string();
+    for (const std::string& tileset : tilesets) {
+        if (!copyFile(dataDir() + "/" + tileset, dir + "/" + tileset)) return std::string();
+    }
+    return dir;
+}
+
+/// Deletes a directory stageDataDir() or stageShippedDataDir() made, files
+/// and all.
 inline void removeDataDir(const std::string& dir) {
     if (dir.empty()) return;
     // No <filesystem>: this tree targets a toolchain without it in the wasm
-    // build, and the fixture's shape is known -- flat files plus `tiles/`.
+    // build, and the fixture's shape is known -- flat files and nothing else.
     const std::string command = "rm -rf '" + dir + "'";
     if (std::system(command.c_str()) != 0) {
         std::printf("  could not remove fixture dir %s\n", dir.c_str());
@@ -539,5 +592,171 @@ inline bool loginNew(Harness& h, NetClient& client, const char* name, const char
     client.requestRegister(name, password);
     return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
 }
+
+/// Logs an account a seed wrote in, and waits for the account state to arrive.
+inline bool loginAs(Harness& h, NetClient& client, const char* name, const char* password) {
+    if (!connectClient(h, client)) return false;
+    client.requestLogin(name, password);
+    return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
+}
+
+// ---------------------------------------------------------------------------
+// Seeds: accounts written into the database before the server opens it
+// ---------------------------------------------------------------------------
+
+/// A registered account with a known password, so a test can log clients in
+/// against the same database. `admin` sets the account's admin flag, which is
+/// what makes it a full admin -- never its name.
+inline void seedUser(const std::string& path, const std::string& username,
+                     const std::string& password, bool admin = false) {
+    Database db;
+    std::string error;
+    db.load(path, error);
+    db.setPasswordCost(4);   // the default cost makes this the slowest step of a test
+    CreateResult created = db.createUser(username, password);
+    if (created.ok() && admin) created.account->admin = true;
+    db.markDirty();
+    db.save();
+}
+
+/// Gives a seeded account a stack -- `itemKey` is the bag's own key,
+/// "petal_rose" -- which no amount of playing would hand out reliably.
+inline void seedStack(const std::string& path, const std::string& username, const char* itemKey,
+                      Rarity rarity, int count) {
+    Database db;
+    std::string error;
+    db.load(path, error);
+    const Account* account = db.findUser(username);
+    if (account == nullptr) return;
+    db.progress(account->id).addItem(rarity, itemKey, count);
+    db.markDirty();
+    db.save();
+}
+
+// ---------------------------------------------------------------------------
+// What a client was told
+// ---------------------------------------------------------------------------
+
+/// Waits for a profile whose `predicate` holds. The server answers every
+/// request that changes an account with a fresh Profile, so a state change is
+/// observable without polling anything else.
+template <class F>
+bool awaitProfile(Harness& h, NetClient& client, F predicate) {
+    return h.stepUntil({&client}, [&] { return predicate(client.profile()); }, 200);
+}
+
+/// Every chat line this client holds, joined -- the whole transcript as one
+/// haystack, because command output is many lines and a test cares that the
+/// answer is somewhere in it, not which line carried it.
+inline std::string transcript(const NetClient& client) {
+    std::string all;
+    for (const ChatLine& line : client.chat()) {
+        all += line.author;
+        all += ": ";
+        all += line.text;
+        all += '\n';
+    }
+    return all;
+}
+
+/// Whether `needle` is anywhere in that transcript, author names included.
+inline bool sawText(const NetClient& client, const std::string& needle) {
+    return transcript(client).find(needle) != std::string::npos;
+}
+
+/// sawText over only the lines that landed after `mark`, a chatSequence()
+/// reading -- for a test that asks the same question twice and needs the
+/// second answer, not the first one still sitting in the transcript.
+inline bool sawTextSince(const NetClient& client, std::uint64_t mark, const std::string& needle) {
+    const std::vector<ChatLine>& lines = client.chat();
+    const std::uint64_t landed = client.chatSequence() - mark;
+    const std::size_t fresh =
+        landed < lines.size() ? static_cast<std::size_t>(landed) : lines.size();
+    for (std::size_t i = lines.size() - fresh; i < lines.size(); ++i) {
+        if ((lines[i].author + ": " + lines[i].text).find(needle) != std::string::npos) return true;
+    }
+    return false;
+}
+
+/// Sends `text` and steps until the transcript grows, so a test does not have
+/// to guess how many ticks a reply takes.
+inline bool say(Harness& h, NetClient& client, const std::string& text, int maxTicks = 120) {
+    const std::size_t before = client.chat().size();
+    client.sendChat(text);
+    return h.stepUntil({&client}, [&] { return client.chat().size() > before; }, maxTicks);
+}
+
+/// The player flowers this client's own view holds, its own included.
+inline std::size_t playersVisibleTo(const NetClient& client) {
+    std::size_t n = 0;
+    for (const auto& e : client.view().entities()) {
+        if (e.second.kind == net::EntityKind::Player) ++n;
+    }
+    return n;
+}
+
+// ---------------------------------------------------------------------------
+// Bodies in the server's world
+// ---------------------------------------------------------------------------
+
+/// The flower whose nameplate reads `name` -- the account's name, unless its
+/// join chose another -- or NULL_ENTITY.
+inline Entity bodyNamed(World& world, const std::string& name) {
+    Entity found = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> players{world};
+    players.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.username == name) found = e;
+    });
+    return found;
+}
+
+/// The one flower in the world that belongs to an account: the body of a
+/// test's only client, or NULL_ENTITY before it has joined.
+///
+/// A bot is a flower too, and owns no account -- its PlayerAccount carries no
+/// userId -- so it is skipped by that rather than by which archetype row a
+/// query happens to visit last. Taking "the last PlayerTag" used to find the
+/// client only because of the order the rows were in, and with the usual bot
+/// population running that is not an order anything promises.
+inline Entity onlyPlayer(World& world) {
+    Entity found = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> players{world};
+    players.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (!account.userId.empty()) found = e;
+    });
+    return found;
+}
+
+// ---------------------------------------------------------------------------
+// Past the socket
+// ---------------------------------------------------------------------------
+
+/// The suite's one reach past GameServer's public interface: its friend
+/// (server/game_server.h declares it).
+///
+/// Everything else in this file reaches the server from outside, the way the
+/// rest of the world can -- a socket, the database file, the world() it
+/// exposes -- and a test should do the same whenever it can; the top of this
+/// file says why. This is for the tests that cannot: a guard against a state
+/// no message leads to any more -- a session whose stage stopped saying
+/// Playing while its body stood, which a repeated Hello used to leave -- can
+/// be watched working only by putting a session into that state by hand.
+/// Untested, a guard like that is indistinguishable from dead code, and the
+/// next tidy-up takes it out.
+///
+/// Defined here and nowhere else, so every test file that includes this one
+/// shares the one definition.
+struct GameServerPeer {
+    /// The session signed in as `username`, or nullptr. None for a socket that
+    /// has closed, because a disconnect erases the session, or that has signed
+    /// out, because a sign-out clears the name.
+    static Session* sessionOf(GameServer& server, const std::string& username) {
+        if (username.empty()) return nullptr;
+        for (auto& entry : server.sessions_) {
+            if (entry.second.username == username) return &entry.second;
+        }
+        return nullptr;
+    }
+};
 
 } // namespace flix::testsupport

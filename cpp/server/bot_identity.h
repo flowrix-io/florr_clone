@@ -7,9 +7,9 @@
 // roll would answer a different question the moment either drifted.
 //
 // The generator is the reference's mulberry32 reproduced exactly, not the
-// server's own Rng: the level and loadout a name produces have to be the same
-// numbers on the browser server and on this one, or the same bot is a
-// different flower depending on which build spawned it.
+// server's own Rng, and the rolls are taken in the order the browser build's
+// botManager took them: a name rolls the same level and loadout it always did,
+// so a bot players knew as "m28" is still that flower here.
 
 #include <algorithm>
 #include <cstdint>
@@ -60,7 +60,7 @@ inline std::uint32_t hashName(const std::string& s) {
 
 /// mulberry32, the reference's own generator. Reproduced exactly rather than
 /// swapped for the server's Rng, because the level and loadout a name produces
-/// have to be the same numbers on both servers.
+/// have to be the numbers the browser build rolled for it.
 class BotRng {
 public:
     explicit BotRng(std::uint32_t seed) : state_(seed) {}
@@ -136,10 +136,11 @@ inline Rarity rollBotPetalRarity(int level, BotRng& rng) {
 
 /// The whole build a name seeds: the level, then one entry per active slot.
 ///
-/// The rolls are consumed in the order createBotBody consumes them -- level
-/// first, then petal-then-rarity per slot -- because they come off ONE stream.
-/// Reordering them here would silently give the console a different answer
-/// than the bot the world actually spawns.
+/// The rolls come off ONE stream, level first and then petal-then-rarity per
+/// slot, in the reference's order; reordering them would give every name a
+/// different build. createBotBody and the console's /level-from-string and
+/// /loadout-from-string both call this, so the console's answer is the bot
+/// the world actually spawns.
 struct BotIdentity {
     struct Slot {
         std::uint16_t petalIndex = kInvalidIndex;

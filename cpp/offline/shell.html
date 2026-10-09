@@ -38,12 +38,6 @@
             -webkit-user-select: none;
             -webkit-touch-callout: none;
         }
-        #info {
-            position: absolute;
-            z-index: 1000;
-            pointer-events: none;
-            user-select: none;
-        }
         #loadingScreen {
             position: absolute;
             top: 50%;
@@ -59,7 +53,6 @@
 <body>
     <span id="loadingScreen">Loading...</span>
     <canvas id="canvas" oncontextmenu="return false;"></canvas>
-    <b id="info" style="color:#f00; width:100%; height:5em; font-size:x-small;">db key:0ff1ce0ff1ce0ff1</b>
     <script>
 (function () {
   const query = new URLSearchParams(location.search);

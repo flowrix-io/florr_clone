@@ -12,7 +12,10 @@
 // permanent ghost -- the diff regenerates the removal for as long as the
 // discrepancy exists.
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -49,8 +52,10 @@ public:
         double angle = 0;
         /// The last health fraction SENT, and -1 until one has been.
         ///
-        /// Compared for exact equality, because the wire carries the f64 this
-        /// holds: anything a hit changes about a mob's pool is a change the
+        /// Held as the value quantized at its wire width
+        /// (net::quantizeHealthFraction) -- exactly what the client decodes --
+        /// and compared for exact equality against the next one, so anything a
+        /// hit changes about a mob's pool that survives the wire is a change the
         /// client must see. A threshold here used to be the bug -- at 1/255 a
         /// petal taking a millionth of an apex mob read as "unchanged" and the
         /// bar sat still through the whole fight.
@@ -126,8 +131,9 @@ struct WireEvent {
     /// other kind, and the only variable-length thing on the event wire.
     std::vector<Vec2> points;
 
-    /// Only clients within this distance of `position` are sent the event.
-    /// A damage number on the far side of the map is bytes nobody will see.
+    /// Only clients in the same realm whose streamed box contains `position`
+    /// are sent the event; every EventQueue factory sets it. A damage number
+    /// on the far side of the map is bytes nobody will see.
     bool positional = false;
 };
 
@@ -135,7 +141,6 @@ struct WireEvent {
 class EventQueue {
 public:
     void clear() { events_.clear(); }
-    void push(const WireEvent& e) { events_.push_back(e); }
 
     /// `flags` is a net::DamageEventFlags mask. Poison is called out on the
     /// wire because the client colours and offsets a tick differently from a
@@ -186,16 +191,29 @@ public:
         events_.push_back(e);
     }
 
-    /// `targets` is where the bolts end -- the mobs the strike hit -- already
-    /// trimmed to net::kMaxLightningTargets by the caller, which is the only
-    /// side that knows which ones are nearest.
-    void lightning(Vec2 at, double radius, Realm realm, const std::vector<Vec2>& targets) {
+    /// `targets` is where the bolts end -- whatever the strike hit, read
+    /// before the damage lands -- and the strike is drawn to the
+    /// net::kMaxLightningTargets of them nearest `at` when there are more than
+    /// fit. Nearest, not first: a plain truncation would take whatever order
+    /// the archetypes happen to hold, which is a direction rather than a disc
+    /// -- the browser build shipped that bug, and every bolt in a dense pile
+    /// fanned the same way. Only the drawing is trimmed; what the strike
+    /// damages is the caller's own list.
+    void lightning(Vec2 at, double radius, Realm realm, std::vector<Vec2> targets) {
+        if (targets.size() > net::kMaxLightningTargets) {
+            const auto cap = static_cast<std::ptrdiff_t>(net::kMaxLightningTargets);
+            std::partial_sort(targets.begin(), targets.begin() + cap, targets.end(),
+                              [at](const Vec2& a, const Vec2& b) {
+                                  return distanceSq(a, at) < distanceSq(b, at);
+                              });
+            targets.resize(net::kMaxLightningTargets);
+        }
         WireEvent e;
         e.kind = net::EventKind::Lightning;
         e.position = at;
         e.radius = radius;
         e.realm = realm;
-        e.points = targets;
+        e.points = std::move(targets);
         e.positional = true;
         events_.push_back(std::move(e));
     }
@@ -226,6 +244,12 @@ public:
         /// distance. Null when the viewer squads alone, which is the ordinary
         /// case and costs the gather nothing.
         const std::vector<Entity>* alwaysVisible = nullptr;
+        /// The window to cull to, when it is not the viewer body's own claim
+        /// (PlayerLocation::viewport). Set for an admin steering another
+        /// player's flower: the stream is built around THAT flower, but in the
+        /// box the admin's own client reported -- the steered player's claim is
+        /// their own screen's, and it keeps culling their own stream.
+        std::optional<Vec2> viewport;
     };
 
     /// Appends a complete Snapshot payload (message id included) to `out`.
@@ -308,7 +332,8 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis);
 
 /// The player-specific flag families that define the flower sprite. Keeping
 /// these separate from EntityState lets ordinary entities retain their compact
-/// generic state while players track the TypeScript renderer exactly.
+/// generic state while players carry the sprite's own flag families, as the
+/// TypeScript renderer they were ported from drew them.
 struct PlayerVisualState {
     std::uint8_t faceFlags = FaceNone;
     std::uint8_t equipFlags = EquipNone;

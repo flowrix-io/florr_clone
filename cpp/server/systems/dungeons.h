@@ -16,9 +16,10 @@
 // carried back out beside it a few seconds later, which is long enough to
 // collect what the last of the brood dropped.
 //
-// The colony: a dungeon's `colony` mobs share every hit. combat's applyDamage
-// splits a hit on one of them over all of them; this system keeps the list it
-// splits over (DungeonEntrance::colony).
+// The colony (MobConfig::colony, the ColonyMember tag spawnMobAt puts on a
+// termite) is combat's business, not this system's: applyDamage shares a hit
+// on one colony mob with every colony mob connected to it by distance, in a
+// dungeon or out.
 //
 // A copy nobody is in for a minute is cleaned out and given back, and its nest
 // goes back to being an ordinary unclaimed one -- the next flower to walk in
@@ -73,17 +74,6 @@ public:
     /// beside its nest, rather than wherever the pad's `targetMap` says. False
     /// when `realm` is not a copy somebody's nest has claimed.
     bool exitFor(Realm realm, Rng& rng, double bodyRadius, Realm& outRealm, Vec2& out) const;
-
-    /// What tests and the console want to know about one copy.
-    struct InstanceView {
-        Realm realm = Realm::Overworld;
-        bool live = false;
-        Entity entrance = NULL_ENTITY;
-        int dwellers = 0;
-        int players = 0;
-        bool cleared = false;
-    };
-    std::vector<InstanceView> instances() const;
 
 private:
     struct Instance {

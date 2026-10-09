@@ -5,14 +5,13 @@
 #include "shared/game/terrain.h"
 #include "shared/game/tiled_map.h"
 #include "client/minimap.h"
+#include "test_data.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <string>
-#include <sys/stat.h>
 #include <limits>
 #include <vector>
 
@@ -21,7 +20,8 @@ using namespace flix;
 namespace {
 
 /// One generated map, shared by the tests that only read it. Generation walks
-/// 40000 tiles and a repair BFS; doing it per test case is pure waste.
+/// every tile of the grid (kTilesPerAxis squared) and a repair BFS; doing it
+/// per test case is pure waste.
 const Terrain& sharedMap() {
     static const Terrain map = [] {
         Terrain t;
@@ -630,7 +630,6 @@ TEST(spatial_grid_keeps_each_realm_in_its_own_layer) {
 TEST(spatial_grid_does_not_allocate_once_warm) {
     SpatialGrid grid;
     std::vector<Entity> out;
-    Rng rng(8);
 
     // Two identical rounds. The first grows every buffer; the second must
     // reuse all of them, or the broadphase allocates 25 times a second for
@@ -658,7 +657,6 @@ TEST(spatial_grid_does_not_allocate_once_warm) {
     CHECK_EQ(grid.reservedEntries(), reserved);
     CHECK_EQ(out.capacity(), outCapacity);
     CHECK(reserved > 0);
-    (void)rng;
 }
 
 // ---------------------------------------------------------------------------
@@ -872,10 +870,14 @@ TEST(a_substep_cannot_carry_a_centre_past_a_tiles_effective_midline) {
 // ---------------------------------------------------------------------------
 //
 // A cell blocks where the SHAPES of its tile are, not over its whole square.
-// Every fixture below is written by the test itself, from a tileset drawn at 256
-// into a map whose cells are 300, because that is the one thing the shipped map
-// cannot check for us: an engine that ignored the scale would agree with a
-// fixture authored at 300 on every number.
+// Every fixture below is written by the test itself, from a tileset drawn at
+// 256 -- the cell size now, so kShapeScale is one and every number here is a
+// tile-space number too. The fixtures were authored when cells were 300, to
+// catch an engine that ignored the scale; that is still caught one level
+// down, where tiled_map_tests.cpp reads tilesets drawn at 300 and 512 into
+// 256-unit cells, and by the harness's own 300-unit fixture tileset
+// (server_harness.h). Expectations below still go through kShapeScale, so a
+// change of cell size scales them rather than breaking them.
 //
 // The shapes are chosen to be things a rectangle cannot fake:
 //
@@ -891,19 +893,11 @@ TEST(a_substep_cannot_carry_a_centre_past_a_tiles_effective_midline) {
 
 namespace {
 
-std::string shapeDir() {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_shape_tests";
-    mkdir(base.c_str(), 0755);
-    return base;
-}
-
+/// Writes a fixture file into this section's scratch directory and hands back
+/// its path.
 std::string writeFixture(const std::string& name, const std::string& text) {
-    const std::string path = shapeDir() + "/" + name;
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
+    const std::string path = testsupport::tempDir("flix_shape_tests") + "/" + name;
+    testsupport::writeText(path, text);
     return path;
 }
 
@@ -1015,12 +1009,7 @@ bool loadShapeMap(Terrain& out, const std::string& name, int cols, int rows,
 }
 
 /// maps/garden.tmj, out of the repository rather than a staged data directory.
-std::string shippedMap() {
-    const std::string here = __FILE__;
-    const std::size_t slash = here.find_last_of('/');
-    const std::string tests = slash == std::string::npos ? std::string(".") : here.substr(0, slash);
-    return tests + "/../../maps/garden.tmj";
-}
+std::string shippedMap() { return testsupport::repoMap("garden.tmj"); }
 
 Vec2 inCell(int tx, int ty, double lx, double ly) {
     return {tx * kTileSize + lx, ty * kTileSize + ly};
@@ -1081,8 +1070,8 @@ TEST(a_concave_shape_blocks_its_arms_and_not_its_notch) {
     gids[4] = 4;                     // notch, at cell (1,1)
     CHECK(loadShapeMap(t, "notch.tmj", 3, 3, gids));
 
-    const double arm = 64.0 * kShapeScale;    // 75: the arms' inner faces
-    const double bar = 192.0 * kShapeScale;   // 225: the crossbar's top face
+    const double arm = 64.0 * kShapeScale;    // the arms' inner faces
+    const double bar = 192.0 * kShapeScale;   // the crossbar's top face
     // The two arms block...
     CHECK(t.blocked(inCell(1, 1, arm * 0.5, 10.0), Realm::Overworld));
     CHECK(t.blocked(inCell(1, 1, arm * 0.5, bar - 10.0), Realm::Overworld));
@@ -1142,9 +1131,9 @@ TEST(a_shape_that_leaves_its_tile_blocks_and_is_reported_in_every_cell_it_reache
     gids[2 * 8 + 2] = 7;   // the wide tile at cell (2,2)
     CHECK(loadShapeMap(t, "overhang.tmj", 8, 8, gids));
 
-    // 700 tileset units is 820.3 world units, so it fills cells (2,2) and (3,2)
-    // and reaches 220 units into (4,2). Three cells hold geometry; the coarse
-    // grid calls all three Wall.
+    // 700 tileset units (700 * kShapeScale in the world) fill cells (2,2) and
+    // (3,2) and reach well into (4,2), past where the probes below stand.
+    // Three cells hold geometry; the coarse grid calls all three Wall.
     CHECK_EQ(t.collisionShapeCellCount(), 3);
     CHECK_NEAR(t.collisionOverhangUnits(), 700.0 * kShapeScale - kTileSize, 1e-9);
     for (int tx = 2; tx <= 4; ++tx) {
@@ -1193,13 +1182,13 @@ TEST(a_shape_that_leaves_its_tile_blocks_and_is_reported_in_every_cell_it_reache
 TEST(all_eight_orientations_block_where_the_art_is) {
     // One Wang edge tile serves all four rotations of a corner, so a cell's flip
     // bits have to turn its collision by the same matrix the renderer turns its
-    // art by. The `corner` shape is asymmetric -- 150 x 75 in the cell's
+    // art by. The `corner` shape is asymmetric -- 128 x 64 in the tile's
     // top-left -- so all eight orientations are eight different rectangles, and
     // each expected one is written out here rather than read back out of the
     // engine.
     struct Case { std::uint32_t flips; double left, top, right, bottom; const char* what; };
-    const double w = 128.0 * kShapeScale;   // 150
-    const double h = 64.0 * kShapeScale;    // 75
+    const double w = 128.0 * kShapeScale;
+    const double h = 64.0 * kShapeScale;
     const double S = kTileSize;
     const std::uint32_t H = 0x80000000u;
     const std::uint32_t V = 0x40000000u;
@@ -1325,8 +1314,8 @@ TEST(a_body_wedged_between_two_shapes_is_reported_unresolved_not_relocated) {
     // centre the passes cannot free is REPORTED rather than moved somewhere the
     // caller did not ask for: movement refuses an unresolved result, and a
     // resolver that silently relocated a body would tunnel it through a wall.
-    // The notch is 150 units wide, so a body of radius 90 cannot fit and is
-    // pushed from one arm to the other for all four passes.
+    // The notch is 128 tile units wide, so a body of radius 90 cannot fit and
+    // is pushed from one arm to the other for all four passes.
     Terrain t;
     std::vector<std::uint32_t> gids(9, 0);
     gids[4] = 4;                     // notch, at cell (1,1)
@@ -1407,9 +1396,6 @@ TEST(the_segment_tests_agree_with_the_point_tests_along_the_same_line) {
     const Vec2 through0 = inCell(1, 1, kTileSize * 0.5, 5.0);
     const Vec2 through1 = inCell(1, 1, kTileSize * 0.5, notchFloor - 10.0);
     CHECK(!t.segmentBlocked(through0, through1, Realm::Overworld));
-    CHECK(!t.hasLineOfSight(inCell(1, 1, 20.0, kTileSize / 3.0),
-                            inCell(1, 1, kTileSize - 20.0, kTileSize / 3.0), Realm::Overworld) ||
-          true);   // the arms are in the way; what matters is the notch below
     CHECK(t.hasLineOfSight(through0, through1, Realm::Overworld));
 }
 
@@ -1596,10 +1582,11 @@ TEST(a_realm_keeps_its_shapes_only_while_they_still_describe_its_grid) {
     TiledMap wrong;
     std::string error;
     writeFixture("shapes.tsj", kShapeTileset);
-    CHECK(wrong.load(writeFixture("small.tmj", shapeMap(3, 3, gids)), error));
+    const std::string small = writeFixture("small.tmj", shapeMap(3, 3, gids));
+    CHECK(wrong.load(small, error));
     CHECK(!t.setCollisionShapes(wrong, Realm::Overworld));
     CHECK(!t.hasCollisionShapes());
-    CHECK(!t.loadCollisionShapes(shapeDir() + "/small.tmj", error, Realm::Overworld));
+    CHECK(!t.loadCollisionShapes(small, error, Realm::Overworld));
     CHECK(!error.empty());
 
     // A realm that answers for its own geometry never takes shapes at all.
@@ -1656,8 +1643,8 @@ TEST(collision_rings_are_the_geometry_the_queries_answer_from) {
     // engine collides with, in world units, or the map on screen is not the
     // map being walked on.
     //
-    // The cell is a TURNED one: `corner` is a 150 x 75 rectangle in the tile's
-    // top-left, and the quarter turn clockwise (D | H) puts a 75 x 150 one
+    // The cell is a TURNED one: `corner` is a 128 x 64 rectangle in the tile's
+    // top-left, and the quarter turn clockwise (D | H) puts a 64 x 128 one
     // against the cell's right edge. A ring handed back untouched by the flip
     // bits would still look plausible -- same shape, wrong corner -- so the
     // check is against blocked(), point by point, rather than against a
@@ -1682,8 +1669,8 @@ TEST(collision_rings_are_the_geometry_the_queries_answer_from) {
     // The ring in world units, which is how a caller drawing it has to read it.
     std::vector<Vec2> world;
     for (const Vec2& p : *rings[0].points) world.push_back(p + rings[0].origin);
-    const double h = 64.0 * kShapeScale;    // 75, the turned rectangle's width
-    const double w = 128.0 * kShapeScale;   // 150, its height
+    const double h = 64.0 * kShapeScale;    // the turned rectangle's width
+    const double w = 128.0 * kShapeScale;   // its height
     double left = world[0].x, right = world[0].x, top = world[0].y, bottom = world[0].y;
     for (const Vec2& p : world) {
         left = std::min(left, p.x); right = std::max(right, p.x);

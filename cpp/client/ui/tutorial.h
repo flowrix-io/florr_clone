@@ -44,9 +44,8 @@ enum class TutorialGesture : std::uint8_t {
 /// One step's static copy and its rules.
 struct TutorialStep {
     const char* title;
-    /// The browser's description string verbatim, `<strong>`, `<em>` and
-    /// `<br>` included. Kept as written so a change to the reference copy is a
-    /// one-line change here.
+    /// The description, `<strong>`, `<em>` and `<br>` included -- the
+    /// browser's markup, kept as it was written there.
     const char* description;
     /// False on the steps whose `skipButton: false` hides the Skip button.
     bool skipButton;
@@ -60,9 +59,6 @@ public:
     /// The eleven steps, which is also the counter's denominator and the
     /// number of pagination dots.
     static constexpr int kStepCount = 11;
-
-    /// The steps, for anything that wants to read the copy.
-    static const TutorialStep* steps();
 
     /// Arms the card for a game that has just begun. The browser puts it up a
     /// second after the socket authenticates, and not at all once the settings
@@ -100,7 +96,7 @@ public:
 
     /// Paints the card. `highlightCard` is the crafting panel's box while that
     /// panel is open and empty otherwise -- see `kCraftingHighlightStep`.
-    void draw(Canvas&, double nowSeconds, Rect highlightCard);
+    void draw(Canvas&, Rect highlightCard);
 
     /// True while the pointer is over the card. In the browser the box is a
     /// DOM element on top of the canvas, so a click there never reaches the

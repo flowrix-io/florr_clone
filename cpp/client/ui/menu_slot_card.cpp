@@ -1,9 +1,10 @@
-// The slot card: the one card the forge, the oracle and the trader are drawn on.
+// The slot card: the one card the forge, the oracle, the trader and the titan
+// are drawn on.
 //
 // Laid out against the reference trade shot (After-trade_trade_menu.webp) and
 // measured off it -- the oracle's reference shot agrees with it to the unit --
 // in design units (the shots are at one design unit to the pixel), from the
-// card's OUTER top edge and from its centre line. What the three cards share
+// card's OUTER top edge and from its centre line. What the four cards share
 // and what they do not is in menus.h; slotCardBounds() is in menus.cpp, with
 // every other panel's anchoring.
 

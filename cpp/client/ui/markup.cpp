@@ -1,5 +1,6 @@
 #include "client/ui/markup.h"
 
+#include "shared/core/text.h"
 #include "shared/game/chat_images.h"
 #include "shared/game/html_entities.h"
 
@@ -11,8 +12,6 @@ namespace flix::ui {
 
 namespace {
 
-char lower(char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
-
 bool nameChar(char c) {
     const unsigned char u = static_cast<unsigned char>(c);
     return std::isalnum(u) != 0 || c == '-' || c == '_' || c == ':';
@@ -22,13 +21,6 @@ bool nameChar(char c) {
 // Colours
 // ---------------------------------------------------------------------------
 
-int hexDigit(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
-
 /// `#rgb`, `#rrggbb`, `rgb(r, g, b)` and the CSS colour keywords the server
 /// spells out by name. Alpha is deliberately not carried: the transcript's
 /// runs are drawn opaque over their own outline, and a translucent fill there
@@ -36,7 +28,7 @@ int hexDigit(char c) {
 bool parseCssColor(const std::string& in, std::uint32_t& out) {
     std::string s;
     for (const char c : in) {
-        if (c != ' ' && c != '\t') s.push_back(lower(c));
+        if (c != ' ' && c != '\t') s.push_back(lowerCase(c));
     }
     if (s.empty()) return false;
 
@@ -123,7 +115,7 @@ bool readTag(const std::string& s, std::size_t at, Tag& out) {
         ++i;
     }
     if (i >= s.size() || std::isalpha(static_cast<unsigned char>(s[i])) == 0) return false;
-    while (i < s.size() && nameChar(s[i])) out.name.push_back(lower(s[i++]));
+    while (i < s.size() && nameChar(s[i])) out.name.push_back(lowerCase(s[i++]));
 
     while (i < s.size() && s[i] != '>') {
         while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
@@ -135,7 +127,7 @@ bool readTag(const std::string& s, std::size_t at, Tag& out) {
         if (i >= s.size() || s[i] == '>') break;
 
         std::string name;
-        while (i < s.size() && nameChar(s[i])) name.push_back(lower(s[i++]));
+        while (i < s.size() && nameChar(s[i])) name.push_back(lowerCase(s[i++]));
         if (name.empty()) {
             // Junk inside the tag. Skip the byte rather than spinning.
             ++i;
@@ -196,7 +188,7 @@ bool voidTag(const std::string& name) { return name == "br" || name == "wbr" || 
 /// would run or read off the disk.
 bool fetchableUrl(const std::string& url) {
     std::string scheme;
-    for (const char c : url.substr(0, 8)) scheme.push_back(lower(c));
+    for (const char c : url.substr(0, 8)) scheme.push_back(lowerCase(c));
     return scheme.rfind("http://", 0) == 0 || scheme.rfind("https://", 0) == 0;
 }
 
@@ -229,7 +221,9 @@ void applyAttributes(const Tag& tag, MarkupSpan& style) {
                 if (colon != std::string::npos) {
                     std::string property;
                     for (const char c : declaration.substr(0, colon)) {
-                        if (!std::isspace(static_cast<unsigned char>(c))) property.push_back(lower(c));
+                        if (!std::isspace(static_cast<unsigned char>(c))) {
+                            property.push_back(lowerCase(c));
+                        }
                     }
                     if (property == "color") {
                         std::uint32_t rgb = 0;

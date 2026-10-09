@@ -98,9 +98,9 @@ struct PlayerRecord {
     SkillSet mazeSkills;
     /// Maze-tree branches this build does not know, round-tripped verbatim.
     /// The outside tree drops unknown branches -- a tier only means something
-    /// to the code that applies it -- but the maze tree is also read by the
-    /// TypeScript server sharing this file, and its maze talents are not all
-    /// modelled here yet; losing them would strip a player's maze build.
+    /// to the code that applies it -- but files the TypeScript server wrote
+    /// can hold maze talents this build does not model yet, and losing them
+    /// would strip a player's maze build.
     Json mazeSkillsExtra = Json::object();
 
     /// Keys this build does not model, round-tripped verbatim (`mazeLoadout`,
@@ -329,12 +329,10 @@ public:
     bool maybeSave(std::int64_t nowMillis);
 
     void markDirty() { dirty_ = true; }
-    bool dirty() const { return dirty_; }
 
     /// True when the file on disk could not be understood. Every save is
     /// refused while this holds.
     bool loadFailed() const { return loadFailed_; }
-    const std::string& path() const { return path_; }
 
     // -- accounts ----------------------------------------------------------
 
@@ -364,8 +362,7 @@ public:
     /// matched back to an address by hashing a candidate list -- the file and
     /// every backup of it would otherwise be a de-anonymisable log of who
     /// played from where. The salt is generated once and persisted: a fresh one
-    /// each boot would silently reset the cap it exists to enforce, and two
-    /// servers sharing a file have to agree on the hashes.
+    /// each boot would silently reset the cap it exists to enforce.
     std::string accountAddressHash(const std::string& addressKey);
 
     /// The secret salt stored in the database file (`ipSalt`), generated and
@@ -408,13 +405,20 @@ public:
     bool setPassword(const std::string& username, const std::string& password,
                      std::string& reasonOut);
 
+    /// The account rules, and the only copy of them: 3 to 16 of letters,
+    /// digits and underscore, starting with a letter; a password of 8 to 72
+    /// bytes with no control characters. Registration asks them before it
+    /// spends anything (GameServer::handleRegister) and createUser asks again,
+    /// so the two cannot drift into a name the first lets through and the
+    /// second refuses; setPassword holds a new password to the same rule.
+    /// Login asks neither: an account made under an older, looser rule must
+    /// still be able to sign in. `reasonOut` is a sentence for the player.
     static bool validUsername(const std::string& username, std::string& reasonOut);
     static bool validPassword(const std::string& password, std::string& reasonOut);
 
     /// bcrypt cost for new and upgraded passwords. Clamped to bcrypt's legal
     /// range. Tests lower it; a production server has no reason to.
     void setPasswordCost(int cost);
-    int passwordCost() const { return passwordCost_; }
 
     const std::vector<std::string>& usernames() const { return users_.keys(); }
     std::size_t userCount() const { return users_.size(); }
@@ -436,7 +440,6 @@ public:
     /// everywhere). Returns how many were dropped.
     int revokeSessionsForUser(const std::string& username);
     int pruneExpiredSessions();
-    std::size_t sessionCount() const { return sessions_.size(); }
 
     // -- progress ----------------------------------------------------------
 
@@ -451,7 +454,6 @@ public:
     /// authentication; calling it twice on the same UTC day is a no-op that
     /// still reports the current state, which is what a reconnect needs.
     DailyStreakResult processDailyStreak(const std::string& userId);
-    std::size_t playerCount() const { return players_.size(); }
     /// Every userId with a progress record, in stored order. Read with
     /// findProgress(); reach for progress() only for the rows actually being
     /// changed, so a sweep does not throw away every row's cached text.
@@ -476,6 +478,21 @@ public:
     // `update` command takes one before it touches a single file and aborts if
     // it cannot, which is the only reason a self-installing server is safe to
     // have at all.
+    //
+    // That directory is shared. The TypeScript server wrote its snapshots
+    // there under the same `inventory-<time>-<label>.json` pattern, and an
+    // operator may keep copies of their own beside them, so a name in that
+    // pattern says nothing about who wrote it. This build's own snapshots end
+    // `.snapshot.json` -- a dot no label the TypeScript server could write
+    // contains -- and only those are ever pruned. Everything else matching
+    // `inventory-*.json` is listed, and left exactly where it is.
+    //
+    // Under Node the directory is the HOST's (server/main.cpp mounts it from
+    // the real filesystem, as it does the database's); anything else there is
+    // in memory, and a snapshot in memory is gone at the restart it was taken
+    // for. So a backup is checked through Node's own fs before it counts, and
+    // refused when it is not on the disk -- in a page, which has no disk to
+    // put it on, always.
 
     struct BackupInfo {
         std::string file;
@@ -483,28 +500,46 @@ public:
         std::int64_t modifiedMillis = 0;
     };
 
-    /// How many snapshots are kept. The reference's MAX_DB_BACKUPS: enough to
-    /// reach back past a bad deploy, few enough that they cannot fill a disk.
+    /// How many of this server's own snapshots are kept. The reference's
+    /// MAX_DB_BACKUPS: enough to reach back past a bad deploy, few enough that
+    /// they cannot fill a disk.
     static constexpr std::size_t kMaxDatabaseBackups = 30;
 
+    /// What ends the name of every snapshot this build writes. See above.
+    static constexpr const char* kSnapshotSuffix = ".snapshot.json";
+
     /// Writes one snapshot, labelled for whoever asked for it. False with
-    /// `errorOut` set on any failure -- a backup that half-wrote is not a
-    /// backup, so the file is verified by length before it counts.
+    /// `errorOut` set on any failure -- a backup that half-wrote, or that
+    /// landed somewhere a restart forgets, is not a backup, so the file is
+    /// verified by length, and under Node on the host's own disk, before it
+    /// counts.
     bool backup(const std::string& label, BackupInfo& out, std::string& errorOut);
 
-    /// Existing snapshots, newest first.
+    /// Existing snapshots, newest first: every `inventory-*.json` in the
+    /// directory, whoever wrote it.
     std::vector<BackupInfo> listBackups() const;
 
     /// Where those snapshots live, derived from the database's own path.
-    std::string backupDirectory() const;
+    std::string backupDirectory() const { return backupDirectoryFor(path_); }
+
+    /// The same rule for a database path that is not open yet. The ONE copy:
+    /// server/main.cpp mounts this directory from the host before start()
+    /// opens anything, and a mount and a writer that worked the path out
+    /// separately could disagree.
+    static std::string backupDirectoryFor(const std::string& databasePath);
+
+    /// Whether `name`, a bare file name, is one backup() writes:
+    /// `inventory-<YYYY-MM-DDTHH-MM-SS-mmmZ>-<label>.snapshot.json`. The only
+    /// files pruning may delete.
+    static bool isOwnSnapshotName(const std::string& name);
 
     /// One unmodelled top-level table, read exactly as the file stores it.
     ///
     /// Separate from rawTable() because that one COERCES its value to an
     /// object. That is right for the dictionaries it was written for and fatal
-    /// for `notifications`, which the browser build stores as an ARRAY: one
-    /// coercing read would replace the whole feed with `{}`. Returns a null
-    /// Json when the table is absent.
+    /// for `notifications`, which is stored as an ARRAY, the shape the browser
+    /// build gave it: one coercing read would replace the whole feed with
+    /// `{}`. Returns a null Json when the table is absent.
     const Json& storedTable(const std::string& key) const { return otherTop_[key]; }
 
     /// The array-shaped counterpart of rawTable(), for `notifications`.

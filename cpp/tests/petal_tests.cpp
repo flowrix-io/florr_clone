@@ -4,12 +4,8 @@
 #include "server/systems/movement.h"
 #include "server/systems/petals.h"
 
-#include <sys/stat.h>
-
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
-#include <fstream>
 #include <string>
 #include <vector>
 #include "fixture_content.h"
@@ -86,21 +82,6 @@ const char* const kMobsJson = R"JSON({
   "brute":   {"name":"Brute","health":500,"damage":5,"size":6,"speed":0.2,"range":300,"cooldown":500,"color":"#AA3300","section":[0],"ai_type":"hostile"}
 })JSON";
 
-std::string tempDir() {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_petal_tests";
-    mkdir(base.c_str(), 0755);   // already there is fine
-    return base;
-}
-
-bool writeText(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
-    return out.good();
-}
-
 struct Fixture {
     ContentRegistry registry;
     bool ok = false;
@@ -110,15 +91,8 @@ struct Fixture {
 const Fixture& fixture() {
     static const Fixture state = [] {
         Fixture f;
-        const std::string dir = tempDir();
-        const std::string mobs = dir + "/mobs.json";
-        const std::string petals = dir + "/petals.json";
-        if (!writeText(mobs, test::fixtureMobs(kMobsJson)) ||
-            !writeText(petals, test::fixturePetals(kPetalsJson))) {
-            f.error = "could not write the fixture content into " + dir;
-            return f;
-        }
-        f.ok = f.registry.loadFiles(mobs, petals, f.error);
+        f.ok = test::loadFixtureContent(f.registry, testsupport::tempDir("flix_petal_tests"),
+                                        kMobsJson, kPetalsJson, f.error);
         return f;
     }();
     return state;
@@ -2086,7 +2060,11 @@ TEST(rarity_scales_a_petals_published_numbers) {
     // Rare is two tiers up: a flat 3x per tier on damage and poison.
     const double scale = petalStatScale(Rarity::Rare);
     CHECK_NEAR(rig.world.get<ContactDamage>(petal).amount, 2.0 * scale, 1e-9);
-    const PetalEffect& effect = rig.world.get<PetalEffect>(petal);
+    // The riders are not published on the petal: combat reads them off the
+    // content by the petal's own index and tier (gatherPetals), so that is
+    // where they are checked.
+    const PetalInstance& instance = rig.world.get<PetalInstance>(petal);
+    const PetalStats effect = fixture().registry.petalStats(instance.configIndex, instance.rarity);
     CHECK_NEAR(effect.poisonPerSecond, 50.0 * scale, 1e-6);
     // Duration is flat: rarity buys damage, not a longer debuff.
     CHECK_NEAR(effect.poisonDurationMillis, 3000.0, 1e-9);
@@ -2132,8 +2110,9 @@ TEST(a_burst_heal_lands_on_a_flower_running_at_top_speed) {
     rig.settleEquips();
     rig.world.get<Health>(rig.player).current = 50.0;
 
-    // MovementSystem is not in this rig, so the sprint is applied by hand:
-    // one tick of top speed, written where movement would have written it.
+    // Movement is off in this rig unless withMovement() turns it on, and this
+    // test leaves it off, so the sprint is applied by hand: one tick of top
+    // speed, written where movement would have written it.
     const Vec2 stride{kPlayerMaxSpeed * net::kTickSeconds, 0.0};
     bool delivered = false;
     for (int i = 0; i < 200 && !delivered; ++i) {

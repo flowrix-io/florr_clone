@@ -69,7 +69,7 @@ inline constexpr double kDropWallRadius = 15.0;
 
 /// JSON-authored mob drop tables resolved against loaded content: ids become
 /// indices once, and the per-tick path is an array lookup. The source data is
-/// src/mob_drops.json, shared with the TypeScript server.
+/// data/mob_drops.json, staged into the build's data/ directory beside mobs.json.
 class DropTables {
 public:
     /// What one authored row hands out.
@@ -128,9 +128,10 @@ public:
     const std::vector<std::string>& unresolved() const { return unresolved_; }
 
     /// The petals a `random` row may hand out, in catalogue order: everything
-    /// except admin petals, the two cutters, and the eggs of mobs marked
-    /// noEggDrop. One list, because the reference keeps one -- the item spawner
-    /// used to re-derive the rule and got it wrong.
+    /// except admin petals, the two cutters, magic forms (converted into,
+    /// never dropped) and the eggs of mobs marked noEggDrop. One list, because
+    /// the reference keeps one -- the item spawner used to re-derive the rule
+    /// and got it wrong.
     const std::vector<std::uint16_t>& droppablePetals() const { return droppable_; }
 
     /// One uniformly chosen droppable petal, for the `random` sentinel rows.
@@ -213,7 +214,7 @@ public:
     /// Places one drop and returns it. `eligible` may be empty, which means
     /// anyone may take it immediately.
     Entity spawnDrop(World& world, std::uint16_t petalIndex, Rarity rarity, Vec2 position,
-                     Realm realm, const std::vector<Entity>& eligible, double nowMillis);
+                     Realm realm, const std::vector<Entity>& eligible);
 
     /// Apply the whole drop rarity pipeline to one GRADED table row -- the
     /// one drop a kill is measured by. See pickFeatured for which row that is.
@@ -235,35 +236,32 @@ public:
     /// mob's band where they cannot change how fast anyone progresses.
     static Rarity chaffDropRarity(Rarity mobRarity);
 
-    /// Whether `player` may take this drop right now.
     /// Whether this flower may take a copy. `owner` is the connection behind
     /// the body (0 for a bot): a reservation follows the PLAYER, not the body
     /// they happened to be wearing when it was made, because a body does not
     /// survive its owner's death.
-    static bool mayPickUp(const DropItem& drop, Entity player, net::ConnectionId owner,
-                          double nowMillis);
-
-    const DropTables& tables() const { return tables_; }
+    static bool mayPickUp(const DropItem& drop, Entity player, net::ConnectionId owner);
 
 private:
     void bind(World& world);
     void collectPickups(World& world, const SpatialGrid& grid, CommandBuffer& commands,
-                        EventQueue& events, double nowMillis);
+                        EventQueue& events);
     /// The drops awardDeaths has just made, swept without the broadphase.
     ///
     /// The grid this system is handed was built before it ran, so a drop born
     /// this tick is not in it. The reference has no broadphase here at all --
     /// it re-walks the live item list per player, inside the same pipeline step
     /// that killed the mob -- so its loot is taken on the tick it spawns.
-    void collectFresh(World& world, CommandBuffer& commands, EventQueue& events, double nowMillis);
+    void collectFresh(World& world, CommandBuffer& commands, EventQueue& events);
     /// One flower against one drop: the shared body of both pickup passes.
-    void tryCollect(World& world, Entity player, Vec2 playerPosition, double reachSq,
-                    Entity candidate, CommandBuffer& commands, EventQueue& events,
-                    double nowMillis);
+    /// `playerRealm` is the flower's map, which the drop must be on too.
+    void tryCollect(World& world, Entity player, Vec2 playerPosition, Realm playerRealm,
+                    double reachSq, Entity candidate, CommandBuffer& commands,
+                    EventQueue& events);
     /// Per-tick item maintenance, in the reference's order: wall push, bounds,
     /// expiry. The push is not a nicety -- nothing resolves the spawn scatter.
     void maintainDrops(double dt, CommandBuffer& commands);
-    void awardDeaths(World& world, const ContentRegistry& content, Rng& rng, double nowMillis);
+    void awardDeaths(World& world, const ContentRegistry& content, Rng& rng);
     /// One full pass of a mob's table into `selected_`. The caller picks
     /// which table: the authored rows for a common mob, the merged one for
     /// every mob above it, since those drop one of everything they have.

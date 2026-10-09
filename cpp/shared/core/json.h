@@ -6,7 +6,6 @@
 // load/save round trip must not reshuffle it.
 
 #include <cstdint>
-#include <initializer_list>
 #include <map>
 #include <memory>
 #include <string>
@@ -31,11 +30,6 @@ public:
 
     static Json array() { Json j; j.type_ = Type::Array; return j; }
     static Json object() { Json j; j.type_ = Type::Object; return j; }
-    static Json array(std::initializer_list<Json> items) {
-        Json j = array();
-        j.array_ = items;
-        return j;
-    }
 
     Type type() const { return type_; }
     bool isNull() const { return type_ == Type::Null; }
@@ -49,7 +43,6 @@ public:
     // a hand-edited or older database never throws, it degrades to defaults.
     bool asBool(bool fallback = false) const { return type_ == Type::Bool ? bool_ : fallback; }
     double asDouble(double fallback = 0) const { return type_ == Type::Number ? number_ : fallback; }
-    float asFloat(float fallback = 0) const { return static_cast<float>(asDouble(fallback)); }
     int asInt(int fallback = 0) const {
         return type_ == Type::Number ? static_cast<int>(number_) : fallback;
     }

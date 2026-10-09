@@ -10,9 +10,10 @@
 // #rrggbb. The renderer never treats a skin string as anything but a fill or
 // stroke style.
 //
-// Ported from src/skin_format.ts, limits included -- the two builds share a
-// database, so a payload one accepts and the other rejects would be a skin
-// that renders on half the players.
+// Ported from src/skin_format.ts, limits included, so the skins the
+// TypeScript build saved keep loading. The two builds shared a database while
+// both ran, and a payload one accepted and the other rejected would have been
+// a skin that rendered on half the players.
 
 #include <cstddef>
 #include <cstdint>
@@ -65,7 +66,7 @@ struct CustomSkin {
     std::string author;
     std::vector<SkinShape> shapes;
     /// Unix milliseconds. Double rather than int64 because it round-trips
-    /// through the JSON database the browser build wrote.
+    /// through the JSON database the TypeScript build wrote.
     double createdAt = 0;
 };
 
@@ -110,7 +111,7 @@ void writeCustomSkin(ByteWriter&, const CustomSkin&);
 bool readCustomSkin(ByteReader&, CustomSkin& out);
 
 // --- JSON --------------------------------------------------------------
-// The database's on-disk shape, which the browser build also reads and writes.
+// The database's on-disk shape, as the TypeScript build also wrote it.
 // Optional fields are omitted rather than written as zero, so a file this
 // build saves still diffs cleanly against one the old server wrote.
 

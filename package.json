@@ -1,7 +1,6 @@
 {
   "name": "florrclone",
   "version": "0.5.0",
-  "main": "index.js",
   "scripts": {
     "svg2skin": "node scripts/svg-to-skin.js",
     "build": "FLIX_BUILD=release node scripts/build-web.js all",
@@ -9,37 +8,16 @@
     "build:server": "FLIX_BUILD=release node scripts/build-web.js server",
     "build:offline": "FLIX_BUILD=release node scripts/build-web.js offline",
     "build:offline:asmjs": "FLIX_BUILD=release node scripts/build-web.js offline-asmjs",
-    "build:server:ts": "tsc -p tsconfig.server.json",
     "dev:cert": "node scripts/gen-dev-cert.js",
-    "test:ecs": "node scripts/ecs-selftest.js",
-    "bench:grid": "node scripts/grid-bench.js",
-    "build:client": "tsc -p tsconfig.client.json",
     "start": "npm run build && npm run start_nobuild",
     "build:dev": "FLIX_BUILD=dev node scripts/build-web.js all",
-    "dev": "webpack --mode development --watch",
-    "dev:server": "ts-node-dev --respawn --transpile-only src/server.ts",
     "start_nobuild": "node dist/server.js --port ${PORT:-3000} --db dist/inventory.json --web-root dist",
-    "harness:ecs": "node scripts/ecs-tick-harness.js",
-    "test:behavior": "node scripts/behavior-parity.js",
     "test:ws": "node scripts/ws-conformance.js"
   },
   "keywords": [],
   "author": "",
   "license": "AGPL-3.0-or-later",
   "description": "",
-  "dependencies": {
-    "bcrypt": "^6.0.0",
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.67.0"
-  },
-  "devDependencies": {
-    "@types/bcrypt": "^6.0.0",
-    "@types/node": "^22.9.3",
-    "ts-loader": "^9.5.1",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.6.3",
-    "webpack": "^5.95.0",
-    "webpack-cli": "^5.1.4"
-  },
   "optionalDependencies": {
     "@fails-components/webtransport": "^1.6.8",
     "@fails-components/webtransport-transport-http3-quiche": "^1.6.8"

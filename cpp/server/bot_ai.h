@@ -26,7 +26,7 @@
 // activity reads from, so the decision and the steering always agree about
 // what is in the world.
 //
-// Two rules everything below serves:
+// Three rules everything below serves:
 //
 //   * A BOT FIGHTS WHAT IS IN FRONT OF IT. There is no state a bot can be in
 //     where it walks through a mob without engaging it. Travelling, roaming,
@@ -38,12 +38,13 @@
 //     broadphase query and every per-tick index below is asked about THAT
 //     bot's realm: two maps' coordinates overlap exactly, and a question
 //     asked of the wrong one answers about a place the bot is not standing.
-//   * A BOT STAYS WHERE THE GAME IS. Ambient mobs are stocked around HUMANS
-//     (game_server.h: humanPlayers_), so ground with nobody on it has nothing
-//     living on it. A bot that walks to the far side of the map to farm is a
-//     bot that stands in an empty field forever, which is precisely what it
-//     used to do. Hunting grounds are therefore chosen around the people who
-//     are online, spread out around them rather than stacked on them.
+//   * A BOT STAYS WHERE THE GAME IS. Bots exist to make the world look
+//     inhabited, and a bot farming the far side of the map is company nobody
+//     meets. The mobs are no reason either way: every band is stocked whole
+//     whoever is standing in it, as latent records any flower wakes
+//     (systems/spawning.h). Hunting grounds are therefore chosen in the bands
+//     the people who are online are standing in, spread out around them
+//     rather than stacked on them.
 
 #include <cstdint>
 #include <vector>
@@ -221,22 +222,23 @@ inline constexpr double kBotPetalHoldMillis = 260.0;
 // Hunting grounds
 // ---------------------------------------------------------------------------
 //
-// Where a bot sets up shop. See the header note: mobs live where people are,
-// so this is fundamentally "pick a spot near somebody, far enough out not to
-// crowd them".
+// Where a bot sets up shop. See the header note: bots work the ground people
+// are playing on, so this is fundamentally "pick a spot in somebody's band,
+// far enough out not to crowd them".
 
 /// The ring around a human a bot will settle in. The inner edge is far enough
-/// that a bot is not standing on the player; the outer edge is inside the
-/// neighbourhood the spawner actually stocks, which is what makes the ground
-/// the bot picks have mobs on it.
+/// that a bot is not standing on the player. The outer edge is a floor:
+/// botPickHuntingGround widens the ring to the band's own size, because a band
+/// is stocked uniformly and the ground worth working is all of it, and a bot's
+/// temper decides how far out into it that bot goes.
 inline constexpr double kBotHumanOrbitMin = 520.0;
 inline constexpr double kBotHumanOrbitMax = 2600.0;
 
-/// The working radius of a hunting ground, and how far outside it a bot may
-/// get before it walks back. The gap between them is deliberately wide: a
-/// leash a bot brushes against is a leash it oscillates on.
+/// The working radius of a hunting ground. A bot that gets past
+/// kBotTravelDistance from it walks back, and the gap between the two is
+/// deliberately wide: a leash a bot brushes against is a leash it oscillates
+/// on.
 inline constexpr double kBotHomeRadius = 1500.0;
-inline constexpr double kBotHomeReturnRadius = 2400.0;
 
 /// The cell the world's mobs are counted into when a bot is choosing where to
 /// work. About a screen across: fine enough to tell a busy corner of a band

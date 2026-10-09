@@ -2,13 +2,13 @@
 // Password and token cryptography, with no library behind it.
 //
 // bcrypt here is not an implementation detail we are free to get subtly wrong.
-// Every existing account's password was hashed by the Node `bcrypt` library,
-// so verify() has to reproduce that library's output byte for byte or the
-// entire player base is locked out on the day this server replaces the old
-// one. That is why the EksBlowfish key schedule, the 72-byte key cap and
-// bcrypt's own base64 alphabet are reproduced exactly, and why the tests pin
-// published known-answer vectors instead of only round-tripping our own
-// output -- a self-consistent wrong implementation passes a round-trip test.
+// Every account the old server made had its password hashed by the Node
+// `bcrypt` library, so bcryptVerify() has to reproduce that library's output
+// byte for byte or every one of those accounts is locked out. That is why the
+// EksBlowfish key schedule, the 72-byte key cap and bcrypt's own base64
+// alphabet are reproduced exactly, and why the tests pin published known-answer
+// vectors instead of only round-tripping our own output -- a self-consistent
+// wrong implementation passes a round-trip test.
 
 #include <cstddef>
 #include <cstdint>
@@ -20,8 +20,9 @@ namespace flix::crypto {
 // SHA-256
 // ---------------------------------------------------------------------------
 
-/// Streaming SHA-256. Used for session token hashing, which is the only place
-/// the server needs a plain digest.
+/// Streaming SHA-256. Used for session-token hashing, the per-address
+/// registration hash (Database::accountAddressHash) and the database editor's
+/// key (admin_db::deriveKey).
 class Sha256 {
 public:
     Sha256() { reset(); }
@@ -68,13 +69,6 @@ inline constexpr std::size_t kBcryptMaxPasswordBytes = 72;
 /// Hashes `password` with a fresh random salt. Returns a 60-character
 /// `$2b$NN$...` string, or an empty string if `cost` is out of range.
 std::string bcryptHash(const std::string& password, int cost = kBcryptDefaultCost);
-
-/// Hashes `password` under the salt and cost encoded in `setting` (any prefix
-/// of a hash string through its 22 salt characters). Returns the full hash
-/// string, or empty if `setting` is malformed. Exposed so tests can assert an
-/// exact match against a published vector, which is a far stronger check than
-/// verify() returning true.
-std::string bcryptHashWithSetting(const std::string& password, const std::string& setting);
 
 /// True when `password` produced `stored`. Accepts `$2a$`, `$2b$` and `$2y$`;
 /// those three agree for every key we can be handed, since we cap the key at

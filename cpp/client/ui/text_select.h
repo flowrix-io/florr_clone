@@ -111,7 +111,6 @@ public:
     bool dragging() const { return dragging_; }
 
 private:
-    const CapturedRun* find(std::uint64_t key) const;
     /// The run and offset nearest `point`, or an invalid point when nothing
     /// was captured at all.
     TextPoint resolve(Vec2 point) const;

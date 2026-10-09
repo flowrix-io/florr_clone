@@ -43,12 +43,33 @@ class LootSystem;
 class NpcSystem;
 class DungeonSystem;
 
+namespace testsupport {
+/// The test suite's friend of GameServer; tests/server_harness.h defines it
+/// and says what it is for.
+struct GameServerPeer;
+} // namespace testsupport
+
 /// One loadout slot as the body in a given realm wears it: the account's
 /// petal, or the maze's shifted-and-benched version of it. See wornSlot().
 struct WornSlot {
     std::uint16_t petalIndex = kNoPetal;
     Rarity rarity = Rarity::Common;
 };
+
+/// The dense petal index behind a key an account's bag files a stack under
+/// ("petal_rose"), or kInvalidIndex for a key this build has no petal for.
+/// Defined in game_server.cpp beside inventoryKey(), which is the one place
+/// the two spellings meet; declared here for the other server files that read
+/// a bag -- the dashboard's inventory view -- so they do not grow a second.
+std::uint16_t petalIndexFromInventoryKey(const std::string& key);
+
+/// The type tag a notification row carries, as the wire enum: the four the
+/// browser build stored (super_craft, unique_craft, apex_craft, star_code) and
+/// the titan forge's universal_craft. Anything else is Generic, which is also
+/// what an older notification with no type reads as. The one list of tags
+/// there is: the feed reads rows through it, and `/admin notification` refuses
+/// a tag it answers Generic for. Defined in game_server.cpp.
+net::NotificationKind notificationKind(const std::string& type);
 
 /// Milliseconds since the first call, from a steady clock.
 ///
@@ -91,12 +112,14 @@ struct ServerConfig {
     /// (kBotTargetTotalPlayers minus the humans online). Zero is a world with
     /// no bots in it at all.
     ///
-    /// Here for the tests. The world is one map now, so its bots stand in the
-    /// same door a joining player does -- which is what a live server WANTS
-    /// and what makes "these two flowers are the only ones in sight" or "this
-    /// mob lived long enough to fire" impossible to state. `/admin
-    /// set_bot_count` is the same knob at run time; this is the one a harness
-    /// can set before the first tick.
+    /// Here for the tests. Bots are spread over every biome a player can join
+    /// (botBiomes()), the overworld a test joins into among them, and each is
+    /// born in the doors and beginner bands a joining player is put down in
+    /// (pickBotSpawn) -- which is what a live server WANTS and what makes
+    /// "these two flowers are the only ones in sight" or "this mob lived long
+    /// enough to fire" impossible to state. `/admin set_bot_count` is the same
+    /// knob at run time; this is the one a harness can set before the first
+    /// tick.
     int botCount = -1;
     /// The `/admin db` key to use as is, instead of deriving one from the
     /// machine's address and the database's secret. Empty means derive. Only
@@ -139,17 +162,24 @@ public:
     /// accounts were written.
     std::size_t persistAll();
 
-    /// Makes an account a permanent admin, and tells it so if it is signed in.
-    /// False when no such account exists; granting one that already has the
-    /// flag is a no-op that still reports true.
+    /// Makes the account signed in with `sessionToken` a permanent admin, and
+    /// tells its live session so. False when the token resolves to no account
+    /// -- empty, unknown, expired or orphaned; granting one that already has
+    /// the flag is a no-op that still reports true.
+    ///
+    /// Keyed on the token the client was ISSUED, never on a name: the account
+    /// the grant lands on is the database's answer for a credential the server
+    /// minted (Database::resolveSession), so no string a player chooses -- an
+    /// account name, a nameplate -- can aim it. See CLAUDE.md, "Admin rights".
     ///
     /// Deliberately not reachable from a socket: no message carries it and no
     /// chat command calls it. The one caller is the single-file offline build,
-    /// where the server runs inside the player's own page -- there "give me
-    /// the console" is a button on a world only they can reach, not an
-    /// escalation. A network build links this and never calls it, which is
-    /// what keeps `/admin grant_admin` the only way in from outside.
-    bool grantAdmin(const std::string& username);
+    /// where the server runs inside the player's own page and the page's own
+    /// client hands it its token -- there "give me the console" is a button on
+    /// a world only they can reach, not an escalation. A network build links
+    /// this and never calls it, which is what keeps `/admin grant_admin` the
+    /// only way in from outside.
+    bool grantAdmin(const std::string& sessionToken);
 
     /// Safe to call from a signal handler: it only stores to an atomic flag,
     /// and the shutdown work itself happens on the main thread.
@@ -160,12 +190,17 @@ public:
     /// a signal, a tab closing -- and kRestartExit when the server stopped in
     /// order to be started again.
     ///
-    /// The distinction is not cosmetic. A supervisor reads exit 0 as "this
-    /// process was meant to end": pm2's stop_exit_codes and systemd's
-    /// Restart=on-failure both leave a cleanly-exited server down. A restart
-    /// that exits 0 therefore stops the server instead of restarting it --
-    /// which is exactly what `restart` and the last step of `update` must not
-    /// do, since nothing else is coming to bring the server back.
+    /// The distinction is not cosmetic: a restart has to come back under every
+    /// supervisor this is run by, and only a non-zero code does that
+    /// everywhere. pm2 with its default autorestart restarts on ANY exit, 0
+    /// included -- unless the app lists 0 in stop_exit_codes -- but systemd's
+    /// Restart=on-failure (and docker's on-failure policy) restarts only a
+    /// non-zero one and reads exit 0 as "this process was meant to end". A
+    /// restart that exited 0 would leave such a server down instead of
+    /// restarting it -- exactly what `restart` and the last step of `update`
+    /// must not do, since nothing else is coming to bring the server back. A
+    /// clean shutdown exits 0 for the converse reason: wherever the supervisor
+    /// honours it, 0 is the code that means "stay down".
     int exitCode() const { return exitCode_; }
 
     /// The code a restart exits with. Any non-zero value does the job; 1 is
@@ -205,7 +240,20 @@ public:
     void onDisconnect(net::Connection& c, const std::string& reason) override;
 
 private:
+    /// The test suite's one way past the interface above. A test otherwise
+    /// reaches a server only through what is public -- its socket, its world,
+    /// the database it reads back -- and this is for the few that must put a
+    /// session into a state no message leads to any more: a stage that stopped
+    /// saying Playing while its body stood, which a repeated Hello used to
+    /// leave. That state is what the second line of defence in onDisconnect,
+    /// signOut, leaveWorld, spawnPlayer and endControl is for, and with every
+    /// road to it closed, nothing else could tell that code from dead code.
+    /// Defined only by the tests, so no shipping build uses it.
+    friend struct testsupport::GameServerPeer;
+
     // -- message handling --------------------------------------------------
+    /// The handshake, accepted once per socket: a second Hello closes the
+    /// connection rather than resetting the stage under a body.
     void handleHello(Session&, net::Connection&, ByteReader&);
     void handleRegister(Session&, net::Connection&, ByteReader&);
     void handleLogin(Session&, net::Connection&, ByteReader&);
@@ -214,10 +262,22 @@ private:
     /// Logs the ACCOUNT out, not just this connection: every token it holds is
     /// revoked, and every other connection signed into it is signed out too.
     void handleLogout(Session&);
-    /// Takes one connection back to Anonymous: its body saved and removed, its
-    /// temporary admin dropped, and nothing left that names the account.
-    /// Touches no token -- revoking those is the caller's decision.
+    /// Takes one connection back to Anonymous: its squad left, its body saved
+    /// and removed, its temporary admin dropped, and nothing left that names
+    /// the account. Touches no token -- revoking those is the caller's
+    /// decision.
     void signOut(Session&);
+    /// Called by a login, a registration and a resume once the credential has
+    /// checked out, before `incomingUserId`'s state is installed on the socket.
+    /// Signing in as ANOTHER account ends what belonged to the old one on this
+    /// connection: a temporary admin grant -- lent to a person for one life,
+    /// not to a socket -- any flower control, either end of it, and the squad
+    /// with any squad invitation pending for it, which are keyed by the
+    /// connection and would otherwise pass to the account signing in. Signing
+    /// in as the same account again ends nothing here; a sign-in that arrived
+    /// from inside the world has already left it by then (leaveWorld), which
+    /// ends that life's grant and control with the body.
+    void releaseOnAccountChange(Session&, const std::string& incomingUserId);
     /// One account, one live session: signs out and closes every OTHER
     /// connection already holding `userId`, telling each one why. Called by a
     /// login or a resume once the credential has checked out, and before the
@@ -225,6 +285,19 @@ private:
     void replaceOtherSessions(const Session& incoming, const std::string& userId);
     void handleJoin(Session&, net::Connection&, ByteReader&);
     void handleLeave(Session&, net::Connection&);
+    /// Takes the session's body out of the world the way LeaveGame does: its
+    /// progress saved into the account it belongs to, the body and its kit
+    /// removed -- any split and any flower control ending with it -- and a
+    /// temporary admin grant, lent for one life, dropped. Nothing for a
+    /// session with no body. Keyed on the body rather than on playing(), and
+    /// saving only a Playing session's (spawnPlayer says why). handleLeave is
+    /// this plus the profile that tells the client where it is now. A login,
+    /// a registration or a resume that arrives on a socket still in the world
+    /// calls it before the incoming account is installed: the stage drops
+    /// back to signed-in there, and a body left standing would belong to no
+    /// session's account, bank its pickups into whichever account the socket
+    /// had switched to, and be orphaned for good by the next join.
+    void leaveWorld(Session&);
     void handleInput(Session&, ByteReader&);
     void handleChat(Session&, net::Connection&, ByteReader&);
     void handleSetLoadout(Session&, ByteReader&);
@@ -297,16 +370,90 @@ private:
     void adminDbEdit(Session&, net::Connection&, ByteReader&, bool remove);
     void adminDbAccountAction(Session&, net::Connection&, net::AdminDbOp, ByteReader&);
     /// Pushes an edited account onto its live sessions: the body's XP and
-    /// level, everything applyAccountToSession copies, and a fresh profile. See admin_db.cpp for why the body has to be written.
+    /// level, everything applyAccountToSession copies, and a fresh profile.
+    /// See admin_db.cpp for why the body has to be written.
     void adminDbRefreshLive(const std::string& userId);
     /// Signs out every live connection on `userId`, telling each why. Returns
     /// how many there were.
     int adminDbSignOutConnections(const std::string& userId, const std::string& reason);
 
+    // -- the admin dashboard (server/admin_dashboard.cpp) --------------------
+    //
+    // The panel `/admin gui` and the strip's admin button open: the flowers in
+    // the world, one player's bag, flower control, and the console's spawn,
+    // give and announce -- which it sends AS console commands, so their answers
+    // land in chat where the console's always do. Anyone the console answers
+    // may use it (effectiveAdmin), and every request is checked again here:
+    // nothing is trusted from the panel being open.
+    //
+    // Control arrives by two roads, as the guild's operations do: the panel's
+    // binary request, and `/admin control` / `/admin release`. Both reach
+    // controlFlower and releaseFlower, so the two cannot disagree about who may
+    // steer whom.
+
+    void handleAdminDashboard(Session&, net::Connection&, ByteReader&);
+    /// One page of the flowers in the world whose account name or nameplate
+    /// holds `search`, case-insensitively, in account-name order.
+    void sendDashboardPlayers(net::Connection&, const std::string& search, std::uint32_t offset);
+    /// One page of `target`'s bag, read from the account's own progress record
+    /// -- what `give` writes -- and never from an arena run's scratch kit.
+    /// Answered as gone unless `target` still holds `username`, the account
+    /// the panel picked it as.
+    void sendDashboardInventory(net::Connection&, net::ConnectionId target,
+                                const std::string& username, std::uint32_t offset);
+    /// How a Control or Release request went, for the panel's status line.
+    void sendDashboardResult(net::Connection&, bool ok, const std::string& message);
+    /// Tells `controller`'s client whose flower it is steering now, if anybody's.
+    void sendControlState(const Session& controller);
+
+    /// Takes `target`'s flower for `admin`, or refuses. Either way `answer` is
+    /// the one sentence both roads show; true means control has begun.
+    bool controlFlower(Session& admin, Session& target, std::string& answer);
+    /// Gives the steered flower back. False, with nothing changed and `answer`
+    /// saying so, when there was nothing to release.
+    bool releaseFlower(Session& admin, std::string& answer);
+    /// Why `admin` may not take `target`'s flower now, or empty when it may.
+    std::string controlRefusal(const Session& admin, const Session& target) const;
+    /// Why a control already running cannot go on, or empty while it holds.
+    std::string controlLapse(const Session& controller) const;
+    /// Wires the two sessions together and moves the admin's view onto the
+    /// target's flower. Only ever called once controlRefusal has said yes.
+    void beginControl(Session& admin, Session& target);
+    /// Ends `controller`'s control, both back-references and both bodies: the
+    /// one that stops being steered is parked rather than left walking its
+    /// last heading. `why`, when not empty, is told to the admin as a System
+    /// line. `restate` moves the admin's view back onto their own flower, which
+    /// a controller on their way out of the world has no use for.
+    void endControl(Session& controller, const std::string& why, bool restate);
+    /// Ends whatever control `session` is part of, from either end, through
+    /// the back-references -- what every way out of the world calls, and an
+    /// account changing on the socket. `leaving` is that the session's own
+    /// body is about to go, so its view is not restated onto it.
+    void endControlOf(Session&, const std::string& why, bool leaving);
+    /// Ends every control that lapsed this tick: either side stopped playing
+    /// or died, the two are in different realms, or the controller lost the
+    /// standing it took the flower with. Once a tick, next to the splitter
+    /// service and before the reaper, so a death ends control before the
+    /// corpse is announced.
+    void serviceControl();
+    /// The body `session`'s snapshot stream is built around: the steered
+    /// flower's active half while it controls one, else its own. Reads only.
+    Entity viewpointOf(const Session&) const;
+    /// Restates a client's whole view around viewpointOf(): the RealmChange
+    /// that clears what it holds and snaps its camera, with the server-side
+    /// view reset in the same breath. See switchSplitHalf for why a moved
+    /// self flag needs both halves of that.
+    void restateView(Session&);
+    /// The steered flower's active half just changed under its controller --
+    /// a splitter switch, or the steered half dying with the other still up.
+    /// Control follows the active half, so the admin's view is restated onto
+    /// it exactly as the target's own client's is.
+    void followControlledHalf(Session& target);
+
     // -- the splitter ------------------------------------------------------
     //
     // One connection, two flowers. The petal is not used from a chord the way
-    // the browser build uses it (U + the slot number): it is CLICKED on the
+    // the browser build used it (U + the slot number): it is CLICKED on the
     // loadout bar, and it does two different things depending on the state of
     // the slot. Equipping it splits the flower at once, for nothing; clicking
     // the loaded petal afterwards hands control to the other half and spends
@@ -358,10 +505,11 @@ private:
 
     /// Appends one row to the global notification feed.
     ///
-    /// The three things that write to it -- a rare craft, a redeemed star code
-    /// and the admin `notification` command -- are the same three the browser
-    /// build has, and they all come through here so that the row shape, the id
-    /// format and the history cap cannot drift apart between them.
+    /// The three things that write to it -- a rare craft (a titan's forge
+    /// included), a redeemed star code and the admin `notification` command --
+    /// are the three the browser build had, and they all come through here so
+    /// that the row shape, the id format and the history cap cannot drift apart
+    /// between them.
     void addNotification(const std::string& type, const std::string& message);
     /// The global line and the feed row a super/unique/apex craft produces,
     /// and a universal forged at a titan. Silent for every tier below, which
@@ -384,9 +532,8 @@ private:
     // shape: an object keyed by the upper-cased five-character name, each
     // value carrying {name, leaderUsername, memberUsernames, createdAt}, plus
     // the optional displayName and description server/guilds.h describes. Held
-    // as JSON rather than mirrored into a typed cache because the same file is
-    // read by the browser build, and a second copy is a second thing to keep
-    // true.
+    // as JSON in the shape existing database files carry, rather than mirrored
+    // into a typed cache: a second copy is a second thing to keep true.
     void handleGuildCreate(Session&, net::Connection&, ByteReader&);
     void handleGuildEdit(Session&, net::Connection&, ByteReader&);
     void handleGuildInvite(Session&, net::Connection&, ByteReader&);
@@ -431,9 +578,8 @@ private:
     /// What this member's flower is labelled, which is what the squad's own
     /// announcements name it by.
     std::string squadDisplayName(SquadMemberId);
-    Entity squadEntity(SquadMemberId);
-    /// The body a member owns right now, or NULL_ENTITY -- the read-only half
-    /// of squadEntity(), for the rules below that only look.
+    /// The body a member owns right now -- a player's active half, a bot's
+    /// one body -- or NULL_ENTITY for a member without one.
     Entity squadEntityOf(SquadMemberId) const;
     net::Connection* squadConnection(SquadMemberId);
 
@@ -521,18 +667,19 @@ private:
     /// caller has checked that this session may run it.
     void runAdminCommand(Session&, net::Connection&, const std::string& command);
 
-    /// One System line to one connection. Command output is one line per
-    /// message rather than one message with embedded newlines: the browser
-    /// build joins its lines with `<br/>`, and this client has no markup.
+    /// One System line to one connection. Console output is one line per
+    /// message rather than one message with embedded newlines, where the
+    /// browser build joined its lines with `<br/>`; the client parses that
+    /// markup as well (client/ui/markup.cpp), so a reply may be either, and
+    /// /help and /guild-info are one message joined with `<br/>`.
     void sendSystem(net::Connection&, const std::string& text);
 
     // -- scheduled restart -------------------------------------------------
     //
     // The console's `restart`, and the last step of `update`. A restart IS a
     // process exit: pm2, systemd or docker is what actually brings the server
-    // back up, exactly as it is for the browser build. Players are warned on
-    // the way down, which is the whole reason it is scheduled rather than
-    // immediate.
+    // back up. Players are warned on the way down, which is the whole reason
+    // it is scheduled rather than immediate.
 
     struct ScheduledRestart {
         bool pending = false;
@@ -594,20 +741,36 @@ private:
     struct CommandTarget {
         Entity entity = NULL_ENTITY;
         Session* session = nullptr;   ///< null for a bot
-        std::string name;             ///< the nameplate, for output
+        /// For output: the account name, or a bot's nameplate, since a bot
+        /// owns no account. Never a person's nameplate, so a confirmation
+        /// names who was actually acted on.
+        std::string name;
     };
-    /// Matches a live flower by nameplate or account name, case-insensitively.
-    /// Accounts that are not online do not resolve here; the commands that
-    /// work offline (give, mute) fall back to the database themselves.
+    /// Matches a playing person by ACCOUNT name, or a bot by its nameplate,
+    /// case-insensitively. A person's nameplate never resolves: it is
+    /// whatever their client typed on the title screen, unique to nobody, so
+    /// a flower wearing an absent player's name would otherwise receive the
+    /// grant, the give or the control meant for them. Accounts that are not
+    /// playing do not resolve here; the commands that work offline (give,
+    /// mute) fall back to the database by account name themselves.
     bool resolveCommandTarget(const std::string& identifier, CommandTarget& out);
 
-    /// Moves a body and tells its owner, so the client cuts its interpolation
-    /// instead of gliding across the map.
+    /// Moves a body within its realm, its velocity and knockback cleared so it
+    /// does not arrive sliding. It sends nothing: the client cuts its
+    /// interpolation by itself on any jump past kTeleportSnapDistance
+    /// (client/interpolation.h, 600 units), which every teleport worth the
+    /// name exceeds, and eases across a shorter one.
     void teleportEntity(Entity, Vec2);
 
-    /// Drops a temporary admin grant, if this connection holds one. Called on
-    /// respawn, on leaving to the title screen, and on disconnect -- a grant
-    /// is lent for one life, as the reference lends it.
+    /// Drops a temporary admin grant, if this connection holds one. A grant is
+    /// lent for one life, as the reference lends it, and to a person rather
+    /// than a socket, so every way that life or that person ends calls this:
+    /// a respawn (handleRespawn); leaving the world, to the title screen or by
+    /// a re-auth from inside it (leaveWorld); the socket closing
+    /// (onDisconnect); a sign-out of any kind -- Log Out, a session replaced by
+    /// a newer sign-in, the database editor's sign-out (all signOut); a sign-in
+    /// as another account on the same socket (releaseOnAccountChange); and
+    /// `/admin revoke_admin`.
     void revokeTempAdmin(net::ConnectionId);
 
     void sendAuthResult(net::Connection&, net::AuthStatus, const std::string& token,
@@ -643,6 +806,11 @@ private:
     /// the players whose screens hold the speaker's flower. Billed to the chat
     /// allowance and barred by a mute, as anything said to another player is.
     void sayInPublic(Session&, net::Connection&, net::ChatChannel, const std::string& text);
+    /// True, with the speaker told so, when the session's account is muted.
+    /// Every road a line takes to another player asks this first -- Global and
+    /// Local through sayInPublic, a guild or squad line, a whisper -- so the
+    /// mute is one rule and its notice one sentence (server/chat_commands.cpp).
+    bool speakerMuted(const Session&, net::Connection&);
     /// Cuts every picture not served by a listed image host out of a line a
     /// player is about to say to others, telling them what went and why.
     /// False when nothing is left worth sending.
@@ -778,12 +946,10 @@ private:
     /// it keeps the death card over a flower it will not steer.
     void onPlayerRevived(Entity revived, Entity reviver);
 
-    /// Every live mob body, for the spawn-placement tests that refuse a point
-    /// standing on one. Rebuilt per call: a spawn is rare and the alternative
-    /// is a cache that has to be kept true.
     /// Every mob body in `realm`, as the discs a spawn point has to clear. One
     /// realm's, because a spawn is judged crowded by what stands on ITS map,
-    /// not by a mob at the same numbers on another.
+    /// not by a mob at the same numbers on another. Rebuilt per call: a spawn
+    /// is rare and the alternative is a cache that has to be kept true.
     void collectSpawnBlockers(Realm realm, std::vector<MobDisc>& out) const;
 
     /// Drains the spawner's boss queue into chat. Worded per recipient: a
@@ -850,12 +1016,6 @@ private:
         /// the one it was assigned, life after life -- so this is settled at
         /// birth and only re-read to keep it honest.
         Realm realm = Realm::Overworld;
-        /// Where the bot is working right now: its hunting ground, or the
-        /// rally point of whatever it has been pulled onto. Mirrored out of
-        /// the AI state each tick for anything outside the controller that
-        /// wants to know where a bot considers itself to be.
-        Vec2 anchor;
-        bool hasAnchor = false;
         /// Wall-clock at which a dead bot's body is replaced. A corpse that
         /// respawns instantly reads as a flower that never died.
         double respawnAtMillis = 0;
@@ -970,11 +1130,11 @@ private:
 
     /// Picks and maintains the patch of ground a bot works.
     ///
-    /// Ambient mobs are stocked around HUMANS, so a patch is chosen around one
-    /// -- far enough out not to crowd them, inside the neighbourhood the
-    /// spawner actually fills. With nobody online it falls back to a spawn
-    /// band suited to the bot's gear, so a joining player arrives into a world
-    /// that already looks inhabited.
+    /// Bots are company, so a patch is chosen in a band a human is standing in
+    /// -- far enough out not to crowd them, and spread over the band, which is
+    /// stocked whole whoever stands in it (systems/spawning.h). With nobody on
+    /// the bot's map it falls back to a spawn band suited to the bot's gear,
+    /// so a joining player arrives into a world that already looks inhabited.
     void botUpdateHome(Bot&, double nowMillis, const BotSenses&);
     bool botPickHuntingGround(const Bot&, Vec2& out);
 
@@ -1033,6 +1193,14 @@ private:
     bool activeForcedRaidAnchor(double nowMillis, Realm realm, Vec2& out);
     /// The nearest boss within rally range of this bot, preferring uniques.
     bool botNearestBoss(const Bot&, Vec2& out, double& distOut);
+    /// The one rule the three raid picks above share: among the live supers
+    /// and uniques in botBosses_ -- apex never rallies anybody -- a unique
+    /// beats every super, then the most recently seen wins, then, when
+    /// `humanTieBreak`, the one closest to a human. `realm` keeps only that
+    /// realm's bosses, and `within` only those inside kBotBossRallyRange of a
+    /// point. NULL_ENTITY when nothing qualifies.
+    Entity bestRaidBoss(std::optional<Realm> realm, std::optional<Vec2> within,
+                        bool humanTieBreak) const;
 
     // -- bot movement primitives -------------------------------------------
 
@@ -1108,7 +1276,7 @@ private:
     /// Moves what the loot system handed out into the owning accounts.
     void bankPickups();
     void replicate(double nowMillis);
-    void reapDead(double nowMillis);
+    void reapDead();
 
     ServerConfig config_;
     std::atomic<bool> running_{false};
@@ -1148,7 +1316,6 @@ private:
     /// not a record.
     struct PendingGuildInvite {
         std::string guildName;
-        std::string fromUsername;
         std::int64_t expiresAtMillis = 0;
     };
     std::unordered_map<std::string, PendingGuildInvite> guildInvites_;
@@ -1165,7 +1332,7 @@ private:
     ///
     /// Keyed by connection and held in memory only: a grant is for one life,
     /// so there is nothing here worth surviving a restart. See
-    /// revokeTempAdmin() for the three ways one ends.
+    /// revokeTempAdmin() for every way one ends.
     struct TempAdminGrant {
         std::string grantedBy;
         double grantedAtMillis = 0;
@@ -1216,10 +1383,10 @@ private:
     /// stands in, rebuilt each tick. The mob LOD counts a bot as an observer,
     /// so this is the list it gets.
     std::vector<RealmPoint> activePlayers_;
-    /// The same, restricted to real connections. The spawner drives population
-    /// and the unseen-despawn census off THIS one: a bot must not stock the
-    /// bands it wanders through, nor keep what is already standing alive
-    /// against the unseen-despawn sweep.
+    /// The same, restricted to real connections: what ModeSpawner fills the
+    /// arena and the maze for, which a bot has no business keeping populated.
+    /// The band spawner, the mob LOD and the NPCs take activePlayers_, bots
+    /// included (see runSystems).
     std::vector<RealmPoint> humanPlayers_;
 
     std::vector<Bot> bots_;
@@ -1284,7 +1451,6 @@ private:
         /// this they march to the same COORDINATES in their own realm, which
         /// is a crowd of flowers standing on an empty field.
         Realm realm = Realm::Overworld;
-        Rarity tier = Rarity::Super;
         double untilMillis = 0;
     };
     BotForcedRaid botForcedRaid_;
@@ -1319,6 +1485,10 @@ private:
     double nextBotJitterMillis_ = 0;
     int botCountJitter_ = 0;
 
+    /// When the next fixed step is due, in the monotonic clock. A member
+    /// rather than a local in run(), because the loop is no longer
+    /// necessarily this object's.
+    double nextTickMillis_ = 0;
     /// Simulation delta, low-pass filtered over the real elapsed time between
     /// ticks and clamped to three nominal steps.
     ///
@@ -1329,11 +1499,7 @@ private:
     /// speed honest and the motion smooth, and the clamp keeps a long stall
     /// from producing one giant step.
     ///
-    /// When the next fixed step is due, in the monotonic clock. A member
-    /// rather than a local in run(), because the loop is no longer
-    /// necessarily this object's.
-    double nextTickMillis_ = 0;
-    /// Only run() writes it, so a test driving tick() by hand still gets an
+    /// Only step() writes it, so a test driving tick() by hand still gets an
     /// exactly fixed step.
     double smoothedDeltaSeconds_ = net::kTickSeconds;
     double lastTickWallMillis_ = 0;

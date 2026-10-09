@@ -6,28 +6,19 @@
 // encode is a rule, not a convenience: names are compared case-insensitively
 // and typed with stray whitespace, and a second copy of either is a second
 // place for that to stop being true.
+//
+// lowerCase and trimmed themselves live in shared/core/text.h, which the
+// client and the content loaders read too; this header brings them in, so
+// every server file that compares a name has them from one include. What is
+// below is the server's alone.
 
-#include <cctype>
+#include <algorithm>
 #include <string>
 #include <vector>
 
+#include "shared/core/text.h"
+
 namespace flix {
-
-/// Case folding for every name comparison on the server. Guild membership,
-/// account lookup and command targets are all case-insensitive in the
-/// reference -- a player invited as "Bob" answers as "bob" -- so nothing that
-/// matches a name may compare raw bytes.
-inline std::string lowerCase(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-
-inline std::string trimmed(const std::string& s) {
-    const std::size_t first = s.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return {};
-    const std::size_t last = s.find_last_not_of(" \t\r\n");
-    return s.substr(first, last - first + 1);
-}
 
 /// Splits on RUNS of whitespace, dropping empties.
 ///
@@ -47,6 +38,15 @@ inline std::vector<std::string> splitWords(const std::string& s) {
         at = end;
     }
     return words;
+}
+
+/// A mob id as chat says it out loud: `baby_ant` is "baby ant". Underscores
+/// read as spaces in the reference's wording, which is how both a boss
+/// announcement and a bot's shout name the animal.
+inline std::string spokenMobName(const std::string& id) {
+    std::string out = id;
+    std::replace(out.begin(), out.end(), '_', ' ');
+    return out;
 }
 
 /// Chat content is markup, so a '<' in a line would open a tag and take the

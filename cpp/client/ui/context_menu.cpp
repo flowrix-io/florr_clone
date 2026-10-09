@@ -22,9 +22,9 @@ constexpr double kBorder = 2.0;
 /// The shop BUTTON's green -- the stars icon in the top strip -- not the shop
 /// card's, which is a duller shade of it. Both literals are that button's own
 /// fill/border pair from MenuSystem::strip() in menus.cpp and have to stay in
-/// step with it; the strip keeps its fourteen rows as one literal table, so
-/// there is nowhere better for these two to live than beside the thing that
-/// borrows them.
+/// step with it; the strip keeps its rows as one literal table, so there is
+/// nowhere better for these two to live than beside the thing that borrows
+/// them.
 constexpr std::uint32_t kBody = 0x7EF16Bu;
 constexpr std::uint32_t kFrame = 0x64C156u;
 constexpr std::uint32_t kHover = lighten(kBody, 0.15);

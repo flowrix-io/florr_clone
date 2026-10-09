@@ -133,10 +133,7 @@ public:
     double unitByte() { return static_cast<double>(u8()) / 255.0; }
     double unitShort() { return static_cast<double>(u16()) / 65535.0; }
 
-    void skip(std::size_t n) { if (want(n)) pos_ += n; }
-
     std::size_t remaining() const { return failed_ ? 0 : size_ - pos_; }
-    std::size_t offset() const { return pos_; }
 
     /// False once any read has run past the end. A truncated or hostile frame
     /// yields a message full of zeroes that the caller discards, rather than a

@@ -34,11 +34,15 @@ the same place. That is how every termite mound gets a dungeon of its own: a
 mound claims a free copy when the first flower walks in and gives it back when
 the dungeon is cleared or left empty (`cpp/server/systems/dungeons.h`). The
 first copy keeps the plain id (`termite_mound`); the rest are `termite_mound#2`
-and up. Every copy counts against the 62-map limit.
+and up. Every copy counts against the 62-map limit. A pad drawn on a `copies`
+map leads out beside the nest that copy was entered through, whatever its
+`targetMap` says; the shipped mound has none, so clearing it is the way out,
+and everyone inside is carried back out beside the nest.
 
-The manifest and every map's bytes are covered by the content hash, so a client
-running a different map than the server it dials is refused at the handshake
-rather than discovered by walking into a wall nobody else can see.
+The manifest's bytes, every map's and every tileset's are covered by the
+content hash, so a client running a different map than the server it dials is
+refused at the handshake rather than discovered by walking into a wall nobody
+else can see.
 
 ## A map is a Tiled map, in Tiled's idiom
 
@@ -112,7 +116,7 @@ else              ground
 ```
 
 So a cell is **not** solid corner to corner just because something is painted on
-it. `castle_l` draws its wall body across the left 130.5 of its 256-unit tile
+it. `castle_l_0` draws its wall body across the left 130.5 of its 256-unit tile
 and its collision rectangle is exactly that wide, so on a 256-unit cell the wall
 face lands 130.5 units in — and a flower walks right up to the edge of the
 drawn stone instead of stopping half a cell short of it. An edge tile has a
@@ -194,16 +198,17 @@ the fix is one click: give the deck tile a whole-tile shape, or no shape.
 every one of them is the `water` layer with `water_tl_0` / `water_l_0` /
 `water_tri_0` / `water_c_0`, each of which does. So the river blocks everywhere
 except those 14 cells, where the deck cancels it: a flower walks the run end to
-end, is dry the whole way (`inWater()` is false on the deck), and is stopped by
-the water one cell north and one cell south of it.
+end, is dry the whole way (`inWater()` is false on the deck), and is stopped one
+cell north and one cell south of it, where the river (and, at the west end, the
+dirt bank) still blocks.
 
 The load report says what it resolved to — the negating layers by name, and how
 many of each layer's painted cells it actually opened:
 
 ```
 [map] data/garden.tmj: collision from water, dirt, castle; negated by bridge
-(14 of 14 cells cleared); scenery background; 6495 wall, 1136 water, 8753
-ground cells; 93 shape sets over 7631 shaped cells, 14 cells decked over
+(14 of 14 cells cleared); scenery background; 7028 wall, 1113 water, 8243
+ground cells; 93 shape sets over 8141 shaped cells, 14 cells decked over
 ```
 
 `14 of 14` is the number to read after ticking the box. It counts cells where
@@ -239,7 +244,7 @@ show a wall where the player can walk, and hide the way through. It falls back
 to filling a cell's square only where there are no shapes to draw, which is the
 same cell-wide solid `blocked()` itself falls back to there.
 
-A client whose data directory has no map for the realm it is in falls back to
+A client whose content directory has no map for the realm it is in falls back to
 whole-cell collision from that wire grid. It believes in more wall than there
 is, never less, which is the harmless way to be wrong.
 
@@ -253,7 +258,7 @@ into it. A layer has one switch and the author has already decided which layer
 the walls go on.
 
 *Where* is a tile property because it is a property of the drawing: the same
-`castle_l` blocks the same shape wherever it is painted, and the shape is
+`castle_l_0` blocks the same shape wherever it is painted, and the shape is
 already sitting in the tileset next to the picture it belongs to. The two
 questions do not fail the same way either — forgetting the layer switch makes a
 whole region walkable and is obvious the moment you walk it, while a missing
@@ -293,7 +298,7 @@ engine: `water` is a label on a decision the layer already made.
 
 ### What is tagged today
 
-`tileset.tsj`'s 77 tiles carry two tags between them:
+`tileset.tsj`'s tiles carry two tags between them:
 
 | tag | tiles |
 | --- | --- |
@@ -318,16 +323,16 @@ off this one, which is only what the map happened to say the day it was written:
 
 ```
 [map] data/garden.tmj: collision from water, dirt, castle; negated by bridge
-(14 of 14 cells cleared); scenery background; 6495 wall, 1136 water, 8753
-ground cells; 93 shape sets over 7631 shaped cells, 14 cells decked over
+(14 of 14 cells cleared); scenery background; 7028 wall, 1113 water, 8243
+ground cells; 93 shape sets over 8141 shaped cells, 14 cells decked over
 ```
 
 A second line appears when a collision shape reaches outside the tile it was
-drawn on — which the shipped tileset does, by 0.39 of a world unit, from one
+drawn on — which the shipped tileset does, by a third of a world unit, from one
 polygon vertex at x = −0.333 on `water_tl_0` and `sewage_tl_0`:
 
 ```
-[map] data/garden.tmj: a collision shape reaches 0.391 world units outside its
+[map] data/garden.tmj: a collision shape reaches 0.333 world units outside its
 own tile; it still blocks, in every cell it reaches, but check it was meant
 ```
 
@@ -398,10 +403,11 @@ it carries decides which kind of object it is:
 > **What still appears regardless**, because none of it is ground being filled:
 >
 > - A **child of a mob a band placed** — a nest's escorts and waves, a
->   centipede's body segments. They are laid out on a ring around their parent,
->   and that ring legitimately reaches over the band's edge onto ground nothing
->   fills. They are not spawned *on* unbanded ground, they are spawned *by*
->   something standing inside a band, so they are deliberately not gated.
+>   centipede's body segments. Escorts climb out of their parent's middle and
+>   segments trail behind the head, and either legitimately ends up over the
+>   band's edge on ground nothing fills. They are not spawned *on* unbanded
+>   ground, they are spawned *by* something standing inside a band, so they are
+>   deliberately not gated.
 > - **Pets, admin spawn commands and the drop/loot system**, none of which ask
 >   the ground anything.
 > - **The PVP arena and the daily maze**, the two realms that are not authored
@@ -409,6 +415,11 @@ it carries decides which kind of object it is:
 >   on, and `cpp/server/systems/mode_spawning.h` populates each of them whole on
 >   its own terms. "No band, no mobs" is a rule about map ground, and those two
 >   are deliberately exempt from it.
+> - **A dungeon's brood.** A `copies` map such as `termite_mound.tmj` is
+>   authored but carries no band, so its load line says `NO SPAWN BANDS`, and
+>   that is right: the nest that claims a copy fills it with the brood listed
+>   in the `dungeon` block of its `data/mobs.json` entry, spread over the doors
+>   that block names (`cpp/server/systems/dungeons.cpp`).
 
 A band with `difficulty: 0` is still a band — it owns its population and grows
 commons. It is the *presence* of the property that makes it one, not its value.
@@ -428,7 +439,7 @@ singular   = true
 Draw it over everywhere the queen may be. The size now buys **reach, not
 numbers**: one queen, placed somewhere inside the outline, and when she is
 killed the replacement is rolled over the **whole outline** again rather than
-handed back within a few hundred units of the corpse the way an ordinary band's
+handed back within about 900 units of the corpse the way an ordinary band's
 population is. That is the difference between a hunt across the hell and a farm
 at one coordinate.
 
@@ -441,8 +452,8 @@ range, not ground that grows anything. It is still counted in the map's load
 line, with how many of the map's bands are singular said separately:
 
 ```
-[map] ant_hell: 128x128 tiles, biome "ant_hell", mobs "ant_hell", 8 bands
-difficulty 0 (common)..130 (ultra), 2 singular, 1 region, ...
+[map] ant_hell: 128x128 tiles, biome "ant_hell", mobs "ant_hell", 15 bands
+difficulty 0 (common)..130 (ultra), 2 singular, 0 regions, ...
 ```
 
 `singular` on a shape with no `difficulty` does nothing — a region owns no
@@ -473,7 +484,8 @@ five-per-cent chance of apex — and it is linear between them. Past 300 it keep
 the last segment's slope toward apex rather than capping, so a bigger number
 always means at least as dangerous.
 
-**Whole tiers.** These difficulties spawn one rarity and nothing else:
+**Whole tiers.** On the curve, these difficulties are one rarity and nothing
+else:
 
 | difficulty | rarity |
 | ---: | --- |
@@ -492,10 +504,10 @@ always means at least as dangerous.
 
 | difficulty | spawns |
 | ---: | --- |
-| 10 | 40% common, 60% uncommon |
-| 25 | 50% uncommon, 50% rare |
+| 10 | 39.8% common, 60.2% uncommon |
+| 25 | 49.5% uncommon, 50.5% rare |
 | 50 | 99% epic, 1% legendary |
-| 75 | 49% legendary, 51% mythic |
+| 75 | 48.5% legendary, 51.5% mythic |
 | **100** | **98% ultra, 2% super** |
 | 150 | 49% ultra, 51% super |
 | **200** | **100% super** |
@@ -509,11 +521,21 @@ the first hundred points and the last three take the next three hundred. The
 early climb is short and the top of it is long, which is what the four anchors
 say.
 
-Luck is the only thing that moves a band off these numbers, and it only moves it
-up — every point of a player's luck above neutral adds a hundredth of a tier, so
-a clover buys a percentage point of the tier above wherever its owner is
-standing. There is no downward drift: a difficulty-0 band is fully common for
-everyone, always.
+**A band grows nothing above super, though.** Its roll is stopped there, and a
+wild unique or apex is a super that its biome's boss clock upgraded
+(`cpp/server/systems/spawning.h`): while a clock is ready, each super the
+biome's bands spawn has a one-in-ten chance of coming out at that tier, which
+starts the clock again — twenty minutes for a unique, two hours for an apex —
+and a biome holds at most one of each alive. So past 200 the curve describes
+the ground (the minimap, the load line and the bots read it), not what the band
+rolls.
+
+Luck is the only thing that moves a band's roll off the curve, and it only moves
+it up — every point of luck above neutral adds a hundredth of a tier, a
+percentage point of the tier above. A band belongs to nobody's screen, so its
+rolls are charged to the flower nearest its centre in its realm, or to neutral
+luck when that realm is empty. There is no downward drift: a difficulty-0 band
+is fully common for everyone, always.
 
 #### `difficulty: -1` — the random band
 
@@ -530,14 +552,16 @@ side, with no progression across the shape.
 | legendary | 4% |
 | mythic | 1% |
 
-Those are the TypeScript server's own `ENEMY_TIERS` probabilities
-(`src/constants.ts`) — what every ambient mob rolled there when it was *not*
-standing in a spawn zone — so a `-1` band is the old unbanded world, drawn as a
-shape. Luck works on it exactly as it does on the curve: a hundredth of a tier
-per point above neutral, here spent as that much chance of one tier up.
+That table is `kNaturalRaritySpread` in `cpp/shared/game/difficulty.h`, copied
+from the TypeScript server's `ENEMY_TIERS` — what every ambient mob there rolled
+when it was *not* standing in a spawn zone — so a `-1` band is the old unbanded
+world, drawn as a shape. Luck works on it exactly as it does on the curve: a
+hundredth of a tier per point above neutral, here spent as that much chance of
+one tier up.
 
-Ultra and above are **not** in the spread. A boss is something a band asks for
-by difficulty; random ground never hands one out.
+Ultra and above are **not** in the spread; luck can lift one of its mythics to
+an ultra, and nothing further. A boss is something a band asks for by
+difficulty; random ground never hands one out.
 
 Two consequences worth knowing before drawing one:
 
@@ -547,9 +571,11 @@ Two consequences worth knowing before drawing one:
   the sentinel being numerically *below* zero does not make it safe. **A door
   you actually drew inside one still stands**, though: that rectangle in that
   band is two deliberate statements, and `hel`'s door is exactly that.
-- **Anything that has to paint one colour on it** — the minimap, the map's load
-  line, a bot sizing up where to farm — reads the spread's *average* (tier 1.11,
-  a shade past uncommon). That is an appraisal, not what it rolls.
+- **Anything that has to paint one colour on it** — the minimap, the world's
+  rarity overlay, a bot sizing up where to farm — reads the spread's *average*
+  (tier 1.11, a shade past uncommon). That is an appraisal, not what it rolls.
+  The load line counts random bands apart instead: `hel` reports
+  `1 band, all random (common..mythic)`.
 
 `hel.tmj` is the map drawn this way: one band over the whole thing, `-1`.
 
@@ -562,16 +588,18 @@ the ground is *entirely* rare and which would have called a band that rolls rare
 98.7% of the time (difficulty 33) safe for a level-one flower. Derived from the
 curve rather than written down twice.
 
-**What the shipped map says today.** `garden.tmj` carries a handful of bands,
-from 0 on the ground the `garden` door stands on up to the hardest of them, each
-naming the map's own `garden` roster. Everything outside them is empty ground.
-The author moves and renumbers them as the map is balanced, so the count below
-is whatever the file said the day this was written; the start-up line is the
-thing to read:
+**What the shipped map says today.** `garden.tmj`'s bands run from 0, on the
+ground the `garden` door stands on, up to 100. Most name the map's own `garden`
+roster and the rest a distribution of their own (such as
+`ladybug 95% garden 5%` or `ant_hell 50% ant_hole 50%`), and one region
+(`bee 95% garden 5%`) is drawn among them. Everything outside the bands is empty
+ground. The author moves and renumbers them as the map is balanced, so the count
+below is whatever the file said the day this was written; the start-up line is
+the thing to read:
 
 ```
-[map] garden: 128x128 tiles, biome "garden", mobs "garden", 4 bands difficulty 0
-(common)..40 (rare), 0 regions, 77 art files, 4 layers, doors: garden
+[map] garden: 128x128 tiles, biome "garden", mobs "garden", 26 bands difficulty
+0 (common)..100 (ultra), 1 region, 81 art files, 5 layers, doors: garden
 ```
 
 ### `player_spawns` — doors
@@ -581,9 +609,9 @@ teleporter, or on respawn.
 
 | property | meaning |
 | --- | --- |
-| `spawnId` | what a teleporter or a saved preference names this door by. Unique within its map; the server qualifies it as `<map id>:<spawn id>` |
+| `spawnId` | what a teleporter or a saved preference names this door by. Unique within its map; the picker offers it bare while no other map has a door of that id, and as `<map id>:<spawn id>` once one does |
 | `label` | what the picker's button says. Empty falls back to the id, title cased |
-| `color` | the button's colour, `#rrggbb` |
+| `color` | the button's colour: `#rrggbb`, or the `#aarrggbb` Tiled's colour picker writes (the alpha is dropped) |
 | `order` | where the button sits in its row; ties break by map order |
 | `backdrop` | the artwork tiled behind the picker while this button is chosen, by file name. Empty falls back to the spawn id, so a door called `desert` gets `desert.svg` |
 | `biome` | which tab of the picker files this door. Empty falls back to the map's `biome`, then to the map's id |
@@ -603,10 +631,10 @@ property is `label: "Garden"`, is the pickable door `garden`.
 Only a map with several unnamed doors can now collide, and that shows up as a
 duplicate id rather than as a door that silently vanished.
 
-`pickable` is the main-area rule: a biome's sublevels are entered from its main
-area through a pad, so their doors are arrival points and nothing more, and only
-the main area's door is a button. A non-pickable door is still joinable — by an
-admin, by name.
+`pickable` is the main-area rule: a biome's sublevels are entered from inside
+the game (through a pad, or a dungeon's nest), so their doors are arrival
+points and nothing more, and only the main area's door is a button. A
+non-pickable door is still joinable — by an admin, by name.
 
 ### `teleporters` — pads
 
@@ -649,9 +677,10 @@ watch the nearest flower. Which side it is on is the mob's business, in its mobs
 The server keeps one standing on every object here — at start-up, and again on
 the next tick if anything removed it. Draw it as a **point** (Tiled's *Insert
 Point*) where its middle should be — for a cruiser, the middle of where it
-flies; the server pushes it clear of a wall its body would overlap. The load line lists every
-NPC a map places (`npcs: oracle`), and an `npc` that is not in mobs.json, or
-has no `npc` block, is reported and nothing stands there.
+flies. An NPC meets walls as a point, as its mob does, so the server only moves
+its centre off a wall; the room its body needs is the author's to leave. The
+load line lists every NPC a map places (`npcs: oracle`), and an `npc` that is
+not in mobs.json, or has no `npc` block, is reported and nothing stands there.
 
 What a service does is the mob's business too: `oracle` turns the craft panel
 of any flower within reach of it into a guaranteed craft at a fixed price
@@ -674,9 +703,10 @@ empty block means). A map is stricter, and only places mobs that have a block.
 `ocean.tmj` places one common oracle, `desert.tmj` one common trader on
 the open ground west of its door, and `jungle.tmj` one universal titan out in
 its far south-east, clear of the target dummies. The titan needs the room: it
-is a thousand units across, its ring orbits forty past its edge, and it
-cruises about its point as the oracle does — meeting walls with its centre
-only — so give it a clear circle of about a thousand units round its point.
+is some fourteen hundred units across, its ring orbits forty past its edge, and
+it cruises about its point as the oracle does — meeting walls with its centre
+only — so give it a clear circle of about a thousand units' radius round its
+point.
 
 ## The map's own properties
 
@@ -684,7 +714,7 @@ Set these in Tiled under *Map → Map Properties → Custom Properties*.
 
 | property | meaning | default |
 | --- | --- | --- |
-| `displayName` | what the map is called in a message | the map's id |
+| `displayName` | the caption under the minimap | the map's id |
 | `biome` | which tab of the spawn picker this map's doors file under | **the map's id** |
 | `defaultMobGroup` | the mob group a band with no `mobs` of its own, and no region under it, spawns from | **`biome`** |
 
@@ -708,11 +738,11 @@ mobs = ocean 20% jellyfish 80%
 mobs = hornet
 ```
 
-The name is a **mob group** when `src/mobs.json` defines one by that name, and a
+The name is a **mob group** when `data/mobs.json` defines one by that name, and a
 **mob id** otherwise; groups win, so naming a group is never ambiguous. The
-groups today are `garden`, `desert`, `ocean`, `hel`, `ant_hell`, `jungle`,
-`sewers` and `computer` — there is no separate list of them, they are the union
-of the names the mobs claim:
+groups are names such as `garden`, `ocean`, `ant_hell` and `fire_ant_hell`, and
+there is no separate list of them: they are the union of the names the mobs
+claim:
 
 ```json
 "groups": ["garden", "jungle"]           // in both, at spawn_weight
@@ -728,28 +758,31 @@ newlines are all just separators. A bare name takes weight 1. A name the content
 does not define is reported once on stderr rather than silently spawning nothing
 forever.
 
-Whether a name is a group or a mob is resolved **at spawn time**, by the
-spawner, never here: the map layer has no view of the content registry and must
-not grow one. Resolving it at load is what made the old nine hard-coded section
-presets impossible to add to.
+Whether a name is a group or a mob is resolved **by the spawner**, once, when
+it builds its bands out of the maps and the content, never here: the map layer
+has no view of the content registry and must not grow one. Resolving it in the
+map layer is what made the old nine hard-coded section presets impossible to add
+to.
 
-Naming a mob directly also bypasses the group's exclusions, which is how a
-`neverAmbient` mob reaches the world at all.
+Naming a mob directly also bypasses the group's exclusions, which is the only
+way a band grows a `neverAmbient` mob.
 
 ## Art and staging
 
-The build stages this directory **flat, by bare file name**, into the data
-directory beside the binaries (`cpp/CMakeLists.txt`). That flatness is what
-makes the references inside the files resolve: a map names its tilesets as
-siblings, a tileset names its art under `tiles/`, and the client's sprite cache
-looks a tile's art up by bare name. `maps/tileset.tsj` and
-`maps/tiles/grass_c_0.svg` both land directly in the data directory.
+The build stages this directory **flat, by bare file name**, into the staged
+content directory (`<build>/data`, embedded as `/data` in the wasm builds; see
+`cpp/CMakeLists.txt`), alongside the JSON from the repository's `data/`. That
+flatness is what makes the references inside the files resolve: a map names its
+tilesets as siblings, a tileset names its art under `tiles/`, and the client's
+sprite cache looks a tile's art up by bare name. `maps/tileset.tsj` and
+`maps/tiles/grass_c_0.svg` both land directly in that directory.
 
 - The **maps** come out of `maps.json`, never globbed.
 - The **tilesets** are read out of the maps at configure time, so a map that
   starts naming a second `.tsj` stages it on the next build.
 - The **tile art** and the **ground art** are globbed, because the tileset — not
-  a list anyone maintains — decides what exists.
+  a list anyone maintains — decides what exists. So an `.svg` in `tiles/` that
+  no tileset names yet still ships.
 
 So **adding a tile is two things**: drop a `.svg` in `tiles/`, add a tile to
 `tileset.tsj` in Tiled (and tag it `water` if that is what it is). Nothing is
@@ -792,18 +825,13 @@ map generator (`scripts/generateBiomeMaps.js`), a converter from the retired
 `MapData` literal (`scripts/mapToTiled.js`) and the two palettes those wrote
 (`terrain.tsj`, `ground.tsj`). Tiled's Wang brushes do the edge work now, and
 the author draws the art, so all of it has been deleted along with the engine's
-tile-skin and edge-mask system.
+tile-skin and edge-mask system. The TypeScript server's compiled copy of the old
+map (`src/map_bundle.ts`, from `scripts/encodeMap.js`) went with the TypeScript
+tree; nothing in the C++ engine read it.
 
-`src/map_bundle.ts` is **frozen where it stands**. It was the TypeScript
-server's copy of the map, compiled by `scripts/encodeMap.js` from the one map
-that then existed; the new format cannot produce one and there is no
-`npm run build:map` any more. The file stays on disk untouched because
-`src/map_data.ts` imports it and the frozen TypeScript tree has to keep
-typechecking — it is simply never regenerated again. Nothing in the C++ engine
-reads it.
-
-`maps_old/` is the author's backup of the 47 generated maps this replaced. It is
-untracked, it is not staged, and nothing reads it. Leave it alone.
+`maps_old/` is the author's archive of the 47 generated maps this replaced,
+tracked in git on purpose. Nothing stages it and nothing reads it. Leave it
+alone.
 
 **Zone rarities are gone**, and with them the machinery that hung off them: a
 band naming `spawnType: rare`, the per-section "natural" rarity spread the
@@ -811,18 +839,20 @@ density fill used to roll, the one-tier drift that nudged every spawn up or down
 on a die roll, the one-in-a-hundred super an ultra band used to produce, and the
 boss pass — the pass that kept exactly one ultra alive in the world and one
 super per section and placed them by hand. That pass cannot coexist with a scale
-on which a difficulty-100 band is *full* of ultras, so on this scale bosses come
-from the ground they stand on. What survives is the announcement: a super,
-unique or apex spawning is still worth telling the server about.
+on which a difficulty-100 band is *full* of ultras, so on this scale an ultra or
+a super comes from the ground it stands on, and a unique or an apex from a super
+its biome's clock upgraded (see `difficulty` above). What survives is the
+announcement: a super, unique or apex spawning is still worth telling the server
+about.
 
 ## What guards this
 
-Every name below is a test in `cpp/tests` that exists and passes today, with
-what it pins written after it. The list was checked against the files rather
-than remembered, so a name that has drifted is a bug in one of the two. The
-only exception is a name introduced as a *former* name — "(it replaced …)",
-"(formerly …)" — which is deliberately a test that no longer exists, kept so
-that someone searching for the old behaviour finds where it went.
+Every name below is a test in `cpp/tests`, with what it pins written after it.
+The list was checked against the files rather than remembered, so a name that
+has drifted is a bug in one of the two. The only exception is a name introduced
+as a *former* name — "(it replaced …)", "(formerly …)" — which is deliberately
+a test that no longer exists, kept so that someone searching for the old
+behaviour finds where it went.
 
 **The collision rule — `cpp/tests/tiled_map_tests.cpp`** (the reader: which
 shapes a cell ends up with)
@@ -928,15 +958,21 @@ derived from the file rather than pinned, because the author is still drawing)
 
 - `the_shipped_catalogue_loads_and_resolves_its_defaults` (formerly
   `the_shipped_map_loads_and_resolves_its_defaults`, which pinned a catalogue of
-  exactly one map) — **every** map `maps/maps.json` names loads, and each
-  reports the banded branch of the load line quoted above: a band count and a
-  difficulty range, never `NO SPAWN BANDS`. Neither the number of maps nor the
+  exactly one map) — **every** map `maps/maps.json` names loads with no
+  `WorldMaps` warning (no pad that leads nowhere, none aimed at a door that is
+  not there), realm *i* is the manifest's *i*th entry both ways round, each map
+  resolves the `biome` and `defaultMobGroup` defaults (a `copies` map instead
+  names the biome its entrance stands in), each load line reports its bands (a
+  count and a range, or the `NO SPAWN BANDS` the termite mound prints), and
+  the overworld carries at least one band. Neither the number of maps nor the
   number of bands is pinned, because the author adds both.
 - `every_shipped_door_is_named_by_its_label_and_is_offered` (formerly
   `the_shipped_door_is_named_by_its_label_and_is_pickable`) — the name → label
   slug → map id fallback asked of every door in the catalogue, each resolving to
-  a real map, with the pickable ones offered on the join list; the catalogue is
-  required to be non-empty and self-consistent rather than a fixed size.
+  a real map and filed under that map's biome (a door's own `biome` has to spell
+  its map's exactly, case included), with the pickable ones offered on the join
+  list; the catalogue is required to be non-empty and self-consistent rather
+  than a fixed size.
   `the_shipped_door_stands_on_open_ground`.
 - `an_authored_band_and_region_still_parse`,
   `a_zone_outline_excludes_what_its_bounding_box_includes`,
@@ -974,9 +1010,9 @@ derived from the file rather than pinned, because the author is still drawing)
   `a_bands_difficulty_beats_the_maps_default`, whose second half asserted that
   the ground around the band grew the map's `defaultDifficulty`.)
 - `a_map_with_no_band_at_all_grows_nothing` — a map with a default group and a
-  region over the whole of it, and still no mobs. It also pins the load line
-  above word for word, through `MapData::bandSummary()`, because that line is
-  the only warning the author gets.
+  region over the whole of it, and still no mobs. It also pins that load line's
+  bands clause word for word, through `MapData::bandSummary()`, because at boot
+  that line is the only warning the author gets.
 - `a_harness_with_no_map_at_all_grows_nothing` — no maps means no bands means
   no mobs, stated on its own so that a harness which places its own mobs cannot
   quietly start passing for the wrong reason.
@@ -1013,6 +1049,7 @@ derived from the file rather than pinned, because the author is still drawing)
   **and every tileset's**, which is where the shapes and the `water` tag live.
   Drawing one shape on one tile changes the hash, so a client with a stale
   tileset is refused rather than left predicting against different geometry.
+  It pins `mob_drops.json`, which is not map data, the same way.
 
 **Realms — `cpp/tests/realm_tests.cpp`** — `each_realm_draws_its_own_ground`
 and `a_respawn_into_another_realm_sends_the_client_that_realms_map`: a map is
@@ -1023,25 +1060,28 @@ Nothing today guards the client's *missing tile art* warning
 covers the SVG cache itself and not that path.
 
 And the real thing, which is the check that matters: `flowrix_server` boots on
-the staged map and prints its three `[map]` lines — the collision summary, the
-overhang note and the load report — with **no `[spawn]` or `[tiled]` line at
-all** on stderr, and the native client draws the map and stops where the art
-says it should. A `[spawn]` line on a shipped boot means the map lost its bands.
-Measured on the map as it stands, which the author is still redrawing, so read
-the boot lines rather than these numbers:
+the staged maps and prints `[map]` lines for each — the collision summary and
+the load report, plus a note for anything the map should look at, such as the
+overhang line — and the native client draws the map and stops where the art
+says it should. Garden's, from a boot of the map as it stands, which the author
+is still redrawing, so read your own boot lines rather than these numbers:
 
 ```
-[map] data/garden.tmj: collision from water, dirt, castle; scenery background;
-6443 wall, 1150 water, 8791 ground cells; 93 shape sets over 7593 shaped cells
-[map] data/garden.tmj: a collision shape reaches 0.391 world units outside its
+[map] data/garden.tmj: collision from water, dirt, castle; negated by bridge
+(14 of 14 cells cleared); scenery background; 7028 wall, 1113 water, 8243
+ground cells; 93 shape sets over 8141 shaped cells, 14 cells decked over
+[map] data/garden.tmj: a collision shape reaches 0.333 world units outside its
 own tile; it still blocks, in every cell it reaches, but check it was meant
-[map] garden: 128x128 tiles, biome "garden", mobs "garden", 4 bands difficulty 0
-(common)..40 (rare), 0 regions, 77 art files, 4 layers, doors: garden
+[map] garden: 128x128 tiles, biome "garden", mobs "garden", 26 bands difficulty
+0 (common)..100 (ultra), 1 region, 81 art files, 5 layers, doors: garden
 ```
 
-and a client joining through that door meets a world every mob of which was
-born inside one of those four bands, or is the brood of a hole that was. A
-thirteen-second boot with one client joined counted 229 live mobs: 229 born in a
-band, 0 anywhere else. (Three of them had since wandered off their band's edge,
-which is why the check is against the spot a mob was *placed* — `MobAi::anchor`,
-never rewritten — and not against where it is standing.)
+A client joining through that door should meet only mobs born inside one of
+those bands, or the brood of a hole that was. Check that against the band that
+owns a mob — `AmbientMob::zone` (`cpp/server/systems/spawning.h`), which a
+nest's brood and a centipede's segments leave unset — and not against where it
+is standing, because a mob wanders off its band's edge. Once someone has joined,
+the spawner also prints a `[spawn] map "…" has no spawn band on it` line for
+every bandless map. For the `termite_mound` copies that is expected (a dungeon
+is stocked by its nest, see `spawns` above); for any other map it means the map
+lost its bands.

@@ -11,16 +11,12 @@
 #include "shared/game/spatial.h"
 #include "shared/net/protocol.h"
 
-#include <sys/stat.h>
-
 #include <cmath>
-#include <cstdlib>
 #include <cstdio>
-#include <fstream>
-#include <map>
 #include <string>
 #include <vector>
 #include "fixture_content.h"
+#include "render_rig.h"
 
 using namespace flix;
 
@@ -67,13 +63,8 @@ bool paintedNear(const std::vector<std::uint8_t>& rgba, Vec2 screen, double reac
     return false;
 }
 
-Camera frameCamera() {
-    Camera camera;
-    camera.setViewport(kFrameSize, kFrameSize);
-    camera.userZoom = 1.0;
-    camera.snapTo(kStrikeAt);
-    return camera;
-}
+/// The camera every frame here is drawn through: on the strike, at zoom one.
+Camera frameCamera() { return testsupport::frameCamera(kFrameSize, kStrikeAt); }
 
 /// One frame of a strike on `targets`, `age` seconds after it landed. No
 /// content and no sprites: the ground falls back to its flat biome colour,
@@ -215,13 +206,7 @@ std::vector<std::uint8_t> renderNumber(std::uint8_t flags) {
     // A number is TEXT, and text needs the font the game ships. Without it the
     // renderer paints nothing at all and every colour assertion below would
     // pass by finding no wrong colour either.
-    static const bool fontsReady = [] {
-        std::string error;
-        const bool ok = ui::Fonts::init(std::string(FLIX_TEST_DATA_DIR), error);
-        if (!ok) std::printf("  fonts did not load: %s\n", error.c_str());
-        return ok;
-    }();
-    CHECK(fontsReady);
+    CHECK(testsupport::fontsReady());
 
     Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
     const Camera camera = frameCamera();
@@ -287,11 +272,7 @@ TEST(a_share_too_small_to_print_is_held_until_it_adds_up) {
     // reported a tenth of a point at a time. Drawn as it came, that is a
     // stream of "-0"; held, it surfaces as a real number once it is worth one.
     const auto renderShares = [](int count) {
-        static const bool fontsReady = [] {
-            std::string error;
-            return ui::Fonts::init(std::string(FLIX_TEST_DATA_DIR), error);
-        }();
-        CHECK(fontsReady);
+        CHECK(testsupport::fontsReady());
         Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
         const Camera camera = frameCamera();
         WorldView view;
@@ -408,21 +389,6 @@ struct Sim {
     }
 };
 
-std::string simTempDir() {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_lightning_tests";
-    mkdir(base.c_str(), 0755);
-    return base;
-}
-
-bool writeFile(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
-    return out.good();
-}
-
 /// Hand-written content rather than the shipped tables. These tests assert on
 /// exact radii and exact damage, and pinning them to whatever balance
 /// mobs.json currently ships would turn a tuning change into a red build. The
@@ -442,10 +408,8 @@ struct SimContent {
 const SimContent& simContent() {
     static const SimContent state = [] {
         SimContent c;
-        const std::string mobs = simTempDir() + "/mobs.json";
-        const std::string petals = simTempDir() + "/petals.json";
-        const bool wrote =
-            writeFile(mobs, test::fixtureMobs(R"({
+        c.ok = test::loadFixtureContent(c.registry, testsupport::tempDir("flix_lightning_tests"),
+            R"({
               "shocker":{"name":"Shocker","health":500,"damage":20,"size":1,"speed":0.2,
                          "cooldown":2000,
                          "lightning":{"radius":300}},
@@ -453,16 +417,12 @@ const SimContent& simContent() {
                          "cooldown":0,
                          "lightning":{"radius":250,"onContact":true}},
               "inert":{"name":"Inert","health":500,"damage":30,"size":1,"speed":0.2}
-            })")) &&
-            writeFile(petals, test::fixturePetals(R"({
+            })",
+            R"({
               "pea":{"name":"Pea","damage":10,"health":50,"size":1},
               "berry":{"name":"Berry","damage":10,"health":50,"size":1,"lightningDamage":true}
-            })"));
-        if (!wrote) {
-            c.error = "cannot write the fixture content";
-            return c;
-        }
-        c.ok = c.registry.loadFiles(mobs, petals, c.error);
+            })",
+            c.error);
         c.shocker = c.registry.mobIndex("shocker");
         c.toucher = c.registry.mobIndex("toucher");
         c.inert = c.registry.mobIndex("inert");
@@ -480,8 +440,10 @@ Entity petalAt(Sim& sim, Entity owner, Vec2 at, std::uint16_t configIndex = kInv
     sim.world.add<Transform>(e, Transform{at, 0.0});
     sim.world.add<Body>(e, Body{10.0, 1.0});
     sim.world.add<Health>(e, Health{50.0, 50.0, 0.0, 0.0});
-    const std::uint16_t petal = configIndex != kInvalidIndex ? configIndex : simContent().pea;
-    sim.world.add<PetalInstance>(e, PetalInstance{owner, petal, Rarity::Common});
+    PetalInstance instance;   // a common, every other field at its default
+    instance.owner = owner;
+    instance.configIndex = configIndex != kInvalidIndex ? configIndex : simContent().pea;
+    sim.world.add<PetalInstance>(e, instance);
     sim.world.add<NetId>(e, NetId{sim.nextNetId++});
     return e;
 }
@@ -678,10 +640,10 @@ TEST(a_contact_striker_holds_its_charge_between_strikes) {
     const SimContent& content = simContent();
     sim.mob({0, 0}, content.toucher, 30.0, 40.0);
     const Entity player = sim.player({50, 0});
-    // Contact SHOVES the flower 25 units clear every tick it lands, so a test
-    // that only stepped the clock would be measuring the bump rather than the
-    // charge. Walked back in each time, which is what a player holding a
-    // direction is doing anyway.
+    // Contact BOUNCES the flower back off the mob every tick it lands
+    // (gardn's bounce, bounceOffMob), so a test that only stepped the clock
+    // would be measuring the bump rather than the charge. Walked back in each
+    // time, which is what a player holding a direction is doing anyway.
     const auto touching = [&] { sim.world.get<Transform>(player).position = {50, 0}; };
 
     // The fixture states `cooldown: 0` and no `cooldownMs`, exactly as both
@@ -859,14 +821,8 @@ TEST(an_unmarked_burst_still_reports_an_ordinary_hit) {
 // --- the shipped data ------------------------------------------------------
 
 TEST(the_shipped_jellyfish_and_fireflies_declare_the_strikes_they_should) {
-    ContentRegistry registry;
-    std::string error;
-    const std::string dir = std::string(FLIX_TEST_DATA_DIR);
-    if (!registry.loadFiles(dir + "/mobs.json", dir + "/petals.json", error)) {
-        std::printf("  shipped content did not load: %s\n", error.c_str());
-        CHECK(false);
-        return;
-    }
+    const ContentRegistry& registry = testsupport::shippedContent();
+    if (!registry.loaded()) { CHECK(false); return; }
 
     // Only the SHAPE, never the numbers: the radii are balance and an author
     // must be able to change them without a test going red.
@@ -968,14 +924,8 @@ TEST(the_shipped_mobs_reach_a_flower_touching_them_at_every_tier) {
     // would have caught the original bug: it says nothing about how far a
     // strike goes, only that it never stops reaching the flower standing on
     // the mob -- which is the one thing a contact strike must always do.
-    ContentRegistry registry;
-    std::string error;
-    const std::string dir = std::string(FLIX_TEST_DATA_DIR);
-    if (!registry.loadFiles(dir + "/mobs.json", dir + "/petals.json", error)) {
-        std::printf("  shipped content did not load: %s\n", error.c_str());
-        CHECK(false);
-        return;
-    }
+    const ContentRegistry& registry = testsupport::shippedContent();
+    if (!registry.loaded()) { CHECK(false); return; }
 
     for (const char* id : {"firefly", "magic_firefly"}) {
         const std::uint16_t index = registry.mobIndex(id);

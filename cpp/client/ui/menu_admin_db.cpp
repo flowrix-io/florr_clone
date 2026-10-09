@@ -16,7 +16,6 @@
 // the card says so when the server stored something other than what was typed.
 
 #include <algorithm>
-#include <cctype>
 #include <ctime>
 #include <set>
 #include <string>
@@ -27,6 +26,7 @@
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "shared/core/json.h"
+#include "shared/core/text.h"
 
 namespace flix {
 
@@ -114,7 +114,7 @@ struct TreeRow {
 
 /// Everything the panel keeps between frames.
 ///
-/// At file scope for the reason the guild panel's dialog is: there is one
+/// At file scope for the reason the guild panel's form is: there is one
 /// panel, and menus.h is a header every panel shares.
 struct State {
     bool accountsTab = true;
@@ -167,18 +167,6 @@ State& state() {
     return s;
 }
 
-std::string lowered(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-
-std::string trimmedText(const std::string& s) {
-    const std::size_t first = s.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return {};
-    const std::size_t last = s.find_last_not_of(" \t\r\n");
-    return s.substr(first, last - first + 1);
-}
-
 /// A path as one string, for the expansion set and the armed button. The
 /// separator is a control character no key in the file can hold.
 std::string pathKey(const net::AdminDbPath& path) {
@@ -193,7 +181,7 @@ std::string pathKey(const net::AdminDbPath& path) {
 /// The identity a document is remembered under: an account's name in any
 /// case, since the server answers with the stored spelling of a typed one.
 std::string docIdentity(net::AdminDbScope scope, const std::string& key) {
-    return scope == net::AdminDbScope::Account ? "a:" + lowered(key) : "t:" + key;
+    return scope == net::AdminDbScope::Account ? "a:" + lowerCase(key) : "t:" + key;
 }
 
 TextStyle label(double size, std::uint32_t fill = kPaper, Align align = Align::Left) {
@@ -405,7 +393,7 @@ void commitEdit(State& s, NetClient& net) {
         // job, and an admin fixing a name should not have to escape it.
         json = jsonEscape(s.editText);
     } else {
-        json = trimmedText(s.editText);
+        json = trimmed(s.editText);
         Json probe;
         std::string error;
         if (!Json::parse(json, probe, error)) {
@@ -420,12 +408,12 @@ void commitEdit(State& s, NetClient& net) {
 }
 
 void commitAdd(State& s, NetClient& net) {
-    const std::string key = trimmedText(s.addKey);
+    const std::string key = trimmed(s.addKey);
     if (!s.addToArray && key.empty()) {
         setStatus(s, "Give the new field a name.", false);
         return;
     }
-    const std::string typed = trimmedText(s.addValue);
+    const std::string typed = trimmed(s.addValue);
     if (typed.empty()) {
         setStatus(s, "Type a value: a number, true, false, null, text, {} or [].", false);
         return;
@@ -617,7 +605,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             if (s.accountsTab) {
                 const AdminDbAccountRow& account = db.accounts[static_cast<std::size_t>(i)];
                 selected = db.documentOpen && db.scope == net::AdminDbScope::Account &&
-                           lowered(db.key) == lowered(account.username);
+                           lowerCase(db.key) == lowerCase(account.username);
                 fillRound(canvas, row, 5.0, kPaper, selected ? 0.3 : hovered ? 0.16 : 0.07);
                 dot(canvas, row.x + 11.0, cy, 4.5,
                     (account.flags & net::AdminDbOnline) != 0 ? kOnlineDot : kOfflineDot);

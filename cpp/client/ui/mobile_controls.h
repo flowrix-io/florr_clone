@@ -91,9 +91,6 @@ private:
         bool is(std::int64_t other) const { return held && id == other; }
     };
 
-    /// Where the finger holding the stick is, relative to the stick's centre,
-    /// clamped to the base. The knob is drawn at it and the direction is read
-    /// off it, exactly as the reference's `knobOffset` is.
     /// False until layout() has run. A control that has never been placed sits
     /// at the origin, and would otherwise claim every touch in the top-left
     /// corner of the first frame it is asked about.
@@ -102,6 +99,9 @@ private:
     /// enough to lay the three controls out side by side -- which is every
     /// landscape one. See layout().
     double scale_ = 1.0;
+    /// Where the finger holding the stick is, relative to the stick's centre,
+    /// clamped to the base. The knob is drawn at it and the direction is read
+    /// off it, exactly as the reference's `knobOffset` is.
     Vec2 knob_{0, 0};
     Vec2 stickCentre_{0, 0};
     Vec2 attackCentre_{0, 0};

@@ -49,14 +49,10 @@ bool paintRunFromAtlas(Canvas& canvas, const std::string& s, double penX, double
 /// is drawn; it is also what advances the atlas's clock.
 void prepareTextAtlas();
 
-/// Drops every baked run.
-void clearTextAtlas();
-
+/// What the debug panel's Profiling tab shows of the atlas.
 struct TextAtlasStats {
     std::size_t runs = 0;       // baked and held
-    std::size_t waiting = 0;    // queued for the next pre-pass
     int bakedLastFrame = 0;
-    int resets = 0;             // times the atlas filled and was cleared
 };
 TextAtlasStats textAtlasStats();
 

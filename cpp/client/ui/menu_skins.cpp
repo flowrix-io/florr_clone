@@ -23,7 +23,6 @@
 // the world renderer resolves a wearer's skin through.
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -39,6 +38,7 @@
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/text_select.h"
+#include "shared/core/text.h"
 #include "shared/game/skin_format.h"
 
 namespace flix {
@@ -208,8 +208,13 @@ ButtonStyle buttonStyle(std::uint32_t fill, double textSize = kBodySize) {
     return style;
 }
 
-bool insideInclusive(Rect r, Vec2 p) {
-    return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+/// The Create tab's footer: the name box, then Reset, then Publish against the
+/// right edge. Shared by the paint and the hit test, so the box the caret is
+/// placed against is the box that was drawn.
+constexpr double kPublishW = 106.0;
+constexpr double kResetW = 84.0;
+Rect footerNameField(Rect footer) {
+    return {footer.x, footer.y, std::max(120.0, footer.w - kPublishW - kResetW - 24.0), footer.h};
 }
 
 // --- the skin data model ---------------------------------------------------
@@ -1007,10 +1012,7 @@ void Studio::drawCommandHelp(Canvas& canvas, Rect r) {
 
 void Studio::drawFooter(Canvas& canvas, double timeSeconds) {
     const Rect r = layout.footer;
-    constexpr double kPublishW = 106.0;
-    constexpr double kResetW = 84.0;
-
-    const Rect field{r.x, r.y, std::max(120.0, r.w - kPublishW - kResetW - 24.0), r.h};
+    const Rect field = footerNameField(r);
     inputField(canvas, field, skinName, "Skin name", nameField.focused, timeSeconds, &nameField);
 
     Action reset;
@@ -1089,9 +1091,7 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
         ui::text(canvas, "by " + clipChars(skin.author, 14), card.x + cardW * 0.5,
                  board.bottom() + 30.0, label(kCaptionSize, Align::Centre));
 
-        std::string author = skin.author;
-        for (char& c : author) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        const bool canDelete = isAdmin() || author == me;
+        const bool canDelete = isAdmin() || lowerCase(skin.author) == me;
 
         // A takedown is a glyph beside the Equip button, not a second labelled
         // one: at this card width two labelled buttons side by side left
@@ -1122,8 +1122,7 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
 
 void Studio::drawConfirm(Canvas& canvas, Vec2 mouse) {
     // A confirm is modal: nothing behind it can be clicked, so the regions
-    // drawn so far are dropped rather than merely painted over. Built like the
-    // guild panel's, which stands in for the same browser confirm().
+    // drawn so far are dropped rather than merely painted over.
     regions.clear();
     regionClip = layout.panel;
     const Rect box{layout.panel.x + (layout.panel.w - 320.0) * 0.5,
@@ -1204,9 +1203,7 @@ void Studio::draw(MenuContext& ctx) {
         }
         drawFooter(canvas, ctx.timeSeconds);
     } else {
-        std::string me = ctx.net.profile().username;
-        for (char& c : me) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        drawBrowse(canvas, me);
+        drawBrowse(canvas, lowerCase(ctx.net.profile().username));
     }
 
     if (confirming) drawConfirm(canvas, mouse);
@@ -1580,8 +1577,7 @@ bool Studio::handleInput(MenuContext& ctx) {
     if (tab == Tab::Create && !textMode) {
         // The name box takes its own press; the region list below would only
         // ever put the caret at one end of it.
-        const Rect box = layout.footer;
-        const Rect field{box.x, box.y, std::max(120.0, box.w - 106.0 - 84.0 - 24.0), box.h};
+        const Rect field = footerNameField(layout.footer);
         trackTextMouse(ctx.window, nameField, field,
                        inputFieldRun(field, skinName, nameField), skinName, ctx.timeSeconds);
         if (insideInclusive(field, mouse)) ctx.window.setCursorShape(CursorShape::Text);

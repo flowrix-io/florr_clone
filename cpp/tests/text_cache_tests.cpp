@@ -1,13 +1,15 @@
 #include "test.h"
 
-#include "server_harness.h"
+#include "render_rig.h"   // fontsReady(): no run draws a pixel without the font
 
 #include "client/ui/draw.h"
 #include "client/ui/text.h"
 #include "client/ui/text_cache.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -21,7 +23,7 @@
 // allows.
 
 using namespace flix;
-using flix::testsupport::dataDir;
+using flix::testsupport::fontsReady;
 
 namespace {
 
@@ -88,8 +90,7 @@ Diff compare(const Shot& a, const Shot& b) {
 } // namespace
 
 TEST(text_cache_bakes_a_rotated_run_where_the_rasterizer_would_put_it) {
-    std::string error;
-    CHECK(ui::Fonts::init(dataDir(), error));
+    CHECK(fontsReady());
     ui::clearTextCache();
 
     // The bestiary's tally tilt, the item badge's, and a right angle -- the
@@ -109,8 +110,7 @@ TEST(text_cache_bakes_a_rotated_run_where_the_rasterizer_would_put_it) {
 }
 
 TEST(text_cache_reuses_one_entry_for_a_repeated_rotated_run) {
-    std::string error;
-    CHECK(ui::Fonts::init(dataDir(), error));
+    CHECK(fontsReady());
     ui::clearTextCache();
 
     // A grid of tilted tallies is what the bestiary draws; the point of the
@@ -124,8 +124,7 @@ TEST(text_cache_reuses_one_entry_for_a_repeated_rotated_run) {
 }
 
 TEST(text_cache_still_declines_a_sheared_transform) {
-    std::string error;
-    CHECK(ui::Fonts::init(dataDir(), error));
+    CHECK(fontsReady());
     ui::clearTextCache();
 
     Canvas canvas = Canvas::createVirtual(kWidth, kHeight);

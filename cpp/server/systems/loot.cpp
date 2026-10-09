@@ -91,11 +91,13 @@ bool DropTables::load(const ContentRegistry& content, const std::string& path, s
 }
 
 void DropTables::loadDefault(const ContentRegistry& content) {
+    // Relative to the working directory. From a build directory the first is
+    // the staged copy; from the repository root it is the source, and so are
+    // the other two from cpp/ and from cpp/build.
     static constexpr const char* kCandidates[] = {
         "data/mob_drops.json",
-        "src/mob_drops.json",
-        "../src/mob_drops.json",
-        "../../src/mob_drops.json",
+        "../data/mob_drops.json",
+        "../../data/mob_drops.json",
     };
 
     for (const char* candidate : kCandidates) {
@@ -133,11 +135,12 @@ void DropTables::resolve(const ContentRegistry& content) {
         }
 
         Entry resolved;
-        // A row whose item this build cannot hand out -- a consumable, the
-        // Random sentinel, an id the petal registry does not know -- still
-        // belongs in the table: on a common mob it is an independent roll and
-        // above one it is a guaranteed drop. Only the payout is missing, and
-        // kNoPetal is already what spawnDrop treats as "nothing".
+        // A row whose item this build cannot hand out -- a consumable, an id
+        // the petal registry does not know -- still belongs in the table: on
+        // a common mob it is an independent roll and above one it is a
+        // guaranteed drop. Only the payout is missing, and kNoPetal is already
+        // what spawnDrop treats as "nothing". (The `random` sentinel keeps
+        // kNoPetal here too, and is resolved per copy in awardDeaths.)
         resolved.kind = source.kind;
         resolved.petalIndex =
             source.kind == Kind::Petal ? content.petalIndex(source.petalId) : kNoPetal;
@@ -293,9 +296,7 @@ Rarity LootSystem::rollDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& 
     return finishDropRarity(scaleDropRarity(authoredRarity, mobRarity, rng), mobRarity, rng);
 }
 
-bool LootSystem::mayPickUp(const DropItem& drop, Entity player, net::ConnectionId owner,
-                           double nowMillis) {
-    (void)nowMillis;
+bool LootSystem::mayPickUp(const DropItem& drop, Entity player, net::ConnectionId owner) {
     // By the OWNER where there is one, so a player who died between the kill
     // and the walk back still collects what was reserved for them -- and
     // still cannot collect it twice by dying again. See LootClaim.
@@ -337,7 +338,7 @@ int wornOrbTier(const World& world, const ContentRegistry& content, Entity playe
 // ---------------------------------------------------------------------------
 
 Entity LootSystem::spawnDrop(World& world, std::uint16_t petalIndex, Rarity rarity, Vec2 position,
-                             Realm realm, const std::vector<Entity>& eligible, double nowMillis) {
+                             Realm realm, const std::vector<Entity>& eligible) {
     if (petalIndex == kNoPetal) return NULL_ENTITY;
 
     const Entity e = world.create();
@@ -406,24 +407,24 @@ void LootSystem::run(World& world, const SpatialGrid& grid, const ContentRegistr
     pickups_.clear();
 
     maintainDrops(dt, commands);
-    collectPickups(world, grid, commands, events, nowMillis);
-    awardDeaths(world, content, rng, nowMillis);
+    collectPickups(world, grid, commands, events);
+    awardDeaths(world, content, rng);
     // Deaths pay out after the broadphase pass, but their loot is still
     // collectable this tick: the reference rolls a mob's drops inside the very
     // player step that then tests pickups, so a magnet flower standing on its
     // own kill takes the item before any snapshot could have carried it. The
     // client is not left with nothing to animate -- the pickup cue carries the
     // drop's position and look for exactly this case.
-    collectFresh(world, commands, events, nowMillis);
+    collectFresh(world, commands, events);
 }
 
 void LootSystem::maintainDrops(double dt, CommandBuffer& commands) {
     expired_.clear();
     drops_->each([&](Entity e, DropTag&, Transform& transform, Lifetime& lifetime) {
-        // Nothing resolves the +-50 spawn scatter -- neither server does, by
-        // design -- so this push is the only way a drop that landed inside a
-        // rock, a wall or water ever becomes reachable again. Pickup is a plain
-        // distance test, and a tile face is far wider than its reach.
+        // Nothing resolves the +-50 spawn scatter -- the reference does not
+        // either, by design -- so this push is the only way a drop that landed
+        // inside a rock, a wall or water ever becomes reachable again. Pickup
+        // is a plain distance test, and a tile face is far wider than its reach.
         if (terrain != nullptr) {
             transform.position =
                 terrain->resolveCircle(transform.position, kDropWallRadius, transform.realm);
@@ -444,7 +445,7 @@ void LootSystem::maintainDrops(double dt, CommandBuffer& commands) {
 }
 
 void LootSystem::collectPickups(World& world, const SpatialGrid& grid, CommandBuffer& commands,
-                                EventQueue& events, double nowMillis) {
+                                EventQueue& events) {
     collectors_->each([&](Entity player, PlayerTag&, Transform& transform, PlayerModifiers& mods) {
         const Health* health = world.tryGet<Health>(player);
         if (health != nullptr && !health->alive()) return;
@@ -452,14 +453,13 @@ void LootSystem::collectPickups(World& world, const SpatialGrid& grid, CommandBu
         const double reach = pickupReach(world, player, mods);
         grid.query(transform.realm, transform.position, reach, candidates_);
         for (const Entity candidate : candidates_) {
-            tryCollect(world, player, transform.position, reach * reach, candidate, commands,
-                       events, nowMillis);
+            tryCollect(world, player, transform.position, transform.realm, reach * reach,
+                       candidate, commands, events);
         }
     });
 }
 
-void LootSystem::collectFresh(World& world, CommandBuffer& commands, EventQueue& events,
-                              double nowMillis) {
+void LootSystem::collectFresh(World& world, CommandBuffer& commands, EventQueue& events) {
     if (fresh_.empty()) return;
     collectors_->each([&](Entity player, PlayerTag&, Transform& transform, PlayerModifiers& mods) {
         const Health* health = world.tryGet<Health>(player);
@@ -467,23 +467,29 @@ void LootSystem::collectFresh(World& world, CommandBuffer& commands, EventQueue&
 
         const double reach = pickupReach(world, player, mods);
         for (const Entity candidate : fresh_) {
-            tryCollect(world, player, transform.position, reach * reach, candidate, commands,
-                       events, nowMillis);
+            tryCollect(world, player, transform.position, transform.realm, reach * reach,
+                       candidate, commands, events);
         }
     });
 }
 
-void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, double reachSq,
-                            Entity candidate, CommandBuffer& commands, EventQueue& events,
-                            double nowMillis) {
+void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, Realm playerRealm,
+                            double reachSq, Entity candidate, CommandBuffer& commands,
+                            EventQueue& events) {
     DropItem* drop = world.tryGet<DropItem>(candidate);
     if (drop == nullptr) return;
     const Transform* at = world.tryGet<Transform>(candidate);
     if (at == nullptr) return;
+    // A drop on another map is out of reach whatever the numbers say. The
+    // broadphase pass only ever finds drops filed under the flower's realm,
+    // but the fresh pass walks this tick's drops directly -- so without this
+    // a flower standing at the same coordinates on another map, a contributor
+    // who changed map on the tick of the kill, took its copy from there.
+    if (at->realm != playerRealm) return;
     if (distanceSq(at->position, playerPosition) > reachSq) return;
     const PlayerAccount* taker = world.tryGet<PlayerAccount>(player);
     const net::ConnectionId owner = taker != nullptr ? taker->connection : 0;
-    if (!mayPickUp(*drop, player, owner, nowMillis)) return;
+    if (!mayPickUp(*drop, player, owner)) return;
 
     const Pickup pickup{player, drop->configIndex, drop->rarity};
     pickups_.push_back(pickup);
@@ -506,8 +512,7 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, do
     if (finished) commands.destroy(candidate);
 }
 
-void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& rng,
-                             double nowMillis) {
+void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& rng) {
     fresh_.clear();
     // Once for the tick, not once per corpse: the conversion below asks for it
     // on every drop of every kill.
@@ -519,10 +524,13 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         if (type == nullptr || transform == nullptr) continue;
 
         // Read the corpse out in full first. Everything below is a structural
-        // change, and these pointers are into an archetype column.
+        // change, and these pointers are into an archetype column. The realm
+        // too: adding LootAwarded moves the corpse out of its row, and the
+        // corpse swapped into that row may be standing on another map.
         const std::uint16_t mobIndex = type->configIndex;
         const Rarity mobRarity = type->rarity;
         const Vec2 at = transform->position;
+        const Realm realm = transform->realm;
         const Dead* dead = world.tryGet<Dead>(corpse);
         const Entity killer = dead != nullptr ? dead->killer : NULL_ENTITY;
         const Health* health = world.tryGet<Health>(corpse);
@@ -646,13 +654,12 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
                     }
                 }
                 const Vec2 scatter{rng.range(-50.0, 50.0), rng.range(-50.0, 50.0)};
-                // Unresolved on purpose, on both servers: the per-tick pass is
-                // what pushes a drop out of the geometry it landed in. Noted so
-                // the sweep below tests the scattered position, as the
+                // Unresolved on purpose, as in the reference: the per-tick pass
+                // is what pushes a drop out of the geometry it landed in. Noted
+                // so the sweep below tests the scattered position, as the
                 // reference's same-step pickup does.
                 const Entity dropped =
-                    spawnDrop(world, petalIndex, rarity, at + scatter, transform->realm, eligible_,
-                              nowMillis);
+                    spawnDrop(world, petalIndex, rarity, at + scatter, realm, eligible_);
                 if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
             }
         }

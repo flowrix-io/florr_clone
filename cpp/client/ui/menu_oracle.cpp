@@ -60,10 +60,6 @@ constexpr double kCraftTimeoutSeconds = 8.0;
 /// How long a refusal stays under the slot.
 constexpr double kRefusalSeconds = 3.0;
 
-bool knownPetal(std::uint16_t petalIndex) {
-    return petalIndex != kNoPetal && petalIndex < content().petalCount();
-}
-
 } // namespace
 
 Rect OraclePanel::bounds(int w, int h) { return slotCardBounds(false, w, h); }

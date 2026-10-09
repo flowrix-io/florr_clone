@@ -17,9 +17,10 @@
 // shown; its name picks the channel Enter sends to, which the open line
 // carries at its head as "[Local]". The server's own lines belong to no tab.
 //
-// handleClientCommand() is the other half of the box: the two commands the
-// server has no say in. Everything else typed here, squad, guild and whisper
-// lines included, is sent and answered by the server.
+// handleClientCommand() is the other half of the box: the commands the server
+// has no say in -- two panel toggles and a local render override. Everything
+// else typed here, squad, guild and whisper lines included, is sent and
+// answered by the server.
 
 #include "client/app.h"
 
@@ -35,6 +36,7 @@
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/touch_scroll.h"
+#include "shared/core/text.h"
 #include "shared/game/html_entities.h"
 
 namespace flix {
@@ -108,8 +110,21 @@ constexpr double kChatCodeRadius = 3.0;
 
 /// The channel tabs, in strip order -- the order chatChannels' bits and
 /// App::chatSendTab_ count in. Local is first because it is where a line goes
-/// unless the player picks otherwise.
-enum ChatTab : int { kTabLocal, kTabGlobal, kTabSquad, kTabGuild, kTabWhisper, kTabAdmin, kChatTabCount };
+/// unless the player picks otherwise. Admin is last, and is the one tab that
+/// only filters: it files every admin's announcements, and nothing typed in
+/// the box is ever sent to it (see chatTabSendable).
+enum ChatTab : int {
+    kTabLocal, kTabGlobal, kTabSquad, kTabGuild, kTabWhisper, kTabAdmin, kChatTabCount
+};
+static_assert((1u << kTabAdmin) == kChatAdminChannel &&
+                  (1u << kChatTabCount) - 1u == kChatChannelsAll,
+              "ClientSettings::chatChannels names the tabs' bits in this order");
+
+/// Whether Enter can send to a tab. The Admin tab cannot: an announcement
+/// raises a banner on every screen on the server, so it is made on purpose --
+/// the dashboard's Announce tab, or `/admin announce` -- and never by a player
+/// who pressed Tab once too often and kept typing.
+constexpr bool chatTabSendable(int tab) { return tab != kTabAdmin; }
 
 struct ChatTabStyle {
     const char* label;
@@ -155,7 +170,6 @@ ui::InputPrefix chatPrefix(int tab, const std::string& whisperPartner) {
 std::string chatChannelCommand(int tab, const std::string& whisperPartner) {
     switch (tab) {
         case kTabLocal: return "/l ";
-        case kTabAdmin: return "/admin announce ";
         case kTabSquad: return "/s ";
         case kTabGuild: return "/g ";
         case kTabWhisper: return "/w " + whisperPartner + " ";
@@ -165,9 +179,10 @@ std::string chatChannelCommand(int tab, const std::string& whisperPartner) {
 
 /// The bare words that switch the channel Enter sends to, in strip order.
 /// Only bare: "/squad invite bob" is the squad's own command and still goes to
-/// the server, as "/local hi" goes there to be said once on Local.
+/// the server, as "/local hi" goes there to be said once on Local. None for
+/// the Admin tab, which is not a place to send.
 constexpr const char* kChatSwitchCommands[kChatTabCount] = {
-    "/local", "/global", "/squad", "/guild", "/whisper", "/announcements",
+    "/local", "/global", "/squad", "/guild", "/whisper", nullptr,
 };
 
 /// The tab a line switches to, or -1 when it is not one of those words alone.
@@ -177,10 +192,9 @@ int chatSwitchTarget(const std::string& line) {
     const std::size_t first = line.find_first_not_of(' ');
     if (first == std::string::npos) return -1;
     const std::size_t last = line.find_last_not_of(' ');
-    std::string word = line.substr(first, last - first + 1);
-    for (char& c : word) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const std::string word = lowerCase(line.substr(first, last - first + 1));
     for (int tab = 0; tab < kChatTabCount; ++tab) {
-        if (word == kChatSwitchCommands[tab]) return tab;
+        if (kChatSwitchCommands[tab] != nullptr && word == kChatSwitchCommands[tab]) return tab;
     }
     return -1;
 }
@@ -192,16 +206,17 @@ constexpr std::size_t kChatDraftBytes = 180;
 /// The suggestion list replaces the message column; these are its own metrics.
 constexpr double kChatSuggestionRowHeight = 23.0;   // 4px padding, a 15px line, 4px
 constexpr double kChatSuggestionSize = 13.0;
-/// One notch of the wheel, in pixels of transcript. The panels' Scroller moves
-/// by the same step, so the box scrolls at the speed the rest of the client
-/// does.
+/// One notch of the wheel, in pixels of transcript.
 constexpr double kChatWheelStep = 42.0;
 
-/// The slash commands the reference offers, in its order.
+/// The slash commands the box offers, in the order the list shows them: the
+/// reference's table (src/chat.ts, in git history at d47055a7), grown with
+/// what this client and its server added since and pruned of what neither
+/// answers.
 ///
-/// Admin rows are carried so this is the reference's table rather than an
-/// edited copy of it, and filtered at draw time by matchChatCommands: they are
-/// offered only to a client the server has told is admin.
+/// Admin rows are carried in the same table and filtered at draw time by
+/// matchChatCommands: they are offered only to a client the server has told
+/// is admin.
 struct ChatCommand {
     const char* command;
     const char* description;
@@ -212,8 +227,6 @@ constexpr ChatCommand kChatCommands[] = {
     {"/help", "Show available commands", false},
     {"/biome", "Show the most populated biome", false},
     {"/boss-timers", "Show each biome's unique/apex cooldown", false},
-    {"/create-api-key", "Issue an API key tied to your account: /create-api-key [label]", false},
-    {"/delete-api-key", "Revoke one of your API keys: /delete-api-key <key-or-prefix>", false},
     {"/admin save", "Save player progress", true},
     {"/admin list-players", "List online players", true},
     {"/admin list-sockets", "List connected sockets", true},
@@ -286,19 +299,21 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin restart", "Schedule server restart: restart [<N>(s|m|h)|cancel|status]", true},
     {"/admin backup_db", "Back up the database: backup_db [list]", true},
     {"/admin db", "Open the database editor (full admins): /admin db <key> [username]", true},
+    {"/admin gui", "Open the admin dashboard: players, bags, control, spawn, give, announce", true},
+    {"/admin control", "Steer another player's flower with your controls: /admin control <player>", true},
+    {"/admin release", "Give back the flower you are steering", true},
+    {"/admin announce", "A banner for every player (full admins): /admin announce <message>", true},
     {"/admin update", "Back up DB, install latest build from GitHub, restart: update [now|<N>(s|m|h)|status|cancel]", true},
     {"/admin change-maze", "Change the maze: change-maze [next|garden|desert|ocean|<dayNumber>]", true},
     {"/level-from-string", "Show what level a player named <name> would roll", false},
     {"/loadout-from-string", "Show the loadout a player named <name> would roll", false},
-    {"/admin remove_petal ", "remove petal from a player", true},
 };
 
 /// The commands whose names start with what has been typed, case-blind.
 /// Shared by the key handler and the draw pass so the highlighted row and the
 /// completed text can never come from two different lists.
 std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool includeAdmin) {
-    std::string needle = typed;
-    for (char& c : needle) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const std::string needle = lowerCase(typed);
 
     std::vector<const ChatCommand*> matches;
     for (const ChatCommand& command : kChatCommands) {
@@ -308,8 +323,7 @@ std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool
         // the skin catalog, which a temporary grant re-sends. Listing them to
         // everyone would advertise a console most players cannot open.
         if (command.admin && !includeAdmin) continue;
-        std::string name = command.command;
-        for (char& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const std::string name = lowerCase(command.command);
         if (name.size() >= needle.size() && name.compare(0, needle.size(), needle) == 0) {
             matches.push_back(&command);
         }
@@ -327,7 +341,6 @@ struct ChatToken {
     std::string text;
     double size = 14.0;
     std::uint32_t fill = kPaper;
-    double alpha = 1.0;
     bool italic = false;
     bool underline = false;
     bool blink = false;
@@ -354,7 +367,6 @@ struct ChatPlacedRun {
     double x = 0;
     double size = 14.0;
     std::uint32_t fill = kPaper;
-    double alpha = 1.0;
     bool italic = false;
     bool underline = false;
     bool blink = false;
@@ -432,9 +444,9 @@ std::vector<ChatRow> layoutChatMessage(const std::vector<ChatToken>& tokens, dou
         if (word.empty()) continue;
         rowAfterPicture = false;
         const auto place = [&](const std::string& run, double x) {
-            rows.back().runs.push_back({run, x, token.size, token.fill, token.alpha,
-                                        token.italic, token.underline, token.blink,
-                                        measure(run, token.size), token.code});
+            rows.back().runs.push_back({run, x, token.size, token.fill, token.italic,
+                                        token.underline, token.blink, measure(run, token.size),
+                                        token.code});
             if (token.pre) rows.back().pre = true;
         };
         double gap = (rows.back().runs.empty() || token.joinsPrevious)
@@ -472,8 +484,9 @@ constexpr double kItalicShear = 0.21;   // ~12 degrees
 /// One run of chat text.
 ///
 /// Outlined like every other label, at gardn's size * kTextStrokeRatio. The
-/// fill is drawn on its own so a translucent span (the timestamp) does not
-/// also thin its outline, which stays opaque.
+/// fill is drawn on its own so a translucent span (a suggestion row's
+/// description) does not also thin its outline, which stays opaque. Every
+/// transcript run is opaque.
 void chatRun(Canvas& canvas, const std::string& s, double x, double baseline, double size,
              std::uint32_t fill, double alpha, bool italic = false, bool underline = false) {
     if (italic) {
@@ -589,7 +602,7 @@ std::vector<ChatToken> chatLineTokens(const ChatLine& line) {
     bool afterWhitespace = true;
     for (const ui::MarkupSpan& span : ui::parseMarkup(line.text)) {
         if (span.lineBreak) {
-            ChatToken token{{}, kChatTextSize, kPaper, 1.0, false, false, false, true, false};
+            ChatToken token{{}, kChatTextSize, kPaper, false, false, false, true, false};
             token.code = span.code;
             token.pre = span.preformatted;
             tokens.push_back(std::move(token));
@@ -638,7 +651,7 @@ std::vector<ChatToken> chatLineTokens(const ChatLine& line) {
                 if (end == std::string::npos) end = text.size();
                 end = text.find_first_not_of(' ', end);
                 if (end == std::string::npos) end = text.size();
-                ChatToken token{withSpaces(text.substr(at, end - at)), kChatTextSize, fill, 1.0,
+                ChatToken token{withSpaces(text.substr(at, end - at)), kChatTextSize, fill,
                                 span.italic, span.underline, span.blink, false, true};
                 token.code = span.code;
                 token.pre = true;
@@ -654,7 +667,7 @@ std::vector<ChatToken> chatLineTokens(const ChatLine& line) {
             const std::string text = span.text.substr(
                 at, space == std::string::npos ? std::string::npos : space - at);
             if (!text.empty()) {
-                ChatToken token{withSpaces(text), kChatTextSize, fill, 1.0, span.italic,
+                ChatToken token{withSpaces(text), kChatTextSize, fill, span.italic,
                                 span.underline, span.blink, false, !afterWhitespace};
                 token.code = span.code;
                 tokens.push_back(std::move(token));
@@ -716,15 +729,9 @@ bool foldFlags(const NamedFlag (&table)[N], const std::vector<std::string>& name
     out = 0;
     for (const std::string& name : names) {
         const NamedFlag* found = nullptr;
+        const std::string wanted = lowerCase(name);
         for (const NamedFlag& flag : table) {
-            std::string candidate = flag.name;
-            if (candidate.size() != name.size()) continue;
-            bool same = true;
-            for (std::size_t i = 0; i < name.size() && same; ++i) {
-                same = std::tolower(static_cast<unsigned char>(candidate[i])) ==
-                       std::tolower(static_cast<unsigned char>(name[i]));
-            }
-            if (same) found = &flag;
+            if (lowerCase(flag.name) == wanted) found = &flag;
         }
         if (found != nullptr) {
             out |= found->value;
@@ -846,16 +853,19 @@ void App::editChatLine() {
                 // Back to the newest line: an offset into the old selection
                 // of lines points at nothing in the new one.
                 chatScroll_ = 0;
-            } else {
+            } else if (chatTabSendable(tab)) {
                 chatSendTab_ = tab;
             }
             break;
         }
     }
     // Tab and a press on the line's "[Local]" both step on to the next
-    // channel, wrapping, in strip order; Shift+Tab steps back.
+    // channel, wrapping, in strip order; Shift+Tab steps back. Past the tabs
+    // that cannot be sent to, so the step always lands on one that can.
     const auto stepChannel = [&](int step) {
-        chatSendTab_ = (chatSendTab_ + step + kChatTabCount) % kChatTabCount;
+        do {
+            chatSendTab_ = (chatSendTab_ + step + kChatTabCount) % kChatTabCount;
+        } while (!chatTabSendable(chatSendTab_));
     };
     // Against the box the last frame painted: input runs before the draw, and
     // the field does not move between the two.
@@ -993,9 +1003,14 @@ void App::drawTitleChat(Canvas& canvas, double time) {
 }
 
 bool App::handleClientCommand(const std::string& message) {
-    if (message == "/admin gui" && net_.isSkinAdmin()) {
-        menus_.adminDashboardOpen = !menus_.adminDashboardOpen;
-        net_.sendChat("/admin dashboard");
+    // The dashboard is a panel like any other, toggled like one. Only for an
+    // account the server calls an admin: anyone else's line goes to the
+    // server, which answers it the way it answers any `/admin` from them.
+    // The completed form ends in a space, which is why the end is trimmed.
+    const std::size_t typedEnd = message.find_last_not_of(' ');
+    if (typedEnd != std::string::npos && message.compare(0, typedEnd + 1, "/admin gui") == 0 &&
+        net_.isSkinAdmin()) {
+        menus_.toggle(MenuId::AdminDashboard);
         return true;
     }
     if (message == "/guild-menu" || message == "/guild menu") {
@@ -1042,8 +1057,7 @@ bool App::handleClientCommand(const std::string& message) {
         return true;
     }
 
-    std::string family = words.front();
-    for (char& c : family) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const std::string family = lowerCase(words.front());
     const std::vector<std::string> names(words.begin() + 1, words.end());
 
     std::uint32_t value = 0;
@@ -1152,15 +1166,9 @@ void App::drawChat(Canvas& canvas, double time) {
                 // The description is ellipsised rather than wrapped: its span
                 // is `overflow: hidden; text-overflow: ellipsis; white-space:
                 // nowrap`.
-                std::string description = std::string("- ") + matches[i]->description;
                 const double room = column.right() - 4.0 - afterCommand;
-                if (measure(description, 12.0) > room) {
-                    while (!description.empty() &&
-                           measure(description + "...", 12.0) > room) {
-                        popCodepoint(description);
-                    }
-                    description += "...";
-                }
+                const std::string description =
+                    ellipsize(std::string("- ") + matches[i]->description, 12.0, room);
                 chatRun(canvas, description, afterCommand, baseline, 12.0, kPaper, 0.5);
                 y += kChatSuggestionRowHeight;
             }
@@ -1320,7 +1328,7 @@ void App::drawChat(Canvas& canvas, double time) {
                         // second.
                         if (run.blink && std::fmod(time, 1.0) >= 0.5) continue;
                         chatRun(canvas, run.text, column.x + run.x, rowBaseline, run.size,
-                                run.fill, run.alpha, run.italic, run.underline);
+                                run.fill, 1.0, run.italic, run.underline);
                     }
                 }
                 baseline = firstRow - rows.front().height;

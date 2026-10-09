@@ -2,10 +2,10 @@
 // Registration and login abuse limits.
 //
 // Someone spam-created over 9000 accounts against the production browser
-// server, which had no limit of any kind on account creation. This is the same
-// defence, on this side: see src/server/accountLimiter.ts -- the constants and
-// the layering are deliberately identical, so an operator reasoning about one
-// server is reasoning about both.
+// server, which had no limit of any kind on account creation. This is the
+// defence that server was given, ported: the constants and the layering were
+// kept identical to src/server/accountLimiter.ts (removed with the rest of the
+// TypeScript tree; read it at d47055a7).
 //
 // The per-session budget in session.h does NOT cover this. A session is a
 // socket, and a socket is free: reconnecting hands the client a brand-new
@@ -128,9 +128,6 @@ public:
     /// the same thing -- that an attack is happening, and where from -- and
     /// carries how many refusals it stands for.
     std::string refusalLogLine(const std::string& address, LimitScope scope, double nowMillis);
-
-    /// How many addresses are currently tracked, for tests and reporting.
-    std::size_t trackedAddresses() const { return registerBuckets_.size() + loginBuckets_.size(); }
 
     /// Test hook: forget everything.
     void reset(double nowMillis);

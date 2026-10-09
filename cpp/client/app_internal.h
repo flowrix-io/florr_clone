@@ -6,16 +6,15 @@
 // the top of app.cpp). Almost everything each of those needs is its own
 // business and stays in its own anonymous namespace; this header is only what
 // more than one of them asks for, which is the design space they all draw in
-// and two questions about the world outside the class.
+// and one question about the world outside the class. The wall clock the
+// screens share is not here: it is wallClockMillis, beside the render clock in
+// client/interpolation.h, because NetClient and the panels read it too.
 //
 // It is short on purpose. A helper one file uses belongs in that file, and
 // one that grows a second caller can move here then -- a shared header that
 // collects everything is how seven files become one again.
 //
 // Nothing outside client/app*.cpp includes this.
-
-#include <chrono>
-#include <cstdint>
 
 #include "window.h"
 
@@ -53,13 +52,5 @@ inline constexpr int kDesignHeight = 1080;
 /// from DOM enter/leave callbacks in a page and SDL focus on the desktop; a
 /// bounds test against the last position cannot answer after the pointer left.
 inline bool pointerInWindow(const Window& window) { return window.pointerInside(); }
-
-/// Unix milliseconds. The daily-streak card counts down to timestamps the
-/// server minted from the same clock, so this cannot be the app's uptime.
-inline std::int64_t wallClockMillis() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
 
 } // namespace flix

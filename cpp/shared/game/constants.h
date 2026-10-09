@@ -1,9 +1,13 @@
 #pragma once
-// Gameplay constants and the shared movement step.
+// Gameplay constants, and the movement step the server integrates flowers
+// with.
 //
 // Anything here that both sides need is here precisely so there is one copy:
-// the client predicts movement with the same function the server authorises it
-// with, so straight-line movement reconciles to nothing at all.
+// the client draws with the same sizes, radii and ladders the server simulates
+// with. The movement step at the bottom is the server's alone -- the client
+// predicts nothing and eases every flower straight from the wire
+// (client/interpolation.h) -- and it lives here beside the constants it is
+// built from.
 
 #include <algorithm>
 #include <string>
@@ -24,8 +28,11 @@ namespace flix {
 inline constexpr double kWorldSize = 60000.0;
 inline constexpr double kWorldHalf = kWorldSize * 0.5;
 
-/// The map is a 3x3 grid of biome sections, each 20000 units square. A mob's
-/// `section` list in mobs.json indexes into this grid.
+/// The default world is a 3x3 grid of biome sections, each 20000 units
+/// square: the legacy procedural world's palette, which the maze still borrows
+/// its ground colour from, and the grid /biome and the boss announcements
+/// still count the overworld by. What spawns where is a mob group's business
+/// (config.h); a `section` list left in mobs.json is ignored with a warning.
 inline constexpr int kSectionsPerAxis = 3;
 inline constexpr int kSectionCount = kSectionsPerAxis * kSectionsPerAxis;
 inline constexpr double kSectionSize = kWorldSize / kSectionsPerAxis;
@@ -38,9 +45,9 @@ inline int sectionAt(Vec2 p) {
     return cy * kSectionsPerAxis + cx;
 }
 
-/// Terrain is a coarse tile grid rather than polygons: collision is then a
-/// couple of array reads instead of a broadphase, and the whole map is a byte
-/// per tile.
+/// Terrain is a tile grid: one coarse Tile byte per cell (what the minimap
+/// paints, the flow field walks and the wire carries), with each cell's
+/// authored collision SHAPES beside it for the exact tests (terrain.h).
 inline constexpr double kTileSize = 256.0;
 inline constexpr int kTilesPerAxis = static_cast<int>(kWorldSize / kTileSize);  // 234
 
@@ -131,10 +138,6 @@ inline constexpr double kFullSpeedCursorDistance = 200.0;
 
 inline constexpr double kRespawnInvulnerabilitySeconds = 3.0;
 
-/// How far a mob's touch shoves the flower. The same 25 units is used by the
-/// glitch flower's petal ring, which is why it is not a mob-only constant.
-inline constexpr double kPlayerKnockbackForce = 25.0;
-
 // -- teleporters -------------------------------------------------------------
 //
 // A pad is not a trigger volume you cross; it is a well you fall into. The
@@ -147,10 +150,6 @@ inline constexpr double kTeleporterSuctionRadius = 150.0;
 inline constexpr double kTeleporterSuctionForce = 400.0;
 inline constexpr double kTeleporterDwellMillis = 1000.0;
 inline constexpr double kTeleporterCooldownMillis = 5000.0;
-
-/// How much of the remaining impulse survives a bounce off a wall. Used by the
-/// bubble dash, which walks its displacement in substeps and reflects.
-inline constexpr double kBounceDamping = 0.7;
 
 // -- progression -------------------------------------------------------------
 
@@ -214,19 +213,27 @@ inline double playerRadiusForLevel(int) {
     return kPlayerBaseRadius;
 }
 
+/// The ceiling on a flower's summed size modifier. Past about six times its
+/// own size the wall resolver cannot contain the body (see the containment
+/// guard in server/systems/movement.cpp), so the server clamps the loadout's
+/// size scale here, in PetalSystem's stat pass, as the TypeScript server did;
+/// and the client bounds what it draws by the same figure, so a corrupt radius
+/// cannot scale a flower off the screen.
+inline constexpr double kMaxPlayerSizeScale = 6.0;
+
 // ---------------------------------------------------------------------------
 // Petals
 // ---------------------------------------------------------------------------
 
 /// Loadout slots an account holds and the wire carries. Twenty, matching the
-/// browser build, which pads every profile's loadout to that width.
+/// TypeScript build, which padded every profile's loadout to that width.
 inline constexpr int kLoadoutSlots = 20;
 
 /// How many of those slots are ACTUALLY equipped -- the ring, the modifiers,
 /// the passive heals. The rest is storage a player carries and swaps from.
-/// The browser draws the same two rows and stops every gameplay loop at ten
-/// (`PRIMARY_LOADOUT_SLOTS`, src/server/shared/playerModifiers.ts:36); a ring
-/// built from all twenty would give a second row of petals for free.
+/// The TypeScript build drew the same two rows and stopped every gameplay loop
+/// at ten (`PRIMARY_LOADOUT_SLOTS`, src/server/shared/playerModifiers.ts:36); a
+/// ring built from all twenty would give a second row of petals for free.
 inline constexpr int kLoadoutActiveSlots = 10;
 
 /// The most of one petal at one tier an account can hold: a stack is an
@@ -268,14 +275,10 @@ inline int loadoutPresetIndex(const std::string& name) {
 inline constexpr double kPetalOrbitRestRadius = 60.0;
 
 /// TypeScript's fully extended and retracted petal-extension values. Attack
-/// and defend use these as targets; damping below provides the transition.
+/// and defend use these as targets; the ring's extension ramps between them
+/// at a fixed rate (kPetalExtensionRampPerSecond, server/systems/petals.cpp).
 inline constexpr double kPetalOrbitAttackExtension = 2.0;
 inline constexpr double kPetalOrbitDefendExtension = 0.7;
-
-/// How fast the ring converges on its target radius, as a fraction of the
-/// remaining gap per second. Fast enough to feel instant, damped enough that
-/// tapping attack does not teleport the petals.
-inline constexpr double kPetalRadiusDamp = 0.999;
 
 /// Ring spin, radians per second.
 inline constexpr double kPetalSpinRate = 2.0;
@@ -348,12 +351,6 @@ inline constexpr double kLoosePetalMass = 0.25;
 /// health: an opening strike, not a finisher.
 inline constexpr double kClawCritHealthFraction = 0.8;
 
-/// Petal art radius and hit radius, as multiples of the flower's radius. The
-/// hitbox is deliberately more generous than the art: petals are small and
-/// fast, and matching the hitbox to the sprite makes them feel like they miss.
-inline constexpr double kPetalDrawScale = 0.48;
-inline constexpr double kPetalHitScale = 0.8;
-
 /// A broken petal's slot reloads on the petal's own cooldown; this is the
 /// fallback when a config omits one.
 inline constexpr double kDefaultPetalReloadMillis = 10000.0;
@@ -362,7 +359,7 @@ inline constexpr double kDefaultPetalReloadMillis = 10000.0;
 /// `damageCooldown`.
 ///
 /// Zero, because the reference throttles only the three petals that name one
-/// (glass, glasss, infinity); every other petal in src/petals.json damages
+/// (glass, glasss, infinity); every other petal in data/petals.json damages
 /// every mob it overlaps on every tick and pays for it out of its own instance
 /// health (src/server/playerState.ts:2730-2767). A non-zero default here is
 /// worth roughly fifteen sixteenths of the whole ring's DPS.
@@ -436,7 +433,6 @@ inline constexpr double kRaindropAuraDamageIntervalMillis = 500.0;
 // Mobs
 // ---------------------------------------------------------------------------
 
-/// Base radius a mob's config `size` multiplies.
 /// A projectile's radius per unit of the FIRING petal's `size`, before the
 /// shooter's own scaling.
 ///
@@ -447,6 +443,7 @@ inline constexpr double kRaindropAuraDamageIntervalMillis = 500.0;
 /// volley when the petal body was brought down to its drawn size.
 inline constexpr double kProjectileRadiusPerSize = 10.0;
 
+/// Base radius a mob's config `size` multiplies.
 inline constexpr double kMobBaseRadius = 20.0;
 
 /// gardn's BASE_FLOWER_RADIUS, the yardstick it weighs every body by: a
@@ -646,9 +643,9 @@ inline constexpr int kCentipedeSegmentCount = 9;
 ///
 /// Shared rather than server-private because the joint is DRAWN as well as
 /// held: a leech segment paints the bar between its own centre and its
-/// leader's, and the length of that bar is this number (see
-/// `paintLeechBody`). Two copies of it would be a chain that renders half a
-/// segment short of where it actually is.
+/// leader's, and the length of that bar is this number (see the
+/// MobArt::LeechBody case in client/render/mob_art.cpp). Two copies of it would
+/// be a chain that renders half a segment short of where it actually is.
 inline constexpr double kSegmentSpacingPerRadius = 1.8;
 
 // -- mob-carried petal rings -------------------------------------------------
@@ -706,21 +703,11 @@ inline constexpr double kPetAggroRangePerRarity = 200.0;
 /// (PET_SIZE_SCALE_AT_UNIQUE, src/mobs.ts) on purpose.
 inline constexpr double kPetSizeScaleAtUnique = 2.0 / 3.0;
 
-/// Hard ceiling on one player's live summons. A backstop rather than a balance
-/// rule: stacked squads once made the tick quadratic.
-inline constexpr int kMaxPetsPerPlayer = 50;
-
 // ---------------------------------------------------------------------------
 // Drops
 // ---------------------------------------------------------------------------
 
 inline constexpr double kDropPickupRadius = 40.0;
-
-/// Half-size a loose drop is resolved against terrain with. Deliberately a
-/// little larger than the drop's own collision body: a drop is scattered up to
-/// 50 units from the corpse with no wall test at all, and this per-tick push is
-/// the only thing that gets one back out of a rock.
-inline constexpr double kDroppedItemRadius = 15.0;
 
 /// Magnetism is a pickup RADIUS, not a force. Pulling the drop toward the
 /// player looks better but means the item is consumed before any snapshot
@@ -728,11 +715,12 @@ inline constexpr double kDroppedItemRadius = 15.0;
 inline constexpr double kBaseMagnetism = 0.0;
 
 // ---------------------------------------------------------------------------
-// Shared movement step
+// Movement step
 // ---------------------------------------------------------------------------
 
-/// One tick of player physics, run identically by the server (authoritative)
-/// and the client (prediction). Anything that changes here changes both.
+/// One tick of player physics, run by the server. The client does not
+/// predict, so nothing on its side has to agree with this step (see
+/// client/interpolation.h).
 ///
 /// `target` is the velocity the input asks for; the flower eases toward it
 /// under friction rather than adopting it, which is what gives the movement
@@ -744,7 +732,8 @@ struct MoveState {
 
 inline void integrateVelocity(MoveState& state, Vec2 target, double dt) {
     // Frame-rate independent: raising dt must not make the flower converge
-    // sooner, or a 144Hz client would out-accelerate a 60Hz one.
+    // sooner, or the same input stepped at two rates would end up at two
+    // different speeds.
     const double decay = std::pow(1.0 - kMoveFriction, dt * kFrictionReferenceRate);
     state.velocity = state.velocity * decay + target * (1.0 - decay);
 }

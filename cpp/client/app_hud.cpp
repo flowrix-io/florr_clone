@@ -1,19 +1,30 @@
-// The HUD: the flower's own corner, the squad's bars under it, and the boss
-// bars across the top.
+// The HUD: the flower's own corner, the squad's bars under it, the boss bars
+// across the top, and an admin's announcement under those.
+//
+// While this client steers another player's flower (the admin dashboard's
+// control), the snapshot's self block describes THAT flower, and so does the
+// corner here: its name, its health, its level. That is the flower on the
+// screen and under the controls, so it is the one to show. What describes
+// this account instead is read from the profile -- the shop's balance, the
+// talent card's numbers -- and the loadout bar, which would mix the two, is
+// taken off the screen for the length of it (MenuSystem::drawLoadoutBar).
 //
 // The bar painters are the reason this file is worth reading. A HUD bar is
-// not ui::bar and a flower's health bar is not a mob's -- both are drawn as
-// non-overlapping rings punched out of one path, so that every pixel is
-// blended with the world exactly once and the layer comes out flat rather
-// than muddy. See hudBar() and flowerBar().
+// not a generic inset bar and a flower's health bar is not a mob's -- both
+// are drawn as non-overlapping rings punched out of one path, so that every
+// pixel is blended with the world exactly once and the layer comes out flat
+// rather than muddy. See hudBar() and flowerBar().
 
 #include "client/app.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
+#include <string>
+#include <vector>
 
 #include "client/ui/draw.h"
+#include "client/ui/text.h"
+#include "client/ui/text_input.h"
 #include "shared/game/config.h"
 
 namespace flix {
@@ -63,33 +74,88 @@ constexpr double kHudFillInset = 3.0;
 /// bar under it.
 constexpr double kHudNameSize = 22.0;
 constexpr double kHudLevelSize = 14.0;
-/// How long the health bar takes to fade from the invulnerable colour back to
-/// green once invulnerability ends.
-constexpr double kInvulFadeSeconds = 0.5;
+
+/// An admin's announcement (drawAdminAnnouncement): a plate at the top of the
+/// screen, centred, for this long after it arrives, fading out over the last
+/// stretch of it.
+constexpr double kAnnouncementSeconds = 8.0;
+constexpr double kAnnouncementFadeSeconds = 0.4;
+/// No wider than this, and never closer to a side of the window than the
+/// margin -- a phone held upright gets a narrower plate, not smaller text.
+constexpr double kAnnouncementWidth = 650.0;
+constexpr double kAnnouncementMargin = 20.0;
+/// Where the plate's top edge sits with nothing above it, and how far under
+/// the boss bars it drops when there are some.
+constexpr double kAnnouncementTop = 85.0;
+constexpr double kAnnouncementGap = 12.0;
+constexpr double kAnnouncementPad = 15.0;
+constexpr double kAnnouncementHeaderSize = 17.0;
+/// The header's line, and the gap under it before the text starts.
+constexpr double kAnnouncementHeaderHeight = 26.0;
+constexpr double kAnnouncementTextSize = 16.0;
+constexpr double kAnnouncementLineHeight = 21.0;
+constexpr std::uint32_t kAnnouncementFill = 0x332B18u;
+/// The header in the chat box's Admin-tab gold, so the banner and the line it
+/// leaves in the transcript read as the same thing.
+constexpr std::uint32_t kAnnouncementHeaderInk = 0xFFD166u;
+
+/// Greedy word wrap for the banner at `size`, `width` wide. A word that will
+/// not fit a line of its own is broken between its characters rather than
+/// left to run off the plate: an announcement can be one long URL.
+std::vector<std::string> wrapAnnouncement(const std::string& body, double size, double width) {
+    std::vector<std::string> lines;
+    std::string line;
+    const auto flush = [&] {
+        if (!line.empty()) lines.push_back(line);
+        line.clear();
+    };
+    std::size_t at = 0;
+    while (at < body.size()) {
+        const std::size_t space = body.find(' ', at);
+        const std::size_t end = space == std::string::npos ? body.size() : space;
+        std::string word = body.substr(at, end - at);
+        at = space == std::string::npos ? body.size() : space + 1;
+        if (word.empty()) continue;
+        const std::string joined = line.empty() ? word : line + " " + word;
+        if (measure(joined, size) <= width) {
+            line = joined;
+            continue;
+        }
+        flush();
+        // Too long for a line of its own: as many characters as fit, then
+        // the rest on the next line, on UTF-8 boundaries.
+        while (measure(word, size) > width) {
+            std::size_t cut = 0;
+            for (std::size_t next = utf8Next(word, 0); next <= word.size();
+                 next = utf8Next(word, next)) {
+                if (measure(word.substr(0, next), size) > width) break;
+                cut = next;
+                if (next == word.size()) break;
+            }
+            if (cut == 0) cut = utf8Next(word, 0);   // a single glyph wider than the plate
+            lines.push_back(word.substr(0, cut));
+            word.erase(0, cut);
+        }
+        line = word;
+    }
+    flush();
+    return lines;
+}
 
 /// The reference's `formatNumber`: one decimal place and a suffix past a
 /// thousand, and the exact integer while ALT is held.
 std::string formatNumber(double value, bool raw) {
-    if (!raw) {
-        static constexpr struct { double scale; const char* suffix; } kSteps[] = {
-            {1e12, "T"}, {1e9, "B"}, {1e6, "M"}, {1e3, "K"},
-        };
-        for (const auto& step : kSteps) {
-            if (value < step.scale) continue;
-            char buffer[32];
-            std::snprintf(buffer, sizeof buffer, "%.1f%s", value / step.scale, step.suffix);
-            return buffer;
-        }
-    }
-    return std::to_string(static_cast<long long>(std::llround(value)));
+    return raw ? std::to_string(static_cast<long long>(std::llround(value)))
+               : ui::formatCompact(value);
 }
 
 /// One HUD bar: an oversized black pill with the fill sitting flush inside it.
 ///
-/// Deliberately NOT ui::bar. That one insets the fill by its own outline width
-/// and clamps the fraction to the bar; the reference does neither, so a bar
-/// that is somehow over-full overhangs its plate there and has to here, and a
-/// one-pixel sliver of XP still shows as a rounded cap.
+/// Deliberately not a generic inset bar (the old ui::bar, since removed as
+/// unused), which insets the fill by its own outline width and clamps the
+/// fraction to the bar; the reference does neither, so a bar that is somehow
+/// over-full overhangs its plate there and has to here, and a one-pixel
+/// sliver of XP still shows as a rounded cap.
 /// The plate is punched out where the fill covers it rather than drawn whole
 /// and painted over. Under the HUD's layer alpha those are NOT the same
 /// picture: a fill laid over a plate that is already blended with the world
@@ -217,10 +283,13 @@ void squadArrow(Canvas& canvas, double centreX, double centreY, double angle, do
 /// The reference's `drawFlower` with its default face, in a space whose origin
 /// is the flower's centre.
 ///
-/// Local to this file on purpose: the HUD's avatar is a fixed picture. It does
-/// not mirror the player's own colour, skin, face flags or equipment -- the
-/// reference draws the same yellow flower whatever the player looks like -- so
-/// there is nothing here for a general painter to be parameterised by.
+/// Only the fallback: the plain yellow face drawHudFlower draws when the
+/// flower's body is not in the stream -- a squadmate between a death and a
+/// respawn, or the frames before the first snapshot. The avatar proper is the
+/// body itself, drawn by the world's own painter
+/// (WorldRenderer::drawFlowerBody). With no body there is no colour, face,
+/// skin or equipment to show, which is why this takes nothing but a colour
+/// and the face's numbers.
 void drawFlowerFace(Canvas& canvas, std::uint32_t colour, double radius, double eyeX,
                     double eyeY, double mouth) {
     setFill(canvas, shade(colour, 0.8));
@@ -291,18 +360,14 @@ void App::drawHud(Canvas& canvas, double time) {
     if (wasInvulnerable_ && !invulnerable) invulEndedAt_ = time;
     wasInvulnerable_ = invulnerable;
 
-    constexpr std::uint32_t kInvulnerableHealth = 0xFAFFC9u;
     std::uint32_t healthColour = kHealth;
     if (invulnerable) {
         healthColour = kInvulnerableHealth;
-    } else if (invulEndedAt_ >= 0 && time - invulEndedAt_ < kInvulFadeSeconds) {
-        // Linear, per channel. The reference eases this not at all, and a
-        // curve here would be visible against an in-world bar that does not.
-        const double t = clamp((time - invulEndedAt_) / kInvulFadeSeconds, 0.0, 1.0);
-        const auto blend = [t](double from, double to) {
-            return static_cast<std::uint32_t>(std::lround(from + (to - from) * t)) & 0xFFu;
-        };
-        healthColour = (blend(0xFA, 0x73) << 16) | (blend(0xFF, 0xFF) << 8) | blend(0xC9, 0x54);
+    } else if (invulEndedAt_ >= 0 && time - invulEndedAt_ < kInvulnerableFadeSeconds) {
+        // Linear, per channel, and the in-world plate's own fade rather than a
+        // copy of it. The reference eases this not at all, and a curve here
+        // would be visible against an in-world bar that does not.
+        healthColour = invulnerableFadeColor(time - invulEndedAt_);
     }
 
     // The whole block goes down as ONE see-through layer. Everything between
@@ -365,7 +430,10 @@ void App::drawHud(Canvas& canvas, double time) {
 
     drawMinimap(canvas);
 
-    drawBossBars(canvas, altHeld);
+    const double bossBarsBottom = drawBossBars(canvas, altHeld);
+    // Under the boss bars, which share the top of the screen with it and are
+    // what the player is fighting.
+    drawAdminAnnouncement(canvas, bossBarsBottom);
 
     // Over the HUD and under everything the menu system paints. A panel is the
     // one thing that takes the controls away, and it takes them away entirely
@@ -454,7 +522,7 @@ void App::drawSquadHud(Canvas& canvas, double time) {
         const double barY = centreY - barHeight * 0.5;
         const bool invulnerable = (body.state & net::StateInvulnerable) != 0;
         flowerBar(canvas, barX, barY, barWidth, barHeight, body.healthFraction,
-                  body.shieldFraction, invulnerable ? 0xFAFFC9u : kHealth, kScale);
+                  body.shieldFraction, invulnerable ? kInvulnerableHealth : kHealth, kScale);
         text(canvas, member.name.empty() ? std::string("Squadmate") : member.name,
              barX + barWidth * 0.5, centreY, label);
 
@@ -496,7 +564,7 @@ NpcService App::nearbyNpcService(Vec2 self) const {
     return nearest;
 }
 
-void App::drawBossBars(Canvas& canvas, bool altHeld) {
+double App::drawBossBars(Canvas& canvas, bool altHeld) {
     // Super, unique and apex only. An ultra is a big mob, not a boss: it wears
     // the ordinary bar under its body, which is also where its name is.
     // A pet is somebody's summon and a target dummy is a permanent DPS-test
@@ -528,7 +596,7 @@ void App::drawBossBars(Canvas& canvas, bool altHeld) {
         }
         bosses.push_back(&entity);
     }
-    if (bosses.empty()) return;
+    if (bosses.empty()) return 0.0;
     // The entity table is unordered, so two bosses on screen at once would
     // otherwise trade rows from frame to frame.
     std::sort(bosses.begin(), bosses.end(),
@@ -593,6 +661,61 @@ void App::drawBossBars(Canvas& canvas, bool altHeld) {
              centreX, barY + kBarHeight + kTierDrop, tier);
     }
 
+    canvas.restore();
+    // The last row's tier line, which is the lowest thing in the block.
+    const double lastBarY = kTopMargin + static_cast<double>(bosses.size() - 1) * kRowSpacing;
+    return lastBarY + kBarHeight + kTierDrop - descent(kTierSize);
+}
+
+void App::drawAdminAnnouncement(Canvas& canvas, double clearOf) {
+    const AdminAnnouncement& announcement = net_.adminAnnouncement();
+    // Timed on this clock, from the frame a new one is first seen: the
+    // sequence says WHICH one, and nothing about the network's clock has to
+    // be compared with the app's.
+    if (announcement.sequence != announcementSeen_) {
+        announcementSeen_ = announcement.sequence;
+        announcementShownAt_ = timeSeconds_;
+    }
+    if (announcement.text.empty()) return;
+    const double age = timeSeconds_ - announcementShownAt_;
+    if (age >= kAnnouncementSeconds) return;
+    const double alpha = clamp((kAnnouncementSeconds - age) / kAnnouncementFadeSeconds, 0.0, 1.0);
+
+    const double width =
+        std::min(kAnnouncementWidth, canvas.width() - kAnnouncementMargin * 2.0);
+    if (width <= kAnnouncementPad * 2.0) return;
+    // Wrapped, never shrunk: a full-length announcement on a narrow window is
+    // three lines of the same type, not one line of type too small to read.
+    const std::vector<std::string> lines =
+        wrapAnnouncement(announcement.text, kAnnouncementTextSize, width - kAnnouncementPad * 2.0);
+    const double top = std::max(kAnnouncementTop, clearOf > 0.0 ? clearOf + kAnnouncementGap : 0.0);
+    const Rect plateRect{(canvas.width() - width) * 0.5, top, width,
+                         kAnnouncementPad * 2.0 + kAnnouncementHeaderHeight +
+                             static_cast<double>(lines.size()) * kAnnouncementLineHeight};
+
+    canvas.save();
+    canvas.setGlobalAlpha(static_cast<float>(alpha));
+    plate(canvas, plateRect, kAnnouncementFill);
+    TextStyle header;
+    header.size = kAnnouncementHeaderSize;
+    header.fill = kAnnouncementHeaderInk;
+    header.baseline = Baseline::Middle;
+    // Credited to the account that made it, which the server signs the line
+    // with -- not to a name written into the client.
+    text(canvas,
+         announcement.author.empty() ? std::string("Announcement")
+                                     : "Announcement from " + announcement.author,
+         plateRect.x + kAnnouncementPad, plateRect.y + kAnnouncementPad + kAnnouncementHeaderSize * 0.5,
+         header);
+    TextStyle body;
+    body.size = kAnnouncementTextSize;
+    body.baseline = Baseline::Middle;
+    double y = plateRect.y + kAnnouncementPad + kAnnouncementHeaderHeight +
+               kAnnouncementLineHeight * 0.5;
+    for (const std::string& line : lines) {
+        text(canvas, line, plateRect.x + kAnnouncementPad, y, body);
+        y += kAnnouncementLineHeight;
+    }
     canvas.restore();
 }
 

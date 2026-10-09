@@ -7,7 +7,6 @@
 // the strip the grid leaves free on the right.
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -19,6 +18,7 @@
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
+#include "shared/core/text.h"
 #include "shared/game/config.h"
 
 namespace flix {
@@ -27,14 +27,14 @@ using namespace flix::ui;
 
 namespace {
 
-/// The grid's margins. NOT equal: the right one also has to clear the scroll
-/// thumb, so the five columns sit a touch left of the panel's own centre and
-/// the thumb rides in the strip they leave. Centring the block on the panel
-/// instead puts the last column under the thumb.
 /// The stack toggle's knob: a quarter of the way per 60 fps frame, the
 /// browser's rate.
 const double kStackToggleEaseSeconds = easeTimeConstant(0.25);
 
+/// The grid's margins. NOT equal: the right one also has to clear the scroll
+/// thumb, so the five columns sit a touch left of the panel's own centre and
+/// the thumb rides in the strip they leave. Centring the block on the panel
+/// instead puts the last column under the thumb.
 constexpr double kGridPadding = 26.0;
 constexpr double kGridGutter = 42.0;
 /// The air above the first heading and below the last row. Its own constant
@@ -74,7 +74,7 @@ constexpr double kSectionLabelSize = 15.0;
 constexpr double kViewBottomPad = 14.0;
 
 /// One wheel notch is a raw ~100px deltaY in the browser; SDL reports ±1, so
-/// the step is spelled out here rather than taken from Scroller's own 42.
+/// the step is spelled out here.
 constexpr double kWheelStep = 100.0;
 
 /// The thumb, and how far in from the panel's right edge its RIGHT side sits.
@@ -93,7 +93,8 @@ constexpr std::size_t kSearchLimit = 128;
 constexpr double kRuleWidth = 5.0;
 constexpr double kRuleGap = 13.0;
 
-/// Dwell before the hover tooltip appears, and how wide its body text wraps.
+/// How wide the hover tooltip's body text wraps. Its dwell before it appears
+/// is TooltipDelay::kDelaySeconds.
 constexpr double kTooltipWrapWidth = 230.0;
 
 /// One laid-out cell. In stacked mode a cell stands for a petal TYPE at the
@@ -123,29 +124,11 @@ struct Grid {
 /// one inventory panel in the client, so one timer is the right number.
 TooltipDelay tooltipDelay;
 
-std::string lowercased(std::string text) {
-    for (char& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return text;
-}
-
-/// Leading and trailing ASCII whitespace, dropped before matching. The browser
-/// trims the field's value, so a stray space must not filter the grid empty.
-std::string trimmed(const std::string& text) {
-    const auto blank = [&text](std::size_t at) {
-        return std::isspace(static_cast<unsigned char>(text[at])) != 0;
-    };
-    std::size_t begin = 0;
-    while (begin < text.size() && blank(begin)) ++begin;
-    std::size_t end = text.size();
-    while (end > begin && blank(end - 1)) --end;
-    return text.substr(begin, end - begin);
-}
-
 bool matchesSearch(std::uint16_t petalIndex, const std::string& needle) {
     if (needle.empty()) return true;
     const PetalConfig& config = content().petal(petalIndex);
-    return lowercased(titleCase(config.name)).find(needle) != std::string::npos ||
-           lowercased(config.id).find(needle) != std::string::npos;
+    return lowerCase(titleCase(config.name)).find(needle) != std::string::npos ||
+           lowerCase(config.id).find(needle) != std::string::npos;
 }
 
 /// Places `entries` as a centred five-column block starting at `y`, then
@@ -496,7 +479,12 @@ bool InventoryPanel::render(MenuContext& ctx) {
     const double visibleH =
         std::max(0.0, panel.bottom() - (panel.y + kHeaderHeight) - kViewBottomPad);
     const double innerWidth = panel.w - kGridPadding - kGridGutter;
-    const Grid grid = buildGrid(profile, innerWidth, stacked_, trimmed(lowercased(search_)));
+    // Leading and trailing whitespace is dropped before matching: the browser
+    // trims the field's value, so a stray space must not filter the grid
+    // empty. The shared trim takes spaces, tabs, CRs and LFs, which is every
+    // blank this field can hold -- editText lets no other control byte into a
+    // single-line field.
+    const Grid grid = buildGrid(profile, innerWidth, stacked_, trimmed(lowerCase(search_)));
 
     scroll_.contentHeight = grid.contentHeight;
     scroll_.viewHeight = visibleH;

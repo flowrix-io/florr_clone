@@ -8,7 +8,10 @@
 
 #include "test.h"
 
+#include <utime.h>
+
 #include <cmath>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -30,41 +33,8 @@ void adminSpawnAt(NetClient& client, const char* mob, const char* rarity, Vec2 a
                     std::to_string(static_cast<int>(at.y)) + " 1");
 }
 
-void seedUser(const std::string& path, const std::string& username, const std::string& password,
-              bool admin = false) {
-    Database db;
-    std::string error;
-    db.load(path, error);
-    db.setPasswordCost(4);   // the default cost makes this the slowest test
-    CreateResult created = db.createUser(username, password);
-    if (created.ok() && admin) created.account->admin = true;
-    db.markDirty();
-    db.save();
-}
-
-bool loginAs(Harness& h, NetClient& client, const char* name, const char* password) {
-    if (!connectClient(h, client)) return false;
-    client.requestLogin(name, password);
-    return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
-}
-
-/// Every chat line this client holds, joined -- the whole transcript as one
-/// haystack, because command output is many lines and a test cares that the
-/// answer is somewhere in it, not which line carried it.
-std::string transcript(const NetClient& client) {
-    std::string all;
-    for (const ChatLine& line : client.chat()) {
-        all += line.author;
-        all += ": ";
-        all += line.text;
-        all += '\n';
-    }
-    return all;
-}
-
-bool sawText(const NetClient& client, const std::string& needle) {
-    return transcript(client).find(needle) != std::string::npos;
-}
+// seedUser, loginAs, transcript, sawText, sawTextSince and say are the
+// harness's own (server_harness.h).
 
 /// The newest line whose text is exactly `text`, or null. For the tests that
 /// care which channel carried a line and who it was signed by.
@@ -73,14 +43,6 @@ const ChatLine* lineReading(const NetClient& client, const std::string& text) {
         if (it->text == text) return &*it;
     }
     return nullptr;
-}
-
-/// Sends `text` and steps until the transcript grows, so a test does not have
-/// to guess how many ticks a reply takes.
-bool say(Harness& h, NetClient& client, const std::string& text, int maxTicks = 120) {
-    const std::size_t before = client.chat().size();
-    client.sendChat(text);
-    return h.stepUntil({&client}, [&] { return client.chat().size() > before; }, maxTicks);
 }
 
 /// The snapshots this harness's database wrote, read back off disk. A backup
@@ -94,65 +56,88 @@ std::vector<Database::BackupInfo> reopenBackups(Harness& h) {
 
 } // namespace
 
-TEST(admin_dashboard_owner_access_inventory_and_announcement) {
-    Harness h("dashboard-owner", [](const std::string& path) {
-        seedUser(path, "a19kisme", "password7");
+TEST(admin_dashboard_shows_a_bag_and_a_full_admin_announces) {
+    // The dashboard's panel reads the player list and a bag over its own
+    // binary message (admin_dashboard_tests.cpp has the rest of it); here it
+    // is held to the console's rule for who gets an answer at all, beside
+    // the console's own announce.
+    Harness h("dashboard-admin", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
         seedUser(path, "visitor", "password7");
     }, dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
-    NetClient owner, visitor;
-    CHECK(loginAs(h, owner, "a19kisme", "password7"));
+    NetClient boss, visitor;
+    CHECK(loginAs(h, boss, "boss", "password7"));
     CHECK(loginAs(h, visitor, "visitor", "password7"));
-    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.isSkinAdmin(); }));
-    owner.joinGame(1000, 800, {}, "Owner");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.isSkinAdmin(); }));
+    boss.joinGame(1000, 800, {}, "Boss");
     visitor.joinGame(1000, 800, {}, "Visitor");
-    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.status() == NetClient::Status::Playing && visitor.status() == NetClient::Status::Playing; }));
-    owner.sendChat("/admin give visitor rose legendary 3");
-    owner.sendChat("/admin dashboard visitor");
-    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.adminDashboard["target"].asString() == "visitor"; }));
-    CHECK_EQ(owner.adminDashboard["players"].size(), 2u);
-    CHECK(owner.adminDashboard["inventory"].dump().find("rose") != std::string::npos);
-    visitor.sendChat("/admin dashboard a19kisme");
-    h.step(8, {&owner, &visitor});
-    CHECK(visitor.adminDashboard.isNull());
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.status() == NetClient::Status::Playing && visitor.status() == NetClient::Status::Playing; }));
+    CHECK(say(h, boss, "/admin give visitor rose legendary 3"));
+
+    // By the row's connection, which is how the list names a player.
+    boss.adminDashboardPlayers("", 0);
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.adminDashboard().players.size() == 2; }));
+    net::ConnectionId visitorId = 0;
+    for (const net::AdminDashboardPlayer& row : boss.adminDashboard().players) {
+        if (row.username == "visitor") visitorId = row.connection;
+    }
+    CHECK(visitorId != 0);
+    boss.adminDashboardInventory(visitorId, "visitor", 0);
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.adminDashboard().bagUsername == "visitor"; }));
+    bool rose = false;
+    for (const net::AdminDashboardStack& stack : boss.adminDashboard().bag) {
+        if (content().petal(stack.petalIndex).id == "rose") rose = stack.count == 3;
+    }
+    CHECK(rose);
+
+    // A player asking the same is not answered at all.
+    visitor.adminDashboardPlayers("", 0);
+    h.step(8, {&boss, &visitor});
+    CHECK(visitor.adminDashboard().players.empty());
+    CHECK(visitor.adminDashboard().playersPending);
     visitor.sendChat("/admin announce fake");
-    h.step(8, {&owner, &visitor});
-    CHECK(owner.adminAnnouncement.empty());
-    owner.sendChat("/admin announce Hello & welcome");
-    CHECK(h.stepUntil({&owner, &visitor}, [&] { return visitor.adminAnnouncement == "Hello & welcome"; }));
-    CHECK(visitor.adminAnnouncementVisible());
+    h.step(8, {&boss, &visitor});
+    CHECK(sawText(visitor, "Command does not exist."));
+    CHECK(boss.adminAnnouncement().text.empty());
+
+    boss.sendChat("/admin announce Hello & welcome");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return visitor.adminAnnouncement().text == "Hello & welcome"; }));
+    CHECK_EQ(visitor.adminAnnouncement().author, std::string("boss"));
     const auto* line = lineReading(visitor, "Hello &amp; welcome");
     CHECK(line != nullptr);
     if (line) CHECK_EQ(line->channel, net::ChatChannel::Admin);
+    if (line) CHECK_EQ(line->author, std::string("boss"));
 }
 
 TEST(admin_dashboard_control_changes_view_and_releases) {
     Harness h("dashboard-control", [](const std::string& path) {
-        seedUser(path, "a19kisme", "password7");
+        seedUser(path, "boss", "password7", true);
         seedUser(path, "visitor", "password7");
     }, dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
-    NetClient owner, visitor;
-    CHECK(loginAs(h, owner, "a19kisme", "password7"));
+    NetClient boss, visitor;
+    CHECK(loginAs(h, boss, "boss", "password7"));
     CHECK(loginAs(h, visitor, "visitor", "password7"));
-    owner.joinGame(1000, 800, {}, "Owner");
+    boss.joinGame(1000, 800, {}, "Boss");
     visitor.joinGame(1000, 800, {}, "Visitor");
-    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.selfPlaced() && visitor.selfPlaced(); }));
-    const auto ownId = owner.view().self().netId;
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.selfPlaced() && visitor.selfPlaced(); }));
+    const auto ownId = boss.view().self().netId;
     const auto otherId = visitor.view().self().netId;
     CHECK(ownId != otherId);
-    owner.sendChat("/admin control visitor");
-    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.view().self().netId == otherId; }));
+    boss.sendChat("/admin control visitor");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.view().self().netId == otherId; }));
+    CHECK(boss.controllingFlower());
     net::InputFrame steering;
     steering.sequence = 10;
     steering.moveStrength = 1;
     steering.moveAngle = 0.5;
     steering.flags = net::InputAttack;
-    owner.sendInput(steering);
+    boss.sendInput(steering);
     net::InputFrame competing;
     competing.sequence = 20;
     visitor.sendInput(competing);
-    h.step(2, {&owner, &visitor});
+    h.step(2, {&boss, &visitor});
     bool foundTarget = false;
     Query<NetId, PlayerInput> controlledInputs{h.server.world()};
     controlledInputs.each([&](Entity, NetId& id, PlayerInput& input) {
@@ -163,15 +148,23 @@ TEST(admin_dashboard_control_changes_view_and_releases) {
         }
     });
     CHECK(foundTarget);
-    owner.sendChat("/admin release");
-    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.view().self().netId == ownId; }));
-    visitor.sendChat("/admin control a19kisme");
-    h.step(8, {&owner, &visitor});
+    boss.sendChat("/admin release");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.view().self().netId == ownId; }));
+    CHECK(!boss.controllingFlower());
+    // A player has no console to control anybody with: the line is answered
+    // the way any `/admin` from them is, and nothing moves.
+    CHECK(say(h, visitor, "/admin control boss"));
+    CHECK(sawText(visitor, "Command does not exist."));
+    h.step(8, {&boss, &visitor});
     CHECK_EQ(visitor.view().self().netId, otherId);
-    owner.sendChat("/admin control visitor");
-    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.view().self().netId == otherId; }));
+    CHECK_EQ(boss.view().self().netId, ownId);
+    // A name nobody plays under is refused in words of its own.
+    CHECK(say(h, boss, "/admin control nobody"));
+    CHECK(sawText(boss, "No player named nobody is in the world."));
+    boss.sendChat("/admin control visitor");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.view().self().netId == otherId; }));
     visitor.disconnect();
-    CHECK(h.stepUntil({&owner}, [&] { return owner.view().self().netId == ownId; }));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.view().self().netId == ownId; }));
 }
 
 TEST(a_slash_command_is_answered_rather_than_broadcast) {
@@ -270,6 +263,75 @@ TEST(an_admin_can_run_the_console) {
     CHECK(say(h, client, "/admin list-players"));
     CHECK(sawText(client, "[ADMIN] boss executed: list-players"));
     CHECK(sawText(client, "boss"));
+}
+
+TEST(an_account_registered_as_a19kisme_is_an_ordinary_player) {
+    // The project owner's account name used to be read as a grant: the
+    // permanent admin flag at registration and at every load, a console with
+    // no chat or command budget, a way past mutes, an "[ADMIN]" label on its
+    // lines -- and anybody could register the name on a server that did not
+    // have it yet. A name is not a privilege, so whoever registers it, in
+    // either case, is an ordinary player, in memory and on disk.
+    for (const std::string spelling : {"a19kisme", "A19KISME"}) {
+        Harness h(spelling == "a19kisme" ? "cmd-a19-lower" : "cmd-a19-upper",
+                  [](const std::string& path) {
+                      seedUser(path, "boss", "password7", true);
+                      seedUser(path, "listener", "password7");
+                  }, dataDir(), 0);
+        if (!h.ready) { CHECK(false); return; }
+
+        NetClient squatter;
+        NetClient boss;
+        NetClient listener;
+        CHECK(loginNew(h, squatter, spelling.c_str(), "password7"));
+        CHECK(loginAs(h, boss, "boss", "password7"));
+        CHECK(loginAs(h, listener, "listener", "password7"));
+        const std::vector<NetClient*> all{&squatter, &boss, &listener};
+        h.step(5, all);
+
+        CHECK(!squatter.isSkinAdmin());
+        const Account* account = h.server.database().findUser(spelling);
+        CHECK(account != nullptr);
+        if (account != nullptr) CHECK(!account->admin);
+        // And not on disk either, where a flag read in at load used to be
+        // written straight back out.
+        h.server.persistAll();
+        Database probe;
+        std::string error;
+        CHECK(probe.load(h.dbPath, error));
+        const Account* stored = probe.findUser(spelling);
+        CHECK(stored != nullptr);
+        if (stored != nullptr) CHECK(!stored->admin);
+
+        CHECK(say(h, squatter, "/admin list-players"));
+        CHECK(sawText(squatter, "Command does not exist."));
+
+        // Signed with the account's own name, and nothing else.
+        const std::size_t heard = listener.chat().size();
+        squatter.sendChat("hello there");
+        CHECK(h.stepUntil(all, [&] { return listener.chat().size() > heard; }, 120));
+        const ChatLine* line = lineReading(listener, "hello there");
+        CHECK(line != nullptr);
+        if (line != nullptr) CHECK_EQ(line->author, spelling);
+        CHECK(!sawText(listener, "[ADMIN]"));
+
+        // A mute holds.
+        CHECK(say(h, boss, "/admin mute " + spelling));
+        CHECK(sawText(boss, "Muted " + spelling));
+        squatter.sendChat("can you hear me");
+        h.step(30, all);
+        CHECK(sawText(squatter, "You are muted"));
+        CHECK(!sawText(listener, "can you hear me"));
+
+        // So do both budgets: four lines, then a refusal; twelve commands,
+        // then a refusal.
+        for (int i = 0; i < 6; ++i) squatter.sendChat("line " + std::to_string(i));
+        h.step(10, all);
+        CHECK(sawText(squatter, "You are sending messages too quickly."));
+        for (int i = 0; i < 16; ++i) squatter.sendChat("/notacommand");
+        h.step(10, all);
+        CHECK(sawText(squatter, "You are sending commands too quickly."));
+    }
 }
 
 TEST(give_writes_the_petal_into_the_account) {
@@ -444,6 +506,41 @@ TEST(the_console_cannot_spawn_a_unique_while_its_biome_clock_cools_down) {
     CHECK(liveOfRarity(Rarity::Super) > supers);
 }
 
+TEST(a_full_admin_named_a19kisme_is_held_to_the_boss_clock) {
+    // The owner's account name used to wave the console past a biome's boss
+    // clocks. Being a full admin is the database flag and nothing more, so a
+    // full admin of that name is refused exactly as any other is -- nothing
+    // stands, and the clock is not spent again.
+    Harness h("cmd-spawn-cooling-a19", [](const std::string& path) {
+        seedUser(path, "a19kisme", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "a19kisme", "password7"));
+    client.joinGame(1920, 1080, {}, "Owner");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    const auto liveOfRarity = [&](Rarity rarity) {
+        int count = 0;
+        Query<MobTag, MobType> mobs{h.server.world()};
+        mobs.each([&](Entity, MobTag&, MobType& type) { count += type.rarity == rarity ? 1 : 0; });
+        return count;
+    };
+    const std::string clocksBefore = h.server.database().storedTable("bossClocks").dump();
+
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "unique clock is cooling down"));
+    CHECK(say(h, client, "/admin spawn bee apex 3"));
+    CHECK(sawText(client, "apex clock is cooling down"));
+    h.step(30, {&client});
+    CHECK_EQ(liveOfRarity(Rarity::Unique), 0);
+    CHECK_EQ(liveOfRarity(Rarity::Apex), 0);
+    CHECK(!sawText(client, "Unique bee has spawned"));
+    CHECK(!sawText(client, "Apex bee has spawned"));
+    CHECK_EQ(h.server.database().storedTable("bossClocks").dump(), clocksBefore);
+}
+
 TEST(a_unique_from_the_console_restarts_its_biome_clock) {
     // An admin's unique spends the biome's clock just as a wild one does: let
     // in while the clock is ready, and then the next one there waits a whole
@@ -611,7 +708,7 @@ TEST(teleport_moves_the_flower_and_refuses_a_point_off_the_map) {
     // coordinate past the map -- so a hard-coded point is a test that starts
     // failing the moment an author resizes the world.
     //
-    // And an OPEN one. The shipped map is about three fifths solid now --
+    // And an OPEN one. The shipped map is about half solid now --
     // collision is a layer property and water, dirt and castle all collide --
     // so the middle of the map is as likely to be inside a castle wall as not.
     // `tp` puts the body exactly where it is told, and the very next movement
@@ -642,8 +739,8 @@ TEST(teleport_moves_the_flower_and_refuses_a_point_off_the_map) {
     });
     CHECK(landed);
 
-    // A coordinate past the map is a typo, and typing one is how the browser
-    // build used to hang its tick loop. It is refused, not clamped.
+    // A coordinate past the map is a typo, and typing one is how the
+    // TypeScript build used to hang its tick loop. It is refused, not clamped.
     CHECK(say(h, client, "/admin tp boss 1e20 1e20"));
     CHECK(sawText(client, "Coordinates out of range"));
 }
@@ -777,10 +874,31 @@ TEST(a_local_grant_makes_an_admin_the_respawn_does_not_take_back) {
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
     CHECK(!client.isSkinAdmin());
 
-    // No such account is a refusal, not a silently invented one.
+    // A token that names no account is a refusal, not a silently invented one.
     CHECK(!h.server.grantAdmin("nobody-at-all"));
+    CHECK(!h.server.grantAdmin(""));
 
-    CHECK(h.server.grantAdmin("solo"));
+    // Nor is anything that names this very account without being the
+    // credential its client was issued: its name, in either spelling, the
+    // nameplate it joined under, its id. A "helpful" fallback that looked any
+    // of these up would let whatever a player can type aim the grant -- the
+    // thing grantAdmin is keyed on the token to rule out.
+    const Account* before = h.server.database().findUser("solo");
+    CHECK(before != nullptr);
+    const std::string accountId = before != nullptr ? before->id : std::string();
+    for (const std::string& notAToken :
+         {std::string("solo"), std::string("Solo"), std::string("SOLO"), accountId}) {
+        CHECK(!h.server.grantAdmin(notAToken));
+    }
+    h.step(30, {&client});
+    CHECK(!client.isSkinAdmin());
+    before = h.server.database().findUser("solo");
+    CHECK(before != nullptr);
+    if (before != nullptr) CHECK(!before->admin);
+
+    // Keyed on the session token the client was issued, as the offline page
+    // hands it over -- never on the account's name.
+    CHECK(h.server.grantAdmin(client.sessionToken()));
     // The client is told, the same resend a temporary grant does: that flag is
     // what stops the command autocomplete hiding the /admin rows.
     CHECK(h.stepUntil({&client}, [&] { return client.isSkinAdmin(); }, 120));
@@ -806,7 +924,124 @@ TEST(a_local_grant_makes_an_admin_the_respawn_does_not_take_back) {
     if (stored != nullptr) CHECK(stored->admin);
 
     // Granting it twice is a no-op that still reports the standing.
-    CHECK(h.server.grantAdmin("solo"));
+    CHECK(h.server.grantAdmin(client.sessionToken()));
+}
+
+TEST(a_command_never_takes_a_nameplate_for_the_player_it_names) {
+    // A nameplate is whatever its client typed on the title screen, so a
+    // player can wear another's account name. While the account it names was
+    // not in the world -- on the title screen, or not signed in at all -- the
+    // console used to settle for the flower wearing it: the grant, the give,
+    // the control and the confirmation all went to the impostor.
+    Harness h("cmd-nameplate", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "alice", "password7");
+        seedUser(path, "mallory", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient alice;
+    NetClient mallory;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, alice, "alice", "password7"));   // and stays on the title screen
+    CHECK(loginAs(h, mallory, "mallory", "password7"));
+    boss.joinGame(1920, 1080, {}, "Boss");
+    mallory.joinGame(1920, 1080, {}, "alice");
+    std::vector<NetClient*> all{&boss, &alice, &mallory};
+    CHECK(h.stepUntil(all, [&] {
+        return boss.status() == NetClient::Status::Playing &&
+               mallory.status() == NetClient::Status::Playing;
+    }, 200));
+
+    const std::string aliceId = h.server.database().findUser("alice")->id;
+    const std::string malloryId = h.server.database().findUser("mallory")->id;
+    const auto roses = [&](const std::string& userId) {
+        const PlayerRecord* record = h.server.database().findProgress(userId);
+        return record != nullptr ? record->itemCount(Rarity::Rare, "petal_rose") : 0;
+    };
+
+    const auto noneOfItReachedMallory = [&] {
+        const std::uint64_t mark = boss.chatSequence();
+        CHECK(say(h, boss, "/admin grant_admin alice"));
+        CHECK(sawTextSince(boss, mark, "Player \"alice\" not found"));
+        const auto ownView = boss.view().self().netId;
+        CHECK(say(h, boss, "/admin control alice"));
+        CHECK(sawTextSince(boss, mark, "No player named alice is in the world."));
+        h.step(10, all);
+        CHECK_EQ(boss.view().self().netId, ownView);
+        CHECK(!mallory.isSkinAdmin());
+
+        // A give by name lands on the account of that name, as an offline
+        // give does, and never on the flower wearing it.
+        const int aliceBefore = roses(aliceId);
+        CHECK(say(h, boss, "/admin give alice rose rare 2"));
+        CHECK(sawTextSince(boss, mark, "petal to alice (offline)"));
+        CHECK_EQ(roses(aliceId), aliceBefore + 2);
+        CHECK_EQ(roses(malloryId), 0);
+        CHECK(!sawTextSince(boss, mark, "Granted"));
+    };
+
+    // alice on the title screen...
+    noneOfItReachedMallory();
+
+    // ...and signed out altogether.
+    alice.disconnect();
+    all = {&boss, &mallory};
+    h.step(10, all);
+    noneOfItReachedMallory();
+
+    // A mute is by account name too.
+    CHECK(say(h, boss, "/admin mute alice"));
+    CHECK(h.server.database().findUser("alice")->muted);
+    CHECK(!h.server.database().findUser("mallory")->muted);
+
+    // And what a command does resolve, it names by ACCOUNT: mallory's grant
+    // says "mallory", whatever her flower is called.
+    CHECK(say(h, boss, "/admin grant_admin mallory"));
+    CHECK(sawText(boss, "Granted temporary admin to mallory ("));
+    CHECK(!sawText(boss, "Granted temporary admin to alice"));
+    CHECK(h.stepUntil(all, [&] { return mallory.isSkinAdmin(); }, 120));
+}
+
+TEST(a_bot_is_still_named_by_its_nameplate) {
+    // Bots own no account, so a nameplate is all there is to call one by, and
+    // the console still answers to it.
+    Harness h("cmd-bot-target", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 3);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    boss.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&boss}, [&] { return boss.status() == NetClient::Status::Playing; }, 200));
+
+    // A bot whose name is one word, so it can be typed as one argument.
+    std::string name;
+    CHECK(h.stepUntil({&boss}, [&] {
+        Query<PlayerTag, PlayerAccount> flowers{h.server.world()};
+        flowers.each([&](Entity, PlayerTag&, PlayerAccount& account) {
+            if (!name.empty() || !account.userId.empty() || account.username.empty()) return;
+            if (account.username.find(' ') != std::string::npos) return;
+            name = account.username;
+        });
+        return !name.empty();
+    }, 600));
+    if (name.empty()) return;
+
+    CHECK(say(h, boss, "/admin corrupt " + name + " on"));
+    CHECK(sawText(boss, "Corrupted " + name + " ("));
+    int corrupted = 0;
+    Query<PlayerTag, PlayerAccount, PlayerVisuals> flowers{h.server.world()};
+    flowers.each([&](Entity, PlayerTag&, PlayerAccount& account, PlayerVisuals& visuals) {
+        if (account.userId.empty() && account.username == name && visuals.corrupted) ++corrupted;
+    });
+    CHECK(corrupted > 0);
+
+    // It holds no session, so nothing that needs one resolves to it.
+    CHECK(say(h, boss, "/admin grant_admin " + name));
+    CHECK(sawText(boss, "Player \"" + name + "\" not found"));
 }
 
 TEST(set_bot_count_clamps_and_applies) {
@@ -818,8 +1053,9 @@ TEST(set_bot_count_clamps_and_applies) {
     NetClient client;
     CHECK(loginAs(h, client, "boss", "password7"));
 
-    // The browser build reported the clamp and then returned WITHOUT applying
-    // anything, so a count over the cap said it had capped and did nothing.
+    // The TypeScript build reported the clamp and then returned WITHOUT
+    // applying anything, so a count over the cap said it had capped and did
+    // nothing.
     // Both halves are asserted: the wording, and that it applied. The number
     // is derived from the cap rather than written out, so raising the ceiling
     // does not silently turn this into a test of the un-clamped path.
@@ -1496,11 +1732,31 @@ TEST(the_database_backs_up_and_lists_its_backups) {
 
     CHECK(say(h, boss, "/admin backup_db"));
     CHECK(sawText(boss, "Database backed up to"));
-    CHECK(sawText(boss, "-manual-boss.json"));
+    CHECK(sawText(boss, "-manual-boss.snapshot.json"));
+
+    // The one file this test made, as the reply names it. It is in the
+    // harness's own directory -- the database sits at <home>/db/, so its
+    // backups go to <home>/db_backups -- and it is the ONLY file the test
+    // deletes: a directory of backups is somebody's rescue kit, and a test
+    // that cleaned up "every snapshot it could see" once reached the repo's
+    // own db_backups through a relative TMPDIR.
+    std::string written;
+    for (const ChatLine& line : boss.chat()) {
+        const std::string lead = "Database backed up to ";
+        const std::size_t at = line.text.find(lead);
+        if (at == std::string::npos) continue;
+        const std::size_t end = line.text.find(" (", at + lead.size());
+        if (end == std::string::npos) continue;
+        written = line.text.substr(at + lead.size(), end - at - lead.size());
+    }
+    const std::string ownDirectory = h.files.home + "/db_backups/";
+    CHECK(!written.empty());
+    CHECK_EQ(written.compare(0, ownDirectory.size(), ownDirectory), 0);
 
     CHECK(say(h, boss, "/admin backup_db list"));
     CHECK(sawText(boss, "Database backups (1, newest first):"));
     CHECK(sawText(boss, "To restore: copy a backup over inventory.json"));
+    CHECK(sawText(boss, "Only this server's own snapshots (*.snapshot.json) are pruned"));
 
     CHECK(say(h, boss, "/admin backup_db everything"));
     CHECK(sawText(boss, "Usage: backup_db [list]"));
@@ -1509,13 +1765,100 @@ TEST(the_database_backs_up_and_lists_its_backups) {
     // because it looks like a rescue and is not one.
     const std::vector<Database::BackupInfo> backups = reopenBackups(h);
     CHECK(backups.size() == 1);
-    for (const Database::BackupInfo& info : backups) {
-        Database written;
-        std::string error;
-        CHECK(written.load(info.file, error));
-        CHECK(written.findUser("boss") != nullptr);
-        std::remove(info.file.c_str());
+    if (backups.size() == 1) CHECK_EQ(backups.front().file, written);
+    Database reread;
+    std::string error;
+    CHECK(reread.load(written, error));
+    CHECK(reread.findUser("boss") != nullptr);
+    if (!written.empty() && written.compare(0, ownDirectory.size(), ownDirectory) == 0) {
+        std::remove(written.c_str());
     }
+}
+
+TEST(pruning_deletes_only_the_servers_own_snapshots) {
+    // The backup directory is shared. The TypeScript server kept its snapshots
+    // there under the very pattern this one used to write, and an operator
+    // keeps copies of their own beside them -- so once the Node server's
+    // backups started reaching the real ~/db_backups, a prune that took
+    // "every inventory-*.json past the newest thirty" would have deleted the
+    // oldest of somebody else's, the four-megabyte pre-purge rescue among
+    // them. Only names this build writes are pruned.
+    const std::string home = tempDir("florr-prune-" + std::to_string(::getpid()));
+    ::mkdir((home + "/db").c_str(), 0755);
+    const std::string directory = home + "/db_backups";
+    ::mkdir(directory.c_str(), 0755);
+    const std::string path = home + "/db/inventory.json";
+    CHECK_EQ(Database::backupDirectoryFor(path), directory);
+
+    // Everything planted is OLDER than the backup about to be taken, by a day
+    // per file, so the prune's newest-first order puts every one of them past
+    // the backup itself.
+    const auto plant = [&](const std::string& name, int daysAgo) {
+        const std::string file = directory + "/" + name;
+        CHECK(writeText(file, "{}"));
+        const std::time_t when = std::time(nullptr) - static_cast<std::time_t>(daysAgo) * 86400;
+        struct utimbuf stamp {when, when};
+        ::utime(file.c_str(), &stamp);
+        return file;
+    };
+    // The TypeScript server's two, by the names prod really has.
+    const std::vector<std::string> foreign{
+        plant("inventory-2026-07-17T02-00-27-265Z-pre-update.json", 90),
+        plant("inventory-2026-09-03T23-36-13-000Z-pre-spam-purge.json", 80),
+        // An operator's copy, and one that only nearly looks like ours.
+        plant("inventory-before-the-migration.json", 70),
+        plant("inventory-2026-09-05T00-00-00-000Z-Manual.snapshot.json", 60),
+    };
+    // Thirty of this server's own, the oldest five weeks old.
+    std::vector<std::string> own;
+    for (int i = 0; i < static_cast<int>(Database::kMaxDatabaseBackups); ++i) {
+        char name[96];
+        std::snprintf(name, sizeof name,
+                      "inventory-2026-08-%02dT00-00-%02d-000Z-pre-update.snapshot.json",
+                      i % 28 + 1, i);
+        own.push_back(plant(name, 35 - i));
+    }
+    const auto bare = [](const std::string& file) {
+        return file.substr(file.find_last_of('/') + 1);
+    };
+    for (const std::string& file : own) CHECK(Database::isOwnSnapshotName(bare(file)));
+    for (const std::string& file : foreign) CHECK(!Database::isOwnSnapshotName(bare(file)));
+
+    Database::BackupInfo made;
+    std::size_t listed = 0;
+    {
+        // Scoped, so its last save -- a database loaded from nothing is dirty,
+        // and ~Database writes a dirty one -- lands before the cleanup below
+        // rather than after it.
+        Database db;
+        std::string error;
+        db.load(path, error);
+        CHECK(db.backup("pre-update", made, error));
+        listed = db.listBackups().size();
+    }
+    CHECK(Database::isOwnSnapshotName(bare(made.file)));
+
+    // Thirty-one of ours now, so the oldest one goes -- and only it.
+    const auto exists = [](const std::string& file) {
+        struct stat info {};
+        return ::stat(file.c_str(), &info) == 0;
+    };
+    CHECK(!exists(own.front()));
+    for (std::size_t i = 1; i < own.size(); ++i) CHECK(exists(own[i]));
+    CHECK(exists(made.file));
+    for (const std::string& file : foreign) CHECK(exists(file));
+    // And the list shows everybody's, so an operator can see what is there.
+    CHECK_EQ(listed, own.size() + foreign.size());
+
+    // Only what this test planted or made, then the directories.
+    for (const std::string& file : own) std::remove(file.c_str());
+    for (const std::string& file : foreign) std::remove(file.c_str());
+    std::remove(made.file.c_str());
+    std::remove(path.c_str());
+    std::remove((path + ".tmp").c_str());
+    ::rmdir(directory.c_str());
+    ::rmdir((home + "/db").c_str());
+    ::rmdir(home.c_str());
 }
 
 TEST(change_maze_rotates_the_active_maze) {
@@ -1539,27 +1882,6 @@ TEST(change_maze_rotates_the_active_maze) {
     // process-wide object, so a test that moves it has to put it back.
     CHECK(say(h, boss, "/admin change-maze " + std::to_string(started)));
     CHECK(activeMaze().day() == started);
-}
-
-TEST(api_keys_are_minted_and_revoked_per_account) {
-    Harness h("cmd-apikey", [](const std::string& path) {
-        seedUser(path, "owner", "password7");
-    });
-    if (!h.ready) { CHECK(false); return; }
-
-    NetClient client;
-    CHECK(loginAs(h, client, "owner", "password7"));
-
-    CHECK(say(h, client, "/create-api-key discord-bot"));
-    CHECK(sawText(client, "[API KEY CREATED]"));
-    CHECK(sawText(client, "Label: discord-bot"));
-    CHECK(sawText(client, "sk_"));
-
-    CHECK(say(h, client, "/delete-api-key sk_"));
-    CHECK(sawText(client, "Deleted API key \"discord-bot\""));
-
-    CHECK(say(h, client, "/delete-api-key sk_"));
-    CHECK(sawText(client, "No API key of yours matched"));
 }
 
 TEST(guild_commands_reach_the_same_logic_as_the_guild_panel) {
@@ -1979,9 +2301,52 @@ TEST(a_termite_mound_leads_into_its_own_dungeon_and_falls_when_it_is_cleared) {
     // mound, out by the copy's pad (beside the mound, not wherever the pad's
     // targetMap says), back in to the SAME copy, and the mound falling with
     // loot the moment the last thing inside dies -- then everyone carried out.
+    //
+    // The shipped mound has no pad any more -- clearing it is the only way
+    // out, since "fix termites" (5ffec410) took the pad off its map -- but a
+    // copy's own pad still leads out beside the nest it was entered through,
+    // and that is half of what this walks. So it boots on the shipped world
+    // with the pad the mound had until then put back, where it stood.
+    const std::string dir = stageShippedDataDir("termite-dungeon", "termite_mound", [](Json& map) {
+        const int id = map["nextobjectid"].asInt(1);
+        for (Json& layer : map["layers"].items()) {
+            const Json& read = layer;
+            if (read["name"].asString() != "teleporters") continue;
+            // Drawn back in since: that pad is the one to walk.
+            if (!read["objects"].items().empty()) return true;
+            Json target = Json::object();
+            target["name"] = Json("targetMap");
+            target["type"] = Json("string");
+            target["value"] = Json("jungle");
+            Json pad = Json::object();
+            pad["id"] = Json(id);
+            pad["name"] = Json("");
+            pad["type"] = Json("");
+            pad["point"] = Json(true);
+            pad["x"] = Json(1280);
+            pad["y"] = Json(1280);
+            pad["width"] = Json(0);
+            pad["height"] = Json(0);
+            pad["rotation"] = Json(0);
+            pad["visible"] = Json(true);
+            pad["properties"] = Json::array();
+            pad["properties"].push(std::move(target));
+            layer["objects"].push(std::move(pad));
+            map["nextobjectid"] = Json(id + 1);
+            return true;
+        }
+        return false;
+    });
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+    // Removed on every way out, and only after the server reading it is gone.
+    struct Cleanup {
+        std::string dir;
+        ~Cleanup() { removeDataDir(dir); }
+    } cleanup{dir};
     Harness h("cmd-termite-dungeon", [](const std::string& path) {
         seedUser(path, "digger", "password7", true);
-    });
+    }, dir);
     if (!h.ready) { CHECK(false); return; }
 
     NetClient client;
@@ -2105,9 +2470,14 @@ TEST(a_termite_mound_leads_into_its_own_dungeon_and_falls_when_it_is_cleared) {
     // Out by the pad, which puts the flower down beside the mound.
     const MapData* map = h.server.worldMaps().forRealm(inside);
     Vec2 pad;
+    bool padFound = false;
     for (const MapElement& element : map->elements()) {
-        if (element.kind == MapElementKind::Teleporter) pad = element.centre();
+        if (element.kind != MapElementKind::Teleporter) continue;
+        pad = element.centre();
+        padFound = true;
     }
+    CHECK(padFound);
+    if (!padFound) return;
     h.step(160, {&client});   // past the arrival's pad lockout
     CHECK(h.stepUntil({&client}, [&] {
         if (realmOf() == home) return true;
@@ -2331,7 +2701,7 @@ TEST(a_dead_summon_is_not_announced) {
     });
     CHECK(!supers.empty());
     for (Entity e : supers) {
-        world.add<Pet>(e, Pet{body, 0, Rarity::Super});
+        world.add<Pet>(e, Pet{body, 0});
         Afflictions* afflictions = world.tryGet<Afflictions>(e);
         if (afflictions == nullptr) {
             world.add<Afflictions>(e, Afflictions{});
@@ -2346,6 +2716,6 @@ TEST(a_dead_summon_is_not_announced) {
         }
         return true;
     }, 120));
-    h.stepUntil({&client}, [] { return false; }, 10);
+    h.step(10, {&client});
     CHECK(!sawText(client, "Super bee has been defeated"));
 }

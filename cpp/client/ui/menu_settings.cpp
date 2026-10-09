@@ -15,7 +15,7 @@
 // same thing as a member.
 //
 // Which rows reach the rest of the client, and which do not:
-//   wired   all fifteen bindings -> ClientSettings, which is what App reads
+//   wired   all sixteen bindings -> ClientSettings, which is what App reads
 //           for movement, the petal keys, chat and zoom and what MenuSystem
 //           reads for the panel keys and the two in-game switches; Show
 //           Hitboxes -> settings.render.hitboxes, Use Mouse Controls ->
@@ -77,22 +77,6 @@ constexpr double kFieldHeight = 32.0;
 /// Chrome reports 100 CSS px of deltaY per wheel notch and the browser panel
 /// scrolls 1:1 with it; SDL reports one notch as 1.0.
 constexpr double kWheelStep = 100.0;
-
-/// The settings gear: the first slot of the top icon row, at menus.cpp's
-/// kIconInset/kIconButton. The geometry is duplicated rather than shared
-/// because the strip's layout is private to menus.cpp, and these two have to
-/// agree about this one button: the strip is hit-tested AFTER the panel, so a
-/// click the panel answered by closing would be turned straight back into an
-/// open by the gear's own toggle. Every other click outside the card closes.
-constexpr Rect kGearButton{20.0, 20.0, 42.0, 42.0};
-
-/// Inclusive on the far edges, the way the browser writes its own bounds
-/// tests (`x > panelX + panelW` is outside, `x == panelX + panelW` is not) and
-/// the way the icon strip hit-tests its buttons. Rect::contains is half-open,
-/// which would leave the card's last pixel column reading as outside it.
-bool insideEdges(Rect r, Vec2 p) {
-    return p.x >= r.x && p.x <= r.right() && p.y >= r.y && p.y <= r.bottom();
-}
 
 // --- palette ----------------------------------------------------------------
 
@@ -287,8 +271,8 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         // Everything else lands in the panel's own copy, because ClientSettings
         // has no field for it: nothing outside this file could read one, and
         // nothing would write it to disk. A row moves up here the moment a
-        // field exists -- Number Keys Use Items is the one whose consumer (the
-        // lobby's control hints) is already written and waiting.
+        // field exists -- and Number Keys Use Items has no consumer yet either
+        // (see the file comment).
         default: return &st.toggles[static_cast<std::size_t>(id)];
     }
 }
@@ -986,11 +970,13 @@ bool SettingsPanel::render(MenuContext& ctx) {
         return keepOpen;
     }
     // A click anywhere outside the card closes the panel. The gear is the one
-    // exemption: the strip is hit-tested AFTER the panel, so closing here
-    // would race the gear's own toggle and reopen the panel on the same click.
-    // The strip's other buttons need no exemption -- closing this panel and
+    // exemption: on the title screen the strip is hit-tested AFTER the panel,
+    // so closing here would race the gear's own toggle and reopen the panel on
+    // the same click. Its rect is the strip's own, tested the way the strip
+    // tests it, so the two cannot disagree about where the button is. The
+    // strip's other buttons need no exemption -- closing this panel and
     // opening theirs is what one-menu-at-a-time already does.
-    if (insideEdges(kGearButton, mouse)) return keepOpen;
+    if (insideInclusive(ctx.settingsButton, mouse)) return keepOpen;
     return false;
 }
 

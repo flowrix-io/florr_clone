@@ -1,6 +1,15 @@
 // Renders every mob and petal SVG out of the game's own config files through
 // cpp_canvas and writes the result as one contact sheet.
 //
+// Usage: svg_smoke [data-dir] [time-seconds]
+//   data-dir      where mobs.json and petals.json are read from; default the
+//                 build's staged copy (FLIX_TEST_DATA_DIR), so it runs from
+//                 anywhere -- pass the repo's data/ to see an edit unbuilt.
+//   time-seconds  the animation clock the sprites are drawn at; default 0.
+// Writes svg-smoke.ppm into the WORKING directory and prints the counts and
+// warnings. Exits 0 when everything drew, 2 when a sprite failed, 1 when a
+// file could not be read or the sheet could not be written.
+//
 // The entire visual identity of the rewrite rests on one assumption: that the
 // artwork in mobs.json / petals.json can be compiled to canvas draw calls
 // rather than reimplemented. This proves it. Each sprite is fitted to its own
@@ -18,6 +27,10 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#ifndef FLIX_TEST_DATA_DIR
+#define FLIX_TEST_DATA_DIR "data"
+#endif
 
 namespace {
 
@@ -123,7 +136,11 @@ int countOf(const std::vector<Sprite>& a, const std::vector<Sprite>& b, Kind kin
 } // namespace
 
 int main(int argc, char** argv) {
-    const std::string dataDir = argc > 1 ? argv[1] : "../src";
+    // The build's staged copy, by the absolute path CMake bakes in
+    // (FLIX_TEST_DATA_DIR, as bot_probe and hitbox_fit read it), so the tool
+    // runs from any directory. Pass the repository's data/ explicitly to
+    // render an edit without a rebuild.
+    const std::string dataDir = argc > 1 ? argv[1] : FLIX_TEST_DATA_DIR;
     const float time = argc > 2 ? std::strtof(argv[2], nullptr) : 0.0f;
 
     flix::Json mobs, petals;

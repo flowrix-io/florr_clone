@@ -46,20 +46,10 @@ std::uint32_t rankColor(int rank) {
     }
 }
 
-/// Text drawn as translucent white rather than in a pre-mixed colour, so it
-/// tints whatever it lands on: the header row over the bare card, the XP
-/// column over a row band. TextStyle carries no alpha of its own.
-void fadedText(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style,
-               double alpha) {
-    canvas.setGlobalAlpha(static_cast<float>(alpha));
-    text(canvas, s, x, y, style);
-    canvas.setGlobalAlpha(1.0f);
-}
-
 /// The board's own number format: tenths of a K or an M, and nothing above.
-/// `abbreviate` is nearly this but lowercases the K, erases a trailing ".0"
-/// and has B and T tiers, so the same total would read differently here than
-/// it does in the browser.
+/// `abbreviate` is nearly this but erases a trailing ".0" and has B and T
+/// tiers, so the same total would read differently here than it did in the
+/// browser.
 std::string formatXp(double xp) {
     char buffer[32];
     if (xp >= 1e6) std::snprintf(buffer, sizeof buffer, "%.1fM", xp / 1e6);
@@ -68,9 +58,8 @@ std::string formatXp(double xp) {
     return buffer;
 }
 
-/// Trimmed by character count, not by pixel width: a name that overflows its
-/// column has to overflow it in both clients, or the two boards disagree about
-/// which names are cut.
+/// Trimmed by character count, not by pixel width, as the browser's board
+/// trimmed it: twenty characters fit, and a longer name keeps seventeen.
 std::string displayName(const std::string& name) {
     return name.size() > 20 ? name.substr(0, 17) + "..." : name;
 }
@@ -133,8 +122,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
     // The reference SUBTRACTS the wheel delta from its scroll offset, so a
     // wheel-down there walks the board back toward rank 1 rather than on to
-    // rank 50. Folded in here because the shared Scroller applies a wheel the
-    // other way round, at its own step, and the other panels want that.
+    // rank 50 -- the other way round from the other panels, and kept.
     if (panel.contains(mouse)) scroll_.offset += ctx.wheel() * kWheelStep;
     // A finger is not inverted: the board follows it. Everything but the
     // track, which a finger drags the other way.
@@ -173,7 +161,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
     // The count of every account the server holds, beside the title. It comes
     // with the board rather than being derived from it: the board is the top
-    // 25 and this is the whole table. The active-today half only ever arrives
+    // 50 and this is the whole table. The active-today half only ever arrives
     // for an admin, which is how the browser's payload omits the field.
     if (ctx.net.totalAccounts() > 0) {
         TextStyle stats;
@@ -185,7 +173,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
             // U+00B7, a middle dot, not a hyphen.
             line += " · " + std::to_string(ctx.net.dailyActiveUsers()) + " active today";
         }
-        fadedText(canvas, line, panel.x + 160.0, panel.y + 25.0, stats, 0.7);
+        textAtAlpha(canvas, line, panel.x + 160.0, panel.y + 25.0, stats, 0.7);
     }
 
     pillButton(canvas, refreshRect, "Refresh", kLeaderboardSkin.border);
@@ -205,8 +193,8 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
         empty.align = Align::Centre;
         empty.baseline = Baseline::Top;
         empty.strokeWidth = 0.0;
-        fadedText(canvas, pending ? "Loading..." : "No accounts found",
-                  panel.x + panel.w * 0.5, y + 20.0, empty, 0.7);
+        textAtAlpha(canvas, pending ? "Loading..." : "No accounts found",
+                    panel.x + panel.w * 0.5, y + 20.0, empty, 0.7);
     } else {
         const double rankX = panel.x + 15.0;
         const double nameX = panel.x + 60.0;
@@ -217,11 +205,11 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
         header.size = 14.0;
         header.baseline = Baseline::Top;
         header.strokeWidth = 0.0;
-        fadedText(canvas, "#", rankX, y + 8.0, header, 0.8);
-        fadedText(canvas, "Player", nameX, y + 8.0, header, 0.8);
-        fadedText(canvas, "Level", levelX, y + 8.0, header, 0.8);
+        textAtAlpha(canvas, "#", rankX, y + 8.0, header, 0.8);
+        textAtAlpha(canvas, "Player", nameX, y + 8.0, header, 0.8);
+        textAtAlpha(canvas, "Level", levelX, y + 8.0, header, 0.8);
         header.align = Align::Right;
-        fadedText(canvas, "XP", xpX, y + 8.0, header, 0.8);
+        textAtAlpha(canvas, "XP", xpX, y + 8.0, header, 0.8);
         y += kColumnHeader;
 
         for (std::size_t i = 0; i < rows.size(); ++i) {
@@ -253,7 +241,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
             cell.align = Align::Right;
             cell.size = 13.0;
-            fadedText(canvas, formatXp(rows[i].totalXp), xpX, middle, cell, 0.8);
+            textAtAlpha(canvas, formatXp(rows[i].totalXp), xpX, middle, cell, 0.8);
         }
     }
     canvas.restore();

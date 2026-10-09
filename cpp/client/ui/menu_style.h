@@ -38,6 +38,11 @@ void roundPath(Canvas&, Rect, double radius);
 void fillRound(Canvas&, Rect, double radius, std::uint32_t rgb, double alpha = 1.0);
 void strokeRound(Canvas&, Rect, double radius, std::uint32_t rgb, double width);
 
+/// A filled five-point star about `centre`: its points `radius` out, its
+/// notches at 0.45 of that, the first point straight up. What the shop and the
+/// notifications draw where the shipped face has no star glyph to type.
+void fillStar(Canvas&, Vec2 centre, double radius, std::uint32_t rgb);
+
 // ---------------------------------------------------------------------------
 // The card
 // ---------------------------------------------------------------------------
@@ -59,9 +64,10 @@ void cardFrame(Canvas&, Rect, std::uint32_t fill, std::uint32_t border, double b
 inline constexpr double kOverlayBorder = 4.0;
 inline constexpr double kOverlayRadius = 6.0;
 
-/// The frame every top-row menu wears: settings, changelog, notifications,
-/// leaderboard, guild, skins and debug. Use it for the panel itself; `inlaid`
-/// below is the button treatment, for the controls on it.
+/// The frame the corner overlays wear: settings, changelog, notifications,
+/// leaderboard, skins, gallery, shop, debug and the two admin cards -- the
+/// guild's card is a `panelCard`. Use it for the panel itself; `inlaid` below
+/// is the button treatment, for the controls on it.
 void overlayCard(Canvas&, Rect, std::uint32_t fill, std::uint32_t border);
 void overlayCard(Canvas&, Rect, const PanelSkin&);
 
@@ -123,14 +129,6 @@ void pillButton(Canvas&, Rect, const std::string& label, std::uint32_t fill,
 /// arms of 15.6px overlapping once solve to 1.6.
 void closeCross(Canvas&, Rect, double arm, double width, bool roundCap);
 
-/// A coloured frame over a translucent interior, with the label in the frame's
-/// own colour -- the guild panel's buttons. Distinct from `chip` and `button`,
-/// both of which fill a solid body: these take their identity from the frame
-/// alone, and giving the two danger buttons a body would make them read as
-/// filled red controls.
-void framedButton(Canvas&, Rect, const std::string& label, std::uint32_t labelColor,
-                  std::uint32_t frame, bool hovered);
-
 /// A small labelled button: the panel chrome's Switch, Craft, Reset, Refresh.
 struct ChipStyle {
     std::uint32_t fill = kControlMid;
@@ -145,6 +143,10 @@ void chip(Canvas&, Rect, const std::string& label, bool hovered, const ChipStyle
 // ---------------------------------------------------------------------------
 // Labels
 // ---------------------------------------------------------------------------
+
+/// Body text on a panel: white, outlined hard enough to read over a saturated
+/// fill or a mob sprite, and never over-stroked at small sizes.
+TextStyle labelStyle(double size, std::uint32_t fill);
 
 /// Stroke-then-fill text whose OUTLINE carries an alpha -- the forge's and the
 /// oracle's labels, which are stroked at 60% where every other panel strokes

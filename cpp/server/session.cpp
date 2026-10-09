@@ -9,7 +9,11 @@ namespace {
 /// Allowance refill rates, per second.
 constexpr double kLoginRefillPerSecond = 0.2;    // one attempt every 5s
 constexpr double kChatRefillPerSecond = 0.5;     // one message every 2s
-constexpr double kInputRefillPerSecond = 30.0;   // comfortably above the tick rate
+/// Inputs refill at the tick rate, which is the rate the client sends them at
+/// (one per simulation tick, client/app_game.cpp). This was set when the tick
+/// was 25 Hz, so it used to have room above it; at 30 Hz the only slack left
+/// is the bucket's depth below.
+constexpr double kInputRefillPerSecond = 30.0;
 /// Commands refill four times faster than chat, off a deeper bucket.
 ///
 /// The chat budget exists to stop one player flooding EVERYONE ELSE, and a
@@ -24,10 +28,6 @@ constexpr double kMaxChatAllowance = 4;
 constexpr double kMaxCommandAllowance = 12;
 constexpr double kMaxInputAllowance = 60;
 
-constexpr std::size_t kMinUsername = 3;
-constexpr std::size_t kMaxUsername = 16;
-constexpr std::size_t kMinPassword = 6;
-constexpr std::size_t kMaxPassword = 128;
 constexpr std::size_t kMaxChatLength = 200;
 
 } // namespace
@@ -54,44 +54,6 @@ void refillAllowances(Session& session, double nowMillis) {
 bool spend(double& allowance, double cost) {
     if (allowance < cost) return false;
     allowance -= cost;
-    return true;
-}
-
-bool validUsername(const std::string& name, std::string& reasonOut) {
-    if (name.size() < kMinUsername || name.size() > kMaxUsername) {
-        reasonOut = "Username must be 3 to 16 characters.";
-        return false;
-    }
-    for (const char c : name) {
-        const bool allowed = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                             (c >= '0' && c <= '9') || c == '_' || c == '-';
-        if (!allowed) {
-            reasonOut = "Username may only contain letters, digits, underscore and hyphen.";
-            return false;
-        }
-    }
-    // A leading digit or symbol makes a name that reads like a system message
-    // in chat, so require it to start with a letter.
-    const char first = name[0];
-    if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z'))) {
-        reasonOut = "Username must start with a letter.";
-        return false;
-    }
-    return true;
-}
-
-bool validPassword(const std::string& password, std::string& reasonOut) {
-    if (password.size() < kMinPassword) {
-        reasonOut = "Password must be at least 6 characters.";
-        return false;
-    }
-    // The upper bound is not a strength rule: bcrypt only considers the first
-    // 72 bytes, and accepting megabytes of password is free work for an
-    // attacker to hand us.
-    if (password.size() > kMaxPassword) {
-        reasonOut = "Password is too long.";
-        return false;
-    }
     return true;
 }
 

@@ -67,10 +67,10 @@ bool drawCachedPicture(Canvas& canvas, const void* owner, std::uint64_t variant,
                        const std::function<void(Canvas&)>& paint);
 
 /// Bitmaps held and the bytes they occupy, for the stats readout and the tests.
+///
+/// There is no call to empty the cache. A display-scale change does not need
+/// one: entries are keyed by the pixel size they were baked at, so the old
+/// sizes simply stop being asked for and age out through the byte budget.
 void artCacheStats(std::size_t& entries, std::size_t& bytes);
-
-/// Drops every bitmap. For a display-scale change, which invalidates the size
-/// every entry was baked at.
-void clearArtCache();
 
 } // namespace flix

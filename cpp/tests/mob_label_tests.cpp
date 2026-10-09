@@ -2,17 +2,16 @@
 
 #include "client/camera.h"
 #include "client/render/world_renderer.h"
-#include "client/ui/text.h"
 #include "client/ui/theme.h"
 #include "client/world_view.h"
 #include "shared/game/config.h"
 #include "shared/net/protocol.h"
+#include "render_rig.h"
+#include "test_data.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
-#include <fstream>
 #include <string>
 #include <vector>
 
@@ -31,42 +30,10 @@ namespace {
 constexpr int kFrameSize = 320;
 constexpr Vec2 kMobAt{1000.0, 1000.0};
 
-std::string testsDir() {
-    const std::string path = __FILE__;
-    const std::size_t slash = path.find_last_of('/');
-    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
-}
+const ContentRegistry& shipped() { return testsupport::shippedContent(); }
 
-std::string firstExisting(const std::vector<std::string>& candidates) {
-    for (const std::string& candidate : candidates) {
-        std::ifstream probe(candidate, std::ios::binary);
-        if (probe) return candidate;
-    }
-    return {};
-}
-
-const ContentRegistry& shipped() {
-    static const ContentRegistry registry = [] {
-        ContentRegistry r;
-        std::string error;
-        r.loadFiles(firstExisting({testsDir() + "/../../src/mobs.json", "data/mobs.json",
-                                   "../src/mobs.json", "../../src/mobs.json", "src/mobs.json"}),
-                    firstExisting({testsDir() + "/../../src/petals.json", "data/petals.json",
-                                   "../src/petals.json", "../../src/petals.json",
-                                   "src/petals.json"}),
-                    error);
-        return r;
-    }();
-    return registry;
-}
-
-Camera frameCamera() {
-    Camera camera;
-    camera.setViewport(kFrameSize, kFrameSize);
-    camera.userZoom = 1.0;
-    camera.snapTo(kMobAt);
-    return camera;
-}
+/// The camera every frame here is drawn through: on the mob, at zoom one.
+Camera frameCamera() { return testsupport::frameCamera(kFrameSize, kMobAt); }
 
 RemoteEntity mobOfType(const char* id, Rarity rarity = Rarity::Common) {
     RemoteEntity mob;
@@ -93,13 +60,7 @@ std::vector<std::uint8_t> frameOf(const char* id, bool pet,
     // The plate's lines are TEXT, and text needs the font the game ships.
     // Without it the renderer paints no line at all, and a check that a line
     // is absent would pass for the wrong reason.
-    static const bool fontsReady = [] {
-        std::string error;
-        const bool ok = ui::Fonts::init(std::string(FLIX_TEST_DATA_DIR), error);
-        if (!ok) std::printf("  fonts did not load: %s\n", error.c_str());
-        return ok;
-    }();
-    CHECK(fontsReady);
+    CHECK(testsupport::fontsReady());
 
     Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
     WorldView view;

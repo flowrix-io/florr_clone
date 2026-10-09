@@ -20,7 +20,6 @@
 #include "server/game_server.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <iterator>
@@ -28,8 +27,8 @@
 #include <string>
 
 #include "server/bot_identity.h"
-#include "server/systems/loot.h"
 #include "server/systems/spawning.h"
+#include "server/text.h"
 #include "shared/game/config.h"
 #include "shared/game/difficulty.h"
 
@@ -126,13 +125,6 @@ void replaceAll(std::string& text, const std::string& from, const std::string& t
     }
 }
 
-/// A mob id as chat says it out loud: `baby_ant` is "baby ant".
-std::string spokenMobName(const std::string& id) {
-    std::string out = id;
-    std::replace(out.begin(), out.end(), '_', ' ');
-    return out;
-}
-
 /// Wall-probe offsets, in order: straight on first, then progressively wider
 /// to either side.
 constexpr double kSteerOffsets[] = {
@@ -199,6 +191,24 @@ const char* botActivityName(BotActivity activity) {
 // ---------------------------------------------------------------------------
 // Population
 // ---------------------------------------------------------------------------
+//
+// The reference keeps the world populated whether or not anyone else is
+// online: it tops the flower count up to ~23 with server-owned players that
+// hunt, wander, die and respawn. Without them a solo player meets an empty
+// map -- no company, no competition for aggro or loot, and a leaderboard with
+// one row on it.
+//
+// A bot here is an ORDINARY player entity with no Session behind it. That is
+// the whole trick: combat, loot eligibility, replication and the death reaper
+// all treat it as a flower without knowing bots exist, and the handful of
+// places that need an account (banking a kill, a pickup, a persist) already
+// walk the session table and simply find nothing.
+//
+// This section and the next are the POPULATION: the target, the jitter, the
+// burst cap, idle retirement, which biome each bot belongs to, and the
+// name-seeded level and loadout. What a bot DOES -- sensing, hunting grounds,
+// and the activity machine over them -- is the rest of this file, and
+// bot_ai.h explains its shape.
 
 void GameServer::maintainBots(double nowMillis) {
     // A human in the world resets the idle clock. Past the grace period with
@@ -257,8 +267,6 @@ void GameServer::maintainBots(double nowMillis) {
             destroyBot(bot);
             bot.entity = createBotBody(bot.name, bot.realm, spawn);
             bot.deathAnnounced = false;
-            bot.anchor = spawn;
-            bot.hasAnchor = false;
             bot.respawnAtMillis = 0;
 
             // The bot reappears somewhere else entirely, so everything derived
@@ -333,7 +341,6 @@ void GameServer::maintainBots(double nowMillis) {
             // in the same one.
             bot.realm = pickBotRealm();
             const Vec2 spawn = pickBotSpawn(bot.realm, blockersByRealm[realmIndex(bot.realm)]);
-            bot.anchor = spawn;
             bot.entity = createBotBody(bot.name, bot.realm, spawn);
             bots_.push_back(std::move(bot));
         }
@@ -410,10 +417,9 @@ double GameServer::cullScore(const Bot& bot) const {
 // Which biome a bot belongs to
 // ---------------------------------------------------------------------------
 //
-// Bots exist to make the world look inhabited, and the world is seven maps.
-// A population that all stood in the first one left six biomes that a player
-// could walk into and find nothing alive and nobody playing -- and, because a
-// band is only stocked while somebody is looking at it, not even mobs.
+// Bots exist to make the world look inhabited, and the world is many maps
+// (maps/maps.json). A population that all stood in the first one left every
+// other biome a player could walk into with nobody playing in it.
 
 /// Whether a realm has ground a standing population could actually live on:
 /// at least one spawn band that is not dangerous (difficulty.h's own test,
@@ -638,7 +644,6 @@ void GameServer::destroyBot(Bot& bot) {
     // Before the body goes: a squad holding a destroyed entity would rank a
     // corpse for loot, and the line its squadmates get needs its nameplate.
     removeBotFromSquad(bot.entity);
-    botBossFirstSeen_.erase(bot.entity);
     botRaidSlots_.erase(bot.entity);
     // The ring and the pets belong to the body, not to the name, so they go
     // with it.
@@ -1483,8 +1488,8 @@ void GameServer::computeBotRaidSlots(double nowMillis) {
 
 namespace {
 
-/// Squared distance to the nearest live human, or infinity when nobody is
-/// connected -- in which case recency alone decides the raid target.
+/// Squared distance to the nearest live human, or the largest double when
+/// nobody is connected -- in which case recency alone decides the raid target.
 double distSqToNearestHuman(const World& world,
                             const std::unordered_map<net::ConnectionId, Session>& sessions,
                             RealmPoint at) {
@@ -1502,15 +1507,8 @@ double distSqToNearestHuman(const World& world,
 
 } // namespace
 
-bool GameServer::botNearestBoss(const Bot& bot, Vec2& out, double& distOut) {
-    // Only bosses within rally range of THIS bot. Without the range gate every
-    // bot in the world rallies on any boss anywhere, which is a map-wide
-    // stampede rather than a raid. Among those in range, uniques beat supers,
-    // then most recently seen, then proximity to a human.
-    const Transform* transform = world_.tryGet<Transform>(bot.entity);
-    if (transform == nullptr) return false;
-    const Vec2 at = transform->position;
-
+Entity GameServer::bestRaidBoss(std::optional<Realm> realm, std::optional<Vec2> within,
+                                bool humanTieBreak) const {
     Entity best = NULL_ENTITY;
     bool preferUnique = false;
     double bestSeen = 0;
@@ -1519,13 +1517,13 @@ bool GameServer::botNearestBoss(const Bot& bot, Vec2& out, double& distOut) {
     for (const Entity boss : botBosses_) {
         if (!world_.isAlive(boss) || world_.has<Dead>(boss)) continue;
         const MobType* type = world_.tryGet<MobType>(boss);
-        const Transform* bossTransform = world_.tryGet<Transform>(boss);
-        if (type == nullptr || bossTransform == nullptr) continue;
-        // Another biome's boss is not a boss this bot can walk to: the two
-        // maps are separate coordinate spaces, and a rally onto one would send
-        // the bot to an empty field with the same numbers on it.
-        if (bossTransform->realm != transform->realm) continue;
-        if (distanceSq(bossTransform->position, at) > kBotBossRallyRange * kBotBossRallyRange) {
+        const Transform* bossAt = world_.tryGet<Transform>(boss);
+        if (type == nullptr || bossAt == nullptr) continue;
+        if (realm && bossAt->realm != *realm) continue;
+        // Gated BEFORE the preference below: a unique out of reach must not
+        // discard the supers that are in it.
+        if (within && distanceSq(bossAt->position, *within) >
+                          kBotBossRallyRange * kBotBossRallyRange) {
             continue;
         }
         // A unique outranks every super outright: the first one seen discards
@@ -1543,16 +1541,36 @@ bool GameServer::botNearestBoss(const Bot& bot, Vec2& out, double& distOut) {
 
         const auto seenIt = botBossFirstSeen_.find(boss);
         const double seen = seenIt == botBossFirstSeen_.end() ? 0.0 : seenIt->second;
+        // Only walked when it can decide something: it is a pass over every
+        // session per candidate.
         const double humanDistSq =
-            distSqToNearestHuman(world_, sessions_, {bossTransform->position,
-                                                     bossTransform->realm});
+            humanTieBreak
+                ? distSqToNearestHuman(world_, sessions_, {bossAt->position, bossAt->realm})
+                : 0.0;
         if (best == NULL_ENTITY || seen > bestSeen ||
-            (seen == bestSeen && humanDistSq < bestHumanDistSq)) {
+            (humanTieBreak && seen == bestSeen && humanDistSq < bestHumanDistSq)) {
             best = boss;
             bestSeen = seen;
             bestHumanDistSq = humanDistSq;
         }
     }
+    return best;
+}
+
+bool GameServer::botNearestBoss(const Bot& bot, Vec2& out, double& distOut) {
+    // Only bosses within rally range of THIS bot. Without the range gate every
+    // bot in the world rallies on any boss anywhere, which is a map-wide
+    // stampede rather than a raid. Among those in range, uniques beat supers,
+    // then most recently seen, then proximity to a human.
+    const Transform* transform = world_.tryGet<Transform>(bot.entity);
+    if (transform == nullptr) return false;
+    const Vec2 at = transform->position;
+
+    // In this bot's own realm, too. Another biome's boss is not a boss this
+    // bot can walk to: the two maps are separate coordinate spaces, and a
+    // rally onto one would send the bot to an empty field with the same
+    // numbers on it.
+    const Entity best = bestRaidBoss(transform->realm, at, true);
     if (best == NULL_ENTITY) return false;
     out = world_.get<Transform>(best).position;
     distOut = (out - at).length();
@@ -1564,35 +1582,7 @@ bool GameServer::triggerBotRaid(double nowMillis) {
     // then most recently seen, then whichever is closest to a human. That
     // makes bots commit to a fresh boss bothering somebody rather than to
     // whatever stale one happens to come first out of the world.
-    Entity best = NULL_ENTITY;
-    bool preferUnique = false;
-    double bestSeen = 0;
-    double bestHumanDistSq = 0;
-
-    for (const Entity boss : botBosses_) {
-        if (!world_.isAlive(boss) || world_.has<Dead>(boss)) continue;
-        const MobType* type = world_.tryGet<MobType>(boss);
-        const Transform* transform = world_.tryGet<Transform>(boss);
-        if (type == nullptr || transform == nullptr) continue;
-        const bool unique = type->rarity == Rarity::Unique;
-        if (!unique && preferUnique) continue;
-        if (unique && !preferUnique) {
-            preferUnique = true;
-            best = NULL_ENTITY;
-        }
-        if (!unique && type->rarity != Rarity::Super) continue;
-
-        const auto seenIt = botBossFirstSeen_.find(boss);
-        const double seen = seenIt == botBossFirstSeen_.end() ? 0.0 : seenIt->second;
-        const double humanDistSq =
-            distSqToNearestHuman(world_, sessions_, {transform->position, transform->realm});
-        if (best == NULL_ENTITY || seen > bestSeen ||
-            (seen == bestSeen && humanDistSq < bestHumanDistSq)) {
-            best = boss;
-            bestSeen = seen;
-            bestHumanDistSq = humanDistSq;
-        }
-    }
+    const Entity best = bestRaidBoss(std::nullopt, std::nullopt, true);
 
     if (best == NULL_ENTITY) {
         botForcedRaid_.active = false;
@@ -1601,7 +1591,6 @@ bool GameServer::triggerBotRaid(double nowMillis) {
     botForcedRaid_.active = true;
     botForcedRaid_.at = world_.get<Transform>(best).position;
     botForcedRaid_.realm = world_.get<Transform>(best).realm;
-    botForcedRaid_.tier = world_.get<MobType>(best).rarity;
     botForcedRaid_.untilMillis = nowMillis + kBotForcedRaidMillis;
     // Every cached path IN THAT BIOME now aims at the wrong place. The bots
     // working the other biomes were not called and carry on as they were.
@@ -1626,34 +1615,17 @@ bool GameServer::activeForcedRaidAnchor(double nowMillis, Realm realm, Vec2& out
     if (realm != botForcedRaid_.realm) return false;
     // Refresh the rally point to a live boss of the preferred tier, so bots
     // home in on something that is still there rather than on a stale point.
-    Entity best = NULL_ENTITY;
-    bool preferUnique = false;
-    double bestSeen = 0;
-    for (const Entity boss : botBosses_) {
-        if (!world_.isAlive(boss) || world_.has<Dead>(boss)) continue;
-        const MobType* type = world_.tryGet<MobType>(boss);
-        const Transform* bossAt = world_.tryGet<Transform>(boss);
-        if (type == nullptr || bossAt == nullptr || bossAt->realm != realm) continue;
-        const bool unique = type->rarity == Rarity::Unique;
-        if (!unique && preferUnique) continue;
-        if (unique && !preferUnique) {
-            preferUnique = true;
-            best = NULL_ENTITY;
-        }
-        if (!unique && type->rarity != Rarity::Super) continue;
-        const auto seenIt = botBossFirstSeen_.find(boss);
-        const double seen = seenIt == botBossFirstSeen_.end() ? 0.0 : seenIt->second;
-        if (best == NULL_ENTITY || seen > bestSeen) {
-            best = boss;
-            bestSeen = seen;
-        }
-    }
+    // With no human tie-break, as this refresh has always been: between two
+    // bosses first seen on the same tick it keeps whichever it met first,
+    // where the pick that called the raid takes the one nearer a human. Kept
+    // deliberately rather than aligned -- the two disagree only on an exact
+    // tie, and aligning them would change which boss a running rally follows.
+    const Entity best = bestRaidBoss(realm, std::nullopt, false);
     if (best == NULL_ENTITY) {
         botForcedRaid_.active = false;
         return false;
     }
     botForcedRaid_.at = world_.get<Transform>(best).position;
-    botForcedRaid_.tier = world_.get<MobType>(best).rarity;
     out = botForcedRaid_.at;
     return true;
 }
@@ -2089,13 +2061,14 @@ bool GameServer::botPickHuntingGround(const Bot& bot, Vec2& out) {
     const MapData* map = worldMaps_.forRealm(bot.realm);
     if (map == nullptr) return false;
 
-    // Where the humans are. Not because a bot wants to stand next to one, but
-    // because of what their presence DOES: the spawner stocks a band whose
-    // bounding box overlaps somebody's viewport, and it then fills the WHOLE
-    // band uniformly -- not the part near the player (systems/spawning.cpp,
-    // runSpawnZones). So the ground that has mobs on it is the band a human is
-    // standing in, all nine thousand units of it, and a bot that hugs the
-    // player is standing in the emptiest part of stocked ground.
+    // Where the humans are. Not because a bot wants to stand next to one --
+    // it leaves the mobs around a player alone (kBotPlayerClaimRadius) -- but
+    // because a band a human is standing in is ground somebody is playing on,
+    // and a bot working it is one they can come across. Mobs are no reason to
+    // prefer it: every band is stocked whole at all times, as latent records
+    // that any viewer wakes, a bot included (systems/spawning.h;
+    // SpawnSystem::stockSpawnZones). And a bot that hugs the player is
+    // standing in the part of that band the player is already fighting over.
     std::vector<Entity> humans;
     for (const auto& entry : sessions_) {
         const Session& session = entry.second;
@@ -2105,10 +2078,10 @@ bool GameServer::botPickHuntingGround(const Bot& bot, Vec2& out) {
         humans.push_back(session.entity);
     }
 
-    // The bands a human is currently keeping stocked. The overlap test is the
-    // spawner's own, at the default viewport -- a client reports its own, so
-    // this is an estimate, but it is an estimate of a box nine thousand units
-    // wide and being a few hundred out cannot change the answer.
+    // The bands a human's screen reaches. The box is the spawner's default
+    // viewport (kSpawnViewportHalfWidth/Height) -- a client reports its own, so
+    // this is an estimate, but it is an estimate against bands thousands of
+    // units across, and being a few hundred out cannot change the answer.
     std::vector<const MapElement*> live;
     std::vector<const MapElement*> all;
     for (const MapElement& element : map->elements()) {
@@ -2131,9 +2104,10 @@ bool GameServer::botPickHuntingGround(const Bot& bot, Vec2& out) {
         }
     }
 
-    // Nothing is being stocked -- nobody online, or everybody standing on
-    // ground no band covers. Fall back to the band this bot's gear suits, so
-    // that when somebody does arrive the world already looks inhabited.
+    // No human's screen is on a band of this map -- nobody here, or everybody
+    // standing on ground no band covers. Fall back to every band, weighted by
+    // what this bot's gear suits, so that when somebody does arrive the world
+    // already looks inhabited.
     std::vector<const MapElement*>& pool = live.empty() ? all : live;
     if (pool.empty()) return false;
 
@@ -2177,9 +2151,9 @@ bool GameServer::botPickHuntingGround(const Bot& bot, Vec2& out) {
     // is the BAND'S OWN SIZE, not a fixed number of units, and that is the
     // whole trick: mobs are stocked uniformly over the band, so a population
     // that all sits within a couple of thousand units of the player occupies a
-    // fifth of the stocked ground, eats it bare, and then waits for a trickle
-    // that is refilling the other four fifths. Spreading the bots over the
-    // band is what puts each of them next to something to kill.
+    // fifth of the stocked ground and crowds onto its mobs, while the other
+    // four fifths stand full with nobody working them. Spreading the bots over
+    // the band is what puts each of them next to something to kill.
     //
     // The tempers pull in opposite directions on purpose. A hunter ranges over
     // the whole band, which is where the mobs are; a drifter stays within
@@ -2335,7 +2309,6 @@ void GameServer::botFight(Bot& bot, const BotSenses& senses, double nowMillis) {
     // so the ring is not welded to the mob's centre.
     const double aimWobble = botNoise(nowMillis, persona.noisePhase * 1.7) * 0.05;
     input->current.aimAngle = std::atan2(toward.y, toward.x) + aimWobble;
-    input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
 
     // The true maximum hit distance, centre to centre, is where a petal's far
     // edge just touches the mob's edge: reach, less the buffer folded into it,
@@ -2435,7 +2408,6 @@ void GameServer::botHunt(Bot& bot, const BotSenses& senses, double nowMillis) {
     const Vec2 toward = targetAt - senses.at;
     const double dist = std::max(1e-6, toward.length());
     input->current.aimAngle = std::atan2(toward.y, toward.x);
-    input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
 
     // Petals carried neutral on the way in, thrown out as the bot arrives.
     // A flower sprinting across a field with its ring at full extension is not
@@ -2471,7 +2443,6 @@ void GameServer::botLoot(Bot& bot, const BotSenses& senses, double nowMillis) {
     const double dist = std::max(1e-6, toward.length());
     const Vec2 direction = toward / dist;
     input->current.aimAngle = std::atan2(direction.y, direction.x);
-    input->aimDirection = direction;
     botSetPetals(bot, false, nowMillis);
     // Only steer around walls when the drop is far enough that one could
     // genuinely be in the way; close-range pickup does not need it.
@@ -2509,7 +2480,6 @@ void GameServer::botRetreat(Bot& bot, const BotSenses& senses, double nowMillis)
     // player holds while running.
     botSetPetals(bot, false, nowMillis, true);
     input->current.aimAngle = std::atan2(escape.y, escape.x);
-    input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
     botDrive(bot, botSteerAroundWalls(bot.realm, senses.at, escape.normalized()), 1.0,
              kBotAvoidStrengthTravel, 1.6);
 }
@@ -2526,7 +2496,6 @@ void GameServer::botTravel(Bot& bot, const BotSenses& senses, double nowMillis, 
     const Vec2 toward = goal - senses.at;
     const double dist = std::max(1e-6, toward.length());
     input->current.aimAngle = std::atan2(toward.y, toward.x);
-    input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
 
     if (botFollowPath(bot, nowMillis, goal, 1.0, kBotAvoidStrengthTravel)) return;
     botDrive(bot, botSteerAroundWalls(bot.realm, senses.at, toward / dist), 1.0, kBotAvoidStrengthTravel);
@@ -2559,7 +2528,6 @@ void GameServer::botRoam(Bot& bot, const BotSenses& senses, double nowMillis) {
         // welded to the last heading.
         input->current.aimAngle =
             wrapAngle(input->current.aimAngle + botNoise(nowMillis, persona.noisePhase) * 0.06);
-        input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
         return;
     }
     ai.idleUntilMillis = 0;
@@ -2601,7 +2569,6 @@ void GameServer::botRoam(Bot& bot, const BotSenses& senses, double nowMillis) {
     // does not move like one formation at a single fixed pace.
     const double cruise = persona.cruise * (0.88 + 0.12 * botNoise(nowMillis, persona.noisePhase));
     input->current.aimAngle = ai.roamAngle;
-    input->aimDirection = Vec2::fromAngle(ai.roamAngle);
     botDrive(bot, steered, cruise, kBotAvoidStrengthTravel);
 }
 
@@ -2614,7 +2581,6 @@ void GameServer::botRevive(Bot& bot, const BotSenses& senses, double nowMillis, 
     const Vec2 toward = world_.get<Transform>(downed).position - senses.at;
     const double dist = std::max(1e-6, toward.length());
     input->current.aimAngle = std::atan2(toward.y, toward.x);
-    input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
     botSetPetals(bot, true, nowMillis);
     botDrive(bot, botSteerAroundWalls(bot.realm, senses.at, toward / dist), 0.95, kBotAvoidStrengthFight);
 }
@@ -2740,8 +2706,6 @@ void GameServer::stepOneBot(Bot& bot, double nowMillis) {
     BotSenses senses;
     botSense(bot, nowMillis, senses);
     botUpdateHome(bot, nowMillis, senses);
-    bot.hasAnchor = ai.hasHome;
-    if (ai.hasHome) bot.anchor = ai.home;
 
     const double homeDist = ai.hasHome ? (ai.home - senses.at).length() : 0.0;
 

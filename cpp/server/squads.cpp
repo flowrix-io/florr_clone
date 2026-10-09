@@ -36,10 +36,6 @@ Squad* SquadRoster::forMember(SquadMemberId who) {
     return nullptr;
 }
 
-const Squad* SquadRoster::forMember(SquadMemberId who) const {
-    return const_cast<SquadRoster*>(this)->forMember(who);
-}
-
 Squad* SquadRoster::create(SquadMemberId leader, bool isPublic, Rng& rng) {
     if (!leader.valid()) return nullptr;
     if (forMember(leader) != nullptr) return nullptr;
@@ -101,8 +97,7 @@ std::vector<const Squad*> SquadRoster::publicSquads() const {
     return out;
 }
 
-std::string SquadRoster::invite(SquadMemberId from, SquadMemberId to,
-                                const std::string& fromUsername, std::int64_t nowMillis) {
+std::string SquadRoster::invite(SquadMemberId from, SquadMemberId to, std::int64_t nowMillis) {
     Squad* squad = forMember(from);
     if (squad == nullptr) return "You are not in a squad.";
     if (!(squad->leader == from)) return "Only the squad leader can invite players.";
@@ -114,7 +109,7 @@ std::string SquadRoster::invite(SquadMemberId from, SquadMemberId to,
         return "That player already has a pending invite.";
     }
 
-    invites_[to.connection] = Invite{squad->id, fromUsername, nowMillis + kSquadInviteMillis};
+    invites_[to.connection] = Invite{squad->id, nowMillis + kSquadInviteMillis};
     return {};
 }
 

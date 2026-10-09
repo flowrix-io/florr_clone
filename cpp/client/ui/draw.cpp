@@ -107,17 +107,28 @@ void paintRun(Canvas& canvas, const std::string& s, double penX, double baseline
 #endif
 }
 
+Vec2 textPen(const std::string& s, double x, double y, const TextStyle& style) {
+    return {originX(x, measure(s, style.size), style.align),
+            baselineY(y, style.size, style.baseline)};
+}
+
 void text(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style) {
     if (s.empty() || !Fonts::ready()) return;
-    const double pen = originX(x, measure(s, style.size), style.align);
-    const double base = baselineY(y, style.size, style.baseline);
+    const Vec2 pen = textPen(s, x, y, style);
     // The one place a run can be recorded from: every label, heading and chat
     // token in the game is painted through here, so the selectable-text layer
     // needs no second copy of the alignment arithmetic to agree with.
     if (capturingText()) {
-        TextSelect::instance().record(s, pen, base, style.size);
+        TextSelect::instance().record(s, pen.x, pen.y, style.size);
     }
-    paintRun(canvas, s, pen, base, style);
+    paintRun(canvas, s, pen.x, pen.y, style);
+}
+
+void textAtAlpha(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style,
+                 double alpha) {
+    canvas.setGlobalAlpha(static_cast<float>(alpha));
+    text(canvas, s, x, y, style);
+    canvas.setGlobalAlpha(1.0f);
 }
 
 double textWidth(Canvas&, const std::string& s, double size) {
@@ -147,10 +158,6 @@ void plate(Canvas& canvas, Rect r, std::uint32_t fill, double radius,
         canvas.setLineJoin("round");
         canvas.stroke();
     }
-}
-
-void panel(Canvas& canvas, Rect r, double alpha) {
-    plate(canvas, r, kPanel, kPanelRadius, kPanelDark, 4.0, alpha);
 }
 
 void button(Canvas& canvas, Rect r, const std::string& label, bool hovered, bool pressed,
@@ -190,30 +197,6 @@ void button(Canvas& canvas, Rect r, const std::string& label, bool hovered, bool
     text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, ts);
 }
 
-void bar(Canvas& canvas, Rect r, double fraction, std::uint32_t fill,
-         std::uint32_t back, double radius) {
-    if (r.w <= 0 || r.h <= 0) return;
-    const double rad = radius < 0 ? r.h * 0.5 : radius;
-    plate(canvas, r, back, rad);
-
-    const double clamped = clamp(fraction, 0.0, 1.0);
-    if (clamped <= 0) return;
-
-    const double outline = outlineFor(r.h);
-    const double innerH = std::max(0.0, r.h - outline * 2);
-    const double innerW = std::max(0.0, r.w - outline * 2) * clamped;
-    // Below the corner radius the fill would render as a sliver of the wrong
-    // shape; drawing nothing reads better than a stray dot.
-    if (innerW < 1.0 || innerH < 1.0) return;
-
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x + outline), static_cast<float>(r.y + outline),
-                     static_cast<float>(innerW), static_cast<float>(innerH),
-                     static_cast<float>(std::min(rad, innerH * 0.5)));
-    setFill(canvas, fill);
-    canvas.fill();
-}
-
 void disc(Canvas& canvas, Vec2 centre, double radius, std::uint32_t fill,
           std::uint32_t outline, double outlineWidth, double alpha) {
     if (radius <= 0) return;
@@ -227,11 +210,6 @@ void disc(Canvas& canvas, Vec2 centre, double radius, std::uint32_t fill,
         canvas.strokeCircle(static_cast<float>(centre.x), static_cast<float>(centre.y),
                             static_cast<float>(radius));
     }
-}
-
-void scrim(Canvas& canvas, double alpha) {
-    setFill(canvas, kShade, alpha);
-    canvas.fillRect(0, 0, static_cast<float>(canvas.width()), static_cast<float>(canvas.height()));
 }
 
 void selectionHighlight(Canvas& canvas, const TextRun& run, const TextSelection& selection,

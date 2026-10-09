@@ -84,10 +84,6 @@ constexpr double kNameDropPull = 0.5;
 constexpr double kForgeTimeoutSeconds = 8.0;
 constexpr double kRefusalSeconds = 3.0;
 
-bool knownPetal(std::uint16_t petalIndex) {
-    return petalIndex != kNoPetal && petalIndex < content().petalCount();
-}
-
 /// An apex stack as the staging counts it, held below what an int holds.
 std::uint32_t apexOwned(const Profile& profile, std::uint16_t petalIndex) {
     return std::min<std::uint32_t>(profile.stackCount(petalIndex, Rarity::Apex),

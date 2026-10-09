@@ -85,8 +85,8 @@ inline constexpr double kMazeBossRoomRadius = 2000.0;
 inline constexpr double kMazeTierUpChance = 0.08;
 inline constexpr double kMazeTierDownChance = 0.20;
 
-/// Types that never spawn in the maze whatever their section list says: wave
-/// spawners would flood the corridors, and the utility mobs make no sense
+/// Types that never spawn in the maze whatever their biome's mob group says:
+/// wave spawners would flood the corridors, and the utility mobs make no sense
 /// there. Centipede bodies are excluded by structure -- a body only ever
 /// follows a head.
 inline constexpr std::array<const char*, 6> kMazeExcludedMobs = {{
@@ -99,16 +99,6 @@ inline constexpr double kModeSpawnIntervalMillis = kPopulationIntervalMillis;
 
 class ModeSpawner {
 public:
-    /// What the last pass counted, for tests and the console.
-    struct Census {
-        int arenaPlayers = 0;
-        int arenaMobs = 0;
-        int mazePlayers = 0;
-        int mazeMobs = 0;
-        int mazeBosses = 0;
-        int mazeTarget = 0;
-    };
-
     /// `players` is every connected flower with a body, in whatever realm; the
     /// pass keeps the ones in the arena and the maze. `grid` is the tick's
     /// broadphase, for the too-close checks -- at maze density a linear scan
@@ -121,15 +111,21 @@ public:
     /// would be standing inside today's walls.
     void clearMaze(World& world, CommandBuffer& commands);
 
-    /// Runs both passes on the next call regardless of the clock.
-    void requestImmediatePass() { nextPassMillis_ = 0; }
-
-    const Census& census() const { return census_; }
-
     /// The maze's live population target for the active layout.
     static int mazePopulationTarget();
 
 private:
+    /// What the current pass counted; the arena and maze passes top up
+    /// against it.
+    struct Census {
+        int arenaPlayers = 0;
+        int arenaMobs = 0;
+        int mazePlayers = 0;
+        int mazeMobs = 0;
+        int mazeBosses = 0;
+        int mazeTarget = 0;
+    };
+
     struct PoolEntry {
         std::uint16_t mobIndex = 0;
         double weight = 1.0;

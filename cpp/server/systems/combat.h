@@ -3,12 +3,16 @@
 // follows.
 //
 // The whole point of this file is that there is exactly ONE function that
-// writes Health::current -- applyDamage(). Invulnerability, the same-team
-// refusal, the hurt flash, the contribution ledger, the damage event and the
-// transition to Dead are consequences of a hit, and a consequence that lives
-// in only one place cannot be forgotten by the next damage source somebody
-// adds. No other system may touch Health::current; it should reach for
-// applyDamage instead.
+// DEALS damage -- applyDamage(). Invulnerability, the same-team refusal, the
+// hurt flash, the contribution ledger, the damage event and the transition to
+// Dead are consequences of a hit, and a consequence that lives in only one
+// place cannot be forgotten by the next damage source somebody adds. Every hit
+// goes through it; a system that wants to hurt something should reach for
+// applyDamage rather than write Health::current. The writes that do not go
+// through it are not hits: heals and revives, a level-up's refill and a
+// max-health rescale, Second Chance's 1 HP, fell(), a shared chain mirroring
+// its pool, a shot spending its own pool on what it struck, and the petal
+// system spending or cracking a petal by zeroing it.
 //
 // STRUCTURAL TRAP: applyDamage() adds the Dead tag, which relocates the victim
 // between archetypes and invalidates every column pointer a Query::each is
@@ -236,8 +240,9 @@ public:
     /// `setMobKnockback()` rather than accumulating momentum.
     void applyKnockback(World& world, Entity victim, Vec2 offset, double strength);
 
-    /// The momentum a shot transfers into a MOB it hits, committed straight to
-    /// the victim's position.
+    /// The momentum a shot transfers into a MOB it hits, owed to the victim's
+    /// Knockback::carry, which the movement pass spends through the wall
+    /// resolver (a mob with no Knockback component is displaced at once).
     ///
     /// Flowers are excluded: a shot moves them through applyKnockback, which
     /// movement drains. A mob takes this INSTEAD of a queued knockback, so the
@@ -621,6 +626,14 @@ private:
     /// applyDamage refuses before it would roll.
     bool rollDodge(World& world, Entity victim, double nowMillis);
 
+    /// The colony's and the relic's split: `amount` shared evenly over `group`
+    /// plus `victim`, each share going back through applyDamage as that body's
+    /// own hit while `guard` is raised, so no share is shared again. Sums what
+    /// landed, is refused only when every share was, and carries the struck
+    /// victim's own death and dodge.
+    DamageResult shareHit(World& world, std::vector<Entity> group, Entity victim, Entity source,
+                          double amount, double nowMillis, DamageKind kind, bool& guard);
+
     /// Cotton: land `amount` of any damage aimed at `flower` -- the last step
     /// before its health bar, behind the shield and the sponge -- on the
     /// flower's live cottons first, each taking up to what it has left, and return the
@@ -699,9 +712,10 @@ private:
     /// would have the strike delete the list it was called from.
     std::vector<Entity> strikeCandidates_;
     std::vector<Entity> strikeVictims_;
-    /// Where the bolts end, for the wire. Trimmed to net::kMaxLightningTargets;
-    /// strikeVictims_ is not, because every flower inside the disc is hit
-    /// whether or not an arm was drawn to it.
+    /// Where the bolts end, for the wire, of which the event queue draws the
+    /// net::kMaxLightningTargets nearest (EventQueue::lightning).
+    /// strikeVictims_ is never trimmed, because every flower inside the disc
+    /// is hit whether or not an arm was drawn to it.
     std::vector<Vec2> strikeArms_;
     /// TypeScript stops after the first legitimate mob body-contact for a
     /// player each tick. Reused rather than allocated in resolveMelee().

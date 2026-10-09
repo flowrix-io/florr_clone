@@ -60,8 +60,9 @@ if(NOT EMSCRIPTEN)
 endif()
 
 # --- cpp_canvas: the vendored Canvas2D-alike renderer ------------------------
-# Upstream ships it as a demo executable; built as a library here so both the
-# client and the render tools can link it.
+# Upstream ships it as a demo executable, whose build files are not vendored;
+# built as a library here, straight from its sources, so both the client and
+# the render tools can link it.
 add_library(cpp_canvas STATIC
   third_party/cpp_canvas/canvas.cpp
   third_party/cpp_canvas/svg.cpp
@@ -93,6 +94,7 @@ add_library(flix_shared STATIC
   shared/net/transport.cpp
   shared/net/web_channel.cpp
   shared/net/admin_db.cpp
+  shared/net/admin_dashboard.cpp
   shared/game/rarity.cpp
   shared/game/config.cpp
   shared/game/skin_format.cpp
@@ -109,6 +111,7 @@ target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(flix_server STATIC
   server/game_server.cpp
   server/account_limits.cpp
+  server/admin_dashboard.cpp
   server/admin_db.cpp
   server/admin_db_key.cpp
   server/bot_ai.cpp
@@ -168,6 +171,7 @@ add_library(flix_client STATIC
   client/ui/menu_titan.cpp
   client/ui/menu_gallery.cpp
   client/ui/menu_guild.cpp
+  client/ui/menu_admin_dashboard.cpp
   client/ui/menu_admin_db.cpp
   client/ui/menu_talents.cpp
   client/ui/menu_shop.cpp
@@ -228,8 +232,9 @@ endfunction()
 flix_stage_font(Ubuntu-Bold.ttf
                679b5c1e09cab3156bb8ef529735f9382bf31ca7ac737382ab959297f8d82ad4)
 
-# The src data stays the single source of truth; stage it beside the binaries
-# so both programs find one content directory.
+# The repository's data/ (mobs.json, petals.json, mob_drops.json) and maps/ are
+# the single source of truth; stage them beside the binaries so both programs
+# find one content directory.
 #
 # Modelled as a custom COMMAND with real outputs rather than a custom TARGET
 # that always runs, because the web link has to be able to DEPEND on the
@@ -302,9 +307,9 @@ file(GLOB FLIX_TILE_ART CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../maps/ti
 file(GLOB FLIX_GROUND_ART CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../maps/ground/*.svg)
 
 set(FLIX_DATA_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/mobs.json
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/petals.json
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/mob_drops.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/../data/mobs.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/../data/petals.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/../data/mob_drops.json
     ${CMAKE_CURRENT_SOURCE_DIR}/../maps/maps.json
     # Every map maps.json names. Read out of the manifest rather than globbed,
     # so adding a map is one edit in one file and the build fails loudly if the
@@ -387,7 +392,10 @@ if(EMSCRIPTEN)
   # so there is nothing to gain from a separate fetch it would have to wait for
   # anyway; a single artifact cannot half-deploy, which a .wasm and a stale
   # .data next to it can; and the server build has no page to run a preload
-  # from at all. The whole set is ~1MB, which is smaller than the wasm.
+  # from at all. The whole set is about 3.3MB, the maps most of it -- more of
+  # the linked wasm by now than the code is -- but it is nearly all text, and
+  # it deflates with the rest of the module in the bundle.wasm.bin the page
+  # prefers (scripts/build-web.js).
   set(FLIX_EMBED_DATA "--embed-file" "${FLIX_DATA_DIR}@data")
 
   # The embed happens at LINK time, so the linked output is stale the moment a
@@ -461,7 +469,6 @@ if(EMSCRIPTEN)
     "-flto"
     "-msimd128"
     "-sEVAL_CTORS=0"
-    "-fno-rtti -fno-exceptions"
     ${FLIX_WEB_CLIENT_OPT}
     ${FLIX_EMBED_DATA}
     "--shell-file" "${CMAKE_CURRENT_SOURCE_DIR}/client/web/shell.html")
@@ -472,11 +479,14 @@ if(EMSCRIPTEN)
   # the native one -- the same tick, the same systems, the same database -- and
   # differs only in what carries the bytes: net/web_channel.cpp accepts
   # WebSocket and, when a certificate is configured, WebTransport sessions.
-  # .js, not .mjs: the emitted module has to be CommonJS, because the transport
-  # reaches for Node's `http`, `crypto` and `fs` with require() from inside
-  # EM_JS. Those are built in, and they are all it reaches for -- the WebSocket
-  # server is written out in net/web_channel.cpp rather than taken from npm --
-  # so what dist/ needs beside it to run is nothing at all.
+  # .js, not .mjs: the emitted module has to be CommonJS, because the server
+  # reaches for Node's built-ins -- `fs`, `path`, `crypto`, `http`/`https`, `os`
+  # and `child_process` -- with require() from inside EM_JS and EM_ASM. Those
+  # are all it requires; the WebSocket server is written out in
+  # net/web_channel.cpp rather than taken from npm. The one package it ever
+  # loads is @fails-components/webtransport, by dynamic import and only for
+  # WebTransport, and without it the server still serves WebSocket -- so what
+  # dist/ needs beside it to run is nothing at all.
   target_link_options(flowrix_server PRIVATE
     ${FLIX_WEB_LINK_OPTIONS}
     "-sENVIRONMENT=node"
@@ -551,9 +561,9 @@ if(EMSCRIPTEN)
   # linked module through wasm2js, which rewrites it into the JavaScript the
   # asm.js era compiled to, and the glue carries its own WebAssembly shim so
   # nothing reaches for the engine's. With -sSINGLE_FILE that is still one
-  # HTML file that opens from disk -- 8.6MB against the wasm page's 5.9MB, and
-  # slower to start and to run, which is the trade for playing at all where
-  # wasm is off or missing.
+  # HTML file that opens from disk -- a couple of megabytes larger than the
+  # wasm page, and slower to start and to run, which is the trade for playing
+  # at all where wasm is off or missing.
   #
   # Two things this link must NOT have, both of which the wasm page does:
   #   * -msimd128. wasm2js cannot translate SIMD instructions, and the link
@@ -580,20 +590,25 @@ if(EMSCRIPTEN)
 endif()
 
 # --- tools -------------------------------------------------------------------
-# Native only: two write a PPM from a headless rasterizer, the other runs the
-# server's own systems.
+# Native only. svg_smoke and raster_parity write a PPM from the headless
+# rasterizer; bot_probe and projectile_bench boot the real server;
+# mob_render_bench and hitbox_fit draw through the client's own renderer.
 if(NOT EMSCRIPTEN)
+# Every mob and petal artwork in the staged mobs.json and petals.json, drawn
+# through the SVG compiler onto one contact sheet. The staged directory rides
+# in as FLIX_TEST_DATA_DIR, as it does for bot_probe and hitbox_fit, and the
+# staging runs first, so the sheet is of the content this build ships. See
+# the file's own header.
 add_executable(svg_smoke tools/svg_smoke.cpp)
 target_link_libraries(svg_smoke PRIVATE flix_shared cpp_canvas)
+target_compile_definitions(svg_smoke PRIVATE FLIX_TEST_DATA_DIR="${FLIX_DATA_DIR}")
+add_dependencies(svg_smoke flix_data)
 
 # The rasterizer's fingerprint. Build it either side of a canvas.cpp change and
 # diff the two PPMs: the coverage maths is not what any of those changes are
 # for, so a correct one moves no bytes at all. See the file's own header.
 add_executable(raster_parity tools/raster_parity.cpp)
 target_link_libraries(raster_parity PRIVATE cpp_canvas)
-
-add_executable(behavior_oracle tools/behavior_oracle.cpp)
-target_link_libraries(behavior_oracle PRIVATE flix_server)
 
 # The bot controller's fingerprint. Runs a real server with a real bot
 # population for a few simulated minutes and prints what they did -- how often
@@ -626,7 +641,7 @@ add_dependencies(mob_render_bench flix_data)
 add_executable(hitbox_fit tools/hitbox_fit.cpp)
 target_link_libraries(hitbox_fit PRIVATE flix_client cpp_canvas)
 target_compile_definitions(hitbox_fit PRIVATE
-  FLIX_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../src"
+  FLIX_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../data"
   FLIX_TEST_DATA_DIR="${FLIX_DATA_DIR}")
 add_dependencies(hitbox_fit flix_data)
 

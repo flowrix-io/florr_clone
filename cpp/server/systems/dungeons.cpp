@@ -10,16 +10,6 @@
 
 namespace flix {
 
-namespace {
-
-bool standing(const World& world, Entity e) {
-    if (!world.isAlive(e) || world.has<Dead>(e)) return false;
-    const Health* health = world.tryGet<Health>(e);
-    return health == nullptr || health->alive();
-}
-
-} // namespace
-
 void DungeonSystem::index(const ContentRegistry& content) {
     indexed_ = true;
     instances_.clear();
@@ -51,21 +41,6 @@ void DungeonSystem::index(const ContentRegistry& content) {
 
 bool DungeonSystem::isInstance(Realm realm) const {
     return indexed_ && byRealm_[realmIndex(realm)] >= 0;
-}
-
-std::vector<DungeonSystem::InstanceView> DungeonSystem::instances() const {
-    std::vector<InstanceView> out;
-    for (const Instance& instance : instances_) {
-        InstanceView view;
-        view.realm = instance.realm;
-        view.live = instance.live;
-        view.entrance = instance.entrance;
-        view.dwellers = instance.dwellers;
-        view.players = instance.players;
-        view.cleared = instance.clearedAtMillis >= 0.0;
-        out.push_back(view);
-    }
-    return out;
 }
 
 DungeonSystem::Instance* DungeonSystem::claim(const std::string& mapId) {
@@ -244,7 +219,7 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
     std::vector<Flower> flowers;
     Query<PlayerTag, Transform, Body> players{world};
     players.each([&](Entity e, PlayerTag&, Transform& transform, Body& body) {
-        if (!standing(world, e)) return;
+        if (!isStanding(world, e)) return;
         flowers.push_back({e, transform.realm, transform.position, body.radius});
     });
 
@@ -252,7 +227,7 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
     std::vector<std::pair<Entity, Entity>> entering;   // (player, nest)
     Query<DungeonEntrance, Transform, Body> nests{world};
     nests.each([&](Entity nest, DungeonEntrance&, Transform& transform, Body& body) {
-        if (!standing(world, nest)) return;
+        if (!isStanding(world, nest)) return;
         for (const Flower& flower : flowers) {
             if (flower.realm != transform.realm) continue;
             const double reach = body.radius + flower.radius;
@@ -291,8 +266,10 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
         }
         if (instance->clearedAtMillis >= 0.0) continue;
         if (moveToRealm) moveToRealm(player, instance->realm, arrivalPoint(*instance, rng, terrain));
+        // Copied out: a lambda may not capture a structured binding before C++20.
+        const Entity entered = player;
         approaches_.erase(std::remove_if(approaches_.begin(), approaches_.end(),
-                                         [&](const Approach& a) { return a.player == player; }),
+                                         [&](const Approach& a) { return a.player == entered; }),
                           approaches_.end());
     }
 
@@ -307,7 +284,7 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
         const int slot = byRealm_[realmIndex(transform.realm)];
         if (slot < 0) return;
         Instance& instance = instances_[static_cast<std::size_t>(slot)];
-        if (!instance.live || !standing(world, e)) return;
+        if (!instance.live || !isStanding(world, e)) return;
         ++instance.dwellers;
         if (!world.has<DungeonDweller>(e)) {
             // Born in here after the brood was put down -- by any mob whose
@@ -327,7 +304,7 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
     // Dead flowers count as inside too: one waiting on the death screen has
     // not left, and its party should not be cleaned out from under it.
     players.each([&](Entity e, PlayerTag&, Transform& transform, Body&) {
-        if (standing(world, e)) return;
+        if (isStanding(world, e)) return;
         const int slot = byRealm_[realmIndex(transform.realm)];
         if (slot >= 0) ++instances_[static_cast<std::size_t>(slot)].players;
     });
@@ -336,7 +313,7 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
         Instance& instance = instances_[i];
         if (!instance.live) continue;
         const Entity nest = instance.entrance;
-        const bool nestStands = standing(world, nest);
+        const bool nestStands = isStanding(world, nest);
 
         if (instance.clearedAtMillis < 0.0) {
             if (!nestStands) {

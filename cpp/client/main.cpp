@@ -12,12 +12,12 @@
 // returning from main() there is normal and must not tear the runtime down,
 // which is what -sEXIT_RUNTIME=0 in the emscripten link flags is for.
 
-#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
 #include "client/app.h"
+#include "shared/core/text.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -43,7 +43,8 @@ void usage(const char* program) {
         "usage: %s [options]\n"
         "  --host <address>   server to connect to (default 127.0.0.1)\n"
         "  --port <number>    server port (default 3000)\n"
-        "  --data <dir>       directory holding mobs.json and petals.json (default data)\n"
+        "  --data <dir>       the staged content: mobs.json, petals.json,\n"
+        "                     mob_drops.json, the maps and the font (default data)\n"
         "  --width <px>       window width (default 1280)\n"
         "  --height <px>      window height (default 720)\n"
         "  --user <name>      log in (or register) automatically\n"
@@ -51,7 +52,8 @@ void usage(const char* program) {
         "  --frames <n>       render n frames then exit\n"
         "  --screenshot <f>   write the last frame to f as a PPM\n"
         "  --menu <name>      open a menu on startup: inventory, craft, talents,\n"
-        "                     mobgallery, shop, skins, leaderboard, settings\n"
+        "                     mobgallery, shop, skins, leaderboard, settings, or\n"
+        "                     admin (the dashboard, for an admin account)\n"
         "  --lobby            log in but stay on the title screen\n"
         "  --spawn <where>    where to join: a spawn-point id from the picker\n"
         "                     (garden, ...), or pvp / maze. A door a map marks\n"
@@ -99,10 +101,10 @@ int main(int argc, char** argv) {
             // Matched against the menu's own label, lowercased and with the
             // spaces taken out, so "mobgallery" reaches "Mob Gallery" without
             // a second table of names to keep in step with the first.
-            const auto slug = [](std::string text) {
+            const auto slug = [](const std::string& text) {
                 std::string out;
-                for (const char c : text) {
-                    if (c != ' ') out += static_cast<char>(std::tolower(c));
+                for (const char c : flix::lowerCase(text)) {
+                    if (c != ' ') out += c;
                 }
                 return out;
             };
@@ -117,7 +119,6 @@ int main(int argc, char** argv) {
                 return 2;
             }
         }
-        else if (arg == "--admin-gui") config.autoAdminDashboard = true;
         else if (arg == "--lobby") config.autoJoin = false;
         else if (arg == "--spawn") config.autoSpawn = next("--spawn");
         else if (arg == "--login") config.forceLogin = true;

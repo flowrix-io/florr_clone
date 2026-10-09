@@ -59,7 +59,6 @@ EM_JS(void, flix_net_init, (), {
       return {
         listener: false,
         state: 0,
-        kind: "",
         peer: "",
         error: "",
         chunks: [],
@@ -111,7 +110,6 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
     const client = net.channel();
     const server = net.channel();
     const wire = (from, to, peer) => {
-      from.kind = "loopback";
       from.peer = peer;
       from.state = 1;
       // Handed over whole and unshared: send() already sliced the bytes out of
@@ -155,7 +153,7 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
     channel.sender = (bytes) => socket.send(bytes);
     channel.bufferedFn = () => socket.bufferedAmount || 0;
     channel.closer = () => { try { socket.close(); } catch (e) { } };
-    socket.onopen = () => { channel.kind = "websocket"; channel.peer = origin; channel.state = 1; };
+    socket.onopen = () => { channel.peer = origin; channel.state = 1; };
     socket.onmessage = (event) => {
       const data = event.data;
       if (data instanceof ArrayBuffer) net.deliver(channel, new Uint8Array(data));
@@ -197,7 +195,6 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
     };
     channel.bufferedFn = () => channel.outstanding;
     channel.closer = () => { try { session.close(); } catch (e) { } };
-    channel.kind = "webtransport";
     channel.peer = origin;
     channel.state = 1;
 
@@ -343,21 +340,25 @@ EM_JS(int, flix_ch_listen,
       console.warn("[net] cannot read " + certPath + "/" + keyPath + "; http only");
     }
   } else {
-    // The named pairs, in the working directory. VALIDITY decides, not order:
-    // the same rule the TypeScript server follows, and the reason it matters
-    // here is that the committed cert.crt outlives its own dates while the
-    // generated dev pair is refreshed. Serving the dead one would cost every
-    // browser the connection and cost WebTransport its pinnable digest.
+    // The named pairs, in the working directory: cert.crt/cert.key, a real
+    // certificate put there by hand, and dev-cert.crt/dev-cert.key, the
+    // localhost pair `npm run dev:cert` writes. VALIDITY decides, not order --
+    // the rule the TypeScript server followed -- because either one can be
+    // left lying there past its dates while the other is current. Serving the
+    // dead one would cost every browser the connection and cost WebTransport
+    // its pinnable digest.
     const found = [readPair("cert.crt", "cert.key"),
                    readPair("dev-cert.crt", "dev-cert.key")].filter(Boolean);
     credentials = found.find((pair) => !pair.expired) || found[0] || null;
   }
 
   if (credentials && credentials.expired) {
-    // Reported, not repaired: regenerating is the TypeScript server`s job --
-    // these files are shared, and two writers is how they come to disagree.
+    // Reported, not repaired: scripts/gen-dev-cert.js (`npm run dev:cert`) is
+    // the one writer of the dev pair, and a real certificate is renewed by
+    // whoever installed it. Two writers is how these files come to disagree.
     console.warn("[net] " + credentials.name + " expired on " + credentials.validTo +
-                 "; browsers will refuse it. `npm start` regenerates it.");
+                 "; browsers will refuse it. Run `npm run dev:cert` for a fresh " +
+                 "localhost certificate.");
   }
   console.log("[net] serving " + (credentials ? "https" : "http") + " from " + webRoot +
               (credentials ? " (" + credentials.name + ")" : ""));
@@ -393,20 +394,94 @@ EM_JS(int, flix_ch_listen,
     ".txt": "text/plain; charset=utf-8",
   };
 
-  const sendFile = (response, file, head) => {
+  // What this serves, by name: the web build's own files, at the top of the
+  // root and nowhere below it. The root is NOT a directory of web content. On
+  // every deployed box it is dist/, which is also the server's working
+  // directory, so beside the page sit the live database (inventory.json, and
+  // inventory.json.tmp while a save is landing) and the certificate pair read
+  // at start-up (cert.crt, cert.key). Serving whatever file a path named
+  // handed all of them to anyone who asked: every account's password hash,
+  // the salt that keeps the address hashes anonymous, and the TLS private
+  // key. The list is what the emscripten link emits for the page, the
+  // deflated copies build-web.js stages beside them, and the page's icon.
+  // The game's content is --embed-file'd into the wasm, so the page needs
+  // nothing else from here, and any other path is answered exactly as a
+  // missing file is.
+  const servedFiles = new Set([
+    // The page: bundle.html as the link names it, index.html as it is staged.
+    "index.html", "bundle.html",
+    // The glue and the module, and the deflated copies the page prefers.
+    "bundle.js", "bundle.js.bin", "bundle.wasm", "bundle.wasm.bin",
+    // The icon the shell links to (client/web/shell.html).
+    "favicon.ico",
+    // The single-file pages, where they have been built.
+    "offline.html", "offline-asmjs.html",
+  ]);
+
+  // Whether a conditional request's validators say the browser already holds
+  // this exact file. If-None-Match first, and If-Modified-Since only when it
+  // is absent (RFC 9110 13.2.2): an entity tag is the stronger statement, and
+  // a client that sent one is asking that question. A GET or HEAD compares
+  // tags weakly, so a W/ prefix is ignored, and "*" matches any file that
+  // exists. A date is compared in whole seconds, which is all an HTTP date
+  // carries, so a file is "not modified" when its mtime, cut to the second,
+  // is no later than the date the browser was given.
+  const notModified = (request, etag, mtime) => {
+    const ifNoneMatch = request.headers["if-none-match"];
+    if (typeof ifNoneMatch === "string") {
+      return ifNoneMatch.split(",").some((candidate) => {
+        const trimmed = candidate.trim();
+        const tag = trimmed.startsWith("W/") ? trimmed.slice(2) : trimmed;
+        return tag === "*" || tag === etag;
+      });
+    }
+    const ifModifiedSince = request.headers["if-modified-since"];
+    if (typeof ifModifiedSince === "string") {
+      const since = Date.parse(ifModifiedSince);
+      return !Number.isNaN(since) && Math.floor(mtime.getTime() / 1000) * 1000 <= since;
+    }
+    return false;
+  };
+
+  const sendFile = (request, response, file, head) => {
     let body;
     try {
-      const stat = fs.statSync(file);
+      // BigInt stats for the validator: size and mtime to the nanosecond, so
+      // a rebuild that lands within the same millisecond as the file it
+      // replaces still changes the tag.
+      const stat = fs.statSync(file, { bigint: true });
       if (!stat.isFile()) return false;
-      body = head ? null : fs.readFileSync(file);
-      response.writeHead(200, {
-        "Content-Type": mimeTypes[path.extname(file).toLowerCase()] || "application/octet-stream",
-        "Content-Length": head ? stat.size : body.length,
+      // Strong: these bytes and only these. A wasm that validated as the one
+      // before the last rebuild is the exact failure the no-cache below is
+      // there to prevent, so the tag changes whenever the file does. (The
+      // quote is a character rather than an escaped string: this is the body
+      // of an EM_JS, stringified by the preprocessor, and the whole of it is
+      // kept free of backslashes.)
+      const quote = '"';
+      const etag = quote + stat.size.toString(16) + "-" + stat.mtimeNs.toString(16) + quote;
+      const headers = {
         // Revalidate every time. This serves a build directory, and the one
         // failure worth designing against is a page still running the wasm
-        // from before the last rebuild.
+        // from before the last rebuild. The validators are what make that
+        // cheap: the shell fetches with cache: 'no-cache'
+        // (client/web/shell.html), and an unchanged file is answered 304
+        // with no body instead of a megabyte of the same wasm again.
         "Cache-Control": "no-cache",
-      });
+        "ETag": etag,
+        "Last-Modified": stat.mtime.toUTCString(),
+      };
+      if (notModified(request, etag, stat.mtime)) {
+        // Before any read: the browser has these bytes, so neither the disk
+        // nor the event loop pays for them.
+        response.writeHead(304, headers);
+        response.end();
+        return true;
+      }
+      body = head ? null : fs.readFileSync(file);
+      headers["Content-Type"] =
+          mimeTypes[path.extname(file).toLowerCase()] || "application/octet-stream";
+      headers["Content-Length"] = head ? Number(stat.size) : body.length;
+      response.writeHead(200, headers);
       response.end(body === null ? undefined : body);
       return true;
     } catch (e) {
@@ -454,17 +529,19 @@ EM_JS(int, flix_ch_listen,
       return;
     }
 
-    // A directory means its index. In cpp/build-web the client's page is
-    // named after its output (bundle.html) rather than index.html, which is
-    // the name it is staged into dist/ under, so both are tried.
-    let candidates = [target];
-    let isDirectory = false;
-    try { isDirectory = fs.statSync(target).isDirectory(); } catch (e) { }
-    if (isDirectory) {
-      candidates = [path.join(target, "index.html"), path.join(target, "bundle.html")];
-    }
+    // The root means its index. In cpp/build-web the client's page is named
+    // after its output (bundle.html) rather than index.html, which is the
+    // name it is staged into dist/ under, so both are tried. Only the root:
+    // no directory below it holds anything of the web build's.
+    //
+    // Anything off the list is a 404, never a 403, and the same 404 whether
+    // or not the file is there: a refusal that differed would tell a probe
+    // which of the names it guessed exist.
+    const name = path.relative(webRoot, target);
+    const candidates = name === "" ? ["index.html", "bundle.html"]
+                                   : servedFiles.has(name) ? [name] : [];
     for (const candidate of candidates) {
-      if (sendFile(response, candidate, head)) return;
+      if (sendFile(request, response, path.join(webRoot, candidate), head)) return;
     }
 
     response.writeHead(404, { "Content-Type": "text/plain" });
@@ -564,7 +641,6 @@ EM_JS(int, flix_ch_listen,
     socket.setNoDelay(true);
 
     const channel = net.channel();
-    channel.kind = "websocket";
     channel.peer = (socket.remoteAddress || "") + ":" + (socket.remotePort || 0);
     channel.state = 1;
     channel.sender = (bytes) => socket.write(encode(0x2, bytes));
@@ -733,7 +809,6 @@ EM_JS(int, flix_ch_listen,
               if (first.done || !first.value) throw new Error("no stream");
               const writer = first.value.writable.getWriter();
               const reader = first.value.readable.getReader();
-              channel.kind = "webtransport";
               channel.peer = String(session.peerAddress || "");
               channel.state = 1;
               channel.sender = (bytes) => {
@@ -843,9 +918,7 @@ EM_JS(void, flix_ch_close, (int id), {
 // this header would have no reason to expect it imposes.
 EM_JS(void, flix_ch_text, (int id, int which, char* out, int capacity), {
   const slot = Module.flixNet.get(id);
-  const value = !slot ? "" : (which === 0 ? (slot.peer || "")
-                            : which === 1 ? (slot.kind || "")
-                                          : String(slot.error || ""));
+  const value = !slot ? "" : (which === 0 ? (slot.peer || "") : String(slot.error || ""));
   stringToUTF8(value, out, capacity);
 });
 
@@ -861,9 +934,9 @@ void ensureInit() {
     done = true;
 }
 
-/// Peers, transport names and close reasons are all short; a caller that
-/// wanted more would be logging a JavaScript exception, which is worth
-/// truncating rather than allocating for.
+/// Peers and close reasons are both short; a caller that wanted more would be
+/// logging a JavaScript exception, which is worth truncating rather than
+/// allocating for. `which` is 0 for the peer and 1 for the close reason.
 std::string text(int channel, int which) {
     char buffer[256] = {0};
     flix_ch_text(channel, which, buffer, static_cast<int>(sizeof buffer));
@@ -871,8 +944,6 @@ std::string text(int channel, int which) {
 }
 
 } // namespace
-
-bool available() { return true; }
 
 int connect(const std::string& host, std::uint16_t port) {
     ensureInit();
@@ -906,8 +977,7 @@ std::size_t buffered(int channel) {
 void close(int channel) { flix_ch_close(channel); }
 
 std::string peer(int channel) { return text(channel, 0); }
-std::string kind(int channel) { return text(channel, 1); }
-std::string error(int channel) { return text(channel, 2); }
+std::string error(int channel) { return text(channel, 1); }
 
 } // namespace flix::net::web
 
@@ -916,8 +986,8 @@ std::string error(int channel) { return text(channel, 2); }
 namespace flix::net::web {
 
 // Natively there is no JavaScript runtime and transport.cpp uses real sockets;
-// these exist so a caller can ask without an #ifdef of its own.
-bool available() { return false; }
+// these exist so the API links on both builds and a caller can use it without
+// an #ifdef of its own. Every one of them fails.
 int connect(const std::string&, std::uint16_t) { return kInvalid; }
 int listen(std::uint16_t, const std::string&, const std::string&, const std::string&) {
     return kInvalid;
@@ -929,7 +999,6 @@ bool send(int, const void*, int) { return false; }
 std::size_t buffered(int) { return 0; }
 void close(int) {}
 std::string peer(int) { return {}; }
-std::string kind(int) { return {}; }
 std::string error(int) { return {}; }
 
 } // namespace flix::net::web

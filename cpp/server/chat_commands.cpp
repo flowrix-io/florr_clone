@@ -9,12 +9,16 @@
 //  * A slash line is never broadcast. It is answered, refused, or reported
 //    unknown. handleChatCommand returning true is what says "dealt with".
 //
-//  * Every System line here says exactly what the browser build's server says
-//    for the same command, word for word. That build renders HTML and joins
-//    its output with `<br/>` inside one message; this client renders text, so
-//    the same words arrive with the markup dropped and one message per line.
-//    Nothing gets a message the reference does not send, and nothing gets
-//    wording of its own -- src/server is the source of truth for the text.
+//  * A command the browser build had says what that build's server said for
+//    it, word for word: those System lines were ported from src/server (gone
+//    now; read it out of history at d47055a7, as CLAUDE.md describes). That
+//    server joined a reply's lines with `<br/>` inside one message. Here the
+//    console sends one message per line, the longer listings (/help,
+//    /guild-info) still arrive as one message joined with `<br/>`, and the
+//    client parses the markup either way (client/ui/markup.cpp). The verbs
+//    this build added -- the boss timers, the bot and squad reports,
+//    spawn_npc, control, announce, the dashboard and the database editor among
+//    them -- have wording of their own.
 //
 //  * A command this build has no counterpart for is simply not answered, the
 //    way the reference leaves an unrecognised admin verb unanswered. It is not
@@ -42,7 +46,6 @@
 #include "server/text.h"
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
-#include "shared/game/player_flags.h"
 #include "shared/game/terrain.h"
 
 namespace flix {
@@ -188,7 +191,7 @@ bool parseDurationMillis(const std::string& text, double& out) {
     if (digits == 0) return false;
     std::string unit = text.substr(digits);
     while (!unit.empty() && (unit.front() == ' ' || unit.front() == '\t')) unit.erase(0, 1);
-    for (char& c : unit) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    unit = lowerCase(unit);
 
     double scale = 0;
     if (unit.empty() || unit == "s" || unit == "sec" || unit == "secs") scale = 1000.0;
@@ -241,18 +244,14 @@ std::string clockWaitLabel(double leftMillis) {
 std::string localeTimestamp(std::int64_t millis) {
     const std::time_t seconds = static_cast<std::time_t>(millis / 1000);
     std::tm parts{};
-#if defined(_WIN32)
-    localtime_s(&parts, &seconds);
-#else
     localtime_r(&seconds, &parts);
-#endif
     char buffer[64];
     if (std::strftime(buffer, sizeof buffer, "%m/%d/%Y, %I:%M:%S %p", &parts) == 0) return {};
     return buffer;
 }
 
-/// Eight characters of A-Z0-9, as the browser build mints them, so a code from
-/// either server looks the same and pastes into the same shop field.
+/// Eight characters of A-Z0-9, as the browser build minted them, so codes from
+/// before and after the port look the same and paste into the same shop field.
 std::string mintCode(Rng& rng) {
     static const char kAlphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     std::string code;
@@ -262,26 +261,21 @@ std::string mintCode(Rng& rng) {
 }
 
 /// The two lines several commands share, spelled once. The mute notice is
-/// the reference's own coloured span; the unknown-command line names the same
-/// five commands its chat handler names.
+/// the reference's own coloured span, and every road a line takes to another
+/// player sends it through GameServer::speakerMuted; the unknown-command line
+/// names the commands its chat handler names, less the reference's two
+/// API-key commands: only the browser server's HTTP API ever honoured those
+/// keys, and this server has no such API to hand one to.
 constexpr const char* kMutedNotice =
     "<span style=\"color: #ff8866;\">You are muted and cannot send chat messages.</span>";
 constexpr const char* kUnknownCommand =
-    "Unknown command. Available commands: /biome, /level-from-string, /loadout-from-string, "
-    "/create-api-key, /delete-api-key";
+    "Unknown command. Available commands: /biome, /level-from-string, /loadout-from-string";
 /// The squad usage line, which is both the answer to a bare `/squad` and to a
 /// subcommand nothing matches.
 constexpr const char* kSquadCommands =
     "Squad commands: /squad-create [public|private], /squad-invite &lt;username&gt;, "
     "/squad-find-public, /squad-join &lt;squadId&gt;, /squad-public, /squad-private, "
     "/squad-accept, /squad-decline, /squad-leave, /squad-info";
-
-/// The four type tags the browser stores against a notification, and the
-/// universal forge's.
-bool validNotificationType(const std::string& type) {
-    return type == "super_craft" || type == "unique_craft" || type == "apex_craft" ||
-           type == "star_code" || type == "universal_craft";
-}
 
 } // namespace
 
@@ -294,76 +288,115 @@ void GameServer::sendSystem(net::Connection& connection, const std::string& text
 }
 
 bool GameServer::effectiveAdmin(const Session& session) const {
-    return session.owner() || session.admin || tempAdmins_.count(session.connection) != 0;
+    return session.admin || tempAdmins_.count(session.connection) != 0;
 }
 
-bool GameServer::grantAdmin(const std::string& username) {
-    Account* account = database_.findUser(username);
+bool GameServer::speakerMuted(const Session& session, net::Connection& connection) {
+    // Through the const lookup: this only reads the flag, and the mutable one
+    // would drop the speaker's cached row on every line they say.
+    const Account* account = std::as_const(database_).findUser(session.username);
+    if (account == nullptr || !account->muted) return false;
+    sendSystem(connection, kMutedNotice);
+    return true;
+}
+
+bool GameServer::grantAdmin(const std::string& sessionToken) {
+    // Which account this is, the database says, from a credential the server
+    // issued: the token the page's own client holds. Never a name, which is a
+    // string a player chose and anyone can type.
+    if (sessionToken.empty()) return false;
+    const Database::Session* record = database_.resolveSession(sessionToken);
+    if (record == nullptr) return false;
+    // Copied out: `record` points into the session table.
+    const std::string userId = record->userId;
+    Account* account = database_.findUserById(userId);
     if (account == nullptr) return false;
     if (!account->admin) {
         account->admin = true;
-        // In memory only until the database is written, and the next write is
-        // the periodic save half a minute out -- which a page closed before it
-        // lands would lose, along with the grant.
+        // In memory until the database is next written: the periodic save half
+        // a minute out, or sooner when the page goes away -- the offline
+        // page's pagehide handler flushes every account and the database into
+        // browser storage (persistAll), which is what keeps a grant made just
+        // before the tab closes. Only a page that dies without that event (a
+        // crash, a killed browser) can lose it.
         database_.markDirty();
     }
 
     // The session carries its own copy of the flag, taken at login: without
-    // this the grant would not be real until the player logged in again.
-    Session* session = sessionForUser(account->username);
-    if (session == nullptr) return true;
-    session->admin = true;
-    net::Connection* connection = listener_.find(session->connection);
-    if (connection == nullptr) return true;
-    // The same resend a temporary grant does, and for the same reason: the
-    // catalog's leading flag is where the client learns its standing, and it
-    // is what un-hides the /admin rows in the command autocomplete.
-    sendSkinCatalog(*session, *connection);
-    sendSystem(*connection, "<span style=\"color: #ffb74d;\">You are now an admin. Use /admin "
-                            "&lt;command&gt; or /help.</span>");
+    // this the grant would not be real until the player logged in again. Every
+    // connection signed into the account, by its id -- one account has one
+    // live session (replaceOtherSessions), so this is that one.
+    for (auto& [id, session] : sessions_) {
+        if (!session.authenticated() || session.userId != userId) continue;
+        session.admin = true;
+        net::Connection* connection = listener_.find(id);
+        if (connection == nullptr) continue;
+        // The same resend a temporary grant does, and for the same reason: the
+        // catalog's leading flag is where the client learns its standing, and
+        // it is what un-hides the /admin rows in the command autocomplete.
+        sendSkinCatalog(session, *connection);
+        // With the database editor's key, where the key is a fixed one -- the
+        // offline page's, the one caller of this, and the one place a player
+        // has no log to read it out of. `/admin db` says it too; a derived
+        // key is never said (see the editor's branch of the console).
+        const std::string editor =
+            config_.fixedAdminDbKey.empty()
+                ? std::string()
+                : " The database editor's key here is " + escapedMarkup(config_.fixedAdminDbKey) +
+                      ": /admin db " + escapedMarkup(config_.fixedAdminDbKey) + ".";
+        sendSystem(*connection, "<span style=\"color: #ffb74d;\">You are now an admin. Use "
+                                "/admin &lt;command&gt; or /help." +
+                                    editor + "</span>");
+    }
     return true;
 }
 
 void GameServer::revokeTempAdmin(net::ConnectionId id) {
     if (tempAdmins_.erase(id) == 0) return;
+    Session* session = sessionFor(id);
+    if (session == nullptr) return;
+    // A flower steered on the strength of the grant goes back to its player
+    // with it, now rather than at the next tick's check: the grant is what the
+    // control was lent on. Only control the grantee HOLDS -- being steered by
+    // somebody else has nothing to do with their own console.
+    if (session->controlling != 0) {
+        endControl(*session, "Control ended: your temporary admin access ended.", true);
+    }
     // The client learns its admin standing from the skin catalog's leading
     // flag, and that flag is what un-hides the admin rows in its command
     // autocomplete. Resending it is how a revoked console disappears from the
     // grantee's screen rather than lingering until their next login.
-    if (Session* session = sessionFor(id)) {
-        if (net::Connection* connection = listener_.find(id)) sendSkinCatalog(*session, *connection);
-    }
+    if (net::Connection* connection = listener_.find(id)) sendSkinCatalog(*session, *connection);
 }
 
 bool GameServer::resolveCommandTarget(const std::string& identifier, CommandTarget& out) {
     const std::string key = lowerCase(trimmed(identifier));
     if (key.empty()) return false;
 
-    // Account name first: it is the spelling an admin types, and it is unique.
-    // A nameplate is neither -- two flowers may share one -- so it is only
-    // consulted when nothing owns the name as an account.
+    // Account name first: it is the spelling an admin types, it is unique, and
+    // the server holds it -- no client chooses it.
     for (auto& entry : sessions_) {
         Session& session = entry.second;
         if (!session.playing()) continue;
         if (lowerCase(session.username) != key) continue;
-        out = {session.entity, &session,
-               session.displayName.empty() ? session.username : session.displayName};
+        out = {session.entity, &session, session.username};
         return true;
     }
 
-    Query<PlayerTag, PlayerAccount> flowers{world_};
-    Entity found = NULL_ENTITY;
-    std::string foundName;
-    flowers.each([&](Entity entity, PlayerTag&, PlayerAccount& account) {
-        if (found != NULL_ENTITY) return;
-        if (lowerCase(account.username) != key) return;
-        found = entity;
-        foundName = account.username;
-    });
-    if (found == NULL_ENTITY) return false;
-
-    out = {found, sessionForEntity(found), foundName};
-    return true;
+    // Then a bot, by nameplate: bots own no account, so the name is all there
+    // is to type, and teleporting them is half of what the console is for.
+    // Bots ONLY. A person's nameplate is any twenty printable bytes their
+    // client sent, and anyone may wear anyone's: matched here, a flower named
+    // after a player who is offline or on the title screen would take the
+    // grant, the give or the control meant for that player. resolveSquadTarget
+    // draws the same line.
+    for (const Bot& bot : bots_) {
+        if (bot.entity == NULL_ENTITY || !world_.isAlive(bot.entity)) continue;
+        if (lowerCase(bot.name) != key) continue;
+        out = {bot.entity, nullptr, bot.name};
+        return true;
+    }
+    return false;
 }
 
 void GameServer::teleportEntity(Entity entity, Vec2 position) {
@@ -398,11 +431,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // An empty `/g` is not answered at all, which is what the reference
         // does with it: there is nothing to say and nothing to send.
         if (argument.empty()) return true;
-        const Account* account = database_.findUser(session.username);
-        if (account != nullptr && account->muted) {
-            out(kMutedNotice);
-            return true;
-        }
+        if (speakerMuted(session, connection)) return true;
         const std::string guildName = guildNameForUser(session.username);
         if (guildName.empty()) {
             out("You are not in a guild.");
@@ -425,11 +454,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
 
     if (verb == "/s") {
         if (argument.empty()) return true;
-        const Account* account = database_.findUser(session.username);
-        if (account != nullptr && account->muted) {
-            out(kMutedNotice);
-            return true;
-        }
+        if (speakerMuted(session, connection)) return true;
         const Squad* squad = squads_.forMember(squadIdOf(session));
         if (squad == nullptr) {
             out("You are not in a squad.");
@@ -463,11 +488,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out("Usage: /w &lt;player&gt; &lt;message&gt;");
             return true;
         }
-        const Account* account = database_.findUser(session.username);
-        if (account != nullptr && account->muted) {
-            out(kMutedNotice);
-            return true;
-        }
+        if (speakerMuted(session, connection)) return true;
         const Session* target = sessionForUser(words[0]);
         net::Connection* peer = target != nullptr ? listener_.find(target->connection) : nullptr;
         if (peer == nullptr) {
@@ -719,74 +740,6 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         return true;
     }
 
-    if (verb == "/create-api-key") {
-        // The key is minted into the same `apiKeys` table the browser build's
-        // HTTP API authenticates against, so a key made here works there.
-        const std::string label = argument.empty() ? session.username : argument;
-        std::string body;
-        Rng keyRng(static_cast<std::uint64_t>(database_.nowMillis()) ^
-                   (static_cast<std::uint64_t>(hashName(session.userId)) << 21));
-        static const char kAlphabet[] = "abcdefghijklmnopqrstuvwxyz0123456789";
-        body.reserve(64);
-        for (int i = 0; i < 64; ++i) body.push_back(kAlphabet[keyRng.below(36)]);
-        const std::string key = "sk_" + body;
-
-        Json entry = Json::object();
-        entry["key"] = key;
-        entry["username"] = session.username;
-        entry["label"] = label;
-        entry["createdAt"] = static_cast<double>(database_.nowMillis());
-        database_.rawTable("apiKeys")[key] = std::move(entry);
-        database_.markDirty();
-
-        out("<b>[API KEY CREATED]</b><br/>Label: " + label + "<br/>Key: <b>" + key +
-            "</b><br/>Send this on requests as the X-API-Key header, or append "
-            "?api_key=&lt;key&gt; to the URL. Save it now \xE2\x80\x94 the full key is not shown "
-            "again.<br/>" +
-            (session.admin
-                 ? "Your account is admin, so this key has admin scope (can create star codes, "
-                   "broadcast notifications, etc.)."
-                 : "Your account is not admin, so this key has user scope only (read events, "
-                   "whoami). Admin endpoints will return 403."));
-        return true;
-    }
-
-    if (verb == "/delete-api-key") {
-        if (argument.empty()) {
-            out("Usage: /delete-api-key &lt;key-or-prefix&gt;");
-            return true;
-        }
-        // Only this account's own keys are visible here, by prefix or in full.
-        // Removing somebody else's stays an out-of-band operation, so the
-        // command can never escalate across users however it is typed at.
-        Json& keys = database_.rawTable("apiKeys");
-        std::vector<std::string> owned;
-        for (const std::string& key : keys.keys()) {
-            if (lowerCase(keys[key]["username"].asString()) == lowerCase(session.username)) {
-                owned.push_back(key);
-            }
-        }
-        std::vector<std::string> matches;
-        for (const std::string& key : owned) {
-            if (key == argument) { matches.assign(1, key); break; }
-            if (key.rfind(argument, 0) == 0) matches.push_back(key);
-        }
-        if (matches.size() > 1) {
-            out("Prefix \"" + argument + "\" is ambiguous \xE2\x80\x94 matches " +
-                std::to_string(matches.size()) + " of your keys. Provide more characters.");
-            return true;
-        }
-        if (matches.empty()) {
-            out("No API key of yours matched that key or prefix.");
-            return true;
-        }
-        const std::string label = keys[matches[0]]["label"].asString();
-        keys.erase(matches[0]);
-        database_.markDirty();
-        out("Deleted API key \"" + label + "\" (" + matches[0].substr(0, 10) + "...).");
-        return true;
-    }
-
     if (verb == "/help") {
         // One message, laid out with the reference's own markup: the client
         // parses this subset, so the listing arrives looking the way it looks
@@ -798,9 +751,6 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                 "roll <br/>";
         help += "/loadout-from-string &lt;name&gt; - Show the loadout a bot named &lt;name&gt; "
                 "would roll <br/>";
-        help += "/create-api-key [label] - Issue an API key tied to your account for /api/v1/* "
-                "<br/>";
-        help += "/delete-api-key &lt;key-or-prefix&gt; - Revoke one of your API keys <br/>";
         help += "<br/><b>Squad commands (groups of " + std::to_string(kMaxSquadSize) +
                 ", share loot as one instance):</b><br/>";
         help += "/squad-create [public|private] - Create a new squad (defaults to private)<br/>";
@@ -837,6 +787,9 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             help += "<br/><br/>Admin commands:<br/>";
             help += "/admin &lt;command&gt; - Execute server command<br/>";
             help += "/cmd &lt;command&gt; - Execute server command (alternative)<br/>";
+            // There is no lookup by id: a player is named by account, and a
+            // bot -- which has none -- by the name over its flower.
+            help += "A &lt;username&gt; is an account name, or a bot's name.<br/>";
             help += "Available server commands: save, list-players, list-sockets, "
                     "set_max_enemies, set_bot_count &lt;0-" + std::to_string(kMaxBots) +
                     "|default&gt;, bots (what the bot population is doing), squads (who the "
@@ -845,17 +798,20 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "[players|hostile|neutral] (any mob, as an NPC where you stand), "
                     "clear_npcs, killall (kill all wild "
                     "mobs), teleport "
-                    "&lt;playerId/username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
+                    "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
-                    "(move every bot only), give &lt;playerId/username&gt; &lt;itemType&gt; "
-                    "&lt;rarity&gt; [amount], set_skin &lt;playerId/username&gt; "
-                    "&lt;skin|none&gt;, corrupt &lt;playerId/username&gt; [on|off|toggle] "
+                    "(move every bot only), give &lt;username&gt; &lt;itemType&gt; "
+                    "&lt;rarity&gt; [amount], set_skin &lt;username&gt; "
+                    "&lt;skin|none&gt;, corrupt &lt;username&gt; [on|off|toggle] "
                     "(corrupted flowers fight players anywhere, not just in PVP), god "
-                    "[on|off|toggle] (make yourself invulnerable), grant_admin "
-                    "&lt;playerId/username&gt; (lend the admin console until they respawn), "
-                    "revoke_admin &lt;playerId/username&gt;, list_admins, mute "
-                    "&lt;playerId/username&gt; (bar an account from chat, persists across "
-                    "sessions), unmute &lt;playerId/username&gt;, unmute_all (lift every mute), "
+                    "[on|off|toggle] (make yourself invulnerable), control &lt;username&gt; "
+                    "(steer another player's flower with your own controls), release (give "
+                    "it back), announce &lt;message&gt; (a banner for every player; full "
+                    "admins only), gui (open the admin dashboard), grant_admin "
+                    "&lt;username&gt; (lend the admin console until they respawn), "
+                    "revoke_admin &lt;username&gt;, list_admins, mute "
+                    "&lt;username&gt; (bar an account from chat, persists across "
+                    "sessions), unmute &lt;username&gt;, unmute_all (lift every mute), "
                     "notification &lt;type&gt; "
                     "&lt;message&gt;, clear_notifications, delete_guests, list_today_logins, "
                     "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
@@ -961,7 +917,7 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
                 return;
             }
         }
-        const std::string error = squads_.invite(me, target, session.username, now);
+        const std::string error = squads_.invite(me, target, now);
         if (!error.empty()) {
             out(error);
             return;
@@ -1140,104 +1096,6 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     const std::string verb = lowerCase(words[0]);
     const std::string rest = argumentOf(trimmed(command));
 
-    if (verb == "dashboard") {
-        Json data = Json::object();
-        data["players"] = Json::array();
-        for (auto& entry : sessions_) {
-            const auto& other = entry.second;
-            if (!other.playing()) continue;
-            Json row = Json::object();
-            row["id"] = std::to_string(entry.first);
-            row["name"] = other.displayName.empty() ? other.username : other.displayName;
-            row["username"] = other.username;
-            data["players"].push(std::move(row));
-        }
-        data["control"] = session.controlledFlower != NULL_ENTITY;
-        if (words.size() >= 2) {
-            CommandTarget target;
-            if (resolveCommandTarget(words[1], target) && target.session) {
-                data["target"] = target.session->username;
-                int page = 0;
-                if (words.size() >= 3) parseInteger(words[2], page);
-                page = std::max(0, std::min(page, 100000));
-                const auto& inventory = liveRecord(*target.session).inventory;
-                data["inventory"] = Json::object();
-                int row = 0;
-                for (const auto& rarity : inventory.keys()) for (const auto& item : inventory[rarity].keys()) {
-                    if (row >= page * 6 && row < page * 6 + 6)
-                        data["inventory"][rarity][item] = inventory[rarity][item];
-                    ++row;
-                }
-                data["inventoryTotal"] = row;
-                data["page"] = page;
-            }
-        }
-        ByteWriter w;
-        w.u8(static_cast<std::uint8_t>(net::ServerMessage::AdminDashboard));
-        w.str(data.dump());
-        connection.send(w);
-        return;
-    }
-
-    if (verb == "release") {
-        if (auto* input = world_.tryGet<PlayerInput>(session.controlledFlower))
-            input->current = net::InputFrame{};
-        session.controlledFlower = NULL_ENTITY;
-        views_[session.connection] = {};
-        out("Flower control released.");
-        return;
-    }
-    if (verb == "control") {
-        CommandTarget target;
-        if (!session.playing() || words.size() != 2 ||
-            !resolveCommandTarget(words[1], target) || target.session == nullptr ||
-            !target.session->playing() || target.entity == session.entity ||
-            target.session->controlledFlower != NULL_ENTITY ||
-            realmOf(world_, target.entity) != realmOf(world_, session.entity)) {
-            out("Choose another online player in your realm: control <username>.");
-            return;
-        }
-        for (const auto& entry : sessions_) {
-            if (entry.second.controlledFlower == session.entity) {
-                out("Release the control of your own flower first."); return;
-            }
-            if (entry.second.controlledFlower == target.entity &&
-                entry.first != session.connection) {
-                out("Another admin is already controlling that flower.");
-                return;
-            }
-        }
-        if (auto* previous = world_.tryGet<PlayerInput>(session.controlledFlower))
-            previous->current = net::InputFrame{};
-        session.controlledFlower = target.entity;
-        views_[session.connection] = {};
-        if (auto* own = world_.tryGet<PlayerInput>(session.entity))
-            own->current = net::InputFrame{};
-        out("Controlling " + target.name + ". Movement and attacks now steer that flower. Use release to stop.");
-        return;
-    }
-    if (verb == "viewinv") {
-        CommandTarget target;
-        if (words.size() != 2 || !resolveCommandTarget(words[1], target) || !target.session) {
-            out("Choose an online player: viewinv <username>.");
-            return;
-        }
-        const Json& inventory = liveRecord(*target.session).inventory;
-        out("Inventory of " + target.name + ":");
-        for (const auto& rarity : inventory.keys())
-            for (const auto& item : inventory[rarity].keys())
-                out(rarity + " / " + item + " x " + inventory[rarity][item].dump());
-        if (inventory.size() == 0) out("Empty inventory.");
-        return;
-    }
-    if (verb == "announce") {
-        if (!session.owner()) { out("Announcements belong to a19kisme only."); return; }
-        if (rest.empty()) { out("Write a message after announce."); return; }
-        if (rest.size() > 120) { out("Announcements can contain up to 120 bytes."); return; }
-        broadcastChat(net::ChatChannel::Admin, "[ADMIN] a19kisme", escapedMarkup(rest), 0);
-        return;
-    }
-
     // The database editor's key is blanked out of the echo: the line sits in
     // the chat log for anyone looking over the admin's shoulder.
     const bool databaseEditor = verb == "db" || verb == "database" || verb == "db_editor";
@@ -1247,6 +1105,82 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         out("[ADMIN] " + session.username + " executed: " + echoed);
     } else {
         out("[ADMIN] " + session.username + " executed: " + command);
+    }
+
+    // -- flower control and announcements ----------------------------------
+    //
+    // The admin dashboard's other road (server/admin_dashboard.cpp). Its panel
+    // asks for control by connection in a binary request; these verbs ask by
+    // name, and both land in controlFlower and releaseFlower, so the console
+    // and the panel cannot disagree about who may steer whom. The panel
+    // announces through this verb itself, so its refusals land in chat the way
+    // every console answer does.
+
+    if (verb == "control") {
+        if (words.size() != 2) {
+            out("Usage: control <username>  (steer another player's flower; release to stop)");
+            return;
+        }
+        // By account name, or a bot by its nameplate -- the console's one
+        // rule for naming somebody (resolveCommandTarget).
+        CommandTarget target;
+        if (!resolveCommandTarget(words[1], target)) {
+            out("No player named " + words[1] + " is in the world.");
+            return;
+        }
+        if (target.session == nullptr) {
+            // Control is two sessions, one steering the other's input, and a
+            // bot has no session for its input to come from.
+            out(target.name + " is a bot, and only a player's flower can be controlled.");
+            return;
+        }
+        std::string answer;
+        controlFlower(session, *target.session, answer);
+        out(answer);
+        return;
+    }
+
+    if (verb == "release") {
+        std::string answer;
+        releaseFlower(session, answer);
+        out(answer);
+        return;
+    }
+
+    if (verb == "announce") {
+        // The database flag, as grant_admin and the editor check it, and not
+        // the console: the Admin channel is the one line every connected
+        // client raises a banner for, so it is the server's own voice, and a
+        // grant lent for one life does not lend that. Nothing about the
+        // sender's NAME enters into it.
+        if (!session.admin) {
+            out("Only a full admin can send announcements.");
+            return;
+        }
+        if (rest.empty()) {
+            out("Write a message after announce.");
+            return;
+        }
+        if (rest.size() > net::kMaxAnnouncementBytes) {
+            out("Announcements can contain up to " + std::to_string(net::kMaxAnnouncementBytes) +
+                " bytes.");
+            return;
+        }
+        // Billed as a line said to other players, which is what it is, the
+        // way a whisper is: the command budget alone would let one admin
+        // bury everyone in banners.
+        if (!spend(session.chatAllowance)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "You are sending messages too quickly.");
+            return;
+        }
+        // The echo above reaches the sender alone, so the log is the one
+        // record of who said what to everyone.
+        std::printf("[admin] %s announced: %s\n", session.username.c_str(), rest.c_str());
+        // Signed with the account's own name, which the server holds and no
+        // client chooses.
+        broadcastChat(net::ChatChannel::Admin, session.username, escapedMarkup(rest), 0);
+        return;
     }
 
     // -- accounts and sessions ---------------------------------------------
@@ -1325,7 +1259,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 if (!std::isdigit(static_cast<unsigned char>(username[i]))) digits = false;
             }
             if (!digits) continue;
-            const Account* account = database_.findUser(username);
+            // The const lookup: this walk only reads, and the mutable one
+            // drops each row's cached text, which re-serialises every account
+            // on the next save (Database::Table).
+            const Account* account = std::as_const(database_).findUser(username);
             if (account == nullptr) continue;
             const PlayerRecord* record = database_.findProgress(account->id);
             if (record != nullptr && !Database::isStarterProgress(*record)) continue;
@@ -1346,7 +1283,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         const std::int64_t dayAgo = now - 24LL * 60 * 60 * 1000;
         std::vector<std::pair<std::string, std::int64_t>> active;
         for (const std::string& username : database_.usernames()) {
-            const Account* account = database_.findUser(username);
+            // Read-only, so the const lookup, as in delete_guests above.
+            const Account* account = std::as_const(database_).findUser(username);
             if (account == nullptr || account->lastActiveAtMillis < dayAgo) continue;
             active.emplace_back(account->username, account->lastActiveAtMillis);
         }
@@ -1584,8 +1522,11 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("    spawn bee legendary 1000 2000    (1 bee at 1000,2000)");
             out("    spawn bee legendary 1000 2000 5  (5 bees at 1000,2000)");
             out("Available mob types: " + mobTypes);
+            // Every name parseRarityStrict takes. Apex is the top of the mob
+            // ladder; universal is a petal tier and spawns as apex
+            // (SpawnSystem::spawnMobAt clamps it), so it is named as that.
             out("Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, "
-                "unique");
+                "unique, apex (universal spawns as apex)");
             return;
         }
 
@@ -1682,7 +1623,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 std::max(rarityIndex(rarity), rarityIndex(content().mob(mobIndex).minRarity)));
             const double cooling =
                 spawning_->bossCooldownLeft(standing, spawnRealm, clockMillis_);
-            if (!session.owner() && cooling > 0.0) {
+            if (cooling > 0.0) {
                 const std::string biome = biomeOfRealm(spawnRealm);
                 out(std::string("Refused: ") + (biome.empty() ? "this biome" : biomeLabel(biome)) +
                     "'s " + rarityName(standing) + " clock is cooling down (ready in " +
@@ -1709,7 +1650,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 // tick() on a clock of its own they do not, and an operator's
                 // spawn was being recycled by the very next census.
                 if (spawning_->spawnMob(world_, *terrain_, content(), mobIndex, rarity, at,
-                                        spawnRealm, clockMillis_, rng_, session.owner()) != NULL_ENTITY) {
+                                        spawnRealm, clockMillis_, rng_) != NULL_ENTITY) {
                     placedAny = true;
                 }
             }
@@ -1820,17 +1761,16 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
     if (verb == "teleport" || verb == "tp") {
         if (words.size() != 4) {
-            out("Usage: teleport <playerId/username> <x> <y>");
+            out("Usage: teleport <username> <x> <y>");
             out("  Examples:");
-            out("    teleport abc123 1000 2000");
             out("    teleport Username 5000 3000");
-            out("    tp abc123 1000 2000  (shorthand)");
+            out("    tp Username 1000 2000  (shorthand)");
             return;
         }
         double x = 0;
         double y = 0;
         if (!parseNumber(words[2], x) || !parseNumber(words[3], y)) {
-            out("Invalid coordinates. Usage: teleport <playerId/name> <x> <y>");
+            out("Invalid coordinates. Usage: teleport <username> <x> <y>");
             return;
         }
         CommandTarget target;
@@ -1932,7 +1872,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
     if (verb == "corrupt") {
         if (words.size() < 2 || words.size() > 3) {
-            out("Usage: corrupt <playerId/username> [on|off|toggle]  (default: toggle)");
+            out("Usage: corrupt <username> [on|off|toggle]  (default: toggle)");
             return;
         }
         const std::string mode = words.size() == 3 ? lowerCase(words[2]) : "toggle";
@@ -2005,7 +1945,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
     if (verb == "set_skin") {
         if (words.size() != 3) {
-            out("Usage: set_skin <playerId/username> <" + skinNameList("|") + "|none|bitmask>");
+            out("Usage: set_skin <username> <" + skinNameList("|") + "|none|bitmask>");
             return;
         }
         // A skin name, "none", or a raw bitmask -- the three spellings the
@@ -2044,13 +1984,12 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
     if (verb == "give") {
         if (words.size() < 4 || words.size() > 5) {
-            out("Usage: give <playerId/username> <itemType> <rarity> [amount]");
+            out("Usage: give <username> <itemType> <rarity> [amount]");
             out("  amount: how many to give (default 1).");
-            out("  Works for online players (by socket id or username) and offline");
-            out("  accounts (by username) \xE2\x80\x94 offline gives are saved directly to the "
-                "account.");
+            out("  Works for online players and offline accounts alike, by account name");
+            out("  \xE2\x80\x94 offline gives are saved directly to the account.");
             out("  Examples:");
-            out("    give abc123 basic rare");
+            out("    give Username basic rare");
             out("    give Username rose legendary 5");
             out("  Item types:");
             out("    Petals: any petal type (e.g., basic, rose, stinger)");
@@ -2121,7 +2060,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             return;
         }
         if (words.size() != 2) {
-            out("Usage: " + verb + " <playerId/username>");
+            out("Usage: " + verb + " <username>");
             return;
         }
         CommandTarget target;
@@ -2169,11 +2108,6 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (databaseEditor) {
-        if (session.owner()) {
-            session.adminDbUnlockedFor = session.userId;
-            sendAdminDbOpen(connection, words.size() >= 2 ? words.back() : std::string());
-            return;
-        }
         // The database flag, as grant_admin checks it: the editor resets
         // passwords and rewrites any record, which a console lent for one life
         // must not reach.
@@ -2184,13 +2118,26 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         // And the key, which only the server's machine knows (it is printed in
         // the server log at start-up): an admin account alone is not the
         // database. See server/admin_db_key.h.
+        //
+        // Except where the key is FIXED, which only the offline page makes it:
+        // the same string in every copy of the page, written in its source --
+        // public by construction -- and that page has no server log anybody
+        // reads, its printf landing in the browser's devtools console. So it
+        // is said right here, in the answers that ask for it. A key derived
+        // from a machine is never said: being able to read that machine's log
+        // is the whole of what it proves.
+        const std::string fixedKey = config_.fixedAdminDbKey;
+        const std::string whereTheKeyIs =
+            fixedKey.empty() ? std::string(" The key is printed in the server log at start-up.")
+                             : " This server's key is fixed: " + fixedKey + ".";
         if (words.size() < 2) {
-            out("Usage: db <key> [username]. The key is printed in the server log at start-up.");
+            out("Usage: db <key> [username]." + whereTheKeyIs);
             return;
         }
         if (!admin_db::keyMatches(words[1], adminDbKey_)) {
             std::printf("[admin] wrong database editor key from %s\n", session.username.c_str());
-            out("Wrong database editor key.");
+            out("Wrong database editor key." +
+                (fixedKey.empty() ? std::string() : whereTheKeyIs));
             return;
         }
         session.adminDbUnlockedFor = session.userId;
@@ -2223,18 +2170,13 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     if (verb == "mute" || verb == "unmute") {
         const bool muting = verb == "mute";
         if (words.size() != 2) {
-            out("Usage: " + verb + " <playerId/username>");
+            out("Usage: " + verb + " <username>");
             return;
         }
         // Straight to the account, so an offline player can be muted too: the
-        // flag is persisted and outlives the session.
+        // flag is persisted and outlives the session. By account name alone:
+        // a nameplate is not a name anyone owns (see resolveCommandTarget).
         Account* account = database_.findUser(words[1]);
-        if (account == nullptr) {
-            CommandTarget target;
-            if (resolveCommandTarget(words[1], target) && target.session != nullptr) {
-                account = database_.findUser(target.session->username);
-            }
-        }
         if (account == nullptr) {
             out("No account named \"" + words[1] +
                 "\" exists. Use list-players to see online players.");
@@ -2350,7 +2292,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         entry["code"] = code;
         entry["stars"] = stars;
         // Absent rather than zero for unlimited, which is the shape the
-        // browser build writes and handleRedeemCode already reads: it treats a
+        // browser build wrote and handleRedeemCode already reads: it treats a
         // maxUses of 0 as no limit, and an absent key reads as 0.
         if (maxUses > 0) entry["maxUses"] = maxUses;
         entry["uses"] = 0;
@@ -2422,7 +2364,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("    notify unique_craft New unique petal discovered!");
             return;
         }
-        if (!validNotificationType(type)) {
+        // The feed's own list of tags (notificationKind), so a tag the console
+        // accepts is always one the feed can tell apart from Generic.
+        if (notificationKind(type) == net::NotificationKind::Generic) {
             out("Invalid notification type. Valid types: super_craft, unique_craft, apex_craft, "
                 "star_code, universal_craft");
             return;
@@ -2559,8 +2503,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     // -- the process itself ------------------------------------------------
     //
     // A restart IS a process exit: pm2, systemd or docker is what brings the
-    // server back, on both builds. Players get the reference's warnings on the
-    // way down, which is the whole reason it is scheduled rather than done.
+    // server back. Players get the reference's warnings on the way down, which
+    // is the whole reason it is scheduled rather than done.
 
     if (verb == "restart") {
         const std::string arg = lowerCase(rest);
@@ -2617,6 +2561,12 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             }
             out("To restore: copy a backup over inventory.json (in dist/) and restart the "
                 "server.");
+            // The directory is shared with whatever wrote snapshots there
+            // before this server, so what pruning will and will not touch is
+            // said where an operator reads the list (see Database::backup).
+            out("Only this server's own snapshots (*" + std::string(Database::kSnapshotSuffix) +
+                ") are pruned, to the newest " + std::to_string(Database::kMaxDatabaseBackups) +
+                "; any other file listed here is never deleted.");
             return;
         }
         if (!arg.empty()) {

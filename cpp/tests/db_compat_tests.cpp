@@ -4,13 +4,11 @@
 #include "server/db.h"
 #include "shared/core/json.h"
 #include "shared/game/constants.h"
-
-#include <unistd.h>
+#include "test_data.h"
 
 #include <cstdio>
-#include <fstream>
-#include <sstream>
 #include <string>
+#include <vector>
 
 using namespace flix;
 
@@ -75,20 +73,40 @@ const char* kLegacyDatabase = R"({
   "aTopLevelKeyWeDoNotKnow": {"anything": 42}
 })";
 
+/// Every path scratchPath() has handed out, removed when the process exits.
+///
+/// Not by the tests themselves: each one's last std::remove runs while its own
+/// Database is still in scope, and ~Database writes a dirty database straight
+/// back on the way out (a load of a missing file, a migration, a login all
+/// leave one dirty), so the file outlived the run. At exit every test's
+/// Database is long gone, and the removal sticks.
+struct ScratchFiles {
+    std::vector<std::string> paths;
+    ~ScratchFiles() {
+        for (const std::string& path : paths) {
+            std::remove(path.c_str());
+            std::remove((path + ".tmp").c_str());
+        }
+    }
+};
+
+/// A database file of this process's own, in the tests' scratch directory.
 std::string scratchPath(const char* name) {
-    return std::string("/tmp/florr-dbtest-") + name + "-" + std::to_string(::getpid()) + ".json";
+    static ScratchFiles handedOut;
+    std::string path = testsupport::tempUnique(std::string("florr-dbtest-") + name, ".json");
+    handedOut.paths.push_back(path);
+    return path;
 }
 
 void writeFile(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
+    testsupport::writeText(path, text);
 }
 
+/// The file as it is on disk now, or "" when it cannot be read.
 std::string readFile(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    return buffer.str();
+    std::string text;
+    testsupport::readText(path, text);
+    return text;
 }
 
 } // namespace
@@ -292,6 +310,57 @@ TEST(a_set_password_refuses_what_validPassword_refuses) {
     CHECK(db.verifyPassword("picky", "a-good-password"));
 
     std::remove(path.c_str());
+}
+
+TEST(the_admin_flag_comes_only_from_the_file) {
+    // No account is an admin because of its NAME. A row called a19kisme with
+    // no `admin` field loads as an ordinary account and is written back as
+    // one -- a flag read in at load is a flag the next save writes out -- and
+    // a fresh registration of the name, in any case, starts as one. A row
+    // that does carry the flag keeps it: the file is the only authority,
+    // which is also why taking a name check out does not take back a flag an
+    // older build has already written.
+    const std::string path = scratchPath("admin-flag");
+    writeFile(path, R"({
+  "users": {
+    "a19kisme": {"id": "u-named", "username": "a19kisme",
+                 "password": "$2b$12$2XTXtpXNuMonJ9HX442GYeByWDfnKcgsxGWvOK.v7LBQcqAzNhmqu"},
+    "keeper": {"id": "u-keeper", "username": "keeper", "admin": true,
+               "password": "$2b$12$2XTXtpXNuMonJ9HX442GYeByWDfnKcgsxGWvOK.v7LBQcqAzNhmqu"}
+  },
+  "players": {"u-named": {}, "u-keeper": {}}
+})");
+
+    Database db;
+    std::string error;
+    CHECK(db.load(path, error));
+    const Account* named = db.findUser("a19kisme");
+    CHECK(named != nullptr);
+    if (named) CHECK(!named->admin);
+    const Account* keeper = db.findUser("keeper");
+    CHECK(keeper != nullptr);
+    if (keeper) CHECK(keeper->admin);
+
+    db.markDirty();
+    CHECK(db.save());
+    Json saved;
+    std::string parseError;
+    CHECK(Json::parse(readFile(path), saved, parseError));
+    CHECK(saved["users"].contains("a19kisme"));
+    CHECK(!saved["users"]["a19kisme"].contains("admin"));
+    CHECK(saved["users"]["keeper"]["admin"].asBool());
+
+    const std::string freshPath = scratchPath("admin-flag-fresh");
+    std::remove(freshPath.c_str());
+    Database fresh;
+    CHECK(fresh.load(freshPath, error));
+    fresh.setPasswordCost(crypto::kBcryptMinCost);
+    const CreateResult created = fresh.createUser("A19KISME", "a-good-password");
+    CHECK(created.ok());
+    if (created.account) CHECK(!created.account->admin);
+
+    std::remove(path.c_str());
+    std::remove(freshPath.c_str());
 }
 
 TEST(sessions_are_stored_hashed_and_expire) {

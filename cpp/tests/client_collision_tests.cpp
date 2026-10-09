@@ -34,6 +34,7 @@ using flix::testsupport::fixtureMap;
 using flix::testsupport::fixturePad;
 using flix::testsupport::Harness;
 using flix::testsupport::loginNew;
+using flix::testsupport::onlyPlayer;
 using flix::testsupport::removeDataDir;
 using flix::testsupport::stageDataDir;
 
@@ -68,8 +69,8 @@ double fromWall(Vec2 p) { return (p.x - p.y - kTileSize) / std::sqrt(2.0); }
 
 /// The two-map fixture world: `slope` is the overworld, `cellar` a second realm
 /// of a different size, and both are cut in half by the diagonal wall. The pad
-/// at (1050, 2550) -- open ground well below the diagonal -- leads to the
-/// second map, which is how the realm-change test gets there.
+/// in the middle of cell (3, 8) -- open ground well below the diagonal -- leads
+/// to the second map, which is how the realm-change test gets there.
 std::string stageSlopeWorld(const std::string& name) {
     const int wide = 16;
     const int small = 12;
@@ -102,13 +103,6 @@ struct LocalMaps {
         return ok;
     }
 };
-
-Entity onlyPlayer(World& world) {
-    Entity found = NULL_ENTITY;
-    Query<PlayerTag, Transform> bodies{world};
-    bodies.each([&](Entity e, PlayerTag&, Transform&) { found = e; });
-    return found;
-}
 
 /// Every point of a grid over the diagonal-tiled cells, at a spacing fine
 /// enough to fall either side of the shape boundary inside each of them. The

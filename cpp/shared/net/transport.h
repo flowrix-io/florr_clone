@@ -62,10 +62,6 @@ public:
     void closeGracefully() { closing_ = true; }
     bool closing() const { return closing_; }
 
-    /// Arbitrary owner state (the session, the player entity). The transport
-    /// never looks inside it.
-    void* user = nullptr;
-
 private:
     friend class Listener;
     friend class Dialer;
@@ -116,8 +112,6 @@ public:
     /// Binds and listens. Returns false with `errorOut` set on failure.
     bool start(std::uint16_t port, std::string& errorOut);
     void stop();
-    bool listening() const { return listenFd_ >= 0; }
-    std::uint16_t port() const { return port_; }
 
     /// Services sockets for up to `timeoutMillis`, dispatching to `handler`.
     /// Returns the number of frames delivered.
@@ -149,9 +143,11 @@ public:
     std::string certPath;
     std::string keyPath;
 
-    /// Directory the web backend serves over the same HTTP(S) listener. Empty
-    /// means the directory the program was loaded from, which is where the
-    /// client build sits. Ignored natively, which serves no files at all.
+    /// Directory the web backend serves the client from over the same HTTP(S)
+    /// listener: the web build's own files, by name, and nothing else in it
+    /// (see web::listen). Empty means the directory the program was loaded
+    /// from, which is where the client build sits. Ignored natively, which
+    /// serves no files at all.
     std::string webRoot;
 
 private:
@@ -170,7 +166,6 @@ private:
                  int& delivered, std::string& error);
 
     int listenFd_ = -1;
-    std::uint16_t port_ = 0;
     ConnectionId nextId_ = 1;
     std::vector<std::unique_ptr<Connection>> connections_;
     std::vector<std::byte> frameScratch_;

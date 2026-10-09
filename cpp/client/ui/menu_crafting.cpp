@@ -70,9 +70,10 @@ constexpr std::uint32_t kDisabledBorder = 0x5A5A5Au;
 constexpr double kDisabledAlpha = 0.45;
 
 
-/// Absorb -- the purple half of this panel -- is maze-only, and this build has
-/// no maze. The Switch button is still laid out and hit-tested, drawn in the
-/// reference's disabled state and swallowing its own clicks.
+/// Absorb -- the purple half of this panel -- is the maze's petal absorbing,
+/// which this server does not implement: nothing server-side reads
+/// kAbsorbSkillScale. The Switch button is still laid out and hit-tested,
+/// drawn in the reference's disabled state and swallowing its own clicks.
 constexpr bool kAbsorbAvailable = false;
 
 /// Each clover equipped in the ten PRIMARY loadout slots at the tier being
@@ -92,10 +93,6 @@ std::string percentText(double percent) {
         if (!out.empty() && out.back() == '.') out.pop_back();
     }
     return out + "%";
-}
-
-bool knownPetal(std::uint16_t petalIndex) {
-    return petalIndex != kNoPetal && petalIndex < content().petalCount();
 }
 
 /// A stack as the staging math counts it. The wire carries a u32 but no stack

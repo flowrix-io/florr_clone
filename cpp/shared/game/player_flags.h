@@ -1,9 +1,11 @@
 #pragma once
 // Player-only visual flags shared by simulation, snapshots and rendering.
 //
-// Keep these values in lockstep with src/player.ts.  They are deliberately
-// separate from the generic EntityState bits: EntityState is transient
-// simulation state, while these describe the flower body and its cosmetics.
+// All three travel on the wire in every Player record, and renderFlags is also
+// persisted in the account database, so never renumber a value. (They began as
+// a mirror of src/player.ts; see git history.) They are deliberately separate
+// from the generic EntityState bits: EntityState is transient simulation
+// state, while these describe the flower body and its cosmetics.
 
 #include <cstdint>
 

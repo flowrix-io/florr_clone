@@ -101,8 +101,9 @@ AuthLayout authLayout(int viewW, int viewH, bool registering, bool advancedOpen)
     layout.headingY = y;
     y += 50;
     // The browser adds a "not secure" warning and 30px here when it is served
-    // over http:. A raw TCP socket has no scheme to be insecure about, so this
-    // client is always on the https path.
+    // over http:. This form never draws that warning -- natively a raw TCP
+    // socket has no scheme to be insecure about, and the web build leaves it
+    // out too -- so it is always laid out as the https path.
     y += 10;
 
     layout.username = {x, y, w, kFieldHeight};

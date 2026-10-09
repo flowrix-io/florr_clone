@@ -4,8 +4,8 @@
 #include "client/render/mob_art.h"
 #include "client/render/sprites.h"
 #include "shared/game/config.h"
+#include "test_data.h"
 
-#include <fstream>
 #include <string>
 #include <vector>
 
@@ -69,38 +69,7 @@ TEST(art_cache_is_a_no_op_off_the_web) {
 #endif
 }
 
-
-namespace {
-
-std::string testsDir() {
-    const std::string path = __FILE__;
-    const std::size_t slash = path.find_last_of('/');
-    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
-}
-
-std::string firstExisting(const std::vector<std::string>& candidates) {
-    for (const std::string& candidate : candidates) {
-        std::ifstream probe(candidate, std::ios::binary);
-        if (probe) return candidate;
-    }
-    return {};
-}
-
-const ContentRegistry& shippedContent() {
-    static const ContentRegistry registry = [] {
-        ContentRegistry r;
-        std::string error;
-        r.loadFiles(firstExisting({testsDir() + "/../../src/mobs.json", "data/mobs.json",
-                                   "../src/mobs.json", "../../src/mobs.json", "src/mobs.json"}),
-                    firstExisting({testsDir() + "/../../src/petals.json", "data/petals.json",
-                                   "../src/petals.json", "../../src/petals.json", "src/petals.json"}),
-                    error);
-        return r;
-    }();
-    return registry;
-}
-
-} // namespace
+using flix::testsupport::shippedContent;
 
 TEST(every_procedural_marker_in_the_shipped_mobs_compiles) {
     // The failure this pins is SILENT. An `image` naming a painter this build
@@ -110,14 +79,14 @@ TEST(every_procedural_marker_in_the_shipped_mobs_compiles) {
     // the mob draws as a flat rarity disc in the world, in the bestiary and on
     // its own tooltip.
     //
-    // Asked of the '$' entries only. Four mobs ship a literally empty <svg/>
-    // and are MEANT to draw nothing (the renderer paints the garbage pile
-    // itself; the plot markers are invisible), so "declares an image" is not
-    // the same question as "should draw something".
+    // Asked of the '$' entries only. The garbage pile ships a literally empty
+    // <svg/> and is MEANT to draw nothing from it (the renderer paints the
+    // pile itself), so "declares an image" is not the same question as
+    // "should draw something".
     const ContentRegistry& content = shippedContent();
     CHECK(content.loaded());
     SpriteCache sprites;
-    sprites.build(content, "data");
+    sprites.build(content, testsupport::dataDir());
 
     int markers = 0;
     for (std::uint16_t i = 0; i < content.mobCount(); ++i) {
@@ -161,7 +130,7 @@ TEST(a_super_square_is_repainted_green_with_a_derived_outline) {
     const std::uint16_t square = content.petalIndex("square");
     CHECK(square != kInvalidIndex);
     SpriteCache sprites;
-    sprites.build(content, "data");
+    sprites.build(content, testsupport::dataDir());
 
     // At 64 px the 32-unit document is doubled: the stroke runs down x = 4,
     // 6 px wide, and the middle of the box is all fill.

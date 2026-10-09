@@ -2,10 +2,9 @@
 
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
+#include "render_rig.h"
 
-#include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <string>
 
 using flix::ui::editText;
@@ -607,15 +606,7 @@ namespace {
 
 /// followCaret measures, and `measure` answers 0 with no typeface loaded --
 /// every check below would pass with the view never moving.
-bool fontsLoaded() {
-    static const bool ok = [] {
-        std::string error;
-        const bool loaded = flix::ui::Fonts::init(std::string(FLIX_TEST_DATA_DIR), error);
-        if (!loaded) std::printf("  fonts did not load: %s\n", error.c_str());
-        return loaded;
-    }();
-    return ok;
-}
+bool fontsLoaded() { return flix::testsupport::fontsReady(); }
 
 constexpr double kScrollSize = 14.0;
 

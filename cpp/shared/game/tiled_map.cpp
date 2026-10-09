@@ -3,10 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <fstream>
-#include <iterator>
 #include <unordered_map>
 
+#include "shared/core/file.h"
 #include "shared/game/constants.h"
 
 namespace flix {
@@ -49,12 +48,6 @@ constexpr std::uint32_t kGidMask = 0x1FFFFFFFu;
 /// exists so the cast cannot silently wrap.
 constexpr std::size_t kMaxArtFiles = 32767;
 
-/// The file name half of a path, for a tileset tile's `image`.
-std::string fileNameOf(const std::string& path) {
-    const std::size_t slash = path.find_last_of("/\\");
-    return slash == std::string::npos ? path : path.substr(slash + 1);
-}
-
 std::string directoryOf(const std::string& path) {
     const std::size_t slash = path.find_last_of("/\\");
     return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
@@ -65,13 +58,6 @@ std::string directoryOf(const std::string& path) {
 std::string resolveRelative(const std::string& base, const std::string& reference) {
     if (!reference.empty() && (reference[0] == '/' || reference[0] == '\\')) return reference;
     return directoryOf(base) + "/" + reference;
-}
-
-bool readFile(const std::string& path, std::string& out) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) return false;
-    out.assign((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    return true;
 }
 
 bool parseJsonFile(const std::string& path, Json& out, std::string& errorOut) {

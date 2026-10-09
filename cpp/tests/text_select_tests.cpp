@@ -1,10 +1,11 @@
 #include "test.h"
 
+#include "client/ui/draw.h"
 #include "client/ui/text_select.h"
+#include "render_rig.h"
 
 #include <string>
 
-using flix::ui::CapturedRun;
 using flix::ui::capturingText;
 using flix::ui::TextCaptureScope;
 using flix::ui::TextPoint;
@@ -12,10 +13,11 @@ using flix::ui::TextSelect;
 
 // The layer that makes painted labels selectable.
 //
-// Only the half that needs no font is exercised here: recording, identity
-// across frames, and what a span of runs reads as once it is copied out.
-// Anything that maps an x to an offset goes through `measure`, which answers 0
-// until a typeface is loaded, and a test binary loads none.
+// Almost all of it is the half that needs no font: recording, identity across
+// frames, and what a span of runs reads as once it is copied out -- every
+// offset below is given, never measured, so these hold with or without a
+// typeface. The last test paints through ui::text, which draws (and records)
+// nothing without one, so that test loads the game's.
 
 namespace {
 
@@ -175,8 +177,23 @@ TEST(capture_is_off_by_default_and_scopes_restore_it) {
 
 TEST(nothing_is_recorded_while_capture_is_off) {
     // The guard lives in ui::text rather than in record(), so this pins the
-    // contract the widgets rely on rather than the implementation.
+    // contract the widgets rely on rather than the implementation -- by
+    // painting through ui::text for real. It returns before the guard when no
+    // typeface is loaded, so without the font this could not tell a missing
+    // guard from a working one.
+    CHECK(flix::testsupport::fontsReady());
+    Canvas canvas = Canvas::createVirtual(200, 60);
     TextSelect& layer = fresh();
     CHECK(!capturingText());
+    flix::ui::text(canvas, "unrecorded", 20.0, 30.0);
     CHECK_EQ(layer.runs().size(), std::size_t{0});
+
+    // The same call with capture on records the run, so the check above is
+    // one that can fail.
+    {
+        TextCaptureScope on(true);
+        flix::ui::text(canvas, "recorded", 20.0, 30.0);
+    }
+    CHECK_EQ(layer.runs().size(), std::size_t{1});
+    if (!layer.runs().empty()) CHECK_EQ(layer.runs()[0].text, std::string("recorded"));
 }

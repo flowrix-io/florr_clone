@@ -7,7 +7,6 @@
 
 #include <array>
 #include <cstdint>
-#include <deque>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -18,6 +17,7 @@
 #include "shared/game/skin_format.h"
 #include "shared/game/skills.h"
 #include "shared/game/terrain.h"
+#include "shared/net/admin_dashboard.h"
 #include "shared/net/admin_db.h"
 #include "shared/net/protocol.h"
 #include "shared/net/transport.h"
@@ -62,15 +62,15 @@ struct Profile {
 
     SkillSet skills;
 
-    /// Kills per mob and tier, flattened as `mobIndex * kRarityCount + tier`.
-    /// A dense grid rather than a map: the gallery reads every cell of it once
-    /// per frame, and there are only a few hundred.
     /// Milliseconds the account still had to wait for its next oracle craft
     /// when this profile was sent; 0 when it may craft now. A duration, not a
     /// deadline: NetClient turns it into one on its own clock as it arrives.
     std::uint32_t oracleCooldownMillis = 0;
     /// The same for the account's next trade at a trader.
     std::uint32_t traderCooldownMillis = 0;
+    /// Kills per mob and tier, flattened as `mobIndex * kRarityCount + tier`.
+    /// A dense grid rather than a map: the gallery reads every cell of it once
+    /// per frame, and there are only a few hundred.
     std::vector<std::uint32_t> mobKills;
 
     /// The saved loadouts, by preset number (loadoutPresetName), each in
@@ -322,6 +322,82 @@ struct AdminDbState {
     std::uint32_t goneSeq = 0;
 };
 
+/// What the admin dashboard knows: the page of players it last asked for, the
+/// bag of the one player it is looking at, whose flower this client is
+/// steering, and how the last control request went.
+///
+/// Kept here rather than in the panel because the answers arrive whether or
+/// not the panel is drawing -- the control state above all, which the server
+/// pushes whenever control starts or ends, and which the strip's Release chip,
+/// the hidden loadout bar and the shop all read with the panel shut. The
+/// server sends none of it to anyone its admin console would not answer, so
+/// for everybody else this stays empty.
+struct AdminDashboardState {
+    /// Moves every time the rest of this is wiped -- the socket dropping, the
+    /// account being forgotten, a sign-in as another account on this socket
+    /// -- and is kept across the wipe, as AdminAnnouncement::sequence is.
+    /// Every connection id held here belonged to the connection, or the
+    /// account, that just went, and a panel that kept its pick across it would
+    /// go on naming a player by an id the next server process may well have
+    /// dealt to somebody else. The panel compares this with what it last saw
+    /// and lets go of its pick when it moves.
+    std::uint32_t generation = 0;
+
+    /// The query the rows below answer, and how many flowers matched it --
+    /// more than `players` holds until every page has been asked for.
+    std::string playersSearch;
+    std::uint32_t playersTotal = 0;
+    std::vector<net::AdminDashboardPlayer> players;
+    bool playersPending = false;
+    /// The last page asked for was refused for coming too fast (see
+    /// AdminDashboardReply::Refused); cleared by the next request.
+    bool playersRefused = false;
+
+    /// The bag being shown: whose, by connection; their account name, once a
+    /// page has named it; how many stacks it holds; and the pages so far.
+    net::ConnectionId bagOf = 0;
+    std::string bagUsername;
+    std::uint32_t bagTotal = 0;
+    std::vector<net::AdminDashboardStack> bag;
+    bool bagPending = false;
+    /// The server said that connection holds no account any more -- or not
+    /// the account it was asked about, which is the same thing to the panel.
+    bool bagGone = false;
+    /// As playersRefused, for the bag's last page.
+    bool bagRefused = false;
+
+    /// Whose flower this client is steering, as the server last said.
+    /// `active` false is its own.
+    struct Control {
+        bool active = false;
+        net::ConnectionId connection = 0;
+        std::string username;
+    };
+    Control control;
+
+    /// The last Control or Release answer. `resultSeq` moves on every one, so
+    /// the panel can tell a new answer from the one it is already showing.
+    bool resultOk = true;
+    std::string resultMessage;
+    std::uint32_t resultSeq = 0;
+};
+
+/// The last announcement an admin made, as it arrived live on the Admin
+/// channel. The line itself is in the transcript too, under the Admin tab;
+/// this is what the HUD raises its banner from.
+struct AdminAnnouncement {
+    /// Who made it: the line's author, which the server signs with the
+    /// sender's account name.
+    std::string author;
+    /// The text with its markup flattened, as a bubble's is.
+    std::string text;
+    /// Moves on every announcement and never goes back -- forgetting the
+    /// account clears the words but not this -- so the HUD, which remembers
+    /// the last one it showed and times the banner on its own clock, can
+    /// always tell a new one from it. 0 is none yet.
+    std::uint32_t sequence = 0;
+};
+
 struct ChatLine {
     net::ChatChannel channel = net::ChatChannel::Global;
     std::string author;
@@ -329,11 +405,9 @@ struct ChatLine {
     /// The flower that said it, or 0 for anything the server said in its own
     /// voice. What the bubble over a speaker's head is anchored to.
     std::uint32_t speakerNetId = 0;
-    double receivedAtMillis = 0;
     /// When the line was said, in Unix milliseconds -- a backlog line's is the
-    /// server's, from before this client connected. Separate from
-    /// `receivedAtMillis`, which is monotonic uptime and so cannot be turned
-    /// into a wall-clock time of day. The transcript no longer prints it.
+    /// server's, from before this client connected. The transcript no longer
+    /// prints it.
     std::int64_t wallClockMillis = 0;
 };
 
@@ -563,6 +637,36 @@ public:
     AdminDbState& adminDb() { return adminDb_; }
     const AdminDbState& adminDb() const { return adminDb_; }
 
+    // -- the admin dashboard -------------------------------------------------
+    //
+    // Requests as well: the server checks the console's standing on every one
+    // and answers into adminDashboard(). A player is named by the connection
+    // the list gave, never by a name for the server to resolve again -- and
+    // with the account name the row carried, which the server holds the id to
+    // (shared/net/admin_dashboard.h says why an id alone is not enough).
+
+    /// One page of the flowers in the world whose account or nameplate holds
+    /// `search`. Offset 0 starts a new list; any other asks for the page after
+    /// the rows held.
+    void adminDashboardPlayers(const std::string& search, std::uint32_t offset);
+    /// One page of a player's bag: the row's connection, and its account
+    /// name. A different player, or offset 0, starts over; any other offset
+    /// asks for the page after the stacks held.
+    void adminDashboardInventory(net::ConnectionId player, const std::string& username,
+                                 std::uint32_t offset);
+    /// Asks to steer that player's flower, named as the bag is. The answer
+    /// lands in the result fields; the control state itself arrives when -- if
+    /// -- it starts.
+    void adminControl(net::ConnectionId player, const std::string& username);
+    /// Asks to give the steered flower back.
+    void adminRelease();
+    const AdminDashboardState& adminDashboard() const { return adminDashboard_; }
+    /// Whether this client is steering another player's flower right now --
+    /// which is when the snapshot's self block describes THAT flower and not
+    /// this account's own.
+    bool controllingFlower() const { return adminDashboard_.control.active; }
+    const AdminAnnouncement& adminAnnouncement() const { return adminAnnouncement_; }
+
     // -- state -------------------------------------------------------------
     WorldView& view() { return view_; }
     const WorldView& view() const { return view_; }
@@ -590,8 +694,9 @@ public:
 
     /// True once after the body was moved to another realm -- through a
     /// teleporter, which leads to another map. Consumed by the App, which
-    /// snaps the camera onto `realmArrival()`: easing across two coordinate
-    /// spaces sweeps the view over a world the flower is not in.
+    /// snaps the camera onto the arrival this hands back (the same point
+    /// arrival() reports): easing across two coordinate spaces sweeps the view
+    /// over a world the flower is not in.
     bool takeRealmChange(Vec2& arrivalOut) {
         if (!realmChanged_) return false;
         realmChanged_ = false;
@@ -608,10 +713,6 @@ public:
     /// then arrival() is the only honest position for it.
     bool selfPlaced() const { return view_.self().netId != 0; }
     const Profile& profile() const { return profile_; }
-    Json adminDashboard;
-    std::string adminAnnouncement;
-    double adminAnnouncementAt = -100000;
-    bool adminAnnouncementVisible() const;
     const std::string& sessionToken() const { return sessionToken_; }
     const std::vector<ChatLine>& chat() const { return chat_; }
     /// How many lines this transcript has ever taken, trimmed ones included.
@@ -640,9 +741,10 @@ public:
     const std::string& equippedSkinId() const { return equippedSkinId_; }
     bool isSkinAdmin() const { return skinAdmin_; }
 
-    /// Puts a locally generated System line in the transcript. There is no
-    /// separate notice or toast layer: every announcement the reference makes,
-    /// its own included, is a chat line.
+    /// Puts a locally generated System line in the transcript. Every notice
+    /// the reference makes, its own included, is a chat line and nothing more.
+    /// The one banner this client raises is an admin's announcement -- see
+    /// adminAnnouncement() -- and that arrives as a chat line as well.
     void addSystemMessage(const std::string& text);
     /// The same, under a chosen sender. The studio reports its own failures as
     /// lines from "Skins", exactly as the reference does, so the author is not
@@ -650,8 +752,6 @@ public:
     void addLocalChat(const std::string& author, const std::string& text,
                       net::ChatChannel channel = net::ChatChannel::System);
 
-    /// Round-trip time in milliseconds, from the last Ping/Pong exchange.
-    double pingMillis() const { return pingMillis_; }
     /// The mean of the last ten round trips, which is what the readout shows:
     /// a single sample jitters too much to read, and the quality band below is
     /// derived from the same average so the two never disagree.
@@ -674,17 +774,13 @@ public:
     void takeWireStats(std::uint32_t& inBytes, std::uint32_t& outBytes,
                        std::vector<WireEvent>& top, std::size_t topCount = 5);
 
-    /// The server's own memory and tick cost, from the last DebugStats. Null
-    /// until one arrives, which is what the debug panel draws as "no data".
+    /// The server's own memory and tick cost, from the last DebugStats.
     struct ServerDebugStats {
         double residentBytes = 0;
         double heapBytes = 0;
         double tickAvgMillis = 0;
         double tickMaxMillis = 0;
     };
-    const ServerDebugStats* serverDebugStats() const {
-        return haveServerDebugStats_ ? &serverDebugStats_ : nullptr;
-    }
     /// True exactly once per DebugStats, so the panel appends one graph sample
     /// per packet rather than resampling whatever it last saw.
     bool takeServerDebugStats(ServerDebugStats& out);
@@ -837,6 +933,11 @@ private:
     /// Starts an AdminDb request with its op and, for the document ops, the
     /// open document's scope and key.
     void beginAdminDb(ByteWriter&, net::AdminDbOp);
+    void handleAdminDashboard(ByteReader&);
+    void beginAdminDashboard(ByteWriter&, net::AdminDashboardOp);
+    /// Wipes the dashboard's state and moves its generation (see
+    /// AdminDashboardState::generation).
+    void resetAdminDashboard();
 
     /// Rebuilds one realm's collision shapes from this client's own copy of
     /// its map, right after the wire's grid for that realm was installed.
@@ -915,8 +1016,9 @@ private:
     ShopOutcome shopOutcome_;
     PasswordOutcome passwordOutcome_;
     AdminDbState adminDb_;
+    AdminDashboardState adminDashboard_;
+    AdminAnnouncement adminAnnouncement_;
 
-    double pingMillis_ = 0;
     /// The last ten round trips and their mean. Ten is the reference's window.
     static constexpr std::size_t kPingSamples = 10;
     std::vector<double> pingHistory_;
@@ -930,7 +1032,6 @@ private:
     std::array<std::uint32_t, 256> outgoingBytes_{};
 
     ServerDebugStats serverDebugStats_;
-    bool haveServerDebugStats_ = false;
     bool serverDebugStatsFresh_ = false;
 
     bool dead_ = false;

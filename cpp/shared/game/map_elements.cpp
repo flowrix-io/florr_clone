@@ -4,12 +4,12 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
-#include <fstream>
-#include <iterator>
 #include <limits>
 #include <stdexcept>
 
+#include "shared/core/file.h"
 #include "shared/core/json.h"
+#include "shared/core/text.h"
 #include "shared/game/constants.h"
 #include "shared/game/terrain.h"
 
@@ -88,11 +88,8 @@ bool parseColor(const Json& value, std::uint32_t& out) {
     if (text.size() != 6 && text.size() != 8) return false;
     std::uint32_t packed = 0;
     for (const char c : text) {
-        int digit = 0;
-        if (c >= '0' && c <= '9') digit = c - '0';
-        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
-        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
-        else return false;
+        const int digit = hexDigit(c);
+        if (digit < 0) return false;
         packed = (packed << 4) | static_cast<std::uint32_t>(digit);
     }
     out = packed & 0xFFFFFFu;
@@ -158,8 +155,7 @@ bool onSegment(Vec2 a, Vec2 b, Vec2 at) {
 /// `maps/garden.tmj` -> `garden`. A map's id is its file stem, so the manifest
 /// need not repeat it and a teleporter's `targetMap` reads like a file name.
 std::string stemOf(const std::string& fileName) {
-    const std::size_t slash = fileName.find_last_of("/\\");
-    const std::string base = slash == std::string::npos ? fileName : fileName.substr(slash + 1);
+    const std::string base = fileNameOf(fileName);
     const std::size_t dot = base.find_last_of('.');
     return dot == std::string::npos ? base : base.substr(0, dot);
 }
@@ -181,7 +177,7 @@ std::string slugOf(const std::string& label) {
         if (std::isalnum(u)) {
             if (pending && !out.empty()) out.push_back('_');
             pending = false;
-            out.push_back(static_cast<char>(std::tolower(u)));
+            out.push_back(lowerCase(c));
         } else {
             pending = true;
         }
@@ -450,11 +446,11 @@ TiledCell MapData::cellAt(std::size_t layer, int tx, int ty) const {
                                 static_cast<std::size_t>(tx)];
 }
 
-/// The one element parser, shared by both map formats.
+/// The one element parser.
 ///
-/// `array` is the bundle's MAP_ELEMENTS shape either way: the Tiled reader
-/// rebuilds its objects into it rather than growing a second parser here, so
-/// there is exactly one place that decides what an annotation means.
+/// `array` is the MAP_ELEMENTS shape the TypeScript bundle used: the Tiled
+/// reader rebuilds its objects into it rather than growing a second parser
+/// here, so there is exactly one place that decides what an annotation means.
 void MapData::adopt(const Json& array) {
     for (const Json& value : array.items()) {
         if (!value.isObject()) continue;
@@ -564,12 +560,11 @@ void MapData::adopt(const Json& array) {
             if (properties.contains("rarity")) {
                 // Lower-cased: Tiled is where an author types "Epic", and the
                 // tier table is spelled the way mobs.json spells it.
-                std::string tier = properties["rarity"].asString();
-                for (char& c : tier) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                element.npcRarity = parseRarity(tier);
-                // parseRarity reads anything it does not know as common, which
-                // for an NPC is a silently small one: said out loud instead.
-                if (tier != rarityName(element.npcRarity)) {
+                const std::string tier = lowerCase(properties["rarity"].asString());
+                // A tier it does not know stands at common, which for an NPC
+                // is a silently small one: said out loud instead.
+                if (!tryParseRarity(tier, element.npcRarity)) {
+                    element.npcRarity = Rarity::Common;
                     std::fprintf(stderr,
                                  "[map] an npc's `rarity` \"%s\" is not a tier; it stands at "
                                  "common\n",
@@ -662,7 +657,6 @@ MapData::TeleportStep MapData::stepTeleporters(Vec2 centre, double deltaSeconds,
         if (state.pad != standingOn) {
             state.pad = standingOn;
             state.enteredAtMillis = nowMillis;
-            step.entered = standingOn;
         }
         // The cooldown blocks the jump but NOT the charge-up: a flower that
         // walks back onto the pad it arrived on still spins, it just does not
@@ -686,7 +680,6 @@ MapData::TeleportStep MapData::stepTeleporters(Vec2 centre, double deltaSeconds,
     if (standingOn < 0 && state.pad >= 0) {
         state.pad = -1;
         state.enteredAtMillis = 0;
-        step.exited = true;
     }
     return step;
 }
@@ -826,20 +819,19 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
     spawnChoices_.clear();
     warnings_.clear();
 
-    // The manifest, when there is one. Its ORDER is the realm order, and that
-    // is why the set is not discovered by scanning the directory: a client and
-    // a server that sorted the same files differently would disagree about
-    // which realm is which map, and a player would arrive in the wrong world.
+    // The manifest, which is required (below). Its ORDER is the realm order,
+    // and that is why the set is not discovered by scanning the directory: a
+    // client and a server that sorted the same files differently would
+    // disagree about which realm is which map, and a player would arrive in
+    // the wrong world.
     std::vector<std::string> files;
     // How many realms each file is loaded into: 1, or the entry's `copies`.
     std::vector<int> copies;
     Json manifest;
     std::string manifestError;
-    std::ifstream probe(dataDir + "/maps.json", std::ios::binary);
-    if (probe) {
-        const std::string text((std::istreambuf_iterator<char>(probe)),
-                               std::istreambuf_iterator<char>());
-        if (!Json::parse(text, manifest, manifestError)) {
+    std::string manifestText;
+    if (readFile(dataDir + "/maps.json", manifestText)) {
+        if (!Json::parse(manifestText, manifest, manifestError)) {
             errorOut = dataDir + "/maps.json did not parse: " + manifestError;
             return false;
         }
@@ -892,8 +884,8 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
     maps_.resize(slots.size());
     for (std::size_t i = 0; i < slots.size(); ++i) {
         const Realm realm = worldRealm(static_cast<int>(i));
-        // A manifest entry is a file name beside the manifest; the no-manifest
-        // path already handed over a full path.
+        // A manifest entry is a file name beside the manifest; one that
+        // already holds a '/' is taken as the path it is.
         const std::string path = slots[i].find('/') == std::string::npos
                                      ? dataDir + "/" + slots[i]
                                      : slots[i];

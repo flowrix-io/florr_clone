@@ -12,12 +12,12 @@
 #include "client/render/sprites.h"
 #include "client/render/world_renderer.h"
 #include "client/world_view.h"
-#include "server_harness.h"
+#include "render_rig.h"
 #include "shared/game/config.h"
 #include "shared/game/map_elements.h"
+#include "test_data.h"
 
 #include <cstddef>
-#include <cstdlib>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -86,21 +86,7 @@ struct TerrainScene {
     }
 };
 
-/// Pixels that differ between two frames by more than `tolerance` in any channel.
-int differingPixels(const std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b,
-                    int tolerance) {
-    if (a.size() != b.size()) return -1;
-    int differing = 0;
-    for (std::size_t i = 0; i + 3 < a.size(); i += 4) {
-        for (std::size_t c = 0; c < 3; ++c) {
-            if (std::abs(static_cast<int>(a[i + c]) - static_cast<int>(b[i + c])) > tolerance) {
-                ++differing;
-                break;
-            }
-        }
-    }
-    return differing;
-}
+using testsupport::differingPixels;
 
 /// Enough frames for the chunk cache to have baked everything on screen: it
 /// bakes a handful of chunks a frame and paints the rest straight meanwhile.
@@ -206,38 +192,18 @@ TEST(map_tiles_leave_no_seam_when_antennae_zoom_the_camera_far_out) {
     // tile corners, each snapped to a whole pixel on its own, used to land a
     // pixel further apart than the tile reached, at every boundary where the
     // rounding fell that way -- a black line every dozen tiles, across the
-    // whole map. These zooms each opened one at this scale.
-    std::string error;
-    CHECK(loadContent(testsupport::dataDir(), error));
-    WorldMaps maps;
-    CHECK(maps.load(testsupport::dataDir(), nullptr, error));
-    // The tile artwork comes out of the sprite cache; without it every cell
-    // draws nothing and the whole frame is the black this is looking for.
-    SpriteCache sprites;
-    sprites.build(content(), testsupport::dataDir());
-    WorldRenderer renderer;
-    renderer.setSprites(&sprites);
-    renderer.setWorldMaps(&maps);
-    WorldView view;
-    view.setRealm(Realm::Overworld);
+    // whole map. These zooms each opened one at this scale. Painted straight,
+    // with no chunk cache: the tests above hold the cache to this same picture.
+    // The tile artwork comes out of the scene's sprite cache; without it every
+    // cell draws nothing and the whole frame is the black this is looking for.
+    TerrainScene scene;
+    CHECK(scene.load());
 
     // The middle of the garden: at 0.1 the view is 19200 x 10800 units, and
     // all of it has to be map for a black line to mean a seam.
     const Vec2 centre{16384.3, 16384.7};
     for (const double zoom : {0.100, 0.106, 0.112, 0.130}) {
-        Canvas canvas = Canvas::createVirtual(kPixelWidth, kPixelHeight);
-        canvas.setLogicalSize(kDesignWidth, kDesignHeight);
-        canvas.resetTransform();
-        const float scale = static_cast<float>(kPixelWidth) / kDesignWidth;
-        canvas.scale(scale, scale);
-        Camera camera;
-        camera.setViewport(kDesignWidth, kDesignHeight);
-        camera.userZoom = zoom;
-        camera.snapTo(centre);
-        renderer.draw(canvas, view, camera, centre, 0.0);
-
-        const std::vector<std::uint8_t> pixels =
-            canvas.getImageData(0, 0, kPixelWidth, kPixelHeight);
+        const std::vector<std::uint8_t> pixels = scene.frame(centre, zoom);
         CHECK(pixels.size() == static_cast<std::size_t>(kPixelWidth) * kPixelHeight * 4);
         CHECK(blackLines(pixels, true) == 0);
         CHECK(blackLines(pixels, false) == 0);

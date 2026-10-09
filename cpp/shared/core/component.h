@@ -10,9 +10,9 @@
 #include <bitset>
 #include <cstddef>
 #include <cstdint>
-#include <string>
+#include <new>
 #include <type_traits>
-#include <vector>
+#include <utility>
 
 namespace flix {
 
@@ -65,8 +65,9 @@ ComponentInfo makeComponentInfo(const char* name) {
 
 } // namespace detail
 
-/// Every component type must specialise this, which is also what gives the
-/// type a stable human-readable name in diagnostics:
+/// Every component type must specialise this. The macro also records the
+/// type's name, which ComponentInfo::name carries for a debugger to show;
+/// nothing in the program prints it:
 ///     struct Position { Vec2 value; };
 ///     FLIX_COMPONENT(Position);
 template <class T>
@@ -95,7 +96,8 @@ ComponentId componentId() { return componentInfo<T>().id; }
 /// Number of component types registered so far. Diagnostics only.
 std::size_t componentCount();
 
-/// Registered info by id, or nullptr. Diagnostics only.
+/// Registered info by id, or nullptr. What an Archetype builds its columns
+/// from.
 const ComponentInfo* componentById(ComponentId id);
 
 /// Mask with a bit set for each of `Ts`.

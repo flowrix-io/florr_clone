@@ -1,10 +1,10 @@
 #include "server/systems/spawning.h"
 
-#include "server/systems/mob_ai.h"
 #include "server/systems/movement.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 namespace flix {
@@ -82,9 +82,7 @@ void provokeIfNeutral(World& world, Entity child, Entity attacker) {
 
 /// Whether `e` is still somebody a mob can be sent after, in `realm`.
 bool attackerUsable(World& world, Entity e, Realm realm) {
-    if (!world.isAlive(e) || world.has<Dead>(e)) return false;
-    const Health* health = world.tryGet<Health>(e);
-    if (health != nullptr && !health->alive()) return false;
+    if (!isStanding(world, e)) return false;
     const Transform* at = world.tryGet<Transform>(e);
     return at != nullptr && at->realm == realm;
 }
@@ -131,21 +129,30 @@ Entity freshestAttacker(World& world, const Bounty* bounty, Realm realm,
 /// who are owed the same neighbourhood anyway.
 constexpr double kViewerMatchRadius = 24.0;
 
+/// The flower closest to `at` in `realm` -- the first of equals -- or null when
+/// nobody is in it. Its squared distance goes to `distSqOut` when one is given.
+const SpawnSystem::Viewer* nearestViewer(const std::vector<SpawnSystem::Viewer>& viewers,
+                                         Realm realm, Vec2 at, double* distSqOut = nullptr) {
+    const SpawnSystem::Viewer* nearest = nullptr;
+    double nearestSq = 0.0;
+    for (const SpawnSystem::Viewer& viewer : viewers) {
+        if (viewer.realm != realm) continue;
+        const double distSq = distanceSq(viewer.position, at);
+        if (nearest != nullptr && distSq >= nearestSq) continue;
+        nearest = &viewer;
+        nearestSq = distSq;
+    }
+    if (distSqOut != nullptr) *distSqOut = nearestSq;
+    return nearest;
+}
+
 /// The luck a spawn placed at `at` is charged to: the closest flower to it in
 /// the SAME realm. What the reference does for a zone fill, which belongs to
 /// nobody's viewport (src/server/enemySpawner.ts:855-869). Distances are only
 /// meaningful inside one coordinate space, so a flower standing at the same
 /// numbers on another map is not "near" anything here.
 double nearestViewerLuck(const std::vector<SpawnSystem::Viewer>& viewers, Realm realm, Vec2 at) {
-    const SpawnSystem::Viewer* nearest = nullptr;
-    double nearestDistSq = 0.0;
-    for (const SpawnSystem::Viewer& viewer : viewers) {
-        if (viewer.realm != realm) continue;
-        const double distSq = distanceSq(viewer.position, at);
-        if (nearest != nullptr && distSq >= nearestDistSq) continue;
-        nearest = &viewer;
-        nearestDistSq = distSq;
-    }
+    const SpawnSystem::Viewer* nearest = nearestViewer(viewers, realm, at);
     return nearest == nullptr ? kNeutralSpawnLuck : nearest->luck;
 }
 
@@ -155,9 +162,9 @@ double nearestViewerLuck(const std::vector<SpawnSystem::Viewer>& viewers, Realm 
 /// (isInOutOfBoundsZone, src/server/shared/positions.ts:25-30).
 ///
 /// `extent` is the rectangle of the realm the point is in: every map is its
-/// own coordinate space with its own size -- the shipped world is 64 tiles
-/// square -- so a single world constant is the wrong number for all but one
-/// of them.
+/// own coordinate space with its own size -- the shipped maps run from 32 to
+/// 128 tiles square -- so a single world constant is the wrong number for all
+/// but one of them.
 bool inBorderBand(Vec2 position, Vec2 extent) {
     return position.x < kWorldBoundaryThreshold ||
            position.x > extent.x - kWorldBoundaryThreshold ||
@@ -223,15 +230,8 @@ double distanceToSegmentSq(Vec2 p, Vec2 a, Vec2 b) {
 /// body directly away from it. Unset when nobody is in the realm.
 std::optional<double> facingNearestFlower(const std::vector<SpawnSystem::Viewer>& viewers,
                                           Realm realm, Vec2 at) {
-    const SpawnSystem::Viewer* nearest = nullptr;
     double nearestSq = 0.0;
-    for (const SpawnSystem::Viewer& viewer : viewers) {
-        if (viewer.realm != realm) continue;
-        const double distSq = distanceSq(viewer.position, at);
-        if (nearest != nullptr && distSq >= nearestSq) continue;
-        nearest = &viewer;
-        nearestSq = distSq;
-    }
+    const SpawnSystem::Viewer* nearest = nearestViewer(viewers, realm, at, &nearestSq);
     if (nearest == nullptr || !(nearestSq > 0.0)) return std::nullopt;
     return (nearest->position - at).angle();
 }
@@ -406,7 +406,7 @@ std::uint16_t SpawnSystem::chooseRegionMobAt(const ContentRegistry& content, Rea
     //
     // There is no arm below this one. A map is always in hand by the time we
     // get here: this is reached only from chooseZoneMobType, which is reached
-    // only from spawnInZone, which needs a band -- and a band exists only
+    // only from stockZone, which needs a band -- and a band exists only
     // because rebuildZones read it off a map in `worldMaps`, whose realm
     // therefore resolves. A harness with no map has no band, so it spawns
     // nothing at all and never arrives here; that is what spawning.h's
@@ -512,19 +512,19 @@ void SpawnSystem::spawnRingPetals(World& world, const ContentRegistry& content, 
 
 Entity SpawnSystem::spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                              std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                             double nowMillis, Rng& rng, bool bypassBossCooldown) {
+                             double nowMillis, Rng& rng) {
     // No band owns a mob somebody else asked for -- the arena, the maze, a
     // script, an operator's console -- so it is counted against no band's
     // target and is recycled the old way rather than going back to a record
     // there is no band to hold.
     return spawnMobAt(world, terrain, content, mobIndex, rarity, position, realm, nowMillis, rng, 0,
-                      kInvalidIndex, std::nullopt, bypassBossCooldown);
+                      kInvalidIndex);
 }
 
 Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                                std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                                double nowMillis, Rng& rng, int depth, std::uint16_t zone,
-                               std::optional<double> facing, bool bypassBossCooldown) {
+                               std::optional<double> facing) {
     if (mobIndex >= content.mobCount()) return NULL_ENTITY;
 
     const MobConfig& config = content.mob(mobIndex);
@@ -544,7 +544,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // because that is the tier the mob would actually stand at; roots only,
     // as with the announcement, because a centipede's segments carry the
     // head's tier and the head was already let in.
-    if (!bypassBossCooldown && depth == 0 && bossCooldownLeft(rarity, realm, nowMillis) > 0.0) return NULL_ENTITY;
+    if (depth == 0 && bossCooldownLeft(rarity, realm, nowMillis) > 0.0) return NULL_ENTITY;
 
     const MobStats stats = content.mobStats(mobIndex, rarity);
 
@@ -611,10 +611,8 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
 
     MobAi ai;
     ai.kind = stats.ai;
-    ai.anchor = at;
     ai.aggroRange = stats.aggroRange;
     ai.wanderAngle = rng.angle();
-    ai.nextDecisionMillis = nowMillis;
     world.add<MobAi>(e, std::move(ai));
 
     world.add<AmbientMob>(e, AmbientMob{nowMillis, zone, nextSpawnOrder_++});
@@ -760,11 +758,12 @@ void SpawnSystem::spawnBodyChain(World& world, const Terrain& terrain,
     }
 }
 
-// An escort is placed by its NEST, not by a band. The ring it stands on is
-// centred on the parent and routinely reaches over the band's edge onto ground
-// no band covers -- which is legal, and deliberately ungated: the band chose
-// the nest, and the nest chose these. The same is true of a centipede's body
-// segments (spawnBodyChain).
+// An escort is placed by its NEST, not by a band. It comes up at the parent's
+// own centre (escortSpawnPoint, a unit off on a bearing of its own) and walks
+// out from there, so it is routinely standing over the band's edge on ground
+// no band covers soon after -- which is legal, and deliberately ungated: the
+// band chose the nest, and the nest chose these. The same is true of a
+// centipede's body segments (spawnBodyChain).
 Entity SpawnSystem::spawnEscort(World& world, const Terrain& terrain, const ContentRegistry& content,
                                 std::uint16_t childIndex, Rarity nestRarity, Vec2 at, Realm realm,
                                 Entity parent, double nowMillis, Rng& rng, int depth) {
@@ -839,7 +838,8 @@ void SpawnSystem::run(World& world, const Terrain& terrain, const ContentRegistr
     //
     // The ARENA and the MAZE are not that rule's business: they are generated
     // realms with no object layer to draw a band on, and ModeSpawner
-    // (mode_spawning.h) fills each one whole, every tick, through spawnMob().
+    // (mode_spawning.h) fills each one whole, twice a second
+    // (kModeSpawnIntervalMillis), through spawnMob().
     // Their mobs are kept alive by the realm-occupied branch of takeCensus
     // rather than by any band, and none of them is ever latent.
 }
@@ -1331,7 +1331,6 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             zone.polygon = element.polygon;
             zone.difficulty = element.difficulty;
             zone.realm = map.realm();
-            zone.mobs = element.mobDistribution;
             zone.singular = element.singular;
 
             // The rows are resolved to indices ONCE, here, rather than on every
@@ -1339,8 +1338,8 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             // times a second. It is also the only moment both halves are in
             // hand -- the map, which has the names, and the content, which has
             // the groups -- so it is where a typo can be reported.
-            zone.resolved.reserve(zone.mobs.size());
-            for (const ZoneMobEntry& row : zone.mobs) {
+            zone.resolved.reserve(element.mobDistribution.size());
+            for (const ZoneMobEntry& row : element.mobDistribution) {
                 SpawnZone::ResolvedRow resolved;
                 resolved.weight = row.weight;
                 resolved.group = content.mobGroupIndex(row.name);
@@ -1358,7 +1357,7 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             }
             if (element.isMobRegion()) {
                 // A region owns no population, so none of the bookkeeping
-                // below applies to it: no target, no fill, no section mask.
+                // below applies to it: no target, no fill.
                 regions_.push_back(std::move(zone));
                 continue;
             }
@@ -1630,7 +1629,11 @@ std::uint16_t SpawnSystem::rollResolvedRows(const ContentRegistry& content,
         return chooseGroupMob(content, chosen->group, rarity, rng);
     }
     // Named outright, which bypasses the group roll entirely -- that roll
-    // excludes `neverAmbient` mobs, and this is how one reaches the world.
+    // excludes `neverAmbient` mobs, and this is how a BAND puts one in the
+    // world: the spawner's only way to. Not the only way there is. The target
+    // dummy also stands as a map NPC -- the jungle's DPS row is a line of
+    // `npcs` objects, placed by NpcSystem, not by any band -- and the console
+    // puts one down with spawn_npc, or as a mob with spawn.
     if (chosen->mob == kInvalidIndex || chosen->mob >= content.mobCount()) return kInvalidIndex;
     return chosen->mob;
 }
@@ -2019,9 +2022,11 @@ void SpawnSystem::announceIfNotable(const ContentRegistry& content, Entity entit
                                     std::uint16_t mobIndex, Rarity rarity, Vec2 position,
                                     Realm realm) {
     if (rarityIndex(rarity) < rarityIndex(kAnnouncedRarity)) return;
-    // A permanent fixture is not an event. The DPS row is built out of bands
-    // that name the target dummy outright, up to unique, and announcing those
-    // would put a line in chat for a post nobody has to fight.
+    // A permanent fixture is not an event. A dummy reaches this through a band
+    // that names it outright, up to unique, or the console's spawn, and
+    // announcing those would put a line in chat for a post nobody has to
+    // fight. (The shipped DPS row is the jungle's map NPCs, which NpcSystem
+    // places and which never come through here.)
     if (mobIndex >= content.mobCount() || content.mob(mobIndex).neverAmbient) return;
     // Oldest first, so a server that never drains this keeps the announcements
     // somebody might still care about instead of the ones from an hour ago --

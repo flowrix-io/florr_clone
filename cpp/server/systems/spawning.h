@@ -267,14 +267,16 @@ inline constexpr double kLatentSleepDelayMillis = 3000.0;
 /// in over half a minute.
 inline constexpr double kPopulationIntervalMillis = 500.0;
 
-/// Cadence a wave nest used to send on, kept as the interval anything
-/// stepping a nest through its bands walks by. The tick itself reads it
-/// nowhere: a wave follows the hole's health, not a clock (see NestWaves).
+/// Cadence a wave nest used to send on. Nothing in the server reads it any
+/// more: a wave follows the hole's health, not a clock (see NestWaves). The
+/// tests wait several of it out to show that a hole nobody is hitting sends
+/// nothing however long it stands there.
 inline constexpr double kNestWaveIntervalMillis = 15000.0;
 
 /// Escorts one wave-nest is expected to have out at once. A hole is capped
-/// nowhere -- every band it crosses fires in full -- so this bounds nothing;
-/// it is the headroom a section holding a nest is measured against.
+/// nowhere -- every band it crosses fires in full -- so this bounds nothing in
+/// the server; the tests use it as the slack a population bound allows for a
+/// nest's brood on top of what the bands placed.
 inline constexpr int kMaxNestChildren = 12;
 
 /// How deep nesting may go. A nest whose escorts are themselves nests is legal
@@ -495,7 +497,7 @@ public:
     /// each caller.
     Entity spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                     std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                    double nowMillis, Rng& rng, bool bypassBossCooldown = false);
+                    double nowMillis, Rng& rng);
 
     /// The weighted type roll over ONE mob group: each member's weight, over
     /// the members that exist at this tier.
@@ -609,13 +611,12 @@ private:
         /// staged map, so this is what keeps one map's band from stocking
         /// another's identical coordinates.
         Realm realm = Realm::Overworld;
-        /// What this band spawns: weighted rows of group names and mob ids,
-        /// already resolved against the content. Empty means the map's own
-        /// `defaultMobGroup`.
-        std::vector<ZoneMobEntry> mobs;
-        /// `mobs` resolved to indices, in the same order: a group index when
-        /// the name is a group, a mob index when it is a mob, and
-        /// kInvalidIndex when the content defines neither.
+        /// What this band spawns: the element's weighted `mobs` rows resolved
+        /// to indices, in the same order -- a group index when the name is a
+        /// group, a mob index when it is a mob, and kInvalidIndex when the
+        /// content defines neither. Empty when the band names nothing:
+        /// chooseRegionMobAt then decides (the region under the point, then
+        /// the map's `defaultMobGroup`).
         ///
         /// Resolved once when the zones are built rather than per spawn: the
         /// lookup is a hash probe per row and a busy band rolls several times
@@ -730,17 +731,15 @@ private:
     void promoteLatent(World& world, const Terrain& terrain, const ContentRegistry& content,
                        const std::vector<Viewer>& viewers, Rng& rng, double nowMillis);
 
-    /// True when this section already holds a mob of this type and tier that
-    /// nothing will ever clear away.
+    /// True when a `neverAmbient` fixture of this type and tier already
+    /// stands in `realm` -- in `section` of it when the realm is the
+    /// overworld, anywhere on the map otherwise (the section grid is the
+    /// overworld's alone).
     ///
     /// Only asked about `neverAmbient` mobs, which is the target dummy: it
     /// never despawns and is effectively unkillable, so a duplicate that slips
     /// through is permanent. One of each rarity per section, checked against
     /// the FINAL tier after the mob's own floor (src/server/enemySpawner.ts:112).
-    /// True when a `neverAmbient` fixture of this type and tier already
-    /// stands in `realm` -- in `section` of it when the realm is the
-    /// overworld, anywhere on the map otherwise (the section grid is the
-    /// overworld's alone).
     bool permanentFixtureExists(World& world, std::uint16_t mobIndex, Rarity rarity, Realm realm,
                                 int section);
 
@@ -831,7 +830,7 @@ private:
     Entity spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                       std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                       double nowMillis, Rng& rng, int depth, std::uint16_t zone,
-                      std::optional<double> facing = std::nullopt, bool bypassBossCooldown = false);
+                      std::optional<double> facing = std::nullopt);
 
     /// Lays a centipede's body out behind its head, each segment linked to the
     /// one in front. Driven from spawnMobAt so that every path to a head --

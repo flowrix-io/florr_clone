@@ -28,7 +28,6 @@
 #include "shared/game/constants.h"
 #include "shared/game/difficulty.h"
 #include "shared/game/terrain.h"
-#include "shared/game/tiled_map.h"
 
 namespace flix {
 
@@ -485,8 +484,7 @@ void App::drawMinimap(Canvas& canvas) {
 const Canvas* App::mazeMinimapStatic() {
     const Maze& maze = activeMaze();
     const double density = window_.uiScale();
-    if (mazeMinimapStatic_ && mazeMinimapBaked_ && mazeMinimapDay_ == maze.day() &&
-        mazeMinimapDensity_ == density) {
+    if (mazeMinimapStatic_ && mazeMinimapDay_ == maze.day() && mazeMinimapDensity_ == density) {
         return mazeMinimapStatic_.get();
     }
     const int dim = maze.gridDim();
@@ -527,10 +525,7 @@ const Canvas* App::mazeMinimapStatic() {
             const double cy = y0 + top * s;
             const double sx = concave ? x0 + (1 - left) * s : cx;
             const double sy = concave ? y0 + (1 - top) * s : cy;
-            double a0 = 0.0;
-            if (top == 0 && left == 1) a0 = kPi * 0.5;
-            else if (top == 1 && left == 1) a0 = kPi;
-            else if (top == 1 && left == 0) a0 = kPi * 1.5;
+            const double a0 = mazeFilletStartAngle(v);
             map.moveTo(static_cast<float>(sx), static_cast<float>(sy));
             map.arc(static_cast<float>(cx), static_cast<float>(cy), static_cast<float>(s),
                     static_cast<float>(a0), static_cast<float>(a0 + kPi * 0.5), false);
@@ -553,7 +548,6 @@ const Canvas* App::mazeMinimapStatic() {
 
     mazeMinimapStatic_ = std::move(baked);
     mazeMinimapDay_ = maze.day();
-    mazeMinimapBaked_ = true;
     mazeMinimapDensity_ = density;
     return mazeMinimapStatic_.get();
 }

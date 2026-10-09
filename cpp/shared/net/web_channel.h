@@ -28,6 +28,9 @@
 // Everything is non-blocking. connect() and listen() return immediately and
 // the handshake finishes later; state() is how the caller finds out, polled
 // once a frame, because neither runtime lets us block and wait.
+//
+// Natively there is no JavaScript runtime under any of this: every call is a
+// stub that fails, and transport.cpp uses its sockets instead.
 
 #include <cstddef>
 #include <cstdint>
@@ -44,10 +47,6 @@ enum class State : int {
     Closed = 2,
 };
 
-/// Whether this build has a JavaScript runtime under it at all. False
-/// natively, where every call below is a stub that fails.
-bool available();
-
 /// Starts a client connection to `host`:`port`. Deliberately not a URL: which
 /// scheme and which transport are finally used is this layer's decision, not
 /// the caller's, and a page inherits its own -- a client served over https
@@ -62,16 +61,19 @@ int connect(const std::string& host, std::uint16_t port);
 /// Starts a server listener on `port`.
 ///
 /// `certPath`/`keyPath` name the TLS material. Both empty means "find it": the
-/// conventional pair names are looked for in the working directory, exactly as
-/// the TypeScript server does, and a real certificate is preferred to a
+/// conventional pair names are looked for in the working directory, as the
+/// TypeScript server did, and a real certificate is preferred to a
 /// development one. Finding none leaves the listener on plain HTTP and
 /// WebSocket only -- WebTransport is secure-context only, so without a
 /// certificate there is nothing to offer.
 ///
-/// `webRoot` is the directory served over that same HTTP(S) listener; empty
-/// means the directory the program was loaded from, which is where the client
-/// build sits. One port serves the page, the WebSocket and the QUIC listener,
-/// so a client is same-origin with its server and needs nothing else running.
+/// `webRoot` is the directory the client is served from over that same
+/// HTTP(S) listener -- the web build's own files, by name, and nothing else
+/// in it, because on a deployed box it also holds the live database and the
+/// certificate's key (see onRequest in web_channel.cpp). Empty means the
+/// directory the program was loaded from, which is where the client build
+/// sits. One port serves the page, the WebSocket and the QUIC listener, so a
+/// client is same-origin with its server and needs nothing else running.
 ///
 /// In a page there is nothing to serve and nobody to bind for; the listener
 /// is an in-page one that connect() calls from the same page resolve to, and
@@ -103,9 +105,6 @@ void close(int channel);
 
 /// The peer as the transport saw it, for logging. Never client-supplied.
 std::string peer(int channel);
-
-/// "websocket", "webtransport" or "loopback", once the channel is open.
-std::string kind(int channel);
 
 /// Why a channel closed, when it closed for a reason worth reporting.
 std::string error(int channel);

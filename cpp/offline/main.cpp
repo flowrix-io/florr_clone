@@ -26,17 +26,20 @@
 //     session token use their own localStorage-backed mount, as the online
 //     client does, under a prefix of their own.
 //
-//   * The fonts. The online page loads Ubuntu from Google Fonts; this one has
-//     nowhere to load from, so the faces embedded in the wasm for measuring
-//     are registered with the document for drawing too, and text is set in
-//     the same bytes it was measured with.
+//   * The font. The online page loads Ubuntu from Google Fonts; this one has
+//     nowhere to load from, so the one face staged into the wasm for
+//     measuring (Ubuntu-Bold.ttf) is registered with the document for drawing
+//     too, and text is set in the same bytes it was measured with.
 //
 // One thing this build offers that the others do not: a Grant Admin button in
 // Settings > Advanced. The server is in this page and the world is nobody
 // else's, so the console is the player's to take -- and the alternative is
 // hand-editing an account out of browser storage. It calls
-// GameServer::grantAdmin directly, in-process; no message carries the grant,
-// which is why the shipping server gains no way in from a socket.
+// GameServer::grantAdmin directly, in-process, with the session token the
+// page's own client was issued -- never with a name, so the grant lands on
+// the account that client is signed into and nothing a player types can aim
+// it. No message carries the grant, which is why the shipping server gains no
+// way in from a socket.
 //
 // A scheduled `restart` is honoured the way a process restart would be: the
 // page reloads. Everything that matters is in storage by then, and a reload
@@ -44,8 +47,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <iterator>
 #include <string>
 
 #include <emscripten.h>
@@ -54,6 +55,7 @@
 #include "client/app.h"
 #include "client/web/persist.h"
 #include "server/game_server.h"
+#include "shared/core/file.h"
 
 namespace {
 
@@ -82,8 +84,10 @@ constexpr double kMirrorIntervalMillis = 1000.0;
 /// server derives its key from its machine (server/admin_db_key.h) to prove an
 /// admin also has the box; here the box is the player's own browser, and a
 /// key derived from a per-browser secret would just be a different string to
-/// dig out of the console on every install. Lowercase: keyMatches lowers what
-/// is typed, not the key.
+/// dig out of the console on every install. Nobody has to dig this one out of
+/// anything: because it is fixed, the server says it in `/admin db`'s usage
+/// line and refusal and in the Grant Admin confirmation, which a derived key
+/// never is. Lowercase: keyMatches lowers what is typed, not the key.
 constexpr const char* kAdminDbKey = "0ff1ce0ff1ce0ff1";
 
 flix::GameServer* g_server = nullptr;
@@ -123,12 +127,11 @@ EM_JS(void, offline_register_font, (const char* familyPtr, const char* weightPtr
 EM_JS(void, offline_reload, (), { location.reload(); });
 
 void registerFont(const std::string& path, const char* weight) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) {
+    std::string bytes;
+    if (!flix::readFile(path, bytes)) {
         std::fprintf(stderr, "[fonts] %s is not in the embedded data\n", path.c_str());
         return;
     }
-    const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     offline_register_font("Ubuntu", weight, bytes.data(), static_cast<int>(bytes.size()));
 }
 
@@ -242,9 +245,10 @@ int main(int argc, char** argv) {
     // page, the world is nobody else's, and the alternative is hand-editing
     // the account out of browser storage. Settings > Advanced draws the button
     // because this hook is set; no message carries the grant, so there is
-    // nothing here for a network build to reach.
-    clientConfig.grantAdmin = [](const std::string& username) {
-        return g_server != nullptr && g_server->grantAdmin(username);
+    // nothing here for a network build to reach. The client hands over its
+    // session token, which the server resolves to the account itself.
+    clientConfig.grantAdmin = [](const std::string& sessionToken) {
+        return g_server != nullptr && g_server->grantAdmin(sessionToken);
     };
     if (stored) {
         clientConfig.sessionFile = std::string(flix::web::kStorageDirectory) + "/" + kSessionName;

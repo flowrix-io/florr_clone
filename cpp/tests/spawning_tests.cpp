@@ -6,7 +6,6 @@
 #include "server/systems/loot.h"
 #include "server/systems/spawning.h"
 
-#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -14,73 +13,58 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <limits>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
 #include "fixture_content.h"
+#include "test_data.h"
 
 using namespace flix;
 
 namespace {
 
-// The test binary runs from wherever ctest puts it, so every content path is
-// derived from this source file's own location rather than from the working
-// directory. Same trick as config_tests.cpp.
-std::string testsDir() {
-    const std::string path = __FILE__;
-    const std::size_t slash = path.find_last_of('/');
-    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
-}
+const ContentRegistry& shipped() { return testsupport::shippedContent(); }
 
-std::string firstExisting(const std::vector<std::string>& candidates) {
-    for (const std::string& candidate : candidates) {
-        std::ifstream probe(candidate, std::ios::binary);
-        if (probe) return candidate;
+/// The shipped drop table, loaded by path from the staged directory and linked
+/// against shipped().
+///
+/// Neither DropTables nor LootSystem has to be told where the table is: left
+/// unloaded, the first link() looks for data/mob_drops.json relative to the
+/// WORKING directory (DropTables::loadDefault) and settles for the generated
+/// eggs alone when there is none. That made every loot test here a function
+/// of where the binary was started -- a build directory or the source tree
+/// found a copy, anywhere else ran the very same assertions against tables
+/// holding nothing but eggs. So everything below that rolls or reads the
+/// table is handed it.
+DropTables shippedTables() {
+    DropTables tables;
+    std::string error;
+    if (!tables.load(shipped(), testsupport::dataFile("mob_drops.json"), error)) {
+        std::printf("    (the shipped drop table did not load: %s)\n", error.c_str());
     }
-    return {};
+    return tables;
 }
 
-const ContentRegistry& shipped() {
-    static const ContentRegistry registry = [] {
-        ContentRegistry r;
+/// A LootSystem holding that same table, for the same reason.
+struct ShippedLoot : LootSystem {
+    ShippedLoot() {
         std::string error;
-        r.loadFiles(firstExisting({testsDir() + "/../../src/mobs.json", "data/mobs.json",
-                                   "../src/mobs.json", "../../src/mobs.json", "src/mobs.json"}),
-                    firstExisting({testsDir() + "/../../src/petals.json", "data/petals.json",
-                                   "../src/petals.json", "../../src/petals.json", "src/petals.json"}),
-                    error);
-        return r;
-    }();
-    return registry;
-}
+        if (!loadTables(shipped(), testsupport::dataFile("mob_drops.json"), error)) {
+            std::printf("    (the shipped drop table did not load: %s)\n", error.c_str());
+        }
+    }
+};
 
-std::string tempPath(const char* name) {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_spawning_tests";
-    mkdir(base.c_str(), 0755);
-    return base + "/" + name;
-}
-
-bool writeText(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
-    return out.good();
-}
-
-/// A registry over four invented mobs, so the weighted roll can be measured
+/// A registry over five invented mobs, so the weighted roll can be measured
 /// against numbers a test chose rather than against whatever the shipped data
 /// happens to say this week.
 const ContentRegistry& synthetic() {
     static const ContentRegistry registry = [] {
         ContentRegistry r;
-        const std::string mobs = tempPath("mobs.json");
-        const std::string petals = tempPath("petals.json");
-        writeText(mobs, test::fixtureMobs(R"({
+        std::string error;
+        test::loadFixtureContent(r, testsupport::tempDir("flix_spawning_tests"), R"({
             "alpha": {"name":"Alpha","health":10,"damage":1,"size":1,"speed":0.2,
                       "groups":{"meadow":1}},
             "beta":  {"name":"Beta","health":10,"damage":1,"size":1,"speed":0.2,
@@ -91,12 +75,11 @@ const ContentRegistry& synthetic() {
                       "groups":{"dunes":100}},
             "ghost": {"name":"Ghost","health":10,"damage":1,"size":1,"speed":0.2,
                       "groups":{"meadow":0}}
-        })"));
-        writeText(petals, test::fixturePetals(R"({
+        })",
+                                 R"({
             "basic": {"name":"Basic","damage":5,"health":5,"size":1,"cooldown":1000,"count":1}
-        })"));
-        std::string error;
-        r.loadFiles(mobs, petals, error);
+        })",
+                                 error);
         return r;
     }();
     return registry;
@@ -108,7 +91,8 @@ const WorldMaps& shippedMaps();
 
 /// The AUTHORED fixture map -- bands of several difficulties and a region,
 /// written by this file. Defined with the band tests for the same reason. See
-/// its definition for why the shipped map cannot stand in for it any more.
+/// its definition for why it is written here rather than read off the shipped
+/// maps.
 const MapData& authoredMap();
 const WorldMaps& authoredMaps();
 
@@ -588,16 +572,21 @@ TEST(luck_shifts_the_curve_upward_and_never_down) {
 }
 
 TEST(min_rarity_still_floors_a_named_mob_whatever_the_ground_says) {
+    // The queen ant: one of the shipped mobs that carries a floor (the evil
+    // centipede this was first written against has since lost its own). The
+    // premise is checked rather than assumed, and the floor is whatever tier
+    // the file gives her.
     const ContentRegistry& content = shipped();
-    const MobConfig& evil = content.mob(content.mobIndex("evil_centipede"));
-    CHECK_EQ(evil.minRarity, Rarity::Rare);
+    const MobConfig& queen = content.mob(content.mobIndex("queen_ant"));
+    const Rarity lowest = queen.minRarity;
+    CHECK(rarityIndex(lowest) > rarityIndex(Rarity::Common));
 
-    // Difficulty zero is fully common ground, and an evil centipede still
-    // cannot exist below rare: the floor is a property of the MOB, which is why
+    // Difficulty zero is fully common ground, and a queen still cannot exist
+    // below her floor: the floor is a property of the MOB, which is why
     // min_rarity survived the removal of the rarity-zone scheme.
     Rng rng(77);
     for (int i = 0; i < 5000; ++i) {
-        CHECK(SpawnSystem::rollRarity(evil, 0.0, kNeutralSpawnLuck, rng) == Rarity::Rare);
+        CHECK(SpawnSystem::rollRarity(queen, 0.0, kNeutralSpawnLuck, rng) == lowest);
     }
     // A mob with no floor takes the ground's answer unchanged.
     const MobConfig& bee = content.mob(content.mobIndex("bee"));
@@ -608,15 +597,22 @@ TEST(min_rarity_still_floors_a_named_mob_whatever_the_ground_says) {
 }
 
 TEST(a_direct_spawn_below_min_rarity_is_raised_to_it) {
+    // The queen ant again, as the floored mob the shipped data has.
     Sim sim;
-    const std::uint16_t evil = shipped().mobIndex("evil_centipede");
-    const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), evil, Rarity::Common,
+    const std::uint16_t queen = shipped().mobIndex("queen_ant");
+    const Rarity lowest = shipped().mob(queen).minRarity;
+    CHECK(rarityIndex(lowest) > rarityIndex(Rarity::Common));
+    CHECK(rarityIndex(lowest) < rarityIndex(Rarity::Legendary));
+    const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), queen, Rarity::Common,
                                           kCentre, Realm::Overworld, 0.0, sim.rng);
     CHECK(e != NULL_ENTITY);
-    CHECK_EQ(sim.world.get<MobType>(e).rarity, Rarity::Rare);
+    if (e == NULL_ENTITY) return;
+    CHECK_EQ(sim.world.get<MobType>(e).rarity, lowest);
     // ...and a tier above it is left alone.
-    const Entity high = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), evil,
+    const Entity high = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), queen,
                                              Rarity::Legendary, kCentre, Realm::Overworld, 0.0, sim.rng);
+    CHECK(high != NULL_ENTITY);
+    if (high == NULL_ENTITY) return;
     CHECK_EQ(sim.world.get<MobType>(high).rarity, Rarity::Legendary);
 }
 
@@ -924,7 +920,7 @@ TEST(a_camera_petals_wide_view_is_awake_from_edge_to_edge) {
     sim.spawner.worldMaps = &maps;
     const Vec2 drawn{kViewportWidth * 10.0, kViewportHeight * 10.0};
     const Entity flower = makePlayer(sim.world, kCentre);
-    sim.world.add<PlayerLocation>(flower, PlayerLocation{Region::Overworld, drawn});
+    sim.world.add<PlayerLocation>(flower, PlayerLocation{drawn});
     const std::vector<Vec2> players{kCentre};
 
     sim.tick(players);
@@ -1901,8 +1897,8 @@ TEST(mobs_nobody_has_been_near_stop_being_entities) {
 }
 
 TEST(the_shipped_map_grows_its_own_biomes_roster) {
-    // The shape of the game's own data: garden.tmj draws art, a door and a
-    // handful of bands, and declares no map properties at all -- so the map's
+    // The shape of the game's own data: garden.tmj draws art, a door and its
+    // bands, and declares no map properties at all -- so the map's
     // biome falls back to its id and its default mob group falls back to its
     // biome. That group is what a band with no `mobs` of its own asks for, and
     // it is also what the bands the author HAS written name. A map that
@@ -1965,8 +1961,8 @@ TEST(the_shipped_map_grows_its_own_biomes_roster) {
 }
 
 TEST(the_region_under_a_spawn_decides_its_group) {
-    // Authored here rather than read out of the shipped map: the shipped map
-    // has no regions at all now, and this is a test of the SPAWNER, not of the
+    // Authored here rather than read out of the shipped maps: their regions
+    // are the author's to move, and this is a test of the SPAWNER, not of the
     // game's art. See authoredMap().
     if (!authoredMap().loaded()) {
         ::testing::reportFailure(__FILE__, __LINE__, "the authored fixture map did not load");
@@ -2551,7 +2547,7 @@ TEST(a_fire_ant_hole_falls_with_its_last_ant_and_pays_everyone_who_fought) {
     // The flowers step back first, or they would pick them up the same tick.
     sim.world.get<Transform>(helper).position = mouth + Vec2{5000.0, 0.0};
     sim.world.get<Transform>(finisher).position = mouth + Vec2{-5000.0, 0.0};
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     SpatialGrid grid;
     rebuildGrid(sim.world, grid);
@@ -2721,8 +2717,7 @@ TEST(a_dead_nest_stops_producing) {
 // ---------------------------------------------------------------------------
 
 TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
-    DropTables tables;
-    tables.link(shipped());
+    DropTables tables = shippedTables();
     // Every id in the table is one the content defines. A line that does not
     // resolve is a data bug, not something to discover at runtime.
     if (!tables.unresolved().empty()) {
@@ -2730,17 +2725,80 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     }
     CHECK(tables.unresolved().empty());
 
-    CHECK_EQ(tables.forMob(shipped().mobIndex("bee")).size(), std::size_t(4));
-    CHECK_EQ(tables.forMob(shipped().mobIndex("starfish")).size(), std::size_t(2));
-    // TypeScript synthesises a guaranteed common egg even for a mob with no
-    // authored table. Only an index off the end has no table at all.
-    CHECK_EQ(tables.forMob(shipped().mobIndex("dust")).size(), std::size_t(1));
+    // Every mob's rows are its authored lines, in the order they are written,
+    // behind the guaranteed common egg TypeScript synthesises for every mob
+    // that lays one -- even a mob with no authored table at all. Read off the
+    // file rather than counted here, so the table can be rebalanced without
+    // this test having to be told.
+    const Json& authored = testsupport::shippedJson("mob_drops.json");
+    CHECK(authored.size() > 0);
+    for (std::uint16_t i = 0; i < shipped().mobCount(); ++i) {
+        const MobConfig& mob = shipped().mob(i);
+        const std::vector<Json>& lines = authored[mob.id]["drops"].items();
+        const bool pet = mob.id.size() >= 4 && mob.id.compare(mob.id.size() - 4, 4, "_pet") == 0;
+        const std::uint16_t egg = shipped().petalIndex(mob.id + "_egg");
+        // A common egg the author wrote down IS the egg row, made certain --
+        // not a second one beside it.
+        bool authoredEgg = false;
+        for (const Json& line : lines) {
+            if (line["itemType"].asString() == mob.id + "_egg" &&
+                line["rarity"].asString() == "common") {
+                authoredEgg = true;
+            }
+        }
+        const bool generated = !mob.noEggDrop && !pet && egg != kInvalidIndex && !authoredEgg;
+        const std::size_t first = generated ? 1 : 0;
+        const std::vector<DropTables::Entry>& rows = tables.forMob(i);
+        if (rows.size() != lines.size() + first) {
+            std::printf("    (%s: %zu rows for %zu authored lines)\n", mob.id.c_str(), rows.size(),
+                        lines.size());
+            CHECK(false);
+            continue;
+        }
+        if (generated) {
+            CHECK_EQ(rows.front().petalIndex, egg);
+            CHECK_EQ(rows.front().rarityOffset, rarityIndex(Rarity::Common));
+            CHECK_NEAR(rows.front().probability, 1.0, 1e-12);
+        }
+        for (std::size_t k = 0; k < lines.size(); ++k) {
+            // A `random` line and a consumable name no petal of their own.
+            const std::string item = lines[k]["itemType"].asString();
+            const bool named = lines[k]["type"].asString() != "consumable" && item != "random";
+            CHECK_EQ(rows[first + k].petalIndex, named ? shipped().petalIndex(item) : kNoPetal);
+        }
+    }
+    // Only an index off the end has no table at all.
     CHECK(tables.forMob(kInvalidIndex).empty());
     CHECK(tables.guaranteedForMob(kInvalidIndex).empty());
 
-    // The merged view is the same table with one row per drop TYPE. The
-    // ladybug authors its rose twice -- common 0.5 and uncommon 0.1 -- and a
-    // rare ladybug leaves one rose, not two.
+    CHECK(tables.linkedTo(shipped()));
+    tables.link(shipped());   // idempotent
+    CHECK(tables.unresolved().empty());
+}
+
+TEST(the_merged_view_holds_one_row_per_drop_type) {
+    // What every mob above common drops from: the same table with one row per
+    // drop TYPE. A petal written on two lines -- common 0.5 and uncommon 0.1,
+    // the shape the shipped ladybug's rose had once -- is one drop, and a rare
+    // ladybug leaves one rose, not two. The table is this test's own, so the
+    // numbers are chosen ones rather than whatever the shipped table says
+    // this week.
+    const std::string path = testsupport::tempDir("flix_spawning_tests") + "/merged_drops.json";
+    CHECK(testsupport::writeText(path, R"({
+        "ladybug": {"drops": [
+            {"type": "petal", "itemType": "rose", "rarity": "common", "probability": 0.5},
+            {"type": "petal", "itemType": "rose", "rarity": "uncommon", "probability": 0.1},
+            {"type": "petal", "itemType": "light", "rarity": "common", "probability": 0.5}]},
+        "bee": {"drops": [
+            {"type": "petal", "itemType": "stinger", "rarity": "common", "probability": 0.3},
+            {"type": "petal", "itemType": "pollen", "rarity": "common", "probability": 0.8}]}
+    })"));
+    DropTables tables;
+    std::string error;
+    CHECK(tables.load(shipped(), path, error));
+    if (!error.empty()) std::printf("    (%s)\n", error.c_str());
+
+    // Three authored lines behind the generated egg; one row a type merged.
     const std::uint16_t ladybug = shipped().mobIndex("ladybug");
     CHECK_EQ(tables.forMob(ladybug).size(), std::size_t(4));
     CHECK_EQ(tables.guaranteedForMob(ladybug).size(), std::size_t(3));
@@ -2756,11 +2814,9 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     // Either authored line firing: 1 - 0.5*0.9.
     CHECK(std::abs(roseProbability - 0.55) < 1e-9);
     // A mob whose rows name different items is untouched by the merge.
-    CHECK_EQ(tables.guaranteedForMob(shipped().mobIndex("bee")).size(), std::size_t(4));
-
-    CHECK(tables.linkedTo(shipped()));
-    tables.link(shipped());   // idempotent
-    CHECK(tables.unresolved().empty());
+    const std::uint16_t bee = shipped().mobIndex("bee");
+    CHECK_EQ(tables.forMob(bee).size(), std::size_t(3));
+    CHECK_EQ(tables.guaranteedForMob(bee).size(), std::size_t(3));
 }
 
 TEST(drop_rarity_uses_authored_rows_for_common_and_uncommon_mobs) {
@@ -2855,16 +2911,21 @@ TEST(a_kill_above_unusual_grades_exactly_one_of_its_rows) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(808);
 
     // A RARE ladybug separates the two cleanly: its graded drop floors at
     // uncommon and its chaff is common, so counting the non-common items
-    // counts the graded ones. Three rows drop every time -- rose, light and
-    // the generated egg -- and exactly one of them is the real drop.
+    // counts the graded ones. Every row of its merged table drops every time
+    // -- the authored ones and the generated egg -- and exactly one of them is
+    // the real drop.
     const std::uint16_t ladybug = shipped().mobIndex("ladybug");
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    const int rows = static_cast<int>(shippedTables().guaranteedForMob(ladybug).size());
+    // More than one, or there is nothing for the one graded row to stand out
+    // from.
+    CHECK(rows > 1);
 
     for (int i = 0; i < 400; ++i) {
         makeCorpse(world, ladybug, Rarity::Rare, kCentre, player, {player});
@@ -2878,7 +2939,7 @@ TEST(a_kill_above_unusual_grades_exactly_one_of_its_rows) {
             if (world.get<DropItem>(drop).rarity != Rarity::Common) ++graded;
             world.destroy(drop);
         }
-        CHECK_EQ(total, 3);
+        CHECK_EQ(total, rows);
         CHECK_EQ(graded, 1);
     }
 }
@@ -2887,18 +2948,26 @@ TEST(which_row_is_graded_is_drawn_by_probability) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(909);
 
     // The pre-guaranteed-drops weighted draw, still deciding which item a
-    // kill is worth something for. The merged ladybug table is egg 1.0, rose
-    // 0.55 and light 0.5, so the shares are those over 2.05.
+    // kill is worth something for: each row of the ladybug's merged table is
+    // the graded one in proportion to its probability -- the egg's 1.0 against
+    // the authored rows' own figures, as the shipped table states them.
     const std::uint16_t ladybug = shipped().mobIndex("ladybug");
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
-    const std::uint16_t egg = shipped().petalIndex("ladybug_egg");
-    const std::uint16_t rose = shipped().petalIndex("rose");
-    const std::uint16_t light = shipped().petalIndex("light");
+    const DropTables tables = shippedTables();
+    const std::vector<DropTables::Entry>& rows = tables.guaranteedForMob(ladybug);
+    double weight = 0.0;
+    for (const DropTables::Entry& row : rows) {
+        // One petal a row, each a different one: that is what the merge made.
+        CHECK(row.kind == DropTables::Kind::Petal && row.petalIndex != kNoPetal);
+        weight += row.probability;
+    }
+    CHECK(rows.size() > 1);
+    CHECK(weight > 0.0);
 
     constexpr int kKills = 8000;
     std::map<std::uint16_t, int> graded;
@@ -2913,9 +2982,9 @@ TEST(which_row_is_graded_is_drawn_by_probability) {
         }
     }
 
-    CHECK_NEAR(graded[egg] / double(kKills), 1.00 / 2.05, 0.02);
-    CHECK_NEAR(graded[rose] / double(kKills), 0.55 / 2.05, 0.02);
-    CHECK_NEAR(graded[light] / double(kKills), 0.50 / 2.05, 0.02);
+    for (const DropTables::Entry& row : rows) {
+        CHECK_NEAR(graded[row.petalIndex] / double(kKills), row.probability / weight, 0.02);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2929,7 +2998,7 @@ TEST(a_squads_drops_are_reserved_for_every_member) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(4242);
 
@@ -2964,7 +3033,7 @@ TEST(a_killed_mob_drops_from_its_own_table) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(11);
 
@@ -2972,6 +3041,7 @@ TEST(a_killed_mob_drops_from_its_own_table) {
     const std::uint16_t starfishPetal = shipped().petalIndex("starfish");
     const std::uint16_t starfishEgg = shipped().petalIndex("starfish_egg");
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    const std::size_t rows = shippedTables().guaranteedForMob(starfish).size();
 
     for (int i = 0; i < 40; ++i) {
         makeCorpse(world, starfish, Rarity::Uncommon, kCentre, player, {player});
@@ -2980,9 +3050,9 @@ TEST(a_killed_mob_drops_from_its_own_table) {
     commands.flush();
 
     const std::vector<Entity> drops = liveDrops(world);
-    // Uncommon mobs drop every row: the authored starfish plus its generated
-    // guaranteed egg.
-    CHECK_EQ(drops.size(), std::size_t(80));
+    // Uncommon mobs drop every row of the merged table: the authored ones --
+    // the starfish petal among them -- plus the generated guaranteed egg.
+    CHECK_EQ(drops.size(), 40 * rows);
     int petals = 0;
     int eggs = 0;
     for (const Entity drop : drops) {
@@ -3006,7 +3076,7 @@ TEST(a_mob_pays_out_exactly_once_however_long_its_corpse_lingers) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(12);
 
@@ -3015,8 +3085,12 @@ TEST(a_mob_pays_out_exactly_once_however_long_its_corpse_lingers) {
 
     loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
     commands.flush();
+    // A common mob rolls each of its rows on its own, so how many came out is
+    // the dice's business -- but never none, because the egg is certain, and
+    // never more than the table has rows.
     const std::size_t first = liveDrops(world).size();
-    CHECK_EQ(first, std::size_t(2));
+    CHECK(first >= 1);
+    CHECK(first <= shippedTables().forMob(shipped().mobIndex("starfish")).size());
 
     for (int i = 0; i < 5; ++i) {
         loot.run(world, grid, shipped(), rng, 40.0 * i, net::kTickSeconds, commands, events);
@@ -3025,11 +3099,53 @@ TEST(a_mob_pays_out_exactly_once_however_long_its_corpse_lingers) {
     CHECK_EQ(liveDrops(world).size(), first);
 }
 
+TEST(two_corpses_on_two_maps_each_drop_on_their_own) {
+    // Marking a corpse LootAwarded moves it out of its archetype row, and the
+    // last corpse of that archetype is swapped into the row it left. The realm
+    // used to be read through the corpse's Transform pointer AFTER the mark,
+    // so it named the OTHER corpse's map, and the first one's drops landed
+    // there: reserved for players who could never reach them. Two of one mob,
+    // dying on one tick on two maps, is all it takes.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(14);
+
+    const std::uint16_t starfish = shipped().mobIndex("starfish");
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Vec2 arenaAt = kCentre + Vec2{2000, 0};
+    makeCorpse(world, starfish, Rarity::Uncommon, kCentre, player, {player});
+    const Entity inArena = makeCorpse(world, starfish, Rarity::Uncommon, arenaAt, player, {player});
+    world.get<Transform>(inArena).realm = Realm::Arena;
+
+    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    // The scatter is +-50 on each axis, so every drop is plainly one corpse's.
+    int overworld = 0;
+    int arena = 0;
+    for (const Entity drop : liveDrops(world)) {
+        const Transform& at = world.get<Transform>(drop);
+        const bool fromArena = distanceSq(at.position, arenaAt) < distanceSq(at.position, kCentre);
+        CHECK(at.realm == (fromArena ? Realm::Arena : Realm::Overworld));
+        if (fromArena) {
+            ++arena;
+        } else {
+            ++overworld;
+        }
+    }
+    // An uncommon mob drops every row it has, so both corpses left something.
+    CHECK(overworld > 0);
+    CHECK(arena > 0);
+}
+
 TEST(a_pet_dying_is_not_loot) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(13);
 
@@ -3047,14 +3163,13 @@ TEST(common_mobs_roll_each_drop_row_at_most_once) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(14);
 
     const std::uint16_t flower = shipped().mobIndex("glitch_flower");
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
-    DropTables tables;
-    tables.link(shipped());
+    const DropTables tables = shippedTables();
     const int rowCount = static_cast<int>(tables.forMob(flower).size());
 
     int mostSeen = 0;
@@ -3074,28 +3189,29 @@ TEST(every_mob_above_common_leaves_one_of_each_of_its_drops) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(15);
 
-    DropTables tables;
-    tables.link(shipped());
-    const std::uint16_t ladybug = shipped().mobIndex("ladybug");
+    const DropTables tables = shippedTables();
+    const std::uint16_t scorpion = shipped().mobIndex("scorpion");
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
 
-    // Rose, light and the generated egg. The ladybug authors its rose twice,
-    // so a mob that simply dropped every authored row would leave four items
-    // and two roses -- the merge is what makes "one of each" mean one.
+    // One of each row of its merged table. The scorpion authors its pincer
+    // twice -- common and uncommon -- so a mob that simply dropped every
+    // authored row would leave two pincers: the merge is what makes "one of
+    // each" mean one. That is the premise, so it is checked first.
     std::vector<std::uint16_t> expected;
-    for (const DropTables::Entry& row : tables.guaranteedForMob(ladybug)) {
+    for (const DropTables::Entry& row : tables.guaranteedForMob(scorpion)) {
         expected.push_back(row.petalIndex);
     }
     std::sort(expected.begin(), expected.end());
-    CHECK_EQ(expected.size(), std::size_t(3));
+    CHECK(std::adjacent_find(expected.begin(), expected.end()) == expected.end());
+    CHECK(tables.forMob(scorpion).size() > expected.size());
 
     for (int tier = rarityIndex(Rarity::Uncommon); tier <= rarityIndex(Rarity::Mythic); ++tier) {
         for (int i = 0; i < 20; ++i) {
-            makeCorpse(world, ladybug, clampRarity(tier), kCentre, player, {player});
+            makeCorpse(world, scorpion, clampRarity(tier), kCentre, player, {player});
             loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
             commands.flush();
 
@@ -3154,8 +3270,7 @@ TEST(the_magic_form_table_is_derived_from_the_petal_ids) {
 }
 
 TEST(a_magic_petal_is_never_in_the_random_drop_pool) {
-    DropTables tables;
-    tables.link(shipped());
+    const DropTables tables = shippedTables();
     // The gate would be for nothing if a `random` row could hand out an apex
     // magic leaf to a flower wearing a common orb.
     for (const std::uint16_t index : tables.droppablePetals()) {
@@ -3169,7 +3284,7 @@ TEST(without_an_orb_a_mob_drops_exactly_what_its_table_says) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(41);
 
@@ -3186,7 +3301,7 @@ TEST(a_worn_orb_converts_every_drop_that_has_a_magic_form) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(42);
 
@@ -3215,7 +3330,7 @@ TEST(a_common_orb_gatekeeps_every_conversion_to_common) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(43);
 
@@ -3242,7 +3357,7 @@ TEST(a_better_orb_lets_a_better_conversion_through) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(43);
 
@@ -3264,7 +3379,7 @@ TEST(a_stashed_orb_converts_nothing) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(44);
 
@@ -3285,7 +3400,7 @@ TEST(a_non_contributor_can_never_take_an_eligible_players_drop) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(15);
 
@@ -3293,7 +3408,7 @@ TEST(a_non_contributor_can_never_take_an_eligible_players_drop) {
     const Entity bystander = makePlayer(world, kCentre, 0.0, 2);
     (void)bystander;
     const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Rare, kCentre, Realm::Overworld,
-                                       {fighter}, 0.0);
+                                       {fighter});
     CHECK(drop != NULL_ENTITY);
 
     rebuildGrid(world, grid);
@@ -3314,7 +3429,7 @@ TEST(a_contributor_may_take_a_reserved_drop_at_once) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(16);
     NetIdAllocator ids;
@@ -3322,7 +3437,7 @@ TEST(a_contributor_may_take_a_reserved_drop_at_once) {
 
     const Entity fighter = makePlayer(world, kCentre, 0.0, 7);
     const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common,
-                                       kCentre, Realm::Overworld, {fighter}, 0.0);
+                                       kCentre, Realm::Overworld, {fighter});
     // A wired allocator is what makes a drop visible to a client at all.
     CHECK(world.has<NetId>(drop));
     const std::uint32_t dropNetId = world.get<NetId>(drop).value;
@@ -3348,14 +3463,14 @@ TEST(a_reservation_survives_the_owners_death) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(4711);
 
     const Entity died = makePlayer(world, kCentre);
     world.add<PlayerAccount>(died, PlayerAccount{"acct-1", "player", 42, false});
     loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre,
-                   Realm::Overworld, {died}, 0.0);
+                   Realm::Overworld, {died});
 
     // Death and respawn: the same account, the same connection, a new body.
     world.destroy(died);
@@ -3373,12 +3488,12 @@ TEST(an_unreserved_drop_is_free_for_anyone) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(17);
 
     const Entity passerby = makePlayer(world, kCentre);
-    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, Realm::Overworld, {}, 0.0);
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, Realm::Overworld, {});
     rebuildGrid(world, grid);
     loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
     commands.flush();
@@ -3391,13 +3506,13 @@ TEST(each_player_can_take_an_unrestricted_drop_once) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(18);
 
     makePlayer(world, kCentre, 0.0, 1);
     makePlayer(world, kCentre, 0.0, 2);
-    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, Realm::Overworld, {}, 0.0);
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, Realm::Overworld, {});
 
     rebuildGrid(world, grid);
     loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
@@ -3415,14 +3530,14 @@ TEST(magnetism_widens_the_pickup_radius_without_moving_the_drop) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(19);
 
     const Vec2 dropAt = kCentre + Vec2{300.0, 0.0};
     const Entity player = makePlayer(world, kCentre, 0.0);
     const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, dropAt, Realm::Overworld,
-                                       {player}, 0.0);
+                                       {player});
     CHECK(300.0 > kDropPickupRadius);
 
     rebuildGrid(world, grid);
@@ -3447,13 +3562,13 @@ TEST(a_dead_player_picks_nothing_up) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(20);
 
     const Entity player = makePlayer(world, kCentre);
     world.get<Health>(player).current = 0.0;
-    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, Realm::Overworld, {}, 0.0);
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, Realm::Overworld, {});
 
     rebuildGrid(world, grid);
     loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
@@ -3465,12 +3580,12 @@ TEST(drops_expire) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(21);
 
     const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, Realm::Overworld,
-                                       {}, 0.0);
+                                       {});
     constexpr double lifetime = kDropLifetimeByRarity[rarityIndex(Rarity::Common)];
     CHECK_NEAR(world.get<Lifetime>(drop).remainingSeconds, lifetime, 1e-12);
 
@@ -3495,7 +3610,7 @@ TEST(a_drop_is_collectable_on_the_tick_it_was_created_in) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(22);
 
@@ -3513,7 +3628,10 @@ TEST(a_drop_is_collectable_on_the_tick_it_was_created_in) {
     // snapshot could have carried it. Holding the drop back for a tick would
     // be a different game: it is the pickup CUE, which carries the drop's
     // position and look, that gives the client something to animate.
-    CHECK_EQ(loot.pickups().size(), std::size_t(2));
+    //
+    // Every copy the corpse left, however many of its rows fired -- a common
+    // mob rolls each on its own, and the egg always comes out.
+    CHECK(!loot.pickups().empty());
     CHECK_EQ(liveDrops(world).size(), std::size_t(0));
 
     // ...and it is taken exactly once: the second pass finds nothing left.
@@ -3521,6 +3639,42 @@ TEST(a_drop_is_collectable_on_the_tick_it_was_created_in) {
     loot.run(world, grid, shipped(), rng, 40.0, net::kTickSeconds, commands, events);
     commands.flush();
     CHECK_EQ(loot.pickups().size(), std::size_t(0));
+}
+
+TEST(a_fresh_drop_is_not_taken_from_another_map) {
+    // The fresh pass walks this tick's drops directly rather than through the
+    // broadphase, which files every drop under its realm -- so the realm is
+    // tryCollect's own test to make. Without it, a contributor standing at
+    // the corpse's coordinates on ANOTHER map (one who changed map on the
+    // tick of the kill) took its copy from there.
+    const std::uint16_t starfish = shipped().mobIndex("starfish");
+    const auto killOnce = [&](Realm flowerRealm, std::size_t& pickups, std::size_t& left) {
+        World world;
+        CommandBuffer commands{world};
+        SpatialGrid grid;
+        ShippedLoot loot;
+        EventQueue events;
+        Rng rng(23);
+        const Entity player = makePlayer(world, kCentre, 500.0, 1);
+        world.get<Transform>(player).realm = flowerRealm;
+        // Uncommon, so the corpse leaves every row it has: something to take.
+        makeCorpse(world, starfish, Rarity::Uncommon, kCentre, player, {player});
+        loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+        commands.flush();
+        pickups = loot.pickups().size();
+        left = liveDrops(world).size();
+    };
+
+    std::size_t pickups = 0;
+    std::size_t left = 0;
+    killOnce(Realm::Arena, pickups, left);
+    CHECK_EQ(pickups, std::size_t(0));
+    CHECK(left > 0);
+
+    // The control: the same flower on the corpse's own map collects on the
+    // spot, so it was the map, and only the map, that stopped it above.
+    killOnce(Realm::Overworld, pickups, left);
+    CHECK(pickups > 0);
 }
 
 TEST(the_pickup_cue_carries_the_drops_look_not_just_its_id) {
@@ -3533,7 +3687,7 @@ TEST(the_pickup_cue_carries_the_drops_look_not_just_its_id) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(2201);
     NetIdAllocator ids;
@@ -3543,7 +3697,7 @@ TEST(the_pickup_cue_carries_the_drops_look_not_just_its_id) {
     (void)player;
     const std::uint16_t rose = shipped().petalIndex("rose");
     const Entity drop =
-        loot.spawnDrop(world, rose, Rarity::Epic, kCentre, Realm::Overworld, {}, 0.0);
+        loot.spawnDrop(world, rose, Rarity::Epic, kCentre, Realm::Overworld, {});
     CHECK(drop != NULL_ENTITY);
     const std::uint32_t dropNetId = world.get<NetId>(drop).value;
     rebuildGrid(world, grid);
@@ -3571,7 +3725,7 @@ TEST(the_pickup_callback_sees_what_the_list_sees) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(23);
 
@@ -3579,7 +3733,7 @@ TEST(the_pickup_callback_sees_what_the_list_sees) {
     loot.onPickup = [&](const LootSystem::Pickup& p) { seen.push_back(p); };
 
     const Entity player = makePlayer(world, kCentre);
-    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Epic, kCentre, Realm::Overworld, {}, 0.0);
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Epic, kCentre, Realm::Overworld, {});
     rebuildGrid(world, grid);
     loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
     commands.flush();
@@ -3599,7 +3753,7 @@ TEST(a_dead_contributor_is_still_credited_but_a_non_player_is_not) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    LootSystem loot;
+    ShippedLoot loot;
     EventQueue events;
     Rng rng(24);
 
@@ -3613,8 +3767,10 @@ TEST(a_dead_contributor_is_still_credited_but_a_non_player_is_not) {
     loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
     commands.flush();
 
+    // However many of its rows fired, every drop is reserved for the player
+    // alone -- and something did drop, because a common mob's egg is certain.
     const std::vector<Entity> drops = liveDrops(world);
-    CHECK_EQ(drops.size(), std::size_t(2));
+    CHECK(!drops.empty());
     for (const Entity drop : drops) {
         CHECK_EQ(world.get<DropItem>(drop).eligible.size(), std::size_t(1));
         CHECK_EQ(world.get<DropItem>(drop).eligible.front().body, player);
@@ -3626,11 +3782,13 @@ TEST(a_dead_contributor_is_still_credited_but_a_non_player_is_not) {
 // ---------------------------------------------------------------------------
 //
 // The map does not only say which TIER belongs where. A band may name a mob
-// outright, and that is the only way a mob the group roll refuses ever reaches
-// the world: `target_dummy` is in no group and is marked neverAmbient, so the
-// dummy bands are the whole of its existence. A parser that keeps the tier
-// and drops the name leaves the DPS row unbuilt and nothing else about the
-// world looks wrong.
+// outright, and that is the only way the SPAWNER puts down a mob the group
+// roll refuses: `target_dummy` is in no group and is marked neverAmbient, so in
+// the fixture world below the dummy bands are the whole of its existence. (In
+// the shipped world the jungle's DPS row is map NPCs instead, and the console
+// can place one with spawn_npc or spawn.) A parser that keeps the tier and
+// drops the name leaves the DPS row unbuilt and nothing else about the world
+// looks wrong.
 
 namespace {
 
@@ -3638,15 +3796,9 @@ const WorldMaps& shippedMaps() {
     static const WorldMaps maps = [] {
         WorldMaps m;
         std::string error;
-        // The manifest is what marks a staged data directory; its directory is
-        // the one WorldMaps wants. FLIX_TEST_DATA_DIR first: that is the
-        // directory the build stages, and the only one that has the maps in it.
-        const std::string manifest = firstExisting({
-#ifdef FLIX_TEST_DATA_DIR
-            std::string(FLIX_TEST_DATA_DIR) + "/maps.json",
-#endif
-            testsDir() + "/../build/data/maps.json", "data/maps.json", "../data/maps.json"});
-        const std::string dir = manifest.substr(0, manifest.find_last_of('/'));
+        // The staged directory: the only one that has the maps in it, and the
+        // one the server loads them from (test_data.h finds it by its manifest).
+        const std::string& dir = testsupport::dataDir();
         if (!m.load(dir, nullptr, error)) {
             std::fprintf(stderr, "[test] the shipped maps did not load: %s\n", error.c_str());
         }
@@ -3659,34 +3811,31 @@ const WorldMaps& shippedMaps() {
 // An AUTHORED map, written here
 // ---------------------------------------------------------------------------
 //
-// The shipped map is hand-drawn art with one door on it and no annotations at
-// all: no difficulty bands, no mob regions. That is the new normal -- an author
-// paints a map and the mobs follow from its `defaultMobGroup` -- and it means
-// the shipped data can no longer stand in for "a map with bands on it".
+// The shipped maps carry bands and regions of their own, but those are the
+// author's to rebalance, and a spawner test that read its coverage out of them
+// would move every time the author did. So the bands these tests need are
+// authored here instead, in the same Tiled shape a map file has.
 //
-// It used to: world.tmj carried two hundred bands, nine regions and nine
-// target-dummy rows, and every test below read its coverage out of the game's
-// own content. Everything those tests pinned is still true of the SPAWNER, so
-// the bands they need are authored here instead, in the same Tiled shape a map
-// file has. The map is a few cells wide and its objects are laid out over
+// They started as a port: world.tmj once carried two hundred bands, nine
+// regions and nine target-dummy rows, and every test below read its coverage
+// out of the game's own content. Everything those tests pinned is still true
+// of the SPAWNER. The map is a single cell and its objects are laid out over
 // sixty thousand units, because MapData reads the annotations and the Sim
 // brings its own flat terrain -- the tile layer is a formality.
 
-/// Writes `body` to /tmp/<name>, with the minimal tileset every map must name
-/// beside it. Returns the path.
+/// Writes `body` to `name` in this process's own scratch directory (see
+/// test_data.h), with the minimal tileset every map must name beside it, and
+/// returns the path. The directory is left behind, a handful of small files,
+/// so a failed run can be read back.
 std::string writeTiledFixture(const std::string& name, const std::string& body) {
-    const std::string dir = std::string("/tmp/flix-spawn-fixture-") + std::to_string(::getpid());
-    ::mkdir(dir.c_str(), 0755);
-    {
-        std::ofstream tileset(dir + "/fixture.tsj", std::ios::binary | std::ios::trunc);
-        tileset << R"({"name": "fixture", "type": "tileset", "version": "1.10",
+    const std::string dir =
+        testsupport::tempDir("flix-spawn-fixture-" + std::to_string(::getpid()));
+    testsupport::writeText(dir + "/fixture.tsj", R"({"name": "fixture", "type": "tileset", "version": "1.10",
  "tilewidth": 300, "tileheight": 300, "tilecount": 1, "columns": 0,
  "grid": {"orientation": "orthogonal", "width": 300, "height": 300},
- "tiles": [{"id": 0, "image": "tiles/grass_c_0.svg", "imagewidth": 300, "imageheight": 300}]})";
-    }
+ "tiles": [{"id": 0, "image": "tiles/grass_c_0.svg", "imagewidth": 300, "imageheight": 300}]})");
     const std::string path = dir + "/" + name;
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << body;
+    testsupport::writeText(path, body);
     return path;
 }
 
@@ -4189,14 +4338,14 @@ TEST(the_border_band_is_measured_against_the_maps_own_extent) {
     //
     // This used to be measured against a compile-time 60000-unit square, which
     // was the overworld's size when there was only ever one shape of overworld.
-    // The shipped map is 19200 units across, so the right and bottom bands sat
-    // forty thousand units outside the world and never rejected anything --
-    // mobs spawned flush against those two walls while the left and top were
-    // correctly refused. A small map makes it obvious: here the whole map is
-    // 24 tiles, so the far band is most of the way across an old constant's
-    // idea of the world.
+    // The shipped map was 19200 units across then, so the right and bottom
+    // bands sat forty thousand units outside the world and never rejected
+    // anything -- mobs spawned flush against those two walls while the left
+    // and top were correctly refused. A small map makes it obvious: here the
+    // whole map is 24 tiles, so the far band is most of the way across an old
+    // constant's idea of the world.
     Sim sim;
-    const int side = 24;   // 7200 units
+    const int side = 24;
     installOpenGrid(sim.terrain, Realm::Overworld, side);
     const Vec2 extent = sim.terrain.realmExtent(Realm::Overworld);
     CHECK_NEAR(extent.x, side * kTileSize, 1e-6);
@@ -4272,10 +4421,21 @@ TEST(a_band_on_another_map_is_stocked_through_that_maps_own_terrain) {
 
     Sim sim;
     sim.spawner.worldMaps = &worldMaps;
-    installOpenGrid(sim.terrain, other, 60);   // 18000 units: the band fits
-    // The overworld under the whole band is solid.
-    for (int ty = 6; ty <= 54; ++ty) {
-        for (int tx = 6; tx <= 54; ++tx) sim.terrain.setTile(tx, ty, Tile::Wall, Realm::Overworld);
+    // The band is the square 2000..16000 on each axis (writeZoneMap). The
+    // second map is open ground a little over 18000 units across, so the band
+    // fits inside it with room to spare -- counted in tiles of whatever size a
+    // tile is, so a change of cell size cannot shrink the map under the band.
+    installOpenGrid(sim.terrain, other, static_cast<int>(std::ceil(18000.0 / kTileSize)));
+    // The overworld under the whole band is solid: every tile from the one
+    // holding the band's near edge to the one past its far edge, so no strip
+    // of open overworld is left under it for a fill that sampled the wrong
+    // map's grid to find.
+    const int firstWall = static_cast<int>(std::floor(2000.0 / kTileSize));
+    const int lastWall = static_cast<int>(std::ceil(16000.0 / kTileSize));
+    for (int ty = firstWall; ty <= lastWall; ++ty) {
+        for (int tx = firstWall; tx <= lastWall; ++tx) {
+            sim.terrain.setTile(tx, ty, Tile::Wall, Realm::Overworld);
+        }
     }
     CHECK(sim.terrain.blocked({9000, 9000}, Realm::Overworld));
     CHECK(!sim.terrain.blocked({9000, 9000}, other));
@@ -4578,23 +4738,22 @@ TEST(the_shipped_map_never_spawns_above_the_difficulty_its_ground_declares) {
     Query<MobTag, MobType, Transform> live{sim.world};
     live.each([&](Entity e, MobTag&, MobType& type, Transform& transform) {
         // An escort is not an ambient spawn, and the ground it stands on did not
-        // choose it: a nest is placed by a band at that band's tier and then
-        // lays its brood out on a ring around itself, which routinely reaches
-        // over the band's edge onto ground no band covers. The nest answers for
-        // the tier; the ring is just where the children fit. Same exemption --
-        // and the same reason -- as the roster test above.
+        // choose it: a nest is placed by a band at that band's tier, and its
+        // brood comes up at the nest's own centre (escortSpawnPoint) and walks
+        // out from there, routinely over the band's edge onto ground no band
+        // covers. The nest answers for the tier; where the children wander is
+        // theirs. Same exemption -- and the same reason -- as the roster test
+        // above.
         if (sim.world.has<HoleTether>(e)) return;
         const double difficulty = sim.spawner.difficultyAt(transform.realm, transform.position);
-        // The hardest thing this square can roll at neutral luck: the upper half
-        // of its blend. A mob's own min_rarity still floors it above that -- that
-        // is the mob's property, not the ground's.
-        const TierMix mix = tierMixForDifficulty(difficulty);
         const MobConfig& config = shipped().mob(type.configIndex);
         // A body segment is the rest of the same animal as its head, laid out
         // along it and over whatever ground that reaches; the head was judged on
         // its own square.
         if (config.id.find("_body") != std::string::npos) return;
         ++mobs;
+        // A mob's own min_rarity still floors it above the map's ceiling --
+        // that is the mob's property, not the ground's.
         if (rarityIndex(type.rarity) > std::max(worldCeiling, rarityIndex(config.minRarity))) {
             ::testing::reportFailure(__FILE__, __LINE__,
                                      "the shipped map spawned a " + std::string(rarityName(type.rarity)) +
@@ -4610,7 +4769,6 @@ TEST(the_shipped_map_never_spawns_above_the_difficulty_its_ground_declares) {
         // standing on ground that could have rolled it anything but a common.
         // Difficulty zero is FULLY common: not "mostly", and not "common unless
         // something drifted it".
-        (void)mix;
         if (rarityIndex(type.rarity) > rarityIndex(config.minRarity)) {
             ::testing::reportFailure(__FILE__, __LINE__,
                                      "the shipped map spawned a " + std::string(rarityName(type.rarity)) +
@@ -4801,9 +4959,10 @@ TEST(every_ambient_mob_on_the_shipped_map_stands_inside_a_band) {
     // THE INVARIANT, driven over the game's own data with the real spawn pass.
     //
     // Every mob in the world is inside one of the bands the author drew, or is
-    // the escort or body segment of one that is -- a hole's brood rings the
-    // hole and a centipede's body trails its head, and both legitimately reach
-    // over the band's edge onto ground nothing fills. There is no third case:
+    // the escort or body segment of one that is -- a hole's brood climbs out
+    // of the hole's centre and walks out around it, and a centipede's body
+    // trails its head, and both legitimately reach over the band's edge onto
+    // ground nothing fills. There is no third case:
     // "somewhere else entirely" is what the deleted density fill used to
     // produce, and this is the test that would catch it coming back.
     if (!shippedMaps().forRealm(Realm::Overworld)) {
@@ -4865,9 +5024,12 @@ TEST(every_ambient_mob_on_the_shipped_map_stands_inside_a_band) {
 
 TEST(a_neverambient_mob_never_comes_from_a_group_roll_however_hard_the_ground) {
     // The target dummy is in no group and is marked neverAmbient, so the group
-    // roll can never produce one at any difficulty: the only way it reaches the
-    // world is a band naming it outright (the DPS row above). Difficulty is a
-    // new axis; it must not become a new back door.
+    // roll can never produce one at any difficulty: the spawner's only way to
+    // put one down is a band naming it outright (the DPS row above). Outside
+    // the spawner it also stands as a map NPC -- the shipped jungle's row is
+    // `npcs` objects -- and the console places one with spawn_npc, or spawn;
+    // none of those is a roll. Difficulty is a new axis; it must not become a
+    // new back door.
     const ContentRegistry& content = shipped();
     const std::uint16_t dummy = content.mobIndex("target_dummy");
     CHECK(dummy != kInvalidIndex);

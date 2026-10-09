@@ -20,6 +20,7 @@
 #include "shared/core/component.h"
 #include "shared/core/entity.h"
 #include "shared/core/types.h"
+#include "shared/core/world.h"
 #include "shared/game/constants.h"
 #include "shared/game/npc.h"
 #include "shared/game/rarity.h"
@@ -69,10 +70,20 @@ struct Motion {
 
 struct Body {
     double radius = 10;
-    /// Resistance to being pushed, in collision and knockback. Scales with
-    /// area so a boss shrugs off what launches a ladybug.
+    /// Resistance to being pushed, in collision and knockback: gardn's
+    /// `1 + radius / 25` (bodyMassForRadius), linear in the radius rather
+    /// than the area, so a boss shrugs off what launches a ladybug -- and
+    /// kAnchoredMassScale times that for a mob that never moves.
     double mass = 1;
 };
+
+/// What a body weighs in a momentum split -- a knockback, a contact push, a
+/// shot's recoil: its own mass, or a flower's 1 when it has no Body or one
+/// whose mass was never set. The floor is what keeps every division by it
+/// finite.
+inline double bodyMass(const Body* body) {
+    return body != nullptr && body->mass > 1e-6 ? body->mass : 1.0;
+}
 
 /// One pending positional displacement from a knockback-producing hit.
 ///
@@ -440,9 +451,6 @@ struct PetalRing {
 struct PlayerInput {
     net::InputFrame current;
     std::uint32_t lastAppliedSequence = 0;
-    /// Where the cursor is in world space, derived from the input's aim angle
-    /// and used for both movement and petal facing.
-    Vec2 aimDirection{1, 0};
 };
 
 /// Account-scoped identity. Cold: read on join, on save, and when someone
@@ -482,9 +490,6 @@ struct PlayerProgress {
     /// costing what it said. Integral in practice -- nothing awards a
     /// fraction of a star -- but never truncated on the way through.
     double stars = 0;
-    /// Set when the level changed this tick so the networking layer can emit a
-    /// LevelUp event without diffing.
-    bool leveledThisTick = false;
 };
 
 /// Player body presentation that is not implied by a generic entity state.
@@ -580,11 +585,9 @@ struct PlayerModifiers {
     bool sharesDamage = false;
 };
 
-/// Where the player is: the open world, or one of the detached regions.
-enum class Region : std::uint8_t { Overworld = 0, Arena = 1 };
-
+/// What a player's replication is cut to. Which space the player is in is
+/// Transform::realm; this only holds the view the client reports.
 struct PlayerLocation {
-    Region region = Region::Overworld;
     /// Viewport in world units, reported by the client, used to decide what to
     /// replicate. Clamped server-side -- a client claiming a 40000-unit
     /// viewport is asking to see the whole map.
@@ -644,15 +647,11 @@ enum class CrabPhase : std::uint8_t { None = 0, Strafe, Charge };
 struct MobAi {
     AiKind kind = AiKind::Neutral;
     Entity target = NULL_ENTITY;
-    /// Where the mob was spawned; it wanders around this rather than drifting
-    /// across the map over a long session.
-    Vec2 anchor;
     double aggroRange = 0;
     double wanderAngle = 0;
-    double nextDecisionMillis = 0;
-    /// A heading clock independent of the decision clock. A sandstorm re-rolls
-    /// its direction three times a second, far faster than a mob re-decides,
-    /// and sharing one clock turns a churning storm into a smooth sweep.
+    /// The sandstorm's own heading clock: it re-rolls its direction three
+    /// times a second (kSandstormHeadingMillis), and nothing else in the AI
+    /// runs on it.
     double nextHeadingMillis = 0;
     double lastAttackMillis = 0;
     /// The target a wall is hiding, and since when -- the grace a hostile mob
@@ -842,11 +841,6 @@ struct Pet {
     /// Slot index of the petal that summoned it, so a broken petal can recall
     /// exactly the pets it owns.
     std::uint8_t slot = 0;
-    /// The rarity of the petal that summoned it. NOT always the pet's own
-    /// tier: an apex egg opens into three UNIQUE pets rather than one apex
-    /// one, so the summoning tier has to be remembered separately to know how
-    /// large the squad should be.
-    Rarity summonRarity = Rarity::Common;
 };
 
 /// A segmented body (centipedes). Each segment follows the one ahead.
@@ -987,8 +981,6 @@ struct PetalInstance {
     /// shared ring position.
     std::uint8_t subIndex = 0;
     std::uint8_t subCount = 1;
-    /// Angle offset from the ring's rotation, fixed at spawn.
-    double ringOffset = 0;
     /// The direction this INSTANCE faces, refreshed by the ring step. It is the
     /// slot's bearing for a lone petal, and the outward sub-bearing that places
     /// the grain inside its cluster for a clumped one -- so a clump of four
@@ -1356,3 +1348,19 @@ FLIX_COMPONENT(flix::WebClock);
 FLIX_COMPONENT(flix::DropClock);
 FLIX_COMPONENT(flix::NetId);
 FLIX_COMPONENT(flix::Replicated);
+
+namespace flix {
+
+/// Whether `e` is still a standing body: in the world, not yet marked Dead
+/// for the reaper, and -- if it has a pool at all -- with health left in it.
+/// The one answer to "is this still somebody", which a mob asks of its
+/// target, a nest of whoever last hit it, a dungeon of its brood, the petal
+/// pass of each flower and the splitter of both halves. Below the
+/// registrations, because it names Dead and Health to the World.
+inline bool isStanding(const World& world, Entity e) {
+    if (!world.isAlive(e) || world.has<Dead>(e)) return false;
+    const Health* health = world.tryGet<Health>(e);
+    return health == nullptr || health->alive();
+}
+
+} // namespace flix

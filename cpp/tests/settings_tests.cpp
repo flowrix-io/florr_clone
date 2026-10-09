@@ -1,11 +1,11 @@
 #include "test.h"
 
 #include "client/ui/menus.h"
-
-#include <sys/stat.h>
+#include "test_data.h"
 
 #include <cstdio>
-#include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 using namespace flix;
@@ -21,12 +21,7 @@ using namespace flix;
 namespace {
 
 std::string tempPath(const char* name) {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_settings_tests";
-    mkdir(base.c_str(), 0755);   // already exists is fine
-    return base + "/" + name;
+    return testsupport::tempDir("flix_settings_tests") + "/" + name;
 }
 
 ControlAction action(int i) { return static_cast<ControlAction>(i); }
@@ -92,9 +87,9 @@ TEST(a_rebound_control_survives_the_settings_file) {
 TEST(the_wheel_cannot_scroll_out_past_the_default_view) {
     // kMinZoom is the floor the wheel, the zoom keys and the settings file all
     // land on. It is 100%: a file written by a build that let the wheel reach
-    // 0.6 -- or by the browser, which reached 0.5 -- comes back at the default
-    // view. Seeing more of the world than that is the loadout's to grant, not
-    // the wheel's; see loadoutCameraZoom.
+    // 0.6 -- or by the TypeScript client, which reached 0.5 -- comes back at
+    // the default view. Seeing more of the world than that is the loadout's to
+    // grant, not the wheel's; see loadoutCameraZoom.
     CHECK_NEAR(kMinZoom, 1.0, 1e-12);
     const std::string path = tempPath("zoom.txt");
     std::remove(path.c_str());
@@ -219,7 +214,8 @@ TEST(the_hide_other_petals_and_pets_switches_survive_the_settings_file) {
 TEST(the_show_admins_on_leaderboard_switch_survives_the_settings_file) {
     const std::string path = tempPath("admins_on_board.cfg");
 
-    // Off until the player turns it on, as the browser's localStorage flag is.
+    // Off until the player turns it on, as the TypeScript client's
+    // localStorage flag was.
     ClientSettings fresh;
     CHECK(!fresh.showAdminsOnLeaderboard);
 
@@ -236,11 +232,11 @@ TEST(the_show_admins_on_leaderboard_switch_survives_the_settings_file) {
 TEST(the_chat_channel_filters_survive_the_settings_file) {
     const std::string path = tempPath("chat_channels.cfg");
 
-    // Every channel shown until the player unticks one.
+    // Every channel shown until the player unticks one -- all six tabs.
     ClientSettings fresh;
-    CHECK_EQ(static_cast<int>(fresh.chatChannels), 0x3F);
+    CHECK_EQ(static_cast<int>(fresh.chatChannels), static_cast<int>(kChatChannelsAll));
 
-    // Global, Guild and Whisper unticked.
+    // Global, Guild, Whisper and Admin unticked.
     ClientSettings some;
     some.chatChannels = 0x05;
     CHECK(some.save(path));
@@ -248,13 +244,100 @@ TEST(the_chat_channel_filters_survive_the_settings_file) {
     CHECK(back.load(path));
     CHECK_EQ(static_cast<int>(back.chatChannels), 0x05);
 
-    // All four off is a choice too, and must not read back as "unset".
+    // Every tab off is a choice too, and must not read back as "unset".
     ClientSettings none;
     none.chatChannels = 0;
     CHECK(none.save(path));
     ClientSettings backNone;
     CHECK(backNone.load(path));
     CHECK_EQ(static_cast<int>(backNone.chatChannels), 0);
+
+    std::remove(path.c_str());
+}
+
+TEST(a_settings_file_from_before_the_admin_tab_shows_it) {
+    // `chatChannels` is the old key, and it held two formats. Every client up
+    // to da5936d7 wrote its five tabs there, five bits; da5936d7 to d47055a7,
+    // one day's builds, wrote six, the Admin tab in bit 5. Below 32 the two
+    // cannot be told apart, and the value is read as the five-bit kind: the
+    // Admin tab, which such a file has no bit for, comes up shown -- as every
+    // tab does until the player unticks it -- or nobody upgrading from the
+    // five-tab client would see an announcement land in the transcript.
+    const std::string path = tempPath("chat_channels_legacy.cfg");
+    {
+        std::ofstream file(path, std::ios::trunc);
+        file << "chatChannels 31\n";
+    }
+    ClientSettings all;
+    CHECK(all.load(path));
+    CHECK_EQ(static_cast<int>(all.chatChannels), static_cast<int>(kChatChannelsAll));
+
+    // What the player chose for the five is kept as it was.
+    {
+        std::ofstream file(path, std::ios::trunc);
+        file << "chatChannels 5\n";
+    }
+    ClientSettings some;
+    CHECK(some.load(path));
+    CHECK_EQ(static_cast<int>(some.chatChannels), 0x05 | static_cast<int>(kChatAdminChannel));
+
+    std::remove(path.c_str());
+}
+
+TEST(a_six_bit_chat_channels_file_keeps_its_five_and_shows_admin_once) {
+    // The files the one-day six-bit builds (da5936d7 to d47055a7) wrote under
+    // the old key, read by the rule above. Bit 5 SET can only be one of
+    // theirs, and is kept exactly; every other choice they made is kept too.
+    // Bit 5 CLEAR -- the Admin tab hidden in that build, deliberately -- is
+    // the accepted cost: it reads as a five-tab file and the tab comes back,
+    // once, because a five-tab file is the far likelier writer of that value
+    // (the six-bit builds re-saved every upgrader's five-tab file that way)
+    // and showing a tab hides nothing. The next save writes `chatTabs`, and an
+    // untick after that stays put (an_unticked_admin_tab_stays_unticked).
+    const std::string path = tempPath("chat_channels_six_bits.cfg");
+    const auto loaded = [&](const char* line) {
+        {
+            std::ofstream file(path, std::ios::trunc);
+            file << line << "\n";
+        }
+        ClientSettings settings;
+        CHECK(settings.load(path));
+        return static_cast<int>(settings.chatChannels);
+    };
+    CHECK_EQ(loaded("chatChannels 63"), 0x3F);   // all six shown: as written
+    CHECK_EQ(loaded("chatChannels 61"), 0x3D);   // Global hidden, Admin shown: as written
+    CHECK_EQ(loaded("chatChannels 37"), 0x25);   // bit 5 set with two of the five
+    CHECK_EQ(loaded("chatChannels 31"), 0x3F);   // Admin hidden in that build: shown again
+    CHECK_EQ(loaded("chatChannels 0"), 0x20);    // everything hidden: all but Admin stays so
+    std::remove(path.c_str());
+}
+
+TEST(an_unticked_admin_tab_stays_unticked) {
+    // Written under the new key, so the migration above runs once: a file
+    // saved since says what the player chose for all six tabs, Admin included.
+    const std::string path = tempPath("chat_tabs.cfg");
+    ClientSettings off;
+    off.chatChannels = kChatChannelsBeforeAdmin;
+    CHECK(off.save(path));
+    {
+        std::ifstream file(path);
+        const std::string text((std::istreambuf_iterator<char>(file)),
+                               std::istreambuf_iterator<char>());
+        CHECK(text.find("chatTabs 31") != std::string::npos);
+        CHECK(text.find("chatChannels") == std::string::npos);
+    }
+    ClientSettings back;
+    CHECK(back.load(path));
+    CHECK_EQ(static_cast<int>(back.chatChannels), static_cast<int>(kChatChannelsBeforeAdmin));
+
+    // And the new line outranks an old one, wherever in the file the two are.
+    {
+        std::ofstream file(path, std::ios::trunc);
+        file << "chatTabs 31\nchatChannels 31\n";
+    }
+    ClientSettings both;
+    CHECK(both.load(path));
+    CHECK_EQ(static_cast<int>(both.chatChannels), static_cast<int>(kChatChannelsBeforeAdmin));
 
     std::remove(path.c_str());
 }

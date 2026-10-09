@@ -16,22 +16,11 @@ using namespace flix::testsupport;
 
 namespace {
 
-/// A registered account with a known password, so a test can log two clients
-/// in against the same database.
-void seedUser(const std::string& path, const std::string& username,
-              const std::string& password) {
-    Database db;
-    std::string error;
-    db.load(path, error);
-    db.setPasswordCost(4);   // the default cost makes this the slowest test
-    db.createUser(username, password);
-    db.markDirty();
-    db.save();
-}
+// seedUser and loginAs are the harness's own (server_harness.h).
 
 /// Notifications are stored as a JSON ARRAY, which is the one shape rawTable()
 /// would destroy -- so the seed writes the table by hand, exactly as the
-/// browser build's file carries it.
+/// TypeScript build's database files carry it.
 void seedNotifications(const std::string& path, int count) {
     Json feed = Json::array();
     for (int i = 0; i < count; ++i) {
@@ -49,12 +38,6 @@ void seedNotifications(const std::string& path, int count) {
     if (!Json::parseFile(path, root, error)) root = Json::object();
     root["notifications"] = std::move(feed);
     root.writeFile(path, 2);
-}
-
-bool loginAs(Harness& h, NetClient& client, const char* name, const char* password) {
-    if (!connectClient(h, client)) return false;
-    client.requestLogin(name, password);
-    return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
 }
 
 } // namespace
@@ -126,9 +109,10 @@ TEST(reading_the_notification_feed_leaves_the_stored_array_intact) {
     client.requestNotifications(50, 0);
     CHECK(h.stepUntil({&client}, [&] { return !client.notificationsPending(); }, 200));
 
-    // The feed is the one unmodelled table the browser stores as an array. A
-    // read through rawTable() would have coerced it to an empty object, and
-    // the next save would have written that back over the whole feed.
+    // The feed is the one unmodelled table stored as an array -- the shape the
+    // TypeScript build wrote, which existing databases carry. A read through
+    // rawTable() would have coerced it to an empty object, and the next save
+    // would have written that back over the whole feed.
     Database db;
     std::string error;
     CHECK(db.load(h.dbPath, error));
@@ -291,8 +275,8 @@ TEST(a_guild_is_written_to_the_database_in_the_browser_builds_own_shape) {
     h.clock += 40000.0;
     h.step(1, {&client});
 
-    // Keyed by the upper-cased name, exactly as the browser build stores it,
-    // so one file can be served by either server.
+    // Keyed by the upper-cased name, exactly as the TypeScript build stored
+    // it, so a database that build wrote reads back with its guilds intact.
     Database db;
     std::string error;
     CHECK(db.load(h.dbPath, error));

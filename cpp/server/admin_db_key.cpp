@@ -1,9 +1,9 @@
 #include "server/admin_db_key.h"
 
-#include <cctype>
 #include <cstdio>
 
 #include "server/crypto.h"
+#include "shared/core/text.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -92,9 +92,7 @@ std::string deriveKey(const std::string& secret, const std::string& address) {
 
 bool keyMatches(const std::string& typed, const std::string& key) {
     if (key.empty()) return false;
-    std::string lowered = typed;
-    for (char& ch : lowered) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    return crypto::constantTimeEquals(lowered, key);
+    return crypto::constantTimeEquals(lowerCase(typed), key);
 }
 
 } // namespace flix::admin_db

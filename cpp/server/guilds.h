@@ -4,9 +4,9 @@
 //
 // Guilds live in the browser build's own `guilds` table -- an object keyed by
 // the upper-cased five-character name, each value carrying {name,
-// leaderUsername, memberUsernames, createdAt} -- and are held as JSON rather
-// than mirrored into a typed cache because the same file is read by the
-// browser build, and a second copy is a second thing to keep true.
+// leaderUsername, memberUsernames, createdAt} -- and are held as JSON in that
+// shape, which existing database files carry, rather than mirrored into a
+// typed cache: a second copy is a second thing to keep true.
 //
 // Two optional fields ride beside those: `displayName`, the free-text name the
 // panel heads the card with, and `description`. The five-character `name` is

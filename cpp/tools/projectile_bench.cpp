@@ -38,15 +38,6 @@ double millisSince(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
 
-Entity bodyOf(World& world, const std::string& name) {
-    Entity body = NULL_ENTITY;
-    Query<PlayerTag, PlayerAccount> bodies{world};
-    bodies.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
-        if (account.username == name) body = e;
-    });
-    return body;
-}
-
 double percentile(std::vector<double> samples, double p) {
     if (samples.empty()) return 0.0;
     std::sort(samples.begin(), samples.end());
@@ -93,7 +84,7 @@ int main(int argc, char** argv) {
     }
 
     World& world = h.server.world();
-    const Entity shooter = bodyOf(world, "shooter");
+    const Entity shooter = bodyNamed(world, "shooter");
     if (shooter == NULL_ENTITY) return 1;
     for (int slot = 0; slot < kLoadoutActiveSlots; ++slot) {
         world.get<Loadout>(shooter).slots[slot] = LoadoutSlot{config, Rarity::Common, 0.0, false};
@@ -102,7 +93,7 @@ int main(int argc, char** argv) {
     // whole cloud in view.
     const Vec2 spot = world.get<Transform>(shooter).position;
     for (int i = 1; i <= observers; ++i) {
-        const Entity watcher = bodyOf(world, "watcher" + std::to_string(i));
+        const Entity watcher = bodyNamed(world, "watcher" + std::to_string(i));
         if (watcher != NULL_ENTITY) world.get<Transform>(watcher).position = spot;
     }
 

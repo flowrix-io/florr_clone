@@ -441,8 +441,10 @@ bool trackTextMouse(Window& window, TextFieldState& state, Rect box, const TextR
         }
     }
 
-    // Reported whether or not it is focused: a right-click on an unfocused box
-    // still has to raise the field's own menu rather than the page's.
+    // Only the focused field reports its box, because only the focused field
+    // is asked about: a right-click on it is a right-click on this client's
+    // own UI -- the menu that comes up offers the field's Cut and Paste --
+    // rather than the defend control it would be over the world.
     if (state.focused) {
         FocusedField field = TextSelect::instance().focusedField();
         if (field.state == &state) {

@@ -187,7 +187,6 @@ std::string archetypeKey(const std::vector<ComponentId>& ids) {
 World::World() {
     // Slot 0 is reserved so that no live handle can equal NULL_ENTITY.
     slots_.push_back(Slot{});
-    names_.emplace_back();
     // The empty archetype holds freshly created, component-less entities.
     getOrCreateArchetype({});
 }
@@ -202,7 +201,6 @@ Entity World::create() {
     } else {
         index = static_cast<std::uint32_t>(slots_.size());
         slots_.push_back(Slot{});
-        names_.emplace_back();
     }
 
     Slot& slot = slots_[index];
@@ -223,11 +221,6 @@ bool World::destroy(Entity e) {
 
     releaseRow(archetypes_[slot.archetype].get(), slot.row);
 
-    if (!names_[index].empty()) {
-        byName_.erase(names_[index]);
-        names_[index].clear();
-    }
-
     slot.alive = false;
     // Wrapping the generation is fine: a handle only aliases after 2^32
     // recycles of the same slot, which no session reaches.
@@ -237,13 +230,6 @@ bool World::destroy(Entity e) {
     --liveCount_;
     ++structuralVersion_;
     return true;
-}
-
-void World::clear() {
-    for (std::uint32_t i = 1; i < slots_.size(); ++i) {
-        if (slots_[i].alive) destroy(makeEntity(i, slots_[i].generation));
-    }
-    byName_.clear();
 }
 
 void World::assertAlive(Entity e, const char* op) const {
@@ -298,39 +284,6 @@ void World::releaseRow(Archetype* archetype, std::size_t row) {
     if (moved != NULL_ENTITY) {
         slots_[entityIndex(moved)].row = static_cast<std::uint32_t>(row);
     }
-}
-
-// -- names ------------------------------------------------------------------
-
-void World::bindName(Entity e, std::string name) {
-    assertAlive(e, "bindName");
-    const std::uint32_t index = entityIndex(e);
-    if (!names_[index].empty()) byName_.erase(names_[index]);
-
-    // Rebinding a name that another entity still holds must clear it there
-    // too. Otherwise both entities believe they own it, and destroying the
-    // stale one erases the binding out from under the live one.
-    if (auto it = byName_.find(name); it != byName_.end()) {
-        const std::uint32_t previous = entityIndex(it->second);
-        if (previous < names_.size()) names_[previous].clear();
-    }
-
-    byName_[name] = e;
-    names_[index] = std::move(name);
-}
-
-Entity World::lookup(const std::string& name) const {
-    auto it = byName_.find(name);
-    if (it == byName_.end()) return NULL_ENTITY;
-    // A stale binding can only happen if destroy() was bypassed; treat the
-    // handle as authoritative rather than trusting the map.
-    return isAlive(it->second) ? it->second : NULL_ENTITY;
-}
-
-const std::string* World::nameOf(Entity e) const {
-    if (!isAlive(e)) return nullptr;
-    const std::string& name = names_[entityIndex(e)];
-    return name.empty() ? nullptr : &name;
 }
 
 } // namespace flix

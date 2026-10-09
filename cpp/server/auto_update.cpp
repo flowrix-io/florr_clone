@@ -13,10 +13,10 @@ namespace flix::autoupdate {
 namespace {
 
 /// Text handed back over a caller-owned buffer rather than a malloc'd string,
-/// for the same reason net/web_channel.cpp does it: returning one would need
-/// _malloc exported to JavaScript, which is a link setting nothing else here
-/// asks for. Progress lines are short; a drain that would overflow this has
-/// gone wrong in a way an extra kilobyte does not fix.
+/// for the same reason shared/net/web_channel.cpp does it: returning one would
+/// need _malloc exported to JavaScript, which is a link setting nothing else
+/// here asks for. Progress lines are short; a drain that would overflow this
+/// has gone wrong in a way an extra kilobyte does not fix.
 constexpr int kTextCapacity = 8192;
 
 } // namespace
@@ -114,8 +114,12 @@ EM_JS(void, flix_update_start, (const char* urlPtr), {
         }
         return copied;
       };
-      // Safe on a live server: Node read this build into memory at startup and
-      // never looks at the files again, and the wasm module is already loaded.
+      // Safe for the running server itself: Node read server.js into memory at
+      // startup and never looks at it again, and the wasm module is already
+      // loaded. Not for the client: the web root is read from disk on every
+      // request and is this same directory unless --web-root says otherwise, so
+      // a page loaded between now and the restart is already the new client,
+      // talking to the old server until the restart brings the new one up.
       const copied = overlay(build, runtimeDir, 0);
       say('[UPDATE] Step 4/4: installed ' + copied + ' files into ' + runtimeDir +
           ' (inventory.json and node_modules preserved).');

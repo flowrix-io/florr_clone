@@ -1,5 +1,6 @@
 #include "shared/game/chat_images.h"
 
+#include "shared/core/text.h"
 #include "shared/game/html_entities.h"
 
 #include <cctype>
@@ -29,8 +30,6 @@ constexpr const char* kImageHosts[] = {
     "florr.io",
 };
 
-char lower(char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
-
 bool hostListed(const std::string& host) {
     for (const char* entry : kImageHosts) {
         const std::string listed = entry;
@@ -56,7 +55,7 @@ std::string tagSource(const std::string& s, std::size_t open, std::size_t close)
     while (i < close) {
         while (i < close && (std::isspace(static_cast<unsigned char>(s[i])) != 0 || s[i] == '/')) ++i;
         std::string name;
-        while (i < close && nameChar(s[i])) name.push_back(lower(s[i++]));
+        while (i < close && nameChar(s[i])) name.push_back(lowerCase(s[i++]));
         if (name.empty()) {
             ++i;
             continue;
@@ -95,7 +94,7 @@ bool chatImageUrlAllowed(const std::string& url) {
     static const std::string kScheme = "https://";
     if (url.size() <= kScheme.size()) return false;
     for (std::size_t i = 0; i < kScheme.size(); ++i) {
-        if (lower(url[i]) != kScheme[i]) return false;
+        if (lowerCase(url[i]) != kScheme[i]) return false;
     }
 
     const std::size_t end = url.find_first_of("/?#", kScheme.size());
@@ -119,7 +118,7 @@ bool chatImageUrlAllowed(const std::string& url) {
         return false;
     }
     for (char& c : host) {
-        c = lower(c);
+        c = lowerCase(c);
         if (std::isalnum(static_cast<unsigned char>(c)) == 0 && c != '.' && c != '-') return false;
     }
     return hostListed(host);
@@ -135,8 +134,8 @@ ChatImageFilter filterChatImages(const std::string& text) {
     std::size_t at = 0;
     while (at < text.size()) {
         const bool opensImg = text[at] == '<' && at + 4 <= text.size() &&
-                              lower(text[at + 1]) == 'i' && lower(text[at + 2]) == 'm' &&
-                              lower(text[at + 3]) == 'g' &&
+                              lowerCase(text[at + 1]) == 'i' && lowerCase(text[at + 2]) == 'm' &&
+                              lowerCase(text[at + 3]) == 'g' &&
                               (at + 4 == text.size() || !nameChar(text[at + 4]));
         if (!opensImg) {
             out.text.push_back(text[at++]);

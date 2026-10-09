@@ -15,7 +15,6 @@
 // A name outside it stays literal, as an unknown one does in a browser.
 
 #include <cstddef>
-#include <cstdint>
 #include <string>
 
 namespace flix {
@@ -37,9 +36,5 @@ void decodeCharacterReference(const std::string& s, std::size_t& at, std::string
 
 /// Every reference in `s` decoded.
 std::string decodeCharacterReferences(const std::string& s, bool inAttribute = false);
-
-/// Appends the UTF-8 encoding of `codePoint`, or nothing for one that is not
-/// a scalar value.
-void appendUtf8(std::string& out, std::uint32_t codePoint);
 
 } // namespace flix

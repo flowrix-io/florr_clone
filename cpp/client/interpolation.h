@@ -18,7 +18,7 @@
 //    flower -- it jolts the whole world.
 //
 //    The cost is input latency of about half a round trip plus the ease time
-//    constant. That is the trade the browser build makes on purpose.
+//    constant. That is the trade the browser build made on purpose.
 //
 //  * MOBS ARE PLAYED BACK ON A DELAY, flowers are not. A mob carries a short
 //    sample history and is rendered behind the render clock -- by the longest
@@ -37,6 +37,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 
 #include "client/ease.h"
 #include "shared/core/types.h"
@@ -54,10 +55,25 @@ namespace flix {
 /// constant of however many seconds passed between the two, which pushed the
 /// playback point permanently outside the sample window. Every mob then
 /// rendered at a clamped endpoint, which is to say it held still and jumped.
+///
+/// NetClient times its redial backoff, the oracle and trader cooldowns and the
+/// ping round trip on it too. Each of those is only ever compared with another
+/// reading of this same clock, so its arbitrary epoch never shows.
 inline double renderClockMillis() {
     using clock = std::chrono::steady_clock;
     static const clock::time_point start = clock::now();
     return std::chrono::duration<double, std::milli>(clock::now() - start).count();
+}
+
+/// Unix milliseconds: the wall clock, for the few readings that are compared
+/// with a time minted somewhere else -- the daily-streak card counting down to
+/// a timestamp the server set, a notification's "3 days ago", the time of day
+/// a chat line arrived. Never for an interval: the wall clock can be stepped
+/// under a running client, and the app's uptime cannot answer any of these.
+inline std::int64_t wallClockMillis() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
 }
 
 /// The fraction of the remaining gap an ease closes per frame at 60 fps. The

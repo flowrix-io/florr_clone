@@ -1553,8 +1553,9 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         case MobArt::Wasp: {
             // gardn has no wasp, so it is florr's: drawn for a radius of 30. A
             // sting, two amber bands bowed back at the middle cut to the body,
-            // a rim, and a pair of flat, swept feelers that flick a fifth of a
-            // radian each way on the clock while it is worked up.
+            // a rim, and a pair of flat, swept feelers. florr flicks those a
+            // fifth of a radian each way on the clock while the wasp is worked
+            // up; this one holds them still.
             //
             // florr enlarges it by 1.3 on top, as it does the hornet. Here that
             // lives in mobs.json's visual_scale for both, as the hornet's must
@@ -1613,9 +1614,6 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setStroke(canvas, 0xB77334u);
             canvas.stroke(body);
 
-            const double worked = std::clamp(attr.aggro, 0.0, 1.0);
-            const double flick =
-                worked > 0.001 ? std::sin(attr.clockMs * 0.03) * worked * 0.2 : 0.0;
             ui::setFill(canvas, 0x333333u);
             ui::setStroke(canvas, 0x333333u);
             canvas.setLineWidth(3.0f);
@@ -1623,7 +1621,6 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 canvas.save();
                 canvas.scale(1.0f, side);
                 canvas.translate(25.0f, 5.0f);
-                // canvas.rotate(static_cast<float>(flick));
                 canvas.fill(feeler);
                 canvas.stroke(feeler);
                 canvas.restore();

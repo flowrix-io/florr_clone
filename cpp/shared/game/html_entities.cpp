@@ -1,8 +1,11 @@
 #include "shared/game/html_entities.h"
 
 #include <cctype>
+#include <cstdint>
 #include <string_view>
 #include <unordered_map>
+
+#include "shared/core/text.h"
 
 namespace flix {
 
@@ -154,25 +157,6 @@ void appendNumeric(std::string& out, std::uint32_t cp) {
 
 } // namespace
 
-void appendUtf8(std::string& out, std::uint32_t cp) {
-    if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return;
-    if (cp < 0x80) {
-        out.push_back(static_cast<char>(cp));
-    } else if (cp < 0x800) {
-        out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-    } else if (cp < 0x10000) {
-        out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-    } else {
-        out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-    }
-}
-
 void decodeCharacterReference(const std::string& s, std::size_t& at, std::string& out,
                               bool inAttribute) {
     const std::size_t start = at + 1;
@@ -191,10 +175,7 @@ void decodeCharacterReference(const std::string& s, std::size_t& at, std::string
         bool overflow = false;
         for (; i < s.size(); ++i) {
             const char c = s[i];
-            int digit = -1;
-            if (c >= '0' && c <= '9') digit = c - '0';
-            else if (hex && c >= 'a' && c <= 'f') digit = c - 'a' + 10;
-            else if (hex && c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+            const int digit = hex ? hexDigit(c) : (c >= '0' && c <= '9' ? c - '0' : -1);
             if (digit < 0) break;
             if (!overflow) {
                 value = value * (hex ? 16u : 10u) + static_cast<std::uint32_t>(digit);

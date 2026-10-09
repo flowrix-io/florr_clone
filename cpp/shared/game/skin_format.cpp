@@ -249,9 +249,9 @@ bool readCustomSkin(ByteReader& r, CustomSkin& out) {
 
 namespace {
 
-/// Writes a number only when it carries information. The browser build omits
-/// undefined fields, and a save that spelled every one of them out as 0 would
-/// rewrite every skin in the file on first contact.
+/// Writes a number only when it carries information. The TypeScript build
+/// omitted undefined fields, and a save that spelled every one of them out as
+/// 0 would rewrite every skin in the file on first contact.
 void putIf(Json& out, const char* key, double value, bool present) {
     if (present) out[key] = value;
 }
@@ -331,9 +331,9 @@ CustomSkin skinFromJson(const Json& value) {
             for (const Json& p : points.items()) s.points.push_back(p.asDouble(0.0));
         }
         SkinShape kept;
-        // Everything on disk is re-sanitized on the way in: the file is shared
-        // with another build, and an older one may have written a shape this
-        // one's limits no longer allow.
+        // Everything on disk is re-sanitized on the way in: an older build --
+        // this one's own past, or the TypeScript one that shared the file --
+        // may have written a shape this one's limits no longer allow.
         if (sanitizeSkinShape(std::move(s), kept)) skin.shapes.push_back(std::move(kept));
     }
     return skin;

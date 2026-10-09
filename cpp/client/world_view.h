@@ -92,10 +92,11 @@ struct RemoteEntity {
     std::string equippedSkinId;
 
     /// The guild whose tag hangs under this flower's health bar. Nothing sets
-    /// it yet: there is no guild protocol, exactly as menu_guild.cpp records,
-    /// so the tag draws for nobody -- which is what the reference draws for a
-    /// player in no guild. The plate reads the field rather than the transport
-    /// so the wire lands in one place when it exists.
+    /// it yet: the snapshot carries no guild tag -- GuildUpdate describes only
+    /// the viewer's own guild, see menu_guild.cpp -- so the tag draws for
+    /// nobody, which is what the reference draws for a player in no guild. The
+    /// plate reads the field rather than the transport so the wire lands in
+    /// one place when it exists.
     std::string guildName;
 
     /// Petal-only: the flower this petal orbits, and the petal's DRAWN offset
@@ -175,11 +176,11 @@ inline std::array<int, kLoadoutActiveSlots> noSlotCounters() {
 }
 
 /// The authoritative state of the player's own flower, straight from the
-/// snapshot and never interpolated -- prediction owns its position.
+/// snapshot. Never drawn directly: selfDrawnPosition() eases toward
+/// `position`.
 struct SelfState {
     std::uint32_t netId = 0;
     Vec2 position;
-    Vec2 velocity;
     double health = 0;
     double maxHealth = 0;
     /// The magic petals' pool. `maxMana` is 0 on a bar wearing nothing that
@@ -192,7 +193,6 @@ struct SelfState {
     /// See PlayerProgress::stars: a balance the server keeps to 2^53, so the
     /// HUD must not be the thing that rounds it.
     double stars = 0;
-    std::uint32_t acknowledgedInput = 0;
 
     /// How much of each orbiting slot's reload is still to run, in
     /// milliseconds; 0 for a slot that is ready or empty. The loadout bar
@@ -283,8 +283,9 @@ public:
     /// ground under them is the tile map, the maze or the arena floor.
     Realm realm() const { return realm_; }
     void setRealm(Realm realm) { realm_ = realm; }
+    /// The last snapshot tick applied: what the replay guard in
+    /// applySnapshot() compares the next one against.
     std::uint32_t tick() const { return tick_; }
-    double serverTimeMillis() const { return serverTimeMillis_; }
 
     /// Events from the most recent snapshot. Drained by the effects layer.
     std::vector<ViewEvent>& events() { return events_; }
@@ -312,12 +313,10 @@ public:
     double easeTimeConstantSeconds = easeTimeConstant(kDefaultInterpolationAmount);
 
     /// How far behind the render clock buffered mobs are played back THIS
-    /// frame. interpolate() slews it toward `playbackDelayTargetMillis()`, so
-    /// anything written here holds only until the stream disagrees with it.
+    /// frame. interpolate() slews it toward the delay the recent stream asks
+    /// for (delayTargetMillis_, which noteLateness() derives), so anything
+    /// written here holds only until the stream disagrees with it.
     double interpolationDelayMillis = kMobRenderDelayMillis;
-
-    /// The delay the recent stream asks for; see noteLateness().
-    double playbackDelayTargetMillis() const { return delayTargetMillis_; }
 
 private:
     /// Records how much later than usual a snapshot landed and re-derives the
@@ -348,7 +347,6 @@ private:
     SelfState self_;
     Realm realm_ = Realm::Overworld;
     std::uint32_t tick_ = 0;
-    double serverTimeMillis_ = 0;
     /// Drawn position of the viewer's flower. Held here rather than looked up
     /// on the self entity because the self entity does not exist until its
     /// spawn record arrives, and the camera needs an answer before then.

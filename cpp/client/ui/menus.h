@@ -69,6 +69,11 @@ enum class MenuId : std::uint8_t {
     /// The admin database editor. Opened by `/admin db` and nothing else: it
     /// is on no strip button and its key is unbound and not rebindable.
     AdminDb,
+    /// The admin dashboard: the flowers in the world, a player's bag, flower
+    /// control, spawning, giving and announcements. Opened from the strip's
+    /// admin button, which only an admin is shown, or `/admin gui`. Its key is
+    /// unbound and not rebindable.
+    AdminDashboard,
     Count,
 };
 
@@ -141,10 +146,11 @@ inline constexpr int kLoadoutTrashSlot = kLoadoutBarSlots;
 /// The link the Discord button opens.
 inline constexpr const char* kDiscordInvite = "https://discord.gg/SvAYCGsmAg";
 
-/// Slots in the icon strip: ten across the top-left corner, four down the
-/// bottom-left one. Two of the top ten open no panel -- Discord is a link and
-/// exit leaves the game -- so this is not `kMenuCount`.
-inline constexpr int kStripSlotCount = 14;
+/// Slots in the icon strip: twelve across the top-left corner, three down the
+/// bottom-left one. Not every one is shown at once -- see drawIconStrip -- and
+/// two of the top row open no panel (Discord is a link and exit leaves the
+/// game), so this is not `kMenuCount`.
+inline constexpr int kStripSlotCount = 15;
 
 /// The range ClientSettings::zoom is held to, and how far one press of a zoom
 /// key moves it. The step is the browser's own ZOOM_STEP; the range is this
@@ -188,6 +194,17 @@ double titleHintsOffsetY(bool classic = false);
 /// gauge over the bar has to clear.
 double titleLoadoutTopY(bool classic = false);
 
+/// ClientSettings::chatChannels' bits, for the chat box's six tabs in strip
+/// order (app_chat.cpp's ChatTab counts them). Named here because the
+/// settings file has to know two of them: the Admin tab came sixth, after files
+/// were already being written with five -- and for one day (da5936d7 to
+/// d47055a7) six were written under the same old key, which
+/// ClientSettings::load reads as five on purpose (see there).
+inline constexpr std::uint8_t kChatChannelsAll = 0x3F;
+/// The five tabs a file from before the Admin tab can name.
+inline constexpr std::uint8_t kChatChannelsBeforeAdmin = 0x1F;
+inline constexpr std::uint8_t kChatAdminChannel = 1u << 5;
+
 /// Everything the settings menu owns. Kept in one struct so it can be written
 /// to disk and read back as a unit, and so nothing else has to know which of
 /// these the renderer reads and which the input layer does.
@@ -198,11 +215,11 @@ struct ClientSettings {
     double zoom = 1.0;
     /// How much of the gap between a drawn position and the authoritative one
     /// is closed per frame at 60 fps -- the smoothness/latency trade for every
-    /// flower, petal, drop and mob facing. The browser build keeps the same
+    /// flower, petal, drop and mob facing. The TypeScript client kept the same
     /// number in `localStorage.interpolationAmount`. See client/interpolation.h.
     double interpolation = kDefaultInterpolationAmount;
     /// The fraction of the display's native resolution the frame is
-    /// rasterised at, 0.25 to 1. The browser build keeps the same number in
+    /// rasterised at, 0.25 to 1. The TypeScript client kept the same number in
     /// `localStorage.renderScale`; here it reaches Window::setRenderScale,
     /// which is the whole of its effect -- nothing moves or resizes, the
     /// picture just gets softer and the rasteriser gets cheaper. It earns its
@@ -216,29 +233,29 @@ struct ClientSettings {
     bool desynchronizedCanvas = false;
     bool showChat = true;
     /// Which of the chat box's channel tabs its transcript shows, one bit per
-    /// tab in strip order: Local, Global, Squad, Guild, Whisper. All on by
-    /// default. The server's own lines belong to no tab and always show.
-    std::uint8_t chatChannels = 0x3F;
-    bool showMenuBar = true;
+    /// tab in strip order: Local, Global, Squad, Guild, Whisper, Admin. All on
+    /// by default. The server's own lines belong to no tab and always show.
+    /// Persisted as `chatTabs`; see load() for the older `chatChannels`.
+    std::uint8_t chatChannels = kChatChannelsAll;
     /// The frame/ping/position readout in the bottom-right corner. Off by
-    /// default, and the browser build keeps the same flag in
+    /// default, and the TypeScript client kept the same flag in
     /// `localStorage.showStats`.
     bool showStats = false;
     /// Shows the grey bug button in the top strip, which is the only way into
-    /// the debug panel. Off by default, exactly as `debugMenuEnabled` is.
+    /// the debug panel. Off by default, exactly as `debugMenuEnabled` was.
     bool showDebugButton = false;
     /// Asks the leaderboard to rank admin accounts too, which the server
-    /// otherwise leaves off. Off by default; the browser keeps the same flag
-    /// in `localStorage.showAdminsOnLeaderboard`.
+    /// otherwise leaves off. Off by default; the TypeScript client kept the
+    /// same flag in `localStorage.showAdminsOnLeaderboard`.
     bool showAdminsOnLeaderboard = false;
     /// How many changelog releases the player had already seen the last time
-    /// they opened the panel. The browser keeps the same number in
-    /// `localStorage.lastSeenChangelogCount`, and shakes the strip's changelog
-    /// button for as long as the changelog holds more entries than this.
+    /// they opened the panel. The TypeScript client kept the same number in
+    /// `localStorage.lastSeenChangelogCount`. The strip's changelog button
+    /// shakes for as long as the changelog holds more releases than this.
     int changelogSeen = 0;
-    /// Which notifications the player has already read. The browser keeps the
-    /// same set in `localStorage['game_notifications_read']`; there is no such
-    /// store here, so it rides in the settings file. Server ids carry no
+    /// Which notifications the player has already read. The TypeScript client
+    /// kept the same set in `localStorage['game_notifications_read']`; here it
+    /// rides in the settings file with everything else. Server ids carry no
     /// whitespace, which is what lets them share this file's key/value lines.
     std::vector<std::string> readNotifications;
     /// The key that opens each menu, indexed by MenuId.
@@ -249,10 +266,10 @@ struct ClientSettings {
     /// controlKey/bindControl are what hide which action is kept where.
     std::array<Key, kControlCount> controls{};
     /// Whether the flower follows the cursor. Off leaves movement to the four
-    /// movement keys alone; aim follows the pointer either way. The browser
-    /// keeps the same flag in `localStorage.useMouseControls` and defaults it
-    /// off, where this client defaults it ON: cursor-following is the control
-    /// scheme it has always shipped with, and defaulting to the browser's
+    /// movement keys alone; aim follows the pointer either way. The TypeScript
+    /// client kept the same flag in `localStorage.useMouseControls` and
+    /// defaulted it off, where this client defaults it ON: cursor-following is
+    /// the control scheme it has always shipped with, and defaulting to that
     /// value would take it away from every existing player.
     bool useMouseControls = true;
     /// Draws the loadout bar the way this client used to: three-quarter-size
@@ -261,11 +278,12 @@ struct ClientSettings {
     /// reference game's, which is bigger, tighter and captioned underneath.
     bool classicLoadoutBar = false;
     /// Whether the on-screen touch controls are up: the stick, and the two
-    /// buttons that stand in for the extend/retract keys. The browser keeps
-    /// the same flag in `localStorage.requestMobile`, and resolves an unset
-    /// one from `(pointer: coarse)` -- a phone gets them without being asked,
-    /// and a desktop does not. `requestMobileChosen` is that "unset": until
-    /// the player has said either way, the answer is the device's.
+    /// buttons that stand in for the extend/retract keys. The TypeScript
+    /// client kept the same flag in `localStorage.requestMobile` and resolved
+    /// an unset one from `(pointer: coarse)`, as this one does -- a phone gets
+    /// them without being asked, and a desktop does not. `requestMobileChosen`
+    /// is that "unset": until the player has said either way, the answer is
+    /// the device's.
     bool requestMobile = false;
     bool requestMobileChosen = false;
     /// The spawn point the player last chose to start at -- one of the ids in
@@ -273,9 +291,10 @@ struct ClientSettings {
     /// default. Remembered because it is a preference, not a game state.
     std::string spawnChoice;
     /// Whether the eleven-step tutorial has been finished or skipped, and how
-    /// far it had got. The browser keeps the same pair in localStorage as
-    /// `tutorial_completed` and `tutorial_step`; they ride here so this client
-    /// has one settings file rather than a second store beside it.
+    /// far it had got. The TypeScript client kept the same pair in
+    /// localStorage as `tutorial_completed` and `tutorial_step`; they ride here
+    /// so this client has one settings file rather than a second store beside
+    /// it.
     ///
     /// Only the first is ever read back. See ui::Tutorial::beginGame for why
     /// the reference's own resume is dead and this one matches it.
@@ -318,7 +337,6 @@ struct DragState {
     void clear() { *this = DragState{}; }
 };
 
-/// One frame of everything a panel is allowed to touch.
 /// What the debug panel's Profiling tab shows.
 ///
 /// The frame cost of this client is very nearly the number of drawing calls it
@@ -351,6 +369,7 @@ struct ProfilingStats {
     std::array<int, kCanvasOpCodes> byType{};
 };
 
+/// One frame of everything a panel is allowed to touch.
 struct MenuContext {
     Canvas& canvas;
     Window& window;
@@ -384,6 +403,10 @@ struct MenuContext {
     /// The debug panel's Profiling tab reads this. Null on a build that does
     /// not gather it.
     const ProfilingStats* profiling = nullptr;
+    /// Where the icon strip's settings gear was last laid out, empty before
+    /// the strip has been. The settings panel closes on a click outside its
+    /// card, but not on this one button: see SettingsPanel::render.
+    Rect settingsButton{};
 
     Vec2 mouse() const { return {window.mouseX(), window.mouseY()}; }
     bool over(Rect r) const { return r.contains(mouse()); }
@@ -452,6 +475,13 @@ inline constexpr std::uint32_t kSlotCardWaitInk = 0xED706Bu;
 /// Every label on the card is outlined at 60%, a visibly lighter weight than
 /// the solid outline most panels use.
 inline constexpr double kSlotCardLabelStroke = 0.6;
+
+/// Whether `petalIndex` names a petal this build has: not kNoPetal, and not
+/// past the end of the content table. What every card asks before it draws or
+/// stages a petal that came from its own staging or from the server.
+inline bool knownPetal(std::uint16_t petalIndex) {
+    return petalIndex != kNoPetal && petalIndex < content().petalCount();
+}
 
 /// Where everything on a slot card is this frame. Derived from the card's rect,
 /// so a card still sliding up carries all of it along.
@@ -824,9 +854,6 @@ private:
 
     std::vector<Node> nodes_;
     bool laidOut_ = false;
-    /// How far the card has slid up into place, 0 to 1. The panel opens by
-    /// animating this rather than by appearing where it belongs.
-    double openLerp_ = 0;
     /// Dragging anywhere in the card spins the whole fan about the flower.
     double rotation_ = 0;
     bool dragging_ = false;
@@ -919,6 +946,10 @@ private:
     ui::Scroller scroll_;
 };
 
+/// How many releases the changelog holds: the length of its table, counted
+/// where the table is (menu_changelog.cpp). See MenuSystem::changelogUnread.
+int changelogReleaseCount();
+
 /// Server notices, invites and rewards.
 class NotificationsPanel {
 public:
@@ -950,7 +981,6 @@ class GuildPanel {
 public:
     bool render(MenuContext&);
     void reset();
-    static double preferredWidth();
     static Rect bounds(int viewWidth, int viewHeight);
 
 private:
@@ -1023,8 +1053,23 @@ private:
 /// and edit. Only ever opened by the server's answer to `/admin db`, which a
 /// database-flagged admin gets and nobody else does; the server checks every
 /// request again. Its state lives in menu_admin_db.cpp, at file scope, as the
-/// guild panel's dialog does.
+/// guild panel's form does.
 class AdminDbPanel {
+public:
+    bool render(MenuContext&);
+    void reset();
+    static double preferredWidth();
+    static double preferredHeight();
+    static Rect bounds(int viewWidth, int viewHeight);
+};
+
+/// The admin dashboard: the flowers in the world and one player's bag, flower
+/// control, and the console's spawn, give and announce behind a form. Shown to
+/// anyone the server says is an admin, a temporary grant included; the server
+/// checks every request again, and refuses what a grant does not reach.
+/// Its state lives in menu_admin_dashboard.cpp, at file scope, as the database
+/// editor's does, and opening the panel starts it over.
+class AdminDashboardPanel {
 public:
     bool render(MenuContext&);
     void reset();
@@ -1065,9 +1110,6 @@ public:
         exitRequested_ = false;
         return requested;
     }
-    bool adminDashboardOpen = false;
-    Rect adminDashboardBounds{};
-    Rect adminDashboardButton{};
 
     /// Set when Settings' Log Out was clicked, read and cleared by the app the
     /// same way the exit request is.
@@ -1109,48 +1151,36 @@ public:
     void toggle(MenuId);
     void close();
     MenuId open() const { return open_; }
-    bool anyOpen() const { return open_ != MenuId::None || adminDashboardOpen; }
+    bool anyOpen() const { return open_ != MenuId::None; }
 
     /// True when the cursor is over menu furniture, so the game must not treat
     /// the click as aiming or the wheel as a zoom.
     bool capturesMouse(Vec2 mouse) const;
 
-    /// How far in from the left edge the HUD must start to clear the icon
-    /// strips: the width of the top row, and of the bottom column. The HUD asks
-    /// rather than the strips reserving, because only the HUD knows which of
-    /// its pieces can move.
-    ///
-    /// The top row is eight buttons wide in game, so `reservedTop()` is most of
-    /// the screen: the browser build clears it by dropping BELOW the row, not
-    /// by moving right. `stripBottom()` is the y to use for that.
-    double reservedTop() const;
+    /// How far in from the left edge something hung under the top icon row
+    /// has to start to clear the bottom column: that column's width as last
+    /// laid out, and its gap. The Release chip is placed by it, and by
+    /// stripBottom(); the HUD is not -- its block sits at the reference's
+    /// fixed coordinates (app_hud.cpp).
     double reservedLeft() const;
     /// The first y below the top icon row, strip inset included.
     double stripBottom() const;
 
-    /// How many releases the changelog holds. That, against what the player
-    /// has already seen, is the whole of the browser's unread rule
+    /// True while the strip's changelog button should shake: while the
+    /// changelog holds more releases than the player had seen the last time
+    /// they opened it. That is the whole of the browser's unread rule
     /// (`CHANGELOG.length > lastSeenChangelogCount`), and opening the panel is
     /// what writes the count back -- the same gesture, not a separate
     /// acknowledgement.
-    ///
-    /// One rather than zero by default, so a player who has never opened the
-    /// panel is told there is something in it even before whoever owns the
-    /// changelog table has reported its size.
-    void setChangelogEntryCount(int count) { changelogEntries_ = count < 1 ? 1 : count; }
-    /// True while the strip's changelog button should shake.
-    bool changelogUnread() const { return changelogEntries_ > settings_.changelogSeen; }
-
-    /// True while a settings row is waiting for a key.
-    bool capturingKey() const { return settings_panel_.capturingKey(); }
+    bool changelogUnread() const { return changelogReleaseCount() > settings_.changelogSeen; }
 
     /// The service of the NPC the player's flower is standing at, or None.
     /// The app measures it every frame; the craft panel reads it to decide
-    /// whether it is the forge, the oracle or the trader this frame.
+    /// whether it is the forge, the oracle, the trader or the titan this frame.
     void setNearbyNpc(NpcService service) { nearbyNpc_ = service; }
-    NpcService nearbyNpc() const { return nearbyNpc_; }
     /// The craft menu's card for a `w` x `h` view as it stands this frame: the
-    /// forge's, or the oracle's or the trader's while the flower is at one.
+    /// forge's, or the oracle's, the trader's or the titan's while the flower
+    /// is at one.
     Rect craftPanelBounds(int w, int h) const;
 
     /// Feeds the debug panel one frame of samples. See DebugPanel::recordFrame
@@ -1163,9 +1193,9 @@ public:
     const ClientSettings& settings() const { return settings_; }
 
     /// The chat box and the login form both take typed text; the menus must
-    /// not also eat it. Panels with a text field set this while focused.
+    /// not also eat it. Panels with a text field set MenuContext::wantsText
+    /// while it is focused, and this reports it.
     bool wantsText() const { return wantsText_; }
-    void setWantsText(bool wants) { wantsText_ = wants; }
 
     /// Drawing calls the menu layer made since this was last called, split by
     /// which of its three unrelated jobs made them. One figure for the lot
@@ -1251,14 +1281,19 @@ private:
     void useLoadoutSlot(NetClient&, int slot);
     void drawDragged(Canvas&, Window&, const SpriteCache&, double timeSeconds);
     void activateStripSlot(int slot);
+    /// While this client is steering another player's flower: a "Release
+    /// <name>" chip under the strip, clear of the bottom column, and its click.
+    /// Painted under the open card, which keeps any click it is standing on.
+    void drawReleaseChip(Canvas&, Window&, NetClient&);
 
     MenuId open_ = MenuId::None;
     /// The card being painted. It outlives `open_` by the length of the
     /// slide-out, which is the only reason the two are separate.
     MenuId drawn_ = MenuId::None;
     /// 0 = a full viewport height below its anchor, 1 = seated. Only the tall
-    /// list panels use it: they are DOM shells with a transform transition,
-    /// where the corner overlays are canvas panels drawn straight at (20, 72).
+    /// list panels use it -- in the reference they are DOM shells with a
+    /// transform transition, where the corner overlays are canvas panels drawn
+    /// straight in place (see slidesUp).
     double panelSlide_ = 0;
     ClientSettings settings_;
     DragState drag_;
@@ -1269,7 +1304,6 @@ private:
     bool logoutRequested_ = false;
     bool adminGrantOffered_ = false;
     bool adminGrantRequested_ = false;
-    int changelogEntries_ = 1;
     /// What the badge on the notifications button draws. Recomputed by
     /// render(), which is the only entry point holding a NetClient -- the
     /// login screen's strip has no account and so never badges anything.
@@ -1277,9 +1311,18 @@ private:
     /// Whether this session has already asked for its first page. See the note
     /// in render(): the badge cannot count a feed nobody fetched.
     bool notificationsPrimed_ = false;
+    /// Whether the strip shows the admin dashboard's button: the server's
+    /// word that this account is an admin, as of the last render(), which is
+    /// the only entry point holding a NetClient. The login screen's strip has
+    /// no account, so renderStripOnly() takes the button down -- the Debug
+    /// button's arrangement, with the server's flag where its setting is.
+    bool adminSlotShown_ = false;
+    /// The Release chip as last painted, for capturesMouse(). Empty while no
+    /// control is running.
+    Rect releaseRect_{};
 
     /// The icon artwork, compiled on first use. One document per glyph, shared
-    /// with nothing -- these are the only SVGs the UI layer draws.
+    /// with nothing; the shop compiles its own two copies of the star.
     std::vector<std::shared_ptr<SvgDocument>> icons_;
 
     /// Where the strip's buttons and the loadout slots ended up last frame.
@@ -1422,11 +1465,14 @@ private:
     GuildPanel guild_;
     DebugPanel debug_;
     AdminDbPanel adminDb_;
+    AdminDashboardPanel adminDashboard_;
 };
 
-/// The label and hotkey shown on the menu bar.
+/// A menu's display name, which main.cpp's `--menu <name>` is matched against.
 const char* menuLabel(MenuId);
-/// A key's name, for the settings list. "Unbound" for Key::Unknown.
+/// A key's name as the strip's key caps and the bar's row-swap caption print
+/// it ("Z", "Esc"). "Unbound" for Key::Unknown. The settings list spells its
+/// keys its own way (menu_settings.cpp's keyLabel).
 const char* keyName(Key);
 
 } // namespace flix

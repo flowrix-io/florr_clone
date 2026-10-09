@@ -4,9 +4,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cmath>
-#include <cstdio>
 #include <iterator>
 #include <memory>
 #include <string>
@@ -16,6 +14,7 @@
 #include "client/render/skin_render.h"
 #include "client/ui/draw.h"
 #include "client/ui/item_tile.h"
+#include "client/ui/menu_widgets.h"
 #include "shared/game/config.h"
 #include "shared/game/components.h"
 #include "shared/game/constants.h"
@@ -94,7 +93,9 @@ const double kMobHeadingEaseSeconds = easeTimeConstant(0.2);
 /// correction, a realm hop -- and the legs should not race to cover it.
 constexpr double kMaxWalkUnitsPerMs = 3.0;
 
-/// The window the browser build's server averages a dummy's DPS over.
+/// The window the TypeScript server averaged a dummy's DPS over. This client
+/// works the figure out itself, from the viewer's own hits (dummyDamage_),
+/// over the same window.
 constexpr double kDpsWindowSeconds = 10.0;
 
 /// Explosion: a ring pair plus debris, all of it over one second.
@@ -216,7 +217,6 @@ constexpr double kDropBurstLifeSpreadMs = ui::kDropBurstLifeSpreadMs;
 /// is the rarity colour itself -- only its alpha moves, so the grains read as
 /// the drop's own rarity rather than as a wash of white.
 constexpr double kSparkleWhiten = 0.5;
-constexpr double kDropSparkleWhiten = 0.0;
 /// A drop's grains are five times a petal's and vary widely in size, so it
 /// throws far fewer of them: at this scale a petal's count would read as a
 /// solid slab rather than as a scatter. Base plus a spread of twice the base
@@ -244,19 +244,6 @@ constexpr double kDropSparkleSizeSpread = 10.0;
 constexpr double kDropBurstSize = ui::kDropBurstSize;
 constexpr double kDropBurstSizeSpread = ui::kDropBurstSizeSpread;
 
-/// What tells a drop's shimmer apart from a petal's. A petal's grains keep the
-/// browser build's spoked emission -- evenly spaced angles with a little
-/// jitter -- because that is what the shipped build looks like. A drop's
-/// scatter instead: with only a handful in flight at a time, evenly spaced
-/// angles read as spokes rather than as a burst, so each grain picks its own
-/// direction and its own facing. That scatter lives in pushDropGrain, which is
-/// the only emitter drops use; what is left here is the petal path's.
-struct SparkleStyle {
-    double whiten = 0;
-    bool square = false;
-};
-constexpr SparkleStyle kPetalSparkleStyle{kSparkleWhiten, false};
-constexpr SparkleStyle kDropSparkleStyle{kDropSparkleWhiten, true};
 /// A grain never paints solid: the shimmer sits over the body it came off.
 constexpr double kSparkleAlpha = 0.6;
 
@@ -358,9 +345,6 @@ NumberChannel channelOf(std::uint8_t flags) {
     return NumberChannel::Hit;
 }
 
-/// The ceiling the browser build's server clamps a flower's size modifier to.
-constexpr double kMaxSizeMultiplier = 6.0;
-
 /// The ALT rarity glow's reach past the petal's own artwork. The browser build
 /// bakes it as a 16-unit shadow-blur pad; cpp_canvas has no blur, so it is the
 /// same reach painted as the nested-disc ramp drawPetalGlow builds.
@@ -397,11 +381,6 @@ double petalArtScale(const PetalConfig* config) {
 /// units wide, so it has to be drawn before its centre reaches the edge.
 constexpr double kTeleporterCull = 140.0;
 
-/// Spawn-shield yellow, and how long it takes to bleed back to health green
-/// once the shield drops.
-constexpr std::uint32_t kInvulnHealth = 0xFAFFC9u;
-constexpr double kInvulnFadeSeconds = 0.5;
-
 /// The vertical leg of a number's throw at `t` of its life, in units of the
 /// apex: a parabola solved so it passes through 1 at kNumberArcPeak and keeps
 /// falling afterwards, which puts the number below its spawn by the time it is
@@ -420,22 +399,6 @@ double numberSizeFor(double base, double value) {
 /// Damage is shown as a whole number however large it gets -- abbreviating it
 /// would read as a different game from the browser build.
 std::string formatDamage(double value) {
-    return std::to_string(static_cast<long long>(std::llround(value)));
-}
-
-/// The browser build's formatNumber: one decimal and a magnitude letter past a
-/// thousand. Only the dummy's DPS readout is written this way.
-std::string formatCompact(double value) {
-    static constexpr struct { double scale; const char* suffix; } kSteps[] = {
-        {1e12, "T"}, {1e9, "B"}, {1e6, "M"}, {1e3, "K"},
-    };
-    char buf[32];
-    for (const auto& step : kSteps) {
-        if (value >= step.scale) {
-            std::snprintf(buf, sizeof buf, "%.1f%s", value / step.scale, step.suffix);
-            return buf;
-        }
-    }
     return std::to_string(static_cast<long long>(std::llround(value)));
 }
 
@@ -498,24 +461,6 @@ std::uint32_t lerpColor(std::uint32_t from, std::uint32_t to, double t) {
     return (channel((from >> 16) & 0xFF, (to >> 16) & 0xFF) << 16) |
            (channel((from >> 8) & 0xFF, (to >> 8) & 0xFF) << 8) |
            channel(from & 0xFF, to & 0xFF);
-}
-
-std::uint32_t scaleColor(std::uint32_t rgb, double factor) {
-    const auto channel = [factor](std::uint32_t c) {
-        return static_cast<std::uint32_t>(clamp(std::round(c * factor), 0.0, 255.0));
-    };
-    return (channel((rgb >> 16) & 0xFF) << 16) |
-           (channel((rgb >> 8) & 0xFF) << 8) |
-           channel(rgb & 0xFF);
-}
-
-std::uint32_t mixWithWhite(std::uint32_t rgb, double amount) {
-    const auto channel = [amount](std::uint32_t c) {
-        return static_cast<std::uint32_t>(clamp(std::round(c + (255.0 - c) * amount), 0.0, 255.0));
-    };
-    return (channel((rgb >> 16) & 0xFF) << 16) |
-           (channel((rgb >> 8) & 0xFF) << 8) |
-           channel(rgb & 0xFF);
 }
 
 /// Same stable integer-hash shape used by the TypeScript glitch effect. The
@@ -621,14 +566,15 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         effects_.push_back(std::move(e));
     };
 
-    // Particles for the high-rarity shimmer and the burst a drop throws when
-    // it lands. The browser build integrates these once per 60 Hz frame, so
-    // its speeds are per frame and are converted here the way the explosion's
-    // debris is.
+    // Particles for a petal's high-rarity shimmer: disc-shaped grains, in the
+    // browser build's spoked emission -- evenly spaced angles with a little
+    // jitter -- because that is what the shipped build looks like. A drop's
+    // glitter is pushDropGrain's, below. The browser build integrates these
+    // once per 60 Hz frame, so its speeds are per frame and are converted here
+    // the way the explosion's debris is.
     const auto pushSparkle = [this](Vec2 at, Rarity rarity, int count, double speedBase,
                                     double speedSpread, double lifeBase, double lifeSpread,
-                                    double sizeBase, double sizeSpread, double lifetime,
-                                    SparkleStyle style) {
+                                    double sizeBase, double sizeSpread, double lifetime) {
         // Half the pool, not all of it. The browser build keeps its shimmer in
         // a separate array from its damage numbers; sharing one here without a
         // reservation lets a loadout of ultra petals fill the pool and silence
@@ -638,8 +584,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         e.kind = Effect::Kind::Sparkle;
         e.position = at;
         e.lifeSeconds = lifetime;
-        e.squareParticles = style.square;
-        const std::uint32_t color = mixWithWhite(rarityColor(rarity), style.whiten);
+        const std::uint32_t color = ui::lighten(rarityColor(rarity), kSparkleWhiten);
         e.particles.reserve(static_cast<std::size_t>(count));
         for (int i = 0; i < count; ++i) {
             const double angle = kTau * i / count + randomUnit() * 0.3;
@@ -651,7 +596,6 @@ void WorldRenderer::ingestEvents(WorldView& view) {
             particle.velocity = {std::cos(angle) * speed, std::sin(angle) * speed};
             particle.lifeSeconds = particle.maxLifeSeconds = life;
             particle.size = sizeBase + randomUnit() * sizeSpread;
-            particle.rotation = style.square ? randomUnit() * kTau : 0.0;
             particle.color = color;
             e.particles.push_back(particle);
         }
@@ -664,6 +608,11 @@ void WorldRenderer::ingestEvents(WorldView& view) {
     // the pool is the drops' own, so a screenful of damage numbers can never
     // silence it. `budget` is how much of that pool the caller may take -- the
     // continuous shimmer stops short of the cap, a burst may fill it.
+    //
+    // Scattered, not spoked like a petal's: with only a handful in flight at
+    // a time, evenly spaced angles read as spokes rather than as a burst, so
+    // each grain picks its own direction and its own facing -- a square's
+    // facing shows. The colour is the rarity's own (see kSparkleWhiten).
     const auto pushDropGrain = [this](Vec2 at, Rarity rarity, double speedBase,
                                       double speedSpread, double lifeMs, double lifeSpreadMs,
                                       double sizeBase, double sizeSpread, std::size_t budget) {
@@ -678,7 +627,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
             (lifeMs + randomUnit() * lifeSpreadMs) / 1000.0;
         particle.size = sizeBase + randomUnit() * sizeSpread;
         particle.rotation = randomUnit() * kTau;
-        particle.color = mixWithWhite(rarityColor(rarity), kDropSparkleStyle.whiten);
+        particle.color = rarityColor(rarity);
         dropSparkles_.push_back(particle);
     };
 
@@ -955,7 +904,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         if (entity.kind != net::EntityKind::Petal || hiddenByOptions(entity)) continue;
         if (randomUnit() >= chance) continue;
         pushSparkle(entity.position, entity.rarity, kSparkleCount, 0.5, 0.5, 2000.0, 1000.0, 1.0,
-                    2.0, kSparkleLifeSeconds, kPetalSparkleStyle);
+                    2.0, kSparkleLifeSeconds);
     }
 }
 
@@ -1042,10 +991,7 @@ void WorldRenderer::update(double dt) {
 }
 
 const MapData* WorldRenderer::mapFor(Realm realm) const {
-    if (worldMaps_ != nullptr) return worldMaps_->forRealm(realm);
-    // No catalogue: the single map handed over by setMapData() is the
-    // overworld's, and it has nothing to say about any other realm.
-    return realm == Realm::Overworld ? map_ : nullptr;
+    return worldMaps_ != nullptr ? worldMaps_->forRealm(realm) : nullptr;
 }
 
 const std::vector<const SvgDocument*>& WorldRenderer::artFor(const MapData& map) const {
@@ -1066,16 +1012,6 @@ const std::vector<const SvgDocument*>& WorldRenderer::artFor(const MapData& map)
 
 namespace {
 
-/// Canvas start angle for the quarter-circle fillet, keyed by the corner
-/// code's (top, left) bits -- the mapping rrolf's RenderArena.c uses and the
-/// browser build's maze-render.ts copies.
-double filletStartAngle(int top, int left) {
-    if (top == 0 && left == 1) return kPi * 0.5;
-    if (top == 1 && left == 1) return kPi;
-    if (top == 1 && left == 0) return kPi * 1.5;
-    return 0.0;
-}
-
 /// Traces the wall shape of one rounded-corner cell (4-7 a convex floor
 /// corner, 12-15 a concave wall corner) into the current path, in screen
 /// space. The arc is one whole cell in radius and centred on the shared
@@ -1093,7 +1029,7 @@ void traceMazeCorner(Canvas& canvas, const Camera& camera, double x0, double y0,
     // minus that triangle. Both start their path accordingly.
     const double sx = concave ? cx : x0 + (1 - left) * g;
     const double sy = concave ? cy : y0 + (1 - top) * g;
-    const double a0 = filletStartAngle(top, left);
+    const double a0 = mazeFilletStartAngle(value);
     const Vec2 start = camera.worldToScreen({sx, sy});
     const Vec2 centre = camera.worldToScreen({cx, cy});
     canvas.moveTo(static_cast<float>(start.x), static_cast<float>(start.y));
@@ -2056,9 +1992,14 @@ double WorldRenderer::playerSizeMultiplier(const RemoteEntity& entity) const {
     // same number on the wire twice and let the two disagree.
     const double base = playerRadiusForLevel(entity.level);
     if (base <= 0.0) return 1.0;
-    // Bounded the way the browser build bounds it, so a corrupt radius cannot
-    // scale a flower off the screen.
-    return clamp(entity.radius / base, 0.0, kMaxSizeMultiplier);
+    // Bounded the way the server bounds it, so a corrupt radius cannot scale a
+    // flower off the screen.
+    return clamp(entity.radius / base, 0.0, kMaxPlayerSizeScale);
+}
+
+std::uint32_t invulnerableFadeColor(double secondsSinceShield) {
+    const double t = clamp(secondsSinceShield / kInvulnerableFadeSeconds, 0.0, 1.0);
+    return lerpColor(kInvulnerableHealth, ui::kHealth, t);
 }
 
 std::uint32_t WorldRenderer::healthBarColor(const RemoteEntity& entity, double timeSeconds) const {
@@ -2070,18 +2011,20 @@ std::uint32_t WorldRenderer::healthBarColor(const RemoteEntity& entity, double t
     // is what the fade back to green is measured from.
     if (entity.state & net::StateInvulnerable) {
         invulnFade_[entity.netId] = -1.0;
-        return kInvulnHealth;
+        return kInvulnerableHealth;
     }
     const auto it = invulnFade_.find(entity.netId);
     if (it == invulnFade_.end()) return ui::kHealth;
     if (it->second < 0.0) it->second = timeSeconds;
-    const double t = clamp((timeSeconds - it->second) / kInvulnFadeSeconds, 0.0, 1.0);
-    if (t >= 1.0) {
+    const double since = timeSeconds - it->second;
+    if (since >= kInvulnerableFadeSeconds) {
         invulnFade_.erase(it);
         return ui::kHealth;
     }
-    return lerpColor(kInvulnHealth, ui::kHealth, t);
+    return invulnerableFadeColor(since);
 }
+
+namespace {
 
 /// Where a flower's bar goes: the one slot under the body, in screen pixels.
 ///
@@ -2124,6 +2067,8 @@ void plateBarBack(Path2D& path, const PlateBar& bar) {
                    static_cast<float>(bar.top - bar.zoom), static_cast<float>(62.0 * bar.zoom),
                    static_cast<float>(10.0 * bar.zoom), static_cast<float>(5.0 * bar.zoom));
 }
+
+} // namespace
 
 void WorldRenderer::drawSelfManaBar(Canvas& canvas, const RemoteEntity& entity,
                                     const Camera& camera, Vec2 at) const {
@@ -2611,9 +2556,9 @@ void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint8_
     // that can hurt other players, so it must remain visible through poison.
     if (faceFlags & FaceHasCorruption) baseColor = 0xD91313u;
     else if (faceFlags & FacePoisoned) baseColor = 0xCE76DBu;
-    else if (faceFlags & FaceDandelioned) baseColor = mixWithWhite(baseColor, 0.4);
+    else if (faceFlags & FaceDandelioned) baseColor = ui::lighten(baseColor, 0.4);
 
-    ui::setFill(canvas, scaleColor(baseColor, 0.8));
+    ui::setFill(canvas, ui::shade(baseColor, 0.8));
     canvas.beginPath();
     canvas.arc(0, 0, 26.5f, 0, static_cast<float>(kTau));
     canvas.fill();
@@ -3119,13 +3064,15 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
     if (count <= 0) return;
 
     // Every distance is a multiple of the mob's own radius, so the ring grows
-    // with rarity along with the body and stays where the server damages from.
+    // with rarity along with the body.
     //
     // The mob's WORLD radius, which is why `visual_scale` is divided back out:
-    // the ring is a place the server hits from (CombatSystem::tickMobPetalRings
-    // walks these same seats), and the server is not allowed to read an
-    // art-only field. Anything the death animation did to `radius` survives the
-    // division, so a popping mob's ring still balloons with it.
+    // a ring is laid out off the body the server simulates -- an ammunition
+    // ring's seats are, at spawn (MobPetalRing::orbit), and this decoration
+    // ring, which nothing simulates, is drawn by the same rule -- and an
+    // art-only field must not move it. Anything the death animation did to
+    // `radius` survives the division, so a popping mob's ring still balloons
+    // with it.
     //
     const double artScale = config.visualScale > 0 ? config.visualScale : 1.0;
     const double ringRadius = radius / artScale;
@@ -3381,7 +3328,7 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
             // difference between a working dummy and a bug. An intangible mob
             // (the fire ant hole) is the same promise: its brood is what you
             // fight, not it.
-            ui::setFill(canvas, kInvulnHealth);
+            ui::setFill(canvas, kInvulnerableHealth);
             canvas.beginPath();
             canvas.roundRect(static_cast<float>(barX), static_cast<float>(barY),
                              static_cast<float>(barWidth), static_cast<float>(barHeight),
@@ -3438,8 +3385,8 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         dps.size = 10.0 * zoom;
         dps.align = ui::Align::Right;
         dps.baseline = ui::Baseline::Alphabetic;
-        ui::text(canvas, "DPS: " + formatCompact(total / kDpsWindowSeconds), barX + barWidth,
-                 barY + 34.0 * zoom, dps);
+        ui::text(canvas, "DPS: " + ui::formatCompact(total / kDpsWindowSeconds),
+                 barX + barWidth, barY + 34.0 * zoom, dps);
     }
 }
 
@@ -3842,9 +3789,10 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
                 break;
             }
             case Effect::Kind::Sparkle: {
-                // Particles only: the shimmer has no body of its own.
+                // Particles only: the shimmer has no body of its own. A
+                // petal's grains are discs; only a drop's are square.
                 for (const EffectParticle& p : e.particles) {
-                    drawSparkleGrain(canvas, camera, p, e.squareParticles);
+                    drawSparkleGrain(canvas, camera, p, /*square=*/false);
                 }
                 // The grains fade through globalAlpha, so the layer has to put
                 // it back before anything else is painted.
@@ -3887,7 +3835,6 @@ void WorldRenderer::drawLightning(Canvas& canvas, const Camera& camera) const {
 
 void WorldRenderer::draw(Canvas& canvas, const WorldView& view, const Camera& camera,
                          Vec2 selfDrawn, double timeSeconds) const {
-    selfNetId_ = view.self().netId;
     realm_ = view.realm();
     draw(canvas, view.entities(), camera, selfDrawn, timeSeconds);
 }

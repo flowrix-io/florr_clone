@@ -9,10 +9,10 @@ namespace flix::ui {
 
 namespace {
 
-// Every measurement here is the browser build's own, times kTouchScale. The
-// reference's value is kept beside it so the two can be read against each
-// other: a change there is a change to the number on the left, never to the
-// arithmetic.
+// Every measurement here is the browser build's own (src/graphics/
+// mobile-controls.ts, in git history), times kTouchScale. The reference's
+// value is kept beside it so the two can be read against each other: a retune
+// is a change to the number on the left, never to the arithmetic.
 
 /// Gap above the loadout bar's footprint that all three controls hang from.
 constexpr double kBottomGap = 15.0 * kTouchScale;

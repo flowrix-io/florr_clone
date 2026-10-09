@@ -5,9 +5,9 @@
 //              [--preview DIR] [--mobs PATH] [--petals PATH]
 //
 // With no ids it fits every mob; name some to fit just those. Nothing is
-// written back -- the run ends with the lines to paste into src/mobs.json.
-// mobs.json is read straight out of the source tree, so an edit to it is
-// measured by the next run without a rebuild.
+// written back -- the run ends with the lines to paste into data/mobs.json.
+// mobs.json is read straight out of the source tree's data/, so an edit to it
+// is measured by the next run without a rebuild.
 //
 // The art is drawn through the client's own SpriteCache, so what is measured
 // is exactly what the game paints. Its BODY is then found by discarding what
@@ -68,7 +68,7 @@
 #include <vector>
 
 #ifndef FLIX_SOURCE_DIR
-#define FLIX_SOURCE_DIR "../src"
+#define FLIX_SOURCE_DIR "../data"
 #endif
 #ifndef FLIX_TEST_DATA_DIR
 #define FLIX_TEST_DATA_DIR "data"
@@ -806,7 +806,7 @@ int main(int argc, char** argv) {
     if (changes.empty()) {
         std::printf("\nEvery fitted mob is already on its hitbox.\n");
     } else {
-        std::printf("\nFor src/mobs.json:\n");
+        std::printf("\nFor data/mobs.json:\n");
         for (const Change& change : changes)
             std::printf("  %-22s %s\n", (change.id + ":").c_str(), change.line.c_str());
     }

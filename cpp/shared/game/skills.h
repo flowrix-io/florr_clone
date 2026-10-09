@@ -40,9 +40,10 @@ enum class SkillId : std::uint8_t {
 
 inline constexpr int kSkillCount = static_cast<int>(SkillId::Count);
 
-/// The keys the database and the TypeScript build use. Stored rather than
-/// derived from the enum so a reordering here cannot silently rename a saved
-/// branch out from under an account.
+/// The keys the database stores: the TypeScript build's names, kept so the
+/// trees it saved still load. Stored rather than derived from the enum so a
+/// reordering here cannot silently rename a saved branch out from under an
+/// account.
 inline constexpr std::array<const char*, kSkillCount> kSkillKeys = {
     "damage", "petalHealth", "playerHealth", "healingMultiplier", "absorbing", "reload",
     "secondChance", "petHealth", "duplicator", "magnetism",
@@ -53,23 +54,11 @@ inline constexpr std::array<const char*, kSkillCount> kSkillLabels = {
     "Pet Health", "Duplicator", "Magnetism",
 };
 
-/// One line of what the branch actually does, shown in its tooltip.
-inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
-    "Multiplies the damage your body and petals deal.",
-    "Multiplies the health of every equipped petal.",
-    "Multiplies your flower's maximum health.",
-    "Multiplies healing from petals.",
-    "Multiplies XP from absorbed petals.",
-    "Shortens every petal cooldown.",
-    "Survive a killing blow at 1 HP.",
-    "Multiplies the health of every pet you summon.",
-    "Adds copies to petals that already have two or more.",
-    "Widens the reach your flower picks up drops from.",
-};
-
-/// How many tiers each branch has. Three of them stop short of the full
-/// ladder: Reload tops out at unique, with no apex tier to buy. None reaches
-/// past the ladder: universal is a petal tier, not a talent one.
+/// How many tiers each branch has. Five of them stop short of the full
+/// ladder: Healing tops out at epic, Reload at unique (no apex tier to buy),
+/// and the three forks -- Second Chance, Duplicator, Magnetism -- after two or
+/// three tiers. None reaches past the ladder: universal is a petal tier, not a
+/// talent one.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
     kLadderRarityCount, kLadderRarityCount, kLadderRarityCount, 4, kLadderRarityCount,
     rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount, 2, 3,

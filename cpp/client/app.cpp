@@ -41,7 +41,6 @@
 #include "client/web/reload.h"
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
-#include "shared/game/tiled_map.h"
 
 namespace flix {
 
@@ -178,7 +177,7 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // second copy off disk would be a second answer about which cells block --
     // so no Terrain is passed here, and NetClient installs the shapes for the
     // realm it is dropped into on top of the grid it was sent (net_.
-    // setWorldMaps below). Maps it cannot read cost the picker its choices, the
+    // setWorldMaps above). Maps it cannot read cost the picker its choices, the
     // world its art and the client its exact edges, not its start.
     std::string mapWarning;
     if (!worldMaps_.load(config.dataDir, nullptr, mapWarning)) {
@@ -260,7 +259,6 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     });
 
     if (config.autoMenu != MenuId::None) menus_.toggle(config.autoMenu);
-    if (config.autoAdminDashboard) menus_.adminDashboardOpen = true;
 
     // Seeded before the first frame rather than after the join, so a
     // --frames run short enough to be one screenshot still photographs them.
@@ -691,10 +689,11 @@ void App::frame(double dt) {
     // across every frame rather than the menu reaching into the renderer.
     renderer_.options = menus_.settings().render;
     camera_.userZoom = menus_.settings().zoom;
-    // The petals' share of the zoom, read off the account's own loadout: the
-    // server does not compute it and it is not on the wire, as in the
-    // browser. It rides into the viewport the next input frame reports, so
-    // the server widens what it streams as soon as an observer goes on.
+    // The petals' share of the zoom, read off the account's own loadout. It is
+    // not on the wire, as in the browser: the server works the same figure
+    // out only to bound the viewport a client may claim (claimableViewport).
+    // It rides into the viewport the next input frame reports, so the server
+    // widens what it streams as soon as an observer goes on.
     camera_.loadoutZoom = loadoutCameraZoom(net_.profile(), content());
     const bool inWorld = screen_ == Screen::Playing || screen_ == Screen::Dead;
     menus_.setInGame(inWorld);
@@ -702,19 +701,30 @@ void App::frame(double dt) {
     // the trader's) as the flower walks up and back into the forge as it walks
     // off. Only a living, placed flower is standing anywhere: the corpse on the
     // death screen and the frames before the first snapshot get the forge.
-    menus_.setNearbyNpc(screen_ == Screen::Playing && net_.selfPlaced()
-                            ? nearbyNpcService(net_.view().selfDrawnPosition())
-                            : NpcService::None);
+    //
+    // Nor is a STEERED flower standing anywhere, for this account. While an
+    // admin controls another player's flower the snapshot's self block is
+    // that flower, so measuring from it offered the card of the NPC beside
+    // it -- but the oracle, the trader and the titan measure the requester's
+    // OWN body, parked wherever the control began, and refused every craft
+    // the card offered. The forge, which asks no location, is what control
+    // gets, the way the loadout bar and the run loot opt out of the self
+    // block for the length of it.
+    const bool standingSomewhere =
+        screen_ == Screen::Playing && net_.selfPlaced() && !net_.controllingFlower();
+    menus_.setNearbyNpc(standingSomewhere ? nearbyNpcService(net_.view().selfDrawnPosition())
+                                          : NpcService::None);
     if (menus_.takeExitRequest() && inWorld) leaveToTitle();
     // No inWorld guard: Settings' Log Out is offered on the title screen too,
     // and it is the one action that has to work from either of them.
     if (menus_.takeLogoutRequest()) logout();
     // Nor here: the offline page's Grant Admin row is drawn wherever the panel
-    // is, and an account is all the grant needs. Nothing is sent -- the hook
-    // reaches the server object in this same process, and the server answers
-    // by resending the catalog that carries the flag.
+    // is, and a signed-in session is all the grant needs. Nothing is sent --
+    // the hook hands this client's session token to the server object in this
+    // same process, which resolves the account from it (never from a name),
+    // and the server answers by resending the catalog that carries the flag.
     if (menus_.takeAdminGrantRequest() && config_.grantAdmin) {
-        config_.grantAdmin(net_.profile().username);
+        config_.grantAdmin(net_.sessionToken());
     }
 
     // --- draw -------------------------------------------------------------
@@ -736,7 +746,8 @@ void App::frame(double dt) {
         net_.ageChatBubbles(dt);
         // Pinned, not eased: the reference keeps the flower exactly on the
         // screen centre, which is what the cursor-relative control law reads.
-        // The EASE is on the flower itself, one frame earlier -- see frame().
+        // The EASE is on the flower itself, earlier in this same frame -- see
+        // the interpolate() call above.
         //
         // Until a snapshot has placed the body -- the frames right after a
         // join or a realm change -- the view's self is a zeroed default, and
@@ -769,9 +780,9 @@ void App::frame(double dt) {
         markPhaseOps(OpPhase::World);
         drawHud(canvas, timeSeconds_);
         markPhaseOps(OpPhase::Hud);
-        // The reference hides the whole chat box while one of the three
-        // petal-handling panels is up, rather than letting it poke out beside
-        // the card.
+        // The reference hides the whole chat box while one of the two
+        // petal-handling panels -- the inventory, the crafting card -- is up,
+        // rather than letting it poke out beside the card.
         const MenuId open = menus_.open();
         const bool panelHidesChat = open == MenuId::Inventory || open == MenuId::Crafting;
         if (menus_.settings().showChat && !panelHidesChat) drawChat(canvas, timeSeconds_);
@@ -799,7 +810,7 @@ void App::frame(double dt) {
         // card. Its one anchored step rings the crafting panel, which is the
         // only element in the reference that `.tutorial-highlight` can ever
         // find -- see the note in Tutorial::draw.
-        tutorial_.draw(canvas, timeSeconds_,
+        tutorial_.draw(canvas,
                        menus_.open() != MenuId::Crafting
                            ? Rect{}
                            : menus_.craftPanelBounds(window_.width(), window_.height()));
@@ -821,6 +832,9 @@ void App::frame(double dt) {
         }
         else if (screen_ == Screen::Lobby) {
             drawLobby(canvas, timeSeconds_);
+            // Under the panels, as the game's HUD puts it: a player picking a
+            // door is still somebody an announcement is for.
+            drawAdminAnnouncement(canvas);
             // The same menus, on the title screen. The panels read the account
             // rather than the world, so there is nothing for them to miss here.
             menus_.render(canvas, window_, net_, sprites_, renderer_, timeSeconds_, dt);
@@ -1118,8 +1132,9 @@ void App::showLoggedOut() {
     advancedOpen_ = false;
     pressedControl_.clear();
     pendingAuth_.clear();
-    // Done, not Idle: a scripted run must not answer a deliberate logout by
-    // registering itself straight back in.
+    // Out of Registering, so a late UsernameTaken answer cannot send the
+    // scripted login after a deliberate logout: Registering is the only state
+    // anything tests (updateLogin).
     autoLogin_ = AutoLogin::Done;
 
     deathCardVisible_ = false;
@@ -1327,16 +1342,13 @@ void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
     std::vector<Line> lines;
 
     if (titleScreen) {
-        // The title screen's overlay is a set of PLACEHOLDERS, not a readout:
-        // renderStatsCounters (src/title_screen/index.ts:1228-1232) spells four
-        // of the five lines out as literals and fills in nothing but the frame
-        // count. There is no world behind this screen to report on, and
-        // substituting live-looking zeroes would claim there is.
+        // The title screen's overlay is the frame counter alone. There is no
+        // world behind this screen to report on. The reference's
+        // renderStatsCounters (src/title_screen/index.ts:1228-1232, in git
+        // history at d47055a7) printed four placeholder lines above it --
+        // "Pos: --, --", "Ping: --", "Players: 0", "Mobs: 0" -- and this
+        // client leaves them off.
         lines = {
-            // {"Pos: --, --", 0xFFD700u},
-            // {"Ping: -- | In: 0 B/s | Out: 0 B/s", 0xA78BFAu},
-            // {"Players: 0", 0x4ECDC4u},
-            // {"Mobs: 0", 0xFF6B6Bu},
             {"FPS: " + std::to_string(framesPerSecond_) + " | Memory: 0.00 MB", 0x00FF00u},
         };
     } else {

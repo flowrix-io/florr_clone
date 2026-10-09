@@ -12,6 +12,7 @@
 #include "client/net_client.h"
 #include "client/render/world_renderer.h"
 #include "client/world_view.h"
+#include "render_rig.h"
 #include "server_harness.h"
 #include "shared/game/skin_format.h"
 
@@ -61,14 +62,6 @@ RemoteEntity flowerWearing(const std::string& skinId) {
     return flower;
 }
 
-Camera frameCamera() {
-    Camera camera;
-    camera.setViewport(kFrameSize, kFrameSize);
-    camera.userZoom = 1.0;
-    camera.snapTo(kFlowerAt);
-    return camera;
-}
-
 /// True when the middle of the frame is the skin's magenta.
 bool skinPaintedTheBody(const std::vector<CustomSkin>* catalog, const std::string& wornId) {
     Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
@@ -78,7 +71,7 @@ bool skinPaintedTheBody(const std::vector<CustomSkin>* catalog, const std::strin
 
     WorldRenderer renderer;
     if (catalog != nullptr) renderer.setSkinCatalog(catalog);
-    renderer.draw(canvas, view, frameCamera(), kFlowerAt, 0.0);
+    renderer.draw(canvas, view, testsupport::frameCamera(kFrameSize, kFlowerAt), kFlowerAt, 0.0);
 
     const std::vector<std::uint8_t> pixels = canvas.getImageData(0, 0, kFrameSize, kFrameSize);
     const std::size_t centre =

@@ -1,5 +1,4 @@
 #include "client/ui/menus.h"
-#include "client/ui/admin_dashboard.h"
 #include "client/ui/text_select.h"
 #include "client/ease.h"
 
@@ -16,7 +15,6 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <sstream>
 
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_icons.h"
@@ -77,6 +75,8 @@ const std::array<MenuMeta, kMenuCount> kMenus = {{
     {"Guild", Key::Unknown},
     {"Debug", Key::J},
     {"Database", Key::Unknown},
+    // `--menu admin` reaches it by this label, as every panel is reached.
+    {"Admin", Key::Unknown},
 }};
 
 /// Every rebindable action, indexed by ControlAction, in the browser's
@@ -106,7 +106,7 @@ const std::array<ControlMeta, kControlCount> kControls = {{
 ///
 /// The top row is chrome -- settings, changelog, the guild, the way out --
 /// packed tight along the edge and read left to right. The left column is the
-/// game: the four panels a player opens mid-fight, off a hotkey, without
+/// game: the three panels a player opens mid-fight, off a hotkey, without
 /// looking. So the column's buttons are a third larger, spaced further apart
 /// and captioned with their key; the row's are smaller and crowded. One
 /// `kIconButton` used to serve both at 42px, which drew the row and the column
@@ -142,8 +142,8 @@ constexpr const IconStyle& iconStyle(bool topRow) { return topRow ? kTopIcon : k
 /// The hotkey printed in the bottom-right corner of a column button, as the
 /// loadout bar prints its slot caps. Only the column wears one. Some top-row
 /// panels are bound too, but those are opened between fights with the mouse
-/// already on the button; captioning all ten would turn a quiet strip of icons
-/// into a wall of text for keys nobody reaches for mid-game.
+/// already on the button; captioning all twelve would turn a quiet strip of
+/// icons into a wall of text for keys nobody reaches for mid-game.
 constexpr double kIconKeyCapSize = 14.0;
 constexpr double kIconKeyCapInset = 4.0;
 
@@ -155,12 +155,13 @@ constexpr double kIconStaggerSeconds = 0.040;
 constexpr double kShakePeriodSeconds = 0.8;
 constexpr double kShakeRadians = 12.0 * kPi / 180.0;
 
-/// The browser's hit test is inclusive on all four edges; Rect::contains is
-/// half-open. On a 42px button that is a whole row of pixels that looks
-/// clickable and is not.
-bool insideInclusive(Rect r, Vec2 p) {
-    return r.w > 0 && r.h > 0 && p.x >= r.x && p.x <= r.right() && p.y >= r.y && p.y <= r.bottom();
-}
+/// The chip that gives a steered flower back (drawReleaseChip): a little
+/// shorter than the gap between the top row and the flower's own plate, so it
+/// fits between the two without touching either.
+constexpr double kReleaseChipHeight = 26.0;
+constexpr double kReleaseChipTextSize = 13.0;
+/// Either side of its label.
+constexpr double kReleaseChipPadding = 12.0;
 
 int menuIndex(MenuId id) { return static_cast<int>(id); }
 
@@ -639,6 +640,9 @@ bool ClientSettings::load(const std::string& path) {
     std::string value;
     // A settings file is a comfort, not a contract: an unreadable line is
     // skipped and the default kept, rather than the whole file being rejected.
+    // Whether the six-tab chat mask was in the file, which outranks the older
+    // five-tab line wherever in the file the two are.
+    bool sawChatTabs = false;
     while (file >> key >> value) {
         const int number = std::atoi(value.c_str());
         if (key == "names") render.names = number != 0;
@@ -648,8 +652,37 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "hideOtherPetals") render.hideOtherPetals = number != 0;
         else if (key == "hideOtherPets") render.hideOtherPets = number != 0;
         else if (key == "chat") showChat = number != 0;
-        else if (key == "chatChannels") chatChannels = static_cast<std::uint8_t>(number & 0x3F);
-        else if (key == "menuBar") showMenuBar = number != 0;
+        else if (key == "chatTabs") {
+            chatChannels = static_cast<std::uint8_t>(number & kChatChannelsAll);
+            sawChatTabs = true;
+        }
+        // `chatChannels` is what that line was called before `chatTabs`, in
+        // two formats under the one name. Every build up to da5936d7 had five
+        // tabs and wrote five bits. da5936d7 to d47055a7 -- one day's builds,
+        // 2026-10-08, shipped in dist/ -- had the Admin tab as well and wrote
+        // six, Admin in bit 5, read back with `& 0x3F` and no migration. The
+        // value cannot say which wrote it below 32, so it is read as the
+        // five-bit kind: the five choices kept, and the Admin tab shown, as
+        // every tab is until it is unticked. A set bit 5 can only be a six-bit
+        // file's, and the OR leaves it as it was.
+        //
+        // What that costs: a player who hid the Admin tab in those one-day
+        // builds gets it back, once -- the next save writes `chatTabs` with
+        // it on, and an untick from then on sticks. It is the safe way round.
+        // A clear bit 5 is far more often a five-tab file than a choice: the
+        // six-bit loader read every upgrader's five-tab file as Admin hidden
+        // and saved it back that way, so reading it as hidden would keep
+        // announcements out of the transcript of everybody who came up from
+        // the five-tab client without ever choosing that, to spare a few a
+        // second click. Showing a tab hides nothing; the banner ignores the
+        // setting either way (App::drawAdminAnnouncement). Only ever written
+        // under the new name, so this runs once per file.
+        else if (key == "chatChannels") {
+            if (!sawChatTabs) {
+                chatChannels = static_cast<std::uint8_t>((number & kChatChannelsBeforeAdmin) |
+                                                         kChatAdminChannel);
+            }
+        }
         else if (key == "stats") showStats = number != 0;
         else if (key == "debugButton") showDebugButton = number != 0;
         else if (key == "adminsOnBoard") showAdminsOnLeaderboard = number != 0;
@@ -701,8 +734,7 @@ bool ClientSettings::save(const std::string& path) const {
          << "hideOtherPetals " << (render.hideOtherPetals ? 1 : 0) << '\n'
          << "hideOtherPets " << (render.hideOtherPets ? 1 : 0) << '\n'
          << "chat " << (showChat ? 1 : 0) << '\n'
-         << "chatChannels " << static_cast<int>(chatChannels) << '\n'
-         << "menuBar " << (showMenuBar ? 1 : 0) << '\n'
+         << "chatTabs " << static_cast<int>(chatChannels) << '\n'
          << "stats " << (showStats ? 1 : 0) << '\n'
          << "debugButton " << (showDebugButton ? 1 : 0) << '\n'
          << "adminsOnBoard " << (showAdminsOnLeaderboard ? 1 : 0) << '\n'
@@ -787,6 +819,7 @@ void MenuSystem::toggle(MenuId id) {
         case MenuId::Guild:       guild_.reset(); break;
         case MenuId::Debug:       debug_.reset(); break;
         case MenuId::AdminDb:     adminDb_.reset(); break;
+        case MenuId::AdminDashboard: adminDashboard_.reset(); break;
         default: break;
     }
 }
@@ -797,10 +830,6 @@ void MenuSystem::close() {
 }
 
 bool MenuSystem::handleKeys(Window& window) {
-    if (adminDashboardOpen) {
-        if (window.keyPressed(Key::Escape)) adminDashboardOpen = false;
-        return true;
-    }
     // A settings row waiting for a key must swallow every key: binding the
     // inventory to G should not also open the bestiary on the way past.
     if (settings_panel_.capturingKey()) return true;
@@ -938,9 +967,13 @@ bool MenuSystem::handleKeys(Window& window) {
 // 66.67vh` DOM shells whose width is the only thing that differs between them,
 // and the overlays are canvas panels pinned at a literal (20, 72) under the
 // top icon row at a fixed size. Both live here rather than in the panels so
-// the twelve anchors can be read against each other.
+// the anchors can be read against each other.
 
 namespace {
+
+/// The highest a slot card may reach: clear of the player's own plate in the
+/// top-left corner, whatever the window's height.
+constexpr double kSlotCardTopMin = 160.0;
 
 /// A tall list beside the bottom icon column, as wide as its content needs.
 ///
@@ -949,10 +982,6 @@ namespace {
 /// literal width, and a viewport too narrow for one simply lets it overflow --
 /// it does not narrow the card and re-centre it, which would move a panel a
 /// player has learnt the position of.
-/// The highest a slot card may reach: clear of the player's own plate in the
-/// top-left corner, whatever the window's height.
-constexpr double kSlotCardTopMin = 160.0;
-
 Rect listPanel(double width, int, int viewHeight) {
     const double top = static_cast<double>(viewHeight) * kMenuListTopFraction;
     const double height =
@@ -1030,6 +1059,9 @@ Rect NotificationsPanel::bounds(int w, int h) {
 Rect AdminDbPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
 }
+Rect AdminDashboardPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
+}
 
 Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
     switch (id) {
@@ -1046,6 +1078,7 @@ Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
         case MenuId::Guild:         return GuildPanel::bounds(viewWidth, viewHeight);
         case MenuId::Debug:         return DebugPanel::bounds(viewWidth, viewHeight);
         case MenuId::AdminDb:       return AdminDbPanel::bounds(viewWidth, viewHeight);
+        case MenuId::AdminDashboard: return AdminDashboardPanel::bounds(viewWidth, viewHeight);
         default:                    return listPanel(380.0, viewWidth, viewHeight);
     }
 }
@@ -1087,6 +1120,9 @@ const std::array<MenuSystem::StripSlot, kStripSlotCount>& MenuSystem::strip() {
         {MenuId::Shop,          A::OpenMenu, "stars",         true,  0x7EF16Bu, 0x64C156u},
         {MenuId::None,          A::Discord,  "discord",       true,  0x5865F2u, 0x4752C4u},
         {MenuId::Debug,         A::OpenMenu, "debug",         true,  0x666666u, 0x4D4D4Du},
+        // The panel's own card colours, so the button says which card it opens.
+        {MenuId::AdminDashboard, A::OpenMenu, "admin",        true,  kAdminDashboardSkin.fill,
+         kAdminDashboardSkin.border},
         {MenuId::None,          A::Exit,     "exit_button",   true,  0xFF0000u, 0xCC0000u},
         {MenuId::Inventory,     A::OpenMenu, "inventory",     false, 0x00B3FFu, 0x008FCCu},
         {MenuId::Talents,       A::OpenMenu, "skills",        false, 0x9D4EDDu, 0x7E3EB1u},
@@ -1104,7 +1140,7 @@ void MenuSystem::activateStripSlot(int index) {
     }
     // Opening the panel is what marks the changelog read, which is what stops
     // the button shaking -- the same gesture, not a separate acknowledgement.
-    if (slot.menu == MenuId::Changelog) settings_.changelogSeen = changelogEntries_;
+    if (slot.menu == MenuId::Changelog) settings_.changelogSeen = changelogReleaseCount();
     toggle(slot.menu);
 }
 
@@ -1127,6 +1163,10 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
             visible[static_cast<std::size_t>(i)] = !inGame_;
         else if (slot.menu == MenuId::Debug)
             visible[static_cast<std::size_t>(i)] = settings_.showDebugButton;
+        // Only an account the server calls an admin is offered the console's
+        // panel at all, as only it is offered the console's autocomplete rows.
+        else if (slot.menu == MenuId::AdminDashboard)
+            visible[static_cast<std::size_t>(i)] = adminSlotShown_;
         else visible[static_cast<std::size_t>(i)] = true;
     }
 
@@ -1413,7 +1453,14 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     // Rises into place over its first frames and sinks back the same way, at
     // the browser's per-frame ratio stated as a time constant. The target is whether there is a loadout to show at all,
     // which is the browser's own show()/hide() rule.
-    const double target = owned > 0 ? 1.0 : 0.0;
+    //
+    // And not while this client is steering another player's flower: the
+    // tiles are this account's own loadout, the reload wedges and tile health
+    // come off the snapshot's self block -- which now describes THAT flower --
+    // and a click would use a petal on a body that is parked off-screen. The
+    // bar sinks away for the length of the control, and the sink clears every
+    // key and drag it was holding.
+    const double target = owned > 0 && !net.controllingFlower() ? 1.0 : 0.0;
     easeToward(loadoutSlide_, target, kLoadoutSlideEaseSeconds);
     if (std::fabs(loadoutSlide_ - target) < 0.005) loadoutSlide_ = target;
     if (loadoutSlide_ <= 0.005) {
@@ -2048,12 +2095,6 @@ double lastOr(const std::vector<double>& series, double fallback) {
     return series.empty() ? fallback : series.back();
 }
 
-std::string fixed(double value, int decimals) {
-    char buffer[48];
-    std::snprintf(buffer, sizeof buffer, "%.*f", decimals, value);
-    return buffer;
-}
-
 constexpr double kBytesPerMB = 1024.0 * 1024.0;
 
 } // namespace
@@ -2151,7 +2192,7 @@ void DebugPanel::drawGraph(Canvas& canvas, Rect plot, const std::string& label,
     axis.baseline = Baseline::Middle;
     canvas.save();
     canvas.setGlobalAlpha(0.5f);
-    text(canvas, fixed(scaleMax * 0.5, 1) + " " + unit, plot.x + 4.0, midY - 5.0, axis);
+    text(canvas, fixedDecimals(scaleMax * 0.5, 1) + " " + unit, plot.x + 4.0, midY - 5.0, axis);
     canvas.restore();
 
     canvas.save();
@@ -2243,7 +2284,7 @@ bool DebugPanel::drawGraphsTab(MenuContext& ctx, Rect body) {
     block("Client Frame Time",
           clientFrameMillis_.empty()
               ? "collecting\xE2\x80\xA6"
-              : fixed(frameMillis, 1) + " ms (" +
+              : fixedDecimals(frameMillis, 1) + " ms (" +
                     std::to_string(static_cast<long>(std::lround(1000.0 /
                                                                  std::max(frameMillis, 0.01)))) +
                     " FPS)",
@@ -2251,7 +2292,7 @@ bool DebugPanel::drawGraphsTab(MenuContext& ctx, Rect body) {
 
     block("Client Memory (resident)",
           clientMemoryMB_.empty() ? "unavailable on this platform"
-                                  : fixed(lastOr(clientMemoryMB_, 0.0), 1) + " MB",
+                                  : fixedDecimals(lastOr(clientMemoryMB_, 0.0), 1) + " MB",
           {{&clientMemoryMB_, 0x7FDB7Fu}}, "MB");
 
     // The two server graphs say what is missing rather than drawing zeroes:
@@ -2259,15 +2300,17 @@ bool DebugPanel::drawGraphsTab(MenuContext& ctx, Rect body) {
     // on the title screen is the truth.
     const std::string noServer = "no data \xE2\x80\x94 join a game";
     block("Server Tick Time",
-          haveServerStats_ ? "avg " + fixed(lastOr(serverTickAvgMillis_, 0.0), 1) + " / max " +
-                                 fixed(lastOr(serverTickMaxMillis_, 0.0), 1) + " ms"
-                           : noServer,
+          haveServerStats_
+              ? "avg " + fixedDecimals(lastOr(serverTickAvgMillis_, 0.0), 1) + " / max " +
+                    fixedDecimals(lastOr(serverTickMaxMillis_, 0.0), 1) + " ms"
+              : noServer,
           {{&serverTickMaxMillis_, 0xE07070u}, {&serverTickAvgMillis_, 0xFFDD66u}}, "ms");
 
     block("Server Memory",
-          haveServerStats_ ? "heap " + fixed(lastOr(serverHeapMB_, 0.0), 1) + " / rss " +
-                                 fixed(lastOr(serverResidentMB_, 0.0), 1) + " MB"
-                           : noServer,
+          haveServerStats_
+              ? "heap " + fixedDecimals(lastOr(serverHeapMB_, 0.0), 1) + " / rss " +
+                    fixedDecimals(lastOr(serverResidentMB_, 0.0), 1) + " MB"
+              : noServer,
           {{&serverResidentMB_, 0xC9A0E8u}, {&serverHeapMB_, 0xE8A023u}}, "MB");
 
     return true;
@@ -2303,11 +2346,13 @@ void DebugPanel::drawProfilingTab(MenuContext& ctx, Rect body) {
 
     // The headline: what the frame cost, and how much of it was the browser
     // consuming the drawing rather than the client producing it.
-    row("Frame", fixed(p->frameMillis, 2) + " ms", 0x00FF00u);
+    row("Frame", fixedDecimals(p->frameMillis, 2) + " ms", 0x00FF00u);
     row("Drawing calls", std::to_string(p->opsPerFrame) + " in " + std::to_string(p->batches) +
                              " batch" + (p->batches == 1 ? "" : "es"),
         0x60A5FAu);
-    row("  browser", fixed(p->browserAvgMillis, 2) + " / " + fixed(p->browserPeakMillis, 1) + " ms",
+    row("  browser",
+        fixedDecimals(p->browserAvgMillis, 2) + " / " + fixedDecimals(p->browserPeakMillis, 1) +
+            " ms",
         0x60A5FAu);
     row("  baked bitmaps",
         std::to_string(p->bakedEntries) + " / " + std::to_string(p->bakedBytes >> 20) + " MB",
@@ -2339,6 +2384,9 @@ void DebugPanel::drawProfilingTab(MenuContext& ctx, Rect body) {
     row("  loadout bar", ops(p->menuBar), 0xBBBBBBu);
     row("  icon strip", ops(p->menuStrip), 0xBBBBBBu);
     row("  open panel", ops(p->menuPanel), 0xBBBBBBu);
+    // The fourth phase the app splits a frame into: whatever paints after the
+    // panels -- the page selection's highlight and the scene wipe.
+    row("Other", ops(p->other), 0xFACC15u);
     cy += 10.0;
 
     // --- by kind of call ----------------------------------------------------
@@ -2437,6 +2485,12 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
                     drag_,     timeSeconds, dt,  panelRect_, false};
     ctx.adminGrantOffered = adminGrantOffered_;
     ctx.profiling = profiling_;
+    // As the strip last laid it out, which on the title screen is the frame
+    // before -- settings is painted under the strip there -- and the gear
+    // never moves between two frames.
+    for (std::size_t i = 0; i < stripRects_.size(); ++i) {
+        if (strip()[i].menu == MenuId::Settings) ctx.settingsButton = stripRects_[i];
+    }
     bool keepOpen = true;
     // The setting is the single source of truth for the debug panel: unchecking
     // "Enable Debug Menu" while it is open closes it on the next frame rather
@@ -2449,7 +2503,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     // The same for the database editor and the account's admin standing: a
     // flag taken away while the card is up takes the card with it, rather
     // than leaving a panel whose every request the server now ignores.
-    if (drawn_ == MenuId::AdminDb && !net.isSkinAdmin()) {
+    if ((drawn_ == MenuId::AdminDb || drawn_ == MenuId::AdminDashboard) && !net.isSkinAdmin()) {
         close();
         return;
     }
@@ -2480,6 +2534,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
         case MenuId::Guild:       keepOpen = guild_.render(ctx); break;
         case MenuId::Debug:       keepOpen = debug_.render(ctx); break;
         case MenuId::AdminDb:     keepOpen = adminDb_.render(ctx); break;
+        case MenuId::AdminDashboard: keepOpen = adminDashboard_.render(ctx); break;
         default: break;
     }
     // Latched before the closing-card check below: the Log Out button closes
@@ -2515,11 +2570,9 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
                         const OverlayFn& overStripUnderBar) {
     wantsText_ = false;
     panelRect_ = Rect{};
-    if (adminDashboardOpen && net.haveSession() && net.isSkinAdmin()) {
-        renderAdminDashboard(canvas, window, net, timeSeconds, adminDashboardOpen,
-                             adminDashboardBounds, adminDashboardButton, wantsText_);
-        return;
-    }
+    // Read once a frame, here, because this is the one entry point with the
+    // account to ask: the strip draws the admin button off it.
+    adminSlotShown_ = net.haveSession() && net.isSkinAdmin();
 
     // A guild invitation raises the guild panel over whatever was open. It is
     // the one thing in this build that opens a menu without a click, so the
@@ -2560,10 +2613,10 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     }
 
     if (drawn_ != MenuId::None) {
-        // The craft menu is the forge's card, the oracle's or the trader's,
-        // whichever the ground under the flower offers -- and the NPCs' are
-        // wider, so the card (and what captures the mouse) has to be the one
-        // being drawn.
+        // The craft menu is the forge's card, the oracle's, the trader's or
+        // the titan's, whichever the ground under the flower offers -- and
+        // they are not all one size, so the card (and what captures the
+        // mouse) has to be the one being drawn.
         panelRect_ = drawn_ == MenuId::Crafting
                          ? craftPanelBounds(canvas.width(), canvas.height())
                          : panelBounds(drawn_, canvas.width(), canvas.height());
@@ -2609,6 +2662,9 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
         bar();
         strip();
     }
+    // Under the open card, which is painted next and keeps any click it is
+    // standing on: the chip hangs where the corner cards do.
+    drawReleaseChip(canvas, window, net);
     if (layer == PanelLayer::Over) {
         renderOpenPanel(canvas, window, net, sprites, renderer, timeSeconds, dt);
     }
@@ -2619,8 +2675,31 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // on nothing.
     updateLoadoutInput(window, net, timeSeconds);
     drawDragged(canvas, window, sprites, timeSeconds);
-    renderAdminDashboard(canvas, window, net, timeSeconds, adminDashboardOpen,
-                         adminDashboardBounds, adminDashboardButton, wantsText_);
+}
+
+void MenuSystem::drawReleaseChip(Canvas& canvas, Window& window, NetClient& net) {
+    releaseRect_ = Rect{};
+    const AdminDashboardState::Control& control = net.adminDashboard().control;
+    if (!control.active) return;
+
+    // Under the top row, and in from the left by the bottom column's width,
+    // so the chip sits between the strip and the flower's own plate rather
+    // than over either.
+    const std::string label = "Release @" + control.username;
+    ChipStyle style;
+    style.fill = kAdminDashboardSkin.fill;
+    style.border = kAdminDashboardSkin.border;
+    style.textSize = kReleaseChipTextSize;
+    const double width = measure(label, kReleaseChipTextSize) + kReleaseChipPadding * 2.0;
+    const Rect chipRect{reservedLeft(), stripBottom(), width, kReleaseChipHeight};
+
+    const Vec2 mouse{window.mouseX(), window.mouseY()};
+    // The open card wins wherever it overlaps: it is painted after this, so a
+    // click on the part of the chip it covers is a click on the card.
+    const bool reachable = chipRect.contains(mouse) && !panelRect_.contains(mouse);
+    chip(canvas, chipRect, label, reachable, style);
+    releaseRect_ = chipRect;
+    if (reachable && window.mouseReleased(MouseButton::Left)) net.adminRelease();
 }
 
 void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeconds) {
@@ -2631,18 +2710,10 @@ void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeco
     panelRect_ = Rect{};
     loadoutHovered_ = -1;
     loadoutGrabbable_.fill(false);
+    // No account, so no admin button and nothing being steered.
+    adminSlotShown_ = false;
+    releaseRect_ = Rect{};
     drawIconStrip(canvas, window, timeSeconds);
-}
-
-double MenuSystem::reservedTop() const {
-    double right = 0;
-    for (int i = 0; i < kStripSlotCount; ++i) {
-        const auto at = static_cast<std::size_t>(i);
-        if (strip()[at].topRow && stripRects_[at].w > 0) {
-            right = std::max(right, stripRects_[at].right());
-        }
-    }
-    return right > 0 ? right + kTopIcon.gap : 0.0;
 }
 
 double MenuSystem::reservedLeft() const {
@@ -2661,8 +2732,8 @@ double MenuSystem::stripBottom() const {
 }
 
 bool MenuSystem::capturesMouse(Vec2 mouse) const {
-    if (adminDashboardBounds.contains(mouse) || adminDashboardButton.contains(mouse)) return true;
     if (panelRect_.w > 0 && panelRect_.contains(mouse)) return true;
+    if (releaseRect_.w > 0 && releaseRect_.contains(mouse)) return true;
     // The bar takes the click for one thing only: lifting a petal out of a
     // filled slot. An empty slot, the trash, the gaps between the rows and the
     // caption strip above them all fall through and fire an attack, so no

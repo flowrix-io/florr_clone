@@ -167,7 +167,7 @@ TEST(query_each_writes_through_to_storage) {
     q.each([](Entity, TPosition& p, TVelocity& v) { p.value += v.value; });
 
     double sumX = 0;
-    q.each([&](Entity, TPosition& p, TVelocity&) { sumX += p.value.x; sumX += 0; });
+    q.each([&](Entity, TPosition& p, TVelocity&) { sumX += p.value.x; });
     // 0..31 summed is 496, plus 2 added to each of 32 entities.
     CHECK_NEAR(sumX, 496 + 64, 1e-9);
 }
@@ -189,26 +189,6 @@ TEST(chunks_expose_contiguous_columns) {
     });
     CHECK_EQ(seen, std::size_t(10));
     q.each([](Entity, THealth& h) { CHECK_NEAR(h.hp, 2.0, 1e-12); });
-}
-
-TEST(names_bind_and_are_dropped_on_destroy) {
-    World w;
-    const Entity e = w.create();
-    w.bindName(e, "socket-42");
-    CHECK_EQ(w.lookup("socket-42"), e);
-    CHECK(w.nameOf(e) != nullptr);
-    CHECK_EQ(*w.nameOf(e), std::string("socket-42"));
-
-    w.destroy(e);
-    CHECK_EQ(w.lookup("socket-42"), NULL_ENTITY);
-
-    // Rebinding a name to a different entity releases the old mapping.
-    const Entity a = w.create();
-    const Entity b = w.create();
-    w.bindName(a, "dup");
-    w.bindName(b, "dup");
-    CHECK_EQ(w.lookup("dup"), b);
-    CHECK(w.nameOf(a) == nullptr || w.nameOf(a)->empty());
 }
 
 TEST(command_buffer_defers_structural_change) {

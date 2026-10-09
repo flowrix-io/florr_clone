@@ -3,6 +3,7 @@
 #include "client/camera.h"
 #include "client/render/world_renderer.h"
 #include "client/world_view.h"
+#include "render_rig.h"
 #include "shared/net/protocol.h"
 
 #include <vector>
@@ -44,14 +45,6 @@ constexpr std::uint32_t kStrangerNetId = 8;
 /// Longer than the 150 ms pickup flight and shorter than the 300 ms despawn
 /// spin, so what is left on screen after it tells the two animations apart.
 constexpr double kPastTheFlight = 0.2;
-
-Camera frameCamera() {
-    Camera camera;
-    camera.setViewport(kFrameSize, kFrameSize);
-    camera.userZoom = 1.0;
-    camera.snapTo(kDropAt);
-    return camera;
-}
 
 ViewEvent pickupCue(std::uint16_t petalIndex, Rarity rarity,
                     std::uint32_t takerNetId = kTakerNetId) {
@@ -102,7 +95,7 @@ void seedFlowers(WorldView& view) {
 /// One frame, and how many drops it drew.
 int itemsDrawn(WorldRenderer& renderer, const WorldView& view) {
     Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
-    renderer.draw(canvas, view, frameCamera(), kDropAt, 0.0);
+    renderer.draw(canvas, view, testsupport::frameCamera(kFrameSize, kDropAt), kDropAt, 0.0);
     return renderer.sectionTiming().itemCount;
 }
 

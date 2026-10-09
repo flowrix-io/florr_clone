@@ -4,10 +4,6 @@
 #include "client/ui/menus.h"
 #include "shared/game/config.h"
 
-#include <sys/stat.h>
-
-#include <cstdlib>
-#include <fstream>
 #include <string>
 #include "fixture_content.h"
 
@@ -16,8 +12,8 @@ using namespace flix;
 // What the camera shows: the player's zoom setting times what the worn
 // loadout asks for. Antennae and observer are the petals that ask, and the
 // figure is the client's alone -- the server neither computes it nor sends
-// it, exactly as the browser's getEquippedZoomMultiplier was -- so this is
-// the one place it can be right or wrong.
+// it, exactly as the TypeScript client's getEquippedZoomMultiplier was -- so
+// this is the one place it can be right or wrong.
 
 namespace {
 
@@ -36,21 +32,6 @@ const char* const kMobsJson = R"JSON({
   "critter": {"name":"Critter","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#FF0000","section":[0],"ai_type":"hostile"}
 })JSON";
 
-std::string tempDir() {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_camera_tests";
-    mkdir(base.c_str(), 0755);   // already there is fine
-    return base;
-}
-
-bool writeText(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
-    return out.good();
-}
-
 struct Fixture {
     ContentRegistry registry;
     bool ok = false;
@@ -60,15 +41,8 @@ struct Fixture {
 const Fixture& fixture() {
     static const Fixture state = [] {
         Fixture f;
-        const std::string dir = tempDir();
-        const std::string mobs = dir + "/mobs.json";
-        const std::string petals = dir + "/petals.json";
-        if (!writeText(mobs, test::fixtureMobs(kMobsJson)) ||
-            !writeText(petals, test::fixturePetals(kPetalsJson))) {
-            f.error = "could not write the fixture content into " + dir;
-            return f;
-        }
-        f.ok = f.registry.loadFiles(mobs, petals, f.error);
+        f.ok = test::loadFixtureContent(f.registry, testsupport::tempDir("flix_camera_tests"),
+                                        kMobsJson, kPetalsJson, f.error);
         return f;
     }();
     return state;

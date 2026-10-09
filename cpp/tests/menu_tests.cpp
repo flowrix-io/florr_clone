@@ -6,13 +6,15 @@
 #include "shared/game/skills.h"
 
 #include <cmath>
-#include <fstream>
 
 using namespace flix;
+using flix::testsupport::awaitProfile;
 using flix::testsupport::connectClient;
 using flix::testsupport::dataDir;
 using flix::testsupport::Harness;
 using flix::testsupport::loginNew;
+using flix::testsupport::onlyPlayer;
+using flix::testsupport::seedStack;
 
 // What the menus can actually do to an account: spend talent points, buy a
 // petal, wear a skin, and read the board. Every one of these is a request the
@@ -25,14 +27,6 @@ namespace {
 /// create or seed has never claimed, so its streak starts at one and the
 /// daily-login reward is one star -- on top of whatever the test put there.
 constexpr int kFirstLoginStars = 1;
-
-/// Waits for a profile whose `predicate` holds. The server answers every one
-/// of these requests with a fresh Profile, so a state change is observable
-/// without polling anything else.
-template <class F>
-bool awaitProfile(Harness& h, NetClient& client, F predicate) {
-    return h.stepUntil({&client}, [&] { return predicate(client.profile()); }, 200);
-}
 
 /// Writes an account with the given stars and kills straight into a database
 /// file, for the cases a test cannot reach by playing.
@@ -54,8 +48,8 @@ void seedAccount(const std::string& path, const std::string& username,
     db.save();
 }
 
-/// Puts a star code into the database's own `codes` table -- the same key the
-/// browser build's admin commands write and this one round-trips.
+/// Puts a star code into the database's own `codes` table -- the key the
+/// TypeScript build's admin commands wrote, which this one reads and writes.
 void seedCode(const std::string& path, const std::string& code, int stars, int maxUses) {
     Database db;
     std::string error;
@@ -66,20 +60,6 @@ void seedCode(const std::string& path, const std::string& code, int stars, int m
     entry["uses"] = Json(0);
     if (maxUses > 0) entry["maxUses"] = Json(maxUses);
     db.rawTable("codes")[code] = std::move(entry);
-    db.markDirty();
-    db.save();
-}
-
-/// Gives an account a stack to craft with, which no amount of playing would
-/// hand out reliably.
-void seedStack(const std::string& path, const std::string& username, const char* itemKey,
-               Rarity rarity, int count) {
-    Database db;
-    std::string error;
-    db.load(path, error);
-    const Account* account = db.findUser(username);
-    if (account == nullptr) return;
-    db.progress(account->id).addItem(rarity, itemKey, count);
     db.markDirty();
     db.save();
 }
@@ -97,6 +77,16 @@ bool awaitShopAnswer(Harness& h, NetClient& client, ShopOutcome& out) {
 bool awaitFeed(Harness& h, NetClient& client) {
     client.requestNotifications(50, 0);
     return h.stepUntil({&client}, [&] { return !client.notificationsPending(); }, 200);
+}
+
+/// The shop prices a card and rolls its rotation off the process-wide
+/// content. A test that does either with no harness up yet -- before booting
+/// one, or with none at all -- loads that content itself, from the directory a
+/// harness would boot on, instead of pricing against whatever the test before
+/// it happened to leave there (or nothing, when it runs alone).
+bool ensureShippedContent() {
+    std::string error;
+    return loadContent(dataDir(), error);
 }
 
 } // namespace
@@ -389,6 +379,7 @@ TEST(a_bought_talent_survives_a_reconnect) {
 // ---------------------------------------------------------------------------
 
 TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
+    CHECK(ensureShippedContent());
     const double common = shopPrice("basic", Rarity::Common);
     const double uncommon = shopPrice("basic", Rarity::Uncommon);
     CHECK_NEAR(common, 10.0, 1e-9);
@@ -418,6 +409,7 @@ TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
 }
 
 TEST(the_store_rotates_hourly_and_both_sides_derive_the_same_ten_cards) {
+    CHECK(ensureShippedContent());
     const std::int64_t rotation = shopRotation(1'700'000'000);
     // The same hour is the same store, twice over: the generator is what the
     // client draws and what the server prices against, so a second call that
@@ -455,6 +447,7 @@ TEST(the_store_rotates_hourly_and_both_sides_derive_the_same_ten_cards) {
 }
 
 TEST(an_offer_is_charged_its_discounted_price_and_a_wrong_slot_is_refused) {
+    CHECK(ensureShippedContent());
     const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
     if (offers.empty()) { CHECK(false); return; }
 
@@ -534,6 +527,7 @@ TEST(a_balance_past_32_bits_reaches_the_client_and_is_debited_exactly) {
     // which is a cliff in the middle of an otherwise exact pipeline. A code
     // for ten billion stars was not "slightly off" after it -- it was a
     // different number, and the shop then charged against that.
+    CHECK(ensureShippedContent());
     const std::uint16_t rose = content().petalIndex("rose");
     if (rose == kInvalidIndex) { CHECK(false); return; }
     const double price = shopPrice("rose", Rarity::Common);
@@ -577,6 +571,7 @@ TEST(a_purchase_without_the_stars_is_refused) {
 }
 
 TEST(a_purchase_spends_the_servers_price_not_the_clients) {
+    CHECK(ensureShippedContent());
     const std::uint16_t rose = content().petalIndex("rose");
     if (rose == kInvalidIndex) { CHECK(false); return; }
     const int price = static_cast<int>(shopPrice("rose", Rarity::Common));
@@ -828,9 +823,10 @@ TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
     // each petal it yielded.
     CHECK(h.stepUntil({&client}, [&] { return client.chat().size() > chatBefore; }, 200));
     CHECK_EQ(client.chat().size(), chatBefore + 1);
-    // Marked up, as the browser's line is: the tier colours the sentence, and
-    // the account and the flower's name are separately coloured inside it --
-    // which is why the handle is not contiguous with the words before it.
+    // Marked up, as the TypeScript build's line was: the tier colours the
+    // sentence, and the account and the flower's name are separately coloured
+    // inside it -- which is why the handle is not contiguous with the words
+    // before it.
     const std::string line = client.chat().back().text;
     CHECK(line.find("<b style=\"color: #2bffa4;\">A Super Rose has been crafted by ") == 0);
     CHECK(line.find("<b style=\"color: #00ff00;\">@smith</b>") != std::string::npos);
@@ -897,8 +893,8 @@ TEST(a_redeemed_star_code_is_written_to_the_feed) {
     CHECK_EQ(client.notifications().size(), static_cast<std::size_t>(1));
     const NotificationEntry& notice = client.notifications().front();
     CHECK_EQ(static_cast<int>(notice.kind), static_cast<int>(net::NotificationKind::StarCode));
-    // The code as STORED, not as typed, and the star the browser writes -- the
-    // same save file is read by both builds.
+    // The code as STORED, not as typed, and the star the TypeScript build
+    // wrote -- so a feed that build saved reads the same as one written here.
     CHECK_EQ(notice.message,
              std::string("Star code \"FREESTARS\" redeemed by @coder [coder]! +250 "
                          "\xE2\xAD\x90 Stars"));
@@ -1008,7 +1004,7 @@ TEST(admins_rank_on_the_leaderboard_only_when_asked_for) {
     CHECK_EQ(client.leaderboard()[0].name, std::string("player"));
 
     // The settings switch: asked for by a non-admin, and honoured, as the
-    // browser server honours ?includeAdmins=true for any caller.
+    // TypeScript server honoured ?includeAdmins=true for any caller.
     client.requestLeaderboard(true);
     CHECK(h.stepUntil({&client}, [&] { return !client.leaderboardPending(); }, 200));
     CHECK_EQ(client.leaderboard().size(), static_cast<std::size_t>(2));
@@ -1026,11 +1022,11 @@ TEST(killing_a_mob_credits_the_ledger_and_pays_its_stars) {
 
     // Reaching into the world is the only way to make a kill deterministic:
     // waiting for a real fight to resolve is a test that fails on a slow
-    // machine. Everything from the damage onward is the shipping path.
+    // machine. Everything from the damage onward is the shipping path. The
+    // usual bots are running, so the flower is found by its account rather
+    // than as whichever one a query visits last.
     World& world = h.server.world();
-    Entity player = NULL_ENTITY;
-    Query<PlayerTag, Transform> players{world};
-    players.each([&](Entity e, PlayerTag&, Transform&) { player = e; });
+    const Entity player = onlyPlayer(world);
     CHECK(player != NULL_ENTITY);
     if (player == NULL_ENTITY) return;
 

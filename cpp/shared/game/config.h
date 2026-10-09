@@ -123,7 +123,6 @@ struct ProjectileSpec {
     /// leaves this empty.
     std::string ammoPetalId;
     std::uint16_t ammoPetalIndex = kInvalidIndex;
-    Rarity ammoRarity = Rarity::Common;
 };
 
 /// A mob that throws lightning.
@@ -265,7 +264,7 @@ struct PetalRingSpec {
 
     /// The ring is AMMUNITION: a hit knocks one petal off and fires it at
     /// whoever landed the hit. A ring without this is pure decoration, which
-    /// is what the glitch flower's is (see cpp-mob-petal-ring-not-simulated).
+    /// is what the glitch flower's is (see MobPetalRing in components.h).
     ///
     /// A shed petal never comes back. The ring is what the mob was BUILT with,
     /// so stripping one bare is progress a fight keeps rather than something
@@ -368,8 +367,6 @@ struct PetalModifiers {
     /// reflectionScale() puts under it at the moment of the hit, since that
     /// depends on the attacker as much as on the salt.
     double damageReflection = 0.0;
-
-    bool any = false;   ///< set when the JSON carried a playerModifiers block
 };
 
 // ---------------------------------------------------------------------------
@@ -795,7 +792,7 @@ struct PetalConfig {
     /// The `damageCooldown` key, or kPetalHitIntervalMillis (zero) when the
     /// petal declares none. Non-zero therefore means exactly what truthiness
     /// means in the reference: this petal is throttled, and per INSTANCE
-    /// rather than per victim. Three of the seventy-four are.
+    /// rather than per victim. Three petals are: glass, glasss and infinity.
     double damageIntervalMillis = kPetalHitIntervalMillis;
 
     double cameraZoom = 1.0;    ///< < 1 zooms out
@@ -806,6 +803,9 @@ struct PetalConfig {
     /// A summoned mob. `petCount` is how many one petal keeps alive.
     std::string petMobId;
     std::uint16_t petMobIndex = kInvalidIndex;
+    /// Parsed, and an unknown name warned about, but read by nothing: a pet
+    /// takes the EQUIPPED petal's tier (PetalSystem::maintainPets), and no
+    /// spawn path in the reference read this either.
     Rarity petMobRarity = Rarity::Common;
     int petCount = 1;
 
@@ -850,8 +850,8 @@ struct PetalConfig {
 // ---------------------------------------------------------------------------
 
 /// A mob at one tier. Computed on demand: the whole table is a few multiplies,
-/// and a precomputed 51x10 grid would only be a cache the loader has to keep
-/// coherent.
+/// and a precomputed mobs x tiers grid would only be a cache the loader has
+/// to keep coherent.
 struct MobStats {
     double health = 1;
     double damage = 0;
@@ -971,11 +971,11 @@ inline constexpr const char* kSplitterPetalId = "splitter";
 
 /// Whether this petal DOES something when its slot is clicked on the bar.
 ///
-/// The browser build reaches the same action with a U+slot chord; this client
-/// puts it on the tile itself, so the question "is this slot clickable" has to
-/// be answerable on both ends of the wire -- the bar to know whether a click
-/// is a use or the start of a drag, and the server to refuse a UsePetal that
-/// names a slot holding an ordinary petal.
+/// The TypeScript build reached the same action with a U+slot chord; this
+/// client puts it on the tile itself, so the question "is this slot
+/// clickable" has to be answerable on both ends of the wire -- the bar to know
+/// whether a click is a use or the start of a drag, and the server to refuse a
+/// UsePetal that names a slot holding an ordinary petal.
 inline bool petalIsClickToUse(const PetalConfig& config) {
     return config.id == kSplitterPetalId;
 }
@@ -998,8 +998,8 @@ inline constexpr const char* kMoonPetalId = "moon";
 /// that touch it bite it, which is the only thing that wears its health down.
 ///
 /// By id for the reason petalIsClickToUse is: the server, the wire and the
-/// client's renderer all have to agree about it, and petals.json is shared
-/// verbatim with the frozen browser build.
+/// client's renderer all have to agree about it, and petals.json was shared
+/// verbatim with the TypeScript build when this was written.
 ///
 /// Wax and the moon are the two. Both grow 30 units a tier
 /// (kLoosePetalRadiusPerTier).
@@ -1017,7 +1017,8 @@ inline bool petalIsLooseBody(const PetalConfig& config) {
 ///
 /// It does not stack: one flower has one moon however many are on the bar.
 /// The highest tier among them is the one that comes out (the leftmost of
-/// equals) and the others hold nothing (moonSlotOf).
+/// equals) and the others hold nothing (liveMoonSlot in
+/// server/systems/petals.cpp).
 inline bool petalAnchorsRing(const PetalConfig& config) { return config.id == kMoonPetalId; }
 
 /// The petal that becomes whatever is equipped to its left, by id.
@@ -1084,11 +1085,12 @@ struct MobGroup {
 class ContentRegistry {
 public:
     /// Loads `mobs.json` and `petals.json` from one directory, and folds the
-    /// directory's maps -- `maps.json` and every map it names -- into
-    /// contentHash(), so a client whose staged maps
-    /// differ from the server's (a moved pad, a renamed door) is refused at
-    /// the handshake rather than drawing annotations the server does not
-    /// have. A directory with no manifest folds nothing.
+    /// directory's `mob_drops.json` and its maps -- `maps.json` and every map
+    /// it names -- into contentHash(), so a client whose staged drop table or
+    /// maps differ from the server's (a re-weighted drop, a moved pad, a
+    /// renamed door) is refused at the handshake rather than showing what the
+    /// server does not have. A directory with no drop table or no manifest
+    /// folds nothing for it.
     ///
     /// On failure `errorOut` says what went wrong and the registry keeps
     /// whatever it already held -- a bad hot reload must not leave a running
@@ -1125,8 +1127,9 @@ public:
     /// stays stable, which is a different order and the wrong one to paint.
     const std::vector<std::uint16_t>& petalDisplayOrder() const { return petalOrder_; }
 
-    /// FNV-1a folded over the raw bytes of every file loaded, in a fixed
-    /// order. Compared in the connect handshake.
+    /// FNV-1a folded over the raw bytes of every content file both sides
+    /// read, in a fixed order: mobs.json, petals.json, then (from load())
+    /// mob_drops.json and the maps. Compared in the connect handshake.
     std::uint32_t contentHash() const { return hash_; }
 
     /// Everything the loader had to repair, one line each. Empty on clean

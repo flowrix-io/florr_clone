@@ -2,10 +2,11 @@
 // The `update` admin command's engine: fetch the latest build and install it
 // over the running one.
 //
-// The pipeline is src/server/autoUpdate.ts, unchanged in shape because the
-// thing it installs is unchanged: `dist/` is committed to the repository, so
-// the branch zipball IS the build, and `dist/inventory.json` is gitignored, so
-// the archive can never contain a database. Steps:
+// The pipeline is the TypeScript server's (src/server/autoUpdate.ts, in git
+// history at d47055a7), unchanged in shape because the thing it installs is
+// unchanged: `dist/` is committed to the repository, so the branch zipball IS
+// the build, and `dist/inventory.json` is gitignored, so the archive can never
+// contain a database. Steps:
 //
 //   1. Back up the database. MANDATORY, and done by the caller before any of
 //      this is started -- a failure there aborts before a file is touched.
@@ -14,8 +15,9 @@
 //      "<repo>-<branch>/" folder, which is why the build is searched for).
 //   4. Overlay it onto the directory the server is running from. inventory.json
 //      and node_modules are never overwritten -- the first is the live
-//      database, the second is where the Pi's source-built uWebSockets.js
-//      lives.
+//      database, the second holds that host's own install of the optional
+//      WebTransport packages (@fails-components/webtransport and its native
+//      QUIC backend). db_backups/, cert.crt and cert.key are left alone too.
 //   5. Schedule a restart, which is what actually loads the new build.
 //
 // Only the Node build can do any of this, and that is not a limitation: the
@@ -39,9 +41,10 @@ bool inProgress();
 /// What the last update did, for `update status`.
 std::string lastStatus();
 
-/// The build the zipball is fetched from. The same two environment variables
-/// the browser build reads override it, so a fork updates from its own repo
-/// without a rebuild.
+/// The build the zipball is fetched from. FLORR_UPDATE_REPO and
+/// FLORR_UPDATE_BRANCH override it, or FLORR_UPDATE_URL replaces it outright --
+/// the variables the TypeScript server read -- so a fork updates from its own
+/// repo without a rebuild. A native build honours FLORR_UPDATE_URL only.
 std::string defaultUrl();
 
 /// Starts an install. False when one is already running, or when this build

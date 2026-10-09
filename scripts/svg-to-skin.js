@@ -1101,7 +1101,7 @@
         return o;
     }
 
-    /** One shape → one command line (same grammar serializeShape() in skinStudio.ts writes). */
+    /** One shape → one command line (same grammar serializeShape() in cpp/client/ui/menu_skins.cpp writes). */
     function serializeShape(s) {
         var p = [s.t, 'x=' + s.x, 'y=' + s.y];
         if (s.t === 'circle') p.push('r=' + s.r);

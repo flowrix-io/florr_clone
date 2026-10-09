@@ -18,36 +18,7 @@ using namespace flix::testsupport;
 
 namespace {
 
-void seedUser(const std::string& path, const std::string& username, const std::string& password,
-              bool admin = false) {
-    Database db;
-    std::string error;
-    db.load(path, error);
-    db.setPasswordCost(4);
-    CreateResult created = db.createUser(username, password);
-    if (created.ok() && admin) created.account->admin = true;
-    db.markDirty();
-    db.save();
-}
-
-bool loginAs(Harness& h, NetClient& client, const char* name, const char* password) {
-    if (!connectClient(h, client)) return false;
-    client.requestLogin(name, password);
-    return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
-}
-
-bool sawText(const NetClient& client, const std::string& needle) {
-    for (const ChatLine& line : client.chat()) {
-        if (line.text.find(needle) != std::string::npos) return true;
-    }
-    return false;
-}
-
-bool say(Harness& h, NetClient& client, const std::string& text) {
-    const std::size_t before = client.chat().size();
-    client.sendChat(text);
-    return h.stepUntil({&client}, [&] { return client.chat().size() > before; }, 120);
-}
+// seedUser, loginAs, sawText and say are the harness's own (server_harness.h).
 
 /// Types `/admin db <key>`, as an admin reading the server log would.
 bool unlock(Harness& h, NetClient& admin) {
@@ -71,6 +42,12 @@ bool openAccount(Harness& h, std::vector<NetClient*> clients, NetClient& admin,
 
 const net::AdminDbNode* docNode(const NetClient& admin, const net::AdminDbPath& path) {
     return const_cast<net::AdminDbNode&>(admin.adminDb().root).find(path);
+}
+
+/// The key as somebody might type it with caps lock on.
+std::string upperCase(std::string text) {
+    for (char& ch : text) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    return text;
 }
 
 } // namespace
@@ -222,8 +199,7 @@ TEST(the_database_editor_key_is_derived_from_the_address_and_the_secret) {
     CHECK(key != admin_db::deriveKey("secret", "192.168.1.21"));
     CHECK(key != admin_db::deriveKey("other", "192.168.1.20"));
 
-    std::string upper = key;
-    for (char& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    const std::string upper = upperCase(key);
     CHECK(admin_db::keyMatches(key, key));
     CHECK(admin_db::keyMatches(upper, key));
     CHECK(!admin_db::keyMatches(key.substr(1), key));
@@ -236,14 +212,69 @@ TEST(a_fixed_database_editor_key_is_used_as_is) {
     // secret or the machine's address.
     Harness h("admindb-fixed-key", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
+        seedUser(path, "player", "password7");
     }, dataDir(), 0, [](ServerConfig& config) { config.fixedAdminDbKey = "0ff1ce0ff1ce0ff1"; });
     if (!h.ready) { CHECK(false); return; }
     CHECK_EQ(h.server.adminDbKey(), std::string("0ff1ce0ff1ce0ff1"));
 
     NetClient boss;
     CHECK(loginAs(h, boss, "boss", "password7"));
+
+    // And said where it is asked for. A fixed key is the page's own, written
+    // in its source, and that page has no log a player reads: the usage line
+    // and the refusal both give it, rather than sending them to a console the
+    // page does not have.
+    CHECK(say(h, boss, "/admin db"));
+    // The usage line's "<key>" arrives escaped, as all console output does.
+    CHECK(sawText(boss, "[username]. This server's key is fixed: 0ff1ce0ff1ce0ff1."));
+    CHECK(say(h, boss, "/admin db 0000000000000000"));
+    CHECK(sawText(boss,
+                  "Wrong database editor key. This server's key is fixed: 0ff1ce0ff1ce0ff1."));
+    CHECK(!boss.adminDb().openRequested);
+
     CHECK(say(h, boss, "/admin db 0ff1ce0ff1ce0ff1"));
     CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
+
+    // The Grant Admin button's confirmation carries it as well, which is how
+    // a player who has just taken the console learns there is an editor.
+    NetClient player;
+    CHECK(loginAs(h, player, "player", "password7"));
+    CHECK(h.server.grantAdmin(player.sessionToken()));
+    CHECK(h.stepUntil({&player}, [&] { return sawText(player, "You are now an admin."); }, 60));
+    CHECK(sawText(player, "The database editor's key here is 0ff1ce0ff1ce0ff1"));
+}
+
+TEST(a_derived_database_editor_key_is_never_said) {
+    // Every other server derives its key from its machine, and the key's
+    // whole worth is that only somebody who can read that machine's log has
+    // it. No answer -- the usage line, a refusal, the grant's confirmation --
+    // may repeat it.
+    Harness h("admindb-derived-key", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "player", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::string key = h.server.adminDbKey();
+    CHECK_EQ(key.size(), std::size_t{16});
+    const std::string upper = upperCase(key);
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(say(h, boss, "/admin db"));
+    CHECK(sawText(boss, "The key is printed in the server log at start-up."));
+    CHECK(say(h, boss, "/admin db 0000000000000000"));
+    CHECK(sawText(boss, "Wrong database editor key."));
+    CHECK(!sawText(boss, "fixed"));
+    CHECK(!sawText(boss, key));
+    CHECK(!sawText(boss, upper));
+
+    NetClient player;
+    CHECK(loginAs(h, player, "player", "password7"));
+    CHECK(h.server.grantAdmin(player.sessionToken()));
+    CHECK(h.stepUntil({&player}, [&] { return sawText(player, "You are now an admin."); }, 60));
+    CHECK(!sawText(player, "database editor's key"));
+    CHECK(!sawText(player, key));
+    CHECK(!sawText(player, upper));
 }
 
 TEST(the_database_editor_needs_its_key) {
@@ -273,8 +304,7 @@ TEST(the_database_editor_needs_its_key) {
     CHECK(!boss.adminDb().loaded);
 
     // The right key opens it, case-blind, and the echo does not repeat it.
-    std::string upper = h.server.adminDbKey();
-    for (char& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    const std::string upper = upperCase(h.server.adminDbKey());
     CHECK(say(h, boss, "/admin db " + upper + " bob"));
     CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
     CHECK_EQ(boss.adminDb().openUsername, std::string("bob"));
@@ -289,6 +319,37 @@ TEST(the_database_editor_needs_its_key) {
     again.adminDbList("", 0);
     h.step(30, {&boss, &again});
     CHECK(again.adminDb().accounts.empty());
+}
+
+TEST(the_database_editor_needs_its_key_whatever_the_admin_is_called) {
+    // The owner's account name used to open the editor with no key at all,
+    // and to satisfy every later request's unlock check with it -- and the
+    // editor resets passwords. The key is the server's machine, not a name: a
+    // full admin called a19kisme types it like any other.
+    Harness h("admindb-key-a19", [](const std::string& path) {
+        seedUser(path, "a19kisme", "password7", true);
+        seedUser(path, "bob", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient admin;
+    CHECK(loginAs(h, admin, "a19kisme", "password7"));
+
+    CHECK(say(h, admin, "/admin db"));
+    CHECK(sawText(admin, "The key is printed in the server log"));
+    CHECK(say(h, admin, "/admin db bob"));
+    CHECK(sawText(admin, "Wrong database editor key."));
+    CHECK(!admin.adminDb().openRequested);
+
+    admin.adminDbList("", 0);
+    admin.adminDbOpen(net::AdminDbScope::Account, "bob");
+    h.step(30, {&admin});
+    CHECK(admin.adminDb().accounts.empty());
+    CHECK(!admin.adminDb().loaded);
+
+    CHECK(say(h, admin, "/admin db " + h.server.adminDbKey() + " bob"));
+    CHECK(h.stepUntil({&admin}, [&] { return admin.adminDb().openRequested; }, 60));
+    CHECK_EQ(admin.adminDb().openUsername, std::string("bob"));
 }
 
 TEST(the_database_editor_finds_and_shows_an_account) {

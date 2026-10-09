@@ -50,6 +50,21 @@ void setStroke(Canvas&, std::uint32_t rgb, double alpha = 1.0);
 void text(Canvas&, const std::string& s, double x, double y, const TextStyle& style = {});
 double textWidth(Canvas&, const std::string& s, double size);
 
+/// Where text() puts the pen for `s` asked for at (x, y): the run's left edge
+/// once `style.align` is applied, and its alphabetic baseline once
+/// `style.baseline` is. For a painter that hands a run to paintRun itself --
+/// with an alpha of its own -- and must still land exactly where text() would
+/// have. Unlike text(), it records nothing for the page selection.
+Vec2 textPen(const std::string& s, double x, double y, const TextStyle& style);
+
+/// text() under a global alpha: the outline and the fill fade together, which
+/// TextStyle cannot say -- it carries a colour, not a coverage -- and which a
+/// pre-mixed grey would get wrong over a saturated panel. The alpha is put back
+/// to 1 afterwards. For a fill that fades over an OPAQUE outline, call paintRun
+/// with a fill alpha instead.
+void textAtAlpha(Canvas&, const std::string& s, double x, double y, const TextStyle& style,
+                 double alpha);
+
 /// Paints one text run whose pen is already resolved: `penX` is the run's left
 /// edge and `baseline` its alphabetic baseline. `text()` is this plus the
 /// alignment arithmetic; the painters that need a per-run alpha, a per-glyph
@@ -72,13 +87,10 @@ void paintRun(Canvas&, const std::string& s, double penX, double baseline,
               const TextStyle& style, double strokeAlpha = 1.0, double fillAlpha = 1.0,
               bool fillFirst = false);
 
-/// A filled, outlined, rounded rectangle -- the basis of every panel, slot and
-/// button in the game.
+/// A filled, outlined, rounded rectangle, its outline inset so that the stroke
+/// stays inside `r`.
 void plate(Canvas&, Rect r, std::uint32_t fill, double radius = kPanelRadius,
            std::uint32_t outline = kInk, double outlineWidth = -1, double alpha = 1.0);
-
-/// A panel with the standard body colour and a darker inset edge.
-void panel(Canvas&, Rect r, double alpha = 1.0);
 
 /// A button in the browser build's `gardn` style: a rounded rect with a thick
 /// stroke in the fill's own darker shade, and chunky outlined white text.
@@ -106,17 +118,10 @@ struct ButtonStyle {
 void button(Canvas&, Rect r, const std::string& label, bool hovered, bool pressed,
             const ButtonStyle& style = {});
 
-/// A horizontal bar with an outline, used for health, XP and reload sweeps.
-/// `fraction` is clamped, so a caller need not sanitise it.
-void bar(Canvas&, Rect r, double fraction, std::uint32_t fill,
-         std::uint32_t back = kHealthBack, double radius = -1);
-
-/// A circle with the standard outline. Flowers, petals and drops are all this.
+/// A circle with the standard outline: what a petal or a mob whose artwork
+/// did not compile is drawn as, and the talent tree's nodes.
 void disc(Canvas&, Vec2 centre, double radius, std::uint32_t fill,
           std::uint32_t outline = kInk, double outlineWidth = -1, double alpha = 1.0);
-
-/// A full-screen scrim behind a modal.
-void scrim(Canvas&, double alpha = 0.45);
 
 // ---------------------------------------------------------------------------
 // Text inputs
@@ -201,5 +206,16 @@ void selectionHighlight(Canvas&, const TextRun&, const TextSelection&, Rect band
 
 /// True when `point` is inside `r`. Here so every screen hit-tests the same way.
 inline bool hit(Rect r, Vec2 point) { return r.contains(point); }
+
+/// The same, inclusive on all four edges. The browser's hit tests are written
+/// `x >= left && x <= left + width`, where Rect::contains is half-open: on a
+/// 48px button that is a whole row of pixels that looks clickable and is not.
+/// An empty rect is never hit, so a zeroed placeholder -- a strip button
+/// that is not shown, a loadout bar that is down -- cannot answer for the
+/// corner it sits in.
+inline bool insideInclusive(Rect r, Vec2 point) {
+    return r.w > 0 && r.h > 0 && point.x >= r.x && point.x <= r.right() && point.y >= r.y &&
+           point.y <= r.bottom();
+}
 
 } // namespace flix::ui

@@ -203,18 +203,10 @@ PetalBehaviour behaviourOf(const std::string& id) {
 }
 
 /// How many discharges a petal arrives holding. Only the battery has any, and
-/// it is asked by id for the reason the lightning cutter is: petals.json is
-/// shared verbatim with the frozen browser build, whose loader throws on a key
-/// its own enums do not know.
+/// it is asked by id, as the lightning cutter is, rather than given a
+/// petals.json key: one petal's quirk is not worth a schema field.
 std::uint8_t chargesFor(const PetalConfig& config) {
     return config.id == "battery" ? kBatteryCharges : 0;
-}
-
-/// Summoned-only stat multipliers, applied on top of rarity scaling. The
-/// digger's wild line is tuned for a mob that crawls out of a dying ant hole;
-/// as a permanent escort it outclasses every other egg at the same tier.
-double petStatMultiplier(const std::string& mobId) {
-    return mobId == "digger" ? 0.5 : 1.0;
 }
 
 /// A cooldown of zero is a config that forgot to say how long, not a petal that
@@ -250,9 +242,8 @@ double rangeMultiplier(const PetalConfig& config) {
 /// "It comes and goes" describes.
 ///
 /// Asked by id rather than read out of petals.json for the reason `chargesFor`
-/// is: that file is shared verbatim with the frozen browser build, and one
-/// petal's quirk is not worth a key in a schema two games parse. gardn spells
-/// the same thing as `petal.petal_id == PetalID::kWing`.
+/// is: one petal's quirk is not worth a schema field. gardn spells the same
+/// thing as `petal.petal_id == PetalID::kWing`.
 double lungeReach(const PetalConfig& config, double ageMillis) {
     if (config.id != "wing") return 0.0;
     const double wave = std::sin(std::max(0.0, ageMillis) * 0.001 * kWingOrbitLungeRate);
@@ -484,11 +475,10 @@ double popImpulse(double distance, double dt) {
     return distance / travelPerUnitSpeed;
 }
 
-bool playerIsDown(World& world, Entity player) {
-    if (world.has<Dead>(player)) return true;
-    const Health* health = world.tryGet<Health>(player);
-    return health != nullptr && !health->alive();
-}
+/// A flower that is no longer standing (isStanding). Every caller has
+/// already asked isAlive, so for them this is exactly "marked Dead, or out of
+/// health".
+bool playerIsDown(World& world, Entity player) { return !isStanding(world, player); }
 
 /// A live petal's stats, with the reload a mimic's copy pays in place of its
 /// own tier's.
@@ -1125,8 +1115,6 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     instance.slot = slot;
     instance.subIndex = subIndex;
     instance.subCount = std::max<std::uint8_t>(1, subCount);
-    // A petal that has just arrived waits out a full interval before acting,
-    // so a broken projectile petal cannot be reloaded into an instant volley.
     // TypeScript's absent `lastShotTime` reads as zero against an epoch clock,
     // so a newly equipped projectile is ready immediately when attack extends
     // the ring. Its cooldown begins only after an actual shot.
@@ -1139,6 +1127,8 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     // spring, so a petal that starts on top of the flower does not get
     // slingshotted past its orbit point on the way out.
     instance.glideUntilMillis = nowMillis + kPetalSpawnGlideMillis;
+    // A non-projectile action waits out a full interval after the petal
+    // arrives.
     instance.nextActionMillis = hasNonProjectileAction(config, stats)
                                     ? nowMillis + actionIntervalMillis(config, stats)
                                     : 0.0;
@@ -1158,10 +1148,6 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
         world.add<RingAnchor>(petal);
         world.add<Motion>(petal);
     }
-
-    world.add<PetalEffect>(petal, PetalEffect{stats.poisonPerSecond, stats.poisonDurationMillis,
-                                              stats.knockback, stats.slowFactor,
-                                              stats.slowDurationMillis});
 
     Replicated replicated;
     replicated.kind = net::EntityKind::Petal;
@@ -1293,10 +1279,11 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             aggregate.modifiers.damageScale *= mods.damage;
             aggregate.modifiers.sizeScale *= mods.playerRadius;
             aggregate.modifiers.rangeScale *= mods.range;
-            // Camera zoom is deliberately not summed. It is the BROWSER's:
-            // the smallest cameraZoom over the whole bar wins and two of them
-            // never stack, and the reference server neither computes the
-            // figure nor puts it on the wire.
+            // Camera zoom is deliberately not summed. It is the CLIENT's
+            // (loadoutCameraZoom): the smallest cameraZoom over the active bar
+            // wins and two of them never stack, and nothing puts it on the
+            // wire. The server works out the same figure only to bound the
+            // viewport a client may report, which is not a modifier either.
 
             // Rotation is the one additive multiplier in the reference:
             // `rotationSpeed += modifier - 1`.
@@ -1424,7 +1411,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     const int level = progress ? progress->level : 1;
     double sizeScale = aggregate.modifiers.sizeScale;
     if (!(sizeScale > 0.0) || !std::isfinite(sizeScale)) sizeScale = 1.0;
-    sizeScale = std::min(sizeScale, 6.0);
+    sizeScale = std::min(sizeScale, kMaxPlayerSizeScale);
     if (Body* body = world.tryGet<Body>(player)) {
         body->radius = playerRadiusForLevel(level) * sizeScale;
     }
@@ -1703,7 +1690,6 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         const int ringSlot =
             ordinal[instance->slot] + (config.clumped ? 0 : instance->subIndex);
         const double offset = wedge * ringSlot;
-        instance->ringOffset = offset;
 
         // A fixed-direction petal is pinned to the flower's facing and does not
         // travel with the ring.
@@ -2394,9 +2380,6 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
         // expressed in time, so a projectile that never hits anything still
         // dies on schedule even if nothing decrements the distance.
         world.add<Lifetime>(shot, Lifetime{spec.distance / shotSpeed});
-        world.add<PetalEffect>(shot, PetalEffect{stats.poisonPerSecond, stats.poisonDurationMillis,
-                                                 stats.knockback, stats.slowFactor,
-                                                 stats.slowDurationMillis});
 
         Replicated replicated;
         replicated.kind = net::EntityKind::Projectile;
@@ -2644,18 +2627,8 @@ void PetalSystem::reportLightning(World& world, Entity player, Vec2 at, double r
     }
     if (lightningTargets_.empty()) return;
 
-    // Nearest first, and only when there are more than fit. A plain truncation
-    // would take whatever order the archetypes happen to hold, which is a
-    // direction, not a disc: the browser build shipped that bug and every bolt
-    // in a dense pile fanned the same way.
-    if (lightningTargets_.size() > net::kMaxLightningTargets) {
-        std::partial_sort(lightningTargets_.begin(),
-                          lightningTargets_.begin() + net::kMaxLightningTargets,
-                          lightningTargets_.end(), [at](const Vec2& a, const Vec2& b) {
-                              return distanceSq(a, at) < distanceSq(b, at);
-                          });
-        lightningTargets_.resize(net::kMaxLightningTargets);
-    }
+    // Drawn to the nearest of them when there are more than fit: the queue
+    // trims (EventQueue::lightning).
     events_->lightning(at, radius, realm, lightningTargets_);
 }
 
@@ -2706,8 +2679,9 @@ bool PetalSystem::touchesMob(World& world, Realm realm, Vec2 at, double radius) 
     bindTo(world);
     bool touching = false;
     // A linear sweep: the broadphase is rebuilt after this system runs, so what
-    // it holds here is last tick's world. Only the two petals that park for a
-    // contact ask, and only until their first one.
+    // it holds here is last tick's world. Asked by the petals that park for a
+    // contact (until their first), by the flower petal until it cracks, and by
+    // a charged battery on every tick it is ready.
     mobs_->each([&](Entity, MobTag&, Transform& transform, Body& body) {
         if (touching) return;
         if (transform.realm != realm) return;
@@ -3243,7 +3217,6 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
     const Faction faction = ownerFaction ? *ownerFaction : Faction{Team::Players, false};
     const MobConfig& config = registry.mob(mobIndex);
     MobStats mob = registry.mobStats(mobIndex, rarity);
-    const double petScale = petStatMultiplier(config.id);
     // Smaller than the wild animal, on the reference's pet ramp: the same size
     // at common, two thirds of it by unique. Mass stays the tier's, exactly as a
     // wild mob's does whatever body it rolled.
@@ -3256,8 +3229,12 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
     // up to unique, the top a pet reaches, so taking it from here is what
     // keeps the two in step rather than a change in what a pet hits for.
     const double ladder = petalStatScale(rarity);
-    mob.health = config.health * ladder * petScale * strength;
-    mob.damage = config.damage * ladder * petScale * strength;
+    // The summoned-only nerf (MobConfig::petHealthScale/petDamageScale), on
+    // top of the ladder: the digger's wild line is tuned for a mob that crawls
+    // out of a dying ant hole, and as a permanent escort it outclassed every
+    // other egg at the same tier. Every other mob's scales are 1.
+    mob.health = config.health * ladder * config.petHealthScale * strength;
+    mob.damage = config.damage * ladder * config.petDamageScale * strength;
     // The Pet Health talent is the Petal Health talent for the squad: the same
     // curve, and on this pool alone. Read at the hatch, as the petal talent is
     // read when the slot's pool is sized, so a tier bought while the squad is
@@ -3290,8 +3267,8 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         world.add<Body>(pet, Body{radius, mob.mass});
         world.add<Health>(pet, Health{mob.health, mob.health, 0.0, 0.0});
         // A summon is the same animal at the same tier, so it wears the same
-        // armour. Unscaled by petStatMultiplier: that nerf is the digger's
-        // health and damage, which is what made it worth summoning.
+        // armour. Unscaled by petHealthScale/petDamageScale: that nerf is the
+        // digger's health and damage, which is what made it worth summoning.
         world.add<Armor>(pet, Armor{mob.armor});
         if (mob.evasion > 0.0) world.add<Evasion>(pet, Evasion{mob.evasion});
         world.add<Faction>(pet, faction);
@@ -3303,7 +3280,6 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         // fights for its owner, a passive one still will not, and a sandstorm
         // still drifts, on a leash to its owner.
         ai.kind = mob.ai;
-        ai.anchor = spawnAt;
         ai.aggroRange = aggroRange;
         world.add<MobAi>(pet, ai);
 
@@ -3337,8 +3313,10 @@ void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry
     // One crack in twenty is the glitch itself, and it takes the flower that
     // was carrying the petal instead of opening onto a squad.
     if (rng_.chance(kFlowerCorruptChance)) {
-        // The splitter half the reference corrupts alongside this one has no
-        // C++ counterpart; there is only ever the one flower here.
+        // The reference corrupts the splitter half alongside this one. This
+        // server has a splitter too (server/splitter.cpp), but halves are a
+        // session's business and this system has no view of sessions, so only
+        // the half that cracked the petal is corrupted: a known gap, not a rule.
         if (PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(player)) {
             visuals->corrupted = true;
         }

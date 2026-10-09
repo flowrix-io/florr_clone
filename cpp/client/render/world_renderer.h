@@ -10,7 +10,6 @@
 #include <deque>
 #include <functional>
 #include <memory>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -39,6 +38,22 @@ struct MobConfig;
 /// the colour of what summoned it.
 inline constexpr std::uint32_t kPetLabelColor = 0xFBE878u;
 
+/// Spawn-shield yellow: what a flower's health bar turns while respawn
+/// protection holds, and what an NPC's bar always is. One value for every bar
+/// that wears it -- the plates in the world and the HUD's own bars alike.
+inline constexpr std::uint32_t kInvulnerableHealth = 0xFAFFC9u;
+/// How long a health bar takes to bleed from kInvulnerableHealth back to
+/// ui::kHealth once the shield drops.
+inline constexpr double kInvulnerableFadeSeconds = 0.5;
+
+/// A health bar's colour `secondsSinceShield` after a spawn shield dropped: a
+/// straight per-channel lerp from kInvulnerableHealth to ui::kHealth over
+/// kInvulnerableFadeSeconds, and ui::kHealth from then on. The world's plates
+/// and the HUD's corner bar both fade through this one function -- the HUD
+/// once kept a copy of its own, which went on fading toward the green
+/// ui::kHealth used to be and then jumped to the one it is.
+std::uint32_t invulnerableFadeColor(double secondsSinceShield);
+
 /// One piece of an explosion's debris. Velocity and life are per second here;
 /// the browser build counts both per frame at 60 Hz.
 struct EffectParticle {
@@ -47,8 +62,8 @@ struct EffectParticle {
     double lifeSeconds = 0;
     double maxLifeSeconds = 1;
     double size = 1;
-    /// Radians the grain is turned by. Only the square grains show it; a disc
-    /// looks the same at every angle, so theirs stays zero.
+    /// Radians the grain is turned by. Only the square grains -- a drop's --
+    /// show it; a disc looks the same at every angle, so theirs stays zero.
     double rotation = 0;
     std::uint32_t color = 0xFFFFFFu;
 };
@@ -56,14 +71,11 @@ struct EffectParticle {
 /// A short-lived visual with no gameplay meaning.
 struct Effect {
     /// `Sparkle` is the particle-only kind: the high-rarity shimmer around a
-    /// petal or a drop, and the burst a drop throws when it lands. It has no
-    /// body of its own -- only its particles are drawn.
+    /// petal, a burst of disc-shaped grains. It has no body of its own -- only
+    /// its particles are drawn. A drop's glitter is not one of these: its
+    /// grains live in WorldRenderer::dropSparkles_.
     enum class Kind : std::uint8_t { DamageNumber, Explosion, Sparkle };
     Kind kind = Kind::DamageNumber;
-    /// Sparkle only: a drop's grains are hard-cornered squares, a petal's are
-    /// discs. Kept per effect rather than per particle because one burst is
-    /// all of one shape.
-    bool squareParticles = false;
     Vec2 position;
     Vec2 drift;
     double value = 0;
@@ -171,9 +183,9 @@ public:
               double timeSeconds) const;
 
     /// Draws just the flower body, in the artwork's own local space (radius
-    /// 25, centred on the origin, no rotation). Public because the skins menu
-    /// previews a cosmetic by drawing the very same body the world does --
-    /// a second, panel-only copy of each skin is exactly how the two drift.
+    /// 25, centred on the origin, no rotation). Public for the HUD avatar
+    /// (App::drawHudFlower), which draws the very same body the world does --
+    /// a second, HUD-only copy of each skin is exactly how the two would drift.
     void drawFlowerBody(Canvas&, const RemoteEntity&, double timeSeconds) const;
 
     /// A corpse's body in the same art space: dead eyes, the default colour,
@@ -211,13 +223,8 @@ public:
     /// there is nothing to paint and the realm draws as void.
     void setWorldMaps(const WorldMaps* maps) { worldMaps_ = maps; }
 
-    /// A single map, taken as the OVERWORLD's. What a tool or a test that
-    /// assembled one map in memory hands over; setWorldMaps() wins when both
-    /// are set.
-    void setMapData(const MapData* map) { map_ = map; }
-
     /// What the settings menu switches off. Presentation only: nothing here
-    /// changes what the client sends, predicts, or is told.
+    /// changes what the client sends or is told.
     struct Options {
         bool names = true;
         bool healthBars = true;
@@ -247,13 +254,13 @@ public:
     std::size_t maxEffects = 256;
 
     /// What the last draw() spent in each layer, in milliseconds, for the
-    /// stats overlay's "Render avg/peak" line. The browser times the same
-    /// three sections inside drawGameObjects, and these are the same cuts:
-    /// `mobs` runs from the top of the entity passes through the flowers and
-    /// their petals (so it carries the ground-effect layer too, as the
-    /// browser's does), `items` is the loot lying on the ground, and
-    /// `projectiles` is the last pass. Terrain is outside all three, in both
-    /// builds.
+    /// stats overlay's "Render avg/peak" line. The TypeScript client timed the
+    /// same three sections inside drawGameObjects, and these are the same
+    /// cuts: `mobs` runs from the top of the entity passes through the flowers
+    /// and their petals (so it carries the ground-effect layer too, as the
+    /// browser's did), `items` is the loot lying on the ground, and
+    /// `projectiles` is the last pass. Terrain is outside all three, as it was
+    /// there.
     ///
     /// Mutable because draw() is const -- it reports what it cost, it does not
     /// change what it draws. `itemCount` is how many drops survived culling,
@@ -321,9 +328,9 @@ private:
     bool drawTerrainChunks(Canvas&, const Camera&, const MapData& map,
                            const std::vector<const SvgDocument*>& art, int x0, int y0, int x1,
                            int y1) const;
-    /// The annotations of a realm: its entry in the catalogue, or the single
-    /// map for the overworld when only that was handed over. Null for the
-    /// arena, the maze and any realm nothing was staged for.
+    /// The annotations of a realm: its entry in the catalogue. Null for the
+    /// arena, the maze, any realm nothing was staged for, and every realm
+    /// while no catalogue is set.
     const MapData* mapFor(Realm realm) const;
     /// Resolves `map`'s art file names to compiled documents, once per map.
     /// Returns an empty span when there is nothing to paint with.
@@ -523,7 +530,6 @@ private:
     const SelfState* selfState_ = nullptr;
     const Terrain* terrain_ = nullptr;
     const WorldMaps* worldMaps_ = nullptr;
-    const MapData* map_ = nullptr;
     /// The last map artFor() resolved, and its art in artFiles() order. One
     /// entry is enough: a frame draws one realm, and a realm change is rare.
     /// Null entries are files the data directory does not hold, which draw
@@ -615,7 +621,7 @@ private:
     mutable std::unordered_map<std::uint32_t, MobPace> mobPaces_;
 
     /// Damage landed on each target dummy over the last ten seconds, which is
-    /// the window the browser build's server reports DPS over.
+    /// the window the TypeScript server reported DPS over.
     mutable std::unordered_map<std::uint32_t, std::deque<std::pair<double, double>>> dummyDamage_;
 
     /// Built on first use from the content registry; the registry is immutable
@@ -638,13 +644,8 @@ private:
     /// netId -> the moment invulnerability ended, or -1 while it still holds.
     mutable std::unordered_map<std::uint32_t, double> invulnFade_;
 
-
-    /// Which flower is the viewer's. Captured by the WorldView draw overload
-    /// and used to decide whose petal ring follows the PREDICTED body rather
-    /// than the interpolated one.
-    mutable std::uint32_t selfNetId_ = 0;
     /// Which realm the view being drawn is in; decides what goes under the
-    /// entities. Taken from the WorldView on each draw, like selfNetId_.
+    /// entities. Taken from the WorldView on each draw.
     mutable Realm realm_ = Realm::Overworld;
 
     mutable SectionTiming timing_;

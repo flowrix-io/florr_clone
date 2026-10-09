@@ -7,7 +7,8 @@
 using flix::decodeCharacterReferences;
 
 // Character references decode the way a browser decodes them, because the
-// browser client is what players learned chat escaping from.
+// TypeScript client, which a browser rendered, is what players learned chat
+// escaping from.
 
 namespace {
 std::string text(const std::string& s) { return decodeCharacterReferences(s, false); }

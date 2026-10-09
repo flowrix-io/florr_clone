@@ -13,12 +13,6 @@
 
 namespace flix::ui {
 
-#if defined(__EMSCRIPTEN__)
-inline constexpr bool kRemoteImages = true;
-#else
-inline constexpr bool kRemoteImages = false;
-#endif
-
 struct RemoteImage {
     enum class State { Loading, Ready, Failed, Unsupported };
     State state = State::Unsupported;

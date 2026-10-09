@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <functional>
-#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -145,10 +144,6 @@ double ascent(double size) {
 
 double descent(double size) {
     return state().ready ? Fonts::face().descent(static_cast<float>(size)) : -size * 0.2;
-}
-
-double lineHeight(double size) {
-    return state().ready ? Fonts::face().lineHeight(static_cast<float>(size)) : size * 1.3;
 }
 
 } // namespace flix::ui

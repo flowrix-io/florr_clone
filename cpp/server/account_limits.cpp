@@ -1,20 +1,15 @@
 #include "server/account_limits.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <vector>
 
+#include "shared/core/text.h"
+
 namespace flix {
 
 namespace {
-
-std::string toLowerAscii(const std::string& text) {
-    std::string out = text;
-    for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return out;
-}
 
 bool allDigits(const std::string& text) {
     if (text.empty()) return false;
@@ -148,7 +143,7 @@ int waitSeconds(double tokens, double refillPerSecond) {
 } // namespace
 
 std::string addressKey(const std::string& peer) {
-    std::string host = toLowerAscii(peer);
+    std::string host = lowerCase(peer);
     // The transport formats a peer as `host:port`, unbracketed, so the port is
     // whatever follows the LAST colon -- an IPv6 host is full of the others.
     const std::size_t lastColon = host.rfind(':');

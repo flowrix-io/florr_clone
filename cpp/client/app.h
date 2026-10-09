@@ -60,7 +60,6 @@ struct AppConfig {
     std::string sessionFile = ".florr-session";
     int windowWidth = 1280;
     int windowHeight = 720;
-    bool fullscreen = false;
 
     /// Render this many frames, write the last one to `screenshotPath`, and
     /// exit. For testing what the client actually draws without needing a
@@ -75,12 +74,12 @@ struct AppConfig {
     /// Open this menu on the way in. Only useful with --screenshot: a panel is
     /// the one part of the client a scripted run cannot otherwise reach.
     MenuId autoMenu = MenuId::None;
-    bool autoAdminDashboard = false;
     /// Whether a scripted login goes straight into a game. Cleared by --lobby,
     /// which is the only way to photograph the title screen of a client that
     /// has credentials -- otherwise it joins before the first frame is drawn.
     bool autoJoin = true;
-    /// Where a scripted join lands: a biome name, or "pvp"/"maze" for the two
+    /// Where a scripted join lands: a spawn-picker id -- a door such as
+    /// `garden`, or a qualified `<map>:<door>` -- or "pvp"/"maze" for the two
     /// realms that are destinations rather than places on the map. Empty means
     /// the beginner ground. The only way a --screenshot run can photograph the
     /// arena or the maze, which no scripted run can otherwise walk to.
@@ -88,8 +87,8 @@ struct AppConfig {
     /// Ignore any stored session and start on the login form. The only way to
     /// photograph the auth screen once a machine has logged in once.
     bool forceLogin = false;
-    /// Paint the frame/ping/position counters the browser build gates behind
-    /// its `showStats` setting.
+    /// Paint the frame/ping/position counters whatever the Settings panel's
+    /// "Show Performance Stats" switch says -- see statsVisible().
     bool showStats = false;
     /// Put the touch controls up whatever the settings file and the device
     /// say. A desktop window reports a mouse and gets no stick, so this is the
@@ -101,11 +100,11 @@ struct AppConfig {
     bool autoDead = false;
     /// Force the tutorial card up on the way in, whole and on the first frame.
     ///
-    /// A scripted run gets no tutorial without this. The browser build has the
-    /// same problem from the other side -- the overlay covers a quarter of
-    /// every in-game shot -- and its harness answers it by writing
+    /// A scripted run gets no tutorial without this. The TypeScript client had
+    /// the same problem from the other side -- the overlay covered a quarter
+    /// of every in-game shot -- and its parity harness answered it by writing
     /// `tutorial_completed` before the join and clearing it for the one shot
-    /// that wants the card. This flag is that switch, and a scripted login is
+    /// that wanted the card. This flag is that switch, and a scripted login is
     /// what it is off for: a real player with no settings file still meets the
     /// tutorial on their first game.
     bool autoTutorial = false;
@@ -135,9 +134,11 @@ struct AppConfig {
     /// in this very process and the call reaches it directly. Its presence is
     /// also what puts the Grant Admin button in Settings > Advanced: a client
     /// dialling a real server has no hook, so it offers no button, and there
-    /// is nothing on the wire for one to press anyway. Takes the account name
-    /// and reports whether the grant landed.
-    std::function<bool(const std::string& username)> grantAdmin;
+    /// is nothing on the wire for one to press anyway. Takes this client's
+    /// session token -- which account that is, the server works out for
+    /// itself, so no name is ever what aims the grant -- and reports whether
+    /// the grant landed.
+    std::function<bool(const std::string& sessionToken)> grantAdmin;
 };
 
 class App {
@@ -227,16 +228,14 @@ private:
     /// spawn picker and the loadout bar.
     void drawTitleXpBar(Canvas&, const Rect& track);
     /// The frame/ping/position readout in the bottom-right corner. On the
-    /// title screens it is a fixed set of placeholder lines rather than a live
-    /// readout, which is what the reference paints there.
+    /// title screens it is the frame counter alone: there is no world behind
+    /// them for the other lines to report on.
     void drawStatsCounters(Canvas&, bool titleScreen);
     /// Whether that readout is up. Two switches turn it on: the Settings
     /// panel's "Show Performance Stats", which is where a player finds it and
     /// which persists, and --stats, which is how a scripted run photographs it
     /// without a settings file.
     bool statsVisible() const;
-    /// Every biome the player may start in, "default" first.
-    const std::vector<SpawnChoice>& spawnChoices() const { return spawnChoices_; }
     /// Draws the scrolling title texture behind all non-game screens.
     void drawTitleBackground(Canvas&, double time);
     /// Steps and draws the petals drifting over that texture.
@@ -249,8 +248,14 @@ private:
     double lowHealthTarget() const;
     /// The screen-top health bars a super, unique or apex mob in view gets,
     /// one under the other, name above each. Ultras are not bosses: they wear
-    /// the ordinary bar under the body like every other mob.
-    void drawBossBars(Canvas&, bool altHeld);
+    /// the ordinary bar under the body like every other mob. Returns the y
+    /// under the last row, or 0 when there are none.
+    double drawBossBars(Canvas&, bool altHeld);
+    /// An admin's announcement as a banner at the top of the screen, starting
+    /// below `clearOf` when something is already there, for eight seconds
+    /// after it arrives (kAnnouncementSeconds, app_hud.cpp). The game's HUD and
+    /// the title screen both raise it: an announcement is for everyone signed in.
+    void drawAdminAnnouncement(Canvas&, double clearOf = 0.0);
     /// The service of the nearest NPC in view whose skin is within
     /// kNpcServiceReach of `self`, or None. What turns the craft key into the
     /// oracle's or the trader's panel while the flower stands at one.
@@ -264,9 +269,11 @@ private:
     /// title screen ready to play rather than on a dead world.
     void onReconnected();
 
-    /// The two commands the SERVER has no say in: a panel toggle, and a local
-    /// render override. True when the line was one of them and must not be
-    /// sent -- everything else, squad and guild lines included, is the
+    /// The commands the SERVER has no say in: two panel toggles -- the admin
+    /// dashboard's `/admin gui`, taken here only for an account the server
+    /// calls an admin, and `/guild-menu` -- and a local render override,
+    /// `/forcelocalplayerflags`. True when the line was one of them and must
+    /// not be sent -- everything else, squad and guild lines included, is the
     /// server's to answer.
     bool handleClientCommand(const std::string& message);
 
@@ -394,16 +401,17 @@ private:
     /// identically on both.
     void editChatLine();
 
-    /// Runs one of the auth form's actions. Named after the browser build's
-    /// `AuthAction`, so the two forms answer the same set of verbs.
+    /// Runs one of the auth form's actions. Named after the TypeScript form's
+    /// `AuthAction`, and answering the same set of verbs it did.
     void submitAuth(const std::string& action);
     /// Points the socket at whatever the Advanced Settings field says, if that
     /// is somewhere else. True when a reconnect has started, in which case the
     /// caller must wait for the handshake before asking the server anything.
     bool retargetServer();
 
-    /// Joins with this client's viewport, biome and flower name. One place, so
-    /// the auto-login path and the Ready button cannot send different things.
+    /// Joins with this client's viewport, spawn choice and flower name. One
+    /// place, so the auto-login path and the Ready button cannot send
+    /// different things.
     /// Does nothing while a join is already waiting for its answer.
     void startGame();
     /// Off the lobby and into the world, on the frame the join is answered.
@@ -435,8 +443,8 @@ private:
     std::string storedToken_;
 
     /// One floating petal of the title backdrop. Position is the sprite's
-    /// TOP-LEFT, as the browser build's is, so a petal enters and leaves the
-    /// screen at the same moment in both.
+    /// TOP-LEFT, as the browser build's was, so a petal enters and leaves the
+    /// screen at the same moment it did there.
     struct TitlePetal {
         double x = 0;
         double y = 0;
@@ -633,8 +641,9 @@ private:
     /// while the strip is not up.
     std::array<Rect, 6> chatTabs_{};
     std::array<Rect, 6> chatTabChecks_{};
-    /// The tab Enter sends to, in strip order: Local, Global, Squad, Guild,
-    /// Whisper.
+    /// The tab Enter sends to, in strip order: Local, Global, Squad, Guild or
+    /// Whisper. Never the sixth tab, Admin, which only filters: an
+    /// announcement is made on purpose, from the dashboard or the console.
     int chatSendTab_ = 0;
 
     // -- death ---------------------------------------------------------------
@@ -677,6 +686,10 @@ private:
     int vignetteWidth_ = 0;
     int vignetteHeight_ = 0;
     std::unique_ptr<Canvas> vignetteBitmap_;
+    /// Which announcement the banner last saw arrive, and when, on this
+    /// app's clock. See drawAdminAnnouncement.
+    std::uint32_t announcementSeen_ = 0;
+    double announcementShownAt_ = -1.0;
 
 
     /// The minimap's baked static layer and the map it was baked for, once
@@ -703,7 +716,6 @@ private:
     /// density it was rasterised at, for the same reasons as the world one.
     std::unique_ptr<Canvas> mazeMinimapStatic_;
     std::int64_t mazeMinimapDay_ = 0;
-    bool mazeMinimapBaked_ = false;
     double mazeMinimapDensity_ = 0.0;
 
     // -- scene wipe ----------------------------------------------------------

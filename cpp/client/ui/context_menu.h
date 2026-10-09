@@ -2,10 +2,10 @@
 // The right-click menu.
 //
 // One per client, raised over whatever the pointer is on and drawn last of
-// everything. Built out of the game's own dark chrome -- the charcoal the
-// inventory's search surround and the Stack toggle are made of -- rather than
-// a panel colour: it appears over all eight of those in turn, and a card in
-// any one of their hues would read as that panel having grown a limb.
+// everything. Built out of the shop button's green (kBody/kFrame in
+// context_menu.cpp) rather than a panel colour: it appears over every panel in
+// turn, and a card in any one of their hues would read as that panel having
+// grown a limb.
 
 #include <cstdint>
 #include <string>

@@ -2,11 +2,13 @@
 // Mob intent: what every wild mob and every summoned pet decides to do this
 // tick.
 //
-// The system belongs to the INTENT phase and writes exactly two things -- the
-// mob's velocity for this tick (Motion::velocity) and where it points
-// (Transform::angle). Positions belong to the movement phase, which integrates
-// that velocity as it stands, applies knockback and pushes the body out of
-// walls.
+// The system belongs to the INTENT phase and writes the mob's velocity for
+// this tick (Motion::velocity) and where it points (Transform::angle).
+// Positions belong to the movement phase, which integrates that velocity as it
+// stands, applies knockback and pushes the body out of walls. The few this
+// file writes directly -- a sandstorm's drag on a flower, a volley's recoil, a
+// pet popped back to its owner, a chain's trailing segments and a ring's seeds
+// -- are each explained where they happen.
 //
 // The velocity is published RAW rather than eased toward, because the
 // reference server has no acceleration model for a mob: a chase is a fixed
@@ -84,16 +86,6 @@ struct PetalRingSpec;
 // ---------------------------------------------------------------------------
 // Tunables
 // ---------------------------------------------------------------------------
-
-/// A turn rate, in radians per second, for a caller of steerFacing() that
-/// wants one.
-///
-/// The AI is not such a caller: the reference assigns a mob's facing outright
-/// from the vector it is travelling along, every tick, with no rate limit
-/// anywhere -- so a mob that turns round faces its new heading on the tick it
-/// picks it rather than swinging there over a third of a second while its
-/// sprite points at where it used to be going.
-inline constexpr double kMobTurnRate = 9.0;
 
 /// Added to the two bodies' radii before a mob counts as in contact, so an
 /// attack lands when the sprites touch rather than when the centres do.
@@ -350,11 +342,6 @@ inline constexpr Rarity kSandstormSuckRarity = Rarity::Super;
 inline constexpr double kSandstormSuckRange = 400.0;
 inline constexpr double kSandstormSuckSpeed = 45.0;
 
-/// Unused by the AI: a storm re-rolls its heading outright rather than swinging
-/// the old one, because the reference does, and a limit on the swing turns a
-/// churning storm into weather crossing the map. Kept because a test names it.
-inline constexpr double kSandstormTurnPerDecision = 0.5;
-
 // -- volleys -----------------------------------------------------------------
 
 /// Shot speed for a projectile block that omits one, units per second.
@@ -508,9 +495,6 @@ inline constexpr double kPetViewHalfHeight = kViewportHeight * 0.5;
 
 // -- chains and nests --------------------------------------------------------
 
-/// Extra room beyond the nest's own body when placing an escort.
-inline constexpr double kNestSpawnMargin = 40.0;
-
 /// How far past its parent's RIM a nest's child may be drawn before it gives
 /// up whatever it was chasing and marches home.
 ///
@@ -528,10 +512,6 @@ inline constexpr double kSummonRetreatRadius = 600.0;
 /// idling. Well short of the retreat radius so an escort does not oscillate
 /// across the boundary.
 inline constexpr double kSummonArriveDistance = 100.0;
-
-/// Floor under Spawner::intervalMillis. A nest configured with 0 would ask for
-/// a mob every tick and cap out its brood in under a second.
-inline constexpr double kMinSpawnIntervalMillis = 100.0;
 
 // ---------------------------------------------------------------------------
 // Facing
@@ -574,42 +554,16 @@ double shooterStandoff(double shotReach, double ownRadius, double targetRadius);
 bool shotCanReach(double gap, double shotReach, double targetRadius);
 
 // ---------------------------------------------------------------------------
-// Spawning escorts
-// ---------------------------------------------------------------------------
-
-/// A nest's request for one escort.
-///
-/// The AI decides WHEN a nest spawns and WHAT: assembling the entity -- prefab,
-/// net id, loot table, faction -- is the spawning system's job. The hook below
-/// is where the two meet, and it is why this file needs to know nothing about
-/// how a mob is built.
-struct MobSpawnRequest {
-    Entity parent = NULL_ENTITY;
-    std::uint16_t configIndex = 0;
-    Rarity rarity = Rarity::Common;
-    Vec2 position;
-    /// The nest's own realm: an escort appears in the space its nest is in.
-    Realm realm = Realm::Overworld;
-    /// 0 means the escort never expires on its own.
-    double lifetimeMillis = 0;
-};
-
-// ---------------------------------------------------------------------------
 // MobAiSystem
 // ---------------------------------------------------------------------------
 
 class MobAiSystem {
 public:
     /// Queries are built once against `world` and reused every tick; run() must
-    /// be handed that same World. `seed` fixes the wander and spawn-placement
-    /// rolls so a test gets the same walk twice.
+    /// be handed that same World. `seed` fixes the AI's own rolls -- the
+    /// wanders, a storm's headings, a web's angle -- so a test gets the same
+    /// walk twice.
     explicit MobAiSystem(World& world, std::uint64_t seed = 0xA1B2C3D4E5F60717ull);
-
-    /// Builds one escort at flush time. Returning NULL_ENTITY means "could not
-    /// spawn"; the nest simply tries again on its next interval. With no hook
-    /// set a nest keeps its cadence and produces nothing.
-    using SpawnHook = std::function<Entity(World&, const MobSpawnRequest&)>;
-    void setSpawnHook(SpawnHook hook) { spawnHook_ = std::move(hook); }
 
     /// Mints the wire id a projectile is broadcast under. Unset, a volley still
     /// flies and still hurts, but no client ever sees it -- replication carries
@@ -627,8 +581,8 @@ public:
     /// regardless: they belong to a player who is by definition present. `dt`
     /// is in seconds.
     ///
-    /// A nest's spawn and a volley both land as deferred commands, so
-    /// `commands` must be flushed while this system is still alive.
+    /// A volley, a web and a dropped shot all land as deferred commands:
+    /// nothing this pass creates exists until `commands` is flushed.
     void run(World& world, const Terrain& terrain, const SpatialGrid& grid,
              const std::vector<RealmPoint>& activePlayers,
              double nowMillis, double dt, CommandBuffer& commands);
@@ -641,10 +595,10 @@ public:
     /// create() and the damage path is walked by every system that deals any.
     /// This is where the bill is settled.
     ///
-    /// Deliberately NOT LOD-gated, for the reason driveSpawners is not: the
-    /// seeds are real bodies that a flower can be standing in whether or not
-    /// their mob is taking a turn in the stride, and a ring left un-carried
-    /// would be a hitbox sitting where the mob used to be.
+    /// Deliberately NOT LOD-gated: the seeds are real bodies that a flower can
+    /// be standing in whether or not their mob is taking a turn in the stride,
+    /// and a ring left un-carried would be a hitbox sitting where the mob used
+    /// to be.
     void tickPetalRings(World& world, CommandBuffer& commands);
 
 
@@ -654,15 +608,10 @@ public:
     /// test that target caching is actually caching.
     struct Stats {
         std::uint64_t considered = 0;    ///< mobs the query produced
-        std::uint64_t thought = 0;       ///< mobs that passed the LOD gate
         std::uint64_t skipped = 0;       ///< mobs the far stride held back
         std::uint64_t targetScans = 0;   ///< broadphase acquisitions run
         std::uint64_t attacks = 0;       ///< contact attacks intended
-        std::uint64_t volleys = 0;       ///< projectile volleys let go
-        std::uint64_t spawnRequests = 0; ///< escorts asked of the spawn hook
         std::uint64_t promotions = 0;    ///< segments promoted to chain heads
-        std::uint64_t webs = 0;          ///< webs laid
-        std::uint64_t drops = 0;         ///< projectiles dropped behind a mob
     };
     const Stats& stats() const { return stats_; }
 
@@ -802,6 +751,13 @@ private:
                          const Body& body, MobAi& ai, const Drive& drive, double chaseSpeed,
                          double nowMillis, double dt, Vec2& desired, Vec2& facing,
                          CommandBuffer& commands);
+    /// One tick of a stinger shooter's wind-up cycle against a target on
+    /// `bearing`, wild or on a leash: winds the rear round while a volley is
+    /// due, fires once it has come round, and recovers otherwise. Returns
+    /// where to point this tick. `travel` is what fireVolley hands the shot.
+    Vec2 stingerVolley(World& world, Entity self, const MobType& type, MobAi& ai,
+                       const Drive& drive, const Transform& transform, double bearing,
+                       Vec2 travel, double nowMillis, double dt, CommandBuffer& commands);
 
     /// `range` is measured from the mob's centre -- the point it meets the
     /// world with -- and a flower's poo shrinks all of it. `raisedOnly` is a
@@ -879,7 +835,10 @@ private:
     void followChains(World& world, const Terrain& terrain,
                       const std::vector<RealmPoint>& activePlayers);
     void placeFollower(World& world, const Terrain& terrain, Entity self, Entity ahead);
-    void driveSpawners(World& world, const Terrain& terrain, double nowMillis, CommandBuffer& commands);
+    /// Keeps every nest's brood list (Spawner::children) to the escorts still
+    /// standing, and releases a dying nest's. Spawning them is not this
+    /// system's: SpawnSystem::runNests does it, later in the tick.
+    void pruneBroods(World& world);
 
     /// One seed, launched from the seat at `aim` and at the size it was
     /// sitting there: `orbit` and `seedRadius` come off the mob's own
@@ -904,7 +863,6 @@ private:
     Query<MobRingPetal> seeds_;
     Query<PlayerTag, PlayerModifiers> playerModifiers_;
 
-    SpawnHook spawnHook_;
     Rng rng_;
     Stats stats_;
 

@@ -1,38 +1,23 @@
 #include "client/net_client.h"
 
 #include <algorithm>
-#include <cctype>
-#include <chrono>
 #include <cstdio>
 #include <iterator>
 
 #include "client/ui/markup.h"
 #include "client/web/reload.h"
+#include "shared/core/text.h"
 #include "shared/game/map_elements.h"
 
 namespace flix {
 
 namespace {
 
-double nowMillis() {
-    using clock = std::chrono::steady_clock;
-    static const clock::time_point start = clock::now();
-    return std::chrono::duration<double, std::milli>(clock::now() - start).count();
-}
-
 /// The redial backoff, which is the browser socket's own (src/ws_client.ts):
 /// a second to start, half again per failure, capped at ten seconds.
 constexpr double kReconnectDelayMillis = 1000.0;
 constexpr double kMaxReconnectDelayMillis = 10000.0;
 constexpr double kReconnectBackoff = 1.5;
-
-/// Unix milliseconds. A chat line is stamped with the time of day it arrived,
-/// which the monotonic clock above cannot answer.
-std::int64_t wallClockMillis() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
 
 /// What the bandwidth readout calls each opcode. The browser keys its
 /// per-event byte counters by the socket event name; these are the same names
@@ -82,6 +67,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::AdminDb:             return "adminDb";
         case net::ClientMessage::TitanForge:          return "titanForge";
         case net::ClientMessage::TitanHolder:         return "titanHolder";
+        case net::ClientMessage::AdminDashboard:      return "adminDashboard";
     }
     return "unknown";
 }
@@ -179,11 +165,11 @@ void NetClient::armReconnect() {
                             ? kReconnectDelayMillis
                             : std::min(retryDelayMillis_ * kReconnectBackoff,
                                        kMaxReconnectDelayMillis);
-    retryAtMillis_ = nowMillis() + retryDelayMillis_;
+    retryAtMillis_ = renderClockMillis() + retryDelayMillis_;
 }
 
 void NetClient::poll(int timeoutMillis) {
-    if (status_ == Status::Failed && retryAtMillis_ > 0 && nowMillis() >= retryAtMillis_) {
+    if (status_ == Status::Failed && retryAtMillis_ > 0 && renderClockMillis() >= retryAtMillis_) {
         // The delay is deliberately NOT reset here: it grows until a handshake
         // lands, which is what keeps a server that is down for a minute from
         // being dialled sixty times.
@@ -312,8 +298,11 @@ void NetClient::forgetAccount() {
     shopOutcome_ = ShopOutcome{};
     passwordOutcome_ = PasswordOutcome{};
     adminDb_ = AdminDbState{};
-    adminDashboard = Json{};
-    adminAnnouncement.clear();
+    resetAdminDashboard();
+    // The words go with the account; the sequence does not -- see
+    // AdminAnnouncement::sequence.
+    adminAnnouncement_.author.clear();
+    adminAnnouncement_.text.clear();
     view_.clear();
     chatBubbles_.clear();
     dead_ = false;
@@ -437,7 +426,7 @@ void NetClient::requestOracleCraft(std::uint16_t petalIndex, Rarity rarity) {
 }
 
 double NetClient::oracleCooldownRemainingMillis() const {
-    return std::max(0.0, oracleReadyAtMillis_ - nowMillis());
+    return std::max(0.0, oracleReadyAtMillis_ - renderClockMillis());
 }
 
 void NetClient::requestTrade(std::uint16_t petalIndex, Rarity rarity) {
@@ -449,7 +438,7 @@ void NetClient::requestTrade(std::uint16_t petalIndex, Rarity rarity) {
 }
 
 double NetClient::traderCooldownRemainingMillis() const {
-    return std::max(0.0, traderReadyAtMillis_ - nowMillis());
+    return std::max(0.0, traderReadyAtMillis_ - renderClockMillis());
 }
 
 void NetClient::requestTitanForge(std::uint16_t petalIndex) {
@@ -627,14 +616,7 @@ namespace {
 /// case -- so `/admin db BOB` must still recognise the answer about "bob".
 bool sameAdminDbKey(net::AdminDbScope scope, const std::string& a, const std::string& b) {
     if (scope != net::AdminDbScope::Account) return a == b;
-    if (a.size() != b.size()) return false;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        if (std::tolower(static_cast<unsigned char>(a[i])) !=
-            std::tolower(static_cast<unsigned char>(b[i]))) {
-            return false;
-        }
-    }
-    return true;
+    return lowerCase(a) == lowerCase(b);
 }
 
 } // namespace
@@ -830,6 +812,169 @@ void NetClient::handleAdminDb(ByteReader& reader) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The admin dashboard
+// ---------------------------------------------------------------------------
+
+void NetClient::beginAdminDashboard(ByteWriter& w, net::AdminDashboardOp op) {
+    beginMessage(w, net::ClientMessage::AdminDashboard);
+    w.u8(static_cast<std::uint8_t>(op));
+}
+
+void NetClient::resetAdminDashboard() {
+    const std::uint32_t generation = adminDashboard_.generation + 1;
+    adminDashboard_ = AdminDashboardState{};
+    adminDashboard_.generation = generation;
+}
+
+void NetClient::adminDashboardPlayers(const std::string& search, std::uint32_t offset) {
+    // A new query replaces the rows at once, as the database editor's list
+    // does, so a slow answer never shows one query's rows under another's box.
+    AdminDashboardState& d = adminDashboard_;
+    if (offset == 0 || search != d.playersSearch) {
+        d.players.clear();
+        d.playersTotal = 0;
+        offset = 0;
+    }
+    d.playersSearch = search;
+    d.playersPending = true;
+    d.playersRefused = false;
+    ByteWriter w;
+    beginAdminDashboard(w, net::AdminDashboardOp::Players);
+    w.str(search);
+    w.u32(offset);
+    send(w);
+}
+
+void NetClient::adminDashboardInventory(net::ConnectionId player, const std::string& username,
+                                        std::uint32_t offset) {
+    AdminDashboardState& d = adminDashboard_;
+    if (offset == 0 || player != d.bagOf) {
+        d.bag.clear();
+        d.bagTotal = 0;
+        d.bagUsername.clear();
+        offset = 0;
+    }
+    d.bagOf = player;
+    d.bagGone = false;
+    d.bagPending = true;
+    d.bagRefused = false;
+    ByteWriter w;
+    beginAdminDashboard(w, net::AdminDashboardOp::Inventory);
+    w.u32(player);
+    w.str(username);
+    w.u32(offset);
+    send(w);
+}
+
+void NetClient::adminControl(net::ConnectionId player, const std::string& username) {
+    ByteWriter w;
+    beginAdminDashboard(w, net::AdminDashboardOp::Control);
+    w.u32(player);
+    w.str(username);
+    send(w);
+}
+
+void NetClient::adminRelease() {
+    ByteWriter w;
+    beginAdminDashboard(w, net::AdminDashboardOp::Release);
+    send(w);
+}
+
+void NetClient::handleAdminDashboard(ByteReader& reader) {
+    AdminDashboardState& d = adminDashboard_;
+    switch (static_cast<net::AdminDashboardReply>(reader.u8())) {
+        case net::AdminDashboardReply::Players: {
+            const std::string search = reader.str();
+            const std::uint32_t offset = reader.u32();
+            const std::uint32_t total = reader.u32();
+            const std::uint16_t count = reader.u16();
+            std::vector<net::AdminDashboardPlayer> rows(count);
+            for (net::AdminDashboardPlayer& row : rows) {
+                if (!net::readAdminDashboardPlayer(reader, row)) return;
+            }
+            if (!reader.ok()) return;
+            // An answer to a query the box no longer holds is dropped: typing
+            // fires a query per pause, and they need not come back in order.
+            if (search != d.playersSearch) return;
+            if (offset == 0) d.players.clear();
+            else if (offset != d.players.size()) return;
+            d.players.insert(d.players.end(), std::make_move_iterator(rows.begin()),
+                             std::make_move_iterator(rows.end()));
+            d.playersTotal = total;
+            d.playersPending = false;
+            return;
+        }
+        case net::AdminDashboardReply::Inventory: {
+            const net::ConnectionId player = reader.u32();
+            const std::string username = reader.str();
+            const std::uint32_t offset = reader.u32();
+            const std::uint32_t total = reader.u32();
+            const std::uint16_t count = reader.u16();
+            std::vector<net::AdminDashboardStack> stacks(count);
+            for (net::AdminDashboardStack& stack : stacks) {
+                if (!net::readAdminDashboardStack(reader, stack)) return;
+            }
+            if (!reader.ok()) return;
+            // Only the bag the panel is looking at: a click on another row
+            // while a page was on its way changed what it is looking at.
+            if (player != d.bagOf) return;
+            d.bagPending = false;
+            if (username.empty()) {
+                d.bagGone = true;
+                d.bag.clear();
+                d.bagTotal = 0;
+                return;
+            }
+            if (offset == 0) d.bag.clear();
+            else if (offset != d.bag.size()) return;
+            d.bag.insert(d.bag.end(), stacks.begin(), stacks.end());
+            d.bagUsername = username;
+            d.bagTotal = total;
+            return;
+        }
+        case net::AdminDashboardReply::Control: {
+            AdminDashboardState::Control control;
+            control.active = reader.boolean();
+            control.connection = reader.u32();
+            control.username = reader.str();
+            if (!reader.ok()) return;
+            d.control = std::move(control);
+            return;
+        }
+        case net::AdminDashboardReply::Result: {
+            const bool ok = reader.boolean();
+            const std::string message = reader.str();
+            if (!reader.ok()) return;
+            d.resultOk = ok;
+            d.resultMessage = message;
+            ++d.resultSeq;
+            return;
+        }
+        case net::AdminDashboardReply::Refused: {
+            const auto op = static_cast<net::AdminDashboardOp>(reader.u8());
+            const std::string message = reader.str();
+            if (!reader.ok()) return;
+            // No answer is coming for that request, so nothing may go on
+            // waiting for one: a page left "pending" would also keep its Load
+            // more row from ever asking again.
+            if (op == net::AdminDashboardOp::Players) {
+                d.playersPending = false;
+                d.playersRefused = true;
+            } else if (op == net::AdminDashboardOp::Inventory) {
+                d.bagPending = false;
+                d.bagRefused = true;
+            }
+            // And said where the panel says how a request went -- the status
+            // line, which is also what lets go of a Control it is waiting on.
+            d.resultOk = false;
+            d.resultMessage = message;
+            ++d.resultSeq;
+            return;
+        }
+    }
+}
+
 void NetClient::requestRespawn() {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::Respawn);
@@ -839,7 +984,7 @@ void NetClient::requestRespawn() {
 void NetClient::sendPing() {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::Ping);
-    w.u64(static_cast<std::uint64_t>(nowMillis()));
+    w.u64(static_cast<std::uint64_t>(renderClockMillis()));
     send(w);
 }
 
@@ -907,12 +1052,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::SessionReplaced: handleSessionReplaced(reader); break;
         case net::ServerMessage::ChatHistory:   handleChatHistory(reader); break;
         case net::ServerMessage::AdminDb:       handleAdminDb(reader); break;
-        case net::ServerMessage::AdminDashboard: {
-            const std::string payload = reader.str();
-            std::string error;
-            if (reader.ok()) Json::parse(payload, adminDashboard, error);
-            break;
-        }
+        case net::ServerMessage::AdminDashboard: handleAdminDashboard(reader); break;
         default:
             // An unknown id means the server is newer than this build. The
             // frame is already fully buffered, so skipping it is safe and
@@ -926,6 +1066,11 @@ void NetClient::onDisconnect(net::Connection&, const std::string& reason) {
     lastError_ = reason;
     view_.clear();
     chatBubbles_.clear();
+    // Every connection id the dashboard holds belongs to the socket that just
+    // went, and so does any control: the server lets go of it when the socket
+    // closes, and a reconnection is a new session nobody pushes a release to.
+    // The generation moves with it, so the panel lets go of its pick too.
+    resetAdminDashboard();
     // A server restart looks exactly like this from here, and it is the case
     // the redial exists for.
     armReconnect();
@@ -985,6 +1130,12 @@ void NetClient::handleAuthResult(ByteReader& reader) {
     authMessage = reason;
 
     if (result == net::AuthStatus::Ok) {
+        // Another account on this socket: the dashboard's rows, bag and
+        // control were the last account's, asked for on its standing, and a
+        // pick the panel still held would carry them over to this one. A
+        // logout wipes them for that reason (forgetAccount); a sign-in on top
+        // of a session does not go through there, so it is done here.
+        if (username != profile_.username) resetAdminDashboard();
         sessionToken_ = token;
         profile_.username = username;
         status_ = Status::LoggedIn;
@@ -1069,8 +1220,8 @@ void NetClient::handleProfile(ByteReader& reader) {
     // applied inventory is how duplication bugs start.
     if (!reader.ok()) return;
     profile_ = std::move(next);
-    oracleReadyAtMillis_ = nowMillis() + static_cast<double>(profile_.oracleCooldownMillis);
-    traderReadyAtMillis_ = nowMillis() + static_cast<double>(profile_.traderCooldownMillis);
+    oracleReadyAtMillis_ = renderClockMillis() + static_cast<double>(profile_.oracleCooldownMillis);
+    traderReadyAtMillis_ = renderClockMillis() + static_cast<double>(profile_.traderCooldownMillis);
 }
 
 void NetClient::handleCraftResult(ByteReader& reader) {
@@ -1312,7 +1463,7 @@ void NetClient::installLocalCollision(Realm realm) {
 }
 
 void NetClient::handleJoinAccepted(ByteReader& reader) {
-    const std::uint32_t selfNetId = reader.u32();
+    reader.u32();   // the body's net id: the first snapshot names it (SpawnIsSelf)
     const Vec2 spawn = reader.position();
     reader.u32();   // tick, informational
     const std::int64_t mazeDay = reader.i64();
@@ -1336,7 +1487,6 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     // The grid is in; give the realm its exact geometry from the local file.
     installLocalCollision(realm);
 
-    (void)selfNetId;
     status_ = Status::Playing;
     dead_ = false;
     revived = false;
@@ -1349,7 +1499,7 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     setActiveMazeDay(mazeDay);
     // Where the body is until the first snapshot says so: the App pins the
     // camera here rather than on the view's zeroed self. Not flagged as a
-    // realm change -- the join's own snap (App::startGame) covers the camera.
+    // realm change -- the join's own snap (App::enterGame) covers the camera.
     realmArrival_ = spawn;
 }
 
@@ -1396,7 +1546,6 @@ void NetClient::pushChat(net::ChatChannel channel, std::string author, std::stri
     line.author = std::move(author);
     line.text = std::move(text);
     line.speakerNetId = speakerNetId;
-    line.receivedAtMillis = nowMillis();
     line.wallClockMillis = wallClockMillis();
 
     // Only what somebody in the world said floats over the world: a System
@@ -1493,9 +1642,13 @@ void NetClient::handleChat(ByteReader& reader) {
     const std::uint32_t speakerNetId = reader.u32();
     if (!reader.ok()) return;
     pushChat(channel, std::move(author), std::move(text), speakerNetId);
+    // Live lines only: a backlog replays what was said before this client
+    // was here (handleChatHistory), and a banner for it would be news a
+    // minute old.
     if (channel == net::ChatChannel::Admin) {
-        adminAnnouncement = ui::markupPlainText(chat_.back().text);
-        adminAnnouncementAt = nowMillis();
+        adminAnnouncement_.author = chat_.back().author;
+        adminAnnouncement_.text = ui::markupPlainText(chat_.back().text);
+        ++adminAnnouncement_.sequence;
     }
 }
 
@@ -1512,7 +1665,6 @@ void NetClient::handleChatHistory(ByteReader& reader) {
         // said it may have left, and a net id from then may be somebody else
         // now.
         line.wallClockMillis = static_cast<std::int64_t>(reader.f64());
-        line.receivedAtMillis = nowMillis();
         backlog.push_back(std::move(line));
     }
     if (!reader.ok()) return;
@@ -1530,13 +1682,10 @@ void NetClient::handleChatHistory(ByteReader& reader) {
     }
 }
 
-bool NetClient::adminAnnouncementVisible() const {
-    return !adminAnnouncement.empty() && nowMillis() - adminAnnouncementAt < 8000;
-}
-
 void NetClient::handleNotice(ByteReader& reader) {
-    // The reference has no toast layer: a server announcement is a System line
-    // in the transcript and nothing else, whatever its severity.
+    // The reference has no toast layer: a server notice is a System line in
+    // the transcript and nothing else, whatever its severity. The one banner
+    // this client raises is for the Admin channel (handleChat), not for these.
     const auto severity = static_cast<net::NoticeSeverity>(reader.u8());
     std::string text = reader.str();
     if (!reader.ok()) return;
@@ -1574,9 +1723,8 @@ void NetClient::handlePong(ByteReader& reader) {
     const std::uint64_t sentAt = reader.u64();
     reader.u64();   // server time
     if (!reader.ok()) return;
-    pingMillis_ = nowMillis() - static_cast<double>(sentAt);
 
-    pingHistory_.push_back(pingMillis_);
+    pingHistory_.push_back(renderClockMillis() - static_cast<double>(sentAt));
     if (pingHistory_.size() > kPingSamples) pingHistory_.erase(pingHistory_.begin());
     double total = 0;
     for (const double sample : pingHistory_) total += sample;
@@ -1597,7 +1745,6 @@ void NetClient::handleDebugStats(ByteReader& reader) {
     stats.tickMaxMillis = reader.f32();
     if (!reader.ok()) return;
     serverDebugStats_ = stats;
-    haveServerDebugStats_ = true;
     serverDebugStatsFresh_ = true;
 }
 

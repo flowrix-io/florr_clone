@@ -34,27 +34,11 @@ using namespace flix::testsupport;
 
 namespace {
 
+/// An account joinAs() below can log in: every one here shares its password.
+/// (seedStack, awaitProfile, bodyNamed, onlyPlayer and sawText are the harness's
+/// own, in server_harness.h.)
 void seedAccount(const std::string& path, const std::string& username, bool admin = false) {
-    Database db;
-    std::string error;
-    db.load(path, error);
-    db.setPasswordCost(4);
-    CreateResult created = db.createUser(username, "password7");
-    if (created.ok() && admin) created.account->admin = true;
-    db.markDirty();
-    db.save();
-}
-
-void seedStack(const std::string& path, const std::string& username, const char* itemKey,
-               Rarity rarity, int count) {
-    Database db;
-    std::string error;
-    db.load(path, error);
-    const Account* account = db.findUser(username);
-    if (account == nullptr) return;
-    db.progress(account->id).addItem(rarity, itemKey, count);
-    db.markDirty();
-    db.save();
+    seedUser(path, username, "password7", admin);
 }
 
 /// Where the fixture's oracle stands: a cell and a half east of the one-cell
@@ -85,8 +69,6 @@ Entity npcWearing(World& world, const char* id) {
     });
     return found;
 }
-
-Entity onlyPlayer(World& world);
 
 /// Steps until every petal `flower` has equipped is out. A new flower's ring
 /// arrives a couple of seconds after it does, and a test that starts counting
@@ -148,13 +130,6 @@ std::vector<Entity> npcsIn(World& world) {
     return out;
 }
 
-Entity onlyPlayer(World& world) {
-    Entity found = NULL_ENTITY;
-    Query<PlayerTag> players{world};
-    players.each([&](Entity e, PlayerTag&) { found = e; });
-    return found;
-}
-
 /// Waits for the oracle's answer and hands it back with `pending` cleared, as
 /// the panel reads it.
 bool awaitOracle(Harness& h, NetClient& client, OracleOutcome& out) {
@@ -162,11 +137,6 @@ bool awaitOracle(Harness& h, NetClient& client, OracleOutcome& out) {
     out = client.oracleOutcome();
     client.oracleOutcome().pending = false;
     return true;
-}
-
-template <class F>
-bool awaitProfile(Harness& h, NetClient& client, F predicate) {
-    return h.stepUntil({&client}, [&] { return predicate(client.profile()); }, 200);
 }
 
 bool ensureShippedContent() {
@@ -232,20 +202,17 @@ TEST(an_npc_block_is_read_and_its_unknowns_are_reported) {
     // A service or a side this build does not know is SAID, and read as the
     // default -- the mob is still an NPC, so a map that places one still gets
     // something standing there. A block that is not an object is no NPC.
-    const std::string mobs = test::fixtureMobs(R"({
+    const std::string mobs = R"({
         "seer": { "name": "Seer", "health": 10, "npc": { "service": "oracle" } },
         "fake": { "name": "Fake", "health": 10, "npc": { "service": "banker" } },
         "post": { "name": "Post", "health": 10, "npc": { "team": "hostile" } },
         "odd": { "name": "Odd", "health": 10, "npc": { "team": "pirates" } },
         "flat": { "name": "Flat", "health": 10, "npc": "oracle" },
         "wild": { "name": "Wild", "health": 10 }
-    })");
-    const std::string petals = test::fixturePetals(R"({ "basic": { "name": "Basic" } })");
-    const std::string dir = "/tmp/florr-npc-config-" + std::to_string(::getpid());
-    ::mkdir(dir.c_str(), 0755);
-    CHECK(writeFile(dir + "/mobs.json", mobs));
-    CHECK(writeFile(dir + "/petals.json", petals));
-    CHECK(registry.loadFiles(dir + "/mobs.json", dir + "/petals.json", error));
+    })";
+    const std::string petals = R"({ "basic": { "name": "Basic" } })";
+    const std::string dir = tempDir("florr-npc-config-" + std::to_string(::getpid()));
+    CHECK(test::loadFixtureContent(registry, dir, mobs, petals, error));
     const auto spec = [&](const char* id) { return registry.mob(registry.mobIndex(id)).npc; };
     CHECK(spec("seer").present);
     CHECK(spec("seer").service == NpcService::Oracle);
@@ -377,7 +344,12 @@ TEST(the_shipped_jungle_stands_its_target_dummies) {
     CHECK_EQ(dummies, kLadderRarityCount);
 }
 
-TEST(the_shipped_garden_has_an_oracle_on_open_ground) {
+TEST(the_shipped_oracle_stands_on_open_ground_where_it_was_drawn) {
+    // The one place a petal is crafted up, so the shipped world has to hold an
+    // oracle a flower can walk up to. WHICH map it stands on is the author's
+    // call -- it was drawn in the garden first and has since moved to the
+    // ocean -- so the realm is not pinned: whichever map draws it, it is a map
+    // of the catalogue, and the oracle stands on open ground in it.
     CHECK(ensureShippedContent());
     WorldMaps maps;
     Terrain terrain;
@@ -391,17 +363,15 @@ TEST(the_shipped_garden_has_an_oracle_on_open_ground) {
     for (const NpcSystem::Site& site : npcs.sites()) {
         if (content().mob(site.mobIndex).npc.service != NpcService::Oracle) continue;
         ++oracles;
-        CHECK(site.realm == Realm::Overworld);
-        // Its default size, common: the tier is the NPC's size, and the
-        // garden's is the smallest there is.
-        CHECK(site.rarity == Rarity::Common);
+        CHECK(maps.forRealm(site.realm) != nullptr);
         // Standing where it was drawn: a centre pushed out of a wall would be
         // somewhere its author did not put it. An NPC meets walls as a point.
         const Vec2 placed = terrain.resolveCircle(site.position, kMobWallRadius, site.realm);
         CHECK_NEAR(placed.x, site.position.x, 1e-6);
         CHECK_NEAR(placed.y, site.position.y, 1e-6);
+        CHECK(!terrain.blocked(site.position, site.realm));
     }
-    CHECK_EQ(oracles, 1);
+    CHECK(oracles >= 1);
 }
 
 TEST(an_npc_meets_walls_with_its_centre_not_its_body) {
@@ -714,8 +684,8 @@ TEST(a_hostile_npc_takes_every_hit_and_a_friendly_one_refuses_them) {
 }
 
 TEST(a_hostile_npc_bites_the_flower_touching_it_and_breaks_the_petals_striking_it) {
-    // The dummy hits back with its mob's body, as the browser build's dummy --
-    // an ordinary mob -- always did: a flower pressed against it is bumped and
+    // The dummy hits back with its mob's body, as the TypeScript build's dummy
+    // -- an ordinary mob -- always did: a flower pressed against it is bumped and
     // bitten, and a ring sweeping through it pays for every hit and breaks.
     // The oracle beside it, on the players' side, does neither.
     const double dummyX = kTileSize * 8.0;
@@ -1975,22 +1945,12 @@ void seedWorn(const std::string& path, const std::string& username, std::size_t 
     db.save();
 }
 
-/// The body `username` is playing, or NULL_ENTITY.
-Entity bodyOf(World& world, const std::string& username) {
-    Entity found = NULL_ENTITY;
-    Query<PlayerTag, PlayerAccount> players{world};
-    players.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
-        if (account.username == username) found = e;
-    });
-    return found;
-}
-
 /// Stands `username`'s flower just off the titan's east edge -- inside its
 /// ring's band, where the petals sweep through it.
 void standAtTitan(Harness& h, const std::vector<NetClient*>& clients, const std::string& username) {
     World& world = h.server.world();
     const Entity titan = npcWearing(world, "titan");
-    const Entity body = bodyOf(world, username);
+    const Entity body = bodyNamed(world, username);
     if (titan == NULL_ENTITY || body == NULL_ENTITY) return;
     world.get<Transform>(body).position =
         world.get<Transform>(titan).position + Vec2{world.get<Body>(titan).radius + 60.0, 0.0};
@@ -2014,13 +1974,6 @@ int liveMobsOf(World& world, const char* id) {
         if (type.configIndex == content().mobIndex(id) && !world.has<Dead>(e)) ++count;
     });
     return count;
-}
-
-bool chatSays(const NetClient& client, const std::string& needle) {
-    for (const ChatLine& line : client.chat()) {
-        if (line.text.find(needle) != std::string::npos) return true;
-    }
-    return false;
 }
 
 } // namespace
@@ -2113,10 +2066,10 @@ TEST(a_titan_forge_turns_five_apex_into_one_universal) {
     }));
     // Announced, as a rare craft is -- said to be forged, and in the
     // universal grey, as each tier announces in its own colour.
-    CHECK(h.stepUntil({&client}, [&] { return chatSays(client, "Universal Rose has been forged by"); },
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Universal Rose has been forged by"); },
                       30));
     // "The": there is only ever one of each petal at universal.
-    CHECK(chatSays(client, "<b style=\"color: #555555;\">The Universal Rose has been forged by"));
+    CHECK(sawText(client, "<b style=\"color: #555555;\">The Universal Rose has been forged by"));
     removeDataDir(dir);
 }
 
@@ -2184,7 +2137,6 @@ TEST(a_forged_universal_is_taken_from_every_other_account_and_refunded_four_apex
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
     const std::uint16_t rose = content().petalIndex("rose");
-    const std::uint16_t basic = content().petalIndex("basic");
     World& world = h.server.world();
 
     NetClient smith;
@@ -2193,7 +2145,7 @@ TEST(a_forged_universal_is_taken_from_every_other_account_and_refunded_four_apex
     CHECK(joinAs(h, rival, "rival"));
     const std::vector<NetClient*> both{&smith, &rival};
     h.step(3, both);
-    const Entity rivalBody = bodyOf(world, "rival");
+    const Entity rivalBody = bodyNamed(world, "rival");
     CHECK(rivalBody != NULL_ENTITY);
     if (rivalBody == NULL_ENTITY) { removeDataDir(dir); return; }
     CHECK_EQ(world.get<Loadout>(rivalBody).slots[0].configIndex, rose);
@@ -2212,7 +2164,7 @@ TEST(a_forged_universal_is_taken_from_every_other_account_and_refunded_four_apex
     }));
     // Off the live body too: the ring loses it at once.
     CHECK(world.get<Loadout>(rivalBody).slots[0].empty());
-    CHECK(h.stepUntil(both, [&] { return chatSays(rival, "Another player forged the Universal Rose"); },
+    CHECK(h.stepUntil(both, [&] { return sawText(rival, "Another player forged the Universal Rose"); },
                       30));
     // And the forger holds the one that is left.
     CHECK(awaitProfile(h, smith, [&](const Profile& p) {
@@ -2234,7 +2186,6 @@ TEST(a_forged_universal_is_taken_from_every_other_account_and_refunded_four_apex
             CHECK_EQ(kept->itemCount(Rarity::Universal, "petal_basic"), 1);
         }
     }
-    (void)basic;
     removeDataDir(dir);
 }
 
@@ -2406,13 +2357,13 @@ TEST(an_admins_universals_are_outside_the_one_of_each_rule) {
     CHECK(awaitForge(h, both, smith, outcome));
     CHECK(outcome.success);
     CHECK_EQ(ask(rose), std::string("smith"));
-    CHECK(h.stepUntil(both, [&] { return chatSays(smith, "Universal Rose has been forged by"); },
+    CHECK(h.stepUntil(both, [&] { return sawText(smith, "Universal Rose has been forged by"); },
                       30));
     CHECK(awaitProfile(h, boss, [&](const Profile& p) {
         return p.stackCount(rose, Rarity::Universal) == 1u &&
                p.stackCount(rose, Rarity::Apex) == 0u;
     }));
-    CHECK(!chatSays(boss, "Another player forged"));
+    CHECK(!sawText(boss, "Another player forged"));
 
     // The admin's own forge takes nobody's wing, leaves the titan naming
     // the player who holds it, and is not announced.
@@ -2425,8 +2376,8 @@ TEST(an_admins_universals_are_outside_the_one_of_each_rule) {
                p.stackCount(wing, Rarity::Apex) == 0u;
     }));
     h.step(10, both);
-    CHECK(!chatSays(smith, "Universal Wing has been forged by"));
-    CHECK(!chatSays(boss, "Universal Wing has been forged by"));
+    CHECK(!sawText(smith, "Universal Wing has been forged by"));
+    CHECK(!sawText(boss, "Universal Wing has been forged by"));
     standAtTitan(h, both, "smith");
     CHECK_EQ(ask(wing), std::string("keeper"));
     const Database& db = h.server.database();
@@ -2490,7 +2441,7 @@ TEST(the_titans_ring_orbits_it_as_a_flowers_does_and_kills_mobs_but_spares_flowe
     // outside the band and clear of the flower, and only then moved into it:
     // put down in the band, it could die before anything saw it alive.
     standAtTitan(h, {&client}, "boss");
-    const Entity body = bodyOf(world, "boss");
+    const Entity body = bodyNamed(world, "boss");
     const double full = world.get<Health>(body).max;
     const double bearing = 0.35;
     const Vec2 outside = centre + Vec2::fromAngle(bearing, orbit + 140.0);

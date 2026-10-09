@@ -271,8 +271,8 @@ TEST(transport_reassembles_a_frame_split_across_reads) {
     CHECK(pump(server, serverSide, client, clientSide, [&] { return client.connected(); }));
 
     // Far larger than one read chunk, so it necessarily arrives in pieces.
-    const std::string big(300 * 1024, 'x');
-    client.send(textFrame(big.substr(0, 60000)));
+    const std::string big(60000, 'x');
+    client.send(textFrame(big));
 
     CHECK(pump(server, serverSide, client, clientSide,
                [&] { return serverSide.messages.size() == 1; }));

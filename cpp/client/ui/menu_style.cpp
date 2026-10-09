@@ -1,7 +1,6 @@
 #include "client/ui/menu_style.h"
 
 #include <algorithm>
-#include <cmath>
 
 #include "client/ui/text.h"
 #include "client/ui/text_select.h"
@@ -9,16 +8,6 @@
 namespace flix::ui {
 
 namespace {
-
-/// Body text on a panel: white, outlined hard enough to read over a saturated
-/// fill or a mob sprite, and never over-stroked at small sizes.
-TextStyle labelStyle(double size, std::uint32_t fill) {
-    TextStyle style;
-    style.size = size;
-    style.fill = fill;
-    style.stroke = kInk;
-    return style;
-}
 
 /// The close button's cross is inset by this fraction of the button's width on
 /// every side. 0.27 of the overlay panels' 30px box is the reference's literal
@@ -74,6 +63,20 @@ void strokeRound(Canvas& canvas, Rect r, double radius, std::uint32_t rgb, doubl
     roundPath(canvas, r, radius);
     canvas.stroke();
     canvas.restore();
+}
+
+void fillStar(Canvas& canvas, Vec2 centre, double radius, std::uint32_t rgb) {
+    setFill(canvas, rgb);
+    canvas.beginPath();
+    for (int i = 0; i < 10; ++i) {
+        // Five points and five notches, alternating, starting at the top.
+        const double r = (i % 2 == 0) ? radius : radius * 0.45;
+        const Vec2 p = centre + Vec2::fromAngle(-kPi * 0.5 + i * kPi / 5.0, r);
+        if (i == 0) canvas.moveTo(static_cast<float>(p.x), static_cast<float>(p.y));
+        else canvas.lineTo(static_cast<float>(p.x), static_cast<float>(p.y));
+    }
+    canvas.closePath();
+    canvas.fill();
 }
 
 // ---------------------------------------------------------------------------
@@ -191,23 +194,6 @@ void pillButton(Canvas& canvas, Rect r, const std::string& label, std::uint32_t 
     text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, caption);
 }
 
-void framedButton(Canvas& canvas, Rect r, const std::string& label, std::uint32_t labelColor,
-                  std::uint32_t frame, bool hovered) {
-    TextCaptureScope off(false);
-    fillRound(canvas, r, 4.0, frame);
-    // The interior is a wash rather than a colour, so the frame stays the only
-    // thing that says what the button is.
-    fillRound(canvas, Rect{r.x + 2.0, r.y + 2.0, r.w - 4.0, r.h - 4.0}, 3.0,
-              hovered ? kPaper : kInk, hovered ? 0.22 : 0.25);
-
-    TextStyle caption = labelStyle(13.0, labelColor);
-    caption.align = Align::Centre;
-    caption.roundJoin = true;
-    // The label sits a pixel below the button's middle: at 13px bold the
-    // stroked cap height reads high without it.
-    text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5 + 1.0, caption);
-}
-
 void chip(Canvas& canvas, Rect r, const std::string& label, bool hovered, const ChipStyle& style) {
     TextCaptureScope off(false);
     const std::uint32_t hoverFill =
@@ -225,36 +211,31 @@ void chip(Canvas& canvas, Rect r, const std::string& label, bool hovered, const 
 // Labels
 // ---------------------------------------------------------------------------
 
+TextStyle labelStyle(double size, std::uint32_t fill) {
+    TextStyle style;
+    style.size = size;
+    style.fill = fill;
+    style.stroke = kInk;
+    return style;
+}
+
 /// Stroke-then-fill text whose OUTLINE carries an alpha.
 ///
 /// `TextStyle` has no stroke alpha and the reference stroke here is
-/// rgba(0,0,0,0.6), so the glyph path is built and stroked directly. Round
-/// join throughout: every text call site in the browser panel sets it, and a
-/// mitred outline grows spikes off sharp letter corners at width 3.
+/// rgba(0,0,0,0.6), so the run goes to paintRun with a stroke alpha of its
+/// own, at the pen text() would have used. Round join throughout: every text
+/// call site in the browser panel sets it, and a mitred outline grows spikes
+/// off sharp letter corners at width 3.
 void outlinedText(Canvas& canvas, const std::string& s, double x, double y,
                   const TextStyle& style, double strokeAlpha) {
     if (s.empty() || !Fonts::ready()) return;
-
-    double penX = x;
-    if (style.align != Align::Left) {
-        const double width = measure(s, style.size);
-        penX -= style.align == Align::Centre ? width * 0.5 : width;
-    }
-    double penY = y;
-    switch (style.baseline) {
-        case Baseline::Top: penY += ascent(style.size); break;
-        case Baseline::Bottom: penY += descent(style.size); break;
-        case Baseline::Alphabetic: break;
-        default:
-            penY += (ascent(style.size) + descent(style.size)) * 0.5;
-            break;
-    }
+    const Vec2 pen = textPen(s, x, y, style);
 
     // This painter has always joined the outline round, whatever the style
     // asked for; paintRun reads the flag, so it is set rather than assumed.
     TextStyle rounded = style;
     rounded.roundJoin = true;
-    paintRun(canvas, s, penX, penY, rounded, strokeAlpha);
+    paintRun(canvas, s, pen.x, pen.y, rounded, strokeAlpha);
 }
 
 TextStyle panelLabel(double size, Align align, Baseline baseline) {

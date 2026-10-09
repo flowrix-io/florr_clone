@@ -4,7 +4,9 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <sstream>
+
+#include "shared/core/file.h"
+#include "shared/core/text.h"
 
 namespace flix {
 
@@ -230,7 +232,8 @@ private:
                     unsigned int cp = 0;
                     if (!parseHex4(cp)) return false;
                     // A high surrogate must be joined with the low one that
-                    // follows, or the re-encoded UTF-8 is mojibake.
+                    // follows, or the re-encoded UTF-8 is mojibake. A half
+                    // with no partner is encoded as it stands (appendUtf8).
                     if (cp >= 0xD800 && cp <= 0xDBFF && s_.compare(pos_, 2, "\\u") == 0) {
                         const std::size_t save = pos_;
                         pos_ += 2;
@@ -253,32 +256,12 @@ private:
         if (pos_ + 4 > s_.size()) { fail("truncated \\u escape"); return false; }
         out = 0;
         for (int i = 0; i < 4; ++i) {
-            const char c = s_[pos_++];
+            const int digit = hexDigit(s_[pos_++]);
             out <<= 4;
-            if (c >= '0' && c <= '9') out |= static_cast<unsigned>(c - '0');
-            else if (c >= 'a' && c <= 'f') out |= static_cast<unsigned>(c - 'a' + 10);
-            else if (c >= 'A' && c <= 'F') out |= static_cast<unsigned>(c - 'A' + 10);
-            else { fail("invalid hex in \\u escape"); return false; }
+            if (digit < 0) { fail("invalid hex in \\u escape"); return false; }
+            out |= static_cast<unsigned>(digit);
         }
         return true;
-    }
-
-    static void appendUtf8(std::string& out, unsigned int cp) {
-        if (cp < 0x80) {
-            out += static_cast<char>(cp);
-        } else if (cp < 0x800) {
-            out += static_cast<char>(0xC0 | (cp >> 6));
-            out += static_cast<char>(0x80 | (cp & 0x3F));
-        } else if (cp < 0x10000) {
-            out += static_cast<char>(0xE0 | (cp >> 12));
-            out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            out += static_cast<char>(0x80 | (cp & 0x3F));
-        } else {
-            out += static_cast<char>(0xF0 | (cp >> 18));
-            out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-            out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            out += static_cast<char>(0x80 | (cp & 0x3F));
-        }
     }
 
     bool parseArray(Json& out) {
@@ -346,11 +329,9 @@ Json Json::parseOrNull(const std::string& text) {
 }
 
 bool Json::parseFile(const std::string& path, Json& out, std::string& error) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) { error = "cannot open " + path; return false; }
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    return parse(buffer.str(), out, error);
+    std::string text;
+    if (!readFile(path, text)) { error = "cannot open " + path; return false; }
+    return parse(text, out, error);
 }
 
 bool Json::writeFile(const std::string& path, int indent) const {

@@ -1,7 +1,6 @@
 #include "server/game_server.h"
 
 #include "shared/core/process_stats.h"
-#include "shared/game/tiled_map.h"
 
 #include <algorithm>
 #include <array>
@@ -10,16 +9,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <iterator>
-#include <limits>
 #include <optional>
 #include <random>
-#include <thread>
 #include <utility>
 
 #include "server/admin_db_key.h"
 #include "server/auto_update.h"
-#include "server/bot_identity.h"
 #include "server/guilds.h"
 #include "server/loot_eligibility.h"
 #include "server/text.h"
@@ -119,10 +114,16 @@ std::string inventoryKey(std::uint16_t petalIndex) {
     return "petal_" + content().petal(petalIndex).id;
 }
 
+} // namespace
+
+// Outside the file's own namespace, and declared in game_server.h, because the
+// dashboard's view of a bag (server/admin_dashboard.cpp) reads these keys too.
 std::uint16_t petalIndexFromInventoryKey(const std::string& key) {
     const std::string id = key.rfind("petal_", 0) == 0 ? key.substr(6) : key;
     return content().petalIndex(id);
 }
+
+namespace {
 
 /// Takes `count` from the inventory, or nothing at all when short. Never
 /// partially succeeds: a craft that consumed three of the five it needed and
@@ -260,13 +261,6 @@ PresetLoad equipPreset(PlayerRecord& record, const std::vector<std::optional<Sto
     return result;
 }
 
-/// What a brand-new account starts with.
-///
-/// An empty loadout is a flower that cannot fight anything, which makes the
-/// first minute of the game a walk through a field of mobs that can only hurt
-/// it. Five Basic petals is the smallest kit that is actually playable, and
-/// the five spares beside them are exactly one craft batch -- a brand-new
-/// account can walk to the crafting panel and roll its first Unusual.
 /// One loadout slot as a body in `realm` actually wears it.
 ///
 /// The maze plays the account's ring one rarity DOWN, and an orbiting slot
@@ -299,6 +293,13 @@ WornSlot wornSlot(const PlayerRecord& record, std::size_t slot, Realm realm) {
     return worn;
 }
 
+/// What a brand-new account starts with.
+///
+/// An empty loadout is a flower that cannot fight anything, which makes the
+/// first minute of the game a walk through a field of mobs that can only hurt
+/// it. Five Basic petals is the smallest kit that is actually playable, and
+/// the five spares beside them are exactly one craft batch -- a brand-new
+/// account can walk to the crafting panel and roll its first Unusual.
 void grantStarterKit(PlayerRecord& record) {
     const std::uint16_t basic = content().petalIndex("basic");
     if (basic == kInvalidIndex) return;
@@ -323,9 +324,10 @@ void grantStarterKit(PlayerRecord& record) {
 /// Deliberately the mob's config ID rather than its display name, and
 /// deliberately only one character of each word, because that is what the
 /// reference's death card builds out of `{type, tier}` -- so a mob whose id is
-/// `baby_ant` reads "Common Baby_ant" in both clients. A player killer reads
-/// "Common Player", as it does there. An empty string means the killer is
-/// unknown, which is what leaves the client on its own fallback wording.
+/// `baby_ant` reads "Common Baby_ant", as it did in the browser client. A
+/// player killer reads "Common Player", as it did there. An empty string means
+/// the killer is unknown, which is what leaves the client on its own fallback
+/// wording.
 std::string killerLabel(const World& world, Entity killer) {
     if (killer == NULL_ENTITY || !world.isAlive(killer)) return {};
     if (world.has<PlayerTag>(killer)) return "Common Player";
@@ -354,8 +356,11 @@ std::string numberText(double value) {
     return buffer;
 }
 
-/// The five type tags the browser stores, as the wire enum. Anything else is
-/// Generic, which is also what an older notification with no type reads as.
+} // namespace
+
+// Outside the file's own namespace, and declared in game_server.h, because the
+// console's `notification` command (server/chat_commands.cpp) asks it which
+// tags are real.
 net::NotificationKind notificationKind(const std::string& type) {
     if (type == "super_craft") return net::NotificationKind::SuperCraft;
     if (type == "unique_craft") return net::NotificationKind::UniqueCraft;
@@ -364,8 +369,6 @@ net::NotificationKind notificationKind(const std::string& type) {
     if (type == "universal_craft") return net::NotificationKind::UniversalCraft;
     return net::NotificationKind::Generic;
 }
-
-} // namespace
 
 GameServer::GameServer() = default;
 GameServer::~GameServer() = default;
@@ -759,11 +762,13 @@ void GameServer::tick(double nowMillis) {
         return;
     }
 
-    // Record which input each player's movement is about to consume. The
-    // snapshot reports this back, and it is the whole basis of reconciliation:
-    // the client discards the predicted inputs at or below it and replays only
-    // what is still outstanding. Left at zero, every client replays its entire
-    // queue on top of an already-current position and drifts further each tick.
+    // Record which input each player's movement is about to consume, which
+    // the snapshot echoes back (Replicator::build). That echo is what the
+    // client's reconciliation was built on, back when it predicted its own
+    // flower and replayed the inputs the server had not reached yet. It
+    // predicts nothing now -- it eases toward the server's positions
+    // (client/interpolation.h) -- and reads past the echo without using it;
+    // the field stays on the wire because taking it out is a layout change.
     Query<PlayerTag, PlayerInput> inputs{world_};
     inputs.each([](Entity, PlayerTag&, PlayerInput& input) {
         input.lastAppliedSequence = input.current.sequence;
@@ -780,7 +785,14 @@ void GameServer::tick(double nowMillis) {
     serviceSplitters(nowMillis);
     markTickPhase("splitters");
 
-    reapDead(nowMillis);
+    // After the splitters, which may have moved a controlled flower onto its
+    // other half, and before the reaper for the splitters' own reason: a death
+    // this tick ends the control first, so the admin's view is back on their
+    // own flower before either corpse is announced.
+    serviceControl();
+    markTickPhase("control");
+
+    reapDead();
     commands_.flush();
     markTickPhase("reap");
 
@@ -811,13 +823,18 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // Order matters and is the tick's whole contract:
     //   bot intent -> players -> petals -> mob intent/movement -> projectiles
     //   -> combat -> spawning -> loot.
-    // TypeScript closes the player movement window and runs the player's petal
-    // pipeline before moveEnemies(), then advances projectiles after mobs.
+    // The TypeScript server closed the player movement window and ran the
+    // player's petal pipeline before moveEnemies(), then advanced projectiles
+    // after the mobs, and this keeps that order.
     //
-    // `dt` is the smoothed real step and drives the dt-SCALED half -- flowers,
-    // petals, projectiles, fields. The mob half is a FIXED per-call step on
-    // both sides (src/server.ts:1321 hands moveEnemies a hard 1/30), so it is
-    // given net::kTickSeconds explicitly below rather than the tick's delta.
+    // `dt` is the smoothed real step and drives the dt-SCALED half: flowers,
+    // petals, combat's timed effects (afflictions, ground fields) and the
+    // drops' lifetimes. The mob half is a FIXED per-call step, as it was in
+    // the TypeScript server (src/server.ts:1321 handed moveEnemies a hard
+    // 1/30), and projectile FLIGHT moves with it -- MovementSystem's world
+    // phase steps the mobs and then the shots. So the mob AI, that phase and
+    // the spawner are given net::kTickSeconds explicitly below rather than the
+    // tick's delta.
 
     // Bots decide before anything moves, which is where the reference samples
     // input: their decisions are made against the world as this tick found it
@@ -948,10 +965,7 @@ void GameServer::announceBossSpawns() {
 
         // Underscores read as spaces in the reference's wording, so
         // `soldier_ant` announces itself as "soldier ant".
-        std::string name = content().mob(boss.mobIndex).id;
-        for (char& c : name) {
-            if (c == '_') c = ' ';
-        }
+        const std::string name = spokenMobName(content().mob(boss.mobIndex).id);
         // Only meaningful for a boss on the overworld: `section` is that map's
         // 3x3 grid, and another map's coordinates read as a section number that
         // means nothing. See `here` below.
@@ -1004,7 +1018,7 @@ void GameServer::bankPickups() {
     }
 }
 
-void GameServer::reapDead(double nowMillis) {
+void GameServer::reapDead() {
     // Death is a component, not a destroy, so everything later in the SAME tick
     // still sees the entity -- a mob that dies during combat must still be
     // there for the loot system to read its contributor list. The actual
@@ -1078,7 +1092,6 @@ void GameServer::reapDead(double nowMillis) {
         }
         commands_.destroy(e);
     }
-    (void)nowMillis;
 }
 
 void GameServer::replicate(double nowMillis) {
@@ -1100,21 +1113,22 @@ void GameServer::replicate(double nowMillis) {
         collectSquadBodies(session, squadBodies);
         frame.alwaysVisible = squadBodies.empty() ? nullptr : &squadBodies;
 
-        scratch_.clear();
-        Entity viewpoint = session.entity;
-        const Entity previousControl = session.controlledFlower;
-        if (effectiveAdmin(session) && world_.isAlive(session.controlledFlower)) {
-            const auto* target = world_.tryGet<Transform>(session.controlledFlower);
-            const auto* health = world_.tryGet<Health>(session.controlledFlower);
-            const auto* ownHealth = world_.tryGet<Health>(session.entity);
-            if (target && target->realm == session.realm && health && health->current > 0 && ownHealth && ownHealth->current > 0)
-                viewpoint = session.controlledFlower;
-            else session.controlledFlower = NULL_ENTITY;
-        } else session.controlledFlower = NULL_ENTITY;
-        if (previousControl != session.controlledFlower) {
-            if (auto* input = world_.tryGet<PlayerInput>(previousControl)) input->current = {};
-            views_[session.connection] = {};
+        // Built around the flower this client is WATCHING, which is another
+        // player's while an admin steers it -- and culled to the window this
+        // client reported, which is its own body's claim, not that flower's:
+        // the steered player's own stream keeps the box their screen asked
+        // for. Nothing here decides whether the control still holds;
+        // serviceControl did, this tick, and every way out of it since has
+        // ended it on the spot.
+        const Entity viewpoint = viewpointOf(session);
+        frame.viewport.reset();
+        if (viewpoint != session.entity) {
+            if (const PlayerLocation* own = world_.tryGet<PlayerLocation>(session.entity)) {
+                frame.viewport = own->viewport;
+            }
         }
+
+        scratch_.clear();
         replicator_.build(world_, viewpoint, views_[session.connection], frame, scratch_);
         if (!scratch_.empty()) connection->send(scratch_);
     }
@@ -1143,8 +1157,6 @@ Session* GameServer::sessionForEntity(Entity e) {
 void GameServer::onConnect(net::Connection& connection) {
     Session session;
     session.connection = connection.id();
-    session.connectedAtMillis = monotonicMillis();
-    session.lastHeardMillis = session.connectedAtMillis;
     sessions_[connection.id()] = std::move(session);
     views_[connection.id()] = ClientView{};
 }
@@ -1154,10 +1166,14 @@ void GameServer::onDisconnect(net::Connection& connection, const std::string&) {
         // Before the body is destroyed, so the line the squad is told still
         // knows what this flower was called.
         departSquad(*session, nullptr, squadDisplayName(squadIdOf(*session)));
-        if (session->playing()) {
-            persistPlayer(*session);
-            despawnPlayer(*session, false);
-        }
+        // Saved only while Playing (persistPlayer's own rule), but taken out
+        // whenever a body is held at all: the session is erased below, and a
+        // body it still referred to would stand in the world for nobody,
+        // streamed to everyone near it, until something killed it. The stage
+        // and the body agree on every path there is; this is what keeps one
+        // that some day does not from leaking a flower per connection.
+        if (session->playing()) persistPlayer(*session);
+        if (session->entity != NULL_ENTITY) despawnPlayer(*session, false);
     }
     revokeTempAdmin(connection.id());
     sessions_.erase(connection.id());
@@ -1167,7 +1183,6 @@ void GameServer::onDisconnect(net::Connection& connection, const std::string&) {
 void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
     Session* session = sessionFor(connection.id());
     if (!session) return;
-    session->lastHeardMillis = monotonicMillis();
 
     const auto id = static_cast<net::ClientMessage>(reader.u8());
 
@@ -1232,12 +1247,33 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::DeleteSkin:    handleDeleteSkin(*session, connection, reader); break;
         case net::ClientMessage::Logout:        handleLogout(*session); break;
         case net::ClientMessage::AdminDb:       handleAdminDb(*session, connection, reader); break;
+        case net::ClientMessage::AdminDashboard:
+            handleAdminDashboard(*session, connection, reader);
+            break;
         default:
             break;
     }
 }
 
 void GameServer::handleHello(Session& session, net::Connection& connection, ByteReader& reader) {
+    // Once per socket. The shipping client sends its Hello from
+    // NetClient::onConnect, which the transport calls once per dial, so a
+    // second one on a live socket is a modified client -- and it used to be
+    // honoured. The stage went back to Anonymous with the body, the account
+    // and any temporary grant all still on the session, and everything that
+    // looks after a body asks playing(): the periodic save, the disconnect,
+    // leaveWorld and the next join. So the flower stood in the world for
+    // nobody, unsaved and walking its last input, a steered one included, and
+    // every (Hello, Resume, Join) left another -- without limit, for one free
+    // account, until a restart. A repeat is closed instead, and the stage it
+    // arrived at is left alone: the close then runs through onDisconnect like
+    // any other, which saves the body and takes it out. Were a re-handshake
+    // ever wanted, it would have to be a signOut(), never a bare stage write.
+    if (session.stage != SessionStage::Greeting) {
+        connection.closeGracefully();
+        return;
+    }
+
     const std::uint16_t version = reader.u16();
     const std::uint32_t clientContent = reader.u32();
     if (!reader.ok()) { connection.closeGracefully(); return; }
@@ -1283,6 +1319,26 @@ void GameServer::sendAuthResult(net::Connection& connection, net::AuthStatus sta
     connection.send(w);
 }
 
+namespace {
+
+/// The wire's answer for each way createUser refuses. Every refusal used to go
+/// out as UsernameTaken, which the client reads as "that account exists, log
+/// in instead" -- so a name the format rules refused sent an auto-login rig
+/// off to sign in to an account that was never made.
+net::AuthStatus refusalStatus(CreateStatus status) {
+    switch (status) {
+        case CreateStatus::UsernameInvalid: return net::AuthStatus::UsernameInvalid;
+        case CreateStatus::UsernameTaken:   return net::AuthStatus::UsernameTaken;
+        case CreateStatus::PasswordInvalid: return net::AuthStatus::PasswordInvalid;
+        // "Made" with no account to show for it is no account either.
+        case CreateStatus::Ok:
+        case CreateStatus::ServerError:     break;
+    }
+    return net::AuthStatus::ServerError;
+}
+
+} // namespace
+
 void GameServer::handleRegister(Session& session, net::Connection& connection, ByteReader& reader) {
     const std::string username = reader.str();
     const std::string password = reader.str();
@@ -1293,12 +1349,14 @@ void GameServer::handleRegister(Session& session, net::Connection& connection, B
         return;
     }
 
+    // The database's own rules -- the one copy, which createUser applies again
+    // below -- so this answer and that one cannot disagree.
     std::string reason;
-    if (!validUsername(username, reason)) {
+    if (!Database::validUsername(username, reason)) {
         sendAuthResult(connection, net::AuthStatus::UsernameInvalid, "", "", reason);
         return;
     }
-    if (!validPassword(password, reason)) {
+    if (!Database::validPassword(password, reason)) {
         sendAuthResult(connection, net::AuthStatus::PasswordInvalid, "", "", reason);
         return;
     }
@@ -1328,13 +1386,20 @@ void GameServer::handleRegister(Session& session, net::Connection& connection, B
 
     const CreateResult result = database_.createUser(username, password, addressHash);
     if (!result.ok() || !result.account) {
-        sendAuthResult(connection, net::AuthStatus::UsernameTaken, "", "", result.reason);
+        sendAuthResult(connection, refusalStatus(result.status), "", "", result.reason);
         return;
     }
 
+    // A socket still in the world leaves it first, its body saved into the
+    // account it belonged to (see leaveWorld).
+    leaveWorld(session);
+    releaseOnAccountChange(session, result.account->id);
     session.userId = result.account->id;
     session.username = result.account->username;
-    session.admin = result.account->admin || session.owner();
+    // Assigned, never left as it was: Register is also accepted on a socket
+    // that is already signed in, and a full admin's flag must not carry over
+    // into the account it has just made. A new account is never an admin.
+    session.admin = result.account->admin;
     session.token = database_.createSession(session.userId, session.username);
 
     grantStarterKit(database_.progress(session.userId));
@@ -1382,10 +1447,14 @@ void GameServer::handleLogin(Session& session, net::Connection& connection, Byte
     // A player who signed in is not what the limit is for.
     accountLimits_.refundLoginAttempt(address);
 
+    // A socket still in the world leaves it first, its body saved into the
+    // account it belonged to -- this one again, or another (see leaveWorld).
+    leaveWorld(session);
+    releaseOnAccountChange(session, account->id);
     replaceOtherSessions(session, account->id);
     session.userId = account->id;
     session.username = account->username;
-    session.admin = account->admin || session.owner();
+    session.admin = account->admin;
     session.token = database_.createSession(account->id, account->username);
     session.stage = SessionStage::Authenticated;
     sendAuthResult(connection, net::AuthStatus::Ok, session.token, account->username, "");
@@ -1410,12 +1479,19 @@ void GameServer::handleResume(Session& session, net::Connection& connection, Byt
     // bodies into the database, and `record` points into it.
     const std::string userId = record->userId;
     const std::string username = record->username;
+    // A socket still in the world leaves it first, as a login's does (see
+    // leaveWorld).
+    leaveWorld(session);
+    releaseOnAccountChange(session, userId);
     replaceOtherSessions(session, userId);
     session.userId = userId;
     session.username = username;
     session.token = token;
     session.stage = SessionStage::Authenticated;
-    if (const Account* account = database_.findUser(username)) session.admin = account->admin || session.owner();
+    // Assigned whether or not the lookup lands, so a flag left on this socket
+    // by whoever was signed in on it before can never ride along.
+    const Account* account = database_.findUser(username);
+    session.admin = account != nullptr && account->admin;
     sendAuthResult(connection, net::AuthStatus::Ok, token, username, "");
     sendDailyStreak(session, connection);
     sendProfile(session, connection);
@@ -1580,14 +1656,24 @@ void GameServer::replaceOtherSessions(const Session& incoming, const std::string
 }
 
 void GameServer::signOut(Session& session) {
+    // The squad first, while the session still has the name the squad knows
+    // it by: a squad is keyed by connection, and an anonymous socket left in
+    // one would be handed to whoever signs in on it next, as a disconnect
+    // never would. Callers that already departed (replaceOtherSessions, the
+    // database editor's sign-out) make this a no-op.
+    departSquad(session, listener_.find(session.connection),
+                squadDisplayName(squadIdOf(session)));
     // A body in the world belongs to the account that is going away, so it
     // comes off first -- and with its progress saved, because a logout is a
     // deliberate exit, not a drop. Left alone it would be an orphan: a flower
-    // nobody can steer and no account can persist.
-    if (session.playing()) {
-        persistPlayer(session);
-        despawnPlayer(session, false);
-    }
+    // nobody can steer and no account can persist. Taking it off is also what
+    // ends any flower control this connection is part of, from either end:
+    // control needs a body on both sides, and despawnPlayer lets go of it
+    // through the back-references. Taken out whenever one is held, saved only
+    // while Playing, for onDisconnect's reason: nothing names a body once its
+    // session has stopped naming it.
+    if (session.playing()) persistPlayer(session);
+    if (session.entity != NULL_ENTITY) despawnPlayer(session, false);
     revokeTempAdmin(session.connection);
     session.token.clear();
     session.userId.clear();
@@ -1869,10 +1955,23 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
 
 void GameServer::handleLeave(Session& session, net::Connection& connection) {
     if (!session.playing()) return;
-    revokeTempAdmin(session.connection);
-    persistPlayer(session);
-    despawnPlayer(session, true);
+    leaveWorld(session);
     sendProfile(session, connection);
+}
+
+void GameServer::leaveWorld(Session& session) {
+    // On the body, not the stage: a re-auth is about to change whose session
+    // this is, and a body left on it past that point would be credited with
+    // whatever it picks up by the account that comes next. persistPlayer
+    // saves only a Playing session's, so a body the stage had stopped
+    // vouching for is taken out unsaved -- see spawnPlayer for why.
+    if (session.entity == NULL_ENTITY) return;
+    persistPlayer(session);
+    // The body first, then the grant: a grantee steering somebody else's
+    // flower lets go of it on the way out of the world, and taking the grant
+    // first would move their view back onto a flower that is about to go.
+    despawnPlayer(session, true);
+    revokeTempAdmin(session.connection);
 }
 
 void GameServer::handleInput(Session& session, ByteReader& reader) {
@@ -1885,34 +1984,37 @@ void GameServer::handleInput(Session& session, ByteReader& reader) {
     if (input.sequence <= session.lastInputSequence) return;
     session.lastInputSequence = input.sequence;
 
-    for (const auto& entry : sessions_) {
-        const auto& controller = entry.second;
-        if (controller.playing() && effectiveAdmin(controller) &&
-            controller.controlledFlower == session.entity) return;
+    // Which flower the movement, the aim and the two buttons steer. A flower
+    // an admin has taken over ignores its own player entirely, whichever half
+    // they are in; the admin steers it instead, through whatever half is
+    // active NOW, so a splitter switch moves the control with it. Both ends
+    // are back-references on the sessions, which keeps this to one lookup on
+    // the hottest path the server has.
+    Entity steered = session.entity;
+    if (session.controlledBy != 0) {
+        steered = NULL_ENTITY;
+    } else if (session.controlling != 0) {
+        const Session* target = sessionFor(session.controlling);
+        steered = target != nullptr && target->playing() ? target->entity : NULL_ENTITY;
     }
-    Entity inputEntity = session.entity;
-    if (session.controlledFlower != NULL_ENTITY) {
-        if (!effectiveAdmin(session) || !world_.isAlive(session.controlledFlower) ||
-            !world_.tryGet<Transform>(session.controlledFlower) ||
-            world_.get<Transform>(session.controlledFlower).realm != session.realm) {
-            session.controlledFlower = NULL_ENTITY;
-        } else inputEntity = session.controlledFlower;
-    }
-    if (PlayerInput* state = world_.tryGet<PlayerInput>(inputEntity)) {
-        state->current = input;
-        state->aimDirection = Vec2::fromAngle(input.aimAngle);
-    }
+    if (PlayerInput* state = world_.tryGet<PlayerInput>(steered)) state->current = input;
 
     // The window the client is drawing rides every input packet, so a resize or
     // a zoom widens what is replicated on the next tick rather than at the next
     // join. Zero means "unchanged", which is what a client that never learned
     // to report it sends.
+    //
+    // Always onto the sender's OWN body, whatever it is steering: the claim
+    // culls this client's stream, decides what this body hears on Local and
+    // keeps the spawner from putting mobs down in plain sight of it. An admin
+    // watching through another flower is culled to this same claim by
+    // replicate(), and the flower they are steering keeps its own player's.
     if (input.viewportWidth > 0 && input.viewportHeight > 0) {
         // Clamped against the loadout as it stands NOW, every frame, so taking
         // the antennae off shrinks the claim on the next packet.
-        const Vec2 viewport = claimableViewport(world_, inputEntity, content(),
+        const Vec2 viewport = claimableViewport(world_, session.entity, content(),
                                                 input.viewportWidth, input.viewportHeight);
-        if (PlayerLocation* location = world_.tryGet<PlayerLocation>(inputEntity)) {
+        if (PlayerLocation* location = world_.tryGet<PlayerLocation>(session.entity)) {
             location->viewport = viewport;
         }
     }
@@ -1968,7 +2070,7 @@ void GameServer::handleChat(Session& session, net::Connection& connection, ByteR
     // sender alone -- billed to the chat bucket, four commands emptied it and
     // the console became one command every two seconds.
     if (!text.empty() && text[0] == '/') {
-        if (!session.owner() && !spend(session.commandAllowance)) {
+        if (!spend(session.commandAllowance)) {
             sendNotice(connection, net::NoticeSeverity::Warning,
                        "You are sending commands too quickly.");
             return;
@@ -1999,19 +2101,14 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
         return;
     }
 
-    if (!session.owner() && !spend(session.chatAllowance)) {
+    if (!spend(session.chatAllowance)) {
         sendNotice(connection, net::NoticeSeverity::Warning, "You are sending messages too quickly.");
         return;
     }
 
     // Everything from here reaches other players, which is exactly what a
     // mute blocks.
-    const Account* account = database_.findUser(session.username);
-    if (!session.owner() && account != nullptr && account->muted) {
-        sendSystem(connection, "<span style=\"color: #ff8866;\">You are muted and cannot "
-                               "send chat messages.</span>");
-        return;
-    }
+    if (speakerMuted(session, connection)) return;
 
     std::string said = text;
     if (!screenChatImages(connection, said)) return;
@@ -2019,7 +2116,7 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
     if (channel == net::ChatChannel::Local) {
         sendLocalChat(session, said, speakerNetId);
     } else {
-        broadcastChat(net::ChatChannel::Global, session.owner() ? "[ADMIN] a19kisme" : session.username, said, speakerNetId);
+        broadcastChat(net::ChatChannel::Global, session.username, said, speakerNetId);
     }
 
     // Somebody saying "super" or "unique" rallies every bot onto the best boss
@@ -2056,14 +2153,17 @@ void GameServer::sendLocalChat(const Session& speaker, const std::string& text,
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::Chat));
     w.u8(static_cast<std::uint8_t>(net::ChatChannel::Local));
-    w.str(speaker.owner() ? "[ADMIN] a19kisme" : speaker.username);
+    w.str(speaker.username);
     w.str(text);
     w.u32(speakerNetId);
     for (const auto& [id, listener] : sessions_) {
         if (!listener.authenticated() || !listener.playing()) continue;
         // The speaker hears themselves whatever their own box says.
         if (&listener != &speaker) {
-            const Transform* at = world_.tryGet<Transform>(listener.entity);
+            // From the flower the listener is WATCHING, which for an admin
+            // steering another player's is that one: the line is heard where
+            // its bubble can be seen.
+            const Transform* at = world_.tryGet<Transform>(viewpointOf(listener));
             if (at == nullptr || at->realm != from->realm) continue;
             // The listener's own screen, as the client reported it, centred
             // on the body it is watching from -- the box replication streams
@@ -2854,10 +2954,7 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     // A flower's summon was never announced on the way in, and losing one is
     // not a boss falling -- it simply hatches again.
     if (world_.has<Pet>(mob)) return;
-    std::string name = content().mob(type.configIndex).id;
-    for (char& c : name) {
-        if (c == '_') c = ' ';
-    }
+    const std::string name = spokenMobName(content().mob(type.configIndex).id);
     char colorAttribute[32];
     std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(type.rarity));
     const std::string opening = std::string("<b style=\"color: ") + colorAttribute + ";\">A " +
@@ -3008,9 +3105,10 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
 
 /// Redeems a star code.
 ///
-/// The codes live in the database's own `codes` table -- the one the browser
-/// build's admin commands write and this build round-trips -- so a code minted
-/// against that file works here without a second registry to keep in step.
+/// The codes live in the database's own `codes` table -- the one
+/// `/admin generate_code` writes, in the shape the browser build's admin
+/// commands wrote it -- so a code minted in either era redeems here without a
+/// second registry to keep in step.
 void GameServer::handleRedeemCode(Session& session, net::Connection& connection,
                                   ByteReader& reader) {
     const std::string typed = reader.str();
@@ -3078,10 +3176,10 @@ void GameServer::handleRedeemCode(Session& session, net::Connection& connection,
     sendProfile(session, connection);
     sendShopResult(connection, net::ShopResultKind::Redeem, true, stars, {});
 
-    // The star is U+2B50, exactly as the browser writes it. The same save file
-    // is read by both builds, so the row stored here has to be the row the
-    // browser would have stored -- the shipped face having no glyph for it is
-    // the panel's problem to solve, not a reason to write a different history.
+    // The star is U+2B50, exactly as the browser build wrote it. The row
+    // stored here is kept identical to the rows that build stored, which the
+    // feed still holds -- the shipped face having no glyph for it is the
+    // panel's problem to solve, not a reason to write a different history.
     const std::string playerName =
         session.displayName.empty() ? session.username : session.displayName;
     addNotification("star_code", "Star code \"" + code + "\" redeemed by @" + session.username +
@@ -3125,9 +3223,8 @@ void GameServer::handleSetSkin(Session& session, net::Connection& connection, By
 // and the id, the author and the timestamp are the server's to assign.
 //
 // Stored as raw JSON under the database's `customSkins` key rather than as a
-// typed table, because that key belongs to the shared inventory.json the
-// browser build also reads and writes: a skin published in one build has to
-// come back in the other.
+// typed table, because that key holds the browser build's own skin catalog,
+// which existing database files carry: its skins have to load here unchanged.
 
 namespace {
 
@@ -3153,19 +3250,6 @@ bool isGuestName(const std::string& name) {
     if (name.size() <= 4 || name.compare(0, 4, "User") != 0) return false;
     for (std::size_t i = 4; i < name.size(); ++i) {
         if (name[i] < '0' || name[i] > '9') return false;
-    }
-    return true;
-}
-
-/// Usernames are compared case-insensitively for ownership, as the reference
-/// does: the account "Rose" and the author string "rose" are one person.
-bool sameUser(const std::string& a, const std::string& b) {
-    if (a.size() != b.size()) return false;
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        if (std::tolower(static_cast<unsigned char>(a[i])) !=
-            std::tolower(static_cast<unsigned char>(b[i]))) {
-            return false;
-        }
     }
     return true;
 }
@@ -3269,9 +3353,12 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
     // Read through a const view: Json's non-const operator[] CREATES the key
     // it is handed, so a lookup that misses would quietly grow the table.
     const Json& stored = catalog;
+    // Authors are matched case-blind, as the reference matches them: the
+    // account "Rose" and the author string "rose" are one person.
+    const std::string me = lowerCase(session.username);
     int mine = 0;
     for (const std::string& id : stored.keys()) {
-        if (sameUser(stored[id]["author"].asString(), session.username)) ++mine;
+        if (lowerCase(stored[id]["author"].asString()) == me) ++mine;
     }
     if (mine >= kMaxSkinsPerUser) {
         sendSkinChat(connection, "You've reached the limit of " +
@@ -3338,7 +3425,8 @@ void GameServer::handleDeleteSkin(Session& session, net::Connection& connection,
     const std::string author = stored[id]["author"].asString();
     const std::string name = stored[id]["name"].asString();
 
-    const bool owner = sameUser(author, session.username);
+    // Case-blind, as when the skin was counted against its author's limit.
+    const bool owner = lowerCase(author) == lowerCase(session.username);
     if (!session.admin && !owner) {
         sendSkinChat(connection, "You can only take down your own skins.");
         return;
@@ -3366,15 +3454,20 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
     };
     std::vector<Row> rows;
     rows.reserve(database_.userCount());
-    for (const std::string& username : database_.usernames()) {
-        const Account* account = database_.findUser(username);
+    // Every account, through the const lookup: the board only reads, and any
+    // player may ask for it as often as they like. The mutable lookup drops
+    // each row's cached text, so one request used to have the next save
+    // re-serialise the whole users table on the tick thread (Database::Table).
+    const Database& accounts = database_;
+    for (const std::string& username : accounts.usernames()) {
+        const Account* account = accounts.findUser(username);
         if (account == nullptr) continue;
         // Staff are off the board unless the asker ticked "Show Admins on
         // Leaderboard". The browser's getLeaderboard(limit, includeAdmins)
         // honours that for any caller, not only an admin: it reveals names
         // and XP, which the board shows for everyone else anyway.
         if (account->admin && !includeAdmins) continue;
-        const PlayerRecord* record = database_.findProgress(account->id);
+        const PlayerRecord* record = accounts.findProgress(account->id);
         rows.push_back({&account->username, record ? record->totalXp : 0.0});
     }
 
@@ -3385,16 +3478,16 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
     std::partial_sort(rows.begin(), rows.begin() + static_cast<long>(shown), rows.end(),
                       [](const Row& a, const Row& b) { return a.totalXp > b.totalXp; });
 
-    // The count beside the title is over every account, not over the 25 rows
-    // that fit. The active-today figure rides along only for an admin, which is
+    // The count beside the title is over every account, not over the 50 rows
+    // sent. The active-today figure rides along only for an admin, which is
     // how the browser's payload leaves the field out for everyone else -- and 0
     // is the same answer as "absent" to the panel, since the asker is always
     // active today themselves.
     const std::int64_t dayAgo = database_.nowMillis() - 24 * 60 * 60 * 1000;
     std::uint32_t activeToday = 0;
     if (session.admin) {
-        for (const std::string& username : database_.usernames()) {
-            const Account* account = database_.findUser(username);
+        for (const std::string& username : accounts.usernames()) {
+            const Account* account = accounts.findUser(username);
             if (account && account->lastActiveAtMillis >= dayAgo) ++activeToday;
         }
     }
@@ -3417,9 +3510,9 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
 // ---------------------------------------------------------------------------
 
 void GameServer::addNotification(const std::string& type, const std::string& message) {
-    // rawArrayTable, never rawTable: this is the one unmodelled table the
-    // browser stores as an ARRAY, and coercing it would replace the whole feed
-    // with an empty object.
+    // rawArrayTable, never rawTable: this is the one unmodelled table stored
+    // as an ARRAY, the shape the browser build gave it, and coercing it would
+    // replace the whole feed with an empty object.
     Json& feed = database_.rawArrayTable("notifications");
     const std::int64_t now = database_.nowMillis();
     Json entry = Json::object();
@@ -3445,8 +3538,9 @@ void GameServer::handleNotifications(net::Connection& connection, ByteReader& re
     if (!reader.ok()) return;
 
     // Read through storedTable(), never rawTable(): this is the one unmodelled
-    // table the browser stores as an ARRAY, and rawTable() would coerce the
-    // whole feed to an empty object on the way past.
+    // table stored as an ARRAY, the shape the browser build gave it, and
+    // rawTable() would coerce the whole feed to an empty object on the way
+    // past.
     const Json& table = database_.storedTable("notifications");
 
     struct Row {
@@ -3808,7 +3902,7 @@ void GameServer::guildInvite(Session& session, net::Connection& connection,
         return;
     }
 
-    guildInvites_[key] = {guildName, session.username, now + kGuildInviteMillis};
+    guildInvites_[key] = {guildName, now + kGuildInviteMillis};
     sendNotice(connection, net::NoticeSeverity::Good, "Guild invite sent to " + target + ".");
 
     if (net::Connection* peer = connectionForUser(target)) {
@@ -4214,8 +4308,6 @@ std::string GameServer::squadDisplayName(SquadMemberId member) {
     return squadAccountName(member);
 }
 
-Entity GameServer::squadEntity(SquadMemberId member) { return squadEntityOf(member); }
-
 Entity GameServer::squadEntityOf(SquadMemberId member) const {
     if (member.bot()) {
         return world_.isAlive(member.entity) ? member.entity : NULL_ENTITY;
@@ -4249,7 +4341,7 @@ void GameServer::sendSquadUpdate(net::Connection& connection, const Squad* squad
     std::vector<std::pair<SquadMemberId, Entity>> rows;
     rows.reserve(squad->members.size() + 1);
     for (const SquadMemberId& member : squad->members) {
-        rows.emplace_back(member, squadEntity(member));
+        rows.emplace_back(member, squadEntityOf(member));
         if (member.bot()) continue;
         const auto found = sessions_.find(member.connection);
         if (found != sessions_.end() && found->second.split()) {
@@ -4269,7 +4361,7 @@ void GameServer::sendSquadUpdate(net::Connection& connection, const Squad* squad
         std::uint8_t flags = 0;
         // The leader mark rides the member's OWN row, which is the first one
         // it has: a flower does not lead a squad twice for being two flowers.
-        if (squad->leader == row.first && row.second == squadEntity(row.first)) flags |= 1u;
+        if (squad->leader == row.first && row.second == squadEntityOf(row.first)) flags |= 1u;
         if (row.first.bot()) flags |= 2u;
         w.u8(flags);
     }
@@ -4479,7 +4571,7 @@ void GameServer::rebuildSquadIndex() {
     for (const auto& entry : squads_.all()) {
         std::vector<SquadBody> bodies;
         for (const SquadMemberId& member : entry.second.members) {
-            const Entity body = squadEntity(member);
+            const Entity body = squadEntityOf(member);
             if (body == NULL_ENTITY) continue;
             // A split member brings BOTH its flowers. They are one person --
             // contenderSize() in loot_eligibility.h counts them as one and
@@ -4539,7 +4631,7 @@ void GameServer::collectSquadBodies(const Session& session, std::vector<Entity>&
     if (squad == nullptr) return;
     for (const SquadMemberId& member : squad->members) {
         if (member == me) continue;
-        const Entity body = squadEntity(member);
+        const Entity body = squadEntityOf(member);
         if (body != NULL_ENTITY) out.push_back(body);
     }
 }
@@ -4580,7 +4672,7 @@ void GameServer::handleGuildSquadAll(Session& session, net::Connection& connecti
         // take, so they are passed over rather than sent an invitation they
         // would be refused on.
         if (!squadAcceptsBiome(*squad, squadIdOf(*target))) continue;
-        if (!squads_.invite(squadIdOf(session), squadIdOf(*target), session.username, now).empty()) {
+        if (!squads_.invite(squadIdOf(session), squadIdOf(*target), now).empty()) {
             continue;
         }
         ++invited;
@@ -4641,7 +4733,7 @@ void GameServer::guildInviteToSquad(Session& session, net::Connection& connectio
         return;
     }
     const std::string error =
-        squads_.invite(squadIdOf(session), squadIdOf(*peerSession), session.username,
+        squads_.invite(squadIdOf(session), squadIdOf(*peerSession),
                        static_cast<std::int64_t>(clockMillis_));
     if (!error.empty()) {
         sendNotice(connection, net::NoticeSeverity::Warning, error);
@@ -4705,28 +4797,6 @@ void GameServer::handlePing(net::Connection& connection, ByteReader& reader) {
 }
 
 // ---------------------------------------------------------------------------
-// Bots
-// ---------------------------------------------------------------------------
-//
-// The reference keeps the world populated whether or not anyone else is
-// online: it tops the flower count up to ~23 with server-owned players that
-// hunt, wander, die and respawn. Without them a solo player meets an empty
-// map -- no company, no competition for aggro or loot, and a leaderboard with
-// one row on it.
-//
-// A bot here is an ORDINARY player entity with no Session behind it. That is
-// the whole trick: combat, loot eligibility, replication and the death reaper
-// all treat it as a flower without knowing bots exist, and the handful of
-// places that need an account (banking a kill, a pickup, a persist) already
-// walk the session table and simply find nothing.
-//
-// What lives here is the POPULATION: the target, the jitter, the burst cap,
-// idle retirement, and the name-seeded level and loadout. What a bot DOES --
-// sensing, hunting grounds, and the activity machine over them -- is
-// server/bot_ai.cpp, whose header explains the shape.
-
-
-// ---------------------------------------------------------------------------
 // Player lifecycle
 // ---------------------------------------------------------------------------
 
@@ -4771,6 +4841,29 @@ void GameServer::onPlayerRevived(Entity revived, Entity reviver) {
 }
 
 Entity GameServer::spawnPlayer(Session& session) {
+    // Never on top of a body the session still holds. Both callers arrive
+    // with none -- handleJoin refuses a session that is playing, and a respawn
+    // takes the corpse off first -- so one still attached here is a body some
+    // change of stage forgot, which is how a repeated Hello used to strand a
+    // flower per join. Overwriting session.entity would leave it standing for
+    // good, so it is taken out first, with any control and split it is part
+    // of. Removed rather than refused: a refused join leaves the stray body
+    // exactly where it is and the socket unable to play. Removed with the
+    // ordinary save, which is persistPlayer's to make or refuse, and it makes
+    // it only for a Playing session. In the state this exists to catch -- a
+    // stage that stopped saying Playing while the body stood -- that is a
+    // refusal, and the right one: the account on the session may have changed
+    // while the stage said there was no body, and a save then would write one
+    // account's flower into another's record. The cost is whatever the stray
+    // body earned after the saves stopped seeing it.
+    if (session.entity != NULL_ENTITY || session.split()) {
+        std::printf("[SESSION] %s (connection %u) still held a body at spawn; removing it\n",
+                    session.username.c_str(), static_cast<unsigned>(session.connection));
+        despawnPlayer(session, true);
+        // A split with no active half to end it through, should one ever exist.
+        endSplit(session, clockMillis_, false);
+    }
+
     // Where a player appears is a property of the MAP, not of the player.
     // Level deliberately does not enter into it: picking a zone by tier reads
     // as if a high-level flower should start in high-tier ground, and what it
@@ -4881,12 +4974,6 @@ Entity GameServer::createPlayerBody(Session& session, Realm realm, Vec2 spawn) {
     Replicated replicated;
     replicated.kind = net::EntityKind::Player;
     world_.add<Replicated>(entity, replicated);
-
-    // A name per BODY, not per connection: a split flower has two, and giving
-    // them the same handle would let the second quietly replace the first in
-    // the world's name table.
-    world_.bindName(entity, "conn:" + std::to_string(session.connection) +
-                                (session.entity == NULL_ENTITY ? "" : ":split"));
     return entity;
 }
 
@@ -4993,15 +5080,13 @@ void GameServer::persistPlayer(const Session& session) {
 }
 
 void GameServer::despawnPlayer(Session& session, bool persist) {
-    if (auto* input = world_.tryGet<PlayerInput>(session.controlledFlower))
-        input->current = net::InputFrame{};
-    session.controlledFlower = NULL_ENTITY;
-    for (auto& entry : sessions_)
-        if (entry.second.controlledFlower == session.entity) {
-            entry.second.controlledFlower = NULL_ENTITY;
-            views_[entry.first] = {};
-        }
     if (session.entity == NULL_ENTITY) return;
+    // Control needs a flower at both ends, so the body going is the end of
+    // any this session is part of: whoever was steering it is put back on
+    // their own flower and told why, and a flower this one was steering is
+    // handed back to its player. Through the back-references, and while the
+    // body still exists to be parked and named.
+    endControlOf(session, "left the world", true);
     // The other half first, and with no reload armed: the body it would have
     // been armed on is about to be destroyed as well, and the split is ending
     // because the PLAYER is leaving, not because a flower was lost.

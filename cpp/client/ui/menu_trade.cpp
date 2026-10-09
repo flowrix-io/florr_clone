@@ -45,10 +45,6 @@ constexpr const char* kLine = "You can trade a petal for a coin of the same rari
 constexpr double kTradeTimeoutSeconds = 8.0;
 constexpr double kRefusalSeconds = 3.0;
 
-bool knownPetal(std::uint16_t petalIndex) {
-    return petalIndex != kNoPetal && petalIndex < content().petalCount();
-}
-
 bool tradable(std::uint16_t petalIndex) {
     return knownPetal(petalIndex) && content().petal(petalIndex).tradable;
 }

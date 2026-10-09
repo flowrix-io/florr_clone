@@ -2,7 +2,7 @@
 // NPCs: putting them where the maps say, keeping them there, and deciding who
 // each one is looking at.
 //
-// What an NPC IS lives in shared/game/npc.h. This system owns the three things
+// What an NPC IS lives in shared/game/npc.h. This system owns the four things
 // that happen to one in the world:
 //
 //   PLACING   every map's `npcs` layer is read once into a list of SITES, and a
@@ -21,14 +21,16 @@
 //             kNpcWatchRange, and glances about when there is none. That
 //             facing is all the client needs to move its eye.
 //   FINDING   the server's half of a service: "is this flower standing close
-//             enough to an oracle to be using it". Answered from the NPCs in
-//             the world rather than from the sites, so an admin's extra one
-//             counts and a site whose NPC is gone does not.
+//             enough to an oracle, a trader or the titan to be using it".
+//             Answered from the NPCs in the world rather than from the sites,
+//             so an admin's extra one counts and a site whose NPC is gone
+//             does not.
 //
 // An NPC has no Motion and no AI, so nothing in the movement or intent phases
 // moves it; this system moves it and writes its facing directly, once a tick.
-// Flowers are the one thing that collide with it, and that is the movement
-// system's business (MovementSystem::pushOutOfNpcs).
+// Flowers and loose petals are the things that collide with it, and that is
+// the movement system's business (MovementSystem::pushOutOfNpcs,
+// collideLooseBodies).
 
 #include <cstdint>
 #include <optional>

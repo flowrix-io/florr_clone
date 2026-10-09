@@ -12,8 +12,9 @@ namespace flix::web {
 // thing it is guarding against survives the C++ side entirely: a reload throws
 // this whole module away and starts a new one, so a flag in memory would be
 // clear again by the time it was next read and the page would reload forever.
-// The key is the browser build's own (src/ws_client.ts), so the two clients
-// cannot both be mid-reload against one tab.
+// The key is this client's own, and nothing else in the page reads or writes
+// it. (The TypeScript client kept its guard under another one,
+// 'protoMismatchReloadAt' -- src/ws_client.ts, in git history at d47055a7.)
 EM_JS(int, flix_reload_for_stale_build, (), {
   const key = 'florr:proto-reload';
   try {

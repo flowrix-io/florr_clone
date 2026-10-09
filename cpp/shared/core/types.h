@@ -103,13 +103,6 @@ inline double lerpAngle(double from, double to, double t) {
     return wrapAngle(from + angleDelta(from, to) * t);
 }
 
-// Frame-rate independent exponential approach. `rate` is the fraction of the
-// remaining gap closed per second; the pow() makes a 30Hz and a 144Hz client
-// converge identically instead of the faster one converging sooner.
-inline double damp(double current, double target, double rate, double dtSeconds) {
-    return lerp(target, current, std::pow(1.0 - rate, dtSeconds));
-}
-
 // ---------------------------------------------------------------------------
 // Deterministic RNG
 // ---------------------------------------------------------------------------

@@ -1,7 +1,6 @@
 #include "client/ui/tutorial.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstddef>
 
@@ -10,6 +9,7 @@
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
 #include "client/ui/theme.h"
+#include "shared/core/text.h"
 
 namespace flix::ui {
 
@@ -17,11 +17,15 @@ namespace {
 
 // --- the reference's copy ----------------------------------------------------
 //
-// Verbatim from src/tutorial.ts, markup included. `<strong>` is parsed and
-// then dropped: the page already inherits `font-weight: 700` from its body
-// rule, and `bolder` on top of 700 resolves to 900, which the four Ubuntu
-// weights the page loads answer with 700 again. Emphasis is therefore the one
-// tag in this copy that changes anything on screen.
+// Verbatim from src/tutorial.ts (in git history), markup included, but for the
+// two lines that described the browser build's controls rather than this
+// client's: crafting is staged from the forge's own grid here, not from the
+// inventory, and Escape opens the settings rather than leaving the game.
+// `<strong>` is parsed and then dropped: the page already inherits
+// `font-weight: 700` from its body rule, and `bolder` on top of 700 resolves
+// to 900, which the four Ubuntu weights the page loads answer with 700 again.
+// Emphasis is therefore the one tag in this copy that changes anything on
+// screen.
 constexpr TutorialStep kSteps[Tutorial::kStepCount] = {
     {"Welcome to flowrix.pro!",
      "Let's learn the basics! You'll learn how to move, use petals, equip items, and craft "
@@ -55,8 +59,8 @@ constexpr TutorialStep kSteps[Tutorial::kStepCount] = {
      "of the same type and rarity to create 1 item of higher rarity!",
      true, TutorialGesture::OpenCrafting},
     {"How to Craft",
-     "To craft:<br>1. Click on an item in your inventory (that you have at least 5 of) to add 5 to "
-     "the crafting circle<br>2. Click the <strong>Craft</strong> button<br>3. If successful, "
+     "To craft:<br>1. Click on an item in the crafting menu (that you have at least 5 of) to add 5 "
+     "to the crafting circle<br>2. Click the <strong>Craft</strong> button<br>3. If successful, "
      "you'll get a higher rarity item!<br><br><em>Note: Success chance decreases with higher "
      "rarities. You can close this menu with C.</em>",
      false, TutorialGesture::None},
@@ -70,8 +74,8 @@ constexpr TutorialStep kSteps[Tutorial::kStepCount] = {
     {"Additional Controls",
      "<strong>K</strong> - Toggle mouse/keyboard controls<br><strong>H</strong> - Toggle "
      "hitboxes<br><strong>+/-</strong> - Zoom in/out<br><strong>Enter</strong> - Open "
-     "chat<br><strong>ESC</strong> - Exit to menu<br><br>You can customize controls in the Settings "
-     "menu!",
+     "chat<br><strong>ESC</strong> - Open settings<br><br>You can customize controls in the "
+     "Settings menu!",
      false, TutorialGesture::None},
     {"Tutorial Complete!",
      "You're ready to explore! Defeat enemies, collect petals, craft upgrades, and become the "
@@ -252,8 +256,7 @@ std::vector<Word> parseDescription(const std::string& html) {
         if (c == '<') {
             const std::size_t close = html.find('>', i);
             if (close == std::string::npos) break;
-            std::string tag = html.substr(i + 1, close - i - 1);
-            for (char& t : tag) t = static_cast<char>(std::tolower(static_cast<unsigned char>(t)));
+            const std::string tag = lowerCase(html.substr(i + 1, close - i - 1));
             // A word may straddle a tag ("<strong>1-9 and 0</strong>."), so the
             // pending text is only flushed where the STYLE changes.
             if (tag == "em") { flush(); italic = true; }
@@ -342,8 +345,6 @@ TextStyle cardText(double size, std::uint32_t fill, Align align = Align::Left) {
 }
 
 } // namespace
-
-const TutorialStep* Tutorial::steps() { return kSteps; }
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -686,8 +687,7 @@ void Tutorial::update(Window& window, ClientSettings& settings, const Profile& p
 // Paint
 // ---------------------------------------------------------------------------
 
-void Tutorial::draw(Canvas& canvas, double nowSeconds, Rect highlightCard) {
-    (void)nowSeconds;
+void Tutorial::draw(Canvas& canvas, Rect highlightCard) {
     if (!visible_) return;
     const Layout& l = cached_;
 

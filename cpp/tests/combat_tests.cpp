@@ -7,11 +7,7 @@
 #include "shared/game/config.h"
 #include "shared/game/spatial.h"
 
-#include <sys/stat.h>
-
 #include <cmath>
-#include <cstdlib>
-#include <fstream>
 #include <string>
 #include <vector>
 #include "fixture_content.h"
@@ -172,21 +168,6 @@ TEST(a_sponge_queues_a_direct_hit_and_repays_it_after_invulnerability) {
 // numbers, and pinning them to whatever balance mobs.json currently ships
 // would make a tuning change look like a combat regression.
 
-std::string tempDir() {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_combat_tests";
-    mkdir(base.c_str(), 0755);   // already exists is fine
-    return base;
-}
-
-bool writeText(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
-    return out.good();
-}
-
 struct Fixture {
     ContentRegistry registry;
     std::string error;
@@ -213,15 +194,13 @@ struct Fixture {
 const Fixture& fixture() {
     static const Fixture state = [] {
         Fixture f;
-        const std::string mobs = tempDir() + "/mobs.json";
-        const std::string petals = tempDir() + "/petals.json";
         // `poison` is per MILLISECOND in the JSON, so 0.01 is 10/second.
-        const bool wrote =
-            writeText(mobs, test::fixtureMobs(R"({
+        f.ok = test::loadFixtureContent(f.registry, testsupport::tempDir("flix_combat_tests"),
+            R"({
               "grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":0.2,"section":[0]},
               "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":0.5,"section":[7]}
-            })")) &&
-            writeText(petals, test::fixturePetals(R"({
+            })",
+            R"({
               "frost":{"name":"Frost","damage":1,"health":5,"size":1,"slowFactor":0.5,"slowDuration":1000},
               "sting":{"name":"Sting","damage":10,"health":5,"size":1,"knockback":2,"damageCooldown":500},
               "plain":{"name":"Plain","damage":10,"health":5,"size":1},
@@ -237,12 +216,8 @@ const Fixture& fixture() {
               "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6},
               "plank":{"name":"Plank","damage":18,"health":15,"size":3},
               "tomato":{"name":"Tomato","damage":5,"health":10,"size":1}
-            })"));
-        if (!wrote) {
-            f.error = "cannot write the fixture content";
-            return f;
-        }
-        f.ok = f.registry.loadFiles(mobs, petals, f.error);
+            })",
+            f.error);
         f.sting = f.registry.petalIndex("sting");
         f.plain = f.registry.petalIndex("plain");
         f.jelly = f.registry.petalIndex("jelly");
@@ -567,8 +542,10 @@ TEST(a_hazard_with_no_faction_hurts_everything) {
 TEST(mob_contact_is_paced_by_the_flowers_post_hit_window_alone) {
     Arena a;
     const Entity player = a.player({1000, 1000});
-    // Co-located deliberately: TypeScript's 25-unit contact push separates
-    // ordinary overlaps, while this test isolates the damage cadence.
+    // Co-located deliberately: the contact bounce (bounceOffMob) pushes a
+    // flower out along the line between the two centres, and two bodies on one
+    // point have no such line -- so they stay touching every tick, and this
+    // test isolates the damage cadence.
     const Entity mob = a.mob({1000, 1000}, 100.0);
     // A per-victim interval on the ATTACKER is not consulted for mob body
     // contact: the reference's resolvePlayerMobContact carries no cooldown of
@@ -958,7 +935,7 @@ TEST(a_mob_killed_by_another_mob_pays_nobody) {
     CHECK_NEAR(a.world.get<PlayerProgress>(player).totalXp, 0.0, 1e-12);
 }
 
-TEST(crossing_an_xp_threshold_flags_the_level_up) {
+TEST(crossing_an_xp_threshold_raises_the_level_on_the_spot) {
     Arena a;
     const Entity player = a.player({1000, 1000});
     const Entity mob = a.mob({1000, 1000}, 10.0, 250.0);
@@ -968,12 +945,6 @@ TEST(crossing_an_xp_threshold_flags_the_level_up) {
     CHECK_NEAR(progress.totalXp, 250.0, 1e-9);
     CHECK_EQ(progress.level, levelFromTotalXp(250.0).level);
     CHECK(progress.level > 1);
-    CHECK(progress.leveledThisTick);
-
-    // The flag is owned by combat and cleared at the top of the next tick, so
-    // replication cannot emit the same level-up twice.
-    a.step(40.0);
-    CHECK(!a.world.get<PlayerProgress>(player).leveledThisTick);
 }
 
 TEST(a_pets_kill_credits_its_owner) {
@@ -1332,8 +1303,8 @@ TEST(shots_are_found_when_the_servers_grid_leaves_them_out) {
     Arena a;
     const Entity player = a.player({500, 1000});
     const Entity mob = a.mob({2000, 1000}, 100.0);
-    const Entity onMob =
-        spawnDurableShot(a, {2000, 1000}, {1000, 0}, 12.0, 500.0, player, player, 10.0);
+    // The one already on the mob: what it did is read off the mob's health.
+    spawnDurableShot(a, {2000, 1000}, {1000, 0}, 12.0, 500.0, player, player, 10.0);
     const Entity outgoing =
         spawnDurableShot(a, {1000, 1000}, {1000, 0}, 12.0, 500.0, player, player, 10.0);
     const Entity sibling =
@@ -1583,7 +1554,7 @@ TEST(a_petal_without_a_knockback_field_uses_the_game_default) {
     CHECK(f.ok);
     if (!f.ok) return;
 
-    // The web implementation defaults an omitted knockback to 5.  Most
+    // The TypeScript build defaulted an omitted knockback to 5.  Most
     // ordinary petals omit the JSON field, so reading it as zero silently
     // removed their push in the native game.
     CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Common).knockback, 5.0, 1e-9);
@@ -2060,6 +2031,39 @@ TEST(a_petal_never_hits_its_own_flower) {
     CHECK_NEAR(a.health(player), 100.0, 1e-9);
 }
 
+TEST(a_split_flowers_ring_pays_nothing_for_touching_its_other_half) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    // One connection, two bodies -- what the splitter makes of a flower --
+    // both in the PVP ring, where any two flowers' petals may swing at each
+    // other. The swing at your own other half is refused, and it must cost the
+    // petal nothing either: it used to be charged its point all the same, so
+    // a duellist's ring wore itself down on the half it had parked.
+    Arena a;
+    const Entity steered = a.player({1000, 1000});
+    const Entity parked = a.player({1040, 1000});
+    for (const Entity half : {steered, parked}) {
+        a.world.get<Faction>(half).friendlyFireEnabled = true;
+        PlayerAccount account;
+        account.connection = 7;
+        a.world.add<PlayerAccount>(half, account);
+    }
+    const Entity petal = equipPetal(a, steered, f.plain, Rarity::Common, {1025, 1000});
+    a.world.add<Health>(petal, Health{5.0, 5.0, 0.0, 0.0});
+
+    for (int tick = 0; tick < 20; ++tick) a.step(tick * net::kTickMillis, f.registry);
+    CHECK_NEAR(a.health(parked), 100.0, 1e-9);
+    CHECK_NEAR(a.health(petal), 5.0, 1e-9);
+
+    // On two connections the very same touch is a duel, and the petal pays.
+    a.world.get<PlayerAccount>(parked).connection = 8;
+    a.step(20 * net::kTickMillis, f.registry);
+    CHECK(a.health(parked) < 100.0);
+    CHECK_NEAR(a.health(petal), 5.0 - kPvpPetalSelfDamage, 1e-9);
+}
+
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
@@ -2185,7 +2189,7 @@ TEST(negative_effective_armor_adds_to_every_hit) {
 
 TEST(an_armor_strip_takes_the_deepest_and_grows_back) {
     Arena a;
-    const Entity player = a.player({1000, 1000});
+    a.player({1000, 1000});   // the fight's other half; nothing below reads it
     const Entity mob = a.mob({1000, 1000}, 1000.0, 60.0);
     a.world.add<Armor>(mob, Armor{10.0});
 
@@ -2548,18 +2552,11 @@ struct RingFixture {
 const RingFixture& ringFixture() {
     static const RingFixture state = [] {
         RingFixture f;
-        const std::string mobs = tempDir() + "/ring_mobs.json";
-        const std::string petals = tempDir() + "/ring_petals.json";
-        const bool wrote =
-            writeText(mobs, test::fixtureMobs(kRingMobsJson)) &&
-            writeText(petals, test::fixturePetals(
-                          R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1,
-                                       "noHealDuration":10000}})"));
-        if (!wrote) {
-            f.error = "cannot write the ring fixture content";
-            return f;
-        }
-        f.ok = f.registry.loadFiles(mobs, petals, f.error);
+        f.ok = test::loadFixtureContent(f.registry, testsupport::tempDir("flix_combat_ring_tests"),
+                                        kRingMobsJson,
+                                        R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1,
+                                                     "noHealDuration":10000}})",
+                                        f.error);
         f.seedhead = f.registry.mobIndex("seedhead");
         f.spinner = f.registry.mobIndex("spinner");
         f.dandy = f.registry.petalIndex("dandy");
@@ -2699,6 +2696,8 @@ TEST(a_whole_animal_lands_one_contact_a_tick_however_many_seeds_it_wears) {
                kGardnBounceKick + 2.0 * kGardnBounceMinClosing, 1e-9);
 }
 
+namespace {
+
 struct RecoilFixture {
     ContentRegistry registry;
     std::string error;
@@ -2711,26 +2710,21 @@ struct RecoilFixture {
 const RecoilFixture& recoilFixture() {
     static const RecoilFixture state = [] {
         RecoilFixture f;
-        const std::string mobs = tempDir() + "/recoil_mobs.json";
-        const std::string petals = tempDir() + "/recoil_petals.json";
-        const bool wrote =
-            writeText(mobs, test::fixtureMobs(R"({
+        f.ok = test::loadFixtureContent(f.registry, testsupport::tempDir("flix_combat_recoil_tests"),
+                                        R"({
   "walker": {"name":"Walker","health":100,"damage":5,"size":1,"speed":0.5,"gardn_ai":true},
   "plodder":{"name":"Plodder","health":100,"damage":5,"size":1,"speed":0.5,"ai_type":"passive"}
-})")) &&
-            writeText(petals, test::fixturePetals(
-                          R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1}})"));
-        if (!wrote) {
-            f.error = "cannot write the recoil fixture content";
-            return f;
-        }
-        f.ok = f.registry.loadFiles(mobs, petals, f.error);
+})",
+                                        R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1}})",
+                                        f.error);
         f.walker = f.registry.mobIndex("walker");
         f.plodder = f.registry.mobIndex("plodder");
         return f;
     }();
     return state;
 }
+
+} // namespace
 
 TEST(a_gardn_mob_recoils_off_a_flower_it_touches) {
     const RecoilFixture& f = recoilFixture();

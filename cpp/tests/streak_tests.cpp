@@ -2,10 +2,10 @@
 
 #include <cstdio>
 #include <string>
-#include <unistd.h>
 
 #include "server/db.h"
 #include "server/session.h"
+#include "test_data.h"
 
 using namespace flix;
 
@@ -22,14 +22,27 @@ std::int64_t testClock() { return gNowMillis; }
 
 constexpr std::int64_t kDay = 86400000;
 
+/// Deletes the scratch file when it goes. A member declared BEFORE the
+/// Database, so it goes AFTER it: ~Database saves a dirty database on the way
+/// out, and a removal in ~Fixture's own body ran first and was written straight
+/// back over.
+struct ScratchFile {
+    std::string path = testsupport::tempUnique("florr-streak", ".json");
+    ~ScratchFile() {
+        std::remove(path.c_str());
+        std::remove((path + ".tmp").c_str());
+    }
+};
+
 /// A database on a scratch path with one account, wired to `testClock`.
 struct Fixture {
+    ScratchFile file;   // must stay above `db`
     Database db;
     std::string path;
     std::string userId;
 
     Fixture() {
-        path = std::string("/tmp/florr-streak-") + std::to_string(::getpid()) + ".json";
+        path = file.path;
         std::remove(path.c_str());
         std::string error;
         db.load(path, error);
@@ -38,7 +51,6 @@ struct Fixture {
         const CreateResult created = db.createUser("streaker", "password7");
         if (created.ok() && created.account) userId = created.account->id;
     }
-    ~Fixture() { std::remove(path.c_str()); }
 };
 
 } // namespace

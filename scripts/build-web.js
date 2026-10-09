@@ -12,8 +12,10 @@
  *
  *   bundle.html   the page (cpp/client/web/shell.html, minified) -> index.html
  *   bundle.js     the client's runtime glue
- *   bundle.wasm   the client, with mobs.json / petals.json / the map bundle /
- *                 the biome SVGs / the fonts embedded inside it
+ *   bundle.wasm   the client, with the staged content embedded inside it:
+ *                 mobs.json, petals.json, mob_drops.json, maps.json and the
+ *                 maps it lists, their tilesets, the tile and ground art, and
+ *                 the font
  *   server.js     the server's runtime glue -- what `node dist/server.js` runs
  *   server.wasm   the server, with the same content embedded
  *   offline.html  the offline build: server AND client in one wasm, embedded
@@ -25,13 +27,14 @@
  *                 minutes.
  *
  * bundle.html becomes dist/index.html because that is the name a web root is
- * served at. styles.css and favicon.ico are copied too: the shell references
- * both, and neither is inside the wasm.
+ * served at. favicon.ico (cpp/client/web/favicon.ico) is copied too: the shell
+ * references it, and it is not inside the wasm.
  *
  * The two files the page downloads are also staged deflated, as bundle.js.bin
  * and bundle.wasm.bin -- see compress() below. This is what the TypeScript
- * build did with scripts/compressbundle.js, extended to the wasm, which is
- * where the bytes are now.
+ * build's scripts/compressbundle.js did for its bundle (deleted with that
+ * build; see git history at d47055a7), extended to the wasm, which is where
+ * the bytes are now.
  *
  * Usage:
  *   node scripts/build-web.js [client|server|offline|offline-asmjs|all] [--copy-only]
@@ -51,11 +54,8 @@
  * `npm run build` and `npm start` both pin FLIX_BUILD=release, so what they
  * produce does not depend on what happens to be in the environment; `npm run
  * build:dev` is the dev-flavoured equivalent. Switching flavour wipes
- * cpp/build-web first -- see reconfigure() for why that has to happen.
- *
- * Note that dist/server.js has two possible producers: this script, and
- * `npm run build:server:ts`, which is the frozen-era TypeScript server and
- * writes the same path. Whichever ran last is what `npm start` runs.
+ * cpp/build-web first -- see the flavour check below for why that has to
+ * happen.
  */
 
 const fs = require('fs');
@@ -80,8 +80,7 @@ const TARGETS = {
         ],
         // Referenced by the shell, not part of the link.
         sidecars: [
-            [path.join(ROOT, 'src', 'styles.css'), 'styles.css'],
-            [path.join(ROOT, 'src', 'favicon.ico'), 'favicon.ico'],
+            [path.join(CPP_DIR, 'client', 'web', 'favicon.ico'), 'favicon.ico'],
         ],
         // Staged deflated beside themselves, as <name>.bin. These are the
         // two files the page pulls over the network; index.html is served
@@ -197,9 +196,9 @@ if (!copyOnly) {
  * The page prefers these over the files they were made from and inflates them
  * with DecompressionStream -- see the loader in cpp/client/web/shell.html.
  * Raw deflate, not gzip, because 'deflate-raw' is what that API takes and the
- * headers buy nothing here; this is the codec scripts/compressbundle.js used
- * for the TypeScript client's bundle, and the page's half of it is that page's
- * loader carried over.
+ * headers buy nothing here; it is the codec the TypeScript client's bundle used
+ * (see the header), and the page's half of it is that page's loader carried
+ * over.
  *
  * Done at staging rather than at the link, which is deliberate: a dev relink
  * should not spend a second deflating four megabytes, and a build served
@@ -221,6 +220,18 @@ function compress(name) {
     return [`${name}.bin`, packed.length, `${ratio.toFixed(0)}% of ${name}`];
 }
 
+// A missing sidecar is fatal rather than skipped: the shell links every one,
+// and a dist/ that quietly lacks one only shows up as a 404 in a browser.
+// Checked before anything is copied, because failing halfway through would
+// leave the .bin files older than the files staged beside them.
+for (const name of selected) {
+    for (const [src, to] of TARGETS[name].sidecars) {
+        if (!fs.existsSync(src)) {
+            fail(`${path.relative(ROOT, src)} does not exist; the page links it as ${to}.`);
+        }
+    }
+}
+
 fs.mkdirSync(DIST, { recursive: true });
 
 const copied = [];
@@ -238,7 +249,6 @@ for (const name of selected) {
         copied.push([to, fs.statSync(dest).size]);
     }
     for (const [src, to] of TARGETS[name].sidecars) {
-        if (!fs.existsSync(src)) continue;
         const dest = path.join(DIST, to);
         fs.copyFileSync(src, dest);
         copied.push([to, fs.statSync(dest).size]);

@@ -30,8 +30,6 @@ enum class SessionStage : std::uint8_t {
     Authenticated,
     /// Has a body in the world.
     Playing,
-    /// Marked for disconnect; drained and dropped at the end of the tick.
-    Closing,
 };
 
 struct Session {
@@ -42,8 +40,18 @@ struct Session {
     std::string username;
     std::string token;
     bool admin = false;
-    bool owner() const { return username == "a19kisme"; }
-    Entity controlledFlower = NULL_ENTITY;
+    /// The session whose flower this one is steering through the admin
+    /// dashboard's control, or 0. A CONNECTION and not a body: control follows
+    /// the target's ACTIVE half (see `entity`), which a splitter swaps under
+    /// it and a respawn replaces, so whatever is steered is looked up as
+    /// sessionFor(controlling)->entity at the moment it is needed. See
+    /// GameServer::beginControl for everything that starts and ends it.
+    net::ConnectionId controlling = 0;
+    /// The back-reference: the session steering THIS one's flower, or 0. What
+    /// lets handleInput drop this player's own input without searching the
+    /// session table on every packet, and what lets this side end the control
+    /// when its flower goes away.
+    net::ConnectionId controlledBy = 0;
     /// The account (userId) that typed the database editor's key on this
     /// connection, or empty. The editor answers only while this is the account
     /// signed in, so signing in as someone else on the same socket does not
@@ -58,7 +66,7 @@ struct Session {
     /// and is parked exactly where it was left. Everything that means "act on
     /// my flower" reads this and therefore follows the switch for free; the
     /// few rules that mean "any body this person owns" walk both (see
-    /// GameServer::forEachBody).
+    /// GameServer::bodiesOf).
     Entity entity = NULL_ENTITY;
 
     /// The splitter's other body, or NULL_ENTITY when this connection is not
@@ -144,12 +152,6 @@ struct Session {
     double inputAllowance = 60;
     double lastRefillMillis = 0;
 
-    /// Snapshot of what this connection knows, owned by the replicator.
-    std::uint32_t viewGeneration = 0;
-
-    double connectedAtMillis = 0;
-    double lastHeardMillis = 0;
-
     bool authenticated() const {
         return stage == SessionStage::Authenticated || stage == SessionStage::Playing;
     }
@@ -168,12 +170,6 @@ void refillAllowances(Session& session, double nowMillis);
 /// Takes one unit from `allowance` if available. Returns false when the client
 /// has exceeded its budget, in which case the caller drops the message.
 bool spend(double& allowance, double cost = 1.0);
-
-/// Username rules, enforced at registration. Deliberately conservative: names
-/// are rendered in chat and on nameplates, so control characters, homoglyph
-/// padding and unbounded length are all rejected rather than sanitised later.
-bool validUsername(const std::string& name, std::string& reasonOut);
-bool validPassword(const std::string& password, std::string& reasonOut);
 
 /// Strips control characters and clamps a typed flower name to the browser
 /// build's twenty characters. An empty or all-blank name becomes "Unnamed",

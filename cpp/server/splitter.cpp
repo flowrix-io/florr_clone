@@ -30,7 +30,6 @@
 #include "server/game_server.h"
 
 #include <algorithm>
-#include <cmath>
 #include <string>
 
 #include "server/systems/petals.h"
@@ -52,13 +51,9 @@ namespace {
 /// artwork is, which is also why the halves are a LEFT and a RIGHT one.
 constexpr double kSplitSeparationRadii = 1.0;
 
-/// Whether this body is gone, or a corpse waiting on the reaper.
-bool bodyFinished(const World& world, Entity body) {
-    if (body == NULL_ENTITY || !world.isAlive(body)) return true;
-    if (world.has<Dead>(body)) return true;
-    const Health* health = world.tryGet<Health>(body);
-    return health != nullptr && !health->alive();
-}
+/// Whether this body is gone, or a corpse waiting on the reaper -- anything
+/// but a standing one (isStanding), NULL_ENTITY included.
+bool bodyFinished(const World& world, Entity body) { return !isStanding(world, body); }
 
 } // namespace
 
@@ -89,11 +84,13 @@ void GameServer::parkBody(Entity body) {
     if (PlayerInput* input = world_.tryGet<PlayerInput>(body)) {
         const net::InputFrame previous = input->current;
         input->current = net::InputFrame{};
-        // The sequence is kept so the client's own reconciliation does not see
-        // the acknowledgement run backwards if this half is switched back to.
+        // The sequence is kept so the input echo the snapshot carries
+        // (PlayerInput::lastAppliedSequence) never runs backwards if this half
+        // is switched back to. The client stopped reconciling against that
+        // echo when it stopped predicting, so all this keeps now is the echo
+        // honest.
         input->current.sequence = previous.sequence;
         input->current.aimAngle = previous.aimAngle;
-        input->aimDirection = Vec2::fromAngle(previous.aimAngle);
     }
     if (Motion* motion = world_.tryGet<Motion>(body)) motion->velocity = {0, 0};
     if (Knockback* knockback = world_.tryGet<Knockback>(body)) *knockback = Knockback{};
@@ -341,6 +338,10 @@ void GameServer::switchSplitHalf(Session& session, double nowMillis) {
     const Transform* arrived = world_.tryGet<Transform>(session.entity);
     session.realm = arrived != nullptr ? arrived->realm : session.realm;
     sendRealmChange(session, arrived != nullptr ? arrived->position : Vec2{});
+    // An admin steering this flower steers its ACTIVE half, so the switch has
+    // just moved them too -- and their client holds the old half flagged as
+    // self for exactly the reason this one does.
+    followControlledHalf(session);
 
     // The roster carries wire ids and the two halves have just swapped places
     // in it, so the party HUD would otherwise point at the body the player is
@@ -369,7 +370,14 @@ void GameServer::serviceSplitters(double nowMillis) {
                 endSplit(session, nowMillis, true);
                 const Transform* at = world_.tryGet<Transform>(session.entity);
                 session.realm = at != nullptr ? at->realm : session.realm;
-                sendRealmChange(session, at != nullptr ? at->position : Vec2{});
+                // Around whatever this client is watching, which is somebody
+                // else's flower while it is steering one: the half it lost was
+                // not on its screen, and snapping the camera onto the one left
+                // would only be undone by the next snapshot.
+                restateView(session);
+                // And an admin steering this flower is now steering the half
+                // that is left, so their view moves onto it as well.
+                followControlledHalf(session);
                 if (const Squad* squad = squads_.forMember(squadIdOf(session))) {
                     broadcastSquadUpdate(*squad);
                 }
@@ -419,6 +427,11 @@ void GameServer::handleUsePetal(Session& session, ByteReader& reader) {
     // these as fast as it likes.
     if (!spend(session.inputAllowance)) return;
     if (slot >= kLoadoutActiveSlots) return;
+    // An admin steering somebody else's flower has their own bar hidden, and
+    // their own body is parked off their screen: a click from them would act
+    // on a flower they cannot see. The steered player's own click still lands
+    // -- a splitter switch is theirs to make, and the control follows it.
+    if (session.controlling != 0) return;
 
     const Loadout* loadout = world_.tryGet<Loadout>(session.entity);
     if (loadout == nullptr) return;

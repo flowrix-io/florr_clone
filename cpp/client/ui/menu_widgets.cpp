@@ -11,16 +11,6 @@ namespace flix::ui {
 
 namespace {
 
-/// Body text on a panel: white, outlined hard enough to read over a saturated
-/// fill or a mob sprite, and never over-stroked at small sizes.
-TextStyle labelStyle(double size, std::uint32_t fill) {
-    TextStyle style;
-    style.size = size;
-    style.fill = fill;
-    style.stroke = kInk;
-    return style;
-}
-
 /// The gap the overlay panels leave between the bottom of the scrollbar track
 /// and the bottom of the card. Mirrors menu_leaderboard.cpp's own constant;
 /// scrollbar() needs it to recover the viewport height from the track.
@@ -34,7 +24,7 @@ constexpr double kTrackBottomInset = 5.0;
 //
 // The card, its heading and every button live in client/ui/menu_style.h. What
 // is left here is the chrome that carries state a panel has to feed it: a
-// toggle's animation, a field's caret, a scrollbar's offset.
+// toggle's animation, a scrollbar's offset.
 
 void toggleBox(Canvas& canvas, Rect r, double lerpAmount) {
     setFill(canvas, kControlDark);
@@ -126,11 +116,11 @@ struct TooltipLayout {
 /// rgba(255,255,255,0.56) -- while drawText strokes with solid #000000, which
 /// is why those rows stay crisply outlined over the half-black box.
 ///
-/// It builds the path itself because that is the only seam where the two
-/// passes can differ. Every row goes through here, dimmed or not, so one
-/// anchor governs the whole box; `x, y` is the top-left corner, the only
-/// alignment the painter ever asks for, resolved exactly as draw.cpp resolves
-/// Baseline::Top.
+/// So the row goes to paintRun with a fill alpha of its own, because that is
+/// the only seam where the two passes can differ. Every row goes through here,
+/// dimmed or not, so one anchor governs the whole box; `x, y` is the top-left
+/// corner, the only alignment the painter ever asks for, resolved exactly as
+/// draw.cpp resolves Baseline::Top.
 void paintRow(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style,
               double fillAlpha) {
     paintRun(canvas, s, x, y + ascent(style.size), style, 1.0, fillAlpha);
@@ -244,16 +234,6 @@ Rect paintTooltip(Canvas& canvas, double x, double y, const std::vector<TooltipL
             y + size.y - kTooltipPadY - textBottom};
 }
 
-Vec2 tooltipAnchor(Vec2 cursor, Vec2 size, double viewWidth, double viewHeight) {
-    double x = cursor.x + 16.0;
-    double y = cursor.y + 16.0;
-    // Flip rather than clamp: a box pinned against the right edge covers the
-    // cell it is describing, which is the one thing it must not do.
-    if (x + size.x > viewWidth - 8.0) x = cursor.x - size.x - 12.0;
-    if (y + size.y > viewHeight - 8.0) y = viewHeight - size.y - 8.0;
-    return {std::max(8.0, x), std::max(8.0, y)};
-}
-
 Vec2 tooltipAnchor(Rect anchor, Vec2 size, double viewWidth, double viewHeight) {
     double x = anchor.right() + 10.0;
     if (x + size.x > viewWidth) x = anchor.x - size.x - 10.0;
@@ -295,7 +275,7 @@ std::string abbreviate(double value) {
     } else if (magnitude < 1e12) {
         std::snprintf(buffer, sizeof buffer, "%.1fB", value / 1e9);
     } else {
-        std::snprintf(buffer, sizeof buffer, "%.1eT", value / 1e12);
+        std::snprintf(buffer, sizeof buffer, "%.1fT", value / 1e12);
     }
     std::string out = buffer;
     // "1.0k" reads worse than "1k", and the trailing zero is never news.
@@ -316,10 +296,34 @@ std::string withSeparators(double value) {
     return value < 0 ? "-" + out : out;
 }
 
+std::string fixedDecimals(double value, int decimals) {
+    char buffer[48];
+    std::snprintf(buffer, sizeof buffer, "%.*f", decimals, value);
+    return buffer;
+}
+
+std::string formatCompact(double value) {
+    static constexpr struct { double scale; const char* suffix; } kSteps[] = {
+        {1e12, "T"}, {1e9, "B"}, {1e6, "M"}, {1e3, "K"},
+    };
+    char buf[32];
+    for (const auto& step : kSteps) {
+        if (value >= step.scale) {
+            std::snprintf(buf, sizeof buf, "%.1f%s", value / step.scale, step.suffix);
+            return buf;
+        }
+    }
+    return std::to_string(static_cast<long long>(std::llround(value)));
+}
+
 std::string ellipsize(const std::string& text, double size, double width) {
     if (measure(text, size) <= width) return text;
     std::string out = text;
-    while (!out.empty() && measure(out + "...", size) > width) out.pop_back();
+    // A character at a time: one byte cut off a multi-byte sequence leaves a
+    // string that will neither measure nor draw (see utf8Prev).
+    while (!out.empty() && measure(out + "...", size) > width) {
+        out.erase(utf8Prev(out, out.size()));
+    }
     return out + "...";
 }
 

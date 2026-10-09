@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 50;
+inline constexpr std::uint16_t kProtocolVersion = 51;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -35,9 +35,10 @@ inline constexpr std::uint32_t kMaxFrameBytes = 1u << 20;   // 1 MiB
 
 /// Simulation rate. Fixed, because the physics integrates a constant step:
 /// input, movement and cooldowns are all expressed per tick.
-// The TypeScript authority advances gameplay at 30 Hz.  This is simulation
-// behaviour, not a transport implementation detail: contact opportunities,
-// fixed-step mob AI and every one-tick transition depend on it.
+// The TypeScript server this was ported from advanced gameplay at 30 Hz, and
+// so does this one. This is simulation behaviour, not a transport
+// implementation detail: contact opportunities, fixed-step mob AI and every
+// one-tick transition depend on it.
 inline constexpr int kTicksPerSecond = 30;
 inline constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 inline constexpr double kTickMillis = 1000.0 / kTicksPerSecond;
@@ -86,17 +87,18 @@ enum class ClientMessage : std::uint8_t {
                         ///< full-price catalogue purchase; it is a claim about
                         ///< the card, never about the price.
     SetSkin,            ///< u32 renderFlags
-    RequestLeaderboard, ///< bool includeAdmins -- the browser's
-                        ///< `?includeAdmins=true`, which it sends from the
-                        ///< "Show Admins on Leaderboard" switch for anyone.
+    RequestLeaderboard, ///< bool includeAdmins -- the TypeScript client's
+                        ///< `?includeAdmins=true`, and sent as that was, from
+                        ///< the "Show Admins on Leaderboard" switch, for anyone.
     RedeemCode,         ///< str code -- a star code, checked server-side
     PublishSkin,        ///< str name, u8 shapeCount, { SkinShape }*  (skin_format.h)
     EquipSkin,          ///< str skinId -- empty takes the current skin off
     DeleteSkin,         ///< str skinId -- own skin, or anyone's for an admin
     RequestNotifications, ///< u16 limit, f64 beforeMillis (0 asks for the newest
-                        ///< page). The browser fetches GET /api/notifications;
-                        ///< this client has no HTTP, so the same query is an
-                        ///< opcode with the same two parameters.
+                        ///< page). The TypeScript client fetched GET
+                        ///< /api/notifications; this client has no HTTP, so
+                        ///< the same query is an opcode with the same two
+                        ///< parameters.
     GuildCreate,        ///< str tag, str displayName. The tag is the guild's
                         ///< key -- 5 alphanumerics, upper-cased server-side --
                         ///< and the display name is free text; an empty one
@@ -167,6 +169,19 @@ enum class ClientMessage : std::uint8_t {
                         ///< once per kTitanHolderQueryMillis per session: a
                         ///< faster one is dropped, and the client asks again.
                         ///< (Version 47.)
+    AdminDashboard,     ///< u8 AdminDashboardOp, then that op's payload -- the
+                        ///< admin dashboard's requests (shared/net/admin_dashboard.h).
+                        ///< Refused, silently, unless the session may run the
+                        ///< admin console. Every op is billed to the session's
+                        ///< command allowance, a page as much as a Control, as a
+                        ///< console command is: a binary road past that budget
+                        ///< let a temporary grantee wipe a player's chat with
+                        ///< control notices as fast as frames could be sent. A
+                        ///< request over it is answered with the console's
+                        ///< notice and AdminDashboardReply::Refused. A request
+                        ///< about a player names it by connection AND account
+                        ///< name, and is refused when the two no longer match.
+                        ///< (Version 51.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -199,10 +214,16 @@ enum class ServerMessage : std::uint8_t {
                         ///< are drawn from.
     Leaderboard,        ///< u8 count, u32 totalAccounts, u32 dailyActiveUsers,
                         ///< { str name, u16 level, f64 totalXp }*.
-                        ///< `dailyActiveUsers` is 0 for a non-admin, which is
-                        ///< how the browser's payload omits the field.
+                        ///< `dailyActiveUsers` is 0 for a non-admin, where the
+                        ///< TypeScript server's payload left the field out.
     Pong,               ///< u64 clientTimeMillis, u64 serverTimeMillis
-    Kick,               ///< str reason
+    Kick,               ///< str reason. Never sent: this server says why it is
+                        ///< done with a connection in the message the occasion
+                        ///< already has -- Welcome for a refused handshake,
+                        ///< SessionReplaced for a second sign-in, AuthResult
+                        ///< for a revoked session. The client still handles
+                        ///< it, and the id keeps its place so that the ones
+                        ///< after it keep theirs.
     DailyStreak,        ///< u16 streak, u8 newDay, u16 starsAwarded,
                         ///< i64 nextClaimAtMillis, i64 streakExpiresAtMillis.
                         ///< Sent once per authentication, after Profile, so the
@@ -221,33 +242,35 @@ enum class ServerMessage : std::uint8_t {
                         ///< { str id, u8 kind(NotificationKind), str message,
                         ///<   f64 timestampMillis }*, newest first.
                         ///< `more` is set when the page filled the requested
-                        ///< limit, which is the browser's `hasMore`.
+                        ///< limit, which is the TypeScript build's `hasMore`.
     GuildUpdate,        ///< u8 joined, str tag, str displayName, str description,
                         ///< str leader, u16 memberCount,
                         ///< { str username, u8 online, str location }*.
-                        ///< `joined` 0 is the browser's `guildUpdate null` and
-                        ///< carries no rest. `location` names the biome an
-                        ///< online member's body is in, and is empty for one
-                        ///< with no body (title screen, death card) and for
-                        ///< every offline member. (Version 45.)
+                        ///< `joined` 0 is the TypeScript build's
+                        ///< `guildUpdate null` and carries no rest.
+                        ///< `location` names the biome an online member's
+                        ///< body is in, and is empty for one with no body
+                        ///< (title screen, death card) and for every offline
+                        ///< member. (Version 45.)
     GuildInviteReceived, ///< str guildName, str fromUsername, str displayName.
                         ///< `guildName` is the tag. (Version 45.)
     SquadUpdate,        ///< u8 inSquad, str squadId, u8 isPublic, u8 memberCount,
                         ///< { str account, str name, u32 netId, u8 flags }*.
-                        ///< `inSquad` 0 is the browser's `squadUpdate null` and
-                        ///< carries nothing after its flag. `flags` bit 0 marks
-                        ///< the leader and bit 1 a bot; `netId` is 0 for a
-                        ///< member with no body in the world just now, which is
-                        ///< every member sitting on the title screen.
+                        ///< `inSquad` 0 is the TypeScript build's
+                        ///< `squadUpdate null` and carries nothing after its
+                        ///< flag. `flags` bit 0 marks the leader and bit 1 a
+                        ///< bot; `netId` is 0 for a member with no body in
+                        ///< the world just now, which is every member sitting
+                        ///< on the title screen.
     DebugStats,         ///< f64 residentBytes, f64 heapBytes, f32 tickAvgMs,
                         ///< f32 tickMaxMs -- once a second, and only while
-                        ///< somebody is authenticated. The browser's payload
-                        ///< also carries heapTotal; nothing draws it, so it is
-                        ///< not on this wire.
+                        ///< somebody is authenticated. The TypeScript server's
+                        ///< payload also carried heapTotal; nothing draws it,
+                        ///< so it is not on this wire.
     MazeInfo,           ///< i64 dayNumber -- the maze the server is playing now.
                         ///< Sent when it rotates; JoinAccepted carries the same
                         ///< number for a client that has just arrived. The
-                        ///< browser's `mazeInfo {day}`.
+                        ///< TypeScript build's `mazeInfo {day}`.
     RealmChange,        ///< f32 x, f32 y, MapGrid. The body moved to another
                         ///< REALM -- through a teleporter, which now leads to
                         ///< another map. The client clears its view, adopts the
@@ -317,7 +340,13 @@ enum class ServerMessage : std::uint8_t {
     TitanHolder,        ///< u16 itemType, str username -- the answer to
                         ///< ClientMessage::TitanHolder: the account holding that
                         ///< petal at universal, or empty for nobody. (Version 47.)
-    AdminDashboard,    ///< str JSON, private server-authorized dashboard data
+    AdminDashboard,     ///< u8 AdminDashboardReply, then that reply's payload --
+                        ///< the admin dashboard's answers, and the flower
+                        ///< control state the server pushes whenever it starts
+                        ///< or ends (shared/net/admin_dashboard.h). Sent only to
+                        ///< a session that may run the admin console.
+                        ///< (Version 51: binary sub-replies, where version 50
+                        ///< sent one JSON string.)
 };
 
 // ---------------------------------------------------------------------------
@@ -347,8 +376,10 @@ enum class ServerMessage : std::uint8_t {
 // there used to be two.)
 
 /// What a notification announces. The stripe down a card's left edge is the
-/// only thing that distinguishes them, and the browser sends the same five as
-/// a string tag.
+/// only thing that distinguishes them. The TypeScript build carried the first
+/// five as a string tag (`super_craft`, `unique_craft`, `apex_craft`,
+/// `star_code`, and the generic stripe for anything else); UniversalCraft is
+/// this build's own.
 enum class NotificationKind : std::uint8_t {
     Generic = 0,
     SuperCraft,
@@ -368,7 +399,10 @@ enum class AuthStatus : std::uint8_t {
     UsernameInvalid,
     PasswordInvalid,
     SessionExpired,
-    AlreadyOnline,
+    AlreadyOnline,      ///< never sent: a second sign-in replaces the first
+                        ///< (ServerMessage::SessionReplaced) rather than being
+                        ///< refused. Kept so the statuses after it keep their
+                        ///< values.
     RateLimited,
     ServerError,
 };
@@ -384,9 +418,18 @@ enum class ChatChannel : std::uint8_t {
     Whisper = 4,       ///< to this player alone; `author` is who sent it
     WhisperSent = 5,   ///< the sender's copy of one; `author` is who it went to
     Local = 6,         ///< the players whose screens show the speaker's flower
-    Admin = 7,         ///< owner-only announcements, visible to every player
+    Admin = 7,         ///< an admin's announcement to everyone; `author` is the
+                       ///< admin's account name. Every client raises a banner
+                       ///< for it as well as filing it under its Admin tab.
+                       ///< (Version 50.)
 };
 enum class NoticeSeverity : std::uint8_t { Info = 0, Good = 1, Warning = 2, Bad = 3 };
+
+/// The longest announcement the Admin channel carries, in bytes of the text
+/// as typed. One number for both ends: the server refuses past it, and the
+/// dashboard's field stops taking keystrokes at it, so the two cannot drift
+/// into a box that lets a player type what the server will turn down.
+inline constexpr std::size_t kMaxAnnouncementBytes = 120;
 
 // ---------------------------------------------------------------------------
 // Input
@@ -399,9 +442,12 @@ enum InputFlags : std::uint8_t {
 
 /// One tick of intent from a client.
 ///
-/// `sequence` is echoed back in the next snapshot as `lastInputSequence`,
-/// which is what lets the client discard the predicted inputs the server has
-/// already applied and replay only the rest.
+/// `sequence` is what lets the server drop a duplicated or reordered frame:
+/// one at or below the session's lastInputSequence is ignored. The snapshot
+/// still echoes the last one applied (PlayerInput::lastAppliedSequence), from
+/// when the client predicted its own movement and replayed what the server
+/// had not yet applied. It predicts nothing now, and reads past the echo
+/// without using it (WorldView::applySnapshot).
 struct InputFrame {
     std::uint32_t sequence = 0;
     double moveAngle = 0;      ///< radians; meaningless when moveStrength is 0
@@ -630,19 +676,25 @@ enum UpdateFields : std::uint8_t {
 };
 
 /// Transient visual state, refreshed whenever FieldState is set.
+///
+/// The server sets every bit (computeEntityState in server/replication.cpp),
+/// but the client reads only four of them: Invulnerable, Unloaded, Dead and
+/// Chasing. Hurt, Poisoned, Slowed, Defending and Attacking are sent, and
+/// nothing on the client draws from them today.
 enum EntityState : std::uint8_t {
-    StateHurt      = 1 << 0,   ///< took damage recently; draw the white flash
+    StateHurt      = 1 << 0,   ///< took damage recently (Health::flashUntilMillis);
+                               ///< no client draws a flash from it
     StatePoisoned  = 1 << 1,
     StateSlowed    = 1 << 2,
     StateInvulnerable = 1 << 3,
-    StateDefending = 1 << 4,   ///< petals pulled in
+    StateDefending = 1 << 4,   ///< a flower's petals pulled in
     /// A stinger mob whose missile has just left and is not loaded yet. Its
     /// sting IS the missile, so the client draws none until this clears and
     /// slides it back out of the tail meanwhile. Shares the bit with
     /// StateDefending, which only a flower sets -- the byte is full, and the
     /// two can never be on the same record. (Version 49.)
     StateUnloaded  = 1 << 4,
-    StateAttacking = 1 << 5,   ///< petals pushed out
+    StateAttacking = 1 << 5,   ///< a flower's petals pushed out
     StateDead      = 1 << 6,   ///< playing its death animation
     /// A mob that has locked on. Costs no bytes -- it rides in the state byte
     /// that was already being sent -- and is what makes a chasing bug beat its
@@ -650,12 +702,13 @@ enum EntityState : std::uint8_t {
     StateChasing   = 1 << 7,
 };
 
-/// One-off things that happened this tick, for effects the client can play
-/// without the server streaming per-frame animation state.
-/// `flag` bits on a Damage event. Poison is called out because the browser
-/// build shows a poison tick in its own purple, nudged sideways so it cannot
-/// stack on the petal hit that landed in the same tick.
+/// `flag` bits on a Damage event. Poison is called out because the client
+/// shows a poison tick in its own purple, nudged sideways so it cannot stack
+/// on the petal hit that landed in the same tick -- as the TypeScript build
+/// did.
 enum DamageEventFlags : std::uint8_t {
+    /// Set by nothing and read by nothing: a claw's crit bonus (critDamage)
+    /// lands as an ordinary hit.
     DamageCritical = 1 << 0,
     DamagePoison   = 1 << 1,
     /// A lightning strike's damage, which the client paints cyan.
@@ -676,10 +729,19 @@ enum DamageEventFlags : std::uint8_t {
     DamageByViewer = 1 << 3,
 };
 
+/// One-off things that happened this tick, for effects the client can play
+/// without the server streaming per-frame animation state.
+///
+/// The ids are positional, so a kind nothing produces any more keeps its
+/// place: deleting it would renumber every kind after it. Four are like that
+/// -- Heal, PetalBroke, LevelUp and Explosion.
 enum class EventKind : std::uint8_t {
     Damage = 0,     ///< u32 netId, f32 amount, u8 DamageEventFlags -- floating number
-    Heal,           ///< u32 netId, u16 amount
-    PetalBroke,     ///< u32 ownerNetId, u8 slot
+    Heal,           ///< u32 netId, u16 amount. Never produced, and the client
+                    ///< no longer reads it.
+    PetalBroke,     ///< u32 ownerNetId, u8 slot. Never produced: a slot's
+                    ///< breaks and reloads are streamed state instead (see
+                    ///< kMaxReportedSlots).
     Killed,         ///< u32 netId  -- pop/particles at its last position
     /// A drop was collected: u32 dropNetId, u32 byNetId, and -- in the fields
     /// no other use of this kind has -- f32 amount carrying the drop's PETAL
@@ -692,8 +754,12 @@ enum class EventKind : std::uint8_t {
     /// that named only the id would be unplayable for exactly the flowers that
     /// pick up the most.
     PickedUp,
-    LevelUp,        ///< u32 netId, u16 newLevel
-    Explosion,      ///< f32 x, f32 y, f32 radius, u8 colorIndex
+    LevelUp,        ///< u32 netId, u16 newLevel. Never produced: a level
+                    ///< travels as streamed state (FieldPlayerVisuals, and
+                    ///< the viewer's own block).
+    Explosion,      ///< f32 x, f32 y, f32 radius, u8 colorIndex. Never
+                    ///< produced by this server, though the client still
+                    ///< draws one at `position` with `radius`.
     /// A lightning strike: `position` is where it landed and `radius` its
     /// reach. The ONLY event with a variable tail -- u8 count, then that many
     /// f32 x, f32 y -- because a bolt is drawn to each mob the strike hit and

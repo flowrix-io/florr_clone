@@ -134,7 +134,6 @@ struct Atlas {
     std::uint64_t lastReset = 0;
     bool everReset = false;
     int bakedLastFrame = 0;
-    int resets = 0;
 };
 
 Atlas& atlas() {
@@ -369,7 +368,6 @@ void prepareTextAtlas() {
     if (fonts == 2) {
         // A face arrived: anything baked before it may show its fallback.
         clear(a);
-        ++a.resets;
     }
     if (a.waiting.empty()) return;
 
@@ -383,7 +381,6 @@ void prepareTextAtlas() {
             clear(a);
             a.lastReset = a.frame;
             a.everReset = true;
-            ++a.resets;
             result = bake(a, it->first, it->second);
             if (result == Baked::Full) result = Baked::Skip;   // too big for an empty atlas
         }
@@ -392,20 +389,11 @@ void prepareTextAtlas() {
     }
 }
 
-void clearTextAtlas() {
-    Atlas& a = atlas();
-    clear(a);
-    a.misses.clear();
-    a.waiting.clear();
-}
-
 TextAtlasStats textAtlasStats() {
     const Atlas& a = atlas();
     TextAtlasStats stats;
     stats.runs = a.cells.size();
-    stats.waiting = a.waiting.size();
     stats.bakedLastFrame = a.bakedLastFrame;
-    stats.resets = a.resets;
     return stats;
 }
 

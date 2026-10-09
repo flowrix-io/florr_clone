@@ -21,9 +21,10 @@ std::uint32_t rgbOf(std::uint32_t rgba) { return rgba >> 8; }
 /// The sponge petal and both sponge mobs are the same 300-line vector and
 /// differ only in two fill colours, so mobs.json and petals.json carry a
 /// `$sponge:<body>,<detail>[,<id>]` palette marker instead of three copies of
-/// the path data -- the browser build expands it in resolveSpongeImage() as it
-/// loads the configs. Handing that marker straight to the SVG compiler is what
-/// left all three sponges painting as flat discs.
+/// the path data -- the browser build expanded it in resolveSpongeImage() as
+/// it loaded the configs, and resolveArtwork() below does here. Handing that
+/// marker straight to the SVG compiler is what left all three sponges painting
+/// as flat discs.
 constexpr const char* kSpongeArt = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-40 -40 80 80"${idAttr}>
   
   <path fill="${bodyColor}" d="

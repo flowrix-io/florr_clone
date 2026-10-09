@@ -64,8 +64,6 @@ constexpr double kAvatarRadius = 47.0;
 constexpr double kPivotAboveBottom = 70.0;
 
 constexpr double kDragThreshold = 5.0;
-/// How long the card takes to slide up into place.
-constexpr double kOpenSeconds = 0.3;
 /// Radians of spin per pixel of horizontal drag. A constant, not a fraction of
 /// the card, so the tree turns at the same rate in any window.
 constexpr double kRotationPerPixel = 0.008;
@@ -211,30 +209,6 @@ std::string abbreviateStat(double value) {
     std::snprintf(buffer, sizeof buffer, scaled == std::floor(scaled) ? "%.0f%s" : "%.1f%s", scaled,
                   millions ? "m" : "k");
     return buffer;
-}
-
-/// CSS `ease-out` -- cubic-bezier(0, 0, 0.58, 1) -- at time `t`.
-///
-/// Solved, not approximated. The usual stand-in `1 - (1 - t)^3` runs a fifth
-/// of the travel ahead of the real curve at the midpoint, and a fifth of a
-/// viewport is most of a card: the slide would arrive early and stop dead
-/// rather than easing in.
-double easeOut(double t) {
-    if (t <= 0.0) return 0.0;
-    if (t >= 1.0) return 1.0;
-    // The bezier is x(u) = u^2(1.74 - 0.74u), y(u) = u^2(3 - 2u). Bisected for
-    // u rather than solved with Newton, whose step is undefined at u = 0 where
-    // dx/du vanishes; x is monotonic, so sixteen halvings land well inside a
-    // pixel of a 720-px slide.
-    double lo = 0.0;
-    double hi = 1.0;
-    for (int i = 0; i < 16; ++i) {
-        const double u = (lo + hi) * 0.5;
-        if (u * u * (1.74 - 0.74 * u) < t) lo = u;
-        else hi = u;
-    }
-    const double u = (lo + hi) * 0.5;
-    return u * u * (3.0 - 2.0 * u);
 }
 
 /// The pupil offset the avatar looks around with, in the flower's own
@@ -680,7 +654,6 @@ void TalentsPanel::reset() {
     dragging_ = false;
     dragMoved_ = false;
     pressedNode_ = -1;
-    openLerp_ = 0;
     confirmingReset_ = false;
 }
 
@@ -748,22 +721,17 @@ bool TalentsPanel::render(MenuContext& ctx) {
 
     if (!laidOut_) layout();
 
-    // The card slides up from a full window below, ease-out over 300ms. Only
-    // the opening half: the menu system drops a closed panel the frame it is
-    // closed, so there is nothing left of this one to slide back out.
-    openLerp_ = std::min(1.0, openLerp_ + ctx.dt / kOpenSeconds);
-    const double slide = (1.0 - easeOut(openLerp_)) * canvas.height();
-    // Everything below is laid out where the card comes to rest, and the whole
-    // pass is translated by `slide` at the end. Hit-testing the cursor against
-    // resting geometry therefore means lifting it by the same amount, which is
-    // what keeps a mid-slide click landing on the button it is drawn under --
-    // the browser's card, being a transformed element, hit-tests where it is
-    // drawn too.
-    const Vec2 mouse{ctx.mouse().x, ctx.mouse().y - slide};
-    // A drag, on the other hand, is measured in WINDOW coordinates: while the
-    // card is still sliding it travels under a cursor that has not moved at
-    // all, and that must not add up to a spin.
-    const Vec2 windowMouse = ctx.mouse();
+    // The card slides up from a full window below and back down again the way
+    // the inventory and the forge do: the menu system eases `ctx.bounds`, so
+    // everything below is laid out, drawn and hit-tested where the card stands
+    // this frame -- a mid-slide click lands on the button it is drawn under,
+    // as it does on the browser's transformed card.
+    //
+    // A drag, on the other hand, is measured in WINDOW coordinates, from the
+    // press and never from the card: while the card is still sliding it
+    // travels under a cursor that has not moved at all, and that must not add
+    // up to a spin.
+    const Vec2 mouse = ctx.mouse();
 
     const Rect closeRect = closeButtonRect(panel);
     const Rect resetRect{panel.right() - kChromeInset - kResetWidth,
@@ -782,11 +750,11 @@ bool TalentsPanel::render(MenuContext& ctx) {
     // and came back is still a drag, and releasing it must not buy whatever it
     // happened to land back on.
     if (dragging_ && !dragMoved_ &&
-        distanceSq(windowMouse, dragPress_) >= kDragThreshold * kDragThreshold) {
+        distanceSq(mouse, dragPress_) >= kDragThreshold * kDragThreshold) {
         dragMoved_ = true;
     }
     if (dragging_ && dragMoved_) {
-        rotation_ = rotationAtAnchor_ + (windowMouse.x - dragPress_.x) * kRotationPerPixel;
+        rotation_ = rotationAtAnchor_ + (mouse.x - dragPress_.x) * kRotationPerPixel;
     }
 
     const Vec2 centre{panel.x + panel.w * 0.5, panel.bottom() - kPivotAboveBottom};
@@ -808,9 +776,6 @@ bool TalentsPanel::render(MenuContext& ctx) {
             }
         }
     }
-
-    canvas.save();
-    canvas.translate(0.0f, static_cast<float>(slide));
 
     panelCard(canvas, panel, kTalentsSkin, kMenuBorder, kCardRadius);
 
@@ -938,8 +903,11 @@ bool TalentsPanel::render(MenuContext& ctx) {
     // two lines advertise what the tree is worth, and the gentler curve reads
     // as no progress at all.
     const SelfState& self = ctx.net.view().self();
-    const double baseHealth =
-        self.maxHealth > 0.0 ? self.maxHealth : maxHealthForLevel(profile.level);
+    // Not while this client steers somebody else's flower: the self block is
+    // THAT flower's then, and these lines are about this account's tree.
+    const double baseHealth = self.maxHealth > 0.0 && !ctx.net.controllingFlower()
+                                  ? self.maxHealth
+                                  : maxHealthForLevel(profile.level);
     const double health = baseHealth * skills.effectScale(SkillId::PlayerHealth);
     const double bodyDamage = kDisplayBodyDamage * skills.effectScale(SkillId::Damage);
 
@@ -1025,7 +993,6 @@ bool TalentsPanel::render(MenuContext& ctx) {
     }
 
     canvas.restore();   // the card's clip
-    canvas.restore();   // the slide
 
     // --- input -------------------------------------------------------------
     if (ctx.pressed() && panel.contains(mouse)) {
@@ -1045,7 +1012,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
         }
         dragging_ = true;
         dragMoved_ = false;
-        dragPress_ = windowMouse;
+        dragPress_ = mouse;
         // The click belongs to the node the PRESS landed on. Releasing over a
         // different node after the tree has spun under the cursor is not a
         // click on that one.

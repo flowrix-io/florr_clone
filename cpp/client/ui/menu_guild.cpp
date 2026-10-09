@@ -32,6 +32,7 @@
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/text_select.h"
+#include "shared/core/text.h"
 
 namespace flix {
 
@@ -173,7 +174,7 @@ struct Field {
 /// Everything the card keeps between frames beyond its scroll.
 ///
 /// At file scope for the same reason the drag state below is: there is exactly
-/// one panel instance, and menus.h is a header twelve panels share.
+/// one panel instance, and menus.h is a header every panel shares.
 struct Form {
     Mode mode = Mode::View;
     Field createName;
@@ -235,22 +236,7 @@ struct HitRegion {
     std::string member;
 };
 
-std::string lowered(const std::string& s) {
-    std::string out = s;
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return out;
-}
-
-bool sameName(const std::string& a, const std::string& b) { return lowered(a) == lowered(b); }
-
-std::string trimmedText(const std::string& s) {
-    const std::size_t first = s.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return {};
-    const std::size_t last = s.find_last_not_of(" \t\r\n");
-    return s.substr(first, last - first + 1);
-}
+bool sameName(const std::string& a, const std::string& b) { return lowerCase(a) == lowerCase(b); }
 
 /// Bold white over the default size-scaled outline: every line of text on the
 /// card is this, at one of five sizes.
@@ -262,15 +248,6 @@ TextStyle cardText(double size, Align align = Align::Left, Baseline baseline = B
     style.baseline = baseline;
     style.roundJoin = true;
     return style;
-}
-
-/// White at an alpha, which TextStyle cannot express -- it carries a colour,
-/// not a coverage -- and which a pre-mixed grey would get wrong over cyan.
-void dimText(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style,
-             double alpha) {
-    canvas.setGlobalAlpha(static_cast<float>(alpha));
-    text(canvas, s, x, y, style);
-    canvas.setGlobalAlpha(1.0f);
 }
 
 /// Every button on the card: a rim with the face one step inside it, the
@@ -340,8 +317,11 @@ std::vector<std::string> wrapAbout(const std::string& s, double width, double si
 
     if (static_cast<int>(lines.size()) > maxLines) {
         lines.resize(static_cast<std::size_t>(maxLines));
+        // Always marked, even where the last line would fit whole -- there is
+        // more than the box shows -- which is why this is not ui::ellipsize.
+        // Trimmed a character at a time all the same, as that is.
         std::string& last = lines.back();
-        while (!last.empty() && !fits(last + "...")) last.pop_back();
+        while (!last.empty() && !fits(last + "...")) last.erase(utf8Prev(last, last.size()));
         last += "...";
     }
     return lines;
@@ -367,8 +347,6 @@ struct LiveField {
 };
 
 } // namespace
-
-double GuildPanel::preferredWidth() { return kPanelWidth; }
 
 Rect GuildPanel::bounds(int, int viewHeight) {
     // Full height wherever it fits, and shorter -- out of the roster -- on a
@@ -445,9 +423,9 @@ bool GuildPanel::render(MenuContext& ctx) {
     } else {
         text(canvas, "No guild", centreX, panel.y + kNameBaseline,
              cardText(kNameSize, Align::Centre, Baseline::Alphabetic));
-        dimText(canvas, "Name a guild and pick a 5-letter tag to start one",
-                centreX, panel.y + kTagBaseline,
-                cardText(kDetailTextSize, Align::Centre, Baseline::Alphabetic), 0.85);
+        textAtAlpha(canvas, "Name a guild and pick a 5-letter tag to start one",
+                    centreX, panel.y + kTagBaseline,
+                    cardText(kDetailTextSize, Align::Centre, Baseline::Alphabetic), 0.85);
     }
 
     // The box is as tall as the description it shows. Holding a field instead
@@ -484,10 +462,11 @@ bool GuildPanel::render(MenuContext& ctx) {
                    f.editAbout.state.focused, ctx.timeSeconds, &f.editAbout.state);
         fields.push_back({&f.editAbout, aboutField, kDescriptionLimit, false});
     } else if (aboutLines.empty()) {
-        dimText(canvas, leaderIsMe ? "No description yet. Edit to add one." : "No description.",
-                aboutBox.x + kAboutInset,
-                aboutBox.y + kAboutPad + kAboutLine * 0.5 + kMiddleNudge,
-                cardText(kAboutTextSize), 0.6);
+        textAtAlpha(canvas,
+                    leaderIsMe ? "No description yet. Edit to add one." : "No description.",
+                    aboutBox.x + kAboutInset,
+                    aboutBox.y + kAboutPad + kAboutLine * 0.5 + kMiddleNudge,
+                    cardText(kAboutTextSize), 0.6);
     } else {
         for (std::size_t i = 0; i < aboutLines.size(); ++i) {
             text(canvas, aboutLines[i], aboutBox.x + kAboutInset,
@@ -569,8 +548,8 @@ bool GuildPanel::render(MenuContext& ctx) {
             const Rect card{panel.x + kButtonMargin, band.y + 12.0 - scroll_.offset,
                             panel.w - kButtonMargin * 2, 58.0};
             fillRound(canvas, card, 6.0, kGuildThumb);
-            dimText(canvas, "@" + pending.fromUsername + " invited you to join", card.x + 14.0,
-                    card.y + 18.0, cardText(kDetailTextSize), 0.9);
+            textAtAlpha(canvas, "@" + pending.fromUsername + " invited you to join",
+                        card.x + 14.0, card.y + 18.0, cardText(kDetailTextSize), 0.9);
             text(canvas, pending.displayName + " [" + pending.guildName + "]", card.x + 14.0,
                  card.y + 39.0, cardText(kTagSize));
 
@@ -589,8 +568,8 @@ bool GuildPanel::render(MenuContext& ctx) {
             }
             contentHeight = 12.0 + card.h + 12.0;
         } else {
-            dimText(canvas, "No pending invitations", centreX, band.y + 25.0,
-                    cardText(kDetailTextSize, Align::Centre), 0.7);
+            textAtAlpha(canvas, "No pending invitations", centreX, band.y + 25.0,
+                        cardText(kDetailTextSize, Align::Centre), 0.7);
             contentHeight = 50.0;
         }
     } else {
@@ -607,8 +586,8 @@ bool GuildPanel::render(MenuContext& ctx) {
                              const bool bLead = sameName(b->name, guild.leader);
                              if (aLead != bLead) return aLead;
                              if (a->online != b->online) return a->online;
-                             const std::string al = lowered(a->name);
-                             const std::string bl = lowered(b->name);
+                             const std::string al = lowerCase(a->name);
+                             const std::string bl = lowerCase(b->name);
                              return al != bl ? al < bl : a->name < b->name;
                          });
 
@@ -763,8 +742,8 @@ bool GuildPanel::render(MenuContext& ctx) {
     // --- actions ------------------------------------------------------------------
 
     const auto submitCreate = [&] {
-        const std::string name = trimmedText(f.createName.value);
-        const std::string tag = trimmedText(f.createTag.value);
+        const std::string name = trimmed(f.createName.value);
+        const std::string tag = trimmed(f.createTag.value);
         // Whichever is missing takes the caret, rather than the server being
         // asked to refuse it.
         if (name.empty()) {
@@ -782,17 +761,17 @@ bool GuildPanel::render(MenuContext& ctx) {
         f.createTag.state.blur();
     };
     const auto saveEdit = [&] {
-        const std::string name = trimmedText(f.editName.value);
+        const std::string name = trimmed(f.editName.value);
         if (name.empty()) {
             f.editAbout.state.blur();
             f.editName.state.focusAtEnd(f.editName.value, ctx.timeSeconds);
             return;
         }
-        ctx.net.requestGuildEdit(name, trimmedText(f.editAbout.value));
+        ctx.net.requestGuildEdit(name, trimmed(f.editAbout.value));
         f.view();
     };
     const auto sendInvite = [&] {
-        const std::string name = trimmedText(f.invitee.value);
+        const std::string name = trimmed(f.invitee.value);
         if (!name.empty()) ctx.net.requestGuildInvite(name);
         f.view();
     };

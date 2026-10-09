@@ -51,14 +51,14 @@ inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCCB94Fu};
 /// #292929 for the border, the empty slots and the scroll thumb.
 inline constexpr PanelSkin kTitanSkin{0x333333u, 0x292929u, 0x292929u};
 inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xA89D36u};
-/// The talent card is the one panel drawn against a reference screenshot
-/// rather than the browser build's CSS, so its body is that shot's dusty red
+/// The talent card is drawn against a reference screenshot rather than the
+/// browser build's CSS, so its body is that shot's dusty red
 /// rather than the pink the rest of the family was derived from. The border
 /// doubles as the tree's own ink: every connector and the TP badge are drawn
 /// in it, which is what makes the fan read as part of the card.
 inline constexpr PanelSkin kTalentsSkin{0xCC625Eu, 0xA44F4Cu, 0xA44F4Cu};
-/// The shop is the one panel drawn against a reference screenshot rather than
-/// against the browser build's CSS, so its greens are that shot's. Its frame
+/// The shop is drawn against a reference screenshot rather than against the
+/// browser build's CSS, so its greens are that shot's. Its frame
 /// is NOT in that shot -- the shot's card runs to its own edge -- but a shop
 /// with no frame is the one menu in the game that is not a card, so it wears
 /// the same border every other panel does: its own green at 0.8 value.
@@ -80,6 +80,10 @@ inline constexpr PanelSkin kGuildSkin{0x1FDBDEu, 0x19B1B4u, 0x148E90u};
 /// The database editor: a slate no player-facing panel wears, because it is not
 /// one -- an admin should never mistake it for the settings card beside it.
 inline constexpr PanelSkin kAdminDbSkin{0x55606Bu, 0x434C55u, 0x7A8794u};
+/// The admin dashboard: an indigo no player-facing panel wears either, for the
+/// editor's reason. Its strip button and the Release chip wear it too, so both
+/// say which card they belong to.
+inline constexpr PanelSkin kAdminDashboardSkin{0x5C5B9Cu, 0x48477Au, 0x7F7EBFu};
 
 // --- shared panel metrics ---------------------------------------------------
 
@@ -125,8 +129,9 @@ inline constexpr std::uint32_t kControlLit = 0xCFCFCFu;
 /// The tall list panels (inventory, craft, talents) sit a third of the way
 /// down and kMenuInsetX in from the left, clear of the icon column, and run
 /// two thirds of the viewport tall. The corner panels (settings, changelog,
-/// notifications, guild, leaderboard, skins, shop, gallery, debug) are pinned
-/// directly under the top icon row instead, at their own fixed sizes.
+/// notifications, guild, leaderboard, skins, shop, gallery, debug and the two
+/// admin cards) are pinned directly under the top icon row instead, at their
+/// own fixed sizes.
 inline constexpr double kMenuInsetX = 91.0;
 inline constexpr double kMenuListTopFraction = 1.0 / 3.0;
 inline constexpr double kMenuListHeightFraction = 2.0 / 3.0;

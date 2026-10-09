@@ -82,6 +82,11 @@ inline constexpr Rarity ladderRarity(Rarity r) {
 }
 inline constexpr int ladderIndex(Rarity r) { return rarityIndex(ladderRarity(r)); }
 
+/// Parses a rarity name exactly as the tier table spells it ("epic", not
+/// "Epic"). False, with `out` untouched, for anything else: for the readers
+/// that must tell an unknown name from a real "common" and say so.
+bool tryParseRarity(const std::string& name, Rarity& out);
+
 /// Parses a config/database rarity string. Unknown text reads as Common, so a
 /// hand-edited save or an older record degrades instead of failing to load.
 Rarity parseRarity(const std::string& name);

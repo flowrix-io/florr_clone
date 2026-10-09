@@ -4,7 +4,7 @@
 // full of randomised timers and personas, and a test that asserted a
 // particular heading would fail on the next tuning change. It is the
 // PROPERTIES the reference's controller has and a broken port loses, each of
-// which has actually gone wrong at some point in the browser build:
+// which actually went wrong at some point in the TypeScript build:
 //
 //   * bots exist and keep existing while a player is online
 //   * they MOVE -- an input path that never writes moveStrength produces a
@@ -20,14 +20,12 @@
 // having a PlayerTag and no session behind it.
 
 #include <algorithm>
-#include <cmath>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "server/bot_ai.h"
-#include "server/db.h"
 #include "test.h"
 #include "server_harness.h"
 
@@ -85,14 +83,14 @@ TEST(bots_populate_and_move) {
     }
     CHECK(alive > 0);
     // Not every bot at once -- idle pauses are part of the behaviour -- but a
-    // clear majority of a two-dozen population must be going somewhere.
+    // clear majority of the population must be going somewhere.
     CHECK(moved * 2 > alive);
 }
 
 TEST(bots_spread_out_and_stay_in_the_world) {
     // A thicker population than the shipped target: this measures a CROWD
-    // inside one biome, and the default fourteen spread over six of them is
-    // two or three per map -- three points are not a clump to disprove.
+    // inside one biome, and the default fourteen spread over seven of them is
+    // two per map -- two points are not a clump to disprove.
     Harness h("bots-spread", {}, dataDir(), 60);
     CHECK(h.ready);
     if (!h.ready) return;
@@ -109,7 +107,7 @@ TEST(bots_spread_out_and_stay_in_the_world) {
     if (bots.size() < 2) return;
 
     // Each bot against ITS OWN map's extent: the population is spread over
-    // every biome, the shipped maps are four different sizes, and a bot judged
+    // every biome, the shipped maps are not all one size, and a bot judged
     // against another map's rectangle is judged against the wrong world.
     std::unordered_map<int, std::vector<Vec2>> byRealm;
     for (const Entity bot : bots) {
@@ -148,10 +146,10 @@ TEST(bots_spread_out_and_stay_in_the_world) {
 
 TEST(bots_are_spread_evenly_over_the_biomes) {
     // The population exists so a player does not meet an empty world -- and
-    // the world is seven maps. A population that all stood in the first one
-    // left six biomes a player could walk into and find nothing alive, nobody
-    // playing, and (because a band is only stocked while somebody is looking
-    // at it) not even mobs.
+    // the world is seven biomes a bot can live in. A population that all stood
+    // in the first one left six biomes a player could walk into and find
+    // nothing alive, nobody playing, and (because a band is only stocked while
+    // somebody is looking at it) not even mobs.
     Harness h("bots-biomes");
     CHECK(h.ready);
     if (!h.ready) return;
@@ -241,16 +239,16 @@ TEST(bot_corpses_are_replaced) {
     // Then put it out of everyone's reach, in the far corner of the map.
     //
     // Not tidying: a bot carrying yggdrasil REVIVES a corpse it can reach, and
-    // bots actively path to each other's corpses to do it. The shipped map is
-    // about three fifths solid now, so the walkable ground -- and the bots
-    // standing on it -- is packed close enough that a corpse left where it
-    // fell is revived long before the three-second replacement deadline. That
-    // is correct behaviour and it is covered by
+    // bots actively path to each other's corpses to do it. The shipped maps
+    // are dense -- about half of the garden collides -- so the walkable ground,
+    // and the bots standing on it, is packed close enough that a corpse left
+    // where it fell is revived long before the three-second replacement
+    // deadline. That is correct behaviour and it is covered by
     // bot_traversal_petals_are_handed_back; what it is not is a test of the
-    // REPLACEMENT path, which only runs on a corpse nobody saved. Nineteen
-    // thousand units away, with three seconds on the clock, is out of reach.
-    // In the corpse's OWN realm: bots live in every biome, the maps are four
-    // different sizes, and the far corner of the overworld is off the edge of
+    // REPLACEMENT path, which only runs on a corpse nobody saved. The far
+    // corner of the map, with three seconds on the clock, is out of reach.
+    // In the corpse's OWN realm: bots live in every biome, the maps are not
+    // all one size, and the far corner of the overworld is off the edge of
     // most of them.
     const Terrain& terrain = h.server.terrain();
     const Realm realm = world.get<Transform>(corpse).realm;
@@ -303,26 +301,11 @@ TEST(bot_traversal_petals_are_handed_back) {
 
 namespace {
 
-/// An admin account, seeded before the server opens the database.
-void seedAdmin(const std::string& path) {
-    Database db;
-    std::string error;
-    db.load(path, error);
-    db.setPasswordCost(4);   // the default cost makes this the slowest test
-    CreateResult created = db.createUser("boss", "password7");
-    if (created.ok()) created.account->admin = true;
-    db.markDirty();
-    db.save();
-}
+/// The admin account these tests log in as, seeded before the server opens
+/// the database.
+void seedAdmin(const std::string& path) { seedUser(path, "boss", "password7", true); }
 
-int countBots(World& world) {
-    int count = 0;
-    Query<PlayerTag, PlayerAccount> players{world};
-    players.each([&](Entity, PlayerTag&, PlayerAccount& account) {
-        if (account.userId.empty()) ++count;
-    });
-    return count;
-}
+int countBots(World& world) { return static_cast<int>(botBodies(world).size()); }
 
 } // namespace
 
@@ -374,12 +357,13 @@ TEST(set_bot_count_moves_the_population_at_once) {
 }
 
 TEST(a_bot_never_takes_a_pad) {
-    // Bots exist to populate the overworld, and their controller reads only
-    // that map's grid. A bot carried through a pad would steer around walls
-    // it is not standing among, so a pad simply does not take one -- however
-    // long it stands there -- while the same pad takes a player.
+    // Bots exist to populate the biome they were posted to, and their
+    // controller reads only that map's grid. A bot carried through a pad would
+    // steer around walls it is not standing among, so a pad simply does not
+    // take one -- however long it stands there -- while the same pad takes a
+    // player.
     //
-    // A fixture world, because the shipped map has no pads on it: `meadow`
+    // A fixture world, because the shipped maps have no pads on them: `meadow`
     // with a pad into `warren`. What is under test is the BOT, and the bots
     // populate whatever overworld they are given.
     const std::string dir = twoMapDataDir("botpad");
@@ -416,7 +400,7 @@ TEST(a_bot_never_takes_a_pad) {
     if (pad == nullptr || bots.empty()) { removeDataDir(dir); return; }
 
     // Held on the pad's centre every tick for three dwell periods: a player
-    // would have been sent to the sewers three times over.
+    // would have been sent into the warren three times over.
     const Entity bot = bots.front();
     const int ticks = static_cast<int>(3.0 * kTeleporterDwellMillis / net::kTickMillis);
     for (int i = 0; i < ticks && world.isAlive(bot); ++i) {
@@ -487,7 +471,7 @@ void adminSpawn(NetClient& client, const char* mob, const char* rarity, Vec2 at,
 TEST(a_bot_fights_what_is_put_in_front_of_it) {
     // Enough bots that the player's own biome holds a working handful: the
     // population is spread evenly over every biome with a door, so the default
-    // two dozen is three or four per map and this test stages five mobs.
+    // fourteen is two per map and this test stages five mobs.
     Harness h("bots-fight", seedAdmin, dataDir(), 70);
     CHECK(h.ready);
     if (!h.ready) return;
@@ -507,7 +491,7 @@ TEST(a_bot_fights_what_is_put_in_front_of_it) {
 
     // The five bots FURTHEST from the admin's own flower. Bots deliberately
     // leave the mobs around a human alone (kBotPlayerClaimRadius) -- that rule
-    // is what stops two dozen of them stripping the screen of whoever came to
+    // is what stops a crowd of them stripping the screen of whoever came to
     // play -- so a fight staged on the player's doorstep would be testing that
     // rule rather than this one.
     Entity me = NULL_ENTITY;

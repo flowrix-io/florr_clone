@@ -24,7 +24,7 @@
 namespace flix {
 
 enum class Realm : std::uint8_t {
-    Overworld = 0,   ///< the first world map, maps/world.tmj
+    Overworld = 0,   ///< the first entry of maps/maps.json (garden.tmj today)
     Arena = 1,       ///< the PVP ring
     Maze = 2,        ///< the daily maze
     // 3 and up are the OTHER world maps, one realm each, in the order
@@ -36,11 +36,11 @@ enum class Realm : std::uint8_t {
 /// runtime, and a fixed-size array indexed by realm is what keeps the
 /// broadphase and the terrain grids allocation-free per tick.
 ///
-/// Sixty-four because the realm travels as a byte and the shipped set is
-/// already forty-seven maps -- the overworld, the sewers and five temporary
-/// maps per biome. Raising it costs one broadphase Layer and one tile grid
-/// header per realm, and nothing on the wire; a realm nothing was staged for
-/// keeps a one-cell layer and an empty grid.
+/// Sixty-four because the realm travels as a byte; the shipped manifest stages
+/// sixteen map realms (eight maps, plus eight copies of the termite mound),
+/// and this leaves room to grow. Raising it costs one broadphase Layer and one
+/// tile grid header per realm, and nothing on the wire; a realm nothing was
+/// staged for keeps a one-cell layer and an empty grid.
 inline constexpr int kMaxRealms = 64;
 
 /// How many world MAPS can be staged: every realm that is not the arena or the

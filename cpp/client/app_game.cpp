@@ -16,7 +16,6 @@
 #include "client/app.h"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cmath>
 #include <string>
@@ -448,6 +447,9 @@ void App::drawDeathCard(Canvas& canvas, double time) {
 }
 
 void App::tallyRunLoot() {
+    // While this client steers somebody else's flower, the self id is THAT
+    // flower's, and what it picks up goes into its own player's bag.
+    if (net_.controllingFlower()) return;
     const std::uint32_t self = net_.view().self().netId;
     if (self == 0) return;
     for (const ViewEvent& event : net_.view().events()) {

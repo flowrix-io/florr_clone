@@ -17,6 +17,16 @@ struct CountingScan {
     int operator()() { ++calls; return 0; }
 };
 
+/// A limiter that enforces, with every bucket full at `now`. A dev build does
+/// not enforce these by default, and this file is precisely the place that is
+/// about enforcement.
+static AccountLimiter enforcingLimiter(double now) {
+    AccountLimiter limiter;
+    limiter.setEnforced(true);
+    limiter.reset(now);
+    return limiter;
+}
+
 TEST(address_keys_agree_across_every_spelling_of_an_address) {
     // The transport hands over `host:port`; the port is not part of the key.
     CHECK(addressKey("1.2.3.4:51000") == "1.2.3.4");
@@ -66,12 +76,8 @@ TEST(a_release_build_enforces_the_limits_and_a_dev_build_does_not) {
 }
 
 TEST(registration_allows_a_burst_then_drips) {
-    AccountLimiter limiter;
-    // A dev build does not enforce these by default, and this file is
-    // precisely the place that is about enforcement.
-    limiter.setEnforced(true);
     double now = 1000000;
-    limiter.reset(now);
+    AccountLimiter limiter = enforcingLimiter(now);
 
     CHECK(limiter.spendRegistration("9.9.9.9", noAccountsToday, now).allowed);
     CHECK(limiter.spendRegistration("9.9.9.9", noAccountsToday, now).allowed);
@@ -92,12 +98,8 @@ TEST(registration_allows_a_burst_then_drips) {
 }
 
 TEST(one_ipv6_allocation_cannot_be_walked_for_more_accounts) {
-    AccountLimiter limiter;
-    // A dev build does not enforce these by default, and this file is
-    // precisely the place that is about enforcement.
-    limiter.setEnforced(true);
     const double now = 1000000;
-    limiter.reset(now);
+    AccountLimiter limiter = enforcingLimiter(now);
 
     int allowed = 0;
     for (int i = 0; i < 50; ++i) {
@@ -108,12 +110,8 @@ TEST(one_ipv6_allocation_cannot_be_walked_for_more_accounts) {
 }
 
 TEST(the_persisted_daily_count_refuses_before_the_bucket_is_consulted) {
-    AccountLimiter limiter;
-    // A dev build does not enforce these by default, and this file is
-    // precisely the place that is about enforcement.
-    limiter.setEnforced(true);
     const double now = 1000000;
-    limiter.reset(now);
+    AccountLimiter limiter = enforcingLimiter(now);
 
     const LimitVerdict verdict = limiter.spendRegistration(
         "7.7.7.7", [] { return kRegisterDailyPerAddress; }, now);
@@ -129,12 +127,8 @@ TEST(the_persisted_daily_count_refuses_before_the_bucket_is_consulted) {
 
 TEST(the_global_ceiling_holds_when_every_request_claims_a_new_address) {
     // The attack this whole file exists for: 9000 accounts, one per source.
-    AccountLimiter limiter;
-    // A dev build does not enforce these by default, and this file is
-    // precisely the place that is about enforcement.
-    limiter.setEnforced(true);
     const double now = 1000000;
-    limiter.reset(now);
+    AccountLimiter limiter = enforcingLimiter(now);
 
     int allowed = 0;
     for (int i = 0; i < 9000; ++i) {
@@ -146,12 +140,8 @@ TEST(the_global_ceiling_holds_when_every_request_claims_a_new_address) {
 }
 
 TEST(login_attempts_are_budgeted_and_a_success_hands_its_token_back) {
-    AccountLimiter limiter;
-    // A dev build does not enforce these by default, and this file is
-    // precisely the place that is about enforcement.
-    limiter.setEnforced(true);
     const double now = 1000000;
-    limiter.reset(now);
+    AccountLimiter limiter = enforcingLimiter(now);
 
     int allowed = 0;
     for (int i = 0; i < 20; ++i) {
@@ -169,12 +159,8 @@ TEST(the_database_scan_runs_only_for_requests_the_cheap_limits_allow) {
     // already refused would turn a registration flood into a table scan per
     // packet -- a worse denial of service than the account spam it exists to
     // stop.
-    AccountLimiter limiter;
-    // A dev build does not enforce these by default, and this file is
-    // precisely the place that is about enforcement.
-    limiter.setEnforced(true);
     const double now = 1000000;
-    limiter.reset(now);
+    AccountLimiter limiter = enforcingLimiter(now);
 
     CountingScan scan;
     const std::function<int()> counted = [&] { return scan(); };
@@ -184,12 +170,8 @@ TEST(the_database_scan_runs_only_for_requests_the_cheap_limits_allow) {
 }
 
 TEST(refusal_logging_is_throttled_so_a_flood_is_not_also_a_log_flood) {
-    AccountLimiter limiter;
-    // A dev build does not enforce these by default, and this file is
-    // precisely the place that is about enforcement.
-    limiter.setEnforced(true);
     double now = 1000000;
-    limiter.reset(now);
+    AccountLimiter limiter = enforcingLimiter(now);
 
     const std::string first = limiter.refusalLogLine("1.2.3.4", LimitScope::Address, now);
     CHECK(!first.empty());

@@ -9,6 +9,8 @@
 #include "shared/core/types.h"
 #include "shared/game/config.h"
 #include "shared/net/protocol.h"
+#include "render_rig.h"
+#include "test_data.h"
 
 #include <algorithm>
 #include <cmath>
@@ -56,30 +58,19 @@ std::vector<std::uint8_t> paint(MobArt art, const MobArtAttributes& base) {
     return canvas.getImageData(0, 0, kSide, kSide);
 }
 
-std::string testsDir() {
-    const std::string path = __FILE__;
-    const std::size_t slash = path.find_last_of('/');
-    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
-}
+const ContentRegistry& shipped() { return testsupport::shippedContent(); }
 
-const ContentRegistry& shipped() {
-    static const ContentRegistry registry = [] {
-        ContentRegistry r;
-        std::string error;
-        r.loadFiles(testsDir() + "/../../src/mobs.json", testsDir() + "/../../src/petals.json",
-                    error);
-        return r;
+/// The sprites over the shipped content, built once for every frame in here.
+const SpriteCache& shippedSprites() {
+    static const SpriteCache sprites = [] {
+        SpriteCache cache;
+        cache.build(shipped(), testsupport::dataDir());
+        return cache;
     }();
-    return registry;
+    return sprites;
 }
 
-int differingPixels(const std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b) {
-    int count = 0;
-    for (std::size_t i = 0; i + 3 < a.size() && i + 3 < b.size(); i += 4) {
-        if (a[i] != b[i] || a[i + 1] != b[i + 1] || a[i + 2] != b[i + 2]) ++count;
-    }
-    return count;
-}
+using testsupport::differingPixels;
 
 /// A scorpion played through the world renderer for `seconds` at 60 fps,
 /// walking along +x at `unitsPerSecond` with the camera on it, then the
@@ -90,11 +81,7 @@ std::vector<std::uint8_t> scorpionAfter(double seconds, double unitsPerSecond,
                                         std::vector<std::uint8_t>& empty) {
     constexpr int kSize = 240;
     const std::uint16_t type = shipped().mobIndex("scorpion");
-    static const SpriteCache sprites = [] {
-        SpriteCache cache;
-        cache.build(shipped(), FLIX_TEST_DATA_DIR);
-        return cache;
-    }();
+    const SpriteCache& sprites = shippedSprites();
     WorldRenderer renderer;
     renderer.setContent(&shipped());
     renderer.setSprites(&sprites);
@@ -103,10 +90,7 @@ std::vector<std::uint8_t> scorpionAfter(double seconds, double unitsPerSecond,
     Canvas canvas = Canvas::createVirtual(kSize, kSize);
     {
         const Vec2 at{1000.0, 1000.0};
-        Camera camera;
-        camera.setViewport(kSize, kSize);
-        camera.userZoom = 1.0;
-        camera.snapTo(at);
+        const Camera camera = testsupport::frameCamera(kSize, at);
         WorldView nobody;
         nobody.setRealm(Realm::Overworld);
         WorldRenderer bare;
@@ -129,10 +113,7 @@ std::vector<std::uint8_t> scorpionAfter(double seconds, double unitsPerSecond,
         mob.typeIndex = type;
         mob.radius = shipped().mobStats(type, Rarity::Common).radius;
         view.seedForTest(mob);
-        Camera camera;
-        camera.setViewport(kSize, kSize);
-        camera.userZoom = 1.0;
-        camera.snapTo(at);
+        const Camera camera = testsupport::frameCamera(kSize, at);
         canvas.clear(Color{0, 0, 0});
         renderer.draw(canvas, view, camera, at, t);
         if (f == 0) first = canvas.getImageData(0, 0, kSize, kSize);
@@ -246,15 +227,10 @@ namespace {
 constexpr int kRingSize = 200;
 std::vector<std::uint8_t> mobFrame(const char* id, double angle, std::uint8_t state,
                                    const std::vector<RemoteEntity>& seeds) {
-    static const SpriteCache sprites = [] {
-        SpriteCache cache;
-        cache.build(shipped(), FLIX_TEST_DATA_DIR);
-        return cache;
-    }();
     const std::uint16_t type = shipped().mobIndex(id);
     WorldRenderer renderer;
     renderer.setContent(&shipped());
-    renderer.setSprites(&sprites);
+    renderer.setSprites(&shippedSprites());
     renderer.options.names = false;
     renderer.options.healthBars = false;
     WorldView view;
@@ -276,12 +252,8 @@ std::vector<std::uint8_t> mobFrame(const char* id, double angle, std::uint8_t st
         seed.needsSnap = false;
         view.seedForTest(seed);
     }
-    Camera camera;
-    camera.setViewport(kRingSize, kRingSize);
-    camera.userZoom = 1.0;
-    camera.snapTo(at);
     Canvas canvas = Canvas::createVirtual(kRingSize, kRingSize);
-    renderer.draw(canvas, view, camera, at, 1.0);
+    renderer.draw(canvas, view, testsupport::frameCamera(kRingSize, at), at, 1.0);
     return canvas.getImageData(0, 0, kRingSize, kRingSize);
 }
 
@@ -391,15 +363,6 @@ namespace {
 constexpr double kPlateBox = 52.0;
 double galleryBody(std::uint16_t type) {
     return std::min(48.0, shipped().mobStats(type, Rarity::Common).radius * 2.0 * 1.15);
-}
-
-const SpriteCache& shippedSprites() {
-    static const SpriteCache sprites = [] {
-        SpriteCache cache;
-        cache.build(shipped(), FLIX_TEST_DATA_DIR);
-        return cache;
-    }();
-    return sprites;
 }
 
 /// Where a mob's gallery picture paints, in units from the plate's centre,

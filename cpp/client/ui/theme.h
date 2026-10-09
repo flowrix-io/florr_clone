@@ -17,7 +17,6 @@ inline constexpr std::uint32_t kInk        = 0x000000u;  ///< every outline
 inline constexpr std::uint32_t kPaper      = 0xFFFFFFu;  ///< text and highlights
 inline constexpr std::uint32_t kPanel      = 0x599FDCu;  ///< inventory-blue panel body
 inline constexpr std::uint32_t kPanelDark  = 0x4A8BC2u;  ///< matching panel border
-inline constexpr std::uint32_t kSlot       = 0xEEEEEEu;  ///< empty loadout slot
 inline constexpr std::uint32_t kAccent     = 0x1DD129u;  ///< Ready / primary action
 inline constexpr std::uint32_t kDanger     = 0xFF4444u;
 inline constexpr std::uint32_t kWarning    = 0xFFE65Du;
@@ -43,7 +42,6 @@ inline constexpr double kHudLayerAlpha = 0.865;
 /// the minimap's backdrop and the loadout bar -- is this opaque, so the world
 /// under the corner and the bottom edge still shows faintly through.
 inline constexpr double kOverlayPlateAlpha = 0.9;
-inline constexpr std::uint32_t kShade      = 0x000000u;  ///< modal scrim, at low alpha
 /// The green the browser build's auth form is made of (InputLook::Auth).
 inline constexpr std::uint32_t kField      = 0x18CE18u;
 /// Every other text input, in the inventory search's look (ui::inputField): a
@@ -79,23 +77,14 @@ inline constexpr double kMaxOutline = 6.0;
 inline constexpr double kTextStrokeRatio = 0.12;
 
 inline constexpr double kPanelRadius = 8.0;
-inline constexpr double kSlotRadius = 6.0;
-inline constexpr double kButtonRadius = 6.0;
-
-inline constexpr double kPanelPadding = 14.0;
-inline constexpr double kSlotSize = 56.0;
-inline constexpr double kSlotGap = 8.0;
 
 // --- type scale -------------------------------------------------------------
 
-inline constexpr double kTitleSize = 42.0;
 inline constexpr double kHeadingSize = 22.0;
 inline constexpr double kBodySize = 15.0;
 /// The browser build's `drawGardnButton` default. Every button label in the
 /// game is this size unless its box is too small to hold it.
 inline constexpr double kButtonTextSize = 18.0;
-inline constexpr double kSmallSize = 12.0;
-inline constexpr double kDamageSize = 18.0;
 
 // --- helpers ----------------------------------------------------------------
 

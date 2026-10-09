@@ -90,7 +90,9 @@ public:
     /// bar, or 1 -- see loadoutCameraZoom. Antennae and observer are the
     /// petals that set one, and they are the only way to see more of the
     /// world than the default view, which is what makes them worth wearing.
-    /// The client's alone: the server neither computes it nor sends it.
+    /// The client's to apply: the server never sends it, and works the same
+    /// figure out only to bound the viewport a client may claim
+    /// (claimableViewport, server/game_server.cpp).
     double loadoutZoom = 1.0;
 
 private:

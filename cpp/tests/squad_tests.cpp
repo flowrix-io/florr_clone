@@ -42,13 +42,13 @@ TEST(a_squad_holds_one_leader_and_at_most_four) {
     CHECK(roster.create(human(1), true, rng) == nullptr);
 
     for (net::ConnectionId id = 2; id <= 4; ++id) {
-        CHECK(roster.invite(human(1), human(id), "one", 0).empty());
+        CHECK(roster.invite(human(1), human(id), 0).empty());
         std::string joined;
         CHECK(roster.accept(human(id), 0, joined).empty());
         CHECK(joined == squad->id);
     }
     CHECK(squad->members.size() == kMaxSquadSize);
-    CHECK(roster.invite(human(1), human(5), "one", 0) == "Squad is full (max 4 players).");
+    CHECK(roster.invite(human(1), human(5), 0) == "Squad is full (max 4 players).");
 }
 
 TEST(only_the_leader_invites_and_only_once_per_target) {
@@ -57,17 +57,17 @@ TEST(only_the_leader_invites_and_only_once_per_target) {
     Squad* squad = roster.create(human(1), false, rng);
     CHECK(squad != nullptr);
 
-    CHECK(roster.invite(human(1), human(2), "one", 0).empty());
+    CHECK(roster.invite(human(1), human(2), 0).empty());
     std::string joined;
     CHECK(roster.accept(human(2), 0, joined).empty());
 
-    CHECK(roster.invite(human(2), human(3), "two", 0) ==
+    CHECK(roster.invite(human(2), human(3), 0) ==
           "Only the squad leader can invite players.");
-    CHECK(roster.invite(human(9), human(3), "nine", 0) == "You are not in a squad.");
-    CHECK(roster.invite(human(1), human(2), "one", 0) == "That player is already in a squad.");
+    CHECK(roster.invite(human(9), human(3), 0) == "You are not in a squad.");
+    CHECK(roster.invite(human(1), human(2), 0) == "That player is already in a squad.");
 
-    CHECK(roster.invite(human(1), human(3), "one", 0).empty());
-    CHECK(roster.invite(human(1), human(3), "one", 0) == "That player already has a pending "
+    CHECK(roster.invite(human(1), human(3), 0).empty());
+    CHECK(roster.invite(human(1), human(3), 0) == "That player already has a pending "
                                                          "invite.");
 }
 
@@ -75,7 +75,7 @@ TEST(an_invitation_lapses_after_thirty_seconds) {
     Rng rng(3);
     SquadRoster roster;
     CHECK(roster.create(human(1), false, rng) != nullptr);
-    CHECK(roster.invite(human(1), human(2), "one", 0).empty());
+    CHECK(roster.invite(human(1), human(2), 0).empty());
 
     std::string joined;
     CHECK(roster.accept(human(2), kSquadInviteMillis + 1, joined) == "Invite has expired.");
@@ -84,7 +84,7 @@ TEST(an_invitation_lapses_after_thirty_seconds) {
 
     // The sweep drops one nobody ever answered, so a target who disconnects
     // does not leave a claim on a seat behind them.
-    CHECK(roster.invite(human(1), human(3), "one", 0).empty());
+    CHECK(roster.invite(human(1), human(3), 0).empty());
     roster.expire(kSquadInviteMillis + 1);
     CHECK(roster.accept(human(3), kSquadInviteMillis + 1, joined) == "No pending invite.");
 }
@@ -94,7 +94,7 @@ TEST(the_leader_leaving_promotes_the_next_member) {
     SquadRoster roster;
     Squad* squad = roster.create(human(1), false, rng);
     const std::string id = squad->id;
-    CHECK(roster.invite(human(1), human(2), "one", 0).empty());
+    CHECK(roster.invite(human(1), human(2), 0).empty());
     std::string joined;
     CHECK(roster.accept(human(2), 0, joined).empty());
 

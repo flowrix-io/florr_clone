@@ -1,8 +1,6 @@
 #include "client/web/persist.h"
 
-#include <cstdint>
 #include <fstream>
-#include <iterator>
 #include <unordered_map>
 #include <vector>
 
@@ -10,6 +8,8 @@
 #include <emscripten/wasmfs.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include "shared/core/file.h"
 
 // $wasmFS$backends is the map WasmFS keeps of backend address -> the JS object
 // implementing it. It is a JS library symbol, so it is only emitted if
@@ -263,9 +263,8 @@ bool restoreFile(const std::string& key, const std::string& path) {
 }
 
 bool mirrorFile(const std::string& key, const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return false;
-    std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string bytes;
+    if (!readFile(path, bytes)) return false;
 
     auto& table = mirrored();
     const auto seen = table.find(key);

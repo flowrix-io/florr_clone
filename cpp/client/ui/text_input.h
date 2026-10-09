@@ -199,7 +199,7 @@ double followCaret(const TextFieldState&, const std::string& value, double size,
 /// from that. One frame stale, which a field that has not moved does not
 /// notice.
 ///
-/// Filled from two places, and both are wanted: ui::textField, which is what
+/// Filled from two places, and both are wanted: ui::inputField, which is what
 /// paints a field, and trackTextMouse and its multiline twin, which is what
 /// hit-tests one. Between them they cover every field in the client -- the
 /// panels draw their own plates but hit-test through the shared path, and the

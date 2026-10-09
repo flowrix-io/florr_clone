@@ -43,19 +43,30 @@ struct Registrar {
 };
 
 inline int runAll() {
+    int ran = 0;
     int failed = 0;
     // `FLIX_TEST_FILTER=<substring>` runs only the cases whose name contains
     // it. The suite is a few minutes end to end, and diagnosing one failure
-    // by re-running all nine hundred is how a diagnosis turns into a guess.
+    // by re-running the whole suite is how a diagnosis turns into a guess.
     const char* only = std::getenv("FLIX_TEST_FILTER");
     for (auto& c : cases()) {
         if (only != nullptr && std::string(c.name).find(only) == std::string::npos) continue;
         currentCase() = c.name;
+        ++ran;
         const int before = failures();
         c.fn();
         if (failures() > before) ++failed;
     }
-    std::printf("\n%zu tests, %d failed, %d assertion failures\n", cases().size(), failed, failures());
+    // The count is of the cases that RAN, not of the ones registered: a filter
+    // that picked out three of them must not read as the whole suite passing.
+    std::printf("\n");
+    if (only != nullptr) {
+        std::printf("FLIX_TEST_FILTER=%s: %d of %zu tests\n", only, ran, cases().size());
+    }
+    std::printf("%d tests, %d failed, %d assertion failures\n", ran, failed, failures());
+    // And a run that ran nothing proved nothing -- a mistyped filter is the
+    // usual way to get one -- so it fails rather than exiting clean.
+    if (ran == 0) return 1;
     return failures() == 0 ? 0 : 1;
 }
 

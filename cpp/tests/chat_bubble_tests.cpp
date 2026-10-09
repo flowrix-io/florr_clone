@@ -9,8 +9,9 @@ using flix::ChatBubbles;
 
 // The stack of lines over a flower's head.
 //
-// Only the bookkeeping is exercised: the geometry lives in the renderer and
-// needs a canvas and a typeface, neither of which a test binary has.
+// Only the bookkeeping is exercised: the geometry lives in the renderer, and
+// is a question for a pixel test with the font loaded (render_rig.h), which
+// these choose not to be.
 
 namespace {
 

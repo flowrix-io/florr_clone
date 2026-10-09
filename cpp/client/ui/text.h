@@ -1,10 +1,12 @@
 #pragma once
-// Text rendering.
+// Text rendering: the face, its glyph outlines and what a run measures.
 //
-// Glyphs are decoded to outlines and drawn as ordinary paths, which is what
-// makes the game's stroked-then-filled text possible: the outline is a real
-// stroke of the glyph contour, at any size, with no bitmap cache to go stale
-// and nothing to re-rasterize when the camera zooms.
+// Glyphs are decoded to outlines, which is what makes the game's
+// stroked-then-filled text possible: the outline is a real stroke of the glyph
+// contour, at any size. Painting a run is paintRun's business (draw.h) -- the
+// native build draws these outlines and keeps the pixels they produced
+// (text_cache.h), the web build hands the run to the page's own text engine
+// (text_atlas.h) -- but both lay text out by what this face measures.
 
 #include <string>
 
@@ -36,6 +38,5 @@ void appendGlyphs(Path2D& path, const std::string& text, double x, double baseli
 double measure(const std::string& text, double size);
 double ascent(double size);
 double descent(double size);
-double lineHeight(double size);
 
 } // namespace flix::ui

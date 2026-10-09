@@ -33,9 +33,6 @@ struct Fixture {
         world.add<Body>(e, Body{kPlayerBaseRadius, 1.0});
         world.add<PlayerInput>(e, PlayerInput{});
         world.add<Knockback>(e, Knockback{});
-        // Passed by value, not default-added: Archetype::addRow zero-fills a
-        // trivially-copyable column instead of default-constructing it, so
-        // add<PlayerModifiers>(e) alone would hand back speedScale == 0.
         world.add<PlayerModifiers>(e, PlayerModifiers{});
         world.add<Afflictions>(e, Afflictions{});
         world.add<Health>(e, Health{100, 100, 0, 0});
@@ -201,8 +198,10 @@ TEST(an_unset_or_corrupt_speed_modifier_means_unmodified) {
     Fixture fx;
     const Entity zeroed = fx.spawnPlayer({3000, 3000});
     const Entity broken = fx.spawnPlayer({3000, 6000});
-    // Exactly what an entity carries before any phase has recomputed it:
-    // addRow() zero-fills trivially-copyable columns, so speedScale is 0.
+    // A zero -- what an entity carried before any phase recomputed it, back
+    // when Archetype::addRow zero-filled its columns (it default-constructs
+    // them now; see world.cpp) -- and a NaN, which is what a corrupt one reads
+    // as.
     fx.world.get<PlayerModifiers>(zeroed).speedScale = 0.0;
     fx.world.get<PlayerModifiers>(broken).speedScale = kNan;
     fx.drive(zeroed, 0.0, 1.0);
@@ -275,10 +274,8 @@ TEST(the_aim_angle_is_the_aim_and_the_walk_heading_is_the_facing) {
     const Entity player = fx.spawnPlayer({3000, 3000});
     fx.world.get<PlayerInput>(player).current.aimAngle = kPi * 0.5;
     fx.step(1);
-    // The cursor is one value with two readers -- movement and the petal ring
-    // -- so the aim direction is derived once, here.
-    CHECK_NEAR(fx.world.get<PlayerInput>(player).aimDirection.x, 0.0, 1e-9);
-    CHECK_NEAR(fx.world.get<PlayerInput>(player).aimDirection.y, 1.0, 1e-9);
+    // The aim is the frame's own angle, left exactly as the client sent it.
+    CHECK_NEAR(fx.world.get<PlayerInput>(player).current.aimAngle, kPi * 0.5, 1e-12);
     // The FACING is not the aim. The reference writes `Math.atan2` of the
     // movement it is about to apply, and leaves the angle untouched when there
     // is no movement, so a flower standing still keeps the heading it stopped
@@ -1307,4 +1304,53 @@ TEST(a_bouncing_shot_comes_back_off_a_wall_instead_of_crossing_it) {
     CHECK(fx.velocityOf(shot).x < 0.0);
     CHECK_NEAR(fx.velocityOf(shot).length(), 600.0, 1e-6);
     CHECK_NEAR(fx.positionOf(shot).y, 5000.0, 1e-6);
+}
+
+// ---------------------------------------------------------------------------
+// Teleporter pads
+// ---------------------------------------------------------------------------
+
+TEST(a_flowers_first_tick_on_a_map_pulls_no_other_flower) {
+    // A flower is given its TeleporterState on the first tick it spends on a
+    // world map, and adding a component moves it to another archetype: the
+    // last flower of the archetype it left is swapped into its old row. The
+    // pass used to keep the Transform pointer it read before that, so the
+    // pads' suction was measured on, and committed to, the OTHER flower. Here
+    // the other one is a flower the pads are told never to take, standing in
+    // a pad's well, and it must not be pulled at all.
+    const std::string dir = flix::testsupport::twoMapDataDir("movement-pad-row");
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+    Fixture f;
+    WorldMaps maps;
+    std::string error;
+    const bool loaded = maps.load(dir, &f.terrain, error);
+    flix::testsupport::removeDataDir(dir);
+    CHECK(loaded);
+    const MapData* meadow = loaded ? maps.forRealm(Realm::Overworld) : nullptr;
+    const MapElement* pad = nullptr;
+    if (meadow != nullptr) {
+        for (const MapElement& element : meadow->elements()) {
+            if (element.kind == MapElementKind::Teleporter) pad = &element;
+        }
+    }
+    CHECK(pad != nullptr);
+    if (pad == nullptr) return;
+    f.movement.worldMaps = &maps;
+
+    // Spawned in this order, so the refused flower is the LAST row of the
+    // archetype the walker leaves. The walker stands beyond every pad's reach.
+    const Entity walker =
+        f.spawnPlayer(pad->centre() + Vec2{0.0, kTeleporterSuctionRadius * 2.0});
+    const Entity refused =
+        f.spawnPlayer(pad->centre() + Vec2{kTeleporterSuctionRadius * 0.5, 0.0});
+    f.movement.takesTeleporters = [&](Entity e) { return e != refused; };
+    const Vec2 walkerAt = f.positionOf(walker);
+    const Vec2 refusedAt = f.positionOf(refused);
+
+    f.step();
+    CHECK(f.world.has<TeleporterState>(walker));
+    CHECK(!f.world.has<TeleporterState>(refused));
+    CHECK(distance(f.positionOf(refused), refusedAt) < 1e-9);
+    CHECK(distance(f.positionOf(walker), walkerAt) < 1e-9);
 }

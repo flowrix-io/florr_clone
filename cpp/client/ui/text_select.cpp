@@ -109,11 +109,6 @@ void TextSelect::record(const std::string& text, double penX, double baselineY, 
 
 void TextSelect::setFocusedField(const FocusedField& field) { focused_ = field; }
 
-const CapturedRun* TextSelect::find(std::uint64_t key) const {
-    const auto it = byKey_.find(key);
-    return it == byKey_.end() ? nullptr : &runs_[it->second];
-}
-
 TextPoint TextSelect::resolve(Vec2 point) const {
     if (runs_.empty()) return {};
 

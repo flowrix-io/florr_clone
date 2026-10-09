@@ -364,7 +364,6 @@ bool b64Decode(const std::string& text, std::size_t offset, std::size_t length, 
 const char kMagic[25] = "OrpheanBeholderScryDoubt";
 
 struct Setting {
-    char flavor = 'b';
     int cost = 0;
     std::uint8_t salt[16]{};
 };
@@ -383,7 +382,6 @@ bool parseSetting(const std::string& text, Setting& out) {
     const int cost = (text[4] - '0') * 10 + (text[5] - '0');
     if (cost < kBcryptMinCost || cost > kBcryptMaxCost) return false;
     if (!b64Decode(text, 7, 16, out.salt)) return false;
-    out.flavor = flavor;
     out.cost = cost;
     return true;
 }
@@ -604,16 +602,9 @@ int bcryptCost(const std::string& stored) {
     return setting.cost;
 }
 
-std::string bcryptHashWithSetting(const std::string& password, const std::string& setting) {
-    Setting parsed;
-    if (!parseSetting(setting, parsed)) return {};
-    return bcryptRaw(password, parsed, setting.substr(0, 29));
-}
-
 std::string bcryptHash(const std::string& password, int cost) {
     if (cost < kBcryptMinCost || cost > kBcryptMaxCost) return {};
     Setting setting;
-    setting.flavor = 'b';
     setting.cost = cost;
     secureRandom().bytes(setting.salt, sizeof(setting.salt));
 

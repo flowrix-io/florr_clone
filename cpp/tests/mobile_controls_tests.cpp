@@ -3,7 +3,6 @@
 #include "client/ui/menus.h"
 #include "client/ui/mobile_controls.h"
 
-#include <cmath>
 #include <vector>
 
 using namespace flix;

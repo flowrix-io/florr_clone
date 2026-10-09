@@ -139,9 +139,14 @@ private:
     bool glyphOutlines_ = false;
 };
 
-// CanvasRenderingContext2D-style API. Emscripten calls the real browser context
-// for every operation. createVirtual() uses an OffscreenCanvas (with a detached
-// HTMLCanvasElement fallback) and can be composited with drawCanvas().
+// CanvasRenderingContext2D-style API. Natively it draws with the software
+// rasterizer. Under Emscripten each Canvas is a real browser context, but the
+// calls do not cross into the page one at a time: they are recorded into one
+// buffer in wasm memory and handed over in batches (canvasFlushOps above; see
+// canvas.cpp), and the drawing state, save/restore included, is kept on this
+// side. There, createVirtual() uses an OffscreenCanvas (with a detached
+// HTMLCanvasElement fallback); either way it can be composited with
+// drawCanvas().
 class Canvas {
 public:
     // `desynchronized` asks the browser for a low-latency context on the

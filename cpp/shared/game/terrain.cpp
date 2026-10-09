@@ -436,15 +436,6 @@ Terrain::Terrain() {
 
 bool Terrain::hasMap(Realm realm) const { return !grid(realm).tiles.empty(); }
 
-void Terrain::clearRealm(Realm realm) {
-    Grid& g = grid(realm);
-    g.cols = 0;
-    g.rows = 0;
-    g.tiles.clear();
-    g.spawnTile = 0;
-    clearCollisionShapes(realm);
-}
-
 bool Terrain::install(Realm realm, std::vector<std::uint8_t> tiles, int cols, int rows) {
     if (cols <= 0 || rows <= 0 || cols > kMaxTilesPerAxis || rows > kMaxTilesPerAxis) return false;
     if (tiles.size() != static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows)) return false;
@@ -638,10 +629,6 @@ bool readMapGrid(ByteReader& in, Terrain& terrain, Realm& realmOut, std::string&
     }
     realmOut = realm;
     return true;
-}
-
-bool Terrain::loadWorldMap(const std::string& path, std::string& errorOut, Realm realm) {
-    return loadTiledMap(path, errorOut, realm);
 }
 
 bool Terrain::loadTiledMap(const std::string& path, std::string& errorOut, Realm realm) {
@@ -2110,7 +2097,6 @@ void Maze::setDay(std::int64_t dayNumber) {
     const char* const* rows = kMazeTemplates[pick];
 
     const int d = kMazeTemplateDim;
-    templateDim_ = d;
     gridDim_ = d * 2;
 
     // Pass one: the corridor lattice, its bands, the entrance and the bosses.
@@ -2240,15 +2226,6 @@ int Maze::floorCellCount() const {
         if (v == 1 || (v >= 4 && v <= 7)) ++count;
     }
     return count;
-}
-
-int Maze::zoneAt(Vec2 p) const {
-    if (!contains(p)) return -1;
-    const int gx = static_cast<int>(std::floor((p.x - kMazeOriginX) / kMazeCellSize));
-    const int gy = static_cast<int>(std::floor((p.y - kMazeOriginY) / kMazeCellSize));
-    if (gx < 0 || gy < 0 || gx >= gridDim_ || gy >= gridDim_) return -1;
-    const std::uint8_t zone = zones_[static_cast<std::size_t>(gy) * gridDim_ + gx];
-    return zone == 255 ? -1 : static_cast<int>(zone);
 }
 
 bool Maze::blocksPoint(Vec2 p) const {
@@ -2417,37 +2394,6 @@ Vec2 Maze::resolveCircle(Vec2 position, double radius, bool* collided) const {
     }
     if (collided) *collided = hitAny;
     return position;
-}
-
-bool Maze::circleWallOverlap(Vec2 position, double radius, Rect& out) const {
-    if (!contains(position)) return false;
-    const double g = kMazeCellSize;
-    const int minGx = static_cast<int>(std::floor((position.x - radius - kMazeOriginX) / g));
-    const int maxGx = static_cast<int>(std::floor((position.x + radius - kMazeOriginX) / g));
-    const int minGy = static_cast<int>(std::floor((position.y - radius - kMazeOriginY) / g));
-    const int maxGy = static_cast<int>(std::floor((position.y + radius - kMazeOriginY) / g));
-    for (int gy = minGy; gy <= maxGy; ++gy) {
-        for (int gx = minGx; gx <= maxGx; ++gx) {
-            const int v = cellValue(gx, gy);
-            if (v == 1) continue;               // plain floor never blocks
-            const double left = kMazeOriginX + gx * g;
-            const double top = kMazeOriginY + gy * g;
-            const double nearX = std::max(left, std::min(position.x, left + g));
-            const double nearY = std::max(top, std::min(position.y, top + g));
-            const double dx = position.x - nearX;
-            const double dy = position.y - nearY;
-            if (dx * dx + dy * dy > radius * radius) continue;
-            // A corner cell only blocks on the black side of its arc, so the
-            // nearest point decides -- a projectile grazing the open half of a
-            // fillet passes, exactly as the drawn geometry says it should.
-            if (!cellBlocksPoint(gx, gy, {nearX, nearY}) && !cellBlocksPoint(gx, gy, position)) {
-                continue;
-            }
-            out = {left, top, g, g};
-            return true;
-        }
-    }
-    return false;
 }
 
 namespace {

@@ -79,7 +79,6 @@ public:
 
     Squad* find(const std::string& id);
     Squad* forMember(SquadMemberId who);
-    const Squad* forMember(SquadMemberId who) const;
 
     /// Joins a public squad without an invite. Bot-led squads are always
     /// public, which is what makes them joinable at all.
@@ -97,8 +96,7 @@ public:
 
     /// Invites `to` into `from`'s squad. Returns the refusal, or "" once the
     /// invitation is pending.
-    std::string invite(SquadMemberId from, SquadMemberId to, const std::string& fromUsername,
-                       std::int64_t nowMillis);
+    std::string invite(SquadMemberId from, SquadMemberId to, std::int64_t nowMillis);
 
     /// The squad whose invitation is waiting on this member's answer, or
     /// null when there is none or it has lapsed.
@@ -137,7 +135,6 @@ public:
 private:
     struct Invite {
         std::string squadId;
-        std::string fromUsername;
         std::int64_t expiresAtMillis = 0;
     };
 
@@ -147,13 +144,6 @@ private:
     std::unordered_map<net::ConnectionId, Invite> invites_;
 };
 
-/// Who ranks together when a mob's rewards are shared out.
-///
-/// The loot and XP rules cap their payouts in PLAYERS but rank in CONTENDERS,
-/// and a squad is one contender -- see cpp/server/loot_eligibility.h. Both
-/// systems read this by pointer once per corpse, so it is a flat table rebuilt
-/// from the roster rather than the roster itself, which is keyed by connection
-/// and knows nothing about bodies.
 /// One body in a squad, as the reward rules see it.
 ///
 /// The OWNER matters as much as the body. A squad is paid as one -- every
@@ -172,6 +162,13 @@ struct SquadBody {
     bool banks() const { return owner != 0; }
 };
 
+/// Who ranks together when a mob's rewards are shared out.
+///
+/// The loot and XP rules cap their payouts in PLAYERS but rank in CONTENDERS,
+/// and a squad is one contender -- see cpp/server/loot_eligibility.h. Both
+/// systems read this by pointer once per corpse, so it is a flat table rebuilt
+/// from the roster rather than the roster itself, which is keyed by connection
+/// and knows nothing about bodies.
 struct SquadEntityIndex {
     std::unordered_map<Entity, std::size_t> group;
     std::vector<std::vector<SquadBody>> groups;

@@ -1,14 +1,11 @@
 #include "test.h"
 
-#include <sys/stat.h>
-
 #include <cstdio>
-#include <cstdlib>
-#include <fstream>
 #include <string>
 #include <vector>
 
 #include "client/minimap.h"
+#include "test_data.h"
 
 using namespace flix;
 
@@ -21,8 +18,8 @@ constexpr double kBox = 200.0;
 }
 
 TEST(a_square_map_fills_the_minimap_box) {
-    // The shipped garden: 128 cells of 300 units. Square, so there is nothing
-    // to letterbox and the map uses every pixel of the box.
+    // A square map, as the shipped garden is (128 cells a side). Square, so
+    // there is nothing to letterbox and the map uses every pixel of the box.
     const MinimapFit fit = minimapFit({38400.0, 38400.0}, kBox);
     CHECK_NEAR(fit.offsetX, 0.0, 1e-9);
     CHECK_NEAR(fit.offsetY, 0.0, 1e-9);
@@ -116,19 +113,11 @@ TEST(a_map_with_no_size_still_gives_a_finite_fit) {
 
 namespace {
 
-std::string fixtureDir() {
-    const char* env = std::getenv("TMPDIR");
-    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
-    if (base.back() != '/') base.push_back('/');
-    base += "flix_minimap_tests";
-    mkdir(base.c_str(), 0755);
-    return base;
-}
-
+/// Writes a fixture file into this file's scratch directory and hands back its
+/// path.
 std::string writeFixture(const std::string& name, const std::string& text) {
-    const std::string path = fixtureDir() + "/" + name;
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << text;
+    const std::string path = testsupport::tempDir("flix_minimap_tests") + "/" + name;
+    testsupport::writeText(path, text);
     return path;
 }
 

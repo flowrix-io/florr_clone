@@ -326,23 +326,8 @@ TextStyle shopText(double size, std::uint32_t fill, double strokeWidth) {
 void fadedText(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style,
                double fillAlpha) {
     if (s.empty() || !Fonts::ready()) return;
-
-    double penX = x;
-    if (style.align != Align::Left) {
-        const double width = measure(s, style.size);
-        penX -= style.align == Align::Centre ? width * 0.5 : width;
-    }
-    double penY = y;
-    switch (style.baseline) {
-        case Baseline::Top: penY += ascent(style.size); break;
-        case Baseline::Bottom: penY += descent(style.size); break;
-        case Baseline::Alphabetic: break;
-        default:
-            penY += (ascent(style.size) + descent(style.size)) * 0.5;
-            break;
-    }
-
-    paintRun(canvas, s, penX, penY, style, 1.0, fillAlpha);
+    const Vec2 pen = textPen(s, x, y, style);
+    paintRun(canvas, s, pen.x, pen.y, style, 1.0, fillAlpha);
 }
 
 /// The star glyph, from the same game-icons.net document the browser recolours
@@ -372,22 +357,6 @@ const SvgDocument* starDocument(bool gold) {
     static const SvgDocument paperDoc = compile(false);
     const SvgDocument& doc = gold ? goldDoc : paperDoc;
     return doc.empty() ? nullptr : &doc;
-}
-
-/// A star, drawn rather than typed: the glyph is not in the shipped face, and
-/// the shop is the one screen where the currency has to be unmistakable. Only
-/// reached when the SVG failed to compile.
-void drawStar(Canvas& canvas, Vec2 at, double radius, std::uint32_t rgb) {
-    setFill(canvas, rgb);
-    canvas.beginPath();
-    for (int i = 0; i < 10; ++i) {
-        const double r = (i % 2 == 0) ? radius : radius * 0.45;
-        const Vec2 p = at + Vec2::fromAngle(-kPi * 0.5 + i * kPi / 5.0, r);
-        if (i == 0) canvas.moveTo(static_cast<float>(p.x), static_cast<float>(p.y));
-        else canvas.lineTo(static_cast<float>(p.x), static_cast<float>(p.y));
-    }
-    canvas.closePath();
-    canvas.fill();
 }
 
 /// Fills the sky with the reward shower a redeemed code sets off: twenty
@@ -461,7 +430,10 @@ void drawStarIcon(Canvas& canvas, double x, double y, double size, bool gold = t
                           static_cast<float>(size), 0.0f);
         return;
     }
-    drawStar(canvas, {x + size * 0.5, y + size * 0.5}, size * 0.5, gold ? kGold : kPaper);
+    // Only when the SVG failed to compile: a star drawn rather than typed --
+    // the glyph is not in the shipped face, and the shop is the one screen
+    // where the currency has to be unmistakable.
+    fillStar(canvas, {x + size * 0.5, y + size * 0.5}, size * 0.5, gold ? kGold : kPaper);
 }
 
 // ---------------------------------------------------------------------------
@@ -619,15 +591,19 @@ bool ShopPanel::render(MenuContext& ctx) {
     CursorShape cursor = CursorShape::Arrow;
 
     // A focused field or an open modal owns the keyboard. Without this the
-    // menu system reads every letter typed into the code field as a hotkey and
-    // Escape as "close the shop".
+    // menu system reads every letter typed into the code field as a hotkey --
+    // Escape among them, which is Settings' key and would open Settings in
+    // the shop's place.
     if (modalUp || state.field.focused) ctx.wantsText = true;
 
     // Read the balance from the live entity when there is one, so a mythic
-    // kill's payout shows up before the next profile arrives.
-    const double stars = ctx.net.status() == NetClient::Status::Playing
-                             ? ctx.net.view().self().stars
-                             : profile.stars;
+    // kill's payout shows up before the next profile arrives -- unless this
+    // client is steering somebody else's flower, whose stars the snapshot's
+    // self block is carrying then: the shop spends this account's.
+    const double stars =
+        ctx.net.status() == NetClient::Status::Playing && !ctx.net.controllingFlower()
+            ? ctx.net.view().self().stars
+            : profile.stars;
 
     // --- card ---------------------------------------------------------------
     // No shadow: the reference card sits on its page with nothing between it
@@ -1048,8 +1024,9 @@ bool ShopPanel::render(MenuContext& ctx) {
         typing.asciiOnly = true;
         editText(ctx.window, state.code, state.field, ctx.timeSeconds, typing);
         if (ctx.window.keyPressed(Key::Enter)) submitCode();
-        // Escape leaves the field rather than the panel; a second press then
-        // closes the shop, which is the browser's behaviour exactly.
+        // Escape leaves the field rather than the panel. A second press then
+        // reaches the menu system, where Escape is Settings' key and opens
+        // Settings in the shop's place; the browser closed the shop on it.
         if (ctx.window.keyPressed(Key::Escape)) state.field.blur();
     }
     // The drag half of the pointer, before the press pass below claims it.

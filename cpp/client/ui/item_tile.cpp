@@ -24,8 +24,9 @@ constexpr double kPlateSide = 60.0;
 constexpr double kPlateRadius = 3.0;
 constexpr double kFaceSide = 50.0;
 
-/// The drop's backdrop, from gardn's render_drop: 3 units proud of the plate
-/// on every side, at a quarter black.
+/// The drop's backdrop, after gardn's render_drop -- which sets it 3 units
+/// proud of the plate at a quarter black -- here 4 units proud on every side,
+/// at 15% black.
 constexpr double kShadowSide = 68.0;
 constexpr double kShadowRadius = 4.0;
 constexpr double kShadowAlpha = 0.15;
@@ -37,11 +38,6 @@ constexpr double kNameSize = 12.0;
 /// Reading that 20 as an absolute baseline is what had this game's names five
 /// units low, crowding the plate's bottom edge.
 constexpr double kNameBaseline = 20.0 - kItemTileIconRise;
-/// Every outline inside a tile, as a fraction of its own text size: gardn's
-/// `TextArgs::stroke_scale`. A fraction, not a constant screen width -- an
-/// outline pinned to 3px made the name on a 46px bar tile nearly three times
-/// as heavy as gardn's and turned a small tile's caption into a black blob.
-constexpr double kTextStrokeScale = 0.12;
 /// The plate's border: the 5 units of darker shade left showing around the
 /// face, on each side.
 constexpr double kPlateBorder = (kPlateSide - kFaceSide) * 0.5;
@@ -139,7 +135,7 @@ struct GardnIcon {
     /// thirds, dandelion four fifths because its box is kept symmetric about
     /// the stalk's pivot -- draws that much under the size asked for. The
     /// diameter is divided by this so what lands on the plate is `drawn`.
-    /// 1 for the thirty-three petals whose box already hugs their picture.
+    /// 1 for the petals whose box already hugs their picture.
     ///
     /// Measured by rasterising each document at 512px in a browser and
     /// taking the alpha bounding box, which is the same fit the sprite cache
@@ -219,9 +215,9 @@ struct ClusterShape {
     double ring = 0;      ///< how far each icon of a stack sits off centre
     double shrink = 1;    ///< gardn's oversize clamp, applied to both
     /// gardn's `icon_angle`: a fixed tilt each icon is turned by, on top of
-    /// whichever way round the ring it sits. Thirteen petals carry one -- a
-    /// leaf lies back, a square stands on its corner, yggdrasil is upside
-    /// down -- and without it they read as the same shapes lying flat.
+    /// whichever way round the ring it sits. Many petals carry one -- a leaf
+    /// lies back, a square stands on its corner, yggdrasil is upside down --
+    /// and without it they read as the same shapes lying flat.
     double tilt = 0;
 };
 
@@ -505,9 +501,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
     }
 
     if (filled && tile.showName) {
-        const std::string name = tile.nameOverride.empty()
-                                     ? titleCase(content().petal(tile.petalIndex).name)
-                                     : tile.nameOverride;
+        const std::string name = titleCase(content().petal(tile.petalIndex).name);
         if (!name.empty()) {
             TextStyle label;
             label.size = kNameSize;
@@ -519,7 +513,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
             }
             label.fill = kPaper;
             label.stroke = kInk;
-            label.strokeWidth = label.size * kTextStrokeScale;
+            label.strokeWidth = label.size * kTextStrokeRatio;
             label.align = Align::Centre;
             label.baseline = Baseline::Middle;
             text(canvas, name, 0.0, kNameBaseline, label);
@@ -560,7 +554,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
 
         label.fill = kPaper;
         label.stroke = kInk;
-        label.strokeWidth = label.size * kTextStrokeScale;
+        label.strokeWidth = label.size * kTextStrokeRatio;
         label.align = Align::Centre;
         label.baseline = Baseline::Middle;
         text(canvas, tile.counter, 0.0, kCounterCentreY, label);
@@ -575,7 +569,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         badge.size = kBadgeSize;
         badge.fill = kPaper;
         badge.stroke = kInk;
-        badge.strokeWidth = badge.size * kTextStrokeScale;
+        badge.strokeWidth = badge.size * kTextStrokeRatio;
         badge.align = tile.badgeCentred ? Align::Centre : Align::Right;
         badge.baseline = tile.badgeCentred ? Baseline::Middle : Baseline::Top;
         badge.roundJoin = true;

@@ -78,8 +78,6 @@ public:
 
     double seconds() const { return seconds_ > 0.0 ? seconds_ : kDefaultEaseStepSeconds; }
 
-    void reset() { seconds_ = 0.0; }
-
 private:
     double seconds_ = 0.0;
 };
@@ -106,12 +104,6 @@ template <typename T>
 inline void easeToward(T& value, const T& target, double tauSeconds,
                        double stepSeconds = easeStepSeconds()) {
     value += (target - value) * easeFraction(tauSeconds, stepSeconds);
-}
-
-/// The same for an angle, the short way round.
-inline void easeAngleToward(double& angle, double target, double tauSeconds,
-                            double stepSeconds = easeStepSeconds()) {
-    angle = lerpAngle(angle, target, easeFraction(tauSeconds, stepSeconds));
 }
 
 } // namespace flix

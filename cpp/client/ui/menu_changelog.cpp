@@ -4,15 +4,16 @@
 // icon row at a fixed 600x500, which is why its bounds come from
 // `ChangelogPanel::bounds` and not from the shared list anchor.
 //
-// The table below is the browser build's CHANGELOG array, verbatim and in its
-// own order -- oldest first -- and is walked backwards to paint. Keeping the
-// source order means a new release is appended here exactly as it is appended
-// there, with nothing to re-sort and no way to get the order wrong twice.
+// The table below began as the browser build's CHANGELOG array
+// (src/changelog.ts, in git history; it ends at August 26, 2026), taken
+// verbatim and in its own order -- oldest first -- and is walked backwards to
+// paint. Every release since exists only here. A new one is appended at the
+// end, with nothing to re-sort and no way to get the order wrong.
 //
-// Row pitch is written as literals rather than derived from lineHeight(): the
-// reference advances 25px under a date and 24px under a bullet whatever the
-// face's own leading is, and deriving it would put every row of a 7896px list
-// a little further out of place than the row above it.
+// Row pitch is written as literals rather than derived from the face's line
+// height: the reference advances 25px under a date and 24px under a bullet
+// whatever the face's own leading is, and deriving it would put every row of a
+// 7896px list a little further out of place than the row above it.
 
 #include <algorithm>
 #include <cctype>
@@ -41,8 +42,8 @@ constexpr double kChangeSize = 14.0;
 /// Bullet glyph to change text.
 constexpr double kBulletIndent = 20.0;
 /// One wheel notch is ~100px of deltaY in a browser, and this panel consumes
-/// that unscaled. The shared Scroller's 42 would make the same gesture cover
-/// well under half the ground it covers in the reference.
+/// that unscaled, so the same gesture covers the ground it covers in the
+/// reference.
 constexpr double kWheelStep = 100.0;
 
 /// The card's own colours come from kChangelogSkin; this is the border shade
@@ -355,7 +356,7 @@ constexpr ChangelogEntry kChangelog[] = {
       "New mob: Bush",
       "New mob: Mantis",
       "New mob: Golden Leafbug",
-      "New mob: Magic Firefly"
+      "New mob: Magic Firefly",
       "Added ant hell ultra zone",
       "Fixes skins not working",
       "Changed loadout style",
@@ -476,7 +477,7 @@ struct Segment {
 ///
 /// At file scope because it lives entirely between one press and the release
 /// that ends it, and because the panel's own declaration sits in a header
-/// twelve panels share -- widening it for one panel's transient would cost
+/// every panel shares -- widening it for one panel's transient would cost
 /// every other panel a recompile and tell a reader nothing.
 struct ThumbDrag {
     bool active = false;
@@ -597,6 +598,8 @@ void drawChange(Canvas& canvas, const std::string& change, double x, double y,
 }
 
 } // namespace
+
+int changelogReleaseCount() { return kEntryCount; }
 
 double ChangelogPanel::preferredWidth() { return 600.0; }
 

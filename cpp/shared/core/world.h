@@ -19,6 +19,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -104,14 +105,6 @@ public:
 
     /// Creates an entity with no components.
     Entity create();
-
-    /// Creates an entity carrying `Ts`, each default-constructed.
-    template <class... Ts>
-    Entity createWith() {
-        Entity e = create();
-        (add<Ts>(e), ...);
-        return e;
-    }
 
     /// True when the handle names a live entity. A handle whose slot has since
     /// been recycled reports false, which is the point of the generation field.
@@ -214,20 +207,6 @@ public:
     const std::vector<std::unique_ptr<Archetype>>& archetypes() const { return archetypes_; }
     std::size_t archetypeCount() const { return archetypes_.size(); }
 
-    // -- named entities -----------------------------------------------------
-    //
-    // The parts of the game that address an entity by an outside name (a
-    // connection id, a persisted mob id) go through here rather than keeping
-    // their own map, so destroy() can drop the binding in one place and never
-    // leak a dangling name.
-
-    void bindName(Entity e, std::string name);
-    Entity lookup(const std::string& name) const;
-    const std::string* nameOf(Entity e) const;
-
-    /// Destroys every entity. Keeps archetypes so the storage is reused.
-    void clear();
-
 private:
     struct Slot {
         std::uint32_t generation = 0;
@@ -248,9 +227,6 @@ private:
 
     std::vector<std::unique_ptr<Archetype>> archetypes_;
     std::unordered_map<std::string, std::uint32_t> archetypeByKey_;
-
-    std::unordered_map<std::string, Entity> byName_;
-    std::vector<std::string> names_;
 };
 
 // ---------------------------------------------------------------------------
@@ -377,8 +353,13 @@ private:
 ///
 /// Systems iterate columns by pointer, so creating or destroying an entity
 /// mid-iteration can reallocate the very array being walked. Every system
-/// therefore records its structural intent here and the runtime flushes once
-/// per phase, at a point where nothing holds a column pointer.
+/// therefore records its structural intent here, and the server flushes it at
+/// a point where nothing holds a column pointer: once per tick, right after
+/// the reaper (GameServer::tick's "reap" phase), and on the tick an empty
+/// world returns early from (the idle gate), so a body queued for destruction
+/// between ticks does not wait for the next player to arrive. Nothing between
+/// the systems of one tick flushes it -- an entity destroyed mid-tick is still
+/// alive, and still found by queries, until the reap.
 class CommandBuffer {
 public:
     explicit CommandBuffer(World& world) : world_(&world) {}

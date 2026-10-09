@@ -1,16 +1,18 @@
 #pragma once
 // The movement phase: velocity in, position out, for everything that moves.
 //
-// Players are the reason this file is careful. The client predicts its own
-// flower with desiredVelocity() and integrateVelocity() out of constants.h,
-// and the server authorises it with the SAME two functions -- so in open
-// movement the two agree bit for bit and nothing visibly corrects. Any
-// shortcut taken here that the client does not take is a rubber-band.
+// Players are the reason this file is careful. A flower is simulated here and
+// nowhere else -- desiredVelocity() and integrateVelocity() out of
+// constants.h, then the step below -- and the client runs no movement of its
+// own: it eases every flower toward what it is sent (client/interpolation.h).
+// Whatever this step does, a stall against a wall or a slide along one, is
+// exactly what every screen shows.
 //
 // Mobs share the collision half of that path and differ only in where their
 // velocity came from. Projectiles take the same step with terrain collision
 // switched off: a shot flies through walls, and only the edge of the world
-// stops it.
+// stops it -- except a carrot's (Projectile::bouncesOffWalls), which meets
+// walls as a body does and comes back off them.
 
 #include <cstdint>
 #include <functional>
@@ -25,8 +27,6 @@
 #include "shared/game/terrain.h"
 
 namespace flix {
-
-class MapData;
 
 /// Water costs a mob less than it costs a player.
 ///
@@ -50,13 +50,6 @@ inline constexpr double kKnockbackSpendRate = 20.0;
 
 /// Below this a mob's owed knockback is dropped rather than spent forever.
 inline constexpr double kKnockbackSettleDistance = 0.05;
-
-/// Rate a projectile could correct its heading at, radians per second.
-///
-/// Nothing steers in flight: a seeking shot picks its bearing once, at launch,
-/// and then holds it, because the client dead-reckons a projectile along a
-/// fixed heading and any in-flight curve desynchronises what it draws.
-inline constexpr double kProjectileTurnRate = 4.0;
 
 // -- mob separation -----------------------------------------------------------
 //
@@ -159,14 +152,15 @@ struct StepOutcome {
 
 /// Advances `position` by `velocity * dt`, substepped so that a fast body
 /// samples the tile grid often enough never to cross a wall, and clamped to
-/// the world. Free rather than a member so tests -- and one day the client's
-/// prediction -- can drive it without a World.
+/// the world. Free rather than a member so tests can drive it without a World.
 ///
 /// `refuseWallCrossing` adds the reference's player containment guard: a
 /// substep whose wall ejection would carry the CENTRE across solid is thrown
 /// away and the body stops where it started. Off by default because the
-/// reference only guards flowers -- mobs take the resolver's word for it, and
-/// projectiles do not collide with terrain at all.
+/// reference only guards flowers: a mob's own step takes the resolver's word
+/// for it, and only a bouncing shot collides with terrain at all. The few
+/// other moves that opt in -- a mob's knockback being spent, a loose petal's
+/// contact push, a coasting moon -- say so where they are made.
 StepOutcome stepCollide(const Terrain& terrain, Realm realm, Vec2& position, Vec2 velocity,
                         double radius, double dt, bool collideTerrain = true,
                         bool refuseWallCrossing = false);
@@ -316,8 +310,8 @@ private:
     /// everything else that tick has had its say.
     void stepTeleporters(World& world, double nowMillis, double dt);
     /// Puts a flower back outside every NPC body it has walked into. NPCs are
-    /// solid to flowers -- the one thing that collides with them -- and they
-    /// do not give way: the flower is moved, the NPC stays on its mark.
+    /// solid to flowers, and they do not give way: the flower is moved, the
+    /// NPC stays on its mark.
     void pushOutOfNpcs(const Terrain& terrain, Transform& transform, double radius) const;
     /// Rebuilds npcDiscs_. NPCs do not move between the two movement phases
     /// of one tick, but either phase may be the first to run in a test.

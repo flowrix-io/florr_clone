@@ -1,48 +1,57 @@
 #include "test.h"
 
+#include "server/db.h"
 #include "server/session.h"
 
 #include <string>
 
 using namespace flix;
 
+// The account rules live on the Database, which is the one copy registration
+// and createUser both ask (server/db.h).
+
 TEST(usernames_accept_reasonable_names_and_reject_the_rest) {
     std::string reason;
-    CHECK(validUsername("bob", reason));
-    CHECK(validUsername("Player_1", reason));
-    CHECK(validUsername("a-very-long-name", reason));
+    CHECK(Database::validUsername("bob", reason));
+    CHECK(Database::validUsername("Player_1", reason));
+    CHECK(Database::validUsername("a_very_long_name", reason));
 
     // Too short, too long.
-    CHECK(!validUsername("ab", reason));
-    CHECK(!validUsername("abcdefghijklmnopq", reason));
-    CHECK(!validUsername("", reason));
+    CHECK(!Database::validUsername("ab", reason));
+    CHECK(!Database::validUsername("abcdefghijklmnopq", reason));
+    CHECK(!Database::validUsername("", reason));
 
     // Must start with a letter, so a name cannot mimic a system line.
-    CHECK(!validUsername("1bob", reason));
-    CHECK(!validUsername("_bob", reason));
-    CHECK(!validUsername("-bob", reason));
+    CHECK(!Database::validUsername("1bob", reason));
+    CHECK(!Database::validUsername("_bob", reason));
+    CHECK(!Database::validUsername("-bob", reason));
 
     // No spaces, control characters, or anything that would need escaping
-    // wherever the name is later rendered.
-    CHECK(!validUsername("bo b", reason));
-    CHECK(!validUsername("bob\n", reason));
-    CHECK(!validUsername("bob<b>", reason));
-    CHECK(!validUsername("bob\xC3\xA9", reason));
+    // wherever the name is later rendered -- and no hyphen, which one of the
+    // two validators this replaced let through and the other refused.
+    CHECK(!Database::validUsername("bo b", reason));
+    CHECK(!Database::validUsername("bob\n", reason));
+    CHECK(!Database::validUsername("bob<b>", reason));
+    CHECK(!Database::validUsername("bob\xC3\xA9", reason));
+    CHECK(!Database::validUsername("my-name", reason));
 
     // A rejection always says why.
-    CHECK(!validUsername("", reason));
+    CHECK(!Database::validUsername("", reason));
     CHECK(!reason.empty());
 }
 
 TEST(passwords_have_a_floor_and_a_ceiling) {
     std::string reason;
-    CHECK(validPassword("hunter2!", reason));
-    CHECK(!validPassword("short", reason));
-    CHECK(!validPassword("", reason));
-    // The upper bound is not a strength rule: it stops an attacker handing us
-    // megabytes to hash for free.
-    CHECK(!validPassword(std::string(200, 'x'), reason));
-    CHECK(validPassword(std::string(128, 'x'), reason));
+    CHECK(Database::validPassword("hunter2!", reason));
+    CHECK(!Database::validPassword("hunter2", reason));
+    CHECK(!Database::validPassword("short", reason));
+    CHECK(!Database::validPassword("", reason));
+    // The upper bound is bcrypt's: it reads 72 bytes and ignores the rest, so
+    // anything longer would be a password whose tail did nothing.
+    CHECK(Database::validPassword(std::string(72, 'x'), reason));
+    CHECK(!Database::validPassword(std::string(73, 'x'), reason));
+    CHECK(!Database::validPassword(std::string(200, 'x'), reason));
+    CHECK(!Database::validPassword("pass\tword1", reason));
 }
 
 TEST(chat_is_stripped_of_anything_that_could_forge_a_line) {

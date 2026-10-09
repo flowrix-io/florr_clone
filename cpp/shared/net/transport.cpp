@@ -254,7 +254,6 @@ bool Listener::start(std::uint16_t port, std::string& errorOut) {
         errorOut = "port " + std::to_string(port) + " is already listened on in this runtime";
         return false;
     }
-    port_ = port;
     return true;
 }
 
@@ -310,7 +309,6 @@ bool Listener::start(std::uint16_t port, std::string& errorOut) {
         return false;
     }
 
-    port_ = port;
     return true;
 }
 
@@ -505,9 +503,9 @@ bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& e
         error_ = errorOut;
         return false;
     }
-    // The peer string is provisional: which transport was chosen is not known
-    // until the handshake resolves, and poll() replaces this with what the
-    // channel says once it is open.
+    // The peer string is the host:port that was dialled, and it stays that:
+    // which transport the channel settles on is decided after this returns,
+    // and nothing records it on the Connection.
     connection_ = std::make_unique<Connection>(channel, 1, host + ":" + std::to_string(port));
     state_ = State::Connecting;
     announced_ = false;

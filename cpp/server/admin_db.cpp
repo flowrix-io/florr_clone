@@ -46,7 +46,6 @@
 #include <utility>
 
 #include "server/game_server.h"
-#include "server/guilds.h"
 #include "server/text.h"
 #include "shared/game/constants.h"
 

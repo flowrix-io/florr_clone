@@ -73,6 +73,16 @@ bool isCorrupted(const World& world, Entity player) {
     return visuals != nullptr && visuals->corrupted;
 }
 
+/// Whether two flowers are one person: the two bodies a splitter gives one
+/// connection (server/splitter.cpp). False for anything that is not a flower
+/// with an account, and for two bots, whose connection is 0.
+bool oneConnection(const World& world, Entity a, Entity b) {
+    const PlayerAccount* first = world.tryGet<PlayerAccount>(a);
+    const PlayerAccount* second = world.tryGet<PlayerAccount>(b);
+    return first != nullptr && second != nullptr && first->connection != 0 &&
+           first->connection == second->connection;
+}
+
 /// Whether one flower's petals may swing at another's.
 ///
 /// The two ways are not the same shape. BOTH duellists must be in the arena --
@@ -255,17 +265,9 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
     if (credited == NULL_ENTITY) return;
     bounty->credit(credited, amount);
 
-    // A swing on an ambush nest's brood is a swing on the nest: the nest itself
-    // cannot be hit, and its ledger is what decides who it pays out to when it
-    // falls with the last of them. Scaled so the whole brood is worth the
-    // nest's full health -- the ledger's 1% loot floor is a share of THAT, and
-    // a super hole's ultra-capped ants would otherwise never reach it.
-    //
-    // A nest that fell earlier this tick still takes the credit, as any corpse
-    // does: its drops are not rolled until the loot pass.
-    // A swing inside a dungeon is a swing on the nest outside it, by the same
-    // rule: the nest cannot be hit, and its ledger is what decides who it pays
-    // when its dungeon is cleared.
+    // A swing inside a dungeon is a swing on the nest outside it, by the rule
+    // an ambush nest's brood follows below: the nest cannot be hit, and its
+    // ledger is what decides who it pays when its dungeon is cleared.
     if (const DungeonDweller* dweller = world.tryGet<DungeonDweller>(victim)) {
         const Entity nest = dweller->entrance;
         if (!world.isAlive(nest)) return;
@@ -280,6 +282,14 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
         return;
     }
 
+    // A swing on an ambush nest's brood is a swing on the nest: the nest itself
+    // cannot be hit, and its ledger is what decides who it pays out to when it
+    // falls with the last of them. Scaled so the whole brood is worth the
+    // nest's full health -- the ledger's 1% loot floor is a share of THAT, and
+    // a super hole's ultra-capped ants would otherwise never reach it.
+    //
+    // A nest that fell earlier this tick still takes the credit, as any corpse
+    // does: its drops are not rolled until the loot pass.
     const HoleTether* tether = world.tryGet<HoleTether>(victim);
     if (tether == nullptr) return;
     const Entity nest = tether->hole;
@@ -362,8 +372,8 @@ void stealLife(World& world, Entity player, double amount, double nowMillis) {
 
 struct CombatSystem::Queries {
     explicit Queries(World& world)
-        : progress(world), afflicted(world), auras(world), contact(world), strikers(world),
-          petals(world), projectiles(world), filedShots(world), fields(world), cooldowns(world),
+        : afflicted(world), auras(world), contact(world), strikers(world), petals(world),
+          projectiles(world), filedShots(world), fields(world), cooldowns(world),
           auraCooldowns(world), colony(world) {
         // A dead flower projects nothing, which is the same guard the
         // reference's pre-movement pass opens with.
@@ -383,7 +393,6 @@ struct CombatSystem::Queries {
         colony.without<Dead>();
     }
 
-    Query<PlayerProgress> progress;
     Query<Afflictions, Health> afflicted;
     /// Flowers that might be wearing a raindrop. Every loadout is walked each
     /// tick rather than cached: a slot's petal, tier and broken flag all change
@@ -454,14 +463,7 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
     // than of any split bookkeeping, because that is the thing the two bodies
     // actually share and because combat has no business knowing what a
     // splitter is. A bot's connection is 0 and two bots are still enemies.
-    if (sourcePlayer != NULL_ENTITY && victimPlayer != NULL_ENTITY) {
-        const PlayerAccount* mine = world.tryGet<PlayerAccount>(sourcePlayer);
-        const PlayerAccount* theirs = world.tryGet<PlayerAccount>(victimPlayer);
-        if (mine != nullptr && theirs != nullptr && mine->connection != 0 &&
-            mine->connection == theirs->connection) {
-            return false;
-        }
-    }
+    if (oneConnection(world, sourcePlayer, victimPlayer)) return false;
 
     const TeamInfo attacker = teamOf(world, source);
     const TeamInfo defender = teamOf(world, victim);
@@ -553,9 +555,10 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // A colony shares the hit. Whatever one termite is struck for is split
     // evenly over every colony mob CONNECTED to it (see below) that this
     // source could hit right now, the struck one included, and each share
-    // comes back through here as its own hit -- so armour, the ledgers, the
-    // numbers and the deaths all land on the termite that took the share, and
-    // a cluster of twenty takes a twentieth each. Anywhere, not only in a
+    // comes back through here as its own hit -- so the ledgers, the numbers
+    // and the deaths all land on the termite that took the share (the dodge
+    // and the armour are taken once, by the struck one -- below), and a
+    // cluster of twenty takes a twentieth each. Anywhere, not only in a
     // dungeon: the connection is distance and nothing else. Positive damage
     // only: a heal is not shared, and a lone termite has nobody to share with.
     if (amount > 0.0 && !sharingColonyHit_ && world.has<ColonyMember>(victim) &&
@@ -592,26 +595,8 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
                 if (armor != 0.0) amount = std::max(0.0, amount - armor);
             }
             if (amount <= 0.0) return result;
-            // Copied out: the shares re-enter this function, which reuses
-            // the scratch list.
-            std::vector<Entity> members = colonyScratch_;
-            members.push_back(victim);
-            const double share = amount / static_cast<double>(members.size());
-            sharingColonyHit_ = true;
-            DamageResult total;
-            total.refused = true;
-            for (const Entity member : members) {
-                const DamageResult part =
-                    applyDamage(world, member, source, share, nowMillis, kind);
-                total.applied += part.applied;
-                if (!part.refused) total.refused = false;
-                if (member == victim) {
-                    total.killed = part.killed;
-                    total.dodged = part.dodged;
-                }
-            }
-            sharingColonyHit_ = false;
-            return total;
+            return shareHit(world, colonyScratch_, victim, source, amount, nowMillis, kind,
+                            sharingColonyHit_);
         }
     }
 
@@ -643,25 +628,8 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
                 if (canHit(world, body, source, nowMillis)) relicScratch_.push_back(body);
             }
             if (!relicScratch_.empty()) {
-                // Copied out: the shares re-enter this function.
-                std::vector<Entity> wearers = relicScratch_;
-                wearers.push_back(victim);
-                const double share = amount / static_cast<double>(wearers.size());
-                sharingRelicHit_ = true;
-                DamageResult total;
-                total.refused = true;
-                for (const Entity wearer : wearers) {
-                    const DamageResult part =
-                        applyDamage(world, wearer, source, share, nowMillis, kind);
-                    total.applied += part.applied;
-                    if (!part.refused) total.refused = false;
-                    if (wearer == victim) {
-                        total.killed = part.killed;
-                        total.dodged = part.dodged;
-                    }
-                }
-                sharingRelicHit_ = false;
-                return total;
+                return shareHit(world, relicScratch_, victim, source, amount, nowMillis, kind,
+                                sharingRelicHit_);
             }
         }
     }
@@ -969,6 +937,29 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     return result;
 }
 
+DamageResult CombatSystem::shareHit(World& world, std::vector<Entity> group, Entity victim,
+                                    Entity source, double amount, double nowMillis,
+                                    DamageKind kind, bool& guard) {
+    // `group` arrives as a copy: the shares re-enter applyDamage, which
+    // reuses the scratch list it was gathered into.
+    group.push_back(victim);
+    const double share = amount / static_cast<double>(group.size());
+    guard = true;
+    DamageResult total;
+    total.refused = true;
+    for (const Entity member : group) {
+        const DamageResult part = applyDamage(world, member, source, share, nowMillis, kind);
+        total.applied += part.applied;
+        if (!part.refused) total.refused = false;
+        if (member == victim) {
+            total.killed = part.killed;
+            total.dodged = part.dodged;
+        }
+    }
+    guard = false;
+    return total;
+}
+
 // ---------------------------------------------------------------------------
 // Shared segment health
 // ---------------------------------------------------------------------------
@@ -1083,7 +1074,6 @@ void CombatSystem::awardBounty(World& world, Entity victim) {
         const int level = levelFromTotalXp(progress->totalXp).level;
         if (level != progress->level) {
             progress->level = level;
-            progress->leveledThisTick = true;
 
             // Level-up stat recalculation and full heal happen immediately in
             // addXPToPlayer(), before the death broadcast. Waiting for next
@@ -1166,16 +1156,17 @@ void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, doub
     // archetype churn for a push it would ignore anyway.
     if (!world.has<Motion>(victim)) return;
 
-    const Body* body = world.tryGet<Body>(victim);
-    const double mass = (body != nullptr && body->mass > 1e-6) ? body->mass : 1.0;
+    const double mass = bodyMass(world.tryGet<Body>(victim));
     Vec2 direction = offset.normalized();
     if (direction.lengthSq() < 1e-12) return;   // exactly co-located: no direction to push along
     strength *= knockbackTakenScale(world, victim);
 
-    // This mirrors playerState.ts exactly: `effectiveKnockback` is the petal
-    // stat divided by mob mass, and setMobKnockback() REPLACES the old vector.
-    // It is a positional offset, consumed by movement next tick -- no scale,
-    // friction or second mass division is involved.
+    // This mirrors playerState.ts: `effectiveKnockback` is the petal stat
+    // divided by mob mass, and setMobKnockback() REPLACES the old vector.
+    // Movement drains it next tick: a flower's becomes momentum its friction
+    // spends (shoveSpeed), a mob's is spent over about a third of a second
+    // (kKnockbackSpendDecay). Worn rubbers scale it (knockbackTakenScale,
+    // above), and no second mass division is involved.
     world.ensure<Knockback>(victim).impulse = direction * (strength / mass);
 }
 
@@ -1183,10 +1174,7 @@ namespace {
 
 /// What a body weighs for a contact split: its Body's mass, or a flower's 1
 /// for anything that has none.
-double massOf(World& world, Entity e) {
-    const Body* body = world.tryGet<Body>(e);
-    return body != nullptr && body->mass > 1e-6 ? body->mass : 1.0;
-}
+double massOf(World& world, Entity e) { return bodyMass(world.tryGet<Body>(e)); }
 
 /// A flower bounces off a mob the way gardn's does (Collision.cc
 /// _cancel_movement): the approach is cancelled and reversed -- twice the
@@ -1540,13 +1528,6 @@ void CombatSystem::beginTick(World& world, double nowMillis, double dt, EventQue
     events_ = &events;
     deaths_.clear();
     ++tick_;
-
-    // Owned here because combat is the only thing that awards XP. Cleared at
-    // the top of the phase so replication, which runs later in the same tick,
-    // sees precisely this tick's level-ups and no stale ones.
-    queries_->progress.each([](Entity, PlayerProgress& progress) {
-        progress.leveledThisTick = false;
-    });
 
     // Standing damage first, so a mob that was already dying from poison is
     // dead before the petals that poisoned it swing again -- and its bounty is
@@ -1906,17 +1887,17 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
         source.isPet = world.has<Pet>(e);
         source.isPlayerBody = world.has<PlayerTag>(e);
         // A seed of a mob's ring is a piece of that mob's body, so it hits
-        // like one: the fixed 25-unit displacement, and the one-contact-per-
-        // tick rule shared with the hull, so an animal wearing ten of them
-        // still only touches a flower once a tick. It brings the ring PETAL's
-        // own riders along, resolved at spawn -- a dandelion's seed head locks
-        // healing exactly as its loose seeds do.
+        // like one: the same bounce off the flower (bounceOffMob), and the
+        // one-contact-per-tick rule shared with the hull, so an animal wearing
+        // ten of them still only touches a flower once a tick. It brings the
+        // ring PETAL's own riders along, resolved at spawn -- a dandelion's
+        // seed head locks healing exactly as its loose seeds do.
         if (const MobRingPetal* seed = world.tryGet<MobRingPetal>(e)) {
             source.isMobRing = true;
             source.noHealDurationMillis = seed->noHealDurationMillis;
         }
-        // Contact with a mob moves a player by the fixed TypeScript 25-unit
-        // displacement; resolveMelee handles that special case directly.
+        // A mob's contact bounces a flower gardn's way (bounceOffMob), which
+        // resolveMelee applies itself; no knockback stat rides on it.
         source.knockback = 0.0;
 
         // The creature this body is, and at what tier: a mob's own, or the one
@@ -2248,7 +2229,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             const bool landed = !hit.dodged && (!hit.refused || zeroSwing);
             // Petal knockback is set after the hit using its own stat and the
             // victim's mass, exactly like playerState.ts. Mob contact already
-            // performed its fixed player displacement above.
+            // bounced the flower above (bounceOffMob).
             //
             // Every rider sits BELOW the reference's already-dead `continue`
             // and inside its not-invulnerable branch, so a refused hit lands
@@ -2367,19 +2348,9 @@ void CombatSystem::strikeLightning(World& world, const SpatialGrid& grid, Entity
     // draw. This is why the arms ride the event instead of the client working
     // them out from its entity table.
     if (events_ != nullptr) {
-        // Nearest first, and only when there are more than fit -- the same
-        // rule a petal's strike trims by, for the same reason: a plain
-        // truncation takes whatever order the archetypes hold, which is a
-        // direction rather than a disc. The DAMAGE list is not trimmed; every
+        // The queue draws the nearest of them when there are more than fit
+        // (EventQueue::lightning). The DAMAGE list is not trimmed; every
         // flower inside the radius is hit whether or not an arm was drawn.
-        if (strikeArms_.size() > net::kMaxLightningTargets) {
-            std::partial_sort(strikeArms_.begin(),
-                              strikeArms_.begin() + net::kMaxLightningTargets,
-                              strikeArms_.end(), [at](const Vec2& a, const Vec2& b) {
-                                  return distanceSq(a, at) < distanceSq(b, at);
-                              });
-            strikeArms_.resize(net::kMaxLightningTargets);
-        }
         events_->lightning(at, radius, realm, strikeArms_);
     }
 
@@ -2467,10 +2438,15 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     if (petal == nullptr) return;
     const Entity owner = petal->owner;
     // The reference skips its own flower by id and its splitter half by socket
-    // -- one person, however many bodies. The native server has no splitter, so
-    // resolving the ring back to its owner is the whole of that rule here, and
-    // it is the only thing standing between a corrupted flower and its own ring.
+    // -- one person, however many bodies -- before anything is charged. Here
+    // the ring resolves back to its owner for the first, and the second is the
+    // connection rule canDamage() keys off: a split flower's two halves share
+    // one. Both are tested before the throttle is armed and the swing paid
+    // for below. canDamage() would refuse the hit itself, but too late: a
+    // corrupted half, or a duellist in the ring, would wear its own ring down
+    // on the half it parked.
     if (owner == victim) return;
+    if (oneConnection(world, owner, victim)) return;
     if (!canPetalsDamagePlayer(world, owner, victim)) return;
 
     // Exclusive, and exactly co-located misses: the reference skips on
@@ -2695,8 +2671,8 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             if (hit.dodged) continue;
 
             // Riders belong to flesh. A shot cannot be poisoned, slowed or
-            // shoved -- it has no Afflictions and its flight is a straight
-            // line by contract with the client's interpolation.
+            // shoved -- it has no Afflictions, and nothing but its own flight
+            // (MovementSystem::moveProjectiles) moves it.
             if (!hit.killed && !victimIsShot && hasStats) {
                 // The petal's own `knockback` stat is the RING's, not the
                 // volley's: projectileCollision.ts stamps a flat force on a

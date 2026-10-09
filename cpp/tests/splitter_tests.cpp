@@ -30,6 +30,7 @@ using namespace flix;
 
 namespace {
 
+using flix::testsupport::GameServerPeer;
 using flix::testsupport::Harness;
 using flix::testsupport::loginNew;
 
@@ -61,7 +62,7 @@ Entity soleBody(World& world, const std::string& name) {
 /// the clone merges the flower straight back together. The real path is the
 /// only one that tests the real thing.
 bool equipSplitter(Harness& h, NetClient& client, const char* account, std::uint16_t splitter) {
-    if (!h.server.grantAdmin(account)) return false;
+    if (!h.server.grantAdmin(client.sessionToken())) return false;
     client.sendChat(std::string("/admin give ") + account + " " + kSplitterPetalId + " common 1");
     if (!h.stepUntil({&client}, [&] {
             return client.profile().stackCount(splitter, Rarity::Common) > 0;
@@ -535,4 +536,65 @@ TEST(losing_the_parked_half_takes_its_pets_with_it) {
 
     for (const Entity pet : parkedPets) CHECK(!world.isAlive(pet));
     CHECK_EQ(orphanedPets(world), std::size_t{0});
+}
+
+TEST(a_join_over_a_split_that_lost_its_active_half_takes_the_other_half_out) {
+    // spawnPlayer will not put a body down over one the session still holds
+    // (reauth_tests.cpp, "A body the stage forgot", has the rest of that
+    // guard). This is its second clause: a split held with no active half to
+    // end it through -- `entity` gone, `splitOther` still standing.
+    // despawnPlayer starts from the active half, so it has nothing to do
+    // there, and without the clause the new body would become the active
+    // half of the old split, with last life's parked flower still on the
+    // session. No road leads to that state. This builds it by hand from a
+    // real split: the stage dropped under it, so nothing that services a
+    // playing split ends this one, and the active half let go of and killed,
+    // so the reaper takes it as a body nobody owns -- with bob in the world,
+    // because a server with nobody playing freezes its tick, the reaper
+    // included.
+    Harness h("splitter-lost-active", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice, bob;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+    World& world = h.server.world();
+    const std::uint16_t splitter = content().petalIndex(kSplitterPetalId);
+    if (splitter == kInvalidIndex) { CHECK(false); return; }
+    CHECK(equipSplitter(h, alice, "alice", splitter));
+    CHECK(h.stepUntil({&alice}, [&] { return bodiesNamed(world, "alice").size() == 2; }));
+    // Bob joins only now: equipSplitter steps alice alone, and a client in the
+    // world that nobody polls just piles up a snapshot backlog.
+    const std::vector<NetClient*> both{&alice, &bob};
+    CHECK(loginNew(h, bob, "bob", "hunter2!"));
+    bob.joinGame(1280, 720, {}, "bob");
+    CHECK(h.stepUntil(both, [&] { return bob.status() == NetClient::Status::Playing; }));
+
+    Session* session = GameServerPeer::sessionOf(h.server, "alice");
+    if (session == nullptr || !session->split()) { CHECK(false); return; }
+    const Entity active = session->entity;
+    const Entity parked = session->splitOther;
+    session->stage = SessionStage::Authenticated;
+    session->entity = NULL_ENTITY;
+    world.get<Health>(active).current = 0.0;
+    world.add<Dead>(active, Dead{NULL_ENTITY});
+    CHECK(h.stepUntil(both, [&] { return !world.isAlive(active); }));
+    session = GameServerPeer::sessionOf(h.server, "alice");
+    if (session == nullptr) { CHECK(false); return; }
+    CHECK(session->split());
+    CHECK(world.isAlive(parked));
+
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil(both, [&] {
+        const Session* now = GameServerPeer::sessionOf(h.server, "alice");
+        return now != nullptr && now->playing();
+    }));
+    h.step(3, both);
+    // The old half is gone, and whatever alice stands in now -- the splitter is
+    // still on the bar, so it may already be two bodies again -- is all new.
+    CHECK(!world.isAlive(parked));
+    const std::vector<Entity> now = bodiesNamed(world, "alice");
+    CHECK(!now.empty());
+    for (const Entity body : now) CHECK(body != parked);
 }

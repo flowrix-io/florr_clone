@@ -5,10 +5,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <sstream>
 
+#include "shared/core/file.h"
 #include "shared/core/json.h"
+#include "shared/core/text.h"
 #include "shared/net/protocol.h"
 
 namespace flix {
@@ -104,15 +105,6 @@ const char* typeName(const Json& v) {
         case Json::Type::Object: return "an object";
     }
     return "unknown";
-}
-
-bool readFile(const std::string& path, std::string& out) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return false;
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    out = buffer.str();
-    return true;
 }
 
 std::string joinPath(const std::string& dir, const char* file) {
@@ -234,9 +226,8 @@ struct Ctx {
     Rarity rarity(const Json& obj, const char* key, Rarity fallback = Rarity::Common) {
         const std::string name = text(obj, key);
         if (name.empty()) return fallback;
-        for (int i = 0; i < kRarityCount; ++i) {
-            if (name == kRarityNames[static_cast<std::size_t>(i)]) return static_cast<Rarity>(i);
-        }
+        Rarity parsed = fallback;
+        if (tryParseRarity(name, parsed)) return parsed;
         warn(std::string(key) + " names an unknown rarity '" + name + "'; using " +
              rarityName(fallback));
         return fallback;
@@ -258,13 +249,6 @@ struct Ctx {
 // ---------------------------------------------------------------------------
 // Colours
 // ---------------------------------------------------------------------------
-
-int hexDigit(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
 
 /// Parses `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb(...)` and `rgba(...)` into
 /// 0xRRGGBBAA. `bubble` is genuinely `rgba(255, 255, 255, 0)` and means it, so
@@ -399,7 +383,6 @@ ProjectileSpec parseProjectile(Ctx& ctx, const Json& owner,
     if (petalIds != nullptr) {
         spec.ammoPetalId = ctx.text(node, "petalType");
         spec.ammoPetalIndex = ctx.link(*petalIds, spec.ammoPetalId, "projectile petalType");
-        spec.ammoRarity = ctx.rarity(node, "petalRarity");
     }
     return spec;
 }
@@ -613,7 +596,6 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
         ctx.warn(std::string("playerModifiers is ") + typeName(node) + ", not an object; ignored");
         return mods;
     }
-    mods.any = true;
     // Multipliers may be negative on purpose: yin_yang's -1 rotationSpeed
     // reverses the ring rather than slowing it.
     mods.maxHealth     = ctx.range(node, "maxHealth", 1.0, -100.0, 100.0);
@@ -897,9 +879,9 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.crabStrafe = ctx.boolean(src, "crab_ai");
     m.gardnMotion = ctx.boolean(src, "gardn_ai");
 
-    // Three rules the reference states by NAME rather than in the JSON. They
-    // are resolved once here so no spawner, no combat path and no despawn
-    // sweep has to repeat a string compare per tick.
+    // Rules the reference states by NAME rather than in the JSON. They are
+    // resolved once here so no spawner, no combat path, no summon and no
+    // despawn sweep has to repeat a string compare per tick.
     m.neverAmbient = id == "target_dummy";
     m.glitchInfecting = id == "glitch" || id == "glitch_flower";
     if (id == "digger") {
@@ -1002,16 +984,13 @@ std::vector<PetalConfig::RarityFill> parseRarityFills(Ctx& ctx, const Json& src)
         return fills;
     }
     for (const std::string& key : node.keys()) {
-        int tier = -1;
-        for (int i = 0; i < kRarityCount; ++i) {
-            if (key == kRarityNames[static_cast<std::size_t>(i)]) tier = i;
-        }
-        if (tier < 0) {
+        Rarity tier = Rarity::Common;
+        if (!tryParseRarity(key, tier)) {
             ctx.warn("rarityFills names an unknown rarity '" + key + "'; ignored");
             continue;
         }
         PetalConfig::RarityFill fill;
-        fill.from = static_cast<Rarity>(tier);
+        fill.from = tier;
         fill.fill = node[key].asString();
         if (!parseColor(fill.fill, fill.fillRgba)) {
             ctx.warn("rarityFills." + key + " '" + fill.fill + "' is not a colour; ignored");
@@ -1083,9 +1062,9 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.equipFlags = parseEquipFlags(ctx.text(src, "equipFlags"));
     // The lightning cutter carries a second bit so the client can tell the two
     // blades apart and paint the cyan one. It is derived from the id rather
-    // than written in petals.json because that file is shared verbatim with
-    // the browser build, whose loader THROWS on an equipFlags name its own
-    // (frozen) EquipmentFlags enum does not have.
+    // than written in petals.json because that file was shared verbatim with
+    // the TypeScript build, whose loader THREW on an equipFlags name its own
+    // EquipmentFlags enum did not have; the rule has stayed in code since.
     if (p.id == "lightning_cutter") p.equipFlags |= EquipLightningCutter;
 
     p.poisonPerSecond = ctx.range(src, "poison", 0.0, 0.0, kMaxPoisonPerMillis) * 1000.0;
@@ -1223,13 +1202,6 @@ std::string darkenHex(const std::string& hex) {
     return std::string(out);
 }
 
-std::string toLower(std::string text) {
-    for (char& c : text) {
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-    }
-    return text;
-}
-
 /// Stars per point of the mob's common-tier XP, and the floor under that.
 ///
 /// Ten and ten, so the ordinary mob -- common XP of 1 -- still hatches from a
@@ -1241,17 +1213,17 @@ inline constexpr double kMinEggPrice = 10.0;
 
 /// One synthesised `<mob>_egg`, exactly as src/petals.ts:784-820 builds it.
 ///
-/// The eggs are not in petals.json and never have been: the browser generates
-/// one per non-pet mob at import time, and every surface that lists petals --
-/// the shop, the gallery, the drop tables, the crafting grid -- treats them as
-/// ordinary entries. Generating them here rather than editing the JSON keeps
-/// both builds reading one file.
+/// The eggs are not in petals.json and never have been: the TypeScript build
+/// generated one per non-pet mob at import time, and every surface that lists
+/// petals -- the shop, the gallery, the drop tables, the crafting grid --
+/// treats them as ordinary entries. Generating them here rather than editing
+/// the JSON is what kept that build and this one reading one file.
 PetalConfig eggPetal(const std::string& mobId, const MobConfig& mob,
                      const std::unordered_map<std::string, std::uint16_t>& mobIds) {
     PetalConfig p;
     p.id = mobId + "_egg";
     p.name = mob.name + " Egg";
-    p.description = "A petal that spawns a " + toLower(mob.name) + " pet";
+    p.description = "A petal that spawns a " + lowerCase(mob.name) + " pet";
     p.color = "#000000";
     p.colorRgba = 0x000000FFu;
     p.image = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" "
@@ -1300,6 +1272,17 @@ bool ContentRegistry::load(const std::string& dataDir, std::string& errorOut) {
     if (!loadFiles(joinPath(dataDir, "mobs.json"), joinPath(dataDir, "petals.json"), errorOut)) {
         return false;
     }
+    // mob_drops.json is not parsed here -- the server's loot system and the
+    // client's gallery each read it for themselves -- but BOTH sides read it,
+    // so its bytes belong in the hash: a client holding an older drop table
+    // would otherwise shake hands and quote drop chances the server no longer
+    // rolls. Folded after petals.json and before the maps, always in that
+    // order; a directory without the file folds nothing, which still differs
+    // from one that has it.
+    std::string dropsText;
+    if (readFile(joinPath(dataDir, "mob_drops.json"), dropsText)) {
+        hash_ = net::contentHash(dropsText, hash_);
+    }
     foldMapsIntoHash(dataDir);
     return true;
 }
@@ -1342,11 +1325,8 @@ void ContentRegistry::foldMapsIntoHash(const std::string& dataDir) {
         for (const Json& tileset : map["tilesets"].items()) {
             const std::string source = tileset["source"].asString();
             if (source.empty()) continue;   // an embedded palette is in the map's own bytes
-            const std::size_t slash = source.find_last_of("/\\");
-            const std::string name =
-                slash == std::string::npos ? source : source.substr(slash + 1);
             std::string tilesetText;
-            readFile(joinPath(dataDir, name.c_str()), tilesetText);
+            readFile(joinPath(dataDir, fileNameOf(source).c_str()), tilesetText);
             hash_ = net::contentHash(tilesetText, hash_);
         }
     }
@@ -1732,9 +1712,9 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // `count` is flat for almost every petal, and the two exceptions are
     // literal per-rarity overrides in the reference's RARITY_OVERRIDES table
     // (src/petals.ts:307-334 and :699-726) rather than another scaling rule.
-    // They ride here rather than in petals.json because that file is shared
-    // verbatim with the browser build, which reads its overrides from
-    // TypeScript.
+    // They ride here rather than in petals.json because that file was shared
+    // verbatim with the TypeScript build, which read its overrides from
+    // TypeScript; they have stayed in code since.
     s.count = c.count;
     if (c.id == "light" || c.id == "pollen" || c.id == "stinger") {
         static constexpr std::array<int, kLadderRarityCount> kLightCount = {
