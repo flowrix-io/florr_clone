@@ -485,6 +485,17 @@ struct MobConfig {
     /// steadily at that speed with no pulse; see beeCruiseDrive().
     double cruiseSpeed = 0;
 
+    /// How fast the mob PURSUES, in the same flower-top-speed units as
+    /// `speed` (`chase_speed`). gardn's chase factor for the mobs it has --
+    /// 0.975 for every neutral, 0.95 for most hostiles, 1.2 for a scorpion.
+    /// Zero -- unstated -- chases at `speed`.
+    double chaseSpeed = 0;
+
+    /// Fights the way gardn's crab does (`crab_ai`): sidesteps round its
+    /// target, holding a ring, then charges it in a straight line on a locked
+    /// heading. See MobAiSystem::steerCrab.
+    bool crabStrafe = false;
+
     /// Moves the way gardn's walkers do (`gardn_ai`): one velocity carried
     /// between ticks under gardn's per-tick friction, so a pursuit accelerates
     /// into its speed and swings wide on a turn instead of snapping to it; an
@@ -851,16 +862,15 @@ struct MobStats {
     double radius = 0;          ///< world units
     double mass = 1;            ///< gardn's 1 + radius / 25; see bodyMassForRadius
     double speed = 0;           ///< world units per second
-    /// Speed used ONLY while pursuing a target. Ten mob types chase at exactly
-    /// the flower's top speed so a fleeing player can never outrun them, but
-    /// they still WANDER at their authored speed -- folding the override into
-    /// `speed` makes an idle bee cross the screen. A slow scales `speed`, so a
-    /// chase that bypasses it has to re-derive the same ratio.
+    /// Speed used ONLY while pursuing a target: MobConfig::chaseSpeed, or
+    /// `speed` when the config states none. The mob still WANDERS at its
+    /// authored speed -- folding the chase into `speed` makes an idle bee cross
+    /// the screen. A slow scales `speed`, so a chase that bypasses it has to
+    /// re-derive the same ratio.
     double chaseSpeed = 0;
     /// The stated bee cruise, world units per second; zero when the config
     /// states none. See MobConfig::cruiseSpeed.
     double cruiseSpeed = 0;
-    bool playerSpeedChaser = false;
     double xp = 1;
     double aggroRange = 0;
     double attackCooldownMillis = 0;
@@ -873,12 +883,12 @@ struct MobStats {
     AiKind ai = AiKind::Neutral;
 
     /// Moves on gardn's inertial integrator at THIS tier: the config's
-    /// `gardn_ai`, or any neutral mob that walks. gardn runs every neutral it
-    /// has (tick_default_neutral) on that integrator, and a neutral published
-    /// raw goes from its drift to full chase speed in one tick and pivots on
-    /// the spot when it is provoked. Derived per tier because neutrality is:
-    /// a rare bee is neutral and a common one is not. Chains are left out --
-    /// the head tows the body and keeps its own walk.
+    /// `gardn_ai`, or any neutral or hostile mob that walks. gardn runs every
+    /// mob it has (tick_default_neutral, tick_default_aggro and the shooters)
+    /// on that integrator, and a mob published raw goes from its drift to full
+    /// chase speed in one tick and pivots on the spot. Derived per tier because
+    /// the AI kind is: a rare bee is neutral and a common one passive. Chains
+    /// are left out -- the head tows the body and keeps its own walk.
     bool gardnMotion = false;
 
     /// True when an ambient group roll may produce this mob AT THIS TIER.

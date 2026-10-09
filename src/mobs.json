@@ -6,6 +6,7 @@
         "size": 0.8333,
         "visual_scale": 0.8,
         "speed": 0.1,
+        "chase_speed": 0.975,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -34,6 +35,7 @@
         "health": 60,
         "size": 1,
         "speed": 0.1,
+        "chase_speed": 0.975,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -64,6 +66,7 @@
         "visual_scale": 0.9366,
         "visualOffsetX": 0.0782,
         "speed": 0.48,
+        "chase_speed": 0.95,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -94,6 +97,7 @@
         "visual_scale": 0.9366,
         "visualOffsetX": 0.0782,
         "speed": 0.48,
+        "chase_speed": 0.975,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -124,6 +128,7 @@
         "visual_scale": 0.9499,
         "visualOffsetX": -0.0519,
         "speed": 0.48,
+        "chase_speed": 1,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -272,6 +277,7 @@
         "visual_scale": 0.9366,
         "visualOffsetX": 0.0782,
         "speed": 0.48,
+        "chase_speed": 1,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -302,6 +308,7 @@
         "visual_scale": 0.9488,
         "visualOffsetX": -0.0519,
         "speed": 0.48,
+        "chase_speed": 1,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -398,6 +405,7 @@
         "visual_scale": 0.9355,
         "visualOffsetX": 0.0782,
         "speed": 0.48,
+        "chase_speed": 1,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -426,6 +434,7 @@
         "damage": 10,
         "size": 1,
         "speed": 0.2,
+        "chase_speed": 0.975,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -455,6 +464,7 @@
         "damage": 10,
         "size": 1,
         "speed": 0.3,
+        "chase_speed": 0.975,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -547,6 +557,7 @@
         "visual_scale": 0.9092,
         "visualOffsetX": 0.1,
         "speed": 0.56,
+        "chase_speed": 1.2,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -578,6 +589,7 @@
         "size": 1.3333,
         "visual_scale": 0.8569,
         "speed": 0.52,
+        "chase_speed": 0.95,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -608,6 +620,7 @@
         "visual_scale": 1.0496,
         "visualOffsetX": 0.049,
         "speed": 0.52,
+        "chase_speed": 0.95,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -637,6 +650,7 @@
         "size": 1.562,
         "visual_scale": 0.9603,
         "speed": 0.1,
+        "chase_speed": 0.3,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -699,6 +713,7 @@
         "size": 1.5328,
         "visual_scale": 0.7829,
         "speed": 0.48,
+        "chase_speed": 0.95,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -818,6 +833,7 @@
         "size": 1.3948,
         "visual_scale": 1.0754,
         "speed": 0.56,
+        "chase_speed": 1.25,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -834,6 +850,7 @@
         "color": "#db6f4b",
         "image": "$crab",
         "ai_type": "hostile",
+        "crab_ai": true,
         "range": 300,
         "groups": [
             "ocean"
@@ -901,6 +918,7 @@
         "size": 1.2939,
         "visual_scale": 1.0047,
         "speed": 0.4,
+        "chase_speed": 0.975,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -940,6 +958,7 @@
         "visual_scale": 0.8239,
         "visualOffsetX": 0.0598,
         "speed": 0.48,
+        "chase_speed": 0.975,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -978,6 +997,7 @@
         "damage": 30,
         "size": 1.2,
         "speed": 0.48,
+        "chase_speed": 0.975,
         "cooldown": 0,
         "visual_scale": 0.8685,
         "visualOffsetX": -0.1232,
@@ -1040,6 +1060,7 @@
         "visual_scale": 0.8675,
         "visualOffsetX": -0.1232,
         "speed": 0.48,
+        "chase_speed": 0.975,
         "cooldown": 0,
         "xp": {
             "common": 1,
@@ -1071,6 +1092,7 @@
         "size": 1.2939,
         "visual_scale": 1.0047,
         "speed": 0.4,
+        "chase_speed": 0.975,
         "cooldown": 1000,
         "xp": {
             "common": 1,
@@ -1346,6 +1368,7 @@
         "damage": 15,
         "size": 0.8333,
         "speed": 0.95,
+        "chase_speed": 0.95,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -1900,6 +1923,7 @@
         "visual_scale": 0.7744,
         "visualOffsetX": 0.1126,
         "speed": 0.44,
+        "chase_speed": 0.95,
         "cooldown": 2000,
         "xp": {
             "common": 15,
@@ -1935,6 +1959,7 @@
         "size": 1.3333,
         "visual_scale": 1,
         "speed": 0.52,
+        "chase_speed": 0.95,
         "cooldown": 2000,
         "xp": {
             "common": 20,
@@ -2087,6 +2112,7 @@
         "visual_scale": 1.1611,
         "visualOffsetX": -0.0598,
         "speed": 0.48,
+        "chase_speed": 1,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -2118,6 +2144,7 @@
         "visual_scale": 0.9716,
         "visualOffsetX": -0.1378,
         "speed": 0.48,
+        "chase_speed": 1,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -2149,6 +2176,7 @@
         "visual_scale": 0.9705,
         "visualOffsetX": -0.1378,
         "speed": 0.48,
+        "chase_speed": 1,
         "cooldown": 2000,
         "xp": {
             "common": 2,

@@ -511,20 +511,25 @@ inline constexpr double kMobActiveRadius = 5000.0;
 /// lockstep. Freezing instead leaves the far map to drain into wall lines.
 inline constexpr int kMobFarStride = 5;
 
-/// Aggro RANGE decides acquisition; this decides retention. Once a mob has a
-/// target it pursues for five viewports, and drops it only on distance or on
-/// losing line of sight -- not on the acquisition range it started from.
+/// The furthest any mob holds a target, and so the furthest any acquires one.
+/// A neutral mob keeps what provoked it out to here (gardn has no lose clause
+/// for neutrals; its culling is what ends their chase); a hostile one lets go
+/// much sooner, at kMobTargetLeashScale.
 inline constexpr double kMobTargetRetainRadius = kViewportWidth * 5.0;
+
+/// A hostile mob drops its target past this multiple of the range it noticed
+/// it from -- gardn's `1.5 * aggro_radius` in _focus_lose_clause.
+inline constexpr double kMobTargetLeashScale = 1.5;
+
+/// ...or once a wall has hidden it this long without a break. gardn counts six
+/// blocked sight checks a quarter second apart (AGGRO_LOS_GRACE_CHECKS).
+inline constexpr double kMobSightGraceMillis = 1500.0;
 
 /// Aggro range for a mob whose config declares none.
 inline constexpr double kEnemyChaseRange = 500.0;
 
 /// How far a mob wanders from its spawn anchor when it has no target.
 inline constexpr double kMobWanderRadius = 400.0;
-
-/// Aggro is dropped past this multiple of the mob's own aggro range, so a mob
-/// does not chase a player across the map, and does not flicker at the edge.
-inline constexpr double kAggroDropMultiplier = 1.6;
 
 /// Slack added to the sum of two mobs' radii before they count as touching.
 /// Used both by the push-apart separation pass and by pet/wild contact, so a

@@ -187,6 +187,39 @@ inline constexpr double kGardnHopPeakSpeed = 150.0;
 /// update at a 1/20 s step.
 Vec2 gardnStep(Vec2 velocity, Vec2 terminal, double dt);
 
+// -- the crab ----------------------------------------------------------------
+//
+// gardn's tick_crab_aggro. With a target the crab sidles: it walks sideways
+// relative to the flower, flipping direction each segment (left, right, left),
+// while a radial term holds it near a ring. After the third segment it locks
+// its heading onto the flower and charges straight along it, never re-aiming
+// mid-charge, then drops back into the sidle. The strafe runs at the mob's
+// chase speed (`chase_speed`, gardn's 1.25), the charge at kCrabChargeScale
+// times that, so a slow reaches both.
+
+/// The ring the crab holds, as the gap from its own skin to the target's
+/// centre: gardn holds 250 from the centre of a 30-unit crab. Measured off the
+/// skin here so a bigger tier keeps the same clearance rather than standing
+/// with the flower inside its body.
+inline constexpr double kCrabStrafeGap = 250.0 - 30.0;
+/// How far off the ring the radial term reaches full strength, and its cap:
+/// clamped so the sideways walk always survives near the ring.
+inline constexpr double kCrabRadialEase = 120.0;
+inline constexpr double kCrabRadialClamp = 1.5;
+/// One sideways leg, the three of them, and the charge.
+inline constexpr double kCrabSegmentMillis = 800.0;
+inline constexpr double kCrabStrafeMillis = 3.0 * kCrabSegmentMillis;
+inline constexpr double kCrabChargeMillis = 1500.0;
+/// gardn's charge 2.2 over its strafe 1.25.
+inline constexpr double kCrabChargeScale = 2.2 / 1.25;
+
+/// One tick of the crab's fight against a target `toTarget` away. Advances the
+/// phase clock in `ai`, returns the velocity the crab wants and writes where it
+/// faces into `facing`: the flower while sidling, the locked heading while
+/// charging.
+Vec2 steerCrab(MobAi& ai, Vec2 toTarget, double ownRadius, double strafeSpeed, double nowMillis,
+               Vec2& facing);
+
 // -- the bee cruise ----------------------------------------------------------
 //
 // Bees do not hop. They cruise continuously along a heading that sways
@@ -641,15 +674,14 @@ private:
     /// work over data that cannot change while the server is up.
     struct Drive {
         double speed = 0;
-        /// What the mob moves at while PURSUING. Ten types chase at the
-        /// flower's own top speed and wander at their authored one, so a single
-        /// speed cannot express both.
+        /// What the mob moves at while PURSUING: gardn's chase factor, which
+        /// has nothing to do with the speed it wanders at. See
+        /// MobConfig::chaseSpeed.
         double chaseSpeed = 0;
         double attackCooldownMillis = 0;
         /// The behaviour the CONFIG asks for. Read for pets, whose MobAi::kind
         /// is set by whoever summoned them.
         AiKind ai = AiKind::Neutral;
-        bool playerSpeedChaser = false;
         bool hideRotation = false;
         bool reversed = false;
         /// Cruises with a sinusoidal sway instead of hopping.
@@ -658,6 +690,8 @@ private:
         BeeCruiseDrive cruise;
         /// Flies that sway about its bearing while chasing, too.
         bool beeChaseWeave = false;
+        /// Fights by sidestepping and charging. See steerCrab().
+        bool crabStrafe = false;
         /// Carries its velocity under gardn's friction and hops gardn's
         /// stride. See MobStats::gardnMotion.
         bool gardnMotion = false;
@@ -790,15 +824,16 @@ private:
     /// numbers look.
     Entity nearestAttacker(World& world, Entity self, Vec2 from, Realm realm,
                            double radius) const;
-    bool targetHeld(World& world, const Terrain& terrain, Vec2 from, Realm realm,
-                    Entity target) const;
-    /// Whether a pet target still stands. Held on the mob's own aggro RANGE
-    /// rather than the five viewports a flower is chased across: a summon is a
-    /// target of opportunity, not a grudge.
-    bool petTargetHeld(World& world, const Terrain& terrain, Vec2 from, Realm realm,
-                       Entity target, double range) const;
+    /// Whether `ai.target` is still worth chasing: gardn's lose clause. A
+    /// NEUTRAL mob keeps what it has until it dies (or walks five viewports
+    /// off); a HOSTILE one lets go past kMobTargetLeashScale times the circle
+    /// it noticed the target in, or after kMobSightGraceMillis behind a wall.
+    /// Writes the wall clock into `ai`, hence not const on it.
+    bool holdTarget(World& world, const Terrain& terrain, Vec2 from, Realm realm, MobAi& ai,
+                    double range, double nowMillis) const;
 
-    /// The player a NEUTRAL mob turns on this tick, or NULL_ENTITY.
+    /// The player a mob turns on this tick, or NULL_ENTITY. Neutral and
+    /// hostile alike, as gardn's damage handler provokes both.
     ///
     /// Provocation hangs off the damage LEDGER over there, not off the hurt
     /// flash: every source of damage funnels through one credit call, so a

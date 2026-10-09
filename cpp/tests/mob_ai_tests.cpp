@@ -571,29 +571,141 @@ TEST(a_mob_picks_the_bare_flower_over_a_nearer_one_wearing_poo) {
     CHECK_EQ(sim.brainOf(mob).target, bare);
 }
 
-TEST(aggro_holds_far_outside_the_aggro_range_and_drops_at_five_viewports) {
+TEST(a_hostile_mob_lets_go_past_half_again_its_aggro_range) {
     CHECK(contentReady());
     Sim sim;
     const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
+    const double range = sim.brainOf(mob).aggroRange;
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{200, 0});
     sim.tickIntent(2);
     CHECK_EQ(sim.brainOf(mob).target, player);
 
-    // There is no leash on the aggro range. The reference keeps an acquired
-    // target while it is within `VIEWPORT_WIDTH * 5` and still visible, so a
-    // soldier ant with 300 units of range follows a flower far past it -- that
-    // is what makes a mob you woke up chase you across the section.
-    sim.world.get<Transform>(player).position = kOrigin + Vec2{5000, 0};
+    // gardn's _focus_lose_clause: past the range it noticed the flower from,
+    // a hostile mob keeps chasing...
+    sim.world.get<Transform>(player).position = kOrigin + Vec2{range * 1.5 - 20.0, 0};
     sim.tickIntent();
     CHECK_EQ(sim.brainOf(mob).target, player);
 
-    // Past the retain radius it is dropped, and cannot be re-acquired from
-    // there either. Five ticks because a mob that far from every player is
-    // outside the LOD active radius and thinks one tick in five.
-    sim.world.get<Transform>(player).position =
-        kOrigin + Vec2{kMobTargetRetainRadius + 500.0, 0};
+    // ...until the flower is half as far again, and from there it cannot be
+    // re-acquired either.
+    sim.world.get<Transform>(player).position = kOrigin + Vec2{range * 1.5 + 20.0, 0};
     sim.tickIntent(5);
     CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
+}
+
+TEST(a_glowing_flower_is_held_on_half_again_its_raised_circle) {
+    CHECK(contentReady());
+    // The leash is measured off the circle the flower was NOTICED in, so a
+    // bulb that drew the mob from past its own range does not lose it again
+    // on the next tick.
+    Sim sim;
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
+    const double range = sim.brainOf(mob).aggroRange;
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{range + 100.0, 0}, 150.0);
+    sim.tickIntent(2);
+    CHECK_EQ(sim.brainOf(mob).target, player);
+
+    sim.world.get<Transform>(player).position =
+        kOrigin + Vec2{(range + 150.0) * 1.5 - 20.0, 0};
+    sim.tickIntent();
+    CHECK_EQ(sim.brainOf(mob).target, player);
+}
+
+TEST(a_wall_drops_a_hostile_target_only_after_a_second_and_a_half) {
+    CHECK(contentReady());
+    // A spider: its 900-unit leash covers the far side of the wall, so only
+    // the wall can be what lets go.
+    const int wallTx = Terrain::toTileCoord(kOrigin.x) + 1;
+    const int row = Terrain::toTileCoord(kOrigin.y);
+    const Vec2 inSight = kOrigin + Vec2{-300, 0};
+
+    {
+        Sim sim;
+        for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+        const Entity mob = sim.spawnMob("spider", kOrigin);
+        const Entity player = sim.spawnPlayer(inSight);
+        sim.tickIntent(2);
+        CHECK_EQ(sim.brainOf(mob).target, player);
+        // Hit during the chase: over there that provokes nothing, since the
+        // mob already has a target, so it must not restart the chase later.
+        sim.hurt(mob, player);
+        sim.tickIntent();
+
+        // Ducking behind the wall is not a free escape: gardn waits six
+        // quarter-second sight checks before giving up.
+        sim.world.get<Transform>(player).position = Terrain::tileCenter(wallTx + 1, row);
+        sim.tickIntent(41);                         // ~1.37 s
+        CHECK_EQ(sim.brainOf(mob).target, player);
+        sim.tickIntent(10);                         // past 1.5 s
+        CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
+
+        // Gone for good: no re-acquisition through the wall, and the hit it
+        // took mid-chase does not provoke it all over again.
+        sim.tickIntent(30);
+        CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
+
+        // A NEW hit from behind the wall provokes a new chase, with a full
+        // grace of its own rather than the one the last chase used up.
+        sim.hurt(mob, player);
+        sim.tickIntent(41);
+        CHECK_EQ(sim.brainOf(mob).target, player);
+    }
+    {
+        // Seen again part way through, and the grace starts over.
+        Sim sim;
+        for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+        const Entity mob = sim.spawnMob("spider", kOrigin);
+        const Entity player = sim.spawnPlayer(inSight);
+        sim.tickIntent(2);
+        sim.world.get<Transform>(player).position = Terrain::tileCenter(wallTx + 1, row);
+        sim.tickIntent(30);
+        sim.world.get<Transform>(player).position = inSight;
+        sim.tickIntent();
+        sim.world.get<Transform>(player).position = Terrain::tileCenter(wallTx + 1, row);
+        sim.tickIntent(30);
+        CHECK_EQ(sim.brainOf(mob).target, player);
+    }
+}
+
+TEST(a_neutral_mob_chases_what_hurt_it_through_a_wall) {
+    CHECK(contentReady());
+    // gardn's neutral AI has no lose clause: neither range nor walls end it.
+    Sim sim;
+    const int wallTx = Terrain::toTileCoord(kOrigin.x) + 1;
+    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+    const Entity mob = sim.spawnMob("worker_ant", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{-150, 0});
+    sim.hurt(mob, player);
+    sim.tickIntent();
+    CHECK_EQ(sim.brainOf(mob).target, player);
+
+    sim.world.get<Transform>(player).position =
+        Terrain::tileCenter(wallTx + 1, Terrain::toTileCoord(kOrigin.y));
+    sim.tickIntent(90);                             // three seconds
+    CHECK_EQ(sim.brainOf(mob).target, player);
+}
+
+TEST(a_hostile_mob_turns_on_whoever_hurt_it_from_inside_its_leash) {
+    CHECK(contentReady());
+    // gardn's damage handler targets the attacker of ANY mob with no live
+    // target; the hostile lose clause then decides whether it is kept.
+    Sim near;
+    const Entity mob = near.spawnMob("soldier_ant", kOrigin);
+    const double range = near.brainOf(mob).aggroRange;
+    const Entity sniper = near.spawnPlayer(kOrigin + Vec2{range + 100.0, 0});
+    near.tickIntent(5);
+    CHECK_EQ(near.brainOf(mob).target, NULL_ENTITY);     // out of range: unnoticed
+    near.hurt(mob, sniper);
+    near.tickIntent();
+    CHECK_EQ(near.brainOf(mob).target, sniper);
+
+    // Past the leash the provocation is dropped on the tick it is adopted.
+    Sim far;
+    const Entity distant = far.spawnMob("soldier_ant", kOrigin);
+    const Entity farSniper = far.spawnPlayer(kOrigin + Vec2{range * 1.5 + 50.0, 0});
+    far.hurt(distant, farSniper);
+    far.tickIntent(3);
+    CHECK_EQ(far.brainOf(distant).target, NULL_ENTITY);
 }
 
 TEST(an_aggro_range_past_the_retain_radius_acquires_only_what_it_can_hold) {
@@ -807,8 +919,9 @@ TEST(neutral_mob_loses_interest_when_its_target_runs_far_enough) {
     sim.tickIntent();
     CHECK_EQ(sim.brainOf(mob).target, player);
 
-    // Same retain radius as a hostile mob's: the provoked target is held
-    // until it is five viewports away, not until it leaves the aggro range.
+    // No leash on a neutral mob over there: the provoked target is held until
+    // it is five viewports away (this server's stand-in for gardn's culling),
+    // not until it leaves the aggro range.
     sim.world.get<Transform>(player).position = kOrigin + Vec2{700, 0};
     sim.tickIntent();
     CHECK_EQ(sim.brainOf(mob).target, player);
@@ -1378,19 +1491,19 @@ TEST(a_big_nests_escorts_are_leashed_from_its_rim_not_its_centre) {
 TEST(a_slow_reduces_the_speed_the_mob_asks_for) {
     CHECK(contentReady());
     Sim sim;
-    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);    // player-speed chaser: 300 u/s
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);    // gardn's 0.95: 285 u/s
     sim.spawnPlayer(kOrigin + Vec2{280, 0});
 
     sim.tickIntent(30);
     const double full = sim.velocityOf(mob).length();
-    CHECK_NEAR(full, 300.0, 1.0);
+    CHECK_NEAR(full, 285.0, 1.0);
 
     Afflictions slow;
     slow.slowFactor = 0.5;
     slow.slowUntilMillis = sim.now + 60000.0;
     sim.world.add<Afflictions>(mob, slow);
     sim.tickIntent(30);
-    CHECK_NEAR(sim.velocityOf(mob).length(), 150.0, 1.0);
+    CHECK_NEAR(sim.velocityOf(mob).length(), 142.5, 1.0);
 }
 
 TEST(a_mob_type_outside_the_content_tables_is_inert_rather_than_undefined) {
@@ -2495,27 +2608,29 @@ TEST(a_bee_ai_always_mob_weaves_on_the_chase_without_losing_ground) {
     CHECK(contentReady());
     // Four seconds covers more than a whole period of the sway, so the swing
     // reaches its full width whatever phase the mob was spawned with.
-    const ChaseSplit fly = chaseSplit("fly", 200.0);
+    // Hostile, so on gardn's integrator: measured once the velocity has built
+    // into the pursuit, and to within what its lag behind the sway costs.
+    const ChaseSplit fly = chaseSplit("fly", 200.0, Rarity::Common, false, 120, 30);
     CHECK(fly.widestSwing > 0.95 * kBeeChaseWeave);
     CHECK(fly.widestSwing <= kBeeChaseWeave + 1e-9);
     // And the weave is ADDED across the pursuit: the closing rate is the full
     // chase speed on every tick, so a flower running straight away gains
     // nothing from it.
-    CHECK_NEAR(fly.slowestClosing, chaseSpeedOf("fly"), 1e-6);
-    CHECK_NEAR(fly.fastestClosing, chaseSpeedOf("fly"), 1e-6);
+    CHECK_NEAR(fly.slowestClosing, chaseSpeedOf("fly"), 1.0);
+    CHECK_NEAR(fly.fastestClosing, chaseSpeedOf("fly"), 1.0);
 }
 
 TEST(a_fast_chaser_weaves_as_wide_as_a_slow_one) {
     CHECK(contentReady());
     // The weave is an angle, not a sideways speed. A flat sideways speed is a
     // swing that narrows as the pursuit gets faster: the bee chases at a
-    // flower's full 300 u/s, and under a flat 100 u/s sway it flew all but
+    // flower's 292.5 u/s, and under a flat 100 u/s sway it flew all but
     // straight. A rare bee is neutral, so it has to be hit before it chases --
     // and, neutral, it moves on gardn's integrator, which builds its velocity
     // into the pursuit and lags the sway a little. So it is measured once it
     // has settled, and to within what that lag costs.
     const ChaseSplit bee = chaseSplit("bee", 200.0, Rarity::Rare, true, 120, 30);
-    CHECK_NEAR(chaseSpeedOf("bee", Rarity::Rare), kPlayerMaxSpeed, 1e-9);
+    CHECK_NEAR(chaseSpeedOf("bee", Rarity::Rare), 0.975 * kPlayerMaxSpeed, 1e-9);
     CHECK(bee.widestSwing > 0.95 * kBeeChaseWeave);
     CHECK(bee.widestSwing <= kBeeChaseWeave + 1e-9);
     CHECK_NEAR(bee.slowestClosing, chaseSpeedOf("bee", Rarity::Rare), 1.0);
@@ -2556,17 +2671,15 @@ TEST(a_shooter_closes_to_its_standoff_and_stops_there) {
     CHECK(sim.gap(hornet, player) < start);
     // ...to the gap and no further. A tick of travel of slack either way,
     // because the mob stops on the tick it arrives rather than mid-step.
-    const double step =
-        2.0 * content().mobStats(index, Rarity::Common).speed * net::kTickSeconds;
+    const double chase = content().mobStats(index, Rarity::Common).chaseSpeed;
+    const double step = 2.0 * chase * net::kTickSeconds;
     CHECK(sim.gap(hornet, player) > standoff - step);
     CHECK(sim.gap(hornet, player) < standoff + step + kProjectileMaxRecoil);
     // And it has SETTLED: nothing here strafes, and what is left of its travel
     // is the mob re-closing the few units its own recoil opens under it each
     // volley -- inside the ease band that is a crawl, not a mob still closing.
     CHECK(sim.velocityOf(hornet).length() <=
-          content().mobStats(index, Rarity::Common).speed * kProjectileMaxRecoil /
-                  kShooterStandoffEase +
-              1e-9);
+          chase * kProjectileMaxRecoil / kShooterStandoffEase + 1e-9);
     // Holding is not disengaging -- it still has the flower and is still
     // shooting at it from out there.
     CHECK(sim.brainOf(hornet).target != NULL_ENTITY);
@@ -3067,4 +3180,76 @@ TEST(a_mob_without_a_drop_block_drops_nothing) {
     sim.spawnMob("bee", kOrigin);
     sim.tickIntent(60);
     CHECK_EQ(shotCount(sim), 0);
+}
+
+// ---------------------------------------------------------------------------
+// The crab
+// ---------------------------------------------------------------------------
+
+TEST(a_crab_sidesteps_left_right_left_then_charges_on_a_locked_heading) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity crab = sim.spawnMob("crab", kOrigin);
+    // On the ring exactly, so the radial term is zero and every step is
+    // sideways.
+    const double ring = sim.world.get<Body>(crab).radius + kCrabStrafeGap;
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{ring, 0});
+    const double strafe = content().mobStats(content().mobIndex("crab"), Rarity::Common).chaseSpeed;
+    CHECK_NEAR(strafe, 1.25 * kPlayerMaxSpeed, 1e-9);
+
+    sim.tickIntent();                               // engages: the first leg starts
+    CHECK_EQ(sim.brainOf(crab).target, player);
+
+    // Three legs of 0.8 s, sideways across the flower, flipping each time, and
+    // facing it the whole way.
+    sim.tickIntent(19);                             // ~0.63 s
+    CHECK(sim.velocityOf(crab).y > 0.95 * strafe);
+    CHECK_NEAR(sim.velocityOf(crab).x, 0.0, 1e-6);
+    CHECK(std::cos(sim.angleOf(crab)) > 0.999);
+    sim.tickIntent(25);                             // ~1.47 s
+    CHECK(sim.velocityOf(crab).y < -0.95 * strafe);
+    sim.tickIntent(25);                             // ~2.30 s
+    CHECK(sim.velocityOf(crab).y > 0.95 * strafe);
+
+    // At 2.4 s it locks onto the flower and charges. The flower dodging after
+    // the commit changes nothing: the charge goes where it was aimed.
+    sim.tickIntent(6);                              // ~2.5 s
+    CHECK_EQ(sim.brainOf(crab).crabPhase, CrabPhase::Charge);
+    sim.world.get<Transform>(player).position = kOrigin + Vec2{0, ring};
+    sim.tickIntent(20);                             // ~3.17 s
+    CHECK(sim.velocityOf(crab).x > 0.99 * strafe * kCrabChargeScale);
+    CHECK(std::abs(sim.velocityOf(crab).y) < 5.0);
+    CHECK(std::cos(sim.angleOf(crab)) > 0.999);
+
+    // After 1.5 s of charge it is sidling again, facing where the flower is.
+    sim.tickIntent(30);                             // ~4.17 s
+    CHECK_EQ(sim.brainOf(crab).crabPhase, CrabPhase::Strafe);
+    CHECK(std::sin(sim.angleOf(crab)) > 0.999);
+}
+
+TEST(a_sidling_crab_closes_on_its_ring_from_outside_and_backs_out_from_inside) {
+    CHECK(contentReady());
+    const auto radialAt = [](double offset) {
+        Sim sim;
+        const Entity crab = sim.spawnMob("crab", kOrigin);
+        const double ring = sim.world.get<Body>(crab).radius + kCrabStrafeGap;
+        sim.spawnPlayer(kOrigin + Vec2{ring + offset, 0});
+        sim.tickIntent(10);
+        return sim.velocityOf(crab).x;
+    };
+    CHECK(radialAt(30.0) > 0.0);           // still inside its 300 aggro range
+    CHECK(radialAt(-100.0) < 0.0);
+}
+
+TEST(a_crab_that_loses_its_target_starts_its_next_fight_from_the_first_leg) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity crab = sim.spawnMob("crab", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{200, 0});
+    sim.tickIntent(80);                             // into the charge
+    CHECK_EQ(sim.brainOf(crab).crabPhase, CrabPhase::Charge);
+    sim.world.add<Dead>(player, Dead{crab});
+    sim.tickIntent();
+    CHECK_EQ(sim.brainOf(crab).target, NULL_ENTITY);
+    CHECK_EQ(sim.brainOf(crab).crabPhase, CrabPhase::None);
 }

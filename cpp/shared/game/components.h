@@ -637,6 +637,10 @@ enum class AiKind : std::uint8_t {
     Stationary,     ///< a nest or hole: never moves, spawns escorts
 };
 
+/// Where a crab (MobConfig::crabStrafe) stands in its fight: not fighting,
+/// sidestepping round its target, or charging it.
+enum class CrabPhase : std::uint8_t { None = 0, Strafe, Charge };
+
 struct MobAi {
     AiKind kind = AiKind::Neutral;
     Entity target = NULL_ENTITY;
@@ -651,6 +655,16 @@ struct MobAi {
     /// and sharing one clock turns a churning storm into a smooth sweep.
     double nextHeadingMillis = 0;
     double lastAttackMillis = 0;
+    /// The target a wall is hiding, and since when -- the grace a hostile mob
+    /// gives it before letting go (kMobSightGraceMillis). NULL_ENTITY while
+    /// the target is in sight.
+    Entity unseenTarget = NULL_ENTITY;
+    double unseenSinceMillis = 0;
+    /// A crab's fight: which phase, since when, and the heading a charge was
+    /// locked onto when it began.
+    CrabPhase crabPhase = CrabPhase::None;
+    double crabPhaseMillis = 0;
+    double crabHeading = 0;
     /// Set while the mob is fleeing after being hurt (passive mobs).
     double fleeUntilMillis = 0;
     /// When this mob last let a volley go. Kept apart from `lastAttackMillis`,

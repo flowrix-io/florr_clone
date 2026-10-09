@@ -355,7 +355,11 @@ TEST(a_client_that_picks_the_maze_arrives_in_it_and_cannot_walk_through_its_wall
         if (t.realm != Realm::Maze) return;
         CHECK(!maze.blocksPoint(t.position));
         const double d = distance(t.position, me);
-        if (d < nearestDist) { nearestDist = d; nearest = e; }
+        // Not a trailing chain segment: the chain pass re-places it behind its
+        // leader every tick, so the move below would be undone at once.
+        const BodySegment* segment = world.tryGet<BodySegment>(e);
+        const bool follower = segment != nullptr && !segment->head;
+        if (d < nearestDist && !follower) { nearestDist = d; nearest = e; }
         farthestDist = std::max(farthestDist, d);
     });
     CHECK(farthestDist > maze.worldSize() * 0.4);

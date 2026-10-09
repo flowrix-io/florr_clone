@@ -362,7 +362,6 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.chaseSpeed = stats.chaseSpeed > 0.0 ? stats.chaseSpeed : stats.speed;
         drive.attackCooldownMillis = stats.attackCooldownMillis;
         drive.ai = stats.ai;
-        drive.playerSpeedChaser = stats.playerSpeedChaser;
         drive.hideRotation = config.hideRotation;
         drive.reversed = config.reversed;
         // mobs.json's `bee_ai`. gardn runs hornets and wasps on
@@ -372,6 +371,7 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.beeFlight = config.beeFlight;
         drive.cruise = beeCruiseDrive(stats.speed, stats.cruiseSpeed);
         drive.beeChaseWeave = config.beeChaseWeave;
+        drive.crabStrafe = config.crabStrafe;
         drive.gardnMotion = stats.gardnMotion;
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
@@ -649,37 +649,49 @@ Entity MobAiSystem::nearestAttacker(World& world, Entity self, Vec2 from, Realm 
     return best;
 }
 
-bool MobAiSystem::targetHeld(World& world, const Terrain& terrain, Vec2 from, Realm realm,
-                             Entity target) const {
+bool MobAiSystem::holdTarget(World& world, const Terrain& terrain, Vec2 from, Realm realm,
+                             MobAi& ai, double range, double nowMillis) const {
+    const Entity target = ai.target;
     if (!entityUsable(world, target)) return false;
     const Transform* transform = world.tryGet<Transform>(target);
     if (transform == nullptr) return false;
+    // Another map is gone for good, as it is over there.
+    if (transform->realm != realm) return false;
+    const double gapSq = distanceSq(from, transform->position);
 
-    // Aggro RANGE governs acquisition only. Retention is a flat five viewports
-    // -- it reads neither the mob's own range nor the player's aggro bonus --
-    // and a wall coming between the two drops the target on the spot, which is
-    // what sends the mob back to wandering instead of grinding into geometry.
-    if (distanceSq(from, transform->position) >
-        kMobTargetRetainRadius * kMobTargetRetainRadius) {
-        return false;
+    // gardn's neutral AI (tick_default_neutral) has no lose clause at all:
+    // what hurt it is chased until it dies, walls or no walls. The five
+    // viewports stand in for gardn's culling, which is what ends that chase
+    // over there -- a mob nobody can see forgets its target.
+    if (ai.kind == AiKind::Neutral) {
+        return gapSq <= kMobTargetRetainRadius * kMobTargetRetainRadius;
     }
-    if (transform->realm != realm) return false;
-    return !terrain.segmentBlocked(from, transform->position, realm);
-}
 
-bool MobAiSystem::petTargetHeld(World& world, const Terrain& terrain, Vec2 from, Realm realm,
-                                Entity target, double range) const {
-    if (!world.has<Pet>(target)) return false;
-    if (!entityUsable(world, target)) return false;
-    const Transform* transform = world.tryGet<Transform>(target);
-    if (transform == nullptr) return false;
+    // gardn's _focus_lose_clause: a hostile mob lets go past half as far again
+    // as the circle it noticed the target in. The circle is the one
+    // acquireTarget() measured -- the flower's own, bulb and poo included -- so
+    // nothing it can acquire is let go of on the next tick.
+    double noticed = range;
+    if (!world.has<Pet>(target)) {
+        if (const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(target)) {
+            noticed = range * mods->aggroRangeScale + mods->aggroRadiusBonus;
+        }
+    }
+    const double leash = std::min(noticed * kMobTargetLeashScale, kMobTargetRetainRadius);
+    if (gapSq > leash * leash) return false;
 
-    // The mob's own aggro range, not the five viewports a flower is chased
-    // across. A summon that walks out of range is simply forgotten, and the
-    // mob goes back to looking for the player it would rather have.
-    if (!(distanceSq(from, transform->position) < range * range)) return false;
-    if (transform->realm != realm) return false;
-    return !terrain.segmentBlocked(from, transform->position, realm);
+    // ...and once a wall has hidden it for kMobSightGraceMillis straight, not
+    // on the first ray that hits one: dropping at once made hugging a wall a
+    // free escape from every mob in the game.
+    if (!terrain.segmentBlocked(from, transform->position, realm)) {
+        ai.unseenTarget = NULL_ENTITY;
+        return true;
+    }
+    if (ai.unseenTarget != target) {
+        ai.unseenTarget = target;
+        ai.unseenSinceMillis = nowMillis;
+    }
+    return nowMillis - ai.unseenSinceMillis < kMobSightGraceMillis;
 }
 
 void MobAiSystem::collectChain(World& world, Entity self, std::vector<Entity>& out) const {
@@ -1051,6 +1063,54 @@ void MobAiSystem::driftPassive(World& world, Entity self, Motion& motion, MobAi&
     motion.velocity = passive->velocity;
 }
 
+Vec2 steerCrab(MobAi& ai, Vec2 toTarget, double ownRadius, double strafeSpeed, double nowMillis,
+               Vec2& facing) {
+    // Just engaged: begin sidling.
+    if (ai.crabPhase == CrabPhase::None) {
+        ai.crabPhase = CrabPhase::Strafe;
+        ai.crabPhaseMillis = nowMillis;
+    }
+    const double elapsed = nowMillis - ai.crabPhaseMillis;
+
+    if (ai.crabPhase == CrabPhase::Charge) {
+        if (elapsed >= kCrabChargeMillis) {
+            ai.crabPhase = CrabPhase::Strafe;
+            ai.crabPhaseMillis = nowMillis;
+        } else {
+            // Locked in: along the heading chosen at the commit, wherever the
+            // flower has gone since.
+            facing = Vec2::fromAngle(ai.crabHeading);
+            return facing * (strafeSpeed * kCrabChargeScale);
+        }
+    }
+
+    if (ai.crabPhase == CrabPhase::Strafe && elapsed >= kCrabStrafeMillis) {
+        // Commit to the charge: the heading toward the flower right now.
+        ai.crabPhase = CrabPhase::Charge;
+        ai.crabPhaseMillis = nowMillis;
+        ai.crabHeading = toTarget.angle();
+        facing = Vec2::fromAngle(ai.crabHeading);
+        return facing * (strafeSpeed * kCrabChargeScale);
+    }
+
+    const double gap = toTarget.length();
+    if (!(gap > 0.0)) return Vec2{0, 0};
+    // Face the flower while walking sideways across it.
+    const Vec2 toward = toTarget * (1.0 / gap);
+    facing = toward;
+    const double sign =
+        static_cast<long long>(std::floor((nowMillis - ai.crabPhaseMillis) / kCrabSegmentMillis)) % 2 == 0
+            ? 1.0
+            : -1.0;
+    const Vec2 side{-toward.y * sign, toward.x * sign};
+    // Positive closes the gap, negative backs off.
+    const double radial = std::clamp((gap - ownRadius - kCrabStrafeGap) / kCrabRadialEase,
+                                     -kCrabRadialClamp, kCrabRadialClamp);
+    const Vec2 walk = side + toward * radial;
+    const double length = walk.length();
+    return length > 0.0 ? walk * (strafeSpeed / length) : Vec2{0, 0};
+}
+
 BeeCruiseDrive beeCruiseDrive(double speed, double cruiseSpeed) {
     if (!(cruiseSpeed > 0.0)) return BeeCruiseDrive{speed, kBeeCruiseSpeed};
     const double ceiling = std::min(cruiseSpeed, kMaxWanderSpeed);
@@ -1252,17 +1312,15 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     // super wasp's is 3,355 units against a 436-unit body.
     const double range = ai.aggroRange > 0.0 ? ai.aggroRange : kEnemyChaseRange;
 
-    // Provocation first, which is where the reference has it: over there it
-    // happens in the damage phase and the AI merely validates what it left
-    // behind, so a mob provoked from behind a wall or from five viewports away
-    // loses the target again on this very tick.
-    //
-    // NEUTRAL only. A hostile mob is not provoked by anything -- it finds its
-    // own targets, inside its own range -- so sniping one from beyond that
-    // range leaves it wandering rather than charging the horizon.
-    if (ai.kind == AiKind::Neutral && ai.target == NULL_ENTITY) {
-        ai.target = freshProvoker(world, self, transform.position, transform.realm);
-    }
+    // Provocation first, which is where gardn has it: over there it happens in
+    // the damage phase (inflict_damage targets the attacker of any mob with no
+    // live target) and the AI merely validates what it left behind, so a
+    // hostile mob sniped from past its leash loses the target again on this
+    // very tick. Asked every tick, not only while the mob is free, so the
+    // ledger's watermark keeps up: a hit taken DURING a chase provokes nothing
+    // over there, and must not provoke a fresh chase here once that one ends.
+    const Entity provoker = freshProvoker(world, self, transform.position, transform.realm);
+    if (ai.target == NULL_ENTITY) ai.target = provoker;
 
     // Both halves run every tick. Keeping a target is a pointer chase, a
     // distance and one ray; gaining one is a broadphase query and a fan of
@@ -1270,12 +1328,11 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     // mob per tick, and a mob that only looks on a clock ignores a player who
     // walks up to it for as long as the clock says, which reads as the whole
     // field lagging behind the flower. The LOD stride is what bounds this.
-    if (ai.target != NULL_ENTITY) {
-        const bool held =
-            world.has<Pet>(ai.target)
-                ? petTargetHeld(world, terrain, transform.position, transform.realm, ai.target, range)
-                : targetHeld(world, terrain, transform.position, transform.realm, ai.target);
-        if (!held) ai.target = NULL_ENTITY;
+    if (ai.target != NULL_ENTITY &&
+        !holdTarget(world, terrain, transform.position, transform.realm, ai, range, nowMillis)) {
+        ai.target = NULL_ENTITY;
+        // A later chase of the same flower gets a grace of its own.
+        ai.unseenTarget = NULL_ENTITY;
     }
     // A neutral mob goes looking for one thing only: a flower whose glow it can
     // see. A bulb draws it in inside the same circle a hostile mob notices that
@@ -1302,11 +1359,17 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
             ai.target = acquirePetTarget(terrain, self, transform.position, transform.realm, range);
         }
     }
-    if (ai.target == NULL_ENTITY) return false;
+    if (ai.target == NULL_ENTITY) {
+        // The next target is engaged from the top of a sidle, as gardn's crab
+        // engages from a passive state.
+        ai.crabPhase = CrabPhase::None;
+        return false;
+    }
 
     const Transform* threat = world.tryGet<Transform>(ai.target);
     if (threat == nullptr) {
         ai.target = NULL_ENTITY;
+        ai.crabPhase = CrabPhase::None;
         return false;
     }
 
@@ -1318,6 +1381,11 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     const double threatRadius = threatBody != nullptr ? threatBody->radius : 0.0;
     const double reach = body.radius + threatRadius + kMobContactSlack;
     if (gap <= reach) stampAttack(world, self, ai, nowMillis, drive);
+
+    if (drive.crabStrafe) {
+        desired = steerCrab(ai, toTarget, body.radius, chaseSpeed, nowMillis, facing);
+        return true;
+    }
 
     desired = gap > 0.0 ? toTarget * (chaseSpeed / gap) : Vec2{0, 0};
     // A `bee_ai: "always"` mob weaves across its bearing rather than flying a
@@ -1362,13 +1430,22 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
         // the flower, and a zero facing would hand it to the fallback in
         // steerMob and leave it aimed wherever it last walked.
         if (gap > 0.0) facing = toTarget * (1.0 / gap);
+        // What the volley carries is the shooter's real travel this tick: on
+        // gardn's integrator that is the carried velocity easing toward
+        // `desired`, not `desired` itself.
+        Vec2 travel = desired;
+        if (drive.gardnMotion) {
+            if (const Motion* motion = world.tryGet<Motion>(self)) {
+                travel = gardnStep(motion->velocity, desired, dt);
+            }
+        }
         // Out of the weapon's range: close first. Returning before the volley
         // cycle also keeps a stinger shooter from spending the approach
         // swinging its tail at something it cannot hit yet -- it flies nose-on
         // like anything else and starts the wind-up once in range.
         if (!shotCanReach(gap, drive.shotReach, threatRadius)) return true;
         if (!drive.stingerShooter) {
-            fireVolley(world, self, type, ai, drive, transform.position, bearing, desired,
+            fireVolley(world, self, type, ai, drive, transform.position, bearing, travel,
                        nowMillis, commands);
             return true;
         }
@@ -1425,7 +1502,7 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
         // fireVolley re-checks the cooldown, so a mob that comes round early
         // simply holds the pose until its volley is due.
         if (winding && stingerAimed(bearing, transform.angle)) {
-            fireVolley(world, self, type, ai, drive, transform.position, bearing, desired,
+            fireVolley(world, self, type, ai, drive, transform.position, bearing, travel,
                        nowMillis, commands);
         }
     }

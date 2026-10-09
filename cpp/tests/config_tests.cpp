@@ -371,15 +371,24 @@ TEST(mob_speed_is_converted_to_units_per_second) {
     // Speed 1 IS the player's: a fly at 0.48 flies at 48% of a flower.
     CHECK_NEAR(r.mobStats(r.mobIndex("fly"), Rarity::Common).speed, 0.48 * kPlayerMaxSpeed,
                1e-9);
-    // Bees are one of the reference's player-speed chasers, but that override
-    // replaces the PURSUIT step only: an unprovoked bee still drifts at its
-    // own 30, which is why the flower's speed lives on a separate field.
-    CHECK(bee.playerSpeedChaser);
-    CHECK_NEAR(bee.chaseSpeed, kPlayerMaxSpeed, 1e-9);
+    // A bee chases at gardn's neutral 0.975 of a flower (`chase_speed`), but
+    // that replaces the PURSUIT step only: an unprovoked bee still drifts at
+    // its own 30, which is why the chase lives on a separate field.
+    CHECK_NEAR(bee.chaseSpeed, 0.975 * kPlayerMaxSpeed, 1e-9);
+    // gardn's scorpion outruns a flower; a mob that states no chase pursues
+    // at its own speed.
+    CHECK_NEAR(r.mobStats(r.mobIndex("scorpion"), Rarity::Common).chaseSpeed,
+               1.2 * kPlayerMaxSpeed, 1e-9);
+    // The florr variants chase as the gardn mob they are a variant of.
+    CHECK_NEAR(r.mobStats(r.mobIndex("hel_beetle"), Rarity::Common).chaseSpeed,
+               r.mobStats(r.mobIndex("beetle"), Rarity::Common).chaseSpeed, 1e-9);
+    CHECK_NEAR(r.mobStats(r.mobIndex("golden_leafbug"), Rarity::Common).chaseSpeed,
+               r.mobStats(r.mobIndex("leafbug"), Rarity::Common).chaseSpeed, 1e-9);
+    const MobStats roach = r.mobStats(r.mobIndex("roach"), Rarity::Common);
+    CHECK_NEAR(roach.chaseSpeed, roach.speed, 1e-9);
 
     const MobStats hole = r.mobStats(r.mobIndex("ant_hole"), Rarity::Common);
     CHECK_NEAR(hole.speed, 0.0, 1e-9);
-    CHECK(!hole.playerSpeedChaser);
     CHECK_NEAR(hole.chaseSpeed, 0.0, 1e-9);
 }
 

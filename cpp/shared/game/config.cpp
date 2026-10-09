@@ -893,6 +893,8 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
         }
     }
     m.cruiseSpeed = ctx.speed(src, "cruiseSpeed");
+    m.chaseSpeed = ctx.speed(src, "chase_speed");
+    m.crabStrafe = ctx.boolean(src, "crab_ai");
     m.gardnMotion = ctx.boolean(src, "gardn_ai");
 
     // Three rules the reference states by NAME rather than in the JSON. They
@@ -1581,18 +1583,11 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     s.radius = scaledSize * kMobBaseRadius;
     s.mass = bodyMassForRadius(s.radius) * (c.speed == 0.0 ? kAnchoredMassScale : 1.0);
     s.speed = c.speed * kMobSpeedUnitsPerSecond;
-    // These PURSUE at the flower's 300 u/s so a fleeing player cannot outrun
-    // them -- but only while pursuing. Every other branch (the idle drift, a
-    // flee) reads the authored speed, so the override belongs on its own field
-    // rather than on `speed`: folded in, an unprovoked bee cruises at 135 u/s
-    // instead of ~36, and a ladybug at twenty times its reference drift.
-    s.playerSpeedChaser =
-        c.id == "bee" || c.id == "ladybug" || c.id == "shiny_ladybug" ||
-        c.id == "dark_ladybug" || c.id == "soldier_ant" || c.id == "worker_ant" ||
-        c.id == "baby_ant" || c.id == "soldier_fire_ant" ||
-        c.id == "worker_fire_ant" || c.id == "baby_fire_ant" || c.id == "baby_termite" ||
-        c.id == "worker_termite" || c.id == "soldier_termite";
-    s.chaseSpeed = s.playerSpeedChaser ? kPlayerMaxSpeed : s.speed;
+    // gardn chases at its own factor of PLAYER_ACCELERATION, apart from the
+    // speed the mob drifts at -- every neutral at 0.975, a scorpion at 1.2 --
+    // so the pursuit speed is its own field (`chase_speed`). Folded into
+    // `speed`, an unprovoked bee would cruise at nearly a flower's pace.
+    s.chaseSpeed = c.chaseSpeed > 0.0 ? c.chaseSpeed * kMobSpeedUnitsPerSecond : s.speed;
     s.cruiseSpeed = c.cruiseSpeed * kMobSpeedUnitsPerSecond;
     s.xp = c.xp[t];
     // `range` is what a COMMON mob notices, and every tier notices further on
@@ -1621,8 +1616,9 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
         tier >= rarityIndex(Rarity::Epic)) {
         s.ai = AiKind::Neutral;
     }
-    s.gardnMotion = c.gardnMotion || (s.ai == AiKind::Neutral && c.speed != 0.0 &&
-                                      c.segmentCount == 0 && !c.chainBody);
+    s.gardnMotion = c.gardnMotion ||
+                    ((s.ai == AiKind::Neutral || s.ai == AiKind::Hostile) && c.speed != 0.0 &&
+                     c.segmentCount == 0 && !c.chainBody);
     // min_rarity is enforced in exactly one place: below its tier the mob is
     // not ambient, and every spawner already filters on that.
     s.ambient = tier >= rarityIndex(c.minRarity) && !c.groups.empty() && !c.neverAmbient;

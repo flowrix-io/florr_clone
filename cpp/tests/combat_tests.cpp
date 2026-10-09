@@ -2704,7 +2704,8 @@ struct RecoilFixture {
     std::string error;
     bool ok = false;
     std::uint16_t walker = kInvalidIndex;    ///< `gardn_ai`
-    std::uint16_t plodder = kInvalidIndex;   ///< the same animal without it
+    std::uint16_t plodder = kInvalidIndex;   ///< without it -- passive, as every neutral
+                                             ///< and hostile walker moves on gardn's
 };
 
 const RecoilFixture& recoilFixture() {
@@ -2715,7 +2716,7 @@ const RecoilFixture& recoilFixture() {
         const bool wrote =
             writeText(mobs, test::fixtureMobs(R"({
   "walker": {"name":"Walker","health":100,"damage":5,"size":1,"speed":0.5,"gardn_ai":true},
-  "plodder":{"name":"Plodder","health":100,"damage":5,"size":1,"speed":0.5,"ai_type":"hostile"}
+  "plodder":{"name":"Plodder","health":100,"damage":5,"size":1,"speed":0.5,"ai_type":"passive"}
 })")) &&
             writeText(petals, test::fixturePetals(
                           R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1}})"));
