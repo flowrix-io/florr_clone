@@ -270,9 +270,8 @@ Rarity LootSystem::chaffDropRarity(Rarity mobRarity) {
 
 Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng) {
     Rarity base = baseRarity;
-    double upgrade = dropUpgradeChance(base);
-    if (mobRarity == Rarity::Ultra) upgrade *= 20.0;
-    upgrade = clamp(upgrade, 0.0, 1.0);
+    const double upgrade =
+        clamp(dropUpgradeChance(base) * dropUpgradeMultiplier(mobRarity), 0.0, 1.0);
     if (rng.chance(upgrade)) {
         base = upgradeRarity(base);
     } else if (rng.chance(dropDowngradeChance(base))) {

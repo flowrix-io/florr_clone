@@ -353,6 +353,21 @@ inline double dropUpgradeChance(Rarity mobRarity) {
     return craftSuccessChance(mobRarity) / 3.0;
 }
 
+/// What a mob's tier multiplies dropUpgradeChance by: 5x from rare to mythic,
+/// ultra's 20x lucky roll, and the plain chance everywhere else. A better
+/// DISTRIBUTION, not more items -- the kill still leaves one graded drop.
+/// Shared so the gallery tooltip quotes what the server rolls.
+///
+/// Uncommon only gets 2x: its common rows upgrade 21% of the time, so 5x
+/// would saturate at 100% and every drop would come out uncommon.
+inline double dropUpgradeMultiplier(Rarity mobRarity) {
+    if (mobRarity == Rarity::Ultra) return 20.0;
+    if (mobRarity == Rarity::Uncommon) return 2.0;
+    const int i = rarityIndex(mobRarity);
+    if (i >= rarityIndex(Rarity::Rare) && i <= rarityIndex(Rarity::Mythic)) return 5.0;
+    return 1.0;
+}
+
 /// Chance a drop rolls one tier below the mob that dropped it.
 inline double dropDowngradeChance(Rarity mobRarity) {
     const int i = rarityIndex(mobRarity);

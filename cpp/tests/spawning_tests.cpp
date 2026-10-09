@@ -2795,13 +2795,14 @@ TEST(a_mob_leaves_its_own_rarity_at_the_pre_guaranteed_drop_rate) {
     // The whole point of the split. Guaranteed drops multiplied what a kill
     // pays out; grading exactly one row keeps the rate that decides how fast
     // anyone climbs the ladder at what it was before they existed. The
-    // figures are 90% * the upgrade chance one tier under the mob -- written
+    // figures are 90% * the upgrade chance one tier under the mob, times the
+    // mob's upgrade multiplier (5x rare..mythic, 20x ultra) -- written
     // out rather than recomputed, so a change to either half of the pipeline
     // has to come and edit this list on purpose.
     struct Case { Rarity mob; double ownTier; };
     const Case cases[] = {
-        {Rarity::Rare, 0.096},        {Rarity::Epic, 0.048},
-        {Rarity::Legendary, 0.024},   {Rarity::Mythic, 0.012},
+        {Rarity::Rare, 0.480},        {Rarity::Epic, 0.240},
+        {Rarity::Legendary, 0.120},   {Rarity::Mythic, 0.060},
         {Rarity::Ultra, 0.120},       // the 20x lucky roll, which only ultra has
         {Rarity::Super, 0.003},       {Rarity::Unique, 0.0015},
     };
@@ -2822,6 +2823,20 @@ TEST(a_mob_leaves_its_own_rarity_at_the_pre_guaranteed_drop_rate) {
         if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Apex, rng) == Rarity::Apex) ++apex;
     }
     CHECK_EQ(apex, 0);
+}
+
+TEST(an_uncommon_mob_upgrades_its_common_rows_at_twice_the_base_chance) {
+    // 2x the common upgrade chance (0.64 / 3), not the 5x the tiers above
+    // get: 5x would be over 100% and turn every drop uncommon.
+    Rng rng(2026);
+    constexpr int kRuns = 400000;
+    int uncommon = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Uncommon, rng) == Rarity::Uncommon) {
+            ++uncommon;
+        }
+    }
+    CHECK_NEAR(uncommon / double(kRuns), 0.64 / 3.0 * 2.0, 0.005);
 }
 
 TEST(chaff_is_flat_two_tiers_below_the_mob) {

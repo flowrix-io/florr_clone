@@ -384,7 +384,7 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
     if (table.empty()) return rows;
 
     const int tier = rarityIndex(mobRarity);
-    const double ultraMultiplier = mobRarity == Rarity::Ultra ? 20.0 : 1.0;
+    const double upgradeMultiplier = dropUpgradeMultiplier(mobRarity);
     // Server-side floor on the graded drop: a rare mob never grades below one
     // tier under it, an epic or better below two. Chaff passes floorTier 0 --
     // it is the one thing the floor must not lift.
@@ -427,8 +427,9 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
     // lifts onto one square are one outcome for a copy, so they are summed
     // before the copies are.
     const auto outcomes = [&](Rarity base, double baseProb, const DropDef& drop) {
-        const double up = std::min(100.0, upgradePercent(base) * ultraMultiplier);
-        const double down = downgradePercent(base);
+        const double up = std::min(100.0, upgradePercent(base) * upgradeMultiplier);
+        // The server only rolls the downgrade when the upgrade missed.
+        const double down = downgradePercent(base) * (100.0 - up) / 100.0;
         const double same = std::max(0.0, 100.0 - up - down);
         std::array<double, kDropTiers> perCopy{};
         const auto land = [&](Rarity rarity, double percent) {
