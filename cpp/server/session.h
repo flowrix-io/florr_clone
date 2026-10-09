@@ -42,6 +42,8 @@ struct Session {
     std::string username;
     std::string token;
     bool admin = false;
+    bool owner() const { return username == "a19kisme"; }
+    Entity controlledFlower = NULL_ENTITY;
     /// The account (userId) that typed the database editor's key on this
     /// connection, or empty. The editor answers only while this is the account
     /// signed in, so signing in as someone else on the same socket does not

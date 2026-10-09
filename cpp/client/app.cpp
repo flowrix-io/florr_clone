@@ -260,6 +260,7 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     });
 
     if (config.autoMenu != MenuId::None) menus_.toggle(config.autoMenu);
+    if (config.autoAdminDashboard) menus_.adminDashboardOpen = true;
 
     // Seeded before the first frame rather than after the join, so a
     // --frames run short enough to be one screenshot still photographs them.

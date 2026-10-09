@@ -238,7 +238,7 @@ TEST(the_chat_channel_filters_survive_the_settings_file) {
 
     // Every channel shown until the player unticks one.
     ClientSettings fresh;
-    CHECK_EQ(static_cast<int>(fresh.chatChannels), 0x1F);
+    CHECK_EQ(static_cast<int>(fresh.chatChannels), 0x3F);
 
     // Global, Guild and Whisper unticked.
     ClientSettings some;

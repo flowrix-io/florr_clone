@@ -608,6 +608,10 @@ public:
     /// then arrival() is the only honest position for it.
     bool selfPlaced() const { return view_.self().netId != 0; }
     const Profile& profile() const { return profile_; }
+    Json adminDashboard;
+    std::string adminAnnouncement;
+    double adminAnnouncementAt = -100000;
+    bool adminAnnouncementVisible() const;
     const std::string& sessionToken() const { return sessionToken_; }
     const std::vector<ChatLine>& chat() const { return chat_; }
     /// How many lines this transcript has ever taken, trimmed ones included.

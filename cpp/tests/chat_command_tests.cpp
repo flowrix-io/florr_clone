@@ -94,6 +94,86 @@ std::vector<Database::BackupInfo> reopenBackups(Harness& h) {
 
 } // namespace
 
+TEST(admin_dashboard_owner_access_inventory_and_announcement) {
+    Harness h("dashboard-owner", [](const std::string& path) {
+        seedUser(path, "a19kisme", "password7");
+        seedUser(path, "visitor", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient owner, visitor;
+    CHECK(loginAs(h, owner, "a19kisme", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.isSkinAdmin(); }));
+    owner.joinGame(1000, 800, {}, "Owner");
+    visitor.joinGame(1000, 800, {}, "Visitor");
+    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.status() == NetClient::Status::Playing && visitor.status() == NetClient::Status::Playing; }));
+    owner.sendChat("/admin give visitor rose legendary 3");
+    owner.sendChat("/admin dashboard visitor");
+    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.adminDashboard["target"].asString() == "visitor"; }));
+    CHECK_EQ(owner.adminDashboard["players"].size(), 2u);
+    CHECK(owner.adminDashboard["inventory"].dump().find("rose") != std::string::npos);
+    visitor.sendChat("/admin dashboard a19kisme");
+    h.step(8, {&owner, &visitor});
+    CHECK(visitor.adminDashboard.isNull());
+    visitor.sendChat("/admin announce fake");
+    h.step(8, {&owner, &visitor});
+    CHECK(owner.adminAnnouncement.empty());
+    owner.sendChat("/admin announce Hello & welcome");
+    CHECK(h.stepUntil({&owner, &visitor}, [&] { return visitor.adminAnnouncement == "Hello & welcome"; }));
+    CHECK(visitor.adminAnnouncementVisible());
+    const auto* line = lineReading(visitor, "Hello &amp; welcome");
+    CHECK(line != nullptr);
+    if (line) CHECK_EQ(line->channel, net::ChatChannel::Admin);
+}
+
+TEST(admin_dashboard_control_changes_view_and_releases) {
+    Harness h("dashboard-control", [](const std::string& path) {
+        seedUser(path, "a19kisme", "password7");
+        seedUser(path, "visitor", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient owner, visitor;
+    CHECK(loginAs(h, owner, "a19kisme", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    owner.joinGame(1000, 800, {}, "Owner");
+    visitor.joinGame(1000, 800, {}, "Visitor");
+    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.selfPlaced() && visitor.selfPlaced(); }));
+    const auto ownId = owner.view().self().netId;
+    const auto otherId = visitor.view().self().netId;
+    CHECK(ownId != otherId);
+    owner.sendChat("/admin control visitor");
+    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.view().self().netId == otherId; }));
+    net::InputFrame steering;
+    steering.sequence = 10;
+    steering.moveStrength = 1;
+    steering.moveAngle = 0.5;
+    steering.flags = net::InputAttack;
+    owner.sendInput(steering);
+    net::InputFrame competing;
+    competing.sequence = 20;
+    visitor.sendInput(competing);
+    h.step(2, {&owner, &visitor});
+    bool foundTarget = false;
+    Query<NetId, PlayerInput> controlledInputs{h.server.world()};
+    controlledInputs.each([&](Entity, NetId& id, PlayerInput& input) {
+        if (id.value == otherId) {
+            foundTarget = true;
+            CHECK_NEAR(input.current.moveStrength, 1.0, 0.001);
+            CHECK_EQ(input.current.flags, net::InputAttack);
+        }
+    });
+    CHECK(foundTarget);
+    owner.sendChat("/admin release");
+    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.view().self().netId == ownId; }));
+    visitor.sendChat("/admin control a19kisme");
+    h.step(8, {&owner, &visitor});
+    CHECK_EQ(visitor.view().self().netId, otherId);
+    owner.sendChat("/admin control visitor");
+    CHECK(h.stepUntil({&owner, &visitor}, [&] { return owner.view().self().netId == otherId; }));
+    visitor.disconnect();
+    CHECK(h.stepUntil({&owner}, [&] { return owner.view().self().netId == ownId; }));
+}
+
 TEST(a_slash_command_is_answered_rather_than_broadcast) {
     Harness h("cmd-not-broadcast", [](const std::string& path) {
         seedUser(path, "asker", "password7");

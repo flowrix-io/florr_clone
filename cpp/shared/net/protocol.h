@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 49;
+inline constexpr std::uint16_t kProtocolVersion = 50;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -317,6 +317,7 @@ enum class ServerMessage : std::uint8_t {
     TitanHolder,        ///< u16 itemType, str username -- the answer to
                         ///< ClientMessage::TitanHolder: the account holding that
                         ///< petal at universal, or empty for nobody. (Version 47.)
+    AdminDashboard,    ///< str JSON, private server-authorized dashboard data
 };
 
 // ---------------------------------------------------------------------------
@@ -383,6 +384,7 @@ enum class ChatChannel : std::uint8_t {
     Whisper = 4,       ///< to this player alone; `author` is who sent it
     WhisperSent = 5,   ///< the sender's copy of one; `author` is who it went to
     Local = 6,         ///< the players whose screens show the speaker's flower
+    Admin = 7,         ///< owner-only announcements, visible to every player
 };
 enum class NoticeSeverity : std::uint8_t { Info = 0, Good = 1, Warning = 2, Bad = 3 };
 

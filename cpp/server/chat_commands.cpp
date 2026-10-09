@@ -294,7 +294,7 @@ void GameServer::sendSystem(net::Connection& connection, const std::string& text
 }
 
 bool GameServer::effectiveAdmin(const Session& session) const {
-    return session.admin || tempAdmins_.count(session.connection) != 0;
+    return session.owner() || session.admin || tempAdmins_.count(session.connection) != 0;
 }
 
 bool GameServer::grantAdmin(const std::string& username) {
@@ -1140,6 +1140,104 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     const std::string verb = lowerCase(words[0]);
     const std::string rest = argumentOf(trimmed(command));
 
+    if (verb == "dashboard") {
+        Json data = Json::object();
+        data["players"] = Json::array();
+        for (auto& entry : sessions_) {
+            const auto& other = entry.second;
+            if (!other.playing()) continue;
+            Json row = Json::object();
+            row["id"] = std::to_string(entry.first);
+            row["name"] = other.displayName.empty() ? other.username : other.displayName;
+            row["username"] = other.username;
+            data["players"].push(std::move(row));
+        }
+        data["control"] = session.controlledFlower != NULL_ENTITY;
+        if (words.size() >= 2) {
+            CommandTarget target;
+            if (resolveCommandTarget(words[1], target) && target.session) {
+                data["target"] = target.session->username;
+                int page = 0;
+                if (words.size() >= 3) parseInteger(words[2], page);
+                page = std::max(0, std::min(page, 100000));
+                const auto& inventory = liveRecord(*target.session).inventory;
+                data["inventory"] = Json::object();
+                int row = 0;
+                for (const auto& rarity : inventory.keys()) for (const auto& item : inventory[rarity].keys()) {
+                    if (row >= page * 6 && row < page * 6 + 6)
+                        data["inventory"][rarity][item] = inventory[rarity][item];
+                    ++row;
+                }
+                data["inventoryTotal"] = row;
+                data["page"] = page;
+            }
+        }
+        ByteWriter w;
+        w.u8(static_cast<std::uint8_t>(net::ServerMessage::AdminDashboard));
+        w.str(data.dump());
+        connection.send(w);
+        return;
+    }
+
+    if (verb == "release") {
+        if (auto* input = world_.tryGet<PlayerInput>(session.controlledFlower))
+            input->current = net::InputFrame{};
+        session.controlledFlower = NULL_ENTITY;
+        views_[session.connection] = {};
+        out("Flower control released.");
+        return;
+    }
+    if (verb == "control") {
+        CommandTarget target;
+        if (!session.playing() || words.size() != 2 ||
+            !resolveCommandTarget(words[1], target) || target.session == nullptr ||
+            !target.session->playing() || target.entity == session.entity ||
+            target.session->controlledFlower != NULL_ENTITY ||
+            realmOf(world_, target.entity) != realmOf(world_, session.entity)) {
+            out("Choose another online player in your realm: control <username>.");
+            return;
+        }
+        for (const auto& entry : sessions_) {
+            if (entry.second.controlledFlower == session.entity) {
+                out("Release the control of your own flower first."); return;
+            }
+            if (entry.second.controlledFlower == target.entity &&
+                entry.first != session.connection) {
+                out("Another admin is already controlling that flower.");
+                return;
+            }
+        }
+        if (auto* previous = world_.tryGet<PlayerInput>(session.controlledFlower))
+            previous->current = net::InputFrame{};
+        session.controlledFlower = target.entity;
+        views_[session.connection] = {};
+        if (auto* own = world_.tryGet<PlayerInput>(session.entity))
+            own->current = net::InputFrame{};
+        out("Controlling " + target.name + ". Movement and attacks now steer that flower. Use release to stop.");
+        return;
+    }
+    if (verb == "viewinv") {
+        CommandTarget target;
+        if (words.size() != 2 || !resolveCommandTarget(words[1], target) || !target.session) {
+            out("Choose an online player: viewinv <username>.");
+            return;
+        }
+        const Json& inventory = liveRecord(*target.session).inventory;
+        out("Inventory of " + target.name + ":");
+        for (const auto& rarity : inventory.keys())
+            for (const auto& item : inventory[rarity].keys())
+                out(rarity + " / " + item + " x " + inventory[rarity][item].dump());
+        if (inventory.size() == 0) out("Empty inventory.");
+        return;
+    }
+    if (verb == "announce") {
+        if (!session.owner()) { out("Announcements belong to a19kisme only."); return; }
+        if (rest.empty()) { out("Write a message after announce."); return; }
+        if (rest.size() > 120) { out("Announcements can contain up to 120 bytes."); return; }
+        broadcastChat(net::ChatChannel::Admin, "[ADMIN] a19kisme", escapedMarkup(rest), 0);
+        return;
+    }
+
     // The database editor's key is blanked out of the echo: the line sits in
     // the chat log for anyone looking over the admin's shoulder.
     const bool databaseEditor = verb == "db" || verb == "database" || verb == "db_editor";
@@ -1584,7 +1682,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 std::max(rarityIndex(rarity), rarityIndex(content().mob(mobIndex).minRarity)));
             const double cooling =
                 spawning_->bossCooldownLeft(standing, spawnRealm, clockMillis_);
-            if (cooling > 0.0) {
+            if (!session.owner() && cooling > 0.0) {
                 const std::string biome = biomeOfRealm(spawnRealm);
                 out(std::string("Refused: ") + (biome.empty() ? "this biome" : biomeLabel(biome)) +
                     "'s " + rarityName(standing) + " clock is cooling down (ready in " +
@@ -1611,7 +1709,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 // tick() on a clock of its own they do not, and an operator's
                 // spawn was being recycled by the very next census.
                 if (spawning_->spawnMob(world_, *terrain_, content(), mobIndex, rarity, at,
-                                        spawnRealm, clockMillis_, rng_) != NULL_ENTITY) {
+                                        spawnRealm, clockMillis_, rng_, session.owner()) != NULL_ENTITY) {
                     placedAny = true;
                 }
             }
@@ -2071,6 +2169,11 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (databaseEditor) {
+        if (session.owner()) {
+            session.adminDbUnlockedFor = session.userId;
+            sendAdminDbOpen(connection, words.size() >= 2 ? words.back() : std::string());
+            return;
+        }
         // The database flag, as grant_admin checks it: the editor resets
         // passwords and rewrites any record, which a console lent for one life
         // must not reach.

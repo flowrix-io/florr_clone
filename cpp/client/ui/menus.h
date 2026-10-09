@@ -218,7 +218,7 @@ struct ClientSettings {
     /// Which of the chat box's channel tabs its transcript shows, one bit per
     /// tab in strip order: Local, Global, Squad, Guild, Whisper. All on by
     /// default. The server's own lines belong to no tab and always show.
-    std::uint8_t chatChannels = 0x1F;
+    std::uint8_t chatChannels = 0x3F;
     bool showMenuBar = true;
     /// The frame/ping/position readout in the bottom-right corner. Off by
     /// default, and the browser build keeps the same flag in
@@ -1065,6 +1065,9 @@ public:
         exitRequested_ = false;
         return requested;
     }
+    bool adminDashboardOpen = false;
+    Rect adminDashboardBounds{};
+    Rect adminDashboardButton{};
 
     /// Set when Settings' Log Out was clicked, read and cleared by the app the
     /// same way the exit request is.
@@ -1106,7 +1109,7 @@ public:
     void toggle(MenuId);
     void close();
     MenuId open() const { return open_; }
-    bool anyOpen() const { return open_ != MenuId::None; }
+    bool anyOpen() const { return open_ != MenuId::None || adminDashboardOpen; }
 
     /// True when the cursor is over menu furniture, so the game must not treat
     /// the click as aiming or the wheel as a zoom.

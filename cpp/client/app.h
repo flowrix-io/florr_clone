@@ -75,6 +75,7 @@ struct AppConfig {
     /// Open this menu on the way in. Only useful with --screenshot: a panel is
     /// the one part of the client a scripted run cannot otherwise reach.
     MenuId autoMenu = MenuId::None;
+    bool autoAdminDashboard = false;
     /// Whether a scripted login goes straight into a game. Cleared by --lobby,
     /// which is the only way to photograph the title screen of a client that
     /// has credentials -- otherwise it joins before the first frame is drawn.
@@ -630,8 +631,8 @@ private:
     /// The channel strip as last painted -- each whole tab, and the checkbox
     /// inside it -- for the input pass, which runs before the draw. Empty
     /// while the strip is not up.
-    std::array<Rect, 5> chatTabs_{};
-    std::array<Rect, 5> chatTabChecks_{};
+    std::array<Rect, 6> chatTabs_{};
+    std::array<Rect, 6> chatTabChecks_{};
     /// The tab Enter sends to, in strip order: Local, Global, Squad, Guild,
     /// Whisper.
     int chatSendTab_ = 0;

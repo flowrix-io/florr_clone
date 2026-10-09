@@ -119,6 +119,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::ChatHistory:         return "chatHistory";
         case net::ServerMessage::TradeResult:         return "tradeResult";
         case net::ServerMessage::AdminDb:             return "adminDb";
+        case net::ServerMessage::AdminDashboard:      return "adminDashboard";
         case net::ServerMessage::TitanForgeResult:    return "titanForgeResult";
         case net::ServerMessage::TitanHolder:         return "titanHolder";
     }
@@ -311,6 +312,8 @@ void NetClient::forgetAccount() {
     shopOutcome_ = ShopOutcome{};
     passwordOutcome_ = PasswordOutcome{};
     adminDb_ = AdminDbState{};
+    adminDashboard = Json{};
+    adminAnnouncement.clear();
     view_.clear();
     chatBubbles_.clear();
     dead_ = false;
@@ -904,6 +907,12 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::SessionReplaced: handleSessionReplaced(reader); break;
         case net::ServerMessage::ChatHistory:   handleChatHistory(reader); break;
         case net::ServerMessage::AdminDb:       handleAdminDb(reader); break;
+        case net::ServerMessage::AdminDashboard: {
+            const std::string payload = reader.str();
+            std::string error;
+            if (reader.ok()) Json::parse(payload, adminDashboard, error);
+            break;
+        }
         default:
             // An unknown id means the server is newer than this build. The
             // frame is already fully buffered, so skipping it is safe and
@@ -1484,6 +1493,10 @@ void NetClient::handleChat(ByteReader& reader) {
     const std::uint32_t speakerNetId = reader.u32();
     if (!reader.ok()) return;
     pushChat(channel, std::move(author), std::move(text), speakerNetId);
+    if (channel == net::ChatChannel::Admin) {
+        adminAnnouncement = ui::markupPlainText(chat_.back().text);
+        adminAnnouncementAt = nowMillis();
+    }
 }
 
 void NetClient::handleChatHistory(ByteReader& reader) {
@@ -1515,6 +1528,10 @@ void NetClient::handleChatHistory(ByteReader& reader) {
         chat_.erase(chat_.begin(),
                     chat_.begin() + static_cast<std::ptrdiff_t>(chat_.size() - kMaxChatLines));
     }
+}
+
+bool NetClient::adminAnnouncementVisible() const {
+    return !adminAnnouncement.empty() && nowMillis() - adminAnnouncementAt < 8000;
 }
 
 void NetClient::handleNotice(ByteReader& reader) {
