@@ -2225,7 +2225,9 @@
         "ai_type": "hostile",
         "gardn_ai": true,
         "range": 750,
-        "groups": [],
+        "groups": {
+            "termite_ant_hell": 0.05
+        },
         "min_rarity": "rare"
     },
     "termite_egg": {
@@ -2252,7 +2254,7 @@
         "image": "$termite_egg",
         "ai_type": "passive",
         "groups": {
-            "ant_hell": 0.3
+            "termite_ant_hell": 0.3
         },
         "range": 0,
         "hideRotation": true,
