@@ -708,7 +708,7 @@
         "maxQuantity": 1
       },
       {
-        "type": "antennae",
+        "type": "petal",
         "itemType": "missile",
         "rarity": "common",
         "probability": 1,
