@@ -33,14 +33,11 @@
 #include "client/render/world_renderer.h"
 #include "client/ui/menu_widgets.h"
 #include "client/ui/touch_scroll.h"
+#include "client/ui/item_tile.h"
 #include "shared/core/types.h"
 #include "shared/game/skills.h"
 
 namespace flix {
-
-namespace ui {
-struct ItemTile;
-}
 
 /// Opens an external HTTP(S) URL with the host platform. The web build uses
 /// window.open directly, keeping Emscripten's SDL shim out of the browser
@@ -451,23 +448,23 @@ private:
 //
 // The craft key opens one of four cards -- the forge's, or the oracle's, the
 // trader's or the titan's while the flower stands at one -- and the four are
-// ONE card, laid out against the reference trade shot
-// (After-trade_trade_menu.webp), which the oracle's reference matches to the
-// unit: a title and a close button; a slot left of the centre line and the
-// action button right of it; one line of text; and a grid of everything the
-// account owns, a row a petal and a column a tier. What differs is the skin,
-// the words, whether the grid runs on to apex (only the trader's: nothing
-// crafts out of apex), what a cell says, and what stands where the slot is --
-// the forge and the titan turn a ring of five about the slot's centre where
-// the other two hold one petal.
+// ONE window: florr's own craft window, read out of its client (the screen
+// render lays it out, ~/florr_images/emulator/menus.py records it as Skia
+// commands). A themed panel at x = 95, its bottom 20 above the view's, that
+// slides up from below the view as it opens; a title row with a close
+// button; a 500-wide body of slot, button, odds and two lines; and under it
+// a grid of everything the account owns, a row a petal and a column a tier.
+// What differs is the theme, the words, how many tier columns the grid has
+// (only the trader's runs on to apex), what a cell says, and what stands in
+// the slot -- the forge turns a ring of five about its centre where the
+// oracle, the trader and the titan hold one petal.
 //
 // These are the pieces they share (menu_slot_card.cpp). Each panel keeps its
 // own staging, its own animation and its own input: that is what makes them
-// four menus rather than one. The titan's card is the same card cut down:
-// eight grid columns wide, and only as tall as one row of its grid, under
-// three lines of text instead of one.
+// four menus rather than one.
 
-/// The slot's side, and the size the oracle and the trader draw what is in it.
+/// The single slot's side, and the size the oracle and the trader draw what
+/// is in it.
 inline constexpr double kSlotCardSlot = 70.0;
 /// A refusal under the slot, and the line while an NPC's wait runs.
 inline constexpr std::uint32_t kSlotCardRefusalInk = 0xFF6B6Bu;
@@ -475,6 +472,11 @@ inline constexpr std::uint32_t kSlotCardWaitInk = 0xED706Bu;
 /// Every label on the card is outlined at 60%, a visibly lighter weight than
 /// the solid outline most panels use.
 inline constexpr double kSlotCardLabelStroke = 0.6;
+/// How the window rises: its open progress eases toward 1 at this rate per
+/// millisecond (x += (target - x) * (1 - e^(-rate * dt))), and the window
+/// moves linearly with it from 50 below the view's bottom edge to its seat.
+inline constexpr double kSlotCardOpenRate = 0.021400496636323946;
+inline constexpr double kSlotCardClosedDrop = 50.0;
 
 /// Whether `petalIndex` names a petal this build has: not kNoPetal, and not
 /// past the end of the content table. What every card asks before it draws or
@@ -483,38 +485,50 @@ inline bool knownPetal(std::uint16_t petalIndex) {
     return petalIndex != kNoPetal && petalIndex < content().petalCount();
 }
 
+/// The window's dark shade: its theme with every channel scaled by 0.81
+/// (0.9 in square-root space), which florr paints the border, the empty slots
+/// and the empty cells in.
+std::uint32_t slotCardShade(std::uint32_t theme);
+/// A card's skin from its theme alone, the way florr derives one.
+ui::PanelSkin slotCardSkin(std::uint32_t theme);
+
 /// Where everything on a slot card is this frame. Derived from the card's rect,
 /// so a card still sliding up carries all of it along.
 struct SlotCardLayout {
     Rect panel;
     Rect close;
-    /// The card's centre line.
+    /// The body's centre line, and the window's top-left corner of the body.
     double centreX = 0;
-    /// The slot's centre, and the slot: 101 left of the centre line.
+    Vec2 body;
+    /// The slot's centre (the ring's, on the forge), and the slot.
     Vec2 slot;
     Rect slotRect;
-    /// The action button, 129 right of the centre line.
+    /// The action button, sized to its label.
     Rect button;
-    /// The middle of the line of text.
+    /// The middle of the odds line under the button, of the line of text, and
+    /// of the smaller second line under it.
+    double chanceY = 0;
     double lineY = 0;
+    double line2Y = 0;
+    /// Where the grid scrolls.
+    Rect listView;
 };
 
-/// The card's width -- its grid's, one column a tier through unique, or on
-/// through apex when `withApex` -- and its height, the reference card's.
-double slotCardWidth(bool withApex);
-/// The width of a card whose grid is `columns` cells across.
+/// The window's width for a grid `columns` cells across (never narrower than
+/// florr's 610), and for one through unique or, `withApex`, apex.
 double slotCardColumnsWidth(std::size_t columns);
-double slotCardHeight();
-/// Where a slot card stands: on the list panels' left inset and bottom edge,
-/// reaching up its own height, and stopping short of the HUD in the top-left
-/// corner on a window too short for all of it.
-Rect slotCardBounds(bool withApex, int viewWidth, int viewHeight);
-/// The same for a card of any size: the titan's is shorter and narrower.
+double slotCardWidth(bool withApex);
+/// The window's height for a grid `rows` rows deep: as tall as the grid needs,
+/// up to 700, past which the grid scrolls.
+double slotCardHeight(std::size_t rows);
+/// Where a slot card of this size stands, seated: at x = 95, its bottom 20
+/// above the view's, and never reaching up over the HUD in the top-left.
 Rect slotCardBounds(double width, double height, int viewWidth, int viewHeight);
 
-/// Draws the card, its title and its close button, and lays out the rest.
+/// Draws the window, its title and its close button, and lays out the rest;
+/// `button` is the action button's label, which sizes it.
 SlotCardLayout drawSlotCard(Canvas&, Rect panel, const ui::PanelSkin&, const char* title,
-                            Vec2 mouse);
+                            const char* button, Vec2 mouse);
 /// A slot's plate: flat in the skin's border colour, so an empty slot reads as
 /// a place to put something rather than as a hole in the card.
 void drawSlotPlate(Canvas&, const SpriteCache&, Rect, const ui::PanelSkin&);
@@ -523,13 +537,18 @@ void drawSlotPlate(Canvas&, const SpriteCache&, Rect, const ui::PanelSkin&);
 /// the last, so both canvas backends see the same geometry.
 void drawSlotTile(Canvas&, const SpriteCache&, Vec2 centre, double side, double rotation,
                   const ui::ItemTile&);
-/// The action button: the reference's grey pill at rest, and `tint` -- a
-/// rarity's colour -- once there is something to act on.
+/// The action button: florr's grey button while it cannot be used, and
+/// `tint` -- a rarity's colour -- once it can. Only a usable button answers
+/// the cursor, florr's way: hovered, its face is 10% toward white; pressed,
+/// 10% toward black. The rim is the face's 0.81 shade either way.
 void drawSlotButton(Canvas&, Rect, const char* label, std::optional<std::uint32_t> tint,
-                    bool hovered);
-/// The one line of text, in the labels' white or in `ink`.
+                    bool hovered, bool pressed = false);
+/// The odds under the button.
+void drawSlotChance(Canvas&, const SlotCardLayout&, const std::string& text);
+/// The line of text, in the labels' white or in `ink`; `second` is the
+/// smaller line under it.
 void drawSlotLine(Canvas&, const SlotCardLayout&, const std::string& text,
-                  std::optional<std::uint32_t> ink = std::nullopt);
+                  std::optional<std::uint32_t> ink = std::nullopt, bool second = false);
 /// Why an NPC said no, under the slot, where the player is looking.
 void drawSlotRefusal(Canvas&, const SlotCardLayout&, const std::string& text);
 
@@ -558,6 +577,9 @@ public:
     };
 
     void reset() { scroll_ = {}; }
+    /// How many rows the account's petals make: one a type held at a tier the
+    /// grid has a column for.
+    static std::size_t rows(const Profile&, bool withApex);
     /// Scrolls, draws, and returns the cell under the cursor when `look` left
     /// it clickable -- held, and not greyed.
     std::optional<Pick> render(
@@ -583,6 +605,8 @@ public:
     };
 
     void reset() { scroll_ = {}; }
+    /// How many rows the account's petals at `tier` make, `columns` to a row.
+    static std::size_t rows(const Profile&, Rarity tier, std::size_t columns);
     /// Scrolls, draws, and returns the held cell under the cursor, if any.
     std::optional<Pick> render(
         MenuContext&, const SlotCardLayout&, const ui::PanelSkin&, Rarity tier,
@@ -593,60 +617,131 @@ private:
     ui::Scroller scroll_;
 };
 
-/// What the oracle and the trader play in their slot when something arrives:
-/// loot's own landing -- the tile slides in from a drop's distance, unwinding
-/// a drop's spin -- with twice a drop's burst of its tier's grains, and the
-/// shimmer a drop throws, for the oracle's pulse to build.
-class SlotFlourish {
+/// florr's own slot motions, shared by the cards whose bodies use them (read
+/// out of florr's client; see menu_slot_card.cpp for the addresses). Every
+/// ease is x += (target - x) * (1 - e^(-rate * dt)), dt in milliseconds.
+///
+///   - a spin with its phase, a shake and a show, for a slot that rolls;
+///   - a petal growing into a slot: scale, opacity and one backward turn;
+///   - an outcome popping in -- forward turn, scale and opacity -- with a
+///     pulse on top;
+///   - a tile that is replaced vanishing where it stood, turning;
+///   - a burst of square grains under gravity and drag.
+/// How a slot burst's grains are thrown: x velocity in +-500, y velocity
+/// from -500 to `riseTo`, and starting angles from `angleBase` across
+/// `angleSpread` radians. The trader throws them evenly; the oracle's mostly
+/// rise.
+struct SlotBurstShape {
+    double riseTo = 500.0;
+    double angleBase = 2.0;
+    double angleSpread = 3.0;
+};
+
+class SlotMotion {
 public:
     void clear();
-    /// Starts a landing at `now`, bursting in `rarity`'s colour.
-    void land(double now, Rarity rarity);
-    /// `rate` grains a second of shimmer for the next `dt`, carried between
-    /// frames so the rate does not depend on how long a frame was.
-    void shimmer(Rarity rarity, double rate, double dt);
-    /// Steps the grains by `dt` and paints them under the slot, clipped to the
-    /// card: a burst is the card's, not the world's.
-    void drawGrains(Canvas&, Rect panel, Vec2 slotCentre, double dt);
-    /// Draws `tile` where the landing started at `land` has it by `now`, at
-    /// `side`.
-    void drawLanded(Canvas&, const SpriteCache&, Vec2 slotCentre, double side, double now,
-                    const ui::ItemTile&) const;
+
+    /// Steps the roll: `spin` eases to `spinTarget` rad/s while `rolling`
+    /// (at `upRate`) and back to rest after (at `downRate`); the shake follows
+    /// `rolling` and the show follows `showing`.
+    void stepRoll(double dtMs, bool rolling, bool showing, double spinTarget, double upRate,
+                  double downRate);
+    double spin() const { return spin_; }
+    double phase() const { return phase_; }
+    double shake() const { return shake_; }
+    double show() const { return show_; }
+    /// Puts the roll back at rest at once.
+    void stopRoll() { spin_ = phase_ = shake_ = show_ = 0.0; }
+
+    /// The slot petal's grow, eased once a frame by `step`, and started over
+    /// whenever what the slot shows changes (`key`). Draws `tile` growing in
+    /// at `centre`, at `side` and `alpha`.
+    void drawGrowing(Canvas&, const SpriteCache&, Vec2 centre, double side, double alpha,
+                     std::uint32_t key, double dtMs, ui::ItemTile tile);
+    /// Starts the outcome's pop and its pulse, on its first frame.
+    void startPop();
+    /// Draws the popped outcome at `centre` and `side`.
+    void drawPopped(Canvas&, const SpriteCache&, Vec2 centre, double side, double dtMs,
+                    ui::ItemTile tile);
+    /// A tile that has just been replaced, to vanish where it stood.
+    void vanish(Vec2 centre, double side, const ui::ItemTile& tile);
+    /// A burst of `count` grains of `rarity`'s colour from `at`, each also
+    /// carrying `carry` (the velocity of whatever threw them).
+    void burst(Vec2 at, Rarity rarity, int count, const SlotBurstShape& shape = {},
+               Vec2 carry = {});
+
+    /// The single-slot scene the oracle and the trader share, florr's: the
+    /// plate, faded as the outcome shows, swung out from the slot's centre
+    /// on a 50-deep sine of the time since the click while the spin turns it;
+    /// the grains; the slot's petal (`shown`, keyed by `shownKey`) growing in
+    /// on the plate; and the outcome (`result`), 90 across at the centre,
+    /// popping in with its burst on its first frame. Whatever stood in the
+    /// slot vanishes where it stood when it is replaced. Hover is the
+    /// caller's, on the tiles it passes.
+    void drawSlotScene(Canvas&, const SpriteCache&, const SlotCardLayout&, const ui::PanelSkin&,
+                       double sinceClickMs, double dtMs, const ui::ItemTile* shown,
+                       std::uint32_t shownKey, const ui::ItemTile* result,
+                       std::uint32_t resultKey, const SlotBurstShape& shape);
+    /// Steps and draws the grains, then the vanishing tiles (call where
+    /// each belongs in the paint order).
+    void drawGrains(Canvas&, double dtMs);
+    void drawVanishing(Canvas&, const SpriteCache&, double dtMs);
 
 private:
     struct Grain {
         Vec2 position;
         Vec2 velocity;
-        double lifeSeconds = 0;
-        double maxLifeSeconds = 1;
-        double size = 0;
-        double rotation = 0;
+        double alpha = 1.0;
+        double lifeMs = 1.0;
+        double size = 0.0;
+        double angle = 0.0;
         std::uint32_t color = 0xFFFFFFu;
     };
+    struct Vanishing {
+        Vec2 centre;
+        double side = 0.0;
+        double progress = 0.0;
+        ui::ItemTile tile;
+    };
 
-    void throwGrains(Rarity rarity, int count, double speed, double speedSpread, double lifeMs,
-                     double lifeSpreadMs, double size, double sizeSpread);
-
+    double spin_ = 0, phase_ = 0, shake_ = 0, show_ = 0;
+    std::uint32_t growKey_ = 0xFFFFFFFFu;
+    double grow_ = 0;
+    double pop_ = 1.0;
+    double pulse_ = 0.0;
     std::vector<Grain> grains_;
-    double grainCredit_ = 0;
-    double landStarted_ = 0;
-    Vec2 landFrom_;
-    double landSpin_ = 0;
+    std::vector<Vanishing> vanishing_;
+    /// What the slot scene last drew, for it to vanish from when replaced.
+    std::uint32_t sceneKey_ = 0xFFFFFFFFu;
+    Vec2 sceneAt_;
+    double sceneSide_ = 0.0;
+    ui::ItemTile sceneTile_;
 };
 
-/// The forge: five slots in a ring turned about where the other cards hold
-/// their one, and the grid that feeds them.
+/// florr's grains per outcome by tier, before its own multiplier
+/// (u64 table 0x100e19360); the top figure carries on up our longer ladder.
+int slotBurstGrains(Rarity rarity);
+
+/// The forge: five slots in a ring about where the other cards hold their one,
+/// and the grid that feeds them. florr's own craft ring: each petal grows into
+/// its slot spinning; a craft spins the ring up and shakes it in and out while
+/// the server rolls; a success shrinks the ring away and grows the upgrade in
+/// its middle. See menu_crafting.cpp.
 class CraftingPanel {
 public:
     bool render(MenuContext&);
     void reset();
-    static Rect bounds(int viewWidth, int viewHeight);
+    /// The window's width and height for this account: the grid's columns
+    /// set the one and its rows the other.
+    static Vec2 size(const Profile&);
 
 private:
     enum class Phase : std::uint8_t { Idle, Spinning, Result };
 
     /// Adds up to one more batch of this petal to the staging area.
     void stage(const Profile&, std::uint16_t petalIndex, Rarity rarity, bool wholeStack);
+    /// Steps the ring's eases by `dtMs`.
+    void animate(double dtMs);
 
     SlotGrid grid_;
     /// What is staged. A craft consumes five at a time; `batches` is how many
@@ -657,26 +752,52 @@ private:
 
     Phase phase_ = Phase::Idle;
     double phaseStarted_ = 0;
-    double spinAngle_ = 0;
-    /// How far the ring is drawn in toward its centre, 0 apart and 1 merged.
-    /// The five breathe in and out under the turn and then clamp together for
-    /// the combine; see kPullDepth and kMergeDepth.
-    double ringPull_ = 0;
+    /// The ring's motion, florr's: `spin` turns it (rad/s) and `phase` is
+    /// where that has turned it to; `shake` sets how far it pulses in while a
+    /// craft rolls; `show` is how far the outcome has replaced the ring.
+    double spin_ = 0;
+    double phaseAngle_ = 0;
+    double shake_ = 0;
+    double show_ = 0;
+    /// Each slot's grow, 0 to 1: a petal landing in it grows in, spinning.
+    std::array<double, 5> grow_{};
+    /// Which slots still hold a petal after a failure: a random set of them
+    /// loses one, florr's way, rather than the last few.
+    std::array<bool, 5> survives_{};
+    /// The upgrade's pop and pulse, the grains and the tiles vanishing.
+    SlotMotion fx_;
+    /// Whether the outcome showing now was revealed on an earlier frame --
+    /// the reveal frame is the one whose emptied slots throw grains.
+    bool revealed_ = false;
+    /// What each slot and the middle last showed (petal << 8 | tier, or
+    /// all ones for nothing), and the tile itself: whatever leaves a slot --
+    /// spent, lost, unstaged or replaced -- vanishes where it stood, florr's
+    /// way, whatever took it away.
+    std::array<std::uint32_t, 5> slotKey_{0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                          0xFFFFFFFFu};
+    std::array<ui::ItemTile, 5> slotTile_{};
+    std::uint32_t resultKey_ = 0xFFFFFFFFu;
+    ui::ItemTile resultTile_;
     /// What the ring is animating. The whole staging area goes to the server
     /// on the click, so `staged*` is empty for the whole spin and the ring
     /// needs its own copy of what was sent -- which is also what the result
-    /// card is compared against.
+    /// is compared against.
     std::uint16_t spinPetal_ = kNoPetal;
     Rarity spinRarity_ = Rarity::Common;
-    /// A result that landed before the ring finished turning, held until it
-    /// does. The server answers a craft in well under a frame on a local
-    /// socket, so applying an outcome the moment it arrives skipped the spin
-    /// entirely -- the ring jumped straight to the result card.
+    /// How long this roll lasts before its outcome shows, in ms: florr's
+    /// rule, set from the tier on the click (rollBaseMillis_) and cut short
+    /// on a failure when the outcome arrives (rollMillis_).
+    double rollBaseMillis_ = 0;
+    double rollMillis_ = 0;
+    /// A result that landed before the roll had run its length, held until
+    /// it has. The server answers a craft in well under a frame on a local
+    /// socket, so applying an outcome the moment it arrives would skip the
+    /// roll entirely.
     bool resultPending_ = false;
     bool lastSuccess_ = false;
     std::uint16_t resultPetal_ = kNoPetal;
     Rarity resultRarity_ = Rarity::Common;
-    /// How many upgrades the pool produced, for the result caption.
+    /// How many upgrades the pool produced, for the result's badge.
     int resultCount_ = 0;
     /// How many of the five survived a failure, for the slots to keep drawing.
     int survivors_ = 0;
@@ -685,18 +806,20 @@ private:
 /// The oracle: what the craft card becomes while the flower stands at an
 /// oracle NPC.
 ///
-/// One slot where the forge has five, every cell labelled "owned/price" where
-/// the forge counts a stack, and an upgrade that arrives the way loot does --
-/// the staged petal breathes like a drop on the ground, swells while the
-/// oracle works, and the upgrade lands in the slot with a drop's flourish. One
-/// upgrade per craft and one craft per half hour: while the account waits,
-/// the line counts the minutes down in red and nothing can be staged. See
-/// menu_oracle.cpp.
+/// One slot where the forge has five, every cell labelled "owned/price"
+/// where the forge counts a stack, and an upgrade that is certain. The slot
+/// moves the way florr's oracle window moves it: the staged petal grows in,
+/// the craft spins it about the slot's centre, and the upgrade pops in with
+/// a burst. One upgrade per craft and one craft per half hour: while the
+/// account waits, the line counts the minutes down in red and nothing can be
+/// staged. See menu_oracle.cpp.
 class OraclePanel {
 public:
     bool render(MenuContext&);
     void reset();
-    static Rect bounds(int viewWidth, int viewHeight);
+    /// The window's width and height for this account: the grid's columns
+    /// set the one and its rows the other.
+    static Vec2 size(const Profile&);
 
 private:
     enum class Phase : std::uint8_t { Idle, Pulsing, Result };
@@ -706,7 +829,7 @@ private:
     void stage(const Profile&, std::uint16_t petalIndex, Rarity rarity);
 
     SlotGrid grid_;
-    SlotFlourish flourish_;
+    SlotMotion motion_;
     std::uint16_t stagedPetal_ = kNoPetal;
     Rarity stagedRarity_ = Rarity::Common;
     /// 1 while something is staged, 0 when the slot is empty: the oracle sells
@@ -721,7 +844,7 @@ private:
     std::uint16_t offeredPetal_ = kNoPetal;
     Rarity offeredRarity_ = Rarity::Common;
     int offeredCrafts_ = 0;
-    /// A result that arrived before the pulse had run its course.
+    /// A result that arrived before the spin had run its least length.
     bool resultPending_ = false;
     std::uint16_t resultPetal_ = kNoPetal;
     Rarity resultRarity_ = Rarity::Common;
@@ -736,23 +859,26 @@ private:
 ///
 /// One petal in the slot, a Trade button, and a grid of every stack the
 /// account owns at every tier, apex included: any petal petals.json does not
-/// mark untradable goes for one coin of its own tier, and the coin lands in
-/// the slot the way loot lands on the ground. One trade a day: while the
-/// account waits, the line counts the hours down in red and every stack sits
-/// on grey. See menu_trade.cpp.
+/// mark untradable goes for one coin of its own tier. The slot moves the way
+/// florr's trade window moves it -- the petal grows in, a trade spins it about
+/// the slot's centre, and the coin pops in with a burst. One trade a day:
+/// while the account waits, the line counts the hours down in red and every
+/// stack sits on grey. See menu_trade.cpp.
 class TradePanel {
 public:
     bool render(MenuContext&);
     void reset();
-    static Rect bounds(int viewWidth, int viewHeight);
+    /// The window's width and height for this account: the grid's columns
+    /// set the one and its rows the other.
+    static Vec2 size(const Profile&);
 
 private:
-    /// Trading: the petal has gone to the server and the slot is showing it
+    /// Trading: the petal has gone to the server and the slot is spinning it
     /// until the answer comes back.
     enum class Phase : std::uint8_t { Idle, Trading, Result };
 
     SlotGrid grid_;
-    SlotFlourish flourish_;
+    SlotMotion motion_;
     /// The petal in the slot: one of it, which is what one trade takes.
     std::uint16_t stagedPetal_ = kNoPetal;
     Rarity stagedRarity_ = Rarity::Common;
@@ -764,7 +890,9 @@ private:
     /// out, and a refusal puts it back.
     std::uint16_t offeredPetal_ = kNoPetal;
     Rarity offeredRarity_ = Rarity::Common;
-    /// What came back: the coin, at the offer's tier.
+    /// What came back, the coin at the offer's tier, held until the spin has
+    /// run its least length.
+    bool resultPending_ = false;
     std::uint16_t resultPetal_ = kNoPetal;
     Rarity resultRarity_ = Rarity::Common;
     /// Why the trader said no, shown under the slot until it expires.
@@ -775,17 +903,19 @@ private:
 /// The titan: what the craft card becomes while the flower stands at the
 /// titan NPC -- the universal forge.
 ///
-/// The forge's ring of five, set the way florr's own forge sets it (a
-/// pentagon, point up, of full-size slots), a Forge button, three lines on
-/// what a universal costs its last holder, and one row of every petal the
-/// account holds at apex -- greyed until there are five to forge. Five apex in,
-/// one universal out, never a roll: the ring closes in on itself and the
-/// universal lands in its middle the way loot lands. See menu_titan.cpp.
+/// florr's forge window: one slot holding the five apex petals a forge
+/// takes, a Forge button, three lines on what a universal costs its last
+/// holder, and a picker of every petal the account holds at apex -- greyed
+/// until there are five to forge. Five apex in, one universal out, never a
+/// roll: the forge spins the slot and the universal pops in with a burst.
+/// See menu_titan.cpp.
 class TitanPanel {
 public:
     bool render(MenuContext&);
     void reset();
-    static Rect bounds(int viewWidth, int viewHeight);
+    /// The window's width and height for this account: the grid's columns
+    /// set the one and its rows the other.
+    static Vec2 size(const Profile&);
 
 private:
     /// Forging: the five have gone to the server and the ring is closing on
@@ -793,9 +923,9 @@ private:
     enum class Phase : std::uint8_t { Idle, Forging, Result };
 
     SlotTierGrid grid_;
-    SlotFlourish flourish_;
-    /// The petal in the ring: five of it at apex, which is what one forge
-    /// takes, or kNoPetal for an empty ring.
+    SlotMotion motion_;
+    /// The petal in the slot: five of it at apex, which is what one forge
+    /// takes, or kNoPetal for an empty slot.
     std::uint16_t stagedPetal_ = kNoPetal;
 
     Phase phase_ = Phase::Idle;
@@ -1295,6 +1425,12 @@ private:
     /// transform transition, where the corner overlays are canvas panels drawn
     /// straight in place (see slidesUp).
     double panelSlide_ = 0;
+    /// The craft key's window rises on florr's own ease instead (see
+    /// kSlotCardOpenRate): 0 = 50 below the view, 1 = seated.
+    double craftOpen_ = 0;
+    /// That window's size as the open card last measured it -- it depends on
+    /// the account's petals, which craftPanelBounds() is not handed.
+    Vec2 craftSize_{610.0, 700.0};
     ClientSettings settings_;
     DragState drag_;
     bool wantsText_ = false;

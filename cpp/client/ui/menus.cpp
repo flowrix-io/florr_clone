@@ -971,10 +971,6 @@ bool MenuSystem::handleKeys(Window& window) {
 
 namespace {
 
-/// The highest a slot card may reach: clear of the player's own plate in the
-/// top-left corner, whatever the window's height.
-constexpr double kSlotCardTopMin = 160.0;
-
 /// A tall list beside the bottom icon column, as wide as its content needs.
 ///
 /// Nothing here is clamped to the window. Every one of these panels is a
@@ -1000,18 +996,6 @@ Rect cornerPanel(double width, double height, double top, int, int) {
 } // namespace
 
 Rect InventoryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
-/// The craft key's cards are their reference's size rather than a share of the
-/// view: each stands on the list family's bottom edge and reaches up its own
-/// height, stopping short of the HUD at the top-left on a window too short for
-/// it. The forge, the oracle, the trader and the titan all anchor here.
-Rect slotCardBounds(bool withApex, int w, int h) {
-    return slotCardBounds(slotCardWidth(withApex), slotCardHeight(), w, h);
-}
-Rect slotCardBounds(double width, double height, int w, int h) {
-    const Rect list = listPanel(width, w, h);
-    const double fitted = std::max(0.0, std::min(height, list.bottom() - kSlotCardTopMin));
-    return {list.x, list.bottom() - fitted, list.w, fitted};
-}
 /// The talent card is SQUARE, alone among the list panels: the tree is a fan
 /// spun about its own centre, and a tall card would only add height the fan
 /// never reaches while cropping the width it spreads across. It keeps the
@@ -1066,7 +1050,6 @@ Rect AdminDashboardPanel::bounds(int w, int h) {
 Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
     switch (id) {
         case MenuId::Inventory:     return InventoryPanel::bounds(viewWidth, viewHeight);
-        case MenuId::Crafting:      return CraftingPanel::bounds(viewWidth, viewHeight);
         case MenuId::Talents:       return TalentsPanel::bounds(viewWidth, viewHeight);
         case MenuId::Gallery:       return GalleryPanel::bounds(viewWidth, viewHeight);
         case MenuId::Shop:          return ShopPanel::bounds(viewWidth, viewHeight);
@@ -1084,13 +1067,7 @@ Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
 }
 
 Rect MenuSystem::craftPanelBounds(int w, int h) const {
-    switch (nearbyNpc_) {
-        case NpcService::Oracle: return OraclePanel::bounds(w, h);
-        case NpcService::Trader: return TradePanel::bounds(w, h);
-        case NpcService::Titan:  return TitanPanel::bounds(w, h);
-        case NpcService::None:   break;
-    }
-    return CraftingPanel::bounds(w, h);
+    return slotCardBounds(craftSize_.x, craftSize_.y, w, h);
 }
 
 const SvgDocument* MenuSystem::icon(int index) {
@@ -2455,7 +2432,19 @@ namespace {
 /// 300ms; the corner overlays are canvas panels drawn straight at the corner
 /// anchor with no transition at all, so only these three animate.
 bool slidesUp(MenuId id) {
-    return id == MenuId::Inventory || id == MenuId::Crafting || id == MenuId::Talents;
+    return id == MenuId::Inventory || id == MenuId::Talents;
+}
+
+/// The size of the craft key's window as the flower's ground has it this
+/// frame: the forge's, or the oracle's, the trader's or the titan's.
+Vec2 craftWindowSize(NpcService npc, const Profile& profile) {
+    switch (npc) {
+        case NpcService::Oracle: return OraclePanel::size(profile);
+        case NpcService::Trader: return TradePanel::size(profile);
+        case NpcService::Titan:  return TitanPanel::size(profile);
+        case NpcService::None:   break;
+    }
+    return CraftingPanel::size(profile);
 }
 
 constexpr double kPanelSlideSeconds = 0.30;
@@ -2604,22 +2593,33 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
 
     // What is painted is `drawn_`, which outlives `open_` for as long as the
     // card takes to slide back down.
+    //
+    // The craft key's window rises on florr's own ease: its open progress
+    // closes on its target by 1 - e^(-rate * dt) a frame, and the window
+    // follows it linearly from 50 below the view's bottom to its seat.
+    const double craftTarget = open_ == MenuId::Crafting ? 1.0 : 0.0;
+    craftOpen_ += (craftTarget - craftOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
     if (open_ != MenuId::None) {
+        if (open_ == MenuId::Crafting && drawn_ != MenuId::Crafting) craftOpen_ = 0.0;
         drawn_ = open_;
         panelSlide_ = slidesUp(open_) ? std::min(1.0, panelSlide_ + dt / kPanelSlideSeconds) : 1.0;
+    } else if (drawn_ == MenuId::Crafting) {
+        // Gone once it is out of sight below the view's edge.
+        if (craftOpen_ <= 0.001) drawn_ = MenuId::None;
     } else if (drawn_ != MenuId::None) {
         panelSlide_ = slidesUp(drawn_) ? std::max(0.0, panelSlide_ - dt / kPanelSlideSeconds) : 0.0;
         if (panelSlide_ <= 0.0) drawn_ = MenuId::None;
     }
 
-    if (drawn_ != MenuId::None) {
-        // The craft menu is the forge's card, the oracle's, the trader's or
-        // the titan's, whichever the ground under the flower offers -- and
-        // they are not all one size, so the card (and what captures the
-        // mouse) has to be the one being drawn.
-        panelRect_ = drawn_ == MenuId::Crafting
-                         ? craftPanelBounds(canvas.width(), canvas.height())
-                         : panelBounds(drawn_, canvas.width(), canvas.height());
+    if (drawn_ == MenuId::Crafting) {
+        // Its size is the account's: the grid's columns set the width and its
+        // rows the height, and the card is the one being drawn.
+        craftSize_ = craftWindowSize(nearbyNpc_, net.profile());
+        panelRect_ = craftPanelBounds(canvas.width(), canvas.height());
+        const double below = static_cast<double>(canvas.height()) + kSlotCardClosedDrop;
+        panelRect_.y += (1.0 - clamp(craftOpen_, 0.0, 1.0)) * (below - panelRect_.y);
+    } else if (drawn_ != MenuId::None) {
+        panelRect_ = panelBounds(drawn_, canvas.width(), canvas.height());
         // `transform: translateY(100vh)` -> `translateY(0)` over 300ms
         // `ease-out`, which is cubic-bezier(0, 0, 0.58, 1). 1-(1-t)^1.7 tracks
         // that curve to within a percent the whole way along, where the cubic

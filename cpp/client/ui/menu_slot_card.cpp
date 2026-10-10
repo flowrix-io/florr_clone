@@ -1,12 +1,13 @@
-// The slot card: the one card the forge, the oracle, the trader and the titan
-// are drawn on.
+// The slot card: the one window the forge, the oracle, the trader and the
+// titan are drawn in.
 //
-// Laid out against the reference trade shot (After-trade_trade_menu.webp) and
-// measured off it -- the oracle's reference shot agrees with it to the unit --
-// in design units (the shots are at one design unit to the pixel), from the
-// card's OUTER top edge and from its centre line. What the four cards share
-// and what they do not is in menus.h; slotCardBounds() is in menus.cpp, with
-// every other panel's anchoring.
+// It is florr's craft window, measured out of florr's own client rather than
+// off screenshots: the screen render (sub_1008d1230, 0x1008d8c5c..0x1008d9c60)
+// was run under ~/florr_images/emulator/menus.py and every Skia call it made
+// recorded, at the coordinates it laid the window out at. The numbers below
+// are those, in window units, which this client draws at one to the design
+// unit. What the four cards share and what they do not is in menus.h; the
+// window's slide is MenuSystem's (menus.cpp), with every other panel's.
 
 #include <algorithm>
 #include <cmath>
@@ -26,64 +27,111 @@ using namespace flix::ui;
 
 namespace {
 
-// -- the card ---------------------------------------------------------------------
+// -- the window -------------------------------------------------------------------
 
-/// The grid: 60-unit cells on a 70-unit pitch, 25 in from the card's left
-/// edge and 42 clear of its right, where the scroll thumb runs.
+/// Laid out inside 610 x 700 at x = 95, its bottom 20 above the view's.
+constexpr double kWindowMinWidth = 610.0;
+constexpr double kWindowMaxHeight = 700.0;
+constexpr double kWindowX = 95.0;
+constexpr double kWindowBottom = 20.0;
+/// The highest the window may reach on a short view: clear of the player's
+/// own plate in the top-left corner.
+constexpr double kWindowTopMin = 160.0;
+/// The panel: filled in the theme, then a 7-wide round-joined stroke of its
+/// shade, which is what rounds its corners.
+constexpr double kWindowStroke = 7.0;
+/// Everything inside sits 10 in from the panel's edge.
+constexpr double kWindowPad = 10.0;
+
+/// The title row: 24-unit text on a 1.4 line, centred over the row less the
+/// close button's 10.
+constexpr double kTitleSize = 24.0;
+constexpr double kLineHeight = 1.4;
+constexpr double kTitleRow = kTitleSize * kLineHeight;
+/// The close button: 25 square, 39 in from the panel's right, centred on the
+/// row. Its rim reaches 2 past the square, rounded 8; the face is 2 inside it,
+/// rounded 4; the cross runs 6.25 out from the middle at 3.75 wide. Every
+/// corner is a quadratic, not an arc.
+constexpr double kCloseSide = 25.0;
+constexpr double kCloseFromRight = 39.0;
+constexpr double kCloseRimOut = 2.0;
+constexpr double kCloseRimRadius = 8.0;
+constexpr double kCloseFaceIn = 2.0;
+constexpr double kCloseFaceRadius = 4.0;
+constexpr double kCloseArm = 6.25;
+constexpr double kCloseCrossWidth = 3.75;
+constexpr std::uint32_t kCloseRimInk = 0x974545u;
+constexpr std::uint32_t kCloseFaceInk = 0xBB5555u;
+constexpr std::uint32_t kCloseCrossInk = 0xCCCCCCu;
+
+/// The body: 500 wide, centred, under the title row; 295 deep.
+constexpr double kBodyTop = kWindowPad + kTitleRow + kWindowPad;
+constexpr double kBodyWidth = 500.0;
+constexpr double kBodyHeight = 295.0;
+/// In the body: the slot (or the ring's centre), the button and the odds
+/// under it, and the two lines -- 16 and 14 units, each on a 1.4 line.
+constexpr double kSlotX = 150.0;
+constexpr double kSlotY = 125.0;
+constexpr double kButtonX = 380.0;
+constexpr double kButtonY = 125.0;
+constexpr double kChanceY = 150.0;
+constexpr double kChanceSize = 14.0;
+constexpr double kLineTop = 250.0;
+constexpr double kLineSize = 16.0;
+constexpr double kLine2Top = 275.4;
+constexpr double kLine2Size = 14.0;
+
+/// The button: 35 tall and 13 either side of its label; a rim rounded 10 and
+/// a face 5 inside it rounded 5, both with quadratic corners.
+constexpr double kButtonHeight = 35.0;
+constexpr double kButtonPadX = 13.0;
+constexpr double kButtonRadius = 10.0;
+constexpr double kButtonRim = 5.0;
+constexpr double kButtonFaceRadius = 5.0;
+constexpr double kButtonLabelSize = 16.0;
+constexpr std::uint32_t kButtonIdleFace = 0x777777u;
+constexpr std::uint32_t kButtonIdleRim = 0x606060u;
+
+/// The grid: 60-unit cells on a 70-unit pitch, in a list 16 wider than its
+/// columns, centred under the body and 10 below it. The first row is 10 down
+/// and each cell 5 in; the view stops 10 short of the panel's bottom.
 constexpr double kGridCell = 60.0;
-constexpr double kGridGap = 10.0;
-constexpr double kGridLeft = 25.0;
-constexpr double kGridRight = 42.0;
-/// Where the scroll view begins, and the gap above its first row and below its
-/// last.
-constexpr double kGridTop = 339.0;
-constexpr double kGridPadding = 10.0;
-/// The card's border, which the view stops short of at the bottom.
-constexpr double kCardBorder = 6.0;
-/// Its height: the reference's card is this tall, which gives the grid its
-/// five visible rows.
-constexpr double kCardHeight = 707.0;
+constexpr double kGridPitch = 70.0;
+constexpr double kListExtra = 16.0;
+constexpr double kListTop = kBodyTop + kBodyHeight + kWindowPad;
+constexpr double kCellInsetX = 5.0;
+constexpr double kCellInsetY = 10.0;
+constexpr double kListBottomPad = 10.0;
 constexpr double kWheelStep = 100.0;
-/// The thumb: 8 wide, 20 in from the card's right edge, rounded, in the skin's
-/// accent. A hint at how far down the list is, not a control.
-constexpr double kThumbWidth = 8.0;
-constexpr double kThumbRight = 20.0;
-constexpr double kThumbMinHeight = 20.0;
 
-/// The slot and the button share a line, either side of the centre.
-constexpr double kRowCentreY = 181.0;
-constexpr double kSlotOffsetX = -101.0;
-constexpr double kActionOffsetX = 129.0;
-constexpr double kActionWidth = 64.0;
-constexpr double kActionHeight = 35.0;
-constexpr double kActionRim = 4.0;
-constexpr double kActionRadius = 8.0;
-/// The idle button's greys -- the same pair a grey cell wears.
-constexpr std::uint32_t kActionIdleFill = 0x777777u;
-constexpr std::uint32_t kActionIdleBorder = 0x606060u;
-/// The one line of text, centred.
-constexpr double kLineY = 318.0;
+/// A path round `r` with corners of `radius` drawn the way florr's widgets
+/// draw them: a quadratic through the corner point, not a circular arc.
+void quadRoundPath(Canvas& canvas, Rect r, double radius) {
+    const auto f = [](double v) { return static_cast<float>(v); };
+    const double x0 = r.x, y0 = r.y, x1 = r.right(), y1 = r.bottom();
+    canvas.beginPath();
+    canvas.moveTo(f(x0 + radius), f(y0));
+    canvas.lineTo(f(x1 - radius), f(y0));
+    canvas.quadraticCurveTo(f(x1), f(y0), f(x1), f(y0 + radius));
+    canvas.lineTo(f(x1), f(y1 - radius));
+    canvas.quadraticCurveTo(f(x1), f(y1), f(x1 - radius), f(y1));
+    canvas.lineTo(f(x0 + radius), f(y1));
+    canvas.quadraticCurveTo(f(x0), f(y1), f(x0), f(y1 - radius));
+    canvas.lineTo(f(x0), f(y0 + radius));
+    canvas.quadraticCurveTo(f(x0), f(y0), f(x0 + radius), f(y0));
+    canvas.closePath();
+}
 
-// -- the flourish -------------------------------------------------------------------
+void fillQuadRound(Canvas& canvas, Rect r, double radius, std::uint32_t rgb) {
+    setFill(canvas, rgb);
+    quadRoundPath(canvas, r, radius);
+    canvas.fill();
+}
 
-/// The landing throws twice a drop's burst: it is one tile doing what a whole
-/// kill's worth of loot does, and a single drop's seven grains vanish behind a
-/// tile this size.
-constexpr int kLandingBurstGrains = kDropBurstCount * 2;
-/// The shimmer: a drop's own, arriving evenly.
-constexpr double kShimmerSpeed = 1.2;
-constexpr double kShimmerSpeedSpread = 1.2;
-constexpr double kShimmerLifeMs = 700.0;
-constexpr double kShimmerLifeSpreadMs = 500.0;
-constexpr double kShimmerSize = 5.0;
-constexpr double kShimmerSizeSpread = 10.0;
-constexpr std::size_t kMaxGrains = 192;
-/// A drop's grains fade from 60%, like the ground's.
-constexpr double kGrainAlpha = 0.6;
-/// The world's per-frame speeds, and its grain sizes, are stated against a
-/// 60-unit drop; the slot is bigger, so they grow with it.
-constexpr double kFramesPerSecond = 60.0;
-constexpr double kGrainScale = kSlotCardSlot / kItemTileDesign;
+/// The width of the grid's list for `columns` cells.
+double listWidth(std::size_t columns) {
+    return static_cast<double>(columns) * kGridPitch + kListExtra;
+}
 
 /// Never a universal column: no card -- forge, oracle or trader -- takes one.
 std::size_t tierColumns(bool withApex) {
@@ -103,32 +151,106 @@ double jitter() {
 
 } // namespace
 
+std::uint32_t slotCardShade(std::uint32_t theme) {
+    // florr squares the channel back after scaling its root by 0.9, and rounds.
+    const auto shade = [](std::uint32_t c) {
+        return static_cast<std::uint32_t>(std::lround(static_cast<double>(c) * 0.81));
+    };
+    return (shade((theme >> 16) & 0xFFu) << 16) | (shade((theme >> 8) & 0xFFu) << 8) |
+           shade(theme & 0xFFu);
+}
+
+PanelSkin slotCardSkin(std::uint32_t theme) {
+    const std::uint32_t shade = slotCardShade(theme);
+    return PanelSkin{theme, shade, shade};
+}
+
 double slotCardWidth(bool withApex) { return slotCardColumnsWidth(tierColumns(withApex)); }
 
 double slotCardColumnsWidth(std::size_t columns) {
-    return kGridLeft + static_cast<double>(columns) * (kGridCell + kGridGap) - kGridGap +
-           kGridRight;
+    // florr's list is 576 wide in its 610: 17 either side. Our ladder has a
+    // tier more than florr's, so a grid through unique is a column wider and
+    // the window grows by it rather than squeezing the cells.
+    return std::max(kWindowMinWidth, listWidth(columns) + 2.0 * (kWindowPad + 7.0));
 }
 
-double slotCardHeight() { return kCardHeight; }
+double slotCardHeight(std::size_t rows) {
+    return std::min(kWindowMaxHeight,
+                    kListTop + kCellInsetY + static_cast<double>(rows) * kGridPitch + kListBottomPad);
+}
+
+Rect slotCardBounds(double width, double height, int, int viewHeight) {
+    const double bottom = static_cast<double>(viewHeight) - kWindowBottom;
+    const double fitted = std::max(0.0, std::min(height, bottom - kWindowTopMin));
+    return {kWindowX, bottom - fitted, width, fitted};
+}
 
 SlotCardLayout drawSlotCard(Canvas& canvas, Rect panel, const PanelSkin& skin, const char* title,
-                            Vec2 mouse) {
-    panelCard(canvas, panel, skin, kCardBorder);
-    panelTitle(canvas, panel, title);
+                            const char* button, Vec2 mouse) {
+    // The panel: the theme, under a stroke of its shade whose round joins are
+    // the window's corners.
+    setFill(canvas, skin.fill);
+    canvas.fillRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
+                    static_cast<float>(panel.w), static_cast<float>(panel.h));
+    canvas.save();
+    setStroke(canvas, skin.border);
+    canvas.setLineWidth(static_cast<float>(kWindowStroke));
+    canvas.setLineJoin("round");
+    canvas.strokeRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
+                      static_cast<float>(panel.w), static_cast<float>(panel.h));
+    canvas.restore();
+
     SlotCardLayout layout;
     layout.panel = panel;
-    layout.close = closeButtonRect(panel);
-    panelClose(canvas, layout.close, layout.close.contains(mouse));
 
-    layout.centreX = panel.x + panel.w * 0.5;
-    const double rowY = panel.y + kRowCentreY;
-    layout.slot = {layout.centreX + kSlotOffsetX, rowY};
+    // The title, centred over the row the close button leaves it.
+    const double rowMiddle = panel.y + kWindowPad + kTitleRow * 0.5;
+    outlinedText(canvas, title, panel.x + (panel.w - kWindowPad) * 0.5, rowMiddle,
+                 panelLabel(kTitleSize, Align::Centre, Baseline::Middle), 1.0);
+
+    // The close button.
+    const Rect square{panel.right() - kCloseFromRight, rowMiddle - kCloseSide * 0.5, kCloseSide,
+                      kCloseSide};
+    layout.close = {square.x - kCloseRimOut, square.y - kCloseRimOut,
+                    kCloseSide + kCloseRimOut * 2.0, kCloseSide + kCloseRimOut * 2.0};
+    const bool closeHovered = layout.close.contains(mouse);
+    fillQuadRound(canvas, layout.close, kCloseRimRadius, kCloseRimInk);
+    fillQuadRound(canvas,
+                  {square.x + kCloseFaceIn, square.y + kCloseFaceIn,
+                   kCloseSide - kCloseFaceIn * 2.0, kCloseSide - kCloseFaceIn * 2.0},
+                  kCloseFaceRadius, closeHovered ? lighten(kCloseFaceInk, 0.12) : kCloseFaceInk);
+    {
+        const double cx = square.x + kCloseSide * 0.5;
+        const double cy = square.y + kCloseSide * 0.5;
+        canvas.save();
+        setStroke(canvas, kCloseCrossInk);
+        canvas.setLineWidth(static_cast<float>(kCloseCrossWidth));
+        canvas.setLineCap("butt");
+        canvas.beginPath();
+        canvas.moveTo(static_cast<float>(cx - kCloseArm), static_cast<float>(cy - kCloseArm));
+        canvas.lineTo(static_cast<float>(cx + kCloseArm), static_cast<float>(cy + kCloseArm));
+        canvas.moveTo(static_cast<float>(cx + kCloseArm), static_cast<float>(cy - kCloseArm));
+        canvas.lineTo(static_cast<float>(cx - kCloseArm), static_cast<float>(cy + kCloseArm));
+        canvas.stroke();
+        canvas.restore();
+    }
+
+    // The body, centred under the row.
+    layout.body = {panel.x + (panel.w - kBodyWidth) * 0.5, panel.y + kBodyTop};
+    layout.centreX = layout.body.x + kBodyWidth * 0.5;
+    layout.slot = {layout.body.x + kSlotX, layout.body.y + kSlotY};
     layout.slotRect = {layout.slot.x - kSlotCardSlot * 0.5, layout.slot.y - kSlotCardSlot * 0.5,
                        kSlotCardSlot, kSlotCardSlot};
-    layout.button = {layout.centreX + kActionOffsetX - kActionWidth * 0.5,
-                     rowY - kActionHeight * 0.5, kActionWidth, kActionHeight};
-    layout.lineY = panel.y + kLineY;
+    const double buttonWidth = measure(button, kButtonLabelSize) + kButtonPadX * 2.0;
+    layout.button = {layout.body.x + kButtonX - buttonWidth * 0.5,
+                     layout.body.y + kButtonY - kButtonHeight * 0.5, buttonWidth, kButtonHeight};
+    layout.chanceY = layout.body.y + kChanceY;
+    layout.lineY = layout.body.y + kLineTop + kLineSize * kLineHeight * 0.5;
+    layout.line2Y = layout.body.y + kLine2Top + kLine2Size * kLineHeight * 0.5;
+
+    const double listTop = panel.y + kListTop;
+    layout.listView = {panel.x, listTop, panel.w,
+                       std::max(0.0, panel.bottom() - kListBottomPad - listTop)};
     return layout;
 }
 
@@ -150,19 +272,40 @@ void drawSlotTile(Canvas& canvas, const SpriteCache& sprites, Vec2 centre, doubl
 }
 
 void drawSlotButton(Canvas& canvas, Rect rect, const char* label,
-                    std::optional<std::uint32_t> tint, bool hovered) {
-    const std::uint32_t fill = tint ? *tint : kActionIdleFill;
-    const std::uint32_t border = tint ? darken(fill, 0.25) : kActionIdleBorder;
-    inlaid(canvas, rect, hovered ? lighten(fill, 0.15) : fill, border, kActionRim, kActionRadius);
+                    std::optional<std::uint32_t> tint, bool hovered, bool pressed) {
+    std::uint32_t face = tint ? *tint : kButtonIdleFace;
+    if (tint && (hovered || pressed)) {
+        // Per channel, as florr's button does it: c * 0.9, plus 25.5 hovered.
+        const double lift = pressed ? 0.0 : 25.5;
+        const auto channel = [&](int shift) {
+            const double c = static_cast<double>((face >> shift) & 0xFFu) * 0.9 + lift;
+            return static_cast<std::uint32_t>(std::min(255.0, c)) << shift;
+        };
+        face = channel(16) | channel(8) | channel(0);
+    }
+    const std::uint32_t rim = tint ? slotCardShade(face) : kButtonIdleRim;
+    fillQuadRound(canvas, rect, kButtonRadius, rim);
+    fillQuadRound(canvas,
+                  {rect.x + kButtonRim, rect.y + kButtonRim, rect.w - kButtonRim * 2.0,
+                   rect.h - kButtonRim * 2.0},
+                  kButtonFaceRadius, face);
     outlinedText(canvas, label, rect.x + rect.w * 0.5, rect.y + rect.h * 0.5,
-                 panelLabel(16.0, Align::Centre, Baseline::Middle), kSlotCardLabelStroke);
+                 panelLabel(kButtonLabelSize, Align::Centre, Baseline::Middle),
+                 kSlotCardLabelStroke);
+}
+
+void drawSlotChance(Canvas& canvas, const SlotCardLayout& layout, const std::string& text) {
+    outlinedText(canvas, text, layout.button.x + layout.button.w * 0.5, layout.chanceY,
+                 panelLabel(kChanceSize, Align::Centre, Baseline::Middle), kSlotCardLabelStroke);
 }
 
 void drawSlotLine(Canvas& canvas, const SlotCardLayout& layout, const std::string& text,
-                  std::optional<std::uint32_t> ink) {
-    TextStyle style = panelLabel(16.0, Align::Centre, Baseline::Middle);
+                  std::optional<std::uint32_t> ink, bool second) {
+    TextStyle style =
+        panelLabel(second ? kLine2Size : kLineSize, Align::Centre, Baseline::Middle);
     if (ink) style.fill = *ink;
-    outlinedText(canvas, text, layout.centreX, layout.lineY, style, kSlotCardLabelStroke);
+    outlinedText(canvas, text, layout.centreX, second ? layout.line2Y : layout.lineY, style,
+                 kSlotCardLabelStroke);
 }
 
 void drawSlotRefusal(Canvas& canvas, const SlotCardLayout& layout, const std::string& text) {
@@ -176,71 +319,100 @@ void drawSlotRefusal(Canvas& canvas, const SlotCardLayout& layout, const std::st
 // The grid
 // ---------------------------------------------------------------------------
 
-std::optional<SlotGrid::Pick> SlotGrid::render(
-    MenuContext& ctx, const SlotCardLayout& layout, const PanelSkin& skin, bool withApex,
-    const std::function<SlotCell(std::uint16_t petalIndex, Rarity, std::uint32_t owned)>& look) {
-    Canvas& canvas = ctx.canvas;
-    const Profile& profile = ctx.net.profile();
-    const Rect panel = layout.panel;
-    const Vec2 mouse = ctx.mouse();
-    const std::size_t columns = tierColumns(withApex);
+namespace {
 
-    // A stack only a column the grid does not have would show -- an apex one
-    // on a card that stops at unique -- does not earn its type a row.
+/// The petal types a grid has rows for: held at some tier `held` accepts,
+/// in id order -- florr's list is the inventory's petal ids, in order.
+template <typename Held>
+std::vector<std::uint16_t> heldTypes(const Profile& profile, Held held) {
     std::vector<std::uint16_t> types;
     for (const Profile::Stack& stack : profile.inventory) {
-        if (stack.count == 0 || rarityIndex(stack.rarity) >= static_cast<int>(columns)) continue;
+        if (stack.count == 0 || !held(stack.rarity)) continue;
         if (std::find(types.begin(), types.end(), stack.petalIndex) == types.end()) {
             types.push_back(stack.petalIndex);
         }
     }
     std::sort(types.begin(), types.end());
+    return types;
+}
 
-    const double inventoryTop = panel.y + kGridTop;
-    const Rect view{panel.x + kCardBorder, inventoryTop, panel.w - kCardBorder * 2,
-                    std::max(0.0, panel.bottom() - kCardBorder - inventoryTop)};
-    const double startX = panel.x + kGridLeft;
-    const double contentHeight = kGridPadding * 2 +
-                                 static_cast<double>(types.size()) * (kGridCell + kGridGap) -
-                                 (types.empty() ? 0.0 : kGridGap);
-
-    scroll_.contentHeight = contentHeight;
-    scroll_.viewHeight = view.h;
-    // Anywhere below the line scrolls the grid, not just over the cells.
-    if (panel.contains(mouse) && mouse.y >= inventoryTop) {
-        scroll_.offset -= static_cast<double>(ctx.wheel()) * kWheelStep;
+/// Wheel and touch scrolling over the list, clamped to what it holds.
+void scrollList(MenuContext& ctx, ui::Scroller& scroll, const SlotCardLayout& layout,
+                double contentHeight) {
+    const Vec2 mouse = ctx.mouse();
+    scroll.contentHeight = contentHeight;
+    scroll.viewHeight = layout.listView.h;
+    // Anywhere below the body scrolls the grid, not just over the cells.
+    if (layout.panel.contains(mouse) && mouse.y >= layout.listView.y) {
+        scroll.offset -= static_cast<double>(ctx.wheel()) * kWheelStep;
     }
-    scroll_.offset -= touchScroll(ctx.window, view, scroll_.maxOffset() > 0);
-    scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
+    scroll.offset -= touchScroll(ctx.window, layout.listView, scroll.maxOffset() > 0);
+    scroll.offset = clamp(scroll.offset, 0.0, scroll.maxOffset());
+}
+
+/// The list's clip: as wide as its columns, centred, down to the view's
+/// bottom.
+Rect listClip(const SlotCardLayout& layout, std::size_t columns) {
+    const double width = listWidth(columns);
+    return {layout.panel.x + (layout.panel.w - width) * 0.5, layout.listView.y, width,
+            layout.listView.h};
+}
+
+double contentHeightFor(std::size_t rows) {
+    return kCellInsetY + static_cast<double>(rows) * kGridPitch;
+}
+
+} // namespace
+
+std::size_t SlotGrid::rows(const Profile& profile, bool withApex) {
+    const int columns = static_cast<int>(tierColumns(withApex));
+    return heldTypes(profile, [&](Rarity r) { return rarityIndex(r) < columns; }).size();
+}
+
+std::optional<SlotGrid::Pick> SlotGrid::render(
+    MenuContext& ctx, const SlotCardLayout& layout, const PanelSkin& skin, bool withApex,
+    const std::function<SlotCell(std::uint16_t petalIndex, Rarity, std::uint32_t owned)>& look) {
+    Canvas& canvas = ctx.canvas;
+    const Profile& profile = ctx.net.profile();
+    const Vec2 mouse = ctx.mouse();
+    const std::size_t columns = tierColumns(withApex);
+
+    // A stack only a column the grid does not have would show -- an apex one
+    // on a card that stops at unique -- does not earn its type a row.
+    const std::vector<std::uint16_t> types = heldTypes(
+        profile, [&](Rarity r) { return rarityIndex(r) < static_cast<int>(columns); });
+
+    scrollList(ctx, scroll_, layout, contentHeightFor(types.size()));
+    const Rect clip = listClip(layout, columns);
 
     canvas.save();
     canvas.beginPath();
-    canvas.rect(static_cast<float>(view.x), static_cast<float>(view.y), static_cast<float>(view.w),
-                static_cast<float>(view.h));
+    canvas.rect(static_cast<float>(clip.x), static_cast<float>(clip.y), static_cast<float>(clip.w),
+                static_cast<float>(clip.h));
     canvas.clip();
 
     std::optional<Pick> hovered;
     for (std::size_t row = 0; row < types.size(); ++row) {
         const std::uint16_t petalIndex = types[row];
-        const double y = view.y - scroll_.offset + kGridPadding +
-                         static_cast<double>(row) * (kGridCell + kGridGap);
-        if (y + kGridCell < view.y || y > view.bottom()) continue;
-        // Each row RIGHT TO LEFT: the oracle's "owned/price" labels hang past a
-        // cell's right edge over the next one, and painting that cell after it
-        // would cut the label off at the join.
+        const double y =
+            clip.y - scroll_.offset + kCellInsetY + static_cast<double>(row) * kGridPitch;
+        if (y + kGridCell < clip.y || y > clip.bottom()) continue;
+        // Each row RIGHT TO LEFT, as florr paints it: the oracle's
+        // "owned/price" labels hang past a cell's right edge over the next
+        // one, and painting that cell after it would cut the label off.
         for (std::size_t k = 0; k < columns; ++k) {
             const std::size_t column = columns - 1 - k;
             const Rarity rarity = static_cast<Rarity>(column);
-            const Rect rect{startX + static_cast<double>(column) * (kGridCell + kGridGap), y,
+            const Rect rect{clip.x + kCellInsetX + static_cast<double>(column) * kGridPitch, y,
                             kGridCell, kGridCell};
             const SlotCell cell = look(petalIndex, rarity, profile.stackCount(petalIndex, rarity));
             if (cell.count == 0) {
                 // A tier the account holds none of: a flat square in the
-                // border's colour. Not hoverable and not clickable.
+                // shade. Not hoverable and not clickable.
                 drawSlotPlate(canvas, ctx.sprites, rect, skin);
                 continue;
             }
-            const bool over = !cell.greyed && rect.contains(mouse) && view.contains(mouse);
+            const bool over = !cell.greyed && rect.contains(mouse) && clip.contains(mouse);
             if (over) hovered = Pick{petalIndex, rarity};
 
             ItemTile tile;
@@ -255,17 +427,13 @@ std::optional<SlotGrid::Pick> SlotGrid::render(
         }
     }
     canvas.restore();
-
-    if (contentHeight > view.h && view.h > 0.0) {
-        const double thumbHeight = std::max(kThumbMinHeight, view.h * view.h / contentHeight);
-        const double travel = contentHeight - view.h;
-        const double thumbY =
-            view.y + clamp(scroll_.offset / travel, 0.0, 1.0) * (view.h - thumbHeight);
-        fillRound(canvas,
-                  {panel.right() - kThumbRight - kThumbWidth, thumbY, kThumbWidth, thumbHeight},
-                  kThumbWidth * 0.5, skin.accent);
-    }
     return hovered;
+}
+
+std::size_t SlotTierGrid::rows(const Profile& profile, Rarity tier, std::size_t columns) {
+    columns = std::max<std::size_t>(1, columns);
+    const std::size_t types = heldTypes(profile, [&](Rarity r) { return r == tier; }).size();
+    return (types + columns - 1) / columns;
 }
 
 std::optional<SlotTierGrid::Pick> SlotTierGrid::render(
@@ -274,64 +442,45 @@ std::optional<SlotTierGrid::Pick> SlotTierGrid::render(
     const std::function<SlotCell(std::uint16_t petalIndex, std::uint32_t owned)>& look) {
     Canvas& canvas = ctx.canvas;
     const Profile& profile = ctx.net.profile();
-    const Rect panel = layout.panel;
     const Vec2 mouse = ctx.mouse();
     columns = std::max<std::size_t>(1, columns);
 
-    std::vector<std::uint16_t> types;
-    for (const Profile::Stack& stack : profile.inventory) {
-        if (stack.count == 0 || stack.rarity != tier) continue;
-        if (std::find(types.begin(), types.end(), stack.petalIndex) == types.end()) {
-            types.push_back(stack.petalIndex);
-        }
-    }
-    std::sort(types.begin(), types.end());
+    const std::vector<std::uint16_t> types =
+        heldTypes(profile, [&](Rarity r) { return r == tier; });
     const std::size_t rows = (types.size() + columns - 1) / columns;
 
-    const double viewTop = panel.y + top;
-    const Rect view{panel.x + kCardBorder, viewTop, panel.w - kCardBorder * 2,
-                    std::max(0.0, panel.bottom() - kCardBorder - viewTop)};
-    // Where SlotGrid's columns would stand -- in from the left, and clear of
-    // the thumb on the right -- and each row centred on the middle of that.
-    const double areaWidth = static_cast<double>(columns) * (kGridCell + kGridGap) - kGridGap;
-    const double areaCentre = panel.x + kGridLeft + areaWidth * 0.5;
-    const double contentHeight = kGridPadding * 2 +
-                                 static_cast<double>(rows) * (kGridCell + kGridGap) -
-                                 (rows == 0 ? 0.0 : kGridGap);
-
-    scroll_.contentHeight = contentHeight;
-    scroll_.viewHeight = view.h;
-    if (panel.contains(mouse) && mouse.y >= viewTop) {
-        scroll_.offset -= static_cast<double>(ctx.wheel()) * kWheelStep;
-    }
-    scroll_.offset -= touchScroll(ctx.window, view, scroll_.maxOffset() > 0);
-    scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
+    SlotCardLayout from = layout;
+    from.listView.y = layout.panel.y + top;
+    from.listView.h = std::max(0.0, layout.panel.bottom() - kListBottomPad - from.listView.y);
+    scrollList(ctx, scroll_, from, contentHeightFor(rows));
+    const Rect clip = listClip(from, columns);
+    const double areaCentre = clip.x + clip.w * 0.5;
 
     canvas.save();
     canvas.beginPath();
-    canvas.rect(static_cast<float>(view.x), static_cast<float>(view.y), static_cast<float>(view.w),
-                static_cast<float>(view.h));
+    canvas.rect(static_cast<float>(clip.x), static_cast<float>(clip.y), static_cast<float>(clip.w),
+                static_cast<float>(clip.h));
     canvas.clip();
 
     std::optional<Pick> hovered;
     for (std::size_t row = 0; row < rows; ++row) {
-        const double y = view.y - scroll_.offset + kGridPadding +
-                         static_cast<double>(row) * (kGridCell + kGridGap);
-        if (y + kGridCell < view.y || y > view.bottom()) continue;
+        const double y =
+            clip.y - scroll_.offset + kCellInsetY + static_cast<double>(row) * kGridPitch;
+        if (y + kGridCell < clip.y || y > clip.bottom()) continue;
         const std::size_t first = row * columns;
         const std::size_t count = std::min(columns, types.size() - first);
-        const double rowWidth = static_cast<double>(count) * (kGridCell + kGridGap) - kGridGap;
+        // Each row centred where a full row of the list would stand.
+        const double rowWidth = static_cast<double>(count) * kGridPitch - (kGridPitch - kGridCell);
         const double startX = areaCentre - rowWidth * 0.5;
         for (std::size_t k = 0; k < count; ++k) {
             const std::uint16_t petalIndex = types[first + k];
-            const Rect rect{startX + static_cast<double>(k) * (kGridCell + kGridGap), y, kGridCell,
-                            kGridCell};
+            const Rect rect{startX + static_cast<double>(k) * kGridPitch, y, kGridCell, kGridCell};
             const SlotCell cell = look(petalIndex, profile.stackCount(petalIndex, tier));
             if (cell.count == 0) {
                 drawSlotPlate(canvas, ctx.sprites, rect, skin);
                 continue;
             }
-            const bool under = rect.contains(mouse) && view.contains(mouse);
+            const bool under = rect.contains(mouse) && clip.contains(mouse);
             if (under) hovered = Pick{petalIndex, cell.greyed};
 
             ItemTile tile;
@@ -346,104 +495,223 @@ std::optional<SlotTierGrid::Pick> SlotTierGrid::render(
         }
     }
     canvas.restore();
-
-    if (contentHeight > view.h && view.h > 0.0) {
-        const double thumbHeight = std::max(kThumbMinHeight, view.h * view.h / contentHeight);
-        const double travel = contentHeight - view.h;
-        const double thumbY =
-            view.y + clamp(scroll_.offset / travel, 0.0, 1.0) * (view.h - thumbHeight);
-        fillRound(canvas,
-                  {panel.right() - kThumbRight - kThumbWidth, thumbY, kThumbWidth, thumbHeight},
-                  kThumbWidth * 0.5, skin.accent);
-    }
     return hovered;
 }
 
 // ---------------------------------------------------------------------------
-// The flourish
+// florr's slot motions
 // ---------------------------------------------------------------------------
+//
+// Read out of the trade window's draw (0x100849600) and the particle system
+// it runs (0x100793cc0); the craft and oracle bodies use the same pieces.
 
-void SlotFlourish::clear() {
-    grains_.clear();
-    grainCredit_ = 0;
+namespace {
+
+/// A petal growing into a slot, an outcome popping in, and a replaced tile
+/// vanishing all ease at this rate; growing is done past kGrowDone.
+constexpr double kMotionRate = 0.021400496636323946;
+constexpr double kGrowDone = 0.99999;
+/// The pulse on a fresh outcome runs down over this many ms: scale
+/// 1 + 0.5 sin(pi v) and a turn of 0.1 sin(pi v) radians.
+constexpr double kPulseMs = 200.0;
+constexpr double kPulseScale = 0.5;
+constexpr double kPulseTurn = 0.1;
+/// A vanishing tile also runs on a clock: its progress gains dt / 300 a
+/// frame on top of the ease, and it is gone past 0.9999.
+constexpr double kVanishMs = 300.0;
+constexpr double kVanishDone = 0.9999;
+/// A grain: velocity U(-500, 500) on each axis, life 500..1000 ms, side
+/// 2..5, angle 2..5 rad, spinning a turn a second; gravity 200 down, and drag
+/// that keeps 95% of the velocity per 60 fps frame.
+constexpr double kGrainSpeed = 500.0;
+constexpr double kGrainLifeMs = 500.0;
+constexpr double kGrainSize = 2.0;
+constexpr double kGrainSizeSpread = 3.0;
+constexpr double kGrainGravity = 200.0;
+constexpr double kGrainDrag = 0.95;
+constexpr std::size_t kMaxSlotGrains = 512;
+
+double eased(double dtMs, double rate) { return 1.0 - std::exp(-rate * dtMs); }
+
+} // namespace
+
+int slotBurstGrains(Rarity rarity) {
+    static constexpr std::array<int, 6> kGrains = {3, 4, 5, 7, 12, 25};
+    // (florr makes a zero entry one; none of its entries is zero.)
+    return kGrains[static_cast<std::size_t>(
+        std::min<int>(rarityIndex(rarity), static_cast<int>(kGrains.size()) - 1))];
 }
 
-void SlotFlourish::throwGrains(Rarity rarity, int count, double speed, double speedSpread,
-                               double lifeMs, double lifeSpreadMs, double size,
-                               double sizeSpread) {
-    for (int i = 0; i < count && grains_.size() < kMaxGrains; ++i) {
-        // Each grain its own direction and facing: a drop's scatter, not a
-        // petal's spokes.
-        const double angle = jitter() * kTau;
-        const double pace = (speed + jitter() * speedSpread) * kFramesPerSecond * kGrainScale;
-        Grain grain;
-        grain.position = {(jitter() - 0.5) * 4.0, (jitter() - 0.5) * 4.0};
-        grain.velocity = Vec2::fromAngle(angle, pace);
-        grain.lifeSeconds = grain.maxLifeSeconds = (lifeMs + jitter() * lifeSpreadMs) / 1000.0;
-        grain.size = (size + jitter() * sizeSpread) * kGrainScale;
-        grain.rotation = jitter() * kTau;
-        grain.color = rarityColor(rarity);
-        grains_.push_back(grain);
+void SlotMotion::clear() {
+    stopRoll();
+    growKey_ = 0xFFFFFFFFu;
+    grow_ = 0.0;
+    pop_ = 1.0;
+    pulse_ = 0.0;
+    grains_.clear();
+    vanishing_.clear();
+    sceneKey_ = 0xFFFFFFFFu;
+}
+
+void SlotMotion::stepRoll(double dtMs, bool rolling, bool showing, double spinTarget,
+                          double upRate, double downRate) {
+    spin_ += ((rolling ? spinTarget : 0.0) - spin_) * eased(dtMs, rolling ? upRate : downRate);
+    phase_ = std::fmod(phase_ + spin_ * dtMs / 1000.0, kTau);
+    // The shake and the show share florr's menu rate.
+    constexpr double kShowRate = 0.0133886130788526;
+    shake_ += ((rolling ? 1.0 : 0.0) - shake_) * eased(dtMs, kShowRate);
+    show_ += ((showing ? 1.0 : 0.0) - show_) * eased(dtMs, kShowRate);
+}
+
+void SlotMotion::drawGrowing(Canvas& canvas, const SpriteCache& sprites, Vec2 centre,
+                             double side, double alpha, std::uint32_t key, double dtMs,
+                             ItemTile tile) {
+    if (key != growKey_) {
+        growKey_ = key;
+        grow_ = 0.0;
+    }
+    grow_ += (1.0 - grow_) * eased(dtMs, kMotionRate);
+    const bool growing = grow_ < kGrowDone;
+    tile.alpha = alpha * (growing ? clamp(grow_, 0.0, 1.0) : 1.0);
+    drawSlotTile(canvas, sprites, centre, side * (growing ? grow_ : 1.0),
+                 growing ? grow_ * -kTau : 0.0, tile);
+}
+
+void SlotMotion::startPop() {
+    pop_ = 1.0;
+    pulse_ = 1.0;
+}
+
+void SlotMotion::drawPopped(Canvas& canvas, const SpriteCache& sprites, Vec2 centre, double side,
+                            double dtMs, ItemTile tile) {
+    pop_ += (0.0 - pop_) * eased(dtMs, kMotionRate);
+    double scale = 1.0;
+    double turn = 0.0;
+    if (pop_ > 1e-4) {
+        tile.alpha *= clamp(1.0 - pop_, 0.0, 1.0);
+        turn += kTau * pop_;
+        scale *= 1.0 - pop_;
+    }
+    const double wave = std::sin(kPi * pulse_);
+    scale *= 1.0 + kPulseScale * wave;
+    turn += kPulseTurn * wave;
+    pulse_ = std::max(0.0, pulse_ - dtMs / kPulseMs);
+    if (scale <= 0.0) return;
+    drawSlotTile(canvas, sprites, centre, side * scale, turn, tile);
+}
+
+void SlotMotion::vanish(Vec2 centre, double side, const ItemTile& tile) {
+    Vanishing v;
+    v.centre = centre;
+    v.side = side;
+    v.tile = tile;
+    vanishing_.push_back(v);
+}
+
+void SlotMotion::burst(Vec2 at, Rarity rarity, int count, const SlotBurstShape& shape,
+                       Vec2 carry) {
+    for (int i = 0; i < count && grains_.size() < kMaxSlotGrains; ++i) {
+        Grain g;
+        g.position = at;
+        g.velocity = Vec2{jitter() * kGrainSpeed * 2.0 - kGrainSpeed,
+                          jitter() * (shape.riseTo + kGrainSpeed) - kGrainSpeed} +
+                     carry;
+        g.lifeMs = kGrainLifeMs + jitter() * kGrainLifeMs;
+        g.size = kGrainSize + jitter() * kGrainSizeSpread;
+        g.angle = shape.angleBase + jitter() * shape.angleSpread;
+        g.color = rarityColor(rarity);
+        grains_.push_back(g);
     }
 }
 
-void SlotFlourish::land(double now, Rarity rarity) {
-    landStarted_ = now;
-    landFrom_ = Vec2::fromAngle(jitter() * kTau,
-                                (kDropLandNear + jitter() * kDropLandSpread) * kGrainScale);
-    landSpin_ = (jitter() - 0.5) * kPi;
-    throwGrains(rarity, kLandingBurstGrains, kDropBurstSpeed, kDropBurstSpeedSpread,
-                kDropBurstLifeMs, kDropBurstLifeSpreadMs, kDropBurstSize, kDropBurstSizeSpread);
-}
-
-void SlotFlourish::shimmer(Rarity rarity, double rate, double dt) {
-    grainCredit_ += rate * dt;
-    const int owed = static_cast<int>(grainCredit_);
-    grainCredit_ -= owed;
-    throwGrains(rarity, owed, kShimmerSpeed, kShimmerSpeedSpread, kShimmerLifeMs,
-                kShimmerLifeSpreadMs, kShimmerSize, kShimmerSizeSpread);
-}
-
-void SlotFlourish::drawGrains(Canvas& canvas, Rect panel, Vec2 slotCentre, double dt) {
-    for (Grain& grain : grains_) {
-        grain.position += grain.velocity * dt;
-        grain.lifeSeconds -= dt;
+void SlotMotion::drawGrains(Canvas& canvas, double dtMs) {
+    // Drawn where they stand, then moved: a fresh grain first shows the frame
+    // after it was thrown.
+    for (const Grain& g : grains_) {
+        canvas.save();
+        canvas.setGlobalAlpha(static_cast<float>(clamp(g.alpha, 0.0, 1.0)));
+        canvas.translate(static_cast<float>(g.position.x), static_cast<float>(g.position.y));
+        canvas.rotate(static_cast<float>(g.angle));
+        setFill(canvas, g.color);
+        const float half = static_cast<float>(g.size * 0.5);
+        canvas.fillRect(-half, -half, half * 2.0f, half * 2.0f);
+        canvas.restore();
+    }
+    const double seconds = dtMs / 1000.0;
+    const double keep = std::pow(kGrainDrag, 0.06 * dtMs);
+    for (Grain& g : grains_) {
+        g.position += g.velocity * seconds;
+        g.velocity.x *= keep;
+        g.velocity.y = g.velocity.y * keep + kGrainGravity * seconds;
+        g.alpha -= dtMs / g.lifeMs;
+        g.angle += kTau * seconds;
     }
     grains_.erase(std::remove_if(grains_.begin(), grains_.end(),
-                                 [](const Grain& g) { return g.lifeSeconds <= 0.0; }),
+                                 [](const Grain& g) { return g.alpha <= 0.0; }),
                   grains_.end());
-    if (grains_.empty()) return;
-    canvas.save();
-    roundPath(canvas, panel, kMenuRadius);
-    canvas.clip();
-    for (const Grain& grain : grains_) {
-        const double left = grain.lifeSeconds / grain.maxLifeSeconds;
-        const double r = grain.size * left;
-        if (r <= 0.0) continue;
-        const Vec2 at = slotCentre + grain.position;
-        const double c = std::cos(grain.rotation) * r;
-        const double s = std::sin(grain.rotation) * r;
-        setFill(canvas, grain.color);
-        canvas.setGlobalAlpha(static_cast<float>(left * kGrainAlpha));
-        canvas.beginPath();
-        canvas.moveTo(static_cast<float>(at.x - c + s), static_cast<float>(at.y - s - c));
-        canvas.lineTo(static_cast<float>(at.x + c + s), static_cast<float>(at.y + s - c));
-        canvas.lineTo(static_cast<float>(at.x + c - s), static_cast<float>(at.y + s + c));
-        canvas.lineTo(static_cast<float>(at.x - c - s), static_cast<float>(at.y - s + c));
-        canvas.closePath();
-        canvas.fill();
-    }
-    canvas.setGlobalAlpha(1.0f);
-    canvas.restore();
 }
 
-void SlotFlourish::drawLanded(Canvas& canvas, const SpriteCache& sprites, Vec2 slotCentre,
-                              double side, double now, const ItemTile& tile) const {
-    // In from its offset and unwinding its spin, eased out over a drop's 400 ms.
-    const double t = clamp((now - landStarted_) / kDropLandSeconds, 0.0, 1.0);
-    const double eased = 1.0 - (1.0 - t) * (1.0 - t);
-    drawSlotTile(canvas, sprites, slotCentre + landFrom_ * (1.0 - eased), side,
-                 landSpin_ * (1.0 - eased), tile);
+void SlotMotion::drawVanishing(Canvas& canvas, const SpriteCache& sprites, double dtMs) {
+    for (Vanishing& v : vanishing_) {
+        v.progress += (1.0 - v.progress) * eased(dtMs, kMotionRate);
+        ItemTile tile = v.tile;
+        tile.alpha *= clamp(1.0 - v.progress, 0.0, 1.0);
+        const double side = v.side * (1.0 - v.progress);
+        if (side > 0.0) drawSlotTile(canvas, sprites, v.centre, side, kTau * v.progress, tile);
+        v.progress += dtMs / kVanishMs;
+    }
+    vanishing_.erase(std::remove_if(vanishing_.begin(), vanishing_.end(),
+                                    [](const Vanishing& v) { return v.progress >= kVanishDone; }),
+                     vanishing_.end());
+}
+
+void SlotMotion::drawSlotScene(Canvas& canvas, const SpriteCache& sprites,
+                               const SlotCardLayout& card, const PanelSkin& skin,
+                               double sinceClickMs, double dtMs, const ItemTile* shown,
+                               std::uint32_t shownKey, const ItemTile* result,
+                               std::uint32_t resultKey, const SlotBurstShape& shape) {
+    // Swung out from the centre while the shake is in, and back as the
+    // outcome shows; the spin turns the swing about the centre.
+    constexpr double kSwingDepth = 50.0;
+    constexpr double kSwingRate = 0.01;
+    constexpr double kResultSide = 90.0;
+    constexpr int kBurstMultiplier = 5;
+    const double swing =
+        kSwingDepth * shake_ * std::sin(kSwingRate * sinceClickMs) * (1.0 - show_);
+    const Vec2 at = card.slot + Vec2::fromAngle(phase_ - kPi * 0.5, swing);
+
+    canvas.save();
+    canvas.setGlobalAlpha(static_cast<float>(clamp(1.0 - show_, 0.0, 1.0)));
+    drawSlotPlate(canvas, sprites,
+                  {at.x - kSlotCardSlot * 0.5, at.y - kSlotCardSlot * 0.5, kSlotCardSlot,
+                   kSlotCardSlot},
+                  skin);
+    canvas.restore();
+    drawGrains(canvas, dtMs);
+
+    const std::uint32_t key = result != nullptr ? resultKey
+                              : shown != nullptr ? shownKey
+                                                 : 0xFFFFFFFFu;
+    if (key != sceneKey_) {
+        if (sceneKey_ != 0xFFFFFFFFu) vanish(sceneAt_, sceneSide_, sceneTile_);
+        if (result != nullptr) {
+            startPop();
+            burst(card.slot, result->rarity, kBurstMultiplier * slotBurstGrains(result->rarity),
+                  shape);
+        }
+        sceneKey_ = key;
+    }
+    if (result != nullptr) {
+        drawPopped(canvas, sprites, card.slot, kResultSide, dtMs, *result);
+        sceneAt_ = card.slot;
+        sceneSide_ = kResultSide;
+        sceneTile_ = *result;
+    } else if (shown != nullptr) {
+        drawGrowing(canvas, sprites, at, kSlotCardSlot, 1.0, shownKey, dtMs, *shown);
+        sceneAt_ = at;
+        sceneSide_ = kSlotCardSlot;
+        sceneTile_ = *shown;
+    }
 }
 
 } // namespace flix

@@ -4,22 +4,30 @@
 // shared/game/npc.h): one petal in, one coin (kTraderCoinPetal) of the same
 // tier out, once a day.
 //
-// It is drawn on the slot card every craft-key card shares (menus.h) -- the
-// card is ITS reference shot's (Image_Before_trade.webp and
-// After-trade_trade_menu.webp) -- in the flower yellow. There is no price to
-// be short of, so a stack is counted the way the inventory counts one ("x5"
-// in the corner, nothing on a lone petal); and the grid runs on to apex,
-// because every tier trades.
+// It is florr's trade window (menus.h), in the flower yellow. There is no
+// price to be short of, so a stack is counted the way the inventory counts
+// one ("x5" in the corner, nothing on a lone petal); and the grid runs on to
+// apex, because every tier trades.
 //
 // One trade a day (kTraderCooldownMillis): while the account waits, the line
-// turns red and says how long, and every stack sits on grey -- the second
-// reference shot. A petal petals.json marks `"tradable": false` sits on grey
-// all the time: it is still the account's, the trader just will not take it.
+// turns red and says how long, and every stack sits on grey. A petal
+// petals.json marks `"tradable": false` sits on grey all the time: it is
+// still the account's, the trader just will not take it.
 //
-// The coin arrives the way the oracle's upgrade does, the way loot lands on
-// the ground (SlotFlourish). There is no roll to wait on and nothing is made,
-// so there is no pulse before it -- the petal handed over waits in the slot
-// until the trader answers.
+// The slot moves the way florr's trade window moves it (its draw,
+// 0x100849600; ~/florr_images/menus_skia.json):
+//
+//   - the petal grows into the slot, turning once backwards;
+//   - a trade spins the slot up toward 10 rad/s and swings it out from the
+//     centre on a sine of the time since the click, 50 deep, as the shake
+//     eases in -- the petal moves round the centre but never turns;
+//   - the coin, 90 across, pops in where the slot was -- a forward turn as
+//     it grows, then a 200 ms pulse -- with a burst of grains in its tier's
+//     colour, while the slot's plate fades and the petal vanishes, turning;
+//   - collecting the coin vanishes it the same way.
+//
+// florr spins for as long as its server takes to answer; this one answers
+// at once, so the slot spins for kTradeSpinMs at the least.
 
 #include <algorithm>
 #include <cstdint>
@@ -39,9 +47,15 @@ namespace {
 
 constexpr const char* kLine = "You can trade a petal for a coin of the same rarity";
 
-/// How long a handed-over petal waits in the slot for the trader's answer
-/// before the slot gives up on it. The trade resolved server-side either way,
-/// and the profile will say how.
+/// The trade's spin: toward 10 rad/s while it is out, easing both ways at
+/// the same rate.
+constexpr double kSpinTarget = 10.0;
+constexpr double kSpinRate = 0.00632163093946958;
+/// The least a trade spins before its answer shows -- ours, not florr's.
+constexpr double kTradeSpinMs = 1000.0;
+/// How long a handed-over petal waits for the trader's answer before the
+/// slot gives up on it. The trade resolved server-side either way, and the
+/// profile will say how.
 constexpr double kTradeTimeoutSeconds = 8.0;
 constexpr double kRefusalSeconds = 3.0;
 
@@ -49,15 +63,23 @@ bool tradable(std::uint16_t petalIndex) {
     return knownPetal(petalIndex) && content().petal(petalIndex).tradable;
 }
 
+std::uint32_t tileKey(std::uint16_t petalIndex, Rarity rarity) {
+    return (static_cast<std::uint32_t>(petalIndex) << 8) |
+           static_cast<std::uint32_t>(rarityIndex(rarity));
+}
+
 } // namespace
 
-Rect TradePanel::bounds(int w, int h) { return slotCardBounds(true, w, h); }
+Vec2 TradePanel::size(const Profile& profile) {
+    return {slotCardWidth(true), slotCardHeight(SlotGrid::rows(profile, true))};
+}
 
 void TradePanel::reset() {
     grid_.reset();
-    flourish_.clear();
+    motion_.clear();
     stagedPetal_ = kNoPetal;
     phase_ = Phase::Idle;
+    resultPending_ = false;
     refusal_.clear();
 }
 
@@ -66,7 +88,7 @@ bool TradePanel::render(MenuContext& ctx) {
     const Profile& profile = ctx.net.profile();
     const Vec2 mouse = ctx.mouse();
     const double now = ctx.timeSeconds;
-    const double dt = std::max(0.0, ctx.dt);
+    const double dtMs = std::max(0.0, ctx.dt) * 1000.0;
 
     // The account's wait for its next trade, counted down on this client's
     // clock from what the last profile said.
@@ -79,14 +101,13 @@ bool TradePanel::render(MenuContext& ctx) {
     if (outcome.pending) {
         outcome.pending = false;
         if (outcome.success && knownPetal(outcome.receivedIndex)) {
-            phase_ = Phase::Result;
-            phaseStarted_ = now;
             resultPetal_ = outcome.receivedIndex;
             resultRarity_ = outcome.rarity;
-            flourish_.land(now, resultRarity_);
+            resultPending_ = true;
         } else if (!outcome.success) {
             // Refused: nothing left the inventory, so what was offered goes
-            // straight back into the slot, with the reason under it.
+            // straight back into the slot, with the reason under it -- and
+            // the spin runs down, as florr's does on a failure.
             if (phase_ == Phase::Trading) {
                 stagedPetal_ = offeredPetal_;
                 stagedRarity_ = offeredRarity_;
@@ -95,6 +116,11 @@ bool TradePanel::render(MenuContext& ctx) {
             refusal_ = outcome.reason.empty() ? "The trader refused." : outcome.reason;
             refusalUntil_ = now + kRefusalSeconds;
         }
+    }
+    if (resultPending_ && (phase_ != Phase::Trading || (now - phaseStarted_) * 1000.0 >= kTradeSpinMs)) {
+        resultPending_ = false;
+        phase_ = Phase::Result;
+        phaseStarted_ = now;
     }
     if (phase_ == Phase::Trading && now - phaseStarted_ >= kTradeTimeoutSeconds) {
         phase_ = Phase::Idle;
@@ -110,32 +136,34 @@ bool TradePanel::render(MenuContext& ctx) {
         stagedPetal_ = kNoPetal;
     }
 
-    const SlotCardLayout card = drawSlotCard(canvas, ctx.bounds, kTraderSkin, "Trade", mouse);
+    const bool trading = phase_ == Phase::Trading;
+    const bool coin = phase_ == Phase::Result && knownPetal(resultPetal_);
+    motion_.stepRoll(dtMs, trading, coin, kSpinTarget, kSpinRate, kSpinRate);
+
+    const SlotCardLayout card =
+        drawSlotCard(canvas, ctx.bounds, kTraderSkin, "Trade", "Trade", mouse);
     const Rect panel = card.panel;
 
     // --- the slot ----------------------------------------------------------
-    flourish_.drawGrains(canvas, panel, card.slot, dt);
-    drawSlotPlate(canvas, ctx.sprites, card.slotRect, kTraderSkin);
-    if (phase_ == Phase::Result && knownPetal(resultPetal_)) {
-        ItemTile tile;
-        tile.petalIndex = resultPetal_;
-        tile.rarity = resultRarity_;
-        tile.timeSeconds = now;
-        flourish_.drawLanded(canvas, ctx.sprites, card.slot, kSlotCardSlot * dropPulse(now), now,
-                             tile);
-    } else {
-        // One petal, so no badge: the slot holds exactly what one trade takes.
-        const std::uint16_t shown = phase_ == Phase::Trading ? offeredPetal_ : stagedPetal_;
-        const Rarity shownRarity = phase_ == Phase::Trading ? offeredRarity_ : stagedRarity_;
-        if (knownPetal(shown)) {
-            ItemTile tile;
-            tile.petalIndex = shown;
-            tile.rarity = shownRarity;
-            tile.timeSeconds = now;
-            drawSlotTile(canvas, ctx.sprites, card.slot, kSlotCardSlot * dropPulse(now), 0.0,
-                         tile);
-        }
-    }
+    // The petal in the slot -- staged, or out with the trader -- until the
+    // coin replaces it. One petal, so no badge.
+    const std::uint16_t shown = trading ? offeredPetal_ : stagedPetal_;
+    const Rarity shownRarity = trading ? offeredRarity_ : stagedRarity_;
+    ItemTile shownTile;
+    shownTile.petalIndex = shown;
+    shownTile.rarity = shownRarity;
+    shownTile.timeSeconds = now;
+    // Lit under the cursor only while the slot is at rest.
+    shownTile.hovered =
+        motion_.spin() < 0.05 && phase_ == Phase::Idle && card.slotRect.contains(mouse);
+    ItemTile coinTile;
+    coinTile.petalIndex = resultPetal_;
+    coinTile.rarity = resultRarity_;
+    coinTile.timeSeconds = now;
+    motion_.drawSlotScene(canvas, ctx.sprites, card, kTraderSkin, (now - phaseStarted_) * 1000.0,
+                          dtMs, !coin && knownPetal(shown) ? &shownTile : nullptr,
+                          tileKey(shown, shownRarity), coin ? &coinTile : nullptr,
+                          tileKey(resultPetal_, resultRarity_) | 0x80000000u, {});
 
     if (!refusal_.empty() && now < refusalUntil_) {
         drawSlotRefusal(canvas, card, refusal_);
@@ -144,13 +172,14 @@ bool TradePanel::render(MenuContext& ctx) {
     }
 
     // --- trade button ------------------------------------------------------
-    // The colour of the tier the coin will come back at once something is
-    // staged -- the forge's rule.
+    // The colour of the tier the coin will come back at, once something can
+    // be traded.
     const bool canTrade = !waiting && phase_ == Phase::Idle && tradable(stagedPetal_);
+    const bool overButton = card.button.contains(mouse);
     drawSlotButton(canvas, card.button, "Trade",
                    canTrade ? std::optional<std::uint32_t>(rarityColor(stagedRarity_))
                             : std::nullopt,
-                   card.button.contains(mouse));
+                   overButton, overButton && ctx.window.mouseDown(MouseButton::Left));
 
     if (waiting) {
         drawSlotLine(canvas, card, traderCooldownText(cooldown), kSlotCardWaitInk);
@@ -174,6 +203,9 @@ bool TradePanel::render(MenuContext& ctx) {
             return cell;
         });
 
+    // Tiles on their way out go over everything but the words.
+    motion_.drawVanishing(canvas, ctx.sprites, dtMs);
+
     // --- input -------------------------------------------------------------
     // On press, as the forge and the oracle answer.
     const bool rightPressed = panel.contains(mouse) && ctx.window.mousePressed(MouseButton::Right);
@@ -184,14 +216,15 @@ bool TradePanel::render(MenuContext& ctx) {
     if (!ctx.pressed() && !rightPressed) return true;
     if (card.close.contains(mouse) && ctx.pressed()) return false;
 
-    // The coin sits there until it is dismissed, and the press that dismisses
+    // The coin sits there until it is collected, and the press that collects
     // it does nothing else.
     if (phase_ == Phase::Result && panel.contains(mouse)) {
         phase_ = Phase::Idle;
+        resultPetal_ = kNoPetal;
         return true;
     }
 
-    if (card.button.contains(mouse)) {
+    if (overButton) {
         if (canTrade) {
             phase_ = Phase::Trading;
             phaseStarted_ = now;

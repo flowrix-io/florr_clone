@@ -5,22 +5,24 @@
 // takes a fixed price -- oracleCraftCost(), a table that runs from 7 commons
 // to 1012 uniques -- and the upgrade is certain.
 //
-// It is drawn on the slot card every craft-key card shares (menus.h), in the
-// slate of its reference shot (oracle_screenshot_menu.png): one slot and the
+// It is florr's oracle window (menus.h), in its slate: one slot and the
 // Craft button beside it, one line of text, and the grid, where every cell
 // carries "owned/price" and a stack that cannot yet pay its column's price
-// sits on a grey plate. The reference grid stops at super; this one keeps the
+// sits on a grey plate. florr's grid stops at super; this one keeps the
 // unique column, because unique -> apex has a price here.
 //
 // One upgrade per craft, and one craft per half hour (kOracleCooldownMillis):
 // while the account waits, the line of text turns red and says how long, and
-// every stack in the grid sits on grey with its plain count, as the reference's
-// second shot (oracle_screenshot_cooldown.png) has it.
+// every stack in the grid sits on grey with its plain count.
 //
-// No spin. A roll is something to watch resolve; a purchase is not. The staged
-// petal breathes the way a drop lying on the ground does, the breath swells
-// while the oracle works, and the upgrade LANDS in the slot exactly as loot
-// lands on the ground (SlotFlourish).
+// The slot moves the way florr's oracle window moves it (its draw,
+// 0x1008125f0): the staged petal grows in turning once backwards; a craft
+// spins the slot up toward 10 rad/s and swings it out from the centre on a
+// sine of the time since the click as the shake eases in; the upgrade, 90
+// across, pops in at the centre with a 200 ms pulse and a burst of rising
+// grains in its tier's colour, while the plate fades and the offer vanishes,
+// turning. florr spins for as long as its server takes to answer; this one
+// answers at once, so the slot spins for kCraftSpinMs at the least.
 
 #include <algorithm>
 #include <cmath>
@@ -41,32 +43,29 @@ namespace {
 
 constexpr const char* kLine = "The Oracle will guarantee a craft... for the right price.";
 
-/// How long the oracle works before the upgrade may land. Long enough for the
-/// swell to read; a server that answers sooner is held until it has run.
-constexpr double kPulseSeconds = 1.4;
-/// The breath swells from a drop's own 3% to this, and quickens from a drop's
-/// 10 rad/s to this many times that, both over the pulse. An ease-in, so it
-/// starts as the drop it is and builds.
-constexpr double kPulsePeakAmount = 0.16;
-constexpr double kPulsePeakRateScale = 2.4;
-/// Grains a second the slot throws at the height of the pulse -- a drop's own
-/// shimmer rate. The shimmer ramps with the swell, so the first moments of the
-/// pulse are as quiet as a drop at rest.
-constexpr double kPulseGrainRate = 36.0;
-/// A pulse that has run out holds at its peak waiting on the server. One that
-/// never hears back drops to idle after this: the craft resolved server-side
-/// either way, and the profile will say how.
+/// The craft's spin: toward 10 rad/s while it is out, easing both ways at
+/// the same rate. The least it spins before its answer shows is ours.
+constexpr double kSpinTarget = 10.0;
+constexpr double kSpinRate = 0.00632163093946958;
+constexpr double kCraftSpinMs = 1000.0;
+/// The upgrade's grains mostly rise: y velocity from -500 to 200, and any
+/// starting angle.
+constexpr SlotBurstShape kBurst{200.0, 0.0, kTau};
+/// A craft that never hears back drops to idle after this: it resolved
+/// server-side either way, and the profile will say how.
 constexpr double kCraftTimeoutSeconds = 8.0;
 /// How long a refusal stays under the slot.
 constexpr double kRefusalSeconds = 3.0;
 
 } // namespace
 
-Rect OraclePanel::bounds(int w, int h) { return slotCardBounds(false, w, h); }
+Vec2 OraclePanel::size(const Profile& profile) {
+    return {slotCardWidth(false), slotCardHeight(SlotGrid::rows(profile, false))};
+}
 
 void OraclePanel::reset() {
     grid_.reset();
-    flourish_.clear();
+    motion_.clear();
     stagedPetal_ = kNoPetal;
     crafts_ = 0;
     phase_ = Phase::Idle;
@@ -92,7 +91,7 @@ bool OraclePanel::render(MenuContext& ctx) {
     const Profile& profile = ctx.net.profile();
     const Vec2 mouse = ctx.mouse();
     const double now = ctx.timeSeconds;
-    const double dt = std::max(0.0, ctx.dt);
+    const double dtMs = std::max(0.0, ctx.dt) * 1000.0;
 
     const auto removeCraft = [this]() {
         crafts_ = 0;
@@ -102,11 +101,9 @@ bool OraclePanel::render(MenuContext& ctx) {
     // clock from what the last profile said.
     const double cooldown = ctx.net.oracleCooldownRemainingMillis();
     const bool waiting = cooldown > 0.0;
-    const auto land = [this, now]() {
+    const auto land = [this]() {
         phase_ = Phase::Result;
-        phaseStarted_ = now;
         resultPending_ = false;
-        flourish_.land(now, resultRarity_);
     };
 
     // A result the server sent while this face of the menu was not showing
@@ -118,8 +115,8 @@ bool OraclePanel::render(MenuContext& ctx) {
             resultPetal_ = outcome.petalIndex;
             resultRarity_ = outcome.rarity;
             resultCount_ = outcome.crafted;
-            // Mid-pulse it is only recorded -- the pulse owns when it lands.
-            if (phase_ == Phase::Pulsing && now - phaseStarted_ < kPulseSeconds) {
+            // Mid-spin it is only recorded -- the spin owns when it lands.
+            if (phase_ == Phase::Pulsing && (now - phaseStarted_) * 1000.0 < kCraftSpinMs) {
                 resultPending_ = true;
             } else {
                 land();
@@ -156,63 +153,49 @@ bool OraclePanel::render(MenuContext& ctx) {
         }
     }
 
-    const SlotCardLayout card = drawSlotCard(canvas, ctx.bounds, kOracleSkin, "Oracle", mouse);
+    const SlotCardLayout card = drawSlotCard(canvas, ctx.bounds, kOracleSkin, "Oracle", "Craft", mouse);
     const Rect panel = card.panel;
 
-    // --- the pulse ---------------------------------------------------------
-    // Idle and on a result the slot breathes exactly as a drop on the ground
-    // does. While the oracle works the breath swells and quickens; its PHASE is
-    // the integral of the quickening rate, so the beat speeds up smoothly
-    // rather than jumping every time the rate is re-read.
-    double breath = dropPulse(now);
     if (phase_ == Phase::Pulsing) {
         const double elapsed = now - phaseStarted_;
-        const double u = clamp(elapsed / kPulseSeconds, 0.0, 1.0);
-        const double eased = u * u;
-        const double rateGain = kDropPulseRate * (kPulsePeakRateScale - 1.0);
-        const double ramp = std::min(elapsed, kPulseSeconds);
-        const double phase = kDropPulseRate * elapsed +
-                             rateGain * (ramp * ramp / (2.0 * kPulseSeconds) +
-                                         std::max(0.0, elapsed - kPulseSeconds));
-        const double amount = kDropPulseAmount + (kPulsePeakAmount - kDropPulseAmount) * eased;
-        breath = 1.0 + std::sin(phase) * amount;
-
-        // The shimmer, building with the swell.
-        flourish_.shimmer(offeredRarity_, kPulseGrainRate * eased, dt);
-
-        if (elapsed >= kPulseSeconds && resultPending_) {
+        if (elapsed * 1000.0 >= kCraftSpinMs && resultPending_) {
             land();
         } else if (elapsed >= kCraftTimeoutSeconds) {
             phase_ = Phase::Idle;
         }
     }
+    const bool upgraded = phase_ == Phase::Result && knownPetal(resultPetal_);
+    motion_.stepRoll(dtMs, phase_ == Phase::Pulsing, upgraded, kSpinTarget, kSpinRate, kSpinRate);
 
     // --- the slot ----------------------------------------------------------
-    // Under the tile, as a drop's glitter lies under the drop.
-    flourish_.drawGrains(canvas, panel, card.slot, dt);
-    drawSlotPlate(canvas, ctx.sprites, card.slotRect, kOracleSkin);
-    if (phase_ == Phase::Result && knownPetal(resultPetal_)) {
-        ItemTile tile;
-        tile.petalIndex = resultPetal_;
-        tile.rarity = resultRarity_;
-        if (resultCount_ > 1) tile.badge = "x" + std::to_string(resultCount_);
-        tile.timeSeconds = now;
-        flourish_.drawLanded(canvas, ctx.sprites, card.slot, kSlotCardSlot * breath, now, tile);
-    } else {
-        const std::uint16_t shown = phase_ == Phase::Pulsing ? offeredPetal_ : stagedPetal_;
-        const Rarity shownRarity = phase_ == Phase::Pulsing ? offeredRarity_ : stagedRarity_;
-        const int shownCrafts = phase_ == Phase::Pulsing ? offeredCrafts_ : crafts_;
-        if (knownPetal(shown)) {
-            ItemTile tile;
-            tile.petalIndex = shown;
-            tile.rarity = shownRarity;
-            // The badge counts PETALS, the way a stack is counted everywhere
-            // else: this is how many of them the oracle is being handed.
-            tile.badge = "x" + std::to_string(shownCrafts * oracleCraftCost(shownRarity));
-            tile.timeSeconds = now;
-            drawSlotTile(canvas, ctx.sprites, card.slot, kSlotCardSlot * breath, 0.0, tile);
-        }
+    const std::uint16_t shown = phase_ == Phase::Pulsing ? offeredPetal_ : stagedPetal_;
+    const Rarity shownRarity = phase_ == Phase::Pulsing ? offeredRarity_ : stagedRarity_;
+    const int shownCrafts = phase_ == Phase::Pulsing ? offeredCrafts_ : crafts_;
+    ItemTile shownTile;
+    shownTile.petalIndex = shown;
+    shownTile.rarity = shownRarity;
+    // The badge counts PETALS, the way a stack is counted everywhere else:
+    // this is how many of them the oracle is being handed.
+    if (knownPetal(shown)) {
+        shownTile.badge = "x" + std::to_string(shownCrafts * oracleCraftCost(shownRarity));
     }
+    shownTile.timeSeconds = now;
+    // Lit under the cursor only while the slot is at rest.
+    shownTile.hovered =
+        motion_.spin() < 0.05 && phase_ == Phase::Idle && card.slotRect.contains(mouse);
+    ItemTile upgradeTile;
+    upgradeTile.petalIndex = resultPetal_;
+    upgradeTile.rarity = resultRarity_;
+    if (resultCount_ > 1) upgradeTile.badge = "x" + std::to_string(resultCount_);
+    upgradeTile.timeSeconds = now;
+    const auto key = [](std::uint16_t petal, Rarity rarity) {
+        return (static_cast<std::uint32_t>(petal) << 8) |
+               static_cast<std::uint32_t>(rarityIndex(rarity));
+    };
+    motion_.drawSlotScene(canvas, ctx.sprites, card, kOracleSkin, (now - phaseStarted_) * 1000.0,
+                          dtMs, !upgraded && knownPetal(shown) ? &shownTile : nullptr,
+                          key(shown, shownRarity), upgraded ? &upgradeTile : nullptr,
+                          key(resultPetal_, resultRarity_) | 0x80000000u, kBurst);
 
     // A refusal, under the slot, for as long as it lasts. The reference has no
     // line here; the only thing that ever puts one there is the oracle saying
@@ -224,16 +207,16 @@ bool OraclePanel::render(MenuContext& ctx) {
     }
 
     // --- craft button ------------------------------------------------------
-    // The reference's grey pill at rest, and the colour of the tier being
-    // bought once there is something to buy -- the forge's rule, so the faces
-    // of the menu answer "is anything staged" the same way.
+    // florr's grey button at rest, and the colour of the tier being bought
+    // once there is something to buy -- the forge's rule, so the faces of the
+    // menu answer "is anything staged" the same way.
     const bool canCraft =
         !waiting && phase_ == Phase::Idle && knownPetal(stagedPetal_) && crafts_ > 0;
-    const Rarity nextRarity = upgradeRarity(stagedRarity_);
-    const bool tinted = knownPetal(stagedPetal_) && nextRarity != stagedRarity_;
+    const bool overButton = card.button.contains(mouse);
     drawSlotButton(canvas, card.button, "Craft",
-                   tinted ? std::optional<std::uint32_t>(rarityColor(nextRarity)) : std::nullopt,
-                   card.button.contains(mouse));
+                   canCraft ? std::optional<std::uint32_t>(rarityColor(upgradeRarity(stagedRarity_)))
+                            : std::nullopt,
+                   overButton, overButton && ctx.window.mouseDown(MouseButton::Left));
 
     // The line says how long to wait while there is a wait, in red.
     if (waiting) {
@@ -271,6 +254,9 @@ bool OraclePanel::render(MenuContext& ctx) {
             return cell;
         });
 
+    // Tiles on their way out go over everything but the words.
+    motion_.drawVanishing(canvas, ctx.sprites, dtMs);
+
     // --- input -------------------------------------------------------------
     // On press, as the forge answers: a press that starts on a cell and
     // drifts off must not still fire.
@@ -286,6 +272,7 @@ bool OraclePanel::render(MenuContext& ctx) {
     // dismisses it does nothing else.
     if (phase_ == Phase::Result && panel.contains(mouse)) {
         phase_ = Phase::Idle;
+        resultPetal_ = kNoPetal;
         return true;
     }
 

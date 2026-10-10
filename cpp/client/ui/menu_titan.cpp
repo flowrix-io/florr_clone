@@ -6,17 +6,20 @@
 // player forges the same petal, and then its holder gets the apex petals back
 // less the one the forge keeps -- which is what the card's three lines say.
 //
-// It is drawn on the slot card every craft-key card shares (menus.h), cut down
-// to eight columns and one row of grid, in charcoal. The ring is florr's own
-// forge ring: five full-size slots on a pentagon standing on its point, about
-// where the other cards hold their one slot. The grid is one row of petals
-// rather than a petal-by-tier table, because only apex goes in: every petal
-// the account holds at apex, greyed until there are five of it.
+// It is florr's forge window (menus.h, and its draw 0x1007fc530), in
+// charcoal: one slot holding the five apex petals, the Forge button, three
+// lines on what a universal costs its last holder, and under them a picker
+// six cells wide -- a petal-by-tier table would be pointless, because only
+// apex goes in: every petal the account holds at apex, greyed until there
+// are five of it.
 //
-// The forge plays the way the forge's craft does, cut short -- the seats
-// clear, and the five close in on the middle, turning -- and the universal
-// lands there the way loot lands on the ground (SlotFlourish). Nothing is rolled, so
-// nothing is handed back: a refusal is the only way the five return.
+// The slot moves the way florr's forge moves it, which is the oracle's and
+// the trader's motion (SlotMotion): the five grow in, the forge spins them
+// about the slot's centre, and the universal pops in with florr's burst of
+// 125 grey grains. florr spins for as long as its server takes to answer;
+// this one answers at once, so the slot spins for kForgeSpinMs at the least.
+// Nothing is rolled, so nothing is handed back: a refusal is the only way
+// the five return.
 
 #include <algorithm>
 #include <array>
@@ -37,49 +40,39 @@ using namespace flix::ui;
 
 namespace {
 
-/// The card: eight grid columns wide, and only as tall as one row of them
-/// under the three lines of text. Measured, like the rest, in design units
-/// from the card's outer top edge and its centre line.
-constexpr std::size_t kColumns = 8;
-constexpr double kCardHeight = 508.0;
-/// Where the grid's view begins.
-constexpr double kGridTop = 414.0;
+/// The window: florr's 610, and as tall as its picker's rows under the
+/// three lines, one row at the least. The picker is six cells wide and
+/// starts 327.2 into the body (380.8 from the window's top); its rows are
+/// 70 apart with 10 of padding top and bottom.
+constexpr std::size_t kColumns = 6;
+constexpr double kMaxHeight = 700.0;
+constexpr double kGridTop = 380.8;
+constexpr double kGridPitch = 70.0;
+constexpr double kGridPadding = 10.0;
 
-/// The ring: five slots of a grid cell's size, 90 out from the slot card's
-/// slot centre, the first straight up.
-constexpr int kRingSlots = kTitanForgeCost;
-constexpr double kRingRadius = 90.0;
-constexpr double kRingSlot = 60.0;
-constexpr double kRingStart = -kPi * 0.5;
-
-/// The Forge button is wider than the card's stock button: it says more.
-constexpr double kButtonWidth = 70.0;
-
-/// How often the titan is asked again about a petal it has not answered
-/// for: the server drops a query that comes too soon after the last.
-constexpr double kHolderRetrySeconds = 0.3;
-
-/// The three lines, centred, from the card's top.
-constexpr double kFirstLineY = 350.0;
-constexpr double kLinePitch = 22.5;
+/// The three lines: 16 units on a 22.4 line, the first at the body's 250
+/// (its middle 261.2 into the body), centred.
+constexpr double kBodyTop = 53.6;
+constexpr double kFirstLineY = kBodyTop + 250.0 + 11.2;
+constexpr double kLinePitch = 22.4;
 constexpr std::array<const char*, 3> kLines = {
     "Universal petals will last until another player forges the same petal.",
     "When that happens, you will receive your Apex petals back,",
     "but one will be permanently destroyed.",
 };
 
-/// The close: the five turn a quarter of the way round once more than they
-/// were and draw in on the middle, shrinking, until they are one clump --
-/// not all the way, or five tiles stacked exactly would read as the ring
-/// vanishing rather than closing.
-constexpr double kForgeSeconds = 1.2;
-constexpr double kForgeTurns = 1.0;
-constexpr double kMergeDepth = 0.86;
-constexpr double kMergeShrink = 0.62;
-/// Past this much of the close the names come off: five labels on top of
-/// each other are noise.
-constexpr double kNameDropPull = 0.5;
-/// How long the ring waits on the titan before it gives up on the answer.
+/// The forge's spin: toward 10 rad/s while it is out, easing both ways at
+/// the same rate; the least it spins before its answer shows is ours.
+constexpr double kSpinTarget = 10.0;
+constexpr double kSpinRate = 0.00632163093946958;
+constexpr double kForgeSpinMs = 1000.0;
+/// florr's forge throws its grains mostly upward, at any angle.
+constexpr SlotBurstShape kBurst{200.0, 0.0, kTau};
+
+/// How often the titan is asked again about a petal it has not answered
+/// for: the server drops a query that comes too soon after the last.
+constexpr double kHolderRetrySeconds = 0.3;
+/// How long the slot waits on the titan before it gives up on the answer.
 /// The forge resolved server-side either way, and the profile will say how.
 constexpr double kForgeTimeoutSeconds = 8.0;
 constexpr double kRefusalSeconds = 3.0;
@@ -105,13 +98,17 @@ bool holdsUniversal(const Profile& profile, std::uint16_t petalIndex) {
 
 } // namespace
 
-Rect TitanPanel::bounds(int w, int h) {
-    return slotCardBounds(slotCardColumnsWidth(kColumns), kCardHeight, w, h);
+Vec2 TitanPanel::size(const Profile& profile) {
+    const std::size_t rows =
+        std::max<std::size_t>(1, SlotTierGrid::rows(profile, Rarity::Apex, kColumns));
+    return {slotCardColumnsWidth(kColumns),
+            std::min(kMaxHeight,
+                     kGridTop + kGridPadding * 2.0 + static_cast<double>(rows) * kGridPitch)};
 }
 
 void TitanPanel::reset() {
     grid_.reset();
-    flourish_.clear();
+    motion_.clear();
     stagedPetal_ = kNoPetal;
     phase_ = Phase::Idle;
     resultPending_ = false;
@@ -125,7 +122,7 @@ bool TitanPanel::render(MenuContext& ctx) {
     const Profile& profile = ctx.net.profile();
     const Vec2 mouse = ctx.mouse();
     const double now = ctx.timeSeconds;
-    const double dt = std::max(0.0, ctx.dt);
+    const double dtMs = std::max(0.0, ctx.dt) * 1000.0;
 
     // A result the server sent while this face of the menu was not showing
     // still has to land, so it is read here rather than in the click.
@@ -134,21 +131,19 @@ bool TitanPanel::render(MenuContext& ctx) {
         outcome.pending = false;
         if (outcome.success && knownPetal(outcome.petalIndex)) {
             resultPetal_ = outcome.petalIndex;
-            // Mid-close the result is only recorded: the ring decides when it
-            // has closed. Anywhere else it lands now.
+            // Mid-spin the result is only recorded: the spin decides when it
+            // has run long enough. Anywhere else it lands now.
             if (phase_ == Phase::Forging) {
                 resultPending_ = true;
             } else {
                 phase_ = Phase::Result;
-                phaseStarted_ = now;
-                flourish_.land(now, Rarity::Universal);
             }
             // It is this flower's now, and the titan remembers it so.
             ctx.net.forgetTitanHolder(outcome.petalIndex);
             askedAt_ = -1.0;
         } else if (!outcome.success) {
             // Refused: nothing left the inventory, so the five go back into
-            // the ring, with the reason under the button.
+            // the slot, with the reason in place of the lines.
             if (phase_ == Phase::Forging) {
                 stagedPetal_ = offeredPetal_;
                 phase_ = Phase::Idle;
@@ -159,24 +154,19 @@ bool TitanPanel::render(MenuContext& ctx) {
         }
     }
 
-    // How far the close has run, 0..1, while it is running.
-    double close = 0.0;
     if (phase_ == Phase::Forging) {
         const double elapsed = now - phaseStarted_;
-        close = clamp(elapsed / kForgeSeconds, 0.0, 1.0);
-        if (close >= 1.0 && resultPending_) {
+        if (elapsed * 1000.0 >= kForgeSpinMs && resultPending_) {
             resultPending_ = false;
             phase_ = Phase::Result;
-            phaseStarted_ = now;
-            flourish_.land(now, Rarity::Universal);
-            close = 0.0;
         } else if (elapsed >= kForgeTimeoutSeconds) {
             phase_ = Phase::Idle;
-            close = 0.0;
         }
     }
+    const bool forged = phase_ == Phase::Result && knownPetal(resultPetal_);
+    motion_.stepRoll(dtMs, phase_ == Phase::Forging, forged, kSpinTarget, kSpinRate, kSpinRate);
 
-    // The ring cannot hold five the account no longer has, nor a petal it now
+    // The slot cannot hold five the account no longer has, nor a petal it now
     // holds at universal -- but never while a forge is out: those five are the
     // server's, and a profile landing a frame ahead of the result would empty
     // the ring under its own animation.
@@ -186,66 +176,40 @@ bool TitanPanel::render(MenuContext& ctx) {
         stagedPetal_ = kNoPetal;
     }
 
-    const SlotCardLayout card = drawSlotCard(canvas, ctx.bounds, kTitanSkin, "Forge", mouse);
+    const SlotCardLayout card = drawSlotCard(canvas, ctx.bounds, kTitanSkin, "Forge", "Forge", mouse);
     const Rect panel = card.panel;
 
-    // --- the ring ----------------------------------------------------------
-    // The seats, flat in the border's charcoal, stand only while the ring is
-    // idle: once the five go in, the forge is the petals closing and the
-    // universal landing, with no empty slots left behind to say otherwise.
-    // Laid out regardless -- they are what the idle panel hit-tests.
-    std::array<Rect, kRingSlots> seats{};
-    for (int i = 0; i < kRingSlots; ++i) {
-        const double angle = kRingStart + kTau * i / kRingSlots;
-        const Vec2 at = card.slot + Vec2::fromAngle(angle, kRingRadius);
-        seats[static_cast<std::size_t>(i)] = {at.x - kRingSlot * 0.5, at.y - kRingSlot * 0.5,
-                                              kRingSlot, kRingSlot};
-        if (phase_ == Phase::Idle) {
-            drawSlotPlate(canvas, ctx.sprites, seats[static_cast<std::size_t>(i)], kTitanSkin);
-        }
-    }
-
-    flourish_.drawGrains(canvas, panel, card.slot, dt);
-    const std::uint16_t ringPetal = phase_ == Phase::Forging ? offeredPetal_
-                                    : phase_ == Phase::Idle  ? stagedPetal_
-                                                             : kNoPetal;
-    if (knownPetal(ringPetal)) {
-        // Smoothstep in, so the close accelerates off the ring instead of
-        // snapping inward; cubic out on the turn, so it settles as it merges.
-        const double pull = kMergeDepth * close * close * (3.0 - 2.0 * close);
-        const double turn = (1.0 - std::pow(1.0 - close, 3.0)) * kForgeTurns * kTau;
-        const double radius = kRingRadius * (1.0 - pull);
-        const double side = kRingSlot * (1.0 - (1.0 - kMergeShrink) * (pull / kMergeDepth));
-        for (int i = 0; i < kRingSlots; ++i) {
-            const double angle = kRingStart + kTau * i / kRingSlots + turn;
-            ItemTile tile;
-            tile.petalIndex = ringPetal;
-            tile.rarity = Rarity::Apex;
-            tile.showName = pull < kNameDropPull;
-            tile.timeSeconds = now;
-            drawSlotTile(canvas, ctx.sprites, card.slot + Vec2::fromAngle(angle, radius), side,
-                         0.0, tile);
-        }
-    }
-    if (phase_ == Phase::Result && knownPetal(resultPetal_)) {
-        ItemTile tile;
-        tile.petalIndex = resultPetal_;
-        tile.rarity = Rarity::Universal;
-        tile.timeSeconds = now;
-        flourish_.drawLanded(canvas, ctx.sprites, card.slot, kSlotCardSlot * dropPulse(now), now,
-                             tile);
-    }
+    // --- the slot ----------------------------------------------------------
+    // The five, staged or out with the titan, as one apex tile counting them;
+    // the universal in their place once it is forged.
+    const std::uint16_t shown = phase_ == Phase::Forging ? offeredPetal_ : stagedPetal_;
+    ItemTile shownTile;
+    shownTile.petalIndex = shown;
+    shownTile.rarity = Rarity::Apex;
+    shownTile.badge = "x" + std::to_string(kTitanForgeCost);
+    shownTile.timeSeconds = now;
+    // Lit under the cursor only while the slot is at rest.
+    shownTile.hovered =
+        motion_.spin() < 0.05 && phase_ == Phase::Idle && card.slotRect.contains(mouse);
+    ItemTile forgedTile;
+    forgedTile.petalIndex = resultPetal_;
+    forgedTile.rarity = Rarity::Universal;
+    forgedTile.timeSeconds = now;
+    motion_.drawSlotScene(canvas, ctx.sprites, card, kTitanSkin, (now - phaseStarted_) * 1000.0,
+                          dtMs, !forged && knownPetal(shown) ? &shownTile : nullptr, shown,
+                          forged ? &forgedTile : nullptr,
+                          static_cast<std::uint32_t>(resultPetal_) | 0x80000000u, kBurst);
 
     // --- forge button ------------------------------------------------------
-    // The colour of the tier it forges toward once five are in the ring -- the
-    // forge's rule.
-    const Rect button{card.button.x + card.button.w * 0.5 - kButtonWidth * 0.5, card.button.y,
-                      kButtonWidth, card.button.h};
+    // The colour of the tier it forges toward once five are in the slot --
+    // florr's forge wears its top tier's grey.
+    const Rect button = card.button;
     const bool canForge = phase_ == Phase::Idle && knownPetal(stagedPetal_);
     drawSlotButton(canvas, button, "Forge",
                    canForge ? std::optional<std::uint32_t>(rarityColor(Rarity::Universal))
                             : std::nullopt,
-                   button.contains(mouse));
+                   button.contains(mouse),
+                   button.contains(mouse) && ctx.window.mouseDown(MouseButton::Left));
     // A refusal stands in place of the card's lines, on the middle one, until
     // it expires.
     if (refusal_.empty() || now >= refusalUntil_) {
@@ -262,8 +226,8 @@ bool TitanPanel::render(MenuContext& ctx) {
     }
 
     // The titan remembers who it forged the picked petal for, and says so
-    // halfway between the ring's lowest seats and the lines. Asked of the
-    // server until it answers: only it knows every account.
+    // halfway between the slot and the lines. Asked of the server until it
+    // answers: only it knows every account.
     if (knownPetal(askedPetal_)) {
         const std::string* holder = ctx.net.titanHolder(askedPetal_);
         if (holder == nullptr && (askedAt_ < 0.0 || now - askedAt_ >= kHolderRetrySeconds)) {
@@ -271,12 +235,10 @@ bool TitanPanel::render(MenuContext& ctx) {
             askedAt_ = now;
         }
         if (holder != nullptr && !holder->empty()) {
-            const double lowestSeat = card.slot.y +
-                                      kRingRadius * std::sin(kRingStart + kTau * 2 / kRingSlots) +
-                                      kRingSlot * 0.5;
+            const double slotBottom = card.slotRect.bottom();
             const double linesTop = panel.y + kFirstLineY - kLinePitch * 0.5;
             SlotCardLayout line = card;
-            line.lineY = (lowestSeat + linesTop) * 0.5;
+            line.lineY = (slotBottom + linesTop) * 0.5;
             drawSlotLine(canvas, line, titanMemoryText(*holder));
         }
     }
@@ -301,6 +263,9 @@ bool TitanPanel::render(MenuContext& ctx) {
             return cell;
         });
 
+    // Tiles on their way out go over everything but the words.
+    motion_.drawVanishing(canvas, ctx.sprites, dtMs);
+
     // --- input -------------------------------------------------------------
     // On press, as the forge, the oracle and the trader answer.
     const bool rightPressed = panel.contains(mouse) && ctx.window.mousePressed(MouseButton::Right);
@@ -316,6 +281,7 @@ bool TitanPanel::render(MenuContext& ctx) {
     // dismisses it does nothing else.
     if (phase_ == Phase::Result && panel.contains(mouse)) {
         phase_ = Phase::Idle;
+        resultPetal_ = kNoPetal;
         return true;
     }
 
@@ -334,13 +300,10 @@ bool TitanPanel::render(MenuContext& ctx) {
         return true;
     }
 
-    if (phase_ == Phase::Idle) {
-        for (const Rect& seat : seats) {
-            if (!seat.contains(mouse)) continue;
-            stagedPetal_ = kNoPetal;
-            askedPetal_ = kNoPetal;
-            return true;
-        }
+    if (phase_ == Phase::Idle && card.slotRect.contains(mouse)) {
+        stagedPetal_ = kNoPetal;
+        askedPetal_ = kNoPetal;
+        return true;
     }
 
     if (hovered && phase_ == Phase::Idle && ctx.pressed()) {

@@ -35,20 +35,13 @@ inline constexpr std::uint32_t kCloseFace = 0xAE5B58u;
 inline constexpr std::uint32_t kCloseRim = 0x8D4A47u;
 
 inline constexpr PanelSkin kInventorySkin{0x6B9DD6u, 0x5680ADu, 0x5680ADu};
-inline constexpr PanelSkin kCraftingSkin{0xDB9D5Bu, 0xB17F48u, 0xB17F48u};
-/// The oracle is the forge's other face -- the same key opens it while the
-/// flower stands at one -- so it has to be told apart at a glance. Its slate
-/// is the reference shot's (oracle_screenshot_menu.png), card and border both;
-/// the border's slate is also what an empty slot, an empty cell and the scroll
-/// thumb are filled with there.
-inline constexpr PanelSkin kOracleSkin{0x6D859Cu, 0x586C7Eu, 0x586C7Eu};
-/// The trader's card is the flower yellow it is painted in, with that yellow's
-/// outline shade for the border, an empty slot and an empty cell, and the
-/// scroll thumb one step darker -- all three the reference shot's
-/// (After-trade_trade_menu.webp).
-inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCCB94Fu};
-/// The titan's forge is the one card in charcoal: #333333 for the body, and
-/// #292929 for the border, the empty slots and the scroll thumb.
+/// The craft key's four windows are florr's, in florr's themes: each is the
+/// colour its controller answers with, and its border, its empty slots and
+/// its empty cells are that colour's 0.81 shade (slotCardShade, menus.h).
+/// Forge tan, oracle slate, trader yellow and the titan's charcoal.
+inline constexpr PanelSkin kCraftingSkin{0xDB9D5Au, 0xB17F49u, 0xB17F49u};
+inline constexpr PanelSkin kOracleSkin{0x66869Eu, 0x536D80u, 0x536D80u};
+inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCFBB50u};
 inline constexpr PanelSkin kTitanSkin{0x333333u, 0x292929u, 0x292929u};
 inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xA89D36u};
 /// The talent card is drawn against a reference screenshot rather than the
