@@ -343,3 +343,93 @@ TEST(oversized_length_prefix_is_refused) {
     CHECK_EQ(server.connectionCount(), std::size_t(0));
     ::close(fd);
 }
+
+// A write that fails in flush() -- outside poll(), where the handler cannot be
+// told -- used to close the socket on the spot. The next poll() then erased the
+// closed connection without drop(), so onDisconnect never ran, and the game
+// server kept that connection's session and the flower it steered, with no
+// socket behind either, for good. Both ends now leave the report, and the
+// close, to the next poll().
+//
+// The peer makes the write fail the way a closing game window does: it closes
+// with bytes it never read, which the kernel answers with a reset, and the
+// first send() after a reset fails.
+
+TEST(listener_reports_a_connection_whose_flush_found_it_dead) {
+    Listener server;
+    std::uint16_t port = 0;
+    if (!startOnFreePort(server, port)) { CHECK(false); return; }
+
+    Recorder serverSide;
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(fd >= 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    CHECK(::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
+    for (int i = 0; i < 50 && serverSide.connects.empty(); ++i) server.poll(serverSide, 2);
+    CHECK_EQ(serverSide.ids.size(), std::size_t(1));
+    if (serverSide.ids.empty()) { ::close(fd); return; }
+    const ConnectionId id = serverSide.ids[0];
+
+    // Bytes the peer will never read, then the close: a reset.
+    server.find(id)->send(textFrame("unread"));
+    server.flush();
+    ::usleep(20 * 1000);
+    ::close(fd);
+    ::usleep(20 * 1000);
+
+    // The flush that meets the reset. Nothing is reported from here -- the
+    // handler's contract is that it hears from poll() -- but the connection
+    // must still be listed, and open, for that poll to report it.
+    server.find(id)->send(textFrame("into a dead socket"));
+    server.flush();
+    CHECK(serverSide.disconnects.empty());
+    CHECK(server.find(id) != nullptr);
+    CHECK(server.find(id) != nullptr && server.find(id)->open());
+
+    server.poll(serverSide, 0);
+    CHECK_EQ(serverSide.disconnects.size(), std::size_t(1));
+    CHECK_EQ(server.connectionCount(), std::size_t(0));
+}
+
+TEST(dialer_reports_a_connection_whose_flush_found_it_dead) {
+    // A bare listening socket for the far end, so it can close with unread
+    // bytes -- a Listener reads everything it is sent before it closes.
+    const int listenFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(listenFd >= 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = 0;
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    CHECK(::bind(listenFd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
+    CHECK(::listen(listenFd, 1) == 0);
+    socklen_t len = sizeof addr;
+    CHECK(::getsockname(listenFd, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
+    const std::uint16_t port = ntohs(addr.sin_port);
+
+    Recorder clientSide;
+    Dialer client;
+    std::string error;
+    CHECK(client.connect("127.0.0.1", port, error));
+    for (int i = 0; i < 200 && !client.connected(); ++i) client.poll(clientSide, 2);
+    CHECK(client.connected());
+    const int peer = ::accept(listenFd, nullptr, nullptr);
+    CHECK(peer >= 0);
+
+    client.send(textFrame("unread"));
+    client.flush();
+    ::usleep(20 * 1000);
+    ::close(peer);
+    ::usleep(20 * 1000);
+
+    client.send(textFrame("into a dead socket"));
+    client.flush();
+    CHECK(clientSide.disconnects.empty());
+
+    client.poll(clientSide, 0);
+    CHECK_EQ(clientSide.disconnects.size(), std::size_t(1));
+    CHECK(client.state() == Dialer::State::Failed);
+    ::close(listenFd);
+}

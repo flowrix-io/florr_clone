@@ -255,6 +255,18 @@ private:
     /// The handshake, accepted once per socket: a second Hello closes the
     /// connection rather than resetting the stage under a body.
     void handleHello(Session&, net::Connection&, ByteReader&);
+
+    /// Everything a closed connection's session is owed: its squad told, its
+    /// flower saved and taken out of the world, any temporary admin grant
+    /// revoked, and the session and its view erased. onDisconnect's body, and
+    /// the only place a session ends.
+    void endSession(net::ConnectionId);
+    /// The second line of defence behind the transport's promise that every
+    /// closed socket is reported: ends any session whose connection the
+    /// listener no longer holds. Logged, because finding one means a path
+    /// through the transport has stopped telling us -- the one that did once
+    /// left a flower standing in the world for nobody (see Listener::flush).
+    void reapSessionsWithoutSockets();
     void handleRegister(Session&, net::Connection&, ByteReader&);
     void handleLogin(Session&, net::Connection&, ByteReader&);
     void handleResume(Session&, net::Connection&, ByteReader&);
@@ -1551,6 +1563,9 @@ private:
 
     std::uint32_t tick_ = 0;
     double nextPersistMillis_ = 0;
+    /// When reapSessionsWithoutSockets next runs; once a second is plenty for
+    /// a check that should never find anything.
+    double nextSocketAuditMillis_ = 0;
 
     /// The boss clocks as persistBossClocks last wrote them, on clockMillis_,
     /// so an unchanged clock costs a compare rather than a table write.

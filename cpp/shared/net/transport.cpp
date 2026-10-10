@@ -90,6 +90,16 @@ void Connection::shutdownNow() {
     fd_ = -1;
 }
 
+void Connection::markFailed(const std::string& reason) {
+    failure_ = reason.empty() ? "write failed" : reason;
+    // Nothing queued can reach a dead socket, and nothing queued from here on
+    // should be held for one: closing_ makes send() discard, the same as it
+    // does for a connection that is on its way out for any other reason.
+    outbound_.clear();
+    outboundSent_ = 0;
+    closing_ = true;
+}
+
 void Connection::send(const std::byte* data, std::size_t size) {
     if (fd_ < 0 || closing_) return;
     const std::uint32_t length = static_cast<std::uint32_t>(size);
@@ -366,6 +376,15 @@ void Listener::drop(Connection& c, TransportHandler& handler, const std::string&
     c.shutdownNow();
 }
 
+void Listener::dropFailed(TransportHandler& handler) {
+    // Index rather than iterate, as in each(): onDisconnect is the owner's
+    // code, and nothing about this loop should depend on what it does.
+    for (std::size_t i = 0; i < connections_.size(); ++i) {
+        Connection& c = *connections_[i];
+        if (c.open() && c.failed()) drop(c, handler, c.failure_);
+    }
+}
+
 bool Listener::service(Connection& c, bool readable, bool writable, TransportHandler& handler,
                       int& delivered, std::string& error) {
     if (writable && !c.writeAvailable(error)) return false;
@@ -405,6 +424,8 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     // it, so sleeping here would not wait for data -- it would prevent it.
     (void)timeoutMillis;
 
+    // Before anything is serviced: see Listener::flush.
+    dropFailed(handler);
     acceptPending(handler);
 
     int delivered = 0;
@@ -431,6 +452,11 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 
 int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     if (listenFd_ < 0) return 0;
+
+    // Before the poll set is built: see Listener::flush. A failed connection
+    // has nothing to wait for, and this is also what keeps a socket that is
+    // already dead from sitting in the set while poll() sleeps on the rest.
+    dropFailed(handler);
 
     std::vector<pollfd> fds;
     fds.reserve(connections_.size() + 1);
@@ -477,10 +503,30 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 #endif  // __EMSCRIPTEN__
 
 void Listener::flush() {
+    // A write that fails here is NOT the end of the connection's bookkeeping,
+    // and closing the socket on the spot is how it once became exactly that.
+    // flush() has no handler to tell -- the handler contract is that it hears
+    // from poll() -- and a socket closed here was then erased by the next
+    // poll()'s sweep of closed connections without ever passing through drop().
+    // onDisconnect never ran, so the game server kept the session: signed in,
+    // Playing, its flower standing in the world and streamed to everyone near
+    // it, with no socket behind it, until that account happened to sign in
+    // again or the server restarted. It counted as a player, too, so the
+    // server never went idle.
+    //
+    // It was not a rare path. A client that closes with snapshots it has not
+    // read makes the kernel answer with a reset instead of an orderly close,
+    // and the first send() after a reset fails. tick() polls and then ends in
+    // this flush, so a window closed while the server was mid-tick was seen
+    // HERE first whenever that tick had queued it a snapshot -- a few closes in
+    // a hundred on a busy server.
+    //
+    // So the connection is only marked: nothing more is sent to it, and the
+    // next poll() hands it to drop() like every other way a connection ends.
     for (auto& c : connections_) {
-        if (!c->open() || !c->wantsWrite()) continue;
+        if (!c->open() || c->failed() || !c->wantsWrite()) continue;
         std::string error;
-        if (!c->writeAvailable(error)) c->shutdownNow();
+        if (!c->writeAvailable(error)) c->markFailed(error);
     }
 }
 
@@ -515,6 +561,7 @@ bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& e
 
 int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
     if (!connection_ || !connection_->open()) return 0;
+    if (failReported(handler)) return 0;
     // Ignored, as in Listener::poll: the handshake and every byte after it
     // arrive from the JavaScript event loop, which is not running while this
     // call is on the stack.
@@ -614,6 +661,7 @@ bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& e
 
 int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
     if (!connection_ || !connection_->open()) return 0;
+    if (failReported(handler)) return 0;
 
     short events = POLLIN;
     if (state_ == State::Connecting || connection_->wantsWrite()) events |= POLLOUT;
@@ -680,8 +728,21 @@ void Dialer::fail(const std::string& reason, TransportHandler* handler) {
 
 void Dialer::flush() {
     if (!connection_ || !connection_->open() || state_ != State::Connected) return;
+    if (connection_->failed()) return;
     std::string error;
-    if (!connection_->writeAvailable(error)) fail(error, nullptr);
+    // Marked, not failed on the spot, for Listener::flush's reason: fail()
+    // with no handler took the connection away without onDisconnect, so the
+    // client went on holding the world view, chat bubbles and admin dashboard
+    // of a socket that was gone. The next poll() reports it (failReported).
+    if (!connection_->writeAvailable(error)) connection_->markFailed(error);
+}
+
+bool Dialer::failReported(TransportHandler& handler) {
+    if (!connection_ || !connection_->failed()) return false;
+    // Copied: fail() destroys the connection that holds it.
+    const std::string reason = connection_->failure_;
+    fail(reason, &handler);
+    return true;
 }
 
 } // namespace flix::net

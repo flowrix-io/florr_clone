@@ -757,6 +757,39 @@ struct GameServerPeer {
         }
         return nullptr;
     }
+
+    /// Re-files the session signed in as `username` under `orphanId`, a
+    /// connection id the listener has never issued, and points its bodies
+    /// there too. What that leaves is the state a transport that closes a
+    /// socket without reporting it produces -- a session, and the flower it
+    /// steers, with no connection behind them -- reached without such a
+    /// transport, which is what the server's audit for it needs to be tested
+    /// against now that the one that did exists no more. Its real socket stays
+    /// open and no longer has a session: what it sends is ignored and its
+    /// eventual close finds nothing to end. False if there is no such session.
+    static bool detachFromSocket(GameServer& server, const std::string& username,
+                                 net::ConnectionId orphanId) {
+        for (auto it = server.sessions_.begin(); it != server.sessions_.end(); ++it) {
+            if (it->second.username != username) continue;
+            const net::ConnectionId was = it->first;
+            Session session = std::move(it->second);
+            server.sessions_.erase(it);
+            session.connection = orphanId;
+            for (const Entity body : {session.entity, session.splitOther}) {
+                if (PlayerAccount* account = server.world().tryGet<PlayerAccount>(body)) {
+                    account->connection = orphanId;
+                }
+            }
+            server.sessions_[orphanId] = std::move(session);
+            auto view = server.views_.find(was);
+            if (view != server.views_.end()) {
+                server.views_[orphanId] = std::move(view->second);
+                server.views_.erase(was);
+            }
+            return true;
+        }
+        return false;
+    }
 };
 
 } // namespace flix::testsupport

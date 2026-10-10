@@ -82,11 +82,19 @@ private:
     /// drain, by both backends.
     void compactOutbound();
     void shutdownNow();
+    /// Records that a write outside poll() -- a flush -- found the socket
+    /// dead. The descriptor stays open and nothing more is queued or sent;
+    /// the owner's next poll() reports it through the handler and only then
+    /// closes it. See Listener::flush for why the close may not happen here.
+    void markFailed(const std::string& reason);
+    bool failed() const { return !failure_.empty(); }
 
     int fd_;
     ConnectionId id_;
     std::string peer_;
     bool closing_ = false;
+    /// Why a flush found the socket dead; empty while it is not.
+    std::string failure_;
 
     std::vector<std::byte> inbound_;
     std::size_t inboundConsumed_ = 0;
@@ -96,6 +104,15 @@ private:
 };
 
 /// Callbacks a transport owner implements. All are invoked from poll().
+///
+/// Every connection the peer or the network ends -- a hang-up, a reset seen by
+/// a read OR by a flush, a refused frame, a backlog -- is reported through
+/// onDisconnect exactly once, before its descriptor is closed. The owner's own
+/// teardown is the exception: Listener::stop(), Dialer::disconnect() and a
+/// Dialer that fails before it was ever announced report nothing, because the
+/// owner is the one letting go. An owner keeps
+/// per-connection state (the game server keeps a whole session and the flower
+/// it steers) and onDisconnect is the only way it learns to let go of it.
 struct TransportHandler {
     virtual ~TransportHandler() = default;
     virtual void onConnect(Connection& c) {}
@@ -119,7 +136,8 @@ public:
 
     /// Pushes queued bytes out without waiting for readability. Called at the
     /// end of a tick so a snapshot leaves immediately rather than after the
-    /// next poll timeout.
+    /// next poll timeout. A connection whose write fails here is not closed
+    /// here: it is reported, and closed, by the next poll().
     void flush();
 
     Connection* find(ConnectionId id);
@@ -153,6 +171,10 @@ public:
 private:
     void acceptPending(TransportHandler& handler);
     void drop(Connection& c, TransportHandler& handler, const std::string& reason);
+    /// Drops, through drop(), every connection a flush() found dead since the
+    /// last poll, so the handler hears of each one. Run first thing in both
+    /// backends' poll().
+    void dropFailed(TransportHandler& handler);
     /// Everything that happens to one connection once the transport says it
     /// may read and/or write: the write drain, the read, the frame loop, and
     /// the three conditions that end a connection. Returns false when the
@@ -195,10 +217,15 @@ public:
     /// Returns the number delivered.
     int poll(TransportHandler& handler, int timeoutMillis);
 
+    /// As Listener::flush: a write that fails here is reported to the handler
+    /// by the next poll(), not dropped silently.
     void flush();
 
 private:
     void fail(const std::string& reason, TransportHandler* handler);
+    /// Fails the connection through the handler if a flush() found it dead.
+    /// Returns whether it did. Run first thing in both backends' poll().
+    bool failReported(TransportHandler& handler);
 
     std::unique_ptr<Connection> connection_;
     State state_ = State::Idle;

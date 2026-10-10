@@ -705,6 +705,14 @@ void GameServer::tick(double nowMillis) {
     if (!bossClocksRestored_) restoreBossClocks(nowMillis);
     tickStartedMillis_ = monotonicMillis();
 
+    // First, so a session whose socket is gone is not counted as a player,
+    // simulated or saved by anything below. Above the idle gate because such a
+    // session is exactly what keeps a server from ever going idle.
+    if (nowMillis >= nextSocketAuditMillis_) {
+        nextSocketAuditMillis_ = nowMillis + 1000.0;
+        reapSessionsWithoutSockets();
+    }
+
     for (auto& entry : sessions_) refillAllowances(entry.second, nowMillis);
 
     // Invitations lapse on the server's own clock rather than on a timer per
@@ -1162,7 +1170,11 @@ void GameServer::onConnect(net::Connection& connection) {
 }
 
 void GameServer::onDisconnect(net::Connection& connection, const std::string&) {
-    if (Session* session = sessionFor(connection.id())) {
+    endSession(connection.id());
+}
+
+void GameServer::endSession(net::ConnectionId id) {
+    if (Session* session = sessionFor(id)) {
         // Before the body is destroyed, so the line the squad is told still
         // knows what this flower was called.
         departSquad(*session, nullptr, squadDisplayName(squadIdOf(*session)));
@@ -1175,9 +1187,27 @@ void GameServer::onDisconnect(net::Connection& connection, const std::string&) {
         if (session->playing()) persistPlayer(*session);
         if (session->entity != NULL_ENTITY) despawnPlayer(*session, false);
     }
-    revokeTempAdmin(connection.id());
-    sessions_.erase(connection.id());
-    views_.erase(connection.id());
+    revokeTempAdmin(id);
+    sessions_.erase(id);
+    views_.erase(id);
+}
+
+void GameServer::reapSessionsWithoutSockets() {
+    // Collected first: endSession erases from sessions_, and it tells the
+    // squad, which reads other sessions, so nothing may be ended mid-walk.
+    std::vector<net::ConnectionId> orphaned;
+    for (const auto& entry : sessions_) {
+        if (listener_.find(entry.first) == nullptr) orphaned.push_back(entry.first);
+    }
+    for (const net::ConnectionId id : orphaned) {
+        const Session& session = sessions_.at(id);
+        std::printf("[SESSION] connection %u closed without a disconnect; ending its session (%s%s)\n",
+                    static_cast<unsigned>(id),
+                    session.username.empty() ? "not signed in" : session.username.c_str(),
+                    session.entity != NULL_ENTITY ? ", in the world" : "");
+        std::fflush(stdout);
+        endSession(id);
+    }
 }
 
 void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
