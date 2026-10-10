@@ -2066,6 +2066,70 @@ TEST(a_mob_cannot_step_through_a_thin_rail) {
     CHECK_EQ(wrong, 0);
 }
 
+TEST(a_flower_pressed_into_an_acute_notch_stops_there_and_is_not_flung_out) {
+    // A slope meeting a straight wall at 45 degrees: the diagonal's open half
+    // at cell (1,1), solid cell (2,1) beside it, solid below. Every push off
+    // one face is a push into the other, so four passes end still overlapping
+    // -- and the step used to hand that to resolveCircle, whose rescue put the
+    // flower in the nearest coarse-OPEN cell. Cell (1,1) is wall in the coarse
+    // grid, so that was a cell up: some 200 units in one tick, out of a corner
+    // every shipped map has dozens of. The step must refuse instead.
+    Terrain t;
+    const int cols = 4;
+    const int rows = 4;
+    std::vector<std::uint32_t> gids(cols * rows, 2);    // full
+    for (int tx = 0; tx < cols; ++tx) gids[tx] = 0;     // open top row
+    gids[1 * cols + 0] = 0;
+    gids[1 * cols + 1] = 5;                             // diag
+    CHECK(loadShapeMap(t, "notch45.tmj", cols, rows, gids));
+    const Vec2 apex = inCell(2, 2, 0.0, 0.0);
+    CHECK(t.blocked(apex + Vec2{-10.0, 5.0}, Realm::Overworld));
+    CHECK(!t.blocked(apex + Vec2{-10.0, -20.0}, Realm::Overworld));
+
+    const double dt = 1.0 / 30.0;
+    const double perTick = kPlayerMaxSpeed * dt;
+    const double radius = kPlayerBaseRadius;
+    int flung = 0;
+    int overlapping = 0;
+    int shortOfTheNotch = 0;
+    int wedged = 0;
+    int approaches = 0;
+    for (double sy = 40.0; sy < 2.0 * kTileSize - 60.0; sy += 30.0) {
+        for (double sx = 300.0; sx < 2.0 * kTileSize - 40.0; sx += 30.0) {
+            const Vec2 start{sx, sy};
+            if (t.resolveWall(start, radius, Realm::Overworld).collided) continue;
+            for (const double turn : {-0.3, 0.0, 0.3}) {
+                const Vec2 toApex = (apex - start).normalized();
+                const Vec2 heading{toApex.x * std::cos(turn) - toApex.y * std::sin(turn),
+                                   toApex.x * std::sin(turn) + toApex.y * std::cos(turn)};
+                const Vec2 velocity = heading * kPlayerMaxSpeed;
+                ++approaches;
+                Vec2 p = start;
+                for (int tick = 0; tick < 60; ++tick) {
+                    const Vec2 before = p;
+                    stepCollide(t, Realm::Overworld, p, velocity, radius, dt, true, true);
+                    if (distance(before, p) > perTick + 1e-6) ++flung;
+                    if (t.resolveWall(p, radius, Realm::Overworld).collided) ++overlapping;
+                }
+                // Into the notch, not held off it: a circle touching both faces
+                // of a 45-degree wedge sits radius / sin(22.5) = 65 from the apex.
+                if (turn == 0.0 && distance(p, apex) > 90.0) ++shortOfTheNotch;
+                // And free to leave the way it came.
+                const Vec2 held = p;
+                for (int tick = 0; tick < 10; ++tick) {
+                    stepCollide(t, Realm::Overworld, p, velocity * -1.0, radius, dt, true, true);
+                }
+                if (distance(held, p) < 5.0 * perTick) ++wedged;
+            }
+        }
+    }
+    CHECK(approaches > 50);
+    CHECK_EQ(flung, 0);
+    CHECK_EQ(overlapping, 0);
+    CHECK_EQ(shortOfTheNotch, 0);
+    CHECK_EQ(wedged, 0);
+}
+
 TEST(a_negating_layer_does_not_cancel_a_colliding_layer_above_it) {
     // THE LAYERS ARE A STACK. Negation reaches DOWN and no further, so a wall
     // built on top of a bridge is still a wall. The shipped bridge happens to

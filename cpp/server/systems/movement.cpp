@@ -221,7 +221,45 @@ StepOutcome stepCollide(const Terrain& terrain, Realm realm, Vec2& position, Vec
     for (int i = 0; i < steps; ++i) {
         const Vec2 from = position;
         const Vec2 want = from + stepDelta;
-        Vec2 got = collideTerrain ? terrain.resolveCircle(want, hull, realm) : want;
+        Vec2 got = want;
+        if (collideTerrain && isWorldRealm(realm)) {
+            // resolveWall, not resolveCircle: a movement step needs the truth.
+            // In a notch narrower than a right angle -- a straight wall meeting
+            // a rising jagged edge -- every push out of one face is a push
+            // into the other, and four passes end still overlapping.
+            // resolveCircle's answer to that is to relocate the body to the
+            // nearest coarse-OPEN cell, and every cell around an authored
+            // wall reads as wall in the coarse grid, so that cell can be a
+            // tile or more away: the flower was flung out of the corner in a
+            // single tick. The containment guard below never saw it, because
+            // the straight line to the open cell crosses nothing.
+            const Terrain::WallResolution wall = terrain.resolveWall(want, hull, realm);
+            got = wall.position;
+            if (wall.unresolved) {
+                if (terrain.blocked(from, realm)) {
+                    // Already inside solid -- placed there, not walked there.
+                    // The rescue is its only way out.
+                    got = terrain.resolveCircle(want, hull, realm);
+                } else {
+                    // The reference's refusal (stepPlayerMovement): fall back
+                    // to the pre-step position, taking its own push-out only
+                    // if that comes out clean without crossing solid, and end
+                    // the tick's movement there. A body pressed into a tight
+                    // notch stops at its mouth; it is never relocated.
+                    const Terrain::WallResolution back = terrain.resolveWall(from, hull, realm);
+                    if (!back.unresolved
+                        && !centerPathCrossesWall(terrain, from, back.position, realm)) {
+                        position = terrain.clampInside(back.position, hull, realm);
+                    }
+                    out.blocked = true;
+                    break;
+                }
+            }
+        } else if (collideTerrain) {
+            // The maze and the arena: each realm's own resolver, which slides
+            // along its geometry and has no coarse grid to rescue into.
+            got = terrain.resolveCircle(want, hull, realm);
+        }
 
         // The containment guard is a TILE question, so it is asked of every
         // authored map -- each world realm has a grid of its own -- and of
