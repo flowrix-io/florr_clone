@@ -3217,10 +3217,13 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
     const Faction faction = ownerFaction ? *ownerFaction : Faction{Team::Players, false};
     const MobConfig& config = registry.mob(mobIndex);
     MobStats mob = registry.mobStats(mobIndex, rarity);
-    // Smaller than the wild animal, on the reference's pet ramp: the same size
-    // at common, two thirds of it by unique. Mass stays the tier's, exactly as a
-    // wild mob's does whatever body it rolled.
-    const double petSizeScale = mobSizeRamp(rarity, kPetSizeScaleAtUnique);
+    // Smaller than the wild animal: sized on the old, smaller mob ladder
+    // (kPetSizeScale) rather than the wild one, then on the reference's pet
+    // ramp -- the same size at common, two thirds of it by unique. Mass stays
+    // the tier's, exactly as a wild mob's does whatever body it rolled.
+    const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(rarity))));
+    const double petSizeScale = kPetSizeScale[tier] / kMobSizeScale[tier] *
+                                mobSizeRamp(rarity, kPetSizeScaleAtUnique);
     // Health and damage climb the PETAL ladder, not the mob one. A pet comes
     // out of an egg worn in the loadout, so a tier of egg is worth what a tier
     // of any other petal is worth: 3x. The wild health ladder is superlinear on

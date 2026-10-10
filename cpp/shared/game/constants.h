@@ -696,10 +696,10 @@ inline constexpr double kSandstormPetReturnSpeedFactor = 1.5;
 /// Extra chase range per rarity tier a summon is spawned at.
 inline constexpr double kPetAggroRangePerRarity = 200.0;
 
-/// What a unique pet's size is, as a fraction of a wild unique mob's -- the
-/// endpoint of its mobSizeRamp. A common pet is exactly a common mob; a unique
-/// one is two thirds of the wild animal, which at ~35.9x base would otherwise
-/// dwarf the flower that owns it. Larger than the reference's third
+/// What a unique pet's size is, as a fraction of its base size on the pet
+/// ladder (kPetSizeScale) -- the endpoint of its mobSizeRamp. A common pet is
+/// exactly a common mob; a unique one is two thirds of the old 26.8x size,
+/// which would otherwise dwarf the flower that owns it. Larger than the reference's third
 /// (PET_SIZE_SCALE_AT_UNIQUE, src/mobs.ts) on purpose.
 inline constexpr double kPetSizeScaleAtUnique = 2.0 / 3.0;
 

@@ -180,6 +180,14 @@ inline constexpr std::array<double, kLadderRarityCount> kMobSizeScale = [] {
     return scale;
 }();
 
+/// Pet body size per tier: the ladder kMobSizeScale was before the wild mobs
+/// were resized (a0425bf9, 19f6b364). A pet is sized off this smaller table,
+/// not the wild one -- the pet ramp (kPetSizeScaleAtUnique) was tuned on it,
+/// and on the wild curve a unique pet came out a third larger again.
+inline constexpr std::array<double, kLadderRarityCount> kPetSizeScale = {
+    1.5, 1.65, 1.95, 2.58, 4.5, 7.5, 10.5, 16.777216, 26.8435456, 42.949673,
+};
+
 /// A pull-down on kMobSizeScale for a mob that must not grow like a wild one:
 /// 1x at common, `scaleAtUnique` at unique, linear in the rarity index, and
 /// apex continues the slope. The reference's buildSizeRamp (src/mobs.ts).
