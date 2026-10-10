@@ -63,16 +63,18 @@ bool DropTables::load(const ContentRegistry& content, const std::string& path, s
                 return false;
             }
 
+            // Mobs do not drop consumables: a `consumable` row is not part of
+            // the mob's table at all.
+            if (type == "consumable") continue;
+
             SourceEntry source;
             source.mobId = mobId;
             source.petalId = itemId;
-            // Anything not explicitly a consumable is a petal, which is how the
-            // reference reads the field. Every row is kept whatever its kind:
-            // the row list is what the mob HAS, and above common a mob leaves
-            // one of everything it has.
-            source.kind = type == "consumable" ? Kind::Consumable
-                          : itemId == "random" ? Kind::RandomPetal
-                                               : Kind::Petal;
+            // Anything else is a petal, which is how the reference reads the
+            // field. Every row is kept whatever its kind: the row list is what
+            // the mob HAS, and above common a mob leaves one of everything it
+            // has.
+            source.kind = itemId == "random" ? Kind::RandomPetal : Kind::Petal;
             source.rarityOffset = rarityOffset;
             source.probability = clamp(entry["probability"].asDouble(), 0.0, 1.0);
             source.minCount = std::max(1, entry["minQuantity"].asInt(1));
@@ -135,8 +137,8 @@ void DropTables::resolve(const ContentRegistry& content) {
         }
 
         Entry resolved;
-        // A row whose item this build cannot hand out -- a consumable, an id
-        // the petal registry does not know -- still belongs in the table: on
+        // A row whose item this build cannot hand out -- an id the petal
+        // registry does not know -- still belongs in the table: on
         // a common mob it is an independent roll and above one it is a
         // guaranteed drop. Only the payout is missing, and kNoPetal is already
         // what spawnDrop treats as "nothing". (The `random` sentinel keeps
@@ -185,9 +187,9 @@ void DropTables::resolve(const ContentRegistry& content) {
     for (std::size_t i = 0; i < byMob_.size(); ++i) {
         std::vector<Entry>& merged = mergedByMob_[i];
         for (const Entry& row : byMob_[i]) {
-            // Only a NAMED petal can collide. A consumable and the `random`
-            // sentinel both resolve to kNoPetal, and folding those together
-            // would merge two unrelated rows -- sun drops two consumables.
+            // Only a NAMED petal can collide. The `random` sentinel and an
+            // unknown id both resolve to kNoPetal, and folding those together
+            // would merge two unrelated rows.
             Entry* into = nullptr;
             if (row.kind == Kind::Petal && row.petalIndex != kNoPetal) {
                 for (Entry& candidate : merged) {
@@ -621,14 +623,6 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         const int copies = mobRarity == Rarity::Apex ? 10 : 1;
         for (std::size_t row = 0; row < selected_.size(); ++row) {
             const DropTables::Entry* entry = selected_[row];
-            // A consumable came through like any other row -- it is a drop
-            // this mob has, which is the only reason it is in the table at
-            // all -- but this inventory holds petals, so winning one means the
-            // mob left nothing. Including when it is the FEATURED row: the
-            // weighted draw could always land on one, and did, before every
-            // row started dropping.
-            if (entry->kind == DropTables::Kind::Consumable) continue;
-
             const bool graded = gradeEveryRow || row == featured;
             // The mob's tier scale is rolled ONCE per graded row, upstream of
             // the copies: an apex batch shares one base rarity and its ten

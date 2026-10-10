@@ -2734,7 +2734,11 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     CHECK(authored.size() > 0);
     for (std::uint16_t i = 0; i < shipped().mobCount(); ++i) {
         const MobConfig& mob = shipped().mob(i);
-        const std::vector<Json>& lines = authored[mob.id]["drops"].items();
+        // A `consumable` line is not a drop at all: mobs drop none.
+        std::vector<Json> lines;
+        for (const Json& line : authored[mob.id]["drops"].items()) {
+            if (line["type"].asString() != "consumable") lines.push_back(line);
+        }
         const bool pet = mob.id.size() >= 4 && mob.id.compare(mob.id.size() - 4, 4, "_pet") == 0;
         const std::uint16_t egg = shipped().petalIndex(mob.id + "_egg");
         // A common egg the author wrote down IS the egg row, made certain --
@@ -2761,9 +2765,9 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
             CHECK_NEAR(rows.front().probability, 1.0, 1e-12);
         }
         for (std::size_t k = 0; k < lines.size(); ++k) {
-            // A `random` line and a consumable name no petal of their own.
+            // A `random` line names no petal of its own.
             const std::string item = lines[k]["itemType"].asString();
-            const bool named = lines[k]["type"].asString() != "consumable" && item != "random";
+            const bool named = item != "random";
             CHECK_EQ(rows[first + k].petalIndex, named ? shipped().petalIndex(item) : kNoPetal);
         }
     }
@@ -2817,6 +2821,32 @@ TEST(the_merged_view_holds_one_row_per_drop_type) {
     const std::uint16_t bee = shipped().mobIndex("bee");
     CHECK_EQ(tables.forMob(bee).size(), std::size_t(3));
     CHECK_EQ(tables.guaranteedForMob(bee).size(), std::size_t(3));
+}
+
+TEST(mobs_drop_no_consumables) {
+    // A `consumable` row is skipped at load: the mob's table is its petal rows
+    // alone, so no kill can roll one.
+    const std::string path = testsupport::tempDir("flix_spawning_tests") + "/consumable_drops.json";
+    CHECK(testsupport::writeText(path, R"({
+        "bee": {"drops": [
+            {"type": "consumable", "itemType": "speed_boost", "rarity": "common", "probability": 0.4},
+            {"type": "petal", "itemType": "stinger", "rarity": "common", "probability": 0.3},
+            {"type": "consumable", "itemType": "shield", "rarity": "epic", "probability": 0.1}]}
+    })"));
+    DropTables tables;
+    std::string error;
+    CHECK(tables.load(shipped(), path, error));
+    if (!error.empty()) std::printf("    (%s)\n", error.c_str());
+    CHECK(tables.unresolved().empty());
+
+    // The one petal line behind the generated egg.
+    const std::uint16_t bee = shipped().mobIndex("bee");
+    const std::vector<DropTables::Entry>& rows = tables.forMob(bee);
+    CHECK_EQ(rows.size(), std::size_t(2));
+    if (rows.size() != 2) return;
+    CHECK(rows[1].kind == DropTables::Kind::Petal);
+    CHECK_EQ(rows[1].petalIndex, shipped().petalIndex("stinger"));
+    CHECK_EQ(tables.guaranteedForMob(bee).size(), std::size_t(2));
 }
 
 TEST(drop_rarity_uses_authored_rows_for_common_and_uncommon_mobs) {

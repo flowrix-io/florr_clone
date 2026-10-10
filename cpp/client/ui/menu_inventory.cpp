@@ -161,13 +161,10 @@ void layoutRun(Grid& grid, const std::vector<Cell>& entries, double left, double
 /// so the scroll offset is applied once, when drawing, and never leaks into
 /// the layout or the hit test.
 ///
-/// Petals only, and not because the panel is unfinished: the native server
-/// drops consumable lines from mob_drops.json on load (server/systems/loot.cpp)
-/// and Profile::Stack carries a petal index alone, so no health_potion or
-/// speed_boost ever reaches a client to lay out. The browser's grid takes them
-/// inline with the petals of the same tier -- its dict is keyed by item type,
-/// not by petal -- so when the wire does carry them, they belong in these same
-/// per-rarity runs rather than in a section of their own.
+/// Petals only, and not because the panel is unfinished: Profile::Stack
+/// carries a petal index alone. Mobs drop no consumables, and the TypeScript
+/// build's speed boosts, health potions and shields became powder, roses and
+/// shells where an account loads (server/db.cpp).
 Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
                const std::string& needle) {
     Grid grid;

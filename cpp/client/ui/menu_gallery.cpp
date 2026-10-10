@@ -173,7 +173,7 @@ std::string abbreviateNumber(double value) {
 /// the authored ABSOLUTE rarity instead: every percentage in the tooltip is
 /// the upgrade/downgrade pipeline run forwards from it.
 struct DropDef {
-    std::string type;        ///< "petal", "consumable", ...
+    std::string type;        ///< as authored; every row that is kept is a petal
     std::string itemType;
     Rarity rarity = Rarity::Common;
     double probability = 0;
@@ -267,10 +267,13 @@ std::vector<std::vector<DropDef>> loadDropTables() {
             def.type = entry["type"].asString("petal");
             def.itemType = entry["itemType"].asString();
             if (def.itemType.empty()) continue;
+            // As the server reads it (server/systems/loot.cpp): mobs drop no
+            // consumables, and every other row is a petal.
+            if (def.type == "consumable") continue;
             def.rarity = parseRarity(entry["rarity"].asString("common"));
             def.probability = entry["probability"].asDouble(0.0);
             def.maxQuantity = entry["maxQuantity"].asInt(1);
-            if (def.type == "petal") def.petalIndex = content().petalIndex(def.itemType);
+            def.petalIndex = content().petalIndex(def.itemType);
             byMob[index].push_back(std::move(def));
         }
     }
@@ -527,9 +530,6 @@ void drawDropCard(Canvas& canvas, const SpriteCache& sprites, double cellX, doub
                   Rarity rarity, const DropCell& cell, double timeSeconds) {
     const double cardX = cellX + (kDropCellW - kCardSize) * 0.5;
 
-    // Consumables draw as a bare coloured plate: only petals are compiled as
-    // sprites, so a potion has no artwork to put on one.
-    //
     // Named, as gardn names every drop in its gallery: the tile lifts its
     // icon to make room for the name whether or not one is drawn, so a
     // nameless card reads as one with its label missing.

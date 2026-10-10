@@ -142,6 +142,42 @@ void appendExtras(const Json& extra, Json& out) {
 /// double's exact integer range for the next 200,000 years.
 Json millisJson(std::int64_t millis) { return Json(static_cast<double>(millis)); }
 
+/// The TypeScript build's consumables, as the bare keys it saved them under in
+/// an account's rarity buckets, and the petal each one became.
+struct LegacyConsumable {
+    const char* key;
+    const char* petal;
+};
+constexpr LegacyConsumable kLegacyConsumables[] = {
+    {"speed_boost", "petal_powder"},
+    {"health_potion", "petal_rose"},
+    {"shield", "petal_shell"},
+};
+
+/// Folds those consumables into their petals: `{"epic": {"shield": 3}}`
+/// becomes `{"epic": {"petal_shell": 3}}`, added to any shells already there.
+/// Same tier, same count; the bare key goes. This build has nothing that reads
+/// one, so left alone they were dead weight a player could never see or spend.
+void convertLegacyConsumables(Json& inventory) {
+    if (!inventory.isObject()) return;
+    const std::vector<std::string> tiers = inventory.keys();
+    for (const std::string& tier : tiers) {
+        Json& bucket = inventory[tier];
+        if (!bucket.isObject()) continue;
+        for (const LegacyConsumable& consumable : kLegacyConsumables) {
+            if (!bucket.contains(consumable.key)) continue;
+            const int count = PlayerRecord::stackCount(bucket[consumable.key]);
+            bucket.erase(consumable.key);
+            if (count == 0) continue;
+            const std::string petal = consumable.petal;
+            const std::int64_t sum =
+                static_cast<std::int64_t>(PlayerRecord::stackCount(bucket[petal])) + count;
+            bucket[petal] = static_cast<int>(std::min<std::int64_t>(sum, kMaxStackCount));
+        }
+        if (bucket.size() == 0) inventory.erase(tier);
+    }
+}
+
 // -- record <-> JSON ---------------------------------------------------------
 
 PlayerRecord playerFromJson(const Json& value) {
@@ -156,6 +192,7 @@ PlayerRecord playerFromJson(const Json& value) {
     record.equippedSkinId = value["equippedSkinId"].asString();
 
     if (value["inventory"].isObject()) record.inventory = value["inventory"];
+    convertLegacyConsumables(record.inventory);
     if (value["mobKills"].isObject()) record.mobKills = value["mobKills"];
     // Branches this build does not know are dropped rather than kept as raw
     // JSON: a tier only means something to the code that applies it, and

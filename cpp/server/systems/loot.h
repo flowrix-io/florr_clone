@@ -74,14 +74,12 @@ class DropTables {
 public:
     /// What one authored row hands out.
     ///
-    /// A consumable has no native inventory slot and the `random` sentinel
-    /// names no petal at all, yet both stay in the table: a row is a drop this
-    /// mob HAS, and above common every drop it has comes out. Dropping such a
-    /// row at load time would quietly shorten the mob's advertised table.
+    /// The `random` sentinel names no petal at all, yet stays in the table: a
+    /// row is a drop this mob HAS, and above common every drop it has comes
+    /// out. Mobs drop no consumables; load skips a `consumable` row outright.
     enum class Kind : std::uint8_t {
         Petal = 0,     ///< `petalIndex` names the item outright
         RandomPetal,   ///< resolved per copy against droppablePetals()
-        Consumable,    ///< rolled like any other row, then handed out as nothing
     };
 
     struct Entry {

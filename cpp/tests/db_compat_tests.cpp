@@ -577,6 +577,34 @@ TEST(a_stored_loadout_cannot_wear_what_the_inventory_lacks) {
     CHECK_EQ(record.itemCount(Rarity::Rare, "petal_stinger"), 0);
 }
 
+TEST(legacy_consumables_load_as_their_petals) {
+    // The TypeScript build kept consumables as bare keys in the rarity
+    // buckets. They load as powder, roses and shells: same tier, same count,
+    // added to what is already there, and saturating like any stack.
+    Json stored;
+    std::string error;
+    CHECK(Json::parse(R"({"inventory": {
+        "common": {"speed_boost": 5, "health_potion": 2, "petal_rose": 3},
+        "epic": {"shield": 7},
+        "rare": {"shield": 0},
+        "mythic": {"health_potion": 1, "petal_rose": 2147483647}}})",
+                      stored, error));
+    const PlayerRecord record = parsePlayerRecord(stored);
+    CHECK_EQ(record.itemCount(Rarity::Common, "petal_powder"), 5);
+    CHECK_EQ(record.itemCount(Rarity::Common, "petal_rose"), 5);
+    CHECK_EQ(record.itemCount(Rarity::Epic, "petal_shell"), 7);
+    CHECK_EQ(record.itemCount(Rarity::Mythic, "petal_rose"), kMaxStackCount);
+    CHECK(!record.inventory["common"].contains("speed_boost"));
+    CHECK(!record.inventory["common"].contains("health_potion"));
+    CHECK(!record.inventory["epic"].contains("shield"));
+    // A bucket left holding nothing is dropped.
+    CHECK(!record.inventory.contains("rare"));
+
+    const Json saved = playerRecordJson(record);
+    CHECK(!saved["inventory"]["epic"].contains("shield"));
+    CHECK_EQ(saved["inventory"]["epic"]["petal_shell"].asInt(), 7);
+}
+
 TEST(an_unmarked_record_keeps_its_worn_petals_out_of_the_bag) {
     // The old shape: worn petals are not in the stored inventory, so the load
     // must not take them out of it a second time. The next save migrates it.
