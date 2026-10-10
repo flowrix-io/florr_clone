@@ -1191,8 +1191,8 @@ private:
     /// index sweep, which cannot tell a mob that spawned this tick from one
     /// that has been standing there since the server came up.
     void noteBossSighting(Entity boss, double nowMillis);
-    /// Bots call fresh super/unique sightings out in chat, which is also what
-    /// rallies the population onto one. Spawn alerts are worked through first,
+    /// Bots call fresh super/unique/apex sightings out in chat, which (for a
+    /// super or unique) is also what rallies the population onto one. Spawn alerts are worked through first,
     /// oldest first, so what the bots shout about is what actually just
     /// happened.
     void announceNewBosses(double nowMillis);

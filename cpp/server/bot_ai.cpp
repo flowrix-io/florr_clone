@@ -66,7 +66,7 @@ bool excludedMobType(std::uint16_t configIndex) {
 /// Kept lower-case and inconsistently punctuated on purpose so bot chatter
 /// blends in with the usual player chat. Every template names its tier as a
 /// bare word, so a human retyping one triggers the chat handler's own raid the
-/// same way. {tier} = "super"|"unique", {mob} = e.g. "beetle", {code} = squad
+/// same way. {tier} = "super"|"unique"|"apex", {mob} = e.g. "beetle", {code} = squad
 /// id -- and a {code} template is only drawn from when the announcer is
 /// actually in a squad.
 constexpr const char* const kBossShoutSuper[] = {
@@ -114,6 +114,23 @@ constexpr const char* const kBossShoutUnique[] = {
     "I have previously said things which I regret. Now I ponder in silence.",
     "pls carry",
     "free carry {code}",
+    "{tier} {mob} carry code {code}",
+};
+
+/// No "s{mob}"/"q{mob}" shorthand here: those letters are the super and
+/// unique slang, and an apex has none of its own.
+constexpr const char* const kBossShoutApex[] = {
+    "{tier} {mob}",
+    "{tier} {mob} come",
+    "WHAT {tier} {mob}",
+    "who wants {tier} {mob}",
+    "{tier} {mob} anyone",
+    "{mob} {tier} here",
+    "need help {tier} {mob}",
+    "{tier} {mob} pls carry",
+    "{tier} {mob} pls loot",
+    "less than 20 ppl at {tier} {mob}",
+    "pls carry",
     "{tier} {mob} carry code {code}",
 };
 
@@ -1688,17 +1705,24 @@ void GameServer::announceNewBosses(double nowMillis) {
         }
         if (announcer == nullptr) continue;
 
-        const bool unique = type->rarity == Rarity::Unique;
-        const std::string tierWord = unique ? "unique" : "super";
+        const char* tierWord = "super";
+        const char* const* pool = kBossShoutSuper;
+        std::size_t poolSize = std::size(kBossShoutSuper);
+        if (type->rarity == Rarity::Unique) {
+            tierWord = "unique";
+            pool = kBossShoutUnique;
+            poolSize = std::size(kBossShoutUnique);
+        } else if (type->rarity == Rarity::Apex) {
+            tierWord = "apex";
+            pool = kBossShoutApex;
+            poolSize = std::size(kBossShoutApex);
+        }
         const Squad* squad = squads_.forMember(SquadMemberId::ofBot(announcer->entity));
 
         // A {code} template only makes sense from a bot that is in a squad.
         std::string shout;
         for (int attempt = 0; attempt < 8; ++attempt) {
-            const char* const* pool = unique ? kBossShoutUnique : kBossShoutSuper;
-            const std::size_t size =
-                unique ? std::size(kBossShoutUnique) : std::size(kBossShoutSuper);
-            shout = pool[botRng_.below(static_cast<std::uint32_t>(size))];
+            shout = pool[botRng_.below(static_cast<std::uint32_t>(poolSize))];
             if (squad != nullptr || shout.find("{code}") == std::string::npos) break;
         }
         if (squad == nullptr && shout.find("{code}") != std::string::npos) {
@@ -1715,8 +1739,9 @@ void GameServer::announceNewBosses(double nowMillis) {
         botNextBossAnnounceMillis_ =
             nowMillis + botRng_.range(kBotBossAnnounceMinMillis, kBotBossAnnounceMaxMillis);
         // Rally everyone: the chat handler's own trigger cannot fire for a
-        // line the server emitted itself.
-        triggerBotRaid(nowMillis);
+        // line the server emitted itself. Not for an apex: apex never
+        // rallies anybody, and the raid would land on some other boss.
+        if (type->rarity != Rarity::Apex) triggerBotRaid(nowMillis);
         return;  // One announcement per pass.
     }
 }
