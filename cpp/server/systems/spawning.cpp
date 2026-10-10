@@ -34,24 +34,13 @@ bool alwaysAwake(const ContentRegistry& content, const MobType& type) {
     return alwaysAwake(content, type.configIndex, type.rarity);
 }
 
-/// How much smaller a permanent fixture is than the wild mob of its tier.
-///
-/// A common dummy matches a common mob exactly; by unique it is pulled down to
-/// three quarters of a wild unique, so the practice target does not become an
-/// enormous wall at the top rarities (src/mobs.ts DUMMY_SIZE_SCALE_AT_UNIQUE).
-double fixtureSizeScale(const MobConfig& config, Rarity rarity) {
-    if (!config.neverAmbient) return 1.0;
-    constexpr double kScaleAtUnique = 0.75;
-    return mobSizeRamp(rarity, kScaleAtUnique);
-}
-
 /// The per-spawn size multiplier on the mob's nominal size: the `random_size`
-/// roll, times the fixture ramp above. Both factors ride in the one number
-/// because the reference resolves them in the one function
-/// (getEnemySizeScale), and everything that turns a mob's stat size into world
-/// units multiplies by exactly that.
+/// roll, times the fixture ramp (MobConfig::fixtureSizeScale). Both factors
+/// ride in the one number because the reference resolves them in the one
+/// function (getEnemySizeScale), and everything that turns a mob's stat size
+/// into world units multiplies by exactly that.
 double rollSizeJitter(const MobConfig& config, Rarity rarity, Rng& rng) {
-    return config.rollRandomSize(rng) * fixtureSizeScale(config, rarity);
+    return config.rollRandomSize(rng) * config.fixtureSizeScale(rarity);
 }
 
 /// A mob whose body cannot hurt a player.

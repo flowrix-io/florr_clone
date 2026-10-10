@@ -399,6 +399,31 @@ TEST(an_npc_meets_walls_with_its_centre_not_its_body) {
     CHECK(at.x > face - 1.0);
 }
 
+TEST(a_target_dummy_npc_shrinks_with_its_tier_like_a_band_fixture) {
+    // The dummy a map places as an NPC is the same practice target a band
+    // plants: a common one is a common mob's size, a unique one three
+    // quarters of a wild unique. An NPC that skipped the ramp stood a third
+    // bigger than its band twin at unique.
+    CHECK(ensureShippedContent());
+    Terrain terrain;
+    World world;
+    NpcSystem npcs;
+    const std::uint16_t dummy = content().mobIndex("target_dummy");
+    const std::uint16_t oracle = content().mobIndex("oracle");
+    const auto radiusOf = [&](std::uint16_t mob, Rarity rarity, double x) {
+        const Entity e = npcs.spawnNpc(world, terrain, content(), mob, rarity, {x, 5000.0},
+                                       Realm::Overworld, 0.0);
+        return world.get<Body>(e).radius;
+    };
+    CHECK_NEAR(radiusOf(dummy, Rarity::Common, 2000.0),
+               content().mobStats(dummy, Rarity::Common).radius, 1e-9);
+    CHECK_NEAR(radiusOf(dummy, Rarity::Unique, 4000.0),
+               content().mobStats(dummy, Rarity::Unique).radius * 0.75, 1e-9);
+    // Only the fixture shrinks: an oracle stands at its mob's full size.
+    CHECK_NEAR(radiusOf(oracle, Rarity::Unique, 6000.0),
+               content().mobStats(oracle, Rarity::Unique).radius, 1e-9);
+}
+
 TEST(a_cruising_npc_flies_up_to_a_wall_with_its_centre) {
     // The oracle cruises on a leash about its home. Homed beside a wall, its
     // flight takes it against the wall, and it is the CENTRE that stops there:

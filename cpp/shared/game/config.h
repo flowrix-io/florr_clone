@@ -581,6 +581,18 @@ struct MobConfig {
         if (!(randomSizeMax > randomSizeMin) || !(size > 0.0)) return randomSizeMin;
         return rng.range(randomSizeMin, randomSizeMax) / size;
     }
+    /// How much smaller a permanent fixture is than the wild mob of its tier.
+    ///
+    /// A common dummy matches a common mob exactly; by unique it is pulled
+    /// down to three quarters of a wild unique, so the practice target does
+    /// not become an enormous wall at the top rarities (src/mobs.ts
+    /// DUMMY_SIZE_SCALE_AT_UNIQUE). Applies however the dummy got there: a
+    /// band's fixture and a map's NPC both read it.
+    double fixtureSizeScale(Rarity rarity) const {
+        if (!neverAmbient) return 1.0;
+        constexpr double kScaleAtUnique = 0.75;
+        return mobSizeRamp(rarity, kScaleAtUnique);
+    }
     /// The largest factor rollRandomSize() can return: what anything that has
     /// to stay clear of a body it has not rolled yet must allow for.
     double maxRandomSize() const {

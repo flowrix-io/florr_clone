@@ -58,7 +58,10 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     // read apex (mobStats) -- because no NPC is ever rolled: one is placed.
     rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
     const MobStats stats = content.mobStats(mobIndex, rarity);
-    const double radius = stats.radius > 0.0 ? stats.radius : kMobBaseRadius;
+    // A dummy placed as an NPC shrinks with its tier exactly as one a band
+    // plants does (MobConfig::fixtureSizeScale).
+    const double radius = (stats.radius > 0.0 ? stats.radius : kMobBaseRadius) *
+                          config.fixtureSizeScale(rarity);
 
     // It meets walls as a point, as its mob does, so it has to start with its
     // centre on open ground -- and one standing still is never moved again.
