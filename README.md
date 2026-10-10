@@ -227,7 +227,13 @@ instead of the game. The build embeds four:
 - `diagnostics.js`: what the browser supports, whether the server answers, and
   how fast the game downloads and compiles, as a report to copy
 
-Any `.js` file can be picked instead, with Set as boot. If a boot script breaks
+Any `.js` file can be picked instead, with Set as boot. A boot script's
+`fetch` or `XMLHttpRequest` of a file under `data/`, `boot/` or `persist/`
+reads the game's own files (what the asset browser shows), not the web
+server's, and a relative path is looked up beside the script first. A boot
+script gets a global `Module` of its own, so an emscripten program works as
+one: put its `.js` and `.wasm` in `cpp/client/web/boot/` and pick the `.js`.
+The game is `Module.flixBoot.game`. If a boot script breaks
 the page, add `?boot=game` to the address to skip it for one load, or
 `?boot=reset` to forget it.
 

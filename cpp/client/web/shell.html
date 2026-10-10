@@ -95,6 +95,8 @@
   if (query.get('mobile') !== null) args.push('--mobile');
   for (const line of query.getAll('chat')) args.push('--chat', line);
 
+  // What the game is created with (createFlowrix, below). It is the page's
+  // global Module too, unless a boot script runs: see the boot section.
   var Module = {
     canvas,
     arguments: args,
@@ -119,8 +121,43 @@
 </script>
     <script>
 (function () {
-  const Module = window.Module;
+  // The game is linked -sMODULARIZE: its glue defines createFlowrix and
+  // nothing else, and the module is the object handed to that -- this one --
+  // rather than whatever the page's global Module happens to be. Which is what
+  // lets a boot script be an emscripten program of its own, with a Module of
+  // its own (see the boot section).
+  const game = window.Module;
   const status = document.getElementById('loadingScreen');
+  const canvas = document.getElementById('canvas');
+  // Taken now: callMain needs them below, and the glue may not leave
+  // game.arguments readable once it has consumed it.
+  const gameArguments = game.arguments.slice();
+  // The page's own downloads, which never go through the boot script's fetch
+  // (the boot section below).
+  const networkFetch = window.fetch.bind(window);
+
+  // Runs `run` once the document has been parsed. Nothing starts before
+  // then -- not the game, not a boot script: this runs while the parser is
+  // still in the body, and the game reaches for the page's elements as soon
+  // as main() does (the canvas, #loadingScreen, document.body for the ones it
+  // makes), so a start that raced the parser worked or not by timing.
+  const whenParsed = (run) => {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run, { once: true });
+    } else {
+      run();
+    }
+  };
+
+  // Set when a boot script runs in place of the game (the boot section below).
+  // The runtime may then load before the game is wanted -- the script read one
+  // of the game's files -- and that load stays off the screen: no loading
+  // text, no decompression message, no error over the script's own page.
+  let booting = false;
+  let gameStarted = false;
+  const quiet = () => booting && !gameStarted;
+  const showStatus = game.setStatus;
+  game.setStatus = (text) => { if (!quiet()) showStatus(text); };
 
   // What the page downloads is bundle.js -- emscripten's runtime glue -- and
   // bundle.wasm, the client itself with mobs.json, petals.json,
@@ -166,6 +203,7 @@
   // nothing has to take it down: the glue's first setStatus ("Running...",
   // then "") replaces the markup with text and then hides the element.
   const announceInflating = () => {
+    if (quiet()) return;
     const stage = document.createElement('div');
     stage.className = 'stage';
     stage.textContent = 'Decompressing bundle...';
@@ -183,7 +221,7 @@
   // compileStreaming if it had fetched an uncompressed .wasm itself.
   const load = async (name, contentType) => {
     if (canInflate) {
-      const packed = await fetch(name + '.bin', fetchOptions).catch(() => null);
+      const packed = await networkFetch(name + '.bin', fetchOptions).catch(() => null);
       if (packed && packed.ok) {
         announceInflating();
         const inflating = new DecompressionStream('deflate-raw');
@@ -191,13 +229,18 @@
                             { headers: { 'Content-Type': contentType } });
       }
     }
-    const plain = await fetch(name, fetchOptions);
+    const plain = await networkFetch(name, fetchOptions);
     if (!plain.ok) throw new Error(name + ': HTTP ' + plain.status);
     return plain;
   };
 
+  let loadError = '';
+  let runtimeFailed = null;
   const fail = (what) => {
     console.error('[loader] ' + what);
+    if (!loadError) loadError = what;
+    if (runtimeFailed) runtimeFailed(new Error(what));
+    if (quiet()) return;
     status.hidden = false;
     status.textContent = 'client error: ' + what;
   };
@@ -205,12 +248,23 @@
   // Everything from here to the boot section below is the game's own load. It
   // is a function rather than straight-line code because a boot script may run
   // in its place (see below), and that script decides when -- and whether --
-  // the game starts. Called once; a second call does nothing.
-  let gameStarted = false;
-  const startGame = () => {
-    if (gameStarted) return;
-    gameStarted = true;
-    status.hidden = false;
+  // the runtime loads and the game starts. Called once; later calls return
+  // the same promise, which settles when the runtime is up (and, without a
+  // boot script, main() has been called).
+  let runtime = null;
+  let runtimeReady = false;
+  const loadRuntime = () => {
+    if (runtime) return runtime;
+    runtime = new Promise((resolve, reject) => {
+      game.onRuntimeInitialized = () => {
+        runtimeReady = true;
+        resolve();
+      };
+      runtimeFailed = reject;
+    });
+    // Nobody may be waiting on it, when the game was going to start anyway;
+    // fail() has already said why.
+    runtime.catch(() => {});
 
     // Started now, before the glue: compiling the module is the long pole, and
     // this way it runs against the download instead of after it.
@@ -231,7 +285,7 @@
     // for bundle.wasm, which is what keeps it off the uncompressed copy.
     // Returning an empty object is emscripten's "not yet": the instance arrives
     // through the callback whenever the compile above finishes.
-    Module.instantiateWasm = (imports, ready) => {
+    game.instantiateWasm = (imports, ready) => {
       compiled.then((module) => WebAssembly.instantiate(module, imports))
               .then(ready)
               .catch((error) => fail('bundle.wasm: ' + error));
@@ -241,16 +295,42 @@
     // The glue itself, injected rather than left to the <script src> tag emcc
     // emits (parked in the comment at the end of this file), because the copy
     // worth loading is the compressed one. An injected script runs in global
-    // scope exactly as that tag's would, and the glue picks up the Module
-    // defined above the same way.
+    // scope exactly as that tag's would, and synchronously: createFlowrix is
+    // defined the moment appendChild returns.
     load('bundle.js', 'text/javascript')
       .then((response) => response.text())
       .then((source) => {
         const script = document.createElement('script');
         script.textContent = source;
         document.body.appendChild(script);
+        // Settles when the runtime is up; a failure has gone through
+        // onAbort, which said so on screen.
+        createFlowrix(game).catch(() => {});
       })
       .catch((error) => fail('bundle.js: ' + error));
+    return runtime;
+  };
+
+  // Without a boot script the glue calls main() itself once the runtime is
+  // up. With one it was told not to (noInitialRun), and this calls it.
+  let mainCalled = false;
+  const startGame = () => {
+    if (gameStarted) return;
+    gameStarted = true;
+    if (loadError) {
+      fail(loadError);
+      return;
+    }
+    // A runtime the script already had loaded put nothing on screen to take
+    // down; one still loading shows its progress from here on.
+    if (!runtimeReady) status.hidden = false;
+    const started = loadRuntime();
+    if (!booting) return;
+    started.then(() => {
+      game.callMain(gameArguments);
+      mainCalled = true;
+      canvas.focus();
+    }, () => {});
   };
 
   // --- the boot script ------------------------------------------------------
@@ -267,14 +347,19 @@
   // broken one, or one somebody was talked into keeping -- can lock anyone
   // out of the game.
   const kBootPrefix = 'flowrix/';
-  const stored = (name) => {
+  // The bytes the mount keeps under `name`, or null when there are none.
+  const storedBytes = (name) => {
     try {
       const saved = localStorage.getItem(kBootPrefix + name);
-      if (!saved) return '';
-      return new TextDecoder().decode(Uint8Array.from(atob(saved), (c) => c.charCodeAt(0)));
+      if (saved === null) return null;
+      return Uint8Array.from(atob(saved), (c) => c.charCodeAt(0));
     } catch (e) {
-      return '';
+      return null;
     }
+  };
+  const stored = (name) => {
+    const bytes = storedBytes(name);
+    return bytes ? new TextDecoder().decode(bytes) : '';
   };
   const forget = () => {
     try {
@@ -286,7 +371,7 @@
   if (bootMode === 'reset') forget();
   const bootSource = bootMode === 'game' || bootMode === 'reset' ? '' : stored('boot-script');
   const bootPath = bootSource ? (stored('boot-path') || 'boot-script.js') : '';
-  Module.flixBoot = {
+  const flixBoot = {
     // What this load runs instead of the game, by the path it was set from.
     // Empty when the game starts directly; the client reads it to say so.
     path: bootPath,
@@ -295,9 +380,15 @@
     startGame,
     // Forgets the boot script, so the next load starts the game.
     clear: forget,
+    // The game's module, for poking at from a script; and the arguments
+    // main() is (or will be) given.
+    game,
+    arguments: gameArguments,
   };
+  // The client reads this one (client/web/boot.cpp).
+  game.flixBoot = flixBoot;
   if (!bootSource) {
-    startGame();
+    whenParsed(startGame);
     return;
   }
 
@@ -326,17 +417,48 @@
     document.body.append(box);
   };
 
+  // The page's global Module, from here on, is the script's and not the
+  // game's: a fresh one. A script that is an emscripten program takes it as
+  // its own -- its glue starts `var Module = typeof Module != 'undefined' ?
+  // Module : {}` -- and would otherwise have picked up the game's arguments,
+  // its noInitialRun, its instantiateWasm and the rest. The game never reads
+  // the global (createFlowrix, above).
+  //
+  // What it does carry is what a page normally hands an emscripten program:
+  // the page's canvas, which SDL, GLFW and the GL context creation all find
+  // through Module.canvas, and the same print/printErr as the game's. The
+  // canvas is the game's one too. That is no trouble for a script that
+  // starts the game or never draws, but one that takes a WebGL context on it
+  // leaves the game no 2D context, so such a script should not also start
+  // the game.
+  window.Module = { flixBoot, canvas: game.canvas, print: game.print, printErr: game.printErr };
+
+@FLIX_BOOT_FILES_JS@
+  installBootFiles({
+    path: bootPath,
+    stored: storedBytes,
+    runtime: loadRuntime,
+    ready: () => runtimeReady,
+    files: () => game.FS,
+    mainCalled: () => mainCalled,
+  });
+  booting = true;
+  game.noInitialRun = true;
+
   console.info('[boot] running ' + bootPath + ' instead of the game; ' +
                '?boot=game skips it once, ?boot=reset forgets it');
   status.hidden = true;
-  try {
-    // window.eval, which is an indirect eval: the script runs in global scope,
-    // as a <script> element's would, but a throw on the way in lands here
-    // instead of nowhere. The sourceURL names it in the developer tools.
-    window.eval(bootSource + '\n//# sourceURL=' + bootPath.replace(/^\/+/, ''));
-  } catch (error) {
-    bootFailed(error);
-  }
+  whenParsed(() => {
+    try {
+      // window.eval, which is an indirect eval: the script runs in global
+      // scope, as a <script> element's would, but a throw on the way in lands
+      // here instead of nowhere. The sourceURL names it in the developer
+      // tools.
+      window.eval(bootSource + '\n//# sourceURL=' + bootPath.replace(/^\/+/, ''));
+    } catch (error) {
+      bootFailed(error);
+    }
+  });
 })();
 </script>
     <!-- emcc replaces the token below with a <script> tag for bundle.js, and

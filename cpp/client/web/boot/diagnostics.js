@@ -221,7 +221,7 @@
     // The address the page hands the game: the shell puts it in the
     // arguments main() is given.
     const argument = (name) => {
-      const args = Module.arguments || [];
+      const args = boot.arguments || [];
       const at = args.indexOf(name);
       return at >= 0 ? args[at + 1] : null;
     };

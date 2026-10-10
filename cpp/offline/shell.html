@@ -93,6 +93,23 @@
   };
   window.Module = Module;
 
+  // The game is linked -sMODULARIZE, as on the online page (see there): the
+  // inline glue below defines createFlowrix, and the module is this object,
+  // not the page's global Module.
+  //
+  // Nothing starts until the document has been parsed, as on the online page:
+  // the boot script, when there is one, and then the game. Both in one
+  // handler, so that order is fixed -- a script that wraps console or the
+  // network before the game (console.js, netlog.js) has done so by the time
+  // createFlowrix runs -- and so is everything set up front here, noInitialRun
+  // included, which the game reads the moment it is created.
+  const game = Module;
+  let runBootScript = null;
+  document.addEventListener('DOMContentLoaded', () => {
+    if (runBootScript) runBootScript();
+    createFlowrix(game).catch(() => {});
+  }, { once: true });
+
   // --- the boot script ------------------------------------------------------
   // What the online page does (client/web/shell.html), under this page's own
   // storage prefix: Debug > Assets > Boot can name a script for the next load
@@ -101,14 +118,18 @@
   // so it cannot be kept from loading -- only from starting. With a script to
   // run, main() waits (noInitialRun) and the script's startGame() calls it.
   const kBootPrefix = 'flowrix-offline/';
-  const stored = (name) => {
+  const storedBytes = (name) => {
     try {
       const saved = localStorage.getItem(kBootPrefix + name);
-      if (!saved) return '';
-      return new TextDecoder().decode(Uint8Array.from(atob(saved), (c) => c.charCodeAt(0)));
+      if (saved === null) return null;
+      return Uint8Array.from(atob(saved), (c) => c.charCodeAt(0));
     } catch (e) {
-      return '';
+      return null;
     }
+  };
+  const stored = (name) => {
+    const bytes = storedBytes(name);
+    return bytes ? new TextDecoder().decode(bytes) : '';
   };
   const forget = () => {
     try {
@@ -121,9 +142,12 @@
   const bootSource = bootMode === 'game' || bootMode === 'reset' ? '' : stored('boot-script');
   const bootPath = bootSource ? (stored('boot-path') || 'boot-script.js') : '';
 
+  const gameArguments = args.slice();
   let runtimeReady = false;
   let startWanted = false;
   let gameStarted = false;
+  let mainCalled = false;
+  let runtimeWaiters = [];
   const startGame = () => {
     if (gameStarted) return;
     // Asked for before the runtime is up: it starts the moment it is.
@@ -132,16 +156,42 @@
       return;
     }
     gameStarted = true;
-    Module.callMain(Module.arguments);
+    game.callMain(gameArguments);
+    mainCalled = true;
   };
-  Module.flixBoot = { path: bootPath, prefix: kBootPrefix, startGame, clear: forget };
+  const flixBoot = {
+    path: bootPath, prefix: kBootPrefix, startGame, clear: forget, game, arguments: gameArguments,
+  };
+  game.flixBoot = flixBoot;
   if (!bootSource) return;
 
-  Module.noInitialRun = true;
-  Module.onRuntimeInitialized = () => {
+  game.noInitialRun = true;
+  game.onRuntimeInitialized = () => {
     runtimeReady = true;
+    for (const waiter of runtimeWaiters) waiter();
+    runtimeWaiters = null;
     if (startWanted) startGame();
   };
+  const runtime = () => runtimeReady ? Promise.resolve()
+                                      : new Promise((resolve) => runtimeWaiters.push(resolve));
+
+  // The script's own global Module, with the page's canvas and the game's
+  // print/printErr, as on the online page (see there).
+  window.Module = { flixBoot, canvas: game.canvas, print: game.print, printErr: game.printErr };
+
+  // The page is opened from disk, which has none of the game's files to
+  // fetch; the runtime is inline, so there is nothing to load, and a request
+  // for one waits for it to be up.
+@FLIX_BOOT_FILES_JS@
+  installBootFiles({
+    path: bootPath,
+    stored: storedBytes,
+    runtime,
+    ready: () => runtimeReady,
+    files: () => game.FS,
+    mainCalled: () => mainCalled,
+  });
+
   // A script that throws on its way in leaves a way out on screen.
   const bootFailed = (error) => {
     console.error('[boot] ' + bootPath + ' failed: ' + error);
@@ -169,12 +219,14 @@
 
   console.info('[boot] running ' + bootPath + ' instead of the game; ' +
                '?boot=game skips it once, ?boot=reset forgets it');
-  try {
-    // An indirect eval, for global scope: see the online page.
-    window.eval(bootSource + '\n//# sourceURL=' + bootPath.replace(/^\/+/, ''));
-  } catch (error) {
-    bootFailed(error);
-  }
+  runBootScript = () => {
+    try {
+      // An indirect eval, for global scope: see the online page.
+      window.eval(bootSource + '\n//# sourceURL=' + bootPath.replace(/^\/+/, ''));
+    } catch (error) {
+      bootFailed(error);
+    }
+  };
 })();
 </script>
     {{{ SCRIPT }}}

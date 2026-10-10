@@ -1115,11 +1115,43 @@ two keys out of localStorage before it fetches anything, runs the script with
 `startGame()` and `clear()` -- so a tool that never starts the game costs no
 download, and one that does sets itself up first. The offline page cannot keep
 its inline game from loading, so it holds `main()` back with `noInitialRun`
-and `startGame()` calls `callMain`, which that link alone exports. Both shells
+and `startGame()` calls `callMain`. Both shells
 read `?boot=game` (skip the script once) and `?boot=reset` (forget it) with
 nothing from the client, so no script can lock anyone out, and a script that
 throws on the way in gets a screen with both ways out. A page started through
 a script says so in chat on every load.
+
+Neither shell starts anything before `DOMContentLoaded`: the boot script and
+then the game run from that one point, because the game reaches for the
+page's elements as soon as `main()` does, and a start that raced the parser
+worked or not by timing.
+
+Both page builds link the game `-sMODULARIZE` (`createFlowrix`), and the
+shells hand the factory the object the game is to be. Without a boot script
+that object is also the page's global `Module`; with one, the global is a
+fresh `{ flixBoot, canvas, print, printErr }` the script has to itself -- the
+canvas is the page's `#canvas`, the one the game draws on, so a script that
+takes a WebGL context on it should not also start the game -- because a boot
+script may be an
+emscripten program, and its glue takes the global `Module` as its own -- it
+had been picking up the game's arguments, `noInitialRun` and
+`instantiateWasm`. The game's module stays reachable as
+`Module.flixBoot.game`, and its arguments as `Module.flixBoot.arguments`.
+
+A script sees the client's files, not the web server's
+(`client/web/boot_files.js`, which the configure writes into both shells): a
+GET or HEAD by `fetch` or `XMLHttpRequest` of a file under `data/`, `boot/` or
+`persist/` is answered from `FS.readFile`. A relative path is looked up beside
+the script first and then from the root -- an emscripten glue run by `eval`
+has no script URL, asks for its `.wasm` by bare name, and finds it beside its
+`.js` -- and goes to the network if neither has it and it would not have been
+one of the game's files from the root (`bundle.wasm`); a rooted path, or a
+same-origin URL under the page's directory, is that one path, and a 404 when
+missing. The online page loads the runtime for the first such request, quietly
+and with `noInitialRun`, so the game does not start until the script calls
+`startGame()`, which then calls `callMain`; both links export `FS` and
+`callMain` for this. `persist/` is read straight out of localStorage until
+`main()` has mounted it.
 
 **The tools** are `client/web/boot/*.js`, embedded at `/boot` in the client and
 offline links (globbed: a script dropped in is a tool, and its first comment

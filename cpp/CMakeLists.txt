@@ -446,10 +446,29 @@ if(EMSCRIPTEN)
   # The debug tools a page load can run instead of the game, embedded at /boot
   # in the two builds with a page (client/web/boot.h). Not game content: no
   # handshake hash covers them and the server has no use for them. Globbed --
-  # a script dropped into the directory is a tool -- and named as link
-  # dependencies, so editing one relinks.
-  file(GLOB FLIX_BOOT_TOOLS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot/*.js)
+  # a script dropped into the directory is a tool, and whatever sits beside it
+  # (an emscripten program's .wasm) is a file it can fetch -- and named as
+  # link dependencies, so editing any of them relinks.
+  file(GLOB FLIX_BOOT_TOOLS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot/*)
   set(FLIX_EMBED_BOOT "SHELL:--embed-file \"${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot@boot\"")
+
+  # The two pages' shells, as emcc is given them: each with the boot script's
+  # view of the files (client/web/boot_files.js) written in where it says
+  # @FLIX_BOOT_FILES_JS@, so the two pages share one copy of it. Generated at
+  # configure time; editing any of the three re-runs the configure.
+  file(READ ${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot_files.js FLIX_BOOT_FILES_JS)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+               ${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot_files.js)
+  set(FLIX_CLIENT_SHELL ${CMAKE_CURRENT_BINARY_DIR}/shells/client.html)
+  set(FLIX_OFFLINE_SHELL ${CMAKE_CURRENT_BINARY_DIR}/shells/offline.html)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/client/web/shell.html ${FLIX_CLIENT_SHELL} @ONLY)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/offline/shell.html ${FLIX_OFFLINE_SHELL} @ONLY)
+
+  # The page builds' glue defines createFlowrix(module) and nothing else, and
+  # the shells call it with the object the game is to be. Not the default --
+  # a glue that takes the page's global Module as its own -- because a boot
+  # script may be an emscripten program too, and that one needs the global.
+  set(FLIX_WEB_MODULARIZE "-sMODULARIZE=1" "-sEXPORT_NAME=createFlowrix")
 
   # The embed happens at LINK time, so the linked output is stale the moment a
   # staged data file is newer than it. Without this, editing mobs.json or
@@ -530,9 +549,13 @@ if(EMSCRIPTEN)
     # of the face is its metrics, and those are Ubuntu-Bold.metrics.
     "SHELL:--exclude-file *.ttf"
     ${FLIX_EMBED_BOOT}
-    "--shell-file" "${CMAKE_CURRENT_SOURCE_DIR}/client/web/shell.html")
-  set_property(TARGET flowrix_client APPEND PROPERTY LINK_DEPENDS
-               "${CMAKE_CURRENT_SOURCE_DIR}/client/web/shell.html")
+    # For a boot script (client/web/shell.html): the page loads the runtime
+    # without starting main() and calls it when the script starts the game,
+    # and the script's fetch reads data/, boot/ and persist/ through FS.
+    "-sEXPORTED_RUNTIME_METHODS=['callMain','FS']"
+    ${FLIX_WEB_MODULARIZE}
+    "--shell-file" "${FLIX_CLIENT_SHELL}")
+  set_property(TARGET flowrix_client APPEND PROPERTY LINK_DEPENDS "${FLIX_CLIENT_SHELL}")
 
   # The server runs under Node, where it can listen. It is the same program as
   # the native one -- the same tick, the same systems, the same database -- and
@@ -605,9 +628,11 @@ if(EMSCRIPTEN)
     ${FLIX_EMBED_DATA}
     ${FLIX_EMBED_BOOT}
     # The page holds main() back while a boot script runs in its place, and
-    # the script's startGame() is what calls it (offline/shell.html).
-    "-sEXPORTED_RUNTIME_METHODS=['callMain']"
-    "--shell-file" "${CMAKE_CURRENT_SOURCE_DIR}/offline/shell.html")
+    # the script's startGame() is what calls it; the script's fetch reads the
+    # file system through FS (offline/shell.html).
+    "-sEXPORTED_RUNTIME_METHODS=['callMain','FS']"
+    ${FLIX_WEB_MODULARIZE}
+    "--shell-file" "${FLIX_OFFLINE_SHELL}")
 
   add_executable(flowrix_offline offline/main.cpp)
   target_link_libraries(flowrix_offline PRIVATE flix_server flix_client)
@@ -615,8 +640,7 @@ if(EMSCRIPTEN)
   set_target_properties(flowrix_offline PROPERTIES OUTPUT_NAME offline SUFFIX ".html")
   set_property(TARGET flowrix_offline APPEND PROPERTY LINK_DEPENDS
                ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS})
-  set_property(TARGET flowrix_offline APPEND PROPERTY LINK_DEPENDS
-               "${CMAKE_CURRENT_SOURCE_DIR}/offline/shell.html")
+  set_property(TARGET flowrix_offline APPEND PROPERTY LINK_DEPENDS "${FLIX_OFFLINE_SHELL}")
   target_compile_options(flowrix_offline PRIVATE
    "-flto"
    "-fno-rtti"
@@ -648,8 +672,7 @@ if(EMSCRIPTEN)
                         OUTPUT_NAME offline-asmjs SUFFIX ".html")
   set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS
                ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS})
-  set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS
-               "${CMAKE_CURRENT_SOURCE_DIR}/offline/shell.html")
+  set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS "${FLIX_OFFLINE_SHELL}")
   target_compile_options(flowrix_offline_asmjs PRIVATE
    "-flto"
    "-fno-rtti"
