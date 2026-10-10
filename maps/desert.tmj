@@ -3656,6 +3656,63 @@
         }, 
         {
          "draworder":"topdown",
+         "id":8,
+         "name":"teleporters",
+         "objects":[
+                {
+                 "height":0,
+                 "id":23,
+                 "name":"",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"id",
+                         "type":"string",
+                         "value":"ah_portal_desert"
+                        }, 
+                        {
+                         "name":"to",
+                         "type":"string",
+                         "value":"ah_portal_fah"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":15040,
+                 "y":16576
+                }, 
+                {
+                 "height":0,
+                 "id":24,
+                 "name":"",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"id",
+                         "type":"string",
+                         "value":"computer_portal_desert"
+                        }, 
+                        {
+                         "name":"to",
+                         "type":"string",
+                         "value":"computer_portal"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":6912,
+                 "y":11648
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
          "id":4,
          "name":"player_spawns",
          "objects":[
@@ -3731,8 +3788,8 @@
          "x":0,
          "y":0
         }],
- "nextlayerid":8,
- "nextobjectid":22,
+ "nextlayerid":9,
+ "nextobjectid":25,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",

@@ -328,18 +328,6 @@
                  "width":832,
                  "x":15616,
                  "y":14272
-                }, 
-                {
-                 "height":0,
-                 "id":3,
-                 "name":"",
-                 "point":true,
-                 "rotation":0,
-                 "type":"",
-                 "visible":true,
-                 "width":0,
-                 "x":21916.6666666667,
-                 "y":4100
                 }],
          "opacity":1,
          "properties":[
@@ -363,6 +351,86 @@
                  "type":"float",
                  "value":6
                 }],
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":6,
+         "name":"teleporters",
+         "objects":[
+                {
+                 "height":0,
+                 "id":22,
+                 "name":"",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"id",
+                         "type":"string",
+                         "value":"ah_portal_ant_hell"
+                        }, 
+                        {
+                         "name":"to",
+                         "type":"string",
+                         "value":"ah_portal_garden"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":16083.3333333333,
+                 "y":15066.6666666667
+                }, 
+                {
+                 "height":0,
+                 "id":24,
+                 "name":"",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"id",
+                         "type":"string",
+                         "value":"ah_portal_termite"
+                        }, 
+                        {
+                         "name":"to",
+                         "type":"string",
+                         "value":"ah_portal_jungle"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":21850,
+                 "y":4150
+                }, 
+                {
+                 "height":0,
+                 "id":25,
+                 "name":"",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"id",
+                         "type":"string",
+                         "value":"ah_portal_fah"
+                        }, 
+                        {
+                         "name":"to",
+                         "type":"string",
+                         "value":"ah_portal_desert"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":2650,
+                 "y":25450
+                }],
+         "opacity":1,
          "type":"objectgroup",
          "visible":true,
          "x":0,
@@ -3817,8 +3885,8 @@
          "x":0,
          "y":0
         }],
- "nextlayerid":6,
- "nextobjectid":20,
+ "nextlayerid":7,
+ "nextobjectid":26,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",

@@ -6209,9 +6209,43 @@
          "visible":true,
          "x":0,
          "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":16,
+         "name":"teleporters",
+         "objects":[
+                {
+                 "height":0,
+                 "id":69,
+                 "name":"",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"id",
+                         "type":"string",
+                         "value":"ah_portal_garden"
+                        }, 
+                        {
+                         "name":"to",
+                         "type":"string",
+                         "value":"ah_portal_ant_hell"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":12833.3333333333,
+                 "y":21733.3333333333
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
         }],
- "nextlayerid":16,
- "nextobjectid":68,
+ "nextlayerid":17,
+ "nextobjectid":70,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",

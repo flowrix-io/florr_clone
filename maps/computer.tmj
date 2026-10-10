@@ -547,6 +547,40 @@
         }, 
         {
          "draworder":"topdown",
+         "id":7,
+         "name":"teleporters",
+         "objects":[
+                {
+                 "height":0,
+                 "id":17,
+                 "name":"",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"id",
+                         "type":"string",
+                         "value":"computer_portal"
+                        }, 
+                        {
+                         "name":"to",
+                         "type":"string",
+                         "value":"computer_portal_desert"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":25984,
+                 "y":2240
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
          "id":6,
          "name":"spawns",
          "objects":[
@@ -842,8 +876,8 @@
          "x":0,
          "y":0
         }],
- "nextlayerid":7,
- "nextobjectid":16,
+ "nextlayerid":8,
+ "nextobjectid":18,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",
