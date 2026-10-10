@@ -638,6 +638,22 @@ non-pickable door is still joinable — by an admin, by name.
 
 ### `teleporters` — pads
 
+A pad is a **point**. The usual way to wire one is in pairs, by name:
+
+| property | meaning |
+| --- | --- |
+| `id` | this pad's name, which another pad's `to` aims at. Falls back to the object's name |
+| `to` | the `id` of the pad this one leads to, on this map or any other. Write `<map id>:<pad id>` if a bare id is used on more than one map |
+
+A flower that goes through a pad comes out on the pad its `to` names, so a
+two-way portal is two pads that name each other (`ah_portal_garden` ↔
+`ah_portal_ant_hell`). The pad it comes out on does nothing until the flower
+steps off it, so a player who stands still is not sent straight back. A pad
+with an `id` and no `to` is a one-way exit. The server reports a `to` that
+names no pad when it loads the maps.
+
+The older properties still work, and `targetMap` wins over `to`:
+
 | property | meaning |
 | --- | --- |
 | `targetMap` | the id of the map this pad leads to |

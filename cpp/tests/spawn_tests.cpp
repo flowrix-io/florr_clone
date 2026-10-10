@@ -764,6 +764,69 @@ TEST(a_teleporter_carries_a_player_to_another_map) {
     flix::testsupport::removeDataDir(dir);
 }
 
+TEST(paired_teleporters_lead_to_each_other_and_do_not_bounce) {
+    using flix::testsupport::fixtureDoor;
+    using flix::testsupport::fixtureLinkedPad;
+    using flix::testsupport::fixtureMap;
+    using flix::testsupport::stageDataDir;
+    const double cell = kTileSize;
+    const Vec2 meadowPad{cell * 12, cell * 12};
+    const Vec2 warrenPad{cell * 8, cell * 8};
+    const std::string dir = stageDataDir(
+        "paired-pads",
+        {{"meadow", fixtureMap(24, 24,
+                               fixtureDoor("meadow", "Meadow", cell * 2, cell * 2, cell * 4,
+                                           cell * 4, true, 0.0),
+                               fixtureLinkedPad(meadowPad.x, meadowPad.y, "meadow_hole",
+                                                "warren_hole"))},
+         {"warren", fixtureMap(16, 16, std::string(),
+                               fixtureLinkedPad(warrenPad.x, warrenPad.y, "warren_hole",
+                                                "meadow_hole"))}});
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+    Harness h("spawn-paired-pads", {}, dir, 0);
+    if (!h.ready) { CHECK(false); flix::testsupport::removeDataDir(dir); return; }
+    for (const std::string& warning : h.server.worldMaps().warnings()) {
+        if (warning.find("teleporter") != std::string::npos) {
+            ::testing::reportFailure(__FILE__, __LINE__, warning);
+        }
+    }
+    bool found = false;
+    const Realm warren = h.server.worldMaps().realmOfId("warren", found);
+    CHECK(found);
+
+    NetClient client;
+    CHECK(loginNew(h, client, "pairwalker", "password7"));
+    client.joinGame(1280, 720, {}, "pairwalker");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+    World& world = h.server.world();
+    const Entity body = onlyPlayer(world);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) { flix::testsupport::removeDataDir(dir); return; }
+
+    // Through the meadow's pad, and out of its partner.
+    world.get<Transform>(body).position = meadowPad;
+    CHECK(h.stepUntil({&client}, [&] { return world.get<Transform>(body).realm == warren; }, 120));
+    CHECK(distanceSq(world.get<Transform>(body).position, warrenPad) < 10.0 * 10.0);
+
+    // Left standing on the pad it came out of, well past the cooldown and the
+    // dwell, it stays where it is: the arrival pad does not charge.
+    const int idle = static_cast<int>((kTeleporterCooldownMillis + kTeleporterDwellMillis * 3) /
+                                      net::kTickMillis);
+    h.step(idle, {&client});
+    CHECK(world.get<Transform>(body).realm == warren);
+
+    // Off it and back on, and it is an ordinary pad again.
+    world.get<Transform>(body).position = warrenPad + Vec2{kTeleporterSuctionRadius * 2, 0};
+    h.step(2, {&client});
+    world.get<Transform>(body).position = warrenPad;
+    CHECK(h.stepUntil({&client}, [&] {
+        return world.get<Transform>(body).realm == Realm::Overworld;
+    }, 120));
+    CHECK(distanceSq(world.get<Transform>(body).position, meadowPad) < 10.0 * 10.0);
+    flix::testsupport::removeDataDir(dir);
+}
+
 TEST(a_spawn_choice_the_maps_do_not_define_falls_back) {
     Harness h("spawn-unknown");
     if (!h.ready) { CHECK(false); return; }

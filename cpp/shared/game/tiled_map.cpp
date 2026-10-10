@@ -33,7 +33,7 @@ constexpr struct { const char* layer; const char* kind; } kObjectLayers[] = {
 constexpr struct { const char* kind; const char* properties[9]; } kObjectProperties[] = {
     {"spawn",        {"difficulty", "mobs", "singular", nullptr}},
     {"player_spawn", {"spawnId", "label", "color", "order", "backdrop", "biome", "pickable", nullptr}},
-    {"teleporter",   {"targetMap", "targetSpawn", nullptr}},
+    {"teleporter",   {"id", "to", "targetMap", "targetSpawn", nullptr}},
     {"npc",          {"npc", "rarity", nullptr}},
 };
 

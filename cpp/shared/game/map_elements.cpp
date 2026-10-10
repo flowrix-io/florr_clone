@@ -555,6 +555,13 @@ void MapData::adopt(const Json& array) {
                 element.teleportTo = {destination["x"].asDouble(), destination["y"].asDouble()};
                 element.hasTeleportTo = true;
             }
+            if (element.kind == MapElementKind::Teleporter) {
+                // A pad's name: its `id`, or else the object's Tiled name,
+                // which the reader hands over as `spawnId`.
+                element.padId = properties["id"].asString();
+                if (element.padId.empty()) element.padId = element.spawnId;
+                element.toPad = properties["to"].asString();
+            }
 
             element.npcId = properties["npc"].asString();
             if (properties.contains("rarity")) {
@@ -654,7 +661,9 @@ MapData::TeleportStep MapData::stepTeleporters(Vec2 centre, double deltaSeconds,
         if (distSq > kTeleporterRadius * kTeleporterRadius) continue;
         standingOn = static_cast<int>(i);
 
-        if (state.pad != standingOn) {
+        // The pad a jump put the flower down on does not charge: its clock is
+        // held at zero until the flower has left it (see `arriving`).
+        if (state.pad != standingOn || state.arriving) {
             state.pad = standingOn;
             state.enteredAtMillis = nowMillis;
         }
@@ -677,9 +686,10 @@ MapData::TeleportStep MapData::stepTeleporters(Vec2 centre, double deltaSeconds,
         break;
     }
 
-    if (standingOn < 0 && state.pad >= 0) {
+    if (standingOn < 0) {
         state.pad = -1;
         state.enteredAtMillis = 0;
+        state.arriving = false;
     }
     return step;
 }
@@ -994,6 +1004,8 @@ void WorldMaps::index() {
         }
     }
 
+    const std::vector<const MapElement*> arrivals = linkPads();
+
     // Teleporters are checked HERE, once, rather than when a player stands on
     // one: a pad aimed at a map nobody staged is a map bug, and the moment to
     // find out is when the server starts, not when somebody falls through it.
@@ -1004,7 +1016,13 @@ void WorldMaps::index() {
                                       std::to_string(static_cast<long>(element.centre().x)) + ", " +
                                       std::to_string(static_cast<long>(element.centre().y)) + ")";
             if (element.targetMap.empty()) {
-                warnings_.push_back(where + " names no targetMap; it leads nowhere");
+                // A broken `to` was reported by linkPads; a pad that is only
+                // ever arrived at is an exit, not a mistake.
+                const bool arrivedAt =
+                    std::find(arrivals.begin(), arrivals.end(), &element) != arrivals.end();
+                if (element.toPad.empty() && !arrivedAt) {
+                    warnings_.push_back(where + " names no `to` and no targetMap; it leads nowhere");
+                }
                 continue;
             }
             bool found = false;
@@ -1022,6 +1040,78 @@ void WorldMaps::index() {
             }
         }
     }
+}
+
+std::vector<const MapElement*> WorldMaps::linkPads() {
+    std::vector<const MapElement*> arrivals;
+    for (std::size_t from = 0; from < maps_.size(); ++from) {
+        for (MapElement& pad : maps_[from].elements_) {
+            if (pad.kind != MapElementKind::Teleporter || pad.toPad.empty()) continue;
+            // An explicit `targetMap` is the older way of saying where a pad
+            // goes, and the author wrote it on purpose.
+            if (!pad.targetMap.empty()) continue;
+
+            // `<map id>:<pad id>` names one map; a bare id is looked for on the
+            // pad's own map first -- so a dungeon copy's pads pair within the
+            // copy -- and then on every map in load order, which puts a copied
+            // map's first copy ahead of the rest.
+            std::string wantMap;
+            std::string wantPad = pad.toPad;
+            const std::size_t colon = wantPad.find(':');
+            if (colon != std::string::npos) {
+                wantMap = wantPad.substr(0, colon);
+                wantPad = wantPad.substr(colon + 1);
+            }
+            std::vector<std::size_t> order;
+            order.push_back(from);
+            for (std::size_t i = 0; i < maps_.size(); ++i) {
+                if (i != from) order.push_back(i);
+            }
+
+            const MapData* targetMap = nullptr;
+            const MapElement* target = nullptr;
+            int matches = 0;
+            for (const std::size_t i : order) {
+                const MapData& map = maps_[i];
+                if (!wantMap.empty() && map.id() != wantMap) continue;
+                // A later copy of a map repeats the first copy's ids; it is the
+                // same pad, not a second one.
+                if (i != from && map.id() != map.templateId()) continue;
+                for (const MapElement& other : map.elements()) {
+                    if (other.kind != MapElementKind::Teleporter || other.padId != wantPad) continue;
+                    if (&other == &pad) continue;
+                    if (target == nullptr) {
+                        targetMap = &map;
+                        target = &other;
+                    }
+                    ++matches;
+                }
+                // Found on the pad's own map: that is the partner, whatever
+                // other maps hold.
+                if (target != nullptr && i == from) break;
+            }
+
+            const std::string where = "[" + maps_[from].id() + "] teleporter \"" + pad.padId +
+                                      "\" at (" +
+                                      std::to_string(static_cast<long>(pad.centre().x)) + ", " +
+                                      std::to_string(static_cast<long>(pad.centre().y)) + ")";
+            if (target == nullptr) {
+                warnings_.push_back(where + " leads to pad \"" + pad.toPad +
+                                    "\", which no staged map defines; it leads nowhere");
+                continue;
+            }
+            if (matches > 1) {
+                warnings_.push_back(where + " leads to pad \"" + pad.toPad + "\", which " +
+                                    std::to_string(matches) + " pads are called; it goes to the one in \"" +
+                                    targetMap->id() + "\"");
+            }
+            pad.targetMap = targetMap->id();
+            pad.teleportTo = target->centre();
+            pad.hasTeleportTo = true;
+            arrivals.push_back(target);
+        }
+    }
+    return arrivals;
 }
 
 namespace {

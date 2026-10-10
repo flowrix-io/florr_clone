@@ -225,6 +225,15 @@ struct MapElement {
     /// `targetSpawn` wins when both are given.
     Vec2 teleportTo;
     bool hasTeleportTo = false;
+    /// Teleporters only: this pad's own name, from its `id` property (or the
+    /// object's name), which another pad's `to` aims at.
+    std::string padId;
+    /// Teleporters only: the pad this one leads to, by its `id` -- on this
+    /// map or any other, `<map id>:<pad id>` when a bare id is ambiguous.
+    /// WorldMaps resolves it at load into `targetMap` and `teleportTo` (the
+    /// partner's centre), so everything downstream sees an ordinary pad.
+    /// Ignored when `targetMap` is given.
+    std::string toPad;
 
     /// NPCs only: WHICH NPC stands here, from the object's `npc` property --
     /// the mobs.json id of a mob that has an `npc` block, or nothing is placed
@@ -429,6 +438,10 @@ public:
                                  TeleporterState& state) const;
 
 private:
+    /// WorldMaps resolves pad-to-pad links (`to`) into ordinary destinations
+    /// once every map is loaded, which is the one write after adopt().
+    friend class WorldMaps;
+
     /// Turns one MAP_ELEMENTS-shaped JSON array into elements_, and derives the
     /// spawn point list from it. The Tiled reader rebuilds a map's objects into
     /// that shape rather than parsing them a second way, so there is one
@@ -588,6 +601,13 @@ public:
 private:
     /// Rebuilds spawnChoices_ and warnings_ from the loaded maps.
     void index();
+
+    /// Points every pad that names a partner (`to`) at that partner: its map
+    /// becomes `targetMap` and its centre the arrival point. A link that
+    /// names no pad is reported and leaves the pad leading nowhere. Returns
+    /// every pad some link arrives at, so an arrival-only pad is not reported
+    /// as leading nowhere.
+    std::vector<const MapElement*> linkPads();
 
     std::vector<MapData> maps_;
     std::vector<SpawnChoice> spawnChoices_;

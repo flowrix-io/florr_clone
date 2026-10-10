@@ -5188,6 +5188,7 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
         pads->pad = -1;
         pads->enteredAtMillis = 0;
         pads->cooldownUntilMillis = clockMillis_ + kTeleporterCooldownMillis;
+        pads->arriving = true;
     }
 
     // A pad that leads somewhere on the SAME map is a jump, not a move

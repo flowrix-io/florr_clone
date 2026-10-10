@@ -295,6 +295,17 @@ inline std::string fixturePad(double x, double y, const std::string& targetMap,
            "\" }]}";
 }
 
+/// One `teleporters` object in the paired form: the pad's own `id` and the
+/// pad it leads to, `to`, which may be on any map.
+inline std::string fixtureLinkedPad(double x, double y, const std::string& id,
+                                    const std::string& to) {
+    return "{ \"id\": 91, \"name\": \"\", \"type\": \"\", \"visible\": true, \"point\": true,"
+           " \"rotation\": 0, \"width\": 0, \"height\": 0, \"x\": " + std::to_string(x) +
+           ", \"y\": " + std::to_string(y) + ", \"properties\": ["
+           "{ \"name\": \"id\", \"type\": \"string\", \"value\": \"" + id + "\" },"
+           "{ \"name\": \"to\", \"type\": \"string\", \"value\": \"" + to + "\" }]}";
+}
+
 /// One `npcs` object: a POINT naming the NPC that stands there and its tier.
 /// An empty `npc` writes the object without one, which the reader drops.
 inline std::string fixtureNpc(double x, double y, const std::string& npc,

@@ -605,6 +605,12 @@ struct TeleporterState {
     int pad = -1;
     double enteredAtMillis = 0;
     double cooldownUntilMillis = 0;
+    /// Set by a jump. Paired pads arrive ON their partner, and a flower left
+    /// standing there must not be charging it -- idle on the pad it came out
+    /// of and it would be thrown back the moment the cooldown ran out. The pad
+    /// it lands on stays inert until it has stepped off; landing on no pad at
+    /// all clears this on the next tick.
+    bool arriving = false;
 };
 
 /// Per-(player, victim) throttle for the raindrop petal's aura.
