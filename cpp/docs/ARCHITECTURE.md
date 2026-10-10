@@ -87,13 +87,16 @@ cpp/
     render/       world_renderer, sprites, mob_art (painted mobs),
                   skin_render, art_cache
     ui/           menus and panels, text, markup (chat lines),
-                  mobile_controls (the touch stick and its two buttons)
+                  mobile_controls (the touch stick and its two buttons),
+                  menu_assets asset_files (the asset browser)
     web/          shell.html (the page), persist (browser storage),
-                  reload (stale builds), favicon.ico
+                  reload (stale builds), boot (boot scripts), favicon.ico
+      boot/       the debug tools a page load can run instead of the game
   offline/        main.cpp shell.html -- server and client in one page
   tests/          one binary, all tests
   tools/          native diagnostic programs (Tests and tools)
-  cmake/          prune_staged_content.cmake
+  cmake/          prune_staged_content.cmake; font_metrics.js (the web
+                  builds' outline-free copy of the font)
   docs/           this file, admin-dashboard.md
   third_party/
     cpp_canvas/   the vendored Canvas2D-alike renderer, locally modified
@@ -108,14 +111,17 @@ gitignored.
 or `maps/` where they sit. `cpp/CMakeLists.txt` stages them flat, by bare file
 name, into `<build>/data` — the three JSON files, `maps/maps.json` and every
 map it lists, the tilesets those maps name, the tile art, the title screen's
-ground art, and the Ubuntu Bold the configure downloads — and prunes the
-directory to exactly that set first (`cmake/prune_staged_content.cmake`), so a
-file that stopped being content is not shipped inside the next wasm. Flat is
-what makes the references inside the files resolve: a map names its tilesets
-as siblings, and the client looks a tile's art up by bare name. The wasm builds
-embed the directory as `/data`. Both programs take `--data <dir>`, default
-`data`, so a native binary is run from its build directory; the repository's
-own `data/` has no maps and is not a valid `--data` directory.
+ground art, and the Ubuntu Bold the configure downloads, plus on the web
+`Ubuntu-Bold.metrics` (below) — and prunes the directory to exactly that set
+first (`cmake/prune_staged_content.cmake`), so a file that stopped being
+content is not shipped inside the next wasm. Flat is what makes the references
+inside the files resolve: a map names its tilesets as siblings, and the client
+looks a tile's art up by bare name. The wasm builds embed the directory as
+`/data`, minus what each has no use for: the client leaves out the TTF, the
+server leaves out the TTF and its metrics, and only the offline page carries
+both. Both programs take `--data <dir>`, default `data`, so a native binary is
+run from its build directory; the repository's own `data/` has no maps and is
+not a valid `--data` directory.
 
 ---
 
@@ -714,7 +720,11 @@ in three places.
 `client/web/shell.html` is the page. It does no rendering and picks no
 transport: it fetches the glue and the wasm (compressed, as above), hands the
 wasm the canvas element and the argv `main()` would have had natively, and
-links Ubuntu Bold from Google Fonts for the canvas to draw its text in. It
+links Ubuntu Bold from Google Fonts for the canvas to draw its text in. The
+wasm carries only the face's metrics (`Ubuntu-Bold.metrics`): the TTF with its
+outlines taken out by `cmake/font_metrics.js` at build time, about 9KB against
+330KB, from which `client/ui/text.cpp` measures every run to the same bit as
+the full face would, before the webfont has arrived as well as after. It
 defaults to its own origin, so an untouched URL already points at the server
 that served it; `?host=`/`?port=` are only for a client build hosted somewhere
 else.
@@ -896,11 +906,11 @@ What makes it one file is `-sSINGLE_FILE`: the wasm is embedded in the script
 and the script in the page, so nothing is fetched. That is the whole
 requirement — a page opened from a `file://` URL may not fetch a `.wasm` beside
 itself — and it is also why the page references nothing else: no stylesheet,
-no favicon, and no Google Fonts. The Ubuntu Bold embedded in the wasm for
-measuring is registered with the document (`FontFace`) at startup, so text is
-drawn in the same bytes it was measured with. The file is several megabytes,
-and `dist/offline.html` is gitignored so a rebuild does not land in every
-commit of the otherwise committed `dist/`.
+no favicon, and no Google Fonts. It is the one build that embeds Ubuntu Bold
+itself, and registers it with the document (`FontFace`) at startup, so the
+canvas draws in the face whose metrics the client measures with. The file is
+several megabytes, and `dist/offline.html` is gitignored so a rebuild does not
+land in every commit of the otherwise committed `dist/`.
 
 State lives in the browser's localStorage, under the `flowrix-offline/` prefix
 so that a copy of the page served from the game's own origin never presents the
@@ -1069,6 +1079,58 @@ the tags.
   show embed" button for the other. Nothing here reinstates either, and no code
   path in this client executes or embeds what a chat line asks it to. If you
   are adding a tag, that is the line not to cross.
+
+## The asset browser and boot scripts
+
+The debug panel (Settings > Enable Debug Menu, then J or the bug button) has an
+Assets button, which opens the asset browser: `client/ui/menu_assets.cpp` for
+the panel, `client/ui/asset_files.h` for its file and text rules (listing,
+line index, colouring, undo), which the tests cover without a window. It is
+gated on the same switch as the debug panel and closes with it.
+
+**Files.** The places are, in the browser, `/data` (the content embedded in the
+wasm: in memory, so an edit lasts until the page reloads, and the game read
+what it needed at startup), `/persist` (browser storage: the settings, the
+session and the boot pair), `/boot` (the embedded tools) and `/`; natively,
+the `--data` directory and the working directory, and "Up" stops at a place's
+root. A text file opens in an editor that edits by `text_input.h`'s rules,
+scrolls both ways (horizontally by bytes into every line, so a map's
+single-line tile layer costs what is on screen), colours JSON, scripts and
+markup a line at a time, undoes by diffs rather than snapshots, and saves on
+Ctrl+S, which the editor claims from the browser while it has the caret
+(`Window::setClaimedShortcuts`; every other Ctrl/Cmd combination stays the
+browser's). An SVG gets a live preview; anything that is not UTF-8 text opens
+as a hex dump. Saving the settings file reloads the settings from it, or the
+client would write its own copy back over the edit on the way out. A new file
+cannot be made in `/persist` and nothing there can be deleted: the mount keeps
+only the names it was given, bound to the file objects it made
+(`client/web/persist.h`).
+
+**Boot.** What the next page load runs INSTEAD of the game. Choosing a script
+writes its text and its path into `/persist/boot-script` and
+`/persist/boot-path` (`client/web/boot.h`); copied, because the page has to
+run it before there is a wasm to read `/boot` from. The online shell reads the
+two keys out of localStorage before it fetches anything, runs the script with
+`window.eval`, and hands it `Module.flixBoot` -- `path`, the storage `prefix`,
+`startGame()` and `clear()` -- so a tool that never starts the game costs no
+download, and one that does sets itself up first. The offline page cannot keep
+its inline game from loading, so it holds `main()` back with `noInitialRun`
+and `startGame()` calls `callMain`, which that link alone exports. Both shells
+read `?boot=game` (skip the script once) and `?boot=reset` (forget it) with
+nothing from the client, so no script can lock anyone out, and a script that
+throws on the way in gets a screen with both ways out. A page started through
+a script says so in chat on every load.
+
+**The tools** are `client/web/boot/*.js`, embedded at `/boot` in the client and
+offline links (globbed: a script dropped in is a tool, and its first comment
+line is its summary on the Boot tab): `console.js` (the game under an
+on-screen console with a JavaScript prompt, F2), `netlog.js` (the game with a
+WebSocket monitor: rates, totals, busiest message types by first byte, close
+codes, F3), `recovery.js` (the page's browser storage, decoded, editable,
+exportable, without the game) and `diagnostics.js` (a report of what the
+browser supports, whether the server answers, and how fast the game downloads
+and compiles). The page's stylesheet pins every `<canvas>` full-size, which a
+tool drawing a canvas of its own has to override.
 
 ## Admin
 

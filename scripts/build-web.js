@@ -15,11 +15,15 @@
  *   bundle.wasm   the client, with the staged content embedded inside it:
  *                 mobs.json, petals.json, mob_drops.json, maps.json and the
  *                 maps it lists, their tilesets, the tile and ground art, and
- *                 the font
+ *                 the font's metrics (Ubuntu-Bold.metrics). Not the font
+ *                 itself, which the page loads from Google Fonts.
  *   server.js     the server's runtime glue -- what `node dist/server.js` runs
- *   server.wasm   the server, with the same content embedded
+ *   server.wasm   the server, with the same content embedded, minus the
+ *                 font's metrics
  *   offline.html  the offline build: server AND client in one wasm, embedded
- *                 in one page with nothing beside it. Opens from disk.
+ *                 in one page with nothing beside it. Opens from disk. The one
+ *                 build that embeds the font (Ubuntu-Bold.ttf), since it has
+ *                 nowhere to fetch it from.
  *   offline-asmjs.html
  *                 the same page for a browser with no wasm engine: the module
  *                 is translated to JavaScript (-sWASM=0). Bigger and slower;

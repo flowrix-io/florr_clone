@@ -71,6 +71,9 @@ enum class MenuId : std::uint8_t {
     /// admin button, which only an admin is shown, or `/admin gui`. Its key is
     /// unbound and not rebindable.
     AdminDashboard,
+    /// The asset browser. Opened from the debug panel and gated on the same
+    /// switch; on no strip button, and its key is unbound and not rebindable.
+    Assets,
     Count,
 };
 
@@ -404,6 +407,10 @@ struct MenuContext {
     /// the strip has been. The settings panel closes on a click outside its
     /// card, but not on this one button: see SettingsPanel::render.
     Rect settingsButton{};
+    /// Set by a panel that hands over to another -- the debug panel's Assets
+    /// button, and the asset browser's way back. Opening a menu is the menu
+    /// system's business, so the panel only names the one it wants.
+    MenuId openMenu = MenuId::None;
 
     Vec2 mouse() const { return {window.mouseX(), window.mouseY()}; }
     bool over(Rect r) const { return r.contains(mouse()); }
@@ -1179,6 +1186,28 @@ private:
                           const char* unit);
 };
 
+/// The asset browser: the files this client can reach -- the content embedded
+/// in the wasm, what browser storage keeps, the boot tools -- listed, opened
+/// and edited, with a colouring editor for text and a hex view for the rest;
+/// and the Boot tab, which names the script the next page load runs instead of
+/// the game (client/web/boot.h). Reached from the debug panel, so it is gated
+/// on the same switch. Its state lives in menu_assets.cpp, at file scope, as
+/// the database editor's does; reopening it keeps the open file and its edits.
+class AssetsPanel {
+public:
+    bool render(MenuContext&);
+    void reset();
+    static double preferredWidth();
+    static double preferredHeight();
+    static Rect bounds(int viewWidth, int viewHeight);
+
+    /// Where this client's content and settings file are: the browser's
+    /// places are fixed, a native client's are wherever it was pointed. Saving
+    /// the settings file in the editor reloads the settings from it, or the
+    /// client would write its own copy back over the edit on the way out.
+    static void setPaths(const std::string& dataDirectory, const std::string& settingsFile);
+};
+
 /// The admin database editor: accounts and the raw tables, as trees to read
 /// and edit. Only ever opened by the server's answer to `/admin db`, which a
 /// database-flagged admin gets and nobody else does; the server checks every
@@ -1342,6 +1371,11 @@ public:
     /// owns them -- they span the whole frame, not just the menus -- so it
     /// lends the panel a pointer rather than the menus gathering a copy.
     void setProfiling(const ProfilingStats* stats) { profiling_ = stats; }
+
+    /// See AssetsPanel::setPaths.
+    void setFilePaths(const std::string& dataDirectory, const std::string& settingsFile) {
+        AssetsPanel::setPaths(dataDirectory, settingsFile);
+    }
 
 private:
     const ProfilingStats* profiling_ = nullptr;
@@ -1602,6 +1636,7 @@ private:
     DebugPanel debug_;
     AdminDbPanel adminDb_;
     AdminDashboardPanel adminDashboard_;
+    AssetsPanel assets_;
 };
 
 /// A menu's display name, which main.cpp's `--menu <name>` is matched against.

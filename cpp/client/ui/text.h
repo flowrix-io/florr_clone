@@ -21,9 +21,10 @@ namespace flix::ui {
 /// about which face a run is in.
 class Fonts {
 public:
-    /// Loads the bundled face, or a platform fallback. Returns false only when
-    /// no usable font exists at all, in which case text draws as nothing and
-    /// the caller should say so.
+    /// Loads the bundled face, or a platform fallback. The web build loads the
+    /// face's metrics alone, Ubuntu-Bold.metrics: the page draws the glyphs.
+    /// Returns false only when no usable font exists at all, in which case
+    /// text draws as nothing and the caller should say so.
     static bool init(const std::string& dataDir, std::string& errorOut);
     static bool ready();
     static const Font& face();

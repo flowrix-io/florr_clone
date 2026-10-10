@@ -38,6 +38,7 @@
 #endif
 #include "client/ui/text_input.h"
 #include "client/ui/touch_scroll.h"
+#include "client/web/boot.h"
 #include "client/web/reload.h"
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
@@ -224,6 +225,9 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // A missing settings file is a first run, not a failure: the defaults in
     // ClientSettings are already the shipped configuration.
     menus_.settings().load(settingsPath());
+    // Where the asset browser starts, and which file it reloads the settings
+    // from when it saves one.
+    menus_.setFilePaths(config.dataDir, settingsPath());
     // A saved door that no staged map offers any more -- renamed, removed,
     // or a sublevel door that stopped being pickable -- is dropped here,
     // once. Kept, it would send a choice the server refuses with a notice
@@ -267,6 +271,14 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     for (const std::string& line : config.seedChat) net_.addLocalChat({}, line);
     for (const AppConfig::ChannelLine& line : config.seedChannelChat) {
         net_.addLocalChat(line.author, line.text, line.channel);
+    }
+    // A page a boot script started says so on every load, where the player
+    // will read it. The script ran with the page's whole trust before the game
+    // did, and one somebody talked them into keeping must not run unseen.
+    const std::string bootedFrom = web::bootedThrough();
+    if (!bootedFrom.empty()) {
+        net_.addLocalChat("Debug", "This page was started by the boot script " + bootedFrom +
+                                       ". Debug > Assets > Boot changes what runs.");
     }
     if (config.autoChatOpen) {
         chatOpen_ = true;

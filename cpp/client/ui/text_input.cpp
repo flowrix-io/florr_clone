@@ -492,15 +492,23 @@ std::size_t indexAtPoint(const std::string& value, double originX, double firstB
 bool trackTextMouseMultiline(Window& window, TextFieldState& state, Rect box,
                              const std::string& value, double originX, double firstBaseline,
                              double lineHeight, double size, double timeSeconds) {
+    return trackTextMouseWith(
+        window, state, box, value, timeSeconds,
+        [&](Vec2 point) {
+            return indexAtPoint(value, originX, firstBaseline, lineHeight, size, point);
+        },
+        false);
+}
+
+bool trackTextMouseWith(Window& window, TextFieldState& state, Rect box, const std::string& value,
+                        double timeSeconds, const std::function<std::size_t(Vec2)>& resolve,
+                        bool blurOutside) {
     const Vec2 mouse{window.mouseX(), window.mouseY()};
     TextFieldRegions::instance().record(box);
-    const auto resolve = [&] {
-        return indexAtPoint(value, originX, firstBaseline, lineHeight, size, mouse);
-    };
 
     if (state.dragging) {
         if (window.mouseDown(MouseButton::Left)) {
-            state.selection.caret = resolve();
+            state.selection.caret = resolve(mouse);
             state.caretSeconds = timeSeconds;
         } else {
             state.dragging = false;
@@ -509,10 +517,11 @@ bool trackTextMouseMultiline(Window& window, TextFieldState& state, Rect box,
 
     if (!window.mousePressed(MouseButton::Left)) return false;
     if (!box.contains(mouse)) {
-        state.dragging = false;
+        if (blurOutside) state.blur();
+        else state.dragging = false;
         return false;
     }
-    return pressAt(window, state, resolve(), value, timeSeconds, true);
+    return pressAt(window, state, resolve(mouse), value, timeSeconds, true);
 }
 
 } // namespace flix::ui

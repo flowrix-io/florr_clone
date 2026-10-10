@@ -92,6 +92,89 @@
     },
   };
   window.Module = Module;
+
+  // --- the boot script ------------------------------------------------------
+  // What the online page does (client/web/shell.html), under this page's own
+  // storage prefix: Debug > Assets > Boot can name a script for the next load
+  // to run instead of the game, and `?boot=game` / `?boot=reset` skip it once
+  // or forget it. The difference is that the game is this page, inline below,
+  // so it cannot be kept from loading -- only from starting. With a script to
+  // run, main() waits (noInitialRun) and the script's startGame() calls it.
+  const kBootPrefix = 'flowrix-offline/';
+  const stored = (name) => {
+    try {
+      const saved = localStorage.getItem(kBootPrefix + name);
+      if (!saved) return '';
+      return new TextDecoder().decode(Uint8Array.from(atob(saved), (c) => c.charCodeAt(0)));
+    } catch (e) {
+      return '';
+    }
+  };
+  const forget = () => {
+    try {
+      localStorage.removeItem(kBootPrefix + 'boot-script');
+      localStorage.removeItem(kBootPrefix + 'boot-path');
+    } catch (e) { }
+  };
+  const bootMode = query.get('boot');
+  if (bootMode === 'reset') forget();
+  const bootSource = bootMode === 'game' || bootMode === 'reset' ? '' : stored('boot-script');
+  const bootPath = bootSource ? (stored('boot-path') || 'boot-script.js') : '';
+
+  let runtimeReady = false;
+  let startWanted = false;
+  let gameStarted = false;
+  const startGame = () => {
+    if (gameStarted) return;
+    // Asked for before the runtime is up: it starts the moment it is.
+    if (!runtimeReady) {
+      startWanted = true;
+      return;
+    }
+    gameStarted = true;
+    Module.callMain(Module.arguments);
+  };
+  Module.flixBoot = { path: bootPath, prefix: kBootPrefix, startGame, clear: forget };
+  if (!bootSource) return;
+
+  Module.noInitialRun = true;
+  Module.onRuntimeInitialized = () => {
+    runtimeReady = true;
+    if (startWanted) startGame();
+  };
+  // A script that throws on its way in leaves a way out on screen.
+  const bootFailed = (error) => {
+    console.error('[boot] ' + bootPath + ' failed: ' + error);
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;' +
+      'align-items:center;justify-content:center;gap:16px;padding:24px;background:#16191c;' +
+      'color:#fff;font:700 16px Ubuntu,sans-serif;text-align:center';
+    const message = document.createElement('div');
+    message.textContent = 'The boot script ' + bootPath + ' failed: ' + error;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center';
+    const action = (label, run) => {
+      const button = document.createElement('button');
+      button.textContent = label;
+      button.style.cssText = 'font:inherit;padding:8px 16px;border:0;border-radius:4px;' +
+        'background:#4caf50;color:#fff;cursor:pointer';
+      button.onclick = run;
+      row.append(button);
+    };
+    action('Start the game', () => { box.remove(); startGame(); });
+    action('Forget the script and reload', () => { forget(); location.reload(); });
+    box.append(message, row);
+    document.body.append(box);
+  };
+
+  console.info('[boot] running ' + bootPath + ' instead of the game; ' +
+               '?boot=game skips it once, ?boot=reset forgets it');
+  try {
+    // An indirect eval, for global scope: see the online page.
+    window.eval(bootSource + '\n//# sourceURL=' + bootPath.replace(/^\/+/, ''));
+  } catch (error) {
+    bootFailed(error);
+  }
 })();
 </script>
     {{{ SCRIPT }}}

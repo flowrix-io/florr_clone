@@ -124,9 +124,11 @@
 
   // What the page downloads is bundle.js -- emscripten's runtime glue -- and
   // bundle.wasm, the client itself with mobs.json, petals.json,
-  // mob_drops.json, the maps and the one staged font (Ubuntu-Bold.ttf)
-  // embedded inside it: about five megabytes of it. `npm run build` stages a raw-deflate copy of each beside
-  // the original, bundle.js.bin and bundle.wasm.bin, and this prefers them.
+  // mob_drops.json, the maps and the font's metrics embedded inside it: about
+  // five megabytes of it. The font itself is not in there: the page gets it
+  // from the Google Fonts stylesheet in the head. `npm run build` stages a
+  // raw-deflate copy of each beside the original, bundle.js.bin and
+  // bundle.wasm.bin, and this prefers them.
   // Deflate takes the wasm to about a fifth, and on a first visit that
   // transfer is most of the wait.
   //
@@ -200,44 +202,141 @@
     status.textContent = 'client error: ' + what;
   };
 
-  // Started now, before the glue: compiling the module is the long pole, and
-  // this way it runs against the download instead of after it. compileStreaming
-  // over a Response the page built itself is specified to work -- the MIME
-  // type above is what it checks -- and the retry is for an engine that
-  // disagrees. A module that simply does not compile fails the retry too,
-  // with the same message.
-  const compiled = load('bundle.wasm', 'application/wasm')
-    .then((response) => WebAssembly.compileStreaming(response))
-    .catch(async (error) => {
-      console.warn('[loader] streaming compile failed (' + error + '); buffering');
-      const response = await load('bundle.wasm', 'application/wasm');
-      return WebAssembly.compile(await response.arrayBuffer());
-    });
+  // Everything from here to the boot section below is the game's own load. It
+  // is a function rather than straight-line code because a boot script may run
+  // in its place (see below), and that script decides when -- and whether --
+  // the game starts. Called once; a second call does nothing.
+  let gameStarted = false;
+  const startGame = () => {
+    if (gameStarted) return;
+    gameStarted = true;
+    status.hidden = false;
 
-  // The glue asks for the module through this hook rather than going looking
-  // for bundle.wasm, which is what keeps it off the uncompressed copy.
-  // Returning an empty object is emscripten's "not yet": the instance arrives
-  // through the callback whenever the compile above finishes.
-  Module.instantiateWasm = (imports, ready) => {
-    compiled.then((module) => WebAssembly.instantiate(module, imports))
-            .then(ready)
-            .catch((error) => fail('bundle.wasm: ' + error));
-    return {};
+    // Started now, before the glue: compiling the module is the long pole, and
+    // this way it runs against the download instead of after it.
+    // compileStreaming over a Response the page built itself is specified to
+    // work -- the MIME type above is what it checks -- and the retry is for an
+    // engine that disagrees. A module that simply does not compile fails the
+    // retry too, with the same message.
+    const compiled = load('bundle.wasm', 'application/wasm')
+      .then((response) => WebAssembly.compileStreaming(response))
+      .catch(async (error) => {
+        console.warn('[loader] streaming compile failed (' + error +
+                     '); buffering');
+        const response = await load('bundle.wasm', 'application/wasm');
+        return WebAssembly.compile(await response.arrayBuffer());
+      });
+
+    // The glue asks for the module through this hook rather than going looking
+    // for bundle.wasm, which is what keeps it off the uncompressed copy.
+    // Returning an empty object is emscripten's "not yet": the instance arrives
+    // through the callback whenever the compile above finishes.
+    Module.instantiateWasm = (imports, ready) => {
+      compiled.then((module) => WebAssembly.instantiate(module, imports))
+              .then(ready)
+              .catch((error) => fail('bundle.wasm: ' + error));
+      return {};
+    };
+
+    // The glue itself, injected rather than left to the <script src> tag emcc
+    // emits (parked in the comment at the end of this file), because the copy
+    // worth loading is the compressed one. An injected script runs in global
+    // scope exactly as that tag's would, and the glue picks up the Module
+    // defined above the same way.
+    load('bundle.js', 'text/javascript')
+      .then((response) => response.text())
+      .then((source) => {
+        const script = document.createElement('script');
+        script.textContent = source;
+        document.body.appendChild(script);
+      })
+      .catch((error) => fail('bundle.js: ' + error));
   };
 
-  // The glue itself, injected rather than left to the <script src> tag emcc
-  // emits (parked in the comment at the end of this file), because the copy
-  // worth loading is the compressed one. An injected script runs in global
-  // scope exactly as that tag's would, and the glue picks up the Module
-  // defined above the same way.
-  load('bundle.js', 'text/javascript')
-    .then((response) => response.text())
-    .then((source) => {
-      const script = document.createElement('script');
-      script.textContent = source;
-      document.body.appendChild(script);
-    })
-    .catch((error) => fail('bundle.js: ' + error));
+  // --- the boot script ------------------------------------------------------
+  // Debug > Assets > Boot can name a script for the next load to run INSTEAD
+  // of the game: one of the tools embedded in the wasm under /boot, or any .js
+  // file the player had open (client/web/boot.h). The client keeps it beside
+  // its settings in browser storage, base64 like the rest of what that mount
+  // stores, so it is read here before a byte of the game is fetched: a tool
+  // that never starts the game costs nothing, and one that does sets itself up
+  // first and then calls Module.flixBoot.startGame().
+  //
+  // `?boot=game` skips the script for this load and `?boot=reset` forgets it.
+  // Both are read here, needing nothing from the client, so no script -- a
+  // broken one, or one somebody was talked into keeping -- can lock anyone
+  // out of the game.
+  const kBootPrefix = 'flowrix/';
+  const stored = (name) => {
+    try {
+      const saved = localStorage.getItem(kBootPrefix + name);
+      if (!saved) return '';
+      return new TextDecoder().decode(Uint8Array.from(atob(saved), (c) => c.charCodeAt(0)));
+    } catch (e) {
+      return '';
+    }
+  };
+  const forget = () => {
+    try {
+      localStorage.removeItem(kBootPrefix + 'boot-script');
+      localStorage.removeItem(kBootPrefix + 'boot-path');
+    } catch (e) { }
+  };
+  const bootMode = new URLSearchParams(location.search).get('boot');
+  if (bootMode === 'reset') forget();
+  const bootSource = bootMode === 'game' || bootMode === 'reset' ? '' : stored('boot-script');
+  const bootPath = bootSource ? (stored('boot-path') || 'boot-script.js') : '';
+  Module.flixBoot = {
+    // What this load runs instead of the game, by the path it was set from.
+    // Empty when the game starts directly; the client reads it to say so.
+    path: bootPath,
+    // What the client's files in browser storage are kept under.
+    prefix: kBootPrefix,
+    startGame,
+    // Forgets the boot script, so the next load starts the game.
+    clear: forget,
+  };
+  if (!bootSource) {
+    startGame();
+    return;
+  }
+
+  // A script that throws on its way in leaves a way out on screen.
+  const bootFailed = (error) => {
+    console.error('[boot] ' + bootPath + ' failed: ' + error);
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;' +
+      'align-items:center;justify-content:center;gap:16px;padding:24px;background:#16191c;' +
+      'color:#fff;font:700 16px Ubuntu,sans-serif;text-align:center';
+    const message = document.createElement('div');
+    message.textContent = 'The boot script ' + bootPath + ' failed: ' + error;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center';
+    const action = (label, run) => {
+      const button = document.createElement('button');
+      button.textContent = label;
+      button.style.cssText = 'font:inherit;padding:8px 16px;border:0;border-radius:4px;' +
+        'background:#4caf50;color:#fff;cursor:pointer';
+      button.onclick = run;
+      row.append(button);
+    };
+    action('Start the game', () => { box.remove(); startGame(); });
+    action('Forget the script and reload', () => { forget(); location.reload(); });
+    box.append(message, row);
+    document.body.append(box);
+  };
+
+  console.info('[boot] running ' + bootPath + ' instead of the game; ' +
+               '?boot=game skips it once, ?boot=reset forgets it');
+  status.hidden = true;
+  try {
+    // window.eval, which is an indirect eval: the script runs in global scope,
+    // as a <script> element's would, but a throw on the way in lands here
+    // instead of nowhere. The sourceURL names it in the developer tools.
+    window.eval(bootSource + '\n//# sourceURL=' + bootPath.replace(/^\/+/, ''));
+  } catch (error) {
+    bootFailed(error);
+  }
 })();
 </script>
     <!-- emcc replaces the token below with a <script> tag for bundle.js, and

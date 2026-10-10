@@ -334,6 +334,17 @@ public:
     bool ctrlHeld() const;
     bool altHeld() const;
 
+    /// The Ctrl/Cmd combinations the client wants for itself instead of the
+    /// browser: a text editor's Ctrl+S, which a page otherwise answers with
+    /// its own Save dialog. Every other combination stays the browser's, which
+    /// is what keeps reload and the developer tools working over the canvas.
+    ///
+    /// Published every frame by whatever holds the keyboard, as the soft
+    /// keyboard's regions are, because the keydown it decides arrives between
+    /// frames. Natively there is no browser to keep a shortcut from, and this
+    /// does nothing.
+    void setClaimedShortcuts(std::vector<Key> keys);
+
     /// The system clipboard's text, for a field's paste. Empty when the
     /// clipboard holds no text at all; the caller still has to filter it,
     /// since what arrives is whatever the user last copied ANYWHERE.

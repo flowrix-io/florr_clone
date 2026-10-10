@@ -469,6 +469,8 @@ struct Window::Impl {
   bool pointerIsTouch = false;
   Window::TouchClaimHandler touchClaim;
   std::vector<WindowRect> keyboardRegions;
+  /// See Window::setClaimedShortcuts.
+  std::vector<Key> claimedShortcuts;
   /// What the mirrored finger is doing when it may be scrolling a list, and
   /// what that does to the left button. See touch_gesture.h.
   TouchScrollGesture gesture;
@@ -961,9 +963,13 @@ struct Window::Impl {
 
     // Consumed, so the page does not also scroll on Space, tab away, or open a
     // quick-find on '/'. Ctrl and Cmd combinations are left to the browser:
-    // reload and the developer tools are not the game's to swallow.
-    return (event->ctrlKey || event->metaKey || key == Key::F5 || key == Key::F12) ? EM_FALSE
-                                                                                  : EM_TRUE;
+    // reload and the developer tools are not the game's to swallow -- unless
+    // the client has claimed that one combination (setClaimedShortcuts).
+    if (event->ctrlKey || event->metaKey) {
+      const auto& claimed = impl->claimedShortcuts;
+      return std::find(claimed.begin(), claimed.end(), key) != claimed.end() ? EM_TRUE : EM_FALSE;
+    }
+    return (key == Key::F5 || key == Key::F12) ? EM_FALSE : EM_TRUE;
   }
 
   // The page went away, or the canvas lost the pointer mid-drag. Either way the
@@ -1510,6 +1516,14 @@ void Window::setSoftKeyboardRegions(std::vector<WindowRect> regions) {
   impl_->keyboardRegions = std::move(regions);
 #else
   (void)regions;
+#endif
+}
+
+void Window::setClaimedShortcuts(std::vector<Key> keys) {
+#ifdef __EMSCRIPTEN__
+  impl_->claimedShortcuts = std::move(keys);
+#else
+  (void)keys;
 #endif
 }
 

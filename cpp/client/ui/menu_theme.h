@@ -77,6 +77,9 @@ inline constexpr PanelSkin kAdminDbSkin{0x55606Bu, 0x434C55u, 0x7A8794u};
 /// editor's reason. Its strip button and the Release chip wear it too, so both
 /// say which card they belong to.
 inline constexpr PanelSkin kAdminDashboardSkin{0x5C5B9Cu, 0x48477Au, 0x7F7EBFu};
+/// The asset browser: the teal of the debug panel's Assets button, which is
+/// the one way in, so the card it opens reads as that button's.
+inline constexpr PanelSkin kAssetsSkin{0x3E7C74u, 0x30625Bu, 0x63A89Eu};
 
 // --- shared panel metrics ---------------------------------------------------
 

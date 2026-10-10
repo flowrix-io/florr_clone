@@ -83,6 +83,21 @@ bool Fonts::init(const std::string& dataDir, std::string& errorOut) {
     FontState& s = state();
     if (s.ready) return true;
 
+#if defined(__EMSCRIPTEN__)
+    // The page's own text engine draws every run, in the Ubuntu the page
+    // loads, so this build needs the face's metrics and none of its outlines.
+    // The build stages exactly that: the TTF with its glyphs emptied out
+    // (cmake/font_metrics.js), whose cmap, advances and em box are the full
+    // face's byte for byte, so every run measures to the bit what it would
+    // against the full file. Only the offline page embeds the TTF, to register
+    // with the document for drawing. A browser has no system fonts to fall
+    // back to.
+    s.path = dataDir + "/Ubuntu-Bold.metrics";
+    if (!s.face.loadFromFile(s.path)) {
+        errorOut = "could not load the font metrics (" + s.path + ")";
+        return false;
+    }
+#else
     s.path = dataDir + "/Ubuntu-Bold.ttf";
     if (!s.face.loadFromFile(s.path)) {
         // A bold system face first; a regular one only so that a machine with
@@ -96,6 +111,7 @@ bool Fonts::init(const std::string& dataDir, std::string& errorOut) {
             return false;
         }
     }
+#endif
     s.ready = true;
     return true;
 }

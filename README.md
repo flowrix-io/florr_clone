@@ -206,6 +206,31 @@ nothing. It starts the `dist/server.js` that is already there and checks its
 WebSocket handshake and framing over raw TCP, so rebuild the server first
 (`npm run build:server`) if you changed it.
 
+## Debug tools
+
+Settings > Advanced > Enable Debug Menu puts a bug button in the top strip, and
+J opens the same panel. Besides the frame and server graphs, its Assets button
+opens the asset browser: the files the client can reach (the content embedded in
+the build, what browser storage keeps, the debug tools), opened and edited in
+place. Text gets colouring for JSON, scripts and SVG, undo and Ctrl+S, an SVG
+gets a live preview, and anything else opens as a hex dump. In the browser, a
+save under Storage is kept; any other edit lasts until the page reloads.
+
+The asset browser's Boot tab picks a script for the next page load to run
+instead of the game. The build embeds four:
+
+- `console.js`: the game under an on-screen console with a JavaScript prompt
+  (F2), for a device with no developer tools
+- `netlog.js`: the game with a network monitor (F3)
+- `recovery.js`: the page's browser storage, to read, edit, export or clear
+  without starting the game
+- `diagnostics.js`: what the browser supports, whether the server answers, and
+  how fast the game downloads and compiles, as a report to copy
+
+Any `.js` file can be picked instead, with Set as boot. If a boot script breaks
+the page, add `?boot=game` to the address to skip it for one load, or
+`?boot=reset` to forget it.
+
 ## Layout
 
 ```

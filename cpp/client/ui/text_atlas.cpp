@@ -47,8 +47,8 @@ constexpr std::size_t kMaxMisses = 8192;
 constexpr std::size_t kMaxWaiting = 1024;
 
 /// The CSS font shorthand for a run. `Ubuntu` is the face the page loads and
-/// the same one `data/Ubuntu-Bold.ttf` supplies to `measure()`, so a layout
-/// measured against the outlines still fits what the browser draws.
+/// the same one whose metrics (`data/Ubuntu-Bold.metrics`) `measure()` reads,
+/// so a layout measured against the face still fits what the browser draws.
 std::string fontSpec(double size) {
     char buf[64];
     std::snprintf(buf, sizeof buf, "bold %.3fpx Ubuntu, sans-serif", size);

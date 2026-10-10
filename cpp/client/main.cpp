@@ -22,6 +22,7 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
+#include "client/web/boot.h"
 #include "client/web/persist.h"
 #endif
 
@@ -164,8 +165,11 @@ int main(int argc, char** argv) {
     // Before start(), which reads both files. MEMFS is gone the moment the tab
     // is, so the settings and the session token are moved onto storage the
     // browser keeps; everything else the client reads is embedded and
-    // read-only, and stays in memory where it belongs.
-    if (flix::web::mountStorage({kSessionName, std::string(kSessionName) + "-settings"})) {
+    // read-only, and stays in memory where it belongs. The boot script the
+    // asset browser names for the next load is kept there too, because the
+    // page has to read it before there is any wasm (client/web/boot.h).
+    if (flix::web::mountStorage({kSessionName, std::string(kSessionName) + "-settings",
+                                 flix::web::kBootPathName, flix::web::kBootScriptName})) {
         config.sessionFile = std::string(flix::web::kStorageDirectory) + "/" + kSessionName;
     }
 

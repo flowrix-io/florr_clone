@@ -16,6 +16,7 @@
 // offset an x lands on.
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -238,6 +239,16 @@ bool trackTextMouse(Window&, TextFieldState&, Rect box, const TextRun&,
 bool trackTextMouseMultiline(Window&, TextFieldState&, Rect box, const std::string& value,
                              double originX, double firstBaseline, double lineHeight,
                              double size, double timeSeconds);
+
+/// The pointer handling of the two above for a field that lays out its own
+/// text -- one that scrolls, say, where the layout those two assume does not
+/// hold. `resolve` maps a point to the byte offset under it, and is asked about
+/// points past the box's edges too while a drag runs on. A press outside the
+/// box blurs the field when `blurOutside` is set, as a single-line field's
+/// does; the multiline one above leaves its focus alone.
+bool trackTextMouseWith(Window&, TextFieldState&, Rect box, const std::string& value,
+                        double timeSeconds, const std::function<std::size_t(Vec2)>& resolve,
+                        bool blurOutside);
 
 /// Start of the UTF-8 sequence ending at `at`, and start of the one beginning
 /// there -- one character back and one character forward. Trimming a single

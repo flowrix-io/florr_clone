@@ -77,6 +77,7 @@ const std::array<MenuMeta, kMenuCount> kMenus = {{
     {"Database", Key::Unknown},
     // `--menu admin` reaches it by this label, as every panel is reached.
     {"Admin", Key::Unknown},
+    {"Assets", Key::Unknown},
 }};
 
 /// Every rebindable action, indexed by ControlAction, in the browser's
@@ -820,6 +821,7 @@ void MenuSystem::toggle(MenuId id) {
         case MenuId::Debug:       debug_.reset(); break;
         case MenuId::AdminDb:     adminDb_.reset(); break;
         case MenuId::AdminDashboard: adminDashboard_.reset(); break;
+        case MenuId::Assets:      assets_.reset(); break;
         default: break;
     }
 }
@@ -1046,6 +1048,9 @@ Rect AdminDbPanel::bounds(int w, int h) {
 Rect AdminDashboardPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
 }
+Rect AssetsPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
+}
 
 Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
     switch (id) {
@@ -1062,6 +1067,7 @@ Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
         case MenuId::Debug:         return DebugPanel::bounds(viewWidth, viewHeight);
         case MenuId::AdminDb:       return AdminDbPanel::bounds(viewWidth, viewHeight);
         case MenuId::AdminDashboard: return AdminDashboardPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Assets:        return AssetsPanel::bounds(viewWidth, viewHeight);
         default:                    return listPanel(380.0, viewWidth, viewHeight);
     }
 }
@@ -2230,6 +2236,16 @@ bool DebugPanel::render(MenuContext& ctx) {
         button(canvas, r, kTabLabels[i], !active && r.contains(mouse), false, style);
         if (ctx.clicked(r)) tab_ = static_cast<Tab>(i);
     }
+    // Not a third tab: the asset browser needs a card several times this one's
+    // width, so the button hands over to it, and its own back button returns.
+    {
+        const Rect r{tabRow.x + 2 * (kTabW + 5.0), tabRow.y, kTabW, kTabH};
+        ButtonStyle style;
+        style.fill = 0x3E8E7Eu;
+        style.textSize = 13.0;
+        button(canvas, r, "Assets", r.contains(mouse), false, style);
+        if (ctx.clicked(r)) ctx.openMenu = MenuId::Assets;
+    }
 
     const Rect body{panel.x, tabRow.bottom(), panel.w, panel.bottom() - tabRow.bottom()};
     if (tab_ == Tab::Profiling) {
@@ -2484,8 +2500,9 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     // The setting is the single source of truth for the debug panel: unchecking
     // "Enable Debug Menu" while it is open closes it on the next frame rather
     // than leaving a panel up with no way back to it, which is what the
-    // reference's own render() does first thing.
-    if (drawn_ == MenuId::Debug && !settings_.showDebugButton) {
+    // reference's own render() does first thing. The asset browser is reached
+    // through the debug panel and goes with it.
+    if ((drawn_ == MenuId::Debug || drawn_ == MenuId::Assets) && !settings_.showDebugButton) {
         close();
         return;
     }
@@ -2524,6 +2541,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
         case MenuId::Debug:       keepOpen = debug_.render(ctx); break;
         case MenuId::AdminDb:     keepOpen = adminDb_.render(ctx); break;
         case MenuId::AdminDashboard: keepOpen = adminDashboard_.render(ctx); break;
+        case MenuId::Assets:      keepOpen = assets_.render(ctx); break;
         default: break;
     }
     // Latched before the closing-card check below: the Log Out button closes
@@ -2537,6 +2555,13 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     // eating the chat box's keystrokes all the way down.
     if (open_ == MenuId::None) return;
     wantsText_ = ctx.wantsText;
+    // A hand-over replaces this card with the one it named, the way a click on
+    // that card's own strip button would.
+    if (ctx.openMenu != MenuId::None && ctx.openMenu != open_) {
+        toggle(ctx.openMenu);
+        wantsText_ = false;
+        return;
+    }
     if (!keepOpen) close();
 }
 
@@ -2559,6 +2584,10 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
                         const OverlayFn& overStripUnderBar) {
     wantsText_ = false;
     panelRect_ = Rect{};
+    // Taken back every frame and claimed again by whatever still holds the
+    // keyboard this frame: a closed editor must not keep Ctrl+S from the
+    // browser. See Window::setClaimedShortcuts.
+    window.setClaimedShortcuts({});
     // Read once a frame, here, because this is the one entry point with the
     // account to ask: the strip draws the admin button off it.
     adminSlotShown_ = net.haveSession() && net.isSkinAdmin();
@@ -2708,6 +2737,7 @@ void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeco
     // over, or a card nobody is painting would still be swallowing clicks.
     wantsText_ = false;
     panelRect_ = Rect{};
+    window.setClaimedShortcuts({});
     loadoutHovered_ = -1;
     loadoutGrabbable_.fill(false);
     // No account, so no admin button and nothing being steered.

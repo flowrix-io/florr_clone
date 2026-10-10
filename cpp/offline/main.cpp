@@ -27,9 +27,10 @@
 //     client does, under a prefix of their own.
 //
 //   * The font. The online page loads Ubuntu from Google Fonts; this one has
-//     nowhere to load from, so the one face staged into the wasm for
-//     measuring (Ubuntu-Bold.ttf) is registered with the document for drawing
-//     too, and text is set in the same bytes it was measured with.
+//     nowhere to load from, so it is the one build that embeds the face
+//     itself (Ubuntu-Bold.ttf) and registers it with the document. The client
+//     measures from the face's metrics (Ubuntu-Bold.metrics), as the online
+//     one does: the same numbers as the face the canvas draws with.
 //
 // One thing this build offers that the others do not: a Grant Admin button in
 // Settings > Advanced. The server is in this page and the world is nobody
@@ -53,6 +54,7 @@
 #include <sys/stat.h>
 
 #include "client/app.h"
+#include "client/web/boot.h"
 #include "client/web/persist.h"
 #include "server/game_server.h"
 #include "shared/core/file.h"
@@ -208,7 +210,9 @@ int main(int argc, char** argv) {
     // the online client does. The database is restored by path (see above)
     // and lands in the directory the server is then pointed at.
     const bool stored = flix::web::mountStorage(
-        {kSessionName, std::string(kSessionName) + "-settings"}, kStoragePrefix);
+        {kSessionName, std::string(kSessionName) + "-settings", flix::web::kBootPathName,
+         flix::web::kBootScriptName},
+        kStoragePrefix);
     ::mkdir(kStateDirectory, 0777);
     g_databasePath = std::string(kStateDirectory) + "/" + kDatabaseName;
     g_databaseKey = std::string(kStoragePrefix) + kDatabaseName;
