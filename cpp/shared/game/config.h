@@ -820,6 +820,15 @@ struct PetalConfig {
     /// spawn path in the reference read this either.
     Rarity petMobRarity = Rarity::Common;
     int petCount = 1;
+    /// A TIMED summon: non-zero, each action hatches `petCount` fresh pets that
+    /// last this long, on top of any still out, instead of keeping one squad
+    /// topped up. Uncounted against the squad cap a plain egg has -- what
+    /// limits them is `petManaCost` and the reload. The magic stick.
+    double petLifetimeMillis = 0;
+    /// Mana one timed summon costs, before rarity: on the same doubling ladder
+    /// as requiredMana. A summon that cannot be paid for is skipped until the
+    /// next action; the petal itself still goes on the ring for free.
+    double petManaCost = 0;
 
     double slowFactor = 1.0;    ///< multiplies the victim's speed; 1 = none
     double slowDurationMillis = 0;
@@ -946,6 +955,8 @@ struct PetalStats {
     double passiveManaPerSecond = 0;
     /// What one spawn of this petal costs, this tier. See PetalConfig.
     double requiredMana = 0;
+    /// What one timed summon costs, this tier. See PetalConfig::petManaCost.
+    double petManaCost = 0;
     double knockback = 0;
     /// What this petal adds to the knockback its FLOWER takes, as a fraction:
     /// rubber's +0.3 a tier. Zero for every other petal.

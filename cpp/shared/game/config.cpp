@@ -1128,6 +1128,8 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.petMobIndex = ctx.link(mobIds, p.petMobId, "petMobType");
     p.petMobRarity = ctx.rarity(src, "petMobRarity");
     p.petCount = ctx.integer(src, "petCount", 1, 1, 64);
+    p.petLifetimeMillis = ctx.range(src, "petLifetimeMs", 0.0, 0.0, kMaxDurationMillis);
+    p.petManaCost = ctx.range(src, "petManaCost", 0.0, 0.0, kMaxBaseStat);
 
     p.slowFactor = ctx.range(src, "slowFactor", 1.0, 0.0, 1.0);
     p.slowDurationMillis = ctx.range(src, "slowDuration", 0.0, 0.0, kMaxDurationMillis);
@@ -1676,6 +1678,7 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.manaChargeMillis = c.burstManaChargeMillis;
     s.passiveManaPerSecond = c.passiveMana * mana;
     s.requiredMana = c.requiredMana * mana;
+    s.petManaCost = c.petManaCost * mana;
     // TypeScript keeps ordinary petal knockback flat across rarities. Jelly is
     // the one intentional exception: its per-rarity values are literal
     // overrides in petals.ts, not another copy of the damage multiplier.

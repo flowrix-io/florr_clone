@@ -375,6 +375,20 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         reload.alpha = 0.56;
         lines.push_back(reload);
     }
+    // The magic stick: paid per storm rather than per reload of the petal,
+    // and the storm's span is what the payment buys.
+    if (stats.petManaCost > 0.0) {
+        TooltipLine summon{"Mana per Summon: " + abbreviate(stats.petManaCost), 12.0};
+        summon.alpha = 0.56;
+        summon.altText = "Mana per Summon: " + exactNumber(stats.petManaCost);
+        lines.push_back(summon);
+    }
+    if (config.petLifetimeMillis > 0.0) {
+        TooltipLine span{"Summon Lifetime: " + exactNumber(config.petLifetimeMillis / 1000.0) + "s",
+                         12.0};
+        span.alpha = 0.56;
+        lines.push_back(span);
+    }
     if (stats.maxMana > 0.0) {
         TooltipLine pool{"Max Mana: +" + abbreviate(stats.maxMana), 12.0};
         pool.alpha = 0.56;

@@ -437,6 +437,9 @@ private:
     /// charged to the petal that hatched it.
     void retireDistantPets(World& world, const ContentRegistry& registry, Entity player,
                            double nowMillis);
+    /// Take back the timed summons (Pet::expiresAtMillis) whose time is up.
+    /// Their petal owes no reload for it: it has been hatching more all along.
+    void expireTimedPets(World& world, Entity player, double nowMillis);
     /// A loose petal is NOT retired for being far away: it stays where it was
     /// left for as long as it lasts. The one exception is a slab stranded in
     /// another realm from its flower -- after a teleporter, or joining the
@@ -466,14 +469,21 @@ private:
     void maintainPets(World& world, const ContentRegistry& registry, Entity player,
                       std::uint8_t slot, const PetalConfig& config, Rarity rarity,
                       PetalSlotState& state);
+    /// One action of a TIMED summoner (PetalConfig::petLifetimeMillis): pays
+    /// `stats.petManaCost` and hatches `petCount` more, however many it already
+    /// has out. Nothing is hatched, and nothing paid, when the pool is short.
+    void summonTimedPets(World& world, const ContentRegistry& registry, Entity player,
+                         std::uint8_t slot, const PetalConfig& config, const PetalStats& stats,
+                         Rarity rarity, PetalSlotState& state, double nowMillis);
 
-    /// The player's live summons of one mob type, over every slot.
+    /// The player's live squad members of one mob type, over every slot.
+    /// Timed summons are not squad members and are not counted.
     int countPetsOfType(World& world, const PetalSlotState& state, std::uint16_t mobIndex);
     /// Everything the player has summoned, which is what the entity cap counts.
     int countOwnedPets(World& world, const PetalSlotState& state);
     /// Take back every summon of one mob type, wherever it was hatched. The
     /// reference clears the type before it summons, so a squad replaces its
-    /// predecessor instead of joining it.
+    /// predecessor instead of joining it. Timed summons are left out.
     void recallPetsOfType(World& world, PetalSlotState& state, std::uint16_t mobIndex);
     /// Put `count` summons of `mobIndex` on the field around `at`, filed under
     /// `slot`. Stops short at the per-player entity cap. `strength` multiplies
@@ -482,7 +492,7 @@ private:
     /// -- is sqrt(2) times as strong.
     void summonPets(World& world, const ContentRegistry& registry, Entity player,
                     std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, int count, Vec2 at,
-                    PetalSlotState& state, double strength);
+                    PetalSlotState& state, double strength, double expiresAtMillis = 0.0);
 
     /// The flower petal opening on the mob it touched: it is spent, and either
     /// the flower is corrupted or a squad of glitch flowers lands on the mob.

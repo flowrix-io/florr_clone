@@ -846,6 +846,11 @@ struct Pet {
     /// Slot index of the petal that summoned it, so a broken petal can recall
     /// exactly the pets it owns.
     std::uint8_t slot = 0;
+    /// When a TIMED summon (PetalConfig::petLifetimeMillis) runs out; zero for
+    /// a squad member, which lasts until something kills or recalls it. A
+    /// timed pet is no part of its type's squad: it is not counted toward a
+    /// squad's size and a squad being replaced does not recall it.
+    double expiresAtMillis = 0;
 };
 
 /// A segmented body (centipedes). Each segment follows the one ahead.

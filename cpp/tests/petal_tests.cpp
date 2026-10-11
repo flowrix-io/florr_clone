@@ -48,6 +48,7 @@ const char* const kPetalsJson = R"JSON({
   "briny":    {"name":"Briny","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"damageReflection":0.25},"color":"#FFFFFF"},
   "brinier":  {"name":"Brinier","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"damageReflection":0.4},"color":"#FFFFFF"},
   "summoner": {"name":"Summoner","damage":1,"health":4,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petMobRarity":"common","petCount":2,"color":"#AA00AA"},
+  "stormcaller":{"name":"Stormcaller","damage":1,"health":10,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petCount":1,"petLifetimeMs":20000,"petManaCost":20,"color":"#42E3F5"},
   "toxic":    {"name":"Toxic","damage":2,"health":5,"size":1,"cooldown":1000,"count":1,"poison":0.05,"poisonDuration":3000,"color":"#00AA00"},
   "blade":    {"name":"Blade","damage":0,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#111111"},
   "sparkblade":{"name":"Spark Blade","damage":1,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#00FFFF"},
@@ -2995,6 +2996,75 @@ TEST(a_sandstorm_pet_is_never_retired_for_distance) {
     // mob AI is what brings a storm back now.
     CHECK_EQ(rig.petCount(), std::size_t(2));
     CHECK(!rig.slot(0).broken);
+}
+
+std::size_t timedPetCount(World& world) {
+    std::size_t n = 0;
+    Query<Pet> query{world};
+    query.each([&](Entity, Pet& pet) {
+        if (pet.expiresAtMillis > 0.0) ++n;
+    });
+    return n;
+}
+
+TEST(a_timed_summoner_hatches_one_per_reload_until_the_mana_runs_out) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    // 100 mana and nothing refilling it: five storms' worth, and no sixth.
+    rig.equip(0, "vessel");
+    rig.equip(1, "stormcaller");
+    rig.settleEquips();
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 1; }));
+    // No squad cap: the next reload hatches another beside the first.
+    const double first = rig.now;
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }, 40));
+    CHECK_NEAR(rig.now - first, 1000.0, net::kTickMillis * 1.5);
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 5; }));
+    CHECK(rig.world.get<ManaPool>(rig.player).current < 20.0);
+    rig.tick(90);
+    CHECK_EQ(rig.petCount(), std::size_t(5));
+    CHECK_EQ(timedPetCount(rig.world), std::size_t(5));
+
+    // Each runs out twenty seconds after it was hatched, uncharged to the
+    // petal, and is not killed doing so.
+    CHECK(rig.tickUntil([&] { return rig.petCount() < 5; }, 30 * 20));
+    CHECK_NEAR(rig.now - first, 20000.0, net::kTickMillis * 1.5);
+    CHECK(!rig.slot(1).broken);
+    Query<Dead> dead{rig.world};
+    CHECK_EQ(dead.count(), std::size_t(0));
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 0; }, 30 * 10));
+}
+
+TEST(a_timed_summons_price_doubles_per_tier) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    // A rare stormcaller costs 80 a storm: one from a 100-mana pool.
+    rig.equip(0, "vessel");
+    rig.equip(1, "stormcaller", Rarity::Rare);
+    rig.settleEquips();
+    CHECK_NEAR(fixture().registry.petalStats(petalId("stormcaller"), Rarity::Rare).petManaCost,
+               80.0, 1e-9);
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 1; }));
+    rig.tick(150);
+    CHECK_EQ(rig.petCount(), std::size_t(1));
+}
+
+TEST(a_squad_of_the_same_mob_neither_counts_nor_recalls_timed_summons) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "stormcaller");
+    rig.settleEquips();
+    CHECK(rig.tickUntil([&] { return timedPetCount(rig.world) == 3; }));
+    // The summoner hatches critters too. Its squad of two comes out whole
+    // beside the storms, and replacing it does not take them back.
+    rig.equip(2, "summoner");
+    CHECK(rig.tickUntil([&] { return rig.petCount() - timedPetCount(rig.world) == 2; }));
+    CHECK(timedPetCount(rig.world) >= 3);
+    rig.unequip(2);
+    rig.tick();
+    CHECK_EQ(rig.petCount(), timedPetCount(rig.world));
+    CHECK(timedPetCount(rig.world) >= 3);
 }
 
 TEST(unequipping_a_summoner_recalls_its_pets) {

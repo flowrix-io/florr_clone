@@ -423,6 +423,13 @@ bool canAffordMana(World& world, Entity player, double cost) {
     return pool != nullptr && pool->canAfford(cost);
 }
 
+/// A magic stick's storm rather than a member of its type's squad. See
+/// Pet::expiresAtMillis.
+bool isTimedPet(World& world, Entity pet) {
+    const Pet* tag = world.tryGet<Pet>(pet);
+    return tag != nullptr && tag->expiresAtMillis > 0.0;
+}
+
 /// Puts `amount` back, up to the pool's ceiling. Silently does nothing on a
 /// flower with no pool -- an orb worn without anything granting one restores
 /// mana into a bar that cannot hold it.
@@ -551,6 +558,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         // Before the slot pass, because retiring a pet puts the petal that
         // hatched it back on cooldown and the slot pass is what serves that.
         retireDistantPets(world, registry, player, nowMillis);
+        expireTimedPets(world, player, nowMillis);
         carryLoosePetalsAcrossRealms(world, player);
         reconcileSlots(world, registry, player, nowMillis);
         const Aggregate aggregate = recomputeModifiers(world, registry, player);
@@ -2217,8 +2225,13 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             // Looked up here rather than carried down the loop: raising a
             // corpse moves a flower between archetypes, and the player's
             // columns move with it.
-            maintainPets(world, registry, player, slot, config, rarity,
-                         world.get<PetalSlotState>(player));
+            if (config.petLifetimeMillis > 0.0) {
+                summonTimedPets(world, registry, player, slot, config, stats, rarity,
+                                world.get<PetalSlotState>(player), nowMillis);
+            } else {
+                maintainPets(world, registry, player, slot, config, rarity,
+                             world.get<PetalSlotState>(player));
+            }
         }
         if (behaviour.intervalMillis > 0.0) {
             runBehaviour(world, player, petal, config, stats, rarity, at, PetalTrigger::Interval,
@@ -3167,7 +3180,7 @@ int PetalSystem::countPetsOfType(World& world, const PetalSlotState& state,
     int count = 0;
     for (const PetalSlotState::Slot& slot : state.slots) {
         for (const Entity pet : slot.pets) {
-            if (!world.isAlive(pet) || world.has<Dead>(pet)) continue;
+            if (!world.isAlive(pet) || world.has<Dead>(pet) || isTimedPet(world, pet)) continue;
             const MobType* type = world.tryGet<MobType>(pet);
             if (type != nullptr && type->configIndex == mobIndex) ++count;
         }
@@ -3195,7 +3208,9 @@ void PetalSystem::recallPetsOfType(World& world, PetalSlotState& state, std::uin
             // nothing itself -- the flower's -- ever gets.
             if (!world.isAlive(pet)) continue;
             const MobType* type = world.tryGet<MobType>(pet);
-            if (type != nullptr && type->configIndex == mobIndex) {
+            // A magic stick's storms outlive a stick's squad being replaced:
+            // they were paid for one at a time and run out on their own clock.
+            if (type != nullptr && type->configIndex == mobIndex && !isTimedPet(world, pet)) {
                 // Destroyed, not marked Dead: a recalled summon has not been
                 // killed, so it must not raise a death event or drop anything.
                 world.destroy(pet);
@@ -3207,9 +3222,49 @@ void PetalSystem::recallPetsOfType(World& world, PetalSlotState& state, std::uin
     }
 }
 
+void PetalSystem::summonTimedPets(World& world, const ContentRegistry& registry, Entity player,
+                                  std::uint8_t slot, const PetalConfig& config,
+                                  const PetalStats& stats, Rarity rarity, PetalSlotState& state,
+                                  double nowMillis) {
+    const Transform* ownerTransform = world.tryGet<Transform>(player);
+    if (ownerTransform == nullptr) return;
+    // The same apex rule as a squad: the unique trio, for the one payment.
+    const bool apex = ladderRarity(rarity) == Rarity::Apex;
+    const Rarity petRarity = apex ? Rarity::Unique : rarity;
+    const int count = std::max(0, config.petCount) * (apex ? kApexPetCount : 1);
+    // At the cap the summon would land nothing, so it is not paid for either.
+    if (count <= 0 || countOwnedPets(world, state) >= kMaxPetEntitiesPerPlayer) return;
+    if (!spendMana(world, player, stats.petManaCost)) return;
+    summonPets(world, registry, player, slot, config.petMobIndex, petRarity, count,
+               ownerTransform->position, state, strengthBoost(rarity),
+               nowMillis + config.petLifetimeMillis);
+}
+
+void PetalSystem::expireTimedPets(World& world, Entity player, double nowMillis) {
+    PetalSlotState* state = world.tryGet<PetalSlotState>(player);
+    if (state == nullptr) return;
+    for (PetalSlotState::Slot& slot : state->slots) {
+        std::size_t kept = 0;
+        for (const Entity pet : slot.pets) {
+            if (!world.isAlive(pet)) continue;
+            const Pet* tag = world.tryGet<Pet>(pet);
+            if (tag != nullptr && tag->expiresAtMillis > 0.0 && nowMillis >= tag->expiresAtMillis &&
+                !world.has<Dead>(pet)) {
+                // Destroyed, not killed, as an escort that runs out of time
+                // is: the storm blowing itself out is not a death.
+                world.destroy(pet);
+                continue;
+            }
+            slot.pets[kept++] = pet;
+        }
+        slot.pets.resize(kept);
+    }
+}
+
 void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Entity player,
                              std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, int count,
-                             Vec2 at, PetalSlotState& state, double strength) {
+                             Vec2 at, PetalSlotState& state, double strength,
+                             double expiresAtMillis) {
     if (mobIndex == kInvalidIndex || count <= 0) return;
     PetalSlotState::Slot& slotState = state.slots[static_cast<std::size_t>(slot)];
 
@@ -3291,7 +3346,7 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         world.add<Afflictions>(pet);
         // Deliberately no Bounty: a pet awards no XP and drops nothing, so a
         // player's summons cannot be farmed by whoever kills them.
-        world.add<Pet>(pet, Pet{player, slot});
+        world.add<Pet>(pet, Pet{player, slot, expiresAtMillis});
 
         Replicated replicated;
         replicated.kind = net::EntityKind::Mob;
