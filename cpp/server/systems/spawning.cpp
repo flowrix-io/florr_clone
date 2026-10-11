@@ -449,6 +449,13 @@ double SpawnSystem::difficultyAt(Realm realm, Vec2 at) const {
 void SpawnSystem::spawnRingPetals(World& world, const ContentRegistry& content, Entity mob,
                                   const PetalRingSpec& spec, const MobStats& stats,
                                   Rarity rarity) {
+    spawnMobRingSeeds(world, content, mob, spec, stats.damage, stats.mass, rarity,
+                      [this]() -> std::uint32_t { return netIds != nullptr ? netIds->next() : 0; });
+}
+
+void spawnMobRingSeeds(World& world, const ContentRegistry& content, Entity mob,
+                       const PetalRingSpec& spec, double contactDamage, double mass,
+                       Rarity rarity, const std::function<std::uint32_t()>& nextNetId) {
     if (spec.petalIndex == kInvalidIndex) return;
     // Graded at the MOB's tier, not at the tier the ring's config names: an
     // apex dandelion wears apex seeds, the same rule its shots are fired at.
@@ -474,7 +481,7 @@ void SpawnSystem::spawnRingPetals(World& world, const ContentRegistry& content, 
         // The seed faces OUTWARD, which is gardn's kFollowRot and what puts a
         // dandelion's stem back into the body it grew from.
         world.add<Transform>(e, Transform{centre + Vec2::fromAngle(bearing, orbit), bearing, realm});
-        world.add<Body>(e, Body{seedRadius, stats.mass});
+        world.add<Body>(e, Body{seedRadius, mass});
         world.add<Faction>(e, side);
         // Its own pool, so it breaks alone -- which is the whole point of the
         // seeds being entities. Graded at the mob's tier like everything else
@@ -484,7 +491,7 @@ void SpawnSystem::spawnRingPetals(World& world, const ContentRegistry& content, 
         // ring is how this animal touches you, so touching a seed and touching
         // its hull cost the same. (The reference is explicit about this --
         // applyPetalRingDamage deals `mobDamage(enemy.entity)`.)
-        world.add<ContactDamage>(e, ContactDamage{stats.damage, kMobHitIntervalMillis});
+        world.add<ContactDamage>(e, ContactDamage{contactDamage, kMobHitIntervalMillis});
         world.add<HitCooldowns>(e);
         world.add<Knockback>(e);
         Replicated replicated;
@@ -493,7 +500,9 @@ void SpawnSystem::spawnRingPetals(World& world, const ContentRegistry& content, 
         replicated.rarity = rarity;
         replicated.spawnFlags = net::SpawnRingPetal;
         world.add<Replicated>(e, replicated);
-        if (netIds != nullptr) world.add<NetId>(e, NetId{netIds->next()});
+        if (nextNetId) {
+            if (const std::uint32_t id = nextNetId()) world.add<NetId>(e, NetId{id});
+        }
         // Re-fetched every time, never held: the create above moved it.
         if (MobPetalRing* live = world.tryGet<MobPetalRing>(mob)) live->seats[i] = e;
     }

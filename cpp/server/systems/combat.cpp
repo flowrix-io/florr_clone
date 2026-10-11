@@ -2106,6 +2106,13 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                                  (flushPair ? kNpcTouchSlack : 0.0);
             if (offset.lengthSq() > reach * reach) continue;
 
+            // A summoned firefly discharges on the tick its body reaches a wild
+            // mob, as a wild one does on reaching a flower -- above the body's
+            // own hit, for the reason given there.
+            if (petPair && source.isPet && source.lightningRadius > 0.0) {
+                dischargeOnContact(world, grid, source, nowMillis);
+            }
+
             // A TypeScript mob bump is independent of damage: it still lands
             // during respawn invulnerability, is not throttled by the damage
             // cooldown, and occurs before a lethal hit is handled. A hostile
@@ -2155,20 +2162,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 // and throws nothing, which is the whole difference between a
                 // firefly and a thorn.
                 if (source.lightningRadius > 0.0) {
-                    // Read before it is created: a mob that has never struck
-                    // should not pay an archetype move just for touching
-                    // somebody while it is still charging.
-                    const LightningClock* clock = world.tryGet<LightningClock>(source.attacker);
-                    if (clock == nullptr ||
-                        nowMillis - clock->lastStrikeMillis >= source.lightningCooldownMillis) {
-                        world.ensure<LightningClock>(source.attacker).lastStrikeMillis = nowMillis;
-                        // From the MOB, not from the flower it touched: the
-                        // bolt lands where the firefly is, and the flowers
-                        // standing around it are inside the same flash.
-                        strikeLightning(world, grid, source.attacker, source.position,
-                                        source.realm, source.lightningRadius,
-                                        source.lightningDamage, nowMillis);
-                    }
+                    dischargeOnContact(world, grid, source, nowMillis);
                 }
             }
 
@@ -2323,12 +2317,13 @@ void CombatSystem::strikeLightning(World& world, const SpatialGrid& grid, Entity
     strikeArms_.clear();
     for (const Entity victim : strikeCandidates_) {
         if (victim == source) continue;
-        // Flowers only, stated outright rather than left to the faction rule.
-        // A mob's shock is aimed at what it is fighting; washing over the mobs
-        // beside it would turn a jellyfish shoal into a mutual suicide pact,
-        // and canDamage() would not have stopped that on its own -- it lets
-        // anything through whose side it cannot resolve.
-        if (!world.has<PlayerTag>(victim)) continue;
+        // Stated outright rather than left to the faction rule: a wild mob's
+        // shock is aimed at flowers and a pet's at wild mobs (strikesAt).
+        // Washing over the mobs beside a wild one would turn a jellyfish shoal
+        // into a mutual suicide pact, and canDamage() would not have stopped
+        // that on its own -- it lets anything through whose side it cannot
+        // resolve.
+        if (!strikesAt(world, source, victim)) continue;
         const Transform* transform = world.tryGet<Transform>(victim);
         if (transform == nullptr || transform->realm != realm) continue;
         // Centres inside the disc. The stricter of the two rules a field could
@@ -2370,11 +2365,8 @@ void CombatSystem::gatherMobLightning(World& world, const ContentRegistry& conte
                                 Body& body) {
         const MobConfig& config = content.mob(type.configIndex);
         if (!config.lightning.present || config.lightning.strikeRange <= 0.0) return;
-        // A pet is a mob a flower summoned, and a strike only ever aims at
-        // flowers. Letting one through would mean a summon that electrocutes
-        // its owner, which is what canDamage then has to refuse -- once per
-        // broadphase query, every tick, forever.
-        if (world.has<Pet>(e)) return;
+        // A pet strikes too, at the wild mobs its owner is fighting rather
+        // than at flowers: strikesAt() is what keeps it off its owner.
         LightningSource striker;
         striker.mob = e;
         striker.position = transform.position;
@@ -2404,7 +2396,7 @@ void CombatSystem::resolveMobLightning(World& world, const SpatialGrid& grid, do
         // Something has to be in reach before a strike is thrown. Without this
         // the mob would flash on its cooldown forever with nothing to hit,
         // which is a bolt on every client's screen once a second per jellyfish.
-        if (!playerWithin(world, grid, striker.mob, striker.position, striker.realm,
+        if (!targetWithin(world, grid, striker.mob, striker.position, striker.realm,
                           striker.strikeRange, nowMillis)) {
             continue;
         }
@@ -2417,11 +2409,32 @@ void CombatSystem::resolveMobLightning(World& world, const SpatialGrid& grid, do
     }
 }
 
-bool CombatSystem::playerWithin(World& world, const SpatialGrid& grid, Entity mob, Vec2 at,
+void CombatSystem::dischargeOnContact(World& world, const SpatialGrid& grid,
+                                      const MeleeSource& source, double nowMillis) {
+    // Read before it is created: a mob that has never struck should not pay
+    // an archetype move just for touching something while it is still
+    // charging.
+    const LightningClock* clock = world.tryGet<LightningClock>(source.attacker);
+    if (clock != nullptr && nowMillis - clock->lastStrikeMillis < source.lightningCooldownMillis) {
+        return;
+    }
+    world.ensure<LightningClock>(source.attacker).lastStrikeMillis = nowMillis;
+    // From the MOB, not from what it touched: the bolt lands where the firefly
+    // is, and everything standing around it is inside the same flash.
+    strikeLightning(world, grid, source.attacker, source.position, source.realm,
+                    source.lightningRadius, source.lightningDamage, nowMillis);
+}
+
+bool CombatSystem::strikesAt(World& world, Entity source, Entity victim) {
+    if (world.has<Pet>(source)) return world.has<MobTag>(victim) && !world.has<Pet>(victim);
+    return world.has<PlayerTag>(victim);
+}
+
+bool CombatSystem::targetWithin(World& world, const SpatialGrid& grid, Entity mob, Vec2 at,
                                 Realm realm, double range, double nowMillis) {
     grid.query(realm, at, range + kBroadphasePad, strikeCandidates_);
     for (const Entity candidate : strikeCandidates_) {
-        if (!world.has<PlayerTag>(candidate)) continue;
+        if (!strikesAt(world, mob, candidate)) continue;
         const Transform* transform = world.tryGet<Transform>(candidate);
         if (transform == nullptr || transform->realm != realm) continue;
         if (distanceSq(transform->position, at) > range * range) continue;

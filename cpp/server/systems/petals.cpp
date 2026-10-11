@@ -8,6 +8,7 @@
 #include "server/replication.h"
 #include "server/systems/combat.h"
 #include "server/systems/movement.h"
+#include "server/systems/spawning.h"
 #include "shared/game/terrain.h"
 
 namespace flix {
@@ -559,6 +560,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         // hatched it back on cooldown and the slot pass is what serves that.
         retireDistantPets(world, registry, player, nowMillis);
         expireTimedPets(world, player, nowMillis);
+        runPetBroods(world, registry, player, nowMillis);
         carryLoosePetalsAcrossRealms(world, player);
         reconcileSlots(world, registry, player, nowMillis);
         const Aggregate aggregate = recomputeModifiers(world, registry, player);
@@ -3014,7 +3016,6 @@ void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registr
     Loadout* loadout = world.tryGet<Loadout>(player);
     const Transform* ownerTransform = world.tryGet<Transform>(player);
     if (state == nullptr || loadout == nullptr || ownerTransform == nullptr) return;
-    const Vec2 owner = ownerTransform->position;
 
     for (PetalSlotState::Slot& slotState : state->slots) {
         std::size_t kept = 0;
@@ -3022,35 +3023,38 @@ void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registr
             if (!world.isAlive(pet)) continue;
             const MobAi* ai = world.tryGet<MobAi>(pet);
             const Transform* transform = world.tryGet<Transform>(pet);
-            // A summon something killed is not one that wandered off: it
-            // keeps its handle for maintainPets to prune, and its egg reloads
-            // on the ordinary schedule rather than this one.
-            // A sandstorm is leashed to its owner by MobAiSystem::steerPet
-            // instead, and is never retired for distance.
-            const bool retires = ai != nullptr && transform != nullptr &&
-                                 !world.has<Dead>(pet) && ai->kind == AiKind::Passive;
-            if (!retires) {
-                slotState.pets[kept++] = pet;
-                continue;
-            }
-            // The fixed viewport, not the one the client reported: the
-            // reference clips every pet to the same rectangle, so a player on
-            // a wide window would otherwise keep a pet twice as long.
-            const Vec2 offset = transform->position - owner;
-            if (std::abs(offset.x) <= kViewportWidth * 0.5 &&
-                std::abs(offset.y) <= kViewportHeight * 0.5) {
+            // A summon something killed is not one that got lost: it keeps its
+            // handle for maintainPets to prune, and its egg reloads on the
+            // ordinary schedule rather than this one. A sandstorm is leashed
+            // to its owner by MobAiSystem::steerPet instead, and is never
+            // retired for distance.
+            const bool candidate = ai != nullptr && transform != nullptr &&
+                                   !world.has<Dead>(pet) && ai->kind != AiKind::Sandstorm;
+            // Way too far -- a wall between them or not -- or trapped in sight
+            // of the owner (MobAi::petRecall, which the AI sets).
+            const bool lost =
+                candidate &&
+                (ai->petRecall || transform->realm != ownerTransform->realm ||
+                 distanceSq(transform->position, ownerTransform->position) >
+                     kPetRecallDistance * kPetRecallDistance);
+            if (!lost) {
                 slotState.pets[kept++] = pet;
                 continue;
             }
 
             const MobType* type = world.tryGet<MobType>(pet);
             const std::uint16_t mobIndex = type ? type->configIndex : kInvalidIndex;
-            // Destroyed rather than killed: a summon that walked off the
-            // screen has not died, so it raises no death event and drops
-            // nothing.
+            const Pet* tag = world.tryGet<Pet>(pet);
+            const bool timed = tag != nullptr && tag->expiresAtMillis > 0.0;
+            // Destroyed rather than killed: a summon that got lost has not
+            // died, so it raises no death event and drops nothing.
             world.destroy(pet);
-            reloadEggForPet(world, registry, *state, *loadout, mobIndex,
-                            reloadScaleOf(world, player), nowMillis);
+            // Its egg hatches a fresh one on the reload. A timed summon was
+            // paid for in mana, one at a time, and is simply gone.
+            if (!timed) {
+                reloadEggForPet(world, registry, *state, *loadout, mobIndex,
+                                reloadScaleOf(world, player), nowMillis);
+            }
         }
         slotState.pets.resize(kept);
     }
@@ -3273,24 +3277,14 @@ void PetalSystem::expireTimedPets(World& world, Entity player, double nowMillis)
     }
 }
 
-void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Entity player,
-                             std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, int count,
-                             Vec2 at, PetalSlotState& state, double strength,
-                             double expiresAtMillis) {
-    if (mobIndex == kInvalidIndex || count <= 0) return;
-    PetalSlotState::Slot& slotState = state.slots[static_cast<std::size_t>(slot)];
-
+Entity PetalSystem::hatchPetBody(World& world, const ContentRegistry& registry, Entity player,
+                                 std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity,
+                                 Vec2 at, double angle, Realm realm, double radius,
+                                 double sizeJitter, double strength, double expiresAtMillis) {
     const Faction* ownerFaction = world.tryGet<Faction>(player);
     const Faction faction = ownerFaction ? *ownerFaction : Faction{Team::Players, false};
     const MobConfig& config = registry.mob(mobIndex);
     MobStats mob = registry.mobStats(mobIndex, rarity);
-    // Smaller than the wild animal: sized on the old, smaller mob ladder
-    // (kPetSizeScale) rather than the wild one, then on the reference's pet
-    // ramp -- the same size at common, two thirds of it by unique. Mass stays
-    // the tier's, exactly as a wild mob's does whatever body it rolled.
-    const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(rarity))));
-    const double petSizeScale = kPetSizeScale[tier] / kMobSizeScale[tier] *
-                                mobSizeRamp(rarity, kPetSizeScaleAtUnique);
     // Health and damage climb the PETAL ladder, not the mob one. A pet comes
     // out of an egg worn in the loadout, so a tier of egg is worth what a tier
     // of any other petal is worth: 3x. The wild health ladder is superlinear on
@@ -3317,8 +3311,83 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
     // added first and the fallback only covers a pet that still has none.
     const double range = mob.aggroRange + rarityIndex(rarity) * kPetAggroRangePerRarity;
     const double aggroRange = range > 0.0 ? range : kEnemyChaseRange;
+
+    const Entity pet = world.create();
+    world.add<MobTag>(pet);
+    world.add<Transform>(pet, Transform{at, angle, realm});
+    world.add<Motion>(pet);
+    world.add<Knockback>(pet);
+    world.add<Body>(pet, Body{radius, mob.mass});
+    world.add<Health>(pet, Health{mob.health, mob.health, 0.0, 0.0});
+    // A summon is the same animal at the same tier, so it wears the same
+    // armour. Unscaled by petHealthScale/petDamageScale: that nerf is the
+    // digger's health and damage, which is what made it worth summoning.
+    world.add<Armor>(pet, Armor{mob.armor});
+    if (mob.evasion > 0.0) world.add<Evasion>(pet, Evasion{mob.evasion});
+    world.add<Faction>(pet, faction);
+    world.add<MobType>(pet, MobType{mobIndex, rarity, sizeJitter});
+
+    MobAi ai;
+    // Whatever the mob is in the wild, at this tier. The reference is
+    // explicit that taming overrides nothing: a hostile or neutral mob
+    // fights for its owner, a passive one still will not, and a sandstorm
+    // still drifts, on a leash to its owner.
+    ai.kind = mob.ai;
+    ai.aggroRange = aggroRange;
+    world.add<MobAi>(pet, ai);
+
+    world.add<ContactDamage>(pet, ContactDamage{mob.damage, kMobHitIntervalMillis});
+    world.add<HitCooldowns>(pet);
+    world.add<Afflictions>(pet);
+    // Deliberately no Bounty: a pet awards no XP and drops nothing, so a
+    // player's summons cannot be farmed by whoever kills them.
+    world.add<Pet>(pet, Pet{player, slot, expiresAtMillis});
+
+    Replicated replicated;
+    replicated.kind = net::EntityKind::Mob;
+    replicated.typeIndex = mobIndex;
+    replicated.rarity = rarity;
+    replicated.spawnFlags = net::SpawnIsPet;
+    world.add<Replicated>(pet, replicated);
+    assignNetId(world, pet);
+
+    // An AMMUNITION ring, fitted and stocked at the hatch as a wild one is at
+    // its spawn: a summoned dandelion sheds seeds when it is hit, and they hit
+    // for what the pet hits for. Last, because the seeds are creates.
+    if (config.petalRing.present && config.petalRing.shootOnHit &&
+        config.petalRing.petalIndex != kInvalidIndex && config.petalRing.count > 0) {
+        MobPetalRing ring;
+        ring.seats.assign(static_cast<std::size_t>(config.petalRing.count), NULL_ENTITY);
+        ring.orbit = radius * config.petalRing.orbitScale;
+        ring.seedRadius = radius * config.petalRing.hitScale;
+        world.add<MobPetalRing>(pet, ring);
+        spawnMobRingSeeds(world, registry, pet, config.petalRing, mob.damage, mob.mass, rarity,
+                          allocateNetId);
+    }
+    return pet;
+}
+
+void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Entity player,
+                             std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, int count,
+                             Vec2 at, PetalSlotState& state, double strength,
+                             double expiresAtMillis) {
+    if (mobIndex == kInvalidIndex || count <= 0) return;
+    PetalSlotState::Slot& slotState = state.slots[static_cast<std::size_t>(slot)];
+
+    const MobConfig& config = registry.mob(mobIndex);
+    const MobStats mob = registry.mobStats(mobIndex, rarity);
+    // Smaller than the wild animal: sized on the old, smaller mob ladder
+    // (kPetSizeScale) rather than the wild one, then on the reference's pet
+    // ramp -- the same size at common, a third of it by unique. Mass stays
+    // the tier's, exactly as a wild mob's does whatever body it rolled.
+    const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(rarity))));
+    const double petSizeScale = kPetSizeScale[tier] / kMobSizeScale[tier] *
+                                mobSizeRamp(rarity, kPetSizeScaleAtUnique);
     const Transform* ownerAt = world.tryGet<Transform>(player);
     const Realm realm = ownerAt != nullptr ? ownerAt->realm : Realm::Overworld;
+    // A centipede or a leech arrives whole, as a wild one does: the head and
+    // its body, every segment one more of the owner's pets.
+    const bool chain = config.segmentCount > 0 && config.segmentBodyIndex != kInvalidIndex;
 
     // Counted once and carried, because the summons below are what change it.
     int owned = countOwnedPets(world, state);
@@ -3329,47 +3398,103 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         const double sizeJitter = config.rollRandomSize(rng_) * petSizeScale;
         const double radius = mob.radius * sizeJitter;
         const Vec2 spawnAt = at + rng_.insideCircle(radius * 2.0 + kPlayerBaseRadius);
-        const Entity pet = world.create();
-        world.add<MobTag>(pet);
-        world.add<Transform>(pet, Transform{spawnAt, rng_.angle(), realm});
-        world.add<Motion>(pet);
-        world.add<Knockback>(pet);
-        world.add<Body>(pet, Body{radius, mob.mass});
-        world.add<Health>(pet, Health{mob.health, mob.health, 0.0, 0.0});
-        // A summon is the same animal at the same tier, so it wears the same
-        // armour. Unscaled by petHealthScale/petDamageScale: that nerf is the
-        // digger's health and damage, which is what made it worth summoning.
-        world.add<Armor>(pet, Armor{mob.armor});
-        if (mob.evasion > 0.0) world.add<Evasion>(pet, Evasion{mob.evasion});
-        world.add<Faction>(pet, faction);
-        world.add<MobType>(pet, MobType{mobIndex, rarity, sizeJitter});
-
-        MobAi ai;
-        // Whatever the mob is in the wild, at this tier. The reference is
-        // explicit that taming overrides nothing: a hostile or neutral mob
-        // fights for its owner, a passive one still will not, and a sandstorm
-        // still drifts, on a leash to its owner.
-        ai.kind = mob.ai;
-        ai.aggroRange = aggroRange;
-        world.add<MobAi>(pet, ai);
-
-        world.add<ContactDamage>(pet, ContactDamage{mob.damage, kMobHitIntervalMillis});
-        world.add<HitCooldowns>(pet);
-        world.add<Afflictions>(pet);
-        // Deliberately no Bounty: a pet awards no XP and drops nothing, so a
-        // player's summons cannot be farmed by whoever kills them.
-        world.add<Pet>(pet, Pet{player, slot, expiresAtMillis});
-
-        Replicated replicated;
-        replicated.kind = net::EntityKind::Mob;
-        replicated.typeIndex = mobIndex;
-        replicated.rarity = rarity;
-        replicated.spawnFlags = net::SpawnIsPet;
-        world.add<Replicated>(pet, replicated);
-        assignNetId(world, pet);
-
+        const double angle = rng_.angle();
+        const Entity pet = hatchPetBody(world, registry, player, slot, mobIndex, rarity, spawnAt,
+                                        angle, realm, radius, sizeJitter, strength,
+                                        expiresAtMillis);
         slotState.pets.push_back(pet);
         ++owned;
+
+        // The queen's soldiers: her own clock, hatched as more of the owner's
+        // pets (runPetBroods) rather than as the wild escorts a Spawner fields.
+        if (config.periodicSpawn.present && config.periodicSpawn.mobIndex != kInvalidIndex) {
+            world.add<PetBrood>(pet);
+        }
+
+        if (!chain) continue;
+        BodySegment headLink;
+        headLink.head = true;
+        headLink.chainHead = pet;
+        headLink.sharedHealth = config.sharedSegmentHealth;
+        world.add<BodySegment>(pet, headLink);
+
+        // Laid straight back from the head, at the head's tier and the pet's
+        // scale, as SpawnSystem::spawnBodyChain lays a wild one.
+        const MobStats bodyStats = registry.mobStats(config.segmentBodyIndex, rarity);
+        const double bodyRadius = bodyStats.radius * petSizeScale;
+        if (!(bodyRadius > 0.0)) continue;
+        const double spacing = bodyRadius * kSegmentSpacingPerRadius;
+        const Vec2 step = Vec2::fromAngle(angle + kPi, spacing);
+        Entity ahead = pet;
+        Vec2 place = spawnAt;
+        for (int s = 1; s <= config.segmentCount && owned < kMaxPetEntitiesPerPlayer; ++s) {
+            place = place + step;
+            const Entity segment =
+                hatchPetBody(world, registry, player, slot, config.segmentBodyIndex, rarity, place,
+                             angle, realm, bodyRadius, petSizeScale, strength, expiresAtMillis);
+            BodySegment link;
+            link.ahead = ahead;
+            link.spacing = spacing;
+            link.chainHead = pet;
+            link.segmentIndex = s;
+            link.sharedHealth = config.sharedSegmentHealth;
+            world.add<BodySegment>(segment, link);
+            if (BodySegment* leader = world.tryGet<BodySegment>(ahead)) leader->behind = segment;
+            slotState.pets.push_back(segment);
+            ++owned;
+            ahead = segment;
+        }
+    }
+}
+
+void PetalSystem::runPetBroods(World& world, const ContentRegistry& registry, Entity player,
+                               double nowMillis) {
+    PetalSlotState* state = world.tryGet<PetalSlotState>(player);
+    if (state == nullptr) return;
+    // Snapshotted first: every hatch below is a create, and the slot lists it
+    // appends to are the ones being walked.
+    broodScratch_.clear();
+    for (std::size_t s = 0; s < state->slots.size(); ++s) {
+        for (const Entity pet : state->slots[s].pets) {
+            if (world.isAlive(pet) && !world.has<Dead>(pet) && world.has<PetBrood>(pet)) {
+                broodScratch_.push_back({pet, static_cast<std::uint8_t>(s)});
+            }
+        }
+    }
+
+    for (const auto& [queen, slot] : broodScratch_) {
+        PetBrood* brood = world.tryGet<PetBrood>(queen);
+        const MobType* type = world.tryGet<MobType>(queen);
+        const Transform* transform = world.tryGet<Transform>(queen);
+        if (brood == nullptr || type == nullptr || transform == nullptr) continue;
+
+        std::size_t live = 0;
+        for (const Entity child : brood->children) {
+            if (world.isAlive(child) && !world.has<Dead>(child)) brood->children[live++] = child;
+        }
+        brood->children.resize(live);
+
+        if (nowMillis < brood->nextSpawnMillis) continue;
+        const PeriodicSpawnSpec& spec = registry.mob(type->configIndex).periodicSpawn;
+        brood->nextSpawnMillis = nowMillis + std::max(1.0, spec.intervalMillis);
+        if (static_cast<int>(live) >= spec.maxAlive) continue;
+
+        // The wild queen's rule for her soldiers' tier: hers, offset, and held
+        // to ultra like every minion. Timed on the spec's lifetime, which also
+        // keeps them out of a soldier egg's squad count.
+        const Rarity childRarity =
+            minionRarity(clampLadderRarity(rarityIndex(type->rarity) + spec.rarityOffset));
+        const double expires = spec.lifetimeMillis > 0.0 ? nowMillis + spec.lifetimeMillis : 0.0;
+        const Vec2 from = transform->position;
+        PetalSlotState* current = world.tryGet<PetalSlotState>(player);
+        if (current == nullptr) return;
+        const std::size_t before = current->slots[slot].pets.size();
+        summonPets(world, registry, player, slot, spec.mobIndex, childRarity, 1, from,
+                   *current, 1.0, expires);
+        if (current->slots[slot].pets.size() > before) {
+            const Entity child = current->slots[slot].pets[before];
+            if (PetBrood* again = world.tryGet<PetBrood>(queen)) again->children.push_back(child);
+        }
     }
 }
 

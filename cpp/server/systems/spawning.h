@@ -53,6 +53,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <set>
 #include <string>
@@ -1031,6 +1032,15 @@ private:
     std::vector<Entity> doomed_;
     std::vector<Entity> scratchChildren_;
 };
+
+/// Creates the seeds of an AMMUNITION ring already fitted to `mob`
+/// (MobPetalRing, seats sized), one per seat, on the mob's side. Shared by the
+/// wild spawn and the pet hatch: a summoned dandelion wears the same ring.
+/// `contactDamage` is what a seed hits for -- the mob's own -- and `nextNetId`
+/// hands out network ids (0 or an empty function: none).
+void spawnMobRingSeeds(World& world, const ContentRegistry& content, Entity mob,
+                       const PetalRingSpec& spec, double contactDamage, double mass,
+                       Rarity rarity, const std::function<std::uint32_t()>& nextNetId);
 
 } // namespace flix
 

@@ -57,10 +57,12 @@
 //            it re-rolls three times a second, which is far faster than
 //            anything else here would want to re-decide.
 //
-// Pets get their own pass rather than being fed through the wild-mob one: a
-// summoned mob follows its owner, pops back to them when a wall breaks line of
-// sight, and -- if passive -- is retired when it drifts off their screen. None
-// of that is "wild mob with a different target list".
+// Pets get their own pass rather than being fed through the wild-mob one. A
+// summon idles and chases exactly as its wild counterpart does -- the same
+// idle machine, the same pursuit (pursueTarget) -- but its prey is the wild
+// mob nearest its OWNER, and off the owner's screen it drops everything and
+// walks back. A wall in the way leaves it stuck; one trapped in plain sight
+// is flagged for the petal system to retire. A sandstorm keeps its own leash.
 
 #include <algorithm>
 #include <cstdint>
@@ -489,7 +491,7 @@ inline constexpr double kStingerAimTolerance = 0.3;
 
 /// A pet sees exactly what its owner's screen shows: its target scan is
 /// clipped to this rectangle around the owner rather than to its own aggro
-/// range, and a passive pet that leaves it is retired.
+/// range, and a pet that leaves it walks back to its owner.
 inline constexpr double kPetViewHalfWidth = kViewportWidth * 0.5;
 inline constexpr double kPetViewHalfHeight = kViewportHeight * 0.5;
 
@@ -751,6 +753,15 @@ private:
                          const Body& body, MobAi& ai, const Drive& drive, double chaseSpeed,
                          double nowMillis, double dt, Vec2& desired, Vec2& facing,
                          CommandBuffer& commands);
+    /// The chase itself, once `ai.target` is settled: closes on it at
+    /// `chaseSpeed` (crab, bee weave, shooter standoff and volley included)
+    /// and reports `desired` and `facing` as steerAggressive does. False when
+    /// the target has no position, with the target cleared. Shared by the wild
+    /// mob and the pet, which differ only in how they pick what to chase.
+    bool pursueTarget(World& world, Entity self, const MobType& type, const Transform& transform,
+                      const Body& body, MobAi& ai, const Drive& drive, double chaseSpeed,
+                      double nowMillis, double dt, Vec2& desired, Vec2& facing,
+                      CommandBuffer& commands);
     /// One tick of a stinger shooter's wind-up cycle against a target on
     /// `bearing`, wild or on a leash: winds the rear round while a volley is
     /// due, fires once it has come round, and recovers otherwise. Returns
@@ -818,17 +829,29 @@ private:
 
     void steerPets(World& world, const Terrain& terrain, const SpatialGrid& grid,
                    double nowMillis, double dt, CommandBuffer& commands);
+    /// A sandstorm pet's leash: shadows the owner and comes home past
+    /// kSandstormPetLeash. Its own rules, apart from every other pet's.
+    Vec2 steerSandstormPet(World& world, const Terrain& terrain, Transform& transform,
+                           MobAi& ai, Entity owner, Vec2 ownerPosition, double speed,
+                           double slow);
+    /// True while a pet is off its owner's screen and walking back, with
+    /// `desired` holding the walk. Also where a trapped pet is flagged.
+    bool walkToOwner(World& world, const Terrain& terrain, Entity self,
+                     const Transform& transform, MobAi& ai, Vec2 ownerPosition,
+                     double returnSpeed, double nowMillis, Vec2& desired);
     void steerPet(World& world, const Terrain& terrain, const SpatialGrid& grid, Entity self,
                   Transform& transform, Motion& motion, const Body& body, const MobType& type,
                   MobAi& ai, Entity owner, bool ownerAlive, const Drive& drive,
                   double nowMillis, double dt, CommandBuffer& commands);
-    /// The wild mob a pet is fighting: the cached one while it is still on the
-    /// OWNER's screen and in sight, else the nearest one that is.
+    /// The wild mob a pet is fighting: of those on the OWNER's screen and in
+    /// the pet's sight, the one nearest the owner -- the one it holds winning
+    /// ties within kPetRetargetMargin. Ownerless, the nearest to the pet
+    /// within `range`.
     Entity acquirePetPrey(World& world, const Terrain& terrain, const SpatialGrid& grid,
                           Entity self, Vec2 from, Realm realm, MobAi& ai, bool hasOwner,
                           Vec2 ownerPosition, double range);
-    /// Pops a pet onto a clear, visible ring position around its owner. False
-    /// when nothing was clear and the pet stayed where it was.
+    /// Pops a sandstorm pet onto a clear, visible ring position around its
+    /// owner. False when nothing was clear and the pet stayed where it was.
     bool teleportPetToOwner(const Terrain& terrain, Transform& transform, Vec2 ownerPosition);
 
     void repairChains(World& world);
@@ -853,6 +876,8 @@ private:
     Query<Transform, Motion, Body, MobType, MobAi> mobs_;
     Query<Pet, Transform, Motion, Body, MobType, MobAi> pets_;
     Query<BodySegment, Transform> segments_;
+    /// Pieces of summoned chains that lost what was ahead of them this tick.
+    std::vector<Entity> severedPets_;
     Query<Spawner, Transform, MobType> nests_;
     /// Mobs whose petal ring is ammunition. Corpses are kept out: a dead
     /// dandelion owes nothing, and its debt is cleared rather than fired.

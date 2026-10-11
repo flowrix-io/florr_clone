@@ -1354,7 +1354,14 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
         ai.crabPhase = CrabPhase::None;
         return false;
     }
+    return pursueTarget(world, self, type, transform, body, ai, drive, chaseSpeed, nowMillis, dt,
+                        desired, facing, commands);
+}
 
+bool MobAiSystem::pursueTarget(World& world, Entity self, const MobType& type,
+                               const Transform& transform, const Body& body, MobAi& ai,
+                               const Drive& drive, double chaseSpeed, double nowMillis, double dt,
+                               Vec2& desired, Vec2& facing, CommandBuffer& commands) {
     const Transform* threat = world.tryGet<Transform>(ai.target);
     if (threat == nullptr) {
         ai.target = NULL_ENTITY;
@@ -1670,17 +1677,10 @@ Entity MobAiSystem::acquirePetPrey(World& world, const Terrain& terrain, const S
                std::abs(at.y - ownerPosition.y) <= kPetViewHalfHeight;
     };
 
-    if (ai.target != NULL_ENTITY) {
-        const Transform* at = world.tryGet<Transform>(ai.target);
-        if (at != nullptr && world.has<MobTag>(ai.target) && !world.has<Pet>(ai.target) &&
-            isStanding(world, ai.target) &&
-            at->realm == realm && visible(at->position, distanceSq(from, at->position)) &&
-            !terrain.segmentBlocked(from, at->position, realm)) {
-            return ai.target;
-        }
-        ai.target = NULL_ENTITY;
-    }
-
+    // Scanned every tick rather than held: the pet is there to guard its
+    // owner, so the moment something gets closer to the flower than what the
+    // pet is fighting, that is the fight. The margin is what keeps two mobs
+    // about as close from splitting its attention.
     ++stats_.targetScans;
     // Centred on whatever the clip is stated against, and wide enough to reach
     // the corner of it: a pet running ahead of its owner must still see
@@ -1700,14 +1700,18 @@ Entity MobAiSystem::acquirePetPrey(World& world, const Terrain& terrain, const S
         if (!isStanding(world, candidate)) continue;
         const Transform* at = world.tryGet<Transform>(candidate);
         if (at == nullptr) continue;
-        const double gapSq = distanceSq(from, at->position);
-        if (!visible(at->position, gapSq)) continue;
-        // Scored nearest to the PET even though the clip is the owner's.
-        candidates_.push_back(Candidate{candidate, at->position, gapSq});
+        if (!visible(at->position, distanceSq(from, at->position))) continue;
+        // Nearest the OWNER: the mob closest to the flower is the one the pet
+        // takes on, wherever the pet itself happens to be standing.
+        double score = (at->position - centre).length();
+        if (candidate == ai.target) score -= kPetRetargetMargin;
+        candidates_.push_back(Candidate{candidate, at->position, score});
     }
 
     std::sort(candidates_.begin(), candidates_.end(),
               [](const Candidate& a, const Candidate& b) { return a.score < b.score; });
+    // Sight is the PET's: it goes for what it can reach, and a mob behind a
+    // wall from it falls to the next nearest the owner.
     const std::size_t rays = std::min<std::size_t>(candidates_.size(),
                                                    static_cast<std::size_t>(kTargetLosRayCap));
     for (std::size_t i = 0; i < rays; ++i) {
@@ -1737,6 +1741,86 @@ bool MobAiSystem::teleportPetToOwner(const Terrain& terrain, Transform& transfor
     return false;
 }
 
+Vec2 MobAiSystem::steerSandstormPet(World& world, const Terrain& terrain, Transform& transform,
+                                    MobAi& ai, Entity owner, Vec2 ownerPosition, double speed,
+                                    double slow) {
+    ai.target = NULL_ENTITY;
+    const Motion* ownerMotion = world.tryGet<Motion>(owner);
+    const double ownerSpeed = ownerMotion != nullptr ? ownerMotion->velocity.length() : 0.0;
+    const Vec2 toOwner = ownerPosition - transform.position;
+    const double gap = toOwner.length();
+    if (gap > kSandstormPetLeash) {
+        ai.petReturning = true;
+    } else if (gap < kSandstormPetHomeDistance) {
+        ai.petReturning = false;
+    }
+
+    if (ai.petReturning) {
+        // Leashed rather than retired: past the leash it heads straight home,
+        // and a wall in the way puts it back on the ring around its owner.
+        if (terrain.segmentBlocked(transform.position, ownerPosition, transform.realm)) {
+            if (teleportPetToOwner(terrain, transform, ownerPosition)) ai.petReturning = false;
+        } else if (speed > 0.0 && gap > 0.0) {
+            const double homing =
+                std::max(ownerSpeed, kPlayerMaxSpeed) * kSandstormPetReturnSpeedFactor * slow;
+            return toOwner * (homing / gap);
+        }
+    } else if (speed > 0.0 && ownerSpeed > kOwnerMovingSpeed) {
+        // Shadows the owner's heading slightly faster than the owner moves, so
+        // it steadily pulls ahead until the leash turns it.
+        return ownerMotion->velocity * kSandstormPetSpeedFactor;
+    }
+    return Vec2{0, 0};
+}
+
+bool MobAiSystem::walkToOwner(World& world, const Terrain& terrain, Entity self,
+                              const Transform& transform, MobAi& ai, Vec2 ownerPosition,
+                              double returnSpeed, double nowMillis, Vec2& desired) {
+    const Vec2 toOwner = ownerPosition - transform.position;
+    const double gap = toOwner.length();
+    if (!ai.petReturning) {
+        if (std::abs(toOwner.x) <= kPetViewHalfWidth && std::abs(toOwner.y) <= kPetViewHalfHeight) {
+            return false;
+        }
+        // Off the owner's screen. The fight is DROPPED, not paused: a pet that
+        // kept it would turn round the moment it got home and walk straight
+        // back off the screen after it.
+        ai.petReturning = true;
+        ai.target = NULL_ENTITY;
+        ai.crabPhase = CrabPhase::None;
+        ai.petBestGap = gap;
+        ai.petProgressMillis = nowMillis;
+    }
+
+    if (gap < kPetHomeDistance) {
+        ai.petReturning = false;
+        // Home, and idling from a standing start, as a nest's escort is.
+        if (PassiveMotion* passive = world.tryGet<PassiveMotion>(self)) {
+            passive->state = PassiveState::Idle;
+            passive->stateStartMillis = nowMillis;
+        }
+        return false;
+    }
+
+    if (terrain.segmentBlocked(transform.position, ownerPosition, transform.realm)) {
+        // Behind a wall it keeps walking at its owner and the wall holds it
+        // there. That is stuck, not trapped: the clock starts over, and only
+        // getting way too far (kPetRecallDistance) retires it.
+        ai.petBestGap = gap;
+        ai.petProgressMillis = nowMillis;
+    } else if (gap < ai.petBestGap - kPetProgressStep) {
+        ai.petBestGap = gap;
+        ai.petProgressMillis = nowMillis;
+    } else if (nowMillis - ai.petProgressMillis >= kPetTrappedMillis) {
+        // In plain sight of its owner and getting no closer: trapped. The
+        // petal system retires it and charges its egg the reload.
+        ai.petRecall = true;
+    }
+
+    desired = gap > 0.0 && returnSpeed > 0.0 ? toOwner * (returnSpeed / gap) : Vec2{0, 0};
+    return true;
+}
+
 void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGrid& grid,
                            Entity self, Transform& transform, Motion& motion, const Body& body,
                            const MobType& type, MobAi& ai, Entity owner, bool ownerAlive,
@@ -1744,6 +1828,7 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
                            CommandBuffer& commands) {
     const double slow = slowFactorOf(world, self, nowMillis);
     const double speed = drive.speed * slow;
+    const double chaseSpeed = drive.chaseSpeed * slow;
 
     // A tamed neutral has nothing left to be neutral ABOUT -- it fights for its
     // owner -- so neutral and hostile run the same pet AI. Passive stays
@@ -1756,94 +1841,7 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
     Vec2 desired{0, 0};
     Vec2 facing{0, 0};
 
-    if (ownerAlive) {
-        const Transform* ownerTransform = world.tryGet<Transform>(owner);
-        if (ownerTransform == nullptr) {
-            // An owner with no position is nothing to follow, and a pet left
-            // holding last tick's velocity would sail off on its own.
-            motion.velocity = Vec2{0, 0};
-            return;
-        }
-        const Vec2 ownerPosition = ownerTransform->position;
-
-        // A passive pet never pops back to the ring: off the owner's screen it
-        // is retired, and the petal that summoned it hatches a replacement.
-        if (drive.ai == AiKind::Passive) {
-            const Vec2 offset = transform.position - ownerPosition;
-            if (std::abs(offset.x) > kPetViewHalfWidth || std::abs(offset.y) > kPetViewHalfHeight) {
-                commands.destroy(self);
-                return;
-            }
-        }
-
-        if (drive.ai == AiKind::Sandstorm) {
-            const Motion* ownerMotion = world.tryGet<Motion>(owner);
-            const double ownerSpeed = ownerMotion != nullptr ? ownerMotion->velocity.length() : 0.0;
-            const Vec2 toOwner = ownerPosition - transform.position;
-            const double gap = toOwner.length();
-            if (gap > kSandstormPetLeash) {
-                ai.petReturning = true;
-            } else if (gap < kSandstormPetHomeDistance) {
-                ai.petReturning = false;
-            }
-
-            if (ai.petReturning) {
-                // Leashed rather than retired: past the leash it heads
-                // straight home, and a wall in the way puts it back on the
-                // ring around its owner, as a fighting pet's does.
-                if (terrain.segmentBlocked(transform.position, ownerPosition, transform.realm)) {
-                    if (teleportPetToOwner(terrain, transform, ownerPosition)) {
-                        ai.petReturning = false;
-                    }
-                } else if (speed > 0.0 && gap > 0.0) {
-                    const double homing = std::max(ownerSpeed, kPlayerMaxSpeed) *
-                                          kSandstormPetReturnSpeedFactor * slow;
-                    desired = toOwner * (homing / gap);
-                }
-            } else if (speed > 0.0 && ownerSpeed > kOwnerMovingSpeed) {
-                // Shadows the owner's heading slightly faster than the owner
-                // moves, so it steadily pulls ahead until the leash turns it.
-                desired = ownerMotion->velocity * kSandstormPetSpeedFactor;
-            }
-        } else if (!terrain.segmentBlocked(transform.position, ownerPosition, transform.realm)) {
-            // Follows directly, with no distance limit at all while sight holds.
-            const Vec2 toOwner = ownerPosition - transform.position;
-            const double gap = toOwner.length();
-            if (gap > 0.0 && speed > 0.0) desired = toOwner * (speed / gap);
-        } else if (drive.ai == AiKind::Passive) {
-            // Sight-blocked passive pet: holds position. The off-screen rule
-            // above is what recovers it, not a teleport.
-        } else if (teleportPetToOwner(terrain, transform, ownerPosition)) {
-            facing = ownerPosition - transform.position;
-        }
-
-        if (attacks && speed > 0.0) {
-            ai.target = acquirePetPrey(world, terrain, grid, self, transform.position,
-                                       transform.realm, ai, true, ownerPosition, range);
-            if (ai.target != NULL_ENTITY) {
-                if (const Transform* prey = world.tryGet<Transform>(ai.target)) {
-                    // Charging the target REPLACES the follow step rather than
-                    // blending with it: a pet that averaged the two would circle
-                    // between its owner and the mob and reach neither.
-                    const Vec2 toPrey = prey->position - transform.position;
-                    const double gap = toPrey.length();
-                    if (gap > 0.0) desired = toPrey * (speed / gap);
-                    // A pet hornet fights the way a wild one does: it holds its
-                    // standoff and shoots rather than closing to body-slam what
-                    // it is meant to be shelling. See shooterStandoff().
-                    const Body* preyBody = world.tryGet<Body>(ai.target);
-                    const double preyRadius = preyBody != nullptr ? preyBody->radius : 0.0;
-                    if (drive.shoots &&
-                        gap <= shooterStandoff(drive.shotReach, body.radius, preyRadius)) {
-                        desired = Vec2{0, 0};
-                        facing = toPrey;
-                    }
-                }
-            }
-        } else {
-            ai.target = NULL_ENTITY;
-        }
-    } else {
+    if (!ownerAlive) {
         // Owner dead or gone: wander, straight at the destination.
         ai.target = NULL_ENTITY;
         if (attacks && drive.shoots && speed > 0.0) {
@@ -1853,37 +1851,88 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
         if (WanderTarget* wander = world.tryGet<WanderTarget>(self)) {
             desired = wanderToPoint(*wander, transform.position, speed, nowMillis);
         }
+        motion.velocity = desired;
+        if (desired.lengthSq() > kDirectionEpsilonSq) facing = desired;
+        // It still shoots what wanders into range, the way a wild one does.
+        if (ai.target != NULL_ENTITY) {
+            if (const Transform* prey = world.tryGet<Transform>(ai.target)) {
+                const Vec2 toPrey = prey->position - transform.position;
+                const Body* preyBody = world.tryGet<Body>(ai.target);
+                const double preyRadius = preyBody != nullptr ? preyBody->radius : 0.0;
+                const bool armed = shotCanReach(toPrey.length(), drive.shotReach, preyRadius);
+                if (armed && !drive.stingerShooter) {
+                    fireVolley(world, self, type, ai, drive, transform.position, toPrey.angle(),
+                               motion.velocity, nowMillis, commands);
+                } else if (armed && toPrey.lengthSq() > kDirectionEpsilonSq) {
+                    facing = stingerVolley(world, self, type, ai, drive, transform,
+                                           toPrey.angle(), motion.velocity, nowMillis, dt,
+                                           commands);
+                }
+            }
+        }
+        transform.angle =
+            steerFacing(transform.angle, facing, drive.hideRotation, drive.reversed, kPi);
+        return;
     }
 
-    motion.velocity = desired;
-    if (desired.lengthSq() > kDirectionEpsilonSq) facing = desired;
+    const Transform* ownerTransform = world.tryGet<Transform>(owner);
+    if (ownerTransform == nullptr) {
+        // An owner with no position is nothing to follow, and a pet left
+        // holding last tick's velocity would sail off on its own.
+        motion.velocity = Vec2{0, 0};
+        return;
+    }
+    const Vec2 ownerPosition = ownerTransform->position;
 
-    // A stinger shooter fights the same way on a leash as it does wild: it
-    // winds up rear-on, holds the missile until it has come round, and
-    // retraces the swing afterwards. See steerAggressive for the whole cycle.
-    if (attacks && drive.shoots && speed > 0.0 && ai.target != NULL_ENTITY) {
-        if (const Transform* prey = world.tryGet<Transform>(ai.target)) {
-            const Vec2 toPrey = prey->position - transform.position;
-            const double bearing = toPrey.angle();
-            const Body* preyBody = world.tryGet<Body>(ai.target);
-            const double preyRadius = preyBody != nullptr ? preyBody->radius : 0.0;
-            // Nothing to aim at yet; the pet is still closing, and it flies
-            // nose-on while it does. See steerAggressive, which gates its
-            // volley on the same question.
-            const bool armed = shotCanReach(toPrey.length(), drive.shotReach, preyRadius);
-            if (armed && !drive.stingerShooter) {
-                fireVolley(world, self, type, ai, drive, transform.position, bearing,
-                           motion.velocity, nowMillis, commands);
-            } else if (armed && toPrey.lengthSq() > kDirectionEpsilonSq) {
-                // The same cycle as a wild one, opening shot and bursts
-                // included; see steerAggressive.
-                facing = stingerVolley(world, self, type, ai, drive, transform, bearing,
-                                       motion.velocity, nowMillis, dt, commands);
+    if (drive.ai == AiKind::Sandstorm) {
+        desired = steerSandstormPet(world, terrain, transform, ai, owner, ownerPosition, speed,
+                                    slow);
+        motion.velocity = desired;
+        transform.angle =
+            steerFacing(transform.angle, desired, drive.hideRotation, drive.reversed, kPi);
+        return;
+    }
+
+    // Off the owner's screen, it walks back before anything else: at the pace
+    // it would chase at, as a nest's escort marches home.
+    bool driven = walkToOwner(world, terrain, self, transform, ai, ownerPosition,
+                              std::max(chaseSpeed, speed), nowMillis, desired);
+    if (!driven) {
+        if (attacks) {
+            ai.target = acquirePetPrey(world, terrain, grid, self, transform.position,
+                                       transform.realm, ai, true, ownerPosition, range);
+            // Then it fights exactly as the wild one does: the same chase, the
+            // same weave, the same standoff and volley.
+            if (ai.target != NULL_ENTITY) {
+                driven = pursueTarget(world, self, type, transform, body, ai, drive, chaseSpeed,
+                                      nowMillis, dt, desired, facing, commands);
+            } else {
+                ai.crabPhase = CrabPhase::None;
             }
+        } else {
+            ai.target = NULL_ENTITY;
         }
     }
 
-    transform.angle = steerFacing(transform.angle, facing, drive.hideRotation, drive.reversed, kPi);
+    // And with nothing to do it idles exactly as the wild one does, where it
+    // stands, until its owner walks far enough to take it off their screen.
+    // The rest is steerMob's tail, for the same reasons.
+    if (driven && drive.gardnMotion) {
+        motion.velocity = gardnStep(motion.velocity, desired, dt);
+        if (PassiveMotion* passive = world.tryGet<PassiveMotion>(self)) {
+            passive->state = PassiveState::Idle;
+            passive->stateStartMillis = nowMillis;
+        }
+    } else if (driven) {
+        motion.velocity = desired;
+    } else {
+        desired = steerIdle(world, self, transform, motion, ai, drive, slow, nowMillis, dt);
+    }
+
+    const bool aimed = facing.lengthSq() > kDirectionEpsilonSq;
+    const Vec2 heading = desired.lengthSq() > kDirectionEpsilonSq ? desired : motion.velocity;
+    transform.angle = steerFacing(transform.angle, aimed ? facing : heading, drive.hideRotation,
+                                  drive.reversed, kPi);
 }
 
 void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialGrid& grid,
@@ -1893,6 +1942,11 @@ void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialG
     pets_.collect(stepList_);
     for (const Entity self : stepList_) {
         if (!world.isAlive(self) || world.tryGet<Dead>(self) != nullptr) continue;
+
+        // A summoned centipede's body is carried by the chain pass, exactly as
+        // a wild one's is; only the head steers.
+        const BodySegment* segment = world.tryGet<BodySegment>(self);
+        if (segment != nullptr && !segment->head) continue;
 
         const MobType* type = world.tryGet<MobType>(self);
         const Pet* pet = world.tryGet<Pet>(self);
@@ -1904,15 +1958,9 @@ void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialG
         // Structural, so it happens before any component pointer is taken: only
         // an ownerless pet needs somewhere to walk to.
         if (!ownerAlive && !world.has<WanderTarget>(self)) world.add<WanderTarget>(self);
-        // A summoned spider lays webs too, on its owner's side: they catch the
-        // mobs it is fighting rather than the flower it follows.
-        if (drive.laysWeb && !world.has<WebClock>(self)) {
-            world.add<WebClock>(self, WebClock{nowMillis});
-        }
-        // And a summoned bumble bee drops its pollen on its owner's side.
-        if (drive.dropsProjectile && !world.has<DropClock>(self)) {
-            world.add<DropClock>(self, DropClock{nowMillis});
-        }
+        // The same kit a wild one is handed: the idle machine it hops on, and
+        // a spider's webs or a bumble bee's pollen, laid on its owner's side.
+        equipBehaviour(world, self, drive, nowMillis);
 
         Transform* transform = world.tryGet<Transform>(self);
         Motion* motion = world.tryGet<Motion>(self);
@@ -1939,9 +1987,18 @@ void MobAiSystem::repairChains(World& world) {
     followerOf_.clear();
     chainHeads_.clear();
 
+    severedPets_.clear();
     segments_.each([&](Entity self, BodySegment& segment, Transform&) {
         if (segment.ahead != NULL_ENTITY &&
             (!world.isAlive(segment.ahead) || world.tryGet<Dead>(segment.ahead) != nullptr)) {
+            // A summoned chain is one pet: a piece cut off it -- or left behind
+            // by a head that was recalled -- goes with the cut rather than
+            // running off as a stray pet no egg owns. Destroyed, not killed,
+            // after the walk; the piece behind it follows next tick.
+            if (world.has<Pet>(self)) {
+                severedPets_.push_back(self);
+                return;
+            }
             // Cut in half: the piece behind the wound becomes its own animal.
             // Entity handles carry a generation, so a recycled slot reads as
             // dead here rather than splicing an unrelated mob into the chain.
@@ -1964,6 +2021,23 @@ void MobAiSystem::repairChains(World& world) {
             ++stats_.promotions;
         }
     });
+    // The rest of a severed piece goes with it in the same tick. Left for the
+    // next, the segments behind it would reach followChains' cycle sweep with
+    // no walked head ahead of them and be promoted instead.
+    for (bool grew = !severedPets_.empty(); grew;) {
+        grew = false;
+        segments_.each([&](Entity self, BodySegment& segment, Transform&) {
+            if (segment.ahead == NULL_ENTITY) return;
+            const auto has = [&](Entity e) {
+                return std::find(severedPets_.begin(), severedPets_.end(), e) != severedPets_.end();
+            };
+            if (has(segment.ahead) && !has(self)) {
+                severedPets_.push_back(self);
+                grew = true;
+            }
+        });
+    }
+    for (const Entity severed : severedPets_) world.destroy(severed);
 }
 
 void MobAiSystem::followChains(World& world, const Terrain& terrain,

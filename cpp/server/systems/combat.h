@@ -556,11 +556,18 @@ private:
     /// gives.
     void gatherMobLightning(World& world, const ContentRegistry& content);
     void resolveMobLightning(World& world, const SpatialGrid& grid, double nowMillis);
-    /// Whether any flower this mob could actually hurt is inside `range`. The
-    /// trigger for a strike at range, kept apart from the strike itself so a
-    /// mob with nobody near it costs one broadphase query and no bolt.
-    bool playerWithin(World& world, const SpatialGrid& grid, Entity mob, Vec2 at, Realm realm,
+    /// Whether anything this mob could actually hurt is inside `range` -- a
+    /// flower, or for a pet a wild mob (strikesAt). The trigger for a strike
+    /// at range, kept apart from the strike itself so a mob with nobody near
+    /// it costs one broadphase query and no bolt.
+    bool targetWithin(World& world, const SpatialGrid& grid, Entity mob, Vec2 at, Realm realm,
                       double range, double nowMillis);
+    /// What a mob's shock is aimed at: a wild mob's at flowers, a pet's at
+    /// wild mobs, never at its owner or another pet.
+    static bool strikesAt(World& world, Entity source, Entity victim);
+    /// A contact striker's (the firefly's) shock, on its cooldown.
+    void dischargeOnContact(World& world, const SpatialGrid& grid, const MeleeSource& source,
+                            double nowMillis);
     void gatherPetals(World& world, const ContentRegistry& content, double nowMillis);
     void resolveMelee(World& world, const SpatialGrid& grid, double nowMillis);
     /// A petal swinging at another flower, which is a different collision from

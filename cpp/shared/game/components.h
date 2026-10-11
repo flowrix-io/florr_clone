@@ -703,12 +703,20 @@ struct MobAi {
     /// nose-on and the two sides are a real choice, is what makes the second
     /// leg retrace the first.
     std::int8_t stingerSide = 0;
-    /// Set while a sandstorm pet is heading back to its owner, from the moment
-    /// it passes kSandstormPetLeash until it is inside kSandstormPetHomeDistance.
-    /// Stored for the gap between the two: a pet that only came back while it
-    /// was past the leash would hover on it, since shadowing the owner pushes
-    /// it straight back out.
+    /// Set while a pet is heading back to its owner. A sandstorm turns for
+    /// home past kSandstormPetLeash and stops inside kSandstormPetHomeDistance;
+    /// every other pet turns when it leaves its owner's screen and stops inside
+    /// kPetHomeDistance. Stored for the gap between the two: a pet that only
+    /// came back while it was past the line would hover on it.
     bool petReturning = false;
+    /// The closest a returning (non-sandstorm) pet has come to its owner, and
+    /// when it last closed by kPetProgressStep on that. A pet in sight of its
+    /// owner that has not closed for kPetTrappedMillis is trapped.
+    double petBestGap = 0;
+    double petProgressMillis = 0;
+    /// Set by the AI on a trapped pet. The petal system retires it and charges
+    /// the reload to the egg that hatched it (PetalSystem::retireDistantPets).
+    bool petRecall = false;
 };
 
 /// Where a mob is walking to, when it walks to a POINT rather than steering on
@@ -851,6 +859,15 @@ struct Pet {
     /// timed pet is no part of its type's squad: it is not counted toward a
     /// squad's size and a squad being replaced does not recall it.
     double expiresAtMillis = 0;
+};
+
+/// A summoned mob whose config spawns minions on a clock (`periodic_spawn` --
+/// the queen ant). The wild one's Spawner is SpawnSystem's and fields WILD
+/// escorts; a pet's brood is hatched by PetalSystem as more of its owner's
+/// pets instead, so a summoned queen's soldiers fight for the same flower.
+struct PetBrood {
+    double nextSpawnMillis = 0;   ///< 0: due on the first tick, as a wild queen is
+    std::vector<Entity> children;
 };
 
 /// A segmented body (centipedes). Each segment follows the one ahead.
@@ -1402,6 +1419,7 @@ FLIX_COMPONENT(flix::DungeonDweller);
 FLIX_COMPONENT(flix::ColonyMember);
 FLIX_COMPONENT(flix::KeepAwake);
 FLIX_COMPONENT(flix::Pet);
+FLIX_COMPONENT(flix::PetBrood);
 FLIX_COMPONENT(flix::BodySegment);
 FLIX_COMPONENT(flix::Spawner);
 FLIX_COMPONENT(flix::MobPetalRing);

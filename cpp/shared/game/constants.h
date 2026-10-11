@@ -665,14 +665,39 @@ inline constexpr double kMobPetalRingHitScale = 0.5;
 // -- pets --------------------------------------------------------------------
 //
 // A summoned mob keeps its config's own behaviour -- a passive pet stays
-// passive, a sandstorm still drifts -- rather than being forced to fight. What
-// it gains is an owner: it follows, it teleports back when a wall breaks line
-// of sight, and passive pets that leave the owner's screen are retired so
-// their egg can hatch a fresh one. A sandstorm is leashed instead: it is never
-// retired for distance, it comes back.
+// passive -- and moves the way its wild counterpart does: it idles on the same
+// hop, and a fighting one chases on the same pursuit. What it gains is an
+// owner: it fights the wild mob nearest that owner, and walks back to them
+// when it leaves their screen. A wall between the two leaves it stuck where it
+// is; a pet that gets way too far (kPetRecallDistance) or is trapped in sight
+// of its owner is retired, and its egg hatches a fresh one after its reload.
+// A sandstorm is the exception and runs its own leash below.
 
-/// Ring distance a pet is placed at when it teleports back to its owner.
+/// Ring distance a sandstorm pet is placed at when it teleports back to its
+/// owner.
 inline constexpr double kPetTeleportDistance = 80.0;
+
+/// How close a pet walking back to its owner comes before it is home and goes
+/// back to idling or fighting. Well inside the screen, so a pet that gets home
+/// does not wander straight back off it.
+inline constexpr double kPetHomeDistance = 300.0;
+
+/// Past this from its owner -- or in another realm -- a pet is way too far:
+/// it is retired and its egg pays a reload, wall or no wall. About one and a
+/// half screens.
+inline constexpr double kPetRecallDistance = 3000.0;
+
+/// A returning pet with a clear line to its owner that has not closed on them
+/// by kPetProgressStep for this long is trapped, and is retired like one that
+/// got too far. A wall in the way stops this clock: that pet is stuck, and
+/// stays stuck.
+inline constexpr double kPetTrappedMillis = 5000.0;
+inline constexpr double kPetProgressStep = 25.0;
+
+/// How much nearer the owner another wild mob must be before a pet drops the
+/// one it is fighting for it, so two mobs about as close do not split its
+/// attention tick by tick.
+inline constexpr double kPetRetargetMargin = 50.0;
 
 /// A sandstorm pet shadows its owner's velocity slightly faster than the owner
 /// moves, so it steadily pulls ahead until the leash below brings it back.
@@ -698,10 +723,10 @@ inline constexpr double kPetAggroRangePerRarity = 200.0;
 
 /// What a unique pet's size is, as a fraction of its base size on the pet
 /// ladder (kPetSizeScale) -- the endpoint of its mobSizeRamp. A common pet is
-/// exactly a common mob; a unique one is two thirds of the old 26.8x size,
-/// which would otherwise dwarf the flower that owns it. Larger than the reference's third
-/// (PET_SIZE_SCALE_AT_UNIQUE, src/mobs.ts) on purpose.
-inline constexpr double kPetSizeScaleAtUnique = 2.0 / 3.0;
+/// exactly a common mob; a unique one is a third of the old 26.8x size,
+/// which would otherwise dwarf the flower that owns it -- the reference's
+/// PET_SIZE_SCALE_AT_UNIQUE (src/mobs.ts). Was two thirds until 2026-10-11.
+inline constexpr double kPetSizeScaleAtUnique = 1.0 / 3.0;
 
 // ---------------------------------------------------------------------------
 // Drops

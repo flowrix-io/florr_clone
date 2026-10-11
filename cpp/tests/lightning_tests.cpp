@@ -585,6 +585,57 @@ TEST(a_strike_reaches_every_flower_in_the_disc_and_no_mob_at_all) {
 
 // --- striking on contact ---------------------------------------------------
 
+TEST(a_summoned_striker_shocks_wild_mobs_and_never_a_flower) {
+    Sim sim;
+    const SimContent& content = simContent();
+    const Entity owner = sim.player({-200, 0});
+    const Entity stranger = sim.player({0, 200});
+    const Entity pet = sim.mob({0, 0}, content.shocker, 20.0);
+    sim.world.get<Faction>(pet) = Faction{Team::Players, false};
+    sim.world.add<Pet>(pet, Pet{owner, 0});
+    sim.world.remove<Bounty>(pet);
+    const Entity wild = sim.mob({200, 0}, content.inert, 0.0);
+
+    sim.step(10000.0, content.registry);
+    // The wild mob takes the shock; neither flower in the disc does.
+    CHECK_NEAR(sim.health(wild), 480.0, 1e-9);
+    CHECK_NEAR(sim.health(owner), 500.0, 1e-9);
+    CHECK_NEAR(sim.health(stranger), 500.0, 1e-9);
+    CHECK_EQ(sim.bolts().size(), std::size_t(1));
+}
+
+TEST(a_summoned_striker_with_only_flowers_near_it_holds_its_charge) {
+    Sim sim;
+    const SimContent& content = simContent();
+    const Entity owner = sim.player({100, 0});
+    const Entity pet = sim.mob({0, 0}, content.shocker, 20.0);
+    sim.world.get<Faction>(pet) = Faction{Team::Players, false};
+    sim.world.add<Pet>(pet, Pet{owner, 0});
+    sim.world.remove<Bounty>(pet);
+
+    sim.step(10000.0, content.registry);
+    CHECK_EQ(sim.bolts().size(), std::size_t(0));
+    CHECK(!sim.world.has<LightningClock>(pet));
+}
+
+TEST(a_summoned_contact_striker_shocks_the_wild_mob_it_touches) {
+    Sim sim;
+    const SimContent& content = simContent();
+    const Entity owner = sim.player({-100, 0});
+    const Entity pet = sim.mob({0, 0}, content.toucher, 30.0);
+    sim.world.get<Faction>(pet) = Faction{Team::Players, false};
+    sim.world.add<Pet>(pet, Pet{owner, 0});
+    sim.world.remove<Bounty>(pet);
+    const Entity wild = sim.mob({35, 0}, content.inert, 0.0);
+
+    sim.step(10000.0, content.registry);
+    CHECK_EQ(sim.bolts().size(), std::size_t(1));
+    // The touch and the shock both land on it; its owner, inside the flash,
+    // takes neither.
+    CHECK(sim.health(wild) < 500.0 - 30.0);
+    CHECK_NEAR(sim.health(owner), 500.0, 1e-9);
+}
+
 TEST(a_contact_striker_shocks_the_flower_it_touches) {
     Sim sim;
     const SimContent& content = simContent();

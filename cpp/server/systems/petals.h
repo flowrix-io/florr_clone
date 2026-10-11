@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "shared/core/types.h"
@@ -220,7 +221,7 @@ public:
                    std::uint8_t slot, double nowMillis, bool recallSummons = true);
 
     /// Put the petal that hatched `pet` back on its reload, as a summon
-    /// retired for wandering off does. For whoever ends a pet from outside
+    /// retired for getting lost does. For whoever ends a pet from outside
     /// the ring -- the sacrifice's star. No-op on anything that is not a pet
     /// or whose owner has nothing equipped that hatches it.
     void reloadHatcher(World& world, const ContentRegistry& registry, Entity pet,
@@ -440,12 +441,11 @@ private:
                           double radius, double damagePerSecond, double slowFactor,
                           Rarity rarity, double lifetimeSeconds,
                           double damagePerHit = 0.0, double damageIntervalMillis = 0.0);
-    /// Retire the summons that have drifted off their owner's screen.
-    ///
-    /// Only the one kind that never finds its own way home: a pet that fights
-    /// is steered back to the flower, and a sandstorm is leashed to it, while
-    /// a passive one holds where it stands. That one is let go and the loss is
-    /// charged to the petal that hatched it.
+    /// Retire the summons that got lost: way too far from their owner
+    /// (kPetRecallDistance, or another realm) or flagged trapped by the AI
+    /// (MobAi::petRecall). Each is let go and its loss charged to the petal
+    /// that hatched it, which hatches a fresh one after its reload. A
+    /// sandstorm is leashed instead and never retired here.
     void retireDistantPets(World& world, const ContentRegistry& registry, Entity player,
                            double nowMillis);
     /// Take back the timed summons (Pet::expiresAtMillis) whose time is up.
@@ -504,6 +504,17 @@ private:
     void summonPets(World& world, const ContentRegistry& registry, Entity player,
                     std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, int count, Vec2 at,
                     PetalSlotState& state, double strength, double expiresAtMillis = 0.0);
+    /// One summoned body, every component a pet carries, at an already
+    /// chosen spot and size -- and, if its config has one, its ammunition
+    /// ring. summonPets lays chains and broods on top.
+    Entity hatchPetBody(World& world, const ContentRegistry& registry, Entity player,
+                        std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, Vec2 at,
+                        double angle, Realm realm, double radius, double sizeJitter,
+                        double strength, double expiresAtMillis);
+    /// A summoned queen's soldiers (PetBrood): on her config's clock, up to
+    /// its maxAlive, each a timed pet of the same owner and slot.
+    void runPetBroods(World& world, const ContentRegistry& registry, Entity player,
+                      double nowMillis);
 
     /// The flower petal opening on the mob it touched: it is spent, and either
     /// the flower is corrupted or a squad of glitch flowers lands on the mob.
@@ -554,6 +565,8 @@ private:
     /// the action pass, for the reason PendingBreak documents.
     std::vector<Entity> pendingSpawns_;
     std::vector<PendingBreak> pendingBreaks_;
+    /// runPetBroods' snapshot of the queens it serves, and the slot each is filed under.
+    std::vector<std::pair<Entity, std::uint8_t>> broodScratch_;
     std::vector<Entity> mobScratch_;
     /// Where a strike's bolts end, rebuilt per strike so the report allocates
     /// nothing once the vector has grown.

@@ -1545,6 +1545,154 @@ TEST(a_sandstorm_pet_pulls_ahead_of_a_running_owner_but_stays_on_its_leash) {
     CHECK(farthest < kViewportHeight * 0.5);
 }
 
+TEST(a_pet_fights_the_wild_mob_nearest_its_owner_not_itself) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    const Entity pet = sim.spawnMob("soldier_ant", kOrigin + Vec2{400, 0});
+    sim.world.add<Pet>(pet, Pet{owner, 0});
+    // Right beside the pet, but further from the flower than the other one.
+    const Entity byPet = sim.spawnMob("rock", kOrigin + Vec2{450, 0});
+    const Entity byOwner = sim.spawnMob("rock", kOrigin + Vec2{-200, 0});
+    (void)byPet;
+
+    sim.tick();
+    CHECK_EQ(sim.brainOf(pet).target, byOwner);
+    // And it chases it on the wild one's pursuit.
+    CHECK(sim.velocityOf(pet).x < 0.0);
+}
+
+TEST(a_pet_switches_to_a_mob_that_comes_nearer_its_owner) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    const Entity pet = sim.spawnMob("soldier_ant", kOrigin + Vec2{100, 0});
+    sim.world.add<Pet>(pet, Pet{owner, 0});
+    const Entity first = sim.spawnMob("rock", kOrigin + Vec2{500, 0});
+    sim.tick();
+    CHECK_EQ(sim.brainOf(pet).target, first);
+
+    // Inside the margin it keeps its fight; well inside it, it switches.
+    const Entity close = sim.spawnMob("rock", kOrigin + Vec2{0, 500.0 - kPetRetargetMargin * 0.5});
+    sim.tick();
+    CHECK_EQ(sim.brainOf(pet).target, first);
+    sim.world.get<Transform>(close).position = kOrigin + Vec2{0, 200};
+    sim.tick();
+    CHECK_EQ(sim.brainOf(pet).target, close);
+}
+
+TEST(a_pet_off_its_owners_screen_drops_its_fight_and_walks_back) {
+    CHECK(contentReady());
+    for (const char* id : {"soldier_ant", "ladybug"}) {
+        Sim sim;
+        const Entity owner = sim.spawnPlayer(kOrigin);
+        const Entity pet = sim.spawnMob(id, kOrigin + Vec2{kViewportWidth, 0});
+        sim.world.add<Pet>(pet, Pet{owner, 0});
+
+        sim.tick();
+        // A passive one used to be retired here; now every pet walks back.
+        CHECK(sim.world.isAlive(pet));
+        CHECK(sim.brainOf(pet).petReturning);
+        CHECK_EQ(sim.brainOf(pet).target, NULL_ENTITY);
+        CHECK(sim.velocityOf(pet).x < 0.0);
+
+        CHECK(sim.world.isAlive(pet));
+        int ticks = 0;
+        while (sim.brainOf(pet).petReturning && ticks < 1200) {
+            sim.tick();
+            ++ticks;
+        }
+        CHECK(!sim.brainOf(pet).petReturning);
+        CHECK(sim.gap(pet, owner) < kPetHomeDistance);
+        CHECK(!sim.brainOf(pet).petRecall);
+    }
+}
+
+TEST(a_pet_behind_a_wall_is_stuck_rather_than_teleported_or_recalled) {
+    CHECK(contentReady());
+    Sim sim;
+    const int wallTx = Terrain::toTileCoord(kOrigin.x) + 3;
+    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    const Vec2 start = kOrigin + Vec2{kViewportWidth, 0};
+    const Entity pet = sim.spawnMob("soldier_ant", start);
+    sim.world.add<Pet>(pet, Pet{owner, 0});
+    CHECK(sim.terrain.segmentBlocked(start, kOrigin, Realm::Overworld));
+
+    // The stand-in movement ignores walls, so the wall's hold is played by
+    // putting the pet back where it was after every tick.
+    const double step = sim.world.get<Body>(pet).radius + 50.0;
+    for (int i = 0; i < static_cast<int>(2.0 * kPetTrappedMillis / net::kTickMillis); ++i) {
+        sim.tick();
+        CHECK(distance(sim.positionOf(pet), start) < step);
+        sim.world.get<Transform>(pet).position = start;
+    }
+    CHECK(sim.brainOf(pet).petReturning);
+    CHECK(!sim.brainOf(pet).petRecall);
+    // Still pushing at its owner, into the wall.
+    CHECK(sim.velocityOf(pet).x < 0.0);
+}
+
+TEST(a_pet_trapped_in_sight_of_its_owner_is_flagged_for_recall) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    const Vec2 start = kOrigin + Vec2{kViewportWidth, 0};
+    const Entity pet = sim.spawnMob("soldier_ant", start);
+    sim.world.add<Pet>(pet, Pet{owner, 0});
+
+    // Held in place with a clear line to its owner: it is getting nowhere.
+    const int trapped = static_cast<int>(kPetTrappedMillis / net::kTickMillis);
+    for (int i = 0; i < trapped - 5; ++i) {
+        sim.tick();
+        sim.world.get<Transform>(pet).position = start;
+    }
+    CHECK(!sim.brainOf(pet).petRecall);
+    for (int i = 0; i < 10; ++i) {
+        sim.tick();
+        sim.world.get<Transform>(pet).position = start;
+    }
+    CHECK(sim.brainOf(pet).petRecall);
+}
+
+TEST(a_summoned_centipedes_body_follows_it_and_goes_with_it) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    const Entity head = sim.spawnMob("centipede", kOrigin + Vec2{kViewportWidth, 0});
+    sim.world.add<Pet>(head, Pet{owner, 0});
+    link(sim, head, NULL_ENTITY, 0.0);
+    sim.world.get<BodySegment>(head).chainHead = head;
+    std::vector<Entity> body;
+    Entity ahead = head;
+    for (int i = 1; i <= 3; ++i) {
+        const Entity segment =
+            sim.spawnMob("centipede_body", kOrigin + Vec2{kViewportWidth + 60.0 * i, 0});
+        sim.world.add<Pet>(segment, Pet{owner, 0});
+        link(sim, segment, ahead, 60.0);
+        sim.world.get<BodySegment>(segment).chainHead = head;
+        body.push_back(segment);
+        ahead = segment;
+    }
+
+    // The head walks home; the body is carried along behind it rather than
+    // each segment walking home on its own.
+    sim.tick(30);
+    CHECK(sim.brainOf(head).petReturning);
+    for (const Entity segment : body) {
+        CHECK(!sim.brainOf(segment).petReturning);
+        CHECK(sim.world.get<BodySegment>(segment).chainHead == head);
+    }
+    // Placed at its spacing, give or take the one step the head took after.
+    CHECK(distance(sim.positionOf(body.front()), sim.positionOf(head)) <= 60.0 + 20.0);
+
+    // Recalled: the body goes too, rather than turning into three stray pets.
+    sim.world.destroy(head);
+    sim.tick(5);
+    for (const Entity segment : body) CHECK(!sim.world.isAlive(segment));
+    CHECK_EQ(sim.totalPromotions, std::uint64_t(0));
+}
+
 TEST(a_dead_mob_stops_steering) {
     CHECK(contentReady());
     Sim sim;

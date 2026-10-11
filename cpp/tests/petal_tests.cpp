@@ -80,7 +80,11 @@ const char* const kPetalsJson = R"JSON({
 
 const char* const kMobsJson = R"JSON({
   "critter": {"name":"Critter","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#FF0000","section":[0],"ai_type":"hostile"},
-  "brute":   {"name":"Brute","health":500,"damage":5,"size":6,"speed":0.2,"range":300,"cooldown":500,"color":"#AA3300","section":[0],"ai_type":"hostile"}
+  "brute":   {"name":"Brute","health":500,"damage":5,"size":6,"speed":0.2,"range":300,"cooldown":500,"color":"#AA3300","section":[0],"ai_type":"hostile"},
+  "puffball": {"name":"Puffball","health":10,"damage":1,"size":1,"speed":0,"range":300,"cooldown":500,"color":"#FFFFFF","section":[0],"ai_type":"passive","petal_ring":{"petalType":"pearl","count":4,"spin":false,"shootOnHit":true}},
+  "centipede": {"name":"Centipede","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#88AA00","section":[0],"ai_type":"passive"},
+  "centipede_body": {"name":"Centipede Body","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#88AA00","section":[0],"ai_type":"passive"},
+  "matriarch": {"name":"Matriarch","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#AA00AA","section":[0],"ai_type":"hostile","periodic_spawn":{"mobType":"critter","intervalMs":1000,"lifetimeMs":5000,"maxAlive":3,"spawnRarityOffset":-1}}
 })JSON";
 
 struct Fixture {
@@ -2948,9 +2952,9 @@ TEST(summons_outlive_the_egg_that_broke_under_them) {
     rig.damage(rig.petals(0).front(), 4.0);
     rig.tick();
     CHECK(rig.slot(0).broken);
-    // The squad STAYS. Over there a pet is despawned only when the slot's
-    // petal actually changes, when a duplicate replaces it, or when it drifts
-    // off its owner's screen -- never by the egg breaking in combat -- and the
+    // The squad STAYS. A pet is despawned only when the slot's petal actually
+    // changes, when a duplicate replaces it, or when it gets lost (too far or
+    // trapped) -- never by the egg breaking in combat -- and the
     // reload then finds the pets still out and hatches nothing.
     CHECK_EQ(rig.petCount(), std::size_t(2));
     // Not killed either: no corpse is left for the reaper to award.
@@ -2996,6 +3000,150 @@ TEST(a_sandstorm_pet_is_never_retired_for_distance) {
     // mob AI is what brings a storm back now.
     CHECK_EQ(rig.petCount(), std::size_t(2));
     CHECK(!rig.slot(0).broken);
+}
+
+TEST(a_pet_way_too_far_from_its_owner_is_retired_and_its_egg_reloads) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "summoner");
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+
+    Query<Pet> pets{rig.world};
+    const Entity lost = pets.collect().front();
+    rig.world.get<Transform>(lost).position =
+        rig.position(rig.player) + Vec2{kPetRecallDistance + 10.0, 0.0};
+    rig.tick();
+    CHECK_EQ(rig.petCount(), std::size_t(1));
+    CHECK(rig.slot(0).broken);
+    // Destroyed, not killed: nothing for the reaper to award.
+    Query<Dead> dead{rig.world};
+    CHECK_EQ(dead.count(), std::size_t(0));
+    // The reload hatches a whole fresh squad.
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2 && !rig.slot(0).broken; }));
+}
+
+TEST(a_pet_just_inside_the_recall_distance_is_kept) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "summoner");
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        rig.world.get<Transform>(pet).position =
+            rig.position(rig.player) + Vec2{kPetRecallDistance - 10.0, 0.0};
+    }
+    rig.tick(10);
+    CHECK_EQ(rig.petCount(), std::size_t(2));
+    CHECK(!rig.slot(0).broken);
+}
+
+TEST(a_trapped_pet_is_retired_and_its_egg_reloads) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "summoner");
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+
+    Query<Pet> pets{rig.world};
+    rig.world.get<MobAi>(pets.collect().front()).petRecall = true;
+    rig.tick();
+    CHECK_EQ(rig.petCount(), std::size_t(1));
+    CHECK(rig.slot(0).broken);
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2 && !rig.slot(0).broken; }));
+}
+
+TEST(a_summoned_ring_mob_wears_its_seeds_on_its_owners_side) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "puffball_egg");
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 1; }));
+
+    Query<Pet> pets{rig.world};
+    const Entity pet = pets.collect().front();
+    CHECK(rig.world.has<MobPetalRing>(pet));
+    const MobPetalRing& ring = rig.world.get<MobPetalRing>(pet);
+    CHECK_EQ(ring.seats.size(), std::size_t(4));
+    for (const Entity seed : ring.seats) {
+        CHECK(rig.world.isAlive(seed));
+        CHECK(rig.world.has<MobRingPetal>(seed));
+        CHECK(rig.world.get<MobRingPetal>(seed).mob == pet);
+        // Its owner's side, so the seeds cut wild mobs and never the flower.
+        CHECK(rig.world.get<Faction>(seed).team == Team::Players);
+    }
+}
+
+TEST(a_summoned_centipede_arrives_whole_and_leaves_whole) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "centipede_egg");
+    const std::size_t whole = 1 + static_cast<std::size_t>(kCentipedeSegmentCount);
+    CHECK(rig.tickUntil([&] { return rig.petCount() == whole; }));
+
+    const std::uint16_t head = fixture().registry.mobIndex("centipede");
+    const std::uint16_t body = fixture().registry.mobIndex("centipede_body");
+    Entity headEntity = NULL_ENTITY;
+    int segments = 0;
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        CHECK(rig.world.get<Pet>(pet).owner == rig.player);
+        CHECK(rig.world.has<BodySegment>(pet));
+        const std::uint16_t type = rig.world.get<MobType>(pet).configIndex;
+        if (type == head) {
+            headEntity = pet;
+        } else {
+            CHECK_EQ(type, body);
+            ++segments;
+        }
+    }
+    CHECK(headEntity != NULL_ENTITY);
+    CHECK_EQ(segments, kCentipedeSegmentCount);
+    // One linked animal: walking back from the head reaches every segment.
+    int walked = 0;
+    for (Entity at = rig.world.get<BodySegment>(headEntity).behind; at != NULL_ENTITY;
+         at = rig.world.get<BodySegment>(at).behind) {
+        CHECK(rig.world.get<BodySegment>(at).chainHead == headEntity);
+        ++walked;
+    }
+    CHECK_EQ(walked, kCentipedeSegmentCount);
+    // And a body counts toward nothing: the egg's squad is one centipede.
+    rig.tick(30);
+    CHECK_EQ(rig.petCount(), whole);
+
+    rig.unequip(0);
+    rig.tick();
+    CHECK_EQ(rig.petCount(), std::size_t(0));
+}
+
+TEST(a_summoned_queen_hatches_her_minions_as_her_owners_timed_pets) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "matriarch_egg");
+    CHECK(rig.tickUntil([&] { return rig.petCount() >= 2; }));
+
+    const std::uint16_t critter = fixture().registry.mobIndex("critter");
+    std::size_t minions = 0;
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        if (rig.world.get<MobType>(pet).configIndex != critter) continue;
+        ++minions;
+        CHECK(rig.world.get<Pet>(pet).owner == rig.player);
+        CHECK(rig.world.get<Pet>(pet).expiresAtMillis > 0.0);
+        CHECK(rig.world.get<Faction>(pet).team == Team::Players);
+        CHECK(!rig.world.has<Bounty>(pet));
+    }
+    CHECK(minions >= 1);
+
+    // Up to her maxAlive and no further, however long she stands there.
+    std::size_t most = 0;
+    for (int i = 0; i < 300; ++i) {
+        rig.tick();
+        std::size_t live = 0;
+        for (const Entity pet : pets.collect()) {
+            if (rig.world.get<MobType>(pet).configIndex == critter) ++live;
+        }
+        most = std::max(most, live);
+    }
+    CHECK_EQ(most, std::size_t(3));
 }
 
 std::size_t timedPetCount(World& world) {
@@ -3082,7 +3230,7 @@ TEST(a_pet_is_smaller_than_the_wild_mob_of_its_tier) {
     const ContentRegistry& content = fixture().registry;
     const std::uint16_t critter = content.mobIndex("critter");
     // Sized on the old, smaller mob ladder (kPetSizeScale), then the pet
-    // ramp: the old size at common, two thirds of it by unique.
+    // ramp: the old size at common, a third of it by unique.
     for (const Rarity rarity : {Rarity::Common, Rarity::Epic, Rarity::Unique}) {
         Rig rig;
         rig.equip(0, "summoner", rarity);
@@ -3090,7 +3238,7 @@ TEST(a_pet_is_smaller_than_the_wild_mob_of_its_tier) {
         const std::size_t tier = static_cast<std::size_t>(ladderIndex(rarity));
         const double wild = content.mobStats(critter, rarity).radius;
         const double old = wild * kPetSizeScale[tier] / kMobSizeScale[tier];
-        const double expected = old * mobSizeRamp(rarity, 2.0 / 3.0);
+        const double expected = old * mobSizeRamp(rarity, 1.0 / 3.0);
         if (rarity != Rarity::Common) { CHECK(expected < wild); }
         Query<Pet> pets{rig.world};
         for (const Entity pet : pets.collect()) {
