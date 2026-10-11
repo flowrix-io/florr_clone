@@ -285,6 +285,10 @@ private:
     std::vector<Entity> corpseList_;
     std::vector<Bounty::Share> ranked_;
     std::vector<Entity> eligible_;
+    /// eligible_[i]'s worn orb tier, kRarityCount for none.
+    std::vector<int> eligibleOrbs_;
+    /// The eligible flowers sharing one orb tier: one split drop's claimants.
+    std::vector<Entity> orbGroup_;
     std::vector<const DropTables::Entry*> selected_;
 };
 

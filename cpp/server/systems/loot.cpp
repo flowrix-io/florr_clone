@@ -600,12 +600,20 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         // ordinary leaf, and no magic leaf above common -- so the way to farm
         // better magic petals is to carry a better orb.
         //
-        // Read off the CREDIT player, the one whose kill this is, for the same
-        // reason the roll itself is credited to them: a drop is one item with
-        // one identity, and the eligible list can hold several flowers wearing
-        // several different orbs. kRarityCount is "no orb worn", which is
-        // almost every kill in the game.
-        const int orbTier = wornOrbTier(world, content, credit, magicOrb);
+        // Read off EACH eligible flower, and applied to that flower's copy
+        // alone: an orb is a bonus its wearer carries, not a rule for the whole
+        // kill. So a petal with a magic form splits into one drop per orb tier
+        // among the eligible -- the flowers with no orb share the ordinary one
+        // -- each reserved for its own group, which replication already hides
+        // from everybody else. kRarityCount is "no orb worn", which is almost
+        // every flower in the game, and then nothing splits.
+        eligibleOrbs_.clear();
+        bool anyOrb = false;
+        for (const Entity claimant : eligible_) {
+            const int tier = wornOrbTier(world, content, claimant, magicOrb);
+            eligibleOrbs_.push_back(tier);
+            anyOrb = anyOrb || tier != kRarityCount;
+        }
 
         selected_.clear();
         rollTable(table, mobRarity, rng);
@@ -644,24 +652,45 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
                 std::uint16_t petalIndex = entry->kind == DropTables::Kind::RandomPetal
                                                ? tables_.randomPetal(rng)
                                                : entry->petalIndex;
-                if (orbTier != kRarityCount) {
-                    const std::uint16_t magic = content.magicFormOf(petalIndex);
-                    if (magic != kInvalidIndex) {
-                        petalIndex = magic;
-                        // The gate. Applied AFTER the ordinary roll rather than
-                        // instead of it, so a low orb does not also flatten the
-                        // odds -- it caps what those odds can produce.
-                        if (rarityIndex(rarity) > orbTier) rarity = clampRarity(orbTier);
-                    }
-                }
+                const std::uint16_t magic =
+                    anyOrb ? content.magicFormOf(petalIndex) : kInvalidIndex;
                 const Vec2 scatter{rng.range(-50.0, 50.0), rng.range(-50.0, 50.0)};
                 // Unresolved on purpose, as in the reference: the per-tick pass
                 // is what pushes a drop out of the geometry it landed in. Noted
                 // so the sweep below tests the scattered position, as the
                 // reference's same-step pickup does.
-                const Entity dropped =
-                    spawnDrop(world, petalIndex, rarity, at + scatter, realm, eligible_);
-                if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
+                if (magic == kInvalidIndex) {
+                    const Entity dropped =
+                        spawnDrop(world, petalIndex, rarity, at + scatter, realm, eligible_);
+                    if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
+                    continue;
+                }
+                for (std::size_t first = 0; first < eligible_.size(); ++first) {
+                    const int tier = eligibleOrbs_[first];
+                    // One drop per tier, placed when its first member comes up.
+                    if (std::find(eligibleOrbs_.begin(),
+                                  eligibleOrbs_.begin() + static_cast<std::ptrdiff_t>(first),
+                                  tier) != eligibleOrbs_.begin() +
+                                               static_cast<std::ptrdiff_t>(first)) {
+                        continue;
+                    }
+                    orbGroup_.clear();
+                    for (std::size_t j = first; j < eligible_.size(); ++j) {
+                        if (eligibleOrbs_[j] == tier) orbGroup_.push_back(eligible_[j]);
+                    }
+                    std::uint16_t groupPetal = petalIndex;
+                    Rarity groupRarity = rarity;
+                    if (tier != kRarityCount) {
+                        groupPetal = magic;
+                        // The gate. Applied AFTER the ordinary roll rather than
+                        // instead of it, so a low orb does not also flatten the
+                        // odds -- it caps what those odds can produce.
+                        if (rarityIndex(groupRarity) > tier) groupRarity = clampRarity(tier);
+                    }
+                    const Entity dropped =
+                        spawnDrop(world, groupPetal, groupRarity, at + scatter, realm, orbGroup_);
+                    if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
+                }
             }
         }
     }

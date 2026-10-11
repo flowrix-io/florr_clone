@@ -3534,6 +3534,57 @@ TEST(a_stashed_orb_converts_nothing) {
     CHECK_EQ(leaves, 40);
 }
 
+TEST(an_orb_converts_only_its_wearers_drops) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(45);
+
+    // The orb wearer lands the kill and the most damage; the other contributor
+    // wears nothing. Each must still get their OWN copy of every drop.
+    const Entity wearer = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity plain = makePlayer(world, kCentre + Vec2{-5000, 0});
+    wear(world, wearer, "magic_orb", Rarity::Common);
+    for (int i = 0; i < 40; ++i) {
+        const Entity corpse = makeCorpse(world, shipped().mobIndex("leafbug"), Rarity::Uncommon,
+                                         kCentre, wearer, {wearer, plain});
+        world.get<Bounty>(corpse).credit(wearer, 10.0);
+    }
+    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    const std::uint16_t leaf = shipped().petalIndex("leaf");
+    const std::uint16_t magicLeaf = shipped().petalIndex("magic_leaf");
+    const std::uint16_t root = shipped().petalIndex("root");
+    int wearerMagic = 0;
+    int plainLeaves = 0;
+    int sharedRoots = 0;
+    for (const Entity drop : liveDrops(world)) {
+        const DropItem& item = world.get<DropItem>(drop);
+        const bool forWearer = claimed(item.eligible, wearer, 0);
+        const bool forPlain = claimed(item.eligible, plain, 0);
+        if (item.configIndex == magicLeaf) {
+            CHECK(forWearer && !forPlain);
+            CHECK_EQ(rarityIndex(item.rarity), rarityIndex(Rarity::Common));
+            ++wearerMagic;
+        }
+        if (item.configIndex == leaf) {
+            CHECK(forPlain && !forWearer);
+            ++plainLeaves;
+        }
+        // No magic form: one drop for both, exactly as before.
+        if (item.configIndex == root) {
+            CHECK(forWearer && forPlain);
+            ++sharedRoots;
+        }
+    }
+    CHECK_EQ(wearerMagic, 40);
+    CHECK_EQ(plainLeaves, 40);
+    CHECK(sharedRoots > 0);
+}
+
 TEST(a_non_contributor_can_never_take_an_eligible_players_drop) {
     World world;
     CommandBuffer commands{world};
