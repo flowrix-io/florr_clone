@@ -75,72 +75,24 @@ constexpr double kHudFillInset = 3.0;
 constexpr double kHudNameSize = 22.0;
 constexpr double kHudLevelSize = 14.0;
 
-/// An admin's announcement (drawAdminAnnouncement): a plate at the top of the
-/// screen, centred, for this long after it arrives, fading out over the last
-/// stretch of it.
-constexpr double kAnnouncementSeconds = 8.0;
-constexpr double kAnnouncementFadeSeconds = 0.4;
-/// No wider than this, and never closer to a side of the window than the
-/// margin -- a phone held upright gets a narrower plate, not smaller text.
-constexpr double kAnnouncementWidth = 650.0;
-constexpr double kAnnouncementMargin = 20.0;
-/// Where the plate's top edge sits with nothing above it, and how far under
-/// the boss bars it drops when there are some.
-constexpr double kAnnouncementTop = 85.0;
+/// An admin's announcement (drawAdminAnnouncement), drawn as
+/// rysteria_gardn's game messages ("Disconnected with code ...",
+/// Client/Game.cc): one 16 px white line in an HContainer padded 5 on a
+/// 0x40000000 plate rounded 5, centred with its top edge at y = 50. It
+/// shows for gardn's 6 s round-end banner time, fading in over the first
+/// 0.3 s and out over the last 0.6 s. The plate is as wide as its text.
+constexpr double kAnnouncementSeconds = 6.0;
+constexpr double kAnnouncementFadeInSeconds = 0.3;
+constexpr double kAnnouncementFadeOutSeconds = 0.6;
+/// The plate's top edge with nothing above it; under the boss bars when
+/// there are some.
+constexpr double kAnnouncementTop = 50.0;
 constexpr double kAnnouncementGap = 12.0;
-constexpr double kAnnouncementPad = 15.0;
-constexpr double kAnnouncementHeaderSize = 17.0;
-/// The header's line, and the gap under it before the text starts.
-constexpr double kAnnouncementHeaderHeight = 26.0;
+constexpr double kAnnouncementPad = 5.0;
 constexpr double kAnnouncementTextSize = 16.0;
-constexpr double kAnnouncementLineHeight = 21.0;
-constexpr std::uint32_t kAnnouncementFill = 0x332B18u;
-/// The header in the chat box's Admin-tab gold, so the banner and the line it
-/// leaves in the transcript read as the same thing.
-constexpr std::uint32_t kAnnouncementHeaderInk = 0xFFD166u;
-
-/// Greedy word wrap for the banner at `size`, `width` wide. A word that will
-/// not fit a line of its own is broken between its characters rather than
-/// left to run off the plate: an announcement can be one long URL.
-std::vector<std::string> wrapAnnouncement(const std::string& body, double size, double width) {
-    std::vector<std::string> lines;
-    std::string line;
-    const auto flush = [&] {
-        if (!line.empty()) lines.push_back(line);
-        line.clear();
-    };
-    std::size_t at = 0;
-    while (at < body.size()) {
-        const std::size_t space = body.find(' ', at);
-        const std::size_t end = space == std::string::npos ? body.size() : space;
-        std::string word = body.substr(at, end - at);
-        at = space == std::string::npos ? body.size() : space + 1;
-        if (word.empty()) continue;
-        const std::string joined = line.empty() ? word : line + " " + word;
-        if (measure(joined, size) <= width) {
-            line = joined;
-            continue;
-        }
-        flush();
-        // Too long for a line of its own: as many characters as fit, then
-        // the rest on the next line, on UTF-8 boundaries.
-        while (measure(word, size) > width) {
-            std::size_t cut = 0;
-            for (std::size_t next = utf8Next(word, 0); next <= word.size();
-                 next = utf8Next(word, next)) {
-                if (measure(word.substr(0, next), size) > width) break;
-                cut = next;
-                if (next == word.size()) break;
-            }
-            if (cut == 0) cut = utf8Next(word, 0);   // a single glyph wider than the plate
-            lines.push_back(word.substr(0, cut));
-            word.erase(0, cut);
-        }
-        line = word;
-    }
-    flush();
-    return lines;
-}
+constexpr double kAnnouncementRadius = 5.0;
+constexpr std::uint32_t kAnnouncementFill = 0x000000u;
+constexpr double kAnnouncementFillAlpha = 64.0 / 255.0;
 
 /// The reference's `formatNumber`: one decimal place and a suffix past a
 /// thousand, and the exact integer while ALT is held.
@@ -679,43 +631,36 @@ void App::drawAdminAnnouncement(Canvas& canvas, double clearOf) {
     if (announcement.text.empty()) return;
     const double age = timeSeconds_ - announcementShownAt_;
     if (age >= kAnnouncementSeconds) return;
-    const double alpha = clamp((kAnnouncementSeconds - age) / kAnnouncementFadeSeconds, 0.0, 1.0);
+    const double alpha =
+        clamp(std::min(age / kAnnouncementFadeInSeconds,
+                       (kAnnouncementSeconds - age) / kAnnouncementFadeOutSeconds),
+              0.0, 1.0);
 
-    const double width =
-        std::min(kAnnouncementWidth, canvas.width() - kAnnouncementMargin * 2.0);
-    if (width <= kAnnouncementPad * 2.0) return;
-    // Wrapped, never shrunk: a full-length announcement on a narrow window is
-    // three lines of the same type, not one line of type too small to read.
-    const std::vector<std::string> lines =
-        wrapAnnouncement(announcement.text, kAnnouncementTextSize, width - kAnnouncementPad * 2.0);
+    // Credited to the account that made it, which the server signs the line
+    // with -- not to a name written into the client.
+    const std::string line =
+        (announcement.author.empty() ? std::string("Announcement")
+                                     : "Announcement from " + announcement.author) +
+        ": " + announcement.text;
+    const double width = measure(line, kAnnouncementTextSize) + kAnnouncementPad * 2.0;
+    const double height = kAnnouncementTextSize + kAnnouncementPad * 2.0;
     const double top = std::max(kAnnouncementTop, clearOf > 0.0 ? clearOf + kAnnouncementGap : 0.0);
-    const Rect plateRect{(canvas.width() - width) * 0.5, top, width,
-                         kAnnouncementPad * 2.0 + kAnnouncementHeaderHeight +
-                             static_cast<double>(lines.size()) * kAnnouncementLineHeight};
+    const double centreX = canvas.width() * 0.5;
 
     canvas.save();
     canvas.setGlobalAlpha(static_cast<float>(alpha));
-    plate(canvas, plateRect, kAnnouncementFill);
-    TextStyle header;
-    header.size = kAnnouncementHeaderSize;
-    header.fill = kAnnouncementHeaderInk;
-    header.baseline = Baseline::Middle;
-    // Credited to the account that made it, which the server signs the line
-    // with -- not to a name written into the client.
-    text(canvas,
-         announcement.author.empty() ? std::string("Announcement")
-                                     : "Announcement from " + announcement.author,
-         plateRect.x + kAnnouncementPad, plateRect.y + kAnnouncementPad + kAnnouncementHeaderSize * 0.5,
-         header);
-    TextStyle body;
-    body.size = kAnnouncementTextSize;
-    body.baseline = Baseline::Middle;
-    double y = plateRect.y + kAnnouncementPad + kAnnouncementHeaderHeight +
-               kAnnouncementLineHeight * 0.5;
-    for (const std::string& line : lines) {
-        text(canvas, line, plateRect.x + kAnnouncementPad, y, body);
-        y += kAnnouncementLineHeight;
-    }
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(centreX - width * 0.5), static_cast<float>(top),
+                     static_cast<float>(width), static_cast<float>(height),
+                     static_cast<float>(kAnnouncementRadius));
+    setFill(canvas, kAnnouncementFill, kAnnouncementFillAlpha);
+    canvas.fill();
+
+    TextStyle style;
+    style.size = kAnnouncementTextSize;
+    style.align = Align::Centre;
+    style.baseline = Baseline::Middle;
+    text(canvas, line, centreX, top + height * 0.5, style);
     canvas.restore();
 }
 

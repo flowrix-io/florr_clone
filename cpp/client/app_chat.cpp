@@ -38,6 +38,7 @@
 #include "client/ui/touch_scroll.h"
 #include "shared/core/text.h"
 #include "shared/game/html_entities.h"
+#include "shared/game/rarity.h"
 
 namespace flix {
 
@@ -136,7 +137,8 @@ constexpr ChatTabStyle kChatTabStyles[kChatTabCount] = {
     {"Squad", 0xFF94C9u},
     {"Guild", 0x1FDBDEu},
     {"Whisper", 0x6666FFu},
-    {"Admin", 0xFFD166u},
+    // Legendary's red, so an announcement stands out from every player's line.
+    {"Admin", kRarityColors[rarityIndex(Rarity::Legendary)]},
 };
 
 /// The tab a channel's lines are filed under, or -1 for the server's own,
@@ -551,7 +553,8 @@ std::string withSpaces(std::string word) {
 /// body's own markup.
 ///
 /// A player's line reads "[Squad] name: text" -- the tag and the name in the
-/// channel's colour (a Local sender in grey), the text white. A channel's
+/// channel's colour (a Local sender in grey), the text white -- except an
+/// admin's announcement, which is all in the Admin colour. A channel's
 /// notice, which has no sender, is the text alone in the channel's colour.
 /// The server's own lines carry no tag at all, and a colour their markup
 /// names always wins over the channel's.
@@ -578,14 +581,14 @@ std::vector<ChatToken> chatLineTokens(const ChatLine& line) {
             if (space == std::string::npos) break;
             at = space + 1;
         }
-        word(":", kPaper, true);
+        word(":", bodyFill, true);
     };
 
     if (tab >= 0) {
         const ChatTabStyle& style = kChatTabStyles[tab];
-        if (line.author.empty()) {
-            bodyFill = style.colour;
-        } else {
+        // An announcement is in its tab's colour throughout, text included.
+        if (line.author.empty() || tab == kTabAdmin) bodyFill = style.colour;
+        if (!line.author.empty()) {
             word(std::string("[") + style.label + "]", style.colour);
             if (line.channel == net::ChatChannel::WhisperSent) word("To", style.colour);
             signature(line.author, tab == kTabLocal ? kChatAuthorGrey : style.colour);

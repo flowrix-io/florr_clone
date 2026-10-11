@@ -106,7 +106,7 @@ constexpr double kEmptySize = 15.0;
 
 constexpr std::uint32_t kDetailInk = 0xD6D6F0u;
 constexpr std::uint32_t kDeadInk = 0xFF8A80u;
-constexpr std::uint32_t kSteeredInk = 0xFFD166u;   ///< the Admin chat tab's gold
+constexpr std::uint32_t kSteeredInk = 0xFFD166u;   ///< gold
 constexpr std::uint32_t kSelfInk = 0x9FE7FFu;
 constexpr std::uint32_t kOkInk = 0xB9F6A6u;
 constexpr std::uint32_t kBadInk = 0xFFB0B0u;
@@ -744,7 +744,7 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
     if (s.tab == Tab::Announce) {
         fillRound(canvas, body, 6.0, kInk, 0.16);
         double ay = body.y + 22.0;
-        text(canvas, "Every player sees a banner for eight seconds, and the line in their "
+        text(canvas, "Every player sees a banner for six seconds, and the line in their "
                      "Admin chat tab.",
              body.x + 12.0, ay, label(kTextSize));
         ay += 20.0;
