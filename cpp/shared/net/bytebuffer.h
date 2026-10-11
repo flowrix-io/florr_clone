@@ -36,6 +36,17 @@ public:
     void f64(double v) { raw(&v, sizeof v); }
     void boolean(bool v) { u8(v ? 1 : 0); }
 
+    /// Unsigned LEB128: seven bits a byte, low first, the top bit saying
+    /// another follows. One byte under 128, two under 16384, five at most.
+    /// For counts and id gaps that are nearly always small.
+    void varU32(std::uint32_t v) {
+        while (v >= 0x80) {
+            u8(static_cast<std::uint8_t>(v | 0x80));
+            v >>= 7;
+        }
+        u8(static_cast<std::uint8_t>(v));
+    }
+
     /// Length-prefixed UTF-8, capped at 64KB.
     void str(const std::string& v) {
         const std::uint16_t n = static_cast<std::uint16_t>(v.size() > 0xFFFF ? 0xFFFF : v.size());
@@ -114,6 +125,20 @@ public:
     float f32() { return read<float>(); }
     double f64() { return read<double>(); }
     bool boolean() { return u8() != 0; }
+
+    /// Reads what varU32 wrote. A sixth byte, or a fifth carrying more than
+    /// the four bits a u32 has left, fails the reader like a short frame.
+    std::uint32_t varU32() {
+        std::uint32_t v = 0;
+        for (int shift = 0; shift < 35; shift += 7) {
+            const std::uint8_t b = u8();
+            if (shift == 28 && b > 0x0F) { failed_ = true; return 0; }
+            v |= static_cast<std::uint32_t>(b & 0x7F) << shift;
+            if ((b & 0x80) == 0) return v;
+        }
+        failed_ = true;
+        return 0;
+    }
 
     std::string str() {
         const std::uint16_t n = u16();

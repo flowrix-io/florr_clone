@@ -81,21 +81,28 @@ void pushSample(RemoteEntity& e, double timeMillis) {
 bool WorldView::applySnapshot(ByteReader& reader) {
     const std::uint32_t tick = reader.u32();
     const double serverTime = reader.f64();
-    // The last input sequence the server applied, and below it the flower's
-    // velocity: both still on the wire, and neither read since the client
-    // stopped predicting (client/interpolation.h). Consumed, so the rest of
-    // the self block lines up.
-    reader.u32();
-
     const Vec2 selfPosition = reader.position();
-    reader.position();   // velocity, as above
-    const double health = reader.f32();
-    const double maxHealth = reader.f32();
-    const double mana = reader.f32();
-    const double maxMana = reader.f32();
-    const double totalXp = reader.f64();
-    const int level = reader.u16();
-    const double stars = reader.f64();
+
+    // The figures the server says changed (net::SelfFields); an absent group
+    // keeps what the last snapshot that carried it said.
+    const std::uint8_t selfMask = reader.u8();
+    double health = self_.health, maxHealth = self_.maxHealth;
+    double mana = self_.mana, maxMana = self_.maxMana;
+    double totalXp = self_.totalXp, stars = self_.stars;
+    int level = self_.level;
+    if (selfMask & net::SelfHealth) {
+        health = reader.f32();
+        maxHealth = reader.f32();
+    }
+    if (selfMask & net::SelfMana) {
+        mana = reader.f32();
+        maxMana = reader.f32();
+    }
+    if (selfMask & net::SelfProgress) {
+        totalXp = reader.f64();
+        level = reader.u16();
+        stars = reader.f64();
+    }
 
     // The viewer's own reloading and damaged slots, in wire order with the rest
     // of the self block. A slot that has reloaded or is back at full health is
@@ -151,9 +158,12 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     };
     std::vector<Spawn> spawns;
     spawns.reserve(spawnCount);
+    // Ids are gaps from the previous record's in the same list; see the
+    // Snapshots layout in protocol.h.
+    std::uint32_t previousId = 0;
     for (std::uint16_t i = 0; i < spawnCount; ++i) {
         Spawn s{};
-        s.netId = reader.u32();
+        s.netId = previousId += reader.varU32();
         s.kind = static_cast<net::EntityKind>(reader.u8());
         s.typeIndex = reader.u16();
         s.rarity = clampRarity(reader.u8());
@@ -185,6 +195,10 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint32_t netId;
         std::uint8_t mask;
         Vec2 position;
+        /// FieldPositionDelta's raw steps, added to the entity's target
+        /// position at commit, after this snapshot's spawns are in.
+        std::int16_t deltaX;
+        std::int16_t deltaY;
         double angle;
         double healthFraction;
         std::uint8_t state;
@@ -200,11 +214,17 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     };
     std::vector<Update> updates;
     updates.reserve(updateCount);
+    previousId = 0;
     for (std::uint16_t i = 0; i < updateCount; ++i) {
         Update u{};
-        u.netId = reader.u32();
+        u.netId = previousId += reader.varU32();
         u.mask = reader.u8();
-        if (u.mask & net::FieldPosition) u.position = reader.position();
+        if (u.mask & net::FieldPositionDelta) {
+            u.deltaX = reader.i16();
+            u.deltaY = reader.i16();
+        } else if (u.mask & net::FieldPosition) {
+            u.position = reader.position();
+        }
         if (u.mask & net::FieldAngle) u.angle = reader.angle();
         if (u.mask & net::FieldHealth) {
             u.healthFraction =
@@ -229,7 +249,8 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     const std::uint16_t removalCount = reader.u16();
     std::vector<std::uint32_t> removals;
     removals.reserve(removalCount);
-    for (std::uint16_t i = 0; i < removalCount; ++i) removals.push_back(reader.u32());
+    previousId = 0;
+    for (std::uint16_t i = 0; i < removalCount; ++i) removals.push_back(previousId += reader.varU32());
     if (!reader.ok()) return false;
 
     const std::uint16_t eventCount = reader.u16();
@@ -326,7 +347,12 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         // never to the rendered one: `position` and `angle` are mutated every
         // frame by interpolate(), so feeding them back in would have the
         // client chase its own lagging output and wobble.
-        if (u.mask & net::FieldPosition) e.targetPosition = u.position;
+        if (u.mask & net::FieldPositionDelta) {
+            e.targetPosition.x += u.deltaX / net::kPositionDeltaScale;
+            e.targetPosition.y += u.deltaY / net::kPositionDeltaScale;
+        } else if (u.mask & net::FieldPosition) {
+            e.targetPosition = u.position;
+        }
         if (u.mask & net::FieldAngle) e.targetAngle = u.angle;
         if (isBuffered(e.kind)) pushSample(e, sampleMillis);
         if (u.mask & net::FieldHealth) e.healthFraction = u.healthFraction;

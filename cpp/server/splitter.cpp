@@ -84,11 +84,6 @@ void GameServer::parkBody(Entity body) {
     if (PlayerInput* input = world_.tryGet<PlayerInput>(body)) {
         const net::InputFrame previous = input->current;
         input->current = net::InputFrame{};
-        // The sequence is kept so the input echo the snapshot carries
-        // (PlayerInput::lastAppliedSequence) never runs backwards if this half
-        // is switched back to. The client stopped reconciling against that
-        // echo when it stopped predicting, so all this keeps now is the echo
-        // honest.
         input->current.sequence = previous.sequence;
         input->current.aimAngle = previous.aimAngle;
     }

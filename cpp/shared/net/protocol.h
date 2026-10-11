@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 52;
+inline constexpr std::uint16_t kProtocolVersion = 53;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -443,11 +443,9 @@ enum InputFlags : std::uint8_t {
 /// One tick of intent from a client.
 ///
 /// `sequence` is what lets the server drop a duplicated or reordered frame:
-/// one at or below the session's lastInputSequence is ignored. The snapshot
-/// still echoes the last one applied (PlayerInput::lastAppliedSequence), from
-/// when the client predicted its own movement and replayed what the server
-/// had not yet applied. It predicts nothing now, and reads past the echo
-/// without using it (WorldView::applySnapshot).
+/// one at or below the session's lastInputSequence is ignored. Snapshots used
+/// to echo the last one applied, for a client that predicted its own movement;
+/// it predicts nothing now, and version 53 took the echo off the wire.
 struct InputFrame {
     std::uint32_t sequence = 0;
     double moveAngle = 0;      ///< radians; meaningless when moveStrength is 0
@@ -495,6 +493,21 @@ struct InputFrame {
 // ---------------------------------------------------------------------------
 // Snapshots
 // ---------------------------------------------------------------------------
+//
+//   u32 tick, f64 nowMillis
+//   f32 x, f32 y                  the viewer's own position, always
+//   u8  SelfFields, then the self figures it names, in bit order
+//   u8  slot count, { slot report }*            (kMaxReportedSlots)
+//   u16 spawns, u16 updates, { spawn }*, { update }*
+//   u16 removals, { varU32 id gap }*
+//   u16 events, { event }*
+//
+// Every record in the spawn, update and removal lists is in ascending net id
+// order and names its entity by the GAP from the previous record's id in the
+// same list (the first from 0), as a varU32. Net ids are never reused, so on a
+// server that has been up a while they are in the millions -- four bytes as a
+// u32, three as a plain varint -- while the gap between two entities on one
+// screen is one byte or two. (Version 53.)
 
 /// How many of the viewer's own slots a snapshot can report on.
 ///
@@ -523,6 +536,18 @@ inline constexpr std::uint8_t kMaxReportedSlots = 10;
 /// Sentinel rather than zero, because zero is a number a sponge really does
 /// hold. A counter at the sentinel's own value is clamped one below it.
 inline constexpr std::uint16_t kNoSlotCounter = 0xFFFFu;
+
+/// Which of the viewer's own figures a snapshot restates. Each is sent when it
+/// differs from what this viewer was last sent, and in full on the first
+/// snapshot after the view resets; an absent one means "unchanged". Before
+/// version 53 all of them rode every snapshot, with an input echo and a
+/// velocity nothing read -- 45 of an idle snapshot's bytes, twenty times a
+/// second.
+enum SelfFields : std::uint8_t {
+    SelfHealth   = 1 << 0,   ///< f32 health, f32 maxHealth
+    SelfMana     = 1 << 1,   ///< f32 mana, f32 maxMana (0 max: no mana bar)
+    SelfProgress = 1 << 2,   ///< f64 totalXp, u16 level, f64 stars
+};
 
 /// What a networked entity is, which decides how the client draws it.
 enum class EntityKind : std::uint8_t {
@@ -658,7 +683,9 @@ inline double readHealthFraction(ByteReader& in, bool wide) {
 /// a drifting mob moves, a full-health petal does not, and a corpse changes
 /// nothing at all. Sending the mask costs a byte and saves the rest.
 enum UpdateFields : std::uint8_t {
-    FieldPosition = 1 << 0,   ///< f32 x, f32 y
+    /// f32 x, f32 y -- or, with FieldPositionDelta, the move from the last
+    /// position sent.
+    FieldPosition = 1 << 0,
     FieldAngle    = 1 << 1,   ///< u16 quantised
     /// Fraction of max: u16, or f32 when FieldHealthWide rides with it.
     ///
@@ -677,7 +704,21 @@ enum UpdateFields : std::uint8_t {
     /// Modifies FieldHealth: the fraction is an f32, not a u16. Meaningless
     /// on its own, and never set without FieldHealth.
     FieldHealthWide = 1 << 6,
+    /// Modifies FieldPosition: i16 dx, i16 dy in 1/kPositionDeltaScale units,
+    /// added to the position the client last decoded for this entity -- its
+    /// authoritative one, never the eased one it draws. Half the bytes of
+    /// the absolute form, and nearly every update is a position. Used when the
+    /// move fits the i16 range, which a snapshot interval's move always does
+    /// short of a teleport; the absolute form covers the rest. The sender
+    /// tracks the sum the client will hold, so rounding never accumulates.
+    /// (Version 53.)
+    FieldPositionDelta = 1 << 7,
 };
+
+/// FieldPositionDelta's resolution: 1/32 of a unit, which is finer than the
+/// position tolerance (ReplicationTolerances::position), and reaches 1024
+/// units either way.
+inline constexpr double kPositionDeltaScale = 32.0;
 
 /// Transient visual state, refreshed whenever FieldState is set.
 ///

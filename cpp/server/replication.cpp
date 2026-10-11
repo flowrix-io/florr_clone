@@ -10,6 +10,14 @@ namespace flix {
 
 namespace {
 
+/// A position as the client decodes it from ByteWriter::position: each axis
+/// through an f32. What Tracked holds, so that a FieldPositionDelta is
+/// measured from the very value the client will add it to.
+Vec2 wirePosition(Vec2 p) {
+    return {static_cast<double>(static_cast<float>(p.x)),
+            static_cast<double>(static_cast<float>(p.y))};
+}
+
 /// FNV-1a over a skin id, for Tracked's change detection only.
 ///
 /// A collision would cost one player one missed skin change until anything
@@ -288,6 +296,10 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
                          });
         candidates_.resize(maxEntities);
     }
+    // In net id order, so each record can name its entity by the gap from the
+    // one before (see the Snapshots layout in protocol.h).
+    std::sort(candidates_.begin(), candidates_.end(),
+              [](const Candidate& a, const Candidate& b) { return a.netId < b.netId; });
 
     for (auto& tracked : view.tracked) tracked.second.seenThisTick = false;
 
@@ -296,54 +308,60 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     out.u32(frame.tick);
     out.f64(frame.nowMillis);
 
-    // The last input the simulation has consumed (see GameServer::tick). The
-    // client used to reconcile its predicted inputs against it; it predicts
-    // nothing now and reads past it, but the field stays where the layout has
-    // always had it.
-    std::uint32_t acknowledged = 0;
-    if (const PlayerInput* input = world.tryGet<PlayerInput>(viewer)) {
-        acknowledged = input->lastAppliedSequence;
-    }
-    out.u32(acknowledged);
-
-    // The viewer's own authoritative state, always in full: the client's HUD
-    // reads these exact values every frame and its camera eases toward this
-    // position, so it never goes through the change-mask path. The velocity
-    // beside the position went unread when the client stopped predicting, and
-    // stays for the layout's sake, as the input echo above does.
+    // The viewer's own position, always: the camera eases toward it every
+    // frame, so it never goes through the change-mask path.
     out.position(viewerTransform->position);
-    if (const Motion* motion = world.tryGet<Motion>(viewer)) {
-        out.position(motion->velocity);
-    } else {
-        out.position({0, 0});
-    }
+
+    // The viewer's own figures, at the exact values the HUD prints, but only
+    // the groups that moved since this viewer was last told (net::SelfFields).
+    // They sit still far more than they change, and restating all of them was
+    // 34 bytes of every snapshot. Compared at the width they go out in, as
+    // a health fraction is, so a change the wire cannot carry is no change.
+    ClientView::SelfSent self;
     if (const Health* health = world.tryGet<Health>(viewer)) {
-        out.f32(static_cast<float>(health->current));
-        out.f32(static_cast<float>(health->max));
-    } else {
-        out.f32(0);
-        out.f32(0);
+        self.health = static_cast<float>(health->current);
+        self.maxHealth = static_cast<float>(health->max);
     }
-    // The mana pool, in the same shape and for the same reason: it is the
-    // viewer's own bar and the exact figures are what the HUD prints. A zero
-    // max is a flower wearing nothing that grants a pool, which is almost all
-    // of them, and is what tells the client to draw no mana bar at all.
+    // A zero max is a flower wearing nothing that grants a pool, which is
+    // almost all of them, and is what tells the client to draw no mana bar.
     if (const ManaPool* mana = world.tryGet<ManaPool>(viewer)) {
-        out.f32(static_cast<float>(mana->current));
-        out.f32(static_cast<float>(mana->max));
-    } else {
-        out.f32(0);
-        out.f32(0);
+        self.mana = static_cast<float>(mana->current);
+        self.maxMana = static_cast<float>(mana->max);
     }
+    self.level = 1;
     if (const PlayerProgress* progress = world.tryGet<PlayerProgress>(viewer)) {
-        out.f64(progress->totalXp);
-        out.u16(static_cast<std::uint16_t>(progress->level));
-        out.f64(std::max(0.0, progress->stars));
-    } else {
-        out.f64(0);
-        out.u16(1);
-        out.f64(0);
+        self.totalXp = progress->totalXp;
+        self.level = static_cast<std::uint16_t>(progress->level);
+        self.stars = std::max(0.0, progress->stars);
     }
+    const ClientView::SelfSent& last = view.self;
+    std::uint8_t selfMask = 0;
+    if (!view.selfSent || self.health != last.health || self.maxHealth != last.maxHealth) {
+        selfMask |= net::SelfHealth;
+    }
+    if (!view.selfSent || self.mana != last.mana || self.maxMana != last.maxMana) {
+        selfMask |= net::SelfMana;
+    }
+    if (!view.selfSent || self.totalXp != last.totalXp || self.level != last.level ||
+        self.stars != last.stars) {
+        selfMask |= net::SelfProgress;
+    }
+    out.u8(selfMask);
+    if (selfMask & net::SelfHealth) {
+        out.f32(self.health);
+        out.f32(self.maxHealth);
+    }
+    if (selfMask & net::SelfMana) {
+        out.f32(self.mana);
+        out.f32(self.maxMana);
+    }
+    if (selfMask & net::SelfProgress) {
+        out.f64(self.totalXp);
+        out.u16(self.level);
+        out.f64(self.stars);
+    }
+    view.self = self;
+    view.selfSent = true;
 
     // Which of the viewer's own slots are reloading or hurt, and by how much.
     // Only the owner's own bar draws the wedge and the drained tile, so this
@@ -431,6 +449,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // Two passes over the same candidate list rather than two gathers: the
     // client must create an entity before it can be updated, and interleaving
     // the two record types would force it to tolerate either order.
+    std::uint32_t previousSpawnId = 0;
     for (const Candidate& candidate : candidates_) {
         auto it = view.tracked.find(candidate.netId);
         if (it != view.tracked.end()) {
@@ -454,7 +473,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         const PlayerAccount* account = world.tryGet<PlayerAccount>(candidate.entity);
         if (account && !account->username.empty()) flags |= net::SpawnHasName;
 
-        out.u32(candidate.netId);
+        out.varU32(candidate.netId - previousSpawnId);
+        previousSpawnId = candidate.netId;
         out.u8(static_cast<std::uint8_t>(info.kind));
         out.u16(info.typeIndex);
         out.u8(static_cast<std::uint8_t>(info.rarity));
@@ -506,7 +526,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // Seed the tracked values from what the spawn record just carried, so
         // this tick's update pass has nothing left to say about it.
         ClientView::Tracked tracked;
-        tracked.position = transform.position;
+        tracked.position = wirePosition(transform.position);
         tracked.angle = angle;
         tracked.radius = radius;
         tracked.seenThisTick = true;
@@ -525,6 +545,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     out.patchU16(spawnCountAt, spawnCount);
 
     const int farStride = std::max(1, farSnapshotStride);
+    std::uint32_t previousUpdateId = 0;
     for (const Candidate& candidate : candidates_) {
         auto it = view.tracked.find(candidate.netId);
         if (it == view.tracked.end()) continue;
@@ -534,12 +555,12 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // Off-screen and not due this snapshot: say nothing about it at all.
         //
         // Skipping the whole record rather than trimming its fields is the
-        // point -- the net id and the mask are five bytes before a single
-        // field is named, and at a hundred-odd entities a snapshot they are a
-        // third of the stream on their own. `tracked` is left exactly as it
-        // was, so whenever this entity IS described the diff is still measured
-        // against what the client actually holds, and the spawn pass has
-        // already marked it seen, so skipping it never reads as a removal.
+        // point -- the id gap and the mask are bytes spent before a single
+        // field is named, at a hundred-odd entities a snapshot. `tracked` is
+        // left exactly as it was, so whenever this entity IS described the
+        // diff is still measured against what the client actually holds, and
+        // the spawn pass has already marked it seen, so skipping it never
+        // reads as a removal.
         //
         // The viewer is exempt for the obvious reason, and a squadmate because
         // it is streamed from any distance precisely so the HUD can point at
@@ -593,13 +614,30 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
              skinIdHash(skinIdOf(visuals)) != tracked.skinIdHash)) {
             mask |= net::FieldPlayerVisuals;
         }
+        // The move as FieldPositionDelta would carry it, rounded to its step.
+        // `tracked` advances by exactly what the client will add, so the two
+        // stay in step however many deltas are chained.
+        const double deltaX =
+            std::round((transform.position.x - tracked.position.x) * net::kPositionDeltaScale);
+        const double deltaY =
+            std::round((transform.position.y - tracked.position.y) * net::kPositionDeltaScale);
+        if ((mask & net::FieldPosition) && std::fabs(deltaX) <= 32767.0 &&
+            std::fabs(deltaY) <= 32767.0) {
+            mask |= net::FieldPositionDelta;
+        }
         if (mask == 0) continue;
 
-        out.u32(candidate.netId);
+        out.varU32(candidate.netId - previousUpdateId);
+        previousUpdateId = candidate.netId;
         out.u8(mask);
-        if (mask & net::FieldPosition) {
+        if (mask & net::FieldPositionDelta) {
+            out.i16(static_cast<std::int16_t>(deltaX));
+            out.i16(static_cast<std::int16_t>(deltaY));
+            tracked.position.x += deltaX / net::kPositionDeltaScale;
+            tracked.position.y += deltaY / net::kPositionDeltaScale;
+        } else if (mask & net::FieldPosition) {
             out.position(transform.position);
-            tracked.position = transform.position;
+            tracked.position = wirePosition(transform.position);
         }
         if (mask & net::FieldAngle) {
             out.angle(angle);
@@ -649,9 +687,12 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     for (const auto& entry : view.tracked) {
         if (!entry.second.seenThisTick) removals_.push_back(entry.first);
     }
+    std::sort(removals_.begin(), removals_.end());
     out.u16(static_cast<std::uint16_t>(std::min<std::size_t>(removals_.size(), 0xFFFF)));
+    std::uint32_t previousRemovalId = 0;
     for (const std::uint32_t netId : removals_) {
-        out.u32(netId);
+        out.varU32(netId - previousRemovalId);
+        previousRemovalId = netId;
         view.tracked.erase(netId);
     }
 

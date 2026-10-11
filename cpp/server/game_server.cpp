@@ -771,18 +771,6 @@ void GameServer::tick(double nowMillis) {
         return;
     }
 
-    // Record which input each player's movement is about to consume, which
-    // the snapshot echoes back (Replicator::build). That echo is what the
-    // client's reconciliation was built on, back when it predicted its own
-    // flower and replayed the inputs the server had not reached yet. It
-    // predicts nothing now -- it eases toward the server's positions
-    // (client/interpolation.h) -- and reads past the echo without using it;
-    // the field stays on the wire because taking it out is a layout change.
-    Query<PlayerTag, PlayerInput> inputs{world_};
-    inputs.each([](Entity, PlayerTag&, PlayerInput& input) {
-        input.lastAppliedSequence = input.current.sequence;
-    });
-
     runSystems(nowMillis, smoothedDeltaSeconds_);
     persistBossClocks();
     serviceSacrificeSpawn(nowMillis);

@@ -83,9 +83,24 @@ public:
 
     std::unordered_map<std::uint32_t, Tracked> tracked;
 
+    /// The viewer's own figures as last sent (net::SelfFields), at the width
+    /// they went out in. Meaningless until `selfSent`.
+    struct SelfSent {
+        float health = 0, maxHealth = 0;
+        float mana = 0, maxMana = 0;
+        double totalXp = 0;
+        std::uint16_t level = 0;
+        double stars = 0;
+    };
+    SelfSent self;
+    bool selfSent = false;
+
     /// Cleared when the client re-joins, so a fresh session re-learns the world
     /// rather than inheriting a stale belief about it.
-    void reset() { tracked.clear(); }
+    void reset() {
+        tracked.clear();
+        selfSent = false;
+    }
 };
 
 /// Quantisation thresholds below which a field is considered unchanged.

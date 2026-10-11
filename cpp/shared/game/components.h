@@ -450,7 +450,6 @@ struct PetalRing {
 
 struct PlayerInput {
     net::InputFrame current;
-    std::uint32_t lastAppliedSequence = 0;
 };
 
 /// Account-scoped identity. Cold: read on join, on save, and when someone

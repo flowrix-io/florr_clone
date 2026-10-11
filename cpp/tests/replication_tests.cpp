@@ -7,7 +7,9 @@
 #include "server/systems/petals.h"
 #include "shared/game/components.h"
 
+#include <cmath>
 #include <string>
+#include <vector>
 
 #include "fixture_content.h"
 
@@ -459,6 +461,122 @@ TEST(net_ids_are_never_reused) {
     // The ECS slot is recycled, but the wire id must not be, or a client that
     // has not yet processed the removal would update the wrong entity.
     CHECK(netIdOf(f.world, second) != firstId);
+}
+
+TEST(chained_position_deltas_land_where_the_server_thinks_they_did) {
+    Fixture f;
+    const Entity mob = f.addMob({1100.3, 1000.7});
+    WorldView client;
+    f.tick(client, 1, 1000);
+    const std::uint32_t id = netIdOf(f.world, mob);
+
+    // Hundreds of awkward little moves, every one rounded to the delta step.
+    // The client adds each to what it holds and the server advances its
+    // belief by the same rounded step, so the two never part -- exactly, not
+    // to a tolerance -- and neither strays from the truth by more than a
+    // half step.
+    Transform& transform = f.world.get<Transform>(mob);
+    for (std::uint32_t t = 2; t < 400; ++t) {
+        transform.position.x = 1100.3 + 300.0 * std::sin(0.1 * t) + 0.0137 * t;
+        transform.position.y = 1000.7 + 200.0 * std::cos(0.07 * t) - t / 3.0;
+        f.tick(client, t, 1000 + 40.0 * t);
+        const Vec2 held = client.entities().at(id).targetPosition;
+        CHECK(held.x == f.view.tracked.at(id).position.x);
+        CHECK(held.y == f.view.tracked.at(id).position.y);
+        CHECK_NEAR(held.x, transform.position.x, 0.5 / net::kPositionDeltaScale + 1e-9);
+        CHECK_NEAR(held.y, transform.position.y, 0.5 / net::kPositionDeltaScale + 1e-9);
+    }
+}
+
+TEST(a_move_too_long_for_a_delta_goes_out_absolute) {
+    Fixture f;
+    const Entity mob = f.addMob({300, 1000});
+    WorldView client;
+    f.tick(client, 1, 1000);
+
+    // Past the 1024 units an i16 of 1/32 steps reaches, from one side of the
+    // viewer to the other -- inside the near box both times, so it is
+    // described on every snapshot rather than on the far band's stride.
+    f.world.get<Transform>(mob).position = {1700.25, 999.5};
+    f.tick(client, 2, 1040);
+    const Vec2 held = client.entities().at(netIdOf(f.world, mob)).targetPosition;
+    CHECK_NEAR(held.x, 1700.25, 1e-3);
+    CHECK_NEAR(held.y, 999.5, 1e-3);
+
+    // And the next small move chains off the absolute one.
+    f.world.get<Transform>(mob).position.x += 2;
+    f.tick(client, 3, 1080);
+    CHECK_NEAR(client.entities().at(netIdOf(f.world, mob)).targetPosition.x, 1702.25, 1e-3);
+}
+
+TEST(net_ids_in_the_millions_cost_a_gap_not_four_bytes) {
+    Fixture f;
+    // A server up for days: ids far apart and nowhere near zero, created out
+    // of order so the snapshot has to sort them to gap-code them.
+    const std::uint32_t ids[] = {9000003, 4000000, 9000001, 4000002};
+    std::vector<Entity> mobs;
+    for (const std::uint32_t id : ids) {
+        const Entity e = f.addMob({1100, 1000});
+        f.world.get<NetId>(e).value = id;
+        mobs.push_back(e);
+    }
+    WorldView client;
+    f.tick(client, 1, 1000);
+    for (const std::uint32_t id : ids) CHECK(client.entities().count(id) == 1);
+
+    for (std::size_t i = 0; i < mobs.size(); ++i) {
+        f.world.get<Transform>(mobs[i]).position.x += 10.0 * static_cast<double>(i + 1);
+    }
+    f.tick(client, 2, 1040);
+    CHECK_NEAR(client.entities().at(9000003).targetPosition.x, 1110, 0.05);
+    CHECK_NEAR(client.entities().at(4000000).targetPosition.x, 1120, 0.05);
+    CHECK_NEAR(client.entities().at(9000001).targetPosition.x, 1130, 0.05);
+    CHECK_NEAR(client.entities().at(4000002).targetPosition.x, 1140, 0.05);
+
+    f.world.destroy(mobs[0]);
+    f.world.destroy(mobs[3]);
+    f.tick(client, 3, 1080);
+    CHECK(client.entities().count(9000003) == 0);
+    CHECK(client.entities().count(4000002) == 0);
+    CHECK(client.entities().count(4000000) == 1);
+    CHECK(client.entities().count(9000001) == 1);
+}
+
+TEST(the_viewers_own_figures_ride_only_when_they_change) {
+    Fixture f;
+    WorldView client;
+    f.tick(client, 1, 1000);
+    const std::size_t idle = f.tick(client, 2, 1040);
+    CHECK_NEAR(client.self().health, 100.0, 1e-3);
+    CHECK_EQ(client.self().level, 5);
+    CHECK_EQ(client.self().stars, 3);
+
+    // A hit: the health pair rides, and the rest is held from before. The
+    // other four bytes are the flower's own entity record carrying its bar
+    // (a one-byte id gap, the mask, the u16 fraction).
+    f.world.get<Health>(f.viewer).current = 60;
+    const std::size_t hurt = f.tick(client, 3, 1080);
+    CHECK_EQ(hurt, idle + 8 + 4);
+    CHECK_NEAR(client.self().health, 60.0, 1e-3);
+    CHECK_NEAR(client.self().maxHealth, 100.0, 1e-3);
+    CHECK_EQ(client.self().level, 5);
+    CHECK_EQ(client.self().stars, 3);
+    CHECK_EQ(f.tick(client, 4, 1120), idle);
+
+    f.world.get<PlayerProgress>(f.viewer).stars = 9;
+    f.tick(client, 5, 1160);
+    CHECK_EQ(client.self().stars, 9);
+    CHECK_NEAR(client.self().health, 60.0, 1e-3);
+
+    // A view reset -- a re-join, a realm change -- restates every figure,
+    // which is what a client that has just cleared its own needs.
+    f.view.reset();
+    WorldView fresh;
+    f.tick(fresh, 6, 1200);
+    CHECK_NEAR(fresh.self().health, 60.0, 1e-3);
+    CHECK_NEAR(fresh.self().maxHealth, 100.0, 1e-3);
+    CHECK_EQ(fresh.self().level, 5);
+    CHECK_EQ(fresh.self().stars, 9);
 }
 
 TEST(snapshot_is_capped_and_keeps_the_nearest) {

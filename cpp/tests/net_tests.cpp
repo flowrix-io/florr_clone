@@ -53,6 +53,39 @@ TEST(bytebuffer_round_trips_every_scalar) {
     CHECK_EQ(r.remaining(), std::size_t(0));
 }
 
+TEST(varint_round_trips_and_spends_bytes_by_magnitude) {
+    const std::uint32_t values[] = {0, 1, 127, 128, 16383, 16384, 2097151, 2097152,
+                                    268435455, 268435456, 0xFFFFFFFFu};
+    const std::size_t widths[] = {1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5};
+    for (std::size_t i = 0; i < std::size(values); ++i) {
+        ByteWriter w;
+        w.varU32(values[i]);
+        CHECK_EQ(w.size(), widths[i]);
+        ByteReader r(w.data(), w.size());
+        CHECK_EQ(r.varU32(), values[i]);
+        CHECK(r.ok());
+        CHECK_EQ(r.remaining(), std::size_t(0));
+    }
+}
+
+TEST(an_overlong_varint_fails_the_reader) {
+    // Five continuation bytes: a sixth would be needed, and no u32 has one.
+    const std::uint8_t endless[] = {0x80, 0x80, 0x80, 0x80, 0x80, 0x01};
+    ByteReader r(reinterpret_cast<const std::byte*>(endless), sizeof endless);
+    CHECK_EQ(r.varU32(), std::uint32_t(0));
+    CHECK(!r.ok());
+    // A fifth byte carrying more than the four bits a u32 has left.
+    const std::uint8_t wide[] = {0xFF, 0xFF, 0xFF, 0xFF, 0x1F};
+    ByteReader r2(reinterpret_cast<const std::byte*>(wide), sizeof wide);
+    CHECK_EQ(r2.varU32(), std::uint32_t(0));
+    CHECK(!r2.ok());
+    // And one cut short.
+    const std::uint8_t cut[] = {0x80, 0x80};
+    ByteReader r3(reinterpret_cast<const std::byte*>(cut), sizeof cut);
+    r3.varU32();
+    CHECK(!r3.ok());
+}
+
 TEST(reading_past_the_end_fails_softly) {
     ByteWriter w;
     w.u16(7);
