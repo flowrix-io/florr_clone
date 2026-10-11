@@ -453,6 +453,18 @@ if(EMSCRIPTEN)
   file(GLOB FLIX_BOOT_TOOLS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot/*)
   set(FLIX_EMBED_BOOT "SHELL:--embed-file \"${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot@boot\"")
 
+  # Boot tools kept out of the repository: client/web/boot-local/ is ignored by
+  # git and embedded, beside the ones above at /boot, in the two OFFLINE pages
+  # only. Those are build products nobody commits (dist/offline*.html are
+  # ignored too), so a tool dropped there runs in its builder's own copy and
+  # never reaches dist/bundle.wasm -- the committed client every player
+  # downloads -- whatever it is.
+  file(GLOB FLIX_LOCAL_BOOT_TOOLS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot-local/*)
+  set(FLIX_EMBED_LOCAL_BOOT "")
+  if(FLIX_LOCAL_BOOT_TOOLS)
+    set(FLIX_EMBED_LOCAL_BOOT "SHELL:--embed-file \"${CMAKE_CURRENT_SOURCE_DIR}/client/web/boot-local@boot\"")
+  endif()
+
   # The two pages' shells, as emcc is given them: each with the boot script's
   # view of the files (client/web/boot_files.js) written in where it says
   # @FLIX_BOOT_FILES_JS@, so the two pages share one copy of it. Generated at
@@ -628,6 +640,7 @@ if(EMSCRIPTEN)
     ${FLIX_WEB_CLIENT_OPT}
     ${FLIX_EMBED_DATA}
     ${FLIX_EMBED_BOOT}
+    ${FLIX_EMBED_LOCAL_BOOT}
     # The page holds main() back while a boot script runs in its place, and
     # the script's startGame() is what calls it; the script's fetch reads the
     # file system through FS (offline/shell.html).
@@ -640,7 +653,8 @@ if(EMSCRIPTEN)
   add_dependencies(flowrix_offline flix_data)
   set_target_properties(flowrix_offline PROPERTIES OUTPUT_NAME offline SUFFIX ".html")
   set_property(TARGET flowrix_offline APPEND PROPERTY LINK_DEPENDS
-               ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS})
+               ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS}
+               ${FLIX_LOCAL_BOOT_TOOLS})
   set_property(TARGET flowrix_offline APPEND PROPERTY LINK_DEPENDS "${FLIX_OFFLINE_SHELL}")
   target_compile_options(flowrix_offline PRIVATE
    "-flto"
@@ -672,7 +686,8 @@ if(EMSCRIPTEN)
   set_target_properties(flowrix_offline_asmjs PROPERTIES
                         OUTPUT_NAME offline-asmjs SUFFIX ".html")
   set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS
-               ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS})
+               ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS}
+               ${FLIX_LOCAL_BOOT_TOOLS})
   set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS "${FLIX_OFFLINE_SHELL}")
   target_compile_options(flowrix_offline_asmjs PRIVATE
    "-flto"

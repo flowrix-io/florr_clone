@@ -15,6 +15,9 @@ dist/inventory.json.tmp
 # deployment reads, and five megabytes a commit if it were tracked.
 dist/offline.html
 dist/offline-asmjs.html
+# Boot tools that are only ever the builder's own: embedded in the offline
+# pages above and nowhere else (cpp/CMakeLists.txt, FLIX_LOCAL_BOOT_TOOLS).
+cpp/client/web/boot-local/
 # Database snapshots, kept one level above the database's directory.
 db_backups/
 .DS_Store
