@@ -785,7 +785,10 @@ enum DamageEventFlags : std::uint8_t {
 /// place: deleting it would renumber every kind after it. Four are like that
 /// -- Heal, PetalBroke, LevelUp and Explosion.
 enum class EventKind : std::uint8_t {
-    Damage = 0,     ///< u32 netId, f32 amount, u8 DamageEventFlags -- floating number
+    /// u32 netId, f32 amount, u8 DamageEventFlags -- the floating number --
+    /// and, in the f32 `radius` no hit has, the share of the victim's max
+    /// health the hit took, which sets how hard the client flashes the body.
+    Damage = 0,
     Heal,           ///< u32 netId, u16 amount. Never produced, and the client
                     ///< no longer reads it.
     PetalBroke,     ///< u32 ownerNetId, u8 slot. Never produced: a slot's

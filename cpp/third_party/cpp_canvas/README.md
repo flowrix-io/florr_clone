@@ -20,7 +20,9 @@ this file used to carry — is gone.
   clipboard input from SDL. The software backend has no blend modes, filters or
   shadows (those setters are ignored), and `setFillStyle` / `setStrokeStyle`
   with a CSS string only reach a browser: natively, colour goes through the
-  `Color` overloads.
+  `Color` overloads. On both backends `setColorTint` washes every `Color`
+  style set after it (c × (1 − a) + tint, premultiplied), which is how a whole
+  picture is recoloured without a blend mode.
 - **Web** (emscripten) has no SDL at all. Each `Canvas` is a real
   `CanvasRenderingContext2D` — the page's `<canvas>`, or an `OffscreenCanvas`
   for `Canvas::createVirtual()` — but the drawing calls do not cross into the

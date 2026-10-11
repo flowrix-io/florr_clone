@@ -124,22 +124,28 @@ TEST(an_arm_wanders_off_the_straight_line_between_its_ends) {
     // A bolt drawn as a plain segment is a laser, not lightning. Nothing here
     // asserts a particular shape -- the jitter is random by design -- only that
     // some of the arm lies clear of the straight run between its endpoints.
+    //
+    // Over several strikes, not one: a run's midpoint moves by up to half the
+    // run TIMES A RANDOM FRACTION, so a single arm can honestly come out almost
+    // straight, and which one this test gets depends on how many draws every
+    // test before it took from the shared generator.
     const Vec2 target{kStrikeAt.x + 180.0, kStrikeAt.y};
-    const std::vector<std::uint8_t> frame = renderStrike({target}, 0.0);
-
     const Camera camera = frameCamera();
     const Vec2 from = camera.worldToScreen(kStrikeAt);
     const Vec2 to = camera.worldToScreen(target);
     const Vec2 along = (to - from).normalized();
 
     double furthest = 0;
-    for (int y = 0; y < kFrameSize; ++y) {
-        for (int x = 0; x < kFrameSize; ++x) {
-            const std::size_t index = (static_cast<std::size_t>(y) * kFrameSize + x) * 4;
-            if (!isBoltPixel(frame, index)) continue;
-            const Vec2 offset{x - from.x, y - from.y};
-            const double sideways = std::fabs(offset.x * along.y - offset.y * along.x);
-            furthest = std::max(furthest, sideways);
+    for (int strike = 0; strike < 8; ++strike) {
+        const std::vector<std::uint8_t> frame = renderStrike({target}, 0.0);
+        for (int y = 0; y < kFrameSize; ++y) {
+            for (int x = 0; x < kFrameSize; ++x) {
+                const std::size_t index = (static_cast<std::size_t>(y) * kFrameSize + x) * 4;
+                if (!isBoltPixel(frame, index)) continue;
+                const Vec2 offset{x - from.x, y - from.y};
+                const double sideways = std::fabs(offset.x * along.y - offset.y * along.x);
+                furthest = std::max(furthest, sideways);
+            }
         }
     }
     // Half a run's length is the most the reference displaces a midpoint by,

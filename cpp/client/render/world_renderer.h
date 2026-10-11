@@ -166,6 +166,33 @@ public:
     /// Ages effects and retires expired ones.
     void update(double dt);
 
+    /// The hit flash `netId` wears right now, premultiplied, for
+    /// Canvas::setColorTint; alpha zero when it wears none. florr's: every
+    /// Damage event lays 150 ms of colour over the body, white for its first
+    /// tenth and red after, fading linearly from an intensity set by the share
+    /// of max health the hit took, and the hits in flight are composited over
+    /// one another oldest first.
+    Color hitTint(std::uint32_t netId) const;
+
+    /// How far, in screen (design) units, the world is pushed this frame by
+    /// hits on the viewer's own flower; zero with screenShake off. A screen
+    /// distance, so the shake is the same size however far the camera is
+    /// zoomed out -- see shakenCamera(). florr's: every hit adds
+    /// its share of max health to a pool that decays (tau 325 ms), a second
+    /// level rises toward 1 while the last hit is under 200 ms old (tau 75 ms),
+    /// and the push is (cos 0.01t, sin 0.01t) * 5 sin(0.05t) * level *
+    /// min(1, 50 * pool), t in ms. Applied to the camera the world is DRAWN
+    /// through only -- the camera the cursor steers by stays pinned.
+    ///
+    /// A sacrifice ritual on screen feeds the same pool, as florr's ritual
+    /// does: from when it starts until its mob is out, a push every 100 ms of
+    /// half the share of the ritual traced so far.
+    Vec2 shakeOffset() const { return shakeOffset_; }
+
+    /// `camera` pushed by this frame's shake: shakeOffset() turned into world
+    /// units at the camera's zoom. What the world is drawn through.
+    Camera shakenCamera(const Camera& camera) const;
+
     /// What the renderer actually needs: a set of entities to draw.
     using EntityMap = std::unordered_map<std::uint32_t, RemoteEntity>;
 
@@ -242,6 +269,9 @@ public:
         /// view of the world, not a change to it.
         bool hideOtherPetals = false;
         bool hideOtherPets = false;
+        /// Shakes the world when the viewer's own flower is hit (florr's
+        /// "Screen Shake", on by default as florr has it).
+        bool screenShake = true;
     };
     Options options;
 
@@ -626,6 +656,25 @@ private:
     };
     mutable std::unordered_map<std::uint32_t, MobPace> mobPaces_;
 
+    /// The hits each body is still flashing from, oldest first: when the
+    /// Damage event was ingested and the intensity it flashes at. Stamped
+    /// with the clock of the frame that first DRAWS it (see update()), so the
+    /// white first tenth is on screen rather than spent before the frame.
+    struct HitFlash {
+        double atSeconds = -1.0;
+        float intensity = 0.0f;
+    };
+    std::unordered_map<std::uint32_t, std::vector<HitFlash>> hitFlashes_;
+
+    /// The screen shake (see shakeOffset()): the decaying pool of hits on the
+    /// viewer's flower, the level eased toward "hit recently", when the last
+    /// hit landed and whether it is still being held, and this frame's push.
+    double shakePool_ = 0.0;
+    double shakeLevel_ = 0.0;
+    double shakeHitSeconds_ = 0.0;
+    bool shakeHeld_ = false;
+    Vec2 shakeOffset_;
+
     /// Damage landed on each target dummy over the last ten seconds, which is
     /// the window the TypeScript server reported DPS over.
     mutable std::unordered_map<std::uint32_t, std::deque<std::pair<double, double>>> dummyDamage_;
@@ -647,6 +696,12 @@ private:
     /// pentagram is traced over kSacrificeRitualMillis from then. A ritual
     /// first seen already complete (StateRitualComplete) is drawn whole.
     mutable std::unordered_map<std::uint32_t, double> ritualSeen_;
+    /// The rituals the last draw had on screen still tracing, and how far each
+    /// has got -- the draw is where "on screen" is known, and the next update
+    /// turns them into shake (see shakeOffset()).
+    mutable std::vector<std::pair<std::uint32_t, double>> ritualsTracing_;
+    /// Per ritual, the clock its next shake push is due at.
+    std::unordered_map<std::uint32_t, double> ritualNextPush_;
     /// The clock at the previous ingest, which is the only place a frame's
     /// length is available to the shimmer's per-frame emission roll.
     double lastIngestSeconds_ = 0;

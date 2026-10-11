@@ -793,6 +793,9 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // what the floating number reads. The LEDGER is credited the full swing
     // instead -- see creditSwing().
     const double applied = std::min(amount, health.current);
+    // The same loss against the whole bar, for the client's hit flash. Taken
+    // now: `health` dangles past trySecondChance below.
+    const double share = health.max > 0.0 ? applied / health.max : 0.0;
     // An NPC's bar never moves. The hit LANDS -- armour took its share above,
     // it flashes, it is numbered and a target dummy counts it -- and nothing
     // comes off, so nothing an NPC is hit by can kill it.
@@ -862,7 +865,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
                 dealer != NULL_ENTITY ? world.tryGet<PlayerAccount>(dealer) : nullptr;
             events_->damage(id->value, applied, transform ? transform->position : Vec2{},
                             transform ? transform->realm : Realm::Overworld, flags, dealer,
-                            account != nullptr ? account->connection : 0);
+                            account != nullptr ? account->connection : 0, share);
         }
     }
 

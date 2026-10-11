@@ -13,6 +13,7 @@
 #include "shared/game/constants.h"
 #include "shared/net/protocol.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -195,4 +196,66 @@ TEST(the_ritual_pentagram_is_traced_in_legendary_red_over_five_seconds) {
     for (int edge = 0; edge < 5; ++edge) CHECK(legendaryRed(pixel(drawn, edgeMiddle(edge))));
     const std::vector<std::uint8_t> complete = render(true, 0.0);
     for (int edge = 0; edge < 5; ++edge) CHECK(legendaryRed(pixel(complete, edgeMiddle(edge))));
+}
+
+// The ritual shakes the screen, as florr's does: from when it starts until its
+// mob is out, and only while it is on screen.
+
+namespace {
+
+/// The largest shake over `seconds` of 60 fps frames, with the camera on
+/// `cameraAt`, the ritual `complete` or not.
+double ritualShake(WorldRenderer& renderer, WorldView& view, bool complete, Vec2 cameraAt,
+                   double seconds) {
+    view.seedForTest(ritual(complete));
+    const Camera camera = testsupport::frameCamera(kFrameSize, cameraAt);
+    double largest = 0.0;
+    for (int i = 0; i < static_cast<int>(seconds * 60.0); ++i) {
+        Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+        renderer.draw(canvas, view, camera, cameraAt, 0.0);
+        renderer.update(1.0 / 60.0);
+        largest = std::max(largest, renderer.shakeOffset().length());
+    }
+    return largest;
+}
+
+WorldView arenaView() {
+    WorldView view;
+    view.setRealm(Realm::Arena);
+    return view;
+}
+
+} // namespace
+
+TEST(a_sacrifice_ritual_on_screen_shakes_it_until_its_mob_is_out) {
+    WorldView view = arenaView();
+    WorldRenderer renderer;
+    // Tracing: the shake runs at full strength through it.
+    const double during = ritualShake(renderer, view, false, kRitualAt, 2.0);
+    CHECK(during > 4.0);
+    CHECK(during <= 5.0 + 1e-9);
+
+    // Out: no more pushes, and what is left settles within a second.
+    ritualShake(renderer, view, true, kRitualAt, 1.0);
+    CHECK(renderer.shakeOffset().length() < 0.05);
+}
+
+TEST(a_sacrifice_ritual_off_screen_or_already_done_does_not_shake_it) {
+    {
+        WorldView view = arenaView();
+        WorldRenderer renderer;
+        CHECK_EQ(ritualShake(renderer, view, false, kRitualAt + Vec2{3000.0, 0.0}, 1.0), 0.0);
+    }
+    {
+        WorldView view = arenaView();
+        WorldRenderer renderer;
+        CHECK_EQ(ritualShake(renderer, view, true, kRitualAt, 1.0), 0.0);
+    }
+    {
+        // The setting turns it off.
+        WorldView view = arenaView();
+        WorldRenderer renderer;
+        renderer.options.screenShake = false;
+        CHECK_EQ(ritualShake(renderer, view, false, kRitualAt, 1.0), 0.0);
+    }
 }

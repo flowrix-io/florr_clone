@@ -246,6 +246,30 @@ const Fixture& fixture() {
 // applyDamage: the single path
 // ---------------------------------------------------------------------------
 
+TEST(a_damage_event_carries_the_share_of_max_health_the_hit_took) {
+    // The client's hit flash is as bright as the hit was big against the
+    // whole bar, so the event says that as well as the number.
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 200.0);
+    a.world.add<NetId>(mob, NetId{11});
+
+    a.combat.beginTick(a.world, 1000.0, net::kTickSeconds, a.events);
+    a.combat.applyDamage(a.world, mob, player, 50.0, 1000.0);
+    // Overkill: only what was left counts, against the same max.
+    a.combat.applyDamage(a.world, mob, player, 500.0, 1001.0);
+
+    std::vector<double> shares;
+    for (const WireEvent& event : a.events.events()) {
+        if (event.kind == net::EventKind::Damage && event.netId == 11) shares.push_back(event.radius);
+    }
+    CHECK_EQ(shares.size(), std::size_t(2));
+    if (shares.size() == 2) {
+        CHECK_NEAR(shares[0], 0.25, 1e-9);
+        CHECK_NEAR(shares[1], 0.75, 1e-9);
+    }
+}
+
 TEST(damage_reduces_health_and_death_marks_dead_exactly_once) {
     Arena a;
     const Entity player = a.player({1000, 1000});

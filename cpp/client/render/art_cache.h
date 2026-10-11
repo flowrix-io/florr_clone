@@ -60,7 +60,8 @@ bool drawCachedArt(Canvas& canvas, const SvgDocument& art, double x, double y, d
 ///
 /// Returns false when the picture cannot be served from a bitmap -- including
 /// when the caller's transform is rotated, skewed or mirrored, because a blit
-/// through one of those resamples the bake and softens it. Nothing has been
+/// through one of those resamples the bake and softens it, and while the
+/// canvas has a colour tint on (Canvas::setColorTint), which a blit would skip. Nothing has been
 /// drawn in that case and the caller must draw it the long way.
 bool drawCachedPicture(Canvas& canvas, const void* owner, std::uint64_t variant, double x,
                        double y, double w, double h,

@@ -1174,7 +1174,7 @@ Canvas::Canvas(Canvas&& other) noexcept
       elementId_(std::move(other.elementId_)),
       logicalWidth_(other.logicalWidth_), logicalHeight_(other.logicalHeight_),
       fill_(other.fill_), stroke_(other.stroke_),
-      lineWidth_(other.lineWidth_), currentPath_(std::move(other.currentPath_)) {
+      lineWidth_(other.lineWidth_), currentPath_(std::move(other.currentPath_)), tint_(other.tint_) {
   other.contextId_ = -1;
 #ifdef __EMSCRIPTEN__
   web_ = std::move(other.web_); webStack_ = std::move(other.webStack_);
@@ -1196,7 +1196,7 @@ Canvas& Canvas::operator=(Canvas&& other) noexcept {
 #endif
   width_=other.width_; height_=other.height_; contextId_=other.contextId_; virtual_=other.virtual_;
   elementId_=std::move(other.elementId_); fill_=other.fill_; stroke_=other.stroke_; lineWidth_=other.lineWidth_;
-  currentPath_=std::move(other.currentPath_); other.contextId_=-1;
+  currentPath_=std::move(other.currentPath_); other.contextId_=-1; tint_=other.tint_;
   logicalWidth_=other.logicalWidth_; logicalHeight_=other.logicalHeight_;
 #ifdef __EMSCRIPTEN__
   web_=std::move(other.web_); webStack_=std::move(other.webStack_);
@@ -1691,14 +1691,25 @@ void Canvas::darkenDevice(const std::uint8_t* mask,int mw,int mh,int dx,int dy) 
 #endif
 // The css() string is only ever read by the browser context, so building it on
 // the native path was one heap allocation per colour change per frame.
-void Canvas::setFillStyle(Color c){fill_=c;
+// Truncating at both steps, as the client the tint is taken from does: the
+// colour is scaled to [0,1], blended, and cut back to a byte.
+Color Canvas::tinted(Color c) const {
+  if (tint_.a==0) return c;
+  const float keep=1.f-tint_.a/255.f;
+  const auto mix=[keep](std::uint8_t base,std::uint8_t add) {
+    const float v=(base/255.f*keep+add/255.f)*255.f;
+    return static_cast<std::uint8_t>(std::clamp(v,0.f,255.f));
+  };
+  return Color{mix(c.r,tint_.r),mix(c.g,tint_.g),mix(c.b,tint_.b),c.a};
+}
+void Canvas::setFillStyle(Color c){c=tinted(c);fill_=c;
 #ifdef __EMSCRIPTEN__
   setFillStyle(css(c));
 #else
   state_.fill=c;
 #endif
 }
-void Canvas::setStrokeStyle(Color c){stroke_=c;
+void Canvas::setStrokeStyle(Color c){c=tinted(c);stroke_=c;
 #ifdef __EMSCRIPTEN__
   setStrokeStyle(css(c));
 #else

@@ -181,6 +181,18 @@ public:
     void setTransform(float a = 1, float b = 0, float c = 0, float d = 1, float e = 0, float f = 0); void resetTransform();
     void setFillStyle(Color color); void setStrokeStyle(Color color);
     void setFillStyle(const std::string& cssColor); void setStrokeStyle(const std::string& cssColor);
+    // A colour every LATER setFillStyle/setStrokeStyle(Color) is washed with:
+    // each channel becomes c * (1 - tint.a) + tint.c, where `tint` is
+    // premultiplied by its own alpha, and the colour's alpha is kept. Alpha
+    // zero turns it off. It is how a whole picture is recoloured -- a hit
+    // flash -- without knowing which colours the picture is built from.
+    //
+    // It is applied when a style is SET, so it reaches only what is drawn with
+    // styles set after it; it is not part of save()/restore(), and it never
+    // touches images, the string overloads or shadows. Callers set it around
+    // one picture and put it back after.
+    void setColorTint(Color premultiplied) { tint_ = premultiplied; }
+    Color colorTint() const { return tint_; }
     void setGlobalAlpha(float alpha); void setGlobalCompositeOperation(const std::string& operation); void setFilter(const std::string& filter);
     void setLineWidth(float width); void setLineCap(const std::string& cap); void setLineJoin(const std::string& join); void setMiterLimit(float limit);
     void setLineDash(const std::vector<float>& segments); void setLineDashOffset(float offset);
@@ -321,6 +333,8 @@ private:
     int width_, height_, contextId_ = -1; bool virtual_ = false; std::string elementId_;
     int logicalWidth_ = 0, logicalHeight_ = 0;
     Color fill_{0, 0, 0}, stroke_{0, 0, 0}; float lineWidth_ = 1.0f; Path2D currentPath_;
+    Color tint_{0, 0, 0, 0};
+    Color tinted(Color c) const;
 #ifdef __EMSCRIPTEN__
     // The drawing state, kept in wasm rather than in the browser context.
     //

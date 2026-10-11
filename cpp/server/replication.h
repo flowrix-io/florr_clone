@@ -161,14 +161,18 @@ public:
     /// wire because the client colours and offsets a tick differently from a
     /// petal hit, and only the server knows which one landed. `dealtBy` and
     /// `dealtByConnection` name the flower behind the hit, if any; see
-    /// WireEvent::dealtBy.
+    /// WireEvent::dealtBy. `share` is what the hit took as a fraction of the
+    /// victim's max health, which is how bright the client flashes it.
     void damage(std::uint32_t netId, double amount, Vec2 at, Realm realm,
                 std::uint8_t flags = 0, Entity dealtBy = NULL_ENTITY,
-                net::ConnectionId dealtByConnection = 0) {
+                net::ConnectionId dealtByConnection = 0, double share = 0) {
         WireEvent e;
         e.kind = net::EventKind::Damage;
         e.netId = netId;
         e.amount = amount;
+        // A Damage event has no reach, so its radius slot carries the share
+        // (see net::EventKind::Damage).
+        e.radius = share;
         e.position = at;
         e.realm = realm;
         e.flag = flags;

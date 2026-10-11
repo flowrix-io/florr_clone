@@ -111,6 +111,9 @@ bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double
                 double w, double h, bool snapToDevice, bool quarterTurns,
                 const std::function<void(Canvas&, int, int)>& paint) {
     if (!(w > 0.0) || !(h > 0.0)) return false;
+    // A colour tint (a hit flash) is applied as the styles are set, and a blit
+    // sets none: the picture is drawn the long way while one is on.
+    if (canvas.colorTint().a != 0) return false;
 
     // How many device pixels one user unit is worth, HERE -- not at the
     // frame's base transform. A caller inside a scale of its own (a flower's

@@ -25,7 +25,8 @@
 //           stick and its two buttons up from, Hide Other Players' Petals
 //           and Pets -> settings.render.hideOtherPetals/hideOtherPets, Show
 //           Admins on Leaderboard -> settings.showAdminsOnLeaderboard, which
-//           the leaderboard panel sends with its request, Low Latency Canvas
+//           the leaderboard panel sends with its request, Screen Shake ->
+//           settings.render.screenShake, Low Latency Canvas
 //           -> settings.desynchronizedCanvas, which App hands to
 //           Window::setDesynchronized (browser only; inert natively). These
 //           are read elsewhere and persisted with the rest of ClientSettings.
@@ -144,6 +145,7 @@ enum Toggle : int {
     kHideOtherPetals,
     kHideOtherPets,
     kDesynchronizedCanvas,
+    kScreenShake,
     kToggleCount,
 };
 
@@ -266,6 +268,7 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kRequestMobile: return &settings.requestMobile;
         case kHideOtherPetals: return &settings.render.hideOtherPetals;
         case kHideOtherPets: return &settings.render.hideOtherPets;
+        case kScreenShake: return &settings.render.screenShake;
         case kShowAdminsOnLeaderboard: return &settings.showAdminsOnLeaderboard;
         case kDesynchronizedCanvas: return &settings.desynchronizedCanvas;
         // Everything else lands in the panel's own copy, because ClientSettings
@@ -773,6 +776,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.checkbox(kShowHitboxes, "Show Hitboxes");
             p.checkbox(kHideOtherPetals, "Hide Other Players' Petals");
             p.checkbox(kHideOtherPets, "Hide Other Players' Pets");
+            p.checkbox(kScreenShake, "Screen Shake");
             p.checkbox(kShowStats, "Show Performance Stats");
             p.checkbox(kDynamicSkybox, "Dynamic Skybox");
             p.checkbox(kMobDeathAnimation, "Mob Death Animation");

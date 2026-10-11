@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "client/ease.h"
 #include "client/render/art_cache.h"
 #include "client/render/skin_render.h"
 #include "client/ui/draw.h"
@@ -510,6 +511,60 @@ Rect intersection(Rect a, Rect b) {
     return {x0, y0, std::max(0.0, x1 - x0), std::max(0.0, y1 - y0)};
 }
 
+// The hit flash, read out of florr's client (the entity's tint list and the
+// handler for its damage message). Its damage message carries a byte; what
+// florr's server packs into it is not in the client, and this server sends
+// the hit's share of max health, which is what the curve below reads well on.
+/// How long one hit colours the body.
+constexpr double kHitFlashSeconds = 0.150;
+/// The share of a flash's life, counted from the end, still drawn white
+/// rather than red: the first 15 ms.
+constexpr double kHitFlashWhiteFrom = 0.9;
+/// intensity = clamp(share^0.2, 0.1, 1): a hit for a hundredth of the bar
+/// still flashes at 0.4, and a hit for nothing at all still shows.
+constexpr double kHitFlashExponent = 0.2;
+constexpr double kHitFlashFloor = 0.1;
+/// More hits than a full ring lands in 150 ms, many times over. florr's list
+/// is unbounded; past this the oldest goes, which at these alphas is invisible.
+constexpr std::size_t kMaxHitFlashes = 64;
+
+// The screen shake, out of the same client: its damage handler feeds a pool
+// when the hit is on your own flower, and its camera update turns the pool
+// into a push. See WorldRenderer::shakeOffset().
+/// The pool's decay and the level's rise and fall, florr's expm1 rates.
+const double kShakePoolEaseSeconds = easeTimeConstantFromRatePerMs(0.0030775976632530346);
+const double kShakeLevelEaseSeconds = easeTimeConstantFromRatePerMs(0.013388613078852581);
+/// How long after a hit the level is held at 1.
+constexpr double kShakeHoldSeconds = 0.200;
+/// The push at full strength, in screen units at any zoom.
+constexpr double kShakeReach = 5.0;
+/// A pool of 1/50 of the bar is already full strength.
+constexpr double kShakePoolGain = 50.0;
+/// The push's angle turns at 0.01 rad/ms and its length swings at 0.05.
+constexpr double kShakeTurnPerMs = 0.01;
+constexpr double kShakeSwingPerMs = 0.05;
+/// A ritual's pushes: one per 100 ms, catching up at most 300 ms of missed
+/// ones, each adding this much of how far the ritual has traced.
+constexpr double kRitualShakePushSeconds = 0.100;
+constexpr double kRitualShakeCatchUpSeconds = 0.300;
+constexpr double kRitualShakePerTraced = 0.5;
+
+/// Paints with `tint` on for as long as it lives, then puts back whatever the
+/// canvas had. A tint of alpha zero changes nothing.
+class ScopedColorTint {
+public:
+    ScopedColorTint(Canvas& canvas, Color tint) : canvas_(canvas), saved_(canvas.colorTint()) {
+        if (tint.a != 0) canvas.setColorTint(tint);
+    }
+    ~ScopedColorTint() { canvas_.setColorTint(saved_); }
+    ScopedColorTint(const ScopedColorTint&) = delete;
+    ScopedColorTint& operator=(const ScopedColorTint&) = delete;
+
+private:
+    Canvas& canvas_;
+    Color saved_;
+};
+
 } // namespace
 
 bool WorldRenderer::hiddenByOptions(const RemoteEntity& entity) const {
@@ -634,6 +689,25 @@ void WorldRenderer::ingestEvents(WorldView& view) {
     for (const ViewEvent& event : view.events()) {
         switch (event.kind) {
             case net::EventKind::Damage: {
+                {
+                    // florr carries the share as a byte, and a hit under 1/255
+                    // of the bar is a zero that flashes at the floor.
+                    const double share =
+                        std::floor(clamp(event.radius, 0.0, 1.0) * 255.0) / 255.0;
+                    HitFlash hit;
+                    hit.intensity = static_cast<float>(clamp(
+                        std::pow(share, kHitFlashExponent), kHitFlashFloor, 1.0));
+                    std::vector<HitFlash>& hits = hitFlashes_[event.netId];
+                    if (hits.size() >= kMaxHitFlashes) hits.erase(hits.begin());
+                    hits.push_back(hit);
+                    // The viewer's own flower being hit shakes the screen.
+                    const auto self = view.entities().find(event.netId);
+                    if (self != view.entities().end() && self->second.isSelf()) {
+                        shakePool_ += share;
+                        shakeHitSeconds_ = nowSeconds_;
+                        shakeHeld_ = true;
+                    }
+                }
                 if ((event.flag & net::DamageByViewer) != 0 && isTargetDummy(event.netId)) {
                     dummyDamage_[event.netId].emplace_back(nowSeconds_, event.amount);
                 }
@@ -910,6 +984,48 @@ void WorldRenderer::ingestEvents(WorldView& view) {
 
 void WorldRenderer::update(double dt) {
     nowSeconds_ += dt;
+    for (auto it = hitFlashes_.begin(); it != hitFlashes_.end();) {
+        std::vector<HitFlash>& hits = it->second;
+        for (HitFlash& hit : hits) {
+            if (hit.atSeconds < 0.0) hit.atSeconds = nowSeconds_;
+        }
+        hits.erase(std::remove_if(hits.begin(), hits.end(),
+                                  [this](const HitFlash& hit) {
+                                      return nowSeconds_ - hit.atSeconds >= kHitFlashSeconds;
+                                  }),
+                   hits.end());
+        it = hits.empty() ? hitFlashes_.erase(it) : std::next(it);
+    }
+
+    // The rituals the last frame showed still tracing: each pushes the shake
+    // on its own 100 ms pace, the way florr's does every frame it draws one.
+    for (const auto& [netId, traced] : ritualsTracing_) {
+        double& next = ritualNextPush_[netId];
+        while (nowSeconds_ >= next) {
+            next = std::max(next + kRitualShakePushSeconds,
+                            nowSeconds_ - kRitualShakeCatchUpSeconds);
+            shakePool_ += kRitualShakePerTraced * traced;
+            shakeHitSeconds_ = nowSeconds_;
+            shakeHeld_ = true;
+        }
+    }
+    ritualsTracing_.clear();
+    for (auto it = ritualNextPush_.begin(); it != ritualNextPush_.end();) {
+        it = ritualSeen_.count(it->first) != 0 ? std::next(it) : ritualNextPush_.erase(it);
+    }
+
+    if (shakeHeld_ && nowSeconds_ - shakeHitSeconds_ >= kShakeHoldSeconds) shakeHeld_ = false;
+    easeToward(shakePool_, 0.0, kShakePoolEaseSeconds);
+    easeToward(shakeLevel_, shakeHeld_ ? 1.0 : 0.0, kShakeLevelEaseSeconds);
+    if (options.screenShake) {
+        const double ms = nowSeconds_ * 1000.0;
+        const double reach = kShakeReach * std::sin(ms * kShakeSwingPerMs) * shakeLevel_ *
+                             std::min(1.0, kShakePoolGain * shakePool_);
+        shakeOffset_ = {std::cos(ms * kShakeTurnPerMs) * reach,
+                        std::sin(ms * kShakeTurnPerMs) * reach};
+    } else {
+        shakeOffset_ = {};
+    }
     for (Effect& e : effects_) {
         e.ageSeconds += dt;
         for (EffectParticle& p : e.particles) {
@@ -988,6 +1104,34 @@ void WorldRenderer::update(double dt) {
     if (mobShadows_.size() > kMaxMobShadows) mobShadows_.clear();
     if (mobEyes_.size() > kMaxMobShadows) mobEyes_.clear();
     if (mobPaces_.size() > kMaxMobShadows) mobPaces_.clear();
+}
+
+Color WorldRenderer::hitTint(std::uint32_t netId) const {
+    const auto found = hitFlashes_.find(netId);
+    if (found == hitFlashes_.end()) return Color{0, 0, 0, 0};
+    // Composited in bytes, cut back to a byte after every hit, in float, as
+    // florr does it: each hit is a premultiplied colour laid OVER the ones
+    // before it.
+    const auto over = [](std::uint8_t under, std::uint8_t channel, float alpha) {
+        const float add = static_cast<std::uint8_t>(static_cast<int>(channel * alpha)) / 255.0f;
+        const float out = (under / 255.0f * (1.0f - alpha) + add) * 255.0f;
+        return static_cast<std::uint8_t>(std::clamp(out, 0.0f, 255.0f));
+    };
+    Color tint{0, 0, 0, 0};
+    for (const HitFlash& hit : found->second) {
+        // Not stamped yet: ingested since the last update, so it is new.
+        const double age = hit.atSeconds < 0.0 ? 0.0 : nowSeconds_ - hit.atSeconds;
+        if (age >= kHitFlashSeconds) continue;
+        const float left = static_cast<float>((kHitFlashSeconds - age) / kHitFlashSeconds);
+        const float alpha =
+            static_cast<std::uint8_t>(static_cast<int>(left * hit.intensity * 255.0f)) / 255.0f;
+        const bool white = left >= kHitFlashWhiteFrom;
+        tint.r = over(tint.r, 255, alpha);
+        tint.g = over(tint.g, white ? 255 : 0, alpha);
+        tint.b = over(tint.b, white ? 255 : 0, alpha);
+        tint.a = over(tint.a, 255, alpha);
+    }
+    return tint;
 }
 
 const MapData* WorldRenderer::mapFor(Realm realm) const {
@@ -1979,6 +2123,7 @@ void WorldRenderer::drawFlower(Canvas& canvas, const RemoteEntity& entity, const
         drawGlitched(canvas, screen, radius, entity.netId, timeSeconds, paintBody);
         return;
     }
+    const ScopedColorTint flash(canvas, hitTint(entity.netId));
     canvas.save();
     canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
     paintBody(canvas);
@@ -2301,6 +2446,8 @@ void WorldRenderer::drawCorpse(Canvas& canvas, const RemoteEntity& entity, const
     if (kFlowerArtRadius * zoom <= 0.5) return;
     const Vec2 screen = camera.worldToScreen(at);
 
+    // The killing blow is still flashing as the body falls.
+    const ScopedColorTint flash(canvas, hitTint(entity.netId));
     canvas.save();
     canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
     // A corpse lies where it fell: rotated to its facing, at a fixed radius 25
@@ -3191,6 +3338,11 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         canvas.restore();
     }
 
+    // Everything from here is the body, and flashes when it is hit; the glow
+    // above is light, not body. A dying mob keeps its net id, so the killing
+    // blow flashes on through the death animation.
+    const ScopedColorTint flash(canvas, hitTint(mob.netId));
+
     // Before the body, so the sting comes out from under it. Off the HITBOX
     // centre rather than the art's: it is the server's muzzle.
     if (config && config->stingerShooter && config->projectile.present &&
@@ -3846,6 +3998,8 @@ void WorldRenderer::drawSacrificeRituals(Canvas& canvas, const EntityMap& entiti
         const double traced =
             complete ? 1.0
                      : clamp((nowSeconds_ - seen) * 1000.0 / kSacrificeRitualMillis, 0.0, 1.0);
+        // On screen and its mob not out yet: it shakes the screen.
+        if (!complete) ritualsTracing_.emplace_back(entity.netId, traced);
 
         const Vec2 centre = camera.worldToScreen(entity.position);
         const double r = radius * zoom;
@@ -3926,7 +4080,22 @@ void WorldRenderer::drawLightning(Canvas& canvas, const Camera& camera) const {
 void WorldRenderer::draw(Canvas& canvas, const WorldView& view, const Camera& camera,
                          Vec2 selfDrawn, double timeSeconds) const {
     realm_ = view.realm();
-    draw(canvas, view.entities(), camera, selfDrawn, timeSeconds);
+    if (shakeOffset_.x == 0.0 && shakeOffset_.y == 0.0) {
+        draw(canvas, view.entities(), camera, selfDrawn, timeSeconds);
+        return;
+    }
+    // The world, the viewer's flower with it, is drawn through a camera
+    // pushed by the shake; the caller's stays where the cursor expects it.
+    draw(canvas, view.entities(), shakenCamera(camera), selfDrawn, timeSeconds);
+}
+
+Camera WorldRenderer::shakenCamera(const Camera& camera) const {
+    // The push is a SCREEN distance, so it is divided back through the zoom:
+    // a loadout zoomed out to half shakes as hard as one that is not.
+    Camera shaken = camera;
+    const double zoom = camera.zoom() > 1e-6 ? camera.zoom() : 1.0;
+    shaken.snapTo(camera.centre() + shakeOffset_ / zoom);
+    return shaken;
 }
 
 int WorldRenderer::canvasOps() {
