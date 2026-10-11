@@ -1861,6 +1861,20 @@ void Canvas::fill(const std::string&s){
   fillDevice(currentPath_, s=="evenodd", state_.fill);
 #endif
 }
+void Canvas::desaturate(const std::string& s) {
+#ifdef __EMSCRIPTEN__
+  // `saturation` with a grey source: the result takes the source's saturation
+  // (none) and keeps the backdrop's hue and luminosity, which is grey at the
+  // backdrop's brightness.
+  save();
+  setGlobalCompositeOperation("saturation");
+  setFillStyle(Color{128,128,128,255});
+  fill(s);
+  restore();
+#else
+  desaturateDevice(currentPath_, s=="evenodd");
+#endif
+}
 void Canvas::stroke() {
 #ifdef __EMSCRIPTEN__
   sync(kStrokeBits);
@@ -2415,6 +2429,35 @@ void Canvas::fillDevice(const Path2D& path, bool evenOdd, Color color) {
     if (memsettable) { std::fill(row+x0,row+x1,opaque); return; }
     if (!clipped) { for (int x=x0;x<x1;++x) blend(row[x],color,solid); return; }
     for (int x=x0;x<x1;++x) blend(row[x],color,solid*clipAt(x,y));
+  });
+}
+void Canvas::desaturateDevice(const Path2D& path, bool evenOdd) {
+  if (state_.alpha<=0 || path.segments().empty()) return;
+  flatten(path, state_.matrix, matrixScale(state_.matrix), gFlat);
+  Color* const surface=pixels_.data();
+  const int stride=width_;
+  const float alpha=state_.alpha;
+  const bool clipped=state_.clip!=nullptr;
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  // The browser's non-separable `saturation` blend with a grey source:
+  // SetLum(grey, Lum(backdrop)), which is the backdrop's luminosity in every
+  // channel, laid over the backdrop at the coverage.
+  const auto grey=[&](Color& d, float a){
+    if (a<=0.0005f) return;
+    const auto lum=static_cast<std::uint8_t>(std::clamp(
+        std::lround(0.3f*d.r+0.59f*d.g+0.11f*d.b), 0L, 255L));
+    const float t=std::min(a,1.f), keep=1.f-t;
+    d=Color{static_cast<std::uint8_t>(std::lround(lum*t+d.r*keep)),
+            static_cast<std::uint8_t>(std::lround(lum*t+d.g*keep)),
+            static_cast<std::uint8_t>(std::lround(lum*t+d.b*keep)),
+            d.a};
+  };
+  scanFill(gFlat, evenOdd, cx0,cy0,cx1,cy1, [&](int x,int y,float cov){
+    const float a=cov*alpha;
+    grey(surface[static_cast<size_t>(y)*stride+x], clipped ? a*clipAt(x,y) : a);
+  }, [&](int x0,int x1,int y){
+    Color* const row=surface+static_cast<size_t>(y)*stride;
+    for (int x=x0;x<x1;++x) grey(row[x], clipped ? alpha*clipAt(x,y) : alpha);
   });
 }
 void Canvas::strokeDevice(const Path2D& path) {

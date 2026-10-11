@@ -2957,10 +2957,11 @@ const std::vector<std::uint16_t>& WorldRenderer::droppablePetals() const {
     if (!droppablePetals_.empty() || !content_) return droppablePetals_;
     for (std::uint16_t i = 0; i < content_->petalCount(); ++i) {
         const PetalConfig& petal = content_->petal(i);
-        // The server's own drop rule: no admin petals, no cutters, and no egg
-        // for a mob whose config forbids one.
+        // The server's own drop rule: no admin petals, no cutters, no
+        // sacrifice, and no egg for a mob whose config forbids one.
         if (petal.isAdminPetal) continue;
         if (petal.id == "cutter" || petal.id == "lightning_cutter") continue;
+        if (petalIsSacrifice(petal)) continue;
         const std::string suffix = "_egg";
         if (petal.id.size() > suffix.size() &&
             petal.id.compare(petal.id.size() - suffix.size(), suffix.size(), suffix) == 0) {
@@ -3616,6 +3617,10 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             // Replicated::typeIndex carries the field kind: pollen, web, or
             // radiation. The effect's rarity supplies its tier treatment.
             switch (static_cast<GroundEffectKind>(entity.typeIndex)) {
+                // Drawn in a pass of its own, over the mobs: see
+                // drawSacrificeRituals.
+                case GroundEffectKind::Sacrifice:
+                    break;
                 case GroundEffectKind::Web: {
                     // Ten spokes out to the rim, then five concentric rings of
                     // quadratic segments sagging between them.
@@ -3800,6 +3805,91 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
                 break;
             }
         }
+    }
+}
+
+void WorldRenderer::drawSacrificeRituals(Canvas& canvas, const EntityMap& entities,
+                                         const Camera& camera) const {
+    // Forget the rituals that have gone, so one id reused later starts over.
+    for (auto it = ritualSeen_.begin(); it != ritualSeen_.end();) {
+        const auto live = entities.find(it->first);
+        const bool ritual = live != entities.end() &&
+                            live->second.kind == net::EntityKind::Effect &&
+                            live->second.typeIndex ==
+                                static_cast<std::uint16_t>(GroundEffectKind::Sacrifice);
+        it = ritual ? std::next(it) : ritualSeen_.erase(it);
+    }
+
+    const double zoom = camera.zoom();
+    const Rect visible = camera.visibleWorld(0);
+    // The star's inner corners sit where a pentagram's lines cross: the
+    // golden-ratio inset, 1 / phi^2 of the points' radius.
+    constexpr double kInner = 0.38196601125;
+    const std::uint32_t red = rarityColor(Rarity::Legendary);
+
+    for (const auto& entry : entities) {
+        const RemoteEntity& entity = entry.second;
+        if (entity.kind != net::EntityKind::Effect ||
+            entity.typeIndex != static_cast<std::uint16_t>(GroundEffectKind::Sacrifice)) {
+            continue;
+        }
+        const double seen = ritualSeen_.emplace(entity.netId, nowSeconds_).first->second;
+        const double radius = entity.radius;
+        if (!(radius > 0.0)) continue;
+        if (entity.position.x + radius < visible.left() ||
+            entity.position.x - radius > visible.right() ||
+            entity.position.y + radius < visible.top() ||
+            entity.position.y - radius > visible.bottom()) {
+            continue;
+        }
+        const bool complete = (entity.state & net::StateRitualComplete) != 0;
+        const double traced =
+            complete ? 1.0
+                     : clamp((nowSeconds_ - seen) * 1000.0 / kSacrificeRitualMillis, 0.0, 1.0);
+
+        const Vec2 centre = camera.worldToScreen(entity.position);
+        const double r = radius * zoom;
+        // Turned the way the server rolled it: point 0 lies along the
+        // ritual's facing.
+        const auto point = [&](double along, double reach) {
+            const double angle = entity.angle + along * kTau / 5.0;
+            return Vec2{centre.x + std::cos(angle) * reach, centre.y + std::sin(angle) * reach};
+        };
+
+        // The grey star: the pentagram's own outline, filled with grey.
+        canvas.beginPath();
+        for (int i = 0; i < 10; ++i) {
+            const Vec2 p = point(i * 0.5, (i % 2 == 0) ? r : r * kInner);
+            if (i == 0) canvas.moveTo(static_cast<float>(p.x), static_cast<float>(p.y));
+            else canvas.lineTo(static_cast<float>(p.x), static_cast<float>(p.y));
+        }
+        canvas.closePath();
+        canvas.desaturate();
+
+        // The pentagram, the size of the mob it brings -- a fifth of the
+        // star -- traced point to point, every second point of the pentagon, one edge
+        // after another over the ritual.
+        const double edges = traced * 5.0;
+        if (!(edges > 0.0)) continue;
+        canvas.save();
+        ui::setStroke(canvas, red);
+        const double pr = r / kSacrificeRitualRadiusScale;
+        canvas.setLineWidth(static_cast<float>(std::max(2.0, pr * 0.08)));
+        canvas.setLineCap("round");
+        canvas.setLineJoin("round");
+        canvas.beginPath();
+        Vec2 from = point(0, pr);
+        canvas.moveTo(static_cast<float>(from.x), static_cast<float>(from.y));
+        for (int edge = 0; edge < 5 && edge < edges; ++edge) {
+            const Vec2 to = point(((edge + 1) * 2) % 5, pr);
+            const double part = std::min(1.0, edges - edge);
+            const Vec2 end = from + (to - from) * part;
+            canvas.lineTo(static_cast<float>(end.x), static_cast<float>(end.y));
+            from = to;
+        }
+        if (edges >= 5.0) canvas.closePath();
+        canvas.stroke();
+        canvas.restore();
     }
 }
 
@@ -4013,21 +4103,30 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         }
 
         const bool mobs = kind == net::EntityKind::Mob;
+        // A sacrifice's own mob -- its body and its ring with it -- waits until
+        // the ritual's star has greyed everything else, and is drawn over it
+        // in colour (below).
+        const auto sacrificed = [](const RemoteEntity& entity) {
+            return (entity.spawnFlags & net::SpawnSacrificed) != 0;
+        };
         if (mobs) {
             for (const auto& entry : entities) {
                 const RemoteEntity& entity = entry.second;
-                if (entity.kind == kind && isHole(entity.typeIndex)) drawLive(entity);
+                if (entity.kind == kind && isHole(entity.typeIndex) && !sacrificed(entity)) {
+                    drawLive(entity);
+                }
             }
             for (const DyingMob& dying : dying_) {
                 if (isHole(dying.typeIndex)) drawDying(dying);
             }
             for (const auto& entry : entities) {
-                if (entry.second.isRingPetal()) drawLive(entry.second);
+                if (entry.second.isRingPetal() && !sacrificed(entry.second)) drawLive(entry.second);
             }
         }
         for (const auto& entry : entities) {
             const RemoteEntity& entity = entry.second;
             if (layerOf(entity) != kind) continue;
+            if (mobs && sacrificed(entity)) continue;
             // A ring seed's typeIndex is a PETAL index, so it must be ruled
             // out before isHole reads it as a mob's.
             if (mobs && (entity.isRingPetal() || isHole(entity.typeIndex))) continue;
@@ -4093,6 +4192,26 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         if (!mobs) continue;
         for (const DyingMob& dying : dying_) {
             if (!isHole(dying.typeIndex)) drawDying(dying);
+        }
+        // Everything drawn so far -- the ground, NPCs and every mob -- goes
+        // grey under a sacrifice's star; the flowers and petals that follow
+        // keep their colour, and so does the mob the sacrifice summoned,
+        // drawn now in the order the mob layer would have drawn it.
+        drawSacrificeRituals(canvas, entities, camera);
+        for (const auto& entry : entities) {
+            const RemoteEntity& entity = entry.second;
+            if (sacrificed(entity) && entity.kind == kind && isHole(entity.typeIndex)) {
+                drawLive(entity);
+            }
+        }
+        for (const auto& entry : entities) {
+            if (sacrificed(entry.second) && entry.second.isRingPetal()) drawLive(entry.second);
+        }
+        for (const auto& entry : entities) {
+            const RemoteEntity& entity = entry.second;
+            if (!sacrificed(entity) || layerOf(entity) != kind) continue;
+            if (entity.isRingPetal() || isHole(entity.typeIndex)) continue;
+            drawLive(entity);
         }
         chargeOps(ops_.mobs);
         for (const MobDraw& mob : mobLabels_) drawMobLabel(canvas, camera, mob);

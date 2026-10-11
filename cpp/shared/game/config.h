@@ -1080,6 +1080,18 @@ inline bool petalSharesFlowerDamage(const PetalConfig& config) { return config.i
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }
 
+/// The sacrifice: florr's "On death, summons a mob to fight again". Worn on
+/// the active bar, it is spent when its flower dies on ground rough enough to
+/// answer it, and a mob of that ground is summoned where the flower fell, at
+/// the petal's tier (GameServer::offerSacrifice, SpawnSystem::summonSacrifice).
+///
+/// It comes from nowhere but the ground of Hel, one Apex at a time
+/// (GameServer::serviceSacrificeSpawn): no mob drops it, a `random` drop row
+/// never names it and the shop never sells it, because a sacrifice at a tier
+/// the market deals in would be a super boss for a handful of stars.
+inline constexpr const char* kSacrificePetalId = "sacrifice";
+inline bool petalIsSacrifice(const PetalConfig& config) { return config.id == kSacrificePetalId; }
+
 // ---------------------------------------------------------------------------
 // ContentRegistry
 // ---------------------------------------------------------------------------

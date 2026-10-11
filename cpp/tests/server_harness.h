@@ -758,6 +758,16 @@ inline Entity onlyPlayer(World& world) {
 /// Defined here and nowhere else, so every test file that includes this one
 /// shares the one definition.
 struct GameServerPeer {
+    /// Sets when Hel's next sacrifice appears, on the server's clock -- zero
+    /// is "on the next tick that simulates". The sacrifice on the ground, if any.
+    static void windSacrificeClock(GameServer& server, double readyMillis) {
+        server.sacrificeReadyMillis_ = readyMillis;
+    }
+    static Entity sacrificeDrop(const GameServer& server) { return server.sacrificeDrop_; }
+    static double sacrificeReadyMillis(const GameServer& server) {
+        return server.sacrificeReadyMillis_;
+    }
+
     /// The session signed in as `username`, or nullptr. None for a socket that
     /// has closed, because a disconnect erases the session, or that has signed
     /// out, because a sign-out clears the name.

@@ -119,6 +119,7 @@ add_library(flix_server STATIC
   server/chat_commands.cpp
   server/replication.cpp
   server/session.cpp
+  server/sacrifice.cpp
   server/splitter.cpp
   server/squads.cpp
   server/db.cpp

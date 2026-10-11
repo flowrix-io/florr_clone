@@ -405,6 +405,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // Derived from the same seed, so a world is still reproducible end to end,
     // but a stream of its own -- see botRng_.
     botRng_.reseed(config.worldSeed ^ 0x80757331B07B07ull);
+    sacrificeRng_.reseed(config.worldSeed ^ 0x5AC21F1CEull);
     terrain_ = std::make_unique<Terrain>();
     // Every map the data directory stages, in manifest order: each one gets a
     // realm, a tile grid inside `terrain_` and an annotation layer inside
@@ -784,6 +785,8 @@ void GameServer::tick(double nowMillis) {
 
     runSystems(nowMillis, smoothedDeltaSeconds_);
     persistBossClocks();
+    serviceSacrificeSpawn(nowMillis);
+    serviceSacrificeRituals(nowMillis);
 
     // BEFORE the reaper. A splitter gives one connection two bodies, and a
     // half that died this tick has to stop being part of the session before
@@ -1071,6 +1074,7 @@ void GameServer::reapDead() {
                 // In the ring a death hands the run over to the killer before
                 // anything is written down.
                 if (session->arena) settleArenaDeath(*session, world_.get<Dead>(e).killer);
+                offerSacrifice(*session, e);
                 persistPlayer(*session);
                 if (net::Connection* connection = listener_.find(session->connection)) {
                     ByteWriter w;

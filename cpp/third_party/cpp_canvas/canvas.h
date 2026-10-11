@@ -240,6 +240,12 @@ public:
     void rect(float x, float y, float width, float height); void roundRect(float x, float y, float width, float height, float radius);
     void fill(const std::string& rule = "nonzero"); void stroke(); void clip(const std::string& rule = "nonzero");
     void fill(const Path2D& path, const std::string& rule = "nonzero"); void stroke(const Path2D& path); void clip(const Path2D& path, const std::string& rule = "nonzero");
+    /// Turns what is already painted under the current path to grey, at the
+    /// global alpha: the browser's `saturation` composite with a grey source,
+    /// which keeps each pixel's luminosity (0.3 R + 0.59 G + 0.11 B) and drops
+    /// its colour. The software backend has no blend modes, so this is the one
+    /// it implements, as a primitive of its own rather than a composite name.
+    void desaturate(const std::string& rule = "nonzero");
     bool isPointInPath(float x, float y, const std::string& rule = "nonzero") const; bool isPointInStroke(float x, float y) const;
 
     void fillText(const std::string& text, float x, float y, float maxWidth = -1); void strokeText(const std::string& text, float x, float y, float maxWidth = -1); float measureText(const std::string& text) const;
@@ -420,6 +426,7 @@ private:
     void blitRegion(const Canvas& source, float sx, float sy, float sw, float sh,
                     float dx, float dy, float dw, float dh, const Color* tint);
     void fillDevice(const Path2D& path, bool evenOdd, Color color);
+    void desaturateDevice(const Path2D& path, bool evenOdd);
     void strokeDevice(const Path2D& path);
     void glyphs(const std::string& text, float x, float y, float maxWidth, Color color);
 #endif

@@ -863,6 +863,25 @@ private:
     /// a scatter, an upgrade, a console spawn charging a clock.
     void restoreBossClocks(double nowMillis);
     void persistBossClocks();
+
+    // --- the sacrifice (server/sacrifice.cpp) -------------------------------
+    /// Puts one Apex Sacrifice on the ground somewhere in Hel whenever its
+    /// clock runs out, then deals the next wait: anywhere from nothing to
+    /// kSacrificeSpawnMaxGapMillis. The clock lives in the database's
+    /// `sacrificeSpawn` table on the wall clock, so a restart neither skips a
+    /// spawn nor re-deals the wait. One on the ground at a time: a clock that
+    /// runs out while the last one is still lying there just deals again.
+    void serviceSacrificeSpawn(double nowMillis);
+    /// A flower that has just died: if a sacrifice is on its active bar, the
+    /// best of them is spent and a ritual laid where it fell (SacrificeRitual),
+    /// which summons a mob of that ground once its pentagram is drawn. On
+    /// ground that turns it away the petal stays, and the player is told why.
+    void offerSacrifice(Session& session, Entity corpse);
+    /// Answers every ritual whose pentagram is complete with its mob, and takes
+    /// away every ritual whose mob is dead.
+    void serviceSacrificeRituals(double nowMillis);
+    /// Flags a summoned mob, its body and its ring net::SpawnSacrificed.
+    void markSacrificed(Entity mob);
     /// The no-guild answer, which is the browser's `guildUpdate null`.
     void sendNoGuild(net::Connection&);
     /// Sends `guild` to every one of its members who is connected.
@@ -1576,6 +1595,16 @@ private:
     };
     std::vector<SavedBossClock> savedBossClocks_;
     bool bossClocksRestored_ = false;
+    /// When Hel's next sacrifice appears, on clockMillis_; negative until the
+    /// first tick reads or deals it. The second figure is what was last
+    /// written to the database, so an unchanged clock costs a compare.
+    double sacrificeReadyMillis_ = -1.0;
+    double savedSacrificeReadyMillis_ = -1.0;
+    /// The sacrifice lying on the ground, if one is.
+    Entity sacrificeDrop_ = NULL_ENTITY;
+    /// The sacrifice clock's and placement's own stream, so dealing a wait
+    /// never moves what rng_ hands every other spawn.
+    Rng sacrificeRng_;
     ByteWriter scratch_;
 
     /// One line broadcastChat sent, kept for sendChatHistory.

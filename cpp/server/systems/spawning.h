@@ -366,6 +366,23 @@ inline constexpr double kUniqueSpawnCooldownMillis = 20.0 * 60.0 * 1000.0;
 inline constexpr double kApexSpawnCooldownMillis = 2.0 * 60.0 * 60.0 * 1000.0;
 inline constexpr double kBossUpgradeChance = 0.10;
 
+/// The sacrifice (petalIsSacrifice): what a flower that dies wearing one
+/// summons, and where it will not.
+///
+/// florr's rule is "Cannot be used in low mob rarity areas". Here that is the
+/// band under the corpse: one whose difficulty reads EPIC or above -- the tier
+/// the band mostly spawns, which is the tier the minimap paints it
+/// (dominantTierForDifficulty) -- takes the sacrifice, and anything gentler
+/// turns it away and leaves the petal on the bar. Random ground such as Hel's
+/// reads as its spread's mean, a shade past uncommon, so it is gentle. Ground
+/// no band covers has nothing to summon from either.
+inline constexpr Rarity kSacrificeGroundRarity = Rarity::Epic;
+
+inline bool groundTakesSacrifice(double difficulty) {
+    return rarityIndex(dominantTierForDifficulty(difficulty)) >=
+           rarityIndex(kSacrificeGroundRarity);
+}
+
 // ---------------------------------------------------------------------------
 // SpawnSystem
 // ---------------------------------------------------------------------------
@@ -498,6 +515,53 @@ public:
     Entity spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                     std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                     double nowMillis, Rng& rng);
+
+    /// What came of a sacrifice. Anything but Summoned placed nothing and
+    /// spent nothing: the petal stays on its flower's bar.
+    enum class SacrificeOutcome : std::uint8_t {
+        Summoned,
+        NoBand,      ///< no band covers the spot: nothing lives here to answer
+        LowGround,   ///< the band cannot roll kSacrificeGroundRarity
+        Taken,       ///< a unique/apex of that tier already stands in the biome
+        NoMob,       ///< the band names nothing that can be summoned
+    };
+    struct Sacrifice {
+        SacrificeOutcome outcome = SacrificeOutcome::NoBand;
+        Entity mob = NULL_ENTITY;
+        /// What will be summoned, once planned: the mob and its tier.
+        std::uint16_t mobIndex = kInvalidIndex;
+        Rarity rarity = Rarity::Common;
+    };
+
+    /// The first half of summonSacrifice: every check, and the roll for which
+    /// mob, with nothing placed and no clock spent. Summoned here means "will
+    /// summon `mobIndex` at `rarity`". The ritual uses this at the flower's
+    /// death and summons the mob kSacrificeRitualMillis later.
+    Sacrifice planSacrifice(World& world, const ContentRegistry& content, Rarity rarity, Vec2 at,
+                            Realm realm, Rng& rng);
+
+    /// The second half: places a planned summon, past a cooling clock, and
+    /// spends that clock. NULL_ENTITY if it could not be placed.
+    Entity spawnSacrifice(World& world, const Terrain& terrain, const ContentRegistry& content,
+                          const Sacrifice& plan, Vec2 at, Realm realm, double nowMillis, Rng& rng);
+
+    /// A sacrifice spent at `at`: one mob of the band covering that spot,
+    /// rolled from the band's own distribution, at `rarity` (held to the
+    /// ladder, so a universal sacrifice summons an apex), placed where the
+    /// flower fell.
+    ///
+    /// The one path past a cooling boss clock: the petal itself is the
+    /// rationing, Hel handing out one at a time. It still keeps the biome to
+    /// one unique and one apex -- refused while one of that tier stands -- and
+    /// it spends the clock as the console's spawn does, so the summon counts
+    /// as the biome's boss for the next cooldown.
+    Sacrifice summonSacrifice(World& world, const Terrain& terrain, const ContentRegistry& content,
+                              Rarity rarity, Vec2 at, Realm realm, double nowMillis, Rng& rng);
+
+    /// A random open point inside one of `realm`'s bands -- ground mobs live
+    /// on, and so ground a flower can reach. False when the realm has no band
+    /// or every try landed in a wall. Where Hel's sacrifice is put down.
+    bool randomBandPoint(const Terrain& terrain, Realm realm, Rng& rng, Vec2& out) const;
 
     /// The weighted type roll over ONE mob group: each member's weight, over
     /// the members that exist at this tier.
@@ -827,10 +891,13 @@ private:
     /// chain head's body trails away behind it; unset, it is rolled. The roll
     /// is drawn either way, so asking for a facing never shifts the stream
     /// every later spawn is rolled from.
+    ///
+    /// `clockGated` false lets a unique or apex past a cooling biome clock;
+    /// summonSacrifice is the only caller that asks.
     Entity spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                       std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                       double nowMillis, Rng& rng, int depth, std::uint16_t zone,
-                      std::optional<double> facing = std::nullopt);
+                      std::optional<double> facing = std::nullopt, bool clockGated = true);
 
     /// Lays a centipede's body out behind its head, each segment linked to the
     /// one in front. Driven from spawnMobAt so that every path to a head --

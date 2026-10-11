@@ -510,10 +510,104 @@ Entity SpawnSystem::spawnMob(World& world, const Terrain& terrain, const Content
                       kInvalidIndex);
 }
 
+SpawnSystem::Sacrifice SpawnSystem::planSacrifice(World& world, const ContentRegistry& content,
+                                                  Rarity rarity, Vec2 at, Realm realm, Rng& rng) {
+    bind(world);
+    // The band the flower fell in, first match in map order as difficultyAt
+    // reads it: its difficulty is the "mob rarity" of the area, and its rows
+    // are what lives there.
+    const SpawnZone* zone = nullptr;
+    for (const SpawnZone& candidate : zones_) {
+        if (candidate.realm != realm) continue;
+        if (!zoneContains(candidate.bounds, candidate.polygon, at)) continue;
+        zone = &candidate;
+        break;
+    }
+    if (zone == nullptr) return Sacrifice{SacrificeOutcome::NoBand};
+    if (!groundTakesSacrifice(zone->difficulty)) return Sacrifice{SacrificeOutcome::LowGround};
+
+    rarity = ladderRarity(rarity);
+    if ((rarity == Rarity::Unique || rarity == Rarity::Apex) &&
+        topBossTaken(world, rarity, realm)) {
+        return Sacrifice{SacrificeOutcome::Taken};
+    }
+
+    // A few rolls, because a band may name a permanent fixture outright -- the
+    // target dummy -- and a DPS post is not a mob to fight.
+    std::uint16_t type = kInvalidIndex;
+    for (int attempt = 0; attempt < 8 && type == kInvalidIndex; ++attempt) {
+        const std::uint16_t rolled = chooseZoneMobType(content, *zone, at, rarity, rng);
+        if (rolled == kInvalidIndex || content.mob(rolled).neverAmbient) continue;
+        type = rolled;
+    }
+    if (type == kInvalidIndex) return Sacrifice{SacrificeOutcome::NoMob};
+    Sacrifice plan{SacrificeOutcome::Summoned};
+    plan.mobIndex = type;
+    // The tier it will actually stand at, the mob's own floor included.
+    plan.rarity =
+        clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(content.mob(type).minRarity)));
+    return plan;
+}
+
+Entity SpawnSystem::spawnSacrifice(World& world, const Terrain& terrain,
+                                   const ContentRegistry& content, const Sacrifice& plan, Vec2 at,
+                                   Realm realm, double nowMillis, Rng& rng) {
+    if (plan.outcome != SacrificeOutcome::Summoned || plan.mobIndex >= content.mobCount()) {
+        return NULL_ENTITY;
+    }
+    // Nobody's band: the summon is not part of any band's population, and like
+    // every boss it stays live wherever it stands.
+    const Entity mob = spawnMobAt(world, terrain, content, plan.mobIndex, plan.rarity, at, realm,
+                                  nowMillis, rng, 0, kInvalidIndex, std::nullopt, false);
+    if (mob != NULL_ENTITY) chargeBossClock(plan.rarity, realm, nowMillis);
+    return mob;
+}
+
+SpawnSystem::Sacrifice SpawnSystem::summonSacrifice(World& world, const Terrain& terrain,
+                                                    const ContentRegistry& content, Rarity rarity,
+                                                    Vec2 at, Realm realm, double nowMillis,
+                                                    Rng& rng) {
+    Sacrifice plan = planSacrifice(world, content, rarity, at, realm, rng);
+    if (plan.outcome != SacrificeOutcome::Summoned) return plan;
+    plan.mob = spawnSacrifice(world, terrain, content, plan, at, realm, nowMillis, rng);
+    if (plan.mob == NULL_ENTITY) plan.outcome = SacrificeOutcome::NoMob;
+    return plan;
+}
+
+bool SpawnSystem::randomBandPoint(const Terrain& terrain, Realm realm, Rng& rng,
+                                  Vec2& out) const {
+    // Weighted by population, which is area: a point uniform over the realm's
+    // bands rather than over the band list.
+    double total = 0.0;
+    for (const SpawnZone& zone : zones_) {
+        if (zone.realm == realm) total += static_cast<double>(zone.targetMobs);
+    }
+    if (!(total > 0.0)) return false;
+    const Vec2 extent = terrain.realmExtent(realm);
+    for (int attempt = 0; attempt < 200; ++attempt) {
+        double roll = rng.unit() * total;
+        const SpawnZone* zone = nullptr;
+        for (const SpawnZone& candidate : zones_) {
+            if (candidate.realm != realm) continue;
+            zone = &candidate;
+            roll -= static_cast<double>(candidate.targetMobs);
+            if (roll < 0.0) break;
+        }
+        if (zone == nullptr) return false;
+        const Vec2 candidate = samplePointInRect(zone->bounds, extent, rng);
+        if (!zoneContains(zone->bounds, zone->polygon, candidate)) continue;
+        if (inBorderBand(candidate, extent)) continue;
+        if (terrain.blocked(candidate, realm)) continue;
+        out = candidate;
+        return true;
+    }
+    return false;
+}
+
 Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                                std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                                double nowMillis, Rng& rng, int depth, std::uint16_t zone,
-                               std::optional<double> facing) {
+                               std::optional<double> facing, bool clockGated) {
     if (mobIndex >= content.mobCount()) return NULL_ENTITY;
 
     const MobConfig& config = content.mob(mobIndex);
@@ -533,7 +627,9 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // because that is the tier the mob would actually stand at; roots only,
     // as with the announcement, because a centipede's segments carry the
     // head's tier and the head was already let in.
-    if (depth == 0 && bossCooldownLeft(rarity, realm, nowMillis) > 0.0) return NULL_ENTITY;
+    if (depth == 0 && clockGated && bossCooldownLeft(rarity, realm, nowMillis) > 0.0) {
+        return NULL_ENTITY;
+    }
 
     const MobStats stats = content.mobStats(mobIndex, rarity);
 

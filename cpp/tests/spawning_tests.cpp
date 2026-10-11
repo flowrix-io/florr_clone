@@ -1788,6 +1788,106 @@ TEST(a_biome_with_no_clock_refuses_no_unique) {
           0.0);
 }
 
+// ---------------------------------------------------------------------------
+// The sacrifice: a flower's death summons a mob of the ground it fell on
+// ---------------------------------------------------------------------------
+
+TEST(a_sacrifice_summons_a_mob_of_its_band_at_its_tier_past_a_cooling_clock) {
+    // The petal is the rationing, so the apex clock cooling down does not
+    // turn the summon away -- and the summon then spends that clock, as the
+    // console's apex does.
+    SuperBand world;
+    world.deal();
+    SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis * 0.5;
+    world.sim.spawner.bossSpawns.clear();
+
+    const Vec2 at{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5};
+    const SpawnSystem::Sacrifice result = world.sim.spawner.summonSacrifice(
+        world.sim.world, world.sim.terrain, shipped(), Rarity::Apex, at, Realm::Overworld,
+        world.sim.now, world.sim.rng);
+    CHECK(result.outcome == SpawnSystem::SacrificeOutcome::Summoned);
+    CHECK(result.mob != NULL_ENTITY);
+    const MobType& type = world.sim.world.get<MobType>(result.mob);
+    CHECK(type.rarity == Rarity::Apex);
+    CHECK(type.configIndex == shipped().mobIndex("bee"));
+    CHECK_NEAR(distance(world.sim.world.get<Transform>(result.mob).position, at), 0.0, 1.0);
+    // Announced like every boss, and the biome's apex clock starts over.
+    CHECK_EQ(world.sim.spawner.bossSpawns.size(), std::size_t(1));
+    CHECK_EQ(onlyClock(world.sim).apexReadyMillis, world.sim.now + kApexSpawnCooldownMillis);
+
+    // A universal sacrifice summons at the top of the ladder.
+    SuperBand other;
+    other.deal();
+    const SpawnSystem::Sacrifice universal = other.sim.spawner.summonSacrifice(
+        other.sim.world, other.sim.terrain, shipped(), Rarity::Universal, at, Realm::Overworld,
+        other.sim.now, other.sim.rng);
+    CHECK(universal.outcome == SpawnSystem::SacrificeOutcome::Summoned);
+    CHECK(other.sim.world.get<MobType>(universal.mob).rarity == Rarity::Apex);
+}
+
+TEST(a_sacrifice_is_turned_away_by_low_ground_by_no_ground_and_by_a_standing_apex) {
+    // Ground below epic -- a gentle band, and random ground such as Hel's --
+    // and ground no band covers summon nothing.
+    for (const double difficulty : {30.0, kRandomDifficulty}) {
+        SuperBand world(difficulty);
+        world.deal();
+        const Vec2 at{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5};
+        const SpawnSystem::Sacrifice result = world.sim.spawner.summonSacrifice(
+            world.sim.world, world.sim.terrain, shipped(), Rarity::Apex, at, Realm::Overworld,
+            world.sim.now, world.sim.rng);
+        CHECK(result.outcome == SpawnSystem::SacrificeOutcome::LowGround);
+        CHECK(result.mob == NULL_ENTITY);
+        CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 0);
+    }
+    // Epic is where the band mostly spawns epics: difficulty ~41.5 on the
+    // curve.
+    CHECK(!groundTakesSacrifice(40.0));
+    CHECK(groundTakesSacrifice(45.0));
+    CHECK(groundTakesSacrifice(100.0));
+
+    SuperBand world;
+    world.deal();
+    const Vec2 outside{world.band.x - 500.0, world.band.y - 500.0};
+    CHECK(world.sim.spawner
+              .summonSacrifice(world.sim.world, world.sim.terrain, shipped(), Rarity::Apex,
+                               outside, Realm::Overworld, world.sim.now, world.sim.rng)
+              .outcome == SpawnSystem::SacrificeOutcome::NoBand);
+
+    // One apex to a biome, however it came: a second summon waits for the
+    // first to die.
+    const Vec2 at{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5};
+    CHECK(world.sim.spawner
+              .summonSacrifice(world.sim.world, world.sim.terrain, shipped(), Rarity::Apex, at,
+                               Realm::Overworld, world.sim.now, world.sim.rng)
+              .outcome == SpawnSystem::SacrificeOutcome::Summoned);
+    CHECK(world.sim.spawner
+              .summonSacrifice(world.sim.world, world.sim.terrain, shipped(), Rarity::Apex, at,
+                               Realm::Overworld, world.sim.now, world.sim.rng)
+              .outcome == SpawnSystem::SacrificeOutcome::Taken);
+    CHECK_EQ(animalsOfRarity(world.sim.world, Rarity::Apex).size(), std::size_t(1));
+}
+
+TEST(hel_has_open_band_ground_to_lay_a_sacrifice_on) {
+    // Where the server puts Hel's sacrifice down: inside Hel's band, on open
+    // ground -- with the real tiles, so a wall is a wall.
+    Sim sim;
+    WorldMaps maps;
+    std::string error;
+    CHECK(maps.load(testsupport::dataDir(), &sim.terrain, error));
+    sim.spawner.worldMaps = &maps;
+    sim.tick({});
+    bool found = false;
+    const Realm hel = maps.realmOfId("hel", found);
+    CHECK(found);
+    for (int i = 0; i < 20; ++i) {
+        Vec2 at;
+        CHECK(sim.spawner.randomBandPoint(sim.terrain, hel, sim.rng, at));
+        CHECK(!sim.terrain.blocked(at, hel));
+        CHECK(sim.spawner.difficultyAt(hel, at) == kRandomDifficulty);
+    }
+}
+
 TEST(a_band_stocks_its_own_outline_and_never_the_open_ground_beside_it) {
     // This replaces "ambient mobs spawn inside the buffered viewport". The
     // viewport decides WHETHER a band fills, not WHERE its mobs land: the band
@@ -3310,6 +3410,14 @@ TEST(a_magic_petal_is_never_in_the_random_drop_pool) {
     CHECK(!shipped().isMagicForm(shipped().petalIndex("rose")));
 }
 
+TEST(no_random_drop_row_turns_into_a_sacrifice) {
+    // No `random` row turns into one (the shop's half is in menu_tests).
+    const std::uint16_t sacrifice = shipped().petalIndex("sacrifice");
+    CHECK(sacrifice != kInvalidIndex);
+    const DropTables tables = shippedTables();
+    for (const std::uint16_t index : tables.droppablePetals()) CHECK(index != sacrifice);
+}
+
 TEST(without_an_orb_a_mob_drops_exactly_what_its_table_says) {
     World world;
     CommandBuffer commands{world};
@@ -3554,6 +3662,41 @@ TEST(each_player_can_take_an_unrestricted_drop_once) {
     loot.run(world, grid, shipped(), rng, 1.0, 0.0, commands, events);
     commands.flush();
     CHECK_EQ(loot.pickups().size(), std::size_t(0));
+}
+
+TEST(a_single_copy_drop_goes_to_the_first_human_and_no_bot) {
+    // Hel's sacrifice: one petal for the whole server. A bot standing on it
+    // leaves it, and of two players reaching it on the same tick only one
+    // gets it.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(19);
+
+    const Entity bot = makePlayer(world, kCentre, 0.0, 1);
+    const Entity drop = loot.spawnDrop(world, shipped().petalIndex("sacrifice"), Rarity::Apex,
+                                       kCentre, Realm::Overworld, {});
+    world.get<DropItem>(drop).singleCopy = true;
+    world.get<DropItem>(drop).humansOnly = true;
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+    CHECK(world.isAlive(drop));
+    world.destroy(bot);
+
+    const Entity first = makePlayer(world, kCentre, 0.0, 2);
+    world.add<PlayerAccount>(first, PlayerAccount{"acct-1", "one", 41, false});
+    const Entity second = makePlayer(world, kCentre, 0.0, 3);
+    world.add<PlayerAccount>(second, PlayerAccount{"acct-2", "two", 42, false});
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 1.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK(!world.isAlive(drop));
 }
 
 TEST(magnetism_widens_the_pickup_radius_without_moving_the_drop) {

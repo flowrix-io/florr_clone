@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 51;
+inline constexpr std::uint16_t kProtocolVersion = 52;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -585,6 +585,10 @@ enum SpawnFlags : std::uint8_t {
     /// It is what Settings' Hide Other Petals and Hide Other Pets read, with
     /// SpawnIsPet telling the two apart. (Version 42.)
     SpawnForeign    = 1 << 6,
+    /// A mob a sacrifice summoned -- or a body segment or ring seed of one. It
+    /// keeps its colour under its ritual's grey star, which greys every other
+    /// mob under it. (Version 52.)
+    SpawnSacrificed = 1 << 7,
 };
 
 // ---------------------------------------------------------------------------
@@ -695,6 +699,10 @@ enum EntityState : std::uint8_t {
     /// two can never be on the same record. (Version 49.)
     StateUnloaded  = 1 << 4,
     StateAttacking = 1 << 5,   ///< a flower's petals pushed out
+    /// A sacrifice's ritual (Effect of kind Sacrifice) whose pentagram is
+    /// complete and whose mob is out: drawn whole, not traced. Shares the bit
+    /// with StateAttacking, which only a flower sets. (Version 52.)
+    StateRitualComplete = 1 << 5,
     StateDead      = 1 << 6,   ///< playing its death animation
     /// A mob that has locked on. Costs no bytes -- it rides in the state byte
     /// that was already being sent -- and is what makes a chasing bug beat its

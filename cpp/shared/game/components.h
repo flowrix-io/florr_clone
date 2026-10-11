@@ -1198,9 +1198,46 @@ struct DropItem {
     /// copy; the world entity remains for the others until all have collected.
     std::vector<LootClaim> eligible;
     std::vector<LootClaim> pickedUpBy;
+    /// One copy in all, to whoever reaches it first, rather than one per
+    /// eligible player (or one per player, with nobody eligible). Hel's
+    /// sacrifice, which is one petal on the ground for the whole server.
+    bool singleCopy = false;
+    /// Bots walk past it: a petal the whole server is racing for is not a
+    /// bot's to take.
+    bool humansOnly = false;
 };
 
-enum class GroundEffectKind : std::uint8_t { Poison = 0, Web = 1, Radiation = 2 };
+/// `Sacrifice` is not a field at all -- nothing reads a GroundEffect for it --
+/// but it rides the Effect wire kind with the others: see SacrificeRitual.
+enum class GroundEffectKind : std::uint8_t { Poison = 0, Web = 1, Radiation = 2, Sacrifice = 3 };
+
+/// A sacrifice being answered: the ritual laid where a flower died wearing one.
+///
+/// Streamed as an Effect of kind Sacrifice at `radius`, turned to a random
+/// angle. The client draws a grey star of that radius -- five times the
+/// mob's -- that turns everything under it grey but flowers, petals and the
+/// summoned mob itself (net::SpawnSacrificed), and over it a pentagram in
+/// legendary red the size of the mob, traced over kSacrificeRitualMillis. When
+/// the tracing is done the server summons the mob at the centre, and the
+/// ritual stands until that mob is dead.
+struct SacrificeRitual {
+    std::uint16_t mobIndex = 0;
+    Rarity rarity = Rarity::Common;
+    double summonAtMillis = 0;
+    /// The grey star's: kSacrificeRitualRadiusScale times the summoned mob's
+    /// radius, the nominal one until it stands, then its body's.
+    double radius = 0;
+    /// The mob, once summoned. NULL_ENTITY while the pentagram is being drawn.
+    Entity mob = NULL_ENTITY;
+    /// Who spent it, for the notices: their connection, or 0.
+    std::uint32_t ownerConnection = 0;
+};
+
+/// How long the pentagram takes to draw before the mob is summoned.
+inline constexpr double kSacrificeRitualMillis = 5000.0;
+/// The grey star's radius over the summoned mob's. The red pentagram is the
+/// mob's own size: the star's radius over this.
+inline constexpr double kSacrificeRitualRadiusScale = 5.0;
 
 /// When a mob last threw a lightning strike.
 ///
@@ -1347,6 +1384,7 @@ FLIX_COMPONENT(flix::RingAnchor);
 FLIX_COMPONENT(flix::Projectile);
 FLIX_COMPONENT(flix::Lifetime);
 FLIX_COMPONENT(flix::DropItem);
+FLIX_COMPONENT(flix::SacrificeRitual);
 FLIX_COMPONENT(flix::GroundEffect);
 FLIX_COMPONENT(flix::LightningBurst);
 FLIX_COMPONENT(flix::LightningClock);

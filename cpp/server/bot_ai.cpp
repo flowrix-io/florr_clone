@@ -1993,6 +1993,7 @@ void GameServer::botSense(Bot& bot, double nowMillis, BotSenses& out) {
             // alone -- which is right: a bot's body is not rebuilt for the
             // same player, it is replaced by a different flower entirely.
             if (claimed(drop->pickedUpBy, bot.entity, 0)) continue;
+            if (drop->humansOnly) continue;
             // Only chase what this bot actually earned: a drop with a
             // reservation list is reserved.
             if (!drop->eligible.empty() && !claimed(drop->eligible, bot.entity, 0)) continue;

@@ -221,6 +221,8 @@ void DropTables::resolve(const ContentRegistry& content) {
         const PetalConfig& petal = content.petal(index);
         if (petal.isAdminPetal) continue;
         if (petal.id == "cutter" || petal.id == "lightning_cutter") continue;
+        // Hel's alone to hand out; see petalIsSacrifice.
+        if (petalIsSacrifice(petal)) continue;
         // A magic petal is CONVERTED into, never dropped. Leaving it in the
         // pool would put an apex magic leaf in front of a flower wearing a
         // common orb, straight past the gate the orb exists to be.
@@ -303,6 +305,9 @@ bool LootSystem::mayPickUp(const DropItem& drop, Entity player, net::ConnectionI
     // and the walk back still collects what was reserved for them -- and
     // still cannot collect it twice by dying again. See LootClaim.
     if (claimed(drop.pickedUpBy, player, owner)) return false;
+    // Gone to the first taker, even before the destroy is flushed: two
+    // flowers reaching it on the same tick do not both get it.
+    if (drop.singleCopy && !drop.pickedUpBy.empty()) return false;
     return drop.eligible.empty() || claimed(drop.eligible, player, owner);
 }
 
@@ -491,6 +496,8 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, Re
     if (distanceSq(at->position, playerPosition) > reachSq) return;
     const PlayerAccount* taker = world.tryGet<PlayerAccount>(player);
     const net::ConnectionId owner = taker != nullptr ? taker->connection : 0;
+    // A bot's body carries no connection; see DropItem::humansOnly.
+    if (drop->humansOnly && owner == 0) return;
     if (!mayPickUp(*drop, player, owner)) return;
 
     const Pickup pickup{player, drop->configIndex, drop->rarity};
@@ -504,8 +511,8 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, Re
                         drop->configIndex, drop->rarity);
     }
     drop->pickedUpBy.push_back(LootClaim{player, owner});
-    bool finished = false;
-    if (!drop->eligible.empty()) {
+    bool finished = drop->singleCopy;
+    if (!finished && !drop->eligible.empty()) {
         finished = std::all_of(drop->eligible.begin(), drop->eligible.end(),
                                [&](const LootClaim& claim) {
                                    return claimed(drop->pickedUpBy, claim.body, claim.owner);

@@ -378,6 +378,16 @@ TEST(a_bought_talent_survives_a_reconnect) {
 // The shop
 // ---------------------------------------------------------------------------
 
+TEST(the_shop_never_stocks_a_sacrifice) {
+    // Hel's alone to hand out: a sacrifice at a tier the market deals in
+    // would be a boss for a handful of stars.
+    CHECK(ensureShippedContent());
+    const std::uint16_t sacrifice = content().petalIndex("sacrifice");
+    CHECK(sacrifice != kInvalidIndex);
+    CHECK(!shopSellsPetal(sacrifice));
+    CHECK(shopSellsPetal(content().petalIndex("rose")));
+}
+
 TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
     CHECK(ensureShippedContent());
     const double common = shopPrice("basic", Rarity::Common);

@@ -1671,5 +1671,23 @@
         "color": "#3498DB",
         "count": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-14.25 -14.25 28.5 28.5\"><circle r=\"14\" fill=\"#bdc3c7\"/><circle r=\"11\" fill=\"#3498db\"/><path d=\"M11 0 0-4 0 4Z\" fill=\"#e74c3c\"/><path d=\"M-11 0 0-4 0 4Z\" fill=\"#ecf0f1\"/><circle r=\"2.8\" fill=\"#bdc3c7\"/></svg>"
+    },
+    "sacrifice": {
+        "name": "Sacrifice",
+        "damage": 0,
+        "health": null,
+        "size": 1,
+        "speed": 0,
+        "range": 0,
+        "cooldown": 1,
+        "price": 2000,
+        "fixedDirection": 0,
+        "visualOffsetY": -1e+100,
+        "visual_scale": 1.41,
+        "description": "On death, summons a mob to fight again.\nMob type depends on where the sacrifice happens.\nCannot be used in low mob rarity areas.",
+        "color": "#FF3333",
+        "count": 0,
+        "noPhysics": true,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-8.5 -14.1 17 28.2\"><path transform=\"scale(0.059)translate(-256 -256)\" d=\"M263.844 40.344C234.1 213.202 145.594 248.03 145.594 369.22c0 60.804 60.106 105.5 118.25 105.5 59.45 0 115.937-41.803 115.937-99.533 0-116.332-85.2-162.312-115.936-334.843z\" fill=\"#ff3333\" stroke=\"#cf2929\" stroke-width=\"40\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
     }
 }

@@ -35,6 +35,8 @@ std::uint32_t skinIdHash(const std::string& id) {
 /// ground, not the reach of its dust.
 double replicatedRadius(World& world, Entity e) {
     if (const Body* body = world.tryGet<Body>(e)) return body->radius;
+    // A sacrifice's star, which is twice the mob it summons.
+    if (const SacrificeRitual* ritual = world.tryGet<SacrificeRitual>(e)) return ritual->radius;
     if (const GroundEffect* effect = world.tryGet<GroundEffect>(e)) {
         if (effect->kind == GroundEffectKind::Web && effect->radius > 0.0) return effect->radius;
     }
@@ -111,6 +113,11 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
         if (nowMillis < ai->stingLoadedAtMillis) state |= net::StateUnloaded;
     }
     if (world.has<Dead>(e)) state |= net::StateDead;
+    // A sacrifice whose pentagram is drawn and whose mob is out. See
+    // net::StateRitualComplete.
+    if (const SacrificeRitual* ritual = world.tryGet<SacrificeRitual>(e)) {
+        if (ritual->mob != NULL_ENTITY) state |= net::StateRitualComplete;
+    }
 
     return state;
 }

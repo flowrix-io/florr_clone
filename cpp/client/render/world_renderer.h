@@ -354,6 +354,12 @@ private:
     void drawHitbox(Canvas&, const RemoteEntity&, const Camera&, Vec2 at) const;
     void drawEffects(Canvas&, const Camera&) const;
     void drawLightning(Canvas&, const Camera&) const;
+    /// Every sacrifice ritual in view: its star turns what lies under it grey,
+    /// and its legendary-red pentagram, a fifth of the star's size, is traced
+    /// over it. Run after the mob bodies and before the flowers and the mob
+    /// the sacrifice summoned (net::SpawnSacrificed), so everything under the
+    /// star but those is grey.
+    void drawSacrificeRituals(Canvas&, const EntityMap&, const Camera&) const;
 
     /// One loot drop: the shadow backdrop, the rarity plate, the petal and the
     /// item's name, all in world units. `rotation`, `scale` and `alpha` are
@@ -637,6 +643,10 @@ private:
     /// need a clock (the invulnerability fade, the damage-number throttle) do
     /// not each invent one.
     double nowSeconds_ = 0;
+    /// When each sacrifice ritual in view was first drawn, by net id: the
+    /// pentagram is traced over kSacrificeRitualMillis from then. A ritual
+    /// first seen already complete (StateRitualComplete) is drawn whole.
+    mutable std::unordered_map<std::uint32_t, double> ritualSeen_;
     /// The clock at the previous ingest, which is the only place a frame's
     /// length is available to the shimmer's per-frame emission roll.
     double lastIngestSeconds_ = 0;
