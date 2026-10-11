@@ -1,6 +1,6 @@
 {
-  "name": "florrclone",
-  "version": "0.5.0",
+  "name": "flixcpp",
+  "version": "2026.10.10bw",
   "scripts": {
     "svg2skin": "node scripts/svg-to-skin.js",
     "build": "FLIX_BUILD=release node scripts/build-web.js all",

@@ -445,10 +445,14 @@ constexpr ChangelogEntry kChangelog[] = {
       "New petal: Carrot"
       }
     },
-    {"October 8, 2026",
+    {"October 10, 2026",
       {
         "Added debug console for certain devices",
         "DO NOT USE DEBUG CONSOLE FOR CHEATING OR YOU WILL GET BANNED",
+        "New petal: Sacrifice",
+        "All consumable items are converted to petals",
+        "Fixed target dummies being too large",
+        "Fixed pets being too large"
       }
     }
 };
