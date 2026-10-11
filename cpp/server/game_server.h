@@ -880,6 +880,10 @@ private:
     /// Answers every ritual whose pentagram is complete with its mob, and takes
     /// away every ritual whose mob is dead.
     void serviceSacrificeRituals(double nowMillis);
+    /// Every ritual's grey star, from the moment it is laid until its mob is
+    /// dead, kills each summon inside it and reloads the petal that hatched
+    /// it, and reloads each egg on a ring that reaches into it.
+    void sweepSacrificeStars(const std::vector<Entity>& rituals, double nowMillis);
     /// Flags a summoned mob, its body and its ring net::SpawnSacrificed.
     void markSacrificed(Entity mob);
     /// The no-guild answer, which is the browser's `guildUpdate null`.

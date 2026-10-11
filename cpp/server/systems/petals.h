@@ -212,8 +212,19 @@ public:
     /// False for a slot that is empty, out of the active row, or already
     /// reloading -- which is also the "was this click allowed" answer the
     /// caller needs, so the check and the act stay one thing.
+    ///
+    /// `recallSummons` false leaves the slot's pets where they are: the
+    /// sacrifice's star reloads an egg it touches without reaching for pets
+    /// standing outside it.
     bool spendSlot(World& world, const ContentRegistry& registry, Entity player,
-                   std::uint8_t slot, double nowMillis);
+                   std::uint8_t slot, double nowMillis, bool recallSummons = true);
+
+    /// Put the petal that hatched `pet` back on its reload, as a summon
+    /// retired for wandering off does. For whoever ends a pet from outside
+    /// the ring -- the sacrifice's star. No-op on anything that is not a pet
+    /// or whose owner has nothing equipped that hatches it.
+    void reloadHatcher(World& world, const ContentRegistry& registry, Entity pet,
+                       double nowMillis);
 
     /// A yggdrasil raised `revived` off the ground.
     ///

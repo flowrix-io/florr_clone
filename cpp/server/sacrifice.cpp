@@ -21,7 +21,9 @@
 #include <cstdio>
 #include <string>
 
+#include "server/systems/combat.h"
 #include "server/systems/loot.h"
+#include "server/systems/petals.h"
 #include "server/systems/spawning.h"
 #include "server/text.h"
 #include "shared/game/config.h"
@@ -230,10 +232,58 @@ void GameServer::markSacrificed(Entity mob) {
     });
 }
 
+void GameServer::sweepSacrificeStars(const std::vector<Entity>& rituals, double nowMillis) {
+    if (rituals.empty()) return;
+    const auto inStar = [&](const Transform& at) {
+        for (const Entity e : rituals) {
+            const Transform& star = world_.get<Transform>(e);
+            if (star.realm == at.realm &&
+                insideSacrificeStar(star.position, star.angle,
+                                    world_.get<SacrificeRitual>(e).radius, at.position)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Summons first: killed where they stand, and the egg that hatched each
+    // goes back on its reload. Collected before anything is touched, because
+    // reloading a slot destroys the petals on it.
+    std::vector<Entity> pets;
+    Query<Pet, Transform> summons{world_};
+    summons.without<Dead>();
+    summons.each([&](Entity pet, Pet&, Transform& at) {
+        if (inStar(at)) pets.push_back(pet);
+    });
+    for (const Entity pet : pets) {
+        petals_->reloadHatcher(world_, content(), pet, nowMillis);
+        combat_->fell(world_, pet, NULL_ENTITY);
+    }
+
+    // Then the eggs themselves: a summoning petal on a ring that reaches into
+    // the star is put on its reload. Its pets standing outside stay out.
+    struct Egg {
+        Entity owner;
+        std::uint8_t slot;
+    };
+    std::vector<Egg> eggs;
+    Query<PetalInstance, Transform> petals{world_};
+    petals.without<Dead>();
+    petals.each([&](Entity, PetalInstance& instance, Transform& at) {
+        if (content().petal(instance.configIndex).petMobIndex == kInvalidIndex) return;
+        if (inStar(at)) eggs.push_back({instance.owner, instance.slot});
+    });
+    for (const Egg& egg : eggs) {
+        // A second grain of the same slot finds it already reloading.
+        petals_->spendSlot(world_, content(), egg.owner, egg.slot, nowMillis, false);
+    }
+}
+
 void GameServer::serviceSacrificeRituals(double nowMillis) {
     Query<SacrificeRitual, Transform> rituals{world_};
     std::vector<Entity> list;
     rituals.collect(list);
+    sweepSacrificeStars(list, nowMillis);
     for (const Entity e : list) {
         SacrificeRitual& ritual = world_.get<SacrificeRitual>(e);
         if (ritual.mob == NULL_ENTITY) {

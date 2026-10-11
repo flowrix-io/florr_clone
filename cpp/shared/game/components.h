@@ -1242,6 +1242,30 @@ inline constexpr double kSacrificeRitualMillis = 5000.0;
 /// The grey star's radius over the summoned mob's. The red pentagram is the
 /// mob's own size: the star's radius over this.
 inline constexpr double kSacrificeRitualRadiusScale = 5.0;
+/// The grey star's inner corners over its points: where a pentagram's lines
+/// cross, the golden-ratio inset 1 / phi^2.
+inline constexpr double kSacrificeStarInner = 0.38196601125;
+
+/// Whether `point` lies inside the grey star of a ritual at `centre`, turned
+/// to `facing` (point 0 along it) with its points at `radius` -- the shape the
+/// client fills, not its circle. The star is drawn round its centre, so the
+/// point is inside exactly when it is on the centre's side of the one edge
+/// whose wedge it falls in.
+inline bool insideSacrificeStar(Vec2 centre, double facing, double radius, Vec2 point) {
+    const Vec2 offset = point - centre;
+    if (!(offset.lengthSq() <= radius * radius)) return false;
+    constexpr double kStep = kTau / 10.0;
+    double along = std::fmod(offset.angle() - facing, kTau);
+    if (along < 0.0) along += kTau;
+    const int corner = std::min(9, static_cast<int>(along / kStep));
+    const auto at = [&](int k) {
+        return Vec2::fromAngle(facing + k * kStep, k % 2 == 0 ? radius : radius * kSacrificeStarInner);
+    };
+    const Vec2 a = at(corner);
+    const Vec2 edge = at(corner + 1) - a;
+    const auto cross = [&](Vec2 v) { return edge.x * v.y - edge.y * v.x; };
+    return cross(offset - a) * cross(-a) >= 0.0;
+}
 
 /// When a mob last threw a lightning strike.
 ///

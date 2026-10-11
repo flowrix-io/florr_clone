@@ -239,3 +239,117 @@ TEST(hel_lays_one_apex_sacrifice_on_its_clock_for_the_first_human_to_find) {
     drops.each([&](Entity, DropItem& d) { sacrifices += d.configIndex == sacrifice ? 1 : 0; });
     CHECK_EQ(sacrifices, 1);
 }
+
+TEST(the_sacrifice_star_is_the_grey_star_not_its_circle) {
+    const Vec2 centre{100.0, -50.0};
+    const double facing = 0.7;
+    const double r = 200.0;
+    const auto along = [&](double turn, double reach) {
+        return centre + Vec2::fromAngle(facing + turn * kTau, reach);
+    };
+    CHECK(insideSacrificeStar(centre, facing, r, centre));
+    // Out along a point, nearly to its tip.
+    for (int k = 0; k < 5; ++k) CHECK(insideSacrificeStar(centre, facing, r, along(k / 5.0, r * 0.95)));
+    // Between two points: in up to the inner corner, out past it.
+    for (int k = 0; k < 5; ++k) {
+        CHECK(insideSacrificeStar(centre, facing, r, along((k + 0.5) / 5.0, r * kSacrificeStarInner * 0.95)));
+        CHECK(!insideSacrificeStar(centre, facing, r, along((k + 0.5) / 5.0, r * kSacrificeStarInner * 1.05)));
+        CHECK(!insideSacrificeStar(centre, facing, r, along((k + 0.5) / 5.0, r * 0.9)));
+    }
+    CHECK(!insideSacrificeStar(centre, facing, r, along(0.0, r * 1.01)));
+}
+
+TEST(a_sacrifice_star_kills_the_summons_in_it_and_reloads_the_eggs_in_it) {
+    Harness h("sacrifice-star", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::uint16_t egg = content().petalIndex("soldier_ant_egg");
+    if (egg == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient bob;
+    CHECK(loginNew(h, bob, "bob", "hunter2!"));
+    bob.joinGame(1280, 720, {}, "bob");
+    CHECK(h.stepUntil({&bob}, [&] { return bob.status() == NetClient::Status::Playing; }));
+    CHECK(h.server.grantAdmin(bob.sessionToken()));
+    bob.sendChat("/admin give bob soldier_ant_egg common 1");
+    CHECK(h.stepUntil({&bob}, [&] { return bob.profile().stackCount(egg, Rarity::Common) > 0; }));
+    bob.setLoadoutSlot(0, egg, Rarity::Common);
+
+    World& world = h.server.world();
+    const Entity body = soleBody(world, "bob");
+    if (body == NULL_ENTITY) { CHECK(false); return; }
+    const auto firstPet = [&] {
+        Entity found = NULL_ENTITY;
+        Query<Pet> pets{world};
+        pets.each([&](Entity e, Pet& pet) {
+            if (pet.owner == body && !world.has<Dead>(e) && found == NULL_ENTITY) found = e;
+        });
+        return found;
+    };
+    const auto eggsOut = [&] {
+        int n = 0;
+        Query<PetalInstance> petals{world};
+        petals.each([&](Entity e, PetalInstance& instance) {
+            if (instance.owner == body && instance.configIndex == egg && !world.has<Dead>(e)) ++n;
+        });
+        return n;
+    };
+    const auto ready = [&] {
+        return !world.get<Loadout>(body).slots[0].broken && eggsOut() > 0 && firstPet() != NULL_ENTITY;
+    };
+    CHECK(h.stepUntil({&bob}, ready, 600));
+    if (!ready()) return;
+
+    // A ritual laid by hand, its pentagram forever being drawn.
+    const auto layStar = [&](Vec2 at, double radius) {
+        SacrificeRitual ritual;
+        ritual.mobIndex = 0;
+        ritual.rarity = Rarity::Apex;
+        ritual.summonAtMillis = 1e18;
+        ritual.radius = radius;
+        const Entity e = world.create();
+        world.add<Transform>(e, Transform{at, 0.0, world.get<Transform>(body).realm});
+        world.add<SacrificeRitual>(e, ritual);
+        return e;
+    };
+
+    // A spot `reach` off the flower that it can see: a pet out of its owner's
+    // sight is teleported back beside it.
+    const auto inSight = [&](double reach) {
+        const Transform& at = world.get<Transform>(body);
+        for (int i = 0; i < 16; ++i) {
+            const Vec2 spot = at.position + Vec2::fromAngle(i * kTau / 16.0, reach);
+            if (!h.server.terrain().blocked(spot, at.realm) &&
+                !h.server.terrain().segmentBlocked(at.position, spot, at.realm)) {
+                return spot;
+            }
+        }
+        return at.position + Vec2{reach, 0.0};
+    };
+
+    // A summon carried into a star away from its flower dies there, and its
+    // egg goes back on its reload.
+    Entity pet = firstPet();
+    Vec2 away = inSight(600.0);
+    world.get<Transform>(pet).position = away;
+    Entity star = layStar(away, 100.0);
+    h.step(1, {&bob});
+    CHECK(!world.isAlive(pet) || world.has<Dead>(pet));
+    CHECK(world.get<Loadout>(body).slots[0].broken);
+    CHECK(world.get<Loadout>(body).slots[0].reloadReadyAtMillis > h.clock);
+    CHECK_EQ(eggsOut(), 0);
+    world.destroy(star);
+
+    // An egg in a star reloads, and the summon it hatched, standing outside
+    // the star, is left alone.
+    CHECK(h.stepUntil({&bob}, ready, 600));
+    if (!ready()) return;
+    pet = firstPet();
+    away = inSight(600.0);
+    world.get<Transform>(pet).position = away;
+    star = layStar(world.get<Transform>(body).position, 300.0);
+    h.step(1, {&bob});
+    CHECK(world.get<Loadout>(body).slots[0].broken);
+    CHECK_EQ(eggsOut(), 0);
+    CHECK(world.isAlive(pet) && !world.has<Dead>(pet));
+    world.destroy(star);
+}

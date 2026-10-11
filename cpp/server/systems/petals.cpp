@@ -1189,7 +1189,7 @@ void PetalSystem::destroySlotPetals(World& world, Loadout& loadout, std::uint8_t
 }
 
 bool PetalSystem::spendSlot(World& world, const ContentRegistry& registry, Entity player,
-                            std::uint8_t slot, double nowMillis) {
+                            std::uint8_t slot, double nowMillis, bool recallSummons) {
     if (slot >= kLoadoutActiveSlots) return false;
     Loadout* loadout = world.tryGet<Loadout>(player);
     PetalSlotState* state = world.tryGet<PetalSlotState>(player);
@@ -1210,7 +1210,7 @@ bool PetalSystem::spendSlot(World& world, const ContentRegistry& registry, Entit
     const PetalStats stats = equippedPetalStats(registry, equippedPetal(registry, *loadout, slot));
     const double reload = reloadMillisFor(stats, reloadScaleOf(world, player));
     destroySlotPetals(world, *loadout, slot);
-    recallPets(world, slotState);
+    if (recallSummons) recallPets(world, slotState);
     // Not "the cluster was just destroyed": left set, the fold at the top of
     // the next tick charges every missing instance to the shared pool and
     // breaks a slot that is already serving this reload.
@@ -3102,6 +3102,18 @@ void PetalSystem::carryLoosePetalsAcrossRealms(World& world, Entity player) {
             }
         }
     }
+}
+
+void PetalSystem::reloadHatcher(World& world, const ContentRegistry& registry, Entity pet,
+                                double nowMillis) {
+    const Pet* tag = world.tryGet<Pet>(pet);
+    const MobType* type = world.tryGet<MobType>(pet);
+    if (tag == nullptr || type == nullptr || !world.isAlive(tag->owner)) return;
+    PetalSlotState* state = world.tryGet<PetalSlotState>(tag->owner);
+    Loadout* loadout = world.tryGet<Loadout>(tag->owner);
+    if (state == nullptr || loadout == nullptr) return;
+    reloadEggForPet(world, registry, *state, *loadout, type->configIndex,
+                    reloadScaleOf(world, tag->owner), nowMillis);
 }
 
 void PetalSystem::reloadEggForPet(World& world, const ContentRegistry& registry,

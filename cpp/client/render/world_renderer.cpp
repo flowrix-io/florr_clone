@@ -3974,9 +3974,6 @@ void WorldRenderer::drawSacrificeRituals(Canvas& canvas, const EntityMap& entiti
 
     const double zoom = camera.zoom();
     const Rect visible = camera.visibleWorld(0);
-    // The star's inner corners sit where a pentagram's lines cross: the
-    // golden-ratio inset, 1 / phi^2 of the points' radius.
-    constexpr double kInner = 0.38196601125;
     const std::uint32_t red = rarityColor(Rarity::Legendary);
 
     for (const auto& entry : entities) {
@@ -4013,7 +4010,7 @@ void WorldRenderer::drawSacrificeRituals(Canvas& canvas, const EntityMap& entiti
         // The grey star: the pentagram's own outline, filled with grey.
         canvas.beginPath();
         for (int i = 0; i < 10; ++i) {
-            const Vec2 p = point(i * 0.5, (i % 2 == 0) ? r : r * kInner);
+            const Vec2 p = point(i * 0.5, (i % 2 == 0) ? r : r * kSacrificeStarInner);
             if (i == 0) canvas.moveTo(static_cast<float>(p.x), static_cast<float>(p.y));
             else canvas.lineTo(static_cast<float>(p.x), static_cast<float>(p.y));
         }
