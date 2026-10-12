@@ -307,6 +307,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin announce", "A banner for every player (full admins): /admin announce <message>", true},
     {"/admin update", "Back up DB, install latest build from GitHub, restart: update [now|<N>(s|m|h)|status|cancel]", true},
     {"/admin change-maze", "Change the maze: change-maze [next|garden|desert|ocean|<dayNumber>]", true},
+    {"/admin sacrifice", "Lay Hel's Apex Sacrifice now, or say where it lies", true},
     {"/level-from-string", "Show what level a player named <name> would roll", false},
     {"/loadout-from-string", "Show the loadout a player named <name> would roll", false},
 };

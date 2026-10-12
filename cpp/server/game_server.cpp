@@ -356,6 +356,17 @@ std::string numberText(double value) {
     return buffer;
 }
 
+/// "@handle [Flower]" as chat credits a player with a deed: the account's
+/// handle in green, then the flower's name -- not the account's -- in yellow
+/// brackets. One rendering, so a boss kill and an apex pickup name the same
+/// player the same way.
+std::string creditedPlayerMarkup(const Session& session) {
+    const std::string playerName =
+        session.displayName.empty() ? session.username : session.displayName;
+    return "<span style=\"color: #00ff00;\">@" + session.username +
+           "</span> [<span style=\"color: yellow;\">" + playerName + "</span>]";
+}
+
 } // namespace
 
 // Outside the file's own namespace, and declared in game_server.h, because the
@@ -961,6 +972,12 @@ void GameServer::announceBossSpawns() {
         // place a boss becomes news and no way to add a spawn path that
         // produces one the server says nothing about.
         noteBossSighting(boss.entity, clockMillis_);
+        // A sacrifice's mob was announced as summoned by the ritual that
+        // brought it (announceSacrificeSummon), at any tier.
+        const Replicated* replicated = world_.tryGet<Replicated>(boss.entity);
+        if (replicated != nullptr && (replicated->spawnFlags & net::SpawnSacrificed) != 0) {
+            continue;
+        }
 
         // Underscores read as spaces in the reference's wording, so
         // `soldier_ant` announces itself as "soldier ant".
@@ -1014,6 +1031,7 @@ void GameServer::bankPickups() {
         if (net::Connection* connection = listener_.find(session->connection)) {
             sendProfile(*session, *connection);
         }
+        announceRarePickup(*session, pickup.petalIndex, pickup.rarity);
     }
 }
 
@@ -2993,13 +3011,23 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
         return;
     }
 
-    // The flower's name, not the account's, in the brackets -- the account is
-    // the @handle before them.
-    const std::string playerName =
-        session->displayName.empty() ? session->username : session->displayName;
     broadcastChat(net::ChatChannel::System, "",
-                  opening + " by <span style=\"color: #00ff00;\">@" + session->username +
-                      "</span> [<span style=\"color: yellow;\">" + playerName + "</span>]</b>");
+                  opening + " by " + creditedPlayerMarkup(*session) + "</b>");
+}
+
+void GameServer::announceRarePickup(const Session& session, std::uint16_t petalIndex,
+                                    Rarity rarity) {
+    if (rarityIndex(rarity) < rarityIndex(Rarity::Apex)) return;
+    if (petalIndex >= content().petalCount()) return;
+    char colorAttribute[32];
+    std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(rarity));
+    // "The Universal", as the forge says it: there is only ever one of each
+    // petal at universal.
+    const char* article = rarity == Rarity::Universal ? "The" : "An";
+    broadcastChat(net::ChatChannel::System, "",
+                  std::string("<b style=\"color: ") + colorAttribute + ";\">" + article + " " +
+                      rarityLabel(rarity) + " " + content().petal(petalIndex).name +
+                      " has been collected by " + creditedPlayerMarkup(session) + "!</b>");
 }
 
 void GameServer::handleUpgradeSkill(Session& session, net::Connection& connection,

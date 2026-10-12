@@ -2612,6 +2612,58 @@ TEST(termites_out_in_the_open_share_a_hit_with_the_ones_near_them) {
     }, 10));
 }
 
+TEST(an_apex_pickup_is_announced_with_the_kill_lines_credit) {
+    // Picking up an apex petal tells the server, crediting the collector the
+    // way a boss kill credits its top dealer. A unique is collected silently.
+    Harness h("cmd-apex-pickup", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    const std::uint16_t rose = content().petalIndex("rose");
+    const auto dropUnder = [&](Rarity rarity) {
+        const Transform& at = world.get<Transform>(body);
+        const Entity drop = world.create();
+        world.add<DropTag>(drop);
+        world.add<Transform>(drop, Transform{at.position, 0.0, at.realm});
+        world.add<Body>(drop, Body{10.0, 1.0});
+        DropItem item;
+        item.configIndex = rose;
+        item.rarity = rarity;
+        world.add<DropItem>(drop, std::move(item));
+        world.add<Lifetime>(drop, Lifetime{30.0});
+        world.add<Replicated>(drop, Replicated{net::EntityKind::Drop, 0, rose, rarity, 0});
+    };
+
+    dropUnder(Rarity::Unique);
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.profile().stackCount(rose, Rarity::Unique) == 1;
+    }, 120));
+    h.step(10, {&client});
+    CHECK(!sawText(client, "has been collected by"));
+
+    dropUnder(Rarity::Apex);
+    CHECK(h.stepUntil({&client}, [&] {
+        return sawText(client, "<b style=\"color: #ff00ff;\">An Apex Rose has been collected by "
+                               "<span style=\"color: #00ff00;\">@boss</span> "
+                               "[<span style=\"color: yellow;\">Boss</span>]!</b>");
+    }, 120));
+}
+
 TEST(a_boss_no_player_killed_is_still_announced) {
     // Nobody to credit -- a boss finished by poison with no flower behind it,
     // the same as one a mob killed -- still gets its line in chat, just

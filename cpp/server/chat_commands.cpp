@@ -819,7 +819,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "backup_db [list], db [username] (open the database editor; full admins "
                     "only), update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
                     "DB first, then installs latest build + restarts), change-maze "
-                    "[next|garden|desert|ocean|&lt;dayNumber&gt;]";
+                    "[next|garden|desert|ocean|&lt;dayNumber&gt;], sacrifice (lay Hel's "
+                    "Apex Sacrifice now)";
         }
         out(help);
         return true;
@@ -2664,6 +2665,11 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
     if (verb == "change-maze" || verb == "change_maze") {
         out(adminChangeMaze(rest));
+        return;
+    }
+
+    if (verb == "sacrifice" || verb == "spawn_sacrifice" || verb == "spawn-sacrifice") {
+        out(adminPlaceSacrifice());
         return;
     }
 

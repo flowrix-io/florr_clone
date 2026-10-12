@@ -872,6 +872,20 @@ private:
     /// spawn nor re-deals the wait. One on the ground at a time: a clock that
     /// runs out while the last one is still lying there just deals again.
     void serviceSacrificeSpawn(double nowMillis);
+    /// Whether Hel's sacrifice is lying on the ground right now.
+    bool sacrificeLying() const;
+    /// Hel's name as the sacrifice lines say it.
+    std::string sacrificeMapLabel(Realm hel) const;
+    /// Lays one Apex Sacrifice at a random point of Hel's bands and tells the
+    /// server. The drop, or NULL_ENTITY with no Hel, no petal or no room.
+    /// Does not check for one already lying there; the caller does.
+    Entity placeSacrifice();
+    /// The console's `sacrifice`: placeSacrifice now, the clock untouched, or
+    /// where the one already lying is. The answer for the console.
+    std::string adminPlaceSacrifice();
+    /// "A <tier> <mob> has been summoned[ somewhere]!", per recipient: no
+    /// "somewhere" for a player standing in the summon's own biome.
+    void announceSacrificeSummon(Entity mob, Realm realm);
     /// A flower that has just died: if a sacrifice is on its active bar, the
     /// best of them is spent and a ritual laid where it fell (SacrificeRitual),
     /// which summons a mob of that ground once its pentagram is drawn. On
@@ -974,6 +988,10 @@ private:
     /// is never announced.
     void announceBossDefeat(Entity mob, const MobType&,
                             const std::vector<Bounty::Share>& ranked);
+    /// Broadcasts "An Apex <petal> has been collected by @handle [Flower]!"
+    /// for a ground pickup at apex or above, the player credited exactly as a
+    /// boss kill credits them. Anything below apex is silent.
+    void announceRarePickup(const Session&, std::uint16_t petalIndex, Rarity rarity);
     /// The world half of a yggdrasil revival has already happened when this is
     /// called; the SESSION half is here -- a body whose death was announced
     /// needs that announcement retracted, or its next death is silent, and the

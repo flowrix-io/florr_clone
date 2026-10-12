@@ -9,6 +9,7 @@
 
 #include "server/game_server.h"
 #include "server/systems/spawning.h"
+#include "server/text.h"
 #include "server_harness.h"
 #include "shared/game/config.h"
 #include "shared/game/map_elements.h"
@@ -238,6 +239,87 @@ TEST(hel_lays_one_apex_sacrifice_on_its_clock_for_the_first_human_to_find) {
     Query<DropItem> drops{world};
     drops.each([&](Entity, DropItem& d) { sacrifices += d.configIndex == sacrifice ? 1 : 0; });
     CHECK_EQ(sacrifices, 1);
+}
+
+TEST(a_summon_is_announced_as_summoned_and_somewhere_outside_its_biome) {
+    Harness h("sacrifice-summon-line", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::uint16_t sacrifice = content().petalIndex(kSacrificePetalId);
+    if (sacrifice == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient alice;
+    NetClient bob;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    CHECK(loginNew(h, bob, "bob", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    bob.joinGame(1280, 720, kMazeSpawnChoice, "bob");
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        return alice.status() == NetClient::Status::Playing &&
+               bob.status() == NetClient::Status::Playing;
+    }));
+    CHECK(wearSacrifice(h, alice, "alice", sacrifice));
+
+    World& world = h.server.world();
+    const Entity body = soleBody(world, "alice");
+    if (body == NULL_ENTITY) { CHECK(false); return; }
+    Vec2 at;
+    if (!overworldBandPoint(h.server, true, at)) { CHECK(false); return; }
+    world.get<Transform>(body).position = at;
+
+    kill(world, body);
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return apexMobsNear(world, at, 400.0) == 1; }));
+    const std::vector<Entity> rituals = ritualsIn(world);
+    if (rituals.size() != 1) { CHECK(false); return; }
+    const Entity mob = world.get<SacrificeRitual>(rituals.front()).mob;
+    if (mob == NULL_ENTITY) { CHECK(false); return; }
+    const std::string named =
+        "A Apex " + spokenMobName(content().mob(world.get<MobType>(mob).configIndex).id);
+
+    // Alice fell in the summon's biome; bob is in the maze.
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        return sawText(alice, named + " has been summoned!") &&
+               sawText(bob, named + " has been summoned somewhere!");
+    }));
+    // ...and not also as an ordinary boss spawn.
+    h.step(5, {&alice, &bob});
+    CHECK(!sawText(alice, named + " has spawned"));
+    CHECK(!sawText(bob, named + " has spawned"));
+}
+
+TEST(the_console_lays_hels_sacrifice_now) {
+    Harness h("sacrifice-console", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    bool found = false;
+    const Realm hel = h.server.worldMaps().realmOfId("hel", found);
+    CHECK(found);
+
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+    CHECK(h.server.grantAdmin(alice.sessionToken()));
+
+    // Its clock a day off, so only the command can be what lays it.
+    GameServerPeer::windSacrificeClock(h.server, h.clock + 24.0 * 3600.0 * 1000.0);
+    const double readyAt = GameServerPeer::sacrificeReadyMillis(h.server);
+    CHECK(GameServerPeer::sacrificeDrop(h.server) == NULL_ENTITY);
+
+    alice.sendChat("/admin sacrifice");
+    CHECK(h.stepUntil({&alice}, [&] { return sawText(alice, "Placed one in"); }));
+    const Entity drop = GameServerPeer::sacrificeDrop(h.server);
+    World& world = h.server.world();
+    CHECK(drop != NULL_ENTITY && world.isAlive(drop));
+    if (drop == NULL_ENTITY) return;
+    CHECK(world.get<Transform>(drop).realm == hel);
+    CHECK(world.get<DropItem>(drop).rarity == Rarity::Apex);
+    CHECK(world.get<DropItem>(drop).singleCopy);
+    CHECK(sawText(alice, "Sacrifice has appeared somewhere in"));
+    CHECK_EQ(GameServerPeer::sacrificeReadyMillis(h.server), readyAt);
+
+    // Asked again, it says where the first one lies rather than laying two.
+    alice.sendChat("/admin sacrifice");
+    CHECK(h.stepUntil({&alice}, [&] { return sawText(alice, "One is already lying in"); }));
+    CHECK(GameServerPeer::sacrificeDrop(h.server) == drop);
 }
 
 TEST(the_sacrifice_star_is_the_grey_star_not_its_circle) {

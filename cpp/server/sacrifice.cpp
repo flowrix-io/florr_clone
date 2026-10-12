@@ -54,7 +54,7 @@ void GameServer::serviceSacrificeSpawn(double nowMillis) {
     const std::uint16_t petal = content().petalIndex(kSacrificePetalId);
     if (petal == kInvalidIndex) return;
     bool found = false;
-    const Realm hel = worldMaps_.realmOfId(kSacrificeMapId, found);
+    worldMaps_.realmOfId(kSacrificeMapId, found);
     if (!found) return;
 
     // The wall clock is the only one two runs share; this run's clock is
@@ -77,32 +77,7 @@ void GameServer::serviceSacrificeSpawn(double nowMillis) {
     if (nowMillis >= sacrificeReadyMillis_) {
         // One on the ground at a time. The last one still lying there is the
         // server's sacrifice for this turn too; the clock just deals again.
-        const bool lying = sacrificeDrop_ != NULL_ENTITY && world_.isAlive(sacrificeDrop_) &&
-                           world_.has<DropItem>(sacrificeDrop_);
-        Vec2 at;
-        if (!lying && spawning_->randomBandPoint(*terrain_, hel, sacrificeRng_, at)) {
-            sacrificeDrop_ = loot_->spawnDrop(world_, petal, kSacrificeSpawnRarity, at, hel, {});
-            if (sacrificeDrop_ != NULL_ENTITY) {
-                DropItem& item = world_.get<DropItem>(sacrificeDrop_);
-                item.singleCopy = true;
-                item.humansOnly = true;
-                world_.get<Lifetime>(sacrificeDrop_).remainingSeconds =
-                    kSacrificeDropLifetimeSeconds;
-
-                const MapData* map = worldMaps_.forRealm(hel);
-                const std::string where =
-                    map != nullptr && !map->displayName().empty() ? map->displayName() : "Hel";
-                char color[16];
-                std::snprintf(color, sizeof color, "#%06x", rarityColor(kSacrificeSpawnRarity));
-                broadcastChat(net::ChatChannel::System, "",
-                              std::string("<b style=\"color: ") + color + ";\">An " +
-                                  rarityLabel(kSacrificeSpawnRarity) + " " +
-                                  content().petal(petal).name + " has appeared somewhere in " +
-                                  where + "!</b>");
-                std::printf("[SACRIFICE] placed in %s at (%.0f, %.0f)\n", where.c_str(), at.x,
-                            at.y);
-            }
-        }
+        if (!sacrificeLying()) placeSacrifice();
         sacrificeReadyMillis_ = nowMillis + sacrificeRng_.unit() * kSacrificeSpawnMaxGapMillis;
     }
 
@@ -113,6 +88,62 @@ void GameServer::serviceSacrificeSpawn(double nowMillis) {
         database_.rawTable(kSacrificeTable) = std::move(entry);
         database_.markDirty();
     }
+}
+
+bool GameServer::sacrificeLying() const {
+    return sacrificeDrop_ != NULL_ENTITY && world_.isAlive(sacrificeDrop_) &&
+           world_.has<DropItem>(sacrificeDrop_);
+}
+
+std::string GameServer::sacrificeMapLabel(Realm hel) const {
+    const MapData* map = worldMaps_.forRealm(hel);
+    return map != nullptr && !map->displayName().empty() ? map->displayName() : "Hel";
+}
+
+Entity GameServer::placeSacrifice() {
+    const std::uint16_t petal = content().petalIndex(kSacrificePetalId);
+    if (petal == kInvalidIndex) return NULL_ENTITY;
+    bool found = false;
+    const Realm hel = worldMaps_.realmOfId(kSacrificeMapId, found);
+    if (!found) return NULL_ENTITY;
+    Vec2 at;
+    if (!spawning_->randomBandPoint(*terrain_, hel, sacrificeRng_, at)) return NULL_ENTITY;
+    sacrificeDrop_ = loot_->spawnDrop(world_, petal, kSacrificeSpawnRarity, at, hel, {});
+    if (sacrificeDrop_ == NULL_ENTITY) return NULL_ENTITY;
+
+    DropItem& item = world_.get<DropItem>(sacrificeDrop_);
+    item.singleCopy = true;
+    item.humansOnly = true;
+    world_.get<Lifetime>(sacrificeDrop_).remainingSeconds = kSacrificeDropLifetimeSeconds;
+
+    const std::string where = sacrificeMapLabel(hel);
+    char color[16];
+    std::snprintf(color, sizeof color, "#%06x", rarityColor(kSacrificeSpawnRarity));
+    broadcastChat(net::ChatChannel::System, "",
+                  std::string("<b style=\"color: ") + color + ";\">An " +
+                      rarityLabel(kSacrificeSpawnRarity) + " " + content().petal(petal).name +
+                      " has appeared somewhere in " + where + "!</b>");
+    std::printf("[SACRIFICE] placed in %s at (%.0f, %.0f)\n", where.c_str(), at.x, at.y);
+    return sacrificeDrop_;
+}
+
+std::string GameServer::adminPlaceSacrifice() {
+    // Hel's own placement, run now instead of when its clock says, and the
+    // clock left alone. Still one on the ground at a time: a test that wants
+    // a second has to pick the first one up.
+    bool found = false;
+    const Realm hel = worldMaps_.realmOfId(kSacrificeMapId, found);
+    if (!found || content().petalIndex(kSacrificePetalId) == kInvalidIndex) {
+        return "There is no Hel map or no sacrifice petal staged.";
+    }
+    const bool lying = sacrificeLying();
+    const Entity drop = lying ? sacrificeDrop_ : placeSacrifice();
+    if (drop == NULL_ENTITY) return "Found nowhere in " + sacrificeMapLabel(hel) + " to lay it.";
+    const Vec2 at = world_.get<Transform>(drop).position;
+    char coordinates[64];
+    std::snprintf(coordinates, sizeof coordinates, "(%.0f, %.0f)", at.x, at.y);
+    return std::string(lying ? "One is already lying in " : "Placed one in ") +
+           sacrificeMapLabel(hel) + " at " + coordinates + ".";
 }
 
 void GameServer::offerSacrifice(Session& session, Entity corpse) {
@@ -218,6 +249,28 @@ void GameServer::offerSacrifice(Session& session, Entity corpse) {
     if (connection != nullptr) sendProfile(session, *connection);
 }
 
+void GameServer::announceSacrificeSummon(Entity mob, Realm realm) {
+    const MobType& type = world_.get<MobType>(mob);
+    const std::string name = spokenMobName(content().mob(type.configIndex).id);
+    char colorAttribute[32];
+    std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(type.rarity));
+    const std::string biome = biomeOfRealm(realm);
+    // Worded per recipient, as a boss spawn is: a player in the summon's own
+    // biome is told it was summoned, everyone else that it was summoned
+    // "somewhere".
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        if (!session.playing()) continue;
+        net::Connection* connection = listener_.find(session.connection);
+        if (connection == nullptr) continue;
+        const bool here = !biome.empty() && biomeOfEntity(session.entity) == biome;
+        sendChatTo(*connection, net::ChatChannel::System, "",
+                   std::string("<b style=\"color: ") + colorAttribute + ";\">A " +
+                       rarityLabel(type.rarity) + " " + name + " has been summoned" +
+                       (here ? "" : " somewhere") + "!</b>");
+    }
+}
+
 void GameServer::markSacrificed(Entity mob) {
     if (Replicated* replicated = world_.tryGet<Replicated>(mob)) {
         replicated->spawnFlags |= net::SpawnSacrificed;
@@ -310,6 +363,7 @@ void GameServer::serviceSacrificeRituals(double nowMillis) {
             if (const Body* body = world_.tryGet<Body>(mob)) {
                 placed.radius = body->radius * kSacrificeRitualRadiusScale;
             }
+            announceSacrificeSummon(mob, at.realm);
             if (Session* session = sessionFor(owner)) {
                 if (net::Connection* connection = listener_.find(session->connection)) {
                     const MobType& type = world_.get<MobType>(mob);
