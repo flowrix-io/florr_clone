@@ -168,10 +168,11 @@ public:
 
     /// The hit flash `netId` wears right now, premultiplied, for
     /// Canvas::setColorTint; alpha zero when it wears none. florr's: every
-    /// Damage event lays 150 ms of colour over the body, white for its first
-    /// tenth and red after, fading linearly from an intensity set by the share
-    /// of max health the hit took, and the hits in flight are composited over
-    /// one another oldest first.
+    /// frame's Damage events lay 150 ms of colour over the body, white for its
+    /// first tenth and red after, fading linearly from an intensity set by the
+    /// share of max health they took (share^0.5 -- florr's is steeper), and
+    /// the flashes in flight are composited over one another oldest first,
+    /// never past half strength (kHitFlashMaxAlpha).
     Color hitTint(std::uint32_t netId) const;
 
     /// How far, in screen (design) units, the world is pushed this frame by
@@ -660,8 +661,11 @@ private:
     /// Damage event was ingested and the intensity it flashes at. Stamped
     /// with the clock of the frame that first DRAWS it (see update()), so the
     /// white first tenth is on screen rather than spent before the frame.
+    /// `share` is the total of the hits it stands for: every Damage event
+    /// ingested before that frame folds into the one unstamped flash.
     struct HitFlash {
         double atSeconds = -1.0;
+        double share = 0.0;
         float intensity = 0.0f;
     };
     std::unordered_map<std::uint32_t, std::vector<HitFlash>> hitFlashes_;

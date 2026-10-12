@@ -514,16 +514,24 @@ Rect intersection(Rect a, Rect b) {
 // The hit flash, read out of florr's client (the entity's tint list and the
 // handler for its damage message). Its damage message carries a byte; what
 // florr's server packs into it is not in the client, and this server sends
-// the hit's share of max health, which is what the curve below reads well on.
+// the hit's share of max health.
 /// How long one hit colours the body.
 constexpr double kHitFlashSeconds = 0.150;
 /// The share of a flash's life, counted from the end, still drawn white
 /// rather than red: the first 15 ms.
 constexpr double kHitFlashWhiteFrom = 0.9;
-/// intensity = clamp(share^0.2, 0.1, 1): a hit for a hundredth of the bar
-/// still flashes at 0.4, and a hit for nothing at all still shows.
-constexpr double kHitFlashExponent = 0.2;
+/// intensity = clamp(share^0.5, 0.1, 1): a hit for a hundredth of the bar or
+/// less flashes at the floor, a tenth at 0.32, and a hit for nothing at all
+/// still shows. florr's curve is share^0.2 on a byte, which is steep at the
+/// bottom: a chip for half a percent of the bar -- an apex leaf on an ultra
+/// termite overmind -- flashed at a third, over a body that fills the
+/// screen, while the super, a step under 1/255, sat at the floor.
+constexpr double kHitFlashExponent = 0.5;
 constexpr double kHitFlashFloor = 0.1;
+/// The strongest the composited tint ever gets, as an alpha: florr's goes to
+/// full white, and a body hit hard and often strobes white at that. Every
+/// hit's colour still lands -- the whole tint is scaled down under this.
+constexpr double kHitFlashMaxAlpha = 0.5;
 /// More hits than a full ring lands in 150 ms, many times over. florr's list
 /// is unbounded; past this the oldest goes, which at these alphas is invisible.
 constexpr std::size_t kMaxHitFlashes = 64;
@@ -694,12 +702,23 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     // of the bar is a zero that flashes at the floor.
                     const double share =
                         std::floor(clamp(event.radius, 0.0, 1.0) * 255.0) / 255.0;
-                    HitFlash hit;
-                    hit.intensity = static_cast<float>(clamp(
-                        std::pow(share, kHitFlashExponent), kHitFlashFloor, 1.0));
+                    // Everything a body takes before the next frame is ONE
+                    // flash, for the total. A colony splits each swing over
+                    // every termite in reach and reports each share as its
+                    // own hit, so a termite in a cluster -- the overmind,
+                    // whose reach is the longest, most of all -- took a
+                    // flash for every swing at any of its neighbours, each
+                    // at the floor's tenth at least, and twenty of those
+                    // laid over each other wash the body out to white.
                     std::vector<HitFlash>& hits = hitFlashes_[event.netId];
-                    if (hits.size() >= kMaxHitFlashes) hits.erase(hits.begin());
-                    hits.push_back(hit);
+                    if (hits.empty() || hits.back().atSeconds >= 0.0) {
+                        if (hits.size() >= kMaxHitFlashes) hits.erase(hits.begin());
+                        hits.emplace_back();
+                    }
+                    HitFlash& hit = hits.back();
+                    hit.share = std::min(1.0, hit.share + clamp(event.radius, 0.0, 1.0));
+                    hit.intensity = static_cast<float>(clamp(
+                        std::pow(hit.share, kHitFlashExponent), kHitFlashFloor, 1.0));
                     // The viewer's own flower being hit shakes the screen.
                     const auto self = view.entities().find(event.netId);
                     if (self != view.entities().end() && self->second.isSelf()) {
@@ -1130,6 +1149,15 @@ Color WorldRenderer::hitTint(std::uint32_t netId) const {
         tint.g = over(tint.g, white ? 255 : 0, alpha);
         tint.b = over(tint.b, white ? 255 : 0, alpha);
         tint.a = over(tint.a, 255, alpha);
+    }
+    // Premultiplied, so dimming it is scaling every channel alike.
+    constexpr int kMaxAlpha = static_cast<int>(kHitFlashMaxAlpha * 255.0);
+    if (tint.a > kMaxAlpha) {
+        const float scale = static_cast<float>(kMaxAlpha) / static_cast<float>(tint.a);
+        const auto dim = [scale](std::uint8_t channel) {
+            return static_cast<std::uint8_t>(static_cast<int>(channel * scale + 0.5f));
+        };
+        tint = Color{dim(tint.r), dim(tint.g), dim(tint.b), static_cast<std::uint8_t>(kMaxAlpha)};
     }
     return tint;
 }
