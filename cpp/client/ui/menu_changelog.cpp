@@ -454,6 +454,14 @@ constexpr ChangelogEntry kChangelog[] = {
         "Fixed target dummies being too large",
         "Fixed pets being too large"
       }
+    },
+    {"October 11, 2026",
+      {
+        "Added termite ant hell",
+        "Completely reworked pets",
+        "Added screen shake",
+        "Added damage flash"
+      }
     }
 };
 
