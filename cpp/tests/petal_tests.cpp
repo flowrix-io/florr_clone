@@ -3215,6 +3215,83 @@ TEST(a_squad_of_the_same_mob_neither_counts_nor_recalls_timed_summons) {
     CHECK(timedPetCount(rig.world) >= 3);
 }
 
+TEST(eggs_of_one_type_stack_a_squad_each) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "summoner");
+    rig.equip(1, "summoner");
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 4; }));
+    rig.tick(60);
+    CHECK_EQ(rig.petCount(), std::size_t(4));
+    int fromFirst = 0;
+    int fromSecond = 0;
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        const int slot = rig.world.get<Pet>(pet).slot;
+        if (slot == 0) ++fromFirst;
+        if (slot == 1) ++fromSecond;
+    }
+    CHECK_EQ(fromFirst, 2);
+    CHECK_EQ(fromSecond, 2);
+
+    // Losing one of the second egg's pair rebuilds that pair alone, and leaves
+    // the first egg's squad standing.
+    std::vector<Entity> first;
+    for (const Entity pet : pets.collect()) {
+        if (rig.world.get<Pet>(pet).slot == 0) first.push_back(pet);
+    }
+    for (const Entity pet : pets.collect()) {
+        if (rig.world.get<Pet>(pet).slot == 1) {
+            rig.world.destroy(pet);
+            break;
+        }
+    }
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 4; }));
+    for (const Entity pet : first) CHECK(rig.world.isAlive(pet));
+
+    // Unequipping one egg takes back its own pair only.
+    rig.unequip(1);
+    rig.tick();
+    CHECK_EQ(rig.petCount(), std::size_t(2));
+    for (const Entity pet : first) CHECK(rig.world.isAlive(pet));
+}
+
+TEST(a_lost_pet_reloads_the_egg_that_hatched_it_and_no_other) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "summoner");
+    rig.equip(1, "summoner");
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 4; }));
+
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        if (rig.world.get<Pet>(pet).slot == 1) {
+            rig.world.get<MobAi>(pet).petRecall = true;
+            break;
+        }
+    }
+    rig.tick();
+    CHECK(!rig.slot(0).broken);
+    CHECK(rig.slot(1).broken);
+}
+
+TEST(a_row_of_eggs_stops_at_thirty_pets) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    // Two from a common egg, then six an apex egg: 2 + 6 * 4 = 26 leaves the
+    // next apex egg room for four of its six, and the rest none.
+    rig.equip(0, "summoner");
+    for (int i = 1; i < kLoadoutActiveSlots; ++i) rig.equip(i, "summoner", Rarity::Apex);
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 30; }));
+    // And it holds there: the same thirty, not a squad cut short by the cap
+    // being recalled and re-hatched every tick.
+    Query<Pet> pets{rig.world};
+    const std::vector<Entity> before = pets.collect();
+    rig.tick(100);
+    CHECK_EQ(rig.petCount(), std::size_t(30));
+    for (const Entity pet : before) CHECK(rig.world.isAlive(pet));
+}
+
 TEST(unequipping_a_summoner_recalls_its_pets) {
     if (!contentLoaded()) return;
     Rig rig;

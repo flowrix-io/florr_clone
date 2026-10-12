@@ -462,21 +462,22 @@ private:
     /// heading, clear of its body, and outside the walls.
     Vec2 loosePetalRestPoint(World& world, Entity player, const Transform& owner,
                              double radius) const;
-    /// Put the petal that hatches `mobIndex` back on its reload, if one is
-    /// equipped and not already reloading. `reloadScale` is the owner's Reload
-    /// talent: the slot state and loadout arrive here as references rather than
-    /// as the player they belong to, so the tree has to come with them.
+    /// Put the egg in slot `hatchedBy` back on its reload, if it still hatches
+    /// `mobIndex` and is not already reloading. `reloadScale` is the owner's
+    /// Reload talent: the slot state and loadout arrive here as references
+    /// rather than as the player they belong to, so the tree has to come with
+    /// them.
     void reloadEggForPet(World& world, const ContentRegistry& registry, PetalSlotState& state,
-                         Loadout& loadout, std::uint16_t mobIndex, double reloadScale,
-                         double nowMillis);
+                         Loadout& loadout, std::uint8_t hatchedBy, std::uint16_t mobIndex,
+                         double reloadScale, double nowMillis);
 
     /// `rarity` is the EQUIPPED petal's tier, which is what the pet inherits:
     /// the config's own `petMobRarity` is written in the JSON and read by
     /// nothing.
     ///
-    /// The whole ring state rather than the one slot's: a summon is counted,
-    /// replaced and capped per PLAYER and per mob type, so two stick slots
-    /// share one pair of sandstorms rather than keeping a pair each.
+    /// The whole ring state rather than the one slot's: a squad is counted and
+    /// replaced per SLOT, so eggs of one type stack -- two sticks keep a pair
+    /// of sandstorms each -- but capped per PLAYER (kMaxPetEntitiesPerPlayer).
     void maintainPets(World& world, const ContentRegistry& registry, Entity player,
                       std::uint8_t slot, const PetalConfig& config, Rarity rarity,
                       PetalSlotState& state);
@@ -487,15 +488,17 @@ private:
                          std::uint8_t slot, const PetalConfig& config, const PetalStats& stats,
                          Rarity rarity, PetalSlotState& state, double nowMillis);
 
-    /// The player's live squad members of one mob type, over every slot.
-    /// Timed summons are not squad members and are not counted.
-    int countPetsOfType(World& world, const PetalSlotState& state, std::uint16_t mobIndex);
+    /// The live squad members of one mob type hatched by `slot`. Timed
+    /// summons are not squad members and are not counted.
+    int countPetsOfType(World& world, const PetalSlotState& state, std::uint8_t slot,
+                        std::uint16_t mobIndex);
     /// Everything the player has summoned, which is what the entity cap counts.
     int countOwnedPets(World& world, const PetalSlotState& state);
-    /// Take back every summon of one mob type, wherever it was hatched. The
-    /// reference clears the type before it summons, so a squad replaces its
-    /// predecessor instead of joining it. Timed summons are left out.
-    void recallPetsOfType(World& world, PetalSlotState& state, std::uint16_t mobIndex);
+    /// Take back `slot`'s summons of one mob type, and the bodies of any that
+    /// are chain heads, so a squad replaces its predecessor instead of joining
+    /// it. Timed summons are left out, and so is every other slot's squad.
+    void recallPetsOfType(World& world, PetalSlotState& state, std::uint8_t slot,
+                          std::uint16_t mobIndex);
     /// Put `count` summons of `mobIndex` on the field around `at`, filed under
     /// `slot`. Stops short at the per-player entity cap. `strength` multiplies
     /// their health and damage on top of `rarity`'s: strengthBoost() of the

@@ -64,13 +64,15 @@ constexpr double kRingAnchorSwitchGlideMillis = kPetalSpawnGlideMillis;
 /// universal egg hatches the same three, stronger (see summonPets).
 constexpr int kApexPetCount = 3;
 
-/// Live summons one player may hold, counting every slot's squad together.
+/// Live summons one player may hold, counting every slot's squad together --
+/// and every segment of a summoned centipede, which is a body in the world
+/// like any other.
 ///
-/// Far above any ordinary loadout: it is a backstop against deliberate
-/// stacking, which is what the reference records it as -- a full row of eggs
-/// hatching multi-entity pets put hundreds of mobs in the world per player and
-/// stalled the tick loop until the proxy answered 502.
-constexpr int kMaxPetEntitiesPerPlayer = 50;
+/// Eggs of one type stack (maintainPets), so this is what bounds a row of
+/// them: the reference records a full row of eggs hatching multi-entity pets
+/// putting hundreds of mobs in the world per player and stalling the tick loop
+/// until the proxy answered 502.
+constexpr int kMaxPetEntitiesPerPlayer = 30;
 
 /// The flower petal cracks on the mob it touches: nineteen breaks in twenty
 /// open onto a squad of glitch flowers, and the twentieth takes the flower
@@ -3046,13 +3048,14 @@ void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registr
             const std::uint16_t mobIndex = type ? type->configIndex : kInvalidIndex;
             const Pet* tag = world.tryGet<Pet>(pet);
             const bool timed = tag != nullptr && tag->expiresAtMillis > 0.0;
+            const std::uint8_t hatchedBy = tag != nullptr ? tag->slot : 0;
             // Destroyed rather than killed: a summon that got lost has not
             // died, so it raises no death event and drops nothing.
             world.destroy(pet);
             // Its egg hatches a fresh one on the reload. A timed summon was
             // paid for in mana, one at a time, and is simply gone.
             if (!timed) {
-                reloadEggForPet(world, registry, *state, *loadout, mobIndex,
+                reloadEggForPet(world, registry, *state, *loadout, hatchedBy, mobIndex,
                                 reloadScaleOf(world, player), nowMillis);
             }
         }
@@ -3116,40 +3119,39 @@ void PetalSystem::reloadHatcher(World& world, const ContentRegistry& registry, E
     PetalSlotState* state = world.tryGet<PetalSlotState>(tag->owner);
     Loadout* loadout = world.tryGet<Loadout>(tag->owner);
     if (state == nullptr || loadout == nullptr) return;
-    reloadEggForPet(world, registry, *state, *loadout, type->configIndex,
+    reloadEggForPet(world, registry, *state, *loadout, tag->slot, type->configIndex,
                     reloadScaleOf(world, tag->owner), nowMillis);
 }
 
 void PetalSystem::reloadEggForPet(World& world, const ContentRegistry& registry,
-                                  PetalSlotState& state, Loadout& loadout,
+                                  PetalSlotState& state, Loadout& loadout, std::uint8_t hatchedBy,
                                   std::uint16_t mobIndex, double reloadScale, double nowMillis) {
-    if (mobIndex == kInvalidIndex) return;
-    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        const auto index = static_cast<std::size_t>(i);
-        LoadoutSlot& slot = loadout.slots[index];
-        // Keyed on the mob rather than on the slot the pet was filed under,
-        // and skipping a slot that is already reloading: two sticks that lose
-        // a sandstorm each pay one cycle each, and a pet nothing equipped can
-        // hatch -- a cracked flower's squad -- costs the ring nothing at all.
-        if (slot.empty() || slot.broken) continue;
-        const EquippedPetal equipped = equippedPetal(registry, loadout, i);
-        if (registry.petal(equipped.configIndex).petMobIndex != mobIndex) continue;
+    if (mobIndex == kInvalidIndex || hatchedBy >= kLoadoutActiveSlots) return;
+    // The egg the pet was filed under, and only that one: eggs of one type
+    // stack, so a second stick's pair is no business of the first stick's.
+    // Nothing is charged when that slot is already reloading, or no longer
+    // holds an egg of this mob -- a cracked flower's squad, or a queen's
+    // soldiers, cost the ring nothing at all.
+    const int i = hatchedBy;
+    const auto index = static_cast<std::size_t>(i);
+    LoadoutSlot& slot = loadout.slots[index];
+    if (slot.empty() || slot.broken) return;
+    const EquippedPetal equipped = equippedPetal(registry, loadout, i);
+    if (registry.petal(equipped.configIndex).petMobIndex != mobIndex) return;
 
-        const PetalStats stats = equippedPetalStats(registry, equipped);
-        const double reload = reloadMillisFor(stats, reloadScale);
-        PetalSlotState::Slot& slotState = state.slots[index];
-        destroySlotPetals(world, loadout, static_cast<std::uint8_t>(i));
-        // Not "the cluster was just destroyed": left set, the fold at the top
-        // of the next tick would charge every missing instance to the shared
-        // pool and break a slot that is already serving its reload.
-        slotState.populated = false;
-        if (slotState.independent) {
-            for (double& ready : slotState.instanceReadyAtMillis) ready = nowMillis + reload;
-        }
-        slot.broken = true;
-        slot.reloadReadyAtMillis = nowMillis + reload;
-        return;
+    const PetalStats stats = equippedPetalStats(registry, equipped);
+    const double reload = reloadMillisFor(stats, reloadScale);
+    PetalSlotState::Slot& slotState = state.slots[index];
+    destroySlotPetals(world, loadout, hatchedBy);
+    // Not "the cluster was just destroyed": left set, the fold at the top
+    // of the next tick would charge every missing instance to the shared
+    // pool and break a slot that is already serving its reload.
+    slotState.populated = false;
+    if (slotState.independent) {
+        for (double& ready : slotState.instanceReadyAtMillis) ready = nowMillis + reload;
     }
+    slot.broken = true;
+    slot.reloadReadyAtMillis = nowMillis + reload;
 }
 
 void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, Entity player,
@@ -3171,35 +3173,39 @@ void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, En
     const int wanted = std::max(0, config.petCount) * (apex ? kApexPetCount : 1);
     if (wanted <= 0) return;
 
-    // Counted per MOB TYPE across the whole player, never per slot. The
-    // reference asks how many of this mob the OWNER has out before it summons,
-    // so a second stick egg finds the first one's pair already there and
-    // hatches nothing; keying the count on the slot gave a full row of sticks
-    // twenty sandstorms where production shows two.
-    if (countPetsOfType(world, state, config.petMobIndex) >= wanted) return;
+    // Counted per SLOT: eggs of one type stack, so a second stick hatches a
+    // pair of its own beside the first one's. The reference counts per mob
+    // type across the owner, which made every egg past the first dead weight;
+    // the entity cap (kMaxPetEntitiesPerPlayer) is what bounds a full row.
+    const int current = countPetsOfType(world, state, slot, config.petMobIndex);
+    if (current >= wanted) return;
+    // A squad the cap cut short stays as it is: rebuilding it would recall
+    // and re-hatch the same few every tick, since the cap is what is missing,
+    // not the pets.
+    const int room = kMaxPetEntitiesPerPlayer - (countOwnedPets(world, state) - current);
+    if (room <= current) return;
 
     const Transform* ownerTransform = world.tryGet<Transform>(player);
     if (!ownerTransform) return;
     const Vec2 ownerPosition = ownerTransform->position;
 
-    // A squad REPLACES its predecessor rather than joining it: the reference
-    // clears every pet of the type before summoning, so a squad rebuilt after
-    // one of its members died comes back whole rather than as a mixture.
-    recallPetsOfType(world, state, config.petMobIndex);
+    // A squad REPLACES its predecessor rather than joining it: the slot's
+    // pets of the type are cleared before summoning, so a squad rebuilt after
+    // one of its members died comes back whole rather than as a mixture. Only
+    // this slot's -- another egg's squad is its own.
+    recallPetsOfType(world, state, slot, config.petMobIndex);
     summonPets(world, registry, player, slot, config.petMobIndex, petRarity, wanted, ownerPosition,
                state, strengthBoost(rarity));
 }
 
-int PetalSystem::countPetsOfType(World& world, const PetalSlotState& state,
+int PetalSystem::countPetsOfType(World& world, const PetalSlotState& state, std::uint8_t slot,
                                  std::uint16_t mobIndex) {
     if (mobIndex == kInvalidIndex) return 0;
     int count = 0;
-    for (const PetalSlotState::Slot& slot : state.slots) {
-        for (const Entity pet : slot.pets) {
-            if (!world.isAlive(pet) || world.has<Dead>(pet) || isTimedPet(world, pet)) continue;
-            const MobType* type = world.tryGet<MobType>(pet);
-            if (type != nullptr && type->configIndex == mobIndex) ++count;
-        }
+    for (const Entity pet : state.slots[static_cast<std::size_t>(slot)].pets) {
+        if (!world.isAlive(pet) || world.has<Dead>(pet) || isTimedPet(world, pet)) continue;
+        const MobType* type = world.tryGet<MobType>(pet);
+        if (type != nullptr && type->configIndex == mobIndex) ++count;
     }
     return count;
 }
@@ -3214,28 +3220,44 @@ int PetalSystem::countOwnedPets(World& world, const PetalSlotState& state) {
     return count;
 }
 
-void PetalSystem::recallPetsOfType(World& world, PetalSlotState& state, std::uint16_t mobIndex) {
+void PetalSystem::recallPetsOfType(World& world, PetalSlotState& state, std::uint8_t slot,
+                                   std::uint16_t mobIndex) {
     if (mobIndex == kInvalidIndex) return;
-    for (PetalSlotState::Slot& slot : state.slots) {
-        std::size_t kept = 0;
-        for (const Entity pet : slot.pets) {
-            // A summon the world has already reaped leaves its handle behind.
-            // Dropping it here is the only prune a slot whose petal summons
-            // nothing itself -- the flower's -- ever gets.
-            if (!world.isAlive(pet)) continue;
-            const MobType* type = world.tryGet<MobType>(pet);
-            // A magic stick's storms outlive a stick's squad being replaced:
-            // they were paid for one at a time and run out on their own clock.
-            if (type != nullptr && type->configIndex == mobIndex && !isTimedPet(world, pet)) {
-                // Destroyed, not marked Dead: a recalled summon has not been
-                // killed, so it must not raise a death event or drop anything.
-                world.destroy(pet);
-                continue;
-            }
-            slot.pets[kept++] = pet;
+    std::vector<Entity>& pets = state.slots[static_cast<std::size_t>(slot)].pets;
+    // A magic stick's storms outlive a stick's squad being replaced: they were
+    // paid for one at a time and run out on their own clock.
+    const auto recalled = [&](Entity pet) {
+        const MobType* type = world.tryGet<MobType>(pet);
+        return type != nullptr && type->configIndex == mobIndex && !isTimedPet(world, pet);
+    };
+    // A recalled centipede's body goes with its head, in the same pass, so
+    // the replacement is not held back by a body still counted to the cap.
+    const auto bodyOfRecalled = [&](Entity pet) {
+        const BodySegment* segment = world.tryGet<BodySegment>(pet);
+        return segment != nullptr && segment->chainHead != pet &&
+               world.isAlive(segment->chainHead) && recalled(segment->chainHead);
+    };
+    std::vector<Entity> doomed;
+    std::size_t kept = 0;
+    for (std::size_t i = 0; i < pets.size(); ++i) {
+        const Entity pet = pets[i];
+        // A summon the world has already reaped leaves its handle behind.
+        // Dropping it here is the only prune a slot whose petal summons
+        // nothing itself -- the flower's -- ever gets.
+        if (!world.isAlive(pet)) continue;
+        if (recalled(pet) || bodyOfRecalled(pet)) {
+            doomed.push_back(pet);
+            continue;
         }
-        slot.pets.resize(kept);
+        pets[kept++] = pet;
     }
+    pets.resize(kept);
+    // Destroyed after the walk, heads last, so every body could still find
+    // its head above. Destroyed, not marked Dead: a recalled summon has not
+    // been killed, so it must not raise a death event or drop anything.
+    std::stable_partition(doomed.begin(), doomed.end(),
+                          [&](Entity pet) { return !recalled(pet); });
+    for (const Entity pet : doomed) world.destroy(pet);
 }
 
 void PetalSystem::summonTimedPets(World& world, const ContentRegistry& registry, Entity player,
@@ -3526,7 +3548,7 @@ void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry
     // which would turn the three this petal promises into nine. Universal
     // with it, its sqrt(2) carried as strength.
     const Rarity petRarity = ladderRarity(rarity) == Rarity::Apex ? Rarity::Unique : rarity;
-    recallPetsOfType(world, *state, mobIndex);
+    recallPetsOfType(world, *state, slot, mobIndex);
     // At the PETAL, not at the flower: the squad lands on the mob that broke
     // it, which is the whole point of the petal.
     summonPets(world, registry, player, slot, mobIndex, petRarity, kFlowerPetCount, at, *state,
