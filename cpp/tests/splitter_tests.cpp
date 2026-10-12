@@ -598,3 +598,85 @@ TEST(a_join_over_a_split_that_lost_its_active_half_takes_the_other_half_out) {
     CHECK(!now.empty());
     for (const Entity body : now) CHECK(body != parked);
 }
+
+TEST(the_parked_half_taking_a_pad_leaves_the_client_where_it_is) {
+    // The parked half is a body of its own, so a shove can put it on a pad and
+    // the pad takes it. sessionForEntity matches EITHER half, and the crossing
+    // used to be reported to the client as if the steered half had made it:
+    // the session's realm flipped and a RealmChange loaded the far map under a
+    // flower that was still standing on this one. Only switching to the half
+    // over there may move the client.
+    const std::string dir = flix::testsupport::twoMapDataDir("splitterpad");
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+    Harness h("splitter-pad", {}, dir, 0);
+    if (!h.ready) { CHECK(false); flix::testsupport::removeDataDir(dir); return; }
+
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+    World& world = h.server.world();
+    const std::uint16_t splitter = content().petalIndex(kSplitterPetalId);
+    const MapData* overworld = h.server.worldMaps().forRealm(Realm::Overworld);
+    const MapElement* pad = nullptr;
+    if (overworld != nullptr) {
+        for (const MapElement& element : overworld->elements()) {
+            if (element.kind == MapElementKind::Teleporter && element.targetMap == "warren") {
+                pad = &element;
+            }
+        }
+    }
+    bool found = false;
+    const Realm warren = h.server.worldMaps().realmOfId("warren", found);
+    if (splitter == kInvalidIndex || pad == nullptr || !found) {
+        CHECK(false);
+        flix::testsupport::removeDataDir(dir);
+        return;
+    }
+
+    CHECK(equipSplitter(h, alice, "alice", splitter));
+    CHECK(h.stepUntil({&alice}, [&] { return bodiesNamed(world, "alice").size() == 2; }));
+    Session* session = GameServerPeer::sessionOf(h.server, "alice");
+    if (session == nullptr || !session->split()) {
+        CHECK(false);
+        flix::testsupport::removeDataDir(dir);
+        return;
+    }
+    const Entity active = session->entity;
+    const Entity parked = session->splitOther;
+    const std::uint32_t steered = alice.view().self().netId;
+    CHECK_EQ(steered, world.get<NetId>(active).value);
+    Vec2 arrival;
+    while (alice.takeRealmChange(arrival)) {}
+
+    // Held on the pad until it fires. A parked half has an empty input frame,
+    // so it stays where it is put.
+    world.get<Transform>(parked).position = pad->centre();
+    CHECK(h.stepUntil({&alice}, [&] { return world.get<Transform>(parked).realm == warren; }, 150));
+    h.step(10, {&alice});
+
+    // The steered half never moved, and nothing told the client it had.
+    CHECK(world.get<Transform>(active).realm == Realm::Overworld);
+    session = GameServerPeer::sessionOf(h.server, "alice");
+    CHECK(session != nullptr && session->realm == Realm::Overworld);
+    CHECK(!alice.takeRealmChange(arrival));
+    CHECK(alice.view().realm() == Realm::Overworld);
+    CHECK_EQ(alice.view().self().netId, steered);
+
+    // Switching to the half in the warren is what sends the client there.
+    CHECK(h.stepUntil({&alice}, [&] {
+        for (const Entity half : bodiesNamed(world, "alice")) {
+            if (world.get<Loadout>(half).slots[0].broken) return false;
+        }
+        return true;
+    }, 600));
+    alice.usePetal(0);
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().realm() == warren; }));
+    CHECK(h.stepUntil({&alice}, [&] {
+        return alice.view().self().netId == world.get<NetId>(parked).value;
+    }));
+    session = GameServerPeer::sessionOf(h.server, "alice");
+    CHECK(session != nullptr && session->realm == warren);
+    flix::testsupport::removeDataDir(dir);
+}

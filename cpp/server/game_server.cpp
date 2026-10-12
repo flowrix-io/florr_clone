@@ -5228,6 +5228,12 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
         if (botForEntity(entity) != nullptr) enforceSquadBiome(SquadMemberId::ofBot(entity));
         return;
     }
+    // The PARKED half of a split went through on its own. sessionForEntity
+    // matches either half, but the client is looking through the steered one,
+    // which has not moved: restating its view would load the far map under a
+    // flower still standing on this one. The parked half simply waits over
+    // there, and switching to it (switchSplitHalf) is what sends the client.
+    if (entity != session->entity) return;
     session->realm = realm;
     sendRealmChange(*session, position);
     enforceSquadBiome(squadIdOf(*session));
