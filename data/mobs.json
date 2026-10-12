@@ -1640,6 +1640,36 @@
         "light_radius": 2000,
         "hideRotation": true
     },
+    "sun_pet": {
+        "name": "Sun Pet",
+        "damage": 50,
+        "health": 35,
+        "size": 0.8333,
+        "visual_scale": 1.1406,
+        "speed": 0.1,
+        "chase_speed": 0.975,
+        "cooldown": 2000,
+        "xp": {
+            "common": 1,
+            "uncommon": 3,
+            "rare": 30,
+            "epic": 270,
+            "legendary": 1400,
+            "mythic": 32000,
+            "ultra": 150000,
+            "super": 1200000,
+            "unique": 6800000
+        },
+        "description": "How did you kill this???",
+        "color": "#ff0000",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ffe763\" stroke-width=\"4\" stroke=\"#cfbb50\"/>\n</svg>",
+        "ai_type": "passive",
+        "bee_ai": "always",
+        "range": 100,
+        "light_color": "#ffff00",
+        "emissive": true,
+        "hideRotation": true
+    },
     "server": {
         "name": "Server",
         "damage": 10,

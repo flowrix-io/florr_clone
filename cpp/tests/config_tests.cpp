@@ -196,6 +196,29 @@ TEST(the_catalogue_is_the_files_own_order_with_the_eggs_appended) {
     CHECK(!p.isAdminPetal);
     // A pet is not something that lays an egg.
     CHECK_EQ(r.petalIndex("soldier_ant_pet_egg"), kInvalidIndex);
+
+    // The sun egg hatches a bee wearing the sun's art: every stat a bee's at
+    // every tier, not the stationary giant the egg is named after.
+    const PetalConfig& sunEgg = r.petal(r.petalIndex("sun_egg"));
+    CHECK_EQ(sunEgg.petMobId, std::string("sun_pet"));
+    const std::uint16_t bee = r.mobIndex("bee");
+    const MobConfig& sunPet = r.mob(sunEgg.petMobIndex);
+    CHECK(sunPet.beeFlight == r.mob(bee).beeFlight);
+    CHECK(sunPet.beeChaseWeave == r.mob(bee).beeChaseWeave);
+    CHECK(sunPet.emissive);
+    for (int t = 0; t < kRarityCount; ++t) {
+        const MobStats a = r.mobStats(sunEgg.petMobIndex, static_cast<Rarity>(t));
+        const MobStats b = r.mobStats(bee, static_cast<Rarity>(t));
+        CHECK_EQ(a.health, b.health);
+        CHECK_EQ(a.damage, b.damage);
+        CHECK_EQ(a.radius, b.radius);
+        CHECK_EQ(a.mass, b.mass);
+        CHECK_EQ(a.speed, b.speed);
+        CHECK_EQ(a.chaseSpeed, b.chaseSpeed);
+        CHECK_EQ(a.xp, b.xp);
+        CHECK_EQ(a.aggroRange, b.aggroRange);
+        CHECK_EQ(a.attackCooldownMillis, b.attackCooldownMillis);
+    }
 }
 
 TEST(light_and_pollen_gain_petals_with_rarity) {
