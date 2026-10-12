@@ -1356,7 +1356,7 @@
     "drops": [
       {
         "type": "petal",
-        "itemType": "bone",
+        "itemType": "triangle",
         "rarity": "common",
         "probability": 0.25,
         "minQuantity": 1,

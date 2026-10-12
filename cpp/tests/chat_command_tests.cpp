@@ -2568,12 +2568,16 @@ TEST(termites_out_in_the_open_share_a_hit_with_the_ones_near_them) {
 
     const std::uint16_t worker = content().mobIndex("worker_termite");
     for (int i = 0; i < 3; ++i) adminSpawnAt(client, "worker_termite", "common", at + Vec2{0, 900.0 + 50 * i});
+    // Only the three spawned here: ant hell grows workers of its own.
+    const Realm home = world.get<Transform>(body).realm;
     std::vector<Entity> workers;
     CHECK(h.stepUntil({&client}, [&] {
         workers.clear();
-        Query<MobTag, MobType> mobs{world};
-        mobs.each([&](Entity e, MobTag&, MobType& type) {
-            if (type.configIndex == worker) workers.push_back(e);
+        Query<MobTag, MobType, Transform> mobs{world};
+        mobs.each([&](Entity e, MobTag&, MobType& type, Transform& where) {
+            if (type.configIndex != worker || where.realm != home) return;
+            if ((where.position - (at + Vec2{0, 950})).length() > 400) return;
+            workers.push_back(e);
         });
         return workers.size() == 3;
     }, 120));
