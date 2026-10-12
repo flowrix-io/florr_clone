@@ -2204,7 +2204,7 @@
         "name": "Termite Overmind",
         "damage": 10,
         "health": 500,
-        "size": 1.3333,
+        "size": 3,
         "visual_scale": 1.12,
         "speed": 0.44,
         "cooldown": 2000,
