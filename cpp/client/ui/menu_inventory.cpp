@@ -269,6 +269,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     TooltipLine hp{"HP: " + abbreviate(health), 12.0, kPaper,
                    config.description.empty() ? 10.0 : 4.0};
     hp.alpha = 0.56;
+    hp.labelColor = kStatHealth;
     hp.altText = "HP: " + exactNumber(health);
     lines.push_back(hp);
 
@@ -277,6 +278,9 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     const std::string damageLabel = config.lightningDamage ? "Lightning Damage: " : "Damage: ";
     TooltipLine hit{damageLabel + abbreviate(damage), 12.0};
     hit.alpha = 0.56;
+    // Florr names blueberry-style damage "Damage: X (lightning)" with the
+    // name in damage red (Petal/Attribute/Damage/Lightning), lightning or not.
+    hit.labelColor = kStatDamage;
     hit.altText = damageLabel + exactNumber(damage);
     // A tomato's hit grows while it is out, so the card gives the range it
     // grows through, as florr's does.
@@ -293,6 +297,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
                               exactNumber((stats.modifiers.maxHealth - 1.0) * 100.0) + "%",
                           12.0};
         bonus.alpha = 0.56;
+        bonus.labelColor = kStatHealth;
         lines.push_back(bonus);
     }
 
@@ -310,6 +315,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     if (stats.armorReduction > 0.0) {
         TooltipLine strip{"Armor Shred: -" + abbreviate(stats.armorReduction), 12.0};
         strip.alpha = 0.56;
+        strip.labelColor = kStatArmor;
         strip.altText = "Armor Shred: -" + exactNumber(stats.armorReduction);
         lines.push_back(strip);
     }
@@ -319,6 +325,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     if (stats.petalArmor > 0.0) {
         TooltipLine armor{"Armor: " + abbreviate(stats.petalArmor), 12.0};
         armor.alpha = 0.56;
+        armor.labelColor = kStatArmor;
         armor.altText = "Armor: " + exactNumber(stats.petalArmor);
         lines.push_back(armor);
     }
@@ -328,6 +335,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         const double crit = std::round(stats.critDamage * skills.effectScale(SkillId::Damage));
         TooltipLine bonus{"Crit Damage: +" + abbreviate(crit), 12.0};
         bonus.alpha = 0.56;
+        bonus.labelColor = kStatDamage;
         bonus.altText = "Crit Damage: +" + exactNumber(crit);
         lines.push_back(bonus);
     }
@@ -336,6 +344,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     if (stats.lifesteal > 0.0) {
         TooltipLine steal{"Lifesteal: " + exactNumber(stats.lifesteal * 100.0) + "%", 12.0};
         steal.alpha = 0.56;
+        steal.labelColor = kStatHeal;
         lines.push_back(steal);
     }
 
@@ -356,6 +365,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
                                 "% vs " + rarityLabel(rarity),
                             12.0};
         reflect.alpha = 0.56;
+        reflect.labelColor = kStatReflection;
         lines.push_back(reflect);
     }
 
@@ -371,6 +381,8 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         if (text.size() > 2 && text.compare(text.size() - 2, 2, ".0") == 0) {
             text.erase(text.size() - 2);
         }
+        // Uncoloured, as is "Mana per Summon": florr's cost rows
+        // (Petal/Attribute/SpawnManaCost) name themselves in generic.
         TooltipLine reload{"Mana per Reload: " + text, 12.0};
         reload.alpha = 0.56;
         lines.push_back(reload);
@@ -387,23 +399,27 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         TooltipLine span{"Summon Lifetime: " + exactNumber(config.petLifetimeMillis / 1000.0) + "s",
                          12.0};
         span.alpha = 0.56;
+        span.labelColor = kStatDuration;
         lines.push_back(span);
     }
     if (stats.maxMana > 0.0) {
         TooltipLine pool{"Max Mana: +" + abbreviate(stats.maxMana), 12.0};
         pool.alpha = 0.56;
+        pool.labelColor = kStatMana;
         pool.altText = "Max Mana: +" + exactNumber(stats.maxMana);
         lines.push_back(pool);
     }
     if (stats.mana > 0.0) {
         TooltipLine burst{"Mana Restored: " + abbreviate(stats.mana), 12.0};
         burst.alpha = 0.56;
+        burst.labelColor = kStatMana;
         burst.altText = "Mana Restored: " + exactNumber(stats.mana);
         lines.push_back(burst);
     }
     if (stats.passiveManaPerSecond > 0.0) {
         TooltipLine regen{"Mana/s: " + abbreviate(stats.passiveManaPerSecond), 12.0};
         regen.alpha = 0.56;
+        regen.labelColor = kStatMana;
         regen.altText = "Mana/s: " + exactNumber(stats.passiveManaPerSecond);
         lines.push_back(regen);
     }
@@ -414,6 +430,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         const double body = std::round(stats.bodyDamage);
         TooltipLine slam{"Body Damage: +" + abbreviate(body), 12.0};
         slam.alpha = 0.56;
+        slam.labelColor = kStatDamage;
         slam.altText = "Body Damage: +" + exactNumber(body);
         lines.push_back(slam);
     }

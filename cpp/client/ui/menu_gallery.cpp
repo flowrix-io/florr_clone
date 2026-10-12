@@ -779,16 +779,18 @@ bool GalleryPanel::render(MenuContext& ctx) {
             lines.push_back(std::move(body));
         }
         const double statGap = config.description.empty() ? 10.0 : 4.0;
-        const auto stat = [&](std::string body, double gapBefore) {
+        const auto stat = [&](std::string body, double gapBefore,
+                              std::optional<std::uint32_t> labelColor = std::nullopt) {
             TooltipLine line{std::move(body), 12.0, kPaper, gapBefore};
             line.alpha = 0.56;
+            line.labelColor = labelColor;
             lines.push_back(std::move(line));
         };
-        stat("HP: " + abbreviateNumber(stats.health), statGap);
-        stat("Damage: " + abbreviateNumber(stats.damage), 0.0);
+        stat("HP: " + abbreviateNumber(stats.health), statGap, kStatHealth);
+        stat("Damage: " + abbreviateNumber(stats.damage), 0.0, kStatDamage);
         // Skipped when it is nothing, because a zero here reads as a mob with
         // a weakness rather than one whose author simply wrote no armour.
-        if (stats.armor != 0.0) stat("Armor: " + abbreviateNumber(stats.armor), 0.0);
+        if (stats.armor != 0.0) stat("Armor: " + abbreviateNumber(stats.armor), 0.0, kStatArmor);
         // Only the evasive few carry one, and it is the reason the fly takes
         // ten swings to kill -- the card is the one place that can say so.
         if (stats.evasion > 0.0) {

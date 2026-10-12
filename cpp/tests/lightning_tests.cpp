@@ -238,20 +238,22 @@ std::vector<std::uint8_t> renderNumber(std::uint8_t flags) {
 } // namespace
 
 TEST(a_strikes_number_is_painted_cyan) {
-    // #00ffff: no red at all, and green and blue in equal measure. Asserted as
-    // a relation rather than as the literal -- see inkOf. This is the number
-    // the feature was asked for, so it is stated here rather than imported
-    // from the renderer: a constant a test reads out of the code under test
-    // cannot catch that code changing it.
+    // #36ffe7, the palette's lightning colour: green full, blue just under it
+    // (0.91), and a little red (0.21). Asserted as relations rather than as the
+    // literal -- see inkOf. This is the number the feature was asked for, so
+    // it is stated here rather than imported from the renderer: a constant a
+    // test reads out of the code under test cannot catch that code changing it.
     const Ink ink = inkOf(renderNumber(net::DamageLightning));
     CHECK(ink.pixels > 50);
     CHECK(ink.g > 0.0);
-    // A trace of red is the outline, which is a near-black grey and so
-    // contributes to all three channels alike. A tenth of the green is far
-    // below what a red-bearing fill would leave and far above the outline's
-    // own share.
-    CHECK(ink.r < ink.g * 0.1);
-    CHECK(std::fabs(ink.g - ink.b) < ink.g * 0.02);
+    // The outline is a near-black grey and so adds to all three channels
+    // alike, nudging both ratios up a little; the bands are wide enough for it
+    // and still shut out the old #00ffff (red ~0, blue == green) and the
+    // red-dominant hit colour.
+    CHECK(ink.r > ink.g * 0.12);
+    CHECK(ink.r < ink.g * 0.35);
+    CHECK(ink.b < ink.g * 0.97);
+    CHECK(ink.b > ink.g * 0.85);
 }
 
 TEST(an_ordinary_hit_and_a_poison_tick_keep_their_own_colours) {

@@ -20,12 +20,17 @@ inline constexpr std::uint32_t kPanelDark  = 0x4A8BC2u;  ///< matching panel bor
 inline constexpr std::uint32_t kAccent     = 0x1DD129u;  ///< Ready / primary action
 inline constexpr std::uint32_t kDanger     = 0xFF4444u;
 inline constexpr std::uint32_t kWarning    = 0xFFE65Du;
-/// Both decoded from the reference, not guessed: its HUD is one flattened
-/// layer over the world at kHudLayerAlpha, so a screenshot reads
+/// Every green bar in the game is this one green -- the HUD's track, a
+/// squadmate's, a mob's plate and the boss bar. Florr's own bar fill, read out
+/// of its native client (~/florr_images/client): the one bar painter
+/// (0x10078cb60, three callers) strokes the fill in a lerp whose t=0 end is
+/// 117/221/52 -- bytes in __const at 0x100a94e64 and 0x100a93360. It is NOT
+/// the tooltip's "Colors/health" (kStatHealth): florr keeps the two apart.
+inline constexpr std::uint32_t kHealth     = 0x75DD34u;
+/// Decoded from the reference, not guessed: its HUD is one flattened layer
+/// over the world at kHudLayerAlpha, so a screenshot reads
 /// `alpha*colour + (1-alpha)*ground` and the ground cancels out of two samples
-/// over different floors. Every green bar in the game is this one green -- the
-/// HUD's track, a squadmate's, a mob's plate and the boss bar all decode to it.
-inline constexpr std::uint32_t kHealth     = 0x67D42Cu;
+/// over different floors.
 inline constexpr std::uint32_t kHealthBack = 0x000000u;
 inline constexpr std::uint32_t kXpBar      = 0xECF857u;
 /// The mana bar, in the cyan petals.json paints every magic petal: the
@@ -58,6 +63,26 @@ inline constexpr std::uint32_t kSelection  = 0x3D7DD8u;
 /// colours in turn, and a blue one over the inventory's own blue is invisible
 /// at a glance even though it is technically there.
 inline constexpr std::uint32_t kSelectionPlate = 0x1E3A63u;
+
+/// What a stat is ABOUT, as the name of a tooltip stat row is coloured:
+/// "HP:" in health green, "Damage:" in damage red. Florr's `Colors/<name>`
+/// string table, verbatim from its web build (~/florr_images/client.wasm),
+/// whose `<Petal|Mob>/Attribute/<stat>` strings also say which stat takes
+/// which colour. Its `generic` (#FFE763) is deliberately not used yet. The
+/// floating damage numbers are painted in the damage, poison and lightning
+/// ones.
+inline constexpr std::uint32_t kStatHealth     = 0x66FF66u;
+inline constexpr std::uint32_t kStatDamage     = 0xFF6666u;
+inline constexpr std::uint32_t kStatArmor      = 0x666666u;
+inline constexpr std::uint32_t kStatDuration   = 0x6666FFu;
+inline constexpr std::uint32_t kStatHeal       = 0xFF94C9u;
+inline constexpr std::uint32_t kStatPoison     = 0xCE76DBu;
+inline constexpr std::uint32_t kStatLightning  = 0x36FFE7u;
+inline constexpr std::uint32_t kStatMana       = 0x42E3F5u;
+inline constexpr std::uint32_t kStatDanger     = 0xFF3333u;
+inline constexpr std::uint32_t kStatReflection = 0x999999u;
+inline constexpr std::uint32_t kStatPsionic    = 0xC7A138u;
+inline constexpr std::uint32_t kStatUndead     = 0x83B05Du;
 
 /// Menus and the title screen sit on this; the world has its own biome ground.
 inline constexpr std::uint32_t kBackdrop   = 0x00D885u;

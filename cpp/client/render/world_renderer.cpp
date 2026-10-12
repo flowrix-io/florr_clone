@@ -60,7 +60,7 @@ constexpr double kDamageTextThrottleSeconds = 0.1;
 /// The smallest mob damage total that is drawn: anything less rounds to "-0".
 /// Smaller totals keep accumulating until they reach it.
 constexpr double kMinShownDamage = 0.5;
-constexpr std::uint32_t kDamageTextColor = 0xFF6666u;
+constexpr std::uint32_t kDamageTextColor = ui::kStatDamage;
 
 /// A mob balloons to three times its size and fades out over this, which is
 /// the only feedback there is that something died.
@@ -302,15 +302,15 @@ void drawSparkleGrain(Canvas& canvas, const Camera& camera, const EffectParticle
 
 /// A poison tick is purple and stands 14 units to the right of the body, so a
 /// petal hit landing in the same tick cannot stack on top of it.
-constexpr std::uint32_t kPoisonTextColor = 0xCE76DBu;
+constexpr std::uint32_t kPoisonTextColor = ui::kStatPoison;
 constexpr double kPoisonNumberOffsetX = 14.0;
 
-/// A lightning strike's damage is cyan -- the colour of the bolt that dealt it.
+/// A lightning strike's damage is the lightning cyan the tooltips name it in.
 ///
 /// Not offset the way a poison tick is: a strike IS a landed hit, and it opens
 /// the victim's post-hit window, so nothing else can land on the same body in
 /// the same tick for it to stack on.
-constexpr std::uint32_t kLightningTextColor = 0x00FFFFu;
+constexpr std::uint32_t kLightningTextColor = ui::kStatLightning;
 
 /// Which floating number a hit belongs to.
 ///

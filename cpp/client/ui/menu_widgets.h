@@ -13,6 +13,7 @@
 // panel that owns the geometry.
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,10 @@ struct TooltipLine {
     /// Rendered instead of `text` while ALT is held: the exact value behind an
     /// abbreviated one. Empty means the row has no alternate.
     std::string altText;
+    /// Paints the row's name -- everything up to and including its first ':'
+    /// -- in this colour at full alpha, and leaves the value after it in
+    /// `color` at `alpha`. Empty paints the whole row in `color`.
+    std::optional<std::uint32_t> labelColor;
 
     TooltipLine(std::string body = {}, double size = 12.0, std::uint32_t color = kPaper,
                 double gapBefore = 0.0)

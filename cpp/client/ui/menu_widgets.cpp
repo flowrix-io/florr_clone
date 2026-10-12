@@ -99,6 +99,8 @@ struct TooltipRow {
     const TooltipLine* line;
     std::string text;
     double y;
+    /// The line's first row, the only one its label can be on.
+    bool first;
 };
 
 struct TooltipLayout {
@@ -166,7 +168,8 @@ TooltipLayout layoutRows(const std::vector<TooltipLine>& lines, bool alt) {
 
         for (std::string& piece : pieces) {
             out.textWidth = std::max(out.textWidth, measure(piece, line.size));
-            out.rows.push_back({&line, std::move(piece), y});
+            out.rows.push_back({&line, std::move(piece), y, out.rows.empty() ||
+                                                            out.rows.back().line != &line});
             y += rowHeight(line.size) + kTooltipLineGap;
         }
     }
@@ -224,8 +227,20 @@ Rect paintTooltip(Canvas& canvas, double x, double y, const std::vector<TooltipL
         // only anchor a tooltip row has ever been drawn at.
         TextStyle style = labelStyle(row.line->size, row.line->color);
         style.roundJoin = true;
-        paintRow(canvas, row.text, x + kTooltipPadX, y + kTooltipPadY + row.y, style,
-                 row.line->alpha);
+        double penX = x + kTooltipPadX;
+        const double top = y + kTooltipPadY + row.y;
+        const std::size_t colon = row.text.find(':');
+        if (row.first && row.line->labelColor && colon != std::string::npos) {
+            // The name is never dimmed -- only the value carries the row's alpha.
+            const std::string label = row.text.substr(0, colon + 1);
+            TextStyle named = style;
+            named.fill = *row.line->labelColor;
+            paintRow(canvas, label, penX, top, named, 1.0);
+            penX += measure(label, row.line->size);
+            paintRow(canvas, row.text.substr(colon + 1), penX, top, style, row.line->alpha);
+            continue;
+        }
+        paintRow(canvas, row.text, penX, top, style, row.line->alpha);
     }
     canvas.restore();
 
