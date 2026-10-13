@@ -1400,5 +1400,68 @@
         "maxQuantity": 1
       }
     ]
-  }
+  },
+    "skittering_rock": {
+    "guaranteed": true,
+    "drops": [
+        {
+            "type": "petal",
+            "itemType": "rock",
+            "rarity": "common",
+            "probability": 0.4,
+            "minQuantity": 1,
+            "maxQuantity": 1
+        }
+    ]
+},
+    "static_firefly": {
+    "guaranteed": true,
+    "drops": [
+        {
+            "type": "petal",
+            "itemType": "wing",
+            "rarity": "common",
+            "probability": 0.5,
+            "minQuantity": 1,
+            "maxQuantity": 1
+        },
+        {
+            "type": "petal",
+            "itemType": "bulb",
+            "rarity": "common",
+            "probability": 0.5,
+            "minQuantity": 1,
+            "maxQuantity": 1
+        },
+        {
+            "type": "petal",
+            "itemType": "battery",
+            "rarity": "common",
+            "probability": 0.1,
+            "minQuantity": 1,
+            "maxQuantity": 1
+        }
+    ]
+},
+    "echo_jellyfish": {
+    "guaranteed": true,
+    "drops": [
+        {
+            "type": "petal",
+            "itemType": "lightning",
+            "rarity": "common",
+            "probability": 0.43,
+            "minQuantity": 1,
+            "maxQuantity": 1
+        },
+        {
+            "type": "petal",
+            "itemType": "jelly",
+            "rarity": "common",
+            "probability": 0.41,
+            "minQuantity": 1,
+            "maxQuantity": 1
+        }
+    ]
+}
 }

@@ -11,6 +11,7 @@
 // one petal for one coin of its tier once a day, is held to the same.
 
 #include "test.h"
+#include "shared/game/casino.h"
 
 #include <cmath>
 #include <string>
@@ -190,8 +191,14 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
     }
     const std::uint16_t trader = content().mobIndex("trader");
     const std::uint16_t titan = content().mobIndex("titan");
+    const std::uint16_t casino = content().mobIndex("hel_casino");
+    CHECK(casino != kInvalidIndex);
+    if (casino != kInvalidIndex) {
+        CHECK(content().mob(casino).npc.service == NpcService::Casino);
+        CHECK(content().mob(casino).npc.team == Team::Players);
+    }
     for (std::uint16_t i = 0; i < content().mobCount(); ++i) {
-        if (i == oracle || i == dummy || i == trader || i == titan) continue;
+        if (i == oracle || i == dummy || i == trader || i == titan || i == casino) continue;
         CHECK(!content().mob(i).npc.present);
     }
 }
@@ -2565,4 +2572,152 @@ TEST(the_titan_painter_draws_its_cog_and_scowl_and_moves_its_glints) {
     CHECK(west.left > west.right * 2);
     CHECK_EQ(east.outsideSocket, 0);
     CHECK_EQ(west.outsideSocket, 0);
+}
+
+
+TEST(casino_plinko_exact_odds_and_balance_validation) {
+    int winning = 0, payout = 0;
+    for (int roll = 0; roll < 100; ++roll) {
+        const int slot = plinkoSlot(roll);
+        CHECK(slot >= 0 && slot < 7);
+        winning += kPlinkoPayouts[slot] > 0;
+        payout += kPlinkoPayouts[slot];
+    }
+    CHECK_EQ(winning, 40);
+    CHECK_EQ(payout, 88);
+    CHECK_EQ(plinkoSlot(-1), -1);
+    CHECK_EQ(plinkoSlot(100), -1);
+    CHECK(!casinoBalanceValid(-1));
+    CHECK(!casinoBalanceValid(1.5));
+    CHECK(!casinoBalanceValid(INFINITY));
+    CHECK(!casinoBalanceValid(NAN));
+    CHECK(!casinoBalanceValid(kCasinoMaxBalance + 1));
+    CHECK(casinoBalanceValid(kCasinoMaxBalance));
+    CHECK_EQ(parseNpcService("casino"), NpcService::Casino);
+}
+
+TEST(casino_purchase_requires_npc_and_persists_with_cooldown) {
+    const std::string dir = npcWorld("casino-purchase", fixtureNpc(kOracleX, kOracleY, "hel_casino", "common"));
+    Harness h("casino-purchase", [](const std::string& path) {
+        seedAccount(path, "gambler");
+        Database db;
+        std::string error;
+        CHECK(db.load(path, error));
+        db.progress(db.findUser("gambler")->id).stars = 20;
+        db.markDirty();
+        CHECK(db.save());
+    }, dir, 0);
+    CHECK(h.ready);
+    if (!h.ready) { removeDataDir(dir); return; }
+    NetClient client;
+    CHECK(joinAs(h, client, "gambler"));
+    const auto say = [&](const std::string& line) {
+        const auto before = client.chat().size();
+        client.sendChat(line);
+        CHECK(h.stepUntil({&client}, [&] { return client.chat().size() > before; }, 120));
+    };
+    const auto record = [&]() -> const PlayerRecord& {
+        return *h.server.database().findProgress(h.server.database().findUser("gambler")->id);
+    };
+    World& world = h.server.world();
+    const Entity player = onlyPlayer(world);
+    CHECK(player != NULL_ENTITY);
+    world.get<Transform>(player).position = {kTileSize * 20, kTileSize * 20};
+    h.step(1, {&client});
+    say("/casino buy 5");
+    CHECK_EQ(record().casinoChips, 0.0);
+    standBeside(h, client, "hel_casino");
+    say("/casino buy -5");
+    say("/casino buy 5x");
+    CHECK_EQ(record().stars, 20.0);
+    say("/casino buy 5");
+    CHECK_EQ(record().casinoChips, 50.0);
+    CHECK_EQ(record().stars, 15.0);
+    CHECK_EQ(world.get<PlayerProgress>(player).stars, 15.0);
+    say("/casino buy 5");
+    CHECK_EQ(record().casinoChips, 50.0);
+    h.server.persistAll();
+    Database saved;
+    std::string error;
+    CHECK(saved.load(h.dbPath, error));
+    const PlayerRecord* loaded = saved.findProgress(saved.findUser("gambler")->id);
+    CHECK(loaded != nullptr);
+    if (loaded) {
+        CHECK_EQ(loaded->casinoChips, 50.0);
+        CHECK_EQ(loaded->stars, 15.0);
+        CHECK_EQ(loaded->casinoReadyAt, record().casinoReadyAt);
+    }
+    removeDataDir(dir);
+}
+
+TEST(casino_wagers_and_cashout_conserve_account_balances) {
+    for (const std::string command : {"/casino flip 10 heads", "/casino plinko 10", "/casino cashout 20"}) {
+        const std::string dir = npcWorld("casino-wager", fixtureNpc(kOracleX, kOracleY, "hel_casino", "common"));
+        Harness h("casino-wager", [](const std::string& path) {
+            seedAccount(path, "gambler");
+            Database db;
+            std::string error;
+            CHECK(db.load(path, error));
+            auto& record = db.progress(db.findUser("gambler")->id);
+            record.stars = 5;
+            record.casinoChips = 100;
+            db.markDirty();
+            CHECK(db.save());
+        }, dir, 0);
+        CHECK(h.ready);
+        if (!h.ready) { removeDataDir(dir); return; }
+        NetClient client;
+        CHECK(joinAs(h, client, "gambler"));
+        standBeside(h, client, "hel_casino");
+        const auto before = client.chat().size();
+        client.sendChat(command);
+        CHECK(h.stepUntil({&client}, [&] { return client.chat().size() > before; }, 120));
+        const auto* record = h.server.database().findProgress(h.server.database().findUser("gambler")->id);
+        CHECK(record != nullptr);
+        if (record) {
+            if (command.find("cashout") != std::string::npos) {
+                CHECK_EQ(record->casinoChips, 80.0);
+                CHECK_EQ(record->stars, 7.0);
+            } else {
+                CHECK(record->casinoChips == 90 || record->casinoChips == 110 ||
+                      (command.find("plinko") != std::string::npos && record->casinoChips == 130));
+                CHECK_EQ(record->stars, 5.0);
+            }
+        }
+        removeDataDir(dir);
+    }
+}
+
+
+TEST(casino_database_roundtrip_keeps_chips_and_cooldown) {
+    const std::string path = tempPath("casino-db");
+    std::remove(path.c_str());
+    std::string id;
+    {
+        Database db;
+        std::string error;
+        CHECK(db.load(path, error));
+        db.setPasswordCost(4);
+        auto created = db.createUser("chip_owner", "password7");
+        CHECK(created.ok());
+        if (!created.ok()) return;
+        id = created.account->id;
+        auto& record = db.progress(id);
+        record.stars = 42;
+        record.casinoChips = 123456;
+        record.casinoReadyAt = 1900000000.125;
+        db.markDirty();
+        CHECK(db.save());
+    }
+    Database loaded;
+    std::string error;
+    CHECK(loaded.load(path, error));
+    const auto* record = loaded.findProgress(id);
+    CHECK(record != nullptr);
+    if (record) {
+        CHECK_EQ(record->stars, 42.0);
+        CHECK_EQ(record->casinoChips, 123456.0);
+        CHECK_EQ(record->casinoReadyAt, 1900000000.125);
+    }
+    std::remove(path.c_str());
 }

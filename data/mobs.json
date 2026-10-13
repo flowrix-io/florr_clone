@@ -2346,5 +2346,134 @@
                 }
             ]
         }
+    },
+    "hel_casino": {
+    "name": "Hel Casino",
+    "damage": 10,
+    "health": 150,
+    "size": 1.5,
+    "speed": 0.15,
+    "cooldown": 2000,
+    "xp": {
+        "common": 0,
+        "uncommon": 0,
+        "rare": 0,
+        "epic": 0,
+        "legendary": 0,
+        "mythic": 0,
+        "ultra": 0,
+        "super": 0,
+        "unique": 0
+    },
+    "description": "Type /casino. 40% payout chance, 60% loss. Buy chips using stars.",
+    "color": "#B375E8",
+    "image": "$trader",
+    "ai_type": "passive",
+    "range": 100,
+    "bee_ai": "idle",
+    "npc": {
+        "service": "casino"
+    },
+    "noEggDrop": true
+},
+    "skittering_rock": {
+    "name": "Skittering Rock",
+    "damage": 10,
+    "health": 50,
+    "size": 1,
+    "random_size": [
+        0.6667,
+        1.3333
+    ],
+    "visual_scale": 0.94,
+    "speed": 0.22,
+    "cooldown": 2000,
+    "xp": {
+        "common": 1,
+        "uncommon": 1,
+        "rare": 2,
+        "epic": 22,
+        "legendary": 206,
+        "mythic": 3100,
+        "ultra": 19800,
+        "super": 2100000,
+        "unique": 6800000
+    },
+    "description": "The rock learned to run. Hit it and it skitters after you.",
+    "color": "#7D98B5",
+    "image": "$rock",
+    "ai_type": "neutral",
+    "range": 100,
+    "groups": [
+        "garden"
+    ],
+    "chase_speed": 0.65,
+    "gardn_ai": true
+},
+    "static_firefly": {
+    "name": "Static Firefly",
+    "health": 50,
+    "damage": 30,
+    "size": 1.2,
+    "speed": 0.48,
+    "cooldown": 0,
+    "xp": {
+        "common": 1,
+        "uncommon": 3,
+        "rare": 30,
+        "epic": 270,
+        "legendary": 1400,
+        "mythic": 32000,
+        "ultra": 150000,
+        "super": 1200000,
+        "unique": 6800000
+    },
+    "description": "A violet spark that escaped the Hel power grid.",
+    "color": "#BC77FF",
+    "image": "$firefly",
+    "ai_type": "hostile",
+    "bee_ai": "always",
+    "groups": [
+        "hel"
+    ],
+    "range": 100,
+    "lightning": {
+        "radius": 250,
+        "onContact": true
     }
+},
+    "echo_jellyfish": {
+    "name": "Echo Jellyfish",
+    "health": 75,
+    "damage": 25,
+    "size": 1.562,
+    "visual_scale": 0.9603,
+    "speed": 0.16,
+    "chase_speed": 0.36,
+    "cooldown": 2000,
+    "xp": {
+        "common": 2,
+        "uncommon": 8,
+        "rare": 35,
+        "epic": 300,
+        "legendary": 1500,
+        "mythic": 40000,
+        "ultra": 200000,
+        "super": 1600000,
+        "unique": 8000000
+    },
+    "description": "A sewer jelly that pulses with leftover electricity.",
+    "color": "#FF81C8",
+    "image": "$jellyfish",
+    "ai_type": "hostile",
+    "gardn_ai": true,
+    "range": 400,
+    "lightning": {
+        "radius": 300
+    },
+    "groups": [
+        "sewers"
+    ],
+    "hideRotation": true
+}
 }

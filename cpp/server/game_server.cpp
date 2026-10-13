@@ -393,6 +393,8 @@ std::string GameServer::adminDbKey() const {
 
 bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     config_ = config;
+    cachedShopOffers_.clear();
+    cachedShopRotation_ = -1;
     // The configured bot population, if the caller named one. Same field
     // `/admin set_bot_count` writes, so the two cannot disagree.
     botCountOverride_ = config.botCount;
@@ -3148,7 +3150,12 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     // click on a store that has since changed.
     double price = shopPrice(petalIndex, rarity);
     if (offerSlot != net::kNoShopOffer) {
-        const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
+        const auto rotation = shopRotation(shopClockNow());
+        if (rotation != cachedShopRotation_ || cachedShopOffers_.empty()) {
+            cachedShopOffers_ = shopOffers(rotation);
+            cachedShopRotation_ = rotation;
+        }
+        const auto& offers = cachedShopOffers_;
         const auto slot = static_cast<std::size_t>(offerSlot);
         if (slot >= offers.size() || offers[slot].petalIndex != petalIndex ||
             offers[slot].rarity != rarity) {
@@ -3162,7 +3169,8 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
                                ? world_.tryGet<PlayerProgress>(session.entity)
                                : nullptr;
     const double stars = live ? live->stars : record.stars;
-    if (stars < price) {
+    if (!std::isfinite(stars) || stars < 0 || !std::isfinite(price) || price < 0 ||
+        stars < price) {
         sendShopResult(connection, net::ShopResultKind::Purchase, false, 0, "Not enough stars.");
         return;
     }

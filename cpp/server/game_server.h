@@ -20,6 +20,7 @@
 #include "server/account_limits.h"
 #include "server/bot_ai.h"
 #include "server/db.h"
+#include "shared/game/shop.h"
 #include "server/replication.h"
 #include "server/session.h"
 #include "server/squads.h"
@@ -1335,6 +1336,9 @@ private:
     void replicate(double nowMillis);
     void reapDead();
 
+    // Content is immutable during a run; regenerate offers only at rotation.
+    std::int64_t cachedShopRotation_ = -1;
+    std::vector<ShopOffer> cachedShopOffers_;
     ServerConfig config_;
     std::atomic<bool> running_{false};
     /// Written once, on the way out, by whatever asked the server to stop.

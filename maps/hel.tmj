@@ -264,9 +264,46 @@
          "visible":true,
          "x":0,
          "y":0
-        }],
- "nextlayerid":5,
- "nextobjectid":3,
+        },
+{
+  "draworder": "topdown",
+  "id": 5,
+  "name": "npcs",
+  "objects": [
+    {
+      "id": 3,
+      "name": "Hel Casino",
+      "point": true,
+      "x": 2048,
+      "y": 2304,
+      "width": 0,
+      "height": 0,
+      "rotation": 0,
+      "type": "npc",
+      "visible": true,
+      "properties": [
+        {
+          "name": "npc",
+          "type": "string",
+          "value": "hel_casino"
+        },
+        {
+          "name": "rarity",
+          "type": "string",
+          "value": "common"
+        }
+      ]
+    }
+  ],
+  "opacity": 1,
+  "type": "objectgroup",
+  "visible": true,
+  "x": 0,
+  "y": 0
+}
+],
+ "nextlayerid":6,
+ "nextobjectid":4,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",

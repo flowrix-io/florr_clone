@@ -1610,3 +1610,24 @@ TEST(a_pets_shot_still_files_with_the_pets_after_the_pet_is_gone) {
     CHECK(foreign(client, f.world, shot));
     CHECK(petFlagged(client, f.world, shot));
 }
+
+TEST(replication_cached_query_sees_new_archetypes_and_switches_worlds) {
+    Fixture first, second;
+    WorldView client;
+    first.tick(client, 1, 1000);
+    const Entity mob = first.addMob({1100, 1000});
+    first.tick(client, 2, 1033);
+    CHECK(client.entities().count(netIdOf(first.world, mob)) == 1);
+    // Reuse the replicator on a different world, whose archetypes differ.
+    const Entity other = second.addMob({1050, 1000});
+    second.world.add<Motion>(other);
+    ClientView view;
+    Replicator::Frame frame;
+    ByteWriter packet;
+    first.replicator.build(second.world, second.viewer, view, frame, packet);
+    WorldView otherClient;
+    ByteReader reader(packet.data(), packet.size());
+    reader.u8();
+    CHECK(otherClient.applySnapshot(reader));
+    CHECK_EQ(otherClient.entities().size(), std::size_t(2));
+}

@@ -298,6 +298,20 @@ void drawFlowerFace(Canvas& canvas, std::uint32_t colour, double radius, double 
 
 void App::drawHud(Canvas& canvas, double time) {
     const SelfState& self = net_.view().self();
+    for (const auto& entry : net_.view().entities()) {
+        const RemoteEntity& npc = entry.second;
+        if (npc.kind != net::EntityKind::Npc ||
+            content().mob(npc.typeIndex).npc.service != NpcService::Casino ||
+            distance(self.position, npc.position) - npc.radius > kNpcServiceReach) continue;
+        TextStyle style;
+        style.align = Align::Centre;
+        style.size = 18;
+        text(canvas, "Hel Casino - open chat and type /casino", window_.width() * 0.5, 190, style);
+        style.size = 14;
+        text(canvas, "40% payout chance / 60% loss. 10 chips = 1 star.",
+             window_.width() * 0.5, 214, style);
+        break;
+    }
     // ALT swaps every abbreviated number on this surface for its exact value,
     // and reveals the other players on the minimap.
     const bool altHeld = window_.keyDown(Key::LeftAlt) || window_.keyDown(Key::RightAlt);
@@ -507,7 +521,7 @@ NpcService App::nearbyNpcService(Vec2 self) const {
         const RemoteEntity& entity = entry.second;
         if (entity.kind != net::EntityKind::Npc) continue;
         const NpcService service = content().mob(entity.typeIndex).npc.service;
-        if (service == NpcService::None) continue;
+        if (service == NpcService::None || service == NpcService::Casino) continue;
         const double gap = distance(self, entity.position) - entity.radius;
         if (gap > nearestGap) continue;
         nearest = service;

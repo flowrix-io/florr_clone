@@ -56,6 +56,7 @@ enum class NpcService : std::uint8_t {
     /// universal of it. A universal forged here lasts until another player
     /// forges the same petal; see kTitanForgeRefund.
     Titan,
+    Casino,
 };
 
 /// The service a mobs.json `npc.service` string names, or None for text this
@@ -64,6 +65,7 @@ inline NpcService parseNpcService(const std::string& name) {
     if (name == "oracle") return NpcService::Oracle;
     if (name == "trader") return NpcService::Trader;
     if (name == "titan") return NpcService::Titan;
+    if (name == "casino") return NpcService::Casino;
     return NpcService::None;
 }
 

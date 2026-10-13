@@ -891,7 +891,7 @@ TEST(the_shipped_jellyfish_and_fireflies_declare_the_strikes_they_should) {
     CHECK(jellyfish.strikeRange > 0.0);   // it reaches out
     CHECK(!jellyfish.onContact);
 
-    for (const char* id : {"firefly", "magic_firefly"}) {
+    for (const char* id : {"firefly", "magic_firefly", "static_firefly"}) {
         const std::uint16_t index = registry.mobIndex(id);
         CHECK(index != kInvalidIndex);
         const LightningSpec& bolt = registry.mob(index).lightning;
@@ -908,7 +908,9 @@ TEST(the_shipped_jellyfish_and_fireflies_declare_the_strikes_they_should) {
     for (std::uint16_t i = 0; i < registry.mobCount(); ++i) {
         if (registry.mob(i).lightning.present) ++throwers;
     }
-    CHECK_EQ(throwers, 3);
+    const auto& echo = registry.mob(registry.mobIndex("echo_jellyfish")).lightning;
+    CHECK(echo.present && echo.strikeRange > 0.0 && !echo.onContact);
+    CHECK_EQ(throwers, 5);
 }
 
 // --- the reach grows with the body -----------------------------------------
@@ -986,7 +988,7 @@ TEST(the_shipped_mobs_reach_a_flower_touching_them_at_every_tier) {
     const ContentRegistry& registry = testsupport::shippedContent();
     if (!registry.loaded()) { CHECK(false); return; }
 
-    for (const char* id : {"firefly", "magic_firefly"}) {
+    for (const char* id : {"firefly", "magic_firefly", "static_firefly"}) {
         const std::uint16_t index = registry.mobIndex(id);
         CHECK(index != kInvalidIndex);
         for (int tier = 0; tier < kLadderRarityCount; ++tier) {

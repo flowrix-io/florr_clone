@@ -618,20 +618,25 @@ void App::drawArenaLeaderboard(Canvas& canvas) {
     // Every flower in the ring, best score first. Only arena players are ever
     // streamed to an arena client, so the entity table IS the roster.
     struct Row {
-        std::string name;
+        const RemoteEntity* entity = nullptr;
         double score = 0;
+        std::size_t order = 0;
     };
-    std::vector<Row> rows;
+    thread_local std::vector<Row> rows;
+    rows.clear();
     for (const auto& entry : net_.view().entities()) {
         const RemoteEntity& entity = entry.second;
         if (entity.kind != net::EntityKind::Player) continue;
-        rows.push_back({entity.name.empty() ? std::string("Unnamed") : entity.name,
-                        static_cast<double>(entity.arenaScore)});
+        rows.push_back({&entity, static_cast<double>(entity.arenaScore), rows.size()});
     }
     if (rows.empty()) return;
-    std::stable_sort(rows.begin(), rows.end(),
-                     [](const Row& a, const Row& b) { return a.score > b.score; });
     const std::size_t shown = std::min<std::size_t>(rows.size(), 10);
+    // Only ten rows are drawn. Preserve the old stable tie order without
+    // sorting the hidden roster or copying every player's name each frame.
+    std::partial_sort(rows.begin(), rows.begin() + shown, rows.end(),
+                      [](const Row& a, const Row& b) {
+                          return a.score != b.score ? a.score > b.score : a.order < b.order;
+                      });
     const double maxScore = std::max(1.0, rows.front().score);
 
     // gardn's proportions, as the browser build lays them out: a green pill
@@ -723,7 +728,9 @@ void App::drawArenaLeaderboard(Canvas& canvas) {
             canvas.stroke();
         }
 
-        text(canvas, row.name + " - " + arenaScoreLabel(row.score), rowsX + kRowW * 0.5, cy,
+        const std::string& name = row.entity->name;
+        text(canvas, (name.empty() ? std::string("Unnamed") : name) + " - " +
+                         arenaScoreLabel(row.score), rowsX + kRowW * 0.5, cy,
              rowStyle);
     }
     canvas.restore();

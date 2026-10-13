@@ -341,6 +341,8 @@ private:
         double distanceSq;
     };
 
+    World* boundWorld_ = nullptr;
+    std::optional<Query<NetId, Replicated, Transform>> replicated_;
     std::vector<Candidate> candidates_;
     std::vector<std::uint32_t> removals_;
 };

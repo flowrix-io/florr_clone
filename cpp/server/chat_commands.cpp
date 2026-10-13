@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -37,6 +38,8 @@
 #include <utility>
 #include <vector>
 
+#include "shared/game/casino.h"
+#include "server/crypto.h"
 #include "server/admin_db_key.h"
 #include "server/auto_update.h"
 #include "server/bot_identity.h"
@@ -425,6 +428,123 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     const std::string argument = argumentOf(message);
     const auto out = [&](const std::string& text) { sendSystem(connection, text); };
 
+    if (verb == "/casino") {
+        if (!session.authenticated()) return true;
+        PlayerRecord& record = database_.progress(session.userId);
+        const auto words = splitWords(argument);
+        const auto status = [&] {
+            out("Hel's Casino: " + wholeNumber(record.casinoChips) + " chips. 1 star = 10 chips.");
+            out("Coin flip: 40% win (2x total payout), 60% lose. Expected return: 80%.");
+            out("Plinko slots: 4x / 2x / 2x / 0x / 2x / 2x / 4x. "
+                "Chances: 2% / 6% / 12% / 60% / 12% / 6% / 2%. Expected return: 88%.");
+            out("Near Hel: /casino buy <stars>, /casino cashout <chips>, "
+                "/casino flip <chips> <heads|tails>, /casino plinko <chips>. "
+                "Bets: 1-10000 chips. Cashout in multiples of 10. One action per second.");
+        };
+        if (words.empty() || (words.size() == 1 && words[0] == "status")) {
+            status();
+            return true;
+        }
+        int amount = 0;
+        const bool flip = words[0] == "flip";
+        const bool plinko = words[0] == "plinko";
+        const bool buy = words[0] == "buy";
+        const bool cashout = words[0] == "cashout";
+        if ((!flip && !plinko && !buy && !cashout) ||
+            words.size() != (flip ? 3u : 2u) || !parseInteger(words[1], amount) ||
+            amount <= 0 || amount > kCasinoMaxBet ||
+            (flip && words[2] != "heads" && words[2] != "tails") ||
+            (cashout && amount % kCasinoChipsPerStar != 0)) {
+            out("Invalid casino request. Type /casino for rules and commands.");
+            return true;
+        }
+        const Transform* body = session.playing() && world_.isAlive(session.entity) &&
+                                !world_.has<Dead>(session.entity)
+                                    ? world_.tryGet<Transform>(session.entity) : nullptr;
+        if (!body || npcs_->findService(world_, NpcService::Casino, body->position, body->realm,
+                                       kNpcServiceReach + kNpcServiceSlack) == NULL_ENTITY) {
+            out("Stand beside Hel's Casino NPC to buy, cash out, or gamble.");
+            return true;
+        }
+        PlayerProgress* live = world_.tryGet<PlayerProgress>(session.entity);
+        const double stars = live ? live->stars : record.stars;
+        if (!std::isfinite(stars) || stars < 0 || stars > 9007199254740991.0 ||
+            std::floor(stars) != stars ||
+            !casinoBalanceValid(record.casinoChips)) {
+            out("Invalid balance. Ask an admin to review your account.");
+            return true;
+        }
+        const double now = std::chrono::duration<double>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        if (now < record.casinoReadyAt) {
+            out("Please wait one second between casino actions.");
+            return true;
+        }
+        double chips = record.casinoChips;
+        double nextStars = stars;
+        std::string result;
+        if (buy) {
+            if (stars < amount || chips > kCasinoMaxBalance - amount * kCasinoChipsPerStar) {
+                out("Not enough stars or chip balance limit reached.");
+                return true;
+            }
+            nextStars -= amount;
+            chips += amount * kCasinoChipsPerStar;
+            result = "Bought " + std::to_string(amount * kCasinoChipsPerStar) + " chips.";
+        } else if (cashout) {
+            if (chips < amount || stars > 9007199254740991.0 - amount / kCasinoChipsPerStar) {
+                out("Not enough chips or star balance limit reached.");
+                return true;
+            }
+            chips -= amount;
+            nextStars += amount / kCasinoChipsPerStar;
+            result = "Cashed out for " + std::to_string(amount / kCasinoChipsPerStar) + " stars.";
+        } else {
+            // Check the maximum possible payout BEFORE drawing any randomness.
+            if (chips < amount || chips > kCasinoMaxBalance - amount * 3) {
+                out("Not enough chips or chip balance limit reached.");
+                return true;
+            }
+            auto& random = crypto::secureRandom();
+            if (!random.seededFromKernel()) {
+                out("Casino randomness unavailable. Try again later.");
+                return true;
+            }
+            // Rejection sampling avoids modulo bias and never shares the world RNG.
+            std::uint8_t roll = 255;
+            do { random.bytes(&roll, 1); } while (roll >= 200);
+            const int percent = roll % 100;
+            int multiplier = 0;
+            if (flip) {
+                const bool won = percent < 40;
+                multiplier = won ? 2 : 0;
+                const std::string landed = won ? words[2] : (words[2] == "heads" ? "tails" : "heads");
+                result = "Coin flip landed " + landed + ": ";
+            } else {
+                const int slot = plinkoSlot(percent);
+                multiplier = kPlinkoPayouts[slot];
+                result = "Plinko landed in slot " + std::to_string(slot + 1) + ": ";
+            }
+            chips += amount * (multiplier - 1);
+            result += std::to_string(multiplier) + "x, total payout " +
+                      std::to_string(amount * multiplier) + " chips.";
+        }
+        record.stars = nextStars;
+        record.casinoChips = chips;
+        record.casinoReadyAt = now + 1;
+        // Split bodies share an account; update both to prevent a stale copy
+        // restoring the old star balance on a later save or body switch.
+        for (Entity entity : {session.entity, session.splitOther}) {
+            if (PlayerProgress* progress = world_.tryGet<PlayerProgress>(entity)) {
+                progress->stars = nextStars;
+            }
+        }
+        database_.markDirty();
+        sendProfile(session, connection);
+        out(result + " Balance: " + wholeNumber(chips) + " chips, " + wholeNumber(nextStars) + " stars.");
+        return true;
+    }
+
     // -- channel shorthands ------------------------------------------------
 
     if (verb == "/g") {
@@ -745,6 +865,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // parses this subset, so the listing arrives looking the way it looks
         // in the browser rather than as a wall of tags.
         std::string help = "Available commands:\n";
+        help += "/casino - Hel casino rules, balances, chips, coin flip and Plinko<br/>";
         help += "/biome - Show the most populated biome <br/>";
         help += "/boss-timers - Show each biome's unique/apex cooldown <br/>";
         help += "/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would "

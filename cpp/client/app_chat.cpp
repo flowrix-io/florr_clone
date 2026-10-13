@@ -226,6 +226,7 @@ struct ChatCommand {
 };
 
 constexpr ChatCommand kChatCommands[] = {
+    {"/casino", "Hel casino: rules, chips, flip and Plinko", false},
     {"/help", "Show available commands", false},
     {"/biome", "Show the most populated biome", false},
     {"/boss-timers", "Show each biome's unique/apex cooldown", false},

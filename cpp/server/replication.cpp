@@ -268,8 +268,13 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     const PlayerAccount* viewerAccount = world.tryGet<PlayerAccount>(viewer);
     const net::ConnectionId viewerOwner =
         viewerAccount != nullptr ? viewerAccount->connection : 0;
-    Query<NetId, Replicated, Transform> replicated{world};
-    replicated.each([&](Entity e, NetId& id, Replicated&, Transform& transform) {
+    // Keep the archetype cache across viewers and ticks; only a different
+    // world needs a new query. Query refreshes when new archetypes appear.
+    if (boundWorld_ != &world) {
+        boundWorld_ = &world;
+        replicated_.emplace(world);
+    }
+    replicated_->each([&](Entity e, NetId& id, Replicated&, Transform& transform) {
         if (const DropItem* drop = world.tryGet<DropItem>(e)) {
             if (!drop->eligible.empty() && !claimed(drop->eligible, viewer, viewerOwner)) return;
             if (claimed(drop->pickedUpBy, viewer, viewerOwner)) return;

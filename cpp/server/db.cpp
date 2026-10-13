@@ -186,6 +186,8 @@ PlayerRecord playerFromJson(const Json& value) {
 
     record.totalXp = value["totalXP"].asDouble(0);
     record.stars = value["stars"].asDouble(0);
+    record.casinoChips = value["casinoChips"].asDouble(0);
+    record.casinoReadyAt = value["casinoReadyAt"].asDouble(0);
     record.dailyStreak = value["dailyStreak"].asInt(0);
     record.lastStreakDate = value["lastStreakDate"].asString();
     record.renderFlags = static_cast<std::uint32_t>(value["renderFlags"].asDouble(0));
@@ -247,7 +249,7 @@ PlayerRecord playerFromJson(const Json& value) {
         }
     }
 
-    collectExtras(value, {"totalXP", "stars", "dailyStreak", "lastStreakDate", "renderFlags",
+    collectExtras(value, {"totalXP", "stars", "casinoChips", "casinoReadyAt", "dailyStreak", "lastStreakDate", "renderFlags",
                           "equippedSkinId", "inventory", "mobKills", "loadout",
                           "loadoutInInventory", "loadoutPresets", "skills", "tp", "mazeTotalXP", "mazeSkills", "mazeTp"},
                   record.extra);
@@ -309,6 +311,8 @@ Json playerToJson(const PlayerRecord& record) {
     // key and an explicit 0/false read identically to every consumer, and this
     // file has one record per account -- the noise is not free.
     if (record.stars != 0) out["stars"] = record.stars;
+    if (record.casinoChips != 0) out["casinoChips"] = record.casinoChips;
+    if (record.casinoReadyAt != 0) out["casinoReadyAt"] = record.casinoReadyAt;
     if (record.renderFlags != 0) out["renderFlags"] = static_cast<double>(record.renderFlags);
     if (!record.equippedSkinId.empty()) out["equippedSkinId"] = record.equippedSkinId;
     if (record.dailyStreak != 0) out["dailyStreak"] = record.dailyStreak;
