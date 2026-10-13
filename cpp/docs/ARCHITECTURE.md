@@ -949,11 +949,11 @@ console. What it sets is the permanent `Account::admin` flag (not the one-life
 loan `/admin grant_admin` lends), and the server answers by resending the skin
 catalog, whose leading flag is where a client learns its own standing. The
 page's database editor key is fixed (`ServerConfig::fixedAdminDbKey`, set by
-`offline/main.cpp` and by nothing else) rather than derived from a machine, and
-since this page has no server log anybody reads, the server says it: in the
-Grant Admin confirmation, and in `/admin db`'s usage line and wrong-key
-refusal. A derived key, on every other server, is never said anywhere but the
-log.
+`offline/main.cpp` and by nothing else) rather than read from a key file, and
+since this page has no file anybody opens, the server says it: in the Grant
+Admin confirmation, and in `/admin db`'s usage line and wrong-key refusal. The
+key in a server's file (`admin_db_key.txt`, every other server) is never said
+at all.
 
 ### Without WebAssembly
 
@@ -1176,8 +1176,11 @@ saved, as a leave does. A sign-in as another account also leaves the squad
 the connection was in and drops any squad invitation pending for it, and so
 does a logout: both are keyed by the connection, and would otherwise pass to
 whoever signs in on it next. The database editor (`/admin db`) asks for the
-flag, not the loan, and for the key the server prints at start-up besides (the
-offline page's fixed key, which it also says out loud; see The offline build).
+flag, not the loan, and for a key besides: the one in `admin_db_key.txt` beside
+the database (`server/admin_db_key.h`), which the server writes on a first
+start, reads again on every attempt, and nothing in the game can change -- the
+operator edits the file. The offline page's key is fixed instead, and said out
+loud; see The offline build.
 Nothing a player chooses grants or targets a privilege: an admin command
 resolves a player by account name only — bots, which have no account, by
 nameplate — never by a display name, which is any string a client sent.

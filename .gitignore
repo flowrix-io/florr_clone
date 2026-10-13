@@ -11,6 +11,9 @@ dist/inventory.json.tmp
 # account hashes, either way.
 /inventory.json
 /inventory.json.tmp
+# The database editor's key, which the server keeps beside the database.
+dist/admin_db_key.txt
+/admin_db_key.txt
 # The single-file offline build (npm run build:offline). A build product no
 # deployment reads, and five megabytes a commit if it were tracked.
 dist/offline.html

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "client/net_client.h"
+#include "server/admin_db_key.h"
 #include "server/db.h"
 #include "server/game_server.h"
 #include "shared/core/world.h"
@@ -68,12 +69,14 @@ struct HarnessFiles {
         // directory to be there already.
         ::mkdir(home.c_str(), 0755);
         ::mkdir((home + "/db").c_str(), 0755);
-        // A run that crashed with this pid left its file behind.
+        // A run that crashed with this pid left its files behind.
         std::remove(dbPath.c_str());
+        std::remove(admin_db::keyFileFor(dbPath).c_str());
     }
     ~HarnessFiles() {
         std::remove(dbPath.c_str());
         std::remove((dbPath + ".tmp").c_str());
+        std::remove(admin_db::keyFileFor(dbPath).c_str());
         ::rmdir((home + "/db").c_str());
         ::rmdir((home + "/db_backups").c_str());
         ::rmdir(home.c_str());

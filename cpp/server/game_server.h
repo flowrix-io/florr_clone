@@ -121,11 +121,11 @@ struct ServerConfig {
     /// knob at run time; this is the one a harness can set before the first
     /// tick.
     int botCount = -1;
-    /// The `/admin db` key to use as is, instead of deriving one from the
-    /// machine's address and the database's secret. Empty means derive. Only
-    /// the offline page sets it: its server is a browser tab with no address
-    /// to ask for and a fresh secret in every browser, so a derived key would
-    /// differ per install -- and that machine is the player's own anyway.
+    /// The `/admin db` key to use as is, instead of the one in the key file
+    /// beside the database. Empty means the file. Only the offline page sets
+    /// it: its server is a browser tab with no file anybody can open, and a
+    /// key seeded from its address and secret would differ per install -- and
+    /// that machine is the player's own anyway.
     std::string fixedAdminDbKey;
 };
 
@@ -220,9 +220,13 @@ public:
     /// The account store, for reading. Tests assert against it and the console
     /// reports out of it; nothing outside this class writes to it.
     const Database& database() const { return database_; }
-    /// The key `/admin db` asks for, derived at start() from the machine's
-    /// private address and the database's secret (server/admin_db_key.h).
-    const std::string& adminDbKey() const { return adminDbKey_; }
+    /// The key `/admin db` asks for as it stands right now: the fixed one, or
+    /// what the key file beside the database says (server/admin_db_key.h).
+    /// Empty when that file is missing or holds nothing usable, which keeps
+    /// the editor shut.
+    std::string adminDbKey() const;
+    /// That key file, or empty where the key is fixed.
+    const std::string& adminDbKeyPath() const { return adminDbKeyPath_; }
     const Terrain& terrain() const { return *terrain_; }
     /// Every staged map's annotation layer, and which realm each one is.
     const WorldMaps& worldMaps() const { return worldMaps_; }
@@ -1391,7 +1395,9 @@ private:
         double grantedAtMillis = 0;
     };
     std::unordered_map<net::ConnectionId, TempAdminGrant> tempAdmins_;
-    std::string adminDbKey_;
+    /// Where the `/admin db` key is kept, read again on every attempt so an
+    /// edit to it needs no restart. Empty where the key is fixed.
+    std::string adminDbKeyPath_;
 
     /// `/admin set_bot_count`'s override, or -1 for the default formula.
     /// Negative rather than optional because -1 is already what "no override"

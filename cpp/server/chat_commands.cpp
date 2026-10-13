@@ -337,8 +337,8 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
         sendSkinCatalog(session, *connection);
         // With the database editor's key, where the key is a fixed one -- the
         // offline page's, the one caller of this, and the one place a player
-        // has no log to read it out of. `/admin db` says it too; a derived
-        // key is never said (see the editor's branch of the console).
+        // has no file to read it out of. `/admin db` says it too; the key in a
+        // server's file is never said (see the editor's branch of the console).
         const std::string editor =
             config_.fixedAdminDbKey.empty()
                 ? std::string()
@@ -2116,26 +2116,39 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("Only a full admin can open the database editor.");
             return;
         }
-        // And the key, which only the server's machine knows (it is printed in
-        // the server log at start-up): an admin account alone is not the
-        // database. See server/admin_db_key.h.
+        // And the key, which only the server's machine knows (it is in a file
+        // beside the database): an admin account alone is not the database.
+        // See server/admin_db_key.h.
         //
         // Except where the key is FIXED, which only the offline page makes it:
         // the same string in every copy of the page, written in its source --
-        // public by construction -- and that page has no server log anybody
-        // reads, its printf landing in the browser's devtools console. So it
-        // is said right here, in the answers that ask for it. A key derived
-        // from a machine is never said: being able to read that machine's log
-        // is the whole of what it proves.
+        // public by construction -- and that page has no file anybody opens.
+        // So it is said right here, in the answers that ask for it. The key in
+        // a server's file is never said: being able to read that machine's
+        // files is the whole of what it proves.
         const std::string fixedKey = config_.fixedAdminDbKey;
         const std::string whereTheKeyIs =
-            fixedKey.empty() ? std::string(" The key is printed in the server log at start-up.")
-                             : " This server's key is fixed: " + fixedKey + ".";
+            fixedKey.empty()
+                ? std::string(" The key is in ") + admin_db::kKeyFileName +
+                      ", beside the database on the server."
+                : " This server's key is fixed: " + fixedKey + ".";
         if (words.size() < 2) {
             out("Usage: db <key> [username]." + whereTheKeyIs);
             return;
         }
-        if (!admin_db::keyMatches(words[1], adminDbKey_)) {
+        // Read again on every attempt, so a key changed in the file is the key
+        // from the next attempt on, with no restart.
+        std::string key = fixedKey;
+        if (key.empty()) {
+            std::string error;
+            if (!admin_db::readKeyFile(adminDbKeyPath_, key, error)) {
+                std::printf("[admin] database editor locked: %s\n", error.c_str());
+                out(std::string("The database editor is locked: ") + admin_db::kKeyFileName +
+                    " on the server is missing or unusable. The server log says why.");
+                return;
+            }
+        }
+        if (!admin_db::keyMatches(words[1], key)) {
             std::printf("[admin] wrong database editor key from %s\n", session.username.c_str());
             out("Wrong database editor key." +
                 (fixedKey.empty() ? std::string() : whereTheKeyIs));

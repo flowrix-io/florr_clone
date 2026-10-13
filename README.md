@@ -104,9 +104,23 @@ No name or client setting grants them. On a server you run:
 On the offline page, **Grant Admin** in Settings > Advanced sets the flag on
 the account the page is signed in to. That page's database editor key is fixed,
 and the page says it: the Grant Admin confirmation and `/admin db` both show it.
-On any other server the key is printed in the server log at start-up and
-nowhere else. The admin tools are in
-[cpp/docs/admin-dashboard.md](cpp/docs/admin-dashboard.md).
+The admin tools are in [cpp/docs/admin-dashboard.md](cpp/docs/admin-dashboard.md).
+
+### The database editor key
+
+`/admin db <key> [username]` opens the database editor. Any other server
+keeps that key in `admin_db_key.txt`, in the database's directory
+(`dist/admin_db_key.txt` above). The first start writes the file, owner-only,
+with a key generated from the machine's private IP address. To change the key,
+edit the file on the server: one line, with no spaces, up to 128 characters,
+and case counts. The server reads the file again on every `/admin db`, so a new
+key works at once, with no restart. A missing, empty or unusable file keeps the
+editor locked, and the log says why. To get a fresh generated key, delete the
+file and restart the server.
+
+Nothing in the game can read or change the key: no command or editor panel
+writes the file, `/admin update` never replaces it, the web server never serves
+it, and the game never says it in chat. The file is gitignored.
 
 ## Build
 

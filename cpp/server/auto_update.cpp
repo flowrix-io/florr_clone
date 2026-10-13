@@ -96,8 +96,11 @@ EM_JS(void, flix_update_start, (const char* urlPtr), {
 
       // Skipped at the TOP LEVEL only: inventory.json exists only at the dist
       // root, and a deeper file with the same name is legitimate build output.
-      const preserved = new Set(
-          ['inventory.json', 'node_modules', 'db_backups', 'cert.key', 'cert.crt']);
+      // admin_db_key.txt is the database editor's key, which is changed on the
+      // server machine and never from the game: an archive carrying one must
+      // not be a way to set it.
+      const preserved = new Set(['inventory.json', 'admin_db_key.txt', 'node_modules',
+                                 'db_backups', 'cert.key', 'cert.crt']);
       const overlay = (from, to, depth) => {
         let copied = 0;
         for (const entry of fs.readdirSync(from, { withFileTypes: true })) {

@@ -5,7 +5,10 @@
 #include "test.h"
 
 #include <cctype>
+#include <cstdio>
 #include <string>
+
+#include <sys/stat.h>
 
 #include "server/admin_db.h"
 #include "server/admin_db_key.h"
@@ -20,7 +23,7 @@ namespace {
 
 // seedUser, loginAs, sawText and say are the harness's own (server_harness.h).
 
-/// Types `/admin db <key>`, as an admin reading the server log would.
+/// Types `/admin db <key>`, as an admin reading the key file would.
 bool unlock(Harness& h, NetClient& admin) {
     say(h, admin, "/admin db " + h.server.adminDbKey());
     return h.stepUntil({&admin}, [&] { return admin.adminDb().openRequested; }, 60);
@@ -180,7 +183,7 @@ TEST(the_database_editor_is_for_full_admins_only) {
     CHECK_EQ(boss.adminDb().openUsername, std::string("Nobody"));
 }
 
-TEST(the_database_editor_key_is_derived_from_the_address_and_the_secret) {
+TEST(a_new_key_files_key_is_derived_from_the_address_and_the_secret) {
     CHECK(admin_db::isPrivateIPv4("10.0.0.5"));
     CHECK(admin_db::isPrivateIPv4("172.16.4.1"));
     CHECK(admin_db::isPrivateIPv4("172.31.255.255"));
@@ -199,9 +202,13 @@ TEST(the_database_editor_key_is_derived_from_the_address_and_the_secret) {
     CHECK(key != admin_db::deriveKey("secret", "192.168.1.21"));
     CHECK(key != admin_db::deriveKey("other", "192.168.1.20"));
 
+    // Exact: it is a password, and one an operator may have chosen.
     const std::string upper = upperCase(key);
     CHECK(admin_db::keyMatches(key, key));
-    CHECK(admin_db::keyMatches(upper, key));
+    CHECK(upper != key);
+    CHECK(!admin_db::keyMatches(upper, key));
+    CHECK(admin_db::keyMatches("Hunter2!", "Hunter2!"));
+    CHECK(!admin_db::keyMatches("hunter2!", "Hunter2!"));
     CHECK(!admin_db::keyMatches(key.substr(1), key));
     CHECK(!admin_db::keyMatches("", key));
     CHECK(!admin_db::keyMatches("", ""));
@@ -244,11 +251,11 @@ TEST(a_fixed_database_editor_key_is_used_as_is) {
     CHECK(sawText(player, "The database editor's key here is 0ff1ce0ff1ce0ff1"));
 }
 
-TEST(a_derived_database_editor_key_is_never_said) {
-    // Every other server derives its key from its machine, and the key's
-    // whole worth is that only somebody who can read that machine's log has
-    // it. No answer -- the usage line, a refusal, the grant's confirmation --
-    // may repeat it.
+TEST(the_key_files_key_is_never_said) {
+    // Every other server keeps its key in a file on its machine, and the
+    // key's whole worth is that only somebody who can read that machine's
+    // files has it. No answer -- the usage line, a refusal, the grant's
+    // confirmation -- may repeat it.
     Harness h("admindb-derived-key", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
         seedUser(path, "player", "password7");
@@ -261,7 +268,7 @@ TEST(a_derived_database_editor_key_is_never_said) {
     NetClient boss;
     CHECK(loginAs(h, boss, "boss", "password7"));
     CHECK(say(h, boss, "/admin db"));
-    CHECK(sawText(boss, "The key is printed in the server log at start-up."));
+    CHECK(sawText(boss, "The key is in admin_db_key.txt, beside the database on the server."));
     CHECK(say(h, boss, "/admin db 0000000000000000"));
     CHECK(sawText(boss, "Wrong database editor key."));
     CHECK(!sawText(boss, "fixed"));
@@ -291,7 +298,7 @@ TEST(the_database_editor_needs_its_key) {
     // A full admin without the key gets the usage line, and with a wrong one
     // a refusal; neither opens the panel...
     CHECK(say(h, boss, "/admin db"));
-    CHECK(sawText(boss, "The key is printed in the server log"));
+    CHECK(sawText(boss, "The key is in admin_db_key.txt"));
     CHECK(say(h, boss, "/admin db bob"));
     CHECK(sawText(boss, "Wrong database editor key."));
     CHECK(!boss.adminDb().openRequested);
@@ -303,9 +310,15 @@ TEST(the_database_editor_needs_its_key) {
     CHECK(boss.adminDb().accounts.empty());
     CHECK(!boss.adminDb().loaded);
 
-    // The right key opens it, case-blind, and the echo does not repeat it.
+    // The key in the wrong case is a wrong key...
     const std::string upper = upperCase(h.server.adminDbKey());
+    const std::uint64_t mark = boss.chatSequence();
     CHECK(say(h, boss, "/admin db " + upper + " bob"));
+    CHECK(sawTextSince(boss, mark, "Wrong database editor key."));
+    CHECK(!boss.adminDb().openRequested);
+
+    // ...and the right one opens it, and the echo does not repeat it.
+    CHECK(say(h, boss, "/admin db " + h.server.adminDbKey() + " bob"));
     CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
     CHECK_EQ(boss.adminDb().openUsername, std::string("bob"));
     CHECK(sawText(boss, "executed: db **** bob"));
@@ -319,6 +332,153 @@ TEST(the_database_editor_needs_its_key) {
     again.adminDbList("", 0);
     h.step(30, {&boss, &again});
     CHECK(again.adminDb().accounts.empty());
+}
+
+TEST(the_key_file_is_read_as_one_typeable_word) {
+    const std::string dir = tempDir("admindb-keyfile");
+    const std::string path = dir + "/" + admin_db::kKeyFileName;
+    std::string key;
+    std::string error;
+
+    // The whitespace around it is not part of it: an editor's newline, a
+    // Windows one, an indent.
+    CHECK(writeText(path, "  Hunter2!-x\r\n\n"));
+    CHECK(admin_db::readKeyFile(path, key, error));
+    CHECK_EQ(key, std::string("Hunter2!-x"));
+
+    // Anything `/admin db <key>` could not carry is refused, not truncated.
+    CHECK(writeText(path, "two words\n"));
+    CHECK(!admin_db::readKeyFile(path, key, error));
+    CHECK(key.empty());
+    CHECK(error.find("space") != std::string::npos);
+    CHECK(writeText(path, "tab\tbed"));
+    CHECK(!admin_db::readKeyFile(path, key, error));
+    CHECK(writeText(path, " \n\t\n"));
+    CHECK(!admin_db::readKeyFile(path, key, error));
+    CHECK(error.find("empty") != std::string::npos);
+    CHECK(writeText(path, std::string(admin_db::kMaxKeyLength, 'k')));
+    CHECK(admin_db::readKeyFile(path, key, error));
+    CHECK(writeText(path, std::string(admin_db::kMaxKeyLength + 1, 'k')));
+    CHECK(!admin_db::readKeyFile(path, key, error));
+
+    // A new file is the owner's alone, and an existing one is never replaced.
+    std::remove(path.c_str());
+    CHECK(!admin_db::readKeyFile(path, key, error));
+    CHECK(error.find("no such file") != std::string::npos);
+    CHECK(admin_db::createKeyFile(path, "first", error));
+    struct stat info {};
+    CHECK(::stat(path.c_str(), &info) == 0);
+    CHECK_EQ(static_cast<int>(info.st_mode & 0777), 0600);
+    CHECK(!admin_db::createKeyFile(path, "second", error));
+    CHECK(admin_db::readKeyFile(path, key, error));
+    CHECK_EQ(key, std::string("first"));
+    std::remove(path.c_str());
+
+    CHECK_EQ(admin_db::keyFileFor("/srv/game/dist/inventory.json"),
+             std::string("/srv/game/dist/admin_db_key.txt"));
+    CHECK_EQ(admin_db::keyFileFor("inventory.json"), std::string("admin_db_key.txt"));
+}
+
+TEST(a_first_start_writes_the_key_file_beside_the_database) {
+    Harness h("admindb-keyfile-new", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    const std::string path = admin_db::keyFileFor(h.dbPath);
+    CHECK_EQ(h.server.adminDbKeyPath(), path);
+    std::string stored;
+    CHECK(readText(path, stored));
+    CHECK_EQ(stored, h.server.adminDbKey() + "\n");
+    CHECK_EQ(h.server.adminDbKey().size(), std::size_t{16});
+    struct stat info {};
+    CHECK(::stat(path.c_str(), &info) == 0);
+    CHECK_EQ(static_cast<int>(info.st_mode & 0777), 0600);
+}
+
+TEST(an_existing_key_file_is_kept_and_is_the_key) {
+    // The operator's own key, there before the server starts: used as it is,
+    // and the file left exactly as they wrote it.
+    Harness h("admindb-keyfile-kept", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        writeText(admin_db::keyFileFor(path), "Garden-Gnome_42\n");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    CHECK_EQ(h.server.adminDbKey(), std::string("Garden-Gnome_42"));
+    std::string stored;
+    CHECK(readText(admin_db::keyFileFor(h.dbPath), stored));
+    CHECK_EQ(stored, std::string("Garden-Gnome_42\n"));
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    std::uint64_t mark = boss.chatSequence();
+    CHECK(say(h, boss, "/admin db garden-gnome_42"));
+    CHECK(sawTextSince(boss, mark, "Wrong database editor key."));
+    CHECK(!boss.adminDb().openRequested);
+    CHECK(say(h, boss, "/admin db Garden-Gnome_42"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
+}
+
+TEST(changing_the_key_file_changes_the_key_without_a_restart) {
+    Harness h("admindb-keyfile-change", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::string path = admin_db::keyFileFor(h.dbPath);
+    const std::string old = h.server.adminDbKey();
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+
+    // Edited on the server machine while the server runs: the old key stops
+    // working and the new one opens the editor, from the next attempt on.
+    CHECK(writeText(path, "Brand-New-Key_7\n"));
+    CHECK_EQ(h.server.adminDbKey(), std::string("Brand-New-Key_7"));
+    std::uint64_t mark = boss.chatSequence();
+    CHECK(say(h, boss, "/admin db " + old));
+    CHECK(sawTextSince(boss, mark, "Wrong database editor key."));
+    CHECK(!boss.adminDb().openRequested);
+    CHECK(say(h, boss, "/admin db Brand-New-Key_7"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
+    CHECK(!sawText(boss, "Brand-New-Key_7"));
+}
+
+TEST(a_missing_or_unusable_key_file_keeps_the_editor_shut) {
+    Harness h("admindb-keyfile-broken", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        // There but unusable at start-up: left alone, not replaced with a
+        // fresh key -- it is the operator's file and theirs to fix.
+        writeText(admin_db::keyFileFor(path), "two words\n");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::string path = admin_db::keyFileFor(h.dbPath);
+    CHECK(h.server.adminDbKey().empty());
+    std::string stored;
+    CHECK(readText(path, stored));
+    CHECK_EQ(stored, std::string("two words\n"));
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+
+    // Half of the broken line does not open it.
+    std::uint64_t mark = boss.chatSequence();
+    CHECK(say(h, boss, "/admin db two"));
+    CHECK(sawTextSince(boss, mark, "The database editor is locked: admin_db_key.txt"));
+    CHECK(!boss.adminDb().openRequested);
+
+    // Deleted while running: still shut, and not quietly re-created.
+    std::remove(path.c_str());
+    CHECK(h.server.adminDbKey().empty());
+    mark = boss.chatSequence();
+    CHECK(say(h, boss, "/admin db two"));
+    CHECK(sawTextSince(boss, mark, "The database editor is locked"));
+    CHECK(!boss.adminDb().openRequested);
+    CHECK(!admin_db::keyFileExists(path));
+
+    // Fixed on the machine: open again, no restart.
+    CHECK(writeText(path, "Mended_Key\n"));
+    CHECK(say(h, boss, "/admin db Mended_Key"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
 }
 
 TEST(the_database_editor_needs_its_key_whatever_the_admin_is_called) {
@@ -336,7 +496,7 @@ TEST(the_database_editor_needs_its_key_whatever_the_admin_is_called) {
     CHECK(loginAs(h, admin, "a19kisme", "password7"));
 
     CHECK(say(h, admin, "/admin db"));
-    CHECK(sawText(admin, "The key is printed in the server log"));
+    CHECK(sawText(admin, "The key is in admin_db_key.txt"));
     CHECK(say(h, admin, "/admin db bob"));
     CHECK(sawText(admin, "Wrong database editor key."));
     CHECK(!admin.adminDb().openRequested);

@@ -41,8 +41,9 @@ Advanced that makes the account its own client is signed into a full admin,
 since that server runs in the player's own browser tab. It hands the server
 that client's session token, never a name. The page's database editor key is
 fixed, so its confirmation says it, as do `/admin db`'s usage line and its
-wrong-key refusal there; every other server's key is derived from its machine
-and appears only in its log.
+wrong-key refusal there. Every other server keeps its key in
+`admin_db_key.txt` beside the database, which is changed only by editing that
+file on the server ([README.md](../../README.md#the-database-editor-key)).
 
 ## Opening it
 

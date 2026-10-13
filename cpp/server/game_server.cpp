@@ -384,6 +384,13 @@ net::NotificationKind notificationKind(const std::string& type) {
 GameServer::GameServer() = default;
 GameServer::~GameServer() = default;
 
+std::string GameServer::adminDbKey() const {
+    if (!config_.fixedAdminDbKey.empty()) return config_.fixedAdminDbKey;
+    std::string key;
+    std::string error;
+    return admin_db::readKeyFile(adminDbKeyPath_, key, error) ? key : std::string();
+}
+
 bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     config_ = config;
     // The configured bot population, if the caller named one. Same field
@@ -400,16 +407,35 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // worse, save that over the file they still had.
     if (!database_.load(config.databasePath, errorOut)) return false;
 
-    // Printed rather than stored anywhere a client can reach: reading the
-    // server's own log is what proves an admin also has the machine.
+    // Kept in a file beside the database, never anywhere a client can reach:
+    // reading it is what proves an admin also has the machine. A first start
+    // writes one; after that the file is the operator's, and only they change
+    // it. Its key is not printed here -- the log is read by more than the
+    // file is.
     if (!config.fixedAdminDbKey.empty()) {
-        adminDbKey_ = config.fixedAdminDbKey;
-        std::printf("[admin] database editor key: %s (fixed)\n", adminDbKey_.c_str());
+        adminDbKeyPath_.clear();
+        std::printf("[admin] database editor key: %s (fixed)\n", config.fixedAdminDbKey.c_str());
     } else {
-        const std::string address = admin_db::privateAddress();
-        adminDbKey_ = admin_db::deriveKey(database_.serverSecret(), address);
-        std::printf("[admin] database editor key: %s (from %s)\n", adminDbKey_.c_str(),
-                    address.empty() ? "no network address" : address.c_str());
+        adminDbKeyPath_ = admin_db::keyFileFor(config.databasePath);
+        std::string key;
+        std::string keyError;
+        if (!admin_db::keyFileExists(adminDbKeyPath_)) {
+            const std::string address = admin_db::privateAddress();
+            if (admin_db::createKeyFile(adminDbKeyPath_,
+                                        admin_db::deriveKey(database_.serverSecret(), address),
+                                        keyError)) {
+                std::printf("[admin] wrote a new database editor key to %s (from %s)\n",
+                            adminDbKeyPath_.c_str(),
+                            address.empty() ? "no network address" : address.c_str());
+            } else {
+                std::fprintf(stderr, "[admin] %s\n", keyError.c_str());
+            }
+        }
+        if (admin_db::readKeyFile(adminDbKeyPath_, key, keyError)) {
+            std::printf("[admin] database editor key: in %s\n", adminDbKeyPath_.c_str());
+        } else {
+            std::fprintf(stderr, "[admin] database editor locked: %s\n", keyError.c_str());
+        }
     }
 
     rng_.reseed(config.worldSeed);
