@@ -876,8 +876,8 @@ private:
     bool sacrificeLying() const;
     /// Hel's name as the sacrifice lines say it.
     std::string sacrificeMapLabel(Realm hel) const;
-    /// Lays one Apex Sacrifice at a random point of Hel's bands and tells the
-    /// server. The drop, or NULL_ENTITY with no Hel, no petal or no room.
+    /// Lays one Apex Sacrifice at a random point of Hel's bands, silently --
+    /// nothing in chat. The drop, or NULL_ENTITY with no Hel, no petal or no room.
     /// Does not check for one already lying there; the caller does.
     Entity placeSacrifice();
     /// The console's `sacrifice`: placeSacrifice now, the clock untouched, or

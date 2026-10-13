@@ -6,7 +6,7 @@
 //
 //   * WHERE IT COMES FROM. Nothing drops it and nobody sells it. One Apex
 //     Sacrifice is put down on Hel's ground at a time, on a clock dealt
-//     uniformly from nothing to a day, and the server is told. First human
+//     uniformly from nothing to a day, without a word in chat. First human
 //     to walk over it keeps it; bots leave it alone.
 //   * WHAT IT DOES. A flower that dies with one on its active bar spends it:
 //     a mob of the band it fell in comes out where it fell, at the petal's
@@ -116,14 +116,9 @@ Entity GameServer::placeSacrifice() {
     item.humansOnly = true;
     world_.get<Lifetime>(sacrificeDrop_).remainingSeconds = kSacrificeDropLifetimeSeconds;
 
-    const std::string where = sacrificeMapLabel(hel);
-    char color[16];
-    std::snprintf(color, sizeof color, "#%06x", rarityColor(kSacrificeSpawnRarity));
-    broadcastChat(net::ChatChannel::System, "",
-                  std::string("<b style=\"color: ") + color + ";\">An " +
-                      rarityLabel(kSacrificeSpawnRarity) + " " + content().petal(petal).name +
-                      " has appeared somewhere in " + where + "!</b>");
-    std::printf("[SACRIFICE] placed in %s at (%.0f, %.0f)\n", where.c_str(), at.x, at.y);
+    // Laid silently: only the server log says it is there.
+    std::printf("[SACRIFICE] placed in %s at (%.0f, %.0f)\n", sacrificeMapLabel(hel).c_str(),
+                at.x, at.y);
     return sacrificeDrop_;
 }
 

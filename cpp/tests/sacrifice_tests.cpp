@@ -229,7 +229,9 @@ TEST(hel_lays_one_apex_sacrifice_on_its_clock_for_the_first_human_to_find) {
     CHECK(item.humansOnly);
     CHECK(world.get<Transform>(drop).realm == hel);
     CHECK(GameServerPeer::sacrificeReadyMillis(h.server) > 0.0);
-    CHECK(h.stepUntil({&alice}, [&] { return sawText(alice, "Sacrifice has appeared"); }));
+    // Laid without a word: nobody is told it is there.
+    h.step(10, {&alice});
+    CHECK(!sawText(alice, "Sacrifice has appeared"));
 
     // Its clock running out again while it still lies there lays no second.
     GameServerPeer::windSacrificeClock(h.server, 0.0);
@@ -313,7 +315,7 @@ TEST(the_console_lays_hels_sacrifice_now) {
     CHECK(world.get<Transform>(drop).realm == hel);
     CHECK(world.get<DropItem>(drop).rarity == Rarity::Apex);
     CHECK(world.get<DropItem>(drop).singleCopy);
-    CHECK(sawText(alice, "Sacrifice has appeared somewhere in"));
+    CHECK(!sawText(alice, "Sacrifice has appeared"));
     CHECK_EQ(GameServerPeer::sacrificeReadyMillis(h.server), readyAt);
 
     // Asked again, it says where the first one lies rather than laying two.
