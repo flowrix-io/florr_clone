@@ -582,6 +582,10 @@ struct PlayerModifiers {
     /// A relic is worn: the damage this flower takes is split with the other
     /// wearers in its squad.
     bool sharesDamage = false;
+    /// A cursor is worn, and the best tier among them: this flower's pets
+    /// BELOW that tier walk to its pointer (MobAiSystem::steerPet).
+    bool controlsPets = false;
+    Rarity petControlRarity = Rarity::Common;
 };
 
 /// What a player's replication is cut to. Which space the player is in is

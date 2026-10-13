@@ -75,6 +75,9 @@ const char* const kPetalsJson = R"JSON({
   "magnet":   {"name":"Magnet","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"color":"#000000"},
   "relic":    {"name":"Relic","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"noPhysics":true,"playerModifiers":{"maxHealth":1.1},"color":"#C7A138"},
   "rubber":   {"name":"Rubber","damage":1,"health":30,"size":1.2,"cooldown":2500,"count":1,"color":"#EEEEEE"},
+  "cursor":   {"name":"Cursor","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"color":"#EEEEEE"},
+  "ram":      {"name":"RAM","damage":10,"health":2,"size":1,"cooldown":3000,"count":1,"color":"#3498DB"},
+  "sawblade": {"name":"Sawblade","damage":20,"health":10,"size":1,"cooldown":2500,"count":1,"defendOnly":true,"color":"#AAAAAA"},
   "carrot":   {"name":"Carrot","damage":18,"health":18,"size":1.4,"cooldown":1000,"count":1,"projectile":{"count":1,"distance":500,"speed":300,"spreadAngle":0},"color":"#F09148"}
 })JSON";
 
@@ -4579,6 +4582,37 @@ TEST(a_run_of_mimics_copies_the_first_real_petal_each_at_its_own_tier) {
     }
 }
 
+TEST(a_mimic_beside_ram_fields_a_sawblade) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "ram", Rarity::Common);
+    rig.equip(1, "mimic", Rarity::Rare);
+    rig.equip(2, "mimic", Rarity::Epic);
+    const double equippedAt = rig.now + net::kTickMillis;
+    rig.tick();
+    // On the sawblade's reload at RAM's tier.
+    CHECK_NEAR(rig.slot(1).reloadReadyAtMillis,
+               equippedAt +
+                   fixture().registry.petalStats(petalId("sawblade"), Rarity::Common).reloadMillis,
+               1e-9);
+
+    rig.settleEquips();
+    // A run of mimics reaches the RAM too, and each comes out a sawblade.
+    for (const auto& [slot, tier] : {std::pair{1, Rarity::Rare}, std::pair{2, Rarity::Epic}}) {
+        const std::vector<Entity> copies = rig.petals(slot);
+        CHECK_EQ(copies.size(), std::size_t(1));
+        if (copies.empty()) continue;
+        CHECK_EQ(instanceOf(rig, copies[0]).configIndex, petalId("sawblade"));
+        CHECK(instanceOf(rig, copies[0]).rarity == tier);
+        CHECK_EQ(rig.world.get<Replicated>(copies[0]).typeIndex, petalId("sawblade"));
+    }
+    // The RAM itself stays a RAM.
+    CHECK_EQ(rig.petals(0).size(), std::size_t(1));
+    if (!rig.petals(0).empty()) {
+        CHECK_EQ(instanceOf(rig, rig.petals(0)[0]).configIndex, petalId("ram"));
+    }
+}
+
 TEST(a_mimic_grants_the_modifiers_of_the_petal_it_copies) {
     if (!contentLoaded()) return;
     Rig rig;
@@ -4672,6 +4706,22 @@ TEST(a_relic_raises_max_health_by_a_tenth_a_tier_and_marks_the_flower_a_sharer) 
     CHECK(rig.modifiers().sharesDamage);
     CHECK_NEAR(fixture().registry.petalStats(petalId("relic"), Rarity::Ultra).modifiers.maxHealth,
                1.7, 1e-9);
+}
+
+TEST(a_worn_cursor_hands_its_best_tier_to_the_pet_controls) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.tick();
+    CHECK(!rig.modifiers().controlsPets);
+    rig.equip(0, "cursor", Rarity::Common);
+    rig.equip(1, "cursor", Rarity::Epic);
+    rig.tick();
+    CHECK(rig.modifiers().controlsPets);
+    CHECK_EQ(rig.modifiers().petControlRarity, Rarity::Epic);
+    rig.equip(1, "rubber", Rarity::Epic);
+    rig.tick();
+    CHECK(rig.modifiers().controlsPets);
+    CHECK_EQ(rig.modifiers().petControlRarity, Rarity::Common);
 }
 
 TEST(rubber_adds_knockback_per_tier_and_soaks_lightning) {

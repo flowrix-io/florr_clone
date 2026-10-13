@@ -495,6 +495,11 @@ inline constexpr double kStingerAimTolerance = 0.3;
 inline constexpr double kPetViewHalfWidth = kViewportWidth * 0.5;
 inline constexpr double kPetViewHalfHeight = kViewportHeight * 0.5;
 
+/// A pet a worn cursor is walking to the pointer comes in at full pace until
+/// it is this close, then slows in proportion, so it settles on the pointer
+/// rather than circling it.
+inline constexpr double kPetPointerSlowDistance = 60.0;
+
 // -- chains and nests --------------------------------------------------------
 
 /// How far past its parent's RIM a nest's child may be drawn before it gives
@@ -839,6 +844,12 @@ private:
     bool walkToOwner(World& world, const Terrain& terrain, Entity self,
                      const Transform& transform, MobAi& ai, Vec2 ownerPosition,
                      double returnSpeed, double nowMillis, Vec2& desired);
+    /// A pet's volley at `ai.target` from where it stands, without closing on
+    /// it: the ownerless pet's and the cursor-driven one's. Returns where a
+    /// stinger shooter has to point this tick, or zero to face its travel.
+    Vec2 volleyInPlace(World& world, Entity self, const MobType& type, MobAi& ai,
+                       const Drive& drive, const Transform& transform, Vec2 travel,
+                       double nowMillis, double dt, CommandBuffer& commands);
     void steerPet(World& world, const Terrain& terrain, const SpatialGrid& grid, Entity self,
                   Transform& transform, Motion& motion, const Body& body, const MobType& type,
                   MobAi& ai, Entity owner, bool ownerAlive, const Drive& drive,

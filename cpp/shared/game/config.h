@@ -1051,6 +1051,10 @@ inline constexpr const char* kMimicPetalId = "mimic";
 /// By id for the reason petalIsClickToUse is.
 inline bool petalMimicsLeft(const PetalConfig& config) { return config.id == kMimicPetalId; }
 
+/// RAM's secret use: a mimic copying it comes out as a sawblade.
+inline constexpr const char* kRamPetalId = "ram";
+inline constexpr const char* kSawbladePetalId = "sawblade";
+
 // The termite petals. Each one's rule lives in code, asked by id for the
 // reason petalIsClickToUse is; the figures are florr's own, read out of its
 // client (the tooltip builder and the petal classes' vtables).
@@ -1090,6 +1094,10 @@ inline bool petalSharesFlowerDamage(const PetalConfig& config) { return config.i
 
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }
+
+/// A cursor walks its flower's pets of a LOWER tier to the pointer instead of
+/// letting them fight on their own (MobAiSystem::steerPet).
+inline bool petalControlsPets(const PetalConfig& config) { return config.id == "cursor"; }
 
 /// The sacrifice: florr's "On death, summons a mob to fight again". Worn on
 /// the active bar, it is spent when its flower dies on ground rough enough to
@@ -1279,6 +1287,10 @@ struct EquippedPetal {
 /// its own tier, on that petal's reload. A run that reaches an empty slot or the
 /// row's edge copies its leftmost mimic, which is itself. Bounded by the row,
 /// so a mimic in the first column never reaches back into the row above it.
+///
+/// A mimic copying RAM is a sawblade instead, still at the mimic's tier and
+/// reloading at RAM's -- the sawblade's reload at that tier, as a mimic pays
+/// the reload of what it fields. Content with no sawblade leaves it a RAM.
 template <class SlotAt>
 EquippedPetal resolveEquippedPetal(const ContentRegistry& registry, int slot, SlotAt&& slotAt) {
     EquippedPetal self = slotAt(slot);
@@ -1292,7 +1304,12 @@ EquippedPetal resolveEquippedPetal(const ContentRegistry& registry, int slot, Sl
         source = left;
         if (!petalMimicsLeft(registry.petal(left.configIndex))) break;
     }
-    return EquippedPetal{source.configIndex, self.rarity, source.rarity};
+    std::uint16_t copied = source.configIndex;
+    if (registry.petal(copied).id == kRamPetalId) {
+        const std::uint16_t sawblade = registry.petalIndex(kSawbladePetalId);
+        if (sawblade != kInvalidIndex) copied = sawblade;
+    }
+    return EquippedPetal{copied, self.rarity, source.rarity};
 }
 
 /// Slot `slot` of a flower's `loadout` as it is actually equipped. Every gameplay

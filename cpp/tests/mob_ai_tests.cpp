@@ -1655,6 +1655,75 @@ TEST(a_pet_trapped_in_sight_of_its_owner_is_flagged_for_recall) {
     CHECK(sim.brainOf(pet).petRecall);
 }
 
+namespace {
+
+/// Puts a cursor of `tier` on `owner`, its pointer `aimDistance` out along
+/// `aimAngle` -- what the petal pass and handleInput would leave there.
+void wearCursor(Sim& sim, Entity owner, Rarity tier, double aimAngle, std::uint16_t aimDistance) {
+    PlayerModifiers& mods = sim.world.get<PlayerModifiers>(owner);
+    mods.controlsPets = true;
+    mods.petControlRarity = tier;
+    net::InputFrame& input = sim.world.ensure<PlayerInput>(owner).current;
+    input.aimAngle = aimAngle;
+    input.aimDistance = aimDistance;
+}
+
+} // namespace
+
+TEST(a_worn_cursor_walks_pets_below_its_tier_to_the_pointer) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    wearCursor(sim, owner, Rarity::Rare, 0.0, 500);
+    const Entity below = sim.spawnMob("soldier_ant", kOrigin + Vec2{0, 200}, Rarity::Uncommon);
+    const Entity level = sim.spawnMob("soldier_ant", kOrigin + Vec2{0, -200}, Rarity::Rare);
+    sim.world.add<Pet>(below, Pet{owner, 0});
+    sim.world.add<Pet>(level, Pet{owner, 0});
+    // A wild mob by the owner: the pet at the cursor's own tier goes for it,
+    // and the one below walks past it to the pointer.
+    const Entity prey = sim.spawnMob("rock", kOrigin + Vec2{-300, 0});
+
+    sim.tick(300);
+    CHECK(distance(sim.positionOf(below), kOrigin + Vec2{500, 0}) < 15.0);
+    CHECK_EQ(sim.brainOf(below).target, NULL_ENTITY);
+    CHECK_EQ(sim.brainOf(level).target, prey);
+
+    // It follows the pointer when the pointer moves, and settles on it.
+    wearCursor(sim, owner, Rarity::Rare, kPi * 0.5, 300);
+    sim.tick(300);
+    CHECK(distance(sim.positionOf(below), kOrigin + Vec2{0, 300}) < 15.0);
+    CHECK(sim.velocityOf(below).length() < 15.0);
+}
+
+TEST(a_cursor_pointer_is_held_to_the_screen_its_owner_claims) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    // A client naming a point across the map.
+    wearCursor(sim, owner, Rarity::Rare, 0.0, 60000);
+    const Entity pet = sim.spawnMob("soldier_ant", kOrigin, Rarity::Common);
+    sim.world.add<Pet>(pet, Pet{owner, 0});
+
+    // No claim on record is the default screen.
+    sim.tick(600);
+    CHECK(std::abs(sim.positionOf(pet).x - (kOrigin.x + kViewportWidth * 0.5)) < 15.0);
+    CHECK(!sim.brainOf(pet).petReturning);
+
+    // A zoomed-out player sees further, so it points further -- past the box
+    // an uncontrolled pet is called home from, without being called home.
+    sim.world.add<PlayerLocation>(owner, PlayerLocation{Vec2{2400, 1350}});
+    sim.tick(600);
+    CHECK(std::abs(sim.positionOf(pet).x - (kOrigin.x + 1200.0)) < 15.0);
+    CHECK(!sim.brainOf(pet).petReturning);
+
+    // Taking the cursor off hands the pet back to its own rules, which walk
+    // it home from there.
+    sim.world.get<PlayerModifiers>(owner).controlsPets = false;
+    sim.tick();
+    CHECK(sim.brainOf(pet).petReturning);
+    CHECK(sim.velocityOf(pet).x < 0.0);
+}
+
 TEST(a_summoned_centipedes_body_follows_it_and_goes_with_it) {
     CHECK(contentReady());
     Sim sim;

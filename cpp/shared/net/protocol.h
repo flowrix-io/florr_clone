@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 53;
+inline constexpr std::uint16_t kProtocolVersion = 54;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -464,6 +464,13 @@ struct InputFrame {
     std::uint16_t viewportWidth = 0;
     std::uint16_t viewportHeight = 0;
 
+    /// How far from the flower the pointer is, in world units, along
+    /// `aimAngle`. moveStrength cannot say: it saturates at
+    /// kFullSpeedCursorDistance, and a worn cursor walks pets to the pointer
+    /// itself (MobAiSystem::steerPet). Zero is "on the flower", which is what
+    /// a bot, which has no pointer, sends.
+    std::uint16_t aimDistance = 0;
+
     void write(ByteWriter& w) const {
         w.u32(sequence);
         w.angle(moveAngle);
@@ -472,6 +479,7 @@ struct InputFrame {
         w.u8(flags);
         w.u16(viewportWidth);
         w.u16(viewportHeight);
+        w.u16(aimDistance);
     }
 
     static InputFrame read(ByteReader& r) {
@@ -483,6 +491,7 @@ struct InputFrame {
         f.flags = r.u8();
         f.viewportWidth = r.u16();
         f.viewportHeight = r.u16();
+        f.aimDistance = r.u16();
         return f;
     }
 

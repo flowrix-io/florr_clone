@@ -262,17 +262,32 @@ void App::sendInputFrame(double dt) {
     // that second decision -- there is no second pointer to make it with --
     // so a pushed stick aims as well as moves, and a centred one leaves the
     // aim where it last was rather than snapping it to a stale tap.
-    if (stickPushed) input.aimAngle = stick.direction.angle();
+    //
+    // The distance rides with the angle, for a worn cursor's pets. A stick has
+    // no distance of its own, so it reaches as far as the cursor law it moves
+    // by: full deflection is kFullSpeedCursorDistance ahead of the flower.
+    const auto aimDistance = [](double distance) {
+        return static_cast<std::uint16_t>(std::clamp(std::round(distance), 0.0, 65535.0));
+    };
+    if (stickPushed) {
+        input.aimAngle = stick.direction.angle();
+        input.aimDistance = aimDistance(stick.magnitude * kFullSpeedCursorDistance);
+    }
     // A pointer parked on an open panel is not an aim, for the same reason it
     // is not a heading: hold the last one rather than pointing the petals at
     // whichever slot the hand stopped over.
-    else if (menuOpen) input.aimAngle = lastAimAngle_;
-    else if (!touchControls) {
+    else if (menuOpen) {
+        input.aimAngle = lastAimAngle_;
+        input.aimDistance = lastAimDistance_;
+    } else if (!touchControls) {
         input.aimAngle = toCursor.lengthSq() > 1e-12 ? toCursor.angle() : 0.0;
+        input.aimDistance = aimDistance(toCursor.length());
     } else {
         input.aimAngle = lastAimAngle_;
+        input.aimDistance = lastAimDistance_;
     }
     lastAimAngle_ = input.aimAngle;
+    lastAimDistance_ = input.aimDistance;
 
     const Vec2 pointer{window_.mouseX(), window_.mouseY()};
     // A press that landed on a line of chat is a text selection, not a swing.

@@ -1366,6 +1366,15 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             if (petalSharesFlowerDamage(registry.petal(equipped.configIndex))) {
                 aggregate.modifiers.sharesDamage = true;
             }
+            // A cursor is worn too, and it does not stack: the best one sets
+            // the tier a pet has to be below to answer the pointer.
+            if (petalControlsPets(registry.petal(equipped.configIndex))) {
+                PlayerModifiers& out = aggregate.modifiers;
+                if (!out.controlsPets || equipped.rarity > out.petControlRarity) {
+                    out.petControlRarity = equipped.rarity;
+                }
+                out.controlsPets = true;
+            }
             if (!slot.broken) {
                 aggregate.modifiers.spongeDamageDurationMillis =
                     std::max(aggregate.modifiers.spongeDamageDurationMillis,

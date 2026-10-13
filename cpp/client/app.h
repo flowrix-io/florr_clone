@@ -774,6 +774,8 @@ private:
     /// no direction to give, and the alternative -- the pointer, which on a
     /// phone is wherever the last tap landed -- would swing the petals at it.
     double lastAimAngle_ = 0;
+    /// The pointer's distance that went with it, held by the same rule.
+    std::uint16_t lastAimDistance_ = 0;
     std::uint32_t inputSequence_ = 0;
     /// Accumulates real time so input is produced at the simulation rate rather
     /// than once per rendered frame -- a 144 Hz client must not send (and be

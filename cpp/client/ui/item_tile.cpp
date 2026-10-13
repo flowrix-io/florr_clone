@@ -206,7 +206,10 @@ constexpr GardnIcon kGardnIcon[] = {
     {"coin",              31,   10,  0,       0.2,     1},
     {"wax",              33,   10,  0,       -0.1,     1},
     {"talisman",              26.5,   10,  0,       1,     0.969},
-    {"mimic",           33, 12.5,  0,       0,     1}
+    {"mimic",           33, 12.5,  0,       0,     1},
+    {"ram",              31,   10,  0,      -1, 0.969},
+    {"cursor",              33,   10,  0,       0,     1},
+    {"computer_chip",              33,   10,  0,       0,     1},
 };
 
 /// How one petal is laid out inside a tile, in design units.

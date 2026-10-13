@@ -86,6 +86,7 @@ void GameServer::parkBody(Entity body) {
         input->current = net::InputFrame{};
         input->current.sequence = previous.sequence;
         input->current.aimAngle = previous.aimAngle;
+        input->current.aimDistance = previous.aimDistance;
     }
     if (Motion* motion = world_.tryGet<Motion>(body)) motion->velocity = {0, 0};
     if (Knockback* knockback = world_.tryGet<Knockback>(body)) *knockback = Knockback{};

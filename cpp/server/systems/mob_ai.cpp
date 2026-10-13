@@ -33,6 +33,29 @@ bool aggroRaised(const PlayerModifiers& mods) {
     return mods.aggroRadiusBonus > 0.0 || mods.aggroRangeScale > 1.0;
 }
 
+/// Where a worn cursor sends a pet of `petRarity`: true when the owner wears
+/// one of a HIGHER tier, with `pointer` the owner's pointer in the world.
+///
+/// Held to the screen the owner claims (PlayerLocation, which the server has
+/// already clamped), not to the pet's own view box: a zoomed-out player can
+/// point past that box, and the pointer is wherever they can see. The claim is
+/// also what keeps a client from naming a point across the map.
+bool petPointer(World& world, Entity owner, Rarity petRarity, Vec2 ownerPosition,
+                Vec2& pointer) {
+    const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(owner);
+    if (mods == nullptr || !mods->controlsPets || !(petRarity < mods->petControlRarity)) {
+        return false;
+    }
+    const PlayerInput* input = world.tryGet<PlayerInput>(owner);
+    if (input == nullptr) return false;
+    const PlayerLocation* location = world.tryGet<PlayerLocation>(owner);
+    const Vec2 half = (location != nullptr ? location->viewport
+                                           : Vec2{kViewportWidth, kViewportHeight}) * 0.5;
+    const Vec2 offset = Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
+    pointer = ownerPosition + Vec2{clamp(offset.x, -half.x, half.x), clamp(offset.y, -half.y, half.y)};
+    return true;
+}
+
 /// Whether a mob is close enough to a player to be worth simulating fully.
 ///
 /// An EMPTY list is the permissive case, as it is in the reference: with
@@ -1773,6 +1796,26 @@ Vec2 MobAiSystem::steerSandstormPet(World& world, const Terrain& terrain, Transf
     return Vec2{0, 0};
 }
 
+Vec2 MobAiSystem::volleyInPlace(World& world, Entity self, const MobType& type, MobAi& ai,
+                                const Drive& drive, const Transform& transform, Vec2 travel,
+                                double nowMillis, double dt, CommandBuffer& commands) {
+    if (ai.target == NULL_ENTITY) return Vec2{0, 0};
+    const Transform* prey = world.tryGet<Transform>(ai.target);
+    if (prey == nullptr) return Vec2{0, 0};
+    const Vec2 toPrey = prey->position - transform.position;
+    const Body* preyBody = world.tryGet<Body>(ai.target);
+    const double preyRadius = preyBody != nullptr ? preyBody->radius : 0.0;
+    if (!shotCanReach(toPrey.length(), drive.shotReach, preyRadius)) return Vec2{0, 0};
+    if (!drive.stingerShooter) {
+        fireVolley(world, self, type, ai, drive, transform.position, toPrey.angle(), travel,
+                   nowMillis, commands);
+        return Vec2{0, 0};
+    }
+    if (toPrey.lengthSq() <= kDirectionEpsilonSq) return Vec2{0, 0};
+    return stingerVolley(world, self, type, ai, drive, transform, toPrey.angle(), travel,
+                         nowMillis, dt, commands);
+}
+
 bool MobAiSystem::walkToOwner(World& world, const Terrain& terrain, Entity self,
                               const Transform& transform, MobAi& ai, Vec2 ownerPosition,
                               double returnSpeed, double nowMillis, Vec2& desired) {
@@ -1854,22 +1897,9 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
         motion.velocity = desired;
         if (desired.lengthSq() > kDirectionEpsilonSq) facing = desired;
         // It still shoots what wanders into range, the way a wild one does.
-        if (ai.target != NULL_ENTITY) {
-            if (const Transform* prey = world.tryGet<Transform>(ai.target)) {
-                const Vec2 toPrey = prey->position - transform.position;
-                const Body* preyBody = world.tryGet<Body>(ai.target);
-                const double preyRadius = preyBody != nullptr ? preyBody->radius : 0.0;
-                const bool armed = shotCanReach(toPrey.length(), drive.shotReach, preyRadius);
-                if (armed && !drive.stingerShooter) {
-                    fireVolley(world, self, type, ai, drive, transform.position, toPrey.angle(),
-                               motion.velocity, nowMillis, commands);
-                } else if (armed && toPrey.lengthSq() > kDirectionEpsilonSq) {
-                    facing = stingerVolley(world, self, type, ai, drive, transform,
-                                           toPrey.angle(), motion.velocity, nowMillis, dt,
-                                           commands);
-                }
-            }
-        }
+        const Vec2 aim = volleyInPlace(world, self, type, ai, drive, transform, motion.velocity,
+                                       nowMillis, dt, commands);
+        if (aim.lengthSq() > kDirectionEpsilonSq) facing = aim;
         transform.angle =
             steerFacing(transform.angle, facing, drive.hideRotation, drive.reversed, kPi);
         return;
@@ -1883,6 +1913,44 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
         return;
     }
     const Vec2 ownerPosition = ownerTransform->position;
+
+    // A worn cursor above the pet's tier takes it out of its own hands: it
+    // walks to the owner's pointer and stays there, ahead of the leash, the
+    // walk home and its own choice of fight -- all of which are about where
+    // the pet should be, and the pointer has answered that. A melee pet hurts
+    // what it is walked into, as any pet does on contact; a shooter still
+    // fires at what is in reach of where it stands, as an ownerless one does.
+    Vec2 pointer;
+    if (petPointer(world, owner, type.rarity, ownerPosition, pointer)) {
+        ai.petReturning = false;
+        ai.crabPhase = CrabPhase::None;
+        ai.target = NULL_ENTITY;
+        if (attacks && drive.shoots) {
+            ai.target = acquirePetPrey(world, terrain, grid, self, transform.position,
+                                       transform.realm, ai, true, ownerPosition, range);
+        }
+        const Vec2 toPointer = pointer - transform.position;
+        const double gap = toPointer.length();
+        const double pace = std::max(chaseSpeed, speed);
+        // Full pace until it is close, then in proportion, so it settles on
+        // the pointer rather than orbiting it.
+        desired = gap > 1e-6 && pace > 0.0
+                      ? toPointer * (pace * std::min(1.0, gap / kPetPointerSlowDistance) / gap)
+                      : Vec2{0, 0};
+        motion.velocity = drive.gardnMotion ? gardnStep(motion.velocity, desired, dt) : desired;
+        // Released from a standing start, as a pet that walked home is.
+        if (PassiveMotion* passive = world.tryGet<PassiveMotion>(self)) {
+            passive->state = PassiveState::Idle;
+            passive->stateStartMillis = nowMillis;
+        }
+        facing = volleyInPlace(world, self, type, ai, drive, transform, motion.velocity,
+                               nowMillis, dt, commands);
+        const bool aimed = facing.lengthSq() > kDirectionEpsilonSq;
+        const Vec2 heading = desired.lengthSq() > kDirectionEpsilonSq ? desired : motion.velocity;
+        transform.angle = steerFacing(transform.angle, aimed ? facing : heading,
+                                      drive.hideRotation, drive.reversed, kPi);
+        return;
+    }
 
     if (drive.ai == AiKind::Sandstorm) {
         desired = steerSandstormPet(world, terrain, transform, ai, owner, ownerPosition, speed,

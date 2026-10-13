@@ -164,6 +164,7 @@ TEST(input_frames_round_trip_through_the_wire) {
     sent.moveStrength = 0.75;
     sent.aimAngle = -2.5;
     sent.flags = InputAttack;
+    sent.aimDistance = 640;
 
     ByteWriter w;
     sent.write(w);
@@ -174,6 +175,7 @@ TEST(input_frames_round_trip_through_the_wire) {
     CHECK_NEAR(std::fabs(wrapAngle(got.moveAngle - sent.moveAngle)), 0.0, 1e-3);
     CHECK_NEAR(got.moveStrength, sent.moveStrength, 1.0 / 255.0);
     CHECK_NEAR(std::fabs(wrapAngle(got.aimAngle - sent.aimAngle)), 0.0, 1e-3);
+    CHECK_EQ(got.aimDistance, sent.aimDistance);
     CHECK(got.attacking());
     CHECK(!got.defending());
     CHECK(r.ok());
