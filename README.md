@@ -382,6 +382,16 @@ The last commit with the whole TypeScript tree is `d47055a7`, so
 
 **Like the game? Star the GitHub repository!**
 
+## Proposed commercial terms
+
+[Flowrix Commercial Hosting License — draft](COMMERCIAL-LICENSE-DRAFT.md)
+records the proposed 20% hosting royalty, visible creator credit, and limits on
+major cloud providers offering the game themselves. It is **not active**, is
+not Apache-2.0, and does not restrict this branch's existing AGPL rights.
+Adoption requires clearing rights to the inherited code and artwork and filling
+in the licensor, covered release, and agreement details. The current license
+remains AGPL-3.0-or-later.
+
 ## License
 
 Copyright (c) 2026 sussybite8888
