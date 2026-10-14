@@ -148,11 +148,12 @@ struct PetalSlotState {
     ///
     /// Not a loadout slot: nothing on the bar holds it, so it owns no
     /// LoadoutSlot and is never saved. It takes the ring's last place while a
-    /// crown reaches the flower -- its gap held open while it reloads, as a
+    /// crown lends to the flower -- its gap held open while it reloads, as a
     /// broken slot's is -- and is gone the tick none does.
     struct Lent {
-        /// The crown's wearer reaching this flower THIS tick, or NULL_ENTITY,
-        /// and the tier of its crown. Written by gatherCrownLenders ahead of
+        /// The crown's wearer lending to this flower THIS tick -- the flower
+        /// itself, when it wears one -- or NULL_ENTITY, and the tier of its
+        /// crown. Written by gatherCrownLenders ahead of
         /// the ring pass.
         Entity lender = NULL_ENTITY;
         Rarity lenderRarity = Rarity::Common;
@@ -311,13 +312,22 @@ private:
     void clearRing(World& world, Entity player);
     void reconcileSlots(World& world, const ContentRegistry& registry, Entity player,
                         double nowMillis);
-    /// Decide this tick's loans (PetalSlotState::Lent::lender): every standing
-    /// flower within kCrownLendRadius of a standing crown wearer, in its realm,
-    /// and not that wearer -- nor its splitter half, the same person -- is
-    /// lent one by the NEAREST such wearer, at that wearer's best crown's tier.
-    /// One loan per flower however many crowns reach it. Run once, ahead of
-    /// the ring pass, so that every loan is judged from the same positions.
+    /// Decide this tick's loans (PetalSlotState::Lent::lender), at the
+    /// lending wearer's best crown's tier. A standing crown wearer is lent one
+    /// by its own crown; every other standing flower within kCrownLendRadius
+    /// of one, in its realm, by the NEAREST -- though never by its own
+    /// splitter half, which lends to itself. One loan per flower however many
+    /// crowns reach it, and at most kCrownMaxLoans per person: a full crown
+    /// keeps the flowers it already lends ahead of nearer newcomers, and a
+    /// flower it turns away goes to the next crown in reach that has room.
+    /// Run once, ahead of the ring pass, so that every loan is judged from the
+    /// same positions. Also counts each person's loans out as the tick opens
+    /// (crownLoansOut_), which their crown's slot prints.
     void gatherCrownLenders(World& world, const ContentRegistry& registry);
+    /// The number a crown's slot on `player`'s bar prints: how many of the
+    /// Basics its wearer -- both splitter halves together -- has lent are out
+    /// on the field. 0 for a flower that is no wearer this tick.
+    int crownLoansOutOf(Entity player) const;
     /// Carry out one flower's loan: put the lent petal out once its reload has
     /// run, put it back on that reload when it breaks, and take it off at once,
     /// unbroken, when the loan ends. After reconcileSlots, which drops a petal
@@ -605,8 +615,26 @@ private:
     std::vector<Entity> playerList_;
     std::vector<Entity> ringNpcList_;
     /// gatherCrownLenders' snapshot of this tick's standing crown wearers,
-    /// each with its best crown's tier.
-    std::vector<std::pair<Entity, Rarity>> crownWearers_;
+    /// each with its best crown's tier and the person it belongs to: an index
+    /// into the two tallies below, shared by a splitter's halves.
+    struct CrownWearer {
+        Entity entity = NULL_ENTITY;
+        Rarity tier = Rarity::Common;
+        int person = 0;
+    };
+    std::vector<CrownWearer> crownWearers_;
+    /// Per person: the lent Basics out on the field as the tick opened, and
+    /// the loans made this tick against kCrownMaxLoans.
+    std::vector<int> crownLoansOut_;
+    std::vector<int> crownLoansMade_;
+    /// Every (flower, crown in reach) pairing, ranked, for the allotment.
+    struct CrownOffer {
+        Entity flower = NULL_ENTITY;
+        std::size_t wearer = 0;
+        int rank = 0;
+        double gapSq = 0.0;
+    };
+    std::vector<CrownOffer> crownOffers_;
     std::vector<Entity> actionList_;
     /// The batteries with a charge ready this tick, snapshotted before the
     /// first one fires: a discharge creates entities and can put its slot on

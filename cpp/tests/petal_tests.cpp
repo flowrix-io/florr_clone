@@ -4860,8 +4860,118 @@ TEST(a_crown_lends_a_flower_in_reach_a_basic_of_its_tier_once_its_reload_has_run
     CHECK_EQ(rig.world.get<Replicated>(lent[0]).typeIndex, petalId(kCrownLentPetalId));
     CHECK(rig.world.get<Replicated>(lent[0]).rarity == Rarity::Unique);
     CHECK_NEAR(rig.healthOf(lent[0]), lentStats().health, 1e-9);
-    // The wearer lends to others, never to itself.
-    CHECK(lentTo(rig, rig.player).empty());
+    // And to its own wearer, on the same reload.
+    const std::vector<Entity> own = lentTo(rig, rig.player);
+    CHECK_EQ(own.size(), std::size_t(1));
+    if (own.empty()) return;
+    CHECK(rig.world.get<PetalInstance>(own[0]).creditTo == rig.player);
+    CHECK(rig.world.get<PetalInstance>(own[0]).rarity == Rarity::Unique);
+}
+
+TEST(a_wearer_keeps_its_own_crowns_basic_beside_a_better_crown) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Common);
+    const Entity rival = addFlower(rig, {1100.0, 1000.0});
+    equipOn(rig, rival, 0, "champion_crown", Rarity::Mythic);
+    CHECK(rig.tickUntil([&] {
+        return !lentTo(rig, rig.player).empty() && !lentTo(rig, rival).empty();
+    }));
+    const PetalInstance& own = rig.world.get<PetalInstance>(lentTo(rig, rig.player).front());
+    CHECK(own.creditTo == rig.player);
+    CHECK(own.rarity == Rarity::Common);
+    CHECK(rig.world.get<PetalInstance>(lentTo(rig, rival).front()).creditTo == rival);
+}
+
+TEST(a_crown_lends_at_most_its_count_and_keeps_the_flowers_it_already_lends) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    // Five more flowers than the crown has Basics for, the wearer aside, each
+    // a step further out than the last.
+    std::vector<Entity> flowers;
+    for (int i = 0; i < kCrownMaxLoans + 4; ++i) {
+        flowers.push_back(addFlower(rig, {1000.0 + 10.0 * (i + 1), 1000.0}));
+    }
+    const auto lentCount = [&] {
+        int n = static_cast<int>(lentTo(rig, rig.player).size());
+        for (const Entity flower : flowers) n += static_cast<int>(lentTo(rig, flower).size());
+        return n;
+    };
+    CHECK(rig.tickUntil([&] { return lentCount() > 0; }));
+    rig.tick();
+    // The wearer's own, and the nearest flowers to it for the rest.
+    CHECK_EQ(lentCount(), kCrownMaxLoans);
+    CHECK_EQ(lentTo(rig, rig.player).size(), std::size_t(1));
+    for (int i = 0; i < static_cast<int>(flowers.size()); ++i) {
+        CHECK_EQ(lentTo(rig, flowers[static_cast<std::size_t>(i)]).size(),
+                 std::size_t(i < kCrownMaxLoans - 1 ? 1 : 0));
+    }
+
+    // A newcomer nearer than any of them takes nobody's place...
+    const Entity last = flowers.back();
+    rig.world.get<Transform>(last).position = {1005.0, 1000.0};
+    rig.tick(5);
+    CHECK(lentTo(rig, last).empty());
+    CHECK_EQ(lentCount(), kCrownMaxLoans);
+
+    // ...but a place one leaves is the nearest waiting flower's.
+    rig.world.get<Transform>(flowers.front()).position = {1000.0 + kCrownLendRadius + 1.0, 1000.0};
+    rig.tick();
+    CHECK(lentTo(rig, flowers.front()).empty());
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, last).empty(); }));
+    CHECK(rig.world.get<PetalInstance>(lentTo(rig, last).front()).creditTo == rig.player);
+    CHECK_EQ(lentCount(), kCrownMaxLoans);
+}
+
+TEST(a_flower_a_full_crown_turns_away_is_lent_by_the_next_crown_in_reach) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity rival = addFlower(rig, {1500.0, 1000.0});
+    equipOn(rig, rival, 0, "champion_crown", Rarity::Unique);
+    std::vector<Entity> flowers;
+    for (int i = 0; i < kCrownMaxLoans; ++i) {
+        flowers.push_back(addFlower(rig, {1000.0 + 5.0 * (i + 1), 1000.0}));
+    }
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, flowers.front()).empty(); }));
+    rig.tick();
+    // The wearer and 24 of them are the first crown's; the farthest, turned
+    // away, is the rival's though the first is nearer.
+    for (int i = 0; i < kCrownMaxLoans; ++i) {
+        const std::vector<Entity> lent = lentTo(rig, flowers[static_cast<std::size_t>(i)]);
+        CHECK_EQ(lent.size(), std::size_t(1));
+        if (lent.empty()) continue;
+        CHECK(rig.world.get<PetalInstance>(lent.front()).creditTo ==
+              (i < kCrownMaxLoans - 1 ? rig.player : rival));
+    }
+}
+
+TEST(a_crowns_slot_counts_its_basics_out_on_the_field) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity other = addFlower(rig, {1300.0, 1000.0});
+    rig.tick();
+    // A gauge: it reads 0 while the loans reload, rather than nothing.
+    CHECK_NEAR(rig.slotCounter(0), 0.0, 1e-9);
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    rig.tick();
+    CHECK_NEAR(rig.slotCounter(0), 2.0, 1e-9);
+    // A mimic of it prints the same figure.
+    rig.equip(1, "mimic", Rarity::Unique);
+    rig.tick();
+    CHECK_NEAR(rig.slotCounter(1), 2.0, 1e-9);
+
+    // One broken is one fewer out.
+    rig.world.add<Dead>(lentTo(rig, other).front());
+    rig.reap();
+    rig.tick(2);
+    CHECK_NEAR(rig.slotCounter(0), 1.0, 1e-9);
+    // Any other petal has none.
+    rig.equip(2, "basic");
+    rig.tick();
+    CHECK_NEAR(rig.slotCounter(2), -1.0, 1e-9);
 }
 
 TEST(a_lent_petal_goes_when_its_flower_leaves_reach_and_a_new_loan_reloads_again) {

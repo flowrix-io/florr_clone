@@ -1063,10 +1063,11 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // into and the instances this tick's respawns have already put back.
         slotState.healthFraction = slotHealthFraction(world, slotState, stats, count, live);
 
-        // The bar's number for this slot. Two petals have one: a sponge prints
-        // what it absorbed and has yet to pay back, a root how many armour
-        // stacks are in hand. Asked of the STATS rather than of the petal's
-        // id, so a petal that grows either behaviour in petals.json grows the
+        // The bar's number for this slot. Three petals have one: a sponge
+        // prints what it absorbed and has yet to pay back, a root how many
+        // armour stacks are in hand, a crown how many of its Basics are out.
+        // The first two are asked of the STATS rather than of the petal's id,
+        // so a petal that grows either behaviour in petals.json grows the
         // number with it.
         //
         // Reported even while the body is broken: a sponge's stored hits go on
@@ -1076,6 +1077,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // the effect having been cancelled.
         if (stats.spongeDamageDurationMillis > 0.0) slotState.counter = storedSpongeDamage;
         else if (stats.armorPerStack > 0.0) slotState.counter = bankedArmorStacks;
+        else if (petalLendsBasic(config)) slotState.counter = crownLoansOutOf(player);
         else slotState.counter = -1.0;
     }
 
@@ -1094,47 +1096,113 @@ void PetalSystem::gatherCrownLenders(World& world, const ContentRegistry& regist
     // Flowers on both ends. A ring-wearing NPC lends nothing and is lent
     // nothing: florr's crown gives to "flowers around you".
     crownWearers_.clear();
+    int people = 0;
     for (const Entity player : playerList_) {
         if (!world.isAlive(player) || !world.has<PlayerTag>(player)) continue;
         if (playerIsDown(world, player)) continue;
         const Loadout* loadout = world.tryGet<Loadout>(player);
         Rarity tier = Rarity::Common;
-        if (loadout != nullptr && championCrownTier(registry, *loadout, tier)) {
-            crownWearers_.emplace_back(player, tier);
+        if (loadout == nullptr || !championCrownTier(registry, *loadout, tier)) continue;
+        // A splitter's halves are one person, with one allowance between them.
+        int person = people;
+        for (const CrownWearer& earlier : crownWearers_) {
+            if (oneConnection(world, earlier.entity, player)) {
+                person = earlier.person;
+                break;
+            }
+        }
+        if (person == people) ++people;
+        crownWearers_.push_back({player, tier, person});
+    }
+    crownLoansOut_.assign(static_cast<std::size_t>(people), 0);
+    crownLoansMade_.assign(static_cast<std::size_t>(people), 0);
+    const auto wearerIndex = [&](Entity entity) {
+        for (std::size_t w = 0; w < crownWearers_.size(); ++w) {
+            if (crownWearers_[w].entity == entity) return static_cast<int>(w);
+        }
+        return -1;
+    };
+
+    crownOffers_.clear();
+    const double reachSq = kCrownLendRadius * kCrownLendRadius;
+    for (const Entity player : playerList_) {
+        if (!world.isAlive(player) || !world.has<PlayerTag>(player)) continue;
+        // Last tick's loan, read before it is wiped for this tick's.
+        Entity holding = NULL_ENTITY;
+        if (PetalSlotState* state = world.tryGet<PetalSlotState>(player)) {
+            const PetalSlotState::Lent& lent = state->lent;
+            if (lent.active) holding = lent.lender;
+            // The counter: a lent Basic standing on the field now, entered
+            // under the person whose crown lent it.
+            const int lender = wearerIndex(lent.lender);
+            if (lender >= 0 && lent.petal != NULL_ENTITY && world.isAlive(lent.petal) &&
+                !world.has<Dead>(lent.petal)) {
+                ++crownLoansOut_[static_cast<std::size_t>(crownWearers_[lender].person)];
+            }
+            state->lent.lender = NULL_ENTITY;
+        }
+        if (crownWearers_.empty() || playerIsDown(world, player)) continue;
+
+        const Transform& at = world.get<Transform>(player);
+        const std::size_t first = crownOffers_.size();
+        for (std::size_t w = 0; w < crownWearers_.size(); ++w) {
+            const Entity wearer = crownWearers_[w].entity;
+            const bool self = wearer == player;
+            if (!self && oneConnection(world, wearer, player)) continue;
+            const Transform& from = world.get<Transform>(wearer);
+            if (from.realm != at.realm) continue;
+            const double gapSq = self ? 0.0 : distanceSq(from.position, at.position);
+            // The edge of the reach counts.
+            if (gapSq > reachSq) continue;
+            // A wearer's own crown lends to it before anyone else.
+            crownOffers_.push_back({player, w, self ? 0 : 2, gapSq});
+        }
+        // The nearest crown, the first found of equals, already lending to
+        // this flower: it keeps the loan ahead of every newcomer, so a full
+        // crown never trades a lent Basic back and forth between two flowers
+        // at the edge of its count, each loan restarting the reload.
+        std::size_t nearest = first;
+        for (std::size_t o = first; o < crownOffers_.size(); ++o) {
+            if (crownOffers_[o].gapSq < crownOffers_[nearest].gapSq) nearest = o;
+        }
+        if (nearest < crownOffers_.size() && crownOffers_[nearest].rank == 2 &&
+            crownWearers_[crownOffers_[nearest].wearer].entity == holding) {
+            crownOffers_[nearest].rank = 1;
         }
     }
 
-    for (const Entity player : playerList_) {
-        if (!world.isAlive(player) || !world.has<PlayerTag>(player)) continue;
-        Entity lender = NULL_ENTITY;
-        Rarity lenderRarity = Rarity::Common;
-        if (!crownWearers_.empty() && !playerIsDown(world, player)) {
-            const Transform& at = world.get<Transform>(player);
-            double nearestSq = kCrownLendRadius * kCrownLendRadius;
-            for (const auto& [wearer, tier] : crownWearers_) {
-                if (wearer == player || oneConnection(world, wearer, player)) continue;
-                const Transform& from = world.get<Transform>(wearer);
-                if (from.realm != at.realm) continue;
-                const double gapSq = distanceSq(from.position, at.position);
-                // The edge of the reach counts; of two crowns equally near,
-                // the first one found keeps the loan.
-                if (gapSq > nearestSq || (lender != NULL_ENTITY && gapSq == nearestSq)) continue;
-                nearestSq = gapSq;
-                lender = wearer;
-                lenderRarity = tier;
-            }
+    // Allotted in rank order, then nearest first. Stable, so of two pairings
+    // equally near, the first found keeps the loan.
+    std::stable_sort(crownOffers_.begin(), crownOffers_.end(),
+                     [](const CrownOffer& a, const CrownOffer& b) {
+                         if (a.rank != b.rank) return a.rank < b.rank;
+                         return a.gapSq < b.gapSq;
+                     });
+    for (const CrownOffer& offer : crownOffers_) {
+        const CrownWearer& wearer = crownWearers_[offer.wearer];
+        int& made = crownLoansMade_[static_cast<std::size_t>(wearer.person)];
+        if (made >= kCrownMaxLoans) continue;
+        if (const PetalSlotState* state = world.tryGet<PetalSlotState>(offer.flower);
+            state != nullptr && state->lent.lender != NULL_ENTITY) {
+            continue;
         }
+        ++made;
         // ensure() only where there is a loan to write: it can move the
         // flower to another archetype, and a flower the slot pass has not yet
         // given a state has no loan to end either.
-        if (lender != NULL_ENTITY) {
-            PetalSlotState::Lent& lent = world.ensure<PetalSlotState>(player).lent;
-            lent.lender = lender;
-            lent.lenderRarity = lenderRarity;
-        } else if (PetalSlotState* state = world.tryGet<PetalSlotState>(player)) {
-            state->lent.lender = NULL_ENTITY;
+        PetalSlotState::Lent& lent = world.ensure<PetalSlotState>(offer.flower).lent;
+        lent.lender = wearer.entity;
+        lent.lenderRarity = wearer.tier;
+    }
+}
+
+int PetalSystem::crownLoansOutOf(Entity player) const {
+    for (const CrownWearer& wearer : crownWearers_) {
+        if (wearer.entity == player) {
+            return crownLoansOut_[static_cast<std::size_t>(wearer.person)];
         }
     }
+    return 0;
 }
 
 void PetalSystem::serveLentPetal(World& world, const ContentRegistry& registry, Entity player,
@@ -1145,8 +1213,9 @@ void PetalSystem::serveLentPetal(World& world, const ContentRegistry& registry, 
     PetalSlotState::Lent& lent = state->lent;
     const std::uint16_t lentIndex = registry.petalIndex(kCrownLentPetalId);
     if (lent.lender == NULL_ENTITY || lentIndex == kInvalidIndex) {
-        // The loan is over: the flower walked out of reach, or the crown came
-        // off, went down or left the realm. Its petal goes at once and
+        // The loan is over: the flower walked out of reach, the crown came
+        // off, went down or left the realm, or a full crown kept its place
+        // for a flower it already lends to. Its petal goes at once and
         // unbroken, and the next loan serves a full reload of its own.
         if (lent.active) destroySlotPetals(world, *loadout, kLentPetalSlot);
         lent = PetalSlotState::Lent{};

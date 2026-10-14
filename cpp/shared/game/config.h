@@ -1122,12 +1122,14 @@ inline bool petalIsSacrifice(const PetalConfig& config) { return config.id == kS
 
 /// The Champion's Crown: florr's "Gives flowers around you a Super Basic. You
 /// receive credit for damage dealt using it." Worn on the head (EquipCrown),
-/// it takes no place on its wearer's ring and lends every OTHER flower within
-/// kCrownLendRadius one Basic of the crown's own tier, on that flower's own
-/// ring, for as long as it stays in reach (PetalSystem::serveLentPetal). Whatever the lent petal
-/// takes off a mob is entered in the mob's ledger under the crown's wearer --
-/// the loot, the XP and the mob's grudge are the wearer's -- while the fight
-/// itself, its side and its floating numbers stay with the flower carrying it.
+/// it takes no place on its wearer's ring and lends one Basic of the crown's
+/// own tier to its wearer and to every flower within kCrownLendRadius, up to
+/// kCrownMaxLoans in all, on that flower's own ring, for as long as it stays
+/// in reach (PetalSystem::serveLentPetal). Whatever the lent petal takes off a
+/// mob is entered in the mob's ledger under the crown's wearer -- the loot,
+/// the XP and the mob's grudge are the wearer's -- while the fight itself, its
+/// side and its floating numbers stay with the flower carrying it. The crown's
+/// slot counts the lent Basics that are out.
 ///
 /// florr keeps it in a battle royale castle, one per match. It is the
 /// sacrifice's kind of petal here: no mob drops it, a `random` drop row never
@@ -1146,6 +1148,11 @@ inline constexpr const char* kCrownLentPetalId = "basic";
 /// still be lent one. florr's figure is not in its client; this is a guess --
 /// about half a screen, so "the flowers around you" are the ones in view.
 inline constexpr double kCrownLendRadius = 600.0;
+
+/// How many Basics one crown has out on loan at once, its wearer's own
+/// included (the user's rule, 2026-10-13). A splitter's two halves are one
+/// person and share the one allowance.
+inline constexpr int kCrownMaxLoans = 25;
 
 /// A petal the world hands out by a rule of its own, which every catalogue a
 /// player could otherwise reach it through has to leave out: the shop, the

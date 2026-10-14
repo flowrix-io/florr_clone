@@ -1755,7 +1755,7 @@
         "cooldown": 1,
         "price": 2000,
         "visual_scale": 2.08,
-        "description": "Gives flowers around you a Basic of the same rarity.\nYou receive credit for damage dealt using it.",
+        "description": "Gives you and up to 24 flowers around you a Basic of the same rarity.\nYou receive credit for damage dealt using it.",
         "color": "#FFDC06",
         "count": 0,
         "equipFlags": "Crown",
