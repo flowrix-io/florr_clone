@@ -3049,10 +3049,10 @@ void GameServer::announceRarePickup(const Session& session, std::uint16_t petalI
     // The crown has florr's own line (Chat/PetalFoundNamed/champion_crown),
     // at whatever tier it is picked up.
     if (petalLendsBasic(content().petal(petalIndex))) {
-        broadcastChat(net::ChatChannel::System, "",
-                      std::string("<b style=\"color: ") + colorAttribute + ";\">The " +
-                          content().petal(petalIndex).name + " has been taken by " +
-                          creditedPlayerMarkup(session) + "!</b>");
+        // broadcastChat(net::ChatChannel::System, "",
+        //               std::string("<b style=\"color: ") + colorAttribute + ";\">The " +
+        //                   content().petal(petalIndex).name + " has been taken by " +
+        //                   creditedPlayerMarkup(session) + "!</b>");
         return;
     }
     if (rarityIndex(rarity) < rarityIndex(Rarity::Apex)) return;
