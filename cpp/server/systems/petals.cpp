@@ -2230,9 +2230,15 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player)) {
                 pulse *= modifiers->petalDamageScale;
             }
-            emitGroundEffect(world, player, at, GroundEffectKind::Radiation,
-                             config.radiation.radius, pulse, 1.0, rarity,
-                             interval / 1000.0);
+            const Entity cloud = emitGroundEffect(world, player, at, GroundEffectKind::Radiation,
+                                                  config.radiation.radius, pulse, 1.0, rarity,
+                                                  interval / 1000.0);
+            if (GroundEffect* field = world.tryGet<GroundEffect>(cloud)) {
+                // The same boosted pulse is what the wearer is poisoned
+                // against: a stronger uranium is stronger both ways.
+                field->poisonDurationMillis = config.radiation.poisonDurationMillis;
+                field->ownerPoisonPerSecond = pulse * config.radiation.selfPoisonScale;
+            }
         }
         if (config.petMobIndex != kInvalidIndex) {
             // Looked up here rather than carried down the loop: raising a
@@ -2417,11 +2423,11 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
     return true;
 }
 
-void PetalSystem::emitGroundEffect(World& world, Entity player, Vec2 at, GroundEffectKind kind,
-                                   double radius, double damagePerSecond, double slowFactor,
-                                   Rarity rarity, double lifetimeSeconds,
-                                   double damagePerHit, double damageIntervalMillis) {
-    if (radius <= 0.0 || lifetimeSeconds <= 0.0) return;
+Entity PetalSystem::emitGroundEffect(World& world, Entity player, Vec2 at, GroundEffectKind kind,
+                                     double radius, double damagePerSecond, double slowFactor,
+                                     Rarity rarity, double lifetimeSeconds,
+                                     double damagePerHit, double damageIntervalMillis) {
+    if (radius <= 0.0 || lifetimeSeconds <= 0.0) return NULL_ENTITY;
     const Transform* ownerAt = world.tryGet<Transform>(player);
     const Entity effect = world.create();
     world.add<GroundEffectTag>(effect);
@@ -2441,6 +2447,7 @@ void PetalSystem::emitGroundEffect(World& world, Entity player, Vec2 at, GroundE
     replicated.rarity = rarity;
     world.add<Replicated>(effect, replicated);
     assignNetId(world, effect);
+    return effect;
 }
 
 // ---------------------------------------------------------------------------

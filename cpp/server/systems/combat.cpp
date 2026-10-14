@@ -1726,7 +1726,8 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
         fields_.push_back({e, effect.kind, hitKind, transform.position, effect.radius,
                            effect.damagePerSecond, effect.slowFactor, effect.rarity,
                            effect.damagePerHit, effect.damageIntervalMillis, transform.realm,
-                           effect.slowsFlowers});
+                           effect.slowsFlowers, effect.owner, effect.poisonDurationMillis,
+                           effect.ownerPoisonPerSecond});
     });
 
     for (const FieldSource& field : fields_) {
@@ -1737,6 +1738,9 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                 world.add<Dead>(field.effect);
                 continue;
             }
+        }
+        if (field.ownerPoisonPerSecond > 0.0 && field.poisonDurationMillis > 0.0) {
+            poisonFieldOwner(world, field, nowMillis);
         }
         if (field.damagePerSecond <= 0.0 && field.damagePerHit <= 0.0 &&
             field.slowFactor >= 1.0) continue;
@@ -1786,6 +1790,11 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                             .arm(victim, nowMillis + field.damageIntervalMillis);
                     }
                 }
+            } else if (field.damagePerSecond > 0.0 && field.poisonDurationMillis > 0.0) {
+                // Credited through the field to its owner, as a petal's bite
+                // is, so a mob the cloud kills pays out to whoever wore it.
+                applyPoison(world, victim, field.effect, field.damagePerSecond,
+                            field.poisonDurationMillis, nowMillis);
             } else if (field.damagePerSecond > 0.0) {
                 applyDamage(world, victim, field.effect, field.damagePerSecond * dt, nowMillis,
                             DamageKind::Periodic);
@@ -1801,6 +1810,23 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
             }
         }
     }
+}
+
+void CombatSystem::poisonFieldOwner(World& world, const FieldSource& field, double nowMillis) {
+    const Entity owner = field.owner;
+    if (!world.isAlive(owner) || world.has<Dead>(owner) || !world.has<PlayerTag>(owner)) return;
+    // A cloud left behind in the realm the flower just walked out of is not
+    // the flower's any more.
+    const Transform* at = world.tryGet<Transform>(owner);
+    if (at == nullptr || at->realm != field.realm) return;
+    if (const Afflictions* afflictions = world.tryGet<Afflictions>(owner)) {
+        if (nowMillis < afflictions->poisonUntilMillis &&
+            afflictions->poisonPerSecond > field.ownerPoisonPerSecond) {
+            return;
+        }
+    }
+    applyPoison(world, owner, NULL_ENTITY, field.ownerPoisonPerSecond,
+                field.poisonDurationMillis, nowMillis);
 }
 
 void CombatSystem::gatherAuras(World& world, const ContentRegistry& content) {

@@ -437,10 +437,11 @@ private:
     /// Raise the first corpse in `realm` within reach of a yggdrasil. Returns
     /// whether one was raised, which is what spends the petal.
     bool revivePlayerNear(World& world, Entity reviver, Realm realm, Vec2 at, double nowMillis);
-    void emitGroundEffect(World& world, Entity player, Vec2 at, GroundEffectKind kind,
-                          double radius, double damagePerSecond, double slowFactor,
-                          Rarity rarity, double lifetimeSeconds,
-                          double damagePerHit = 0.0, double damageIntervalMillis = 0.0);
+    /// The field laid, or NULL_ENTITY when it would be nothing.
+    Entity emitGroundEffect(World& world, Entity player, Vec2 at, GroundEffectKind kind,
+                            double radius, double damagePerSecond, double slowFactor,
+                            Rarity rarity, double lifetimeSeconds,
+                            double damagePerHit = 0.0, double damageIntervalMillis = 0.0);
     /// Retire the summons that got lost: way too far from their owner
     /// (kPetRecallDistance, or another realm) or flagged trapped by the AI
     /// (MobAi::petRecall). Each is let go and its loss charged to the petal

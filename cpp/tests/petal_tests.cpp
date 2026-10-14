@@ -31,6 +31,7 @@ const char* const kPetalsJson = R"JSON({
   "bubble":   {"name":"Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"color":"#FFFFFF"},
   "web":      {"name":"Web","damage":5,"health":10,"size":1.2,"cooldown":3000,"count":1,"defendOnly":true,"webRadius":90,"color":"#FFFFFF"},
   "pollen":   {"name":"Pollen","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"color":"#FFE763"},
+  "uranium":  {"name":"Uranium","damage":4,"health":10,"size":1,"cooldown":2500,"count":1,"radiation":{"radius":160,"intervalMs":1000,"poisonDurationMs":2000,"selfPoisonScale":1},"color":"#63bf2e"},
   "sponge":   {"name":"Sponge","damage":10,"health":10,"size":1,"cooldown":2000,"count":1,"spongeDamageDuration":1000,"color":"#FF96E0"},
   "root":     {"name":"Root","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"armorPerStack":12,"defendOnly":true,"color":"#B86C32"},
   "peas":     {"name":"Peas","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"projectile":{"count":3,"spreadAngle":0.5,"speed":800,"distance":1000},"color":"#00FF00"},
@@ -2715,6 +2716,27 @@ TEST(defending_drops_pollen_with_discrete_damage_and_consumes_it) {
         CHECK_NEAR(lifetime.remainingSeconds, 5.0, 1e-12);
     });
     CHECK(rig.world.has<Dead>(rig.petals(0).front()));
+}
+
+TEST(uranium_lays_a_cloud_that_poisons_mobs_and_its_wearer) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "uranium", Rarity::Rare);
+    rig.settleEquips();
+
+    Query<GroundEffect, Lifetime> fields{rig.world};
+    CHECK(rig.tickUntil([&] { return fields.count() > 0; }, 60));
+    CHECK_EQ(fields.count(), std::size_t(1));
+    fields.each([&](Entity, GroundEffect& field, Lifetime& lifetime) {
+        CHECK_EQ(field.kind, GroundEffectKind::Radiation);
+        CHECK_EQ(field.owner, rig.player);
+        CHECK_NEAR(field.radius, 160.0, 1e-9);
+        CHECK_NEAR(field.damagePerSecond, 4.0 * petalStatScale(Rarity::Rare), 1e-9);
+        CHECK_NEAR(field.poisonDurationMillis, 2000.0, 1e-9);
+        // The wearer takes the same rate the mobs do.
+        CHECK_NEAR(field.ownerPoisonPerSecond, field.damagePerSecond, 1e-9);
+        CHECK_NEAR(lifetime.remainingSeconds, 1.0, 1e-12);
+    });
 }
 
 TEST(a_burst_heal_never_overshoots_the_health_bar) {

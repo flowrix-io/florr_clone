@@ -1509,6 +1509,90 @@ TEST(a_timed_ground_effect_expires_and_stops_applying) {
     CHECK_NEAR(a.health(mob), 99.0, 1e-9);
 }
 
+namespace {
+
+/// A uranium cloud as the petal system lays one: poison rather than a drip,
+/// and a bite on the wearer at `ownerRate`.
+Entity uraniumCloud(Arena& a, Entity owner, Vec2 at, double rate, double ownerRate,
+                    double lifetimeSeconds) {
+    const Entity field = a.world.create();
+    a.world.add<GroundEffectTag>(field);
+    GroundEffect cloud{GroundEffectKind::Radiation, owner, 100.0, rate, 1.0, Rarity::Common};
+    cloud.poisonDurationMillis = 2000.0;
+    cloud.ownerPoisonPerSecond = ownerRate;
+    a.world.add<GroundEffect>(field, cloud);
+    a.world.add<Transform>(field, Transform{at, 0.0});
+    a.world.add<Lifetime>(field, Lifetime{lifetimeSeconds});
+    return field;
+}
+
+} // namespace
+
+TEST(a_uranium_cloud_poisons_the_mobs_in_it_and_the_poison_outlasts_it) {
+    Arena a;
+    const Entity player = a.player({5000, 5000});
+    const Entity mob = a.mob({1050, 1000}, 100.0);
+    const Entity outside = a.mob({1300, 1000}, 100.0);
+    const Entity field = uraniumCloud(a, player, {1000, 1000}, 30.0, 0.0,
+                                      net::kTickSeconds * 1.5);
+
+    // A bite credited to the wearer, not a drip: nothing comes off yet.
+    a.step(0.0);
+    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+    const Afflictions& bitten = a.world.get<Afflictions>(mob);
+    CHECK_EQ(bitten.poisonStacks.size(), std::size_t{1});
+    CHECK_EQ(bitten.poisonStacks[0].source, player);
+    CHECK_NEAR(bitten.poisonStacks[0].perSecond, 30.0, 1e-9);
+    CHECK_NEAR(bitten.poisonStacks[0].untilMillis, 2000.0, 1e-9);
+    CHECK(!a.world.has<Afflictions>(outside));
+
+    // The cloud is gone after this tick, and the poison carries on without it.
+    a.step(net::kTickMillis);
+    CHECK(a.world.has<Dead>(field));
+    CHECK_NEAR(a.health(mob), 99.0, 1e-9);
+    a.step(1000.0);
+    CHECK_NEAR(a.health(mob), 98.0, 1e-9);
+    a.step(2500.0);
+    CHECK_NEAR(a.health(mob), 98.0, 1e-9);
+    CHECK_NEAR(a.health(outside), 100.0, 1e-9);
+}
+
+TEST(a_uranium_cloud_poisons_its_wearer_wherever_it_stands) {
+    Arena a;
+    // Far outside the cloud: the bite is on the wearer, not on what is near.
+    const Entity player = a.player({5000, 5000});
+    uraniumCloud(a, player, {1000, 1000}, 30.0, 6.0, 1.0);
+
+    a.step(0.0);
+    const Afflictions& bitten = a.world.get<Afflictions>(player);
+    CHECK_NEAR(bitten.poisonPerSecond, 6.0, 1e-9);
+    CHECK_NEAR(bitten.poisonUntilMillis, 2000.0, 1e-9);
+    // Sourceless: the flower's own side could never land it.
+    CHECK_EQ(bitten.poisonSource, NULL_ENTITY);
+
+    a.step(net::kTickMillis);
+    CHECK_NEAR(a.health(player), 100.0 - 6.0 * net::kTickSeconds, 1e-9);
+}
+
+TEST(a_uranium_cloud_never_weakens_a_stronger_bite_on_its_wearer) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity spider = a.mob({3000, 3000}, 100.0);
+    a.combat.applyPoison(a.world, player, spider, 20.0, 1000.0, 0.0);
+    uraniumCloud(a, player, {1000, 1000}, 30.0, 6.0, 5.0);
+
+    // A flower carries one bite, and a weak uranium overwriting it would be
+    // a cure for the mob's.
+    a.step(0.0);
+    CHECK_NEAR(a.world.get<Afflictions>(player).poisonPerSecond, 20.0, 1e-9);
+    CHECK_EQ(a.world.get<Afflictions>(player).poisonSource, spider);
+
+    // Once the mob's has run out, the uranium's takes hold.
+    a.step(1000.0);
+    CHECK_NEAR(a.world.get<Afflictions>(player).poisonPerSecond, 6.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(player).poisonUntilMillis, 3000.0, 1e-9);
+}
+
 TEST(pollen_hits_each_mob_at_most_once_per_half_second) {
     Arena a;
     const Entity player = a.player({1000, 1000});

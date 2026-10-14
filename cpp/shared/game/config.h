@@ -332,6 +332,15 @@ struct RadiationSpec {
     bool present = false;
     double radius = 0;
     double intervalMillis = 0;
+    /// Above zero, the pulse lands as POISON of this length on whatever stands
+    /// in the cloud rather than as a drip, so it lingers after the victim
+    /// walks out. Zero keeps the drip.
+    double poisonDurationMillis = 0;
+    /// The wearer is poisoned too, at this multiple of the rate the cloud
+    /// poisons mobs at and for the same length, anywhere in the cloud's realm
+    /// -- not only inside it. Needs a
+    /// poisonDurationMillis to have anything to last.
+    double selfPoisonScale = 0;
 };
 
 /// Passive bonuses a petal grants its holder, exactly as the JSON writes them.

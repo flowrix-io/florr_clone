@@ -488,6 +488,9 @@ private:
         double damageIntervalMillis = 0;
         Realm realm = Realm::Overworld;
         bool slowsFlowers = false;
+        Entity owner = NULL_ENTITY;
+        double poisonDurationMillis = 0;
+        double ownerPoisonPerSecond = 0;
     };
 
     struct ShotSource {
@@ -540,6 +543,11 @@ private:
     /// CONFIG radius rather than the body it actually spawned with.
     void tickGroundEffects(World& world, const SpatialGrid& grid, const ContentRegistry& content,
                            double nowMillis, double dt);
+    /// A uranium cloud's bite on the flower wearing it. Sourceless, because
+    /// the flower's own side could never hurt it; and it never weakens a
+    /// stronger live bite, since a flower carries only one and a common
+    /// uranium must not be a cure for a mythic mob's poison.
+    void poisonFieldOwner(World& world, const FieldSource& field, double nowMillis);
     /// The strongest equipped raindrop on every live flower, and the mobs its
     /// field chips. Split in two for the usual reason: resolving a hit can
     /// mark a mob Dead, which relocates the row the gather is walking.

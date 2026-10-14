@@ -584,6 +584,8 @@ RadiationSpec parseRadiation(Ctx& ctx, const Json& owner) {
     spec.radius = ctx.range(node, "radius", 0.0, 0.0, kWorldSize);
     spec.intervalMillis = ctx.range(node, "intervalMs", kMinSpawnIntervalMillis,
                                     kMinSpawnIntervalMillis, kMaxDurationMillis);
+    spec.poisonDurationMillis = ctx.range(node, "poisonDurationMs", 0.0, 0.0, kMaxDurationMillis);
+    spec.selfPoisonScale = ctx.range(node, "selfPoisonScale", 0.0, 0.0, 100.0);
     spec.present = spec.radius > 0.0;
     return spec;
 }

@@ -1179,12 +1179,14 @@
         "size": 1,
         "cooldown": 2500,
         "price": 10,
-        "description": "Periodically releases radiation in a large radius",
+        "description": "Periodically releases radiation in a large radius, poisoning nearby mobs and you",
         "color": "#63bf2e",
         "count": 1,
         "radiation": {
             "radius": 160,
-            "intervalMs": 1000
+            "intervalMs": 1000,
+            "poisonDurationMs": 2000,
+            "selfPoisonScale": 1
         },
         "emissive": true,
         "lightColor": "#63bf2e",

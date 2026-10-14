@@ -1330,6 +1330,13 @@ struct GroundEffect {
     /// alloc_web), whose whole job is to catch the flower chasing through it;
     /// a Web petal's field keeps the reference's rule and slows mobs only.
     bool slowsFlowers = false;
+    /// Above zero, damagePerSecond lands as poison of this length on whatever
+    /// stands in the field, refreshed every tick it stays, instead of a drip.
+    /// A uranium cloud's. See RadiationSpec.
+    double poisonDurationMillis = 0;
+    /// Uranium poisons its wearer as well: `owner` at this rate, for
+    /// poisonDurationMillis, every tick the field stands, anywhere in its realm.
+    double ownerPoisonPerSecond = 0;
 };
 
 /// When a web-laying mob lays its next web. See WebSpec.
