@@ -193,7 +193,7 @@ constexpr GardnIcon kGardnIcon[] = {
     // radius, so its picture is a 10.75-unit speck -- the one place the
     // measurement does not transfer. Sized from the radius like every other
     // petal instead: 2r plus its 1.5 outline.
-    {"third_eye",        41.5,   20,  0,       0,     1},
+    {"third_eye",        26.5,   20,  0,       0,     1},
     {"uranium",            21,   10,  0,       0,     1},
     {"web",                24,   10,  0,       0, 0.957},   // art fills 96% of its box
     {"wing",               33,   10,  0,       1,     1},
