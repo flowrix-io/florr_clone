@@ -927,6 +927,14 @@
         "probability": 0.4,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "computer_chip",
+        "rarity": "common",
+        "probability": 0.8,
+        "minQuantity": 1,
+        "maxQuantity": 2
       }
     ]
   },
@@ -964,6 +972,22 @@
         "probability": 0.002,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "ram",
+        "rarity": "common",
+        "probability": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 3
+      },
+      {
+        "type": "petal",
+        "itemType": "computer_chip",
+        "rarity": "common",
+        "probability": 0.8,
+        "minQuantity": 1,
+        "maxQuantity": 10
       }
     ]
   },
@@ -1398,6 +1422,32 @@
         "probability": 0.5,
         "minQuantity": 1,
         "maxQuantity": 1
+      }
+    ]
+  },
+  "cube": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "ram",
+        "rarity": "common",
+        "probability": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "dust": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "champion_crown",
+        "rarity": "common",
+        "probability": 0.000000004167,
+        "minQuantity": 0,
+        "maxQuantity": 0
       }
     ]
   }

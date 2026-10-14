@@ -54,23 +54,25 @@ inline constexpr double kInvulnerableFadeSeconds = 0.5;
 /// ui::kHealth used to be and then jumped to the one it is.
 std::uint32_t invulnerableFadeColor(double secondsSinceShield);
 
-/// One piece of an explosion's debris. Velocity and life are per second here;
-/// the browser build counts both per frame at 60 Hz.
+/// One piece of an explosion's debris, one petal glint or one grain of a
+/// drop's glitter. Velocity and life are per second here; the browser build
+/// counts both per frame at 60 Hz.
 struct EffectParticle {
     Vec2 position;
     Vec2 velocity;
     double lifeSeconds = 0;
     double maxLifeSeconds = 1;
+    /// A disc's radius (debris, glint); a drop grain's side.
     double size = 1;
-    /// Radians the grain is turned by. Only the square grains -- a drop's --
-    /// show it; a disc looks the same at every angle, so theirs stays zero.
+    /// Radians a drop grain is turned by. A disc looks the same at every
+    /// angle, so the others leave it at zero.
     double rotation = 0;
     std::uint32_t color = 0xFFFFFFu;
 };
 
 /// A short-lived visual with no gameplay meaning.
 struct Effect {
-    /// `Sparkle` is the particle-only kind: the high-rarity shimmer around a
+    /// `Sparkle` is the particle-only kind: the high-rarity glint around a
     /// petal, a burst of disc-shaped grains. It has no body of its own -- only
     /// its particles are drawn. A drop's glitter is not one of these: its
     /// grains live in WorldRenderer::dropSparkles_.
@@ -136,10 +138,6 @@ struct DyingDrop {
     /// Only meaningful in the live table: cleared every frame so a drop that
     /// stopped being sent can be told apart from one that is still there.
     bool seenThisFrame = false;
-    /// Only meaningful in the live table: fractional grains owed by the
-    /// shimmer's steady emission rate, carried between frames so the rate does
-    /// not depend on how long a frame happened to be.
-    double sparkleCredit = 0;
 };
 
 /// A mob the server has already destroyed, kept alive locally for the 200 ms
@@ -260,8 +258,9 @@ public:
         /// Draws every body's collision circle. A debugging view, and the one
         /// honest way to see how generous a petal's reach really is.
         bool hitboxes = false;
-        /// Tints every spawn zone with the tier that spawns in it. Held down
-        /// rather than toggled: the browser build shows it while ALT is down.
+        /// Rings every petal in its tier's colour. Held down rather than
+        /// toggled: the App sets it each frame from ALT, not from the settings
+        /// menu.
         bool rarityGlow = false;
         /// Leaves out every other player's petals and the shots they fire,
         /// and every other player's pets and theirs. The server marks what is
@@ -374,8 +373,7 @@ private:
     /// The arena realm: a grey gridded floor inside the ring, dark void
     /// outside it, and the red boundary the server clamps bodies to.
     void drawArena(Canvas&, const Camera&) const;
-    /// Teleporters, and the spawn-zone tints while the rarity glow is held,
-    /// off the realm's own map.
+    /// Teleporters, off the realm's own map.
     void drawMapElements(Canvas&, const Camera&, Realm realm, double timeSeconds) const;
     void drawEntity(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawFlower(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
@@ -706,8 +704,8 @@ private:
     mutable std::vector<std::pair<std::uint32_t, double>> ritualsTracing_;
     /// Per ritual, the clock its next shake push is due at.
     std::unordered_map<std::uint32_t, double> ritualNextPush_;
-    /// The clock at the previous ingest, which is the only place a frame's
-    /// length is available to the shimmer's per-frame emission roll.
+    /// The clock at the previous ingest: the drops emit the grains due between
+    /// it and now (see grainsDue), and the petals' glint roll is scaled by it.
     double lastIngestSeconds_ = 0;
 
     /// netId -> the moment invulnerability ended, or -1 while it still holds.

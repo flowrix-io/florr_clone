@@ -462,6 +462,17 @@ constexpr ChangelogEntry kChangelog[] = {
         "Added screen shake",
         "Added damage flash"
       }
+    },
+    {"October 13, 2026",
+      {
+        "New petal: Sawblade",
+        "New petal: Mimic",
+        "New petal: Ram",
+        "New petal: Cursor",
+        "New petal: Computer Chip",
+        "New petal: Champion's Crown",
+        "Added new drops for Computer mobs"
+      }
     }
 };
 

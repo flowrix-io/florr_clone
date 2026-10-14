@@ -19,7 +19,6 @@
 #include "shared/game/config.h"
 #include "shared/game/components.h"
 #include "shared/game/constants.h"
-#include "shared/game/difficulty.h"
 #include "shared/game/map_elements.h"
 #include "shared/game/terrain.h"
 
@@ -227,75 +226,72 @@ double dropRestRotation(std::uint32_t netId) {
     return (unit - 0.5) * 2.0 * kDropRestTiltDegrees * kPi / 180.0;
 }
 
-/// The high rarities shimmer. Rolled per drawn frame, per petal and per drop,
-/// exactly as the browser build rolls it.
-constexpr double kSparkleChance = 0.1;
-constexpr int kSparkleCount = 8;
-constexpr double kSparkleLifeSeconds = 3.0;
-/// A drop throws a shorter, faster burst of the same particles when it lands.
+/// The high rarities glitter, florr's way, read out of its client: the drop
+/// pass of the world renderer (0x10077b370) gives every drop of Ultra and up
+/// its own particle system, and the shared stepper (0x100793cc0) moves and
+/// paints it. A drop throws one grain every 20 ms -- a filled square of side
+/// U(2,5) x 3 in the drop's rarity colour, from the drop's centre, at
+/// U(0,400) units/s in any direction -- with drag x0.95 per 60 Hz frame, no
+/// gravity, a full turn a second, and an alpha that runs out linearly over
+/// U(500,1000) ms while the side holds.
+///
+/// florr gives an equipped petal no glitter of its own; the round glints below
+/// are the browser build's.
+constexpr double kGrainSeconds = 0.020;
+constexpr double kGrainSpeedMax = 400.0;
+constexpr double kGrainDragPerFrame = 0.95;
+constexpr double kGrainSpin = kTau;
+constexpr double kGrainLifeMs = 500.0;
+constexpr double kGrainLifeSpreadMs = 500.0;
+constexpr double kGrainSide = 6.0;
+constexpr double kGrainSideSpread = 9.0;
+/// A drop throws a handful of the same grains at once as it lands. florr's
+/// drops land without one: the burst is the browser build's, and only its
+/// count still comes from there.
+constexpr int kDropBurstCount = ui::kDropBurstCount;
 /// The burst goes into the flat drop pool with the shimmer rather than into
 /// the effect pool: wrapped in an Effect it competed with the damage numbers a
 /// dying mob produces in the same tick, and the burst -- which is the one that
 /// arrives exactly when the mob dies -- was the half that got dropped.
-constexpr int kDropBurstCount = ui::kDropBurstCount;
-constexpr double kDropBurstSpeed = ui::kDropBurstSpeed;
-constexpr double kDropBurstSpeedSpread = ui::kDropBurstSpeedSpread;
-constexpr double kDropBurstLifeMs = ui::kDropBurstLifeMs;
-constexpr double kDropBurstLifeSpreadMs = ui::kDropBurstLifeSpreadMs;
-/// A petal's shimmer is the rarity colour blended halfway to white. A drop's
-/// is the rarity colour itself -- only its alpha moves, so the grains read as
-/// the drop's own rarity rather than as a wash of white.
-constexpr double kSparkleWhiten = 0.5;
-/// A drop's grains are five times a petal's and vary widely in size, so it
-/// throws far fewer of them: at this scale a petal's count would read as a
-/// solid slab rather than as a scatter. Base plus a spread of twice the base
-/// puts the mean at 5x the petal grain with a 3:1 spread between the smallest
-/// and the largest.
 ///
-/// Grains per second a drop emits, as a steady trickle. The shimmer used to
-/// roll a 10%-per-frame chance to throw six at once -- six emissions a second,
-/// six grains each -- so 36 a second is that same density arriving evenly
-/// instead of in clumps.
-constexpr double kDropSparkleRate = 36.0;
-constexpr double kDropSparkleSpeed = 1.2;
-constexpr double kDropSparkleSpeedSpread = 1.2;
-constexpr double kDropSparkleLifeMs = 2000.0;
-constexpr double kDropSparkleLifeSpreadMs = 1000.0;
-/// A drop keeps roughly rate x life grains alive, so a screen of them is
+/// A drop keeps about 50 x 0.75 = 38 grains alive, so a screen of them is
 /// bounded here rather than by the effect pool it no longer shares.
 constexpr std::size_t kMaxDropSparkles = 512;
 /// The trickle stops short of the cap so a landing burst always has room: the
 /// shimmer is continuous and would otherwise hold the whole pool, and a burst
 /// silently swallowed is the thing a player notices.
 constexpr std::size_t kDropShimmerBudget = kMaxDropSparkles * 3 / 4;
-constexpr double kDropSparkleSize = 5.0;
-constexpr double kDropSparkleSizeSpread = 10.0;
-constexpr double kDropBurstSize = ui::kDropBurstSize;
-constexpr double kDropBurstSizeSpread = ui::kDropBurstSizeSpread;
 
-/// A grain never paints solid: the shimmer sits over the body it came off.
+/// An equipped petal's glint, the browser build's: rolled per drawn frame, per
+/// petal, a spoked burst of soft discs in the rarity colour lifted halfway to
+/// white, drifting slowly out as they shrink and fade.
+constexpr double kSparkleChance = 0.1;
+constexpr int kSparkleCount = 8;
+constexpr double kSparkleLifeSeconds = 3.0;
+constexpr double kSparkleWhiten = 0.5;
+/// A glint never paints solid: it sits over the petal it came off.
 constexpr double kSparkleAlpha = 0.6;
 
-/// One shimmer grain, wherever it is pooled. It shrinks and fades on its own
-/// clock rather than on any effect's, and a square one is walked as a
-/// four-point path rather than pushed through the transform stack -- at this
-/// size a grain is four lineTo calls, and a save/rotate/restore per grain
-/// costs the rasterizer more than the square itself does.
-void drawSparkleGrain(Canvas& canvas, const Camera& camera, const EffectParticle& p, bool square) {
+/// One grain, wherever it is pooled: florr scales a unit square to the
+/// grain's side, turns it to the grain's facing and multiplies only the alpha
+/// down, so it never shrinks. Walked as a four-point path rather than pushed
+/// through the transform stack -- at this size a grain is four lineTo calls,
+/// and a save/rotate/restore per grain costs the rasterizer more than the
+/// square itself does.
+void drawSparkleGrain(Canvas& canvas, const Camera& camera, const EffectParticle& p) {
     const double left = p.lifeSeconds / p.maxLifeSeconds;
     if (left <= 0) return;
     const Vec2 at = camera.worldToScreen(p.position);
-    const double r = p.size * left * camera.zoom();
+    const double r = p.size * 0.5 * camera.zoom();
     // Grains are spawned off every high-rarity petal and drop the server
     // replicates, and replication reaches a good deal further than the camera
     // does -- so most of them, in a busy world, are behind the edge of the
     // screen. Each one was four browser calls painting nothing: 782 circles a
     // frame measured, against the ~50 that are actually in shot.
     //
-    // `r` is the circle's radius, but a square grain is r from its centre on
-    // each axis BEFORE rotation, so its corners reach r * sqrt(2). The bound
-    // covers the corner, because the sliver of a grain just past the edge is
-    // still a sliver that shows.
+    // `r` is half the side, so a corner reaches r * sqrt(2) once the square
+    // turns. The bound covers the corner, because the sliver of a grain just
+    // past the edge is still a sliver that shows.
     const double reach = r * 1.4143;
     if (at.x + reach < 0 || at.y + reach < 0 || at.x - reach > camera.viewportWidth() ||
         at.y - reach > camera.viewportHeight()) {
@@ -308,15 +304,9 @@ void drawSparkleGrain(Canvas& canvas, const Camera& camera, const EffectParticle
     // so every grain assigned a new `#rrggbbaa` for the browser to parse. This
     // way the colour is one interned string per rarity and only a float moves.
     // Measured at 0.41 -> 0.29 ms for 850 grains. Whoever calls this puts
-    // globalAlpha back; see the two loops that do.
+    // globalAlpha back; see the loops that do.
     ui::setFill(canvas, p.color);
-    canvas.setGlobalAlpha(static_cast<float>(left * kSparkleAlpha));
-    if (!square) {
-        canvas.fillCircle(static_cast<float>(at.x), static_cast<float>(at.y),
-                          static_cast<float>(r));
-        return;
-    }
-    // Hard corners, no radius, turned to its own facing.
+    canvas.setGlobalAlpha(static_cast<float>(left));
     const double c = std::cos(p.rotation) * r;
     const double s = std::sin(p.rotation) * r;
     canvas.beginPath();
@@ -326,6 +316,38 @@ void drawSparkleGrain(Canvas& canvas, const Camera& camera, const EffectParticle
     canvas.lineTo(static_cast<float>(at.x - c - s), static_cast<float>(at.y - s + c));
     canvas.closePath();
     canvas.fill();
+}
+
+/// One petal glint: a disc that shrinks and fades together. Culled to the
+/// screen for the reason drawSparkleGrain is; whoever calls this puts
+/// globalAlpha back.
+void drawPetalGlint(Canvas& canvas, const Camera& camera, const EffectParticle& p) {
+    const double left = p.lifeSeconds / p.maxLifeSeconds;
+    if (left <= 0) return;
+    const Vec2 at = camera.worldToScreen(p.position);
+    const double r = p.size * left * camera.zoom();
+    if (at.x + r < 0 || at.y + r < 0 || at.x - r > camera.viewportWidth() ||
+        at.y - r > camera.viewportHeight()) {
+        return;
+    }
+    ui::setFill(canvas, p.color);
+    canvas.setGlobalAlpha(static_cast<float>(left * kSparkleAlpha));
+    canvas.fillCircle(static_cast<float>(at.x), static_cast<float>(at.y), static_cast<float>(r));
+}
+
+/// Moves one pool of grains on by `dt` in the stepper's order -- drift, then
+/// drag, then turn -- and forgets the ones that have faded out.
+void stepGrains(std::vector<EffectParticle>& grains, double dt) {
+    const double drag = std::pow(kGrainDragPerFrame, dt * kFramesPerSecond);
+    for (EffectParticle& p : grains) {
+        p.position += p.velocity * dt;
+        p.velocity *= drag;
+        p.rotation += kGrainSpin * dt;
+        p.lifeSeconds -= dt;
+    }
+    grains.erase(std::remove_if(grains.begin(), grains.end(),
+                                [](const EffectParticle& p) { return p.lifeSeconds <= 0; }),
+                 grains.end());
 }
 
 /// A poison tick is purple and stands 14 units to the right of the body, so a
@@ -374,10 +396,13 @@ NumberChannel channelOf(std::uint8_t flags) {
     return NumberChannel::Hit;
 }
 
-/// The ALT rarity glow's reach past the petal's own artwork. The browser build
-/// bakes it as a 16-unit shadow-blur pad; cpp_canvas has no blur, so it is the
-/// same reach painted as the nested-disc ramp drawPetalGlow builds.
+/// The ALT rarity glow: how far it reaches past the petal's own artwork (the
+/// browser build's 16-unit blur pad), and its one alpha. It is florr's way of
+/// drawing a glow -- the firefly's is a single flat ellipse in its body colour
+/// at 0.298 (76/255) -- rather than a ramp of nested discs, which cost a
+/// dozen fills a petal every frame and made holding ALT crawl.
 constexpr double kPetalGlowPad = 16.0;
+constexpr double kPetalGlowAlpha = 76.0 / 255.0;
 
 /// A mob's bar never shrinks below the width a common hornet asks for, and is
 /// always eight units tall.
@@ -431,10 +456,11 @@ std::string formatDamage(double value) {
     return std::to_string(static_cast<long long>(std::llround(value)));
 }
 
-/// The four tiers that shimmer in the browser build, and universal above them.
+/// Ultra and up glitter: florr's drop pass tests the rarity byte against 6,
+/// which is Ultra on our ladder too, and every tier above it passes. The
+/// petals' glints take the same tiers.
 bool sparklingRarity(Rarity rarity) {
-    return rarity == Rarity::Ultra || rarity == Rarity::Super || rarity == Rarity::Unique ||
-           rarity == Rarity::Apex || rarity == Rarity::Universal;
+    return rarity >= Rarity::Ultra;
 }
 
 /// Jitter for a particle burst. Deliberately not reproducible across clients:
@@ -446,6 +472,32 @@ double randomUnit() {
     state ^= state >> 17;
     state ^= state << 5;
     return static_cast<double>(state >> 8) * (1.0 / 16777216.0);
+}
+
+/// One grain of `rarity`'s colour thrown from `at` (see kGrainSeconds).
+EffectParticle florrGrain(Vec2 at, Rarity rarity) {
+    const double angle = randomUnit() * kTau;
+    const double speed = randomUnit() * kGrainSpeedMax;
+    EffectParticle grain;
+    grain.position = at;
+    grain.velocity = {std::cos(angle) * speed, std::sin(angle) * speed};
+    grain.lifeSeconds = grain.maxLifeSeconds =
+        (kGrainLifeMs + randomUnit() * kGrainLifeSpreadMs) / 1000.0;
+    grain.size = kGrainSide + randomUnit() * kGrainSideSpread;
+    grain.rotation = randomUnit() * kTau;
+    grain.color = rarityColor(rarity);
+    return grain;
+}
+
+/// How many grains a body owes for (`from`, `to`]: one on every 20 ms tick of
+/// a clock shifted by a phase hashed from its net id. florr keeps a deadline
+/// per drop for this; a phase gives the same steady 50 a second with nothing
+/// stored per drop, and keeps drops that landed together from throwing in step.
+int grainsDue(std::uint32_t netId, double from, double to) {
+    const double phase =
+        static_cast<double>((netId * 2654435761u) >> 8) * (kGrainSeconds / 16777216.0);
+    return static_cast<int>(std::floor((to + phase) / kGrainSeconds) -
+                            std::floor((from + phase) / kGrainSeconds));
 }
 
 /// Lays out one arm of a strike: `from` to `to`, broken into runs that each
@@ -506,16 +558,6 @@ double hash01(std::uint32_t a, std::uint32_t b) {
 /// cells of one continuous surface. Symmetric about the cell's centre, so a
 /// tile that is turned by its flip bits stays registered with its neighbours.
 constexpr double kTileOverlap = 1.5;
-
-void moveToScreen(Canvas& canvas, const Camera& camera, Vec2 world) {
-    const Vec2 screen = camera.worldToScreen(world);
-    canvas.moveTo(static_cast<float>(screen.x), static_cast<float>(screen.y));
-}
-
-void lineToScreen(Canvas& canvas, const Camera& camera, Vec2 world) {
-    const Vec2 screen = camera.worldToScreen(world);
-    canvas.lineTo(static_cast<float>(screen.x), static_cast<float>(screen.y));
-}
 
 /// Clips to a world rectangle. Every tiled draw needs one: the artwork inside
 /// a 400-unit ground tile is free to overflow its own box (hel.svg rotates
@@ -657,12 +699,10 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         effects_.push_back(std::move(e));
     };
 
-    // Particles for a petal's high-rarity shimmer: disc-shaped grains, in the
-    // browser build's spoked emission -- evenly spaced angles with a little
-    // jitter -- because that is what the shipped build looks like. A drop's
-    // glitter is pushDropGrain's, below. The browser build integrates these
-    // once per 60 Hz frame, so its speeds are per frame and are converted here
-    // the way the explosion's debris is.
+    // A petal's glint: disc-shaped grains in the browser build's spoked
+    // emission -- evenly spaced angles with a little jitter. The browser build
+    // integrates these once per 60 Hz frame, so its speeds are per frame and
+    // are converted here the way the explosion's debris is.
     const auto pushSparkle = [this](Vec2 at, Rarity rarity, int count, double speedBase,
                                     double speedSpread, double lifeBase, double lifeSpread,
                                     double sizeBase, double sizeSpread, double lifetime) {
@@ -699,27 +739,8 @@ void WorldRenderer::ingestEvents(WorldView& view) {
     // the pool is the drops' own, so a screenful of damage numbers can never
     // silence it. `budget` is how much of that pool the caller may take -- the
     // continuous shimmer stops short of the cap, a burst may fill it.
-    //
-    // Scattered, not spoked like a petal's: with only a handful in flight at
-    // a time, evenly spaced angles read as spokes rather than as a burst, so
-    // each grain picks its own direction and its own facing -- a square's
-    // facing shows. The colour is the rarity's own (see kSparkleWhiten).
-    const auto pushDropGrain = [this](Vec2 at, Rarity rarity, double speedBase,
-                                      double speedSpread, double lifeMs, double lifeSpreadMs,
-                                      double sizeBase, double sizeSpread, std::size_t budget) {
-        if (dropSparkles_.size() >= budget) return;
-        const double angle = randomUnit() * kTau;
-        const double speed = (speedBase + randomUnit() * speedSpread) * kFramesPerSecond;
-        EffectParticle particle;
-        particle.position = {at.x + (randomUnit() - 0.5) * 4.0,
-                             at.y + (randomUnit() - 0.5) * 4.0};
-        particle.velocity = {std::cos(angle) * speed, std::sin(angle) * speed};
-        particle.lifeSeconds = particle.maxLifeSeconds =
-            (lifeMs + randomUnit() * lifeSpreadMs) / 1000.0;
-        particle.size = sizeBase + randomUnit() * sizeSpread;
-        particle.rotation = randomUnit() * kTau;
-        particle.color = rarityColor(rarity);
-        dropSparkles_.push_back(particle);
+    const auto pushDropGrain = [this](Vec2 at, Rarity rarity, std::size_t budget) {
+        if (dropSparkles_.size() < budget) dropSparkles_.push_back(florrGrain(at, rarity));
     };
 
     for (const ViewEvent& event : view.events()) {
@@ -916,17 +937,13 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     drop.typeIndex = static_cast<std::uint16_t>(event.amount);
                     drop.rarity = clampRarity(static_cast<int>(event.flag));
                     for (int i = 0; i < kDropBurstCount; ++i) {
-                        pushDropGrain(drop.position, drop.rarity, kDropBurstSpeed,
-                                      kDropBurstSpeedSpread, kDropBurstLifeMs,
-                                      kDropBurstLifeSpreadMs, kDropBurstSize,
-                                      kDropBurstSizeSpread, kMaxDropSparkles);
+                        pushDropGrain(drop.position, drop.rarity, kMaxDropSparkles);
                     }
                 }
                 drop.takerNetId = event.otherNetId;
                 drop.pendingTakerNetId = 0;
                 drop.ageSeconds = 0;
                 drop.seenThisFrame = false;
-                drop.sparkleCredit = 0;
                 if (dyingDrops_.size() < kMaxDyingDrops) dyingDrops_.push_back(drop);
                 dropSpawns_.erase(event.netId);
                 break;
@@ -962,9 +979,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         spawn.rotation = (randomUnit() - 0.5) * kTau;
         dropSpawns_[entity.netId] = spawn;
         for (int i = 0; i < kDropBurstCount; ++i) {
-            pushDropGrain(entity.position, entity.rarity, kDropBurstSpeed, kDropBurstSpeedSpread,
-                          kDropBurstLifeMs, kDropBurstLifeSpreadMs, kDropBurstSize,
-                          kDropBurstSizeSpread, kMaxDropSparkles);
+            pushDropGrain(entity.position, entity.rarity, kMaxDropSparkles);
         }
     }
     for (auto it = knownDrops_.begin(); it != knownDrops_.end();) {
@@ -992,32 +1007,23 @@ void WorldRenderer::ingestEvents(WorldView& view) {
 
     // --- the high-rarity shimmer -----------------------------------------
     //
-    // The browser build rolls this once per drawn frame per body, at 60 Hz.
-    // Rolling it per frame here would emit at whatever rate the display runs
-    // at, so the chance is scaled by how long the frame was: the shimmer then
-    // looks the same at 60 Hz and at 144.
+    // A drop's is a steady stream at florr's 50 a second, so the rate is the
+    // same at 60 Hz and at 144; a frame that stalled owes at most a quarter of
+    // a second's grains (florr catches up 300 ms). A petal's glint is the
+    // browser build's roll, once per drawn frame at 60 Hz -- so the chance is
+    // scaled by how long the frame was, for the same reason.
     const double sinceLast = clamp(nowSeconds_ - lastIngestSeconds_, 0.0, 0.25);
     lastIngestSeconds_ = nowSeconds_;
+    if (sinceLast <= 0.0) return;
+    const double since = nowSeconds_ - sinceLast;
     const double chance = clamp(kSparkleChance * sinceLast * kFramesPerSecond, 0.0, 1.0);
-    if (chance <= 0.0) return;
     for (const auto& entry : view.entities()) {
         const RemoteEntity& entity = entry.second;
         if (!sparklingRarity(entity.rarity)) continue;
 
         if (entity.kind == net::EntityKind::Drop) {
-            // A steady stream, not a roll: the drop is owed a fraction of a
-            // grain per frame and emits whenever that has added up to a whole
-            // one, which keeps the rate the same at 60 Hz and at 144.
-            auto known = knownDrops_.find(entity.netId);
-            if (known == knownDrops_.end()) continue;
-            double& credit = known->second.sparkleCredit;
-            credit += kDropSparkleRate * sinceLast;
-            while (credit >= 1.0) {
-                credit -= 1.0;
-                pushDropGrain(entity.position, entity.rarity, kDropSparkleSpeed,
-                              kDropSparkleSpeedSpread, kDropSparkleLifeMs,
-                              kDropSparkleLifeSpreadMs, kDropSparkleSize,
-                              kDropSparkleSizeSpread, kDropShimmerBudget);
+            for (int i = grainsDue(entity.netId, since, nowSeconds_); i > 0; --i) {
+                pushDropGrain(entity.position, entity.rarity, kDropShimmerBudget);
             }
             continue;
         }
@@ -1091,13 +1097,7 @@ void WorldRenderer::update(double dt) {
                                 }),
                  bolts_.end());
 
-    for (EffectParticle& p : dropSparkles_) {
-        p.position += p.velocity * dt;
-        p.lifeSeconds -= dt;
-    }
-    dropSparkles_.erase(std::remove_if(dropSparkles_.begin(), dropSparkles_.end(),
-                                       [](const EffectParticle& p) { return p.lifeSeconds <= 0; }),
-                        dropSparkles_.end());
+    stepGrains(dropSparkles_, dt);
 
     for (auto& entry : dropSpawns_) entry.second.ageSeconds += dt;
     for (auto it = dropSpawns_.begin(); it != dropSpawns_.end();) {
@@ -2625,11 +2625,9 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
         drawPetalGlow(canvas, lightRadius, glow);
     }
     if (options.rarityGlow) {
-        // ALT held: every petal wears its tier. The browser build bakes it as
-        // a 16-unit shadow blur redrawn six times; with no blur here the same
-        // reach is the nested-disc ramp, which reads as the same halo.
-        drawPetalGlow(canvas, diameter * 0.5 + kPetalGlowPad * zoom, rarityColor(entity.rarity),
-                      12, 0.75, 0.45);
+        // ALT held: every petal wears its tier, as one flat disc under it.
+        ui::setFill(canvas, rarityColor(entity.rarity), kPetalGlowAlpha);
+        canvas.fillCircle(0, 0, static_cast<float>(diameter * 0.5 + kPetalGlowPad * zoom));
     }
     canvas.rotate(static_cast<float>(rotation));
     // Both axes: a petal that declares an X offset is drawn off it in the
@@ -3608,43 +3606,10 @@ void WorldRenderer::drawMapElements(Canvas& canvas, const Camera& camera, Realm 
     if (!map) return;
     const double zoom = camera.zoom();
 
-    if (options.rarityGlow) {
-        // Under the walls, and only while the glow is held: this is a map the
-        // player asks for, not a decoration.
-        for (const MapElement& element : map->elements()) {
-            // Difficulty bands only, and painted in the tier that difficulty
-            // mostly produces -- the same colour the minimap gives the band,
-            // off the same curve the spawner rolls against.
-            if (!element.isSpawnBand()) continue;
-            // And not the singular ones: a band holding one mob is drawn over
-            // everywhere that mob may be, and tinting it says the whole
-            // district is that tier. The minimap's ALT overlay drops them for
-            // the same reason. See MapElement::singular.
-            if (element.singular) continue;
-            ui::setFill(canvas, rarityColor(dominantTierForDifficulty(element.difficulty)), 0.25);
-            // The OUTLINE, not the bounding box. Filling the box would show a
-            // player a tier band covering ground it does not cover, which is
-            // the one thing this overlay exists to answer.
-            if (element.polygon.size() >= 3) {
-                canvas.beginPath();
-                moveToScreen(canvas, camera, element.polygon.front());
-                for (std::size_t i = 1; i < element.polygon.size(); ++i) {
-                    lineToScreen(canvas, camera, element.polygon[i]);
-                }
-                canvas.closePath();
-                canvas.fill();
-                continue;
-            }
-            const Vec2 at = camera.worldToScreen({element.bounds.x, element.bounds.y});
-            canvas.fillRect(static_cast<float>(at.x), static_cast<float>(at.y),
-                            static_cast<float>(element.bounds.w * zoom),
-                            static_cast<float>(element.bounds.h * zoom));
-        }
-    }
-
-    // Everything else the annotation layer carries paints nothing: the browser
-    // build's MAP_COLORS are all fully transparent and its spawn points draw
-    // nothing at all. Only the teleporters are visible.
+    // Of everything the annotation layer carries, only the teleporters paint:
+    // the browser build's MAP_COLORS are all fully transparent, its spawn
+    // points draw nothing at all, and the spawn bands are tinted on the
+    // minimap (ALT) but never on the ground.
     const Rect visible = camera.visibleWorld(kTeleporterCull);
     for (const MapElement& element : map->elements()) {
         if (element.kind != MapElementKind::Teleporter) continue;
@@ -4005,12 +3970,9 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
                 break;
             }
             case Effect::Kind::Sparkle: {
-                // Particles only: the shimmer has no body of its own. A
-                // petal's grains are discs; only a drop's are square.
-                for (const EffectParticle& p : e.particles) {
-                    drawSparkleGrain(canvas, camera, p, /*square=*/false);
-                }
-                // The grains fade through globalAlpha, so the layer has to put
+                // Particles only: the glint has no body of its own.
+                for (const EffectParticle& p : e.particles) drawPetalGlint(canvas, camera, p);
+                // The discs fade through globalAlpha, so the layer has to put
                 // it back before anything else is painted.
                 canvas.setGlobalAlpha(1.0f);
                 break;
@@ -4318,12 +4280,10 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     for (const net::EntityKind kind : kOrder) {
         // A drop's glitter opens the drop layer, so it lies UNDER every drop,
         // live or dying, and over the flowers below. Drawn with the effects it
-        // covered the tile it came off -- the grains are five times a petal's
-        // and the burst a landing drop throws hid the icon it was announcing.
+        // covered the tile it came off, and the burst a landing drop throws hid
+        // the icon it was announcing.
         if (kind == net::EntityKind::Drop) {
-            for (const EffectParticle& p : dropSparkles_) {
-                drawSparkleGrain(canvas, camera, p, true);
-            }
+            for (const EffectParticle& p : dropSparkles_) drawSparkleGrain(canvas, camera, p);
             canvas.setGlobalAlpha(1.0f);
         }
 

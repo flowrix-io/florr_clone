@@ -214,15 +214,8 @@ inline constexpr double kDropLandSeconds = 0.4;
 inline constexpr double kDropLandNear = 30.0;
 inline constexpr double kDropLandSpread = 20.0;
 
-/// The burst it throws as it lands. Speeds are per 60 Hz frame, lives in
-/// milliseconds, sizes in the units the drop is drawn in -- the browser build's
-/// own figures, which is the form the world renderer states them in.
+/// The burst it throws as it lands: this many of florr's glitter grains at
+/// once (the world renderer's kGrainSeconds says what one is).
 inline constexpr int kDropBurstCount = 7;
-inline constexpr double kDropBurstSpeed = 3.0;
-inline constexpr double kDropBurstSpeedSpread = 3.0;
-inline constexpr double kDropBurstLifeMs = 500.0;
-inline constexpr double kDropBurstLifeSpreadMs = 250.0;
-inline constexpr double kDropBurstSize = 7.5;
-inline constexpr double kDropBurstSizeSpread = 15.0;
 
 } // namespace flix::ui
