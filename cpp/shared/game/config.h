@@ -1120,6 +1120,40 @@ inline bool petalControlsPets(const PetalConfig& config) { return config.id == "
 inline constexpr const char* kSacrificePetalId = "sacrifice";
 inline bool petalIsSacrifice(const PetalConfig& config) { return config.id == kSacrificePetalId; }
 
+/// The Champion's Crown: florr's "Gives flowers around you a Super Basic. You
+/// receive credit for damage dealt using it." Worn on the head (EquipCrown),
+/// it takes no place on its wearer's ring and lends every OTHER flower within
+/// kCrownLendRadius one Basic of the crown's own tier, on that flower's own
+/// ring, for as long as it stays in reach (PetalSystem::serveLentPetal). Whatever the lent petal
+/// takes off a mob is entered in the mob's ledger under the crown's wearer --
+/// the loot, the XP and the mob's grudge are the wearer's -- while the fight
+/// itself, its side and its floating numbers stay with the flower carrying it.
+///
+/// florr keeps it in a battle royale castle, one per match. It is the
+/// sacrifice's kind of petal here: no mob drops it, a `random` drop row never
+/// names it and the shop never sells it (petalHasOwnSource).
+inline constexpr const char* kChampionCrownPetalId = "champion_crown";
+inline bool petalLendsBasic(const PetalConfig& config) {
+    return config.id == kChampionCrownPetalId;
+}
+
+/// What the crown lends. At the crown's own tier, by the user's rule
+/// (2026-10-13) -- florr names a Super Basic outright, but has the crown at
+/// unique alone.
+inline constexpr const char* kCrownLentPetalId = "basic";
+
+/// How far a flower may stand from the crown's wearer, centre to centre, and
+/// still be lent one. florr's figure is not in its client; this is a guess --
+/// about half a screen, so "the flowers around you" are the ones in view.
+inline constexpr double kCrownLendRadius = 600.0;
+
+/// A petal the world hands out by a rule of its own, which every catalogue a
+/// player could otherwise reach it through has to leave out: the shop, the
+/// `random` drop rows, and the gallery's mirror of them.
+inline bool petalHasOwnSource(const PetalConfig& config) {
+    return petalIsSacrifice(config) || petalLendsBasic(config);
+}
+
 // ---------------------------------------------------------------------------
 // ContentRegistry
 // ---------------------------------------------------------------------------

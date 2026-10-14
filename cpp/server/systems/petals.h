@@ -142,7 +142,43 @@ struct PetalSlotState {
     /// stops being where it was -- a corpse's ring is torn down and the
     /// respawn must not fly its petals in from where it died.
     bool ringCentreValid = false;
+
+    /// The Basic a Champion's Crown lends this flower (petalLendsBasic), at
+    /// the crown's own tier.
+    ///
+    /// Not a loadout slot: nothing on the bar holds it, so it owns no
+    /// LoadoutSlot and is never saved. It takes the ring's last place while a
+    /// crown reaches the flower -- its gap held open while it reloads, as a
+    /// broken slot's is -- and is gone the tick none does.
+    struct Lent {
+        /// The crown's wearer reaching this flower THIS tick, or NULL_ENTITY,
+        /// and the tier of its crown. Written by gatherCrownLenders ahead of
+        /// the ring pass.
+        Entity lender = NULL_ENTITY;
+        Rarity lenderRarity = Rarity::Common;
+        /// A crown reached the flower last tick too. A loan that is new on
+        /// this tick serves the petal's reload before it appears, exactly as
+        /// equipping a petal does.
+        bool active = false;
+        /// The tier the loan was made at. A crown of another tier taking it
+        /// over -- the wearer swapping theirs, or a nearer one -- is a new
+        /// petal, as swapping a slot's tier is, and serves its own reload.
+        Rarity rarity = Rarity::Common;
+        /// The lent petal on the field, or NULL_ENTITY while it reloads.
+        Entity petal = NULL_ENTITY;
+        /// When it comes (back) out; 0 while it is out.
+        double readyAtMillis = 0;
+    };
+    Lent lent;
 };
+
+/// PetalInstance::slot on a lent petal: past every loadout slot, so the guards
+/// that keep a petal's slot inside the bar before indexing it step over one.
+inline constexpr std::uint8_t kLentPetalSlot = 0xFF;
+
+/// Whether a Champion's Crown is worn on the bar's active row, mimicked ones
+/// included, and if so the highest tier among them in `tier`.
+bool championCrownTier(const ContentRegistry& registry, const Loadout& loadout, Rarity& tier);
 
 /// The slot whose moon comes out, or -1 for a bar with none on its active row.
 ///
@@ -274,6 +310,20 @@ private:
 
     void clearRing(World& world, Entity player);
     void reconcileSlots(World& world, const ContentRegistry& registry, Entity player,
+                        double nowMillis);
+    /// Decide this tick's loans (PetalSlotState::Lent::lender): every standing
+    /// flower within kCrownLendRadius of a standing crown wearer, in its realm,
+    /// and not that wearer -- nor its splitter half, the same person -- is
+    /// lent one by the NEAREST such wearer, at that wearer's best crown's tier.
+    /// One loan per flower however many crowns reach it. Run once, ahead of
+    /// the ring pass, so that every loan is judged from the same positions.
+    void gatherCrownLenders(World& world, const ContentRegistry& registry);
+    /// Carry out one flower's loan: put the lent petal out once its reload has
+    /// run, put it back on that reload when it breaks, and take it off at once,
+    /// unbroken, when the loan ends. After reconcileSlots, which drops a petal
+    /// combat killed from the ring's list; before placement, which gives it its
+    /// place.
+    void serveLentPetal(World& world, const ContentRegistry& registry, Entity player,
                         double nowMillis);
     Aggregate recomputeModifiers(World& world, const ContentRegistry& registry, Entity player);
     /// Bank root's armour: one stack per kArmorStackIntervalMillis, capped at
@@ -554,6 +604,9 @@ private:
 
     std::vector<Entity> playerList_;
     std::vector<Entity> ringNpcList_;
+    /// gatherCrownLenders' snapshot of this tick's standing crown wearers,
+    /// each with its best crown's tier.
+    std::vector<std::pair<Entity, Rarity>> crownWearers_;
     std::vector<Entity> actionList_;
     /// The batteries with a charge ready this tick, snapshotted before the
     /// first one fires: a discharge creates entities and can put its slot on

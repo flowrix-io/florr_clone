@@ -1005,6 +1005,12 @@ struct Spawner {
 
 struct PetalInstance {
     Entity owner = NULL_ENTITY;
+    /// The player a mob's ledger enters this petal's damage under, when that is
+    /// not `owner`: the wearer of the Champion's Crown that LENT it (see
+    /// petalLendsBasic). NULL_ENTITY on every petal a flower equipped itself.
+    /// Nothing else follows it -- the petal fights on its owner's side and
+    /// orbits its owner's ring.
+    Entity creditTo = NULL_ENTITY;
     std::uint16_t configIndex = 0;
     Rarity rarity = Rarity::Common;
     std::uint8_t slot = 0;

@@ -490,6 +490,17 @@ double popImpulse(double distance, double dt) {
 /// health".
 bool playerIsDown(World& world, Entity player) { return !isStanding(world, player); }
 
+/// Two bodies of one person: a splitter's halves share a connection. Combat's
+/// oneConnection, for the one question this system asks of it -- whether a
+/// crown's wearer is lending to itself. A bot's connection is 0 and two bots
+/// are two people.
+bool oneConnection(World& world, Entity a, Entity b) {
+    const PlayerAccount* first = world.tryGet<PlayerAccount>(a);
+    const PlayerAccount* second = world.tryGet<PlayerAccount>(b);
+    return first != nullptr && second != nullptr && first->connection != 0 &&
+           first->connection == second->connection;
+}
+
 /// A live petal's stats, with the reload a mimic's copy pays in place of its
 /// own tier's.
 PetalStats instanceStats(const ContentRegistry& registry, const PetalInstance& instance) {
@@ -517,6 +528,18 @@ int liveMoonSlot(const ContentRegistry& registry, const Loadout& loadout) {
     return best;
 }
 
+bool championCrownTier(const ContentRegistry& registry, const Loadout& loadout, Rarity& tier) {
+    bool worn = false;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        // Resolved, so a mimic beside a crown is a crown at the mimic's tier.
+        const EquippedPetal slot = equippedPetal(registry, loadout, i);
+        if (slot.empty() || !petalLendsBasic(registry.petal(slot.configIndex))) continue;
+        if (!worn || rarityIndex(slot.rarity) > rarityIndex(tier)) tier = slot.rarity;
+        worn = true;
+    }
+    return worn;
+}
+
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
@@ -540,6 +563,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
     // Once for the tick, before any petal is placed: every player's ring reads
     // the same set of mob positions, as the reference's does.
     rebuildAttractionGrid(world);
+    gatherCrownLenders(world, registry);
 
     for (const Entity player : playerList_) {
         if (!world.isAlive(player)) continue;
@@ -565,6 +589,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         runPetBroods(world, registry, player, nowMillis);
         carryLoosePetalsAcrossRealms(world, player);
         reconcileSlots(world, registry, player, nowMillis);
+        serveLentPetal(world, registry, player, nowMillis);
         const Aggregate aggregate = recomputeModifiers(world, registry, player);
         tickArmorStacks(world, player, aggregate, dt);
         applyPassiveHeal(world, player, aggregate, nowMillis, dt);
@@ -717,6 +742,10 @@ void PetalSystem::clearRing(World& world, Entity player) {
         // laid out from where it was LAST tick: keeping the corpse's centre
         // would fly the ring in from the place it went down.
         state->ringCentreValid = false;
+        // A loan is a standing flower's. Its petal went with the ring above;
+        // one made to the flower once it is up again starts from scratch,
+        // reload and all.
+        state->lent = PetalSlotState::Lent{};
     }
 }
 
@@ -1059,6 +1088,118 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         loadout.spawned[kept++] = petal;
     }
     loadout.spawned.resize(kept);
+}
+
+void PetalSystem::gatherCrownLenders(World& world, const ContentRegistry& registry) {
+    // Flowers on both ends. A ring-wearing NPC lends nothing and is lent
+    // nothing: florr's crown gives to "flowers around you".
+    crownWearers_.clear();
+    for (const Entity player : playerList_) {
+        if (!world.isAlive(player) || !world.has<PlayerTag>(player)) continue;
+        if (playerIsDown(world, player)) continue;
+        const Loadout* loadout = world.tryGet<Loadout>(player);
+        Rarity tier = Rarity::Common;
+        if (loadout != nullptr && championCrownTier(registry, *loadout, tier)) {
+            crownWearers_.emplace_back(player, tier);
+        }
+    }
+
+    for (const Entity player : playerList_) {
+        if (!world.isAlive(player) || !world.has<PlayerTag>(player)) continue;
+        Entity lender = NULL_ENTITY;
+        Rarity lenderRarity = Rarity::Common;
+        if (!crownWearers_.empty() && !playerIsDown(world, player)) {
+            const Transform& at = world.get<Transform>(player);
+            double nearestSq = kCrownLendRadius * kCrownLendRadius;
+            for (const auto& [wearer, tier] : crownWearers_) {
+                if (wearer == player || oneConnection(world, wearer, player)) continue;
+                const Transform& from = world.get<Transform>(wearer);
+                if (from.realm != at.realm) continue;
+                const double gapSq = distanceSq(from.position, at.position);
+                // The edge of the reach counts; of two crowns equally near,
+                // the first one found keeps the loan.
+                if (gapSq > nearestSq || (lender != NULL_ENTITY && gapSq == nearestSq)) continue;
+                nearestSq = gapSq;
+                lender = wearer;
+                lenderRarity = tier;
+            }
+        }
+        // ensure() only where there is a loan to write: it can move the
+        // flower to another archetype, and a flower the slot pass has not yet
+        // given a state has no loan to end either.
+        if (lender != NULL_ENTITY) {
+            PetalSlotState::Lent& lent = world.ensure<PetalSlotState>(player).lent;
+            lent.lender = lender;
+            lent.lenderRarity = lenderRarity;
+        } else if (PetalSlotState* state = world.tryGet<PetalSlotState>(player)) {
+            state->lent.lender = NULL_ENTITY;
+        }
+    }
+}
+
+void PetalSystem::serveLentPetal(World& world, const ContentRegistry& registry, Entity player,
+                                 double nowMillis) {
+    PetalSlotState* state = world.tryGet<PetalSlotState>(player);
+    Loadout* loadout = world.tryGet<Loadout>(player);
+    if (state == nullptr || loadout == nullptr) return;
+    PetalSlotState::Lent& lent = state->lent;
+    const std::uint16_t lentIndex = registry.petalIndex(kCrownLentPetalId);
+    if (lent.lender == NULL_ENTITY || lentIndex == kInvalidIndex) {
+        // The loan is over: the flower walked out of reach, or the crown came
+        // off, went down or left the realm. Its petal goes at once and
+        // unbroken, and the next loan serves a full reload of its own.
+        if (lent.active) destroySlotPetals(world, *loadout, kLentPetalSlot);
+        lent = PetalSlotState::Lent{};
+        return;
+    }
+
+    // At the crown's tier. It is a petal on THIS flower's ring, though, so
+    // this flower's talents shape it as they shape every other one there:
+    // Petal Health, rounded as reconcileSlots rounds it, and Reload.
+    const Rarity rarity = lent.lenderRarity;
+    PetalStats stats = registry.petalStats(lentIndex, rarity);
+    if (const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player)) {
+        stats.health = std::round(stats.health * tree->skills.healthScale(SkillId::PetalHealth));
+    }
+    const double reload = reloadMillisFor(stats, reloadScaleOf(world, player));
+
+    // A new loan, or one now made at another tier -- the wearer swapped
+    // crowns, or a nearer crown of another tier took it over: a different
+    // petal, which serves its reload before it appears, as a slot whose tier
+    // changes does.
+    if (!lent.active || lent.rarity != rarity) {
+        if (lent.petal != NULL_ENTITY) destroySlotPetals(world, *loadout, kLentPetalSlot);
+        lent.active = true;
+        lent.rarity = rarity;
+        lent.petal = NULL_ENTITY;
+        lent.readyAtMillis = nowMillis + reload;
+    }
+    // Broken. Combat marks the petal it kills Dead, and the slot pass has
+    // already dropped that from the ring's list; one whose health ran out
+    // some other way is taken off here.
+    if (lent.petal != NULL_ENTITY &&
+        (!world.isAlive(lent.petal) ||
+         (stats.breakable && instanceHealth(world, lent.petal) <= 0.0))) {
+        if (world.isAlive(lent.petal) && !world.has<Dead>(lent.petal)) {
+            destroySlotPetals(world, *loadout, kLentPetalSlot);
+        }
+        lent.petal = NULL_ENTITY;
+        lent.readyAtMillis = nowMillis + reload;
+    }
+    if (lent.petal == NULL_ENTITY && nowMillis >= lent.readyAtMillis) {
+        const EquippedPetal equipped{lentIndex, rarity, rarity};
+        lent.petal = spawnPetal(world, player, *loadout, kLentPetalSlot, 0, 1,
+                                registry.petal(lentIndex), stats, equipped,
+                                stats.breakable ? stats.health : 0.0, nowMillis);
+        if (lent.petal != NULL_ENTITY) lent.readyAtMillis = 0;
+    }
+    // Every tick rather than once at the spawn: the nearest crown can change
+    // while the petal is out, and the next hit is entered under the new one.
+    if (lent.petal != NULL_ENTITY) {
+        if (PetalInstance* instance = world.tryGet<PetalInstance>(lent.petal)) {
+            instance->creditTo = lent.lender;
+        }
+    }
 }
 
 Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, std::uint8_t slot,
@@ -1683,6 +1824,10 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
             1, petalCopies(registry.petalStats(slot.configIndex, slot.rarity).count, skills));
         occupied += config.clumped ? 1 : count;
     }
+    // A crown's loan takes the place after the bar's last, and keeps it open
+    // while the lent petal reloads, as a broken slot keeps its own.
+    const int lentOrdinal = occupied;
+    if (ringState != nullptr && ringState->lent.active) ++occupied;
     // A bar of nothing but worn petals leaves the ring empty, but anything
     // they did spawn still has to be pinned to the flower below.
     const double wedge = occupied > 0 ? kTau / occupied : 0.0;
@@ -1690,9 +1835,11 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     for (const Entity petal : loadout->spawned) {
         PetalInstance* instance = world.tryGet<PetalInstance>(petal);
         Transform* transform = world.tryGet<Transform>(petal);
+        if (!instance || !transform) continue;
+        const bool lent = instance->slot == kLentPetalSlot;
         // Bounded by the ACTIVE row, not the loadout: `ordinal` is only that
-        // wide, and nothing outside it was ever spawned.
-        if (!instance || !transform || instance->slot >= kLoadoutActiveSlots) continue;
+        // wide, and nothing outside it was ever spawned -- but a lent petal.
+        if (!lent && instance->slot >= kLoadoutActiveSlots) continue;
         const PetalConfig& config = registry.petal(instance->configIndex);
         // Loose: its place is wherever it was last shoved to, which is the
         // movement pass's to decide. No orbit, no spring, no attraction.
@@ -1709,7 +1856,7 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // A clumped slot's grains all sit on its one ring place and fan out
         // around it below; every other instance owns the next place along.
         const int ringSlot =
-            ordinal[instance->slot] + (config.clumped ? 0 : instance->subIndex);
+            lent ? lentOrdinal : ordinal[instance->slot] + (config.clumped ? 0 : instance->subIndex);
         const double offset = wedge * ringSlot;
 
         // A fixed-direction petal is pinned to the flower's facing and does not

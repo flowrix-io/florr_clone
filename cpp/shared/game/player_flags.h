@@ -33,6 +33,8 @@ enum EquipFlag : std::uint8_t {
     /// paint its cyan blade. Derived in the content loader from the petal id --
     /// see parsePetal() for why it is not written in petals.json.
     EquipLightningCutter = 1 << 5,
+    /// The Champion's Crown, drawn on the flower's head.
+    EquipCrown = 1 << 6,
 };
 
 enum PlayerRenderFlag : std::uint32_t {

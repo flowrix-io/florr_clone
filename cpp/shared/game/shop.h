@@ -51,8 +51,8 @@ inline bool shopSellsPetal(std::uint16_t petalIndex) {
     if (petalIndex >= content().petalCount()) return false;
     const PetalConfig& petal = content().petal(petalIndex);
     if (petal.isAdminPetal) return false;
-    // Hel's alone to hand out; see petalIsSacrifice.
-    if (petalIsSacrifice(petal)) return false;
+    // Handed out by a rule of their own: the sacrifice, the crown.
+    if (petalHasOwnSource(petal)) return false;
     constexpr char kEggSuffix[] = "_egg";
     constexpr std::size_t kEggSuffixLen = sizeof(kEggSuffix) - 1;
     if (petal.id.size() > kEggSuffixLen &&

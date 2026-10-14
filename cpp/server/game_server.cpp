@@ -3043,10 +3043,19 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
 
 void GameServer::announceRarePickup(const Session& session, std::uint16_t petalIndex,
                                     Rarity rarity) {
-    if (rarityIndex(rarity) < rarityIndex(Rarity::Apex)) return;
     if (petalIndex >= content().petalCount()) return;
     char colorAttribute[32];
     std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(rarity));
+    // The crown has florr's own line (Chat/PetalFoundNamed/champion_crown),
+    // at whatever tier it is picked up.
+    if (petalLendsBasic(content().petal(petalIndex))) {
+        broadcastChat(net::ChatChannel::System, "",
+                      std::string("<b style=\"color: ") + colorAttribute + ";\">The " +
+                          content().petal(petalIndex).name + " has been taken by " +
+                          creditedPlayerMarkup(session) + "!</b>");
+        return;
+    }
+    if (rarityIndex(rarity) < rarityIndex(Rarity::Apex)) return;
     // "The Universal", as the forge says it: there is only ever one of each
     // petal at universal.
     const char* article = rarity == Rarity::Universal ? "The" : "An";

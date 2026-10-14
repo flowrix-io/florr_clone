@@ -127,6 +127,34 @@ constexpr double kFramesPerSecond = 60.0;
 /// which grows with level -- the body never does.
 constexpr double kFlowerArtRadius = 25.0;
 
+// --- the Champion's Crown, worn ---------------------------------------------
+//
+// florr paints its headwear with one function for both places it shows: on an
+// item it lays a faint black disc down first, standing in for the head the
+// piece sits on, and on a flower it leaves the disc out. petals.json carries
+// the item's picture, disc and all; this is the other branch -- the crown
+// alone, in the same frame, where the head's disc is centred on the origin
+// with a radius of 30.
+constexpr const char* kWornCrownSvg =
+    R"SVG(<svg xmlns="http://www.w3.org/2000/svg" viewBox="-22.9 -41.7 45.8 22.3">)SVG"
+    R"SVG(<g transform="matrix(1.1 0 0 1.1 -60.5 -60.5)">)SVG"
+    R"SVG(<path fill="#ffdc06" stroke="#ccb005" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m48.125 18.194-4.5 8.526-8.375-4.22 4.625 13.75c3.875-.875 9.612-1.125 15.125-1.125s11.25.25 15.125 1.125L74.75 22.5l-8.375 4.22-4.5-8.526L55 25.875Z"/>)SVG"
+    R"SVG(<path fill="red" stroke="#c00" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.334" d="M40.375 31.373a2 2 0 1 1-4 0 2 2 0 0 1 4 0M51.22 29.57a2 2 0 1 1-4 0 2 2 0 0 1 4 0m18.405 1.802a2 2 0 1 0 4 0 2 2 0 0 0-4 0M58.78 29.57a2 2 0 1 0 4 0 2 2 0 0 0-4 0"/>)SVG"
+    R"SVG(</g></svg>)SVG";
+/// The head's disc is the flower: radius 30 in that frame is radius 25 here.
+constexpr double kWornCrownScale = kFlowerArtRadius / 30.0;
+
+/// The worn crown, in the flower's radius-25 art space and upright -- florr's
+/// sits on top of the head whichever way the flower faces.
+void drawWornCrown(Canvas& canvas) {
+    static const SvgDocument crown = SvgDocument::fromString(kWornCrownSvg);
+    if (crown.empty()) return;
+    crown.renderFitted(canvas, static_cast<float>(crown.viewBoxX() * kWornCrownScale),
+                       static_cast<float>(crown.viewBoxY() * kWornCrownScale),
+                       static_cast<float>(crown.viewBoxWidth() * kWornCrownScale),
+                       static_cast<float>(crown.viewBoxHeight() * kWornCrownScale), 0.0f);
+}
+
 // --- chat bubbles ----------------------------------------------------------
 //
 // The reference's geometry (rysteria_gardn Client/Render/RenderChat.cc and
@@ -2851,6 +2879,8 @@ void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint8_
             canvas.restore();
         }
     }
+
+    if (equipFlags & EquipCrown) drawWornCrown(canvas);
 }
 
 void WorldRenderer::drawPumpkin(Canvas& canvas, const RemoteEntity& entity) const {
@@ -3132,11 +3162,12 @@ const std::vector<std::uint16_t>& WorldRenderer::droppablePetals() const {
     if (!droppablePetals_.empty() || !content_) return droppablePetals_;
     for (std::uint16_t i = 0; i < content_->petalCount(); ++i) {
         const PetalConfig& petal = content_->petal(i);
-        // The server's own drop rule: no admin petals, no cutters, no
-        // sacrifice, and no egg for a mob whose config forbids one.
+        // The server's own drop rule: no admin petals, no cutters, nothing
+        // with a source of its own, and no egg for a mob whose config forbids
+        // one.
         if (petal.isAdminPetal) continue;
         if (petal.id == "cutter" || petal.id == "lightning_cutter") continue;
-        if (petalIsSacrifice(petal)) continue;
+        if (petalHasOwnSource(petal)) continue;
         const std::string suffix = "_egg";
         if (petal.id.size() > suffix.size() &&
             petal.id.compare(petal.id.size() - suffix.size(), suffix.size(), suffix) == 0) {

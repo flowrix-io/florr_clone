@@ -1657,6 +1657,39 @@ TEST(a_petal_hits_with_its_config_stats_and_its_own_cooldown) {
     CHECK_NEAR(a.health(mob), 180.0, 1e-9);
 }
 
+TEST(a_lent_petal_enters_its_damage_under_the_crowns_wearer) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    Arena a;
+    const Entity carrier = a.player({1000, 1000});
+    const Entity champion = a.player({1400, 1000});
+    const Entity mob = a.mob({1040, 1000}, 200.0, 60.0);
+    const Entity petal = equipPetal(a, carrier, f.sting, Rarity::Common, {1025, 1000});
+    a.world.get<PetalInstance>(petal).creditTo = champion;
+    const auto ledgerOf = [&](Entity player) {
+        for (const Bounty::Share& share : a.world.get<Bounty>(mob).contributors) {
+            if (share.player == player) return share.damage;
+        }
+        return 0.0;
+    };
+
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 190.0, 1e-9);
+    // The ledger -- loot, XP, the mob's grudge -- is the champion's...
+    CHECK_NEAR(ledgerOf(champion), 10.0, 1e-9);
+    CHECK_NEAR(ledgerOf(carrier), 0.0, 1e-9);
+    // ...and nothing else: the petal still answers to the flower carrying it.
+    CHECK_EQ(CombatSystem::creditedPlayer(a.world, petal), carrier);
+
+    // With no champion left to enter it under, the carrier's own name goes in.
+    a.world.destroy(champion);
+    a.step(500.0, f.registry);
+    CHECK_NEAR(a.health(mob), 180.0, 1e-9);
+    CHECK_NEAR(ledgerOf(carrier), 10.0, 1e-9);
+}
+
 TEST(a_petal_without_a_knockback_field_uses_the_game_default) {
     const Fixture& f = fixture();
     CHECK(f.ok);

@@ -221,8 +221,8 @@ void DropTables::resolve(const ContentRegistry& content) {
         const PetalConfig& petal = content.petal(index);
         if (petal.isAdminPetal) continue;
         if (petal.id == "cutter" || petal.id == "lightning_cutter") continue;
-        // Hel's alone to hand out; see petalIsSacrifice.
-        if (petalIsSacrifice(petal)) continue;
+        // Handed out by a rule of their own: the sacrifice, the crown.
+        if (petalHasOwnSource(petal)) continue;
         // A magic petal is CONVERTED into, never dropped. Leaving it in the
         // pool would put an apex magic leaf in front of a flower wearing a
         // common orb, straight past the gate the orb exists to be.

@@ -1744,5 +1744,22 @@
         "count": 1,
         "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><path d=\"M28.19 16h3.048l-3.644 3.767 2.898.942-4.63 2.457 2.466 1.79-5.162.906 1.79 2.466-5.19-.734.943 2.898L16 28.19v3.048l-3.767-3.644-.942 2.898-2.457-4.63-1.79 2.466-.906-5.162-2.466 1.79.734-5.19-2.898.943L3.81 16H.762l3.644-3.767-2.898-.942 4.63-2.457-2.466-1.79 5.162-.906-1.79-2.466 5.19.734-.943-2.898L16 3.81V.762l3.767 3.644.942-2.898 2.457 4.63 1.79-2.466.906 5.162 2.466-1.79-.734 5.19 2.898-.943Zm-16.38 0a4.19 4.19 0 1 0 8.38 0 4.19 4.19 0 1 0-8.38 0\" fill=\"#888\" fill-rule=\"evenodd\" stroke=\"#6e6e6e\" stroke-width=\"1.524\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+    },
+    "champion_crown": {
+        "name": "Champion's Crown",
+        "damage": 0,
+        "health": null,
+        "size": 1,
+        "speed": 0,
+        "range": 0,
+        "cooldown": 1,
+        "price": 2000,
+        "visual_scale": 2.08,
+        "description": "Gives flowers around you a Basic of the same rarity.\nYou receive credit for damage dealt using it.",
+        "color": "#FFDC06",
+        "count": 0,
+        "equipFlags": "Crown",
+        "noPhysics": true,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-30 -41.6 60 83.2\"><circle r=\"30\" fill-opacity=\".2\"/><g transform=\"matrix(1.1 0 0 1.1 -60.5 -60.5)\"><path fill=\"#ffdc06\" stroke=\"#ccb005\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"m48.125 18.194-4.5 8.526-8.375-4.22 4.625 13.75c3.875-.875 9.612-1.125 15.125-1.125s11.25.25 15.125 1.125L74.75 22.5l-8.375 4.22-4.5-8.526L55 25.875Z\"/><path fill=\"red\" stroke=\"#c00\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.334\" d=\"M40.375 31.373a2 2 0 1 1-4 0 2 2 0 0 1 4 0M51.22 29.57a2 2 0 1 1-4 0 2 2 0 0 1 4 0m18.405 1.802a2 2 0 1 0 4 0 2 2 0 0 0-4 0M58.78 29.57a2 2 0 1 0 4 0 2 2 0 0 0-4 0\"/></g></svg>"
     }
 }

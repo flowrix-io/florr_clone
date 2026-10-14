@@ -336,6 +336,7 @@ std::uint8_t parseEquipFlags(const std::string& text) {
     if (text == "Observer") return EquipObserver;
     if (text == "Antennae") return EquipAntennae;
     if (text == "Test1") return EquipTest1;
+    if (text == "Crown") return EquipCrown;
     // No flag is a perfectly good outcome for an ordinary petal.
     return EquipNone;
 }

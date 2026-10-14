@@ -75,6 +75,7 @@ const char* const kPetalsJson = R"JSON({
   "compass":  {"name":"Compass","damage":1,"health":40,"size":1.4,"cooldown":2500,"count":1,"color":"#3498DB"},
   "magnet":   {"name":"Magnet","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"color":"#000000"},
   "relic":    {"name":"Relic","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"noPhysics":true,"playerModifiers":{"maxHealth":1.1},"color":"#C7A138"},
+  "champion_crown":{"name":"Champion's Crown","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"equipFlags":"Crown","noPhysics":true,"color":"#FFDC06"},
   "rubber":   {"name":"Rubber","damage":1,"health":30,"size":1.2,"cooldown":2500,"count":1,"color":"#EEEEEE"},
   "cursor":   {"name":"Cursor","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"color":"#EEEEEE"},
   "ram":      {"name":"RAM","damage":10,"health":2,"size":1,"cooldown":3000,"count":1,"color":"#3498DB"},
@@ -4779,4 +4780,266 @@ TEST(a_carrot_is_fired_as_a_shot_that_bounces) {
         return shots > 0;
     }, 200));
     CHECK(bounces);
+}
+
+// ---------------------------------------------------------------------------
+// The Champion's Crown
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A second flower beside the rig's own, carrying everything the rig's does.
+Entity addFlower(Rig& rig, Vec2 at, Realm realm = Realm::Overworld) {
+    const Entity e = rig.world.create();
+    rig.world.add<PlayerTag>(e);
+    rig.world.add<Transform>(e, Transform{at, 0.0, realm});
+    rig.world.add<Motion>(e);
+    rig.world.add<Knockback>(e);
+    rig.world.add<Body>(e, Body{kPlayerBaseRadius, 1.0});
+    rig.world.add<Health>(e, Health{maxHealthForLevel(1), maxHealthForLevel(1), 0.0, 0.0});
+    rig.world.add<Faction>(e, Faction{Team::Players, false});
+    rig.world.add<PlayerProgress>(e, PlayerProgress{});
+    rig.world.add<PlayerInput>(e);
+    rig.world.add<PlayerModifiers>(e);
+    rig.world.add<PlayerLocation>(e);
+    rig.world.add<Loadout>(e);
+    rig.world.add<PetalRing>(e);
+    rig.world.add<Afflictions>(e);
+    rig.world.add<HitCooldowns>(e);
+    return e;
+}
+
+void equipOn(Rig& rig, Entity flower, int slot, const char* id, Rarity rarity = Rarity::Common) {
+    LoadoutSlot& s = rig.world.get<Loadout>(flower).slots[static_cast<std::size_t>(slot)];
+    s.configIndex = petalId(id);
+    s.rarity = rarity;
+}
+
+/// The petals a crown has lent `flower`: zero or one.
+std::vector<Entity> lentTo(Rig& rig, Entity flower) {
+    std::vector<Entity> out;
+    Query<PetalTag, PetalInstance> query{rig.world};
+    query.each([&](Entity e, PetalTag&, PetalInstance& instance) {
+        if (instance.owner == flower && instance.slot == kLentPetalSlot) out.push_back(e);
+    });
+    return out;
+}
+
+/// What a crown of `tier` lends -- a Basic of its own tier. Unique is the tier
+/// florr has the crown at, and the one every test below wears.
+PetalStats lentStats(Rarity tier = Rarity::Unique) {
+    return fixture().registry.petalStats(petalId(kCrownLentPetalId), tier);
+}
+
+} // namespace
+
+TEST(a_crown_lends_a_flower_in_reach_a_basic_of_its_tier_once_its_reload_has_run) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.world.add<PlayerVisuals>(rig.player);
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity other = addFlower(rig, {1300.0, 1000.0});
+    rig.tick();
+    const double lentAt = rig.now;
+    // Worn on the head, and on no ring.
+    CHECK(rig.world.get<PlayerVisuals>(rig.player).equipFlags & EquipCrown);
+    CHECK(rig.petals().empty());
+    // A new loan serves the lent petal's reload first, as an equip does.
+    CHECK(lentTo(rig, other).empty());
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    CHECK(rig.now >= lentAt + lentStats().reloadMillis - 1e-9);
+    CHECK(rig.now < lentAt + lentStats().reloadMillis + net::kTickMillis);
+
+    const std::vector<Entity> lent = lentTo(rig, other);
+    CHECK_EQ(lent.size(), std::size_t(1));
+    if (lent.empty()) return;
+    const PetalInstance& instance = rig.world.get<PetalInstance>(lent[0]);
+    CHECK_EQ(instance.configIndex, petalId(kCrownLentPetalId));
+    CHECK(instance.rarity == Rarity::Unique);
+    CHECK(instance.creditTo == rig.player);
+    CHECK_EQ(rig.world.get<Replicated>(lent[0]).typeIndex, petalId(kCrownLentPetalId));
+    CHECK(rig.world.get<Replicated>(lent[0]).rarity == Rarity::Unique);
+    CHECK_NEAR(rig.healthOf(lent[0]), lentStats().health, 1e-9);
+    // The wearer lends to others, never to itself.
+    CHECK(lentTo(rig, rig.player).empty());
+}
+
+TEST(a_lent_petal_goes_when_its_flower_leaves_reach_and_a_new_loan_reloads_again) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity other = addFlower(rig, {1000.0 + kCrownLendRadius, 1000.0});
+    // The edge of the reach counts.
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    const Entity first = lentTo(rig, other).front();
+
+    rig.world.get<Transform>(other).position = {1000.0 + kCrownLendRadius + 1.0, 1000.0};
+    rig.tick();
+    CHECK(lentTo(rig, other).empty());
+    CHECK(!rig.world.isAlive(first));
+
+    rig.world.get<Transform>(other).position = {1300.0, 1000.0};
+    rig.tick();
+    const double lentAt = rig.now;
+    CHECK(lentTo(rig, other).empty());
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    CHECK(rig.now >= lentAt + lentStats().reloadMillis - 1e-9);
+}
+
+TEST(a_broken_lent_petal_comes_back_after_its_reload) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity other = addFlower(rig, {1300.0, 1000.0});
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+
+    // Killed in combat: marked Dead, and reaped at the end of the tick.
+    rig.world.add<Dead>(lentTo(rig, other).front());
+    rig.reap();
+    rig.tick();
+    const double brokeAt = rig.now;
+    CHECK(lentTo(rig, other).empty());
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    CHECK(rig.now >= brokeAt + lentStats().reloadMillis - 1e-9);
+    CHECK(rig.now < brokeAt + lentStats().reloadMillis + net::kTickMillis);
+
+    // Worn down to nothing without combat's mark, it goes all the same.
+    rig.damage(lentTo(rig, other).front(), lentStats().health);
+    rig.tick();
+    CHECK(lentTo(rig, other).empty());
+}
+
+TEST(a_loan_ends_with_the_crown) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity other = addFlower(rig, {1300.0, 1000.0});
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    rig.unequip(0);
+    rig.tick();
+    CHECK(lentTo(rig, other).empty());
+
+    // And with its wearer going down.
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    rig.world.get<Health>(rig.player).current = 0.0;
+    rig.tick();
+    CHECK(lentTo(rig, other).empty());
+}
+
+TEST(a_crown_lends_nothing_into_another_realm) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity other = addFlower(rig, {1000.0, 1000.0}, Realm::Arena);
+    rig.tick(static_cast<int>(lentStats().reloadMillis / net::kTickMillis) + 10);
+    CHECK(lentTo(rig, other).empty());
+}
+
+TEST(the_nearest_crown_holds_the_loan) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity rival = addFlower(rig, {1500.0, 1000.0});
+    equipOn(rig, rival, 0, "champion_crown", Rarity::Unique);
+    const Entity other = addFlower(rig, {1400.0, 1000.0});
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    CHECK(rig.world.get<PetalInstance>(lentTo(rig, other).front()).creditTo == rival);
+
+    // Walked over to the first, the loan changes hands without a reload.
+    const Entity petal = lentTo(rig, other).front();
+    rig.world.get<Transform>(other).position = {1100.0, 1000.0};
+    rig.tick();
+    CHECK(rig.world.isAlive(petal));
+    CHECK(rig.world.get<PetalInstance>(petal).creditTo == rig.player);
+}
+
+TEST(a_lent_petal_takes_the_last_place_on_its_flowers_ring) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity other = addFlower(rig, {1300.0, 1000.0});
+    equipOn(rig, other, 0, "basic");
+    // Frozen, as Rig::freezeRing freezes the rig's own: three places, then --
+    // the basic, the anchor, and the loan.
+    equipOn(rig, other, Rig::kAnchorSlot, "anchor");
+    const auto petalIn = [&](int slot) {
+        Entity found = NULL_ENTITY;
+        Query<PetalTag, PetalInstance> query{rig.world};
+        query.each([&](Entity e, PetalTag&, PetalInstance& instance) {
+            if (instance.owner == other && instance.slot == slot) found = e;
+        });
+        return found;
+    };
+    CHECK(rig.tickUntil([&] {
+        return petalIn(0) != NULL_ENTITY && petalIn(Rig::kAnchorSlot) != NULL_ENTITY &&
+               !lentTo(rig, other).empty();
+    }));
+    rig.settleRing();
+    const Vec2 centre = rig.position(other);
+    const double basicAngle = (rig.position(petalIn(0)) - centre).angle();
+    const double lentAngle = (rig.position(lentTo(rig, other).front()) - centre).angle();
+    CHECK_NEAR(wrapAngle(lentAngle - basicAngle), -kTau / 3.0, 0.02);
+}
+
+TEST(the_lent_basic_follows_the_crowns_tier) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Common);
+    const Entity other = addFlower(rig, {1300.0, 1000.0});
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    CHECK(rig.world.get<PetalInstance>(lentTo(rig, other).front()).rarity == Rarity::Common);
+    CHECK_NEAR(rig.healthOf(lentTo(rig, other).front()), lentStats(Rarity::Common).health, 1e-9);
+
+    // A better crown is a different petal: the common one goes, and the epic
+    // one serves its own reload before it comes out.
+    const Entity common = lentTo(rig, other).front();
+    rig.equip(0, "champion_crown", Rarity::Epic);
+    rig.tick();
+    const double swappedAt = rig.now;
+    CHECK(!rig.world.isAlive(common));
+    CHECK(lentTo(rig, other).empty());
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    CHECK(rig.now >= swappedAt + lentStats(Rarity::Epic).reloadMillis - 1e-9);
+    CHECK(rig.world.get<PetalInstance>(lentTo(rig, other).front()).rarity == Rarity::Epic);
+    CHECK_NEAR(rig.healthOf(lentTo(rig, other).front()), lentStats(Rarity::Epic).health, 1e-9);
+}
+
+TEST(a_wearers_best_crown_sets_the_tier_and_a_mimic_counts) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Rare);
+    rig.equip(3, "champion_crown", Rarity::Common);
+    const Entity other = addFlower(rig, {1300.0, 1000.0});
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    CHECK(rig.world.get<PetalInstance>(lentTo(rig, other).front()).rarity == Rarity::Rare);
+
+    // A legendary mimic beside the common crown is a legendary crown.
+    rig.equip(4, "mimic", Rarity::Legendary);
+    CHECK(rig.tickUntil([&] {
+        return !lentTo(rig, other).empty() &&
+               rig.world.get<PetalInstance>(lentTo(rig, other).front()).rarity ==
+                   Rarity::Legendary;
+    }));
+}
+
+TEST(a_nearer_crown_of_another_tier_lends_its_own) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "champion_crown", Rarity::Unique);
+    const Entity rival = addFlower(rig, {1500.0, 1000.0});
+    equipOn(rig, rival, 0, "champion_crown", Rarity::Mythic);
+    const Entity other = addFlower(rig, {1400.0, 1000.0});
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    const Entity mythic = lentTo(rig, other).front();
+    CHECK(rig.world.get<PetalInstance>(mythic).creditTo == rival);
+    CHECK(rig.world.get<PetalInstance>(mythic).rarity == Rarity::Mythic);
+
+    rig.world.get<Transform>(other).position = {1100.0, 1000.0};
+    rig.tick();
+    CHECK(!rig.world.isAlive(mythic));
+    CHECK(rig.tickUntil([&] { return !lentTo(rig, other).empty(); }));
+    const PetalInstance& unique = rig.world.get<PetalInstance>(lentTo(rig, other).front());
+    CHECK(unique.creditTo == rig.player);
+    CHECK(unique.rarity == Rarity::Unique);
 }

@@ -261,7 +261,16 @@ double lightningCooldownOf(const MobConfig& config) {
 void creditSwing(World& world, Entity victim, Entity source, double amount) {
     Bounty* bounty = world.tryGet<Bounty>(victim);
     if (bounty == nullptr) return;
-    const Entity credited = CombatSystem::creditedPlayer(world, source);
+    Entity credited = CombatSystem::creditedPlayer(world, source);
+    // A petal the Champion's Crown lent is entered under the crown's wearer
+    // (PetalInstance::creditTo) -- the ledger alone: who the petal may hit,
+    // and whose number rises off the mob, are still its own flower's.
+    if (const PetalInstance* petal = world.tryGet<PetalInstance>(source)) {
+        if (petal->creditTo != NULL_ENTITY && world.isAlive(petal->creditTo) &&
+            world.has<PlayerTag>(petal->creditTo)) {
+            credited = petal->creditTo;
+        }
+    }
     if (credited == NULL_ENTITY) return;
     bounty->credit(credited, amount);
 

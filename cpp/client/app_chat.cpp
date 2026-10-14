@@ -706,7 +706,7 @@ constexpr NamedFlag kFaceFlagNames[] = {
 };
 constexpr NamedFlag kEquipFlagNames[] = {
     {"Cutter", EquipCutter},     {"ThirdEye", EquipThirdEye}, {"Observer", EquipObserver},
-    {"Antennae", EquipAntennae}, {"Test1", EquipTest1},
+    {"Antennae", EquipAntennae}, {"Test1", EquipTest1},  {"Crown", EquipCrown},
 };
 constexpr NamedFlag kRenderFlagNames[] = {
     {"Pumpkin", PlayerRenderPumpkin},
