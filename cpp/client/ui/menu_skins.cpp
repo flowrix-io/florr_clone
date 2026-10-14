@@ -40,6 +40,7 @@
 #include "client/ui/text_select.h"
 #include "shared/core/text.h"
 #include "shared/game/skin_format.h"
+#include "shared/game/skin_likeness.h"
 
 namespace flix {
 
@@ -259,28 +260,6 @@ Shape defaultShape(ShapeType t) {
     return s;
 }
 
-std::vector<Shape> starterShapes() {
-    std::vector<Shape> out;
-    Shape body;
-    body.t = ShapeType::Circle;
-    body.r = 25;
-    body.fill = "#ffe763";
-    body.stroke = "#cdb74f";
-    body.sw = 3;
-    out.push_back(body);
-    for (const double ex : {-7.0, 7.0}) {
-        Shape eye;
-        eye.t = ShapeType::Ellipse;
-        eye.x = ex;
-        eye.y = -5;
-        eye.rx = 3.2;
-        eye.ry = 6.5;
-        eye.fill = "#111111";
-        out.push_back(eye);
-    }
-    return out;
-}
-
 /// One shape as one editable command line; round-trips through parseShapes.
 std::string serializeShape(const Shape& s) {
     std::string out = skinShapeTypeName(s.t);
@@ -403,7 +382,7 @@ struct Studio {
     enum class Tab : std::uint8_t { Create, Browse };
 
     Tab tab = Tab::Create;
-    std::vector<Shape> shapes = starterShapes();
+    std::vector<Shape> shapes = starterSkinShapes();
     int selected = 0;
     std::string skinName;
 
@@ -1507,7 +1486,7 @@ bool Studio::dispatch(MenuContext& ctx, const Action& a) {
             break;
         }
         case Act::Reset:
-            shapes = starterShapes();
+            shapes = starterSkinShapes();
             selected = 0;
             textError.clear();
             if (textMode) enterTextMode();

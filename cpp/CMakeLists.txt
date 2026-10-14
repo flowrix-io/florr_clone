@@ -98,6 +98,7 @@ add_library(flix_shared STATIC
   shared/game/rarity.cpp
   shared/game/config.cpp
   shared/game/skin_format.cpp
+  shared/game/skin_likeness.cpp
   shared/game/map_elements.cpp
   shared/game/terrain.cpp
   shared/game/tiled_map.cpp

@@ -75,7 +75,9 @@ cpp/
                   its hash; constants.h rarity realm.h npc.h difficulty.h;
                   tiled_map terrain map_elements -- the .tmj reader, the
                   collision it builds out of each tile's authored shapes,
-                  the annotations; spatial -- the broadphase; chat_images ...
+                  the annotations; spatial -- the broadphase; skin_format
+                  skin_likeness -- player skins, and when two are the same
+                  picture (publish refusal, the start-up fold); chat_images ...
   server/         headless authoritative simulation: game_server (the tick),
                   session, replication, db, chat_commands, bot_ai,
                   auto_update, squads, splitter

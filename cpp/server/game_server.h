@@ -26,6 +26,7 @@
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/map_elements.h"
+#include "shared/game/skin_likeness.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 #include "shared/net/admin_db.h"
@@ -915,6 +916,20 @@ private:
     /// its account is wearing. Sent once per authentication, beside the
     /// profile: a client that has not seen a skin cannot draw whoever wears it.
     void sendSkinCatalog(Session&, net::Connection&);
+    /// A published skin's sampled look (skin_likeness.h), sampled again only
+    /// when the shapes filed under its id change -- `/admin db` can edit a
+    /// catalog row in place, so the id alone does not say the picture is the
+    /// one that was sampled.
+    const SkinLook& catalogSkinLook(const CustomSkin&);
+    /// The oldest published skin that `look` passes for, if there is one.
+    std::optional<CustomSkin> findLookAlikeSkin(const SkinLook& look);
+    /// Folds every published skin that looks like an older one, or like the
+    /// studio's starter flower, into it: the copy leaves the catalog and every
+    /// account wearing it is put in the original instead (in the plain flower,
+    /// for the starter). Run once at start, before anybody can be wearing
+    /// anything; publishes are refused on the same test, so after the first
+    /// run it only finds work when that test changes.
+    void foldLookAlikeSkins();
     /// One prebuilt message to every logged-in connection. A published or
     /// deleted skin changes what EVERY screen must be able to draw, not just
     /// the author's.
@@ -1406,6 +1421,15 @@ private:
 
     std::unordered_map<net::ConnectionId, Session> sessions_;
     std::unordered_map<net::ConnectionId, ClientView> views_;
+
+    /// catalogSkinLook's memo, by skin id. Memory only: a look is cheap to
+    /// sample once and a catalog's worth of them is too slow to sample on
+    /// every publish.
+    struct CachedSkinLook {
+        std::uint64_t shapesHash = 0;
+        SkinLook look;
+    };
+    std::unordered_map<std::string, CachedSkinLook> skinLooks_;
 
     NetIdAllocator netIds_;
     Replicator replicator_;

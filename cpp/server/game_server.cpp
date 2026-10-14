@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <optional>
 #include <random>
 #include <utility>
@@ -31,6 +32,7 @@
 #include "shared/game/config.h"
 #include "shared/game/shop.h"
 #include "shared/game/skin_format.h"
+#include "shared/game/skin_likeness.h"
 #include "shared/game/skills.h"
 
 namespace flix {
@@ -406,6 +408,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // with an empty one would serve every returning player a blank account and,
     // worse, save that over the file they still had.
     if (!database_.load(config.databasePath, errorOut)) return false;
+    foldLookAlikeSkins();
 
     // Kept in a file beside the database, never anywhere a client can reach:
     // reading it is what proves an admin also has the machine. A first start
@@ -3339,6 +3342,33 @@ bool isGuestName(const std::string& name) {
     return true;
 }
 
+/// The studio's starter flower, sampled once. It is the skin everybody starts
+/// from, so a publish that looks like it adds nothing to the catalog.
+const SkinLook& starterLook() {
+    static const SkinLook look = sampleSkinLook(starterSkinShapes());
+    return look;
+}
+
+/// The catalog, parsed, oldest first: the order that decides which of two
+/// look-alikes is the original. Ties -- one millisecond, two publishes -- go to
+/// the id, so the answer never depends on the file's key order. Rows the parse
+/// leaves without shapes (the browser build's old `data` payloads) are never
+/// sent and draw nothing, so they are not anybody's original either.
+std::vector<CustomSkin> catalogByAge(const Json& table) {
+    std::vector<CustomSkin> skins;
+    if (!table.isObject()) return skins;
+    for (const std::string& id : table.keys()) {
+        CustomSkin skin = skinFromJson(table[id]);
+        if (skin.id.empty() || skin.shapes.empty()) continue;
+        skins.push_back(std::move(skin));
+    }
+    std::sort(skins.begin(), skins.end(), [](const CustomSkin& a, const CustomSkin& b) {
+        if (a.createdAt != b.createdAt) return a.createdAt < b.createdAt;
+        return a.id < b.id;
+    });
+    return skins;
+}
+
 std::string base36(std::uint64_t value) {
     static const char* digits = "0123456789abcdefghijklmnopqrstuvwxyz";
     if (value == 0) return "0";
@@ -3452,6 +3482,26 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
         return;
     }
 
+    // Last, because it is the one check that costs anything: the cheap
+    // refusals above never sample a thing.
+    SkinLook look = sampleSkinLook(check.shapes);
+    if (skinsLookAlike(look, starterLook())) {
+        sendSkinChat(connection, "That's the starter flower. Change it a bit more before "
+                                 "publishing.");
+        return;
+    }
+    if (const std::optional<CustomSkin> original = findLookAlikeSkin(look)) {
+        if (lowerCase(original->author) == me) {
+            sendSkinChat(connection, "That looks just like your \"" + original->name +
+                                         "\". Change it a bit more, or delete that one first.");
+        } else {
+            sendSkinChat(connection, "That looks just like \"" + original->name + "\" by " +
+                                         original->author +
+                                         ". Change it a bit more before publishing.");
+        }
+        return;
+    }
+
     CustomSkin skin;
     // Time plus a random tail, as the reference mints it: the clock alone
     // collides when two players publish in the same millisecond.
@@ -3463,6 +3513,7 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
     skin.createdAt = static_cast<double>(database_.nowMillis());
     catalog[skin.id] = skinToJson(skin);
     database_.markDirty();
+    skinLooks_[skin.id] = CachedSkinLook{skinShapesHash(skin.shapes), std::move(look)};
 
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinPublished));
@@ -3517,6 +3568,7 @@ void GameServer::handleDeleteSkin(Session& session, net::Connection& connection,
         return;
     }
     catalog.erase(id);
+    skinLooks_.erase(id);
     database_.markDirty();
 
     ByteWriter w;
@@ -3525,6 +3577,86 @@ void GameServer::handleDeleteSkin(Session& session, net::Connection& connection,
     broadcastToAuthenticated(w);
     sendSkinChat(connection, owner ? "Deleted \"" + name + "\"."
                                    : "Took down \"" + name + "\" by " + author + ".");
+}
+
+const SkinLook& GameServer::catalogSkinLook(const CustomSkin& skin) {
+    const std::uint64_t hash = skinShapesHash(skin.shapes);
+    auto found = skinLooks_.find(skin.id);
+    if (found == skinLooks_.end() || found->second.shapesHash != hash) {
+        found = skinLooks_.insert_or_assign(skin.id, CachedSkinLook{hash, sampleSkinLook(skin.shapes)})
+                    .first;
+    }
+    return found->second.look;
+}
+
+std::optional<CustomSkin> GameServer::findLookAlikeSkin(const SkinLook& look) {
+    const Json& table = database_.storedTable("customSkins");
+    // Forget the looks of skins that are gone, whoever took them down -- the
+    // admin editor erases rows without coming through here.
+    for (auto it = skinLooks_.begin(); it != skinLooks_.end();) {
+        it = table.isObject() && table.contains(it->first) ? std::next(it) : skinLooks_.erase(it);
+    }
+    for (CustomSkin& skin : catalogByAge(table)) {
+        if (skinsLookAlike(look, catalogSkinLook(skin))) return std::move(skin);
+    }
+    return std::nullopt;
+}
+
+void GameServer::foldLookAlikeSkins() {
+    const std::vector<CustomSkin> skins = catalogByAge(database_.storedTable("customSkins"));
+    // Copy id -> the id it folds into, "" for the starter flower.
+    std::unordered_map<std::string, std::string> foldedInto;
+    std::vector<const CustomSkin*> originals;
+    for (const CustomSkin& skin : skins) {
+        const SkinLook& look = catalogSkinLook(skin);
+        const CustomSkin* original = nullptr;
+        const bool starter = skinsLookAlike(look, starterLook());
+        if (!starter) {
+            // Against the originals only, never a copy: A, then B like A, then
+            // C like B but not like A is two skins, not one.
+            for (const CustomSkin* candidate : originals) {
+                if (skinsLookAlike(look, catalogSkinLook(*candidate))) {
+                    original = candidate;
+                    break;
+                }
+            }
+            if (original == nullptr) {
+                originals.push_back(&skin);
+                continue;
+            }
+        }
+        foldedInto[skin.id] = original != nullptr ? original->id : std::string();
+        if (original != nullptr) {
+            std::printf("[skins] folded \"%s\" by %s (%s) into \"%s\" by %s (%s)\n",
+                        skin.name.c_str(), skin.author.c_str(), skin.id.c_str(),
+                        original->name.c_str(), original->author.c_str(), original->id.c_str());
+        } else {
+            std::printf("[skins] removed \"%s\" by %s (%s): it is the starter flower\n",
+                        skin.name.c_str(), skin.author.c_str(), skin.id.c_str());
+        }
+    }
+    if (foldedInto.empty()) return;
+
+    Json& catalog = database_.rawTable("customSkins");
+    for (const auto& fold : foldedInto) {
+        catalog.erase(fold.first);
+        skinLooks_.erase(fold.first);
+    }
+    // Offline accounts too: a row still naming a copy would come back to a
+    // skin that no longer exists, which draws as the plain flower.
+    int rehomed = 0;
+    for (const std::string& userId : database_.playerIds()) {
+        const PlayerRecord* record = database_.findProgress(userId);
+        if (record == nullptr || record->equippedSkinId.empty()) continue;
+        const auto fold = foldedInto.find(record->equippedSkinId);
+        if (fold == foldedInto.end()) continue;
+        database_.progress(userId).equippedSkinId = fold->second;
+        ++rehomed;
+    }
+    database_.markDirty();
+    std::printf("[skins] folded %zu look-alike skin(s); %d account(s) moved onto the "
+                "original\n",
+                foldedInto.size(), rehomed);
 }
 
 void GameServer::handleLeaderboard(const Session& session, net::Connection& connection,
