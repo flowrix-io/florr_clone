@@ -473,7 +473,13 @@ constexpr ChangelogEntry kChangelog[] = {
         "New petal: Champion's Crown",
         "Added new drops for Computer mobs"
       }
-    }
+    },
+    {"October 14, 2026",
+      {
+        "Added Assembler",
+        "Added C++ mob and petal"
+      }
+    },
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
