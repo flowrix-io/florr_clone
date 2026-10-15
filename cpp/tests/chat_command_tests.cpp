@@ -457,7 +457,7 @@ TEST(a_boss_from_the_console_is_announced_to_the_whole_server) {
     // worded per recipient: this one is standing on the boss, so it is told
     // where rather than that it happened "somewhere".
     CHECK(h.stepUntil({&client}, [&] { return sawText(client, "has spawned"); }, 60));
-    CHECK(sawText(client, "A Super bee has spawned"));
+    CHECK(sawText(client, "A Super Bee has spawned"));
 
     // And nothing below the line says a word, an ultra included. Named
     // precisely rather than "no spawn line at all", because the world is
@@ -2699,9 +2699,9 @@ TEST(a_boss_no_player_killed_is_still_announced) {
     }
     CHECK(poisoned > 0);
 
-    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Super bee has been defeated!"); },
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Super Bee has been defeated!"); },
                       120));
-    CHECK(!sawText(client, "Super bee has been defeated by"));
+    CHECK(!sawText(client, "Super Bee has been defeated by"));
 }
 
 TEST(killall_announces_the_bosses_it_removes) {
@@ -2720,7 +2720,7 @@ TEST(killall_announces_the_bosses_it_removes) {
     CHECK(say(h, client, "/admin spawn bee super"));
     CHECK(sawText(client, "Spawned super bee"));
     CHECK(say(h, client, "/admin killall"));
-    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Super bee has been defeated!"); },
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Super Bee has been defeated!"); },
                       120));
 }
 
@@ -2773,5 +2773,5 @@ TEST(a_dead_summon_is_not_announced) {
         return true;
     }, 120));
     h.step(10, {&client});
-    CHECK(!sawText(client, "Super bee has been defeated"));
+    CHECK(!sawText(client, "Super Bee has been defeated"));
 }

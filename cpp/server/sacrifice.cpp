@@ -246,7 +246,7 @@ void GameServer::offerSacrifice(Session& session, Entity corpse) {
 
 void GameServer::announceSacrificeSummon(Entity mob, Realm realm) {
     const MobType& type = world_.get<MobType>(mob);
-    const std::string name = spokenMobName(content().mob(type.configIndex).id);
+    const std::string& name = content().mob(type.configIndex).name;
     char colorAttribute[32];
     std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(type.rarity));
     const std::string biome = biomeOfRealm(realm);
@@ -369,7 +369,7 @@ void GameServer::serviceSacrificeRituals(double nowMillis) {
                                         ? "an "
                                         : "a ") +
                                    label + " " +
-                                   spokenMobName(content().mob(type.configIndex).id) + ".");
+                                   content().mob(type.configIndex).name + ".");
                 }
             }
             continue;

@@ -275,7 +275,7 @@ TEST(a_summon_is_announced_as_summoned_and_somewhere_outside_its_biome) {
     const Entity mob = world.get<SacrificeRitual>(rituals.front()).mob;
     if (mob == NULL_ENTITY) { CHECK(false); return; }
     const std::string named =
-        "A Apex " + spokenMobName(content().mob(world.get<MobType>(mob).configIndex).id);
+        "A Apex " + content().mob(world.get<MobType>(mob).configIndex).name;
 
     // Alice fell in the summon's biome; bob is in the maze.
     CHECK(h.stepUntil({&alice, &bob}, [&] {

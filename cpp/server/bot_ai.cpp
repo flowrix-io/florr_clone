@@ -1729,7 +1729,8 @@ void GameServer::announceNewBosses(double nowMillis) {
             shout = "{tier} {mob}";
         }
         replaceAll(shout, "{tier}", tierWord);
-        replaceAll(shout, "{mob}", spokenMobName(content().mob(type->configIndex).id));
+        // Typed the way a player types it: the display name, lower case.
+        replaceAll(shout, "{mob}", lowerCase(content().mob(type->configIndex).name));
         if (squad != nullptr) replaceAll(shout, "{code}", squad->id);
 
         broadcastChat(net::ChatChannel::Global, announcer->name, shout);

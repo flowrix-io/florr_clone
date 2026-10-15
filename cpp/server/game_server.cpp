@@ -320,14 +320,12 @@ void grantStarterKit(PlayerRecord& record) {
     giveToInventory(record, basic, Rarity::Common, kStartingSpares);
 }
 
-/// "Legendary Ladybug": the killer's tier and its type, each with only its
-/// first character upper-cased.
+/// "Legendary Soldier Ant": the killer's tier and its display name.
 ///
-/// Deliberately the mob's config ID rather than its display name, and
-/// deliberately only one character of each word, because that is what the
-/// reference's death card builds out of `{type, tier}` -- so a mob whose id is
-/// `baby_ant` reads "Common Baby_ant", as it did in the browser client. A
-/// player killer reads "Common Player", as it did there. An empty string means
+/// The name, not the config id: the browser client built this from the id, so
+/// `baby_ant` read "Common Baby_ant", but ids are for commands and internals
+/// and never shown to a player. A player killer reads "Common Player", as it
+/// did there. An empty string means
 /// the killer is unknown, which is what leaves the client on its own fallback
 /// wording.
 std::string killerLabel(const World& world, Entity killer) {
@@ -335,10 +333,9 @@ std::string killerLabel(const World& world, Entity killer) {
     if (world.has<PlayerTag>(killer)) return "Common Player";
     const MobType* type = world.tryGet<MobType>(killer);
     if (type == nullptr) return {};
-    std::string id = content().mob(type->configIndex).id;
-    if (id.empty()) return {};
-    id[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(id[0])));
-    return std::string(rarityLabel(type->rarity)) + " " + id;
+    const std::string& name = content().mob(type->configIndex).name;
+    if (name.empty()) return {};
+    return std::string(rarityLabel(type->rarity)) + " " + name;
 }
 
 /// How many rows of the global feed are kept. The browser build trims to the
@@ -1008,9 +1005,8 @@ void GameServer::announceBossSpawns() {
             continue;
         }
 
-        // Underscores read as spaces in the reference's wording, so
-        // `soldier_ant` announces itself as "soldier ant".
-        const std::string name = spokenMobName(content().mob(boss.mobIndex).id);
+        // The mob's display name, never its id: ids are for commands only.
+        const std::string& name = content().mob(boss.mobIndex).name;
         // Only meaningful for a boss on the overworld: `section` is that map's
         // 3x3 grid, and another map's coordinates read as a section number that
         // means nothing. See `here` below.
@@ -3114,7 +3110,7 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     // A flower's summon was never announced on the way in, and losing one is
     // not a boss falling -- it simply hatches again.
     if (world_.has<Pet>(mob)) return;
-    const std::string name = spokenMobName(content().mob(type.configIndex).id);
+    const std::string& name = content().mob(type.configIndex).name;
     char colorAttribute[32];
     std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(type.rarity));
     const std::string opening = std::string("<b style=\"color: ") + colorAttribute + ";\">A " +

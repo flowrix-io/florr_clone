@@ -40,15 +40,6 @@ inline std::vector<std::string> splitWords(const std::string& s) {
     return words;
 }
 
-/// A mob id as chat says it out loud: `baby_ant` is "baby ant". Underscores
-/// read as spaces in the reference's wording, which is how both a boss
-/// announcement and a bot's shout name the animal.
-inline std::string spokenMobName(const std::string& id) {
-    std::string out = id;
-    std::replace(out.begin(), out.end(), '_', ' ');
-    return out;
-}
-
 /// Chat content is markup, so a '<' in a line would open a tag and take the
 /// rest of the line with it -- which is exactly what happens in the browser,
 /// where `Usage: teleport <playerId/username> <x> <y>` renders as "Usage:
