@@ -10,18 +10,23 @@
 //             at start-up, and after anything (an operator, a test) destroyed
 //             the last one. There is no death to wait out: nothing an NPC is
 //             hit by takes anything off it, so a missing one is a hole in the
-//             map, not a casualty.
+//             map, not a casualty. A site drawn as an AREA puts its NPC on a
+//             spot picked inside it each time (the assemblers, roaming the
+//             computer), and one whose `rarity` is "all" is a site per tier --
+//             one NPC of each, never two.
 //   MOVING    an NPC whose mob flies like a bee (`bee_ai`) cruises about its
 //             home on the bee's own cruise (stepBeeCruise), on a leash that
 //             turns it back once it is kNpcLeashRadius out -- the oracle stays
 //             where the map says it is, give or take a flight. Any other NPC
-//             stands still.
+//             stands still, and one whose block says `still` (the assemblers)
+//             does not even turn.
 //   LOOKING   an NPC that cruises looks where it is going, always. One that
 //             stands turns to face the nearest flower in its realm inside
 //             kNpcWatchRange, and glances about when there is none. That
 //             facing is all the client needs to move its eye.
 //   FINDING   the server's half of a service: "is this flower standing close
-//             enough to an oracle, a trader or the titan to be using it".
+//             enough to an oracle, a trader, the titan or an assembler to be
+//             using it" -- and, for an assembler, one of which tier.
 //             Answered from the NPCs in the world rather than from the sites,
 //             so an admin's extra one counts and a site whose NPC is gone
 //             does not.
@@ -65,11 +70,18 @@ public:
     /// One NPC the maps asked for.
     struct Site {
         Realm realm = Realm::Overworld;
+        /// Where it stands -- for a roaming site, where the last NPC placed
+        /// on it was put.
         Vec2 position;
         std::uint16_t mobIndex = 0;
         Rarity rarity = Rarity::Common;
         /// The NPC standing on it now, or NULL_ENTITY until the first run().
         Entity entity = NULL_ENTITY;
+        /// The area a roaming site's NPC is put down somewhere inside, picked
+        /// afresh each time it is placed; empty (`roams` false) for a point.
+        bool roams = false;
+        Rect area;
+        std::vector<Vec2> outline;
     };
 
     /// Reads every map's `npcs` layer into sites. Called once the maps and the
@@ -113,14 +125,23 @@ public:
                     double nowMillis, std::optional<Team> side = std::nullopt);
 
     /// The nearest NPC offering `service` whose SKIN is within `reach` of
-    /// `at`, in `realm`; NULL_ENTITY when there is none. The reach is measured
-    /// from the NPC's edge because that is what a player walks up to.
-    Entity findService(World& world, NpcService service, Vec2 at, Realm realm, double reach);
+    /// `at`, in `realm` -- and of `tier`, when one is given; NULL_ENTITY when
+    /// there is none. The reach is measured from the NPC's edge because that
+    /// is what a player walks up to.
+    Entity findService(World& world, NpcService service, Vec2 at, Realm realm, double reach,
+                       std::optional<Rarity> tier = std::nullopt);
+
+    /// The radius an NPC of mob `mobIndex` stands at, at `rarity`: its mob's
+    /// own at that tier, pulled down as a band's fixture is for a target dummy
+    /// (MobConfig::fixtureSizeScale).
+    static double npcRadius(const ContentRegistry& content, std::uint16_t mobIndex, Rarity rarity);
 
     const std::vector<Site>& sites() const { return sites_; }
 
 private:
     void bind(World& world);
+    /// A spot inside a roaming site's area for its NPC to stand on.
+    Vec2 pickRoamingSpot(const Terrain& terrain, const ContentRegistry& content, const Site& site);
 
     std::vector<Site> sites_;
     /// Glances, and the cruises' re-picked headings: the NPCs' own stream.

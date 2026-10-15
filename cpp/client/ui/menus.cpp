@@ -810,6 +810,7 @@ void MenuSystem::toggle(MenuId id) {
             oracle_.reset();
             trader_.reset();
             titan_.reset();
+            assembler_.reset();
             break;
         case MenuId::Talents:     talents_.reset(); break;
         case MenuId::Gallery:     gallery_.reset(); break;
@@ -1245,6 +1246,9 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Titan) {
             face = kTitanSkin.fill;
             rim = kTitanSkin.border;
+        } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Assembler) {
+            face = kAssemblerSkin.fill;
+            rim = kAssemblerSkin.border;
         }
 
         // Two filled rects rather than a stroke: the face keeps the frame's own
@@ -2460,6 +2464,7 @@ Vec2 craftWindowSize(NpcService npc, const Profile& profile) {
         case NpcService::Oracle: return OraclePanel::size(profile);
         case NpcService::Trader: return TradePanel::size(profile);
         case NpcService::Titan:  return TitanPanel::size(profile);
+        case NpcService::Assembler: return AssemblerPanel::size();
         case NpcService::None:   break;
     }
     return CraftingPanel::size(profile);
@@ -2529,7 +2534,9 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
             keepOpen = nearbyNpc_ == NpcService::Oracle   ? oracle_.render(ctx)
                        : nearbyNpc_ == NpcService::Trader ? trader_.render(ctx)
                        : nearbyNpc_ == NpcService::Titan  ? titan_.render(ctx)
-                                                          : crafting_.render(ctx);
+                       : nearbyNpc_ == NpcService::Assembler
+                           ? assembler_.render(ctx, nearbyMob_, nearbyTier_, nearbyRecipe_)
+                           : crafting_.render(ctx);
             break;
         case MenuId::Talents:     keepOpen = talents_.render(ctx); break;
         case MenuId::Gallery:     keepOpen = gallery_.render(ctx); break;

@@ -84,7 +84,8 @@ enum class MapElementKind : std::uint8_t {
     Spawn,         ///< a mob band: a tier and a distribution over some ground
     PlayerSpawn,   ///< a rectangle a PLAYER may be put down in
     Teleporter,    ///< a pad, which leads to another map
-    Npc,           ///< where a friendly NPC stands -- a point
+    Npc,           ///< where a friendly NPC stands -- a point, or an area it
+                   ///< stands somewhere in
 };
 
 /// One annotation, in world coordinates. The numbers are already world units --
@@ -245,6 +246,13 @@ struct MapElement {
     /// its plate shows and the tier the plate names. Common when the map does
     /// not say.
     Rarity npcRarity = Rarity::Common;
+    /// NPCs only: `rarity` said "all" -- one NPC of every ladder tier, common
+    /// through apex, from this one object.
+    bool npcEveryRarity = false;
+
+    /// NPCs only: the object is an AREA rather than a point, and the NPC
+    /// stands somewhere inside it, picked afresh every time it is placed.
+    bool npcRoams() const { return bounds.w > 0.0 && bounds.h > 0.0; }
 
     /// The centre of the BOUNDING BOX, which for a concave outline can be a
     /// point outside the zone. Deliberately so: this is what orders zones and

@@ -170,6 +170,7 @@ add_library(flix_client STATIC
   client/ui/menu_crafting.cpp
   client/ui/menu_oracle.cpp
   client/ui/menu_trade.cpp
+  client/ui/menu_assembler.cpp
   client/ui/menu_titan.cpp
   client/ui/menu_gallery.cpp
   client/ui/menu_guild.cpp

@@ -875,9 +875,42 @@
          "visible":true,
          "x":0,
          "y":0
+        },
+        {
+         "draworder":"topdown",
+         "id":8,
+         "name":"npcs",
+         "objects":[
+                {
+                 "height":27136,
+                 "id":18,
+                 "name":"assemblers",
+                 "properties":[
+                        {
+                         "name":"npc",
+                         "type":"string",
+                         "value":"assembler"
+                        },
+                        {
+                         "name":"rarity",
+                         "type":"string",
+                         "value":"all"
+                        }],
+                 "rotation":0,
+                 "type":"npc",
+                 "visible":true,
+                 "width":27136,
+                 "x":256,
+                 "y":256
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
         }],
- "nextlayerid":8,
- "nextobjectid":18,
+ "nextlayerid":9,
+ "nextobjectid":19,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",

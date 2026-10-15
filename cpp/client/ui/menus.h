@@ -44,6 +44,17 @@ namespace flix {
 /// artifact; the desktop build delegates to SDL.
 bool openExternalLink(const std::string& url);
 
+/// The NPC a flower is standing at, as the client measures it (App::nearbyNpc):
+/// what it offers, and which mob at which tier it is -- an assembler's recipes
+/// are its mob's, and its tier is the tier it works at.
+struct NearbyNpc {
+    NpcService service = NpcService::None;
+    std::uint16_t mobIndex = 0xFFFF;
+    Rarity rarity = Rarity::Common;
+    /// An assembler's one recipe, an index into its mob's `npc.recipes`.
+    std::uint8_t recipe = 0;
+};
+
 /// Which panel is on screen.
 ///
 /// Appended to, never reordered: `ClientSettings::hotkeys` is indexed by this
@@ -956,6 +967,63 @@ private:
     double askedAt_ = -1.0;
 };
 
+/// The assembler: what the craft card becomes while the flower stands at an
+/// assembler NPC.
+///
+/// florr's assemble window, read out of florr's client: its 356-tall card
+/// with no grid, in machine grey. The assembler's recipe's inputs on seats
+/// about the slot's centre, each labelled "held/needed"; an Assemble
+/// button; and under it the count, a field between a triangle that takes one
+/// off and one that adds one. See menu_assembler.cpp.
+class AssemblerPanel {
+public:
+    /// `mobIndex`, `tier` and `recipe` are the assembler the flower is
+    /// standing at: whose recipes, at what tier, and which one it makes.
+    bool render(MenuContext&, std::uint16_t mobIndex, Rarity tier, std::uint8_t recipe);
+    void reset();
+    /// florr's window: as wide as its least, and its body deep, no grid.
+    static Vec2 size();
+
+private:
+    enum class Phase : std::uint8_t { Idle, Assembling, Result };
+
+    SlotMotion motion_;
+    /// The assembler last stood at: a different one drops what was showing.
+    std::uint16_t stationMob_ = 0xFFFF;
+    Rarity stationTier_ = Rarity::Common;
+    std::uint8_t stationRecipe_ = 0;
+
+    /// The count field: what is typed, and the field's caret and focus.
+    std::string count_ = "1";
+    ui::TextFieldState countField_;
+
+    Phase phase_ = Phase::Idle;
+    double phaseStarted_ = 0;
+    /// An answer that came back before the grains had flown, and how many
+    /// it made, for the product's badge.
+    bool resultPending_ = false;
+    int made_ = 0;
+    /// Why the assembler said no, shown in the line's place until it expires.
+    std::string refusal_;
+    double refusalUntil_ = 0;
+    /// What each seat and the middle last showed (petal << 8 | tier, all
+    /// ones for nothing), the tile itself, and each seat's grow: whatever
+    /// leaves a seat vanishes where it stood, and whatever arrives grows in.
+    static_assert(kAssemblerMaxInputs == 5, "one initialiser per seat");
+    std::array<std::uint32_t, kAssemblerMaxInputs> seatKey_{0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                                            0xFFFFFFFFu, 0xFFFFFFFFu};
+    std::array<ui::ItemTile, kAssemblerMaxInputs> seatTile_{};
+    std::array<double, kAssemblerMaxInputs> seatGrow_{};
+    /// How much the seats show: 1 idle, easing to 0 while a product does.
+    double seatShow_ = 1.0;
+    /// The same for each product, and each one's pop.
+    static_assert(kAssemblerMaxOutputs == 5, "one initialiser per product");
+    std::array<std::uint32_t, kAssemblerMaxOutputs> resultKey_{
+        0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+    std::array<ui::ItemTile, kAssemblerMaxOutputs> resultTile_{};
+    std::array<SlotMotion, kAssemblerMaxOutputs> pops_{};
+};
+
 /// The bestiary: every mob at every tier it can appear at, and what the
 /// account has actually killed.
 class GalleryPanel {
@@ -1333,10 +1401,16 @@ public:
     /// acknowledgement.
     bool changelogUnread() const { return changelogReleaseCount() > settings_.changelogSeen; }
 
-    /// The service of the NPC the player's flower is standing at, or None.
-    /// The app measures it every frame; the craft panel reads it to decide
-    /// whether it is the forge, the oracle, the trader or the titan this frame.
-    void setNearbyNpc(NpcService service) { nearbyNpc_ = service; }
+    /// The NPC the player's flower is standing at, its service None when it is
+    /// at none. The app measures it every frame; the craft panel reads it to
+    /// decide whether it is the forge, the oracle, the trader, the titan or an
+    /// assembler this frame -- and, at an assembler, which one.
+    void setNearbyNpc(const NearbyNpc& npc) {
+        nearbyNpc_ = npc.service;
+        nearbyMob_ = npc.mobIndex;
+        nearbyTier_ = npc.rarity;
+        nearbyRecipe_ = npc.recipe;
+    }
     /// The craft menu's card for a `w` x `h` view as it stands this frame: the
     /// forge's, or the oracle's, the trader's or the titan's while the flower
     /// is at one.
@@ -1618,12 +1692,16 @@ private:
 
     /// See setNearbyNpc().
     NpcService nearbyNpc_ = NpcService::None;
+    std::uint16_t nearbyMob_ = 0xFFFF;
+    Rarity nearbyTier_ = Rarity::Common;
+    std::uint8_t nearbyRecipe_ = 0;
 
     InventoryPanel inventory_;
     CraftingPanel crafting_;
     OraclePanel oracle_;
     TradePanel trader_;
     TitanPanel titan_;
+    AssemblerPanel assembler_;
     TalentsPanel talents_;
     GalleryPanel gallery_;
     ShopPanel shop_;

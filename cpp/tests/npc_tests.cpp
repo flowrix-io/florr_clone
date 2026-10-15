@@ -178,9 +178,9 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
     CHECK(config.noEggDrop);
     CHECK(!content().mobStats(oracle, Rarity::Common).ambient);
     // The target dummy is another NPC: on the hostiles' side, so a flower
-    // can hit it, and offering nothing but that. The trader is the third and
-    // the titan the fourth (their own tests below). Nothing else in the
-    // shipped content is an NPC by accident.
+    // can hit it, and offering nothing but that. The trader is the third, the
+    // titan the fourth and the assembler the fifth (their own tests below).
+    // Nothing else in the shipped content is an NPC by accident.
     const std::uint16_t dummy = content().mobIndex("target_dummy");
     CHECK(dummy != kInvalidIndex);
     if (dummy != kInvalidIndex) {
@@ -190,8 +190,9 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
     }
     const std::uint16_t trader = content().mobIndex("trader");
     const std::uint16_t titan = content().mobIndex("titan");
+    const std::uint16_t assembler = content().mobIndex("assembler");
     for (std::uint16_t i = 0; i < content().mobCount(); ++i) {
-        if (i == oracle || i == dummy || i == trader || i == titan) continue;
+        if (i == oracle || i == dummy || i == trader || i == titan || i == assembler) continue;
         CHECK(!content().mob(i).npc.present);
     }
 }
@@ -2565,4 +2566,634 @@ TEST(the_titan_painter_draws_its_cog_and_scowl_and_moves_its_glints) {
     CHECK(west.left > west.right * 2);
     CHECK_EQ(east.outsideSocket, 0);
     CHECK_EQ(west.outsideSocket, 0);
+}
+
+// ---------------------------------------------------------------------------
+// The assembler
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// One `npcs` object drawn as an AREA (a rectangle, not a point): the NPC it
+/// names stands somewhere inside it, picked when it is placed.
+std::string fixtureNpcArea(double x, double y, double w, double h, const std::string& npc,
+                           const std::string& rarity) {
+    std::string out = fixtureNpc(x, y, npc, rarity);
+    const std::string point = "\"point\": true, \"rotation\": 0, \"width\": 0, \"height\": 0,";
+    out.replace(out.find(point), point.size(),
+                "\"rotation\": 0, \"width\": " + std::to_string(w) + ", \"height\": " +
+                    std::to_string(h) + ",");
+    return out;
+}
+
+std::string assemblerWorld(const std::string& name, const char* rarity = "epic") {
+    return npcWorld(name, fixtureNpc(kOracleX, kOracleY, "assembler", rarity));
+}
+
+/// Waits for the assembler's answer and hands it back with `pending`
+/// cleared, as the panel reads it.
+bool awaitAssemble(Harness& h, NetClient& client, AssembleOutcome& out) {
+    if (!h.stepUntil({&client}, [&] { return client.assembleOutcome().pending; }, 200)) {
+        return false;
+    }
+    out = client.assembleOutcome();
+    client.assembleOutcome().pending = false;
+    return true;
+}
+
+/// The index of the first recipe of mob `mob` that makes `output`, or -1.
+int recipeMaking(std::uint16_t mob, const char* output) {
+    const std::uint16_t petal = content().petalIndex(output);
+    const std::vector<AssemblyRecipe>& recipes = content().mob(mob).npc.recipes;
+    for (std::size_t i = 0; i < recipes.size(); ++i) {
+        for (const AssemblyRecipe::Stack& made : recipes[i].outputs) {
+            if (made.petal == petal) return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+/// Makes the fixture's assembler offer the recipe that makes `output`, as if
+/// it had rolled it, and returns that recipe's index.
+std::uint8_t offerRecipe(Harness& h, const char* output) {
+    World& world = h.server.world();
+    const Entity npc = npcWearing(world, "assembler");
+    const int index = recipeMaking(content().mobIndex("assembler"), output);
+    if (npc != NULL_ENTITY && index >= 0) {
+        world.get<Npc>(npc).recipe = static_cast<std::uint8_t>(index);
+    }
+    return static_cast<std::uint8_t>(std::max(0, index));
+}
+
+std::vector<Entity> assemblersIn(World& world) {
+    std::vector<Entity> out;
+    Query<NpcTag, Npc> npcs{world};
+    npcs.each([&](Entity e, NpcTag&, Npc& npc) {
+        if (npc.service == NpcService::Assembler) out.push_back(e);
+    });
+    return out;
+}
+
+} // namespace
+
+TEST(the_shipped_assembler_makes_a_sawblade_out_of_a_mimic_and_a_ram) {
+    CHECK(ensureShippedContent());
+    const std::uint16_t assembler = content().mobIndex("assembler");
+    CHECK(assembler != kInvalidIndex);
+    if (assembler == kInvalidIndex) return;
+    const MobConfig& config = content().mob(assembler);
+    CHECK(config.npc.present);
+    CHECK(config.npc.service == NpcService::Assembler);
+    CHECK(config.npc.team == Team::Players);
+    CHECK_EQ(config.image, std::string("$assembler"));
+    CHECK(config.noEggDrop);
+    CHECK(!content().mobStats(assembler, Rarity::Common).ambient);
+    // Completely still (user, 2026-10-14): no cruise, no turning.
+    CHECK(config.npc.still);
+    CHECK(!config.beeFlight);
+    CHECK_EQ(content().mobStats(assembler, Rarity::Common).speed, 0.0);
+
+    // The user's mimic + RAM = sawblade, and every one of florr's own recipes
+    // (its client's table, 0x10234f910) whose petals all exist here -- ten of
+    // its twenty (user, 2026-10-14).
+    CHECK_EQ(config.npc.recipes.size(), std::size_t(11));
+    const int saw = recipeMaking(assembler, "sawblade");
+    CHECK(saw >= 0);
+    if (saw < 0) return;
+    const AssemblyRecipe& recipe = config.npc.recipes[static_cast<std::size_t>(saw)];
+    CHECK_EQ(recipe.inputs.size(), std::size_t(2));
+    CHECK_EQ(recipe.takes(content().petalIndex("mimic")), std::int64_t(1));
+    CHECK_EQ(recipe.takes(content().petalIndex("ram")), std::int64_t(1));
+    CHECK_EQ(recipe.outputs.size(), std::size_t(1));
+    // florr's counts come with them: three honey for a wax, a hundred
+    // thousand rocks for a moon, three batteries for a battery and a bolt.
+    const int wax = recipeMaking(assembler, "wax");
+    CHECK(wax >= 0);
+    if (wax >= 0) {
+        CHECK_EQ(config.npc.recipes[static_cast<std::size_t>(wax)].takes(
+                     content().petalIndex("honey")), std::int64_t(3));
+    }
+    const int moon = recipeMaking(assembler, "moon");
+    CHECK(moon >= 0);
+    if (moon >= 0) {
+        CHECK_EQ(config.npc.recipes[static_cast<std::size_t>(moon)].takes(
+                     content().petalIndex("rock")), std::int64_t(100000));
+    }
+    const int bolt = recipeMaking(assembler, "lightning");
+    CHECK(bolt >= 0);
+    if (bolt >= 0) {
+        const AssemblyRecipe& r = config.npc.recipes[static_cast<std::size_t>(bolt)];
+        CHECK_EQ(r.outputs.size(), std::size_t(2));
+        CHECK_EQ(r.takes(content().petalIndex("battery")), std::int64_t(3));
+    }
+}
+
+TEST(an_assembler_is_a_hornets_size_at_every_tier) {
+    // User, 2026-10-14: "the assembler mob size should be same as hornet" --
+    // the hornet's size on the mob ladder, so an apex assembler is an apex
+    // hornet's size.
+    CHECK(ensureShippedContent());
+    const std::uint16_t assembler = content().mobIndex("assembler");
+    const std::uint16_t hornet = content().mobIndex("hornet");
+    CHECK(assembler != kInvalidIndex && hornet != kInvalidIndex);
+    if (assembler == kInvalidIndex || hornet == kInvalidIndex) return;
+    Terrain terrain;
+    World world;
+    NpcSystem npcs;
+    for (int tier = 0; tier < kLadderRarityCount; ++tier) {
+        const Rarity rarity = static_cast<Rarity>(tier);
+        const double expected = content().mobStats(hornet, rarity).radius;
+        CHECK_NEAR(NpcSystem::npcRadius(content(), assembler, rarity), expected, 1e-9);
+        const Entity e = npcs.spawnNpc(world, terrain, content(), assembler, rarity,
+                                       {2000.0 + 300.0 * tier, 2000.0}, Realm::Overworld, 0.0);
+        CHECK_NEAR(world.get<Body>(e).radius, expected, 1e-9);
+    }
+}
+
+TEST(an_npc_recipe_list_is_read_and_its_mistakes_are_reported) {
+    ContentRegistry registry;
+    std::string error;
+    // A recipe naming a petal that does not exist is dropped whole -- half a
+    // recipe would make something out of less than it says -- and so is one
+    // taking more petals than the window has seats for. A petal named twice
+    // is taken twice. Recipes on anything but an assembler are refused.
+    const std::string mobs = R"({
+        "maker": { "name": "Maker", "health": 10, "npc": { "service": "assembler",
+            "recipes": [
+                { "from": ["basic", "rock"], "to": "rock" },
+                { "from": ["basic", "nothing"], "to": "rock" },
+                { "from": ["basic", "basic", "basic", "basic", "basic", "basic"], "to": "rock" },
+                { "from": ["basic", "basic"], "to": "unheard" },
+                { "from": ["rock", "rock"], "to": "basic" },
+                "garbage",
+                { "from": [{ "petal": "rock", "count": 10 }],
+                  "to": [{ "petal": "basic", "count": 2 }, "rock"] },
+                { "from": [{ "petal": "rock", "count": 0 }], "to": "basic" }
+            ] } },
+        "seer": { "name": "Seer", "health": 10, "npc": { "service": "oracle",
+            "recipes": [ { "from": ["basic"], "to": "rock" } ] } }
+    })";
+    const std::string petals = R"({ "basic": { "name": "Basic" }, "rock": { "name": "Rock" } })";
+    const std::string dir = tempDir("florr-npc-recipes-" + std::to_string(::getpid()));
+    CHECK(test::loadFixtureContent(registry, dir, mobs, petals, error));
+    const NpcSpec& maker = registry.mob(registry.mobIndex("maker")).npc;
+    CHECK(maker.service == NpcService::Assembler);
+    CHECK_EQ(maker.recipes.size(), std::size_t(3));
+    if (maker.recipes.size() == 3) {
+        CHECK_EQ(maker.recipes[0].outputs.size(), std::size_t(1));
+        CHECK_EQ(maker.recipes[0].outputs[0].petal, registry.petalIndex("rock"));
+        CHECK_EQ(maker.recipes[0].takes(registry.petalIndex("basic")), std::int64_t(1));
+        CHECK_EQ(maker.recipes[1].takes(registry.petalIndex("rock")), std::int64_t(2));
+        CHECK_EQ(maker.recipes[1].outputs[0].petal, registry.petalIndex("basic"));
+        // Counted stacks, and a list of outputs in the order given.
+        const AssemblyRecipe& counted = maker.recipes[2];
+        CHECK_EQ(counted.takes(registry.petalIndex("rock")), std::int64_t(10));
+        CHECK_EQ(counted.outputs.size(), std::size_t(2));
+        if (counted.outputs.size() == 2) {
+            CHECK_EQ(counted.outputs[0].petal, registry.petalIndex("basic"));
+            CHECK_EQ(counted.outputs[0].count, std::int64_t(2));
+            CHECK_EQ(counted.outputs[1].petal, registry.petalIndex("rock"));
+            CHECK_EQ(counted.outputs[1].count, std::int64_t(1));
+        }
+    }
+    CHECK(registry.mob(registry.mobIndex("seer")).npc.recipes.empty());
+    const auto warned = [&](const char* needle) {
+        for (const std::string& line : registry.warnings()) {
+            if (line.find(needle) != std::string::npos) return true;
+        }
+        return false;
+    };
+    CHECK(warned("nothing"));
+    CHECK(warned("unheard"));
+    CHECK(warned("takes 6 petals"));
+    CHECK(warned("npc recipe 5"));
+    CHECK(warned("only an assembler's"));
+    CHECK(warned("count is not a whole number"));
+    removeDataDir(dir);
+}
+
+TEST(an_npc_area_with_every_rarity_is_one_roaming_site_per_tier) {
+    CHECK(ensureShippedContent());
+    const double cell = kTileSize;
+    const std::string dir = npcWorld(
+        "npc-area", fixtureNpcArea(cell * 4, cell * 4, cell * 16, cell * 16, "assembler", "All") +
+                        "," + fixtureNpc(kOracleX, kOracleY, "oracle", "rare"));
+    if (dir.empty()) { CHECK(false); return; }
+    WorldMaps maps;
+    Terrain terrain;
+    std::string error;
+    CHECK(maps.load(dir, &terrain, error));
+    if (maps.maps().empty()) { CHECK(false); removeDataDir(dir); return; }
+    int areas = 0;
+    for (const MapElement& element : maps.maps()[0].elements()) {
+        if (element.kind != MapElementKind::Npc || element.npcId != "assembler") continue;
+        ++areas;
+        CHECK(element.npcEveryRarity);
+        CHECK(element.npcRoams());
+    }
+    CHECK_EQ(areas, 1);
+    const Rect area{cell * 4, cell * 4, cell * 16, cell * 16};
+    NpcSystem npcs;
+    std::vector<std::string> warnings;
+    npcs.loadSites(maps, content(), warnings);
+    CHECK(warnings.empty());
+    // A site for every ladder tier, and the oracle's point beside them.
+    CHECK_EQ(npcs.sites().size(), static_cast<std::size_t>(kLadderRarityCount) + 1);
+    std::vector<int> perTier(kRarityCount, 0);
+    for (const NpcSystem::Site& site : npcs.sites()) {
+        if (site.mobIndex != content().mobIndex("assembler")) {
+            CHECK(!site.roams);
+            continue;
+        }
+        CHECK(site.roams);
+        ++perTier[static_cast<std::size_t>(rarityIndex(site.rarity))];
+    }
+    for (int tier = 0; tier < kLadderRarityCount; ++tier) {
+        CHECK_EQ(perTier[static_cast<std::size_t>(tier)], 1);
+    }
+    CHECK_EQ(perTier[static_cast<std::size_t>(rarityIndex(Rarity::Universal))], 0);
+
+    // Placed: inside the area, on open ground, one of each tier -- and one
+    // removed comes back, at a spot of its own, while the rest stay put.
+    World world;
+    npcs.placeMissing(world, terrain, content(), 0.0);
+    std::vector<Entity> standing = assemblersIn(world);
+    CHECK_EQ(standing.size(), static_cast<std::size_t>(kLadderRarityCount));
+    Entity epic = NULL_ENTITY;
+    for (const Entity e : standing) {
+        const Vec2 at = world.get<Transform>(e).position;
+        CHECK(area.contains(at));
+        CHECK(!terrain.blocked(at, Realm::Overworld));
+        if (world.get<Npc>(e).rarity == Rarity::Epic) epic = e;
+    }
+    CHECK(epic != NULL_ENTITY);
+    if (epic == NULL_ENTITY) { removeDataDir(dir); return; }
+    world.destroy(epic);
+    npcs.placeMissing(world, terrain, content(), 0.0);
+    standing = assemblersIn(world);
+    CHECK_EQ(standing.size(), static_cast<std::size_t>(kLadderRarityCount));
+    int epics = 0;
+    for (const Entity e : standing) epics += world.get<Npc>(e).rarity == Rarity::Epic ? 1 : 0;
+    CHECK_EQ(epics, 1);
+    removeDataDir(dir);
+}
+
+TEST(the_computer_holds_one_assembler_of_every_tier_somewhere_inside_it) {
+    CHECK(ensureShippedContent());
+    WorldMaps maps;
+    Terrain terrain;
+    std::string error;
+    CHECK(maps.load(dataDir(), &terrain, error));
+    Realm computer = Realm::Overworld;
+    bool haveComputer = false;
+    for (const MapData& map : maps.maps()) {
+        if (map.id() != "computer") continue;
+        computer = map.realm();
+        haveComputer = true;
+    }
+    CHECK(haveComputer);
+    NpcSystem npcs;
+    std::vector<std::string> warnings;
+    npcs.loadSites(maps, content(), warnings);
+    CHECK(warnings.empty());
+    std::vector<int> perTier(kRarityCount, 0);
+    for (const NpcSystem::Site& site : npcs.sites()) {
+        if (content().mob(site.mobIndex).npc.service != NpcService::Assembler) continue;
+        CHECK(site.realm == computer);
+        CHECK(site.roams);
+        ++perTier[static_cast<std::size_t>(rarityIndex(site.rarity))];
+    }
+    for (int tier = 0; tier < kLadderRarityCount; ++tier) {
+        CHECK_EQ(perTier[static_cast<std::size_t>(tier)], 1);
+    }
+
+    // Each put down on open, dry ground in the computer, its body clear of
+    // the walls.
+    World world;
+    npcs.placeMissing(world, terrain, content(), 0.0);
+    const std::vector<Entity> standing = assemblersIn(world);
+    CHECK_EQ(standing.size(), static_cast<std::size_t>(kLadderRarityCount));
+    for (const Entity e : standing) {
+        const Transform& transform = world.get<Transform>(e);
+        CHECK(transform.realm == computer);
+        CHECK(!terrain.blocked(transform.position, computer));
+        CHECK(!terrain.inWater(transform.position, computer));
+        CHECK(!terrain.resolveWall(transform.position, world.get<Body>(e).radius, computer)
+                   .collided);
+    }
+}
+
+TEST(an_assembler_never_moves_or_turns_whoever_walks_round_or_into_it) {
+    // A machine, not a creature: put down facing east, its drawing's own
+    // pose, it holds that spot and that facing while a flower circles it and
+    // shoves into it -- the flower is what gives way.
+    const std::string dir = assemblerWorld("assembler-still");
+    Harness h("assembler-still", [](const std::string& path) { seedAccount(path, "builder"); },
+              dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    NetClient client;
+    CHECK(joinAs(h, client, "builder"));
+    h.step(3, {&client});
+    World& world = h.server.world();
+    const Entity npc = npcWearing(world, "assembler");
+    const Entity player = onlyPlayer(world);
+    if (npc == NULL_ENTITY || player == NULL_ENTITY) { CHECK(false); removeDataDir(dir); return; }
+    CHECK(world.get<Npc>(npc).still);
+    CHECK(!world.get<Npc>(npc).cruises);
+    const Vec2 home = world.get<Transform>(npc).position;
+    CHECK_EQ(world.get<Transform>(npc).angle, 0.0);
+    const double radius = world.get<Body>(npc).radius;
+
+    for (const double bearing : {kPi * 0.5, kPi, -kPi * 0.5, 0.25}) {
+        // Beside it, then pressed halfway into it.
+        world.get<Transform>(player).position = home + Vec2::fromAngle(bearing, radius + 80.0);
+        h.step(10, {&client});
+        world.get<Transform>(player).position = home + Vec2::fromAngle(bearing, radius * 0.5);
+        h.step(10, {&client});
+        const Transform& self = world.get<Transform>(npc);
+        CHECK_NEAR(self.position.x, home.x, 1e-9);
+        CHECK_NEAR(self.position.y, home.y, 1e-9);
+        CHECK_EQ(self.angle, 0.0);
+        // Pushed back out to its skin.
+        CHECK(distance(world.get<Transform>(player).position, home) >= radius);
+    }
+    // Long enough for any cruise or glance to have shown itself.
+    world.get<Transform>(player).position = home + Vec2{0.0, radius + 2000.0};
+    h.step(150, {&client});
+    CHECK_NEAR(world.get<Transform>(npc).position.x, home.x, 1e-9);
+    CHECK_NEAR(world.get<Transform>(npc).position.y, home.y, 1e-9);
+    CHECK_EQ(world.get<Transform>(npc).angle, 0.0);
+    removeDataDir(dir);
+}
+
+TEST(an_assembly_takes_one_of_each_input_per_run_at_the_assemblers_tier) {
+    const std::string dir = assemblerWorld("assembler-make");
+    Harness h("assembler-make", [](const std::string& path) {
+        seedAccount(path, "builder");
+        seedStack(path, "builder", "petal_mimic", Rarity::Epic, 3);
+        seedStack(path, "builder", "petal_ram", Rarity::Epic, 2);
+        seedStack(path, "builder", "petal_mimic", Rarity::Rare, 4);
+        seedStack(path, "builder", "petal_ram", Rarity::Rare, 4);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t mimic = content().petalIndex("mimic");
+    const std::uint16_t ram = content().petalIndex("ram");
+    const std::uint16_t saw = content().petalIndex("sawblade");
+
+    NetClient client;
+    CHECK(joinAs(h, client, "builder"));
+    h.step(3, {&client});
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(ram, Rarity::Epic) == 2u;
+    }));
+
+    AssembleOutcome outcome;
+    const std::uint8_t recipe = offerRecipe(h, "sawblade");
+    standBeside(h, client, "assembler");
+    client.requestAssemble(Rarity::Epic, recipe, 2);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(outcome.success);
+    CHECK(outcome.rarity == Rarity::Epic);
+    CHECK_EQ(outcome.recipe, recipe);
+    CHECK_EQ(outcome.made, 2);
+    // Two of each in, two sawblades out, all at the assembler's tier; the
+    // rare stacks are another tier's, and untouched.
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(mimic, Rarity::Epic) == 1u && p.stackCount(ram, Rarity::Epic) == 0u &&
+               p.stackCount(saw, Rarity::Epic) == 2u;
+    }));
+    CHECK_EQ(client.profile().stackCount(mimic, Rarity::Rare), 4u);
+    CHECK_EQ(client.profile().stackCount(ram, Rarity::Rare), 4u);
+    CHECK_EQ(client.profile().stackCount(saw, Rarity::Rare), 0u);
+    // No wait: the next one is a matter of having the petals.
+    CHECK_EQ(client.oracleCooldownRemainingMillis(), 0.0);
+    CHECK_EQ(client.traderCooldownRemainingMillis(), 0.0);
+    removeDataDir(dir);
+}
+
+TEST(the_assembler_refuses_a_short_bag_and_a_flower_not_standing_at_it) {
+    const std::string dir = assemblerWorld("assembler-refuse");
+    Harness h("assembler-refuse", [](const std::string& path) {
+        seedAccount(path, "builder");
+        seedStack(path, "builder", "petal_mimic", Rarity::Epic, 5);
+        seedStack(path, "builder", "petal_ram", Rarity::Epic, 2);
+        seedStack(path, "builder", "petal_mimic", Rarity::Rare, 5);
+        seedStack(path, "builder", "petal_ram", Rarity::Rare, 5);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t mimic = content().petalIndex("mimic");
+    const std::uint16_t ram = content().petalIndex("ram");
+    const std::uint16_t saw = content().petalIndex("sawblade");
+
+    NetClient client;
+    CHECK(joinAs(h, client, "builder"));
+    h.step(3, {&client});
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(ram, Rarity::Epic) == 2u;
+    }));
+
+    AssembleOutcome outcome;
+    const std::uint8_t recipe = offerRecipe(h, "sawblade");
+    // Three runs need three RAM: all or nothing, so not one mimic goes.
+    standBeside(h, client, "assembler");
+    client.requestAssemble(Rarity::Epic, recipe, 3);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(!outcome.success);
+    CHECK_EQ(outcome.made, 0);
+    CHECK(outcome.reason.find("RAM") != std::string::npos);
+    // A recipe it does not offer -- another of its mob's -- and no runs at all.
+    standBeside(h, client, "assembler");
+    client.requestAssemble(Rarity::Epic, static_cast<std::uint8_t>(recipe == 0 ? 1 : 0), 1);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(!outcome.success);
+    CHECK(outcome.reason.find("does not make") != std::string::npos);
+    standBeside(h, client, "assembler");
+    client.requestAssemble(Rarity::Epic, recipe, 0);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(!outcome.success);
+    // The flower is at the EPIC assembler: a rare run is asking for one that
+    // is not there, whatever the bag holds.
+    standBeside(h, client, "assembler");
+    client.requestAssemble(Rarity::Rare, recipe, 1);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(!outcome.success);
+    // Walked away: no assembler in reach.
+    {
+        World& world = h.server.world();
+        const Entity player = onlyPlayer(world);
+        const Entity npc = npcWearing(world, "assembler");
+        if (player != NULL_ENTITY && npc != NULL_ENTITY) {
+            const Vec2 at = world.get<Transform>(npc).position;
+            world.get<Transform>(player).position =
+                at + Vec2{0.0, world.get<Body>(npc).radius + kNpcServiceReach +
+                                   kNpcServiceSlack + 400.0};
+        }
+        h.step(1, {&client});
+    }
+    client.requestAssemble(Rarity::Epic, recipe, 1);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(!outcome.success);
+
+    h.step(5, {&client});
+    CHECK_EQ(client.profile().stackCount(mimic, Rarity::Epic), 5u);
+    CHECK_EQ(client.profile().stackCount(ram, Rarity::Epic), 2u);
+    CHECK_EQ(client.profile().stackCount(mimic, Rarity::Rare), 5u);
+    CHECK_EQ(client.profile().stackCount(saw, Rarity::Epic), 0u);
+    CHECK_EQ(client.profile().stackCount(saw, Rarity::Rare), 0u);
+
+    // Back at it, the two RAM make two.
+    standBeside(h, client, "assembler");
+    client.requestAssemble(Rarity::Epic, recipe, 2);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(outcome.success);
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(saw, Rarity::Epic) == 2u && p.stackCount(mimic, Rarity::Epic) == 3u;
+    }));
+    removeDataDir(dir);
+}
+
+TEST(florrs_counted_recipes_take_and_make_their_counts) {
+    // battery x3 -> battery + lightning: three in, one of each out, per run.
+    const std::string dir = assemblerWorld("assembler-counts", "rare");
+    Harness h("assembler-counts", [](const std::string& path) {
+        seedAccount(path, "builder");
+        seedStack(path, "builder", "petal_battery", Rarity::Rare, 7);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t battery = content().petalIndex("battery");
+    const std::uint16_t bolt = content().petalIndex("lightning");
+
+    NetClient client;
+    CHECK(joinAs(h, client, "builder"));
+    h.step(3, {&client});
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(battery, Rarity::Rare) == 7u;
+    }));
+    AssembleOutcome outcome;
+    const std::uint8_t recipe = offerRecipe(h, "lightning");
+    // Three runs take nine: refused, nothing taken.
+    standBeside(h, client, "assembler");
+    client.requestAssemble(Rarity::Rare, recipe, 3);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(!outcome.success);
+    // Two take six and give two of each back.
+    standBeside(h, client, "assembler");
+    client.requestAssemble(Rarity::Rare, recipe, 2);
+    CHECK(awaitAssemble(h, client, outcome));
+    CHECK(outcome.success);
+    CHECK_EQ(outcome.made, 2);
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(battery, Rarity::Rare) == 3u && p.stackCount(bolt, Rarity::Rare) == 2u;
+    }));
+    removeDataDir(dir);
+}
+
+TEST(each_assembler_rolls_one_recipe_and_the_client_is_told_which) {
+    // florr's assemblers each offer one recipe (user, 2026-10-14: "one
+    // random recipe each"): rolled when the assembler is put down, and sent
+    // with it, so the window shows the recipe this one makes.
+    CHECK(ensureShippedContent());
+    WorldMaps maps;
+    Terrain terrain;
+    std::string error;
+    CHECK(maps.load(dataDir(), &terrain, error));
+    NpcSystem npcs;
+    std::vector<std::string> warnings;
+    npcs.loadSites(maps, content(), warnings);
+    World world;
+    npcs.placeMissing(world, terrain, content(), 0.0);
+    const std::size_t recipes =
+        content().mob(content().mobIndex("assembler")).npc.recipes.size();
+    std::vector<int> seen(recipes, 0);
+    for (const Entity e : assemblersIn(world)) {
+        const std::uint8_t recipe = world.get<Npc>(e).recipe;
+        CHECK(recipe < recipes);
+        if (recipe < recipes) ++seen[recipe];
+    }
+    // Ten rolls over eleven recipes are not all the same one.
+    int distinct = 0;
+    for (const int n : seen) distinct += n > 0 ? 1 : 0;
+    CHECK(distinct >= 2);
+
+    // On the wire: the client's copy of the NPC carries the server's roll.
+    const std::string dir = assemblerWorld("assembler-roll");
+    Harness h("assembler-roll", [](const std::string& path) { seedAccount(path, "builder"); },
+              dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    NetClient client;
+    CHECK(joinAs(h, client, "builder"));
+    standBeside(h, client, "assembler");
+    const Entity npc = npcWearing(h.server.world(), "assembler");
+    CHECK(npc != NULL_ENTITY);
+    const std::uint32_t netId =
+        npc != NULL_ENTITY ? h.server.world().get<NetId>(npc).value : 0u;
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.view().entities().count(netId) != 0;
+    }, 100));
+    const auto seenBy = client.view().entities().find(netId);
+    CHECK(seenBy != client.view().entities().end());
+    if (seenBy != client.view().entities().end() && npc != NULL_ENTITY) {
+        CHECK_EQ(seenBy->second.npcRecipe, h.server.world().get<Npc>(npc).recipe);
+    }
+    removeDataDir(dir);
+}
+
+TEST(the_assembler_painter_draws_florrs_machine_and_turns_its_gears) {
+    CHECK(ensureShippedContent());
+    const std::uint16_t assembler = content().mobIndex("assembler");
+    const SpriteCache& sprites = shippedSprites();
+    CHECK(sprites.mobArt(assembler) == MobArt::Assembler);
+    CHECK(sprites.mobDrawable(assembler));
+
+    // A radius of 80 pixels: florr's 200-unit box at 80/90 of a pixel a
+    // unit, centred on the frame.
+    const double diameter = 160.0;
+    const double unit = diameter * 0.5 / 90.0;
+    const auto frame = [&](double clockMs) {
+        Canvas canvas = Canvas::createVirtual(kFrame, kFrame);
+        MobMotion motion;
+        motion.clockMs = clockMs;
+        motion.seed = 7;
+        sprites.drawMob(canvas, assembler, kFrame * 0.5, kFrame * 0.5, diameter, 0.0, 0.0, false,
+                        0.0, {1.0, 0.0}, &motion);
+        return canvas.getImageData(0, 0, kFrame, kFrame);
+    };
+    // A design-box point (florr's numbers) to the pixel it lands on.
+    const auto pixelOf = [&](double dx, double dy) {
+        const int x = static_cast<int>(kFrame * 0.5 + (dx - 100.0) * unit);
+        const int y = static_cast<int>(kFrame * 0.5 + (dy - 100.0) * unit);
+        return static_cast<std::size_t>((y * kFrame + x) * 4);
+    };
+    const auto rgbAt = [&](const std::vector<std::uint8_t>& pixels, double dx, double dy) {
+        const std::size_t i = pixelOf(dx, dy);
+        if (pixels[i + 3] == 0) return 0x01000000u;
+        return (static_cast<std::uint32_t>(pixels[i]) << 16) |
+               (static_cast<std::uint32_t>(pixels[i + 1]) << 8) | pixels[i + 2];
+    };
+    const std::vector<std::uint8_t> still = frame(0.0);
+    CHECK_EQ(rgbAt(still, 100.0, 100.0), 0x999999u);   // the body's middle
+    CHECK_EQ(rgbAt(still, 100.0, 13.0), 0x4D4D4Du);    // the tread, between links
+    CHECK_EQ(rgbAt(still, 100.0, 150.125), 0x00FF00u); // the lamp
+    CHECK_EQ(rgbAt(still, 164.5, 37.5), 0x000000u);    // the port
+    CHECK_EQ(rgbAt(still, 100.0, 197.0), 0x01000000u); // past the tread: nothing
+
+    // A tenth of a second on, the gears have turned 0.3 rad: their housing
+    // changes, and the body away from the gears and the dials does not.
+    const std::vector<std::uint8_t> later = frame(100.0);
+    int gearChanged = 0;
+    int bodyChanged = 0;
+    for (int y = 0; y < kFrame; ++y) {
+        for (int x = 0; x < kFrame; ++x) {
+            const double dx = 100.0 + (x + 0.5 - kFrame * 0.5) / unit;
+            const double dy = 100.0 + (y + 0.5 - kFrame * 0.5) / unit;
+            const std::size_t i = static_cast<std::size_t>((y * kFrame + x) * 4);
+            const bool differs = still[i] != later[i] || still[i + 1] != later[i + 1] ||
+                                 still[i + 2] != later[i + 2] || still[i + 3] != later[i + 3];
+            if (!differs) continue;
+            if (dx > 148.0 && dx < 190.0 && dy > 55.0 && dy < 140.0) ++gearChanged;
+            else if (dx > 45.0 && dx < 140.0 && dy > 62.0 && dy < 138.0) ++bodyChanged;
+        }
+    }
+    CHECK(gearChanged > 20);
+    CHECK_EQ(bodyChanged, 0);
 }

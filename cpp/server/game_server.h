@@ -332,6 +332,10 @@ private:
     /// One petal for one coin of its tier at a trader. Refused unless the
     /// session's body is alive and standing at one, as the oracle's craft is.
     void handleTrade(Session&, net::Connection&, ByteReader&);
+    /// One of a recipe's petals for each it takes, `count` times over, at the
+    /// assembler the session's body is standing at -- all at its tier. Found
+    /// and refused as the oracle's craft is; all or nothing.
+    void handleAssemble(Session&, net::Connection&, ByteReader&);
     /// kTitanForgeCost apex petals for one universal at a titan, standing at
     /// one as the oracle's craft is; then takeUniversals for everyone else,
     /// unless the forger is an admin (see tracksUniversals).

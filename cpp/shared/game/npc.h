@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -56,6 +57,11 @@ enum class NpcService : std::uint8_t {
     /// universal of it. A universal forged here lasts until another player
     /// forges the same petal; see kTitanForgeRefund.
     Titan,
+    /// Recipes: what a recipe takes for what it makes, every petal at the
+    /// assembler's own tier. Each assembler offers ONE of its mob's
+    /// `npc.recipes`, rolled when it is put down, as florr's do. Never a
+    /// roll for the outcome, and no wait.
+    Assembler,
 };
 
 /// The service a mobs.json `npc.service` string names, or None for text this
@@ -64,6 +70,7 @@ inline NpcService parseNpcService(const std::string& name) {
     if (name == "oracle") return NpcService::Oracle;
     if (name == "trader") return NpcService::Trader;
     if (name == "titan") return NpcService::Titan;
+    if (name == "assembler") return NpcService::Assembler;
     return NpcService::None;
 }
 
@@ -141,6 +148,25 @@ inline constexpr double kTitanHolderMemoMillis = 5000.0;
 inline std::string titanMemoryText(const std::string& holder) {
     return "\"Ah, I remember forging that petal for a flower named " + holder + "...\"";
 }
+
+/// The most recipes one assembler's `npc.recipes` may list -- a recipe goes
+/// on the wire as a u8 index -- and the most different petals one recipe may
+/// take and make: florr's recipe records hold five of each.
+inline constexpr std::size_t kAssemblerMaxRecipes = 32;
+inline constexpr std::size_t kAssemblerMaxInputs = 5;
+inline constexpr std::size_t kAssemblerMaxOutputs = 5;
+/// The most of one petal a recipe may name, taken or made per run: florr's
+/// rock-for-a-moon takes a hundred thousand.
+inline constexpr std::int64_t kAssemblerMaxStack = 1000000;
+
+/// The most times one Assemble runs its recipe. A batch is one message and
+/// one reply; the cap only keeps a typed count sane.
+inline constexpr int kAssemblerMaxBatch = 9999;
+
+/// The line the assemble window says what it is for in: florr's own
+/// (UI/AssemblerCraft/Instructions).
+inline constexpr const char* kAssemblerInstructions =
+    "Combine specific petals to assemble a new petal.";
 
 /// How far past exact overlap a flower's body and an NPC's still count as
 /// touching, for the contact hit either lands on the other.

@@ -38,11 +38,13 @@ inline constexpr PanelSkin kInventorySkin{0x6B9DD6u, 0x5680ADu, 0x5680ADu};
 /// The craft key's four windows are florr's, in florr's themes: each is the
 /// colour its controller answers with, and its border, its empty slots and
 /// its empty cells are that colour's 0.81 shade (slotCardShade, menus.h).
-/// Forge tan, oracle slate, trader yellow and the titan's charcoal.
+/// Forge tan, oracle slate, trader yellow, the titan's charcoal and the
+/// assembler's machine grey (florr's capture: #999999 under a #7C7C7C stroke).
 inline constexpr PanelSkin kCraftingSkin{0xDB9D5Au, 0xB17F49u, 0xB17F49u};
 inline constexpr PanelSkin kOracleSkin{0x66869Eu, 0x536D80u, 0x536D80u};
 inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCFBB50u};
 inline constexpr PanelSkin kTitanSkin{0x333333u, 0x292929u, 0x292929u};
+inline constexpr PanelSkin kAssemblerSkin{0x999999u, 0x7C7C7Cu, 0x7C7C7Cu};
 inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xA89D36u};
 /// The talent card is drawn against a reference screenshot rather than the
 /// browser build's CSS, so its body is that shot's dusty red

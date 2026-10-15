@@ -89,6 +89,9 @@ enum class MobArt : std::uint8_t {
     /// The one PETAL drawn by code (petals.json `$moon`): gardn's seeded
     /// crater scatter, clipped to the disc, magnified to the moon's radius.
     Moon,
+    /// florr's assembler NPC: a machine on a tread, its gears turning on the
+    /// mob's clock and its dial needles twitching.
+    Assembler,
 };
 
 /// How fast a walk cycle runs, in radians of phase per second.

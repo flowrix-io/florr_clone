@@ -256,10 +256,11 @@ private:
     /// after it arrives (kAnnouncementSeconds, app_hud.cpp). The game's HUD and
     /// the title screen both raise it: an announcement is for everyone signed in.
     void drawAdminAnnouncement(Canvas&, double clearOf = 0.0);
-    /// The service of the nearest NPC in view whose skin is within
-    /// kNpcServiceReach of `self`, or None. What turns the craft key into the
-    /// oracle's or the trader's panel while the flower stands at one.
-    NpcService nearbyNpcService(Vec2 self) const;
+    /// The nearest NPC in view offering a service whose skin is within
+    /// kNpcServiceReach of `self` -- its service None when there is none.
+    /// What turns the craft key into the oracle's or the trader's panel while
+    /// the flower stands at one, and says which assembler it is at.
+    NearbyNpc nearbyNpc(Vec2 self) const;
     /// Puts the session back together after the socket came back.
     ///
     /// A reconnection is always to a NEW server process -- that is what a

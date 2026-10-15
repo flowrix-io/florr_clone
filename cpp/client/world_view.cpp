@@ -154,6 +154,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         double shieldFraction;
         std::string equippedSkinId;
         std::uint32_t ownerNetId;
+        std::uint8_t npcRecipe;
         std::string name;
     };
     std::vector<Spawn> spawns;
@@ -186,6 +187,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             s.equippedSkinId = reader.str();
         }
         if (s.kind == net::EntityKind::Petal) s.ownerNetId = reader.u32();
+        if (s.kind == net::EntityKind::Npc) s.npcRecipe = reader.u8();
         if (s.flags & net::SpawnHasName) s.name = reader.str();
         spawns.push_back(std::move(s));
         if (!reader.ok()) return false;
@@ -326,6 +328,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.shieldFraction = s.shieldFraction;
         e.equippedSkinId = std::move(s.equippedSkinId);
         e.ownerNetId = s.ownerNetId;
+        e.npcRecipe = s.npcRecipe;
         if (s.flags & net::SpawnIsSelf) {
             self_.netId = s.netId;
             // A spawn record for your own flower is a join or a respawn.

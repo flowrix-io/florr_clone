@@ -570,7 +570,9 @@ void MapData::adopt(const Json& array) {
                 const std::string tier = lowerCase(properties["rarity"].asString());
                 // A tier it does not know stands at common, which for an NPC
                 // is a silently small one: said out loud instead.
-                if (!tryParseRarity(tier, element.npcRarity)) {
+                if (tier == "all") {
+                    element.npcEveryRarity = true;
+                } else if (!tryParseRarity(tier, element.npcRarity)) {
                     element.npcRarity = Rarity::Common;
                     std::fprintf(stderr,
                                  "[map] an npc's `rarity` \"%s\" is not a tier; it stands at "

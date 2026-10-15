@@ -38,13 +38,62 @@ void NpcSystem::loadSites(const WorldMaps& maps, const ContentRegistry& content,
             }
             Site site;
             site.realm = map.realm();
-            // The object is a point, so its box's corner IS the point.
-            site.position = {element.bounds.x, element.bounds.y};
+            // A point object's box is the point itself; an area's NPC is put
+            // down somewhere inside it when placed, and until then the box's
+            // middle is as good an answer to "where" as any.
+            site.roams = element.npcRoams();
+            site.position = site.roams ? element.centre() : Vec2{element.bounds.x, element.bounds.y};
+            site.area = element.bounds;
+            site.outline = element.polygon;
             site.mobIndex = mobIndex;
-            site.rarity = element.npcRarity;
-            sites_.push_back(site);
+            if (!element.npcEveryRarity) {
+                site.rarity = element.npcRarity;
+                sites_.push_back(site);
+                continue;
+            }
+            // "all": a site per ladder tier, each holding one NPC. Universal
+            // is no rung of the ladder -- nothing stands there unasked.
+            for (int tier = 0; tier < kLadderRarityCount; ++tier) {
+                site.rarity = static_cast<Rarity>(tier);
+                sites_.push_back(site);
+            }
         }
     }
+}
+
+double NpcSystem::npcRadius(const ContentRegistry& content, std::uint16_t mobIndex,
+                            Rarity rarity) {
+    if (mobIndex >= content.mobCount()) return kMobBaseRadius;
+    const MobConfig& config = content.mob(mobIndex);
+    rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
+    const double radius = content.mobStats(mobIndex, rarity).radius;
+    // A dummy placed as an NPC shrinks with its tier exactly as one a band
+    // plants does (MobConfig::fixtureSizeScale).
+    return (radius > 0.0 ? radius : kMobBaseRadius) * config.fixtureSizeScale(rarity);
+}
+
+Vec2 NpcSystem::pickRoamingSpot(const Terrain& terrain, const ContentRegistry& content,
+                                 const Site& site) {
+    // Open, dry ground, clear of walls for the body and -- for one that
+    // cruises -- a margin to wander in; then, failing that, for the body
+    // alone, then any open point at all. Each pass is a fixed number of
+    // draws, so a site drawn over solid rock costs a bounded search, never a
+    // hang.
+    const double radius = npcRadius(content, site.mobIndex, site.rarity);
+    const MobConfig& config = content.mob(site.mobIndex);
+    const bool cruises = !config.npc.still && config.beeFlight;
+    const double margins[] = {radius + (cruises ? kNpcLeashRadius : 0.0), radius, 0.0};
+    for (const double clearance : margins) {
+        for (int attempt = 0; attempt < 200; ++attempt) {
+            const Vec2 at{site.area.x + rng_.unit() * site.area.w,
+                          site.area.y + rng_.unit() * site.area.h};
+            if (!zoneContains(site.area, site.outline, at)) continue;
+            if (terrain.blocked(at, site.realm) || terrain.inWater(at, site.realm)) continue;
+            if (clearance > 0.0 && terrain.resolveWall(at, clearance, site.realm).collided) continue;
+            return at;
+        }
+    }
+    return site.position;
 }
 
 Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRegistry& content,
@@ -58,10 +107,7 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     // read apex (mobStats) -- because no NPC is ever rolled: one is placed.
     rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
     const MobStats stats = content.mobStats(mobIndex, rarity);
-    // A dummy placed as an NPC shrinks with its tier exactly as one a band
-    // plants does (MobConfig::fixtureSizeScale).
-    const double radius = (stats.radius > 0.0 ? stats.radius : kMobBaseRadius) *
-                          config.fixtureSizeScale(rarity);
+    const double radius = npcRadius(content, mobIndex, rarity);
 
     // It meets walls as a point, as its mob does, so it has to start with its
     // centre on open ground -- and one standing still is never moved again.
@@ -70,8 +116,10 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     const Entity e = world.create();
     world.add<NpcTag>(e);
     // Facing down the screen until somebody walks up: the eye is centred on
-    // nothing in particular, which reads as a creature at rest.
-    world.add<Transform>(e, Transform{position, kPi * 0.5, realm});
+    // nothing in particular, which reads as a creature at rest. A still one
+    // faces east, its drawing's own pose, and keeps it.
+    const bool still = config.npc.still;
+    world.add<Transform>(e, Transform{position, still ? 0.0 : kPi * 0.5, realm});
     world.add<Body>(e, Body{radius, stats.mass});
     const Team team = side.value_or(config.npc.team);
     world.add<Faction>(e, Faction{team, false});
@@ -117,7 +165,14 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     npc.nextGlanceMillis = nowMillis;
     // Flies like its mob does when its mob flies like a bee, starting off on
     // a heading and a weave of its own.
-    npc.cruises = config.beeFlight && stats.speed > 0.0;
+    npc.still = still;
+    // One recipe each, rolled here: a replaced assembler may well make
+    // something else. Off the NPCs' own stream, so it moves no spawn.
+    if (!config.npc.recipes.empty()) {
+        npc.recipe = static_cast<std::uint8_t>(
+            rng_.below(static_cast<std::uint32_t>(config.npc.recipes.size())));
+    }
+    npc.cruises = !still && config.beeFlight && stats.speed > 0.0;
     const BeeCruiseDrive cruise = beeCruiseDrive(stats.speed, stats.cruiseSpeed);
     npc.speed = cruise.thrust;
     npc.cruiseCeiling = cruise.ceiling;
@@ -137,6 +192,7 @@ void NpcSystem::placeMissing(World& world, const Terrain& terrain, const Content
         if (site.entity != NULL_ENTITY && world.isAlive(site.entity) && world.has<NpcTag>(site.entity)) {
             continue;
         }
+        if (site.roams) site.position = pickRoamingSpot(terrain, content, site);
         site.entity = spawnNpc(world, terrain, content, site.mobIndex, site.rarity, site.position,
                                site.realm, nowMillis);
     }
@@ -149,6 +205,9 @@ void NpcSystem::run(World& world, const Terrain& terrain, const ContentRegistry&
     placeMissing(world, terrain, content, nowMillis);
 
     npcs_->each([&](Entity e, NpcTag&, Npc& npc, Transform& transform) {
+        // Neither moves nor turns: it stands where it was put down, facing
+        // where it was put down facing.
+        if (npc.still) return;
         if (npc.cruises) {
             // The leash: out past it, the heading swings back toward home a
             // little each tick, and the weave the cruise lays over it goes on.
@@ -211,12 +270,13 @@ void NpcSystem::run(World& world, const Terrain& terrain, const ContentRegistry&
 }
 
 Entity NpcSystem::findService(World& world, NpcService service, Vec2 at, Realm realm,
-                              double reach) {
+                              double reach, std::optional<Rarity> tier) {
     bind(world);
     Entity best = NULL_ENTITY;
     double bestGap = 0.0;
     npcs_->each([&](Entity e, NpcTag&, Npc& npc, Transform& transform) {
         if (npc.service != service || transform.realm != realm) return;
+        if (tier && npc.rarity != *tier) return;
         const Body* body = world.tryGet<Body>(e);
         const double gap = distance(at, transform.position) - (body != nullptr ? body->radius : 0.0);
         if (gap > reach) return;

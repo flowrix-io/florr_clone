@@ -51,6 +51,27 @@ inline constexpr Rgba kOpaqueWhite = 0xFFFFFFFFu;
 /// readable string of separate projectiles rather than as one clump.
 inline constexpr double kDefaultBurstIntervalMillis = 100.0;
 
+/// One thing an assembler makes: `inputs` for `outputs`, every petal at the
+/// assembler's own tier, never a roll. From the `npc.recipes` list of an
+/// assembler's mobs.json entry -- `{ "from": ["mimic", "ram"], "to":
+/// "sawblade" }`, or with counts, florr's `{ "from": [{ "petal": "honey",
+/// "count": 3 }], "to": "wax" }` -- each in the order the window seats them.
+struct AssemblyRecipe {
+    struct Stack {
+        std::uint16_t petal = kNoPetal;
+        std::int64_t count = 1;
+    };
+    std::vector<Stack> inputs;
+    std::vector<Stack> outputs;
+
+    /// How many of `petalIndex` one run of the recipe takes.
+    std::int64_t takes(std::uint16_t petalIndex) const {
+        std::int64_t n = 0;
+        for (const Stack& input : inputs) n += input.petal == petalIndex ? input.count : 0;
+        return n;
+    }
+};
+
 /// What a mob is when a map (or `spawn_npc`) puts it down as an NPC, from its
 /// `npc` block. `present` is what makes the mob one at all; see
 /// shared/game/npc.h for what an NPC is.
@@ -69,6 +90,13 @@ struct NpcSpec {
     /// flower: its ring and its body hit whatever its side may hit.
     std::vector<std::uint16_t> petals;
     Rarity petalRarity = Rarity::Universal;
+    /// An assembler's recipes, in the order its window pages through them.
+    /// Empty for every other NPC.
+    std::vector<AssemblyRecipe> recipes;
+    /// Completely still: it never cruises, whatever its mob's `bee_ai`, and
+    /// never turns to watch a flower -- it faces east, its drawing's own pose,
+    /// from the moment it is put down. A machine, not a creature.
+    bool still = false;
 
     bool wearsPetals() const { return !petals.empty(); }
 };

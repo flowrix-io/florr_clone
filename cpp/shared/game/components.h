@@ -981,6 +981,14 @@ struct Npc {
     double speed = 0;
     double cruiseCeiling = 0;
     BeeCruise cruise;
+    /// Its mob's `npc.still`: it neither cruises nor turns to watch anybody,
+    /// facing east -- its drawing's own pose -- where it was put down.
+    bool still = false;
+    /// An assembler's one recipe: an index into its mob's `npc.recipes`,
+    /// rolled when it is put down, as florr's assemblers each offer one.
+    /// Replicated with the NPC, so the window shows the recipe this one
+    /// makes. 0 for every other NPC.
+    std::uint8_t recipe = 0;
 };
 
 /// A nest that periodically produces escorts, up to a live cap.

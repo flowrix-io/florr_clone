@@ -496,12 +496,12 @@ void App::drawSquadHud(Canvas& canvas, double time) {
     }
 }
 
-NpcService App::nearbyNpcService(Vec2 self) const {
+NearbyNpc App::nearbyNpc(Vec2 self) const {
     // Measured from the flower the player SEES against the NPC's skin, which
     // is what they walked up to. The server measures the body it simulates
     // and allows kNpcServiceSlack on top, so a panel opened here is never
     // refused for the frame of easing between the two.
-    NpcService nearest = NpcService::None;
+    NearbyNpc nearest;
     double nearestGap = kNpcServiceReach;
     for (const auto& entry : net_.view().entities()) {
         const RemoteEntity& entity = entry.second;
@@ -510,7 +510,7 @@ NpcService App::nearbyNpcService(Vec2 self) const {
         if (service == NpcService::None) continue;
         const double gap = distance(self, entity.position) - entity.radius;
         if (gap > nearestGap) continue;
-        nearest = service;
+        nearest = {service, entity.typeIndex, entity.rarity, entity.npcRecipe};
         nearestGap = gap;
     }
     return nearest;

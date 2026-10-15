@@ -360,7 +360,7 @@ the tile layers':
 | `spawns` | mob bands and mob regions — **polygons** |
 | `player_spawns` | doors: where a player arrives — rectangles |
 | `teleporters` | pads: where a player leaves — points |
-| `npcs` | NPCs: who stands where — points |
+| `npcs` | NPCs: who stands where — points, or areas they stand somewhere in |
 
 The game never sees the grouping beyond the kind: every reader filters by kind
 before it looks at order, so only the order *within* a layer is observable, and
@@ -671,8 +671,14 @@ An `npc` object stands one NPC in the world, where it is drawn:
 
 | property | meaning |
 | --- | --- |
-| `npc` | **which** NPC: the mobs.json id of a mob that has an `npc` block — `oracle`, `trader`, `titan`, `target_dummy` |
-| `rarity` | the tier it stands at: its size, the pool on its plate and the tier the plate names. `common` when left out; spelled like mobs.json's tiers, in any case. An NPC may stand at `universal`, which sizes it as apex |
+| `npc` | **which** NPC: the mobs.json id of a mob that has an `npc` block — `oracle`, `trader`, `titan`, `assembler`, `target_dummy` |
+| `rarity` | the tier it stands at: its size, the pool on its plate and the tier the plate names. `common` when left out; spelled like mobs.json's tiers, in any case. An NPC may stand at `universal`, which sizes it as apex. `all` stands one NPC of **every** ladder tier, common through apex, from the one object — never two of a tier |
+
+Drawn as a **point**, the NPC stands on it. Drawn as a **rectangle or
+polygon**, it stands somewhere inside the shape instead: the server picks a
+spot on open, dry ground — its body clear of the walls when it can find one —
+each time it puts the NPC down, so after a restart it is somewhere else. Such
+an area gets no dot on the minimap, as it has no one spot to mark.
 
 An NPC is a mob's artwork, size and tier standing in the world without being a
 mob: nothing that hunts, farms or recycles mobs sees it, flowers cannot walk
@@ -688,6 +694,7 @@ watch the nearest flower. Which side it is on is the mob's business, in its mobs
 | `{ "service": "oracle" }` | the players' (the default) | nothing — every hit is refused |
 | `{ "service": "trader" }` | the players' | nothing — every hit is refused |
 | `{ "service": "titan", "petals": [...] }` | the players' | nothing — every hit is refused. It wears `petals` as a ring that orbits it as a flower's does (at `petalRarity`, universal by default), and the ring and its body hit mobs |
+| `{ "service": "assembler", "still": true, "recipes": [...] }` | the players' | nothing — every hit is refused. `still` holds it completely still: it never cruises and never turns, facing east where it was put down |
 | `{ "team": "hostile" }` | the hostiles' | every hit a flower lands: it flashes, it is numbered and a dummy counts its DPS — each viewer's own hits only — and it loses nothing. It hits back as its mob does: a flower touching it is bumped and bitten, and a petal striking it pays for the hit out of its own health |
 
 The server keeps one standing on every object here — at start-up, and again on
@@ -708,7 +715,17 @@ for one `coin` of the same tier, any petal whose petals.json entry does not say
 memory the same way). `titan` turns it into the universal forge: five apex
 petals of one kind for one universal of it, which lasts until another player
 forges the same petal — then every other account's universal of it is taken
-and refunded at four apex apiece. The same mob is still an
+and refunded at four apex apiece. `assembler` turns it into the assemble
+window. Each assembler offers ONE of its block's `recipes`, rolled when it is
+put down (as florr's assemblers each offer one): `{ "from": ["mimic", "ram"],
+"to": "sawblade" }` takes one of each petal in `from` for one `to`, and a
+stack may carry a count — `{ "from": [{ "petal": "honey", "count": 3 }],
+"to": "wax" }` — and `to` may list several. Every petal is at the ASSEMBLER's
+tier, and the recipe runs as many times over as the player asks, with no roll
+and no wait. The shipped list is the user's mimic + RAM and every one of
+florr's own recipes whose petals all exist here. `still` (any NPC's block) holds
+it completely still: no cruise whatever its mob's `bee_ai`, and no turning to
+watch a flower. The same mob is still an
 ordinary enemy to `spawn oracle <rarity>` on the admin console; `spawn_npc
 <mob> [rarity] [players|hostile|neutral]` stands the NPC where the admin is,
 which is how the maze and the arena — which have no map to draw on — get one.
@@ -722,7 +739,9 @@ its far south-east, clear of the target dummies. The titan needs the room: it
 is some fourteen hundred units across, its ring orbits forty past its edge, and
 it cruises about its point as the oracle does — meeting walls with its centre
 only — so give it a clear circle of about a thousand units' radius round its
-point.
+point. `computer.tmj` draws one `assemblers` area over the whole map with
+`rarity: all`: one assembler of each tier, common through apex, each wherever
+the server puts it.
 
 ## The map's own properties
 

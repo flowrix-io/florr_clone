@@ -361,14 +361,18 @@ What each service does, what it costs and how often, and how a map places an
 NPC, is the author's view in [maps/README.md](../../maps/README.md) (`npcs`);
 the numbers are constants in `shared/game/npc.h`, the oracle's price
 `oracleCraftCost` in `rarity.h`. The engine side is the same for the oracle,
-the trader and the titan:
+the trader, the titan and the assemblers:
 
 * **Reach is checked by the server.** Standing within `kNpcServiceReach` of
   one turns the craft key's panel into that service's (`OraclePanel`,
-  `TradePanel`, `TitanPanel`). The request (`ClientMessage::OracleCraft`,
-  `Trade`, `TitanForge`) names no NPC: the server finds the nearest one itself
-  and refuses unless the body stands at one, so a client cannot claim an NPC
-  it is nowhere near.
+  `TradePanel`, `TitanPanel`, `AssemblerPanel`). The request
+  (`ClientMessage::OracleCraft`, `Trade`, `TitanForge`, `Assemble`) names no
+  NPC: the server finds the nearest one itself and refuses unless the body
+  stands at one, so a client cannot claim an NPC it is nowhere near. An
+  Assemble names only the assembler's TIER, which picks between two standing
+  close, and the recipe that assembler offers: each assembler rolls one of
+  its mob's `npc.recipes` when it is put down (`Npc::recipe`, sent in its
+  spawn record), and the server refuses any other.
 * **Waits live in memory.** The oracle's and the trader's per-account waits
   (`GameServer::oracleReadyAt_`, `traderReadyAt_`, keyed by userId, on the tick
   clock) are never written to the database: a relog keeps them, a restart
@@ -382,6 +386,18 @@ the trader and the titan:
   basic petals outlined only on the outside. The titan (`$titan`) is a grey
   cog round a flower's face set to a scowl, its glints moved as a flower's
   pupils are.
+
+The assemblers (`$assembler`, florr's machine on a tread: gears turning on the
+mob clock, dial needles twitching) are placed by an AREA rather than a point:
+`computer.tmj`'s one `npc` rectangle says `rarity: all`, which
+`NpcSystem::loadSites` turns into a roaming site per ladder tier, and
+`placeMissing` picks each a fresh spot inside it whenever it puts one down --
+so there is one assembler of each tier at a time. Their block says `still`
+(`Npc::still`): `NpcSystem::run` neither cruises nor turns them, so each faces
+east where it was put down and never moves. They are a hornet's size at
+every tier (mobs.json `size`, on the mob ladder). An
+assembly is all or nothing: every input is counted at the assembler's tier
+before any is taken.
 
 The titan has more engine to it than the other two:
 
@@ -405,8 +421,8 @@ The titan has more engine to it than the other two:
   cruises about its point on the oracle's leashed flight (`bee_ai`). It stands
   at universal on its plate (an NPC alone may; its stats read apex).
 
-The craft key's four cards -- `CraftingPanel`, `OraclePanel`, `TradePanel`,
-`TitanPanel` -- are one SLOT CARD (`menus.h`, `ui/menu_slot_card.cpp`), laid
+The craft key's cards -- `CraftingPanel`, `OraclePanel`, `TradePanel`,
+`TitanPanel`, `AssemblerPanel` -- are one SLOT CARD (`menus.h`, `ui/menu_slot_card.cpp`), laid
 out against the trade reference shot: the frame and its anchoring, the slot
 and the action button either side of the centre line, the line of text, the
 tier grid (`SlotGrid`, through unique, or through apex for the trader) and the
@@ -415,7 +431,13 @@ staging, animation and input, and says per cell what its grid shows; the forge
 turns its ring of five about the slot's centre where the other two hold one.
 The titan's card is the same card cut down to one row of `SlotTierGrid` (every
 apex stack, greyed below the forge cost), with florr's own forge ring --
-full-size slots on a pentagon -- and three lines of text.
+full-size slots on a pentagon -- and three lines of text. The assembler's is
+florr's 356-tall card with no grid, read out of florr's client: the recipe's
+inputs on seats about the slot's centre (one on it, two 45 either side, three
+to five on a ring 90 out from the top), each counting what the bag holds; an
+Assemble button; under it a count field between a take-one-off and an
+add-one triangle, the count held to what the bag can make while the field is
+not being typed in; and florr's one line of instructions.
 
 ## Networking
 

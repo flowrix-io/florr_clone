@@ -520,6 +520,11 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             if (const NetId* ownerId = world.tryGet<NetId>(owner)) ownerNetId = ownerId->value;
             out.u32(ownerNetId);
         }
+        if (info.kind == net::EntityKind::Npc) {
+            // Which of its mob's recipes an assembler makes; 0 for any other.
+            const Npc* npc = world.tryGet<Npc>(candidate.entity);
+            out.u8(npc != nullptr ? npc->recipe : 0);
+        }
         if (flags & net::SpawnHasName) out.str(account->username);
         ++spawnCount;
 

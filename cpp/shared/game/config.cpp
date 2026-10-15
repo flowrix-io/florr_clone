@@ -757,7 +757,8 @@ std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
 }
 
 /// The `npc` block: `{ "service": "oracle" }` for the oracle, `{ "service":
-/// "trader" }` for the trader, `{ "team": "hostile" }` for the target dummy.
+/// "trader" }` for the trader, `{ "team": "hostile" }` for the target dummy,
+/// and `{ "service": "assembler", "recipes": [...] }` for an assembler.
 /// Both keys are optional -- an empty block
 /// is a friendly NPC that offers nothing -- and a value this build does not
 /// know is reported and read as its default, never as a reason to drop the
@@ -808,6 +809,91 @@ NpcSpec parseNpcSpec(Ctx& ctx, const Json& owner,
         }
     }
     spec.petalRarity = ctx.rarity(node, "petalRarity", Rarity::Universal);
+    // An assembler's recipes: `{ "from": [...], "to": ... }` each, a stack
+    // being a petal id (one of it) or `{ "petal": id, "count": n }`, and `to`
+    // one stack or a list of them. A recipe naming a petal that does not
+    // exist is dropped whole, with a line -- half a recipe would make
+    // something out of less than it says.
+    if (node.contains("recipes")) {
+        const Json& recipes = node["recipes"];
+        if (!recipes.isArray()) {
+            ctx.warn(std::string("npc recipes is ") + typeName(recipes) +
+                     ", not an array; it offers none");
+        } else {
+            for (std::size_t i = 0; i < recipes.size(); ++i) {
+                const Json& entry = recipes[i];
+                const std::string where = "npc recipe " + std::to_string(i);
+                if (!entry.isObject() || !entry["from"].isArray() || !entry.contains("to")) {
+                    ctx.warn(where + " is not { \"from\": [...], \"to\": ... }; dropped");
+                    continue;
+                }
+                if (spec.recipes.size() >= kAssemblerMaxRecipes) {
+                    ctx.warn("npc recipes lists more than " + std::to_string(kAssemblerMaxRecipes) +
+                             "; the rest are dropped");
+                    break;
+                }
+                bool whole = true;
+                const auto stack = [&](const Json& value, const std::string& what) {
+                    AssemblyRecipe::Stack out;
+                    std::string id;
+                    if (value.isString()) {
+                        id = value.stringRef();
+                    } else if (value.isObject()) {
+                        id = ctx.text(value, "petal");
+                        const Json& count = value["count"];
+                        if (value.contains("count") &&
+                            (!count.isNumber() || count.asDouble() < 1.0 ||
+                             count.asDouble() > kAssemblerMaxStack ||
+                             count.asDouble() != std::floor(count.asDouble()))) {
+                            ctx.warn(where + " " + what + " count is not a whole number from 1 to " +
+                                     std::to_string(kAssemblerMaxStack));
+                            whole = false;
+                        } else if (value.contains("count")) {
+                            out.count = static_cast<std::int64_t>(count.asDouble());
+                        }
+                    }
+                    out.petal = ctx.link(petalIds, id, (where + " " + what).c_str());
+                    if (out.petal == kInvalidIndex) whole = false;
+                    return out;
+                };
+                AssemblyRecipe recipe;
+                const Json& from = entry["from"];
+                for (std::size_t k = 0; k < from.size(); ++k) {
+                    recipe.inputs.push_back(stack(from[k], "input"));
+                }
+                const Json& to = entry["to"];
+                if (to.isArray()) {
+                    for (std::size_t k = 0; k < to.size(); ++k) {
+                        recipe.outputs.push_back(stack(to[k], "output"));
+                    }
+                } else {
+                    recipe.outputs.push_back(stack(to, "output"));
+                }
+                if (recipe.inputs.empty() || recipe.inputs.size() > kAssemblerMaxInputs) {
+                    ctx.warn(where + " takes " + std::to_string(recipe.inputs.size()) +
+                             " petals; a recipe takes 1 to " +
+                             std::to_string(kAssemblerMaxInputs) + "; dropped");
+                    continue;
+                }
+                if (recipe.outputs.empty() || recipe.outputs.size() > kAssemblerMaxOutputs) {
+                    ctx.warn(where + " makes " + std::to_string(recipe.outputs.size()) +
+                             " petals; a recipe makes 1 to " +
+                             std::to_string(kAssemblerMaxOutputs) + "; dropped");
+                    continue;
+                }
+                if (!whole) {
+                    ctx.warn(where + " names a petal that does not exist; dropped");
+                    continue;
+                }
+                spec.recipes.push_back(std::move(recipe));
+            }
+        }
+    }
+    if (!spec.recipes.empty() && spec.service != NpcService::Assembler) {
+        ctx.warn("npc recipes are only an assembler's; this NPC offers none of them");
+        spec.recipes.clear();
+    }
+    spec.still = ctx.boolean(node, "still");
     return spec;
 }
 

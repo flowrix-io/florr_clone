@@ -727,8 +727,8 @@ void App::frame(double dt) {
     // block for the length of it.
     const bool standingSomewhere =
         screen_ == Screen::Playing && net_.selfPlaced() && !net_.controllingFlower();
-    menus_.setNearbyNpc(standingSomewhere ? nearbyNpcService(net_.view().selfDrawnPosition())
-                                          : NpcService::None);
+    menus_.setNearbyNpc(standingSomewhere ? nearbyNpc(net_.view().selfDrawnPosition())
+                                          : NearbyNpc{});
     if (menus_.takeExitRequest() && inWorld) leaveToTitle();
     // No inWorld guard: Settings' Log Out is offered on the title screen too,
     // and it is the one action that has to work from either of them.

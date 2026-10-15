@@ -301,6 +301,9 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
         const bool pad = element.kind == MapElementKind::Teleporter;
         const bool npc = element.kind == MapElementKind::Npc;
         if (!pad && !npc) continue;
+        // An area's NPC stands somewhere in it that the server picks: there
+        // is no one spot to mark, and its middle would be a lie.
+        if (npc && element.npcRoams()) continue;
         const Vec2 dot = toBox(element.centre());
         // Strictly inside, as the reference's test is: a zero-sized teleporter
         // sitting on the box's own edge is a dot the browser does not draw,

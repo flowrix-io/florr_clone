@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 54;
+inline constexpr std::uint16_t kProtocolVersion = 55;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -182,6 +182,15 @@ enum class ClientMessage : std::uint8_t {
                         ///< about a player names it by connection AND account
                         ///< name, and is refused when the two no longer match.
                         ///< (Version 51.)
+    Assemble,           ///< u8 rarity, u8 recipe, u16 count -- runs the recipe
+                        ///< of the assembler of tier `rarity` the body is
+                        ///< standing at `count` times: everything it takes, at
+                        ///< that tier, for everything it makes. `recipe` must be
+                        ///< the one that assembler offers (its spawn record's).
+                        ///< The server finds the assembler itself, as
+                        ///< OracleCraft's oracle is found; the tier only says
+                        ///< WHICH one when two stand close. Never a roll, and
+                        ///< all or nothing. (Version 55.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -347,6 +356,11 @@ enum class ServerMessage : std::uint8_t {
                         ///< a session that may run the admin console.
                         ///< (Version 51: binary sub-replies, where version 50
                         ///< sent one JSON string.)
+    AssembleResult,     ///< u8 ok, u8 rarity, u8 recipe, u16 count, str reason
+                        ///< -- the answer to ClientMessage::Assemble, echoing
+                        ///< what was asked. `count` is how many were made: all
+                        ///< that were asked for, or 0 on a refusal, which
+                        ///< `reason` explains. (Version 55.)
 };
 
 // ---------------------------------------------------------------------------
@@ -583,7 +597,9 @@ enum class EntityKind : std::uint8_t {
 /// of max health and the str id of the custom skin that flower is wearing,
 /// "" for none; a Petal record
 /// carries the u32 net id of the flower it orbits, which is what lets the
-/// client anchor a ring to the DRAWN owner rather than to a snapshot-old one.
+/// client anchor a ring to the DRAWN owner rather than to a snapshot-old one;
+/// an Npc record carries u8 recipe, the index into its mob's `npc.recipes` of
+/// the one recipe an assembler makes (0 for any other NPC). (Version 55.)
 enum SpawnFlags : std::uint8_t {
     SpawnHasName    = 1 << 0,   ///< a player name follows
     SpawnIsSelf     = 1 << 1,   ///< this is the viewer's own body

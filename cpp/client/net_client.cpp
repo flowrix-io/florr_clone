@@ -66,6 +66,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::Trade:               return "trade";
         case net::ClientMessage::AdminDb:             return "adminDb";
         case net::ClientMessage::TitanForge:          return "titanForge";
+        case net::ClientMessage::Assemble:            return "assemble";
         case net::ClientMessage::TitanHolder:         return "titanHolder";
         case net::ClientMessage::AdminDashboard:      return "adminDashboard";
     }
@@ -107,6 +108,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::AdminDb:             return "adminDb";
         case net::ServerMessage::AdminDashboard:      return "adminDashboard";
         case net::ServerMessage::TitanForgeResult:    return "titanForgeResult";
+        case net::ServerMessage::AssembleResult:      return "assembleResult";
         case net::ServerMessage::TitanHolder:         return "titanHolder";
     }
     return "unknown";
@@ -294,6 +296,7 @@ void NetClient::forgetAccount() {
     tradeOutcome_ = TradeOutcome{};
     traderReadyAtMillis_ = 0;
     titanForgeOutcome_ = TitanForgeOutcome{};
+    assembleOutcome_ = AssembleOutcome{};
     titanHolders_.clear();
     shopOutcome_ = ShopOutcome{};
     passwordOutcome_ = PasswordOutcome{};
@@ -439,6 +442,15 @@ void NetClient::requestTrade(std::uint16_t petalIndex, Rarity rarity) {
 
 double NetClient::traderCooldownRemainingMillis() const {
     return std::max(0.0, traderReadyAtMillis_ - renderClockMillis());
+}
+
+void NetClient::requestAssemble(Rarity rarity, std::uint8_t recipe, std::uint16_t count) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::Assemble);
+    w.u8(static_cast<std::uint8_t>(rarity));
+    w.u8(recipe);
+    w.u16(count);
+    send(w);
 }
 
 void NetClient::requestTitanForge(std::uint16_t petalIndex) {
@@ -1048,6 +1060,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::OracleResult:  handleOracleResult(reader); break;
         case net::ServerMessage::TradeResult:   handleTradeResult(reader); break;
         case net::ServerMessage::TitanForgeResult: handleTitanForgeResult(reader); break;
+        case net::ServerMessage::AssembleResult: handleAssembleResult(reader); break;
         case net::ServerMessage::TitanHolder:   handleTitanHolder(reader); break;
         case net::ServerMessage::SessionReplaced: handleSessionReplaced(reader); break;
         case net::ServerMessage::ChatHistory:   handleChatHistory(reader); break;
@@ -1272,6 +1285,18 @@ void NetClient::handleTitanForgeResult(ByteReader& reader) {
     if (!reader.ok()) return;
     outcome.pending = true;
     titanForgeOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleAssembleResult(ByteReader& reader) {
+    AssembleOutcome outcome;
+    outcome.success = reader.boolean();
+    outcome.rarity = clampRarity(reader.u8());
+    outcome.recipe = reader.u8();
+    outcome.made = reader.u16();
+    outcome.reason = reader.str();
+    if (!reader.ok()) return;
+    outcome.pending = true;
+    assembleOutcome_ = std::move(outcome);
 }
 
 void NetClient::handleTitanHolder(ByteReader& reader) {

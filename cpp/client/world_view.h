@@ -120,6 +120,9 @@ struct RemoteEntity {
     /// While the owner has a moon out the ring is laid out around the MOON,
     /// and the offset is smoothed in the moon's frame instead -- see
     /// `frameNetId`.
+    /// An NPC's recipe: which of its mob's `npc.recipes` an assembler makes,
+    /// from its spawn record. 0 for every other entity.
+    std::uint8_t npcRecipe = 0;
     std::uint32_t ownerNetId = 0;
     Vec2 ownerOffset;
     /// The entity `ownerOffset` is measured from: the owner, or the moon its

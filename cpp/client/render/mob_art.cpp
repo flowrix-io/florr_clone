@@ -86,6 +86,44 @@ void roundStrokes(Canvas& canvas, double width) {
 /// colour this way; a part it fills at 0.9 of the base is `shadeOf(base, 0.9)`.
 constexpr std::uint32_t shadeOf(std::uint32_t rgb, double f) { return ui::shade(rgb, f * f); }
 
+/// Where one of the assembler's two dial needles points at `clockMs`, in
+/// radians.
+///
+/// florr (0x100726660) re-aims each needle at a fresh U(-2pi, 2pi) every
+/// 200-1500 ms and eases it there, keeping 85% of the gap each 60 fps frame;
+/// the angle lives on the mob. A painter keeps nothing, so the aims are a
+/// hash of the mob's seed, the dial and the aim's number, laid on an 850 ms
+/// grid jittered by +-300 (gaps of 250-1450 ms), and the ease is replayed
+/// from four aims back -- by then what came before has decayed below a
+/// thousandth of a turn.
+double assemblerNeedle(std::uint32_t seed, int dial, double clockMs) {
+    constexpr double kPitch = 850.0;
+    constexpr double kJitter = 600.0;
+    constexpr double kKeepPerFrame = 0.85;
+    constexpr double kFrameMs = 1000.0 / 60.0;
+    const auto unit = [&](long long k, std::uint32_t salt) {
+        std::uint64_t x = (static_cast<std::uint64_t>(seed) << 32) ^
+                          static_cast<std::uint64_t>(k) * 0x9E3779B97F4A7C15ull ^
+                          (static_cast<std::uint64_t>(dial) + 1) * 0xC2B2AE3D27D4EB4Full ^ salt;
+        x ^= x >> 30; x *= 0xBF58476D1CE4E5B9ull;
+        x ^= x >> 27; x *= 0x94D049BB133111EBull;
+        x ^= x >> 31;
+        return static_cast<double>(x >> 11) * (1.0 / 9007199254740992.0);
+    };
+    const auto start = [&](long long k) { return k * kPitch + (unit(k, 1u) - 0.5) * kJitter; };
+    const auto aim = [&](long long k) { return (unit(k, 2u) * 2.0 - 1.0) * kTau; };
+    const auto eased = [&](double from, double to, double ms) {
+        return to + (from - to) * std::pow(kKeepPerFrame, std::max(0.0, ms) / kFrameMs);
+    };
+
+    long long k = static_cast<long long>(std::floor(clockMs / kPitch));
+    while (start(k + 1) <= clockMs) ++k;
+    while (start(k) > clockMs) --k;
+    double angle = aim(k - 5);
+    for (long long j = k - 4; j < k; ++j) angle = eased(angle, aim(j), start(j + 1) - start(j));
+    return eased(angle, aim(k), clockMs - start(k));
+}
+
 /// The blend florr moves claws, mandibles and wings by, 0..1: a slow idle
 /// cycle on the mob's clock, cross-faded by `aggro` into one three times as
 /// fast -- a mob that has locked on snaps and buzzes, one that is wandering
@@ -180,6 +218,7 @@ MobArt mobArtFor(const std::string& image) {
     if (name == "trader") return MobArt::Trader;
     if (name == "titan") return MobArt::Titan;
     if (name == "moon") return MobArt::Moon;
+    if (name == "assembler") return MobArt::Assembler;
     // florr's ports, under florr's own names.
     static const std::pair<const char*, MobArt> kFlorr[] = {
         {"scorpion", MobArt::Scorpion},
@@ -2858,6 +2897,164 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             }
             canvas.stroke();
             canvas.fill();
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::Assembler: {
+            // florr's assembler (render 0x100724d40, mob id 75): a machine on
+            // a tread, every part an SVG path string of florr's in a 200-unit
+            // box centred on the body, scaled so a radius of 90 of those units
+            // is the hitbox -- the tread's ends. Fills first, then each part's
+            // outline as a round-capped stroke (florr's getFillPath).
+            //
+            // Two things move. The gears turn on the mob's own clock, 0.003
+            // rad/ms, the lower one the other way (this+0xc). The two dial
+            // needles twitch: assemblerNeedle.
+            constexpr double kDesign = 90.0;
+            static const Path2D housing = svgPathData("M150 55h29v85h-29z");
+            static const Path2D gear = svgPathData(
+                "M5.478 2.21Q6.442-.059 5.518-2.345 4.596-4.632 2.328-5.596T-2.227-5.637Q-4.514-4."
+                "714-5.477-2.446-6.442-.178-5.519 2.109-4.596 4.396-2.328 5.359-.06 6.323 2.227 5."
+                "401 4.514 4.478 5.477 2.21ZM17.424 4.533 15.406 9.283Q15.296 9.54 15.026 9.703 14"
+                ".754 9.865 14.479 9.799L10.266 8.716Q9.369 9.698 8.604 10.308 8.898 11.696 9.639 "
+                "14.234 9.744 14.582 9.626 14.86 9.507 15.138 9.224 15.27 8.31 15.816 6.124 16.68 "
+                "3.937 17.545 3.466 17.345 3.21 17.236 2.992 16.916L1.022 13.351Q-.129 13.443-1.27"
+                "1 13.336-2.851 16.101-3.583 17.053-3.988 17.588-4.608 17.324L-9.358 15.306Q-9.658"
+                " 15.178-9.805 14.901-9.953 14.624-9.856 14.336L-8.782 10.145Q-9.685 9.357-10.372 "
+                "8.535L-14.362 9.542Q-14.657 9.644-14.978 9.507-15.278 9.38-15.413 9.045-17.073 5."
+                "46-17.416 3.95-17.475 3.672-17.356 3.394-17.248 3.137-16.976 2.974-16.464 2.661-1"
+                "5.28 2.015-14.096 1.369-13.484.998-13.607-.318-13.461-1.493L-17.131-3.736Q-17.391"
+                "-3.897-17.467-4.195-17.543-4.492-17.424-4.77L-15.406-9.52Q-15.296-9.777-15.026-9."
+                "94-14.754-10.103-14.501-10.045L-10.266-8.953Q-9.548-9.81-8.596-10.567-8.933-12.15"
+                "-9.63-14.493-9.735-14.841-9.626-15.097-9.535-15.311-9.224-15.507-8.34-16.042-6.13"
+                "9-16.912T-3.467-17.582Q-3.189-17.465-3.001-17.132L-1.021-13.588Q.129-13.68 1.271-"
+                "13.574 2.851-16.338 3.583-17.29 3.987-17.825 4.608-17.562L9.358-15.543Q9.658-15.4"
+                "16 9.805-15.139 9.952-14.861 9.855-14.574L8.782-10.382Q9.685-9.594 10.372-8.772L1"
+                "4.382-9.77Q14.657-9.881 14.978-9.745 15.256-9.627 15.422-9.304 17.1-5.584 17.407-"
+                "4.166 17.484-3.931 17.357-3.631 17.247-3.374 16.976-3.211 16.464-2.899 15.28-2.25"
+                "3 14.096-1.606 13.484-1.235 13.585.071 13.47 1.235L17.13 3.498Q17.39 3.658 17.467"
+                " 3.956 17.542 4.254 17.424 4.532Z");
+            static const Path2D axles = svgPathData(
+                "M174.264 80.946c.642-1.513.656-3.03.04-4.555-.614-1.525-1.678-2.608-3.19-3.251-1."
+                "512-.643-3.03-.656-4.555-.041s-2.608 1.679-3.25 3.191c-.643 1.512-.657 3.03-.042 "
+                "4.555.615 1.524 1.68 2.608 3.191 3.25 1.512.643 3.03.657 4.555.042 1.525-.616 2.6"
+                "08-1.68 3.25-3.191zM174.058 114.079c-.01 1.643-.6 3.042-1.77 4.197-1.169 1.156-2."
+                "575 1.729-4.218 1.719-1.643-.01-3.042-.6-4.197-1.77-1.156-1.17-1.728-2.575-1.719-"
+                "4.218.01-1.643.6-3.042 1.77-4.198 1.17-1.155 2.575-1.728 4.218-1.718 1.643.01 3.0"
+                "42.6 4.198 1.77 1.155 1.169 1.728 2.575 1.718 4.218z");
+            static const Path2D tread = svgPathData(
+                "M63 10h74c1.662 0 3 1.338 3 3v174c0 1.662-1.338 3-3 3H63c-1.662 0-3-1.338-3-3V13c"
+                "0-1.662 1.338-3 3-3z");
+            static const Path2D links = svgPathData(
+                "M60 21.495h11.536l7.54-4.995h41.847l7.541 4.995H140m-80 15h11.536l7.54-4.995h41.8"
+                "47l7.541 4.995H140m-80 130h11.536l7.54-4.995h41.847l7.541 4.995H140m-80 15h11.536"
+                "l7.54-4.995h41.847l7.541 4.995H140");
+            static const Path2D body = svgPathData(
+                "M57 40V21H26c-2.77 0-5 2.23-5 5v148c0 2.77 2.23 5 5 5h31v-19h86v19h31c2.77 0 5-2."
+                "23 5-5v-39h-21V40Z");
+            static const Path2D lamp =
+                svgPathData("M104 150.125a4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4 4 4 0 0 1 4 4z");
+            static const Path2D rivets = svgPathData(
+                "M151.4 68a2.4 2.4 0 0 1-2.4 2.4 2.4 2.4 0 0 1-2.4-2.4 2.4 2.4 0 0 1 2.4-2.4 2.4 2"
+                ".4 0 0 1 2.4 2.4zm-98 0a2.4 2.4 0 0 1-2.4 2.4 2.4 2.4 0 0 1-2.4-2.4 2.4 2.4 0 0 1"
+                " 2.4-2.4 2.4 2.4 0 0 1 2.4 2.4Zm98 64a2.4 2.4 0 0 1-2.4 2.4 2.4 2.4 0 0 1-2.4-2.4"
+                " 2.4 2.4 0 0 1 2.4-2.4 2.4 2.4 0 0 1 2.4 2.4zm-98 0a2.4 2.4 0 0 1-2.4 2.4 2.4 2.4"
+                " 0 0 1-2.4-2.4 2.4 2.4 0 0 1 2.4-2.4 2.4 2.4 0 0 1 2.4 2.4Zm-20-101a2.4 2.4 0 0 1"
+                "-2.4 2.4 2.4 2.4 0 0 1-2.4-2.4 2.4 2.4 0 0 1 2.4-2.4 2.4 2.4 0 0 1 2.4 2.4Zm0 138"
+                "a2.4 2.4 0 0 1-2.4 2.4 2.4 2.4 0 0 1-2.4-2.4 2.4 2.4 0 0 1 2.4-2.4 2.4 2.4 0 0 1 "
+                "2.4 2.4zm138 0a2.4 2.4 0 0 1-2.4 2.4 2.4 2.4 0 0 1-2.4-2.4 2.4 2.4 0 0 1 2.4-2.4 "
+                "2.4 2.4 0 0 1 2.4 2.4z");
+            static const Path2D port = svgPathData("M17 108.625h25v30H17Z");
+            static const Path2D plug = svgPathData("M34 114.625h8v18h-8z");
+            static const Path2D pins = svgPathData(
+                "M25 129.625a2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2 2 2 0 0 1 2 2zm0-6a2 2 0 0 1"
+                "-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2 2 2 0 0 1 2 2zm0-6a2 2 0 0 1-2 2 2 2 0 0 1-2-2 2"
+                " 2 0 0 1 2-2 2 2 0 0 1 2 2zm6 12a2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2 2 2 0 "
+                "0 1 2 2zm0-6a2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2 2 2 0 0 1 2 2zm0-6a2 2 0 0"
+                " 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2 2 2 0 0 1 2 2z");
+            static const Path2D seams = svgPathData("M21 65h21m0 33H21");
+            static const Path2D dials = svgPathData(
+                "M37 74.25a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0zm0 14.5a5.5 5.5 0 1 1-11 0 5.5 "
+                "5.5 0 0 1 11 0z");
+            static const Path2D cab = svgPathData("M143 16h43v43h-43z");
+            static const Path2D panel = svgPathData(
+                "M42 59h116v82H42Zm138.5-21.5a16 16 0 0 1-16 16 16 16 0 0 1-16-16 16 16 0 0 1 16-"
+                "16 16 16 0 0 1 16 16z");
+            static const Path2D hole = svgPathData(
+                "M174.5 37.5a10 10 0 0 1-10 10 10 10 0 0 1-10-10 10 10 0 0 1 10-10 10 10 0 0 1 10 "
+                "10z");
+
+            // florr's own fills and edges, as captured: its edges are its
+            // fills at 0.8 or 0.81, rounded its own way, so they are written
+            // out rather than derived.
+            constexpr std::uint32_t kHousing = 0x666666u, kHousingEdge = 0x525252u;
+            constexpr std::uint32_t kGear = 0x8A826Eu, kGearEdge = 0x706959u;
+            constexpr std::uint32_t kTread = 0x4D4D4Du, kTreadEdge = 0x3E3E3Eu;
+            constexpr std::uint32_t kBody = 0x999999u, kBodyEdge = 0x7A7A7Au;
+            constexpr std::uint32_t kLamp = 0x00FF00u, kLampEdge = 0x00CC00u;
+            constexpr std::uint32_t kPin = 0x333333u;
+            constexpr std::uint32_t kDial = 0xE5E5E5u;
+            constexpr std::uint32_t kNeedle = 0xFF0000u;
+            constexpr double kGearRate = 0.003;
+
+            const auto part = [&canvas](const Path2D& path, std::uint32_t fill,
+                                        std::uint32_t edge, double width) {
+                ui::setFill(canvas, fill);
+                canvas.fill(path);
+                ui::setStroke(canvas, edge);
+                roundStrokes(canvas, width);
+                canvas.stroke(path);
+            };
+            const auto edgeOnly = [&canvas](const Path2D& path, std::uint32_t edge, double width) {
+                ui::setStroke(canvas, edge);
+                roundStrokes(canvas, width);
+                canvas.stroke(path);
+            };
+
+            canvas.save();
+            const float s = static_cast<float>(attr.radius / kDesign);
+            canvas.scale(s, s);
+            canvas.translate(-100.0f, -100.0f);
+
+            part(housing, kHousing, kHousingEdge, 3.5);
+            const double turn = std::fmod(attr.clockMs * kGearRate, kTau);
+            const Vec2 gears[] = {{168.786, 78.736}, {168.106, 114.079}};
+            for (int i = 0; i < 2; ++i) {
+                canvas.save();
+                canvas.translate(static_cast<float>(gears[i].x), static_cast<float>(gears[i].y));
+                canvas.rotate(static_cast<float>(i == 0 ? turn : -turn));
+                part(gear, kGear, kGearEdge, 3.25);
+                canvas.restore();
+            }
+            part(axles, kGear, kGearEdge, 3.25);
+            part(tread, kTread, kTreadEdge, 3.5);
+            edgeOnly(links, kTreadEdge, 3.5);
+            part(body, kBody, kBodyEdge, 3.5);
+            part(lamp, kLamp, kLampEdge, 2.0);
+            ui::setFill(canvas, kBodyEdge);
+            canvas.fill(rivets);
+            part(port, kBody, kBodyEdge, 3.5);
+            part(plug, kBody, kBodyEdge, 3.5);
+            ui::setFill(canvas, kPin);
+            canvas.fill(pins);
+            edgeOnly(seams, kBodyEdge, 3.5);
+            part(dials, kDial, kPin, 2.0);
+            ui::setStroke(canvas, kNeedle);
+            roundStrokes(canvas, 2.0);
+            for (int dial = 0; dial < 2; ++dial) {
+                canvas.save();
+                canvas.translate(31.5f, dial == 0 ? 74.25f : 88.75f);
+                canvas.rotate(static_cast<float>(assemblerNeedle(attr.seed, dial, attr.clockMs)));
+                canvas.beginPath();
+                canvas.moveTo(0.0f, 0.0f);
+                canvas.lineTo(3.05f, 0.0f);
+                canvas.stroke();
+                canvas.restore();
+            }
+            part(cab, kBody, kBodyEdge, 3.5);
+            edgeOnly(panel, kBodyEdge, 3.5);
+            part(hole, 0x000000u, kBodyEdge, 3.5);
             canvas.restore();
             break;
         }

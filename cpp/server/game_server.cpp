@@ -1288,6 +1288,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::OracleCraft:   handleOracleCraft(*session, connection, reader); break;
         case net::ClientMessage::Trade:         handleTrade(*session, connection, reader); break;
         case net::ClientMessage::TitanForge:    handleTitanForge(*session, connection, reader); break;
+        case net::ClientMessage::Assemble:      handleAssemble(*session, connection, reader); break;
         case net::ClientMessage::TitanHolder:   handleTitanHolder(*session, connection, reader); break;
         case net::ClientMessage::Respawn:       handleRespawn(*session); break;
         case net::ClientMessage::Ping:          handlePing(connection, reader); break;
@@ -2668,6 +2669,96 @@ double GameServer::traderWaitMillis(const std::string& userId) {
     if (wait > 0.0) return wait;
     traderReadyAt_.erase(found);
     return 0.0;
+}
+
+void GameServer::handleAssemble(Session& session, net::Connection& connection,
+                                ByteReader& reader) {
+    const Rarity rarity = clampRarity(reader.u8());
+    const std::uint8_t recipeIndex = reader.u8();
+    const int count = reader.u16();
+    if (!reader.ok() || !session.authenticated()) return;
+
+    const auto reply = [&](int made, const std::string& reason) {
+        ByteWriter w;
+        w.u8(static_cast<std::uint8_t>(net::ServerMessage::AssembleResult));
+        w.boolean(made > 0);
+        w.u8(static_cast<std::uint8_t>(rarity));
+        w.u8(recipeIndex);
+        w.u16(static_cast<std::uint16_t>(made));
+        w.str(reason);
+        connection.send(w);
+    };
+
+    // Where the body IS decides, exactly as at the oracle: the assembler is
+    // found here, never named on the wire. The tier only picks WHICH one,
+    // for a flower standing between two.
+    const bool standing = session.playing() && world_.isAlive(session.entity) &&
+                          !world_.has<Dead>(session.entity);
+    const Transform* body = standing ? world_.tryGet<Transform>(session.entity) : nullptr;
+    if (body == nullptr) {
+        reply(0, "You need to be standing at an assembler.");
+        return;
+    }
+    const Entity assembler =
+        npcs_->findService(world_, NpcService::Assembler, body->position, body->realm,
+                           kNpcServiceReach + kNpcServiceSlack, rarity);
+    if (assembler == NULL_ENTITY) {
+        reply(0, "You are too far from the assembler.");
+        return;
+    }
+
+    // It offers ONE recipe, its own (Npc::recipe): asking for another is a
+    // window that has not caught up with which assembler it is at.
+    const Npc& npc = world_.get<Npc>(assembler);
+    const std::vector<AssemblyRecipe>& recipes = content().mob(npc.configIndex).npc.recipes;
+    if (recipeIndex >= recipes.size() || recipeIndex != npc.recipe) {
+        reply(0, "The assembler does not make that.");
+        return;
+    }
+    // Universal is forged at the titan and nowhere else: an assembler an
+    // operator stood at universal makes nothing.
+    if (rarity == Rarity::Universal) {
+        reply(0, "The assembler cannot work at that rarity.");
+        return;
+    }
+    if (count <= 0 || count > kAssemblerMaxBatch) {
+        reply(0, "The assembler cannot make that many.");
+        return;
+    }
+
+    // All or nothing: every input is counted before any is taken, so a batch
+    // short of its last petal destroys none of the others.
+    const AssemblyRecipe& recipe = recipes[recipeIndex];
+    PlayerRecord& record = liveRecord(session);
+    for (const AssemblyRecipe::Stack& input : recipe.inputs) {
+        const std::int64_t need = recipe.takes(input.petal) * count;
+        if (need > kMaxStackCount ||
+            record.itemCount(rarity, inventoryKey(input.petal)) < need) {
+            reply(0, "You don't have enough " + content().petal(input.petal).name + ".");
+            return;
+        }
+    }
+    // Taken once per distinct petal, everything the recipe names of it at a
+    // time; then every output, each as many times over.
+    std::vector<std::uint16_t> taken;
+    for (const AssemblyRecipe::Stack& input : recipe.inputs) {
+        if (std::find(taken.begin(), taken.end(), input.petal) != taken.end()) continue;
+        takeFromInventory(record, input.petal, rarity,
+                          static_cast<int>(recipe.takes(input.petal) * count));
+        taken.push_back(input.petal);
+    }
+    for (const AssemblyRecipe::Stack& output : recipe.outputs) {
+        giveToInventory(record, output.petal, rarity,
+                        static_cast<int>(std::min<std::int64_t>(output.count * count,
+                                                                kMaxStackCount)));
+    }
+    database_.markDirty();
+
+    reply(count, "");
+    // The profile carries the new stacks, which is what refills the window's
+    // seats and greys whatever is now short.
+    sendProfile(session, connection);
+    announceRareCraft(session, recipe.outputs.front().petal, rarity);
 }
 
 void GameServer::handleTitanForge(Session& session, net::Connection& connection,
