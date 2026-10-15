@@ -872,6 +872,27 @@
       }
     ]
   },
+  "c++": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "c++",
+        "rarity": "common",
+        "probability": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "bomb",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
   "glitch": {
     "guaranteed": true,
     "drops": [
