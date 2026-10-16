@@ -2955,13 +2955,9 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
     if (made != Rarity::Super && made != Rarity::Unique && made != Rarity::Apex && !forged) return;
     if (petalIndex >= content().petalCount()) return;
 
-    // The reference's own table, which is not kRarityColors: unique announces
-    // in plain white here rather than in the near-white the tier is drawn in.
-    // Universal, which the reference never had, announces in its own grey.
-    const char* tierColor = made == Rarity::Super    ? "#2bffa4"
-                            : made == Rarity::Unique ? "#ffffff"
-                            : forged                 ? "#555555"
-                                                     : "#ff00ff";
+    // In the tier's own colour, the one every other surface draws it in.
+    char tierColor[8];
+    std::snprintf(tierColor, sizeof tierColor, "#%06x", rarityColor(made));
     const std::string verb = forged ? " has been forged by " : " has been crafted by ";
     const std::string tier = rarityLabel(made);
     // "An Apex" -- and "An Unique", because the reference tests the LABEL's
@@ -3257,6 +3253,11 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
         }
         price = offers[slot].price;
     }
+    // A split flower carries the balance on both halves, and the tick levels
+    // them to the HIGHER of the two -- so a charge to the steered half alone
+    // was refunded by the parked one on the next tick. Levelled before it is
+    // read, and the new balance written onto both below.
+    syncSplitProgress(session);
     PlayerProgress* live = session.playing() && world_.isAlive(session.entity)
                                ? world_.tryGet<PlayerProgress>(session.entity)
                                : nullptr;
@@ -3271,7 +3272,14 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     // million, which is comfortably past what an int can hold and used to trap
     // or wrap on the way to the subtraction.
     record.stars = stars - price;
-    if (live) live->stars = record.stars;
+    if (live) {
+        for (const Entity body : bodiesOf(session)) {
+            if (body == NULL_ENTITY || !world_.isAlive(body)) continue;
+            if (PlayerProgress* progress = world_.tryGet<PlayerProgress>(body)) {
+                progress->stars = record.stars;
+            }
+        }
+    }
     giveToInventory(record, petalIndex, rarity, 1);
     database_.markDirty();
     sendProfile(session, connection);

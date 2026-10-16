@@ -1020,8 +1020,9 @@ Rect GalleryPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), GalleryPanel::preferredHeight(), kMenuCornerY, w, h);
 }
 
-Rect ShopPanel::bounds(int w, int h) {
-    return cornerPanel(preferredWidth(), ShopPanel::preferredHeight(), kMenuCornerY, w, h);
+Rect ShopPanel::bounds(int, int) {
+    // florr's seat for it: (10, 65), whatever the view's size.
+    return {10.0, 65.0, preferredWidth(), preferredHeight()};
 }
 Rect SkinsPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), SkinsPanel::preferredHeight(), kMenuCornerY, w, h);
@@ -2637,13 +2638,20 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // follows it linearly from 50 below the view's bottom to its seat.
     const double craftTarget = open_ == MenuId::Crafting ? 1.0 : 0.0;
     craftOpen_ += (craftTarget - craftOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
+    // The shop slides in from the left on the same ease, and is not drawn at
+    // all once it is back below 1e-5 -- florr's own cut-off.
+    const double shopTarget = open_ == MenuId::Shop ? 1.0 : 0.0;
+    shopOpen_ += (shopTarget - shopOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
     if (open_ != MenuId::None) {
         if (open_ == MenuId::Crafting && drawn_ != MenuId::Crafting) craftOpen_ = 0.0;
+        if (open_ == MenuId::Shop && drawn_ != MenuId::Shop) shopOpen_ = 0.0;
         drawn_ = open_;
         panelSlide_ = slidesUp(open_) ? std::min(1.0, panelSlide_ + dt / kPanelSlideSeconds) : 1.0;
     } else if (drawn_ == MenuId::Crafting) {
         // Gone once it is out of sight below the view's edge.
         if (craftOpen_ <= 0.001) drawn_ = MenuId::None;
+    } else if (drawn_ == MenuId::Shop) {
+        if (shopOpen_ < 1e-5) drawn_ = MenuId::None;
     } else if (drawn_ != MenuId::None) {
         panelSlide_ = slidesUp(drawn_) ? std::max(0.0, panelSlide_ - dt / kPanelSlideSeconds) : 0.0;
         if (panelSlide_ <= 0.0) drawn_ = MenuId::None;
@@ -2656,6 +2664,12 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
         panelRect_ = craftPanelBounds(canvas.width(), canvas.height());
         const double below = static_cast<double>(canvas.height()) + kSlotCardClosedDrop;
         panelRect_.y += (1.0 - clamp(craftOpen_, 0.0, 1.0)) * (below - panelRect_.y);
+    } else if (drawn_ == MenuId::Shop) {
+        // x = lerp(-50 - w, seat, open): florr's slide, in from the left.
+        panelRect_ = panelBounds(drawn_, canvas.width(), canvas.height());
+        const double away = -kSlotCardClosedDrop - panelRect_.w;
+        panelRect_.x = away + (panelRect_.x - away) * clamp(shopOpen_, 0.0, 1.0);
+        shop_.setSlide(shopOpen_, open_ != MenuId::Shop);
     } else if (drawn_ != MenuId::None) {
         panelRect_ = panelBounds(drawn_, canvas.width(), canvas.height());
         // `transform: translateY(100vh)` -> `translateY(0)` over 300ms

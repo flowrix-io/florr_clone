@@ -49,14 +49,12 @@ constexpr double kTitleSize = 24.0;
 constexpr double kLineHeight = 1.4;
 constexpr double kTitleRow = kTitleSize * kLineHeight;
 /// The close button: 25 square, 39 in from the panel's right, centred on the
-/// row. Its rim reaches 2 past the square, rounded 8; the face is 2 inside it,
-/// rounded 4; the cross runs 6.25 out from the middle at 3.75 wide. Every
-/// corner is a quadratic, not an arc.
+/// row: a b4 r4 button -- its rim reaches 2 past the square, rounded 8; the
+/// face is 2 inside it, rounded 4 -- and the cross runs 6.25 out from the
+/// middle at 3.75 wide. Every corner is a quadratic, not an arc.
 constexpr double kCloseSide = 25.0;
 constexpr double kCloseFromRight = 39.0;
 constexpr double kCloseRimOut = 2.0;
-constexpr double kCloseRimRadius = 8.0;
-constexpr double kCloseFaceIn = 2.0;
 constexpr double kCloseFaceRadius = 4.0;
 constexpr double kCloseArm = 6.25;
 constexpr double kCloseCrossWidth = 3.75;
@@ -85,7 +83,6 @@ constexpr double kLine2Size = 14.0;
 /// a face 5 inside it rounded 5, both with quadratic corners.
 constexpr double kButtonHeight = 35.0;
 constexpr double kButtonPadX = 13.0;
-constexpr double kButtonRadius = 10.0;
 constexpr double kButtonRim = 5.0;
 constexpr double kButtonFaceRadius = 5.0;
 constexpr double kButtonLabelSize = 16.0;
@@ -120,12 +117,6 @@ void quadRoundPath(Canvas& canvas, Rect r, double radius) {
     canvas.lineTo(f(x0), f(y0 + radius));
     canvas.quadraticCurveTo(f(x0), f(y0), f(x0 + radius), f(y0));
     canvas.closePath();
-}
-
-void fillQuadRound(Canvas& canvas, Rect r, double radius, std::uint32_t rgb) {
-    setFill(canvas, rgb);
-    quadRoundPath(canvas, r, radius);
-    canvas.fill();
 }
 
 /// The width of the grid's list for `columns` cells.
@@ -165,6 +156,68 @@ PanelSkin slotCardSkin(std::uint32_t theme) {
     return PanelSkin{theme, shade, shade};
 }
 
+void fillQuadRound(Canvas& canvas, Rect r, double radius, std::uint32_t rgb) {
+    setFill(canvas, rgb);
+    quadRoundPath(canvas, r, radius);
+    canvas.fill();
+}
+
+void drawFlorrRim(Canvas& canvas, Rect panel, std::uint32_t rim) {
+    // florr draws it as four edge strips and four quarter-disc corners, which
+    // is a 7-wide stroke with round joins.
+    canvas.save();
+    setStroke(canvas, rim);
+    canvas.setLineWidth(static_cast<float>(kWindowStroke));
+    canvas.setLineJoin("round");
+    canvas.strokeRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
+                      static_cast<float>(panel.w), static_cast<float>(panel.h));
+    canvas.restore();
+}
+
+void drawFlorrPanel(Canvas& canvas, Rect panel, std::uint32_t fill, std::uint32_t rim) {
+    setFill(canvas, fill);
+    canvas.fillRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
+                    static_cast<float>(panel.w), static_cast<float>(panel.h));
+    drawFlorrRim(canvas, panel, rim);
+}
+
+void drawFlorrButton(Canvas& canvas, Rect rect, std::uint32_t face, double border, double radius,
+                     bool hovered, bool pressed, std::optional<std::uint32_t> rim) {
+    const std::uint32_t edge = rim ? *rim : slotCardShade(face);
+    if (hovered || pressed) {
+        // Per channel and truncated: c * 0.9, plus 25.5 hovered.
+        const double lift = pressed ? 0.0 : 25.5;
+        const auto channel = [&](int shift) {
+            const double c = static_cast<double>((face >> shift) & 0xFFu) * 0.9 + lift;
+            return static_cast<std::uint32_t>(std::min(255.0, c)) << shift;
+        };
+        face = channel(16) | channel(8) | channel(0);
+    }
+    const double half = border * 0.5;
+    fillQuadRound(canvas, {rect.x - half, rect.y - half, rect.w + border, rect.h + border},
+                  radius + border, edge);
+    fillQuadRound(canvas, {rect.x + half, rect.y + half, rect.w - border, rect.h - border}, radius,
+                  face);
+}
+
+void drawFlorrClose(Canvas& canvas, Rect square, bool hovered, bool pressed) {
+    drawFlorrButton(canvas, square, kCloseFaceInk, kCloseRimOut * 2.0, kCloseFaceRadius, hovered,
+                    pressed, kCloseRimInk);
+    const double cx = square.x + square.w * 0.5;
+    const double cy = square.y + square.h * 0.5;
+    canvas.save();
+    setStroke(canvas, kCloseCrossInk);
+    canvas.setLineWidth(static_cast<float>(kCloseCrossWidth));
+    canvas.setLineCap("butt");
+    canvas.beginPath();
+    canvas.moveTo(static_cast<float>(cx - kCloseArm), static_cast<float>(cy - kCloseArm));
+    canvas.lineTo(static_cast<float>(cx + kCloseArm), static_cast<float>(cy + kCloseArm));
+    canvas.moveTo(static_cast<float>(cx + kCloseArm), static_cast<float>(cy - kCloseArm));
+    canvas.lineTo(static_cast<float>(cx - kCloseArm), static_cast<float>(cy + kCloseArm));
+    canvas.stroke();
+    canvas.restore();
+}
+
 double slotCardWidth(bool withApex) { return slotCardColumnsWidth(tierColumns(withApex)); }
 
 double slotCardColumnsWidth(std::size_t columns) {
@@ -189,16 +242,7 @@ SlotCardLayout drawSlotCard(Canvas& canvas, Rect panel, const PanelSkin& skin, c
                             const char* button, Vec2 mouse) {
     // The panel: the theme, under a stroke of its shade whose round joins are
     // the window's corners.
-    setFill(canvas, skin.fill);
-    canvas.fillRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
-                    static_cast<float>(panel.w), static_cast<float>(panel.h));
-    canvas.save();
-    setStroke(canvas, skin.border);
-    canvas.setLineWidth(static_cast<float>(kWindowStroke));
-    canvas.setLineJoin("round");
-    canvas.strokeRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
-                      static_cast<float>(panel.w), static_cast<float>(panel.h));
-    canvas.restore();
+    drawFlorrPanel(canvas, panel, skin.fill, skin.border);
 
     SlotCardLayout layout;
     layout.panel = panel;
@@ -213,27 +257,7 @@ SlotCardLayout drawSlotCard(Canvas& canvas, Rect panel, const PanelSkin& skin, c
                       kCloseSide};
     layout.close = {square.x - kCloseRimOut, square.y - kCloseRimOut,
                     kCloseSide + kCloseRimOut * 2.0, kCloseSide + kCloseRimOut * 2.0};
-    const bool closeHovered = layout.close.contains(mouse);
-    fillQuadRound(canvas, layout.close, kCloseRimRadius, kCloseRimInk);
-    fillQuadRound(canvas,
-                  {square.x + kCloseFaceIn, square.y + kCloseFaceIn,
-                   kCloseSide - kCloseFaceIn * 2.0, kCloseSide - kCloseFaceIn * 2.0},
-                  kCloseFaceRadius, closeHovered ? lighten(kCloseFaceInk, 0.12) : kCloseFaceInk);
-    {
-        const double cx = square.x + kCloseSide * 0.5;
-        const double cy = square.y + kCloseSide * 0.5;
-        canvas.save();
-        setStroke(canvas, kCloseCrossInk);
-        canvas.setLineWidth(static_cast<float>(kCloseCrossWidth));
-        canvas.setLineCap("butt");
-        canvas.beginPath();
-        canvas.moveTo(static_cast<float>(cx - kCloseArm), static_cast<float>(cy - kCloseArm));
-        canvas.lineTo(static_cast<float>(cx + kCloseArm), static_cast<float>(cy + kCloseArm));
-        canvas.moveTo(static_cast<float>(cx + kCloseArm), static_cast<float>(cy - kCloseArm));
-        canvas.lineTo(static_cast<float>(cx - kCloseArm), static_cast<float>(cy + kCloseArm));
-        canvas.stroke();
-        canvas.restore();
-    }
+    drawFlorrClose(canvas, square, layout.close.contains(mouse), false);
 
     // The body, centred under the row.
     layout.body = {panel.x + (panel.w - kBodyWidth) * 0.5, panel.y + kBodyTop};
@@ -273,22 +297,13 @@ void drawSlotTile(Canvas& canvas, const SpriteCache& sprites, Vec2 centre, doubl
 
 void drawSlotButton(Canvas& canvas, Rect rect, const char* label,
                     std::optional<std::uint32_t> tint, bool hovered, bool pressed) {
-    std::uint32_t face = tint ? *tint : kButtonIdleFace;
-    if (tint && (hovered || pressed)) {
-        // Per channel, as florr's button does it: c * 0.9, plus 25.5 hovered.
-        const double lift = pressed ? 0.0 : 25.5;
-        const auto channel = [&](int shift) {
-            const double c = static_cast<double>((face >> shift) & 0xFFu) * 0.9 + lift;
-            return static_cast<std::uint32_t>(std::min(255.0, c)) << shift;
-        };
-        face = channel(16) | channel(8) | channel(0);
-    }
-    const std::uint32_t rim = tint ? slotCardShade(face) : kButtonIdleRim;
-    fillQuadRound(canvas, rect, kButtonRadius, rim);
-    fillQuadRound(canvas,
-                  {rect.x + kButtonRim, rect.y + kButtonRim, rect.w - kButtonRim * 2.0,
-                   rect.h - kButtonRim * 2.0},
-                  kButtonFaceRadius, face);
+    // `rect` is the rim's box; florr's button is laid out by the rect half a
+    // border inside it. Only a usable button answers the cursor.
+    const double half = kButtonRim * 0.5;
+    drawFlorrButton(canvas, {rect.x + half, rect.y + half, rect.w - kButtonRim, rect.h - kButtonRim},
+                    tint ? *tint : kButtonIdleFace, kButtonRim, kButtonFaceRadius,
+                    tint && hovered, tint && pressed,
+                    tint ? std::nullopt : std::optional<std::uint32_t>(kButtonIdleRim));
     outlinedText(canvas, label, rect.x + rect.w * 0.5, rect.y + rect.h * 0.5,
                  panelLabel(kButtonLabelSize, Align::Centre, Baseline::Middle),
                  kSlotCardLabelStroke);

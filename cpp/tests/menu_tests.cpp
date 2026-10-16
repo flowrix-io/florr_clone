@@ -833,12 +833,12 @@ TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
     // each petal it yielded.
     CHECK(h.stepUntil({&client}, [&] { return client.chat().size() > chatBefore; }, 200));
     CHECK_EQ(client.chat().size(), chatBefore + 1);
-    // Marked up, as the TypeScript build's line was: the tier colours the
-    // sentence, and the account and the flower's name are separately coloured
-    // inside it -- which is why the handle is not contiguous with the words
-    // before it.
+    // Marked up, as the TypeScript build's line was: the tier's own palette
+    // colour paints the sentence, and the account and the flower's name are
+    // separately coloured inside it -- which is why the handle is not
+    // contiguous with the words before it.
     const std::string line = client.chat().back().text;
-    CHECK(line.find("<b style=\"color: #2bffa4;\">A Super Rose has been crafted by ") == 0);
+    CHECK(line.find("<b style=\"color: #2bffa3;\">A Super Rose has been crafted by ") == 0);
     CHECK(line.find("<b style=\"color: #00ff00;\">@smith</b>") != std::string::npos);
     CHECK(line.find("<b style=\"color: yellow;\">smith</b>") != std::string::npos);
 

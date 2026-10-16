@@ -510,6 +510,27 @@ std::uint32_t slotCardShade(std::uint32_t theme);
 /// A card's skin from its theme alone, the way florr derives one.
 ui::PanelSkin slotCardSkin(std::uint32_t theme);
 
+/// florr's window: `fill`, under a 7-wide round-joined stroke of `rim`
+/// centred on the edge -- which is what rounds the corners.
+void drawFlorrPanel(Canvas&, Rect, std::uint32_t fill, std::uint32_t rim);
+/// The stroke alone. florr paints it a second time once the content is down,
+/// so nothing drawn inside the window overruns its edge.
+void drawFlorrRim(Canvas&, Rect, std::uint32_t rim);
+/// A rounded rect whose corners are quadratics through the corner point, not
+/// arcs -- how every florr widget rounds a corner.
+void fillQuadRound(Canvas&, Rect, double radius, std::uint32_t rgb);
+/// florr's bordered button (0x1007ab640). Its rim is `rect` grown by
+/// border/2 and rounded radius + border, in the 0.81 shade of the BASE face;
+/// its face is `rect` shrunk by border/2 and rounded `radius`. Hovered the
+/// face goes c * 0.9 + 25.5 a channel, pressed (held, or forced -- an open
+/// tab) c * 0.9; the rim never changes. `rim` overrides the derived shade.
+void drawFlorrButton(Canvas&, Rect rect, std::uint32_t face, double border, double radius,
+                     bool hovered, bool pressed,
+                     std::optional<std::uint32_t> rim = std::nullopt);
+/// florr's close button in the 25-square `square`: a b4 r4 button of
+/// #BB5555 on #974545 with a #CCCCCC cross.
+void drawFlorrClose(Canvas&, Rect square, bool hovered, bool pressed);
+
 /// Where everything on a slot card is this frame. Derived from the card's rect,
 /// so a card still sliding up carries all of it along.
 struct SlotCardLayout {
@@ -1077,23 +1098,30 @@ private:
 };
 
 /// The star shop: the store's ten offers, the challenges that pay the stars to
-/// buy them with, and the code redeemer. An overlay under the top icon row,
-/// not one of the tall lists -- its grid is a fixed two rows of five and has
-/// nothing to gain from a two-thirds-of-the-viewport card.
+/// buy them with, and the code redeemer. florr's premium shop window (see
+/// menu_shop.cpp), seated under the top icon row and sliding in from the left.
 class ShopPanel {
 public:
     bool render(MenuContext&);
     void reset();
     static double preferredWidth();
-    /// Fixed, like every other overlay's: the header, the tab row and two rows
-    /// of offer cards come to this and no window makes them taller.
+    /// Fixed: the title row, the tab strip, the header and two rows of offer
+    /// cards come to this, and the other two tabs are laid out inside it.
     static double preferredHeight();
     static Rect bounds(int viewWidth, int viewHeight);
+    /// How far the window has slid in (0..1), and whether it is on its way
+    /// out. florr's window takes no input until it is 0.9 of the way in, and
+    /// none at all while it leaves.
+    void setSlide(double open, bool closing) {
+        open_ = open;
+        closing_ = closing;
+    }
 
 private:
     enum class Tab : std::uint8_t { Offers, Challenges, Bonus };
     Tab tab_ = Tab::Offers;
-    ui::Scroller scroll_;
+    double open_ = 1.0;
+    bool closing_ = false;
 };
 
 /// Cosmetic flower skins.
@@ -1536,6 +1564,9 @@ private:
     /// The craft key's window rises on florr's own ease instead (see
     /// kSlotCardOpenRate): 0 = 50 below the view, 1 = seated.
     double craftOpen_ = 0;
+    /// The shop slides in from the left on the same ease: 0 = 50 past the
+    /// view's left edge, 1 = seated.
+    double shopOpen_ = 0;
     /// That window's size as the open card last measured it -- it depends on
     /// the account's petals, which craftPanelBounds() is not handed.
     Vec2 craftSize_{610.0, 700.0};

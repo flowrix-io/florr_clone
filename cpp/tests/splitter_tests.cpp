@@ -25,6 +25,7 @@
 #include "server/loot_eligibility.h"
 #include "server_harness.h"
 #include "shared/game/config.h"
+#include "shared/game/shop.h"
 
 using namespace flix;
 
@@ -679,4 +680,42 @@ TEST(the_parked_half_taking_a_pad_leaves_the_client_where_it_is) {
     session = GameServerPeer::sessionOf(h.server, "alice");
     CHECK(session != nullptr && session->realm == warren);
     flix::testsupport::removeDataDir(dir);
+}
+
+TEST(a_split_flower_pays_for_what_it_buys) {
+    Harness h("splitter-shop", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    const std::uint16_t splitter = content().petalIndex(kSplitterPetalId);
+    const std::uint16_t rose = content().petalIndex("rose");
+    if (splitter == kInvalidIndex || rose == kInvalidIndex) { CHECK(false); return; }
+    CHECK(equipSplitter(h, alice, "alice", splitter));
+    CHECK(h.stepUntil({&alice}, [&] { return bodiesNamed(world, "alice").size() == 2; }));
+    const std::vector<Entity> halves = bodiesNamed(world, "alice");
+    if (halves.size() != 2) { CHECK(false); return; }
+
+    // Both halves carry the balance, and the split levels them to the higher
+    // of the two every tick. A purchase charged to the steered half alone was
+    // refunded by the parked one on the next tick: the petal was free, and
+    // every click bought another.
+    constexpr double kBalance = 1000.0;
+    for (const Entity half : halves) world.get<PlayerProgress>(half).stars = kBalance;
+    const double price = shopPrice(rose, Rarity::Common);
+    CHECK(price > 0 && price * 2 <= kBalance);
+
+    alice.requestBuyPetal(rose, Rarity::Common);
+    CHECK(h.stepUntil({&alice}, [&] { return alice.profile().stackCount(rose, Rarity::Common) == 1; }));
+    alice.requestBuyPetal(rose, Rarity::Common);
+    CHECK(h.stepUntil({&alice}, [&] { return alice.profile().stackCount(rose, Rarity::Common) == 2; }));
+    h.step(10, {&alice});
+
+    const double left = kBalance - price * 2;
+    for (const Entity half : halves) CHECK_EQ(world.get<PlayerProgress>(half).stars, left);
+    CHECK_EQ(alice.view().self().stars, left);
 }

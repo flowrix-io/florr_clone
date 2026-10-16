@@ -143,9 +143,9 @@ void GameServer::syncSplitProgress(const Session& session) {
     // other, and following one of them would drag the other backwards.
     //
     // Safe because neither figure ever falls on its own. XP only grows, and a
-    // star balance only drops through the shop or a code -- which write the
-    // ACCOUNT and are pushed onto both bodies by applyAccountToSession, so the
-    // two agree again before this is next asked.
+    // star balance only drops through the shop -- which writes the new balance
+    // onto BOTH bodies itself (handleBuyPetal), so the two agree again before
+    // this is next asked. A drop written to one half alone is undone here.
     const double xp = std::max(mine->totalXp, theirs->totalXp);
     const double stars = std::max(mine->stars, theirs->stars);
     if (mine->totalXp == xp && theirs->totalXp == xp && mine->stars == stars &&
