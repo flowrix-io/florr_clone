@@ -390,6 +390,12 @@ void App::pollNetwork() {
         net_.sessionReplaced = false;
         showSessionReplaced();
     }
+    // The server sent the body home itself (a talent reset in a prestige
+    // biome): the same screen a Continue leads to, minus the LeaveGame.
+    if (net_.leftWorld) {
+        net_.leftWorld = false;
+        if (screen_ == Screen::Playing || screen_ == Screen::Dead) returnToTitle();
+    }
     // A drop does NOT take the screen away while a redial is coming. In a
     // game the world, the HUD and the panels keep drawing; on the title screen
     // the form or the lobby does; and a banner over either says what happened
@@ -1099,6 +1105,10 @@ void App::onReconnected() {
 
 void App::leaveToTitle() {
     net_.leaveGame();
+    returnToTitle();
+}
+
+void App::returnToTitle() {
     menus_.close();
     // Not finished, just gone: the browser destroys the Tutorial with the Game
     // that owns it, and an unfinished one comes back on the next join.

@@ -354,6 +354,9 @@ private:
     /// Leaves the world for the title screen: what Continue, ENTER and the
     /// exit button all do.
     void leaveToTitle();
+    /// leaveToTitle's own half: the screen, without telling the server --
+    /// for a body the server has already taken out of the world.
+    void returnToTitle();
 
     /// Builds this frame's input from the keyboard and mouse and sends it.
     ///

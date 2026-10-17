@@ -876,6 +876,12 @@ public:
     /// the player takes the account back. The reason is in lastError().
     bool sessionReplaced = false;
 
+    /// Set once each time the server took this client's body out of the world
+    /// on its own (ServerMessage::LeftWorld) -- a talent reset in a prestige
+    /// biome. NetClient has already forgotten the world; the app still has to
+    /// put the title screen up.
+    bool leftWorld = false;
+
     /// Set when the server reports the player died; cleared by respawning, or
     /// by a yggdrasil raising this body back up.
     bool dead() const { return dead_; }
@@ -948,6 +954,9 @@ private:
     void handleDebugStats(ByteReader&);
     void handleKick(ByteReader&);
     void handleSessionReplaced(ByteReader&);
+    void handleLeftWorld();
+    /// What leaving the world clears on this end, whichever side ended it.
+    void forgetWorld();
     void handleDailyStreak(ByteReader&);
     void handleSkinCatalog(ByteReader&);
     void handleSkinPublished(ByteReader&);

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 56;
+inline constexpr std::uint16_t kProtocolVersion = 57;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -364,6 +364,12 @@ enum class ServerMessage : std::uint8_t {
                         ///< what was asked. `count` is how many were made: all
                         ///< that were asked for, or 0 on a refusal, which
                         ///< `reason` explains. (Version 55.)
+    LeftWorld,          ///< (empty). The server took this client's body out of
+                        ///< the world on its own -- a talent reset in a
+                        ///< prestige biome took the talent that let it be
+                        ///< there -- so the client goes back to the title
+                        ///< screen as if it had left. The Profile after it is
+                        ///< the one a LeaveGame is answered with. (Version 57.)
 };
 
 // ---------------------------------------------------------------------------

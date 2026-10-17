@@ -383,6 +383,49 @@ TEST(prestige_is_bought_with_225_points_and_not_on_the_maze_tree) {
     CHECK(realmOf(world, bodyNamed(world, "rich")) == Realm::Overworld);
 }
 
+TEST(a_reset_in_a_prestige_biome_sends_the_flower_home) {
+    Harness h("prestige-reset-kick",
+              [](const std::string& path) {
+                  seedUser(path, "climber", "password7");
+                  seedUser(path, "walker", "password7");
+                  seedProgress(path, "climber", true);
+                  seedProgress(path, "walker", true);
+              },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    World& world = h.server.world();
+
+    NetClient climber;
+    CHECK(logIn(h, climber, "climber"));
+    CHECK(awaitProfile(h, climber, [](const Profile& p) { return p.skills.prestigeUnlocked(); }));
+    CHECK(join(h, climber, "climber", true));
+    CHECK(h.server.worldMaps().isPrestige(realmOf(world, bodyNamed(world, "climber"))));
+
+    // Without the talent the flower may not stay: the body goes, and the
+    // client is told so rather than left drawing a world it is not in.
+    climber.requestResetSkills();
+    CHECK(h.stepUntil({&climber}, [&] { return climber.leftWorld; }, 60));
+    CHECK(climber.status() == NetClient::Status::LoggedIn);
+    CHECK(bodyNamed(world, "climber") == NULL_ENTITY);
+    CHECK(awaitProfile(h, climber, [](const Profile& p) { return !p.skills.prestigeUnlocked(); }));
+
+    // And the next join, asking for prestige all the same, is an ordinary one.
+    CHECK(join(h, climber, "climber", true));
+    CHECK(realmOf(world, bodyNamed(world, "climber")) == Realm::Overworld);
+
+    // A reset in an ordinary biome leaves the flower where it is.
+    NetClient walker;
+    CHECK(logIn(h, walker, "walker"));
+    CHECK(awaitProfile(h, walker, [](const Profile& p) { return p.skills.prestigeUnlocked(); }));
+    CHECK(join(h, walker, "walker", false));
+    walker.requestResetSkills();
+    CHECK(awaitProfile(h, walker, [](const Profile& p) { return !p.skills.prestigeUnlocked(); }));
+    h.step(10, {&walker});
+    CHECK(!walker.leftWorld);
+    CHECK(walker.status() == NetClient::Status::Playing);
+    CHECK(bodyNamed(world, "walker") != NULL_ENTITY);
+}
+
 TEST(a_prestige_super_is_neither_announced_nor_mourned) {
     // A super is a prestige biome's everyday stock, not a boss: no spawn line,
     // no "has been defeated" line, whether it dies or an operator clears it.

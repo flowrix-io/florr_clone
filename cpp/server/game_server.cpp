@@ -3236,10 +3236,31 @@ void GameServer::handleResetSkills(Session& session, net::Connection& connection
         record.mazeSkills.clear();
     } else {
         record.skills.clear();
-        // Prestige went with the rest of the tree. A flower already in an
-        // prestige biome finishes its life there; the next one starts in the
-        // ordinary biome.
+        // Prestige went with the rest of the tree, and a flower may not stay
+        // in a prestige biome without it: one there -- either half of a split
+        // -- is taken out of the world and its client sent back to the title
+        // screen, whose next join starts in the ordinary biome.
         session.prestige = false;
+        bool inPrestige = false;
+        if (session.playing()) {
+            for (const Entity body : bodiesOf(session)) {
+                if (body == NULL_ENTITY || !world_.isAlive(body)) continue;
+                const Transform* at = world_.tryGet<Transform>(body);
+                if (at != nullptr && worldMaps_.isPrestige(at->realm)) inPrestige = true;
+            }
+        }
+        if (inPrestige) {
+            leaveWorld(session);
+            ByteWriter w;
+            w.u8(static_cast<std::uint8_t>(net::ServerMessage::LeftWorld));
+            connection.send(w);
+            database_.markDirty();
+            sendProfile(session, connection);
+            sendNotice(connection, net::NoticeSeverity::Info,
+                       "Talents reset; every point refunded. Without Prestige you are back "
+                       "on the title screen.");
+            return;
+        }
     }
     database_.markDirty();
     if (session.playing() && world_.isAlive(session.entity)) applyAccountToSession(session);

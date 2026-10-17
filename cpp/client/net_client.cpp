@@ -109,6 +109,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::AdminDashboard:      return "adminDashboard";
         case net::ServerMessage::TitanForgeResult:    return "titanForgeResult";
         case net::ServerMessage::AssembleResult:      return "assembleResult";
+        case net::ServerMessage::LeftWorld:           return "leftWorld";
         case net::ServerMessage::TitanHolder:         return "titanHolder";
     }
     return "unknown";
@@ -342,6 +343,10 @@ void NetClient::leaveGame() {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::LeaveGame);
     send(w);
+    forgetWorld();
+}
+
+void NetClient::forgetWorld() {
     if (status_ == Status::Playing) status_ = Status::LoggedIn;
     view_.clear();
     chatBubbles_.clear();
@@ -1067,6 +1072,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::ChatHistory:   handleChatHistory(reader); break;
         case net::ServerMessage::AdminDb:       handleAdminDb(reader); break;
         case net::ServerMessage::AdminDashboard: handleAdminDashboard(reader); break;
+        case net::ServerMessage::LeftWorld:     handleLeftWorld(); break;
         default:
             // An unknown id means the server is newer than this build. The
             // frame is already fully buffered, so skipping it is safe and
@@ -1834,6 +1840,14 @@ void NetClient::handleSessionReplaced(ByteReader& reader) {
     dead_ = false;
     revived = false;
     sessionReplaced = true;
+}
+
+void NetClient::handleLeftWorld() {
+    // The body is already gone on the server; this end forgets it the way a
+    // LeaveGame of its own would, without sending one.
+    if (status_ != Status::Playing) return;
+    forgetWorld();
+    leftWorld = true;
 }
 
 void NetClient::handleDailyStreak(ByteReader& reader) {
