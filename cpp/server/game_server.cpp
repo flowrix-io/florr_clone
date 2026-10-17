@@ -28,6 +28,7 @@
 #include "server/systems/mode_spawning.h"
 #include "server/systems/dungeons.h"
 #include "server/systems/npcs.h"
+#include "shared/game/prestige.h"
 #include "shared/game/chat_images.h"
 #include "shared/game/config.h"
 #include "shared/game/shop.h"
@@ -1950,6 +1951,7 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     const double height = reader.u16();
     const std::string where = reader.str();
     const std::string name = reader.str();
+    const bool wantsPrestige = reader.u8() != 0;
     if (!reader.ok()) return;
     if (!session.authenticated()) return;
     if (session.playing()) return;
@@ -1986,6 +1988,20 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
         } else {
             sendNotice(connection, net::NoticeSeverity::Warning,
                        "That spawn point is not on this server; starting at the default.");
+        }
+    }
+
+    // The prestige twin of that door, for a tree that holds the talent. The
+    // arena and the maze have no twin, so the flag means nothing there and is
+    // dropped rather than refused: the picker hides both while it is set.
+    session.prestige = false;
+    if (wantsPrestige && session.spawnChoice != kArenaSpawnChoice &&
+        session.spawnChoice != kMazeSpawnChoice) {
+        if (database_.progress(session.userId).skills.prestigeUnlocked()) {
+            session.prestige = true;
+        } else {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "Prestige is a talent; starting in the ordinary biome.");
         }
     }
 
@@ -3099,6 +3115,11 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     // mourning a boss nobody was told about. An ultra dies as quietly as it
     // spawned.
     if (rarityIndex(type.rarity) < rarityIndex(kAnnouncedRarity)) return;
+    // Nor does a prestige biome's super, whose spawn was never announced
+    // either: there it is the bands' everyday stock (shared/game/prestige.h).
+    if (const Transform* at = world_.tryGet<Transform>(mob)) {
+        if (worldMaps_.isPrestige(at->realm)) return;
+    }
     // The head's death is the animal's. A centipede's beads each carry their
     // own ledger and die one by one, and a line per bead would be ten more
     // deaths than the one spawn line chat was given.
@@ -3168,6 +3189,13 @@ void GameServer::handleUpgradeSkill(Session& session, net::Connection& connectio
     const bool maze = session.playing() && session.realm == Realm::Maze;
     SkillSet& skills = maze ? record.mazeSkills : record.skills;
     const int points = maze ? record.mazeTalentPoints() : record.talentPoints();
+    // Prestige opens the prestige biomes, which the maze track never visits:
+    // bought there it would be points spent on nothing.
+    if (maze && id == SkillId::Prestige) {
+        sendNotice(connection, net::NoticeSeverity::Warning,
+                   "Prestige cannot be bought on the maze's tree.");
+        return;
+    }
 
     // Tiers are bought one at a time, in order. Accepting an arbitrary target
     // would let a client skip the tiers below it and pay for one of them.
@@ -3204,8 +3232,15 @@ void GameServer::handleResetSkills(Session& session, net::Connection& connection
         sendNotice(connection, net::NoticeSeverity::Warning, "Talents are disabled in the arena.");
         return;
     }
-    if (session.playing() && session.realm == Realm::Maze) record.mazeSkills.clear();
-    else record.skills.clear();
+    if (session.playing() && session.realm == Realm::Maze) {
+        record.mazeSkills.clear();
+    } else {
+        record.skills.clear();
+        // Prestige went with the rest of the tree. A flower already in an
+        // prestige biome finishes its life there; the next one starts in the
+        // ordinary biome.
+        session.prestige = false;
+    }
     database_.markDirty();
     if (session.playing() && world_.isAlive(session.entity)) applyAccountToSession(session);
     sendProfile(session, connection);
@@ -5547,11 +5582,17 @@ std::string GameServer::biomeOfRealm(Realm realm) const {
     if (realm == Realm::Arena) return kArenaSpawnChoice;
     if (realm == Realm::Maze) return kMazeSpawnChoice;
     const MapData* map = worldMaps_.forRealm(realm);
-    return map != nullptr ? map->biome() : std::string();
+    if (map == nullptr) return std::string();
+    // A twin is a biome of its own: nobody in the garden can see a flower in
+    // the prestige garden, so the two can no more share a squad than the
+    // garden and the desert can.
+    return map->prestige() ? kPrestigeMapPrefix + map->biome() : map->biome();
 }
 
 std::string GameServer::biomeLabel(const std::string& biome) const {
     if (biome.empty()) return biome;
+    const std::string plain = stripPrestigePrefix(biome);
+    if (plain != biome) return std::string(kPrestigeLabel) + " " + biomeLabel(plain);
     for (const SpawnChoice& choice : worldMaps_.spawnChoices()) {
         if (biomeOfRealm(choice.realm) == biome) return choice.label;
     }
@@ -5581,7 +5622,13 @@ Realm GameServer::spawnRealmFor(const Session& session) const {
     // A spawn point carries the map it is on, so choosing one is how a player
     // joins straight into a map other than the overworld.
     const SpawnChoice* choice = chosenDoor(session);
-    return choice != nullptr ? choice->realm : Realm::Overworld;
+    const Realm plain = choice != nullptr ? choice->realm : Realm::Overworld;
+    if (!session.prestige) return plain;
+    // The same door on the map's prestige twin: the twin is the same file, so
+    // the door's element index means the same rectangle on it.
+    bool found = false;
+    const Realm twin = worldMaps_.prestigeRealm(plain, found);
+    return found ? twin : plain;
 }
 
 PlayerRecord& GameServer::liveRecord(Session& session) {

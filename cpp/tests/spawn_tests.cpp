@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "server_harness.h"
+#include "shared/game/prestige.h"
 #include "shared/game/map_elements.h"
 
 #include <set>
@@ -200,6 +201,11 @@ TEST(the_shipped_catalogue_loads_and_resolves_its_defaults) {
         if (maps.copiesOf(world.templateId()).size() > 1) {
             CHECK(!world.biome().empty());
             CHECK(world.biome() != world.id());
+        } else if (world.prestige()) {
+            // A prestige twin is the plain map under another id, and its
+            // biome and mobs are the plain map's (shared/game/prestige.h).
+            CHECK_EQ(world.id(), std::string(kPrestigeMapPrefix) + world.templateId());
+            CHECK_EQ(world.biome(), world.templateId());
         } else {
             CHECK_EQ(world.biome(), world.id());
         }
@@ -352,6 +358,9 @@ TEST(every_shipped_door_is_named_by_its_label_and_is_offered) {
         const MapData* world = maps.forRealm(worldRealm(i));
         CHECK(world != nullptr);
         if (world == nullptr) continue;
+        // A twin's doors are the plain map's, reached through the plain door
+        // with the prestige flag; it adds none of its own.
+        if (world->prestige()) continue;
         for (const MapElement* spawn : world->playerSpawns()) {
             ++doorCount;
             CHECK(!spawn->spawnId.empty());

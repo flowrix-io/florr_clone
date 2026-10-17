@@ -200,6 +200,10 @@ void GameServer::offerSacrifice(Session& session, Entity corpse) {
             case SpawnSystem::SacrificeOutcome::LowGround:
                 why = "Your " + petalName + " cannot be used in low mob rarity areas.";
                 break;
+            case SpawnSystem::SacrificeOutcome::Prestige:
+                why = "Your " + petalName +
+                      " went unanswered: no Unique or Apex can stand in a Prestige biome.";
+                break;
             case SpawnSystem::SacrificeOutcome::Taken:
                 why = "Your " + petalName + " went unanswered: an " +
                       rarityLabel(ladderRarity(tier)) + " already roams this biome.";

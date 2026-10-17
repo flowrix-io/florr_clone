@@ -523,6 +523,9 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     // fixture, so neither earns the screen-top bar whatever tier it wears.
     // A centipede or a leech is one boss however many bodies it drags: the
     // head wears the bar and the segments behind it none.
+    // In a prestige biome a super is ordinary stock, not a boss
+    // (shared/game/prestige.h), and keeps only the bar under its body.
+    const bool prestige = worldMaps_.isPrestige(net_.view().realm());
     std::vector<const RemoteEntity*> bosses;
     const Rect view = camera_.visibleWorld();
     for (const auto& entry : net_.view().entities()) {
@@ -532,6 +535,7 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
             entity.rarity != Rarity::Apex) {
             continue;
         }
+        if (prestige && entity.rarity == Rarity::Super) continue;
         if ((entity.spawnFlags & net::SpawnIsPet) != 0) continue;
         const MobConfig& config = content().mob(entity.typeIndex);
         if (config.id == "target_dummy" || config.chainBody) continue;

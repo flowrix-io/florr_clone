@@ -37,8 +37,9 @@ enum class Realm : std::uint8_t {
 /// broadphase and the terrain grids allocation-free per tick.
 ///
 /// Sixty-four because the realm travels as a byte; the shipped manifest stages
-/// sixteen map realms (eight maps, plus eight copies of the termite mound),
-/// and this leaves room to grow. Raising it costs one broadphase Layer and one
+/// twenty-four map realms (eight maps, their eight prestige twins -- see
+/// shared/game/prestige.h -- and eight copies of the termite mound), and
+/// this leaves room to grow. Raising it costs one broadphase Layer and one
 /// tile grid header per realm, and nothing on the wire; a realm nothing was
 /// staged for keeps a one-cell layer and an empty grid.
 inline constexpr int kMaxRealms = 64;

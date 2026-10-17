@@ -27,6 +27,7 @@
 #include "client/render/art_cache.h"
 #include "client/ui/draw.h"
 #include "client/ui/text_input.h"
+#include "shared/game/prestige.h"
 #include "shared/game/constants.h"
 
 namespace flix {
@@ -56,6 +57,15 @@ constexpr double kPickerNaturalWidth = 90.0;
 constexpr double kPickerMinWidth = 70.0;
 /// Breathing room the widest row keeps from the design frame's edges.
 constexpr double kPickerMargin = 10.0;
+
+/// The Prestige arrow's fill while the talent is not bought: its yellow at
+/// about a third over the talent tree's locked grey, so it reads as there but
+/// not yet usable.
+constexpr std::uint32_t kPrestigeLocked = 0xA79862u;
+/// The ink of the arrow inside it, and the wash laid over the title backdrop
+/// while the arrow is up.
+constexpr std::uint32_t kPrestigeArrowInk = 0x3A2F00u;
+constexpr double kPrestigeBackdropWash = 0.14;
 
 /// The backdrop's petals are drawn at 0.5x to 2x of this.
 constexpr double kTitlePetalPixels = 32.0;
@@ -252,6 +262,7 @@ void App::updateLobby() {
                     pressedControl_ = "door_" + std::to_string(i);
                 }
             }
+            if (insideInclusive(layout.prestige, mouse)) pressedControl_ = "prestige";
         }
         if (window_.mouseReleased(MouseButton::Left)) {
             // "default" is stored as no choice at all, so a player who never
@@ -280,6 +291,28 @@ void App::updateLobby() {
                 if (!insideInclusive(layout.doors[i], mouse)) continue;
                 onPicker = true;
                 if (open != nullptr && i < open->choices.size()) choose(open->choices[i]);
+            }
+            if (insideInclusive(layout.prestige, mouse)) {
+                onPicker = true;
+                if (!net_.profile().skills.prestigeUnlocked()) {
+                    // Said rather than greyed out silently: a button that does
+                    // nothing and explains nothing reads as broken.
+                    net_.addSystemMessage("Prestige is a talent: unlock it at the root of the "
+                                          "Talents tree (" + std::to_string(kPrestigeCost) +
+                                          " TP).");
+                } else {
+                    ClientSettings& settings = menus_.settings();
+                    settings.prestige = !settings.prestige;
+                    // The arena and the maze have no prestige version, and
+                    // their tabs go while the arrow is up -- so a choice of
+                    // either falls back to the default rather than staying
+                    // selected behind a tab that is not there.
+                    if (settings.prestige && (settings.spawnChoice == kArenaSpawnChoice ||
+                                              settings.spawnChoice == kMazeSpawnChoice)) {
+                        settings.spawnChoice.clear();
+                    }
+                    pickerTab_ = pickerTabOf(settings.spawnChoice);
+                }
             }
 
             // Focus follows the click. Ready and the picker's two rows are the
@@ -346,7 +379,8 @@ void App::startGame() {
     // ordinary game to the maze.
     const std::string& where =
         config_.autoSpawn.empty() ? menus_.settings().spawnChoice : config_.autoSpawn;
-    net_.joinGame(window_.width(), window_.height(), where, playerName_);
+    const bool prestige = config_.autoPrestige || (config_.autoSpawn.empty() && prestigeOn());
+    net_.joinGame(window_.width(), window_.height(), where, playerName_, prestige);
     joinStartedSeconds_ = timeSeconds_;
     // The lobby is about to give way to the loading screen, which has no
     // field: a caret left in the name box would keep a phone's keyboard up
@@ -462,6 +496,17 @@ void App::drawTitleBackground(Canvas& canvas, double time) {
                         static_cast<float>(canvas.height()));
     }
 
+    // A golden wash while the arrow is up, so the screen says which world
+    // Ready leads to before anyone reads the label.
+    if (prestigeOn()) {
+        canvas.save();
+        canvas.setGlobalAlpha(static_cast<float>(kPrestigeBackdropWash));
+        setFill(canvas, kPrestigeYellow);
+        canvas.fillRect(0, 0, static_cast<float>(canvas.width()),
+                        static_cast<float>(canvas.height()));
+        canvas.restore();
+    }
+
     drawTitlePetals(canvas, time);
 }
 
@@ -551,9 +596,17 @@ std::vector<App::PickerTab> App::pickerTabs() const {
         }
         tab->choices.push_back(i);
     }
-    tabs.push_back(std::move(arena));
-    tabs.push_back(std::move(maze));
+    // Neither generated realm has a prestige version, so neither is offered
+    // while the arrow is up.
+    if (!prestigeOn()) {
+        tabs.push_back(std::move(arena));
+        tabs.push_back(std::move(maze));
+    }
     return tabs;
+}
+
+bool App::prestigeOn() const {
+    return menus_.settings().prestige && net_.profile().skills.prestigeUnlocked();
 }
 
 std::string App::pickerTabOf(const std::string& choiceId) const {
@@ -606,6 +659,14 @@ App::LobbyLayout App::lobbyLayout(int viewWidth, int viewHeight) const {
                          pickerButtonWidth(tab.choices.size(), rowSpace), centreX,
                          centreY + 14.0);
         }
+    }
+
+    // The Prestige arrow: square, the tab row's height, a gap left of its
+    // first tab, so it reads as a switch on the whole row rather than as one
+    // more biome.
+    if (!layout.tabs.empty()) {
+        const Rect& first = layout.tabs.front();
+        layout.prestige = {first.x - kPickerGap - first.h, first.y, first.h, first.h};
     }
 
     // The XP gauge takes the middle of whatever the picker leaves above the
@@ -663,7 +724,13 @@ void App::drawLobby(Canvas& canvas, double time) {
     TextStyle label;
     label.size = 18.0;
     label.align = Align::Centre;
-    text(canvas, "Spawn At:", centreX, centreY - 50.0, label);
+    if (prestigeOn()) {
+        label.fill = kPrestigeYellow;
+        text(canvas, std::string("Spawn At (") + kPrestigeLabel + "):", centreX, centreY - 50.0,
+             label);
+    } else {
+        text(canvas, "Spawn At:", centreX, centreY - 50.0, label);
+    }
 
     // The picker: a row of biome tabs, and under it the doors of the open
     // tab. The chosen one in each row is drawn darker with a heavier
@@ -697,6 +764,10 @@ void App::drawLobby(Canvas& canvas, double time) {
         pickerButton(layout.doors[i], choice.label, choice.color, chosen,
                      "door_" + std::to_string(i));
     }
+
+    drawPrestigeButton(canvas, layout.prestige,
+                       freeMouse && insideInclusive(layout.prestige, mouse),
+                       freeMouse && pressedControl_ == "prestige");
 
     // Not until the profile is here, or a returning player's first frame reads
     // "Lvl 1".
@@ -734,6 +805,36 @@ void App::drawLobby(Canvas& canvas, double time) {
 
     drawTitleChat(canvas, time);
     if (statsVisible()) drawStatsCounters(canvas, true);
+}
+
+void App::drawPrestigeButton(Canvas& canvas, const Rect& box, bool hovered, bool pressed) {
+    if (box.w <= 0.0) return;
+    const bool unlocked = net_.profile().skills.prestigeUnlocked();
+    const bool up = prestigeOn();
+    ButtonStyle style;
+    style.fill = unlocked ? kPrestigeYellow : kPrestigeLocked;
+    // Drawn as the picker draws a chosen tab: darker with a heavier outline
+    // while it is up, so the two states differ by more than the arrow.
+    if (up) style.fill = hsvScale(style.fill, 0.85);
+    style.outlineWidth = up ? 5.0 : 4.0;
+    button(canvas, box, "", hovered, pressed, style);
+
+    // Up to prestige, down to come back: the arrow points where a click goes.
+    const double cx = box.x + box.w * 0.5;
+    const double cy = box.y + box.h * 0.5;
+    const double half = box.h * 0.26;
+    const double dir = up ? 1.0 : -1.0;
+    const double shaftW = half * 0.55;
+    setFill(canvas, unlocked ? kPrestigeArrowInk : darken(style.fill, 0.45));
+    canvas.beginPath();
+    canvas.moveTo(static_cast<float>(cx), static_cast<float>(cy + dir * half));
+    canvas.lineTo(static_cast<float>(cx + half), static_cast<float>(cy));
+    canvas.lineTo(static_cast<float>(cx + shaftW * 0.5), static_cast<float>(cy));
+    canvas.lineTo(static_cast<float>(cx + shaftW * 0.5), static_cast<float>(cy - dir * half));
+    canvas.lineTo(static_cast<float>(cx - shaftW * 0.5), static_cast<float>(cy - dir * half));
+    canvas.lineTo(static_cast<float>(cx - shaftW * 0.5), static_cast<float>(cy));
+    canvas.lineTo(static_cast<float>(cx - half), static_cast<float>(cy));
+    canvas.fill();
 }
 
 void App::drawTitleXpBar(Canvas& canvas, const Rect& track) {

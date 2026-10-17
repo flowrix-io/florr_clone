@@ -39,6 +39,18 @@ map leads out beside the nest that copy was entered through, whatever its
 `targetMap` says; the shipped mound has none, so clearing it is the way out,
 and everyone inside is carried back out beside the nest.
 
+An entry may carry **`prestige`**: `{ "file": "garden.tmj", "prestige": true }`
+also loads the map's **prestige twin**, `prestige_garden`, into a realm of its
+own after every entry's realms (so turning it on renumbers nothing). A twin
+is the same place for players who bought the Prestige talent and flipped the
+yellow arrow on the title screen: every mob its bands grow comes out one
+rarity higher, capped at super, and no unique or apex ever spawns there (no
+boss clocks). Its biome and mob group are the plain map's; its doors are not
+offered on their own (a join asks for the plain door with the prestige flag);
+every pad on a twin leads to the twin of the map it names, when that map has
+one. A `copies` entry cannot also be `prestige`. Each twin counts against the
+62-map limit. See `cpp/shared/game/prestige.h`.
+
 The manifest's bytes, every map's and every tileset's are covered by the
 content hash, so a client running a different map than the server it dials is
 refused at the handshake rather than discovered by walking into a wall nobody

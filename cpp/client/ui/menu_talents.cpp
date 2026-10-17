@@ -6,7 +6,9 @@
 // evenly spaced instead of crossing their neighbours. Second Chance,
 // Duplicator and Magnetism are not branches of their own: each forks off its
 // parent at the tier it needs -- rare Flower Health, mythic and legendary
-// Absorption -- and says so by growing out of that node.
+// Absorption -- and says so by growing out of that node. Prestige is not a
+// branch either: one node straight off the flower, in the gap between the
+// first branch and the last.
 //
 // The fan is laid out in fixed pixels and is deliberately far larger than the
 // card -- most of it starts off the edge. Dragging spins the whole tree about
@@ -22,6 +24,7 @@
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
 #include "client/world_view.h"
+#include "shared/game/prestige.h"
 #include "shared/game/constants.h"
 
 namespace flix {
@@ -227,9 +230,10 @@ Vec2 avatarEye(const WorldView& view) {
 }
 
 /// The branches that grow out of the flower, in fan order: every skill but the
-/// forks, which grow out of another branch instead. Pet Health is last, so it
-/// opens up-left beside Damage and the older branches keep their order.
-constexpr std::array<SkillId, kSkillCount - kSkillForks.size()> kTrunks = {
+/// forks, which grow out of another branch instead, and Prestige, which is a
+/// single node of its own (below). Pet Health is last, so it opens up-left
+/// beside Damage and the older branches keep their order.
+constexpr std::array<SkillId, kSkillCount - kSkillForks.size() - 1> kTrunks = {
     SkillId::Damage,    SkillId::PetalHealth, SkillId::PlayerHealth, SkillId::Healing,
     SkillId::Absorbing, SkillId::Reload,      SkillId::PetHealth,
 };
@@ -237,6 +241,23 @@ constexpr std::array<SkillId, kSkillCount - kSkillForks.size()> kTrunks = {
 /// Where a branch starts, in the fan. First one straight up.
 double branchAngle(int branchIndex, int branchCount) {
     return -kPi * 0.5 + (kTau / branchCount) * branchIndex;
+}
+
+/// Prestige's one node: halfway between the first branch (Damage, straight
+/// up) and the last (Pet Health, up-left), two steps out. One step out would
+/// sit 44 from each neighbour's first node, inside both; at two it keeps 89
+/// from every node on the tree, and its connector passes 43 from the centres
+/// of the two first nodes it runs between -- clear of their 35 radius. Up-left
+/// is on the card without a spin, which a root node a new player is meant to
+/// notice has to be.
+const double kPrestigeAngle =
+    branchAngle(0, static_cast<int>(kTrunks.size())) - kPi / static_cast<double>(kTrunks.size());
+constexpr double kPrestigeReach = 2.0 * kBaseStep;
+
+/// What a node's colour is once bought: its tier's, or Prestige's own yellow,
+/// which has no tier to borrow one from.
+std::uint32_t nodeColor(SkillId skill, int tier) {
+    return skill == SkillId::Prestige ? kPrestigeYellow : rarityColor(clampRarity(tier));
 }
 
 /// The one tooltip row that says what a tier is worth.
@@ -248,6 +269,7 @@ std::string effectLine(SkillId skill, int tier) {
     if (skill == SkillId::Duplicator) {
         return tier == 0 ? "+1 copy on petals with 2+ copies" : "+2 copies on petals with 2+ copies";
     }
+    if (skill == SkillId::Prestige) return "Unlocks the Prestige biomes";
     char buffer[48];
     if (skill == SkillId::Magnetism) {
         const auto at = static_cast<std::size_t>(tier);
@@ -579,6 +601,22 @@ void drawIcon(Canvas& canvas, SkillId id, int tier, Vec2 at, double size) {
             }
             break;
         }
+        case SkillId::Prestige: {      // two chevrons climbing
+            // Stroked rather than filled: a chevron is a bent line, and round
+            // caps and joins give it the same soft ends every other mark has.
+            canvas.setLineWidth(static_cast<float>(size * 0.16));
+            for (const double lift : {-0.30, 0.22}) {
+                const double tipY = at.y + half * (lift - 0.30);
+                canvas.beginPath();
+                canvas.moveTo(static_cast<float>(at.x - half * 0.62),
+                              static_cast<float>(tipY + half * 0.52));
+                canvas.lineTo(static_cast<float>(at.x), static_cast<float>(tipY));
+                canvas.lineTo(static_cast<float>(at.x + half * 0.62),
+                              static_cast<float>(tipY + half * 0.52));
+                canvas.stroke();
+            }
+            break;
+        }
         default: break;
     }
     canvas.restore();
@@ -709,6 +747,9 @@ void TalentsPanel::layout() {
         }
     }
 
+    nodes_.push_back(
+        {SkillId::Prestige, 0, Vec2::fromAngle(kPrestigeAngle, kPrestigeReach), {}});
+
     laidOut_ = true;
 }
 
@@ -838,12 +879,12 @@ bool TalentsPanel::render(MenuContext& ctx) {
 
         std::uint32_t fill = kLockedFill;
         if (unlocked) {
-            fill = rarityColor(clampRarity(node.tier));
+            fill = nodeColor(node.skill, node.tier);
         } else if (available) {
             // A TINT of the tier's own colour over the locked grey, so the one
             // node a click would actually buy names its rarity without ever
             // being mistaken for a node already owned.
-            fill = mixColor(kLockedFill, rarityColor(clampRarity(node.tier)), kAvailableTint);
+            fill = mixColor(kLockedFill, nodeColor(node.skill, node.tier), kAvailableTint);
         }
         const std::uint32_t border = fill == kLockedFill ? kLockedBorder : darken(fill, kRimShade);
 
@@ -963,8 +1004,15 @@ bool TalentsPanel::render(MenuContext& ctx) {
 
         std::vector<TooltipLine> lines;
         lines.push_back({skillTierLabel(node.skill, node.tier), 20.0, kPaper});
-        lines.push_back({rarityLabel(rarity), 14.0, rarityColor(rarity)});
-        lines.push_back({effectLine(node.skill, node.tier), 12.0, kPaper, 10.0});
+        if (node.skill == SkillId::Prestige) {
+            // No tier to name: what it opens, and what is different there.
+            lines.push_back({effectLine(node.skill, node.tier), 14.0, kPrestigeYellow});
+            lines.push_back({"Every mob there is +1 rarity", 12.0, kPaper, 10.0});
+            lines.push_back({"No Unique or Apex mobs spawn there", 12.0, kPaper});
+        } else {
+            lines.push_back({rarityLabel(rarity), 14.0, rarityColor(rarity)});
+            lines.push_back({effectLine(node.skill, node.tier), 12.0, kPaper, 10.0});
+        }
         lines.push_back({"Cost: " + std::to_string(cost) + " TP", 12.0, kPaper});
 
         if (!prereqMet) {

@@ -44,6 +44,7 @@
 #include "server/systems/npcs.h"
 #include "server/systems/spawning.h"
 #include "server/text.h"
+#include "shared/game/prestige.h"
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
 #include "shared/game/terrain.h"
@@ -1622,6 +1623,11 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // floor included.
             const Rarity standing = clampLadderRarity(
                 std::max(rarityIndex(rarity), rarityIndex(content().mob(mobIndex).minRarity)));
+            if (barredFromPrestige(standing) && spawning_->prestigeRealm(spawnRealm)) {
+                out(std::string("Refused: no ") + rarityName(standing) +
+                    " can stand in a prestige biome");
+                return;
+            }
             const double cooling =
                 spawning_->bossCooldownLeft(standing, spawnRealm, clockMillis_);
             if (cooling > 0.0) {

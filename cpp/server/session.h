@@ -106,6 +106,12 @@ struct Session {
     /// default.
     std::string spawnChoice;
 
+    /// Whether that door's PRESTIGE twin was asked for and granted
+    /// (shared/game/prestige.h). Kept beside spawnChoice so a respawn goes
+    /// back to the prestige biome; never set for the arena or the maze, which
+    /// have no twin.
+    bool prestige = false;
+
     /// The coordinate space the body is in while Playing (realm.h). Overworld
     /// between bodies, so a title-screen session reads as ordinary ground.
     Realm realm = Realm::Overworld;

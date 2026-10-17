@@ -325,6 +325,14 @@ public:
     const std::string& templateId() const { return templateId_.empty() ? id_ : templateId_; }
     void setTemplateId(std::string id) { templateId_ = std::move(id); }
 
+    /// True for a map's PRESTIGE twin (shared/game/prestige.h): the same file
+    /// loaded into a realm of its own, id `prestige_<stem>`, whose bands spawn
+    /// a tier higher. Its biome() and defaultMobGroup() are the plain map's,
+    /// so the same mobs live in it; its doors are never offered on their own
+    /// -- a join reaches one by asking for the plain door with the prestige
+    /// flag set.
+    bool prestige() const { return prestige_; }
+
     /// The `.tmj` this was read from, as it was passed to loadTiled(). Empty
     /// for a map a harness built in memory.
     ///
@@ -476,6 +484,7 @@ private:
     Realm realm_ = Realm::Overworld;
     std::string id_;
     std::string templateId_;
+    bool prestige_ = false;
     std::string sourcePath_;
     std::string displayName_;
     std::string biome_;
@@ -565,6 +574,14 @@ public:
     /// Empty when no such map was staged.
     std::vector<Realm> copiesOf(const std::string& templateId) const;
 
+    /// The prestige twin of the map in `plain`, with `found` false (and
+    /// `plain` returned) for a realm that has none: the arena, the maze, an
+    /// instanced copy, or a twin already.
+    Realm prestigeRealm(Realm plain, bool& found) const;
+
+    /// True when `realm` is a prestige twin.
+    bool isPrestige(Realm realm) const;
+
     /// The maps, in load order. `maps()[i]` is realm `worldRealm(i)`.
     const std::vector<MapData>& maps() const { return maps_; }
 
@@ -617,7 +634,14 @@ private:
     /// as leading nowhere.
     std::vector<const MapElement*> linkPads();
 
+    /// Points every pad on a prestige twin that leads to a plain map with a
+    /// twin of its own at that twin instead, so a flower in the prestige world
+    /// stays in it from one biome to the next.
+    void retargetPrestigePads();
+
     std::vector<MapData> maps_;
+    /// Per map slot: the slot of its prestige twin, or -1.
+    std::vector<int> twinSlot_;
     std::vector<SpawnChoice> spawnChoices_;
     std::vector<SpawnChoice> doors_;
     std::vector<std::string> warnings_;

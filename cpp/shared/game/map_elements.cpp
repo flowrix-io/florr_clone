@@ -10,6 +10,7 @@
 #include "shared/core/file.h"
 #include "shared/core/json.h"
 #include "shared/core/text.h"
+#include "shared/game/prestige.h"
 #include "shared/game/constants.h"
 #include "shared/game/terrain.h"
 
@@ -839,6 +840,8 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
     std::vector<std::string> files;
     // How many realms each file is loaded into: 1, or the entry's `copies`.
     std::vector<int> copies;
+    // Whether the entry also loads a prestige twin (`"prestige": true`).
+    std::vector<bool> prestigeTwins;
     Json manifest;
     std::string manifestError;
     std::string manifestText;
@@ -863,6 +866,16 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
                 }
             }
             copies.push_back(count);
+            // A prestige twin (shared/game/prestige.h) is a whole second
+            // world, which an instanced dungeon is not: its brood takes its
+            // tier from the mob the party walked in through.
+            const bool prestige = entry.isObject() && entry["prestige"].asBool(false);
+            if (prestige && count != 1) {
+                errorOut = dataDir + "/maps.json: " + files.back() +
+                           " is loaded as copies and cannot also have a prestige twin";
+                return false;
+            }
+            prestigeTwins.push_back(prestige);
         }
         if (files.empty()) {
             errorOut = dataDir + "/maps.json names no maps";
@@ -886,6 +899,14 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
             copyOf.push_back(k);
         }
     }
+    // Then the prestige twin of every entry that asks for one, after ALL of
+    // the manifest's own realms, so turning prestige on renumbered nothing
+    // that was already there. Marked with copyOf -1.
+    for (std::size_t i = 0; i < files.size(); ++i) {
+        if (!prestigeTwins[i]) continue;
+        slots.push_back(files[i]);
+        copyOf.push_back(-1);
+    }
     if (static_cast<int>(slots.size()) > kMaxWorldMaps) {
         errorOut = "the manifest names " + std::to_string(slots.size()) +
                    " maps, copies included; at most " + std::to_string(kMaxWorldMaps) +
@@ -903,9 +924,14 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
                                      : slots[i];
         if (terrain != nullptr && !terrain->loadTiledMap(path, errorOut, realm)) return false;
         const std::string stem = stemOf(slots[i]);
+        const bool twin = copyOf[i] < 0;
         // The first copy keeps the plain stem, so a teleporter or an admin
-        // naming the map still finds one; the rest are numbered from 2.
-        maps_[i].setId(copyOf[i] == 0 ? stem : stem + "#" + std::to_string(copyOf[i] + 1));
+        // naming the map still finds one; the rest are numbered from 2. A
+        // twin loads under the plain stem too, so every default the loader
+        // derives from the id -- the biome, the mob group, an unnamed door's
+        // spawn id -- comes out the same as the plain map's, and is renamed
+        // once it is in.
+        maps_[i].setId(copyOf[i] <= 0 ? stem : stem + "#" + std::to_string(copyOf[i] + 1));
         maps_[i].setTemplateId(stem);
         std::string annotationError;
         if (!maps_[i].loadTiled(path, annotationError, realm)) {
@@ -914,6 +940,13 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
             // not acceptable.
             warnings_.push_back(path + ": " + annotationError +
                                 "; this map has no spawns or teleporters");
+        }
+        if (twin) {
+            MapData& map = maps_[i];
+            map.prestige_ = true;
+            map.setId(kPrestigeMapPrefix + stem);
+            map.displayName_ = std::string(kPrestigeLabel) + " " +
+                               (map.displayName_.empty() ? titleCase(stem) : map.displayName_);
         }
     }
 
@@ -946,14 +979,56 @@ Realm WorldMaps::realmOfId(const std::string& mapId, bool& found) const {
 std::vector<Realm> WorldMaps::copiesOf(const std::string& templateId) const {
     std::vector<Realm> out;
     for (std::size_t i = 0; i < maps_.size(); ++i) {
+        // A twin is the same file but not an instance of the same place: it
+        // is a world of its own, never a dungeon slot to hand a party.
+        if (maps_[i].prestige()) continue;
         if (maps_[i].templateId() == templateId) out.push_back(worldRealm(static_cast<int>(i)));
     }
     return out;
 }
 
+Realm WorldMaps::prestigeRealm(Realm plain, bool& found) const {
+    const int slot = worldMapSlot(plain);
+    found = slot >= 0 && slot < static_cast<int>(twinSlot_.size()) &&
+            twinSlot_[static_cast<std::size_t>(slot)] >= 0;
+    return found ? worldRealm(twinSlot_[static_cast<std::size_t>(slot)]) : plain;
+}
+
+bool WorldMaps::isPrestige(Realm realm) const {
+    const MapData* map = forRealm(realm);
+    return map != nullptr && map->prestige();
+}
+
+void WorldMaps::retargetPrestigePads() {
+    for (MapData& map : maps_) {
+        if (!map.prestige()) continue;
+        for (MapElement& pad : map.elements_) {
+            if (pad.kind != MapElementKind::Teleporter || pad.targetMap.empty()) continue;
+            bool found = false;
+            const Realm plain = realmOfId(pad.targetMap, found);
+            if (!found) continue;
+            const Realm twin = prestigeRealm(plain, found);
+            if (found) pad.targetMap = forRealm(twin)->id();
+        }
+    }
+}
+
 void WorldMaps::index() {
     spawnChoices_.clear();
     doors_.clear();
+
+    // Each twin to the plain map it copies: the one whose id it carries
+    // behind the prefix.
+    twinSlot_.assign(maps_.size(), -1);
+    for (std::size_t twin = 0; twin < maps_.size(); ++twin) {
+        if (!maps_[twin].prestige()) continue;
+        const std::string plainId = stripPrestigePrefix(maps_[twin].id());
+        for (std::size_t plain = 0; plain < maps_.size(); ++plain) {
+            if (!maps_[plain].prestige() && maps_[plain].id() == plainId) {
+                twinSlot_[plain] = static_cast<int>(twin);
+            }
+        }
+    }
 
     // A spawn id that only one map uses is offered unqualified, because that
     // is what an author types into a teleporter and what a settings file
@@ -962,8 +1037,12 @@ void WorldMaps::index() {
     // Counted over EVERY door, pickable or not: an id is qualified by what
     // exists, not by what is offered, so a sublevel door an admin names
     // resolves to the same door a pad arrives at.
+    //
+    // A twin's doors are not counted, and not offered: they repeat the plain
+    // map's ids, and a join reaches them through the plain door.
     std::vector<std::pair<std::string, int>> idCounts;
     for (const MapData& map : maps_) {
+        if (map.prestige()) continue;
         for (const MapElement* point : map.playerSpawns()) {
             auto found = std::find_if(idCounts.begin(), idCounts.end(),
                                       [&](const std::pair<std::string, int>& entry) {
@@ -976,6 +1055,7 @@ void WorldMaps::index() {
 
     for (std::size_t slot = 0; slot < maps_.size(); ++slot) {
         const MapData& map = maps_[slot];
+        if (map.prestige()) continue;
         for (const MapElement* point : map.playerSpawns()) {
             const auto found = std::find_if(idCounts.begin(), idCounts.end(),
                                             [&](const std::pair<std::string, int>& entry) {
@@ -1007,6 +1087,7 @@ void WorldMaps::index() {
     }
 
     const std::vector<const MapElement*> arrivals = linkPads();
+    retargetPrestigePads();
 
     // Teleporters are checked HERE, once, rather than when a player stands on
     // one: a pad aimed at a map nobody staged is a map bug, and the moment to

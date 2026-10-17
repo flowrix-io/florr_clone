@@ -84,6 +84,9 @@ struct AppConfig {
     /// the beginner ground. The only way a --screenshot run can photograph the
     /// arena or the maze, which no scripted run can otherwise walk to.
     std::string autoSpawn;
+    /// Join the prestige twin of autoSpawn's door (shared/game/prestige.h).
+    /// Like --spawn, for this join only: never written back to the settings.
+    bool autoPrestige = false;
     /// Ignore any stored session and start on the login form. The only way to
     /// photograph the auth screen once a machine has logged in once.
     bool forceLogin = false;
@@ -202,6 +205,8 @@ private:
         /// The XP gauge's track: where the fill runs from empty to full. Its
         /// rounded ends stand out half its height past both sides of this.
         Rect xp;
+        /// The yellow Prestige arrow at the left end of the tab row.
+        Rect prestige;
     };
     LobbyLayout lobbyLayout(int viewWidth, int viewHeight) const;
     /// One button of the picker's first row: a biome, or one of the three
@@ -215,6 +220,10 @@ private:
     /// The first row, in order: Default, every distinct biome the doors are
     /// filed under (in spawnChoices_ order), then the PVP arena and the maze.
     std::vector<PickerTab> pickerTabs() const;
+    /// Whether the next join goes to the prestige biomes: the arrow is up AND
+    /// the profile holds the talent. The arrow alone is a preference that
+    /// outlives a talent reset; this is what the picker and the join act on.
+    bool prestigeOn() const;
     /// The tab a spawn choice id is filed under -- "default" for the empty
     /// choice and for any id no staged map defines.
     std::string pickerTabOf(const std::string& choiceId) const;
@@ -227,6 +236,10 @@ private:
     /// The account's level and progress into it, as a gauge between the
     /// spawn picker and the loadout bar.
     void drawTitleXpBar(Canvas&, const Rect& track);
+    /// The yellow Prestige arrow left of the picker's tab row: up to join
+    /// the prestige biomes, down to come back. Dimmed until the talent is
+    /// bought.
+    void drawPrestigeButton(Canvas&, const Rect& box, bool hovered, bool pressed);
     /// The frame/ping/position readout in the bottom-right corner. On the
     /// title screens it is the frame counter alone: there is no world behind
     /// them for the other lines to report on.

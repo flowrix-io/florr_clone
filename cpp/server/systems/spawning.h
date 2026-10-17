@@ -525,6 +525,7 @@ public:
         LowGround,   ///< the band cannot roll kSacrificeGroundRarity
         Taken,       ///< a unique/apex of that tier already stands in the biome
         NoMob,       ///< the band names nothing that can be summoned
+        Prestige,    ///< a unique/apex asked for in a prestige biome
     };
     struct Sacrifice {
         SacrificeOutcome outcome = SacrificeOutcome::NoBand;
@@ -638,6 +639,10 @@ public:
     /// spawnMobAt refuses.
     double bossCooldownLeft(Rarity rarity, Realm realm, double nowMillis) const;
 
+    /// True when `realm` is a prestige twin, where no unique or apex may
+    /// stand by any path (spawnMobAt refuses one outright).
+    bool prestigeRealm(Realm realm) const;
+
     /// Starts `realm`'s biome clock for `rarity` over from `nowMillis`, exactly
     /// as the clock's own upgrade does once the boss it made is standing. For
     /// the console: an admin's unique or apex spends the clock a wild one
@@ -703,7 +708,11 @@ private:
         /// the shape is one creature's range, not a patch of ground.
         bool singular = false;
         /// Index into bossClocks_: the biome of the map this band is drawn on.
+        /// kInvalidIndex on a prestige twin, which keeps no clock.
         std::uint16_t biome = kInvalidIndex;
+        /// Drawn on a prestige twin (shared/game/prestige.h): every roll
+        /// comes out a tier higher, never past super, and is never upgraded.
+        bool prestige = false;
         /// This band's share of the world that is not simulated. Held HERE
         /// rather than in one flat list because both hot questions are per
         /// band: "is this band worth walking at all" is one rectangle test

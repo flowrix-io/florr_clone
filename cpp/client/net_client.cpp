@@ -326,13 +326,14 @@ void NetClient::forgetAccount() {
 }
 
 void NetClient::joinGame(int viewportWidth, int viewportHeight, const std::string& spawnChoice,
-                         const std::string& playerName) {
+                         const std::string& playerName, bool prestige) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::JoinGame);
     w.u16(static_cast<std::uint16_t>(viewportWidth));
     w.u16(static_cast<std::uint16_t>(viewportHeight));
     w.str(spawnChoice);
     w.str(playerName);
+    w.u8(prestige ? 1 : 0);
     send(w);
     joinPending_ = true;
 }

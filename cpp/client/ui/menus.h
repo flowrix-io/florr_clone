@@ -301,6 +301,10 @@ struct ClientSettings {
     /// WorldMaps::spawnChoices(), or "pvp"/"maze". Empty is the server's
     /// default. Remembered because it is a preference, not a game state.
     std::string spawnChoice;
+    /// Whether the title screen's yellow arrow is up: the next join asks for
+    /// the chosen door's prestige twin (shared/game/prestige.h). Only acted
+    /// on while the profile holds the Prestige talent.
+    bool prestige = false;
     /// Whether the eleven-step tutorial has been finished or skipped, and how
     /// far it had got. The TypeScript client kept the same pair in
     /// localStorage as `tutorial_completed` and `tutorial_step`; they ride here

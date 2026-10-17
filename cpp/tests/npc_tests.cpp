@@ -1406,8 +1406,14 @@ TEST(the_shipped_trader_stands_in_the_desert_and_takes_all_but_the_marked_petals
     npcs.loadSites(maps, content(), warnings);
     CHECK(warnings.empty());
     int traders = 0;
+    int prestigeTraders = 0;
     for (const NpcSystem::Site& site : npcs.sites()) {
         if (content().mob(site.mobIndex).npc.service != NpcService::Trader) continue;
+        // The prestige desert is the same map, trader and all.
+        if (maps.isPrestige(site.realm)) {
+            ++prestigeTraders;
+            continue;
+        }
         ++traders;
         CHECK(site.realm == desert);
         CHECK(site.rarity == Rarity::Common);
@@ -1419,6 +1425,7 @@ TEST(the_shipped_trader_stands_in_the_desert_and_takes_all_but_the_marked_petals
         CHECK_NEAR(placed.y, site.position.y, 1e-6);
     }
     CHECK_EQ(traders, 1);
+    CHECK_EQ(prestigeTraders, 1);
 }
 
 TEST(a_trade_is_one_petal_for_one_coin_of_the_same_tier) {
@@ -2037,8 +2044,14 @@ TEST(the_shipped_titan_stands_in_the_jungle_wearing_a_universal_ring) {
     npcs.loadSites(maps, content(), warnings);
     CHECK(warnings.empty());
     int titans = 0;
+    int prestigeTitans = 0;
     for (const NpcSystem::Site& site : npcs.sites()) {
         if (site.mobIndex != titan) continue;
+        // The prestige jungle is the same map, titan and all.
+        if (maps.isPrestige(site.realm)) {
+            ++prestigeTitans;
+            continue;
+        }
         ++titans;
         CHECK(site.realm == jungle);
         // Universal on its plate, as florr's titan is the top tier on its.
@@ -2061,6 +2074,7 @@ TEST(the_shipped_titan_stands_in_the_jungle_wearing_a_universal_ring) {
         }
     }
     CHECK_EQ(titans, 1);
+    CHECK_EQ(prestigeTitans, 1);
 }
 
 TEST(a_titan_forge_turns_five_apex_into_one_universal) {
@@ -2856,22 +2870,35 @@ TEST(the_computer_holds_one_assembler_of_every_tier_somewhere_inside_it) {
     std::vector<std::string> warnings;
     npcs.loadSites(maps, content(), warnings);
     CHECK(warnings.empty());
+    // The prestige computer is the same map and holds a set of its own.
+    bool found = false;
+    const Realm prestigeComputer = maps.prestigeRealm(computer, found);
+    CHECK(found);
     std::vector<int> perTier(kRarityCount, 0);
+    std::vector<int> prestigePerTier(kRarityCount, 0);
     for (const NpcSystem::Site& site : npcs.sites()) {
         if (content().mob(site.mobIndex).npc.service != NpcService::Assembler) continue;
-        CHECK(site.realm == computer);
         CHECK(site.roams);
+        if (site.realm == prestigeComputer) {
+            ++prestigePerTier[static_cast<std::size_t>(rarityIndex(site.rarity))];
+            continue;
+        }
+        CHECK(site.realm == computer);
         ++perTier[static_cast<std::size_t>(rarityIndex(site.rarity))];
     }
     for (int tier = 0; tier < kLadderRarityCount; ++tier) {
         CHECK_EQ(perTier[static_cast<std::size_t>(tier)], 1);
+        CHECK_EQ(prestigePerTier[static_cast<std::size_t>(tier)], 1);
     }
 
     // Each put down on open, dry ground in the computer, its body clear of
     // the walls.
     World world;
     npcs.placeMissing(world, terrain, content(), 0.0);
-    const std::vector<Entity> standing = assemblersIn(world);
+    std::vector<Entity> standing;
+    for (const Entity e : assemblersIn(world)) {
+        if (world.get<Transform>(e).realm == computer) standing.push_back(e);
+    }
     CHECK_EQ(standing.size(), static_cast<std::size_t>(kLadderRarityCount));
     for (const Entity e : standing) {
         const Transform& transform = world.get<Transform>(e);

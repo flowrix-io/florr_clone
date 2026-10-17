@@ -60,6 +60,8 @@ void usage(const char* program) {
         "                     (garden, ...), or pvp / maze. A door a map marks\n"
         "                     not pickable needs an admin account; anyone else\n"
         "                     starts at the default\n"
+        "  --prestige         join that door's prestige twin (needs the\n"
+        "                     Prestige talent)\n"
         "  --login            ignore any stored session and show the login form\n"
         "  --dead             join, then show the death card straight away\n"
         "  --tutorial         join with the onboarding tutorial card up\n"
@@ -122,6 +124,7 @@ int main(int argc, char** argv) {
         }
         else if (arg == "--lobby") config.autoJoin = false;
         else if (arg == "--spawn") config.autoSpawn = next("--spawn");
+        else if (arg == "--prestige") config.autoPrestige = true;
         else if (arg == "--login") config.forceLogin = true;
         else if (arg == "--dead") config.autoDead = true;
         else if (arg == "--tutorial") config.autoTutorial = true;

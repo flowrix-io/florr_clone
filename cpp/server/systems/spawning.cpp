@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <limits>
 
+#include "shared/game/prestige.h"
+
 namespace flix {
 namespace {
 
@@ -25,13 +27,18 @@ namespace {
 /// which is the whole point -- a difficulty-100 band is nearly all ultras, and
 /// keeping that band's population simulated forever is exactly the bill this
 /// system exists not to pay.
-bool alwaysAwake(const ContentRegistry& content, std::uint16_t mobIndex, Rarity rarity) {
-    if (isBossRarity(rarity)) return true;
+/// `prestige`: the mob stands in a prestige twin, where a super is not a
+/// boss but the band's ordinary stock -- a difficulty-100 band there is nearly
+/// all super (shared/game/prestige.h) -- so it sleeps when nobody is near
+/// like any other band mob. Nothing above super ever stands in a twin.
+bool alwaysAwake(const ContentRegistry& content, std::uint16_t mobIndex, Rarity rarity,
+                 bool prestige) {
+    if (isBossRarity(rarity) && !prestige) return true;
     return mobIndex < content.mobCount() && content.mob(mobIndex).neverAmbient;
 }
 
-bool alwaysAwake(const ContentRegistry& content, const MobType& type) {
-    return alwaysAwake(content, type.configIndex, type.rarity);
+bool alwaysAwake(const ContentRegistry& content, const MobType& type, bool prestige) {
+    return alwaysAwake(content, type.configIndex, type.rarity, prestige);
 }
 
 /// The per-spawn size multiplier on the mob's nominal size: the `random_size`
@@ -536,6 +543,12 @@ SpawnSystem::Sacrifice SpawnSystem::planSacrifice(World& world, const ContentReg
     if (!groundTakesSacrifice(zone->difficulty)) return Sacrifice{SacrificeOutcome::LowGround};
 
     rarity = ladderRarity(rarity);
+    // A prestige biome raises the summons a tier as it raises every mob, and
+    // refuses a unique or an apex outright.
+    if (prestigeRealm(realm)) {
+        if (barredFromPrestige(rarity)) return Sacrifice{SacrificeOutcome::Prestige};
+        rarity = prestigeRarity(rarity);
+    }
     if ((rarity == Rarity::Unique || rarity == Rarity::Apex) &&
         topBossTaken(world, rarity, realm)) {
         return Sacrifice{SacrificeOutcome::Taken};
@@ -555,6 +568,9 @@ SpawnSystem::Sacrifice SpawnSystem::planSacrifice(World& world, const ContentReg
     // The tier it will actually stand at, the mob's own floor included.
     plan.rarity =
         clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(content.mob(type).minRarity)));
+    if (barredFromPrestige(plan.rarity) && prestigeRealm(realm)) {
+        return Sacrifice{SacrificeOutcome::Prestige};
+    }
     return plan;
 }
 
@@ -626,6 +642,11 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // here rather than at each call site so a nest, a script and the ambient
     // roll cannot disagree about it.
     rarity = clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
+
+    // A prestige biome has no boss clocks and never fields a unique or an
+    // apex, whoever asks -- the console and a sacrifice included, which is why
+    // this is not under `clockGated`.
+    if (barredFromPrestige(rarity) && prestigeRealm(realm)) return NULL_ENTITY;
 
     // A wild unique or apex is its biome's clock's to hand out, and nobody
     // else's. One asked for any other way while that clock is still cooling
@@ -1075,7 +1096,7 @@ void SpawnSystem::takeCensus(World& world, const ContentRegistry& content,
         if (nearAnyone) {
             ambient.lastNearPlayerMillis = nowMillis;
         } else if (nowMillis - ambient.lastNearPlayerMillis >= graceMillis &&
-                   !alwaysAwake(content, type)) {
+                   !alwaysAwake(content, type, prestigeRealm(transform.realm))) {
             // Nobody has been near it for the grace period, so it stops being
             // an entity. Whether that is the END of it depends on whether a
             // band is holding a slot for it: one the band placed goes back
@@ -1416,7 +1437,9 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
     for (const MapData& map : worldMaps->maps()) {
         // Every map's biome, banded or not: the one-unique rule has to know
         // which biome an operator's spawn landed in wherever it landed.
-        const std::uint16_t biome = bossClockFor(map.biome());
+        // Except a prestige twin's, which has no clock to keep: nothing
+        // there is ever upgraded, and a unique or apex never stands in one.
+        const std::uint16_t biome = map.prestige() ? kInvalidIndex : bossClockFor(map.biome());
         realmBiome_[realmIndex(map.realm())] = biome;
         for (const MapElement& element : map.elements()) {
             if (!element.isSpawnBand() && !element.isMobRegion()) continue;
@@ -1426,6 +1449,7 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             zone.difficulty = element.difficulty;
             zone.realm = map.realm();
             zone.singular = element.singular;
+            zone.prestige = map.prestige();
 
             // The rows are resolved to indices ONCE, here, rather than on every
             // spawn: a group name is a hash probe and a busy band rolls several
@@ -1610,6 +1634,10 @@ Rarity SpawnSystem::rollBossUpgrade(World& world, const SpawnZone& zone, double 
     if (rolls(clock.apexReadyMillis, Rarity::Apex)) return Rarity::Apex;
     if (rolls(clock.uniqueReadyMillis, Rarity::Unique)) return Rarity::Unique;
     return Rarity::Super;
+}
+
+bool SpawnSystem::prestigeRealm(Realm realm) const {
+    return worldMaps != nullptr && worldMaps->isPrestige(realm);
 }
 
 double SpawnSystem::bossCooldownLeft(Rarity rarity, Realm realm, double nowMillis) const {
@@ -1847,6 +1875,9 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // far faster than kUniqueSpawnCooldownMillis allows.
     Rarity rarity = rollSpawnRarity(zone.difficulty, luck, rng);
     if (rarityIndex(rarity) > rarityIndex(Rarity::Super)) rarity = Rarity::Super;
+    // A prestige twin's band grows what the plain band would, a tier up --
+    // and still never past super (shared/game/prestige.h).
+    if (zone.prestige) rarity = prestigeRarity(rarity);
     std::uint16_t type = chooseZoneMobType(content, zone, at, rarity, rng);
     if (type == kInvalidIndex) return false;
     // A band naming a mob outright can name one below its own tier; the mob's
@@ -1854,18 +1885,22 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // AFTER the floor, because that is the tier that decides whether this is a
     // record or an event.
     rarity = clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(content.mob(type).minRarity)));
+    // A mob whose floor sits above super cannot stand in a twin at all; the
+    // slot goes back to the band and is rolled afresh.
+    if (zone.prestige && barredFromPrestige(rarity)) return false;
 
     // A super may come out a unique or an apex instead, if its biome's clock
     // for that tier has run down. After the type roll, which is safe because a
     // mob that is ambient at super is ambient at every tier above it; and never
-    // for a permanent fixture, which is a DPS post rather than an event.
+    // for a permanent fixture, which is a DPS post rather than an event. Never
+    // in a prestige twin, which has no clocks.
     bool upgraded = false;
-    if (rarity == Rarity::Super && !content.mob(type).neverAmbient) {
+    if (rarity == Rarity::Super && !zone.prestige && !content.mob(type).neverAmbient) {
         rarity = rollBossUpgrade(world, zone, nowMillis);
         upgraded = rarity != Rarity::Super;
     }
 
-    if (!alwaysAwake(content, type, rarity)) {
+    if (!alwaysAwake(content, type, rarity, zone.prestige)) {
         // The ordinary case, and the whole reason the map can be full: a
         // position, a type and a tier. No entity, no components, no wire id.
         //
@@ -2116,6 +2151,9 @@ void SpawnSystem::announceIfNotable(const ContentRegistry& content, Entity entit
                                     std::uint16_t mobIndex, Rarity rarity, Vec2 position,
                                     Realm realm) {
     if (rarityIndex(rarity) < rarityIndex(kAnnouncedRarity)) return;
+    // A prestige twin's supers are its bands' everyday stock, not events: the
+    // server would announce one every few seconds.
+    if (prestigeRealm(realm)) return;
     // A permanent fixture is not an event. A dummy reaches this through a band
     // that names it outright, up to unique, or the console's spawn, and
     // announcing those would put a line in chat for a post nobody has to

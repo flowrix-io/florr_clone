@@ -11,17 +11,22 @@
     "names. See maps/README.md.",
     "",
     "`copies` loads one file into that many realms, side by side: private",
-    "instances of one place, such as the dungeon inside each termite mound."
+    "instances of one place, such as the dungeon inside each termite mound.",
+    "",
+    "`prestige: true` also loads the map's PRESTIGE twin, `prestige_<id>`, in",
+    "a realm after every entry's own: the same place one rarity harder, with",
+    "no unique or apex, for players with the Prestige talent. Its pads lead",
+    "to other twins. See cpp/shared/game/prestige.h."
   ],
   "maps": [
-    { "file": "garden.tmj" },
-    { "file": "desert.tmj" },
-    { "file": "computer.tmj" },
-    { "file": "ocean.tmj" },
-    { "file": "jungle.tmj" },
-    { "file": "hel.tmj" },
-    { "file": "ant_hell.tmj" },
-    { "file": "sewers.tmj" },
+    { "file": "garden.tmj", "prestige": true },
+    { "file": "desert.tmj", "prestige": true },
+    { "file": "computer.tmj", "prestige": true },
+    { "file": "ocean.tmj", "prestige": true },
+    { "file": "jungle.tmj", "prestige": true },
+    { "file": "hel.tmj", "prestige": true },
+    { "file": "ant_hell.tmj", "prestige": true },
+    { "file": "sewers.tmj", "prestige": true },
     { "file": "termite_mound.tmj", "copies": 8 }
   ]
 }

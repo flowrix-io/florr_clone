@@ -522,8 +522,12 @@ public:
     /// WorldMaps::choice(), and a door a map marks not pickable is only
     /// honoured for an admin session.
     /// `playerName` is the flower's nameplate; empty spawns as "Unnamed".
+    /// `prestige` asks for the chosen door's prestige twin
+    /// (shared/game/prestige.h); the server ignores it for a tree without
+    /// the Prestige talent, and for the arena and the maze.
     void joinGame(int viewportWidth, int viewportHeight,
-                  const std::string& spawnChoice = {}, const std::string& playerName = {});
+                  const std::string& spawnChoice = {}, const std::string& playerName = {},
+                  bool prestige = false);
     /// True from joinGame() until the server answers it: with JoinAccepted,
     /// or with the Bad notice that is its only way of saying no. Only ever
     /// true while logged in -- a dropped socket takes the join with it, and a

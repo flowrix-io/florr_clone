@@ -35,6 +35,9 @@ enum class SkillId : std::uint8_t {
     Duplicator,
     /// Widens the pickup reach, the way a magnet petal does.
     Magnetism,
+    /// One node at the root: unlocks the prestige biomes (shared/game/
+    /// prestige.h). Owned or not; it multiplies nothing.
+    Prestige,
     Count,
 };
 
@@ -46,22 +49,22 @@ inline constexpr int kSkillCount = static_cast<int>(SkillId::Count);
 /// account.
 inline constexpr std::array<const char*, kSkillCount> kSkillKeys = {
     "damage", "petalHealth", "playerHealth", "healingMultiplier", "absorbing", "reload",
-    "secondChance", "petHealth", "duplicator", "magnetism",
+    "secondChance", "petHealth", "duplicator", "magnetism", "prestige",
 };
 
 inline constexpr std::array<const char*, kSkillCount> kSkillLabels = {
     "Damage", "Petal Health", "Flower Health", "Healing", "Absorption", "Reload", "Second Chance",
-    "Pet Health", "Duplicator", "Magnetism",
+    "Pet Health", "Duplicator", "Magnetism", "Prestige",
 };
 
-/// How many tiers each branch has. Five of them stop short of the full
+/// How many tiers each branch has. Six of them stop short of the full
 /// ladder: Healing tops out at epic, Reload at unique (no apex tier to buy),
-/// and the three forks -- Second Chance, Duplicator, Magnetism -- after two or
-/// three tiers. None reaches past the ladder: universal is a petal tier, not a
-/// talent one.
+/// the three forks -- Second Chance, Duplicator, Magnetism -- after two or
+/// three tiers, and Prestige is a single node. None reaches past the ladder:
+/// universal is a petal tier, not a talent one.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
     kLadderRarityCount, kLadderRarityCount, kLadderRarityCount, 4, kLadderRarityCount,
-    rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount, 2, 3,
+    rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount, 2, 3, 1,
 };
 
 /// What one tier costs in talent points. Steep at the top, so the last tiers
@@ -79,6 +82,10 @@ inline constexpr std::array<int, 2> kDuplicatorTierCost = {15, 20};
 /// price and the two ladder steps after it, not the ladder's opening 1-2-3.
 inline constexpr std::array<int, 3> kMagnetismTierCost = {5, 8, 12};
 
+/// Prestige's one node. Priced as an endgame goal on its own rather than off
+/// the ladder: it opens a whole second world.
+inline constexpr int kPrestigeCost = 225;
+
 /// What a tier costs, on the branch it belongs to. Every caller that prices a
 /// tier -- the purchase, the refund total, the panel -- asks this rather than
 /// indexing kTierCost, so a branch with its own prices cannot be charged at
@@ -88,6 +95,7 @@ inline int skillTierCost(SkillId id, int tier) {
     const std::size_t t = static_cast<std::size_t>(tier);
     if (id == SkillId::Duplicator) return t < kDuplicatorTierCost.size() ? kDuplicatorTierCost[t] : 0;
     if (id == SkillId::Magnetism) return t < kMagnetismTierCost.size() ? kMagnetismTierCost[t] : 0;
+    if (id == SkillId::Prestige) return t == 0 ? kPrestigeCost : 0;
     return t < kTierCost.size() ? kTierCost[t] : 0;
 }
 
@@ -275,6 +283,9 @@ struct SkillSet {
         }
         return kMagnetismBonus[static_cast<std::size_t>(t)];
     }
+
+    /// Whether this tree may join the prestige biomes.
+    bool prestigeUnlocked() const { return level(SkillId::Prestige) >= 0; }
 };
 
 /// A slot's copy count for a flower that may or may not carry a tree. Bots and

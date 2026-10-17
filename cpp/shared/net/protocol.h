@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 55;
+inline constexpr std::uint16_t kProtocolVersion = 56;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -65,8 +65,11 @@ enum class ClientMessage : std::uint8_t {
     ResumeSession,      ///< str token
     Logout,             ///< (empty)
     JoinGame,           ///< u16 viewportWidth, u16 viewportHeight, str spawnBiome,
-                        ///< str playerName. An empty biome picks the beginner
-                        ///< ground; an empty name spawns as "Unnamed".
+                        ///< str playerName, u8 prestige. An empty biome picks the
+                        ///< beginner ground; an empty name spawns as "Unnamed".
+                        ///< `prestige` nonzero asks for the chosen door's
+                        ///< prestige twin (shared/game/prestige.h), which the
+                        ///< server grants only to a tree holding Prestige.
     LeaveGame,          ///< (empty) -- back to the title screen, keeps the session
     Input,              ///< see InputFrame
     SetLoadout,         ///< u8 slot, u16 itemType, u8 rarity  (0xFFFF = clear)
