@@ -246,7 +246,7 @@ private:
     /// spawn picker and the loadout bar.
     void drawTitleXpBar(Canvas&, const Rect& track);
     /// The yellow Prestige arrow left of the picker's tab row: up to join
-    /// the prestige biomes, down to come back. Dimmed until the talent is
+    /// the prestige biomes, down to come back. Not shown until the talent is
     /// bought.
     void drawPrestigeButton(Canvas&, const Rect& box, bool hovered, bool pressed);
     /// The frame/ping/position readout in the bottom-right corner. On the

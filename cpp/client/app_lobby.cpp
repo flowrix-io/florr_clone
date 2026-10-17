@@ -58,10 +58,6 @@ constexpr double kPickerMinWidth = 70.0;
 /// Breathing room the widest row keeps from the design frame's edges.
 constexpr double kPickerMargin = 10.0;
 
-/// The Prestige arrow's fill while the talent is not bought: its yellow at
-/// about a third over the talent tree's locked grey, so it reads as there but
-/// not yet usable.
-constexpr std::uint32_t kPrestigeLocked = 0xA79862u;
 /// The ink of the arrow inside it, and the wash laid over the title backdrop
 /// while the arrow is up.
 constexpr std::uint32_t kPrestigeArrowInk = 0x3A2F00u;
@@ -294,25 +290,17 @@ void App::updateLobby() {
             }
             if (insideInclusive(layout.prestige, mouse)) {
                 onPicker = true;
-                if (!net_.profile().skills.prestigeUnlocked()) {
-                    // Said rather than greyed out silently: a button that does
-                    // nothing and explains nothing reads as broken.
-                    net_.addSystemMessage("Prestige is a talent: unlock it at the root of the "
-                                          "Talents tree (" + std::to_string(kPrestigeCost) +
-                                          " TP).");
-                } else {
-                    ClientSettings& settings = menus_.settings();
-                    settings.prestige = !settings.prestige;
-                    // The arena and the maze have no prestige version, and
-                    // their tabs go while the arrow is up -- so a choice of
-                    // either falls back to the default rather than staying
-                    // selected behind a tab that is not there.
-                    if (settings.prestige && (settings.spawnChoice == kArenaSpawnChoice ||
-                                              settings.spawnChoice == kMazeSpawnChoice)) {
-                        settings.spawnChoice.clear();
-                    }
-                    pickerTab_ = pickerTabOf(settings.spawnChoice);
+                ClientSettings& settings = menus_.settings();
+                settings.prestige = !settings.prestige;
+                // The arena and the maze have no prestige version, and their
+                // tabs go while the arrow is up -- so a choice of either falls
+                // back to the default rather than staying selected behind a
+                // tab that is not there.
+                if (settings.prestige && (settings.spawnChoice == kArenaSpawnChoice ||
+                                          settings.spawnChoice == kMazeSpawnChoice)) {
+                    settings.spawnChoice.clear();
                 }
+                pickerTab_ = pickerTabOf(settings.spawnChoice);
             }
 
             // Focus follows the click. Ready and the picker's two rows are the
@@ -663,8 +651,9 @@ App::LobbyLayout App::lobbyLayout(int viewWidth, int viewHeight) const {
 
     // The Prestige arrow: square, the tab row's height, a gap left of its
     // first tab, so it reads as a switch on the whole row rather than as one
-    // more biome.
-    if (!layout.tabs.empty()) {
+    // more biome. Only there once the talent is bought: left empty, it is
+    // neither drawn nor hit.
+    if (!layout.tabs.empty() && net_.profile().skills.prestigeUnlocked()) {
         const Rect& first = layout.tabs.front();
         layout.prestige = {first.x - kPickerGap - first.h, first.y, first.h, first.h};
     }
@@ -809,10 +798,9 @@ void App::drawLobby(Canvas& canvas, double time) {
 
 void App::drawPrestigeButton(Canvas& canvas, const Rect& box, bool hovered, bool pressed) {
     if (box.w <= 0.0) return;
-    const bool unlocked = net_.profile().skills.prestigeUnlocked();
     const bool up = prestigeOn();
     ButtonStyle style;
-    style.fill = unlocked ? kPrestigeYellow : kPrestigeLocked;
+    style.fill = kPrestigeYellow;
     // Drawn as the picker draws a chosen tab: darker with a heavier outline
     // while it is up, so the two states differ by more than the arrow.
     if (up) style.fill = hsvScale(style.fill, 0.85);
@@ -825,7 +813,7 @@ void App::drawPrestigeButton(Canvas& canvas, const Rect& box, bool hovered, bool
     const double half = box.h * 0.26;
     const double dir = up ? 1.0 : -1.0;
     const double shaftW = half * 0.55;
-    setFill(canvas, unlocked ? kPrestigeArrowInk : darken(style.fill, 0.45));
+    setFill(canvas, kPrestigeArrowInk);
     canvas.beginPath();
     canvas.moveTo(static_cast<float>(cx), static_cast<float>(cy + dir * half));
     canvas.lineTo(static_cast<float>(cx + half), static_cast<float>(cy));
