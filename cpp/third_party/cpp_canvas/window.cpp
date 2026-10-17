@@ -1,4 +1,5 @@
 #include "window.h"
+#include "input_guard.h"
 #include "touch_gesture.h"
 
 #include <algorithm>
@@ -321,6 +322,20 @@ EM_JS(void, web_soft_keyed, (const char* text), {
   Module.cppSoftKeyed = UTF8ToString(text);
   Module.cppSoftKeyedAt = performance.now();
 });
+// Whether each event came from the browser rather than from a script's
+// dispatchEvent, written into `bit` (a wasm int) before any handler of the
+// window's sees the event: capture listeners on the window run ahead of the
+// element's and the window's own. Emscripten's event structs have no field for
+// isTrusted. Not window.event, which any script can redefine with one line;
+// these listeners are reachable from nowhere, and the bit only through the
+// heap. One input to the pointer physics, not the verdict.
+EM_JS(void, web_trust_watch, (int* bit), {
+  const watch = (event) => { HEAP32[bit >> 2] = event.isTrusted ? 1 : 0; };
+  for (const type of ['mousemove', 'mousedown', 'mouseup', 'mouseenter', 'mouseleave', 'click',
+                      'touchstart', 'touchmove', 'touchend', 'touchcancel', 'focus', 'blur']) {
+    addEventListener(type, watch, { capture: true, passive: true });
+  }
+});
 #endif
 
 struct Window::Impl {
@@ -435,6 +450,11 @@ struct Window::Impl {
   // What setDesynchronized asked for. See elementDesynchronized for what the
   // page actually has.
   bool desynchronized = false;
+  // What setInputGuard asked for. Only the browser handlers read it.
+  bool inputGuard = false;
+  // Whether the event being handled came from the browser (web_trust_watch).
+  int eventTrusted = 1;
+  bool trustWatched = false;
   // Points per design unit, and canvas pixels per design unit. `fit` is what
   // the mouse is divided by; `uiScale` is the caller's base transform.
   double fit = 1.0;
@@ -759,6 +779,44 @@ struct Window::Impl {
     impl->mouseY = static_cast<float>(targetY) * toDesign;
   }
 
+  // The input guard's pointer rule (see input_guard.h): a mouse sample the
+  // pointer physics does not believe is moved to a random point on the
+  // canvas, in the same CSS pixels the event's own coordinates are in. That
+  // sample only; the next is judged on its own.
+  PointerPhysics pointerPhysics;
+
+  void randomPoint(double& targetX, double& targetY) const {
+    targetX = emscripten_random() * pointWidth;
+    targetY = emscripten_random() * pointHeight;
+  }
+
+  void judgePointer(PointerSample::Kind kind, const EmscriptenMouseEvent* event,
+                    double& targetX, double& targetY) {
+    if (!inputGuard) return;
+    PointerSample sample;
+    sample.kind = kind;
+    sample.millis = event->timestamp;
+    sample.x = targetX;
+    sample.y = targetY;
+    sample.sinceFrameMillis = emscripten_get_now() - lastFrameMillis;
+    sample.scripted = !eventTrusted;
+    pointerPhysics.setBounds(pointWidth, pointHeight);
+    if (!pointerPhysics.judge(sample)) randomPoint(targetX, targetY);
+  }
+
+  // Touch has no physics to judge -- a finger lands wherever it lands -- so
+  // only the browser's word is taken: a contact a script made is moved.
+  void disguiseIfScripted(double& targetX, double& targetY) const {
+    if (!inputGuard || eventTrusted) return;
+    randomPoint(targetX, targetY);
+  }
+
+  // The input guard's key rule. Set on a keydown it dropped, so the keyup
+  // that ends that key is dropped with it rather than releasing a key no
+  // frame ever saw go down.
+  KeyRateLimit keyRate;
+  std::array<bool, kKeyCount> droppedKeys{};
+
   static void recordModifiers(Impl* impl, bool shift, bool ctrl, bool alt, bool meta) {
     impl->shift = shift;
     // Meta counts as ctrl, so a Mac's Cmd shortcuts reach code written for Ctrl
@@ -774,7 +832,12 @@ struct Window::Impl {
     // this same button as it happened; letting the echo through would press
     // whatever it landed on a second time.
     if (emscripten_get_now() < impl->ghostUntilMillis) return EM_TRUE;
-    recordPointer(impl, event->targetX, event->targetY);
+    double targetX = event->targetX, targetY = event->targetY;
+    impl->judgePointer(type == EMSCRIPTEN_EVENT_MOUSEMOVE   ? PointerSample::Kind::Move
+                       : type == EMSCRIPTEN_EVENT_MOUSEDOWN ? PointerSample::Kind::Press
+                                                            : PointerSample::Kind::Release,
+                       event, targetX, targetY);
+    recordPointer(impl, targetX, targetY);
     impl->pointerIsTouch = false;
     recordModifiers(impl, event->shiftKey, event->ctrlKey, event->altKey, event->metaKey);
     if (type == EMSCRIPTEN_EVENT_MOUSEMOVE || type == EMSCRIPTEN_EVENT_MOUSEDOWN) {
@@ -800,7 +863,11 @@ struct Window::Impl {
   static EM_BOOL onPointerBoundary(int type, const EmscriptenMouseEvent* event,
                                    void* userData) {
     Impl* impl = implOf(userData);
-    recordPointer(impl, event->targetX, event->targetY);
+    double targetX = event->targetX, targetY = event->targetY;
+    impl->judgePointer(type == EMSCRIPTEN_EVENT_MOUSEENTER ? PointerSample::Kind::Enter
+                                                          : PointerSample::Kind::Leave,
+                       event, targetX, targetY);
+    recordPointer(impl, targetX, targetY);
     impl->pointerInside = type == EMSCRIPTEN_EVENT_MOUSEENTER;
     if (impl->pointerInside) return EM_TRUE;
 
@@ -829,8 +896,10 @@ struct Window::Impl {
       // finger on the screen, changed or not, and treating them all as moves
       // would replay a stationary finger's position on every frame.
       if (!point.isChanged) continue;
-      const float x = static_cast<float>(point.targetX) * toDesign;
-      const float y = static_cast<float>(point.targetY) * toDesign;
+      double targetX = point.targetX, targetY = point.targetY;
+      impl->disguiseIfScripted(targetX, targetY);
+      const float x = static_cast<float>(targetX) * toDesign;
+      const float y = static_cast<float>(targetY) * toDesign;
       if (phase == TouchPhase::Began) {
         // A tap on a field is the one gesture this window does NOT consume.
         // Every browser refuses to raise its keyboard for a focus() made
@@ -877,8 +946,15 @@ struct Window::Impl {
   static EM_BOOL onClick(int type, const EmscriptenMouseEvent* event, void* userData) {
     Impl* impl = implOf(userData);
     const float toDesign = impl->fit > 0 ? static_cast<float>(1.0 / impl->fit) : 1.0f;
-    const float x = static_cast<float>(event->targetX) * toDesign;
-    const float y = static_cast<float>(event->targetY) * toDesign;
+    // The click follows the mouseup it came from, which the pointer physics
+    // has already judged; it is not a sample of its own.
+    double targetX = event->targetX, targetY = event->targetY;
+    if (impl->inputGuard &&
+        (!impl->eventTrusted || !impl->pointerPhysics.lastBelieved())) {
+      impl->randomPoint(targetX, targetY);
+    }
+    const float x = static_cast<float>(targetX) * toDesign;
+    const float y = static_cast<float>(targetY) * toDesign;
     if (impl->onKeyboardField(x, y)) {
       web_soft_keyboard(1);
       impl->softKeyboardUp = true;
@@ -930,11 +1006,28 @@ struct Window::Impl {
     if (key == Key::Unknown) key = fromDomKey(event->key);
     const std::size_t i = static_cast<std::size_t>(key);
     if (type == EMSCRIPTEN_EVENT_KEYUP) {
+      if (i < kKeyCount && impl->droppedKeys[i]) {
+        impl->droppedKeys[i] = false;
+        return EM_TRUE;
+      }
       if (i < kKeyCount) { impl->down[i] = false; impl->pendingReleased[i] = true; }
       return EM_TRUE;
     }
 
-    if (i < kKeyCount) {
+    // The input guard's key rule (see input_guard.h): a key faster than a
+    // person types is not pressed, typed or held. Still answered below the
+    // way a kept key would be, so the page does not act on it instead -- a
+    // dropped Space must not scroll -- and Ctrl/Cmd combinations still reach
+    // the browser. A dropped repeat of a key already down leaves it down: its
+    // keyup is still to come and still has to release it.
+    const bool dropped =
+        impl->inputGuard && !impl->keyRate.admit(emscripten_get_now(), event->repeat);
+    // A later keydown of the same key that IS kept -- the repeat of one whose
+    // first press was dropped -- puts it down after all, and its keyup then
+    // has to be heard.
+    if (i < kKeyCount) impl->droppedKeys[i] = dropped && !impl->down[i];
+
+    if (!dropped && i < kKeyCount) {
       // `repeat` is the browser auto-repeating a held key: it must feed text
       // fields but must not read as a fresh press to game logic -- except for
       // the two erase keys, which a field has to see repeat on.
@@ -947,7 +1040,7 @@ struct Window::Impl {
     // KeyboardEvent.key is the character the layout produced when it is one, and
     // a name like "ArrowLeft" when it is not. One code point -- however many
     // UTF-8 bytes that is -- is the test for the difference.
-    if (!event->ctrlKey && !event->metaKey) {
+    if (!dropped && !event->ctrlKey && !event->metaKey) {
       const char* text = event->key;
       const std::size_t bytes = std::strlen(text);
       const bool oneCodePoint =
@@ -975,8 +1068,18 @@ struct Window::Impl {
   // The page went away, or the canvas lost the pointer mid-drag. Either way the
   // held state has to be dropped: a button whose release happened somewhere else
   // would otherwise stay down forever.
+  // Where the pointer went while the window was not ours nobody can say, so
+  // the pointer physics lets its next sample be anywhere -- when the browser
+  // says the focus really changed, and not on a script's say-so.
+  static EM_BOOL onFocus(int type, const EmscriptenFocusEvent* event, void* userData) {
+    Impl* impl = implOf(userData);
+    if (impl->eventTrusted) impl->pointerPhysics.noteFocusChange(emscripten_get_now());
+    return EM_TRUE;
+  }
+
   static EM_BOOL onBlur(int type, const EmscriptenFocusEvent* event, void* userData) {
     Impl* impl = implOf(userData);
+    if (impl->eventTrusted) impl->pointerPhysics.noteFocusChange(emscripten_get_now());
     for (std::size_t i = 0; i < kButtonCount; ++i) {
       if (impl->mouseHeld[i]) { impl->mouseHeld[i] = false; impl->pendingUpEdge[i] = true; }
     }
@@ -990,6 +1093,9 @@ struct Window::Impl {
     // a "T" that empties one -- once for every tab switch.
     impl->pendingPressed.fill(false);
     impl->pendingTypedKeys.fill(false);
+    // Their keyups are going to whatever took the focus; left marked, the
+    // next real release of each would be swallowed and the key stuck down.
+    impl->droppedKeys.fill(false);
     impl->shift = impl->ctrl = impl->alt = false;
     // A contact whose lift happens somewhere the page cannot see is a stick
     // held forever. Dropped whole rather than replayed as an end: whoever owns
@@ -1091,6 +1197,11 @@ bool Window::open(int width, int height, const std::string& title, std::string& 
   emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onKey);
   emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onKey);
   emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onBlur);
+  emscripten_set_focus_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onFocus);
+  if (!impl_->trustWatched) {
+    web_trust_watch(&impl_->eventTrusted);
+    impl_->trustWatched = true;
+  }
   web_clipboard_init();
 
   impl_->startMillis = emscripten_get_now();
@@ -1170,6 +1281,7 @@ void Window::close() {
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
     emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
     emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
+    emscripten_set_focus_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
   }
   impl_->cursorRequested = CursorShape::Arrow;
   impl_->cursorApplied = CursorShape::Count;
@@ -1354,6 +1466,8 @@ void Window::setDesynchronized(bool on) {
   impl_->refreshGeometry();
 #endif
 }
+
+void Window::setInputGuard(bool on) { impl_->inputGuard = on; }
 
 void Window::present() {
 #ifdef __EMSCRIPTEN__

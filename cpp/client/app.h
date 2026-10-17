@@ -131,6 +131,15 @@ struct AppConfig {
     bool autoChatOpen = false;
     std::string autoChatDraft;
 
+    /// Treat the browser's input as possibly synthetic: a mouse that does not
+    /// move like a physical one, or a touch a script made, lands at a random
+    /// point, and keys faster than a person types are dropped
+    /// (Window::setInputGuard). Set only by the online web
+    /// client's release build -- the one production serves -- so the dev
+    /// build, the offline page and the headless rigs that drive a page with
+    /// dispatched events are untouched.
+    bool inputGuard = false;
+
     /// Makes this account an admin, for a build that can do that locally.
     ///
     /// Set only by the single-file offline build, where the server object is

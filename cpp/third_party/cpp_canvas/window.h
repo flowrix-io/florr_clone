@@ -179,6 +179,16 @@ public:
     // and its end would never be heard from a detached one. Recorded and
     // otherwise ignored natively.
     void setDesynchronized(bool on);
+
+    // Browser only: treats input as possibly synthetic (see input_guard.h). A
+    // mouse sample that does not move the way a physical mouse or trackpad
+    // can -- a teleport, a click where the pointer never travelled to, a
+    // ruler-straight constant-speed line -- lands at a random point on the
+    // canvas instead of the one it names, as does a touch a script made; keys
+    // pressed faster than a person types are dropped. Off unless asked for:
+    // the headless rigs drive the page with exactly that kind of input.
+    // Recorded and otherwise ignored natively.
+    void setInputGuard(bool on);
     bool desynchronized() const;
 
     // The backing store's size, for a caller that has to reason in real

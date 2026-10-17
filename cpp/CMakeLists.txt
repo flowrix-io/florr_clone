@@ -29,10 +29,12 @@ elseif(FLIX_BUILD STREQUAL "dev")
   string(REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO
                  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
   add_compile_options(-fno-omit-frame-pointer)
-  # What a development build compiles differently. Today that is one thing:
-  # the account abuse limits are not enforced (server/account_limits.h). It is
-  # a compile definition rather than a runtime flag so that a release build
-  # cannot be talked into turning them off.
+  # What a development build compiles differently. Today that is two things:
+  # the account abuse limits are not enforced (server/account_limits.h), and
+  # the web client does not guard against scripted input (client/main.cpp,
+  # third_party/cpp_canvas/input_guard.h). It is a compile definition rather
+  # than a runtime flag so that a release build cannot be talked into turning
+  # them off.
   add_compile_definitions(FLIX_DEV_BUILD)
 else()
   message(FATAL_ERROR "FLIX_BUILD must be dev or release, not '${FLIX_BUILD}'")

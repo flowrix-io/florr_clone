@@ -132,6 +132,7 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // first frame, because the camera's viewport and every panel's layout are
     // read straight off window_.width()/height().
     window_.setDesignSize(kDesignWidth, kDesignHeight);
+    window_.setInputGuard(config.inputGuard);
     coarsePointer_ = window_.coarsePointer();
 
     renderer_.setContent(&content());

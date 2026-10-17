@@ -176,6 +176,13 @@ int main(int argc, char** argv) {
         config.sessionFile = std::string(flix::web::kStorageDirectory) + "/" + kSessionName;
     }
 
+#ifndef FLIX_DEV_BUILD
+    // Production only: the release build is what dist/ ships and prod serves.
+    // A compile definition rather than a page switch, so no URL parameter can
+    // turn it off (cpp/CMakeLists.txt).
+    config.inputGuard = true;
+#endif
+
     // Leaked deliberately: main() returns straight after registering the
     // callback and the app has to outlive it. The browser tab's teardown is
     // the process exit here.
