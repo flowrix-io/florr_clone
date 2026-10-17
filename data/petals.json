@@ -59,7 +59,7 @@
         "damage": 15,
         "health": 45,
         "size": 1,
-        "cooldown": 400,
+        "cooldown": 3500,
         "price": 18,
         "description": "Very strong, but recharges slowly",
         "color": "#8B0000",
