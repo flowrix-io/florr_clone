@@ -370,7 +370,7 @@ void stealLife(World& world, Entity player, double amount, double nowMillis) {
     if (CombatSystem::healingBlocked(world, player, nowMillis)) return;
     Health* health = world.tryGet<Health>(player);
     if (health == nullptr || !health->alive()) return;
-    health->current = std::min(health->max, health->current + amount);
+    CombatSystem::landHeal(world, player, *health, amount);
 }
 
 } // namespace
@@ -1418,6 +1418,22 @@ void CombatSystem::applyNoHeal(World& world, Entity victim, double durationMilli
 bool CombatSystem::healingBlocked(const World& world, Entity entity, double nowMillis) {
     const Afflictions* afflictions = world.tryGet<Afflictions>(entity);
     return afflictions != nullptr && afflictions->healBlocked(nowMillis);
+}
+
+void CombatSystem::landHeal(World& world, Entity entity, Health& health, double amount) {
+    if (!(amount > 0.0)) return;
+    const double before = health.current;
+    health.current = std::min(health.max, health.current + amount);
+    const double spill = amount - std::max(0.0, health.current - before);
+    if (!(spill > 0.0)) return;
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(entity);
+    if (modifiers == nullptr || !(modifiers->overhealShield > 0.0)) return;
+    // Looked up rather than ensured: every flower is built with one, and
+    // adding a column here would move the row `health` points into.
+    ShieldState* shield = world.tryGet<ShieldState>(entity);
+    // Never lowers a bigger shield a shield petal put up.
+    if (shield == nullptr || shield->amount >= health.max) return;
+    shield->amount = std::min(health.max, shield->amount + spill * modifiers->overhealShield);
 }
 
 double CombatSystem::effectiveArmor(const World& world, Entity victim, double nowMillis) {

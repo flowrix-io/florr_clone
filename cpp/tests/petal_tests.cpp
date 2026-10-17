@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "server/replication.h"
+#include "server/systems/combat.h"
 #include "server/systems/movement.h"
 #include "server/systems/petals.h"
 
@@ -77,6 +78,7 @@ const char* const kPetalsJson = R"JSON({
   "relic":    {"name":"Relic","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"noPhysics":true,"playerModifiers":{"maxHealth":1.1},"color":"#C7A138"},
   "champion_crown":{"name":"Champion's Crown","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"equipFlags":"Crown","noPhysics":true,"color":"#FFDC06"},
   "rubber":   {"name":"Rubber","damage":1,"health":30,"size":1.2,"cooldown":2500,"count":1,"color":"#EEEEEE"},
+  "amulet":   {"name":"Amulet","damage":0,"health":10,"size":1,"cooldown":2000,"count":1,"defendOnly":true,"color":"#FF94C9"},
   "cursor":   {"name":"Cursor","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"color":"#EEEEEE"},
   "ram":      {"name":"RAM","damage":10,"health":2,"size":1,"cooldown":3000,"count":1,"color":"#3498DB"},
   "sawblade": {"name":"Sawblade","damage":20,"health":10,"size":1,"cooldown":2500,"count":1,"defendOnly":true,"color":"#AAAAAA"},
@@ -4761,6 +4763,42 @@ TEST(rubber_adds_knockback_per_tier_and_soaks_lightning) {
         CHECK(rig.world.get<PetalInstance>(rubber[0]).soaksOwnerLightning);
         CHECK(!rig.world.get<PetalInstance>(rubber[0]).soaksOwnerDamage);
     }
+}
+
+TEST(an_amulet_turns_its_tiers_share_of_overheal_into_shield) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "amulet", Rarity::Epic);
+    rig.equip(1, "amulet", Rarity::Common);
+    rig.settleEquips();
+    // +5% a tier, florr's figure: 20% at epic. The better one, not the sum.
+    CHECK_NEAR(rig.modifiers().overhealShield, 0.2, 1e-9);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("amulet"), Rarity::Ultra).overhealShield,
+               0.35, 1e-9);
+
+    Health& health = rig.world.get<Health>(rig.player);
+    ShieldState& shield = rig.world.get<ShieldState>(rig.player);
+    shield.amount = 0.0;
+    health.current = health.max - 10.0;
+    // Ten points fill the bar; the other fifty spill, and a fifth of it stays.
+    CombatSystem::landHeal(rig.world, rig.player, health, 60.0);
+    CHECK_NEAR(health.current, health.max, 1e-9);
+    CHECK_NEAR(shield.amount, 10.0, 1e-9);
+    // Capped at max health, as a shell's shield is.
+    CombatSystem::landHeal(rig.world, rig.player, health, health.max * 100.0);
+    CHECK_NEAR(shield.amount, health.max, 1e-9);
+}
+
+TEST(without_an_amulet_overheal_is_simply_lost) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.settleEquips();
+    Health& health = rig.world.get<Health>(rig.player);
+    ShieldState& shield = rig.world.get<ShieldState>(rig.player);
+    shield.amount = 0.0;
+    CombatSystem::landHeal(rig.world, rig.player, health, 500.0);
+    CHECK_NEAR(health.current, health.max, 1e-9);
+    CHECK_NEAR(shield.amount, 0.0, 1e-12);
 }
 
 TEST(a_carrot_is_fired_as_a_shot_that_bounces) {

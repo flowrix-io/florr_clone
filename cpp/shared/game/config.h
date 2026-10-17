@@ -998,6 +998,9 @@ struct PetalStats {
     /// What this petal adds to the knockback its FLOWER takes, as a fraction:
     /// rubber's +0.3 a tier. Zero for every other petal.
     double flowerKnockback = 0;
+    /// The share of every heal past its flower's max health that this petal
+    /// turns into shield: amulet's +5% a tier. Zero for every other petal.
+    double overhealShield = 0;
     double shield = 0;
     double slowFactor = 1.0;
     double slowDurationMillis = 0;
@@ -1128,6 +1131,9 @@ inline bool petalSoaksLightning(const PetalConfig& config) { return config.id ==
 /// A relic's wearer shares the damage it takes with the other wearers in its
 /// squad.
 inline bool petalSharesFlowerDamage(const PetalConfig& config) { return config.id == "relic"; }
+
+/// An amulet turns part of its flower's overheal into shield.
+inline bool petalConvertsOverheal(const PetalConfig& config) { return config.id == "amulet"; }
 
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }

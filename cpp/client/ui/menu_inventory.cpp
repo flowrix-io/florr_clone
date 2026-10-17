@@ -309,6 +309,15 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(shove);
     }
 
+    // Amulet. florr's own line, and the whole of what the petal does.
+    if (stats.overhealShield > 0.0) {
+        TooltipLine convert{"Overheal Conversion: +" + exactNumber(stats.overhealShield * 100.0) +
+                                "%",
+                            12.0};
+        convert.alpha = 0.56;
+        lines.push_back(convert);
+    }
+
     // Bur alone. Its description says the petal debuffs armour and cannot say
     // by how much, and how much is the entire question a player has about it:
     // whether this one out-strips the tier standing in front of them.

@@ -453,7 +453,7 @@ void healPlayer(World& world, Entity player, double amount, double nowMillis) {
     Health* health = world.tryGet<Health>(player);
     // Healing a corpse is a respawn, and that decision is not a petal's.
     if (!health || !health->alive()) return;
-    health->current = std::min(health->max, health->current + amount);
+    CombatSystem::landHeal(world, player, *health, amount);
 }
 
 /// The velocity a bubble drops into the flower to carry it `distance`.
@@ -1572,6 +1572,10 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             // rather than out, like the cutter above -- the flower is light
             // because of what it is wearing, not because the petal is up.
             aggregate.modifiers.knockbackTakenScale += stats.flowerKnockback;
+            // Amulet, worn like the rubber and maximised like the lotus: a
+            // second amulet is a spare, not a second share of the same heal.
+            aggregate.modifiers.overhealShield =
+                std::max(aggregate.modifiers.overhealShield, stats.overhealShield);
             // A relic is worn, never out: it has no body to break.
             if (petalSharesFlowerDamage(registry.petal(equipped.configIndex))) {
                 aggregate.modifiers.sharesDamage = true;
@@ -2917,7 +2921,11 @@ void PetalSystem::healFromBehaviour(World& world, Entity player, double amount, 
     const double talent = tree ? tree->skills.effectScale(SkillId::Healing) : 1.0;
     const double scaled = amount * std::pow(std::sqrt(3.0), ladderIndex(rarity)) * talent *
                           kBehaviourHealScale;
-    health->current = std::min(health->max, health->current + scaled);
+    if (scaled > 0.0) {
+        CombatSystem::landHeal(world, player, *health, scaled);
+    } else {
+        health->current = std::min(health->max, health->current + scaled);
+    }
     // A scripted `heal -1` is self-damage, and it stops one point short of
     // lethal: taking a flower to zero raises a death, and the death notice
     // belongs to the combat path this system cannot reach.

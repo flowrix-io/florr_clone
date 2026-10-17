@@ -269,6 +269,8 @@ MobArt mobArtFor(const std::string& image) {
         {"termite_overmind", MobArt::TermiteOvermind},
         {"termite_mound", MobArt::TermiteMound},
         {"termite_egg", MobArt::TermiteEgg},
+        {"ant_egg", MobArt::AntEgg},
+        {"fire_ant_egg", MobArt::FireAntEgg},
     };
     for (const auto& [marker, art] : kFlorr) {
         if (name == marker) return art;
@@ -2707,11 +2709,15 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         }
 
         case MobArt::TermiteMound:
-        case MobArt::TermiteEgg: {
+        case MobArt::TermiteEgg:
+        case MobArt::AntEgg:
+        case MobArt::FireAntEgg: {
             // Discs and nothing else, florr's colours. The mound is the ant
             // hole's three rings -- the full radius, two thirds and one third
-            // of it, each a darker clay; the egg a shell with a pale yolk four
-            // fifths its size.
+            // of it, each a darker clay; an egg a shell with a pale yolk four
+            // fifths its size. florr draws all three eggs with one painter:
+            // the ant's and the termite's are the same colours, the fire
+            // ant's a pinker pair.
             const auto disc = [&canvas](std::uint32_t color, double r) {
                 ui::setFill(canvas, color);
                 canvas.beginPath();
@@ -2722,6 +2728,9 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 disc(0xA39D43u, attr.radius);
                 disc(0x858033u, attr.radius * 2 / 3);
                 disc(0x605D28u, attr.radius / 3);
+            } else if (art == MobArt::FireAntEgg) {
+                disc(0xCFA995u, attr.radius);
+                disc(0xFFD1B8u, attr.radius * 0.8);
             } else {
                 disc(0xCFC295u, attr.radius);
                 disc(0xFFF0B8u, attr.radius * 0.8);

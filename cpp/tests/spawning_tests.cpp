@@ -2880,6 +2880,33 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     CHECK(tables.unresolved().empty());
 }
 
+TEST(the_three_eggs_drop_florrs_ant_egg_and_the_termite_one_an_amulet) {
+    // florr's own tables: its one Ant Egg petal (here the soldier ant egg) at
+    // a quarter from every egg, and an amulet at 5% from the termite's. An
+    // egg mob drops no egg of its own (noEggDrop), so these are the only rows.
+    DropTables tables = shippedTables();
+    const std::uint16_t antEgg = shipped().petalIndex("soldier_ant_egg");
+    const std::uint16_t amulet = shipped().petalIndex("amulet");
+    CHECK(antEgg != kInvalidIndex);
+    CHECK(amulet != kInvalidIndex);
+    for (const char* id : {"ant_egg", "fire_ant_egg", "termite_egg"}) {
+        const std::uint16_t mob = shipped().mobIndex(id);
+        CHECK(mob != kInvalidIndex);
+        if (mob == kInvalidIndex) continue;
+        CHECK(shipped().mob(mob).noEggDrop);
+        const std::vector<DropTables::Entry>& rows = tables.forMob(mob);
+        const bool termite = std::string(id) == "termite_egg";
+        CHECK_EQ(rows.size(), std::size_t(termite ? 2 : 1));
+        if (rows.empty()) continue;
+        CHECK_EQ(rows[0].petalIndex, antEgg);
+        CHECK_NEAR(rows[0].probability, 0.25, 1e-12);
+        if (termite && rows.size() == 2) {
+            CHECK_EQ(rows[1].petalIndex, amulet);
+            CHECK_NEAR(rows[1].probability, 0.05, 1e-12);
+        }
+    }
+}
+
 TEST(the_merged_view_holds_one_row_per_drop_type) {
     // What every mob above common drops from: the same table with one row per
     // drop TYPE. A petal written on two lines -- common 0.5 and uncommon 0.1,

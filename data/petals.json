@@ -1674,6 +1674,20 @@
         "count": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-11.75 -11.75 23.5 23.5\"><path d=\"M-9-9q6-2 18 0 1 11 0 18-11 2-18 0-2-10 0-18\" fill=\"#eeeeee\" stroke=\"#c1c1c1\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
     },
+    "amulet": {
+        "name": "Amulet",
+        "damage": 0,
+        "health": 10,
+        "size": 1,
+        "cooldown": 2000,
+        "price": 40,
+        "visual_scale": 1.15,
+        "description": "Converts a percentage of overheal into shields.",
+        "color": "#FF94C9",
+        "count": 1,
+        "defendOnly": true,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-11.5 -11.5 23 23\"><path d=\"M10 0L5 8.66L-5 8.66L-10 0L-5-8.66L5-8.66Z\" fill=\"#ff94c9\" stroke=\"#cf78a3\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M4 0L1.236 3.804L-3.236 2.351L-3.236-2.351L1.236-3.804Z\" fill=\"#cf78a3\" stroke=\"#cf78a3\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+    },
     "compass": {
         "name": "Compass",
         "damage": 1,

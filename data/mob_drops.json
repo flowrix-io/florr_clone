@@ -1471,5 +1471,52 @@
         "maxQuantity": 0
       }
     ]
+  },
+  "ant_egg": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "soldier_ant_egg",
+        "rarity": "common",
+        "probability": 0.25,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "fire_ant_egg": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "soldier_ant_egg",
+        "rarity": "common",
+        "probability": 0.25,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "termite_egg": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "soldier_ant_egg",
+        "rarity": "common",
+        "probability": 0.25,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "amulet",
+        "rarity": "common",
+        "probability": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
   }
 }

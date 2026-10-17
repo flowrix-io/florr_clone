@@ -40,7 +40,7 @@ const char* const kFlorrMarkers[] = {
     "starfish", "jellyfish", "dandelion", "fly", "leafbug", "leafbug_shiny", "mantis",
     "bush", "roach", "moth", "firefly", "firefly_magic", "dummy",
     "termite_baby", "termite_worker", "termite_soldier", "termite_overmind", "termite_mound",
-    "termite_egg",
+    "termite_egg", "ant_egg", "fire_ant_egg",
 };
 
 constexpr int kSide = 96;
