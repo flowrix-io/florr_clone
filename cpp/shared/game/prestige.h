@@ -53,6 +53,15 @@ inline constexpr Rarity prestigeRarity(Rarity rolled) {
                                                     : static_cast<Rarity>(raised);
 }
 
+/// The tier whose XP a mob of `rarity` pays in a prestige twin: one below it,
+/// so a twin's super pays an ultra's XP and its uncommon a common's. The +1 is
+/// a harder fight, not a faster climb. A common (only the console puts one
+/// there) has no tier below and pays its own.
+inline constexpr Rarity prestigeXpRarity(Rarity rarity) {
+    const int lowered = rarityIndex(rarity) - kPrestigeRarityStep;
+    return lowered < 0 ? Rarity::Common : static_cast<Rarity>(lowered);
+}
+
 /// True for a tier that can never stand in a prestige realm.
 inline constexpr bool barredFromPrestige(Rarity rarity) {
     return rarityIndex(rarity) > rarityIndex(kPrestigeRarityCap);

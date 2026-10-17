@@ -720,8 +720,12 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
         world.add<BodySegment>(e, link);
     }
 
+    // A prestige twin pays a tier down (shared/game/prestige.h): its super is
+    // worth an ultra. Every way in -- band, console, sacrifice, a chain's
+    // segments -- comes through here, so none of them can pay more.
     Bounty bounty;
-    bounty.xp = stats.xp;
+    bounty.xp = prestigeRealm(realm) ? content.mobStats(mobIndex, prestigeXpRarity(rarity)).xp
+                                     : stats.xp;
     world.add<Bounty>(e, std::move(bounty));
 
     MobAi ai;

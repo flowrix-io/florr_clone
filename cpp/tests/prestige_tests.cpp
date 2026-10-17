@@ -296,6 +296,40 @@ TEST(nothing_puts_a_unique_or_apex_into_an_prestige_twin) {
                            rng) != NULL_ENTITY);
 }
 
+TEST(an_prestige_mob_pays_the_xp_of_the_tier_below) {
+    World world;
+    Terrain terrain;
+    SpawnSystem spawner;
+    Rng rng{11u};
+    WorldMaps maps;
+    std::string error;
+    CHECK(maps.load(dataDir(), &terrain, error));
+    spawner.worldMaps = &maps;
+    bool found = false;
+    const Realm garden = maps.realmOfId("garden", found);
+    const Realm twin = maps.prestigeRealm(garden, found);
+    CHECK(found);
+    const ContentRegistry& content = shippedContent();
+    const std::uint16_t bee = content.mobIndex("bee");
+    CHECK(bee != kInvalidIndex);
+    const auto xpOf = [&](Rarity rarity, Realm realm) {
+        const Entity e = spawner.spawnMob(world, terrain, content, bee, rarity,
+                                          terrain.spawnPoint(realm), realm, 0.0, rng);
+        CHECK(e != NULL_ENTITY);
+        return e == NULL_ENTITY ? -1.0 : world.get<Bounty>(e).xp;
+    };
+
+    // The plain garden pays a tier its own XP.
+    CHECK(xpOf(Rarity::Super, garden) == content.mobStats(bee, Rarity::Super).xp);
+    // The twin pays one tier down: a super is worth an ultra, an uncommon a
+    // common, and a common (console only) stays a common.
+    CHECK(xpOf(Rarity::Super, twin) == content.mobStats(bee, Rarity::Ultra).xp);
+    CHECK(xpOf(Rarity::Ultra, twin) == content.mobStats(bee, Rarity::Mythic).xp);
+    CHECK(xpOf(Rarity::Uncommon, twin) == content.mobStats(bee, Rarity::Common).xp);
+    CHECK(xpOf(Rarity::Common, twin) == content.mobStats(bee, Rarity::Common).xp);
+    CHECK(content.mobStats(bee, Rarity::Ultra).xp < content.mobStats(bee, Rarity::Super).xp);
+}
+
 // ---------------------------------------------------------------------------
 // The join
 // ---------------------------------------------------------------------------
