@@ -480,6 +480,13 @@ constexpr ChangelogEntry kChangelog[] = {
         "Added C++ mob and petal"
       }
     },
+    {"October 16, 2026",
+      {
+        "Added super zones in Prestige biomes",
+        "Added Prestige talent",
+        "Added Prestiged biomes"
+      }
+    }
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
