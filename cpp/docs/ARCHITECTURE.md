@@ -96,9 +96,9 @@ cpp/
       boot/       the debug tools a page load can run instead of the game
   offline/        main.cpp shell.html -- server and client in one page
   tests/          one binary, all tests
-  tools/          native diagnostic programs (Tests and tools)
-  cmake/          prune_staged_content.cmake; font_metrics.js (the web
-                  builds' outline-free copy of the font)
+  tools/          native diagnostic programs, and font_table (Tests and
+                  tools)
+  cmake/          prune_staged_content.cmake
   docs/           this file, admin-dashboard.md
   third_party/
     cpp_canvas/   the vendored Canvas2D-alike renderer, locally modified
@@ -113,15 +113,14 @@ gitignored.
 or `maps/` where they sit. `cpp/CMakeLists.txt` stages them flat, by bare file
 name, into `<build>/data` — the three JSON files, `maps/maps.json` and every
 map it lists, the tilesets those maps name, the tile art, the title screen's
-ground art, and the Ubuntu Bold the configure downloads, plus on the web
-`Ubuntu-Bold.metrics` (below) — and prunes the directory to exactly that set
+ground art, and the Ubuntu Bold the configure downloads — and prunes the
+directory to exactly that set
 first (`cmake/prune_staged_content.cmake`), so a file that stopped being
 content is not shipped inside the next wasm. Flat is what makes the references
 inside the files resolve: a map names its tilesets as siblings, and the client
 looks a tile's art up by bare name. The wasm builds embed the directory as
-`/data`, minus what each has no use for: the client leaves out the TTF, the
-server leaves out the TTF and its metrics, and only the offline page carries
-both. Both programs take `--data <dir>`, default `data`, so a native binary is
+`/data`, minus what each has no use for: the client and the server leave out
+the TTF, and only the offline page carries it. Both programs take `--data <dir>`, default `data`, so a native binary is
 run from its build directory; the repository's own `data/` has no maps and is
 not a valid `--data` directory.
 
@@ -745,10 +744,14 @@ in three places.
 transport: it fetches the glue and the wasm (compressed, as above), hands the
 wasm the canvas element and the argv `main()` would have had natively, and
 links Ubuntu Bold from Google Fonts for the canvas to draw its text in. The
-wasm carries only the face's metrics (`Ubuntu-Bold.metrics`): the TTF with its
-outlines taken out by `cmake/font_metrics.js` at build time, about 9KB against
-330KB, from which `client/ui/text.cpp` measures every run to the same bit as
-the full face would, before the webfont has arrived as well as after. It
+wasm carries none of the face, only its metrics, compiled in: `font_table`
+(below) writes every advance and the em box out of the pinned TTF at build
+time, and `client/ui/face_metrics.cpp` measures each run from that table, to
+the same bit as the full face would, before the webfont has arrived as well as
+after. The browser's `measureText` is asked only for a run with a character
+Ubuntu lacks, which the page draws in a fallback face (remembered per string
+and size, `client/ui/text.cpp`), and for the ink box of a run the text atlas
+bakes, which has the browser's kerning in it. It
 defaults to its own origin, so an untouched URL already points at the server
 that served it; `?host=`/`?port=` are only for a client build hosted somewhere
 else.
@@ -932,7 +935,8 @@ requirement — a page opened from a `file://` URL may not fetch a `.wasm` besid
 itself — and it is also why the page references nothing else: no stylesheet,
 no favicon, and no Google Fonts. It is the one build that embeds Ubuntu Bold
 itself, and registers it with the document (`FontFace`) at startup, so the
-canvas draws in the face whose metrics the client measures with. The file is
+canvas draws in the face whose compiled-in metrics the client measures with.
+The file is
 several megabytes, and `dist/offline.html` is gitignored so a rebuild does not
 land in every commit of the otherwise committed `dist/`.
 
@@ -1248,8 +1252,14 @@ server is written out rather than taken from npm, and a client library would
 hide exactly the cases that matter — an unmasked frame, a reserved bit, a
 1 GiB length prefix. Rebuild the server first if you changed it.
 
-The tools in `cpp/tools` are native only, and each file's header says how to
-run it:
+The tools in `cpp/tools` are native only, but for one the build runs itself,
+and each file's header says how to run it:
+
+* `font_table` — the build step that writes the font's metrics out as C++
+  (`<build>/generated/face_metrics_table.inc`) for `client/ui/face_metrics.cpp`.
+  Built on every configuration, web included, where it is compiled for and run
+  under Node. `face_metrics_tests.cpp` holds the table to the bit against
+  `Font` reading the same file.
 
 * `svg_smoke` — every mob and petal artwork in the config files, compiled and
   drawn into one contact sheet (a PPM); anything not drawable is marked in

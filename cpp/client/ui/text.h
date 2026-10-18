@@ -11,7 +11,6 @@
 #include <string>
 
 #include "canvas.h"
-#include "font.h"
 
 namespace flix::ui {
 
@@ -21,20 +20,24 @@ namespace flix::ui {
 /// about which face a run is in.
 class Fonts {
 public:
-    /// Loads the bundled face, or a platform fallback. The web build loads the
-    /// face's metrics alone, Ubuntu-Bold.metrics: the page draws the glyphs.
-    /// Returns false only when no usable font exists at all, in which case
-    /// text draws as nothing and the caller should say so.
+    /// Loads the bundled face, or a platform fallback, for its outlines. The
+    /// web build loads nothing: the page draws the glyphs, and the face's
+    /// metrics are compiled in (face_metrics.h). Returns false only when no
+    /// usable font exists at all, in which case text draws as nothing and the
+    /// caller should say so.
     static bool init(const std::string& dataDir, std::string& errorOut);
     static bool ready();
-    static const Font& face();
-    static const std::string& path();
+    /// The staged content directory init() was given.
+    static const std::string& dataDirectory();
 };
 
+#if !defined(__EMSCRIPTEN__)
 /// Appends `text`'s glyph outlines to `path`, with the pen starting at the
-/// text origin. `x`/`y` are the origin, not a bounding box.
+/// text origin. `x`/`y` are the origin, not a bounding box. Native only: the
+/// web build has no outlines.
 void appendGlyphs(Path2D& path, const std::string& text, double x, double baselineY,
                   double size);
+#endif
 
 double measure(const std::string& text, double size);
 double ascent(double size);

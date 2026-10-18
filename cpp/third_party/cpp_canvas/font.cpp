@@ -392,6 +392,11 @@ void Font::buildCompositeGlyph(std::uint32_t at, std::uint32_t length, Glyph& ou
       }
       out.path.segments().push_back(moved);
     }
+    // MORE_COMPONENTS. What follows the last component is its instructions
+    // and the glyph's padding, which read as components would draw stray
+    // glyphs over this one -- accented letters grew shapes thousands of units
+    // away.
+    if (!(flags & 0x0020)) break;
   }
 }
 
@@ -434,6 +439,66 @@ bool Font::covers(const std::string& utf8) const {
     if (codepoint >= 0x20 && glyphIndex(codepoint) == 0) return false;
   }
   return true;
+}
+
+std::uint32_t Font::nextCodepoint(const std::string& utf8, std::size_t& i) {
+  return decodeUtf8(utf8, i);
+}
+
+std::vector<std::uint32_t> Font::mappedCodepoints() const {
+  std::vector<std::uint32_t> out;
+  if (!valid_ || !cmapOffset_) return out;
+  // The ranges the subtable can map at all, each codepoint in them then put
+  // through glyphIndex() itself, so the list is what lookups resolve to and
+  // not a second reading of the table.
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> ranges;
+  if (cmapFormat_ == 4) {
+    const std::uint16_t segX2 = u16(data_, cmapOffset_ + 6);
+    const std::uint32_t ends = cmapOffset_ + 14;
+    const std::uint32_t starts = ends + segX2 + 2;
+    for (std::uint16_t s = 0; s + 1 < segX2; s += 2) {
+      ranges.emplace_back(u16(data_, starts + s), u16(data_, ends + s));
+    }
+  } else if (cmapFormat_ == 12) {
+    const std::uint32_t groups = u32(data_, cmapOffset_ + 12);
+    for (std::uint32_t g = 0; g < groups && cmapOffset_ + 16 + g * 12u + 12 <= data_.size(); ++g) {
+      const std::uint32_t rec = cmapOffset_ + 16 + g * 12u;
+      const std::uint32_t end = std::min<std::uint32_t>(u32(data_, rec + 4), 0x10FFFF);
+      ranges.emplace_back(u32(data_, rec), end);
+    }
+  } else if (cmapFormat_ == 6) {
+    const std::uint32_t first = u16(data_, cmapOffset_ + 6);
+    const std::uint32_t count = u16(data_, cmapOffset_ + 8);
+    if (count) ranges.emplace_back(first, first + count - 1);
+  } else if (cmapFormat_ == 0) {
+    ranges.emplace_back(0, 255);
+  }
+  for (const auto& range : ranges) {
+    for (std::uint32_t c = range.first; c <= range.second && c >= range.first; ++c) {
+      if (glyphIndex(c) != 0) out.push_back(c);
+    }
+  }
+  std::sort(out.begin(), out.end());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
+  return out;
+}
+
+Font::GlyphMetrics Font::metrics(std::uint32_t codepoint) const {
+  GlyphMetrics out;
+  if (!valid_) return out;
+  const std::uint16_t index = glyphIndex(codepoint);
+  out.advance = advanceWidth(index);
+  // The same test buildGlyph() makes for a blank glyph.
+  const std::uint32_t glyf = tableOffset("glyf");
+  const std::uint32_t start = glyphOffset(index);
+  const std::uint32_t end = glyphOffset(static_cast<std::uint16_t>(index + 1));
+  if (!glyf || end <= start || glyf + end > data_.size() || end - start < 10) return out;
+  const std::uint32_t at = glyf + start;
+  out.xMin = i16(data_, at + 2);
+  out.yMin = i16(data_, at + 4);
+  out.xMax = i16(data_, at + 6);
+  out.yMax = i16(data_, at + 8);
+  return out;
 }
 
 float Font::measure(const std::string& utf8, float pixelSize) const {

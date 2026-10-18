@@ -14,12 +14,11 @@
  *   bundle.js     the client's runtime glue
  *   bundle.wasm   the client, with the staged content embedded inside it:
  *                 mobs.json, petals.json, mob_drops.json, maps.json and the
- *                 maps it lists, their tilesets, the tile and ground art, and
- *                 the font's metrics (Ubuntu-Bold.metrics). Not the font
- *                 itself, which the page loads from Google Fonts.
+ *                 maps it lists, their tilesets, and the tile and ground
+ *                 art. Not the font, which the page loads from Google Fonts;
+ *                 its metrics are compiled into the client.
  *   server.js     the server's runtime glue -- what `node dist/server.js` runs
- *   server.wasm   the server, with the same content embedded, minus the
- *                 font's metrics
+ *   server.wasm   the server, with the same content embedded
  *   offline.html  the offline build: server AND client in one wasm, embedded
  *                 in one page with nothing beside it. Opens from disk. The one
  *                 build that embeds the font (Ubuntu-Bold.ttf), since it has

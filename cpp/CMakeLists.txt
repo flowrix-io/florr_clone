@@ -156,6 +156,7 @@ add_library(flix_client STATIC
   client/world_view.cpp
   client/ui/draw.cpp
   client/ui/text.cpp
+  client/ui/face_metrics.cpp
   client/ui/text_cache.cpp
   client/ui/text_atlas.cpp
   client/ui/text_input.cpp
@@ -240,14 +241,43 @@ endfunction()
 flix_stage_font(Ubuntu-Bold.ttf
                679b5c1e09cab3156bb8ef529735f9382bf31ca7ac737382ab959297f8d82ad4)
 
-# The web client measures with that face but never draws with it: the browser
-# sets every run in the Ubuntu the page links from Google Fonts. So the web
-# builds also stage the face's metrics on their own, the same file with its
-# outlines taken out (9KB against 330; cmake/font_metrics.js has the details),
-# and that is what the client embeds and reads. The TTF itself is embedded only
-# in the offline page, which has nowhere to fetch a face from and registers
-# this one with the document. See the link options under EMSCRIPTEN below.
-set(FLIX_FONT_METRICS_NAME Ubuntu-Bold.metrics)
+# What every run measures -- each character's advance and the em box -- is
+# fixed by that file, so the build works it out once and compiles it into the
+# client (client/ui/face_metrics.h) instead of the client reading
+# the face at run time or asking the browser. tools/font_table.cpp writes the
+# table, through the same Font reader the native client loads the file with.
+# It is a build step, not a configure one, so the table cannot outlive the
+# face it was made from: natively the tool runs as it is, and on the web it is
+# compiled for, and run under, the Node the emscripten toolchain found (CMake
+# puts CMAKE_CROSSCOMPILING_EMULATOR in front of a target it runs).
+#
+# The web client never draws with the face either -- the browser sets every
+# run in the Ubuntu the page links from Google Fonts -- so the table is all of
+# it the client carries. The TTF itself is embedded only in the offline page,
+# which has nowhere to fetch a face from and registers this one with the
+# document. See the link options under EMSCRIPTEN below.
+add_executable(font_table tools/font_table.cpp)
+target_link_libraries(font_table PRIVATE cpp_canvas)
+target_include_directories(font_table PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(EMSCRIPTEN)
+  if(NOT CMAKE_CROSSCOMPILING_EMULATOR)
+    message(FATAL_ERROR "The emscripten toolchain found no Node to run tools/font_table.cpp")
+  endif()
+  # A command-line program: it reads and writes the host's own files.
+  target_link_options(font_table PRIVATE
+    "-sENVIRONMENT=node" "-sNODERAWFS=1" "-sEXIT_RUNTIME=1" "-sALLOW_MEMORY_GROWTH=1")
+endif()
+set(FLIX_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${FLIX_GENERATED_DIR})
+set(FLIX_FACE_TABLE ${FLIX_GENERATED_DIR}/face_metrics_table.inc)
+add_custom_command(
+  OUTPUT ${FLIX_FACE_TABLE}
+  COMMAND font_table ${FLIX_DATA_DIR}/Ubuntu-Bold.ttf ${FLIX_FACE_TABLE}
+  DEPENDS font_table ${FLIX_DATA_DIR}/Ubuntu-Bold.ttf
+  COMMENT "Tabulating the font's metrics"
+  VERBATIM)
+target_sources(flix_client PRIVATE ${FLIX_FACE_TABLE})
+target_include_directories(flix_client PRIVATE ${FLIX_GENERATED_DIR})
 
 # The repository's data/ (mobs.json, petals.json, mob_drops.json) and maps/ are
 # the single source of truth; stage them beside the binaries so both programs
@@ -347,16 +377,13 @@ endforeach()
 
 # Everything the directory is allowed to contain, as bare names: the files
 # staged below, plus the font, which is downloaded into it at configure
-# time instead, and on the web the font's metrics, which are extracted from it.
+# time instead.
 # Written out for the prune script -- through a file rather than a command line
 # because the list is a few hundred names long.
 #
 # Rewritten only when it changes, so that a re-configure that stages the same
 # set does not date the manifest forward and relink both wasms for nothing.
 set(FLIX_DATA_EXPECTED Ubuntu-Bold.ttf)
-if(EMSCRIPTEN)
-  list(APPEND FLIX_DATA_EXPECTED ${FLIX_FONT_METRICS_NAME})
-endif()
 foreach(source IN LISTS FLIX_DATA_SOURCES)
   get_filename_component(name "${source}" NAME)
   list(APPEND FLIX_DATA_EXPECTED ${name})
@@ -402,26 +429,7 @@ add_custom_command(
   DEPENDS ${FLIX_DATA_SOURCES} ${FLIX_DATA_MANIFEST}
   COMMENT "Staging game content")
 
-# The font's metrics, for the web builds (see FLIX_FONT_METRICS_NAME above).
-# Extracted at build time, under the Node the emscripten toolchain found and
-# made its cross-compiling emulator, so the copy can never drift from the face
-# the configure pinned. The prune above keeps it: it is in the manifest.
-set(FLIX_FONT_METRICS)
-if(EMSCRIPTEN)
-  if(NOT CMAKE_CROSSCOMPILING_EMULATOR)
-    message(FATAL_ERROR "The emscripten toolchain found no Node to run cmake/font_metrics.js")
-  endif()
-  set(FLIX_FONT_METRICS ${FLIX_DATA_DIR}/${FLIX_FONT_METRICS_NAME})
-  add_custom_command(
-    OUTPUT ${FLIX_FONT_METRICS}
-    COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/font_metrics.js
-            ${FLIX_DATA_DIR}/Ubuntu-Bold.ttf ${FLIX_FONT_METRICS}
-    DEPENDS ${FLIX_DATA_DIR}/Ubuntu-Bold.ttf ${CMAKE_CURRENT_SOURCE_DIR}/cmake/font_metrics.js
-    COMMENT "Extracting the font's metrics"
-    VERBATIM)
-endif()
-add_custom_target(flix_data ALL DEPENDS ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS})
+add_custom_target(flix_data ALL DEPENDS ${FLIX_DATA_STAGED})
 add_dependencies(flowrix_client flix_data)
 add_dependencies(flowrix_server flix_data)
 
@@ -429,7 +437,7 @@ add_dependencies(flowrix_server flix_data)
 if(EMSCRIPTEN)
   # Content goes INSIDE the wasm, not beside it. --embed-file rather than
   # --preload-file, for three reasons: the client reads mobs.json, petals.json,
-  # the maps and their art and the font's metrics synchronously during start(),
+  # and the maps and their art synchronously during start(),
   # so there is nothing to gain from a separate fetch it would have to wait for
   # anyway; a single artifact cannot half-deploy, which a .wasm and a stale
   # .data next to it can; and the server build has no page to run a preload
@@ -494,7 +502,7 @@ if(EMSCRIPTEN)
   # linked with. Naming the staged files as link dependencies is what makes a
   # data-only edit force a relink.
   set_property(TARGET flowrix_client APPEND PROPERTY LINK_DEPENDS
-               ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS})
+               ${FLIX_DATA_STAGED} ${FLIX_BOOT_TOOLS})
   set_property(TARGET flowrix_server APPEND PROPERTY LINK_DEPENDS ${FLIX_DATA_STAGED})
 
   # Shared by both web targets. Memory grows because game state and transient
@@ -563,7 +571,7 @@ if(EMSCRIPTEN)
     ${FLIX_EMBED_DATA}
     # Everything staged but the font. The page links the same Ubuntu from
     # Google Fonts and the browser draws every run in it; what the client needs
-    # of the face is its metrics, and those are Ubuntu-Bold.metrics.
+    # of the face is its metrics, and those are compiled in (face_metrics.h).
     "SHELL:--exclude-file *.ttf"
     ${FLIX_EMBED_BOOT}
     # For a boot script (client/web/shell.html): the page loads the runtime
@@ -606,9 +614,8 @@ if(EMSCRIPTEN)
     "-lnodefs.js"
     "-sEXPORTED_RUNTIME_METHODS=['FS']"
     ${FLIX_EMBED_DATA}
-    # The server sets no text: neither the font nor its metrics.
-    "SHELL:--exclude-file *.ttf"
-    "SHELL:--exclude-file *.metrics")
+    # The server sets no text.
+    "SHELL:--exclude-file *.ttf")
 
   # --- the offline build -----------------------------------------------------
   # Both halves in one wasm, in one page, in one file. offline/main.cpp starts
@@ -622,7 +629,8 @@ if(EMSCRIPTEN)
   # a .wasm beside itself. The content is embedded as for the other two, and
   # this is the one build that keeps the font in it: the TTF is registered
   # with the document at startup, so the page loads nothing from the network
-  # either, and the client measures with its metrics, as the online one does.
+  # either. The client still measures from the compiled-in table, as the
+  # online one does.
   # WASMFS, for the client's storage-backed mount; the server's stack size,
   # because this wasm carries the server's JSON parser too. The linked output
   # is offline.html; the .js and .wasm that would otherwise sit beside it do
@@ -657,7 +665,7 @@ if(EMSCRIPTEN)
   add_dependencies(flowrix_offline flix_data)
   set_target_properties(flowrix_offline PROPERTIES OUTPUT_NAME offline SUFFIX ".html")
   set_property(TARGET flowrix_offline APPEND PROPERTY LINK_DEPENDS
-               ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS}
+               ${FLIX_DATA_STAGED} ${FLIX_BOOT_TOOLS}
                ${FLIX_LOCAL_BOOT_TOOLS})
   set_property(TARGET flowrix_offline APPEND PROPERTY LINK_DEPENDS "${FLIX_OFFLINE_SHELL}")
   target_compile_options(flowrix_offline PRIVATE
@@ -690,7 +698,7 @@ if(EMSCRIPTEN)
   set_target_properties(flowrix_offline_asmjs PROPERTIES
                         OUTPUT_NAME offline-asmjs SUFFIX ".html")
   set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS
-               ${FLIX_DATA_STAGED} ${FLIX_FONT_METRICS} ${FLIX_BOOT_TOOLS}
+               ${FLIX_DATA_STAGED} ${FLIX_BOOT_TOOLS}
                ${FLIX_LOCAL_BOOT_TOOLS})
   set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS "${FLIX_OFFLINE_SHELL}")
   target_compile_options(flowrix_offline_asmjs PRIVATE

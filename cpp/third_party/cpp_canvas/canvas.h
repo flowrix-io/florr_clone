@@ -139,6 +139,31 @@ private:
     bool glyphOutlines_ = false;
 };
 
+#ifdef __EMSCRIPTEN__
+// The browser build's way with the transform. It is not one of the fields a
+// Canvas brings across before each call. A call drawn at matrix M is issued
+// under whatever matrix P the page already holds, its coordinates mapped
+// through R = P^-1 * M in wasm, when R is a map the call survives exactly:
+// any affine one for lines and curves, a similarity (uniform scale, rotation,
+// mirroring) for arcs and ellipses, an axis-aligned one for rects and images,
+// a translation for live text. Only a call R does not suit moves the page to
+// M with a setTransform -- and so does every stroke, which Skia offsets in
+// the matrix's own space (Canvas::stroke), and every retained Path2D, which
+// the page has to transform itself. When P already is M the coordinates go
+// over untouched.
+struct CanvasPageFrame {
+    // Page space = R * call space, as [a b c d e f].
+    double a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;
+    // For a similar R: its uniform scale, its rotation, and -1 if it mirrors.
+    double scale = 1, rotation = 0;
+    int sigma = 1;
+    // Which kinds of map R is (the kFit bits in canvas.cpp); all of them when
+    // R is the identity because P is M.
+    unsigned fits = ~0u;
+    bool same() const { return fits == ~0u; }
+};
+#endif
+
 // CanvasRenderingContext2D-style API. Natively it draws with the software
 // rasterizer. Under Emscripten each Canvas is a real browser context, but the
 // calls do not cross into the page one at a time: they are recorded into one
@@ -346,7 +371,9 @@ private:
     // separately in `applied_`. A setter only writes `web_`; each drawing call
     // first brings across the fields IT reads that differ (sync()), so a
     // value set and then restored without being drawn with never crosses, and
-    // a translate/scale/rotate chain crosses as one setTransform.
+    // a translate/scale/rotate chain never crosses at all: the call it ends
+    // in is mapped into the matrix the page already holds, or at worst brings
+    // one setTransform (CanvasPageFrame).
     //
     // A clip is the one thing that cannot be undone by writing values back,
     // so a clip inside a save() emits a real browser save first (realSave())
@@ -365,7 +392,9 @@ private:
         float shadowBlur = 0, shadowOffsetX = 0, shadowOffsetY = 0;
         bool smoothing = true;
         /// The current transform. Composed in double, as the browser composes
-        /// its own, and sent as one setTransform when a drawing call needs it.
+        /// its own. A drawing call's coordinates are mapped by it into the
+        /// page's matrix, or it is sent as one setTransform where they cannot
+        /// be (CanvasPageFrame); in `applied_` it is the page's matrix.
         /// It is also what makes currentTransform() answerable on the browser
         /// build -- the page owns the real matrix and will not hand it back
         /// cheaply.
@@ -391,6 +420,22 @@ private:
     void sync(unsigned fields) const;
     void realSave();
 
+    // The transform is not one of the fields sync() brings across; see
+    // CanvasPageFrame above the class.
+    using PageFrame = CanvasPageFrame;
+    // The frame for a call drawn at `m` that can be mapped by any R with all
+    // of the `need` fits; otherwise moves the page to `m` and returns the
+    // identity. Remembers its last answer, which is the next call's too.
+    const PageFrame& frameFor(const std::array<double, 6>& m, unsigned need) const;
+    void movePageTo(const std::array<double, 6>& m) const;
+    // One segment added at `m`, into the page's current path.
+    void emitSegmentAt(const std::array<double, 6>& m, const Path2D::Segment& g) const;
+    // A fill/stroke/clip (0/1/2) of a Path2D at the current transform.
+    void emitPathAt(const Path2D& p, int action, bool evenOdd) const;
+    mutable std::array<double, 6> framePage_{}, frameCall_{};
+    mutable PageFrame frame_;
+    mutable bool frameKnown_ = false;
+
     // The current path is held here, not streamed to the page as it is built.
     // At the paint it either becomes one fill/stroke/clip of a retained
     // Path2D -- when the same geometry was painted before, which is most of a
@@ -407,6 +452,14 @@ private:
     // through the page's has to clear it first.
     mutable bool pagePathDirty_ = false;
     mutable int pagePathSegments_ = 0;
+    // Whether the current path has a subpath yet. A lineTo into a path that
+    // has none is recorded as the moveTo the spec says it is (and the native
+    // rasterizer treats it as): Chrome draws a subpath begun by a bare lineTo,
+    // closed while it is a single point, with its next segment from the wrong
+    // place -- unless a setTransform happens to come between the two, which
+    // mapping into the page's frame no longer guarantees, and never in a
+    // retained copy of the path.
+    bool pathHasSubpath_ = false;
     // The transform the held segments were added under. Each one is fixed in
     // device space by the transform current when it was ADDED, so held
     // segments are only ever replayed under this.

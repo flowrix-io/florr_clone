@@ -29,8 +29,8 @@
 //   * The font. The online page loads Ubuntu from Google Fonts; this one has
 //     nowhere to load from, so it is the one build that embeds the face
 //     itself (Ubuntu-Bold.ttf) and registers it with the document. The client
-//     measures from the face's metrics (Ubuntu-Bold.metrics), as the online
-//     one does: the same numbers as the face the canvas draws with.
+//     measures from the face's metrics compiled into it (face_metrics.h), as
+//     the online one does: the same numbers as the face the canvas draws with.
 //
 // One thing this build offers that the others do not: a Grant Admin button in
 // Settings > Advanced. The server is in this page and the world is nobody

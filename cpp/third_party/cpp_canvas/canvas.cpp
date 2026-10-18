@@ -1250,16 +1250,44 @@ enum : unsigned {
   kAllStateBits = (1u << 19) - 1,
 };
 // What each kind of call reads, which is all a call brings across before it
-// is issued. Everything that paints pixels reads the compositing fields; the
-// transform is read by every call that takes coordinates, path segments
-// included -- a segment is fixed in device space by the transform current
-// when it is ADDED, not when the path is filled.
-constexpr unsigned kPaintBits = kTransformBit | kAlphaBit | kCompositeBit | kFilterBit | kShadowBit;
+// is issued. Everything that paints pixels reads the compositing fields. The
+// transform is not among them: each call that takes coordinates settles it
+// for itself through frameFor() -- path segments included, since a segment is
+// fixed in device space by the transform current when it is ADDED, not when
+// the path is filled.
+constexpr unsigned kPaintBits = kAlphaBit | kCompositeBit | kFilterBit | kShadowBit;
 constexpr unsigned kFillBits = kPaintBits | kFillBit;
 constexpr unsigned kStrokeBits = kPaintBits | kStrokeBit | kLineWidthBit | kLineCapBit |
                                  kLineJoinBit | kMiterBit | kDashBit | kDashOffsetBit;
 constexpr unsigned kTextBits = kFontBit | kTextAlignBit | kTextBaselineBit | kDirectionBit;
 constexpr unsigned kImageBits = kPaintBits | kSmoothingBit | kSmoothingQualityBit;
+
+// The kinds of map R = P^-1 * M can be (CanvasPageFrame), and so what a call
+// asks of it in frameFor(). Each is a map some call survives exactly.
+enum : unsigned {
+  kFitAffine = 1u << 0,      // invertible: lines, curves, fills
+  kFitSimilar = 1u << 1,     // uniform scale, rotation, mirroring: arcs, ellipses
+  kFitAxis = 1u << 2,        // no rotation or shear: rects
+  kFitPositive = 1u << 3,    // with kFitAxis, no mirroring either: images
+  kFitTranslate = 1u << 4,   // nothing but a shift: live text
+};
+// A uniform, upright scale: a rounded rect stays a rounded rect.
+constexpr unsigned kFitUpright = kFitAffine | kFitSimilar | kFitAxis | kFitPositive;
+
+/// What a segment asks of the frame it is mapped into.
+unsigned segmentNeed(const Path2D::Segment& g) {
+  switch (g.command) {
+    case Path2D::Command::Arc:
+    case Path2D::Command::ArcTo:
+    case Path2D::Command::Ellipse: return kFitAffine | kFitSimilar;
+    // Not rotated: a rect under a rotation is four lines and a closePath,
+    // and Chrome's closePath costs time in proportion to the path so far.
+    case Path2D::Command::Rect: return kFitAffine | kFitAxis;
+    case Path2D::Command::RoundRect: return kFitUpright;
+    case Path2D::Command::Close: return 0;
+    default: return kFitAffine;
+  }
+}
 } // namespace
 
 // Brings the page's context up to date with the fields in `need` -- only
@@ -1271,19 +1299,6 @@ void Canvas::sync(unsigned need) const {
   dirty_ &= ~todo;
   const WebState& w = web_;
   WebState& a = applied_;
-  if ((todo & kTransformBit) && w.matrix != a.matrix) {
-    const auto& m = w.matrix;
-    // A non-finite transform is one the browser ignores, so the page keeps
-    // the matrix it had and the field stays owed.
-    if (std::isfinite(m[0]) && std::isfinite(m[1]) && std::isfinite(m[2]) &&
-        std::isfinite(m[3]) && std::isfinite(m[4]) && std::isfinite(m[5])) {
-      a.matrix = m;
-      OP(7,static_cast<float>(m[0]),static_cast<float>(m[1]),static_cast<float>(m[2]),
-         static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5]),0,0,"");
-    } else {
-      dirty_ |= kTransformBit;
-    }
-  }
   if ((todo & kFillBit) && w.fill != a.fill) { a.fill = w.fill; OP(9,0,0,0,0,0,0,0,0,a.fill.c_str()); }
   if ((todo & kStrokeBit) && w.stroke != a.stroke) { a.stroke = w.stroke; OP(10,0,0,0,0,0,0,0,0,a.stroke.c_str()); }
   if ((todo & kAlphaBit) && w.alpha != a.alpha) { a.alpha = w.alpha; OP(11,a.alpha,0,0,0,0,0,0,0,""); }
@@ -1324,6 +1339,173 @@ void Canvas::realSave() {
   webStack_.back().real = true;
   appliedStack_.push_back(applied_);
   OP(0,0,0,0,0,0,0,0,0,"");
+}
+
+namespace {
+void emitSegment(int context, const Path2D::Segment& g);   // below, with the shape cache
+
+bool finiteMatrix(const std::array<double, 6>& m) {
+  return std::isfinite(m[0]) && std::isfinite(m[1]) && std::isfinite(m[2]) &&
+         std::isfinite(m[3]) && std::isfinite(m[4]) && std::isfinite(m[5]);
+}
+
+/// R = P^-1 * M and what kinds of map it is, or no fits at all when P cannot
+/// be inverted well enough for coordinates to survive the trip through it.
+CanvasPageFrame relativeFrame(const std::array<double, 6>& p, const std::array<double, 6>& m) {
+  CanvasPageFrame r;
+  r.fits = 0;
+  if (!finiteMatrix(p) || !finiteMatrix(m)) return r;
+  const double pNorm = std::max(std::max(std::abs(p[0]), std::abs(p[1])),
+                                std::max(std::abs(p[2]), std::abs(p[3])));
+  const double pDet = p[0] * p[3] - p[1] * p[2];
+  // Nearly singular -- a collapsed scale, a shear to a line -- and the
+  // inverse blows the coordinates up past what a float carries back.
+  if (!(pNorm > 0) || !(std::abs(pDet) > 1e-9 * pNorm * pNorm)) return r;
+  const double ia = p[3] / pDet, ib = -p[1] / pDet, ic = -p[2] / pDet, id = p[0] / pDet;
+  const double ie = (p[2] * p[5] - p[3] * p[4]) / pDet, jf = (p[1] * p[4] - p[0] * p[5]) / pDet;
+  r.a = ia * m[0] + ic * m[1];
+  r.b = ib * m[0] + id * m[1];
+  r.c = ia * m[2] + ic * m[3];
+  r.d = ib * m[2] + id * m[3];
+  r.e = ia * m[4] + ic * m[5] + ie;
+  r.f = ib * m[4] + id * m[5] + jf;
+  const double det = r.a * r.d - r.b * r.c;
+  const double norm = std::max(std::max(std::abs(r.a), std::abs(r.b)),
+                               std::max(std::abs(r.c), std::abs(r.d)));
+  if (!std::isfinite(det) || !(norm > 0) || !(std::abs(det) > 1e-9 * norm * norm)) return r;
+  r.fits = kFitAffine;
+  // Relative to R's own size: what composing two matrices in double leaves
+  // behind is a few ulps of it, and a map within that of exact moves a
+  // coordinate by nothing a pixel can show.
+  const double eps = 1e-9 * norm;
+  r.sigma = det < 0 ? -1 : 1;
+  const bool similar = r.sigma > 0 ? std::abs(r.a - r.d) <= eps && std::abs(r.b + r.c) <= eps
+                                   : std::abs(r.a + r.d) <= eps && std::abs(r.b - r.c) <= eps;
+  if (similar) {
+    r.fits |= kFitSimilar;
+    r.scale = std::sqrt(std::abs(det));
+    r.rotation = std::atan2(r.b, r.a);
+  }
+  if (std::abs(r.b) <= eps && std::abs(r.c) <= eps) {
+    r.fits |= kFitAxis;
+    if (r.a > 0 && r.d > 0) r.fits |= kFitPositive;
+    if (std::abs(r.a - 1) <= 1e-9 && std::abs(r.d - 1) <= 1e-9) r.fits |= kFitTranslate;
+  }
+  return r;
+}
+
+float mapX(const CanvasPageFrame& r, float x, float y) { return static_cast<float>(r.a * x + r.c * y + r.e); }
+float mapY(const CanvasPageFrame& r, float x, float y) { return static_cast<float>(r.b * x + r.d * y + r.f); }
+
+/// The box (x, y, w, h) under an axis-aligned R. Its corners map in order,
+/// so a negative width or height stands for the same corners it did before.
+void mapBox(const CanvasPageFrame& r, float& x, float& y, float& w, float& h) {
+  const double nx = r.a * x + r.e, ny = r.d * y + r.f;
+  w = static_cast<float>(w * r.a);
+  h = static_cast<float>(h * r.d);
+  x = static_cast<float>(nx);
+  y = static_cast<float>(ny);
+}
+
+/// The start and end of an arc whose angles turn by `rotation` and run the
+/// other way when `sigma` is -1, as floats that the browser still sorts into
+/// the same case: a whole turn stays a whole turn, a part stays a part.
+/// Blink decides that in float, end - start against 2pi as a float
+/// (CanvasPath::arc, AdjustEndAngle), so that is the test kept here.
+void mapAngles(float start, float end, bool ccw, double rotation, int sigma, float& outStart,
+               float& outEnd) {
+  constexpr float kTwoPi = 6.2831853071795864f;
+  const auto whole = [&](float s, float e, bool anticlockwise) {
+    return anticlockwise ? s - e >= kTwoPi : e - s >= kTwoPi;
+  };
+  const bool wasWhole = whole(start, end, ccw);
+  const bool nowCcw = sigma < 0 ? !ccw : ccw;
+  outStart = static_cast<float>(rotation + sigma * static_cast<double>(start));
+  outEnd = static_cast<float>(static_cast<double>(outStart) +
+                              sigma * (static_cast<double>(end) - static_cast<double>(start)));
+  // Rounding can put a sweep of exactly 2pi either side of the line; one or
+  // two ulps of the end put it back on the side it started.
+  for (int step = 0; step < 4 && whole(outStart, outEnd, nowCcw) != wasWhole; ++step) {
+    const bool longer = wasWhole;
+    const bool up = nowCcw ? !longer : longer;
+    outEnd = std::nextafter(outEnd, up ? INFINITY : -INFINITY);
+  }
+}
+
+/// A segment added at M, as R maps it into the page's frame. R meets the
+/// segment's segmentNeed().
+Path2D::Segment mapSegment(const Path2D::Segment& g, const CanvasPageFrame& r) {
+  Path2D::Segment o = g;
+  const float* v = g.v;
+  const auto point = [&](int at) { o.v[at] = mapX(r, v[at], v[at + 1]); o.v[at + 1] = mapY(r, v[at], v[at + 1]); };
+  switch (g.command) {
+    case Path2D::Command::Move:
+    case Path2D::Command::Line: point(0); break;
+    case Path2D::Command::Quadratic: point(0); point(2); break;
+    case Path2D::Command::Bezier: point(0); point(2); point(4); break;
+    case Path2D::Command::Arc:
+      // A point at angle t lands at angle rotation + sigma*t of the mapped
+      // circle, so the angles shift and, mirrored, run the other way.
+      point(0);
+      o.v[2] = static_cast<float>(v[2] * r.scale);
+      mapAngles(v[3], v[4], g.counterClockwise, r.rotation, r.sigma, o.v[3], o.v[4]);
+      o.counterClockwise = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+      break;
+    case Path2D::Command::ArcTo:
+      point(0); point(2);
+      o.v[4] = static_cast<float>(v[4] * r.scale);
+      break;
+    case Path2D::Command::Ellipse:
+      // The axes turn with R; a parameter angle is measured from them, so it
+      // only changes direction, when R mirrors.
+      point(0);
+      o.v[2] = static_cast<float>(v[2] * r.scale);
+      o.v[3] = static_cast<float>(v[3] * r.scale);
+      o.v[4] = static_cast<float>(r.rotation + r.sigma * static_cast<double>(v[4]));
+      mapAngles(v[5], v[6], g.counterClockwise, 0.0, r.sigma, o.v[5], o.v[6]);
+      o.counterClockwise = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+      break;
+    case Path2D::Command::Rect:
+      mapBox(r, o.v[0], o.v[1], o.v[2], o.v[3]);
+      break;
+    case Path2D::Command::RoundRect:
+      mapBox(r, o.v[0], o.v[1], o.v[2], o.v[3]);
+      o.v[4] = static_cast<float>(v[4] * r.a);
+      break;
+    case Path2D::Command::Close: break;
+  }
+  return o;
+}
+} // namespace
+
+const Canvas::PageFrame& Canvas::frameFor(const std::array<double, 6>& m, unsigned need) const {
+  static const PageFrame kSame{};
+  if (applied_.matrix == m) return kSame;
+  if (!frameKnown_ || framePage_ != applied_.matrix || frameCall_ != m) {
+    frame_ = relativeFrame(applied_.matrix, m);
+    framePage_ = applied_.matrix;
+    frameCall_ = m;
+    frameKnown_ = true;
+  }
+  if ((frame_.fits & need) == need && frame_.fits != 0) return frame_;
+  movePageTo(m);
+  return kSame;
+}
+
+void Canvas::movePageTo(const std::array<double, 6>& m) const {
+  // A non-finite transform is one the browser ignores, so the page keeps the
+  // matrix it had and the call goes over as it is, into that.
+  if (applied_.matrix == m || !finiteMatrix(m)) return;
+  applied_.matrix = m;
+  OP(7,static_cast<float>(m[0]),static_cast<float>(m[1]),static_cast<float>(m[2]),
+     static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5]),0,0,"");
+}
+
+void Canvas::emitSegmentAt(const std::array<double, 6>& m, const Path2D::Segment& g) const {
+  const unsigned need = segmentNeed(g);
+  if (need == 0) { emitSegment(contextId_, g); return; }
+  const PageFrame& f = frameFor(m, need);
+  emitSegment(contextId_, f.same() ? g : mapSegment(g, f));
 }
 namespace {
 bool pathAlreadySent(const Path2D& path);   // the retained-path cache, further down
@@ -1440,25 +1622,16 @@ void Canvas::pathSegmentAdded() {
     case PathMode::Sent:
       break;
   }
-  sync(kTransformBit);
-  emitSegment(contextId_, path.segments().back());
+  emitSegmentAt(web_.matrix, path.segments().back());
   ++pagePathSegments_;
   pagePathDirty_ = true;
 }
 
 void Canvas::sendHeldPath(std::size_t count) const {
   OP(33,0,0,0,0,0,0,0,0,"");
-  const auto& m = pathMatrix_;
-  if (applied_.matrix != m && std::isfinite(m[0]) && std::isfinite(m[1]) && std::isfinite(m[2]) &&
-      std::isfinite(m[3]) && std::isfinite(m[4]) && std::isfinite(m[5])) {
-    applied_.matrix = m;
-    OP(7,static_cast<float>(m[0]),static_cast<float>(m[1]),static_cast<float>(m[2]),
-       static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5]),0,0,"");
-  }
-  // The page may now hold a transform the program is not at.
-  dirty_ |= kTransformBit;
+  // Each segment into the page's frame, under the transform it was added at.
   const Path2D& path = currentPath_;
-  for (std::size_t i = 0; i < count; ++i) emitSegment(contextId_, path.segments()[i]);
+  for (std::size_t i = 0; i < count; ++i) emitSegmentAt(pathMatrix_, path.segments()[i]);
   pagePathSegments_ = static_cast<int>(count);
   pagePathDirty_ = count > 0;
   pathMode_ = PathMode::Sent;
@@ -1486,6 +1659,8 @@ bool Canvas::paintCachedPath(int action, bool evenOdd) {
   if (!worthCaching(path)) return false;
   const Path2D* cached = cachedShape(path);
   if (!cached) return false;
+  // A retained path is the page's to transform: it has to hold the matrix.
+  movePageTo(pathMatrix_);
   const std::int32_t key = static_cast<std::int32_t>(cached->cacheKey());
   if (pathAlreadySent(*cached)) {
     pushRef(contextId_, 50, key, static_cast<float>(action), evenOdd ? 1.f : 0.f, 0,0,0,0,0,0);
@@ -1505,7 +1680,9 @@ bool Canvas::paintCachedPath(int action, bool evenOdd) {
 // the frame's base scale is not the answer when the caller is inside a
 // transform of its own. Mirrored on both builds so there is one answer.
 #define MATRIX web_.matrix
-#define TRANSFORM_CHANGED() (dirty_ |= kTransformBit)
+// Nothing to mark: each call compares the matrix it is drawn at with the
+// page's for itself (frameFor).
+#define TRANSFORM_CHANGED() ((void)0)
 using MatrixScalar = double;
 #else
 #define STATE(bit, field, value) do { } while (0)
@@ -1549,7 +1726,7 @@ void Canvas::reset() {
   web_ = WebState{}; applied_ = WebState{}; dirty_ = 0;
   // ...and empties the page's current path, which ours mirrors.
   currentPath_ = Path2D{}; pathMode_ = PathMode::Empty;
-  pagePathDirty_ = false; pagePathSegments_ = 0;
+  pagePathDirty_ = false; pagePathSegments_ = 0; pathHasSubpath_ = false;
 #endif
   OP(2,0,0,0,0,0,0,0,0,""); resetTransform();
 #ifndef __EMSCRIPTEN__
@@ -1799,7 +1976,12 @@ void Canvas::clear(Color c) {
 void Canvas::clearRect(float a,float b,float c,float d) {
   // The transform and the clip, and nothing else: clearRect ignores alpha,
   // compositing, shadows and filters.
-  SYNC(kTransformBit);
+#ifdef __EMSCRIPTEN__
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis);
+    if (!f.same()) mapBox(f, a, b, c, d);
+  }
+#endif
   OP(30,a,b,c,d,0,0,0,0,"");
 #ifndef __EMSCRIPTEN__
   Path2D box; box.rect(a,b,c,d);
@@ -1827,6 +2009,12 @@ void Canvas::clearRect(float a,float b,float c,float d) {
 }
 void Canvas::fillRect(float a,float b,float c,float d) {
   SYNC(kFillBits);
+#ifdef __EMSCRIPTEN__
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis);
+    if (!f.same()) mapBox(f, a, b, c, d);
+  }
+#endif
   OP(31,a,b,c,d,0,0,0,0,"");
 #ifndef __EMSCRIPTEN__
   Path2D box; box.rect(a,b,c,d); fillDevice(box,false,state_.fill);
@@ -1834,6 +2022,9 @@ void Canvas::fillRect(float a,float b,float c,float d) {
 }
 void Canvas::strokeRect(float a,float b,float c,float d) {
   SYNC(kStrokeBits);
+#ifdef __EMSCRIPTEN__
+  movePageTo(web_.matrix);   // see stroke()
+#endif
   OP(32,a,b,c,d,0,0,0,0,"");
 #ifndef __EMSCRIPTEN__
   Path2D box; box.rect(a,b,c,d); strokeDevice(box);
@@ -1842,7 +2033,7 @@ void Canvas::strokeRect(float a,float b,float c,float d) {
 #ifdef __EMSCRIPTEN__
 // A segment is only recorded here; pathSegmentAdded() decides when it reaches
 // the page. See the PathMode comment in canvas.h.
-#define SEGMENT() pathSegmentAdded()
+#define SEGMENT() (pathHasSubpath_ = true, pathSegmentAdded())
 #else
 #define SEGMENT() ((void)0)
 #endif
@@ -1854,18 +2045,45 @@ void Canvas::beginPath(){
   // otherwise re-map through every transform change until something clears it.
   if (pathMode_==PathMode::Sent && pagePathSegments_>32) { OP(33,0,0,0,0,0,0,0,0,""); pagePathDirty_=false; pagePathSegments_=0; }
   pathMode_=PathMode::Empty;
+  pathHasSubpath_=false;
 #else
   OP(33,0,0,0,0,0,0,0,0,"");
 #endif
 }
-void Canvas::closePath(){currentPath_.closePath();SEGMENT();} void Canvas::moveTo(float a,float b){currentPath_.moveTo(a,b);SEGMENT();} void Canvas::lineTo(float a,float b){currentPath_.lineTo(a,b);SEGMENT();}
-void Canvas::quadraticCurveTo(float a,float b,float c,float d){currentPath_.quadraticCurveTo(a,b,c,d);SEGMENT();} void Canvas::bezierCurveTo(float a,float b,float c,float d,float e,float f){currentPath_.bezierCurveTo(a,b,c,d,e,f);SEGMENT();} void Canvas::arc(float a,float b,float c,float d,float e,bool f){currentPath_.arc(a,b,c,d,e,f);SEGMENT();} void Canvas::arcTo(float a,float b,float c,float d,float e){currentPath_.arcTo(a,b,c,d,e);SEGMENT();} void Canvas::ellipse(float a,float b,float c,float d,float e,float f,float g,bool h){currentPath_.ellipse(a,b,c,d,e,f,g,h);SEGMENT();} void Canvas::rect(float a,float b,float c,float d){currentPath_.rect(a,b,c,d);SEGMENT();} void Canvas::roundRect(float a,float b,float c,float d,float e){currentPath_.roundRect(a,b,c,d,e);SEGMENT();}
+#ifdef __EMSCRIPTEN__
+// A closePath makes no subpath of its own, so it leaves the flag alone.
+void Canvas::closePath(){currentPath_.closePath();pathSegmentAdded();}
+void Canvas::lineTo(float a,float b){ if (pathHasSubpath_) currentPath_.lineTo(a,b); else currentPath_.moveTo(a,b); SEGMENT(); }
+#else
+void Canvas::closePath(){currentPath_.closePath();SEGMENT();}
+void Canvas::lineTo(float a,float b){currentPath_.lineTo(a,b);SEGMENT();}
+#endif
+void Canvas::moveTo(float a,float b){currentPath_.moveTo(a,b);SEGMENT();}
+#ifdef __EMSCRIPTEN__
+// A curve into a path with no subpath first "ensures a subpath" at its first
+// point, which is a moveTo there: said outright, for the reason lineTo above
+// says it (pathHasSubpath_).
+#define ENSURE_SUBPATH(x,y) do { if (!pathHasSubpath_) { currentPath_.moveTo(x,y); SEGMENT(); } } while (0)
+#else
+#define ENSURE_SUBPATH(x,y) ((void)0)
+#endif
+void Canvas::quadraticCurveTo(float a,float b,float c,float d){ENSURE_SUBPATH(a,b);currentPath_.quadraticCurveTo(a,b,c,d);SEGMENT();} void Canvas::bezierCurveTo(float a,float b,float c,float d,float e,float f){ENSURE_SUBPATH(a,b);currentPath_.bezierCurveTo(a,b,c,d,e,f);SEGMENT();} void Canvas::arc(float a,float b,float c,float d,float e,bool f){currentPath_.arc(a,b,c,d,e,f);SEGMENT();} void Canvas::arcTo(float a,float b,float c,float d,float e){
+#ifdef __EMSCRIPTEN__
+  // Into a path with no subpath an arcTo is a moveTo to its first point and
+  // nothing more -- Blink's own reading of it. Followed by the arcTo itself,
+  // the page would have to find that point equal to the current one to treat
+  // the arc as degenerate, and once the two went over in different frames it
+  // need not, by an ulp.
+  if (!pathHasSubpath_) { currentPath_.moveTo(a,b); SEGMENT(); return; }
+#endif
+  currentPath_.arcTo(a,b,c,d,e);SEGMENT();} void Canvas::ellipse(float a,float b,float c,float d,float e,float f,float g,bool h){currentPath_.ellipse(a,b,c,d,e,f,g,h);SEGMENT();} void Canvas::rect(float a,float b,float c,float d){currentPath_.rect(a,b,c,d);SEGMENT();} void Canvas::roundRect(float a,float b,float c,float d,float e){currentPath_.roundRect(a,b,c,d,e);SEGMENT();}
 void Canvas::fill(const std::string&s){
 #ifdef __EMSCRIPTEN__
+  // No transform: every segment was fixed in device space as it reached the
+  // page's path, and a fill reads nothing else of the matrix.
   sync(kFillBits);
   if (paintCachedPath(0, s=="evenodd")) return;
   preparePagePath();
-  sync(kFillBits);
 #endif
   OP(44,0,0,0,0,0,0,0,0,s.c_str());
 #ifndef __EMSCRIPTEN__
@@ -1890,10 +2108,17 @@ void Canvas::stroke() {
 #ifdef __EMSCRIPTEN__
   sync(kStrokeBits);
   if (paintCachedPath(1, false)) return;
+  // A stroke is never mapped: it goes over under the very matrix it was asked
+  // for, the segments it outlines too when they were all added under one. A
+  // fill only needs its path in the right place; a stroke is offset from the
+  // path by Skia in the matrix's own space, to a tolerance that depends on
+  // where the path lies in it and how big a unit is, so the same stroke in
+  // any other frame comes out a fraction of a pixel different -- measured,
+  // whole small circles re-shaded by up to a third, and dashes drifting.
+  if (pathMode_ == PathMode::Deferred) movePageTo(pathMatrix_);
   preparePagePath();
-  // The line width is in the units of the transform current NOW, so the
-  // transform goes back to it after the held segments were sent under theirs.
-  sync(kStrokeBits);
+  // The line width is in the units of the transform current NOW.
+  movePageTo(web_.matrix);
 #endif
   OP(45,0,0,0,0,0,0,0,0,"");
 #ifndef __EMSCRIPTEN__
@@ -1905,10 +2130,9 @@ void Canvas::clip(const std::string&s){
   // The clip region is the one piece of state that cannot be put back by
   // writing values, so a clip inside a save() needs the real thing.
   realSave();
-  sync(kTransformBit);
+  // Like a fill, the clip reads the path and nothing of the matrix.
   if (paintCachedPath(2, s=="evenodd")) return;
   preparePagePath();
-  sync(kTransformBit);
 #endif
   OP(46,0,0,0,0,0,0,0,0,s.c_str());
 #ifndef __EMSCRIPTEN__
@@ -1962,12 +2186,9 @@ bool pathAlreadySent(const Path2D& path) {
 // path is orders of magnitude bigger than this and still goes in the cache.
 constexpr std::size_t kMaxInlinePathSegments = 8;
 
-// action: 0 fill, 1 stroke, 2 clip.
+// action: 0 fill, 1 stroke, 2 clip. A path too big to send whole each time,
+// under the transform the page already holds.
 static void emitPath(int contextId, const Path2D& path, int action, bool evenOdd) {
-    if (path.segments().size() <= kMaxInlinePathSegments) {
-        pushPath(contextId, 0, path, action, evenOdd);
-        return;
-    }
     const std::uint32_t key = path.cacheKey();
     if (pathAlreadySent(path)) {
         pushRef(contextId, 50, static_cast<std::int32_t>(key),
@@ -1976,11 +2197,34 @@ static void emitPath(int contextId, const Path2D& path, int action, bool evenOdd
     }
     pushPath(contextId, static_cast<std::int32_t>(key), path, action, evenOdd);
 }
+
+// A Path2D drawn at the current transform. One small enough to go whole each
+// time is mapped into the page's frame when its segments allow, like the
+// current path's; a retained one is the page's to transform, so the page is
+// moved to the matrix.
+void Canvas::emitPathAt(const Path2D& p, int action, bool evenOdd) const {
+  // A stroke never is (see stroke()).
+  if (p.segments().size() <= kMaxInlinePathSegments && action != 1) {
+    unsigned need = kFitAffine;
+    for (const Path2D::Segment& g : p.segments()) need |= segmentNeed(g);
+    const PageFrame& f = frameFor(web_.matrix, need);
+    if (f.same()) { pushPath(contextId_, 0, p, action, evenOdd); return; }
+    Path2D mapped;
+    std::vector<Path2D::Segment>& out = mapped.segments();
+    out.reserve(p.segments().size());
+    for (const Path2D::Segment& g : p.segments()) out.push_back(mapSegment(g, f));
+    pushPath(contextId_, 0, mapped, action, evenOdd);
+    return;
+  }
+  movePageTo(web_.matrix);
+  if (p.segments().size() <= kMaxInlinePathSegments) pushPath(contextId_, 0, p, action, evenOdd);
+  else emitPath(contextId_, p, action, evenOdd);
+}
 #endif
 void Canvas::fill(const Path2D&p,const std::string&s) {
 #ifdef __EMSCRIPTEN__
   sync(kFillBits);
-  emitPath(contextId_, p, 0, s=="evenodd");
+  emitPathAt(p, 0, s=="evenodd");
 #else
   fillDevice(p, s=="evenodd", state_.fill);
 #endif
@@ -1988,7 +2232,7 @@ void Canvas::fill(const Path2D&p,const std::string&s) {
 void Canvas::stroke(const Path2D&p) {
 #ifdef __EMSCRIPTEN__
   sync(kStrokeBits);
-  emitPath(contextId_, p, 1, false);
+  emitPathAt(p, 1, false);
 #else
   strokeDevice(p);
 #endif
@@ -1996,8 +2240,7 @@ void Canvas::stroke(const Path2D&p) {
 void Canvas::clip(const Path2D&p,const std::string&s) {
 #ifdef __EMSCRIPTEN__
   realSave();
-  sync(kTransformBit);
-  emitPath(contextId_, p, 2, s=="evenodd");
+  emitPathAt(p, 2, s=="evenodd");
 #else
   flatten(p, state_.matrix, matrixScale(state_.matrix), gFlat);
   auto mask=std::make_shared<ClipMask>();
@@ -2054,8 +2297,10 @@ bool Canvas::isPointInPath(float a,float b,const std::string&s)const {
 }
 bool Canvas::isPointInStroke(float a,float b)const {
 #ifdef __EMSCRIPTEN__
+  if (pathMode_ == PathMode::Deferred) movePageTo(pathMatrix_);
   preparePagePath();
   sync(kStrokeBits);
+  movePageTo(web_.matrix);
   canvasFlushOps();
   return c2d_hit(contextId_,a,b,1,"");
 #else
@@ -2065,6 +2310,13 @@ bool Canvas::isPointInStroke(float a,float b)const {
 void Canvas::fillText(const std::string&s,float a,float b,float c){
 #ifdef __EMSCRIPTEN__
   sync(kFillBits|kTextBits);
+  // Only shifted: the browser does not draw a glyph scaled by its transform
+  // the way it draws the same glyph at the scaled size, so the page keeps the
+  // run's own scale and rotation and only a translation is taken out of it.
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitTranslate);
+    if (!f.same()) { a = static_cast<float>(a + f.e); b = static_cast<float>(b + f.f); }
+  }
   pushText(contextId_,47,c,a,b,s);
 #else
   glyphs(s,a,b,c,state_.fill);
@@ -2073,6 +2325,13 @@ void Canvas::fillText(const std::string&s,float a,float b,float c){
 void Canvas::strokeText(const std::string&s,float a,float b,float c){
 #ifdef __EMSCRIPTEN__
   sync(kStrokeBits|kTextBits);
+  {
+    // Shifted like fillText. The browser strokes glyphs in its glyph cache,
+    // keyed by the matrix's scale and the pen's subpixel phase, which a shift
+    // leaves alone.
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitTranslate);
+    if (!f.same()) { a = static_cast<float>(a + f.e); b = static_cast<float>(b + f.f); }
+  }
   pushText(contextId_,48,c,a,b,s);
 #else
   glyphs(s,a,b,c,state_.stroke);
@@ -2091,6 +2350,18 @@ float Canvas::measureText(const std::string&s)const {
 void Canvas::drawCanvas(const Canvas&s,float a,float b) {
 #ifdef __EMSCRIPTEN__
   sync(kImageBits);
+  {
+    // Upright and unmirrored: drawImage normalises a negative box rather
+    // than flipping the picture, so a mirror needs the page's own matrix.
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) {
+      // At its natural size, which is its backing store's.
+      float w = static_cast<float>(s.width_), h = static_cast<float>(s.height_);
+      mapBox(f, a, b, w, h);
+      pushRef(contextId_,51,s.contextId_,a,b,w,h,1,0,0,0);
+      return;
+    }
+  }
   pushRef(contextId_,51,s.contextId_,a,b,0,0,0,0,0,0);
 #else
   drawCanvas(s, a, b, static_cast<float>(s.width_), static_cast<float>(s.height_));
@@ -2099,6 +2370,10 @@ void Canvas::drawCanvas(const Canvas&s,float a,float b) {
 void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
 #ifdef __EMSCRIPTEN__
   sync(kImageBits);
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) mapBox(f, a, b, c, d);
+  }
   pushRef(contextId_,51,s.contextId_,a,b,c,d,1,0,0,0);
 #else
   if (c <= 0 || d <= 0) return;
@@ -2124,6 +2399,10 @@ void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
 void Canvas::drawCanvas(const Canvas&s,float sx,float sy,float sw,float sh,float a,float b,float c,float d) {
 #ifdef __EMSCRIPTEN__
   sync(kImageBits);
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) mapBox(f, a, b, c, d);
+  }
   pushRef(contextId_,52,s.contextId_,sx,sy,sw,sh,a,b,c,d);
 #else
   blitRegion(s,sx,sy,sw,sh,a,b,c,d,nullptr);
@@ -2218,6 +2497,10 @@ void canvasReleaseRemoteImage(int handle) {
 void Canvas::drawRemoteImage(int handle,float dx,float dy,float dw,float dh) {
   if (handle <= 0 || dw <= 0 || dh <= 0) return;
   sync(kImageBits);
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) mapBox(f, dx, dy, dw, dh);
+  }
   pushRef(contextId_,54,handle,dx,dy,dw,dh,0,0,0,0);
 }
 #endif
@@ -2226,6 +2509,10 @@ void Canvas::drawImage(const std::uint8_t* rgba,int iw,int ih,float dx,float dy,
   // Drawn directly rather than queued, so the state it reads has to be
   // queued and then flushed ahead of it.
   sync(kImageBits);
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) mapBox(f, dx, dy, dw, dh);
+  }
   canvasFlushOps();
   c2d_image(contextId_,static_cast<int>(cacheKey),rgba,iw,ih,dx,dy,dw,dh,alpha);
 #else

@@ -47,8 +47,9 @@ constexpr std::size_t kMaxMisses = 8192;
 constexpr std::size_t kMaxWaiting = 1024;
 
 /// The CSS font shorthand for a run. `Ubuntu` is the face the page loads and
-/// the same one whose metrics (`data/Ubuntu-Bold.metrics`) `measure()` reads,
-/// so a layout measured against the face still fits what the browser draws.
+/// the same one whose metrics the build compiled in (face_metrics.h) for
+/// `measure()`, so a layout measured against the face still fits what the
+/// browser draws.
 std::string fontSpec(double size) {
     char buf[64];
     std::snprintf(buf, sizeof buf, "bold %.3fpx Ubuntu, sans-serif", size);
@@ -82,9 +83,12 @@ EM_JS(int, text_atlas_font_ready, (const char* font, const char* text), {
   }
 });
 // The ink box the page's own engine gives a run, left-aligned on an alphabetic
-// baseline: left, right, ascent, descent. Measured by the browser rather than
-// from the outlines this build decodes, so kerning and fallback faces are in
-// it -- it is the box of what will actually be drawn.
+// baseline: left, right, ascent, descent. Measured by the browser, once per
+// bake, rather than from the face's compiled-in numbers, so kerning and
+// fallback faces are in it -- it is the box of what will actually be drawn.
+// Ubuntu's kerning is not only ever a tightening: "AA" draws 3.7px wider per
+// pair at 100px than its advances say and "(j" 8.5px, so a box built from the
+// advances alone crops the end of a long run.
 EM_JS(void, text_atlas_measure, (const char* font, const char* text, float* out), {
   let x = Module.textAtlasMeasure;
   if (!x) {

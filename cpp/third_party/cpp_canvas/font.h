@@ -43,6 +43,26 @@ public:
     float descent(float pixelSize) const;   // negative, as in the font
     float lineHeight(float pixelSize) const;
 
+    // The face's raw numbers, in font units, for a tool that writes them out
+    // ahead of time rather than reading the file at run time. What measure(),
+    // covers(), ascent() and descent() compute is a function of exactly these.
+    struct GlyphMetrics {
+        std::uint16_t advance = 0;
+        // The glyf header's box, y up. All zero for a blank glyph (a space).
+        std::int16_t xMin = 0, yMin = 0, xMax = 0, yMax = 0;
+    };
+    std::uint16_t unitsPerEm() const { return unitsPerEm_; }
+    // The em box's split at the baseline, which ascent() and descent() scale.
+    std::int16_t emAscent() const { return ascent_; }
+    std::int16_t emDescent() const { return descent_; }
+    // Every codepoint the face maps to a glyph of its own, ascending.
+    std::vector<std::uint32_t> mappedCodepoints() const;
+    // The glyph `codepoint` is set in -- .notdef for one the face lacks.
+    GlyphMetrics metrics(std::uint32_t codepoint) const;
+    // The codepoint at `i`, advancing past it: how measure() and covers() read
+    // a string. Invalid bytes come out as U+FFFD, one byte at a time.
+    static std::uint32_t nextCodepoint(const std::string& utf8, std::size_t& i);
+
 private:
     struct Glyph {
         Path2D path;          // in font units, y already flipped to screen down

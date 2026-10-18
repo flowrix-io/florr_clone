@@ -186,14 +186,13 @@ struct DropDef {
 /// The staged content directory.
 ///
 /// Nothing a panel is handed carries the client's `--data` path, and
-/// mob_drops.json is staged beside the fonts, so the typeface the client
-/// actually loaded is the one handle the UI layer has on it. A client that
-/// fell back to a system font finds no table and the tooltip degrades to its
-/// text rows rather than failing.
+/// mob_drops.json is staged beside the font, so the directory the fonts were
+/// initialised from is the one handle the UI layer has on it. A client without
+/// the file finds no table and the tooltip degrades to its text rows rather
+/// than failing.
 std::string dataDirectory() {
-    const std::string& font = Fonts::path();
-    const std::size_t slash = font.find_last_of("/\\");
-    return slash == std::string::npos ? std::string(".") : font.substr(0, slash);
+    const std::string& dir = Fonts::dataDirectory();
+    return dir.empty() ? std::string(".") : dir;
 }
 
 // ---------------------------------------------------------------------------
