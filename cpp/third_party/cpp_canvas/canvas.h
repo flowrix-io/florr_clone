@@ -428,8 +428,11 @@ private:
     // identity. Remembers its last answer, which is the next call's too.
     const PageFrame& frameFor(const std::array<double, 6>& m, unsigned need) const;
     void movePageTo(const std::array<double, 6>& m) const;
-    // One segment added at `m`, into the page's current path.
-    void emitSegmentAt(const std::array<double, 6>& m, const Path2D::Segment& g) const;
+    // One segment added at `m`, into the page's current path. `loose`: a
+    // whole turn whose start point nothing depends on (see looseTurn in
+    // canvas.cpp), which may go over starting at angle 0 instead.
+    void emitSegmentAt(const std::array<double, 6>& m, const Path2D::Segment& g,
+                       bool loose = false) const;
     // A fill/stroke/clip (0/1/2) of a Path2D at the current transform.
     void emitPathAt(const Path2D& p, int action, bool evenOdd) const;
     mutable std::array<double, 6> framePage_{}, frameCall_{};
@@ -465,8 +468,17 @@ private:
     // segments are only ever replayed under this.
     std::array<double, 6> pathMatrix_{1, 0, 0, 1, 0, 0};
     void pathSegmentAdded();
-    void sendHeldPath(std::size_t count) const;
-    void preparePagePath() const;
+    // `fillOnly`: the path is about to be filled, clipped or hit-tested, never
+    // stroked from what is sent, so a loose whole turn's start may move.
+    void sendHeldPath(std::size_t count, bool fillOnly = false) const;
+    void preparePagePath(bool fillOnly = false) const;
+    // Whether the page's path holds a whole turn sent from angle 0 rather than
+    // from where the program started it. A stroke of it would show the seam
+    // in the wrong place, so a stroke sends the path again first.
+    mutable bool pageSeamMoved_ = false;
+    // Whether every segment of the current path was added at pathMatrix_,
+    // which is what lets a stroke send it again exactly.
+    bool pathUniform_ = true;
     bool paintCachedPath(int action, bool evenOdd);
 #endif
 #ifndef __EMSCRIPTEN__

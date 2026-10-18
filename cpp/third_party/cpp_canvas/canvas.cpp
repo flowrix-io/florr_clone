@@ -157,6 +157,15 @@ EM_JS(void, c2d_flush, (int id, const int* ops, int count, const char* text, con
 });
 EM_JS(void, c2d_dash, (int id, const float* data, int length), { Module.cppCanvasContexts[id].ctx.setLineDash(Array.from(HEAPF32.subarray(data>>2,(data>>2)+length))); });
 EM_JS(void, c2d_path_drop, (int key), { if (Module.cppCanvasPaths) Module.cppCanvasPaths.delete(key); });
+// Whether the page runs on Blink -- Chrome, Edge, Opera, Brave -- whose canvas
+// has the full-turn arc bug segmentNeed() works around.
+EM_JS(int, c2d_blink, (), {
+  if (typeof navigator === 'undefined') return 0;
+  const d = navigator.userAgentData;
+  if (d && d.brands) return d.brands.some(b => /Chromium|Google Chrome/.test(b.brand)) ? 1 : 0;
+  return /Chrome\/|Chromium\//.test(navigator.userAgent) ? 1 : 0;
+});
+EM_JS(void, c2d_warn, (const char* text), { console.warn(UTF8ToString(text)); });
 EM_JS(int, c2d_hit, (int id,double a,double b,int stroke,const char* rule), { const x=Module.cppCanvasContexts[id].ctx; return stroke ? x.isPointInStroke(a,b) : x.isPointInPath(a,b,UTF8ToString(rule)); });
 EM_JS(double, c2d_measure, (int id,const char* text), { return Module.cppCanvasContexts[id].ctx.measureText(UTF8ToString(text)).width; });
 EM_JS(int, c2d_get_pixels, (int id,int x,int y,int w,int h,std::uint8_t* out), { const d=Module.cppCanvasContexts[id].ctx.getImageData(x,y,w,h).data; HEAPU8.set(d,out); return d.length; });
@@ -1274,12 +1283,62 @@ enum : unsigned {
 // A uniform, upright scale: a rounded rect stays a rounded rect.
 constexpr unsigned kFitUpright = kFitAffine | kFitSimilar | kFitAxis | kFitPositive;
 
+// Blink's 2pi, which it compares sweeps against in float.
+constexpr float kTwoPiFloat = 6.2831853071795864f;
+
+/// Whether an arc or ellipse is a whole turn, as Blink decides it
+/// (CanvasPath::arc, AdjustEndAngle): end - start against 2pi, in float.
+bool wholeTurn(float start, float end, bool ccw) {
+  return ccw ? start - end >= kTwoPiFloat : end - start >= kTwoPiFloat;
+}
+bool wholeTurn(const Path2D::Segment& g) {
+  if (g.command == Path2D::Command::Arc) return wholeTurn(g.v[3], g.v[4], g.counterClockwise);
+  if (g.command == Path2D::Command::Ellipse) return wholeTurn(g.v[5], g.v[6], g.counterClockwise);
+  return false;
+}
+
+/// Whether segment `i` is a whole turn whose start point a FILL never sees:
+/// the first segment of the path, so no line runs into it, and followed by
+/// nothing that runs on from where it ends -- the end of the path, or a
+/// segment that starts a subpath of its own, after at most a closePath (which
+/// only goes back to the turn's own start). Filled, such a turn is the same
+/// disc whatever angle it starts at, pixel for pixel: measured in Chrome, a
+/// full circle or ellipse sent from 0 in the page's frame fills exactly as the
+/// program's own did under its matrix, rotated or mirrored (0 of 1200 differ).
+/// That start, 0, is also the one Chrome never draws as half a disc. A
+/// stroke would show the start -- the seam, caps and dash phase -- so it is
+/// only ever used for a fill, a clip or a hit test (pageSeamMoved_).
+///
+/// Not after a moveTo, even one on the circle: the line from it to a moved
+/// start and back is zero area, but Chrome antialiases it (up to 128/255).
+bool looseTurn(const std::vector<Path2D::Segment>& segs, std::size_t i) {
+  if (i != 0 || segs.empty() || !wholeTurn(segs[0])) return false;
+  const auto opens = [&](std::size_t j) {
+    if (j >= segs.size()) return true;
+    const Path2D::Command c = segs[j].command;
+    return c == Path2D::Command::Move || c == Path2D::Command::Rect ||
+           c == Path2D::Command::RoundRect;
+  };
+  if (segs.size() > 1 && segs[1].command == Path2D::Command::Close) return opens(2);
+  return opens(1);
+}
+
 /// What a segment asks of the frame it is mapped into.
 unsigned segmentNeed(const Path2D::Segment& g) {
   switch (g.command) {
+    // A whole turn only where its angles go over exactly as they were given:
+    // no rotation, no mirror. Chrome draws a full circle as HALF a disc when
+    // its own float arithmetic on the start and end leaves the sweep an ulp
+    // short of 2pi -- which depends on the start, its magnitude and the
+    // matrix, and which the angles a program writes (0 to 2pi) under the
+    // rotation it draws at have never hit. A turned start did: measured, the
+    // player's flower and 9 more of the 304 circles in a game frame, in
+    // Chrome only. A part of a turn is nowhere near that sweep. A LOOSE whole
+    // turn is the exception (looseTurn): it goes over from angle 0, which
+    // never trips the bug in any frame.
     case Path2D::Command::Arc:
-    case Path2D::Command::ArcTo:
-    case Path2D::Command::Ellipse: return kFitAffine | kFitSimilar;
+    case Path2D::Command::Ellipse: return wholeTurn(g) ? kFitUpright : (kFitAffine | kFitSimilar);
+    case Path2D::Command::ArcTo: return kFitAffine | kFitSimilar;
     // Not rotated: a rect under a rotation is four lines and a closePath,
     // and Chrome's closePath costs time in proportion to the path so far.
     case Path2D::Command::Rect: return kFitAffine | kFitAxis;
@@ -1410,22 +1469,18 @@ void mapBox(const CanvasPageFrame& r, float& x, float& y, float& w, float& h) {
 /// The start and end of an arc whose angles turn by `rotation` and run the
 /// other way when `sigma` is -1, as floats that the browser still sorts into
 /// the same case: a whole turn stays a whole turn, a part stays a part.
-/// Blink decides that in float, end - start against 2pi as a float
-/// (CanvasPath::arc, AdjustEndAngle), so that is the test kept here.
+/// Only ever a part, in fact: a whole turn is mapped only by an upright R,
+/// whose angles go over untouched (segmentNeed, mapSegment).
 void mapAngles(float start, float end, bool ccw, double rotation, int sigma, float& outStart,
                float& outEnd) {
-  constexpr float kTwoPi = 6.2831853071795864f;
-  const auto whole = [&](float s, float e, bool anticlockwise) {
-    return anticlockwise ? s - e >= kTwoPi : e - s >= kTwoPi;
-  };
-  const bool wasWhole = whole(start, end, ccw);
+  const bool wasWhole = wholeTurn(start, end, ccw);
   const bool nowCcw = sigma < 0 ? !ccw : ccw;
   outStart = static_cast<float>(rotation + sigma * static_cast<double>(start));
   outEnd = static_cast<float>(static_cast<double>(outStart) +
                               sigma * (static_cast<double>(end) - static_cast<double>(start)));
   // Rounding can put a sweep of exactly 2pi either side of the line; one or
   // two ulps of the end put it back on the side it started.
-  for (int step = 0; step < 4 && whole(outStart, outEnd, nowCcw) != wasWhole; ++step) {
+  for (int step = 0; step < 4 && wholeTurn(outStart, outEnd, nowCcw) != wasWhole; ++step) {
     const bool longer = wasWhole;
     const bool up = nowCcw ? !longer : longer;
     outEnd = std::nextafter(outEnd, up ? INFINITY : -INFINITY);
@@ -1434,10 +1489,32 @@ void mapAngles(float start, float end, bool ccw, double rotation, int sigma, flo
 
 /// A segment added at M, as R maps it into the page's frame. R meets the
 /// segment's segmentNeed().
-Path2D::Segment mapSegment(const Path2D::Segment& g, const CanvasPageFrame& r) {
+Path2D::Segment mapSegment(const Path2D::Segment& g, const CanvasPageFrame& r,
+                           bool loose = false) {
   Path2D::Segment o = g;
   const float* v = g.v;
+  // No rotation, no mirror: angles and an ellipse's tilt carry over as they are.
+  const bool upright = (r.fits & kFitAxis) && (r.fits & kFitPositive);
   const auto point = [&](int at) { o.v[at] = mapX(r, v[at], v[at + 1]); o.v[at + 1] = mapY(r, v[at], v[at + 1]); };
+  if (loose && !upright && wholeTurn(g)) {
+    // A loose whole turn (looseTurn): the same disc, from angle 0 of the
+    // page's frame, round the way R turns it.
+    const bool ccw = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+    const float end = ccw ? -kTwoPiFloat : kTwoPiFloat;
+    o.counterClockwise = ccw;
+    point(0);
+    o.v[2] = static_cast<float>(v[2] * r.scale);
+    if (g.command == Path2D::Command::Arc) {
+      o.v[3] = 0.0f;
+      o.v[4] = end;
+    } else {
+      o.v[3] = static_cast<float>(v[3] * r.scale);
+      o.v[4] = static_cast<float>(r.rotation + r.sigma * static_cast<double>(v[4]));
+      o.v[5] = 0.0f;
+      o.v[6] = end;
+    }
+    return o;
+  }
   switch (g.command) {
     case Path2D::Command::Move:
     case Path2D::Command::Line: point(0); break;
@@ -1445,11 +1522,14 @@ Path2D::Segment mapSegment(const Path2D::Segment& g, const CanvasPageFrame& r) {
     case Path2D::Command::Bezier: point(0); point(2); point(4); break;
     case Path2D::Command::Arc:
       // A point at angle t lands at angle rotation + sigma*t of the mapped
-      // circle, so the angles shift and, mirrored, run the other way.
+      // circle, so the angles shift and, mirrored, run the other way. Upright,
+      // they are left exactly as given.
       point(0);
       o.v[2] = static_cast<float>(v[2] * r.scale);
-      mapAngles(v[3], v[4], g.counterClockwise, r.rotation, r.sigma, o.v[3], o.v[4]);
-      o.counterClockwise = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+      if (!upright) {
+        mapAngles(v[3], v[4], g.counterClockwise, r.rotation, r.sigma, o.v[3], o.v[4]);
+        o.counterClockwise = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+      }
       break;
     case Path2D::Command::ArcTo:
       point(0); point(2);
@@ -1461,9 +1541,11 @@ Path2D::Segment mapSegment(const Path2D::Segment& g, const CanvasPageFrame& r) {
       point(0);
       o.v[2] = static_cast<float>(v[2] * r.scale);
       o.v[3] = static_cast<float>(v[3] * r.scale);
-      o.v[4] = static_cast<float>(r.rotation + r.sigma * static_cast<double>(v[4]));
-      mapAngles(v[5], v[6], g.counterClockwise, 0.0, r.sigma, o.v[5], o.v[6]);
-      o.counterClockwise = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+      if (!upright) {
+        o.v[4] = static_cast<float>(r.rotation + r.sigma * static_cast<double>(v[4]));
+        mapAngles(v[5], v[6], g.counterClockwise, 0.0, r.sigma, o.v[5], o.v[6]);
+        o.counterClockwise = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+      }
       break;
     case Path2D::Command::Rect:
       mapBox(r, o.v[0], o.v[1], o.v[2], o.v[3]);
@@ -1501,11 +1583,38 @@ void Canvas::movePageTo(const std::array<double, 6>& m) const {
      static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5]),0,0,"");
 }
 
-void Canvas::emitSegmentAt(const std::array<double, 6>& m, const Path2D::Segment& g) const {
-  const unsigned need = segmentNeed(g);
+namespace {
+/// Says once, in the console of a Blink browser, that a full circle has been
+/// sent differently for Chrome's sake (segmentNeed, looseTurn). Called with R
+/// before frameFor() may move the page; says nothing elsewhere.
+void noteBlinkFullTurn(const CanvasPageFrame& r) {
+  static int blink = -1;
+  static bool said = false;
+  if (said) return;
+  if (blink < 0) blink = c2d_blink();
+  if (!blink) { said = true; return; }
+  // Only where the workaround is what decided it: a frame the turn would
+  // otherwise have been mapped into.
+  if (!(r.fits & kFitSimilar) || ((r.fits & kFitAxis) && (r.fits & kFitPositive))) return;
+  said = true;
+  c2d_warn("[canvas] Chrome draws some full-circle arcs as half discs: when float rounding "
+           "leaves a whole turn's sweep just short of 2pi, which depends on the start angle "
+           "and the rotation it is drawn under (Safari does not show it). A "
+           "slightly longer sweep does not avoid it -- Blink clamps it back to start + 2pi. "
+           "Filled full circles are sent starting at angle 0, which it always draws whole; "
+           "others keep their own transform.");
+}
+} // namespace
+
+void Canvas::emitSegmentAt(const std::array<double, 6>& m, const Path2D::Segment& g,
+                           bool loose) const {
+  const unsigned need = loose ? (kFitAffine | kFitSimilar) : segmentNeed(g);
   if (need == 0) { emitSegment(contextId_, g); return; }
+  if (wholeTurn(g) && applied_.matrix != m) noteBlinkFullTurn(relativeFrame(applied_.matrix, m));
   const PageFrame& f = frameFor(m, need);
-  emitSegment(contextId_, f.same() ? g : mapSegment(g, f));
+  if (f.same()) { emitSegment(contextId_, g); return; }
+  if (loose && !((f.fits & kFitAxis) && (f.fits & kFitPositive))) pageSeamMoved_ = true;
+  emitSegment(contextId_, mapSegment(g, f, loose));
 }
 namespace {
 bool pathAlreadySent(const Path2D& path);   // the retained-path cache, further down
@@ -1611,15 +1720,18 @@ void Canvas::pathSegmentAdded() {
     case PathMode::Empty:
       pathMatrix_ = web_.matrix;
       pathMode_ = PathMode::Deferred;
+      pathUniform_ = true;
       return;
     case PathMode::Deferred:
       if (web_.matrix == pathMatrix_) return;
+      pathUniform_ = false;
       // The transform moved while the path was being built. What is held goes
       // over under the transform it was added under, and from here the path
       // is sent as it is built, the way every path used to be.
       sendHeldPath(path.segments().size() - 1);
       break;
     case PathMode::Sent:
+      if (web_.matrix != pathMatrix_) pathUniform_ = false;
       break;
   }
   emitSegmentAt(web_.matrix, path.segments().back());
@@ -1627,11 +1739,14 @@ void Canvas::pathSegmentAdded() {
   pagePathDirty_ = true;
 }
 
-void Canvas::sendHeldPath(std::size_t count) const {
+void Canvas::sendHeldPath(std::size_t count, bool fillOnly) const {
   OP(33,0,0,0,0,0,0,0,0,"");
+  pageSeamMoved_ = false;
   // Each segment into the page's frame, under the transform it was added at.
-  const Path2D& path = currentPath_;
-  for (std::size_t i = 0; i < count; ++i) emitSegmentAt(pathMatrix_, path.segments()[i]);
+  const std::vector<Path2D::Segment>& segs = currentPath_.segments();
+  for (std::size_t i = 0; i < count; ++i) {
+    emitSegmentAt(pathMatrix_, segs[i], fillOnly && looseTurn(segs, i));
+  }
   pagePathSegments_ = static_cast<int>(count);
   pagePathDirty_ = count > 0;
   pathMode_ = PathMode::Sent;
@@ -1639,11 +1754,12 @@ void Canvas::sendHeldPath(std::size_t count) const {
 
 // Puts our current path in the page's, for a paint or a query that is about
 // to use the page's.
-void Canvas::preparePagePath() const {
+void Canvas::preparePagePath(bool fillOnly) const {
   if (pathMode_ == PathMode::Deferred) {
-    sendHeldPath(currentPath_.segments().size());
+    sendHeldPath(currentPath_.segments().size(), fillOnly);
   } else if (pathMode_ == PathMode::Empty && pagePathDirty_) {
     OP(33,0,0,0,0,0,0,0,0,"");
+    pageSeamMoved_ = false;
     pagePathDirty_ = false;
     pagePathSegments_ = 0;
   }
@@ -1727,6 +1843,7 @@ void Canvas::reset() {
   // ...and empties the page's current path, which ours mirrors.
   currentPath_ = Path2D{}; pathMode_ = PathMode::Empty;
   pagePathDirty_ = false; pagePathSegments_ = 0; pathHasSubpath_ = false;
+  pageSeamMoved_ = false; pathUniform_ = true;
 #endif
   OP(2,0,0,0,0,0,0,0,0,""); resetTransform();
 #ifndef __EMSCRIPTEN__
@@ -2043,7 +2160,7 @@ void Canvas::beginPath(){
   // The page's path is left as it is: whatever is painted next either names a
   // retained path or clears it first. Except a big one, which the page would
   // otherwise re-map through every transform change until something clears it.
-  if (pathMode_==PathMode::Sent && pagePathSegments_>32) { OP(33,0,0,0,0,0,0,0,0,""); pagePathDirty_=false; pagePathSegments_=0; }
+  if (pathMode_==PathMode::Sent && pagePathSegments_>32) { OP(33,0,0,0,0,0,0,0,0,""); pageSeamMoved_=false; pagePathDirty_=false; pagePathSegments_=0; }
   pathMode_=PathMode::Empty;
   pathHasSubpath_=false;
 #else
@@ -2083,7 +2200,7 @@ void Canvas::fill(const std::string&s){
   // page's path, and a fill reads nothing else of the matrix.
   sync(kFillBits);
   if (paintCachedPath(0, s=="evenodd")) return;
-  preparePagePath();
+  preparePagePath(true);
 #endif
   OP(44,0,0,0,0,0,0,0,0,s.c_str());
 #ifndef __EMSCRIPTEN__
@@ -2116,6 +2233,11 @@ void Canvas::stroke() {
   // any other frame comes out a fraction of a pixel different -- measured,
   // whole small circles re-shaded by up to a third, and dashes drifting.
   if (pathMode_ == PathMode::Deferred) movePageTo(pathMatrix_);
+  // Filled already from a moved start: sent again as the program drew it.
+  if (pathMode_ == PathMode::Sent && pageSeamMoved_ && pathUniform_) {
+    movePageTo(pathMatrix_);
+    sendHeldPath(currentPath_.segments().size());
+  }
   preparePagePath();
   // The line width is in the units of the transform current NOW.
   movePageTo(web_.matrix);
@@ -2132,7 +2254,7 @@ void Canvas::clip(const std::string&s){
   realSave();
   // Like a fill, the clip reads the path and nothing of the matrix.
   if (paintCachedPath(2, s=="evenodd")) return;
-  preparePagePath();
+  preparePagePath(true);
 #endif
   OP(46,0,0,0,0,0,0,0,0,s.c_str());
 #ifndef __EMSCRIPTEN__
@@ -2205,14 +2327,17 @@ static void emitPath(int contextId, const Path2D& path, int action, bool evenOdd
 void Canvas::emitPathAt(const Path2D& p, int action, bool evenOdd) const {
   // A stroke never is (see stroke()).
   if (p.segments().size() <= kMaxInlinePathSegments && action != 1) {
+    const std::vector<Path2D::Segment>& segs = p.segments();
     unsigned need = kFitAffine;
-    for (const Path2D::Segment& g : p.segments()) need |= segmentNeed(g);
+    for (std::size_t i = 0; i < segs.size(); ++i) {
+      need |= looseTurn(segs, i) ? (kFitAffine | kFitSimilar) : segmentNeed(segs[i]);
+    }
     const PageFrame& f = frameFor(web_.matrix, need);
     if (f.same()) { pushPath(contextId_, 0, p, action, evenOdd); return; }
     Path2D mapped;
     std::vector<Path2D::Segment>& out = mapped.segments();
-    out.reserve(p.segments().size());
-    for (const Path2D::Segment& g : p.segments()) out.push_back(mapSegment(g, f));
+    out.reserve(segs.size());
+    for (std::size_t i = 0; i < segs.size(); ++i) out.push_back(mapSegment(segs[i], f, looseTurn(segs, i)));
     pushPath(contextId_, 0, mapped, action, evenOdd);
     return;
   }
@@ -2275,7 +2400,7 @@ void Canvas::clip(const Path2D&p,const std::string&s) {
 bool Canvas::isPointInPath(float a,float b,const std::string&s)const {
 #ifdef __EMSCRIPTEN__
   // The page answers about ITS path, so ours has to be there.
-  preparePagePath();
+  preparePagePath(true);
   canvasFlushOps();
   return c2d_hit(contextId_,a,b,0,s.c_str());
 #else
@@ -2298,6 +2423,10 @@ bool Canvas::isPointInPath(float a,float b,const std::string&s)const {
 bool Canvas::isPointInStroke(float a,float b)const {
 #ifdef __EMSCRIPTEN__
   if (pathMode_ == PathMode::Deferred) movePageTo(pathMatrix_);
+  if (pathMode_ == PathMode::Sent && pageSeamMoved_ && pathUniform_) {
+    movePageTo(pathMatrix_);
+    sendHeldPath(currentPath_.segments().size());
+  }
   preparePagePath();
   sync(kStrokeBits);
   movePageTo(web_.matrix);
