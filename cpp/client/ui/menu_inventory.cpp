@@ -612,7 +612,8 @@ bool InventoryPanel::render(MenuContext& ctx) {
         // The badge is how many the ACCOUNT owns; the cluster the tile draws is
         // how many one equipped slot spawns. Two different counts, deliberately.
         tile.badge = cell.count > 1 ? ("x" + stackCountText(cell.count)) : std::string();
-        tile.hovered = hovered == static_cast<int>(i);
+        // No hover wash: the pointer turning into a hand is what says a cell
+        // can be picked up (below), and the tile itself stays its own colour.
         tile.timeSeconds = ctx.timeSeconds;
         drawItemTile(canvas, ctx.sprites, rect, tile);
     }
@@ -662,6 +663,9 @@ bool InventoryPanel::render(MenuContext& ctx) {
         }
     }
     if (searchRect.contains(mouse)) ctx.window.setCursorShape(CursorShape::Text);
+    // Held through a press as well: a drag starts on the press, and the hand
+    // flipping back to an arrow the moment a petal is picked up reads as lost.
+    if (hovered >= 0) ctx.window.setCursorShape(CursorShape::Hand);
 
     if (ctx.pressed()) {
         // Close and Stack act on PRESS, as the browser's mousedown handler
