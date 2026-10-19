@@ -123,6 +123,47 @@ void button(Canvas&, Rect r, const std::string& label, bool hovered, bool presse
 void disc(Canvas&, Vec2 centre, double radius, std::uint32_t fill,
           std::uint32_t outline = kInk, double outlineWidth = -1, double alpha = 1.0);
 
+/// One health bar -- every one in the game: a flower's and a mob's in the
+/// world, the HUD's, a squadmate's and a boss's.
+///
+/// rysteria_gardn's render_health (Client/Render/RenderHealth.cc): four
+/// round-capped strokes along one centre line, each over the last -- a
+/// kHealthTrack track, the kHealthLag red of health lost a moment ago, the
+/// green of what is left, and a white line for the shield. The widths keep
+/// that file's 9 : 7 : 5 (track : fill : shield), and every line but the
+/// track fades in over its first twentieth of the bar, so an empty one is not
+/// a round dot of colour sitting at the start. The values are the eased ones
+/// (HealthBarEase); the painter only draws them.
+struct HealthBar {
+    /// The left end of the centre line, and its height.
+    double x = 0;
+    double y = 0;
+    /// The centre line's length at full health. The caps stand half a
+    /// stroke past both ends of it.
+    double length = 0;
+    /// The fill's stroke: rysteria's 7 world units under a flower.
+    double thickness = 7;
+    /// How much further left the TRACK starts than the fill, for the HUD's
+    /// bars, whose track runs back under the avatar. rysteria's own is 0.
+    double trackLead = 0;
+    double health = 1;
+    /// The red trail: at or above `health`.
+    double lag = 1;
+    /// The shield as a fraction of MAX health, measured from the same start,
+    /// so it can outrun the green.
+    double shield = 0;
+    std::uint32_t fill = kHealth;
+};
+
+/// The track's stroke for a fill `thickness` wide.
+double healthTrackWidth(double thickness);
+
+/// Draws `bar` at the canvas's current global alpha. Opaque, the four lines
+/// are stacked exactly as rysteria strokes them. Under a see-through layer
+/// (the HUD's kHudLayerAlpha) they are clipped apart instead, so each pixel
+/// is blended with what is under the bar once, as the rest of that layer is.
+void healthBar(Canvas&, const HealthBar& bar);
+
 // ---------------------------------------------------------------------------
 // Text inputs
 // ---------------------------------------------------------------------------

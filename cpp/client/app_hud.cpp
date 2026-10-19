@@ -9,11 +9,13 @@
 // talent card's numbers -- and the loadout bar, which would mix the two, is
 // taken off the screen for the length of it (MenuSystem::drawLoadoutBar).
 //
-// The bar painters are the reason this file is worth reading. A HUD bar is
-// not a generic inset bar and a flower's health bar is not a mob's -- both
-// are drawn as non-overlapping rings punched out of one path, so that every
-// pixel is blended with the world exactly once and the layer comes out flat
-// rather than muddy. See hudBar() and flowerBar().
+// The bar painters are the reason this file is worth reading. The XP bar is
+// not a generic inset bar: it is drawn as non-overlapping rings punched out of
+// one path, so that every pixel is blended with the world exactly once and the
+// layer comes out flat rather than muddy (hudBar). The health bars -- the
+// flower's own, a squadmate's, a boss's -- are rysteria_gardn's, the one bar
+// every health readout in the game shares (ui::healthBar), which keeps to the
+// same rule under this layer's alpha.
 
 #include "client/app.h"
 
@@ -59,17 +61,14 @@ constexpr double kHudXpY = kHudHealthY + kHudBarHeight + 12.0;   // 134
 /// The mana bar is NOT here. It stands in the slot the viewer's own health
 /// bar used to occupy, under the flower itself -- WorldRenderer::drawSelfManaBar
 /// -- which is why this block goes straight from the XP bar to the avatar.
-/// How far the black plate of a bar stands out past its fill, and how far the
-/// white health pill is inset inside the track it rides in.
-constexpr double kHudPlatePad = 6.0;
-/// The plate runs back to the flower's CENTRE, so its rounded left cap is
-/// hidden behind the disc and the bar meets the flower along a straight edge
-/// with no crescent of background between them. Stopping it at the rim leaves
-/// the cap's arc showing, which is a bar that floats beside the flower rather
-/// than plugging into it.
+/// The health bar's track runs back to the flower's CENTRE, so its rounded
+/// left cap is hidden behind the disc and the bar meets the flower along a
+/// straight edge with no crescent of background between them. Stopping it at
+/// the rim leaves the cap's arc showing, which is a bar that floats beside the
+/// flower rather than plugging into it.
 constexpr double kHudPlateLeft = kHudBarX - kFlowerCentreX;
+/// How far the XP bar's black plate stands out past its fill.
 constexpr double kHudXpPad = 3.0;
-constexpr double kHudFillInset = 3.0;
 /// The nameplate written across the health bar, and the level across the XP
 /// bar under it.
 constexpr double kHudNameSize = 22.0;
@@ -101,7 +100,7 @@ std::string formatNumber(double value, bool raw) {
                : ui::formatCompact(value);
 }
 
-/// One HUD bar: an oversized black pill with the fill sitting flush inside it.
+/// The XP bar: an oversized black pill with the fill sitting flush inside it.
 ///
 /// Deliberately not a generic inset bar (the old ui::bar, since removed as
 /// unused), which insets the fill by its own outline width and clamps the
@@ -116,7 +115,7 @@ std::string formatNumber(double value, bool raw) {
 /// painter overlaps anything else, so every pixel is blended with the world
 /// exactly once -- the flattened layer the reference composites.
 void hudBar(Canvas& canvas, double x, double y, double w, double h, double fillWidth,
-            std::uint32_t colour, double pad = 2.0, std::uint32_t plateColour = kInk) {
+            std::uint32_t colour, double pad = 2.0) {
     const float radius = static_cast<float>(h * 0.5);
     // The hole is clamped to the plate; an over-full bar still overhangs it,
     // and the overhang is simply outside the shape being punched.
@@ -130,7 +129,7 @@ void hudBar(Canvas& canvas, double x, double y, double w, double h, double fillW
         plate.roundRect(static_cast<float>(x), static_cast<float>(y),
                         static_cast<float>(hole), static_cast<float>(h), radius);
     }
-    setFill(canvas, plateColour);
+    setFill(canvas, kInk);
     canvas.fill(plate, hole > 0 ? "evenodd" : "nonzero");
 
     if (fillWidth <= 0) return;
@@ -141,70 +140,28 @@ void hudBar(Canvas& canvas, double x, double y, double w, double h, double fillW
     canvas.fill();
 }
 
-/// A FLOWER's health bar, which is not shaped like a mob's.
-///
-/// A mob spends a black track down and fills it green, and that is the whole
-/// bar. A flower's has THREE zones:
-///
-///   * the green fill -- health, exactly as a mob's is.
-///   * the white pill riding inside it -- the SHIELD. Its own length, not a
-///     share of the health: a flower with no shield up shows no pill at all,
-///     and the bar is then an ordinary green one.
-///   * the dark plate past the fill -- health that is gone.
+/// A flower's health bar in this block: rysteria's bar (ui::healthBar) laid
+/// along the fill box (x, y, w, h), the green at full health spanning exactly
+/// that box. Its track runs back to the avatar's centre, as the plate it
+/// replaced did, so its rounded left cap is hidden behind the disc and the bar
+/// meets the flower along a straight edge rather than floating beside it.
 ///
 /// `fill` is the colour of the health, which is what invulnerability tints;
-/// the shield pill is always white.
-void flowerBar(Canvas& canvas, double x, double y, double w, double h, double fraction,
-               double shield, std::uint32_t fill, double scale) {
-    const double pad = kHudPlatePad * scale;
-    const double left = kHudPlateLeft * scale;
-    const double inset = kHudFillInset * scale;
-    const double innerHeight = h - inset * 2.0;
-
-    const double health = clamp(fraction, 0.0, 1.0);
-    const double healthWidth = w * health;
-    // Clamped to the health under it: the pill is drawn INSIDE the fill, so a
-    // shield larger than what is left of the pool reads as "all of it", not as
-    // a white cap hanging off the end of the green.
-    const double pillWidth = std::min(w * clamp(shield, 0.0, 1.0), healthWidth) - inset * 2.0;
-    const bool hasHealth = healthWidth > 0;
-    const bool hasPill = pillWidth > 0 && innerHeight > 0;
-
-    // Three rings, none of them overlapping: see hudBar. The pill is punched
-    // out of the fill and the fill out of the plate, so the layer stays flat
-    // and its alpha lands on each pixel once.
-    Path2D plate;
-    plate.roundRect(static_cast<float>(x - left), static_cast<float>(y - pad),
-                    static_cast<float>(w + left + pad), static_cast<float>(h + pad * 2.0),
-                    static_cast<float>(h * 0.5 + pad));
-    if (hasHealth) {
-        plate.roundRect(static_cast<float>(x), static_cast<float>(y),
-                        static_cast<float>(healthWidth), static_cast<float>(h),
-                        static_cast<float>(h * 0.5));
-    }
-    setFill(canvas, kInk);
-    canvas.fill(plate, hasHealth ? "evenodd" : "nonzero");
-
-    if (!hasHealth) return;
-    Path2D green;
-    green.roundRect(static_cast<float>(x), static_cast<float>(y),
-                    static_cast<float>(healthWidth), static_cast<float>(h),
-                    static_cast<float>(h * 0.5));
-    if (hasPill) {
-        green.roundRect(static_cast<float>(x + inset), static_cast<float>(y + inset),
-                        static_cast<float>(pillWidth), static_cast<float>(innerHeight),
-                        static_cast<float>(innerHeight * 0.5));
-    }
-    setFill(canvas, fill);
-    canvas.fill(green, hasPill ? "evenodd" : "nonzero");
-
-    if (!hasPill) return;
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(x + inset), static_cast<float>(y + inset),
-                     static_cast<float>(pillWidth), static_cast<float>(innerHeight),
-                     static_cast<float>(innerHeight * 0.5));
-    setFill(canvas, kPaper);
-    canvas.fill();
+/// the shield line is always white.
+void flowerBar(Canvas& canvas, double x, double y, double w, double h, const HealthBarEase& ease,
+               std::uint32_t fill, double scale) {
+    HealthBar bar;
+    bar.thickness = h;
+    bar.x = x + h * 0.5;
+    bar.y = y + h * 0.5;
+    bar.length = std::max(0.0, w - h);
+    bar.trackLead =
+        std::max(0.0, bar.x - (x - kHudPlateLeft * scale) - healthTrackWidth(h) * 0.5);
+    bar.health = ease.health;
+    bar.lag = ease.lag;
+    bar.shield = ease.shield;
+    bar.fill = fill;
+    healthBar(canvas, bar);
 }
 
 /// The white pointer that rides on a ring around a squadmate's avatar, aimed
@@ -338,14 +295,10 @@ void App::drawHud(Canvas& canvas, double time) {
     label.baseline = Baseline::Middle;
 
     const double health = std::max(0.0, self.health);
-    const double healthFraction = self.maxHealth > 0 ? health / self.maxHealth : 0.0;
-    // The shield rides in off the wire on the player's own body record, the
-    // same field every other flower's bar reads.
-    const double shield = selfEntity != net_.view().entities().end()
-                              ? selfEntity->second.shieldFraction
-                              : 0.0;
-    flowerBar(canvas, kHudBarX, kHudHealthY, kHudBarWidth, kHudBarHeight, healthFraction, shield,
-              healthColour, 1.0);
+    // The view eases it from SelfState's exact health, with the shield off the
+    // player's own body record -- the same field every other flower's bar reads.
+    flowerBar(canvas, kHudBarX, kHudHealthY, kHudBarWidth, kHudBarHeight,
+              net_.view().selfHealthBar(), healthColour, 1.0);
     // ALT is the only way to the exact figures now that the plate carries the
     // name: it is already what every other abbreviated number on this surface
     // answers to, so there is nowhere else a player would look for them.
@@ -473,8 +426,8 @@ void App::drawSquadHud(Canvas& canvas, double time) {
 
         const double barY = centreY - barHeight * 0.5;
         const bool invulnerable = (body.state & net::StateInvulnerable) != 0;
-        flowerBar(canvas, barX, barY, barWidth, barHeight, body.healthFraction,
-                  body.shieldFraction, invulnerable ? kInvulnerableHealth : kHealth, kScale);
+        flowerBar(canvas, barX, barY, barWidth, barHeight, body.healthBar,
+                  invulnerable ? kInvulnerableHealth : kHealth, kScale);
         text(canvas, member.name.empty() ? std::string("Squadmate") : member.name,
              barX + barWidth * 0.5, centreY, label);
 
@@ -558,14 +511,13 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     std::sort(bosses.begin(), bosses.end(),
               [](const RemoteEntity* a, const RemoteEntity* b) { return a->netId < b->netId; });
 
+    /// The fill's box at full health. The track stands a little proud of it
+    /// all round (ui::healthBar), and that is what the name and tier overlap.
     constexpr double kBarWidth = 400.0;
     constexpr double kBarHeight = 34.0;
-    /// The plate the bar rides in: a charcoal pill standing this far out past
-    /// it on every side, which is what the name and the tier overlap.
-    constexpr double kBarPad = 8.0;
     constexpr double kNameSize = 33.0;
     constexpr double kTierSize = 20.0;
-    /// The name's baseline sits just INSIDE the plate's top edge and the tier
+    /// The name's baseline sits just INSIDE the track's top edge and the tier
     /// just below its bottom one, so both bite into the bar rather than
     /// floating clear of it.
     constexpr double kNameDrop = 4.0;
@@ -576,8 +528,8 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     constexpr double kTopMargin = 108.0;
     const double centreX = window_.width() * 0.5;
 
-    // One see-through layer, like the block in the corner. hudBar punches the
-    // fill out of its plate so the two never blend into each other.
+    // One see-through layer, like the block in the corner. ui::healthBar
+    // clips its lines apart under it so they never blend into each other.
     canvas.save();
     canvas.setGlobalAlpha(static_cast<float>(kHudLayerAlpha));
 
@@ -590,11 +542,16 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
         // two cannot disagree: nothing scales a mob's pool after it spawns.
         const double maxHealth = content().mobStats(boss.typeIndex, boss.rarity).health;
         const double health = std::max(0.0, clamp(boss.healthFraction, 0.0, 1.0) * maxHealth);
-        hudBar(canvas, centreX - kBarWidth * 0.5, barY, kBarWidth, kBarHeight,
-               maxHealth > 0 ? health / maxHealth * kBarWidth : 0.0, kHealth, kBarPad,
-               kBossTrack);
+        HealthBar bar;
+        bar.thickness = kBarHeight;
+        bar.x = centreX - (kBarWidth - kBarHeight) * 0.5;
+        bar.y = barY + kBarHeight * 0.5;
+        bar.length = kBarWidth - kBarHeight;
+        bar.health = boss.healthBar.health;
+        bar.lag = boss.healthBar.lag;
+        healthBar(canvas, bar);
 
-        // Over the bar, not above it: the name goes down after the plate so
+        // Over the bar, not above it: the name goes down after the track so
         // its outline reads against the fill.
         TextStyle name;
         name.size = kNameSize;

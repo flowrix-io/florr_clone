@@ -24,6 +24,33 @@ namespace flix {
 
 class ContentRegistry;
 
+/// What a health bar shows, eased the way rysteria_gardn eases it
+/// (Client/Simulation.cc). The green and the white glide to the wire's values
+/// at 0.2 of the gap per 60 Hz frame. The red under them -- health lost a
+/// moment ago -- snaps up with the green, holds for a quarter second after the
+/// last hit, and then drains at a third of the green's rate. ui::healthBar
+/// draws it.
+struct HealthBarEase {
+    double health = 1;
+    double shield = 0;
+    double lag = 1;
+
+    /// Takes the values as they stand, with nothing to ease from: a fresh
+    /// spawn, or the viewer's own flower joining or respawning.
+    void snap(double targetHealth, double targetShield);
+    /// One frame toward the wire's `targetHealth` and `targetShield`.
+    /// `nowMillis` is the render clock, which the quarter-second hold after a
+    /// hit is timed on.
+    void step(double targetHealth, double targetShield, double nowMillis, double dtSeconds);
+
+private:
+    /// The wire's health last frame. A drop in it is a hit -- rysteria's
+    /// `damaged` flag, which this wire does not carry.
+    double seenHealth_ = 1;
+    double hitAtMillis_ = -1e300;
+    bool primed_ = false;
+};
+
 /// One entity as the client knows it.
 struct RemoteEntity {
     std::uint32_t netId = 0;
@@ -61,6 +88,9 @@ struct RemoteEntity {
     bool needsSnap = true;
 
     double healthFraction = 1;
+    /// What the health bar draws: `healthFraction` and `shieldFraction`,
+    /// eased, and the red trail behind them. Stepped by interpolate().
+    HealthBarEase healthBar;
     double radius = 10;
     std::uint8_t state = 0;
 
@@ -251,11 +281,21 @@ public:
     /// the raw authoritative position, which is the only thing there is.
     Vec2 selfDrawnPosition() const;
 
+    /// The HUD's health bar for the viewer's own flower: SelfState's exact
+    /// health over its max, and the shield off its body, eased as every
+    /// other bar is.
+    const HealthBarEase& selfHealthBar() const { return selfHealthBar_; }
+
     void clear();
 
     /// Inserts an entity outright, for tests and for tools that assemble a
     /// scene with no socket behind it. Nothing on the wire path uses it.
-    void seedForTest(const RemoteEntity& entity) { entities_[entity.netId] = entity; }
+    /// The health bar starts settled on the record's own health and shield,
+    /// as a spawn's does.
+    void seedForTest(const RemoteEntity& entity) {
+        RemoteEntity& seeded = entities_[entity.netId] = entity;
+        seeded.healthBar.snap(entity.healthFraction, entity.shieldFraction);
+    }
 
     /// Names the viewer's own flower, which a snapshot otherwise does from
     /// the SpawnIsSelf flag on its spawn record. For tests and tools that
@@ -355,6 +395,7 @@ private:
     /// spawn record arrives, and the camera needs an answer before then.
     Vec2 selfDrawnPosition_;
     bool selfSnapPending_ = true;
+    HealthBarEase selfHealthBar_;
     double clockOffsetMillis_ = 0;
     bool clockAnchored_ = false;
     /// The worst recent lateness, decaying by kLatenessMemory per snapshot.

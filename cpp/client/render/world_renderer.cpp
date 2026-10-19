@@ -404,10 +404,14 @@ NumberChannel channelOf(std::uint8_t flags) {
 constexpr double kPetalGlowPad = 16.0;
 constexpr double kPetalGlowAlpha = 76.0 / 255.0;
 
-/// A mob's bar never shrinks below the width a common hornet asks for, and is
-/// always eight units tall.
+/// A mob's bar never shrinks below the width a common hornet asks for, and its
+/// slot is always eight units tall.
 constexpr double kMobBarMinWidth = 60.0;
 constexpr double kMobBarHeight = 8.0;
+/// The stroke of every health bar in the world, a flower's and a mob's:
+/// rysteria_gardn's render_health strokes its fill 7 units wide (its track
+/// 9), whatever the body's size.
+constexpr double kWorldHealthBarThickness = 7.0;
 /// An NPC's plate stops growing at this width. The titan is a thousand units
 /// across, and florr hangs a plate of an ordinary mob's size under it rather
 /// than a bar the width of the screen.
@@ -2261,12 +2265,26 @@ PlateBar plateBar(double size, const Camera& camera, Vec2 at) {
     return bar;
 }
 
-/// The dark backing every bar in this slot is punched out of: one unit proud
-/// of the fill on every side, which is what leaves the rim the pill rides in.
+/// The dark backing the mana bar is punched out of: one unit proud of the fill
+/// on every side.
 void plateBarBack(Path2D& path, const PlateBar& bar) {
     path.roundRect(static_cast<float>(bar.centreX - 31.0 * bar.zoom),
                    static_cast<float>(bar.top - bar.zoom), static_cast<float>(62.0 * bar.zoom),
                    static_cast<float>(10.0 * bar.zoom), static_cast<float>(5.0 * bar.zoom));
+}
+
+/// rysteria's health bar (ui::healthBar) laid along a plate's fill box, in
+/// screen pixels: centred on the box's middle line at rysteria's own stroke,
+/// with the green at full health spanning exactly the box's width, so the
+/// name and the labels set round the box stay where they are.
+ui::HealthBar worldHealthBar(double left, double top, double width, double height,
+                             double zoom) {
+    ui::HealthBar bar;
+    bar.thickness = kWorldHealthBarThickness * zoom;
+    bar.x = left + bar.thickness * 0.5;
+    bar.y = top + height * 0.5;
+    bar.length = std::max(0.0, width - bar.thickness);
+    return bar;
 }
 
 } // namespace
@@ -2286,8 +2304,8 @@ void WorldRenderer::drawSelfManaBar(Canvas& canvas, const RemoteEntity& entity,
     const double fraction = clamp(selfState_->mana / selfState_->maxMana, 0.0, 1.0);
     const double fillWidth = bar.width * fraction;
 
-    // Punched rather than stacked, under one alpha, exactly as the health bar
-    // in this slot is: laying a fill over a plate blends both twice.
+    // Punched rather than stacked, under one alpha: laying a fill over a
+    // plate blends both twice.
     canvas.save();
     canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
 
@@ -2338,64 +2356,16 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         // Always drawn, even at full health: the bar is part of how a flower
         // reads, not a warning that appears once you are hurt.
         //
-        // The same three zones the HUD's own bar has -- flowerBar() in app_hud.cpp
-        // is the other end of this: the green fill is the health, the white
-        // pill riding inside it is the SHIELD, and the dark plate past the
-        // fill is health that is gone. A MOB's bar is the plain two-zone one;
-        // only flowers wear a pill, and only while a shield is up.
-        const double width = bar.width;
-        const double height = bar.height;
-        // One eighth of the bar, which is the rim the HUD's own pill sits in.
-        const double inset = zoom;
-        const double innerHeight = height - inset * 2.0;
-        const double health = clamp(entity.healthFraction, 0.0, 1.0);
-        const double healthWidth = width * health;
-        // Clamped to the health under it, as the HUD's is: the pill is drawn
-        // INSIDE the fill, never hanging off the end of it.
-        const double pillWidth =
-            std::min(width * clamp(entity.shieldFraction, 0.0, 1.0), healthWidth) - inset * 2.0;
-        const bool hasHealth = healthWidth > 0;
-        const bool hasPill = pillWidth > 0 && innerHeight > 0;
-
-        const auto pillRect = [&](Path2D& path) {
-            path.roundRect(static_cast<float>(left + inset), static_cast<float>(barY + inset),
-                           static_cast<float>(pillWidth), static_cast<float>(innerHeight),
-                           static_cast<float>(innerHeight * 0.5));
-        };
-        const auto healthRect = [&](Path2D& path) {
-            path.roundRect(static_cast<float>(left), static_cast<float>(barY),
-                           static_cast<float>(healthWidth), static_cast<float>(height),
-                           static_cast<float>(height * 0.5));
-        };
-
-        // Punched, not stacked, and under one alpha -- again as the HUD does
-        // it. Laying the fill over the plate and the pill over the fill would
-        // blend each of them twice and come out muddy.
-        canvas.save();
-        canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
-
-        Path2D plate;
-        plateBarBack(plate, bar);
-        if (hasHealth) healthRect(plate);
-        ui::setFill(canvas, ui::kHealthBack);
-        canvas.fill(plate, hasHealth ? "evenodd" : "nonzero");
-
-        if (hasHealth) {
-            Path2D green;
-            healthRect(green);
-            if (hasPill) pillRect(green);
-            ui::setFill(canvas, healthBarColor(entity, timeSeconds));
-            canvas.fill(green, hasPill ? "evenodd" : "nonzero");
-        }
-
-        if (hasPill) {
-            Path2D pill;
-            pillRect(pill);
-            ui::setFill(canvas, ui::kPaper);
-            canvas.fill(pill);
-        }
-
-        canvas.restore();
+        // rysteria's bar, opaque as rysteria draws it: the track, the red of
+        // what was just lost, the green -- tinted while spawn protection
+        // lasts -- and the white shield line. A MOB's is the same bar with no
+        // shield in it.
+        ui::HealthBar health = worldHealthBar(left, barY, bar.width, bar.height, zoom);
+        health.health = entity.healthBar.health;
+        health.lag = entity.healthBar.lag;
+        health.shield = entity.healthBar.shield;
+        health.fill = healthBarColor(entity, timeSeconds);
+        ui::healthBar(canvas, health);
     }
 
     if (options.names) {
@@ -3520,14 +3490,7 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
     if (options.healthBars) {
         // Always drawn, even at full health: the bar, the name and the tier are
         // one block of text, and the block is how a mob is identified.
-        ui::setFill(canvas, ui::kHealthBack);
-        canvas.beginPath();
-        canvas.roundRect(static_cast<float>(barX - zoom), static_cast<float>(barY - zoom),
-                         static_cast<float>(barWidth + 2.0 * zoom),
-                         static_cast<float>(barHeight + 2.0 * zoom),
-                         static_cast<float>(barHeight * 0.5));
-        canvas.fill();
-
+        ui::HealthBar health = worldHealthBar(barX, barY, barWidth, barHeight, zoom);
         if (mob.npc || (config != nullptr && config->intangible)) {
             // An NPC's plate is a mob's plate with the bar in its invulnerable
             // state: full whatever the wire says -- which is what the server
@@ -3538,23 +3501,12 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
             // difference between a working dummy and a bug. An intangible mob
             // (the fire ant hole) is the same promise: its brood is what you
             // fight, not it.
-            ui::setFill(canvas, kInvulnerableHealth);
-            canvas.beginPath();
-            canvas.roundRect(static_cast<float>(barX), static_cast<float>(barY),
-                             static_cast<float>(barWidth), static_cast<float>(barHeight),
-                             static_cast<float>(barHeight * 0.5));
-            canvas.fill();
+            health.fill = kInvulnerableHealth;
         } else {
-            const double fill = clamp(mob.healthFraction, 0.0, 1.0) * barWidth;
-            if (fill > 0) {
-                ui::setFill(canvas, ui::kHealth);
-                canvas.beginPath();
-                canvas.roundRect(static_cast<float>(barX), static_cast<float>(barY),
-                                 static_cast<float>(fill), static_cast<float>(barHeight),
-                                 static_cast<float>(barHeight * 0.5));
-                canvas.fill();
-            }
+            health.health = mob.barHealth;
+            health.lag = mob.barLag;
         }
+        ui::healthBar(canvas, health);
     }
 
     if (options.names) {
@@ -3694,6 +3646,8 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             mob.typeIndex = entity.typeIndex;
             mob.rarity = entity.rarity;
             mob.healthFraction = entity.healthFraction;
+            mob.barHealth = entity.healthBar.health;
+            mob.barLag = entity.healthBar.lag;
             mob.chasing = (entity.state & net::StateChasing) != 0;
             mob.pet = (entity.spawnFlags & net::SpawnIsPet) != 0;
             mob.unloaded = (entity.state & net::StateUnloaded) != 0;

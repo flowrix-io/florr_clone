@@ -411,6 +411,10 @@ private:
         std::uint16_t typeIndex = 0;
         Rarity rarity = Rarity::Common;
         double healthFraction = 1.0;
+        /// What the plate's bar draws: the eased health and its red trail
+        /// (RemoteEntity::healthBar).
+        double barHealth = 1.0;
+        double barLag = 1.0;
         /// Locked on to a player. A neutral or hostile mob animates at double
         /// speed while it is.
         bool chasing = false;

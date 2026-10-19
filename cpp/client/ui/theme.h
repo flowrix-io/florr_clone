@@ -21,7 +21,8 @@ inline constexpr std::uint32_t kAccent     = 0x1DD129u;  ///< Ready / primary ac
 inline constexpr std::uint32_t kDanger     = 0xFF4444u;
 inline constexpr std::uint32_t kWarning    = 0xFFE65Du;
 /// Every green bar in the game is this one green -- the HUD's track, a
-/// squadmate's, a mob's plate and the boss bar. Florr's own bar fill, read out
+/// squadmate's, a mob's plate and the boss bar. rysteria_gardn's health bar
+/// green is the same 0xff75dd34. Florr's own bar fill, read out
 /// of its native client (~/florr_images/client): the one bar painter
 /// (0x10078cb60, three callers) strokes the fill in a lerp whose t=0 end is
 /// 117/221/52 -- bytes in __const at 0x100a94e64 and 0x100a93360. It is NOT
@@ -32,13 +33,15 @@ inline constexpr std::uint32_t kHealth     = 0x75DD34u;
 /// `alpha*colour + (1-alpha)*ground` and the ground cancels out of two samples
 /// over different floors.
 inline constexpr std::uint32_t kHealthBack = 0x000000u;
+/// Every HEALTH bar's track and the red trail of health just lost in it:
+/// rysteria_gardn's render_health (Client/Render/RenderHealth.cc), which is
+/// what every health bar in the game is drawn as -- see ui::healthBar.
+inline constexpr std::uint32_t kHealthTrack = 0x222222u;
+inline constexpr std::uint32_t kHealthLag   = 0xED2F31u;
 inline constexpr std::uint32_t kXpBar      = 0xECF857u;
 /// The mana bar, in the cyan petals.json paints every magic petal: the
 /// resource and the petals that feed it have to read as one thing.
 inline constexpr std::uint32_t kMana       = 0x42E3F5u;
-/// The boss bar's track is the one dark plate that is NOT ink: a charcoal
-/// pill, which the same decode puts at 28 on all three channels.
-inline constexpr std::uint32_t kBossTrack  = 0x1C1C1Cu;
 /// What the whole top-left block and the boss bars are composited at. The
 /// reference's HUD is slightly see-through: its plate over a 140 floor reads
 /// 19 and over a 185 one reads 25, and the slope between them is this.

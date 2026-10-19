@@ -212,6 +212,120 @@ void disc(Canvas& canvas, Vec2 centre, double radius, std::uint32_t fill,
     }
 }
 
+namespace {
+
+/// rysteria's three stroke widths -- 9 track, 7 fill, 5 shield -- as shares
+/// of the fill's.
+constexpr double kHealthTrackRatio = 9.0 / 7.0;
+constexpr double kHealthShieldRatio = 5.0 / 7.0;
+/// rysteria's `min(ratio * 20, 1)`: a line fades in over its first twentieth.
+constexpr double kHealthLineFadeIn = 20.0;
+
+/// One of rysteria's round-capped strokes from (x, y) to (x + length, y), as
+/// the capsule it covers. Filled rather than stroked: the same pixels, with no
+/// line cap or stroke transform for the web canvas to carry.
+void capsule(Path2D& path, double x, double y, double length, double width) {
+    const double r = width * 0.5;
+    path.roundRect(static_cast<float>(x - r), static_cast<float>(y - r),
+                   static_cast<float>(length + width), static_cast<float>(width),
+                   static_cast<float>(r));
+}
+
+} // namespace
+
+double healthTrackWidth(double thickness) { return thickness * kHealthTrackRatio; }
+
+void healthBar(Canvas& canvas, const HealthBar& bar) {
+    struct Line {
+        double x;
+        double length;
+        double width;
+        std::uint32_t colour;
+        /// The fade-in; 0 for a line with nothing to show.
+        double alpha;
+    };
+    const double health = clamp(bar.health, 0.0, 1.0);
+    const double lag = std::max(health, clamp(bar.lag, 0.0, 1.0));
+    const double shield = clamp(bar.shield, 0.0, 1.0);
+    const double length = std::max(0.0, bar.length);
+    const double lead = std::max(0.0, bar.trackLead);
+    const auto fade = [](double share) { return std::min(share * kHealthLineFadeIn, 1.0); };
+    // Bottom to top, in rysteria's order. The red runs from the green's end
+    // rather than from the start as rysteria strokes it: the same pixels once
+    // the green is over it, without the two sharing an edge the whole length
+    // of the bar, where antialiasing lets the red through as a yellow rim.
+    const double trail = length * (lag - health);
+    const Line lines[] = {
+        {bar.x - lead, length + lead, healthTrackWidth(bar.thickness), kHealthTrack, 1.0},
+        {bar.x + length * health, trail, bar.thickness, kHealthLag,
+         trail > 1e-3 ? fade(lag) : 0.0},
+        {bar.x, length * health, bar.thickness, bar.fill, fade(health)},
+        {bar.x, length * shield, bar.thickness * kHealthShieldRatio, kPaper, fade(shield)},
+    };
+    constexpr std::size_t kLines = sizeof(lines) / sizeof(lines[0]);
+
+    const auto fillLine = [&](const Line& line, double alpha) {
+        canvas.setGlobalAlpha(static_cast<float>(alpha));
+        Path2D path;
+        capsule(path, line.x, bar.y, line.length, line.width);
+        setFill(canvas, line.colour);
+        canvas.fill(path);
+    };
+
+    const double layer = canvas.globalAlpha();
+    if (layer >= 1.0) {
+        canvas.save();
+        for (const Line& line : lines) {
+            if (line.alpha > 0.0) fillLine(line, line.alpha);
+        }
+        canvas.restore();
+        return;
+    }
+
+    // Under a see-through layer, stacking blends every line with the ones
+    // under it as well as with the world, and the green comes out muddied by
+    // the track. So each line is drawn only where no opaque line above it is:
+    // top down, clipping every line out of the ones still to come. Every line
+    // lies inside the track, so the box round the track bounds them all.
+    const Line& track = lines[0];
+    const double boxX = track.x - track.width * 0.5 - 1.0;
+    const double boxY = bar.y - track.width * 0.5 - 1.0;
+    const double boxW = track.length + track.width + 2.0;
+    const double boxH = track.width + 2.0;
+    const auto clipOut = [&](const Line& line) {
+        Path2D outside;
+        outside.rect(static_cast<float>(boxX), static_cast<float>(boxY),
+                     static_cast<float>(boxW), static_cast<float>(boxH));
+        capsule(outside, line.x, bar.y, line.length, line.width);
+        canvas.clip(outside, "evenodd");
+    };
+
+    canvas.save();
+    for (std::size_t i = kLines; i-- > 0;) {
+        const Line& line = lines[i];
+        // A line still fading in is see-through on purpose, so what is under
+        // it has to be there to show through: it goes on top, below.
+        if (line.alpha < 1.0) continue;
+        fillLine(line, layer);
+        if (i > 0) clipOut(line);
+    }
+    canvas.restore();
+
+    // Only a bar under a twentieth full gets here, and only for the line that
+    // short. It is laid OVER the lines under it, as rysteria lays it, with the
+    // opaque lines above it still clipped out of it.
+    for (std::size_t i = 1; i < kLines; ++i) {
+        const Line& line = lines[i];
+        if (line.alpha <= 0.0 || line.alpha >= 1.0) continue;
+        canvas.save();
+        for (std::size_t j = i + 1; j < kLines; ++j) {
+            if (lines[j].alpha >= 1.0) clipOut(lines[j]);
+        }
+        fillLine(line, layer * line.alpha);
+        canvas.restore();
+    }
+}
+
 void selectionHighlight(Canvas& canvas, const TextRun& run, const TextSelection& selection,
                         Rect band) {
     if (selection.empty()) return;

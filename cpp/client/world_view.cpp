@@ -3,10 +3,49 @@
 #include <algorithm>
 #include <cmath>
 
+#include "client/ease.h"
 #include "client/render/mob_art.h"
 #include "shared/game/config.h"
 
 namespace flix {
+
+namespace {
+
+/// rysteria's health_ratio.step(Ui::lerp_amount): 0.2 of the gap per 60 Hz
+/// frame, for the green and the white alike.
+const double kHealthBarEaseSeconds = easeTimeConstant(0.2);
+/// rysteria's lerp(healthbar_lag, health_ratio, amt / 3).
+const double kHealthLagEaseSeconds = easeTimeConstant(0.2 / 3.0);
+/// How long the red trail holds after a hit before it starts to drain.
+constexpr double kHealthLagHoldMillis = 250.0;
+
+} // namespace
+
+void HealthBarEase::snap(double targetHealth, double targetShield) {
+    health = lag = seenHealth_ = targetHealth;
+    shield = targetShield;
+    hitAtMillis_ = -1e300;
+    primed_ = true;
+}
+
+void HealthBarEase::step(double targetHealth, double targetShield, double nowMillis,
+                         double dtSeconds) {
+    if (!primed_) {
+        snap(targetHealth, targetShield);
+        return;
+    }
+    if (targetHealth < seenHealth_) hitAtMillis_ = nowMillis;
+    seenHealth_ = targetHealth;
+    easeToward(health, targetHealth, kHealthBarEaseSeconds, dtSeconds);
+    easeToward(shield, targetShield, kHealthBarEaseSeconds, dtSeconds);
+    // Measured against the EASED green, as rysteria's is: the red is what the
+    // green has slid back from, never a gap the green has yet to cross.
+    if (lag < health) {
+        lag = health;
+    } else if (nowMillis - hitAtMillis_ > kHealthLagHoldMillis) {
+        easeToward(lag, health, kHealthLagEaseSeconds, dtSeconds);
+    }
+}
 
 void WorldView::clear() {
     entities_.clear();
@@ -16,6 +55,7 @@ void WorldView::clear() {
     tick_ = 0;
     selfDrawnPosition_ = {};
     selfSnapPending_ = true;
+    selfHealthBar_ = HealthBarEase{};
     clockAnchored_ = false;
     clockOffsetMillis_ = 0;
     latenessPeakMillis_ = 0;
@@ -326,6 +366,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.bestRarity = s.bestRarity;
         e.arenaScore = s.arenaScore;
         e.shieldFraction = s.shieldFraction;
+        e.healthBar.snap(e.healthFraction, e.shieldFraction);
         e.equippedSkinId = std::move(s.equippedSkinId);
         e.ownerNetId = s.ownerNetId;
         e.npcRecipe = s.npcRecipe;
@@ -500,6 +541,9 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
     // every other flower. Tracked separately from its entity record because
     // that record does not exist until its spawn arrives, and the camera needs
     // an answer before then.
+    //
+    // A join or a respawn has nothing to ease from, the HUD's bar included.
+    const bool selfJoined = selfSnapPending_;
     if (selfSnapPending_) {
         selfDrawnPosition_ = self_.position;
         selfSnapPending_ = false;
@@ -538,6 +582,8 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
 
         e.eyeX += (std::cos(e.angle) * kFlowerEyeTravelX - e.eyeX) * eyeT;
         e.eyeY += (std::sin(e.angle) * kFlowerEyeTravelY - e.eyeY) * eyeT;
+
+        e.healthBar.step(e.healthFraction, e.shieldFraction, nowMillis, dtSeconds);
     }
 
     // The viewer's flower reads the same position the camera and its ring use,
@@ -545,6 +591,21 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
     const auto self = entities_.find(self_.netId);
     if (self != entities_.end() && self->second.isSelf()) {
         self->second.position = selfDrawnPosition_;
+    }
+
+    // The HUD's bar reads SelfState's exact figures rather than the body's
+    // quantised fraction; only the shield is the body's, as it is nowhere else.
+    {
+        const double health = self_.maxHealth > 0
+                                  ? clamp(std::max(0.0, self_.health) / self_.maxHealth, 0.0, 1.0)
+                                  : 0.0;
+        const double shield =
+            self != entities_.end() ? clamp(self->second.shieldFraction, 0.0, 1.0) : 0.0;
+        if (selfJoined) {
+            selfHealthBar_.snap(health, shield);
+        } else {
+            selfHealthBar_.step(health, shield, nowMillis, dtSeconds);
+        }
     }
 
     // --- petals, after the flowers they hang off --------------------------
