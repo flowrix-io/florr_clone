@@ -30,8 +30,13 @@ EM_JS(void, flix_admin_db_address, (char* out, int capacity), {
   if (typeof process !== 'undefined' && process.versions && process.versions.node) {
     try {
       const interfaces = require('os').networkInterfaces();
-      const isPrivate = (a) => /^10\./.test(a) || /^192\.168\./.test(a) ||
-                               /^172\.(1[6-9]|2[0-9]|3[01])\./.test(a);
+      // Not regex literals: the preprocessor drops their backslashes, and
+      // /^10./ also takes 100-109.
+      const isPrivate = (a) => {
+        const p = a.split('.').map(Number);
+        return p[0] === 10 || (p[0] === 192 && p[1] === 168) ||
+               (p[0] === 172 && p[1] >= 16 && p[1] <= 31);
+      };
       let fallback = '';
       for (const name of Object.keys(interfaces)) {
         for (const entry of interfaces[name] || []) {

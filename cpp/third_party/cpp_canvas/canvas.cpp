@@ -159,11 +159,19 @@ EM_JS(void, c2d_dash, (int id, const float* data, int length), { Module.cppCanva
 EM_JS(void, c2d_path_drop, (int key), { if (Module.cppCanvasPaths) Module.cppCanvasPaths.delete(key); });
 // Whether the page runs on Blink -- Chrome, Edge, Opera, Brave -- whose canvas
 // has the full-turn arc bug segmentNeed() works around.
+//
+// No regex literals in an EM_JS body: it goes through the C preprocessor,
+// which reads a `//` in one as a comment and drops its backslashes. The
+// `/Chrome\/|Chromium\//` this used to have came out as `/Chrome/|Chromium`,
+// a ReferenceError on every browser without userAgentData (Safari, Firefox).
 EM_JS(int, c2d_blink, (), {
   if (typeof navigator === 'undefined') return 0;
   const d = navigator.userAgentData;
-  if (d && d.brands) return d.brands.some(b => /Chromium|Google Chrome/.test(b.brand)) ? 1 : 0;
-  return /Chrome\/|Chromium\//.test(navigator.userAgent) ? 1 : 0;
+  if (d && d.brands) {
+    return d.brands.some(b => b.brand.includes('Chromium') || b.brand.includes('Google Chrome')) ? 1 : 0;
+  }
+  const ua = navigator.userAgent;
+  return ua.includes('Chrome/') || ua.includes('Chromium/') ? 1 : 0;
 });
 EM_JS(void, c2d_warn, (const char* text), { console.warn(UTF8ToString(text)); });
 EM_JS(int, c2d_hit, (int id,double a,double b,int stroke,const char* rule), { const x=Module.cppCanvasContexts[id].ctx; return stroke ? x.isPointInStroke(a,b) : x.isPointInPath(a,b,UTF8ToString(rule)); });
