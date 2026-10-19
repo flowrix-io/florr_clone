@@ -244,6 +244,14 @@ std::string exactNumber(double value) {
     return buffer;
 }
 
+/// A fraction as a percentage to a tenth, the tenth dropped when it is zero:
+/// a golden leaf's 17.5% would round to a figure florr never prints.
+std::string percentNumber(double fraction) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%g", std::round(fraction * 1000.0) / 10.0);
+    return buffer;
+}
+
 /// Name / tier / description / HP / damage, in the shared petal tooltip's
 /// order. HP and damage carry the account's skill tiers, since that is the
 /// number the player will actually see in the field.
@@ -316,6 +324,13 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
                             12.0};
         convert.alpha = 0.56;
         lines.push_back(convert);
+    }
+
+    // Golden leaf, florr's line: what it takes off the rest of the bar.
+    if (stats.reloadCut > 0.0) {
+        TooltipLine cut{"Reload: -" + percentNumber(stats.reloadCut) + "%", 12.0};
+        cut.alpha = 0.56;
+        lines.push_back(cut);
     }
 
     // Bur alone. Its description says the petal debuffs armour and cannot say

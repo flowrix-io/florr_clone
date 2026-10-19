@@ -224,12 +224,20 @@ double reloadMillisFor(const PetalStats& stats, double scale) {
     return std::max(base * scale, net::kTickMillis);
 }
 
-/// The Reload talent as a multiplier. A flower with no tree at all reads as
+/// What the golden leaves on `loadout`'s active row take off a reload.
+double barReloadCutOf(const ContentRegistry& registry, const Loadout& loadout) {
+    return barReloadCut(registry, [&](int i) { return equippedPetal(registry, loadout, i); });
+}
+
+/// What every reload on `player`'s ring is multiplied by: the Reload talent
+/// and the golden leaves on its bar. A flower with no tree at all reads as
 /// neutral rather than as an error: the ring runs on entities, and not every
 /// entity carrying a loadout came from an account.
-double reloadScaleOf(World& world, Entity player) {
+double reloadScaleOf(World& world, const ContentRegistry& registry, Entity player) {
     const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
-    return tree ? tree->skills.reloadScale() : 1.0;
+    const Loadout* loadout = world.tryGet<Loadout>(player);
+    return (tree ? tree->skills.reloadScale() : 1.0) *
+           (1.0 - (loadout ? barReloadCutOf(registry, *loadout) : 0.0));
 }
 
 /// `range` is a multiple of the ring radius. The JSON leaves it out for every
@@ -762,7 +770,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
     const double petalHealthScale =
         tree ? tree->skills.healthScale(SkillId::PetalHealth) : 1.0;
-    const double reloadScale = tree ? tree->skills.reloadScale() : 1.0;
+    const double reloadScale = reloadScaleOf(world, registry, player);
     const SkillSet* skills = tree ? &tree->skills : nullptr;
 
     // What every sponge on the bar is still holding. One figure for the whole
@@ -1224,13 +1232,14 @@ void PetalSystem::serveLentPetal(World& world, const ContentRegistry& registry, 
 
     // At the crown's tier. It is a petal on THIS flower's ring, though, so
     // this flower's talents shape it as they shape every other one there:
-    // Petal Health, rounded as reconcileSlots rounds it, and Reload.
+    // Petal Health, rounded as reconcileSlots rounds it, and Reload -- which
+    // takes its golden leaf too.
     const Rarity rarity = lent.lenderRarity;
     PetalStats stats = registry.petalStats(lentIndex, rarity);
     if (const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player)) {
         stats.health = std::round(stats.health * tree->skills.healthScale(SkillId::PetalHealth));
     }
-    const double reload = reloadMillisFor(stats, reloadScaleOf(world, player));
+    const double reload = reloadMillisFor(stats, reloadScaleOf(world, registry, player));
 
     // A new loan, or one now made at another tier -- the wearer swapped
     // crowns, or a nearer crown of another tier took it over: a different
@@ -1422,7 +1431,7 @@ bool PetalSystem::spendSlot(World& world, const ContentRegistry& registry, Entit
     }
 
     const PetalStats stats = equippedPetalStats(registry, equippedPetal(registry, *loadout, slot));
-    const double reload = reloadMillisFor(stats, reloadScaleOf(world, player));
+    const double reload = reloadMillisFor(stats, reloadScaleOf(world, registry, player));
     destroySlotPetals(world, *loadout, slot);
     if (recallSummons) recallPets(world, slotState);
     // Not "the cluster was just destroyed": left set, the fold at the top of
@@ -2412,7 +2421,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             // one and leaves the other would cap the ring at the slower of two
             // numbers that are meant to be one.
             instance->nextProjectileMillis =
-                nowMillis + reloadMillisFor(stats, reloadScaleOf(world, player));
+                nowMillis + reloadMillisFor(stats, reloadScaleOf(world, registry, player));
             // Read before the volley: firing is structural, and spending the
             // petal below moves the instance out from under the pointer.
             const std::uint8_t firedSlot = instance->slot;
@@ -2422,7 +2431,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 // The shot IS the petal leaving the ring: firing spends it, the
                 // same way being thrown spends web and pollen, and the
                 // reference launches the petal ITSELF as the missile.
-                spendPetal(world, player, petal, firedSlot, firedSub, stats, nowMillis);
+                spendPetal(world, registry, player, petal, firedSlot, firedSub, stats, nowMillis);
                 continue;
             }
         }
@@ -2479,8 +2488,9 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
     }
 }
 
-void PetalSystem::spendPetal(World& world, Entity player, Entity petal, std::uint8_t slotId,
-                             std::uint8_t subIndex, const PetalStats& stats, double nowMillis) {
+void PetalSystem::spendPetal(World& world, const ContentRegistry& registry, Entity player,
+                             Entity petal, std::uint8_t slotId, std::uint8_t subIndex,
+                             const PetalStats& stats, double nowMillis) {
     if (Health* health = world.tryGet<Health>(petal)) {
         // Zeroed rather than destroyed, exactly as yggdrasil's revive spends
         // its petal: the slot's ordinary break path is then what takes the
@@ -2504,7 +2514,7 @@ void PetalSystem::spendPetal(World& world, Entity player, Entity petal, std::uin
     PetalSlotState* state = world.tryGet<PetalSlotState>(player);
     if (loadout == nullptr || state == nullptr || slotId >= kLoadoutActiveSlots) return;
     PetalSlotState::Slot& slotState = state->slots[slotId];
-    const double reload = reloadMillisFor(stats, reloadScaleOf(world, player));
+    const double reload = reloadMillisFor(stats, reloadScaleOf(world, registry, player));
     if (slotState.independent) {
         // One grain at a time, on the same array the break path stamps.
         if (subIndex < slotState.instanceReadyAtMillis.size()) {
@@ -3126,7 +3136,7 @@ void PetalSystem::strikeBatteries(World& world, const ContentRegistry& registry,
         // The last charge retires the petal. spendPetal finds no Health on it
         // and takes the by-hand path: off the ring now, back on the slot's own
         // cooldown, holding three again.
-        if (flat) spendPetal(world, player, petal, slotId, subIndex, stats, nowMillis);
+        if (flat) spendPetal(world, registry, player, petal, slotId, subIndex, stats, nowMillis);
     }
 }
 
@@ -3296,7 +3306,7 @@ void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registr
             // paid for in mana, one at a time, and is simply gone.
             if (!timed) {
                 reloadEggForPet(world, registry, *state, *loadout, hatchedBy, mobIndex,
-                                reloadScaleOf(world, player), nowMillis);
+                                reloadScaleOf(world, registry, player), nowMillis);
             }
         }
         slotState.pets.resize(kept);
@@ -3360,7 +3370,7 @@ void PetalSystem::reloadHatcher(World& world, const ContentRegistry& registry, E
     Loadout* loadout = world.tryGet<Loadout>(tag->owner);
     if (state == nullptr || loadout == nullptr) return;
     reloadEggForPet(world, registry, *state, *loadout, tag->slot, type->configIndex,
-                    reloadScaleOf(world, tag->owner), nowMillis);
+                    reloadScaleOf(world, registry, tag->owner), nowMillis);
 }
 
 void PetalSystem::reloadEggForPet(World& world, const ContentRegistry& registry,

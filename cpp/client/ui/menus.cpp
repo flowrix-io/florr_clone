@@ -1357,7 +1357,7 @@ namespace {
 ///
 /// The server streams what is LEFT of a reload and not how long the whole one
 /// was, because the total is already here: both sides size a reload from the
-/// same petal config.
+/// same petal config, Reload talent and golden leaf.
 double slotReloadProgress(const NetClient& net, int index) {
     if (index < 0 || index >= kLoadoutActiveSlots) return 1.0;
     const double remaining = net.view().self().slotReloadRemainingMillis[
@@ -1368,7 +1368,10 @@ double slotReloadProgress(const NetClient& net, int index) {
     const EquippedPetal equipped = profile.equipped(content(), index);
     if (equipped.empty()) return 1.0;
     const PetalStats stats = equippedPetalStats(content(), equipped);
-    const double total = stats.reloadMillis > 0.0 ? stats.reloadMillis : kDefaultPetalReloadMillis;
+    const double cut =
+        barReloadCut(content(), [&](int i) { return profile.equipped(content(), i); });
+    const double total = (stats.reloadMillis > 0.0 ? stats.reloadMillis : kDefaultPetalReloadMillis) *
+                         profile.skills.reloadScale() * (1.0 - cut);
     // A remaining that outruns the total is a slot whose petal has just been
     // swapped for a slower one: clamped, it sweeps from the start rather than
     // showing an inverted wedge for a frame.

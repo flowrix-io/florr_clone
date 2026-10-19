@@ -436,8 +436,9 @@ private:
 
     /// Take a petal that spent itself firing off the ring and put its slot on
     /// the reload, whichever of the two health models the slot runs on.
-    void spendPetal(World& world, Entity player, Entity petal, std::uint8_t slotId,
-                    std::uint8_t subIndex, const PetalStats& stats, double nowMillis);
+    void spendPetal(World& world, const ContentRegistry& registry, Entity player, Entity petal,
+                    std::uint8_t slotId, std::uint8_t subIndex, const PetalStats& stats,
+                    double nowMillis);
 
     /// Run one petal's scripted behaviour. `at` is where the effect lands,
     /// which is the flower for a spawn and the petal itself thereafter.
@@ -525,7 +526,7 @@ private:
                              double radius) const;
     /// Put the egg in slot `hatchedBy` back on its reload, if it still hatches
     /// `mobIndex` and is not already reloading. `reloadScale` is the owner's
-    /// Reload talent: the slot state and loadout arrive here as references
+    /// Reload talent and golden leaves: the slot state and loadout arrive here as references
     /// rather than as the player they belong to, so the tree has to come with
     /// them.
     void reloadEggForPet(World& world, const ContentRegistry& registry, PetalSlotState& state,

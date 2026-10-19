@@ -1783,6 +1783,8 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     if (petalSoaksLightning(c)) s.flowerKnockback = 0.3 * (rarityIndex(tier) + 1);
     // Amulet: florr's Overheal Conversion, 5% at common and 5% more a tier.
     if (petalConvertsOverheal(c)) s.overhealShield = 0.05 * (rarityIndex(tier) + 1);
+    // Golden leaf: florr's Reload -2.5% at common and 2.5% more a tier.
+    if (petalCutsReload(c)) s.reloadCut = 0.025 * (rarityIndex(tier) + 1);
     s.shield = c.burstShield * heal;
     // A slow's rarity is spent on landing it at all (stallPower), not on
     // making it deeper, so the factor and its duration are flat.

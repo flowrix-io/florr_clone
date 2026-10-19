@@ -18,6 +18,7 @@
 // human-readable line in warnings(), and guarantees that nothing non-finite
 // reaches the simulation.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -1001,6 +1002,10 @@ struct PetalStats {
     /// The share of every heal past its flower's max health that this petal
     /// turns into shield: amulet's +5% a tier. Zero for every other petal.
     double overhealShield = 0;
+    /// The share a golden leaf takes off the reload of every petal on its
+    /// bar, itself included: 2.5% a tier. Zero for every other petal. See
+    /// barReloadCut.
+    double reloadCut = 0;
     double shield = 0;
     double slowFactor = 1.0;
     double slowDurationMillis = 0;
@@ -1134,6 +1139,11 @@ inline bool petalSharesFlowerDamage(const PetalConfig& config) { return config.i
 
 /// An amulet turns part of its flower's overheal into shield.
 inline bool petalConvertsOverheal(const PetalConfig& config) { return config.id == "amulet"; }
+
+/// A golden leaf shortens the reload of every petal on its bar -- florr's
+/// "seems to allow you to use your other petals even more", and its tooltip's
+/// "Reload: -X%". Its own and other golden leaves' too (user's rule).
+inline bool petalCutsReload(const PetalConfig& config) { return config.id == "golden_leaf"; }
 
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }
@@ -1416,6 +1426,31 @@ inline PetalStats equippedPetalStats(const ContentRegistry& registry, const Equi
         stats.reloadMillis = registry.petalStats(petal.configIndex, petal.reloadRarity).reloadMillis;
     }
     return stats;
+}
+
+/// The share the golden leaves on a bar take off every reload on it, 0 when
+/// it wears none. `equippedAt(i)` is active slot i as equipped (equippedPetal), so a
+/// mimic beside a golden leaf is one too, at the mimic's tier.
+///
+/// They stack, each taking its share off what the others left -- 1 -
+/// (1-a)(1-b), as talismans' evasion does -- so a bar of them closes on an
+/// instant reload without ever reaching one. Worn rather than out, like the
+/// amulet -- a broken leaf still cuts, so the bar's reloads do not change
+/// under it as it breaks.
+///
+/// A template over the accessor for the reason resolveEquippedPetal is one:
+/// the server sizes every reload by it and the client sweeps the bar's wedge
+/// by it.
+template <class EquippedAt>
+double barReloadCut(const ContentRegistry& registry, EquippedAt&& equippedAt) {
+    double cut = 0.0;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const EquippedPetal petal = equippedAt(i);
+        if (petal.empty() || !petalCutsReload(registry.petal(petal.configIndex))) continue;
+        cut = 1.0 - (1.0 - cut) *
+                        (1.0 - registry.petalStats(petal.configIndex, petal.rarity).reloadCut);
+    }
+    return cut;
 }
 
 // ---------------------------------------------------------------------------

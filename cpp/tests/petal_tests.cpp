@@ -79,6 +79,7 @@ const char* const kPetalsJson = R"JSON({
   "champion_crown":{"name":"Champion's Crown","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"equipFlags":"Crown","noPhysics":true,"color":"#FFDC06"},
   "rubber":   {"name":"Rubber","damage":1,"health":30,"size":1.2,"cooldown":2500,"count":1,"color":"#EEEEEE"},
   "amulet":   {"name":"Amulet","damage":0,"health":10,"size":1,"cooldown":2000,"count":1,"defendOnly":true,"color":"#FF94C9"},
+  "golden_leaf":{"name":"Golden Leaf","damage":1,"health":100,"size":1.2,"cooldown":200,"count":1,"color":"#EBEB34"},
   "cursor":   {"name":"Cursor","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"color":"#EEEEEE"},
   "ram":      {"name":"RAM","damage":10,"health":2,"size":1,"cooldown":3000,"count":1,"color":"#3498DB"},
   "sawblade": {"name":"Sawblade","damage":20,"health":10,"size":1,"cooldown":2500,"count":1,"defendOnly":true,"color":"#AAAAAA"},
@@ -1222,6 +1223,56 @@ TEST(the_reload_talent_paces_a_projectile_petals_volleys) {
     // reload rather than by the shot timer, so unique lands near, not exactly
     // on, 1/0.292 times the count.
     CHECK(fast >= slow * 3);
+}
+
+TEST(a_golden_leaf_cuts_the_reload_of_the_rest_of_its_bar) {
+    if (!contentLoaded()) return;
+    // florr's figure, read off its tooltip builder: 2.5% a tier.
+    const ContentRegistry& registry = fixture().registry;
+    CHECK_NEAR(registry.petalStats(petalId("golden_leaf"), Rarity::Common).reloadCut, 0.025, 1e-9);
+    CHECK_NEAR(registry.petalStats(petalId("golden_leaf"), Rarity::Ultra).reloadCut, 0.175, 1e-9);
+    CHECK_NEAR(registry.petalStats(petalId("basic"), Rarity::Ultra).reloadCut, 0.0, 1e-9);
+
+    const auto breakSlot = [](Rig& rig, int slot) {
+        const auto out = rig.petals(slot);
+        CHECK_EQ(out.size(), std::size_t(1));
+        if (out.empty()) return -1.0;
+        const Entity petal = out.front();
+        rig.damage(petal, rig.healthOf(petal));
+        const double brokenAt = rig.now + net::kTickMillis;
+        rig.tick();
+        CHECK(rig.slot(slot).broken);
+        return rig.slot(slot).reloadReadyAtMillis - brokenAt;
+    };
+
+    // Basic's 1200ms, less an ultra leaf's 17.5%.
+    Rig rig;
+    rig.equip(0, "basic");
+    rig.equip(1, "golden_leaf", Rarity::Ultra);
+    rig.settleEquips();
+    CHECK_NEAR(breakSlot(rig, 0), 1200.0 * 0.825, 1e-9);
+
+    // Its own reload too.
+    const double leafReload =
+        registry.petalStats(petalId("golden_leaf"), Rarity::Ultra).reloadMillis;
+    CHECK_NEAR(breakSlot(rig, 1), std::max(leafReload * 0.825, net::kTickMillis), 1e-9);
+
+    // Leaves stack, each on what the others left: an ultra and a common keep
+    // 82.5% of 97.5%. And they stack with the Reload talent, multiplied.
+    Rig both;
+    both.world.add<PlayerSkillTree>(both.player);
+    both.world.get<PlayerSkillTree>(both.player)
+        .skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
+    both.equip(0, "basic");
+    both.equip(1, "golden_leaf", Rarity::Ultra);
+    both.equip(2, "golden_leaf", Rarity::Common);
+    both.settleEquips();
+    CHECK_NEAR(breakSlot(both, 0), 350.4 * 0.825 * 0.975, 1e-9);
+    // And a leaf's reload is cut by the other leaf as well as by itself.
+    const double commonLeafReload =
+        registry.petalStats(petalId("golden_leaf"), Rarity::Common).reloadMillis;
+    CHECK_NEAR(breakSlot(both, 2),
+               std::max(commonLeafReload * 0.292 * 0.825 * 0.975, net::kTickMillis), 1e-9);
 }
 
 TEST(partial_damage_does_not_break_a_petal) {

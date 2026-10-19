@@ -331,7 +331,7 @@
         "size": 1.2,
         "cooldown": 200,
         "price": 18,
-        "description": "It respawns very quickly, but not very strong",
+        "description": "A very special leaf, seems to allow you to use your other petals even more.",
         "color": "#000000",
         "count": 1,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-21.5 -10.5 38 21\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M -20 0 \n           L -15 0 \n           C -10 -12, 5 -12, 15 0 \n           C 5 12, -10 12, -15 0\" \n        fill=\"#ebeb34\" \n        stroke=\"#bebe2a\" \n        stroke-width=\"3\" \n        stroke-linecap=\"round\" \n        stroke-linejoin=\"round\"/>\n  <path d=\"M -9 0 \n           Q 0 -1.5, 7.5 0\" \n        fill=\"none\" \n        stroke=\"#bebe2a\" \n        stroke-width=\"3\" \n        stroke-linecap=\"round\" \n        stroke-linejoin=\"round\"/>\n</svg>",
