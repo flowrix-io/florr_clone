@@ -1484,7 +1484,8 @@
         "health": 175,
         "damage": 22,
         "size": 0.6667,
-        "visual_scale": 0.7076,
+        "visual_scale": 1.1898,
+        "visualOffsetX": -0.0033,
         "speed": 0.2,
         "cooldown": 2000,
         "xp": {
