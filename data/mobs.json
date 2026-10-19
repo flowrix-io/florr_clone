@@ -1398,58 +1398,6 @@
             "sewers"
         ]
     },
-    "soldier_ant_pet": {
-        "name": "Soldier Ant Pet",
-        "health": 100,
-        "damage": 10,
-        "size": 0.6667,
-        "visual_scale": 0.9355,
-        "visualOffsetX": 0.0782,
-        "speed": 0.48,
-        "cooldown": 2000,
-        "xp": {
-            "common": 1,
-            "uncommon": 1,
-            "rare": 1,
-            "epic": 1,
-            "legendary": 1,
-            "mythic": 1,
-            "ultra": 1,
-            "super": 1,
-            "unique": 1
-        },
-        "description": "How did you kill this???",
-        "color": "#ffffff",
-        "image": "$ant_soldier_pet",
-        "ai_type": "passive",
-        "range": 300
-    },
-    "soldier_fire_ant_pet": {
-        "name": "Soldier Fire Ant Pet",
-        "health": 100,
-        "damage": 20,
-        "size": 0.6667,
-        "visual_scale": 0.9355,
-        "visualOffsetX": 0.0782,
-        "speed": 0.48,
-        "cooldown": 2000,
-        "xp": {
-            "common": 1,
-            "uncommon": 1,
-            "rare": 1,
-            "epic": 1,
-            "legendary": 1,
-            "mythic": 1,
-            "ultra": 1,
-            "super": 1,
-            "unique": 1
-        },
-        "description": "How did you kill this???",
-        "color": "#ffffff",
-        "image": "$fire_ant_soldier_pet",
-        "ai_type": "passive",
-        "range": 300
-    },
     "javascript": {
         "name": "JavaScript",
         "health": 175,

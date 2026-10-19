@@ -354,6 +354,25 @@ std::string resolveArtwork(const std::string& source) {
     return out;
 }
 
+/// The same `$sponge:` marker in a summon's palette: the body in
+/// kPetBodyColor and the detail in its gardn outline, the id kept. Empty for
+/// any other artwork -- a document is the picture it is, and only a palette
+/// marker says which of its colours is the body.
+std::string petArtwork(const std::string& source) {
+    static const std::string kMarker = "$sponge:";
+    if (source.compare(0, kMarker.size(), kMarker) != 0) return {};
+    const auto hex = [](std::uint32_t rgb) {
+        char out[8];
+        std::snprintf(out, sizeof out, "#%06x", static_cast<unsigned>(rgb & 0xFFFFFFu));
+        return std::string(out);
+    };
+    std::string out = kMarker + hex(kPetBodyColor) + "," + hex(outlineOf(kPetBodyColor));
+    const std::size_t detail = source.find(',', kMarker.size());
+    const std::size_t id = detail == std::string::npos ? detail : source.find(',', detail + 1);
+    if (id != std::string::npos) out += source.substr(id);
+    return out;
+}
+
 /// True when `source` declares artwork at all: an element other than the <svg>
 /// wrapper, or one of the '$' procedural markers.
 ///
@@ -514,6 +533,11 @@ bool SpriteCache::build(const ContentRegistry& content, const std::string& dataD
     for (std::size_t i = 0; i < mobs_.size(); ++i) {
         const MobConfig& config = content.mob(static_cast<std::uint16_t>(i));
         compile(config.image, config.colorRgba, "mob " + config.id, mobs_[i]);
+        if (!mobs_[i].document) continue;
+        const std::string petArt = petArtwork(config.image);
+        if (!petArt.empty()) {
+            mobs_[i].petDocument = compileArt(resolveArtwork(petArt), "mob " + config.id + " (pet)");
+        }
     }
     petalRepaints_.assign(petals_.size(), {});
     for (std::size_t i = 0; i < petals_.size(); ++i) {
@@ -599,6 +623,7 @@ void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y,
             attr.seed = motion->seed;
             attr.health = motion->health;
             attr.inWorld = true;
+            attr.pet = motion->pet;
         } else {
             attr.clockMs = timeSeconds * 1000.0;
         }
@@ -614,6 +639,8 @@ void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y,
         return;
     }
 
+    const SvgDocument& document =
+        motion && motion->pet && sprite.petDocument ? *sprite.petDocument : *sprite.document;
     canvas.save();
     canvas.translate(static_cast<float>(x), static_cast<float>(y));
     if (rotation != 0.0) canvas.rotate(static_cast<float>(rotation));
@@ -622,12 +649,12 @@ void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y,
     // width() instead is what made the artwork render at wildly wrong sizes --
     // these documents declare width="32" while drawing in a viewBox many times
     // that, and the two are unrelated.
-    sprite.document->renderFitted(canvas,
-                                  static_cast<float>(-diameter * 0.5),
-                                  static_cast<float>(-diameter * 0.5),
-                                  static_cast<float>(diameter),
-                                  static_cast<float>(diameter),
-                                  static_cast<float>(timeSeconds));
+    document.renderFitted(canvas,
+                          static_cast<float>(-diameter * 0.5),
+                          static_cast<float>(-diameter * 0.5),
+                          static_cast<float>(diameter),
+                          static_cast<float>(diameter),
+                          static_cast<float>(timeSeconds));
     canvas.restore();
 }
 

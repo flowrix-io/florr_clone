@@ -79,8 +79,8 @@ namespace flix {
 enum class MobArt : std::uint8_t {
     None, Rock, Cactus, Sandstorm, Scorpion, Crab, LeechHead, LeechBody, Spider, Oracle, Trader,
     Ladybug, LadybugDark, LadybugShiny, Bee,
-    AntBaby, AntWorker, AntSoldier, AntSoldierPet, AntQueen,
-    FireAntBaby, FireAntWorker, FireAntSoldier, FireAntSoldierPet,
+    AntBaby, AntWorker, AntSoldier, AntQueen,
+    FireAntBaby, FireAntWorker, FireAntSoldier,
     AntHole, FireAntBurrow, Beetle, BeetleHel, Hornet, Wasp,
     Centipede, CentipedeBody, CentipedeEvil, CentipedeEvilBody, CentipedeDesert,
     CentipedeDesertBody, Bubble, BumbleBee, Shell, Starfish, Jellyfish, Dandelion, Fly,
@@ -121,6 +121,13 @@ inline constexpr double kGaitRadiansPerUnitWalked = 0.015 * 4.0;
 /// drawn by code should say so there rather than in a table somewhere else
 /// that a new mob has to be added to twice.
 MobArt mobArtFor(const std::string& image);
+
+/// What a summon's body is painted in: gardn's FLOWER_COLORS[kYellow], the
+/// colour of the flower that summoned it. gardn swaps a mob's base colour for
+/// its owner's flower colour when the mob is on the viewer's side
+/// (SET_BASE_COLOR in Client/Assets/Mob.cc), and every shade it cuts from
+/// that base follows; legs, mandibles, stripes and wings keep their own.
+inline constexpr std::uint32_t kPetBodyColor = 0xFFE763u;
 
 struct MobArtAttributes {
     /// The body's radius in world units. Both the size the picture is drawn at
@@ -186,6 +193,10 @@ struct MobArtAttributes {
     /// is lit only in the world, a dandelion's seeds are only part of its
     /// picture because in the world they are petals of their own.
     bool inWorld = false;
+    /// Somebody's summon (net::SpawnIsPet): its body wears kPetBodyColor in
+    /// place of its own, gardn's friendly bit. Only a creature in the world
+    /// can be one.
+    bool pet = false;
 };
 
 /// The time constants florr eases a mob's ground speed and its locked-on
@@ -207,6 +218,7 @@ struct MobMotion {
     double aggroMs = 0.0;
     std::uint32_t seed = 0;
     double health = 1.0;
+    bool pet = false;
 };
 
 /// Paints `art` about the origin. `None` draws nothing.

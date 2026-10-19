@@ -150,6 +150,8 @@ struct DyingMob {
     double radius = 10;
     std::uint16_t typeIndex = 0;
     Rarity rarity = Rarity::Common;
+    /// A summon dies in the colours it lived in.
+    bool pet = false;
     double ageSeconds = 0;
 };
 
@@ -418,7 +420,8 @@ private:
         /// Locked on to a player. A neutral or hostile mob animates at double
         /// speed while it is.
         bool chasing = false;
-        /// Somebody's summon rather than a wild mob. Its plate says so.
+        /// Somebody's summon rather than a wild mob. Its plate says so, and
+        /// its body wears the flower yellow (kPetBodyColor).
         bool pet = false;
         /// An NPC wearing this mob's config, not a mob at all: its plate is
         /// the mob's, with the bar in its invulnerable state.

@@ -846,6 +846,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     mob.radius = shadow->second.radius;
                     mob.typeIndex = shadow->second.typeIndex;
                     mob.rarity = shadow->second.rarity;
+                    mob.pet = shadow->second.pet;
                     dying_.push_back(mob);
                 }
                 mobShadows_.erase(shadow);
@@ -1956,6 +1957,7 @@ void WorldRenderer::prepareGlitchAtlas(const EntityMap& entities, const Camera& 
             mob.rarity = entity.rarity;
             mob.npc = entity.kind == net::EntityKind::Npc;
             mob.chasing = !mob.npc && (entity.state & net::StateChasing) != 0;
+            mob.pet = !mob.npc && (entity.spawnFlags & net::SpawnIsPet) != 0;
             prepareMob(mob);
         }
     }
@@ -1968,6 +1970,7 @@ void WorldRenderer::prepareGlitchAtlas(const EntityMap& entities, const Camera& 
         mob.radius = dying.radius;
         mob.typeIndex = dying.typeIndex;
         mob.rarity = dying.rarity;
+        mob.pet = dying.pet;
         mob.deathProgress = clamp(dying.ageSeconds / kDeathAnimationSeconds, 0.0, 1.0);
         prepareMob(mob);
     }
@@ -3086,6 +3089,7 @@ MobMotion WorldRenderer::mobMotion(const MobDraw& mob, double clockSeconds) cons
     motion.aggroMs = pace.aggroMs;
     motion.seed = mob.netId;
     motion.health = clamp(mob.healthFraction, 0.0, 1.0);
+    motion.pet = mob.pet;
     return motion;
 }
 
@@ -3186,8 +3190,10 @@ void WorldRenderer::drawDiggerMob(Canvas& canvas, const MobDraw& mob, double rad
     const Vec2 eye = mobEye(mob);
     // EquipCutter, so the blade is drawn by the one painter a player's flower
     // uses: the digger carries the same object and must not drift from it.
+    // gardn's digger is a flower in its mob colour -- grey wild, and its
+    // owner's flower colour once summoned.
     drawFace(canvas, FaceSquareEyes, EquipCutter, eye.x, eye.y, 14.5, timeSeconds,
-             kDiggerBodyColor);
+             mob.pet ? kPetBodyColor : kDiggerBodyColor);
     canvas.restore();
 }
 
@@ -4237,6 +4243,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         mob.radius = dying.radius;
         mob.typeIndex = dying.typeIndex;
         mob.rarity = dying.rarity;
+        mob.pet = dying.pet;
         mob.deathProgress = clamp(dying.ageSeconds / kDeathAnimationSeconds, 0.0, 1.0);
         drawMobBody(canvas, camera, mob, timeSeconds);
     };

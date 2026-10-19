@@ -185,17 +185,20 @@ TEST(the_catalogue_is_the_files_own_order_with_the_eggs_appended) {
     }
     CHECK_EQ(next, order.size());
 
-    // A generated egg carries the mob's colour in its art and hatches the pet
-    // variant where the mob has one.
+    // A generated egg carries the mob's colour in its art and hatches the mob
+    // itself where it has no pet variant: a summoned soldier ant is a soldier
+    // ant, and the yellow it wears is the client's (kPetBodyColor), not a
+    // second mob's.
     const std::uint16_t egg = r.petalIndex("soldier_ant_egg");
     CHECK(egg != kInvalidIndex);
     const PetalConfig& p = r.petal(egg);
     CHECK_EQ(p.name, std::string("Soldier Ant Egg"));
-    CHECK_EQ(p.petMobId, std::string("soldier_ant_pet"));
+    CHECK_EQ(p.petMobId, std::string("soldier_ant"));
+    CHECK_EQ(p.petMobIndex, r.mobIndex("soldier_ant"));
     CHECK(p.image.find(r.mob(r.mobIndex("soldier_ant")).color) != std::string::npos);
     CHECK(!p.isAdminPetal);
     // A pet is not something that lays an egg.
-    CHECK_EQ(r.petalIndex("soldier_ant_pet_egg"), kInvalidIndex);
+    CHECK_EQ(r.petalIndex("sun_pet_egg"), kInvalidIndex);
 
     // The sun egg hatches a bee wearing the sun's art: every stat a bee's at
     // every tier, not the stationary giant the egg is named after.

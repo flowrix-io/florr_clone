@@ -133,6 +133,11 @@ public:
 private:
     struct Sprite {
         std::shared_ptr<SvgDocument> document;
+        /// The same document in a summon's colours (kPetBodyColor), drawn in
+        /// its place for a pet. Only a palette marker can say which of a
+        /// document's colours is the body, so this is null for every other
+        /// document, and a pet wearing one looks like the wild mob.
+        std::shared_ptr<SvgDocument> petDocument;
         /// Set when the mob's `image` names a painter instead of declaring a
         /// document; `document` is then null and never consulted.
         MobArt art = MobArt::None;

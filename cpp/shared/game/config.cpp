@@ -1332,8 +1332,8 @@ PetalConfig eggPetal(const std::string& mobId, const MobConfig& mob,
     // ladder instead of being flat at ten stars the way every egg used to be.
     const double worth = mob.xp[static_cast<std::size_t>(Rarity::Common)];
     p.price = std::max(kMinEggPrice, kEggStarsPerXp * worth);
-    // A pet variant is preferred where the mob has one -- two of them do --
-    // and otherwise the egg hatches the mob itself.
+    // A pet variant is preferred where the mob has one -- the sun does -- and
+    // otherwise the egg hatches the mob itself.
     const std::string petId = mobId + "_pet";
     p.petMobId = mobIds.count(petId) != 0 ? petId : mobId;
     const auto it = mobIds.find(p.petMobId);

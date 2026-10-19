@@ -16,6 +16,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -32,8 +34,8 @@ namespace {
 /// Every florr marker, by florr's own name.
 const char* const kFlorrMarkers[] = {
     "scorpion", "ladybug", "ladybug_dark", "ladybug_shiny", "bee",
-    "ant_baby", "ant_worker", "ant_soldier", "ant_soldier_pet", "ant_queen",
-    "fire_ant_baby", "fire_ant_worker", "fire_ant_soldier", "fire_ant_soldier_pet",
+    "ant_baby", "ant_worker", "ant_soldier", "ant_queen",
+    "fire_ant_baby", "fire_ant_worker", "fire_ant_soldier",
     "ant_hole", "fire_ant_burrow", "beetle", "beetle_hel", "hornet", "wasp",
     "centipede", "centipede_body", "centipede_evil", "centipede_evil_body",
     "centipede_desert", "centipede_desert_body", "bubble", "bumble_bee", "shell",
@@ -226,7 +228,8 @@ namespace {
 /// seeds in `seeds`, as RGBA. The mob sits at the canvas centre.
 constexpr int kRingSize = 200;
 std::vector<std::uint8_t> mobFrame(const char* id, double angle, std::uint8_t state,
-                                   const std::vector<RemoteEntity>& seeds) {
+                                   const std::vector<RemoteEntity>& seeds,
+                                   std::uint8_t spawnFlags = 0) {
     const std::uint16_t type = shipped().mobIndex(id);
     WorldRenderer renderer;
     renderer.setContent(&shipped());
@@ -244,6 +247,7 @@ std::vector<std::uint8_t> mobFrame(const char* id, double angle, std::uint8_t st
     mob.typeIndex = type;
     mob.angle = angle;
     mob.state = state;
+    mob.spawnFlags = spawnFlags;
     mob.radius = shipped().mobStats(type, Rarity::Common).radius;
     view.seedForTest(mob);
     for (RemoteEntity seed : seeds) {
@@ -354,6 +358,72 @@ TEST(a_hornet_wears_its_missile_until_it_fires_it) {
         CHECK(loaded);
         CHECK(!fired);
     }
+}
+
+namespace {
+
+/// Pixels within a step of every channel of `rgb`: how much of a frame is
+/// painted in exactly that colour.
+int pixelsOf(const std::vector<std::uint8_t>& rgba, std::uint32_t rgb) {
+    const int want[3] = {static_cast<int>((rgb >> 16) & 0xFF), static_cast<int>((rgb >> 8) & 0xFF),
+                         static_cast<int>(rgb & 0xFF)};
+    int count = 0;
+    for (std::size_t i = 0; i + 3 < rgba.size(); i += 4) {
+        bool match = true;
+        for (int c = 0; c < 3; ++c) match = match && std::abs(rgba[i + c] - want[c]) <= 1;
+        if (match) ++count;
+    }
+    return count;
+}
+
+} // namespace
+
+TEST(a_summon_wears_the_flower_yellow_on_its_body) {
+    // gardn's SET_BASE_COLOR: a summon's body is its owner's flower colour.
+    // Every painter with a body colour of its own repaints it -- the bee's
+    // already is the yellow, and the bubble and the jellyfish are clear
+    // glass with no body colour to swap.
+    std::vector<std::string> markers(std::begin(kFlorrMarkers), std::end(kFlorrMarkers));
+    for (const char* gardn : {"rock", "cactus", "sandstorm", "crab", "leech", "leech_body",
+                              "spider"}) {
+        markers.push_back(gardn);
+    }
+    MobArtAttributes pet;
+    pet.pet = true;
+    for (const std::string& name : markers) {
+        if (name == "bee" || name == "bubble" || name == "jellyfish") continue;
+        const MobArt art = mobArtFor("$" + name);
+        const std::vector<std::uint8_t> wild = paint(art, MobArtAttributes{});
+        const std::vector<std::uint8_t> summoned = paint(art, pet);
+        const int yellow = pixelsOf(summoned, kPetBodyColor);
+        if (yellow < 50) std::printf("    $%s summoned: %d yellow pixels\n", name.c_str(), yellow);
+        CHECK(yellow >= 50);
+        CHECK(summoned != wild);
+    }
+
+    // The soldier ant, which was a mob of its own to be yellow: grey wild,
+    // the yellow summoned, its mandibles the same dark either way.
+    const MobArt ant = mobArtFor("$ant_soldier");
+    CHECK_EQ(pixelsOf(paint(ant, MobArtAttributes{}), kPetBodyColor), 0);
+    CHECK(pixelsOf(paint(ant, pet), 0x555555u) == 0);
+    CHECK(pixelsOf(paint(ant, pet), 0x292929u) > 0);
+}
+
+TEST(a_pet_in_the_world_is_drawn_yellow_and_a_wild_one_is_not) {
+    // The flag rides the spawn record (net::SpawnIsPet) into the painter.
+    const int wild = pixelsOf(mobFrame("soldier_ant", 0.0, 0, {}), kPetBodyColor);
+    const int pet = pixelsOf(mobFrame("soldier_ant", 0.0, 0, {}, net::SpawnIsPet),
+                             kPetBodyColor);
+    if (wild != 0 || pet < 200) std::printf("    yellow: wild %d, pet %d\n", wild, pet);
+    CHECK_EQ(wild, 0);
+    CHECK(pet >= 200);
+
+    // The sponge is a document, but its palette marker says which colour is
+    // its body, so it has a summon's copy too.
+    const std::vector<std::uint8_t> sponge = mobFrame("sponge_2", 0.0, 0, {});
+    const std::vector<std::uint8_t> petSponge = mobFrame("sponge_2", 0.0, 0, {}, net::SpawnIsPet);
+    CHECK_EQ(pixelsOf(sponge, kPetBodyColor), 0);
+    CHECK(pixelsOf(petSponge, kPetBodyColor) >= 200);
 }
 
 namespace {
