@@ -404,14 +404,10 @@ NumberChannel channelOf(std::uint8_t flags) {
 constexpr double kPetalGlowPad = 16.0;
 constexpr double kPetalGlowAlpha = 76.0 / 255.0;
 
-/// A mob's bar never shrinks below the width a common hornet asks for, and its
-/// slot is always eight units tall.
+/// A mob's bar never shrinks below the width a common hornet asks for, and is
+/// always eight units tall.
 constexpr double kMobBarMinWidth = 60.0;
 constexpr double kMobBarHeight = 8.0;
-/// The stroke of every health bar in the world, a flower's and a mob's:
-/// rysteria_gardn's render_health strokes its fill 7 units wide (its track
-/// 9), whatever the body's size.
-constexpr double kWorldHealthBarThickness = 7.0;
 /// An NPC's plate stops growing at this width. The titan is a thousand units
 /// across, and florr hangs a plate of an ordinary mob's size under it rather
 /// than a bar the width of the screen.
@@ -2265,26 +2261,28 @@ PlateBar plateBar(double size, const Camera& camera, Vec2 at) {
     return bar;
 }
 
-/// The dark backing the mana bar is punched out of: one unit proud of the fill
-/// on every side.
-void plateBarBack(Path2D& path, const PlateBar& bar) {
-    path.roundRect(static_cast<float>(bar.centreX - 31.0 * bar.zoom),
-                   static_cast<float>(bar.top - bar.zoom), static_cast<float>(62.0 * bar.zoom),
-                   static_cast<float>(10.0 * bar.zoom), static_cast<float>(5.0 * bar.zoom));
+/// The health bar in this slot: the fill box, and the dark backing every bar
+/// here sits in -- one unit proud of the fill on every side.
+ui::HealthBar plateHealthBar(const PlateBar& bar) {
+    ui::HealthBar health;
+    health.x = bar.left;
+    health.y = bar.top;
+    health.width = bar.width;
+    health.height = bar.height;
+    health.plateX = bar.centreX - 31.0 * bar.zoom;
+    health.plateY = bar.top - bar.zoom;
+    health.plateWidth = 62.0 * bar.zoom;
+    health.plateHeight = 10.0 * bar.zoom;
+    health.plateRadius = 5.0 * bar.zoom;
+    return health;
 }
 
-/// rysteria's health bar (ui::healthBar) laid along a plate's fill box, in
-/// screen pixels: centred on the box's middle line at rysteria's own stroke,
-/// with the green at full health spanning exactly the box's width, so the
-/// name and the labels set round the box stay where they are.
-ui::HealthBar worldHealthBar(double left, double top, double width, double height,
-                             double zoom) {
-    ui::HealthBar bar;
-    bar.thickness = kWorldHealthBarThickness * zoom;
-    bar.x = left + bar.thickness * 0.5;
-    bar.y = top + height * 0.5;
-    bar.length = std::max(0.0, width - bar.thickness);
-    return bar;
+/// The same backing as a path, for the mana bar to be punched out of.
+void plateBarBack(Path2D& path, const PlateBar& bar) {
+    const ui::HealthBar back = plateHealthBar(bar);
+    path.roundRect(static_cast<float>(back.plateX), static_cast<float>(back.plateY),
+                   static_cast<float>(back.plateWidth), static_cast<float>(back.plateHeight),
+                   static_cast<float>(back.plateRadius));
 }
 
 } // namespace
@@ -2304,8 +2302,8 @@ void WorldRenderer::drawSelfManaBar(Canvas& canvas, const RemoteEntity& entity,
     const double fraction = clamp(selfState_->mana / selfState_->maxMana, 0.0, 1.0);
     const double fillWidth = bar.width * fraction;
 
-    // Punched rather than stacked, under one alpha: laying a fill over a
-    // plate blends both twice.
+    // Punched rather than stacked, under one alpha, exactly as the health bar
+    // in this slot is: laying a fill over a plate blends both twice.
     canvas.save();
     canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
 
@@ -2356,16 +2354,19 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         // Always drawn, even at full health: the bar is part of how a flower
         // reads, not a warning that appears once you are hurt.
         //
-        // rysteria's bar, opaque as rysteria draws it: the track, the red of
-        // what was just lost, the green -- tinted while spawn protection
+        // rysteria's bar in the black plate this slot has always had: the red
+        // of what was just lost, the green -- tinted while spawn protection
         // lasts -- and the white shield line. A MOB's is the same bar with no
-        // shield in it.
-        ui::HealthBar health = worldHealthBar(left, barY, bar.width, bar.height, zoom);
+        // shield in it. Under one alpha, like everything in this slot.
+        ui::HealthBar health = plateHealthBar(bar);
         health.health = entity.healthBar.health;
         health.lag = entity.healthBar.lag;
         health.shield = entity.healthBar.shield;
         health.fill = healthBarColor(entity, timeSeconds);
+        canvas.save();
+        canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
         ui::healthBar(canvas, health);
+        canvas.restore();
     }
 
     if (options.names) {
@@ -3490,7 +3491,17 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
     if (options.healthBars) {
         // Always drawn, even at full health: the bar, the name and the tier are
         // one block of text, and the block is how a mob is identified.
-        ui::HealthBar health = worldHealthBar(barX, barY, barWidth, barHeight, zoom);
+        ui::HealthBar health;
+        health.x = barX;
+        health.y = barY;
+        health.width = barWidth;
+        health.height = barHeight;
+        // The black backing, one unit proud of the bar on every side.
+        health.plateX = barX - zoom;
+        health.plateY = barY - zoom;
+        health.plateWidth = barWidth + 2.0 * zoom;
+        health.plateHeight = barHeight + 2.0 * zoom;
+        health.plateRadius = barHeight * 0.5;
         if (mob.npc || (config != nullptr && config->intangible)) {
             // An NPC's plate is a mob's plate with the bar in its invulnerable
             // state: full whatever the wire says -- which is what the server

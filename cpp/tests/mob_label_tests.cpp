@@ -147,11 +147,8 @@ bool tierRowSplits(const char* id, Rarity rarity) {
     CHECK(barBottom >= 0);
     if (barBottom < 0) return false;
 
-    // From two rows past it: the bar is a 7-unit stroke centred in its 8-unit
-    // slot, so the row under the last solid one is still its antialiased edge,
-    // and the row after that the track's -- neither part of the tier row.
     std::vector<bool> inked(kFrameSize, false);
-    for (int y = barBottom + 3; y < std::min(kFrameSize, barBottom + 20); ++y) {
+    for (int y = barBottom + 1; y < std::min(kFrameSize, barBottom + 20); ++y) {
         for (int x = 0; x < kFrameSize; ++x) {
             const std::uint8_t* p = at(x, y);
             if (std::max(p[0], std::max(p[1], p[2])) > 80) inked[static_cast<std::size_t>(x)] = true;

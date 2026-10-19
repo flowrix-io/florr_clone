@@ -9,10 +9,11 @@
 #include <cstdint>
 #include <vector>
 
-// Every health bar is rysteria_gardn's (ui::healthBar, HealthBarEase): a red
-// trail of what was just lost, held a quarter second after the hit and then
-// drained, and -- under the HUD's see-through layer -- lines that are clipped
-// apart rather than stacked, so the track does not darken the green.
+// Every health bar is rysteria_gardn's (ui::healthBar, HealthBarEase) in the
+// plate it always had: a red trail of what was just lost, held a quarter
+// second after the hit and then drained, and -- under the HUD's see-through
+// layer -- a fill clipped apart from its plate rather than stacked on it, so
+// the plate does not darken the green.
 
 using namespace flix;
 
@@ -32,18 +33,27 @@ double run(HealthBarEase& bar, double health, double now, double millis) {
 constexpr int kWidth = 260;
 constexpr int kHeight = 60;
 constexpr std::uint32_t kGround = 0x808080u;
+/// Not black, so a plate that went missing would not read as one.
+constexpr std::uint32_t kPlate = 0x1C1C1Cu;
 
-/// A bar 200 long and 20 thick on a grey ground, drawn at `alpha`.
+/// A bar 220 by 20 in a plate 4 proud of it, on a grey ground, drawn at
+/// `alpha`.
 std::vector<std::uint8_t> barFrame(double health, double lag, double alpha) {
     Canvas canvas = Canvas::createVirtual(kWidth, kHeight);
     ui::setFill(canvas, kGround);
     canvas.fillRect(0, 0, kWidth, kHeight);
     canvas.setGlobalAlpha(static_cast<float>(alpha));
     ui::HealthBar bar;
-    bar.x = 30;
-    bar.y = 30;
-    bar.length = 200;
-    bar.thickness = 20;
+    bar.x = 20;
+    bar.y = 20;
+    bar.width = 220;
+    bar.height = 20;
+    bar.plateX = 16;
+    bar.plateY = 16;
+    bar.plateWidth = 228;
+    bar.plateHeight = 28;
+    bar.plateRadius = 14;
+    bar.plateColour = kPlate;
     bar.health = health;
     bar.lag = lag;
     ui::healthBar(canvas, bar);
@@ -100,33 +110,49 @@ TEST(healing_pulls_the_red_trail_up_with_the_green) {
 
 TEST(a_health_bar_shows_its_red_trail_only_while_there_is_one) {
     const std::vector<std::uint8_t> trail = barFrame(0.5, 0.75, 1.0);
-    // Green over the first half, red over the next quarter, track past it.
+    // Green over the first half, red over the next quarter, plate past it.
     const std::uint32_t at[][2] = {{80, ui::kHealth}, {155, ui::kHealthLag},
-                                   {215, ui::kHealthTrack}};
+                                   {215, kPlate}};
     for (const auto& probe : at) {
         for (int c = 0; c < 3; ++c) {
             CHECK_NEAR(channel(trail, static_cast<int>(probe[0]), c), over(probe[1], 1.0, c), 1.0);
         }
     }
 
-    // With nothing just lost, the same spot is bare track.
+    // With nothing just lost, the same spot is bare plate.
     const std::vector<std::uint8_t> settled = barFrame(0.5, 0.5, 1.0);
     for (int c = 0; c < 3; ++c) {
-        CHECK_NEAR(channel(settled, 155, c), over(ui::kHealthTrack, 1.0, c), 1.0);
+        CHECK_NEAR(channel(settled, 155, c), over(kPlate, 1.0, c), 1.0);
     }
 }
 
 TEST(a_see_through_health_bar_blends_each_line_with_the_ground_once) {
     // Under the HUD's layer alpha every line is laid over the GROUND, as a
     // flattened layer would be. Stacked, the green would also take in the
-    // track under it and come out darker.
+    // plate under it and come out darker.
     const std::vector<std::uint8_t> pixels = barFrame(0.5, 0.75, ui::kHudLayerAlpha);
     const std::uint32_t at[][2] = {{80, ui::kHealth}, {155, ui::kHealthLag},
-                                   {215, ui::kHealthTrack}};
+                                   {215, kPlate}};
     for (const auto& probe : at) {
         for (int c = 0; c < 3; ++c) {
             CHECK_NEAR(channel(pixels, static_cast<int>(probe[0]), c),
                        over(probe[1], ui::kHudLayerAlpha, c), 1.0);
         }
+    }
+}
+
+TEST(a_health_bar_sits_in_the_plate_its_caller_gives_it) {
+    // Every bar keeps the plate it always had: the rim above and below the
+    // fill, and the plate's own end past the fill's, are the caller's colour.
+    const std::vector<std::uint8_t> full = barFrame(1.0, 1.0, 1.0);
+    const auto at = [&](int x, int y, int c) {
+        return full[(static_cast<std::size_t>(y) * kWidth + static_cast<std::size_t>(x)) * 4 +
+                    static_cast<std::size_t>(c)];
+    };
+    for (int c = 0; c < 3; ++c) {
+        CHECK_NEAR(at(130, 17, c), over(kPlate, 1.0, c), 1.0);
+        CHECK_NEAR(at(130, 42, c), over(kPlate, 1.0, c), 1.0);
+        CHECK_NEAR(at(130, 30, c), over(ui::kHealth, 1.0, c), 1.0);
+        CHECK_NEAR(at(242, 30, c), over(kPlate, 1.0, c), 1.0);
     }
 }

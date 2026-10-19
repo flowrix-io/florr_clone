@@ -13,9 +13,9 @@
 // not a generic inset bar: it is drawn as non-overlapping rings punched out of
 // one path, so that every pixel is blended with the world exactly once and the
 // layer comes out flat rather than muddy (hudBar). The health bars -- the
-// flower's own, a squadmate's, a boss's -- are rysteria_gardn's, the one bar
-// every health readout in the game shares (ui::healthBar), which keeps to the
-// same rule under this layer's alpha.
+// flower's own, a squadmate's, a boss's -- are rysteria_gardn's bar in the
+// plates they always had, the one bar every health readout in the game shares
+// (ui::healthBar), which keeps to the same rule under this layer's alpha.
 
 #include "client/app.h"
 
@@ -61,11 +61,13 @@ constexpr double kHudXpY = kHudHealthY + kHudBarHeight + 12.0;   // 134
 /// The mana bar is NOT here. It stands in the slot the viewer's own health
 /// bar used to occupy, under the flower itself -- WorldRenderer::drawSelfManaBar
 /// -- which is why this block goes straight from the XP bar to the avatar.
-/// The health bar's track runs back to the flower's CENTRE, so its rounded
-/// left cap is hidden behind the disc and the bar meets the flower along a
-/// straight edge with no crescent of background between them. Stopping it at
-/// the rim leaves the cap's arc showing, which is a bar that floats beside the
-/// flower rather than plugging into it.
+/// How far the health bar's black plate stands out past its fill.
+constexpr double kHudPlatePad = 6.0;
+/// The plate runs back to the flower's CENTRE, so its rounded left cap is
+/// hidden behind the disc and the bar meets the flower along a straight edge
+/// with no crescent of background between them. Stopping it at the rim leaves
+/// the cap's arc showing, which is a bar that floats beside the flower rather
+/// than plugging into it.
 constexpr double kHudPlateLeft = kHudBarX - kFlowerCentreX;
 /// How far the XP bar's black plate stands out past its fill.
 constexpr double kHudXpPad = 3.0;
@@ -140,23 +142,27 @@ void hudBar(Canvas& canvas, double x, double y, double w, double h, double fillW
     canvas.fill();
 }
 
-/// A flower's health bar in this block: rysteria's bar (ui::healthBar) laid
-/// along the fill box (x, y, w, h), the green at full health spanning exactly
-/// that box. Its track runs back to the avatar's centre, as the plate it
-/// replaced did, so its rounded left cap is hidden behind the disc and the bar
-/// meets the flower along a straight edge rather than floating beside it.
+/// A flower's health bar in this block: rysteria's bar (ui::healthBar) along
+/// the fill box (x, y, w, h), in an oversized black plate that runs back to
+/// the avatar's centre (kHudPlateLeft).
 ///
 /// `fill` is the colour of the health, which is what invulnerability tints;
 /// the shield line is always white.
 void flowerBar(Canvas& canvas, double x, double y, double w, double h, const HealthBarEase& ease,
                std::uint32_t fill, double scale) {
+    const double pad = kHudPlatePad * scale;
+    const double left = kHudPlateLeft * scale;
     HealthBar bar;
-    bar.thickness = h;
-    bar.x = x + h * 0.5;
-    bar.y = y + h * 0.5;
-    bar.length = std::max(0.0, w - h);
-    bar.trackLead =
-        std::max(0.0, bar.x - (x - kHudPlateLeft * scale) - healthTrackWidth(h) * 0.5);
+    bar.x = x;
+    bar.y = y;
+    bar.width = w;
+    bar.height = h;
+    bar.plateX = x - left;
+    bar.plateY = y - pad;
+    bar.plateWidth = w + left + pad;
+    bar.plateHeight = h + pad * 2.0;
+    bar.plateRadius = h * 0.5 + pad;
+    bar.plateColour = kInk;
     bar.health = ease.health;
     bar.lag = ease.lag;
     bar.shield = ease.shield;
@@ -511,13 +517,14 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     std::sort(bosses.begin(), bosses.end(),
               [](const RemoteEntity* a, const RemoteEntity* b) { return a->netId < b->netId; });
 
-    /// The fill's box at full health. The track stands a little proud of it
-    /// all round (ui::healthBar), and that is what the name and tier overlap.
     constexpr double kBarWidth = 400.0;
     constexpr double kBarHeight = 34.0;
+    /// The plate the bar rides in: a charcoal pill standing this far out past
+    /// it on every side, which is what the name and the tier overlap.
+    constexpr double kBarPad = 8.0;
     constexpr double kNameSize = 33.0;
     constexpr double kTierSize = 20.0;
-    /// The name's baseline sits just INSIDE the track's top edge and the tier
+    /// The name's baseline sits just INSIDE the plate's top edge and the tier
     /// just below its bottom one, so both bite into the bar rather than
     /// floating clear of it.
     constexpr double kNameDrop = 4.0;
@@ -529,7 +536,8 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     const double centreX = window_.width() * 0.5;
 
     // One see-through layer, like the block in the corner. ui::healthBar
-    // clips its lines apart under it so they never blend into each other.
+    // clips the fill apart from its plate so the two never blend into each
+    // other.
     canvas.save();
     canvas.setGlobalAlpha(static_cast<float>(kHudLayerAlpha));
 
@@ -543,15 +551,21 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
         const double maxHealth = content().mobStats(boss.typeIndex, boss.rarity).health;
         const double health = std::max(0.0, clamp(boss.healthFraction, 0.0, 1.0) * maxHealth);
         HealthBar bar;
-        bar.thickness = kBarHeight;
-        bar.x = centreX - (kBarWidth - kBarHeight) * 0.5;
-        bar.y = barY + kBarHeight * 0.5;
-        bar.length = kBarWidth - kBarHeight;
+        bar.x = centreX - kBarWidth * 0.5;
+        bar.y = barY;
+        bar.width = kBarWidth;
+        bar.height = kBarHeight;
+        bar.plateX = bar.x - kBarPad;
+        bar.plateY = barY - kBarPad;
+        bar.plateWidth = kBarWidth + kBarPad * 2.0;
+        bar.plateHeight = kBarHeight + kBarPad * 2.0;
+        bar.plateRadius = kBarHeight * 0.5 + kBarPad;
+        bar.plateColour = kBossTrack;
         bar.health = boss.healthBar.health;
         bar.lag = boss.healthBar.lag;
         healthBar(canvas, bar);
 
-        // Over the bar, not above it: the name goes down after the track so
+        // Over the bar, not above it: the name goes down after the plate so
         // its outline reads against the fill.
         TextStyle name;
         name.size = kNameSize;

@@ -214,32 +214,21 @@ void disc(Canvas& canvas, Vec2 centre, double radius, std::uint32_t fill,
 
 namespace {
 
-/// rysteria's three stroke widths -- 9 track, 7 fill, 5 shield -- as shares
-/// of the fill's.
-constexpr double kHealthTrackRatio = 9.0 / 7.0;
+/// rysteria's shield stroke against its fill's: 5 to 7.
 constexpr double kHealthShieldRatio = 5.0 / 7.0;
 /// rysteria's `min(ratio * 20, 1)`: a line fades in over its first twentieth.
 constexpr double kHealthLineFadeIn = 20.0;
 
-/// One of rysteria's round-capped strokes from (x, y) to (x + length, y), as
-/// the capsule it covers. Filled rather than stroked: the same pixels, with no
-/// line cap or stroke transform for the web canvas to carry.
-void capsule(Path2D& path, double x, double y, double length, double width) {
-    const double r = width * 0.5;
-    path.roundRect(static_cast<float>(x - r), static_cast<float>(y - r),
-                   static_cast<float>(length + width), static_cast<float>(width),
-                   static_cast<float>(r));
-}
-
 } // namespace
 
-double healthTrackWidth(double thickness) { return thickness * kHealthTrackRatio; }
-
 void healthBar(Canvas& canvas, const HealthBar& bar) {
-    struct Line {
+    /// One layer of the bar, as the rounded rect it covers.
+    struct Shape {
         double x;
-        double length;
-        double width;
+        double y;
+        double w;
+        double h;
+        double r;
         std::uint32_t colour;
         /// The fade-in; 0 for a line with nothing to show.
         double alpha;
@@ -247,81 +236,96 @@ void healthBar(Canvas& canvas, const HealthBar& bar) {
     const double health = clamp(bar.health, 0.0, 1.0);
     const double lag = std::max(health, clamp(bar.lag, 0.0, 1.0));
     const double shield = clamp(bar.shield, 0.0, 1.0);
-    const double length = std::max(0.0, bar.length);
-    const double lead = std::max(0.0, bar.trackLead);
+    const double thickness = std::max(0.0, bar.height);
+    // The middle line the strokes run along, and its length at full health:
+    // the caps stand half a stroke past both ends of it.
+    const double startX = bar.x + thickness * 0.5;
+    const double midY = bar.y + thickness * 0.5;
+    const double length = std::max(0.0, bar.width - thickness);
     const auto fade = [](double share) { return std::min(share * kHealthLineFadeIn, 1.0); };
+    // One of rysteria's round-capped strokes, as the capsule it covers. Filled
+    // rather than stroked: the same pixels, with no line cap or stroke
+    // transform for the web canvas to carry.
+    const auto stroke = [&](double from, double run, double width, std::uint32_t colour,
+                            double alpha) {
+        return Shape{from - width * 0.5, midY - width * 0.5, run + width, width, width * 0.5,
+                     colour, alpha};
+    };
     // Bottom to top, in rysteria's order. The red runs from the green's end
     // rather than from the start as rysteria strokes it: the same pixels once
     // the green is over it, without the two sharing an edge the whole length
     // of the bar, where antialiasing lets the red through as a yellow rim.
     const double trail = length * (lag - health);
-    const Line lines[] = {
-        {bar.x - lead, length + lead, healthTrackWidth(bar.thickness), kHealthTrack, 1.0},
-        {bar.x + length * health, trail, bar.thickness, kHealthLag,
-         trail > 1e-3 ? fade(lag) : 0.0},
-        {bar.x, length * health, bar.thickness, bar.fill, fade(health)},
-        {bar.x, length * shield, bar.thickness * kHealthShieldRatio, kPaper, fade(shield)},
+    const Shape shapes[] = {
+        {bar.plateX, bar.plateY, bar.plateWidth, bar.plateHeight, bar.plateRadius,
+         bar.plateColour, 1.0},
+        stroke(startX + length * health, trail, thickness, kHealthLag,
+               trail > 1e-3 ? fade(lag) : 0.0),
+        stroke(startX, length * health, thickness, bar.fill, fade(health)),
+        stroke(startX, length * shield, thickness * kHealthShieldRatio, kPaper, fade(shield)),
     };
-    constexpr std::size_t kLines = sizeof(lines) / sizeof(lines[0]);
+    constexpr std::size_t kShapes = sizeof(shapes) / sizeof(shapes[0]);
 
-    const auto fillLine = [&](const Line& line, double alpha) {
+    const auto addShape = [](Path2D& path, const Shape& shape) {
+        path.roundRect(static_cast<float>(shape.x), static_cast<float>(shape.y),
+                       static_cast<float>(shape.w), static_cast<float>(shape.h),
+                       static_cast<float>(shape.r));
+    };
+    const auto fillShape = [&](const Shape& shape, double alpha) {
         canvas.setGlobalAlpha(static_cast<float>(alpha));
         Path2D path;
-        capsule(path, line.x, bar.y, line.length, line.width);
-        setFill(canvas, line.colour);
+        addShape(path, shape);
+        setFill(canvas, shape.colour);
         canvas.fill(path);
     };
 
     const double layer = canvas.globalAlpha();
     if (layer >= 1.0) {
         canvas.save();
-        for (const Line& line : lines) {
-            if (line.alpha > 0.0) fillLine(line, line.alpha);
+        for (const Shape& shape : shapes) {
+            if (shape.alpha > 0.0) fillShape(shape, shape.alpha);
         }
         canvas.restore();
         return;
     }
 
-    // Under a see-through layer, stacking blends every line with the ones
+    // Under a see-through layer, stacking blends every shape with the ones
     // under it as well as with the world, and the green comes out muddied by
-    // the track. So each line is drawn only where no opaque line above it is:
-    // top down, clipping every line out of the ones still to come. Every line
-    // lies inside the track, so the box round the track bounds them all.
-    const Line& track = lines[0];
-    const double boxX = track.x - track.width * 0.5 - 1.0;
-    const double boxY = bar.y - track.width * 0.5 - 1.0;
-    const double boxW = track.length + track.width + 2.0;
-    const double boxH = track.width + 2.0;
-    const auto clipOut = [&](const Line& line) {
+    // the plate. So each is drawn, bottom up, only where no opaque shape above
+    // it is. A shape still fading in is see-through on purpose and cuts
+    // nothing out of what is under it: that has to show through.
+    const Shape& plate = shapes[0];
+    const auto clipOut = [&](const Shape& shape) {
         Path2D outside;
-        outside.rect(static_cast<float>(boxX), static_cast<float>(boxY),
-                     static_cast<float>(boxW), static_cast<float>(boxH));
-        capsule(outside, line.x, bar.y, line.length, line.width);
+        outside.rect(static_cast<float>(plate.x - 1.0), static_cast<float>(plate.y - 1.0),
+                     static_cast<float>(plate.w + 2.0), static_cast<float>(plate.h + 2.0));
+        addShape(outside, shape);
         canvas.clip(outside, "evenodd");
     };
-
-    canvas.save();
-    for (std::size_t i = kLines; i-- > 0;) {
-        const Line& line = lines[i];
-        // A line still fading in is see-through on purpose, so what is under
-        // it has to be there to show through: it goes on top, below.
-        if (line.alpha < 1.0) continue;
-        fillLine(line, layer);
-        if (i > 0) clipOut(line);
-    }
-    canvas.restore();
-
-    // Only a bar under a twentieth full gets here, and only for the line that
-    // short. It is laid OVER the lines under it, as rysteria lays it, with the
-    // opaque lines above it still clipped out of it.
-    for (std::size_t i = 1; i < kLines; ++i) {
-        const Line& line = lines[i];
-        if (line.alpha <= 0.0 || line.alpha >= 1.0) continue;
-        canvas.save();
-        for (std::size_t j = i + 1; j < kLines; ++j) {
-            if (lines[j].alpha >= 1.0) clipOut(lines[j]);
+    for (std::size_t i = 0; i < kShapes; ++i) {
+        const Shape& shape = shapes[i];
+        if (shape.alpha <= 0.0) continue;
+        std::size_t above[kShapes];
+        std::size_t covering = 0;
+        for (std::size_t j = i + 1; j < kShapes; ++j) {
+            if (shapes[j].alpha >= 1.0) above[covering++] = j;
         }
-        fillLine(line, layer * line.alpha);
+        canvas.save();
+        canvas.setGlobalAlpha(static_cast<float>(layer * shape.alpha));
+        setFill(canvas, shape.colour);
+        Path2D path;
+        addShape(path, shape);
+        if (i == 0 && covering == 1) {
+            // The plate under the green alone -- a bar with no trail and no
+            // shield, which is nearly every bar -- is punched, as it always
+            // was: one even-odd path, with no clip. Every line lies inside
+            // the plate, so the hole is all inside it.
+            addShape(path, shapes[above[0]]);
+            canvas.fill(path, "evenodd");
+        } else {
+            for (std::size_t k = 0; k < covering; ++k) clipOut(shapes[above[k]]);
+            canvas.fill(path);
+        }
         canvas.restore();
     }
 }
