@@ -273,9 +273,25 @@ private:
     /// left a flower standing in the world for nobody (see Listener::flush).
     void reapSessionsWithoutSockets();
     void handleRegister(Session&, net::Connection&, ByteReader&);
+    /// A new guest account (Database::createGuest), on Register's limits and
+    /// with Register's welcome.
+    void handleRegisterGuest(Session&, net::Connection&);
+    /// The address-keyed registration limits Register and RegisterGuest share.
+    /// False, with the refusal already sent, when they say no.
+    bool spendRegistration(net::Connection&, const std::string& addressHash);
+    /// Signs the socket in to an account that was made on it just now, and
+    /// sends everything an authentication sends -- the tail Register and
+    /// RegisterGuest share.
+    void beginNewAccount(Session&, net::Connection&, const Account&);
     void handleLogin(Session&, net::Connection&, ByteReader&);
     void handleResume(Session&, net::Connection&, ByteReader&);
     void handleChangePassword(Session&, net::Connection&, ByteReader&);
+    /// A guest picks its name, once. Renames the account everywhere the server
+    /// files it by name -- the database's rows, the guild records, a pending
+    /// guild invitation -- and tells the squad and the guild.
+    void handleSetUsername(Session&, net::Connection&, ByteReader&);
+    void sendSetUsernameResult(net::Connection&, bool ok, const std::string& username,
+                               const std::string& reason);
     /// Logs the ACCOUNT out, not just this connection: every token it holds is
     /// revoked, and every other connection signed into it is signed out too.
     void handleLogout(Session&);
@@ -797,7 +813,7 @@ private:
 
     void sendAuthResult(net::Connection&, net::AuthStatus, const std::string& token,
                         const std::string& username, const std::string& reason);
-    /// The settings panel's change-password reply. `token` is the replacement
+    /// The Account panel's change-password reply. `token` is the replacement
     /// session, empty on a refusal.
     void sendChangePasswordResult(net::Connection&, bool ok, const std::string& token,
                                   const std::string& reason);

@@ -158,6 +158,18 @@ struct Account {
     /// limit needs. Empty when the creator could not be identified.
     std::string createdFromHash;
 
+    /// Made by Database::createGuest: the server named it, and its owner may
+    /// still pick a name of their own, once (Database::renameUser clears it).
+    /// Server-held, never inferred from the name -- a registered account can
+    /// be called `User12345678` too. Stored as `guest` only while true.
+    bool guest = false;
+    /// False while the account's password is one its owner was never told --
+    /// a guest's random one -- so the session token is the only way in and a
+    /// password change has no current password to ask for. Stored as
+    /// `passwordChosen: false` only while false: every account that predates
+    /// the field was registered with a password somebody typed.
+    bool passwordChosen = true;
+
     Json extra = Json::object();
 };
 
@@ -268,6 +280,21 @@ public:
             }
             return row.text;
         }
+        /// Files the row under `to` instead, in the same place in the order,
+        /// keeping its value. False when `from` is absent or `to` is taken.
+        bool rekey(const std::string& from, const std::string& to) {
+            if (from == to) return byKey_.count(from) != 0;
+            auto it = byKey_.find(from);
+            if (it == byKey_.end() || byKey_.count(to) != 0) return false;
+            Row row = std::move(it->second);
+            row.cached = false;
+            byKey_.erase(it);
+            byKey_.emplace(to, std::move(row));
+            for (std::string& key : order_) {
+                if (key == from) { key = to; break; }
+            }
+            return true;
+        }
         bool erase(const std::string& key) {
             if (byKey_.erase(key) == 0) return false;
             for (std::size_t i = 0; i < order_.size(); ++i) {
@@ -355,6 +382,29 @@ public:
     CreateResult createUser(const std::string& username, const std::string& password,
                             const std::string& createdFromHash = {});
 
+    /// A guest account: named `User` and eight digits (guestUsername), with a
+    /// random password nobody is told, `guest` set and `passwordChosen`
+    /// cleared. Its only credential is whatever session the caller mints for
+    /// it. A real bcrypt hash rather than an empty or sentinel one, so that no
+    /// password -- not even an empty one, on a build that predates the flag --
+    /// opens it.
+    CreateResult createGuest(const std::string& createdFromHash = {});
+
+    /// Whether `username` has the shape guest accounts are given: `User` and
+    /// eight digits. A name the guests own, which SetUsername will not hand a
+    /// player; NOT a test of whether an account is a guest -- Account::guest is.
+    static bool isGuestUsername(const std::string& username);
+
+    /// Files the account `userId` under `username` instead, and ends its guest
+    /// standing: a guest names itself once. Moves everything this class keys
+    /// on the name -- the account row (in place, keeping the file's order),
+    /// both indices and every session record, so the tokens the account holds
+    /// still resume -- and nothing else: the guild table and the like are the
+    /// caller's. Refuses, with a sentence in `reasonOut`, a name validUsername
+    /// refuses, a guest-shaped name, or one another account holds in any case.
+    bool renameUser(const std::string& userId, const std::string& username,
+                    std::string& reasonOut);
+
     /// A stable, non-reversible label for an address, for the per-address
     /// registration cap.
     ///
@@ -402,6 +452,7 @@ public:
     /// the caller's job, and a database that also demanded it could not be
     /// used by an administrative reset. It does not revoke sessions either --
     /// see revokeSessionsForUser, which the caller decides the timing of.
+    /// Sets `passwordChosen`: whoever set it, somebody now knows it.
     bool setPassword(const std::string& username, const std::string& password,
                      std::string& reasonOut);
 
@@ -432,7 +483,10 @@ public:
 
     /// Resolves a raw token. Returns null for unknown, expired, or orphaned
     /// tokens -- and drops the stored record in the latter two cases, so a
-    /// deleted or renamed account can never be resumed into.
+    /// deleted account, or one whose name was taken over, can never be
+    /// resumed into. A token of an account with no chosen password is pushed
+    /// out another kSessionTtlMillis each time it resolves: it is the only key
+    /// to that account, and a guest who plays once a month must not lose it.
     const Session* resolveSession(const std::string& token);
 
     void revokeSession(const std::string& token);

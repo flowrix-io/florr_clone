@@ -1263,6 +1263,8 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
     switch (id) {
         case net::ClientMessage::Hello:         handleHello(*session, connection, reader); break;
         case net::ClientMessage::Register:      handleRegister(*session, connection, reader); break;
+        case net::ClientMessage::RegisterGuest: handleRegisterGuest(*session, connection); break;
+        case net::ClientMessage::SetUsername:   handleSetUsername(*session, connection, reader); break;
         case net::ClientMessage::Login:         handleLogin(*session, connection, reader); break;
         case net::ClientMessage::ResumeSession: handleResume(*session, connection, reader); break;
         case net::ClientMessage::ChangePassword:
@@ -1435,40 +1437,68 @@ void GameServer::handleRegister(Session& session, net::Connection& connection, B
     // already bounded by the per-session budget above. Above the bcrypt hash and
     // the database write, which are the work an unlimited registration endpoint
     // hands an attacker.
-    //
-    // That session budget bounds one SOCKET; it does not bound one client, which
-    // can hang up and dial again for a fresh allowance. These limits are keyed
-    // on the address instead, and outlive any one connection.
-    const std::string address = addressKey(connection.peer());
-    const std::string addressHash = database_.accountAddressHash(address);
-    const LimitVerdict verdict = accountLimits_.spendRegistration(
-        address,
-        [&] { return database_.countAccountsCreatedBy(addressHash, kRegisterDailyWindowMillis); },
-        monotonicMillis());
-    if (!verdict.allowed) {
-        const std::string line =
-            accountLimits_.refusalLogLine(address, verdict.scope, monotonicMillis());
-        if (!line.empty()) std::printf("%s\n", line.c_str());
-        sendAuthResult(connection, net::AuthStatus::RateLimited, "", "", verdict.message);
-        return;
-    }
+    const std::string addressHash = database_.accountAddressHash(addressKey(connection.peer()));
+    if (!spendRegistration(connection, addressHash)) return;
 
     const CreateResult result = database_.createUser(username, password, addressHash);
     if (!result.ok() || !result.account) {
         sendAuthResult(connection, refusalStatus(result.status), "", "", result.reason);
         return;
     }
+    beginNewAccount(session, connection, *result.account);
+}
 
+void GameServer::handleRegisterGuest(Session& session, net::Connection& connection) {
+    // A guest IS an account -- a row in the file, a starter kit, a name on the
+    // leaderboard -- so it is held to everything Register is, the per-socket
+    // budget and the address limits both. Making guests cheaper than accounts
+    // would only move the nine thousand spam accounts to this door.
+    if (!spend(session.loginAttemptsAllowed)) {
+        sendAuthResult(connection, net::AuthStatus::RateLimited, "", "",
+                       "Too many attempts. Wait a moment.");
+        return;
+    }
+    const std::string addressHash = database_.accountAddressHash(addressKey(connection.peer()));
+    if (!spendRegistration(connection, addressHash)) return;
+
+    const CreateResult result = database_.createGuest(addressHash);
+    if (!result.ok() || !result.account) {
+        sendAuthResult(connection, net::AuthStatus::ServerError, "", "",
+                       result.reason.empty() ? "Could not make a guest account." : result.reason);
+        return;
+    }
+    beginNewAccount(session, connection, *result.account);
+}
+
+bool GameServer::spendRegistration(net::Connection& connection, const std::string& addressHash) {
+    // The session budget each caller spends first bounds one SOCKET; it does
+    // not bound one client, which can hang up and dial again for a fresh
+    // allowance. These limits are keyed on the address instead, and outlive
+    // any one connection.
+    const std::string address = addressKey(connection.peer());
+    const LimitVerdict verdict = accountLimits_.spendRegistration(
+        address,
+        [&] { return database_.countAccountsCreatedBy(addressHash, kRegisterDailyWindowMillis); },
+        monotonicMillis());
+    if (verdict.allowed) return true;
+    const std::string line = accountLimits_.refusalLogLine(address, verdict.scope, monotonicMillis());
+    if (!line.empty()) std::printf("%s\n", line.c_str());
+    sendAuthResult(connection, net::AuthStatus::RateLimited, "", "", verdict.message);
+    return false;
+}
+
+void GameServer::beginNewAccount(Session& session, net::Connection& connection,
+                                 const Account& account) {
     // A socket still in the world leaves it first, its body saved into the
     // account it belonged to (see leaveWorld).
     leaveWorld(session);
-    releaseOnAccountChange(session, result.account->id);
-    session.userId = result.account->id;
-    session.username = result.account->username;
-    // Assigned, never left as it was: Register is also accepted on a socket
-    // that is already signed in, and a full admin's flag must not carry over
-    // into the account it has just made. A new account is never an admin.
-    session.admin = result.account->admin;
+    releaseOnAccountChange(session, account.id);
+    session.userId = account.id;
+    session.username = account.username;
+    // Assigned, never left as it was: an account can be made on a socket that
+    // is already signed in, and a full admin's flag must not carry over into
+    // the account it has just made. A new account is never an admin.
+    session.admin = account.admin;
     session.token = database_.createSession(session.userId, session.username);
 
     grantStarterKit(database_.progress(session.userId));
@@ -1609,7 +1639,14 @@ void GameServer::handleChangePassword(Session& session, net::Connection& connect
         return;
     }
 
-    if (!database_.verifyPassword(session.username, current)) {
+    // An account whose owner was never told its password -- a guest's random
+    // one -- has no current password to produce, so the session is the proof:
+    // the token that opened it is the only credential the account has ever
+    // had. Every other account proves itself again, because a socket left open
+    // on a shared machine is exactly who must not be able to lock its owner out.
+    const Account* account = std::as_const(database_).findUserById(session.userId);
+    const bool proven = account != nullptr && !account->passwordChosen;
+    if (!proven && !database_.verifyPassword(session.username, current)) {
         sendChangePasswordResult(connection, false, "", "Your current password is not correct.");
         return;
     }
@@ -1618,7 +1655,7 @@ void GameServer::handleChangePassword(Session& session, net::Connection& connect
     // login refunds its attempt.
     accountLimits_.refundLoginAttempt(address);
 
-    if (current == next) {
+    if (!proven && current == next) {
         // Refused rather than quietly accepted: the sessions below would be
         // revoked and the token reissued for a change that did not happen, so
         // the player would be signed out elsewhere for nothing.
@@ -1649,6 +1686,93 @@ void GameServer::handleChangePassword(Session& session, net::Connection& connect
     database_.maybeSave(monotonicMillis());
 
     sendChangePasswordResult(connection, true, session.token, "");
+    // The Account panel draws its form from the Profile's flags, and an account
+    // that just chose its first password has a different form now.
+    if (proven) sendProfile(session, connection);
+}
+
+void GameServer::sendSetUsernameResult(net::Connection& connection, bool ok,
+                                       const std::string& username, const std::string& reason) {
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::SetUsernameResult));
+    w.boolean(ok);
+    w.str(username);
+    w.str(reason);
+    connection.send(w);
+}
+
+void GameServer::handleSetUsername(Session& session, net::Connection& connection,
+                                   ByteReader& reader) {
+    const std::string requested = trimmed(reader.str());
+    if (!reader.ok()) return;
+
+    // WHOSE name this is comes from the session, as a password change's does.
+    if (!session.authenticated() || session.userId.empty()) {
+        sendSetUsernameResult(connection, false, "", "You are not signed in.");
+        return;
+    }
+    // On the login budget: every refusal says whether a name is free, and a
+    // free loop of these is a free walk of the user table.
+    if (!spend(session.loginAttemptsAllowed)) {
+        sendSetUsernameResult(connection, false, "", "Too many attempts. Wait a moment.");
+        return;
+    }
+    // A guest names itself once, and only a guest: the flag is the server's,
+    // set when it made the account and cleared by the rename below, so
+    // neither a registered account nor a guest that already chose can ask
+    // again, whatever its name looks like.
+    const Account* account = std::as_const(database_).findUserById(session.userId);
+    if (account == nullptr || !account->guest) {
+        sendSetUsernameResult(connection, false, "",
+                              "Only a guest account can set its username, and only once.");
+        return;
+    }
+
+    const std::string oldName = account->username;
+    std::string reason;
+    if (!database_.renameUser(session.userId, requested, reason)) {
+        sendSetUsernameResult(connection, false, "", reason);
+        return;
+    }
+    const std::string newName = database_.findUserById(session.userId)->username;
+    session.username = newName;
+    std::printf("[ACCOUNT] guest %s is now %s\n", oldName.c_str(), newName.c_str());
+
+    // The guild records name their members, and their leader, by account.
+    const std::string oldKey = lowerCase(oldName);
+    const std::string guildName = guildNameForUser(oldName);
+    if (!guildName.empty()) {
+        Json& guild = database_.rawTable("guilds")[guildName];
+        if (lowerCase(guild["leaderUsername"].asString()) == oldKey) {
+            guild["leaderUsername"] = newName;
+        }
+        Json members = guild["memberUsernames"];
+        Json renamed = Json::array();
+        for (const Json& member : members.items()) {
+            renamed.push(lowerCase(member.asString()) == oldKey ? Json(newName) : member);
+        }
+        guild["memberUsernames"] = std::move(renamed);
+        database_.markDirty();
+    }
+    // An invitation is addressed to the name it was sent to.
+    if (auto invite = guildInvites_.find(oldKey); invite != guildInvites_.end()) {
+        guildInvites_[lowerCase(newName)] = invite->second;
+        guildInvites_.erase(oldKey);
+    }
+    // The titan's memo of who holds what is a list of names; one of them may
+    // be this one. Forgotten whole -- it is a cache, refilled on the next ask.
+    universalHolders_.clear();
+    // Soon, not at the next periodic persist: the old name is free from this
+    // moment, and a crash that brought it back would hand the player a name
+    // somebody else may have taken in the meantime.
+    database_.maybeSave(monotonicMillis());
+
+    sendSetUsernameResult(connection, true, newName, "");
+    sendProfile(session, connection);
+    if (const Squad* squad = squads_.forMember(squadIdOf(session))) broadcastSquadUpdate(*squad);
+    if (!guildName.empty()) {
+        broadcastGuildRoster(std::as_const(database_).storedTable("guilds")[guildName]);
+    }
 }
 
 void GameServer::handleLogout(Session& session) {
@@ -1770,6 +1894,12 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::Profile));
     w.str(session.username);
+    std::uint8_t accountFlags = 0;
+    if (const Account* account = std::as_const(database_).findUserById(session.userId)) {
+        if (account->guest) accountFlags |= net::kAccountGuest;
+        if (!account->passwordChosen) accountFlags |= net::kAccountNoPassword;
+    }
+    w.u8(accountFlags);
     w.f64(trackXp);
     w.u16(static_cast<std::uint16_t>(levelFromTotalXp(trackXp).level));
     w.f64(std::max(0.0, record.stars));

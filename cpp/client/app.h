@@ -634,6 +634,15 @@ private:
     std::string pressedControl_;
     /// An auth action waiting for a reconnect to finish.
     std::string pendingAuth_;
+    /// When the sign-in this client sent on its own -- a stored token's resume,
+    /// or a first visit's guest account -- went out, or negative while none is
+    /// waiting. The form stays hidden behind a status line for as long as it
+    /// waits, so a player who is about to be signed in never sees a login
+    /// form flash up and vanish. See authInFlight().
+    double autoAuthSentAt_ = -1;
+    /// True while that sign-in is still worth waiting for: sent, unanswered,
+    /// on a socket that is still up, and not past kAutoAuthPatienceSeconds.
+    bool authInFlight() const;
 
     // -- lobby ---------------------------------------------------------------
     /// The flower's name, as typed in the field beside Ready. Remembered

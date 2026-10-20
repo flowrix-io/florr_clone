@@ -418,6 +418,7 @@ void App::pollNetwork() {
     }
     if (net_.authAnswered) {
         net_.authAnswered = false;
+        autoAuthSentAt_ = -1;
         loginMessage_ = net_.authMessage;
         if (net_.authStatus == net::AuthStatus::Ok) {
             passwordField_.clear();
@@ -426,6 +427,14 @@ void App::pollNetwork() {
             autoLogin_ = AutoLogin::Done;
             focusedField_ = -1;
             saveSession();
+            // A sign-in from the Account panel in the middle of a run: the
+            // server has already taken the body out (leaveWorld) and the
+            // client has dropped its world (NetClient::handleAuthResult), so
+            // the screen follows them home the way a Continue would.
+            if (screen_ == Screen::Playing || screen_ == Screen::Dead) {
+                deathCardVisible_ = false;
+                returnToTitle();
+            }
             screen_ = Screen::Lobby;
         } else if (screen_ == Screen::Lobby) {
             // A reconnection's resume, refused -- the token was revoked while

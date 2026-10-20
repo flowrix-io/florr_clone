@@ -55,6 +55,9 @@ inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xA89D36u};
 /// doubles as the tree's own ink: every connector and the TP badge are drawn
 /// in it, which is what makes the fan read as part of the card.
 inline constexpr PanelSkin kTalentsSkin{0xCC625Eu, 0xA44F4Cu, 0xA44F4Cu};
+/// The Account card wears the purple of the talents STRIP button (not the
+/// talent card's red above), and so does its own button on the top row.
+inline constexpr PanelSkin kAccountSkin{0x9D4EDDu, 0x7E3EB1u, 0x7E3EB1u};
 /// The shop is drawn against a reference screenshot rather than against the
 /// browser build's CSS, so its greens are that shot's. Its frame
 /// is NOT in that shot -- the shot's card runs to its own edge -- but a shop

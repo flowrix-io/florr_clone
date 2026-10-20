@@ -187,6 +187,7 @@ add_library(flix_client STATIC
   client/ui/menu_skins.cpp
   client/ui/menu_leaderboard.cpp
   client/ui/menu_notifications.cpp
+  client/ui/menu_account.cpp
   client/ui/menu_changelog.cpp
   client/ui/menu_settings.cpp
   client/ui/mobile_controls.cpp

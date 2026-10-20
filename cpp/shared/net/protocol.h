@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 58;
+inline constexpr std::uint16_t kProtocolVersion = 59;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -117,7 +117,10 @@ enum class ClientMessage : std::uint8_t {
                         ///< is the session's, never a name on the wire: an
                         ///< authenticated socket already says whose password
                         ///< this is, and accepting one would make this an
-                        ///< endpoint for changing somebody else's.
+                        ///< endpoint for changing somebody else's. An account
+                        ///< with kAccountNoPassword has no current password to
+                        ///< give, so `currentPassword` is not read for it
+                        ///< (version 59).
     UsePetal,           ///< u8 slot -- the loadout slot whose petal was CLICKED
                         ///< on the bar. Only the petals that DO something when
                         ///< they are used answer to it (petalIsClickToUse in
@@ -201,12 +204,25 @@ enum class ClientMessage : std::uint8_t {
                         ///< the bag cannot cover, or that may not be absorbed,
                         ///< refuses the lot. Anywhere, in or out of the world.
                         ///< (Version 58.)
+    RegisterGuest,      ///< (empty) -- a new GUEST account, which the server
+                        ///< names (`User` and eight digits) and gives a random
+                        ///< password nobody is told: its only credential is
+                        ///< the session token in the AuthResult, which is how
+                        ///< a first visit plays without a form. Held to the
+                        ///< same limits as Register, because it is one.
+                        ///< (Version 59.)
+    SetUsername,        ///< str username -- a guest account picks its name,
+                        ///< once: the account stops being a guest in the same
+                        ///< write, and only a guest may ask. The account is the
+                        ///< session's, as ChangePassword's is. Answered with
+                        ///< SetUsernameResult. (Version 59.)
 };
 
 enum class ServerMessage : std::uint8_t {
     Welcome = 1,        ///< u16 protocolVersion, u8 accepted, str reason
     AuthResult,         ///< u8 status(AuthStatus), str token, str username, str reason
-    Profile,            ///< full account state: xp, level, stars, inventory, loadout,
+    Profile,            ///< str username, u8 accountFlags (AccountFlags), then
+                        ///< the full account state: xp, level, stars, inventory, loadout,
                         ///< skins, the talent tree and the mob-kill ledger,
                         ///< then u32 milliseconds until the account may craft
                         ///< at an oracle again (0 when it may now), u32 the
@@ -301,7 +317,7 @@ enum class ServerMessage : std::uint8_t {
                         ///< card comes down and the body takes input. The name
                         ///< is the reviver's nameplate, which is what the
                         ///< system line thanks.
-    ChangePasswordResult, ///< u8 ok, str token, str reason. The settings
+    ChangePasswordResult, ///< u8 ok, str token, str reason. The Account
                         ///< panel's own reply channel, for the same reason
                         ///< ShopResult is the shop's: the answer belongs on
                         ///< the form that asked, not in the chat.
@@ -381,6 +397,11 @@ enum class ServerMessage : std::uint8_t {
                         ///< -- the answer to ClientMessage::Absorb. On a
                         ///< refusal nothing was taken and `reason` says why.
                         ///< The Profile follows it. (Version 58.)
+    SetUsernameResult,  ///< u8 ok, str username, str reason -- the answer to
+                        ///< ClientMessage::SetUsername. `username` is the name
+                        ///< the account is now filed under (its stored
+                        ///< spelling) on success, and empty on a refusal. The
+                        ///< Profile follows a success. (Version 59.)
 };
 
 // ---------------------------------------------------------------------------
@@ -421,6 +442,18 @@ enum class NotificationKind : std::uint8_t {
     ApexCraft,
     StarCode,
     UniversalCraft,     ///< a universal forged at a titan (version 47)
+};
+
+/// What the Profile says about the account itself rather than its progress:
+/// the two facts the Account panel draws itself from. (Version 59.)
+enum AccountFlags : std::uint8_t {
+    /// A guest: the server made the account and named it, and its owner may
+    /// still pick a name (ClientMessage::SetUsername), once.
+    kAccountGuest = 1u << 0,
+    /// The owner has never chosen a password -- a guest's is a random one the
+    /// server keeps to itself -- so the session token is the only way into the
+    /// account, and ChangePassword does not ask for the current one.
+    kAccountNoPassword = 1u << 1,
 };
 
 /// Which shop action a ShopResult answers.

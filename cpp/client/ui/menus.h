@@ -86,6 +86,10 @@ enum class MenuId : std::uint8_t {
     /// The asset browser. Opened from the debug panel and gated on the same
     /// switch; on no strip button, and its key is unbound and not rebindable.
     Assets,
+    /// The account: its name -- which a guest may pick, once -- its password,
+    /// signing in to another account, and Log Out. On the top row; its key is
+    /// unbound and not rebindable.
+    Account,
     Count,
 };
 
@@ -158,11 +162,11 @@ inline constexpr int kLoadoutTrashSlot = kLoadoutBarSlots;
 /// The link the Discord button opens.
 inline constexpr const char* kDiscordInvite = "https://discord.gg/SvAYCGsmAg";
 
-/// Slots in the icon strip: twelve across the top-left corner, three down the
+/// Slots in the icon strip: thirteen across the top-left corner, three down the
 /// bottom-left one. Not every one is shown at once -- see drawIconStrip -- and
 /// two of the top row open no panel (Discord is a link and exit leaves the
 /// game), so this is not `kMenuCount`.
-inline constexpr int kStripSlotCount = 15;
+inline constexpr int kStripSlotCount = 16;
 
 /// The range ClientSettings::zoom is held to, and how far one press of a zoom
 /// key moves it. The step is the browser's own ZOOM_STEP; the range is this
@@ -1275,6 +1279,21 @@ private:
     int rebinding_ = -1;
 };
 
+/// The account itself: who is signed in, the one-time username a guest may
+/// pick, the password, signing in to a different account, and Log Out. Pinned
+/// under the top icon row like the other corner cards.
+class AccountPanel {
+public:
+    bool render(MenuContext&);
+    void reset();
+    static double preferredWidth();
+    static double preferredHeight();
+    static Rect bounds(int viewWidth, int viewHeight);
+
+private:
+    ui::Scroller scroll_;
+};
+
 /// The release notes, newest first. Pinned under the top icon row rather than
 /// beside the bottom column: it is an overlay, not one of the tall lists.
 class ChangelogPanel {
@@ -1701,6 +1720,9 @@ private:
     /// no account, so renderStripOnly() takes the button down -- the Debug
     /// button's arrangement, with the server's flag where its setting is.
     bool adminSlotShown_ = false;
+    /// Whether the Account button is on the strip: only while there is an
+    /// account to show. The login screen paints the strip and no panels.
+    bool accountSlotShown_ = false;
     /// The Release chip as last painted, for capturesMouse(). Empty while no
     /// control is running.
     Rect releaseRect_{};
@@ -1853,6 +1875,7 @@ private:
     LeaderboardPanel leaderboard_;
     SettingsPanel settings_panel_;
     ChangelogPanel changelog_;
+    AccountPanel account_;
     NotificationsPanel notifications_;
     GuildPanel guild_;
     DebugPanel debug_;

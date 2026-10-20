@@ -36,6 +36,9 @@ constexpr double kRegisterFormHeight = 600;
 constexpr double kFieldHeight = 40;
 constexpr double kButtonHeight = 40;
 constexpr double kAdvancedHeight = 35;
+/// How long an automatic sign-in may keep the form hidden. A server that never
+/// answers must still leave the player a way in.
+constexpr double kAutoAuthPatienceSeconds = 10.0;
 
 Rect centred(double width, double height, int viewW, int viewH, double yOffset = 0) {
     return {(viewW - width) * 0.5, (viewH - height) * 0.5 + yOffset, width, height};
@@ -184,8 +187,22 @@ void App::updateConnecting() {
         // is already the screen we are on, so there is nothing to unwind.
         net_.resumeSession(storedToken_);
         storedToken_.clear();
+        autoAuthSentAt_ = timeSeconds_;
+    } else if (!config_.forceLogin) {
+        // A first visit -- nothing stored -- plays straight away on a guest
+        // account the server makes and names. Its owner can pick a username
+        // and a password later, in the Account panel. The form is only what a
+        // refusal falls back to: the registration limits are shared with
+        // Register, and an address past them is sent to log in instead.
+        net_.requestGuest();
+        autoAuthSentAt_ = timeSeconds_;
     }
     screen_ = Screen::Login;
+}
+
+bool App::authInFlight() const {
+    return autoAuthSentAt_ >= 0 && net_.status() == NetClient::Status::Ready &&
+           timeSeconds_ - autoAuthSentAt_ < kAutoAuthPatienceSeconds;
 }
 
 std::string* App::authValue(int index) {
@@ -213,6 +230,12 @@ void App::focusAuthField(int index) {
 void App::updateLogin(double dt) {
     (void)dt;
     if (net_.status() == NetClient::Status::LoggedIn) { screen_ = Screen::Lobby; return; }
+    // Nothing on the form is drawn while an automatic sign-in is waiting, so
+    // nothing on it can be used either. Once it stops waiting -- answered,
+    // refused, or given up on -- the flag goes, so a later drop and redial
+    // cannot bring the status line back over a form the player is using.
+    if (authInFlight()) return;
+    autoAuthSentAt_ = -1;
 
     if (!config_.autoUsername.empty()) {
         // A name already taken is the normal case on a second run against the
@@ -346,16 +369,10 @@ void App::submitAuth(const std::string& action) {
 
     loginMessage_.clear();
     if (action == "guest") {
-        // The browser mints User<8 digits> / password<10 digits> and registers
-        // them. Registering here also logs in, so there is no second step.
-        const std::string name = "User" + std::to_string(titleRng_.below(100000000u));
-        const std::string password =
-            "password" + std::to_string(titleRng_.next() % 10000000000ull);
-        usernameField_ = name;
-        passwordField_ = password;
-        net_.addSystemMessage("Guest account " + name + " / " + password +
-                              " -- write it down, it is not stored");
-        net_.requestRegister(name, password);
+        // The server names the guest and keeps its password to itself: the
+        // session token that comes back is the account's only credential, and
+        // the Account panel is where its owner turns it into a real one.
+        net_.requestGuest();
         return;
     }
     if (action == "register") {
@@ -488,6 +505,12 @@ void App::drawSessionReplaced(Canvas& canvas, double time) {
 }
 
 void App::drawLogin(Canvas& canvas, double time) {
+    // The sign-in this client sent on its own is still out: the connecting
+    // screen's line rather than a form that is about to vanish.
+    if (authInFlight()) {
+        drawTitleStatus(canvas, "Connecting...");
+        return;
+    }
     const AuthLayout layout = authLayout(canvas.width(), canvas.height(), registering_,
                                          advancedOpen_);
     const double centreX = canvas.width() * 0.5;
@@ -571,7 +594,8 @@ void App::drawLogin(Canvas& canvas, double time) {
         hint.align = Align::Centre;
         hint.strokeWidth = 0;
         hint.fill = 0xFF9800u;
-        text(canvas, "Guest accounts do not keep progress", centreX, layout.hintY, hint);
+        text(canvas, "Pick a username and password later, in the Account menu", centreX,
+             layout.hintY, hint);
     }
 
     // The reference raises its failures as browser dialogs, which this client

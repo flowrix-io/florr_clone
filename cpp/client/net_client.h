@@ -29,6 +29,13 @@ class WorldMaps;
 /// The account state the server sends after login, and keeps up to date.
 struct Profile {
     std::string username;
+    /// The server made this account and named it, and its owner may still
+    /// pick a name of their own -- once (net::kAccountGuest).
+    bool guest = false;
+    /// False while the owner has never chosen a password, so the session
+    /// token is the only way into the account and a password change asks for
+    /// no current one (net::kAccountNoPassword).
+    bool hasPassword = true;
     double totalXp = 0;
     int level = 1;
     double stars = 0;   ///< see PlayerProgress::stars
@@ -282,10 +289,28 @@ struct ShopOutcome {
     std::string message;
 };
 
-/// The settings panel's change-password reply, read the way ShopOutcome is:
+/// The Account panel's change-password reply, read the way ShopOutcome is:
 /// the answer belongs on the form that asked, and a chat line is not that.
 struct PasswordOutcome {
     bool pending = false;   ///< a result arrived that the panel has not read
+    bool ok = false;
+    std::string message;
+};
+
+/// The Account panel's set-username reply, read the way PasswordOutcome is.
+struct UsernameOutcome {
+    bool pending = false;   ///< a result arrived that the panel has not read
+    bool ok = false;
+    std::string message;
+};
+
+/// The answer to a sign-in the Account panel sent while this client was
+/// already signed in, read the way PasswordOutcome is. A refusal leaves the
+/// session as it was, on both sides -- so it has nowhere to go but the form
+/// that asked; a success has already swapped the account by the time the
+/// panel reads it.
+struct SwitchOutcome {
+    bool pending = false;
     bool ok = false;
     std::string message;
 };
@@ -518,6 +543,13 @@ public:
 
     // -- requests ----------------------------------------------------------
     void requestRegister(const std::string& username, const std::string& password);
+    /// Asks the server for a new guest account, which it names and gives a
+    /// password nobody is told. Answered like a registration: an AuthResult
+    /// carrying the session token that is the account's only credential.
+    void requestGuest();
+    /// Picks this guest account's username, once. The answer lands in
+    /// usernameOutcome(), and a success also renames profile().
+    void requestSetUsername(const std::string& username);
     void requestLogin(const std::string& username, const std::string& password);
     void resumeSession(const std::string& token);
     /// Ends the session: tells the server to log the account out -- which
@@ -874,9 +906,13 @@ public:
     /// once it has raised the modal for it.
     ShopOutcome& shopOutcome() { return shopOutcome_; }
 
-    /// The last change-password answer. The settings panel clears `pending`
+    /// The last change-password answer. The Account panel clears `pending`
     /// once it has put the line under its form.
     PasswordOutcome& passwordOutcome() { return passwordOutcome_; }
+    /// The last set-username answer, read and cleared the same way.
+    UsernameOutcome& usernameOutcome() { return usernameOutcome_; }
+    /// The last sign-in refused while this client was signed in already.
+    SwitchOutcome& switchOutcome() { return switchOutcome_; }
 
     /// Set once each time the server issued a REPLACEMENT session token for a
     /// session this client is already in -- which a password change does, and
@@ -964,6 +1000,7 @@ private:
     void handleTitanHolder(ByteReader&);
     void handleShopResult(ByteReader&);
     void handleChangePasswordResult(ByteReader&);
+    void handleSetUsernameResult(ByteReader&);
     void handleLeaderboard(ByteReader&);
     void handleNotifications(ByteReader&);
     /// Schedules the next redial, lengthening the wait each time it is
@@ -1072,6 +1109,8 @@ private:
     std::unordered_map<std::uint16_t, std::string> titanHolders_;
     ShopOutcome shopOutcome_;
     PasswordOutcome passwordOutcome_;
+    UsernameOutcome usernameOutcome_;
+    SwitchOutcome switchOutcome_;
     AdminDbState adminDb_;
     AdminDashboardState adminDashboard_;
     AdminAnnouncement adminAnnouncement_;

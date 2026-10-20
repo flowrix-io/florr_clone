@@ -83,3 +83,5 @@ a privilege by username, display name or any other string a player chooses.
 `README.md` (build, run, test), `cpp/docs/ARCHITECTURE.md` (engine),
 `maps/README.md` (map authoring), `cpp/docs/admin-dashboard.md` (admin tools),
 `cpp/third_party/cpp_canvas/README.md` (the canvas library).
+
+Do not edit README.md

@@ -71,6 +71,8 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::Absorb:              return "absorb";
         case net::ClientMessage::TitanHolder:         return "titanHolder";
         case net::ClientMessage::AdminDashboard:      return "adminDashboard";
+        case net::ClientMessage::RegisterGuest:       return "registerGuest";
+        case net::ClientMessage::SetUsername:         return "setUsername";
     }
     return "unknown";
 }
@@ -114,6 +116,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::LeftWorld:           return "leftWorld";
         case net::ServerMessage::AbsorbResult:        return "absorbResult";
         case net::ServerMessage::TitanHolder:         return "titanHolder";
+        case net::ServerMessage::SetUsernameResult:   return "setUsernameResult";
     }
     return "unknown";
 }
@@ -235,6 +238,19 @@ void NetClient::requestRegister(const std::string& username, const std::string& 
     send(w);
 }
 
+void NetClient::requestGuest() {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::RegisterGuest);
+    send(w);
+}
+
+void NetClient::requestSetUsername(const std::string& username) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::SetUsername);
+    w.str(username);
+    send(w);
+}
+
 void NetClient::requestLogin(const std::string& username, const std::string& password) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::Login);
@@ -305,6 +321,8 @@ void NetClient::forgetAccount() {
     titanHolders_.clear();
     shopOutcome_ = ShopOutcome{};
     passwordOutcome_ = PasswordOutcome{};
+    usernameOutcome_ = UsernameOutcome{};
+    switchOutcome_ = SwitchOutcome{};
     adminDb_ = AdminDbState{};
     resetAdminDashboard();
     // The words go with the account; the sequence does not -- see
@@ -1081,6 +1099,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::MazeInfo:      handleMazeInfo(reader); break;
         case net::ServerMessage::RealmChange:   handleRealmChange(reader); break;
         case net::ServerMessage::ChangePasswordResult: handleChangePasswordResult(reader); break;
+        case net::ServerMessage::SetUsernameResult: handleSetUsernameResult(reader); break;
         case net::ServerMessage::OracleResult:  handleOracleResult(reader); break;
         case net::ServerMessage::TradeResult:   handleTradeResult(reader); break;
         case net::ServerMessage::TitanForgeResult: handleTitanForgeResult(reader); break;
@@ -1164,16 +1183,40 @@ void NetClient::handleAuthResult(ByteReader& reader) {
         signedOutElsewhere = true;
     }
 
+    // Any other refusal while signed in answers a sign-in the Account panel
+    // sent from inside this session -- a mistyped password, a rate limit. The
+    // server touched nothing (handleLogin refuses before it changes the
+    // socket), so neither does this: the player is still signed in, and the
+    // refusal belongs on the form that asked, not on a login screen.
+    if (result != net::AuthStatus::Ok && haveSession()) {
+        switchOutcome_.pending = true;
+        switchOutcome_.ok = false;
+        switchOutcome_.message = reason.empty() ? "Could not log in." : reason;
+        return;
+    }
+
+    // Another account on this socket. Everything the last one owned goes, as
+    // a logout would take it -- its bag, guild, squad, chat backlog, the
+    // dashboard's rows and control asked for on its standing -- before the
+    // new one's arrives behind this answer. A sign-in from inside the world
+    // has already been taken out of it server-side (leaveWorld), so the world
+    // goes too. The same account again keeps what it has.
+    if (result == net::AuthStatus::Ok && haveSession()) {
+        if (username != profile_.username) forgetAccount();
+        else forgetWorld();
+        // After the forget, which would blank it.
+        switchOutcome_.pending = true;
+        switchOutcome_.ok = true;
+        switchOutcome_.message.clear();
+    }
+
     authAnswered = true;
     authStatus = result;
     authMessage = reason;
 
     if (result == net::AuthStatus::Ok) {
-        // Another account on this socket: the dashboard's rows, bag and
-        // control were the last account's, asked for on its standing, and a
-        // pick the panel still held would carry them over to this one. A
-        // logout wipes them for that reason (forgetAccount); a sign-in on top
-        // of a session does not go through there, so it is done here.
+        // A pick the dashboard still held from before a sign-in on a socket
+        // with no session (forgetAccount already ran for one with).
         if (username != profile_.username) resetAdminDashboard();
         sessionToken_ = token;
         profile_.username = username;
@@ -1194,6 +1237,9 @@ void NetClient::handleAuthResult(ByteReader& reader) {
 void NetClient::handleProfile(ByteReader& reader) {
     Profile next;
     next.username = reader.str();
+    const std::uint8_t accountFlags = reader.u8();
+    next.guest = (accountFlags & net::kAccountGuest) != 0;
+    next.hasPassword = (accountFlags & net::kAccountNoPassword) == 0;
     next.totalXp = reader.f64();
     next.level = reader.u16();
     next.stars = reader.f64();
@@ -1371,6 +1417,21 @@ void NetClient::handleChangePasswordResult(ByteReader& reader) {
     }
     outcome.pending = true;
     passwordOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleSetUsernameResult(ByteReader& reader) {
+    UsernameOutcome outcome;
+    outcome.ok = reader.boolean();
+    const std::string username = reader.str();
+    outcome.message = reader.str();
+    if (!reader.ok()) return;
+
+    // Renamed here as well as by the Profile behind it, so a reconnection's
+    // resume -- which answers with the new name -- reads as the same account
+    // rather than as a sign-in to another one (handleAuthResult).
+    if (outcome.ok && !username.empty()) profile_.username = username;
+    outcome.pending = true;
+    usernameOutcome_ = std::move(outcome);
 }
 
 void NetClient::handleLeaderboard(ByteReader& reader) {

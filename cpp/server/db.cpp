@@ -332,9 +332,12 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.mutedBy = value["mutedBy"].asString();
     account.createdAtMillis = static_cast<std::int64_t>(value["createdAt"].asDouble(0));
     account.createdFromHash = value["createdFromHash"].asString();
+    account.guest = value["guest"].asBool(false);
+    account.passwordChosen = value["passwordChosen"].asBool(true);
 
     collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "lastActiveAt",
-                          "muted", "mutedAt", "mutedBy", "createdAt", "createdFromHash"},
+                          "muted", "mutedAt", "mutedBy", "createdAt", "createdFromHash", "guest",
+                          "passwordChosen"},
                   account.extra);
     return account;
 }
@@ -356,6 +359,10 @@ Json accountToJson(const Account& account) {
     // limits existed round-trip through this build unchanged.
     if (account.createdAtMillis != 0) out["createdAt"] = millisJson(account.createdAtMillis);
     if (!account.createdFromHash.empty()) out["createdFromHash"] = account.createdFromHash;
+    // Written only while they say something, for the same reason: every
+    // account that predates them is a registered one with a typed password.
+    if (account.guest) out["guest"] = true;
+    if (!account.passwordChosen) out["passwordChosen"] = false;
     appendExtras(account.extra, out);
     return out;
 }
@@ -1136,6 +1143,101 @@ CreateResult Database::createUser(const std::string& username, const std::string
     return result;
 }
 
+bool Database::isGuestUsername(const std::string& username) {
+    if (username.size() != 12 || username.compare(0, 4, "User") != 0) return false;
+    for (std::size_t i = 4; i < username.size(); ++i) {
+        if (username[i] < '0' || username[i] > '9') return false;
+    }
+    return true;
+}
+
+CreateResult Database::createGuest(const std::string& createdFromHash) {
+    CreateResult result;
+    // Eight digits, zero-padded: the browser build's `User\d{8}`, which is the
+    // shape `/admin delete_guests` sweeps. A collision is a retry, not a
+    // refusal -- a hundred million names is room enough that a few draws
+    // always land, and the loop is bounded so a full namespace cannot hang
+    // the tick.
+    std::string username;
+    for (int attempt = 0; attempt < 64 && username.empty(); ++attempt) {
+        std::uint8_t raw[4];
+        crypto::secureRandom().bytes(raw, sizeof(raw));
+        const std::uint32_t draw = (static_cast<std::uint32_t>(raw[0]) << 24) |
+                                   (static_cast<std::uint32_t>(raw[1]) << 16) |
+                                   (static_cast<std::uint32_t>(raw[2]) << 8) | raw[3];
+        char digits[9];
+        std::snprintf(digits, sizeof digits, "%08u", static_cast<unsigned>(draw % 100000000u));
+        const std::string candidate = std::string("User") + digits;
+        if (findUser(candidate) == nullptr) username = candidate;
+    }
+    if (username.empty()) {
+        result.status = CreateStatus::ServerError;
+        result.reason = "could not find a free guest name";
+        return result;
+    }
+
+    // 32 random bytes, hex: a password with nobody to type it, so its only job
+    // is to be unguessable. It passes validPassword (64 printable bytes) and is
+    // then forgotten -- createUser hashes it and nothing keeps the text.
+    result = createUser(username, crypto::secureRandom().hex(32), createdFromHash);
+    if (result.ok() && result.account != nullptr) {
+        result.account->guest = true;
+        result.account->passwordChosen = false;
+    }
+    return result;
+}
+
+bool Database::renameUser(const std::string& userId, const std::string& username,
+                          std::string& reasonOut) {
+    auto stored = usersById_.find(userId);
+    if (stored == usersById_.end()) {
+        reasonOut = "That account no longer exists.";
+        return false;
+    }
+    const std::string oldKey = stored->second;
+    if (!validUsername(username, reasonOut)) return false;
+    if (isGuestUsername(username)) {
+        reasonOut = "That name is kept for guest accounts. Pick another.";
+        return false;
+    }
+    // Any other account, in any case: "Bob" and "bob" side by side is the
+    // impersonation findUser's case-blindness exists to stop. The account's
+    // own row does not count -- but a guest renaming itself to its own name is
+    // refused above anyway, by the guest shape.
+    const Account* holder = std::as_const(*this).findUser(username);
+    if (holder != nullptr && holder->id != userId) {
+        reasonOut = "That username is taken.";
+        return false;
+    }
+
+    if (!users_.rekey(oldKey, username)) {
+        reasonOut = "That username is taken.";
+        return false;
+    }
+    Account* account = users_.find(username);
+    account->username = username;
+    account->guest = false;
+    // Only when the lower-case entry was this row's: a legacy file can hold
+    // "Bob" and "bob" as two accounts, and the other one owns the lookup then.
+    const auto lower = usersByLowerName_.find(lowerCase(oldKey));
+    if (lower != usersByLowerName_.end() && lower->second == oldKey) {
+        usersByLowerName_.erase(lower);
+    }
+    usersByLowerName_[lowerCase(username)] = username;
+    usersById_[userId] = username;
+
+    // Every token the account holds names it, and resolveSession drops one
+    // whose name no longer finds the account -- so without this, picking a
+    // name would sign the player out everywhere at their next resume.
+    for (const std::string& tokenHash : sessions_.keys()) {
+        const Session* session = std::as_const(sessions_).find(tokenHash);
+        if (session == nullptr || session->userId != userId) continue;
+        sessions_.find(tokenHash)->username = username;
+    }
+    markDirty();
+    return true;
+}
+
 bool Database::eraseUser(const std::string& username) {
     // Resolve through findUser so any spelling works, then delete by the key
     // the account is actually STORED under -- a legacy file may hold both
@@ -1236,6 +1338,10 @@ bool Database::setPassword(const std::string& username, const std::string& passw
     // way a successful verify upgrades it: whatever the record was before, it
     // holds a hash now and the flag has to say so.
     account->isPlainText = false;
+    // A guest's random password is replaced by one somebody typed -- its owner
+    // through ChangePassword, or an admin who will tell them -- so from here a
+    // change asks for the current one like any other account's.
+    account->passwordChosen = true;
     markDirty();
     return true;
 }
@@ -1285,6 +1391,12 @@ const Database::Session* Database::resolveSession(const std::string& token) {
         markDirty();
         return nullptr;
     }
+
+    // The token is the only key to an account with no chosen password, so it
+    // lapses after thirty days of NOT being used rather than thirty days from
+    // the day it was issued. An account with a password keeps the fixed term:
+    // its owner can always sign in again.
+    if (!account->passwordChosen) session->expiresAtMillis = now + kSessionTtlMillis;
 
     account->lastActiveAtMillis = now;
     markDirty();

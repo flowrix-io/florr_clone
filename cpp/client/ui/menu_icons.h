@@ -2,8 +2,9 @@
 // Icon artwork for the menu strip.
 //
 // Lifted verbatim from src/game-icons-net-icons.ts, which is where the
-// browser build kept the same fourteen game-icons.net glyphs -- plus one
-// drawn for this build alone, the admin dashboard's crown. They are embedded
+// browser build kept the same fourteen game-icons.net glyphs -- plus two
+// drawn for this build alone, the admin dashboard's crown and the account's
+// head and shoulders. They are embedded
 // rather than staged as files because they are a few hundred bytes each and
 // because a missing icon file would leave the only way into the menus blank.
 //
@@ -53,6 +54,10 @@ inline constexpr IconSource kMenuIcons[] = {
     // dashboard: a crown, drawn here in the same flat white the others wear.
     {"admin",
      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\"><g><path d=\"M64 176 L160 272 L256 112 L352 272 L448 176 L408 384 L104 384 Z\" fill=\"#fff\"></path><rect x=\"104\" y=\"408\" width=\"304\" height=\"48\" rx=\"10\" fill=\"#fff\"></rect><circle cx=\"64\" cy=\"160\" r=\"30\" fill=\"#fff\"></circle><circle cx=\"256\" cy=\"92\" r=\"30\" fill=\"#fff\"></circle><circle cx=\"448\" cy=\"160\" r=\"30\" fill=\"#fff\"></circle></g></svg>"},
+    // The Account button's: a head and shoulders, drawn here like the crown,
+    // because the browser build had no account panel to have an icon for.
+    {"account",
+     "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\"><g><circle cx=\"256\" cy=\"152\" r=\"104\" fill=\"#fff\"></circle><path d=\"M56 468 C56 348 148 288 256 288 C364 288 456 348 456 468 Z\" fill=\"#fff\"></path></g></svg>"},
 };
 
 inline constexpr int kMenuIconCount = sizeof(kMenuIcons) / sizeof(kMenuIcons[0]);

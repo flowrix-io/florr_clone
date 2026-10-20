@@ -469,6 +469,20 @@ both sides read it.
   line, every path that takes a body out (the disconnect, a sign-out, a re-auth
   from inside the world) keys on the session holding a body rather than on its
   stage, and a join never puts a new body down over one still held.
+* **Signing in.** After `Welcome` a client presents its stored session token
+  (`ResumeSession`) or, on a first visit with nothing stored, asks for a guest
+  (`RegisterGuest`): the server makes and names the account (`User` and eight
+  digits, `Database::createGuest`) with a random password nobody is told, so
+  the token in the `AuthResult` is its only credential. Two server-held flags
+  on the account row say what it may still do, and ride the `Profile`
+  (`AccountFlags`): `guest` — it may pick its name, once (`SetUsername`,
+  `Database::renameUser`, which moves the session records and the guild
+  roster with it); and `passwordChosen: false` — `ChangePassword` takes no
+  current password, and the token's 30-day term restarts on every resume.
+  Guest creation shares Register's limits (`server/account_limits.h`). The
+  login form is only what a refused guest, a dead token or a Log Out falls
+  back to; the Account card (`client/ui/menu_account.cpp`) is where a signed-in
+  player names the account, sets its password and signs in to another.
 * **The content hash** (`ContentRegistry::contentHash`, folded in
   `ContentRegistry::load`, `shared/game/config.cpp`) is FNV-1a over the raw
   bytes of, in this order, `mobs.json`, `petals.json`, `mob_drops.json`,

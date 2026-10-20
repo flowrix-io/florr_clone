@@ -78,6 +78,7 @@ const std::array<MenuMeta, kMenuCount> kMenus = {{
     // `--menu admin` reaches it by this label, as every panel is reached.
     {"Admin", Key::Unknown},
     {"Assets", Key::Unknown},
+    {"Account", Key::Unknown},
 }};
 
 /// Every rebindable action, indexed by ControlAction, in the browser's
@@ -828,6 +829,7 @@ void MenuSystem::toggle(MenuId id) {
         case MenuId::AdminDb:     adminDb_.reset(); break;
         case MenuId::AdminDashboard: adminDashboard_.reset(); break;
         case MenuId::Assets:      assets_.reset(); break;
+        case MenuId::Account:     account_.reset(); break;
         default: break;
     }
 }
@@ -1058,6 +1060,9 @@ Rect AdminDashboardPanel::bounds(int w, int h) {
 Rect AssetsPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
 }
+Rect AccountPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
+}
 
 Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
     switch (id) {
@@ -1075,6 +1080,7 @@ Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
         case MenuId::AdminDb:       return AdminDbPanel::bounds(viewWidth, viewHeight);
         case MenuId::AdminDashboard: return AdminDashboardPanel::bounds(viewWidth, viewHeight);
         case MenuId::Assets:        return AssetsPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Account:       return AccountPanel::bounds(viewWidth, viewHeight);
         default:                    return listPanel(380.0, viewWidth, viewHeight);
     }
 }
@@ -1108,6 +1114,9 @@ const std::array<MenuSystem::StripSlot, kStripSlotCount>& MenuSystem::strip() {
         {MenuId::Skins,         A::OpenMenu, "skins",         true,  0xC45CFFu, 0x9A3FD0u},
         {MenuId::Gallery,       A::OpenMenu, "mob_gallery",   true,  0xD6C206u, 0xAB9B05u},
         {MenuId::Shop,          A::OpenMenu, "stars",         true,  0x7EF16Bu, 0x64C156u},
+        // The talents button's purple, which is also the card's (kAccountSkin).
+        {MenuId::Account,       A::OpenMenu, "account",       true,  kAccountSkin.fill,
+         kAccountSkin.border},
         {MenuId::None,          A::Discord,  "discord",       true,  0x5865F2u, 0x4752C4u},
         {MenuId::Debug,         A::OpenMenu, "debug",         true,  0x666666u, 0x4D4D4Du},
         // The panel's own card colours, so the button says which card it opens.
@@ -1157,6 +1166,8 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         // panel at all, as only it is offered the console's autocomplete rows.
         else if (slot.menu == MenuId::AdminDashboard)
             visible[static_cast<std::size_t>(i)] = adminSlotShown_;
+        else if (slot.menu == MenuId::Account)
+            visible[static_cast<std::size_t>(i)] = accountSlotShown_;
         else visible[static_cast<std::size_t>(i)] = true;
     }
 
@@ -2563,6 +2574,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
         case MenuId::AdminDb:     keepOpen = adminDb_.render(ctx); break;
         case MenuId::AdminDashboard: keepOpen = adminDashboard_.render(ctx); break;
         case MenuId::Assets:      keepOpen = assets_.render(ctx); break;
+        case MenuId::Account:     keepOpen = account_.render(ctx); break;
         default: break;
     }
     // Latched before the closing-card check below: the Log Out button closes
@@ -2612,6 +2624,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // Read once a frame, here, because this is the one entry point with the
     // account to ask: the strip draws the admin button off it.
     adminSlotShown_ = net.haveSession() && net.isSkinAdmin();
+    accountSlotShown_ = net.haveSession();
 
     // A guild invitation raises the guild panel over whatever was open. It is
     // the one thing in this build that opens a menu without a click, so the
@@ -2774,8 +2787,9 @@ void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeco
     window.setClaimedShortcuts({});
     loadoutHovered_ = -1;
     loadoutGrabbable_.fill(false);
-    // No account, so no admin button and nothing being steered.
+    // No account, so no admin or account button and nothing being steered.
     adminSlotShown_ = false;
+    accountSlotShown_ = false;
     releaseRect_ = Rect{};
     drawIconStrip(canvas, window, timeSeconds);
 }
