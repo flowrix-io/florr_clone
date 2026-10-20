@@ -278,7 +278,7 @@ private:
     void handleRegisterGuest(Session&, net::Connection&);
     /// The address-keyed registration limits Register and RegisterGuest share.
     /// False, with the refusal already sent, when they say no.
-    bool spendRegistration(net::Connection&, const std::string& addressHash);
+    bool spendRegistration(const Session&, net::Connection&, const std::string& addressHash);
     /// Signs the socket in to an account that was made on it just now, and
     /// sends everything an authentication sends -- the tail Register and
     /// RegisterGuest share.

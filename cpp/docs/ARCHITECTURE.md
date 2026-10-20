@@ -479,7 +479,13 @@ both sides read it.
   `Database::renameUser`, which moves the session records and the guild
   roster with it); and `passwordChosen: false` — `ChangePassword` takes no
   current password, and the token's 30-day term restarts on every resume.
-  Guest creation shares Register's limits (`server/account_limits.h`). The
+  Guest creation shares Register's limits (`server/account_limits.h`), which
+  size each address by its STANDING — how many accounts it made that went on
+  to be played — so a school or a carrier NAT full of real players scales up
+  while a source of accounts nobody plays stays at the base rate; a source
+  refused faster than people ask is boxed for ten minutes. Guests are hashed
+  at bcrypt's minimum cost, since nobody guesses a random 256-bit password and
+  a first visit should not be a quarter-second of CPU anyone can ask for. The
   login form is only what a refused guest, a dead token or a Log Out falls
   back to; the Account card (`client/ui/menu_account.cpp`) is where a signed-in
   player names the account, sets its password and signs in to another.
@@ -895,6 +901,26 @@ from the repository root, as `node dist/server.js --port ${PORT:-3000}` with
   kind a browser accepts pinned by hash, which is what lets localhost
   WebTransport work with no trust-store setup. The flip side is that it expires
   quickly, and is made again by hand.
+* **Behind nginx or Cloudflare, the limits key on the visitor.** Every
+  account-creation and login limit is keyed on the client's address
+  (`clientAddress` in `server/account_limits.h`), which the WebSocket upgrade
+  reads from `X-Forwarded-For`, `X-Real-IP` and `CF-Connecting-IP`. They are
+  believed only when the TCP peer is loopback (nginx on the box) or a
+  Cloudflare edge; a client dialling the game port directly is its own peer
+  whatever it writes. Behind a trusted peer the hop list is read from the
+  right, a Cloudflare hop is answered by `CF-Connecting-IP`, and if nginx's
+  two headers disagree neither is believed. So nginx must set them itself —
+  a header it does not set is passed through from the client:
+
+  ```nginx
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  ```
+
+  Without either, every proxied visitor is one address (loopback) again and
+  the limits treat the whole site as one network. Cloudflare's edge ranges
+  are compiled in (`kCloudflareBlocks`); an edge missing from them only
+  leaves its visitors sharing that edge's bucket.
 * **`--web-root`** is the directory served, defaulting to the directory the
   server module was loaded from — which is where the client build already is.
   **Only the web build's own files are served**, by name, from the top of the

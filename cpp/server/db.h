@@ -376,9 +376,9 @@ public:
     std::string canonicalUsername(const std::string& username) const;
 
     /// `createdFromHash` stamps the account with accountAddressHash(...) of the
-    /// address that asked for it, so countAccountsCreatedBy can hold one source
-    /// to a daily cap across restarts. Empty means "creator unknown", which
-    /// counts against nobody -- the in-memory and global limits still apply.
+    /// address that asked for it, so creatorStanding can size that address's
+    /// allowance across restarts. Empty means "creator unknown", which counts
+    /// for and against nobody -- the in-memory and global limits still apply.
     CreateResult createUser(const std::string& username, const std::string& password,
                             const std::string& createdFromHash = {});
 
@@ -387,7 +387,10 @@ public:
     /// cleared. Its only credential is whatever session the caller mints for
     /// it. A real bcrypt hash rather than an empty or sentinel one, so that no
     /// password -- not even an empty one, on a build that predates the flag --
-    /// opens it.
+    /// opens it. Hashed at bcrypt's MINIMUM cost: the cost is there to slow a
+    /// guess at a password a person chose, and nobody guesses 256 random bits
+    /// however fast each try is -- while at the full cost every first visit
+    /// would be tens of milliseconds of CPU anyone could ask for.
     CreateResult createGuest(const std::string& createdFromHash = {});
 
     /// Whether `username` has the shape guest accounts are given: `User` and
@@ -421,8 +424,19 @@ public:
     /// (see server/admin_db_key.h).
     std::string serverSecret();
 
-    /// How many accounts `addressHash` created within the last `windowMillis`.
-    int countAccountsCreatedBy(const std::string& addressHash, std::int64_t windowMillis) const;
+    /// What the accounts `addressHash` created have done since: how many made
+    /// in the last `idleWindowMillis` have never been played, and how many made
+    /// in the last `standingWindowMillis` have. "Played" is anything past the
+    /// starter kit (isStarterProgress). Walks only that address's own accounts,
+    /// newest first, and stops at the standing window -- an index kept beside
+    /// the accounts, so the cost is the address's recent accounts, never the
+    /// whole user table.
+    struct CreatorStanding {
+        int idleToday = 0;
+        int played = 0;
+    };
+    CreatorStanding creatorStanding(const std::string& addressHash, std::int64_t idleWindowMillis,
+                                    std::int64_t standingWindowMillis) const;
 
     /// Deletes an account and the progress record behind it, by any spelling
     /// of the name. Returns false when there is no such account.
@@ -624,6 +638,8 @@ private:
     bool parseRoot(const Json& root, std::string& errorOut);
     std::string newUserId();
     void indexUser(const std::string& storedKey, const Account& account);
+    CreateResult createAccount(const std::string& username, const std::string& password,
+                               const std::string& createdFromHash, int cost);
 
     Table<Account> users_;
     Table<PlayerRecord> players_;
@@ -634,6 +650,10 @@ private:
     /// insert; neither is serialised.
     std::unordered_map<std::string, std::string> usersByLowerName_;
     std::unordered_map<std::string, std::string> usersById_;
+    /// createdFromHash -> the userIds that address made, oldest first. Derived
+    /// like the two above: sorted by createdAt once a load is done, appended to
+    /// as accounts are made, and what creatorStanding walks.
+    std::unordered_map<std::string, std::vector<std::string>> usersByCreator_;
 
     /// Top-level keys we do not model -- codes, notifications, guilds,
     /// apiKeys, customSkins -- held as raw JSON and written back untouched.

@@ -211,6 +211,89 @@ TEST(a_token_is_kept_alive_by_use_only_while_it_is_the_accounts_only_key) {
     CHECK(f.db.resolveSession(registeredToken) == nullptr);
 }
 
+TEST(a_guest_is_hashed_at_the_cheapest_cost_and_a_registration_is_not) {
+    // A first visit is something anyone can ask for, and at the full cost every
+    // one is a quarter of a second of CPU. A random 256-bit password needs no
+    // stretching to be unguessable; a password a person chose does.
+    Fixture f;
+    f.db.setPasswordCost(10);
+    const CreateResult guest = f.db.createGuest();
+    CHECK(f.db.createUser("chooser", "password7").ok());
+    if (!guest.account) { CHECK(false); return; }
+    const std::string& guestHash = guest.account->passwordHash;
+    const std::string& chosenHash = f.db.findUser("chooser")->passwordHash;
+    CHECK(guestHash.size() > 7 && guestHash.compare(4, 3, "04$") == 0);
+    CHECK(chosenHash.size() > 7 && chosenHash.compare(4, 3, "10$") == 0);
+}
+
+TEST(an_addresses_standing_is_what_its_own_recent_accounts_did) {
+    Fixture f;
+    f.db.setClock(&testClock);
+    gNowMillis = 1000000000000;
+    constexpr std::int64_t kDay = 86400000;
+    const std::string school = "hash-school";
+
+    // Made a week ago and played; made a week ago and never touched; made an
+    // hour ago and not touched yet; and one from somewhere else entirely.
+    gNowMillis -= 7 * kDay;
+    const CreateResult played = f.db.createGuest(school);
+    const CreateResult abandoned = f.db.createGuest(school);
+    gNowMillis += 7 * kDay - 3600000;
+    const CreateResult fresh = f.db.createGuest(school);
+    const CreateResult elsewhere = f.db.createGuest("hash-elsewhere");
+    gNowMillis += 3600000;
+    if (!played.account || !abandoned.account || !fresh.account || !elsewhere.account) {
+        CHECK(false);
+        return;
+    }
+    f.db.progress(played.account->id).totalXp = 120;
+    f.db.progress(elsewhere.account->id).totalXp = 50;
+
+    const Database::CreatorStanding standing = f.db.creatorStanding(school, kDay, 30 * kDay);
+    CHECK_EQ(standing.played, 1);
+    // The week-old untouched one is past the idle window; the new one is in it.
+    CHECK_EQ(standing.idleToday, 1);
+
+    // Past the standing window, nothing counts.
+    const Database::CreatorStanding later =
+        f.db.creatorStanding(school, kDay, 3 * kDay);
+    CHECK_EQ(later.played, 0);
+
+    // A deleted account takes its part of the standing with it.
+    CHECK(f.db.eraseUser(fresh.account->username));
+    CHECK_EQ(f.db.creatorStanding(school, kDay, 30 * kDay).idleToday, 0);
+
+    // An unknown creator has no standing, and no account is counted for it.
+    CHECK_EQ(f.db.creatorStanding("", kDay, 30 * kDay).played, 0);
+}
+
+TEST(an_addresses_standing_survives_a_reload_in_any_file_order) {
+    std::string path;
+    {
+        Fixture f;
+        f.db.setClock(&testClock);
+        gNowMillis = 2000000000000;
+        path = f.file.path + ".order";
+        // Two accounts written out of creation order: the newer one first.
+        gNowMillis += 1000;
+        const CreateResult newer = f.db.createGuest("hash-order");
+        gNowMillis -= 40LL * 86400000;
+        const CreateResult older = f.db.createGuest("hash-order");
+        gNowMillis += 40LL * 86400000;
+        if (!newer.account || !older.account) { CHECK(false); return; }
+        f.db.progress(newer.account->id).totalXp = 5;
+        f.db.toJson().writeFile(path, 0);
+    }
+    Database reread;
+    reread.setClock(&testClock);
+    std::string error;
+    CHECK(reread.load(path, error));
+    // Walked newest first, the old account ends the walk without hiding the
+    // new one behind it.
+    CHECK_EQ(reread.creatorStanding("hash-order", 86400000, 30LL * 86400000).played, 1);
+    std::remove(path.c_str());
+}
+
 // ---------------------------------------------------------------------------
 // Over the wire
 // ---------------------------------------------------------------------------

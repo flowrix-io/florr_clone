@@ -140,10 +140,30 @@ int waitSeconds(double tokens, double refillPerSecond) {
     return static_cast<int>(std::ceil((1.0 - tokens) / refillPerSecond));
 }
 
-} // namespace
+/// What an address's standing buys it. See the constants in the header.
+double burstFor(const AddressStanding& standing) {
+    return std::min(kRegisterBurstMax, kRegisterBurst + standing.played);
+}
+double refillFor(const AddressStanding& standing) {
+    return std::min(kRegisterRefillMaxPerSecond, kRegisterRefillPerSecond * (1 + standing.played));
+}
+int idleCapFor(const AddressStanding& standing) {
+    return std::min(kIdlePerAddressDailyMax, kIdlePerAddressDaily + standing.played);
+}
+double strikeLimitFor(const AddressStanding& standing) {
+    return kStrikeLimit + standing.played;
+}
 
-std::string addressKey(const std::string& peer) {
-    std::string host = lowerCase(peer);
+
+/// The host part of a peer string or a forwarding header entry: lower-cased,
+/// trimmed, with any port and brackets taken off. `[v6]:port` and `v4:port`
+/// are both spellings a proxy may use in X-Forwarded-For.
+std::string peerHost(const std::string& peer) {
+    std::string host = lowerCase(trimmed(peer));
+    if (!host.empty() && host.front() == '[') {
+        const std::size_t close = host.find(']');
+        return close == std::string::npos ? host.substr(1) : host.substr(1, close - 1);
+    }
     // The transport formats a peer as `host:port`, unbracketed, so the port is
     // whatever follows the LAST colon -- an IPv6 host is full of the others.
     const std::size_t lastColon = host.rfind(':');
@@ -152,36 +172,178 @@ std::string addressKey(const std::string& peer) {
         // group is a group and not a port. Only trim when what remains is still
         // an address in its own right, which `2001:db8:` (from `2001:db8::1`)
         // is not.
-        const std::string trimmed = host.substr(0, lastColon);
+        const std::string head = host.substr(0, lastColon);
         int probe[8];
         int octets[4];
-        const bool stillAnAddress = !trimmed.empty() && trimmed.back() != ':' &&
-                                    (parseIPv4(trimmed, octets) || expandIPv6(trimmed, probe) ||
-                                     trimmed.find(':') == std::string::npos);
-        if (stillAnAddress) host = trimmed;
+        const bool stillAnAddress = !head.empty() && head.back() != ':' &&
+                                    (parseIPv4(head, octets) || expandIPv6(head, probe) ||
+                                     head.find(':') == std::string::npos);
+        if (stillAnAddress) host = head;
     }
-    while (!host.empty() && (host.front() == '[' || host.back() == ']')) {
-        if (host.front() == '[') host.erase(host.begin());
-        if (!host.empty() && host.back() == ']') host.pop_back();
+    return host;
+}
+
+/// One parsed address. IPv4-mapped IPv6 is folded to IPv4 on the way in, so
+/// a client has one identity however its address is spelled.
+struct Address {
+    bool v4 = false;
+    int octets[4] = {0, 0, 0, 0};
+    int groups[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+};
+
+bool parseAddress(const std::string& text, Address& out) {
+    const std::string host = peerHost(text);
+    if (host.empty()) return false;
+    out = Address{};
+    if (parseIPv4(host, out.octets)) {
+        out.v4 = true;
+        return true;
     }
-    if (host.empty()) return "unknown";
-
-    int octets[4];
-    if (parseIPv4(host, octets)) return host;
-    if (host.find(':') == std::string::npos) return host;
-
-    int groups[8];
-    if (!expandIPv6(host, groups)) return host;
-
-    // IPv4-mapped (::ffff:a.b.c.d): the octets are packed into the last two groups.
-    const bool mapped = groups[0] == 0 && groups[1] == 0 && groups[2] == 0 && groups[3] == 0 &&
-                        groups[4] == 0 && groups[5] == 0xffff;
+    if (!expandIPv6(host, out.groups)) return false;
+    const bool mapped = out.groups[0] == 0 && out.groups[1] == 0 && out.groups[2] == 0 &&
+                        out.groups[3] == 0 && out.groups[4] == 0 && out.groups[5] == 0xffff;
     if (mapped) {
-        return joinOctets(groups[6] >> 8, groups[6] & 0xff, groups[7] >> 8, groups[7] & 0xff);
+        out.v4 = true;
+        out.octets[0] = out.groups[6] >> 8;
+        out.octets[1] = out.groups[6] & 0xff;
+        out.octets[2] = out.groups[7] >> 8;
+        out.octets[3] = out.groups[7] & 0xff;
+    }
+    return true;
+}
+
+/// The address as one spelling: dotted for IPv4, all eight groups for IPv6.
+/// Never compressed, so it can be compared as text and taken apart again.
+std::string canonical(const Address& address) {
+    if (address.v4) {
+        return joinOctets(address.octets[0], address.octets[1], address.octets[2],
+                          address.octets[3]);
+    }
+    std::string out;
+    for (int i = 0; i < 8; ++i) {
+        if (i > 0) out += ':';
+        out += hexGroup(address.groups[i]);
+    }
+    return out;
+}
+
+/// A CIDR block, written as Cloudflare publishes it.
+struct Block {
+    const char* base;
+    int prefix;
+};
+
+/// https://www.cloudflare.com/ips-v4 and /ips-v6, as published 2026-10-19.
+/// They change rarely and are announced well ahead; an edge missing from here
+/// only means that edge's visitors share one bucket until it is added.
+constexpr Block kCloudflareBlocks[] = {
+    {"173.245.48.0", 20}, {"103.21.244.0", 22}, {"103.22.200.0", 22}, {"103.31.4.0", 22},
+    {"141.101.64.0", 18}, {"108.162.192.0", 18}, {"190.93.240.0", 20}, {"188.114.96.0", 20},
+    {"197.234.240.0", 22}, {"198.41.128.0", 17}, {"162.158.0.0", 15}, {"104.16.0.0", 13},
+    {"104.24.0.0", 14}, {"172.64.0.0", 13}, {"131.0.72.0", 22},
+    {"2400:cb00::", 32}, {"2606:4700::", 32}, {"2803:f800::", 32}, {"2405:b500::", 32},
+    {"2405:8100::", 32}, {"2a06:98c0::", 29}, {"2c0f:f248::", 32},
+};
+
+bool inBlock(const Address& address, const Block& block) {
+    Address base;
+    if (!parseAddress(block.base, base) || base.v4 != address.v4) return false;
+    // Compared as bytes, most significant first, for as many bits as the
+    // prefix covers.
+    int bits = block.prefix;
+    const int width = address.v4 ? 4 : 16;
+    for (int i = 0; i < width && bits > 0; ++i) {
+        const int a = address.v4 ? address.octets[i]
+                                 : ((i % 2 == 0) ? address.groups[i / 2] >> 8 : address.groups[i / 2] & 0xff);
+        const int b = base.v4 ? base.octets[i]
+                              : ((i % 2 == 0) ? base.groups[i / 2] >> 8 : base.groups[i / 2] & 0xff);
+        const int take = std::min(bits, 8);
+        const int mask = (0xff << (8 - take)) & 0xff;
+        if ((a & mask) != (b & mask)) return false;
+        bits -= take;
+    }
+    return true;
+}
+
+bool isCloudflare(const Address& address) {
+    for (const Block& block : kCloudflareBlocks) {
+        if (inBlock(address, block)) return true;
+    }
+    return false;
+}
+
+bool isLoopback(const Address& address) {
+    if (address.v4) return address.octets[0] == 127;
+    for (int i = 0; i < 7; ++i) {
+        if (address.groups[i] != 0) return false;
+    }
+    return address.groups[7] == 1;
+}
+
+/// A proxy whose forwarding headers this server believes: nginx on the same
+/// box, or a Cloudflare edge. Deliberately NOT the private ranges -- a LAN
+/// player connecting straight to the game port is a client, not a proxy.
+bool trustedProxy(const Address& address) { return isLoopback(address) || isCloudflare(address); }
+
+} // namespace
+
+bool isCloudflareAddress(const std::string& address) {
+    Address parsed;
+    return parseAddress(address, parsed) && isCloudflare(parsed);
+}
+
+std::string clientAddress(const std::string& peer, const net::ForwardedHeaders& headers) {
+    Address current;
+    if (!parseAddress(peer, current)) {
+        const std::string host = peerHost(peer);
+        return host.empty() ? "unknown" : host;
+    }
+    // Anyone who is not a trusted proxy is the client, whatever it wrote.
+    if (!trustedProxy(current)) return canonical(current);
+
+    std::vector<std::string> chain;
+    if (!trimmed(headers.forwardedFor).empty()) chain = split(headers.forwardedFor, ',');
+
+    Address realIp;
+    const bool hasRealIp = parseAddress(headers.realIp, realIp);
+    if (isLoopback(current) && hasRealIp) {
+        // nginx's own hop is the last entry it appended to X-Forwarded-For and
+        // the X-Real-IP it set. When both are here they are one address, or
+        // one of them came from the client: then neither is believed.
+        if (!chain.empty()) {
+            Address lastHop;
+            if (!parseAddress(chain.back(), lastHop) || canonical(lastHop) != canonical(realIp)) {
+                return canonical(current);
+            }
+        } else {
+            chain.push_back(headers.realIp);
+        }
     }
 
-    return hexGroup(groups[0]) + ":" + hexGroup(groups[1]) + ":" + hexGroup(groups[2]) + ":" +
-           hexGroup(groups[3]) + "::/64";
+    // Right to left: each trusted hop vouches for the one before it.
+    for (;;) {
+        if (isCloudflare(current)) {
+            Address visitor;
+            if (parseAddress(headers.cfConnectingIp, visitor)) return canonical(visitor);
+        }
+        if (chain.empty()) return canonical(current);
+        Address next;
+        if (!parseAddress(chain.back(), next)) return canonical(current);
+        chain.pop_back();
+        if (!trustedProxy(next)) return canonical(next);
+        current = next;
+    }
+}
+
+std::string addressKey(const std::string& peer) {
+    Address address;
+    if (!parseAddress(peer, address)) {
+        const std::string host = peerHost(peer);
+        return host.empty() ? "unknown" : host;
+    }
+    if (address.v4) return canonical(address);
+    return hexGroup(address.groups[0]) + ":" + hexGroup(address.groups[1]) + ":" +
+           hexGroup(address.groups[2]) + ":" + hexGroup(address.groups[3]) + "::/64";
 }
 
 void AccountLimiter::sweep(std::unordered_map<std::string, Bucket>& table, double burst,
@@ -238,16 +400,92 @@ AccountLimiter::AccountLimiter() {
                  "[ABUSE] development build: account creation and login limits are NOT enforced\n");
 }
 
+void AccountLimiter::sweepCreators(double nowMillis) {
+    if (creators_.size() <= kMaxTrackedAddresses) return;
+
+    // An address at rest -- bucket full, no strikes left, not blocked -- is
+    // one the next request can measure afresh from the database, so
+    // forgetting it costs nothing.
+    for (auto it = creators_.begin(); it != creators_.end();) {
+        const Creator& creator = it->second;
+        const double elapsed = (nowMillis - creator.bucket.updatedAtMillis) / 1000.0;
+        const double tokens = std::min(burstFor(creator.standing),
+                                       creator.bucket.tokens + elapsed * refillFor(creator.standing));
+        const double strikesLeft =
+            creator.strikes - (nowMillis - creator.strikesAtMillis) / 1000.0 * kStrikeDrainPerSecond;
+        const bool atRest = creator.blockedUntilMillis <= nowMillis && strikesLeft <= 0 &&
+                            tokens >= burstFor(creator.standing);
+        if (atRest) it = creators_.erase(it);
+        else ++it;
+    }
+    if (creators_.size() <= kMaxTrackedAddresses) return;
+
+    // Still over budget means every tracked address is actively spending: a
+    // distributed flood. Drop the least recently seen half rather than grow
+    // without bound -- blocked addresses last, since forgetting one lets it
+    // straight back in, and the global bucket holds the line for the rest.
+    std::vector<std::pair<std::pair<bool, double>, std::string>> byAge;
+    byAge.reserve(creators_.size());
+    for (const auto& entry : creators_) {
+        const bool blocked = entry.second.blockedUntilMillis > nowMillis;
+        byAge.push_back({{blocked, entry.second.bucket.updatedAtMillis}, entry.first});
+    }
+    std::sort(byAge.begin(), byAge.end());
+    for (std::size_t i = 0; i < byAge.size() / 2; ++i) creators_.erase(byAge[i].second);
+}
+
+bool AccountLimiter::strike(Creator& creator, double nowMillis) {
+    const double elapsed = (nowMillis - creator.strikesAtMillis) / 1000.0;
+    creator.strikes = std::max(0.0, creator.strikes - elapsed * kStrikeDrainPerSecond) + 1.0;
+    creator.strikesAtMillis = nowMillis;
+    if (creator.strikes < strikeLimitFor(creator.standing)) return false;
+    creator.blockedUntilMillis = nowMillis + kBlockMillis;
+    creator.strikes = 0;
+    return true;
+}
+
 LimitVerdict AccountLimiter::spendRegistration(const std::string& key,
-                                               const std::function<int()>& accountsToday,
+                                               const std::function<AddressStanding()>& standing,
                                                double nowMillis) {
     // Nothing is counted, so nothing is refused and no bucket is touched: a
     // dev build that is later switched back on starts from a full allowance
     // rather than from whatever an afternoon of testing had drained.
     if (!enforced_) return LimitVerdict{};
 
-    Bucket& bucket =
-        bucketFor(registerBuckets_, key, kRegisterBurst, kRegisterRefillPerSecond, nowMillis);
+    auto found = creators_.find(key);
+    if (found == creators_.end()) {
+        sweepCreators(nowMillis);
+        found = creators_.emplace(key, Creator{}).first;
+    }
+    Creator& creator = found->second;
+
+    // The penalty box answers first, and asks the database nothing: whatever
+    // an address in it sends costs this server a hash lookup and no more.
+    if (creator.blockedUntilMillis > nowMillis) {
+        return denied(LimitScope::Blocked,
+                      static_cast<int>(std::ceil((creator.blockedUntilMillis - nowMillis) / 1000.0)),
+                      "Too many attempts from your network. Please try again later.");
+    }
+
+    if (!creator.measured || nowMillis - creator.measuredAtMillis >= kStandingRefreshMillis) {
+        const AddressStanding measured = standing ? standing() : AddressStanding{};
+        // A new address starts with the burst its record has earned.
+        if (!creator.measured) creator.bucket = Bucket{burstFor(measured), nowMillis};
+        creator.standing = measured;
+        creator.measured = true;
+        creator.measuredAtMillis = nowMillis;
+    }
+
+    const double burst = burstFor(creator.standing);
+    const double refill = refillFor(creator.standing);
+    const double elapsed = (nowMillis - creator.bucket.updatedAtMillis) / 1000.0;
+    if (elapsed > 0) {
+        creator.bucket.updatedAtMillis = nowMillis;
+        creator.bucket.tokens += elapsed * refill;
+    }
+    // Also when standing has fallen since the last measure: a smaller record
+    // is a smaller bucket.
+    creator.bucket.tokens = std::min(burst, creator.bucket.tokens);
 
     if (globalRegister_.updatedAtMillis == 0) globalRegister_.updatedAtMillis = nowMillis;
     const double globalElapsed = (nowMillis - globalRegister_.updatedAtMillis) / 1000.0;
@@ -257,24 +495,38 @@ LimitVerdict AccountLimiter::spendRegistration(const std::string& key,
             kGlobalRegisterBurst, globalRegister_.tokens + globalElapsed * kGlobalRegisterRefillPerSecond);
     }
 
-    // Checked before either is spent: an attempt one limit refuses must not
-    // also burn the other's budget.
-    if (bucket.tokens < 1) {
-        return denied(LimitScope::Address, waitSeconds(bucket.tokens, kRegisterRefillPerSecond),
-                      "Too many accounts created from here. Please wait a few minutes.");
+    // Checked before anything is spent: an attempt one limit refuses must not
+    // also burn another's budget. The two that are this address's own doing
+    // are strikes; the global one is not -- an address that waited its turn
+    // behind somebody else's flood has done nothing wrong.
+    if (creator.bucket.tokens < 1) {
+        LimitVerdict verdict = denied(LimitScope::Address, waitSeconds(creator.bucket.tokens, refill),
+                                      "Too many accounts created from here. Please wait a few minutes.");
+        verdict.newlyBlocked = strike(creator, nowMillis);
+        return verdict;
     }
-    if (globalRegister_.tokens < 1) {
+    if (creator.standing.idleToday >= idleCapFor(creator.standing)) {
+        LimitVerdict verdict =
+            denied(LimitScope::Daily, 3600,
+                   "This network has made too many accounts nobody has played today. "
+                   "Try again later.");
+        verdict.newlyBlocked = strike(creator, nowMillis);
+        return verdict;
+    }
+    // An address whose accounts get played has shown it is people; the global
+    // ceiling is for everyone who has not shown anything yet.
+    const bool vouched = creator.standing.played > 0;
+    if (!vouched && globalRegister_.tokens < 1) {
         return denied(LimitScope::Global,
                       waitSeconds(globalRegister_.tokens, kGlobalRegisterRefillPerSecond),
                       "The server is creating accounts as fast as it will right now. Try again shortly.");
     }
-    if (accountsToday && accountsToday() >= kRegisterDailyPerAddress) {
-        return denied(LimitScope::Daily, 3600,
-                      "This network has created too many accounts today. Try again tomorrow.");
-    }
 
-    bucket.tokens -= 1;
-    globalRegister_.tokens -= 1;
+    creator.bucket.tokens -= 1;
+    if (!vouched) globalRegister_.tokens -= 1;
+    // The account about to be made is idle until somebody plays it, and the
+    // next measure is up to a minute away.
+    creator.standing.idleToday += 1;
     return LimitVerdict{};
 }
 
@@ -306,9 +558,10 @@ std::string AccountLimiter::refusalLogLine(const std::string& address, LimitScop
     lastRefusalLogMillis_ = nowMillis;
     suppressedRefusals_ = 0;
 
-    const char* which = scope == LimitScope::Daily    ? "daily"
-                        : scope == LimitScope::Global ? "global"
-                                                      : "address";
+    const char* which = scope == LimitScope::Daily     ? "daily"
+                        : scope == LimitScope::Global  ? "global"
+                        : scope == LimitScope::Blocked ? "blocked"
+                                                       : "address";
     std::string line = std::string("[ABUSE] registration refused (") + which + ") for " + address;
     if (suppressed > 0) {
         line += " (+" + std::to_string(suppressed) + " more since the last line)";
@@ -317,7 +570,7 @@ std::string AccountLimiter::refusalLogLine(const std::string& address, LimitScop
 }
 
 void AccountLimiter::reset(double nowMillis) {
-    registerBuckets_.clear();
+    creators_.clear();
     loginBuckets_.clear();
     globalRegister_ = Bucket{kGlobalRegisterBurst, nowMillis};
     lastRefusalLogMillis_ = 0;

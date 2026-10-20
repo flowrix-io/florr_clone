@@ -60,6 +60,9 @@ EM_JS(void, flix_net_init, (), {
         listener: false,
         state: 0,
         peer: "",
+        forwardedFor: "",
+        realIp: "",
+        cfConnectingIp: "",
         error: "",
         chunks: [],
         head: null,
@@ -642,6 +645,20 @@ EM_JS(int, flix_ch_listen,
 
     const channel = net.channel();
     channel.peer = (socket.remoteAddress || "") + ":" + (socket.remotePort || 0);
+    // Verbatim, and believed by nobody here: the server decides which of these
+    // a proxy in front of it vouches for, from who the peer is (clientAddress
+    // in server/account_limits.h). Only the right-hand end of the hop list is
+    // kept -- the entries a proxy appended are always the last ones, and the
+    // rest is whatever the client chose to write.
+    const header = (name) => {
+      const value = headers[name];
+      return typeof value === "string" ? value.slice(0, 200) : "";
+    };
+    const hops = typeof headers["x-forwarded-for"] === "string"
+        ? headers["x-forwarded-for"].split(",") : [];
+    channel.forwardedFor = hops.slice(-8).join(",").slice(-400);
+    channel.realIp = header("x-real-ip");
+    channel.cfConnectingIp = header("cf-connecting-ip");
     channel.state = 1;
     channel.sender = (bytes) => socket.write(encode(0x2, bytes));
     // What Node is holding and has not handed to the kernel: the same question
@@ -918,7 +935,8 @@ EM_JS(void, flix_ch_close, (int id), {
 // this header would have no reason to expect it imposes.
 EM_JS(void, flix_ch_text, (int id, int which, char* out, int capacity), {
   const slot = Module.flixNet.get(id);
-  const value = !slot ? "" : (which === 0 ? (slot.peer || "") : String(slot.error || ""));
+  const fields = ["peer", "error", "forwardedFor", "realIp", "cfConnectingIp"];
+  const value = !slot || !fields[which] ? "" : String(slot[fields[which]] || "");
   stringToUTF8(value, out, capacity);
 });
 
@@ -934,11 +952,13 @@ void ensureInit() {
     done = true;
 }
 
-/// Peers and close reasons are both short; a caller that wanted more would be
-/// logging a JavaScript exception, which is worth truncating rather than
-/// allocating for. `which` is 0 for the peer and 1 for the close reason.
+/// Peers, close reasons and forwarding headers are all short -- the upgrade
+/// handler caps the headers -- and a caller that wanted more would be logging
+/// a JavaScript exception, which is worth truncating rather than allocating
+/// for. `which` indexes flix_ch_text's field list: 0 the peer, 1 the close
+/// reason, 2-4 the forwarding headers.
 std::string text(int channel, int which) {
-    char buffer[256] = {0};
+    char buffer[512] = {0};
     flix_ch_text(channel, which, buffer, static_cast<int>(sizeof buffer));
     return std::string(buffer);
 }
@@ -979,6 +999,14 @@ void close(int channel) { flix_ch_close(channel); }
 std::string peer(int channel) { return text(channel, 0); }
 std::string error(int channel) { return text(channel, 1); }
 
+ForwardedHeaders forwarded(int channel) {
+    ForwardedHeaders headers;
+    headers.forwardedFor = text(channel, 2);
+    headers.realIp = text(channel, 3);
+    headers.cfConnectingIp = text(channel, 4);
+    return headers;
+}
+
 } // namespace flix::net::web
 
 #else   // !__EMSCRIPTEN__
@@ -1000,6 +1028,7 @@ std::size_t buffered(int) { return 0; }
 void close(int) {}
 std::string peer(int) { return {}; }
 std::string error(int) { return {}; }
+ForwardedHeaders forwarded(int) { return {}; }
 
 } // namespace flix::net::web
 

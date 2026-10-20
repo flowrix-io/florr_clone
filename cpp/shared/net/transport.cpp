@@ -281,6 +281,7 @@ void Listener::acceptPending(TransportHandler& handler) {
         if (channel < 0) break;
         auto connection =
             std::make_unique<Connection>(channel, nextId_++, web::peer(channel));
+        connection->forwarded_ = web::forwarded(channel);
         Connection& ref = *connection;
         connections_.push_back(std::move(connection));
         handler.onConnect(ref);

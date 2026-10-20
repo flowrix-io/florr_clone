@@ -35,6 +35,11 @@ enum class SessionStage : std::uint8_t {
 struct Session {
     net::ConnectionId connection = 0;
     SessionStage stage = SessionStage::Greeting;
+    /// Where the connection really comes from, worked out once when it opened:
+    /// the TCP peer, or the address a trusted proxy in front of the server
+    /// named (clientAddress, server/account_limits.h). What every abuse limit
+    /// is keyed on.
+    std::string clientAddress;
 
     std::string userId;
     std::string username;

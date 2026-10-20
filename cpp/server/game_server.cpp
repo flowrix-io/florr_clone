@@ -1202,6 +1202,7 @@ Session* GameServer::sessionForEntity(Entity e) {
 void GameServer::onConnect(net::Connection& connection) {
     Session session;
     session.connection = connection.id();
+    session.clientAddress = clientAddress(connection.peer(), connection.forwarded());
     sessions_[connection.id()] = std::move(session);
     views_[connection.id()] = ClientView{};
 }
@@ -1437,8 +1438,8 @@ void GameServer::handleRegister(Session& session, net::Connection& connection, B
     // already bounded by the per-session budget above. Above the bcrypt hash and
     // the database write, which are the work an unlimited registration endpoint
     // hands an attacker.
-    const std::string addressHash = database_.accountAddressHash(addressKey(connection.peer()));
-    if (!spendRegistration(connection, addressHash)) return;
+    const std::string addressHash = database_.accountAddressHash(addressKey(session.clientAddress));
+    if (!spendRegistration(session, connection, addressHash)) return;
 
     const CreateResult result = database_.createUser(username, password, addressHash);
     if (!result.ok() || !result.account) {
@@ -1458,8 +1459,8 @@ void GameServer::handleRegisterGuest(Session& session, net::Connection& connecti
                        "Too many attempts. Wait a moment.");
         return;
     }
-    const std::string addressHash = database_.accountAddressHash(addressKey(connection.peer()));
-    if (!spendRegistration(connection, addressHash)) return;
+    const std::string addressHash = database_.accountAddressHash(addressKey(session.clientAddress));
+    if (!spendRegistration(session, connection, addressHash)) return;
 
     const CreateResult result = database_.createGuest(addressHash);
     if (!result.ok() || !result.account) {
@@ -1470,17 +1471,30 @@ void GameServer::handleRegisterGuest(Session& session, net::Connection& connecti
     beginNewAccount(session, connection, *result.account);
 }
 
-bool GameServer::spendRegistration(net::Connection& connection, const std::string& addressHash) {
+bool GameServer::spendRegistration(const Session& session, net::Connection& connection,
+                                   const std::string& addressHash) {
     // The session budget each caller spends first bounds one SOCKET; it does
     // not bound one client, which can hang up and dial again for a fresh
     // allowance. These limits are keyed on the address instead, and outlive
-    // any one connection.
-    const std::string address = addressKey(connection.peer());
+    // any one connection -- and the address's standing, which sizes them, is
+    // read from the accounts it made, so they outlive a restart too.
+    const std::string address = addressKey(session.clientAddress);
     const LimitVerdict verdict = accountLimits_.spendRegistration(
         address,
-        [&] { return database_.countAccountsCreatedBy(addressHash, kRegisterDailyWindowMillis); },
+        [&] {
+            const Database::CreatorStanding made =
+                database_.creatorStanding(addressHash, kIdleWindowMillis, kStandingWindowMillis);
+            return AddressStanding{made.idleToday, made.played};
+        },
         monotonicMillis());
     if (verdict.allowed) return true;
+    // The moment an address goes to the penalty box is always worth a line;
+    // the refusals around it are throttled, so a flood is not also a log flood.
+    if (verdict.newlyBlocked) {
+        std::printf("[ABUSE] %s kept asking after being refused; no new accounts from it for "
+                    "%d minutes\n",
+                    address.c_str(), static_cast<int>(kBlockMillis / 60000));
+    }
     const std::string line = accountLimits_.refusalLogLine(address, verdict.scope, monotonicMillis());
     if (!line.empty()) std::printf("%s\n", line.c_str());
     sendAuthResult(connection, net::AuthStatus::RateLimited, "", "", verdict.message);
@@ -1523,7 +1537,7 @@ void GameServer::handleLogin(Session& session, net::Connection& connection, Byte
     }
     // Same reasoning as handleRegister: a reconnect resets the session budget,
     // and every attempt costs this server a bcrypt verify.
-    const std::string address = addressKey(connection.peer());
+    const std::string address = addressKey(session.clientAddress);
     const LimitVerdict verdict = accountLimits_.spendLoginAttempt(address, monotonicMillis());
     if (!verdict.allowed) {
         sendAuthResult(connection, net::AuthStatus::RateLimited, "", "", verdict.message);
@@ -1632,7 +1646,7 @@ void GameServer::handleChangePassword(Session& session, net::Connection& connect
         sendChangePasswordResult(connection, false, "", "Too many attempts. Wait a moment.");
         return;
     }
-    const std::string address = addressKey(connection.peer());
+    const std::string address = addressKey(session.clientAddress);
     const LimitVerdict verdict = accountLimits_.spendLoginAttempt(address, monotonicMillis());
     if (!verdict.allowed) {
         sendChangePasswordResult(connection, false, "", verdict.message);

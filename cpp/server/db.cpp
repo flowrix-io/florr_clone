@@ -501,6 +501,7 @@ void Database::reset() {
     sessions_.clear();
     usersByLowerName_.clear();
     usersById_.clear();
+    usersByCreator_.clear();
     otherTop_ = Json::object();
     otherTopText_.clear();
     topKeyOrder_.clear();
@@ -539,6 +540,17 @@ bool Database::load(const std::string& path, std::string& errorOut) {
     if (!parseRoot(root, errorOut)) {
         loadFailed_ = true;
         return false;
+    }
+    // File order is not creation order, and creatorStanding walks newest first
+    // and stops at its window.
+    for (auto& entry : usersByCreator_) {
+        std::stable_sort(entry.second.begin(), entry.second.end(),
+                         [&](const std::string& a, const std::string& b) {
+                             const Account* left = std::as_const(*this).findUserById(a);
+                             const Account* right = std::as_const(*this).findUserById(b);
+                             return (left ? left->createdAtMillis : 0) <
+                                    (right ? right->createdAtMillis : 0);
+                         });
     }
     pruneExpiredSessions();
     // Every row is uncached straight off the parse. Paying for that here, at
@@ -957,6 +969,9 @@ void Database::indexUser(const std::string& storedKey, const Account& account) {
     // registrations can no longer create that situation.
     usersByLowerName_.emplace(lowerCase(storedKey), storedKey);
     if (!account.id.empty()) usersById_.emplace(account.id, storedKey);
+    if (!account.id.empty() && !account.createdFromHash.empty()) {
+        usersByCreator_[account.createdFromHash].push_back(account.id);
+    }
 }
 
 Account* Database::findUser(const std::string& username) {
@@ -1086,26 +1101,33 @@ std::string Database::accountAddressHash(const std::string& addressKey) {
     return crypto::sha256Hex(salt + "|" + addressKey).substr(0, 24);
 }
 
-int Database::countAccountsCreatedBy(const std::string& addressHash,
-                                     std::int64_t windowMillis) const {
-    if (addressHash.empty()) return 0;
-    const std::int64_t cutoff = nowMillis() - windowMillis;
-    int count = 0;
-    // A scan of the whole user table. Registration is rate-limited long before
-    // this is hot, and a second index kept in step with the accounts is more to
-    // get wrong than walking a few thousand entries is to run.
-    for (const std::string& name : users_.keys()) {
-        const Account* account = users_.find(name);
-        if (account != nullptr && account->createdFromHash == addressHash &&
-            account->createdAtMillis >= cutoff) {
-            ++count;
-        }
+Database::CreatorStanding Database::creatorStanding(const std::string& addressHash,
+                                                    std::int64_t idleWindowMillis,
+                                                    std::int64_t standingWindowMillis) const {
+    CreatorStanding standing;
+    if (addressHash.empty()) return standing;
+    const auto made = usersByCreator_.find(addressHash);
+    if (made == usersByCreator_.end()) return standing;
+    const std::int64_t now = nowMillis();
+    for (auto it = made->second.rbegin(); it != made->second.rend(); ++it) {
+        const Account* account = findUserById(*it);
+        // An account the editor has since restamped is not this address's.
+        if (account == nullptr || account->createdFromHash != addressHash) continue;
+        if (account->createdAtMillis < now - standingWindowMillis) break;
+        const PlayerRecord* record = findProgress(*it);
+        if (record != nullptr && !isStarterProgress(*record)) ++standing.played;
+        else if (account->createdAtMillis >= now - idleWindowMillis) ++standing.idleToday;
     }
-    return count;
+    return standing;
 }
 
 CreateResult Database::createUser(const std::string& username, const std::string& password,
                                   const std::string& createdFromHash) {
+    return createAccount(username, password, createdFromHash, passwordCost_);
+}
+
+CreateResult Database::createAccount(const std::string& username, const std::string& password,
+                                     const std::string& createdFromHash, int cost) {
     CreateResult result;
     if (!validUsername(username, result.reason)) {
         result.status = CreateStatus::UsernameInvalid;
@@ -1130,7 +1152,7 @@ CreateResult Database::createUser(const std::string& username, const std::string
     Account& account = users_.insert(username);
     account.id = id;
     account.username = username;
-    account.passwordHash = crypto::bcryptHash(password, passwordCost_);
+    account.passwordHash = crypto::bcryptHash(password, cost);
     account.createdAtMillis = nowMillis();
     account.createdFromHash = createdFromHash;
     indexUser(username, account);
@@ -1179,7 +1201,8 @@ CreateResult Database::createGuest(const std::string& createdFromHash) {
     // 32 random bytes, hex: a password with nobody to type it, so its only job
     // is to be unguessable. It passes validPassword (64 printable bytes) and is
     // then forgotten -- createUser hashes it and nothing keeps the text.
-    result = createUser(username, crypto::secureRandom().hex(32), createdFromHash);
+    result = createAccount(username, crypto::secureRandom().hex(32), createdFromHash,
+                           crypto::kBcryptMinCost);
     if (result.ok() && result.account != nullptr) {
         result.account->guest = true;
         result.account->passwordChosen = false;
@@ -1259,6 +1282,12 @@ bool Database::eraseUser(const std::string& username) {
     }
     for (const std::string& tokenHash : doomedTokens) sessions_.erase(tokenHash);
 
+    if (const auto made = usersByCreator_.find(account->createdFromHash);
+        made != usersByCreator_.end()) {
+        auto& ids = made->second;
+        ids.erase(std::remove(ids.begin(), ids.end(), userId), ids.end());
+        if (ids.empty()) usersByCreator_.erase(made);
+    }
     users_.erase(storedKey);
     if (!userId.empty()) players_.erase(userId);
     usersByLowerName_.erase(lowerCase(storedKey));

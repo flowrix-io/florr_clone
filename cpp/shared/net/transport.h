@@ -46,6 +46,10 @@ public:
 
     ConnectionId id() const { return id_; }
     const std::string& peer() const { return peer_; }
+    /// What the request that opened this connection said about its origin.
+    /// Empty but for a WebSocket accepted by the web backend. Client-written:
+    /// see clientAddress() (server/account_limits.h) for which parts count.
+    const ForwardedHeaders& forwarded() const { return forwarded_; }
     int fd() const { return fd_; }
     bool open() const { return fd_ >= 0; }
 
@@ -92,6 +96,7 @@ private:
     int fd_;
     ConnectionId id_;
     std::string peer_;
+    ForwardedHeaders forwarded_;
     bool closing_ = false;
     /// Why a flush found the socket dead; empty while it is not.
     std::string failure_;

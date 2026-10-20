@@ -36,6 +36,8 @@
 #include <cstdint>
 #include <string>
 
+#include "shared/net/forwarded.h"
+
 namespace flix::net::web {
 
 /// No channel. Returned by every call that could not produce one.
@@ -105,6 +107,10 @@ void close(int channel);
 
 /// The peer as the transport saw it, for logging. Never client-supplied.
 std::string peer(int channel);
+
+/// The forwarding headers of the WebSocket upgrade that opened `channel`, as
+/// the client (or a proxy) sent them. Empty for every other kind of channel.
+ForwardedHeaders forwarded(int channel);
 
 /// Why a channel closed, when it closed for a reason worth reporting.
 std::string error(int channel);
