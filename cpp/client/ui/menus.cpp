@@ -809,6 +809,7 @@ void MenuSystem::toggle(MenuId id) {
         // one this open ends up drawing.
         case MenuId::Crafting:
             crafting_.reset();
+            absorb_.reset();
             oracle_.reset();
             trader_.reset();
             titan_.reset();
@@ -2464,8 +2465,9 @@ bool slidesUp(MenuId id) {
 }
 
 /// The size of the craft key's window as the flower's ground has it this
-/// frame: the forge's, or the oracle's, the trader's or the titan's.
-Vec2 craftWindowSize(NpcService npc, const Profile& profile) {
+/// frame: the forge's (or its Absorb side's), or the oracle's, the trader's or
+/// the titan's.
+Vec2 craftWindowSize(NpcService npc, bool absorb, const Profile& profile) {
     switch (npc) {
         case NpcService::Oracle: return OraclePanel::size(profile);
         case NpcService::Trader: return TradePanel::size(profile);
@@ -2473,7 +2475,7 @@ Vec2 craftWindowSize(NpcService npc, const Profile& profile) {
         case NpcService::Assembler: return AssemblerPanel::size();
         case NpcService::None:   break;
     }
-    return CraftingPanel::size(profile);
+    return absorb ? AbsorbPanel::size(profile) : CraftingPanel::size(profile);
 }
 
 constexpr double kPanelSlideSeconds = 0.30;
@@ -2542,7 +2544,11 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
                        : nearbyNpc_ == NpcService::Titan  ? titan_.render(ctx)
                        : nearbyNpc_ == NpcService::Assembler
                            ? assembler_.render(ctx, nearbyMob_, nearbyTier_, nearbyRecipe_)
-                           : crafting_.render(ctx);
+                       : absorbMode_ ? absorb_.render(ctx)
+                                     : crafting_.render(ctx);
+            // The forge's Switch turns the window over between Craft and
+            // Absorb; whichever side is showing can ask.
+            if (crafting_.takeSwitch() || absorb_.takeSwitch()) absorbMode_ = !absorbMode_;
             break;
         case MenuId::Talents:     keepOpen = talents_.render(ctx); break;
         case MenuId::Gallery:     keepOpen = gallery_.render(ctx); break;
@@ -2665,7 +2671,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     if (drawn_ == MenuId::Crafting) {
         // Its size is the account's: the grid's columns set the width and its
         // rows the height, and the card is the one being drawn.
-        craftSize_ = craftWindowSize(nearbyNpc_, net.profile());
+        craftSize_ = craftWindowSize(nearbyNpc_, absorbMode_, net.profile());
         panelRect_ = craftPanelBounds(canvas.width(), canvas.height());
         const double below = static_cast<double>(canvas.height()) + kSlotCardClosedDrop;
         panelRect_.y += (1.0 - clamp(craftOpen_, 0.0, 1.0)) * (below - panelRect_.y);

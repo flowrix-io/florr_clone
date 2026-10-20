@@ -1077,39 +1077,40 @@ void CombatSystem::awardBounty(World& world, Entity victim) {
     // between them, and no account earns at a different rate than another.
     const double xp = std::round(bounty->xp);
     for (const Entity recipient : recipients) {
-        PlayerProgress* progress = world.tryGet<PlayerProgress>(recipient);
-        if (progress == nullptr) continue;
-        progress->totalXp += xp;
+        if (!grantXp(world, recipient, xp)) continue;
         // The arena leaderboard counts the XP earned inside the ring
         // (src/server/playerManager.ts:929); a flower outside it has no score.
         if (ArenaScore* arena = world.tryGet<ArenaScore>(recipient)) arena->score += xp;
-        const int level = levelFromTotalXp(progress->totalXp).level;
-        if (level != progress->level) {
-            progress->level = level;
-
-            // Level-up stat recalculation and full heal happen immediately in
-            // addXPToPlayer(), before the death broadcast. Waiting for next
-            // tick's petal pass leaves one snapshot with the new level and old
-            // health/damage.
-            const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(recipient);
-            const double healthScale = modifiers ? modifiers->maxHealthScale : 1.0;
-            const Transform* at = world.tryGet<Transform>(recipient);
-            const bool arena = at != nullptr && at->realm == Realm::Arena;
-            if (Health* health = world.tryGet<Health>(recipient)) {
-                // The ring's pool is flat (PVP_MAX_HEALTH); a level gained in
-                // it still heals, as the reference's level-up does.
-                health->max = arena ? kArenaMaxHealth
-                                    : std::round(maxHealthForLevel(level) * healthScale);
-                health->current = health->max;
-            }
-            if (ContactDamage* contact = world.tryGet<ContactDamage>(recipient)) {
-                // The worn cutter's bonus rides along, or the level-up would
-                // strip it until the next petal pass folded it back on.
-                contact->amount = bodyDamageForLevel(level) +
-                                  (modifiers ? modifiers->bodyDamageBonus : 0.0);
-            }
-        }
     }
+}
+
+bool CombatSystem::grantXp(World& world, Entity player, double xp) {
+    PlayerProgress* progress = world.tryGet<PlayerProgress>(player);
+    if (progress == nullptr) return false;
+    progress->totalXp += xp;
+    const int level = levelFromTotalXp(progress->totalXp).level;
+    if (level == progress->level) return true;
+    progress->level = level;
+
+    // Level-up stat recalculation and full heal happen immediately in
+    // addXPToPlayer(), before the death broadcast. Waiting for next tick's
+    // petal pass leaves one snapshot with the new level and old health/damage.
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player);
+    const double healthScale = modifiers ? modifiers->maxHealthScale : 1.0;
+    const Transform* at = world.tryGet<Transform>(player);
+    const bool arena = at != nullptr && at->realm == Realm::Arena;
+    if (Health* health = world.tryGet<Health>(player)) {
+        // The ring's pool is flat (PVP_MAX_HEALTH); a level gained in it
+        // still heals, as the reference's level-up does.
+        health->max = arena ? kArenaMaxHealth : std::round(maxHealthForLevel(level) * healthScale);
+        health->current = health->max;
+    }
+    if (ContactDamage* contact = world.tryGet<ContactDamage>(player)) {
+        // The worn cutter's bonus rides along, or the level-up would strip it
+        // until the next petal pass folded it back on.
+        contact->amount = bodyDamageForLevel(level) + (modifiers ? modifiers->bodyDamageBonus : 0.0);
+    }
+    return true;
 }
 
 bool CombatSystem::trySecondChance(World& world, Entity victim, double nowMillis) {

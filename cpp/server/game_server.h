@@ -336,6 +336,7 @@ private:
     /// assembler the session's body is standing at -- all at its tier. Found
     /// and refused as the oracle's craft is; all or nothing.
     void handleAssemble(Session&, net::Connection&, ByteReader&);
+    void handleAbsorb(Session&, net::Connection&, ByteReader&);
     /// kTitanForgeCost apex petals for one universal at a titan, standing at
     /// one as the oracle's craft is; then takeUniversals for everyone else,
     /// unless the forger is an admin (see tracksUniversals).

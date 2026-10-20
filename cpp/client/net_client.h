@@ -245,6 +245,17 @@ struct AssembleOutcome {
     std::string reason;
 };
 
+/// The outcome of the last Absorb, for the absorb side of the craft window:
+/// its staged ring bursts on a success and is handed back on a refusal. Its
+/// own record for OracleOutcome's reason.
+struct AbsorbOutcome {
+    bool pending = false;      ///< a result arrived that the panel has not read
+    bool success = false;
+    double xpGained = 0;
+    std::uint32_t absorbed = 0;   ///< petals destroyed; 0 on a refusal
+    std::string reason;
+};
+
 /// The outcome of the last trade, for the trade panel's landing. Its own
 /// record for OracleOutcome's reason.
 struct TradeOutcome {
@@ -573,6 +584,15 @@ public:
     /// Runs recipe `recipe` of the assembler of tier `rarity` the body is
     /// standing at, `count` times.
     void requestAssemble(Rarity rarity, std::uint8_t recipe, std::uint16_t count);
+    /// One stack of an Absorb request.
+    struct AbsorbStack {
+        std::uint16_t petalIndex = kNoPetal;
+        Rarity rarity = Rarity::Common;
+        std::uint32_t count = 0;
+    };
+    /// Destroys every one of `stacks` for XP, in one request (shared/game/
+    /// absorb.h prices it). The answer lands in absorbOutcome().
+    void requestAbsorb(const std::vector<AbsorbStack>& stacks);
     /// Forges kTitanForgeCost apex of this petal into one universal at the
     /// titan the body is standing at.
     void requestTitanForge(std::uint16_t petalIndex);
@@ -847,6 +867,8 @@ public:
     TitanForgeOutcome& titanForgeOutcome() { return titanForgeOutcome_; }
     /// The last Assemble result, read and cleared the same way.
     AssembleOutcome& assembleOutcome() { return assembleOutcome_; }
+    /// The last Absorb result, read and cleared the same way.
+    AbsorbOutcome& absorbOutcome() { return absorbOutcome_; }
 
     /// The last purchase or code redemption. The shop panel clears `pending`
     /// once it has raised the modal for it.
@@ -938,6 +960,7 @@ private:
     void handleTradeResult(ByteReader&);
     void handleTitanForgeResult(ByteReader&);
     void handleAssembleResult(ByteReader&);
+    void handleAbsorbResult(ByteReader&);
     void handleTitanHolder(ByteReader&);
     void handleShopResult(ByteReader&);
     void handleChangePasswordResult(ByteReader&);
@@ -1044,6 +1067,7 @@ private:
     double traderReadyAtMillis_ = 0;
     TitanForgeOutcome titanForgeOutcome_;
     AssembleOutcome assembleOutcome_;
+    AbsorbOutcome absorbOutcome_;
     /// The titan's answers, by petal: who holds it at universal.
     std::unordered_map<std::uint16_t, std::string> titanHolders_;
     ShopOutcome shopOutcome_;

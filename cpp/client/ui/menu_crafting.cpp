@@ -27,7 +27,9 @@
 // next tier the account already holds, nothing at all when it holds the
 // petal two tiers up or more, and on a failure stopped short by how many
 // petals it cost. The Craft button wears the colour of the tier it crafts
-// into whenever it can be pressed, grey otherwise.
+// into whenever it can be pressed, grey otherwise. The Switch button beside
+// the close button turns the window over to Absorb (menu_absorb.cpp), as
+// florr's old client's did.
 
 #include <algorithm>
 #include <array>
@@ -286,6 +288,10 @@ bool CraftingPanel::render(MenuContext& ctx) {
     const SlotCardLayout card =
         drawSlotCard(canvas, ctx.bounds, kCraftingSkin, "Craft", "Craft", mouse);
     const Rect panel = card.panel;
+    // florr's old client turns this window over to Absorb with a button in
+    // Absorb's purple beside the close button.
+    const Rect switchRect = drawSlotSwitch(canvas, card, kAbsorbSkin.fill, mouse,
+                                           ctx.window.mouseDown(MouseButton::Left));
 
     // --- the ring ----------------------------------------------------------
     // Through the roll AND through a FAILED result the ring keeps showing the
@@ -475,6 +481,10 @@ bool CraftingPanel::render(MenuContext& ctx) {
     }
     if (!ctx.pressed() && !rightPressed) return true;
     if (card.close.contains(mouse) && ctx.pressed()) return false;
+    if (switchRect.contains(mouse) && ctx.pressed()) {
+        switchPressed_ = true;
+        return true;
+    }
 
     // An outcome stays until the player does something else, florr's way:
     // the upgrade until it is clicked, the survivors of a failure until a

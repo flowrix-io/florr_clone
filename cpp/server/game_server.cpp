@@ -28,6 +28,7 @@
 #include "server/systems/mode_spawning.h"
 #include "server/systems/dungeons.h"
 #include "server/systems/npcs.h"
+#include "shared/game/absorb.h"
 #include "shared/game/prestige.h"
 #include "shared/game/chat_images.h"
 #include "shared/game/config.h"
@@ -1286,6 +1287,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::Trade:         handleTrade(*session, connection, reader); break;
         case net::ClientMessage::TitanForge:    handleTitanForge(*session, connection, reader); break;
         case net::ClientMessage::Assemble:      handleAssemble(*session, connection, reader); break;
+        case net::ClientMessage::Absorb:        handleAbsorb(*session, connection, reader); break;
         case net::ClientMessage::TitanHolder:   handleTitanHolder(*session, connection, reader); break;
         case net::ClientMessage::Respawn:       handleRespawn(*session); break;
         case net::ClientMessage::Ping:          handlePing(connection, reader); break;
@@ -2771,6 +2773,114 @@ void GameServer::handleAssemble(Session& session, net::Connection& connection,
     // seats and greys whatever is now short.
     sendProfile(session, connection);
     announceRareCraft(session, recipe.outputs.front().petal, rarity);
+}
+
+void GameServer::handleAbsorb(Session& session, net::Connection& connection,
+                              ByteReader& reader) {
+    struct Stack {
+        std::uint16_t petalIndex = kNoPetal;
+        Rarity rarity = Rarity::Common;
+        std::int64_t count = 0;
+    };
+    const int stackCount = reader.u16();
+    std::vector<Stack> stacks;
+    stacks.reserve(static_cast<std::size_t>(std::min(stackCount, kMaxAbsorbStacks)));
+    bool malformed = stackCount <= 0 || stackCount > kMaxAbsorbStacks;
+    for (int i = 0; i < stackCount && !malformed; ++i) {
+        Stack stack;
+        stack.petalIndex = reader.u16();
+        // Read raw rather than through clampRarity: a byte past the ladder is
+        // a request to refuse, not one to quietly read as a universal.
+        const std::uint8_t rarity = reader.u8();
+        stack.count = reader.u32();
+        if (!reader.ok()) break;
+        if (rarity >= kRarityCount) {
+            malformed = true;
+            break;
+        }
+        stack.rarity = static_cast<Rarity>(rarity);
+        // One stack per petal and tier: a request naming one twice is asking
+        // for the sum of them, and is checked against the bag as that.
+        const auto same = std::find_if(stacks.begin(), stacks.end(), [&](const Stack& other) {
+            return other.petalIndex == stack.petalIndex && other.rarity == stack.rarity;
+        });
+        if (same != stacks.end()) same->count += stack.count;
+        else stacks.push_back(stack);
+    }
+    if (!reader.ok() || !session.authenticated()) return;
+
+    const auto reply = [&](bool ok, double xp, std::int64_t absorbed, const std::string& reason) {
+        ByteWriter w;
+        w.u8(static_cast<std::uint8_t>(net::ServerMessage::AbsorbResult));
+        w.boolean(ok);
+        w.f64(xp);
+        w.u32(static_cast<std::uint32_t>(std::clamp<std::int64_t>(absorbed, 0, UINT32_MAX)));
+        w.str(reason);
+        connection.send(w);
+    };
+    if (malformed) {
+        reply(false, 0, 0, "Nothing to absorb.");
+        return;
+    }
+
+    // All or nothing: every stack is checked before any is taken, so a
+    // request one petal short destroys none of the others.
+    PlayerRecord& record = liveRecord(session);
+    double units = 0.0;
+    std::int64_t absorbed = 0;
+    for (const Stack& stack : stacks) {
+        if (stack.petalIndex >= content().petalCount() || stack.count <= 0 ||
+            stack.count > kMaxStackCount) {
+            reply(false, 0, 0, "Nothing to absorb.");
+            return;
+        }
+        const PetalConfig& petal = content().petal(stack.petalIndex);
+        if (!absorbable(petal, stack.rarity)) {
+            reply(false, 0, 0, petal.name + " cannot be absorbed.");
+            return;
+        }
+        if (record.itemCount(stack.rarity, inventoryKey(stack.petalIndex)) < stack.count) {
+            reply(false, 0, 0, "You don't have enough " + petal.name + ".");
+            return;
+        }
+        units += static_cast<double>(stack.count) * absorbUnits(stack.rarity);
+        absorbed += stack.count;
+    }
+    for (const Stack& stack : stacks) {
+        takeFromInventory(record, stack.petalIndex, stack.rarity, static_cast<int>(stack.count));
+    }
+
+    // Priced by the tree the flower is playing on -- the maze's in the maze,
+    // the arena run's (which buys nothing) in the ring -- which is the tree
+    // the Profile shows, so the "+N XP" the window printed is what lands.
+    const bool onMazeTrack = session.playing() && session.realm == Realm::Maze;
+    const double xp = absorbXpTotal(units, onMazeTrack ? record.mazeSkills : record.skills);
+    PlayerRecord& account = database_.progress(session.userId);
+    // Onto the body whenever there is one, as a kill's XP is: it is the XP
+    // authority while it exists, and the record is brought level with it
+    // straight after so the Profile below already shows the new level. A
+    // living flower levels up on the spot -- health and body damage -- and a
+    // corpse simply holds the XP until the respawn reads it back out of the
+    // record. With no body at all the account's own track takes it.
+    const bool hasBody = session.playing() && world_.isAlive(session.entity) &&
+                         world_.has<PlayerProgress>(session.entity);
+    if (xp > 0.0) {
+        if (hasBody && !world_.has<Dead>(session.entity)) {
+            CombatSystem::grantXp(world_, session.entity, xp);
+            persistPlayer(session);
+        } else if (hasBody) {
+            PlayerProgress& progress = world_.get<PlayerProgress>(session.entity);
+            progress.totalXp += xp;
+            progress.level = levelFromTotalXp(progress.totalXp).level;
+            persistPlayer(session);
+        } else {
+            account.totalXp += xp;
+        }
+    }
+    database_.markDirty();
+
+    reply(true, xp, absorbed, "");
+    sendProfile(session, connection);
 }
 
 void GameServer::handleTitanForge(Session& session, net::Connection& connection,

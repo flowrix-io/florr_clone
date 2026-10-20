@@ -19,6 +19,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <memory>
@@ -553,8 +554,9 @@ struct SlotCardLayout {
     double chanceY = 0;
     double lineY = 0;
     double line2Y = 0;
-    /// Where the grid scrolls.
+    /// Where the grid scrolls, and how far down it its first row stands.
     Rect listView;
+    double listInsetY = 10.0;
 };
 
 /// The window's width for a grid `columns` cells across (never narrower than
@@ -572,6 +574,10 @@ Rect slotCardBounds(double width, double height, int viewWidth, int viewHeight);
 /// `button` is the action button's label, which sizes it.
 SlotCardLayout drawSlotCard(Canvas&, Rect panel, const ui::PanelSkin&, const char* title,
                             const char* button, Vec2 mouse);
+/// The forge's Switch button, beside the close button: an 80 x 25 b4 r4
+/// button in `face` -- the theme of the side it switches TO -- labelled
+/// "Switch". Returns where it answers the cursor (its rim).
+Rect drawSlotSwitch(Canvas&, const SlotCardLayout&, std::uint32_t face, Vec2 mouse, bool held);
 /// A slot's plate: flat in the skin's border colour, so an empty slot reads as
 /// a place to put something rather than as a hole in the card.
 void drawSlotPlate(Canvas&, const SpriteCache&, Rect, const ui::PanelSkin&);
@@ -712,6 +718,9 @@ public:
     /// carrying `carry` (the velocity of whatever threw them).
     void burst(Vec2 at, Rarity rarity, int count, const SlotBurstShape& shape = {},
                Vec2 carry = {});
+    /// The same, in `color` rather than a rarity's.
+    void burst(Vec2 at, std::uint32_t color, int count, const SlotBurstShape& shape = {},
+               Vec2 carry = {});
 
     /// The single-slot scene the oracle and the trader share, florr's: the
     /// plate, faded as the outcome shows, swung out from the slot's centre
@@ -777,6 +786,9 @@ public:
     /// The window's width and height for this account: the grid's columns
     /// set the one and its rows the other.
     static Vec2 size(const Profile&);
+    /// Whether the Switch button was pressed since the last call: the menu
+    /// system turns the window over to Absorb.
+    bool takeSwitch() { return std::exchange(switchPressed_, false); }
 
 private:
     enum class Phase : std::uint8_t { Idle, Spinning, Result };
@@ -844,6 +856,99 @@ private:
     int resultCount_ = 0;
     /// How many of the five survived a failure, for the slots to keep drawing.
     int survivors_ = 0;
+    bool switchPressed_ = false;
+};
+
+/// The forge's other side: Absorb, florr's old client's absorb window, which
+/// the Switch button turns the craft window over to.
+///
+/// Petals picked off the grid gather in the slot -- one alone sits in it, two
+/// or more stand on a ring about it while the slot gives way to a disc -- and
+/// the Absorb button destroys them for XP (shared/game/absorb.h prices it).
+/// Under the slot an XP bar shows the account's level, and what the staged
+/// petals would add to it; a level gained fills the bar, flashes it and
+/// throws a row of sparks off it. Every motion is florr's own, read out of
+/// that client (see menu_absorb.cpp).
+class AbsorbPanel {
+public:
+    bool render(MenuContext&);
+    /// Empties the slot. The bar keeps what it has shown: like florr's, it
+    /// carries on from where it was the last time the window was open.
+    void reset();
+    /// The window's width and height for this account.
+    static Vec2 size(const Profile&);
+    /// Whether the Switch button was pressed since the last call: the menu
+    /// system turns the window back over to Craft.
+    bool takeSwitch() { return std::exchange(switchPressed_, false); }
+
+private:
+    /// What is in the slot, in the order it was picked: the first stands at
+    /// the ring's three o'clock and the rest go round from there.
+    struct Staged {
+        std::uint16_t petalIndex = kNoPetal;
+        Rarity rarity = Rarity::Common;
+        std::uint32_t count = 0;
+    };
+    /// A stack as the slot draws it, which outlives its Staged entry by the
+    /// length of its way out.
+    struct RingTile {
+        std::uint32_t key = 0;
+        ui::ItemTile tile;
+        /// Where it stands about the slot's centre, eased toward its place.
+        Vec2 at;
+        /// Its grow, 0 to 1, from the moment it landed.
+        double grow = 0;
+        /// Where it was last drawn, and how big, for a click and for its exit.
+        Vec2 centre;
+        double side = 0;
+    };
+
+    std::uint32_t staged(std::uint16_t petalIndex, Rarity) const;
+    /// Puts `count` more of this stack in the slot, as many as are left of it.
+    void stage(const Profile&, std::uint16_t petalIndex, Rarity, std::uint32_t count);
+    /// Steps the XP bar toward the account's level and XP; a level filled
+    /// throws its sparks from the bar's left cap at `barLeft`.
+    void stepBar(const std::string& account, double totalXp, double dtMs, Vec2 barLeft);
+
+    SlotGrid grid_;
+    std::vector<Staged> staged_;
+    std::vector<RingTile> ring_;
+    /// The grains a stack bursts into when it is absorbed, and the tiles on
+    /// their way out when one is taken back.
+    SlotMotion fx_;
+    /// The sparks a level-up throws off the bar.
+    SlotMotion sparks_;
+    /// 0 with one stack or none (the slot's square), 1 with two or more (the
+    /// disc the ring stands on).
+    double disc_ = 0;
+    /// Waiting on the server: the ring holds still where it is and every
+    /// tile in it shudders, on this clock -- 0 to 1 a second.
+    bool waiting_ = false;
+    double waitStarted_ = 0;
+    double shudder_ = 0;
+
+    /// The XP bar: the level it shows, how full it is drawn, and whether it
+    /// is flashing away a level just filled. `preview` is how far the staged
+    /// petals would take it, eased in and out as they come and go.
+    bool barKnown_ = false;
+    std::string barAccount_;
+    int barLevel_ = 1;
+    double barFill_ = 0;
+    bool barFlash_ = false;
+    bool previewShown_ = false;
+    double preview_ = 0;
+
+    /// A grid cell held down repeats, florr's way: a second's wait, then
+    /// every 300 ms a step that grows by a third and one each time.
+    std::uint16_t heldPetal_ = kNoPetal;
+    Rarity heldRarity_ = Rarity::Common;
+    double heldNextMs_ = 0;
+    std::uint32_t heldStep_ = 1;
+
+    /// Why the server said no, under the slot until it expires.
+    std::string refusal_;
+    double refusalUntil_ = 0;
+    bool switchPressed_ = false;
 };
 
 /// The oracle: what the craft card becomes while the flower stands at an
@@ -1733,6 +1838,10 @@ private:
 
     InventoryPanel inventory_;
     CraftingPanel crafting_;
+    AbsorbPanel absorb_;
+    /// Which side of the forge's window shows: Craft or Absorb. Kept across
+    /// openings, as florr's old client kept it.
+    bool absorbMode_ = false;
     OraclePanel oracle_;
     TradePanel trader_;
     TitanPanel titan_;

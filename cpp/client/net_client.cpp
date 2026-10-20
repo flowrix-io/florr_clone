@@ -6,6 +6,7 @@
 
 #include "client/ui/markup.h"
 #include "client/web/reload.h"
+#include "shared/game/absorb.h"
 #include "shared/core/text.h"
 #include "shared/game/map_elements.h"
 
@@ -67,6 +68,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::AdminDb:             return "adminDb";
         case net::ClientMessage::TitanForge:          return "titanForge";
         case net::ClientMessage::Assemble:            return "assemble";
+        case net::ClientMessage::Absorb:              return "absorb";
         case net::ClientMessage::TitanHolder:         return "titanHolder";
         case net::ClientMessage::AdminDashboard:      return "adminDashboard";
     }
@@ -110,6 +112,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::TitanForgeResult:    return "titanForgeResult";
         case net::ServerMessage::AssembleResult:      return "assembleResult";
         case net::ServerMessage::LeftWorld:           return "leftWorld";
+        case net::ServerMessage::AbsorbResult:        return "absorbResult";
         case net::ServerMessage::TitanHolder:         return "titanHolder";
     }
     return "unknown";
@@ -298,6 +301,7 @@ void NetClient::forgetAccount() {
     traderReadyAtMillis_ = 0;
     titanForgeOutcome_ = TitanForgeOutcome{};
     assembleOutcome_ = AssembleOutcome{};
+    absorbOutcome_ = AbsorbOutcome{};
     titanHolders_.clear();
     shopOutcome_ = ShopOutcome{};
     passwordOutcome_ = PasswordOutcome{};
@@ -456,6 +460,20 @@ void NetClient::requestAssemble(Rarity rarity, std::uint8_t recipe, std::uint16_
     w.u8(static_cast<std::uint8_t>(rarity));
     w.u8(recipe);
     w.u16(count);
+    send(w);
+}
+
+void NetClient::requestAbsorb(const std::vector<AbsorbStack>& stacks) {
+    if (stacks.empty()) return;
+    const std::size_t count = std::min<std::size_t>(stacks.size(), kMaxAbsorbStacks);
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::Absorb);
+    w.u16(static_cast<std::uint16_t>(count));
+    for (std::size_t i = 0; i < count; ++i) {
+        w.u16(stacks[i].petalIndex);
+        w.u8(static_cast<std::uint8_t>(stacks[i].rarity));
+        w.u32(stacks[i].count);
+    }
     send(w);
 }
 
@@ -1067,6 +1085,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::TradeResult:   handleTradeResult(reader); break;
         case net::ServerMessage::TitanForgeResult: handleTitanForgeResult(reader); break;
         case net::ServerMessage::AssembleResult: handleAssembleResult(reader); break;
+        case net::ServerMessage::AbsorbResult:  handleAbsorbResult(reader); break;
         case net::ServerMessage::TitanHolder:   handleTitanHolder(reader); break;
         case net::ServerMessage::SessionReplaced: handleSessionReplaced(reader); break;
         case net::ServerMessage::ChatHistory:   handleChatHistory(reader); break;
@@ -1304,6 +1323,17 @@ void NetClient::handleAssembleResult(ByteReader& reader) {
     if (!reader.ok()) return;
     outcome.pending = true;
     assembleOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleAbsorbResult(ByteReader& reader) {
+    AbsorbOutcome outcome;
+    outcome.success = reader.boolean();
+    outcome.xpGained = reader.f64();
+    outcome.absorbed = reader.u32();
+    outcome.reason = reader.str();
+    if (!reader.ok()) return;
+    outcome.pending = true;
+    absorbOutcome_ = std::move(outcome);
 }
 
 void NetClient::handleTitanHolder(ByteReader& reader) {

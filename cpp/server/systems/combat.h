@@ -363,6 +363,13 @@ public:
     };
     const std::vector<DeathRecord>& deaths() const { return deaths_; }
 
+    /// Pays `xp` onto `player`'s live PlayerProgress and, when that crosses a
+    /// level, applies the level-up at once: the new level's health (full) and
+    /// body damage. Every XP the world pays goes through here -- a kill's,
+    /// and an absorb's -- so a level gained either way lands the same.
+    /// False, and nothing paid, for an entity with no PlayerProgress.
+    static bool grantXp(World& world, Entity player, double xp);
+
     /// Kills a mob nothing struck -- a dungeon's nest, on the tick its last
     /// dweller dies -- exactly as a killing blow would: marked Dead for
     /// `killer`, recorded in deaths() and paid off its ledger (XP now, drops

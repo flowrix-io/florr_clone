@@ -41,6 +41,9 @@ inline constexpr PanelSkin kInventorySkin{0x6B9DD6u, 0x5680ADu, 0x5680ADu};
 /// Forge tan, oracle slate, trader yellow, the titan's charcoal and the
 /// assembler's machine grey (florr's capture: #999999 under a #7C7C7C stroke).
 inline constexpr PanelSkin kCraftingSkin{0xDB9D5Au, 0xB17F49u, 0xB17F49u};
+/// The forge's other side, Absorb: florr's old client's purple (its absorb
+/// controller's theme), under the same 0.81 shade.
+inline constexpr PanelSkin kAbsorbSkin{0x895ADBu, 0x6F49B1u, 0x6F49B1u};
 inline constexpr PanelSkin kOracleSkin{0x66869Eu, 0x536D80u, 0x536D80u};
 inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCFBB50u};
 inline constexpr PanelSkin kTitanSkin{0x333333u, 0x292929u, 0x292929u};

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 57;
+inline constexpr std::uint16_t kProtocolVersion = 58;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -194,6 +194,13 @@ enum class ClientMessage : std::uint8_t {
                         ///< OracleCraft's oracle is found; the tier only says
                         ///< WHICH one when two stand close. Never a roll, and
                         ///< all or nothing. (Version 55.)
+    Absorb,             ///< u16 stackCount, { u16 itemType, u8 rarity, u32 count }*
+                        ///< -- the craft window's Absorb side: every staged
+                        ///< stack in ONE request, destroyed for XP
+                        ///< (shared/game/absorb.h). All or nothing: one stack
+                        ///< the bag cannot cover, or that may not be absorbed,
+                        ///< refuses the lot. Anywhere, in or out of the world.
+                        ///< (Version 58.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -370,6 +377,10 @@ enum class ServerMessage : std::uint8_t {
                         ///< there -- so the client goes back to the title
                         ///< screen as if it had left. The Profile after it is
                         ///< the one a LeaveGame is answered with. (Version 57.)
+    AbsorbResult,       ///< u8 ok, f64 xpGained, u32 petalsAbsorbed, str reason
+                        ///< -- the answer to ClientMessage::Absorb. On a
+                        ///< refusal nothing was taken and `reason` says why.
+                        ///< The Profile follows it. (Version 58.)
 };
 
 // ---------------------------------------------------------------------------
