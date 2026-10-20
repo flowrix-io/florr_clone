@@ -26,6 +26,8 @@ struct Fixture {
     ClientView view;
     EventQueue events;
     Entity viewer = NULL_ENTITY;
+    /// The viewer's squadmates (Replicator::Frame::alwaysVisible), if any.
+    std::vector<Entity> squad;
 
     Fixture() { viewer = addPlayer("bob", {1000, 1000}); }
 
@@ -69,6 +71,7 @@ struct Fixture {
         frame.tick = tickNumber;
         frame.nowMillis = nowMillis;
         frame.events = &events;
+        frame.alwaysVisible = squad.empty() ? nullptr : &squad;
         replicator.build(world, viewer, view, frame, out);
 
         ByteReader reader(out.data(), out.size());
@@ -613,6 +616,35 @@ TEST(events_are_scoped_to_what_the_client_can_see) {
     CHECK_EQ(client.events().size(), std::size_t(1));
     CHECK_EQ(static_cast<int>(client.events()[0].kind), static_cast<int>(net::EventKind::Damage));
     CHECK_NEAR(client.events()[0].amount, 37.0, 0.01);
+}
+
+TEST(a_squadmates_hit_reaches_the_viewer_however_far_away_it_lands) {
+    Fixture f;
+    const Entity mate = f.addPlayer("amy", {50000, 50000});
+    const Entity stranger = f.addPlayer("cal", {50000, 51000});
+    f.squad.push_back(mate);
+    WorldView client;
+    f.tick(client, 1, 1000);
+    client.events().clear();
+
+    const std::uint32_t mateId = netIdOf(f.world, mate);
+    f.events.damage(mateId, 12, {50000, 50000}, Realm::Overworld, 0, NULL_ENTITY, 0, 0.1, mate);
+    f.events.damage(netIdOf(f.world, stranger), 9, {50000, 51000}, Realm::Overworld, 0,
+                    NULL_ENTITY, 0, 0.1, stranger);
+    // In the maze, a squadmate's hit means nothing on an overworld screen.
+    f.events.damage(mateId, 7, {50000, 50000}, Realm::Maze, 0, NULL_ENTITY, 0, 0.1, mate);
+    // On screen, it is an ordinary hit.
+    f.events.damage(netIdOf(f.world, f.viewer), 5, {1000, 1000}, Realm::Overworld, 0,
+                    NULL_ENTITY, 0, 0.1, f.viewer);
+    f.tick(client, 2, 1040);
+
+    CHECK_EQ(client.events().size(), std::size_t(2));
+    const ViewEvent& far = client.events()[0];
+    CHECK_EQ(far.netId, mateId);
+    CHECK_NEAR(far.radius, 0.1, 1e-6);
+    // Flashed on the party HUD, numbered nowhere.
+    CHECK((far.flag & net::DamageOffView) != 0);
+    CHECK((client.events()[1].flag & net::DamageOffView) == 0);
 }
 
 TEST(a_lightning_strike_carries_its_bolts_and_the_next_event_still_decodes) {

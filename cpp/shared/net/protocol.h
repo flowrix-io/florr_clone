@@ -821,6 +821,11 @@ enum DamageEventFlags : std::uint8_t {
     /// these and nothing else: it is a measure of YOUR build, and a dummy three
     /// people are hitting would otherwise report the three of them.
     DamageByViewer = 1 << 3,
+    /// The hit landed outside the receiving flower's view, and is on its wire
+    /// only because the body it struck is a squadmate: it flashes the party
+    /// HUD's avatar and puts no number in the world. Set per viewer by the
+    /// replicator, like DamageByViewer.
+    DamageOffView = 1 << 4,
 };
 
 /// One-off things that happened this tick, for effects the client can play

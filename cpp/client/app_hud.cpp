@@ -361,6 +361,10 @@ void App::drawHudFlower(Canvas& canvas, std::uint32_t netId, double centreX, dou
                         double radius, double time) {
     canvas.save();
     canvas.translate(static_cast<float>(centreX), static_cast<float>(centreY));
+    // The avatar is that flower, so it flashes when the flower is hit -- the
+    // body's own tint, killing blow included, as the world draws it.
+    const Color savedTint = canvas.colorTint();
+    canvas.setColorTint(renderer_.hitTint(netId));
     const auto found = net_.view().entities().find(netId);
     if (found != net_.view().entities().end() && found->second.dead()) {
         // A dead flower's avatar is its corpse: dead eyes and a frown, turned
@@ -381,6 +385,7 @@ void App::drawHudFlower(Canvas& canvas, std::uint32_t netId, double centreX, dou
         drawFlowerFace(canvas, 0xFFE763u, radius, 2.0 * (radius / 25.0), 0.0,
                        14.5 * (radius / 25.0));
     }
+    canvas.setColorTint(savedTint);
     canvas.restore();
 }
 

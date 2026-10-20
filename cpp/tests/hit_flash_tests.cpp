@@ -206,6 +206,32 @@ TEST(a_struck_flower_is_drawn_white_then_back_to_yellow) {
     CHECK_EQ(testsupport::differingPixels(before, after, 1), 0);
 }
 
+TEST(a_squadmates_hit_off_screen_flashes_but_puts_no_number_in_the_world) {
+    // The server sends a squadmate's hits however far away they land, for the
+    // party HUD's avatar, and marks those it would otherwise have culled.
+    CHECK(testsupport::fontsReady());
+    WorldView view;
+    view.setRealm(Realm::Overworld);
+    const auto frameAfter = [&](std::uint8_t flag) {
+        WorldRenderer renderer;
+        ViewEvent hit = hitFor(0.5);
+        hit.flag = flag;
+        ingest(renderer, {hit});
+        renderer.update(0.0);
+        CHECK(renderer.hitTint(kVictim).a > 0);
+        Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+        renderer.draw(canvas, view, testsupport::frameCamera(kFrameSize, kAt), kAt, 0.0);
+        return canvas.getImageData(0, 0, kFrameSize, kFrameSize);
+    };
+    WorldRenderer quiet;
+    Canvas blank = Canvas::createVirtual(kFrameSize, kFrameSize);
+    quiet.draw(blank, view, testsupport::frameCamera(kFrameSize, kAt), kAt, 0.0);
+    const std::vector<std::uint8_t> nothing = blank.getImageData(0, 0, kFrameSize, kFrameSize);
+
+    CHECK(testsupport::differingPixels(nothing, frameAfter(0), 8) > 0);
+    CHECK_EQ(testsupport::differingPixels(nothing, frameAfter(net::DamageOffView), 8), 0);
+}
+
 // The screen shake: a hit on the viewer's OWN flower pushes the world it is
 // drawn through, by at most five world units, and settles within seconds.
 

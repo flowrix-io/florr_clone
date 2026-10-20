@@ -142,6 +142,12 @@ struct WireEvent {
     Entity dealtBy = NULL_ENTITY;
     net::ConnectionId dealtByConnection = 0;
 
+    /// Damage only, and never on the wire: the body `netId` names. A
+    /// squadmate's hits reach the viewer however far away they land, as the
+    /// squadmate itself does (Replicator::Frame::alwaysVisible), so the party
+    /// HUD's avatar flashes with every one of them.
+    Entity struck = NULL_ENTITY;
+
     /// Lightning only: where each bolt ends, in world space. Empty for every
     /// other kind, and the only variable-length thing on the event wire.
     std::vector<Vec2> points;
@@ -163,9 +169,11 @@ public:
     /// `dealtByConnection` name the flower behind the hit, if any; see
     /// WireEvent::dealtBy. `share` is what the hit took as a fraction of the
     /// victim's max health, which is how bright the client flashes it.
+    /// `struck` is the body `netId` names; see WireEvent::struck.
     void damage(std::uint32_t netId, double amount, Vec2 at, Realm realm,
                 std::uint8_t flags = 0, Entity dealtBy = NULL_ENTITY,
-                net::ConnectionId dealtByConnection = 0, double share = 0) {
+                net::ConnectionId dealtByConnection = 0, double share = 0,
+                Entity struck = NULL_ENTITY) {
         WireEvent e;
         e.kind = net::EventKind::Damage;
         e.netId = netId;
@@ -178,6 +186,7 @@ public:
         e.flag = flags;
         e.dealtBy = dealtBy;
         e.dealtByConnection = dealtByConnection;
+        e.struck = struck;
         e.positional = true;
         events_.push_back(e);
     }

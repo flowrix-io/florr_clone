@@ -779,7 +779,12 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                 if ((event.flag & net::DamageByViewer) != 0 && isTargetDummy(event.netId)) {
                     dummyDamage_[event.netId].emplace_back(nowSeconds_, event.amount);
                 }
-                if (!options.damageNumbers || isHidden(event.netId)) break;
+                // A squadmate's hit far off screen is here for the party HUD's
+                // flash only (net::DamageOffView).
+                if (!options.damageNumbers || isHidden(event.netId) ||
+                    (event.flag & net::DamageOffView) != 0) {
+                    break;
+                }
                 // A flower's own damage is never throttled: you must see every
                 // hit you take. A mob's is, because a full ring lands eight
                 // hits in one tick and eight stacked numbers read as noise.

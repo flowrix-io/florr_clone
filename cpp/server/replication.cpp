@@ -716,18 +716,30 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         };
         // Events are cosmetic and one-shot. Scoping them to the same reach as
         // entities keeps a busy fight on the far side of the map from costing
-        // every client bytes for numbers they will never see.
+        // every client bytes for numbers they will never see. A hit on a
+        // squadmate goes out wherever it lands -- the party HUD's avatar
+        // flashes with it -- under the same exemption, and in the same realm
+        // only, that streams the squadmate itself; marked, so it puts no
+        // number in a world nobody is looking at.
+        const auto squadmateHit = [&](const WireEvent& event) {
+            return event.kind == net::EventKind::Damage && event.struck != NULL_ENTITY &&
+                   exempt(event.struck);
+        };
         for (const WireEvent& event : frame.events->events()) {
-            if (event.positional && (event.realm != realm || outsideView(event.position))) continue;
+            const bool offView = event.positional && outsideView(event.position);
+            if (event.positional && (event.realm != realm || (offView && !squadmateHit(event)))) {
+                continue;
+            }
+            std::uint8_t flag = event.flag;
+            if (dealtByViewer(event)) flag |= net::DamageByViewer;
+            if (offView) flag |= net::DamageOffView;
             out.u8(static_cast<std::uint8_t>(event.kind));
             out.u32(event.netId);
             out.u32(event.otherNetId);
             out.f32(static_cast<float>(event.amount));
             out.position(event.position);
             out.f32(static_cast<float>(event.radius));
-            out.u8(dealtByViewer(event)
-                       ? static_cast<std::uint8_t>(event.flag | net::DamageByViewer)
-                       : event.flag);
+            out.u8(flag);
             // The one kind with a tail. Written after the fixed fields, so a
             // reader that has already taken the kind byte knows whether to
             // expect it; nothing else on this wire is variable-length.

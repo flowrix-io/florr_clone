@@ -874,7 +874,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
                 dealer != NULL_ENTITY ? world.tryGet<PlayerAccount>(dealer) : nullptr;
             events_->damage(id->value, applied, transform ? transform->position : Vec2{},
                             transform ? transform->realm : Realm::Overworld, flags, dealer,
-                            account != nullptr ? account->connection : 0, share);
+                            account != nullptr ? account->connection : 0, share, shown);
         }
     }
 
