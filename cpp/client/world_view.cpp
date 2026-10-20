@@ -19,7 +19,40 @@ const double kHealthLagEaseSeconds = easeTimeConstant(0.2 / 3.0);
 /// How long the red trail holds after a hit before it starts to drain.
 constexpr double kHealthLagHoldMillis = 250.0;
 
+/// florr's plate eases: k = 0.013389/ms for the green, the white and the
+/// fade, k = 0.006322/ms for the red -- 0.2 and 0.1 of the gap per 60 Hz
+/// frame.
+const double kPlateEaseSeconds = easeTimeConstant(0.2);
+const double kPlateLagEaseSeconds = easeTimeConstant(0.1);
+/// How close above the health the green has to be before the red moves.
+constexpr double kPlateLagWait = 0.001;
+/// A chain bead's bar shows while a shield over this is up, at full health.
+constexpr double kPlateShieldShows = 0.001;
+
 } // namespace
+
+void MobPlateEase::snap(double targetHealth, double targetShield, bool visible) {
+    health = lag = targetHealth;
+    shield = targetShield;
+    opacity = visible ? 1.0 : 0.0;
+}
+
+void MobPlateEase::step(double targetHealth, double targetShield, bool visible,
+                        double dtSeconds) {
+    easeToward(opacity, visible ? 1.0 : 0.0, kPlateEaseSeconds, dtSeconds);
+    easeToward(health, targetHealth, kPlateEaseSeconds, dtSeconds);
+    easeToward(shield, targetShield, kPlateEaseSeconds, dtSeconds);
+    if (health - targetHealth < kPlateLagWait) {
+        easeToward(lag, targetHealth, kPlateLagEaseSeconds, dtSeconds);
+    }
+}
+
+bool WorldView::plateShows(const RemoteEntity& e) const {
+    if (e.healthFraction <= 0.0) return false;
+    const bool labelled = content_ == nullptr || e.kind != net::EntityKind::Mob ||
+                          !content_->mob(e.typeIndex).chainBody;
+    return labelled || e.healthFraction < 1.0 || e.shieldFraction > kPlateShieldShows;
+}
 
 void HealthBarEase::snap(double targetHealth, double targetShield) {
     health = lag = seenHealth_ = targetHealth;
@@ -584,6 +617,9 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
         e.eyeY += (std::sin(e.angle) * kFlowerEyeTravelY - e.eyeY) * eyeT;
 
         e.healthBar.step(e.healthFraction, e.shieldFraction, nowMillis, dtSeconds);
+        if (e.kind == net::EntityKind::Mob || e.kind == net::EntityKind::Npc) {
+            e.plate.step(e.healthFraction, e.shieldFraction, plateShows(e), dtSeconds);
+        }
     }
 
     // The viewer's flower reads the same position the camera and its ring use,

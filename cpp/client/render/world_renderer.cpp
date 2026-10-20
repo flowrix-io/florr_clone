@@ -404,19 +404,43 @@ NumberChannel channelOf(std::uint8_t flags) {
 constexpr double kPetalGlowPad = 16.0;
 constexpr double kPetalGlowAlpha = 76.0 / 255.0;
 
-/// A mob's bar never shrinks below the width a common hornet asks for, and is
-/// always eight units tall.
-constexpr double kMobBarMinWidth = 60.0;
-constexpr double kMobBarHeight = 8.0;
-/// An NPC's plate stops growing at this width. The titan is a thousand units
-/// across, and florr hangs a plate of an ordinary mob's size under it rather
-/// than a bar the width of the screen.
-constexpr double kNpcBarMaxWidth = 200.0;
+/// A mob's plate, as florr draws it (~/florr_images/client: descriptor
+/// 0x10078c0e0, painter 0x10078cb60), in world units. The bar is a line
+/// 80 + 10 x tier long whatever the mob's size, stroked with round caps: a
+/// #222222 track kMobBarThickness wide, the red at 0.6 of that, the green at
+/// 0.7 and the shield's white at 0.5, each starting at the line's left end.
+constexpr double kMobBarBaseLength = 80.0;
+constexpr double kMobBarLengthPerTier = 10.0;
+constexpr double kMobBarThickness = 10.0;
+constexpr double kMobBarLagWidth = 0.6;
+constexpr double kMobBarHealthWidth = 0.7;
+constexpr double kMobBarShieldWidth = 0.5;
+constexpr std::uint32_t kMobBarTrack = 0x222222u;
+constexpr std::uint32_t kMobBarLag = 0xDD3434u;
+/// florr's `min(fraction * 30, 1)`: a line fades in over its first thirtieth,
+/// so an empty one is not a round dot.
+constexpr double kMobBarFadeIn = 30.0;
+/// Below this the shield's line is not drawn at all.
+constexpr double kMobBarShieldMin = 0.0001;
+/// How far below the bottom of a mob's hitbox the top of its bar's track
+/// sits. florr hangs it lower (track top at radius + 25, plus a per-mob nudge
+/// for a few long bodies); this game keeps it ten units under the hitbox.
+constexpr double kMobBarGap = 10.0;
 
-/// What a summon's plate says it is, at the left of the tier row, and the
-/// least clear space kept between it and the tier at the right of that row.
+/// florr's labels: the name 16 units, white, above the bar; the tier (and a
+/// summon's "Summon") 14 units, under it. Text sits on its vertical centre.
+/// The name's centre is 0.7 x 16 + 4 above the bar's line and the row
+/// under it 0.7 x 16 below -- both off the NAME's size, as florr has it.
+constexpr double kMobNameSize = 16.0;
+constexpr double kMobTierSize = 14.0;
+constexpr double kMobNameRaise = 0.7 * kMobNameSize + 4.0;
+constexpr double kMobTierDrop = 0.7 * kMobNameSize;
+/// The DPS line under a target dummy's tier: our own, one florr line (1.4 x
+/// its size) below the tier.
+constexpr double kMobDpsDrop = kMobTierDrop + 1.4 * kMobTierSize;
+
+/// What a summon's plate says it is, at the left of the tier row.
 constexpr const char* kPetLabel = "Summon";
-constexpr double kPetLabelGap = 6.0;
 
 
 /// Flower-shaped mobs. Neither colour is read off mob stats: the loader
@@ -3451,110 +3475,125 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
 }
 
 void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const MobDraw& mob) const {
+    // The plate fades in with the mob and out once a chain bead heals: florr
+    // multiplies everything on it, text included, by one eased opacity.
+    if (mob.plateOpacity <= 0.0) return;
     const double zoom = camera.zoom();
     const Vec2 screen = camera.worldToScreen(mob.position);
     const MobConfig* config = content_ ? &content_->mob(mob.typeIndex) : nullptr;
-    const double visualScale = (config && config->visualScale > 0) ? config->visualScale : 1.0;
-    // The bar hangs off the DRAWN size, so visual_scale moves it along with
-    // the artwork it labels.
-    const double enemySize = mob.radius * 2.0 * visualScale;
+    // A chain's body bead is florr's one unlabelled mob: a bar, and no name,
+    // tier or "Summon" to go with it.
+    const bool labelled = config == nullptr || !config->chainBody;
 
-    // A hornet is the smallest mob the bar is allowed to shrink to: below that
-    // the name would be wider than the bar it labels.
-    double minWidth = kMobBarMinWidth;
-    // A summon's tier row carries two words, one at each end, and a common
-    // ladybug's bar is narrower than "Summon" and "Common" side by side. So a
-    // pet's bar is widened until the row fits, rather than letting the two
-    // overlap on exactly the small, low-tier pets most eggs hatch. Measured at
-    // design size: text scales with the zoom, so the ratio holds at any zoom.
-    if (mob.pet && options.names) {
-        minWidth = std::max(minWidth, ui::textWidth(canvas, kPetLabel, 10.0) + kPetLabelGap +
-                                          ui::textWidth(canvas, rarityLabel(mob.rarity), 10.0));
-    }
-    double width = std::max(enemySize, minWidth);
-    if (mob.npc) width = std::min(width, std::max(kNpcBarMaxWidth, minWidth));
-    const double barWidth = width * zoom;
-    const double barHeight = kMobBarHeight * zoom;
-    const double barY = screen.y + (enemySize * 0.5 + 8.0) * zoom;
-    const double barX = screen.x - barWidth * 0.5;
+    // Everything below is in world units off the mob's centre, scaled by the
+    // zoom where it is drawn. The bar's length is florr's 80 + 10 per tier
+    // whatever the body's size; its LINE is where the strokes run, with the
+    // round caps standing half a thickness past both ends.
+    const double length =
+        kMobBarBaseLength + kMobBarLengthPerTier * static_cast<int>(mob.rarity);
+    const double halfSpan = (length + kMobBarThickness) * 0.5;
+    const double lineY = mob.radius + kMobBarGap + kMobBarThickness * 0.5;
+    const auto sx = [&](double x) { return screen.x + x * zoom; };
+    const auto sy = [&](double y) { return screen.y + y * zoom; };
 
-    // The browser build bakes the name, the bar background and the tier into
-    // one atlas cell four units wider than the bar on each side, so a name
-    // longer than its own bar is CROPPED rather than spilling over the mob
-    // beside it. Only the dummy's DPS line is drawn outside the cell.
+    const double base = canvas.globalAlpha();
+    const double opacity = std::min(mob.plateOpacity, 1.0);
     canvas.save();
-    canvas.beginPath();
-    canvas.rect(static_cast<float>(barX - 4.0 * zoom), static_cast<float>(barY - 18.0 * zoom),
-                static_cast<float>(barWidth + 8.0 * zoom), static_cast<float>(44.0 * zoom));
-    canvas.clip();
-
-    if (options.names) {
-        ui::TextStyle style;
-        style.size = 12.0 * zoom;
-        style.align = ui::Align::Left;
-        // The browser build never sets a baseline in the world pass, so the pen
-        // sits on the alphabetic baseline.
-        style.baseline = ui::Baseline::Alphabetic;
-        static const std::string kUnknownMob = "?";
-        ui::text(canvas, config ? config->name : kUnknownMob, barX, barY - 4.0 * zoom, style);
-    }
 
     if (options.healthBars) {
-        // Always drawn, even at full health: the bar, the name and the tier are
-        // one block of text, and the block is how a mob is identified.
-        ui::HealthBar health;
-        health.x = barX;
-        health.y = barY;
-        health.width = barWidth;
-        health.height = barHeight;
-        // The black backing, one unit proud of the bar on every side.
-        health.plateX = barX - zoom;
-        health.plateY = barY - zoom;
-        health.plateWidth = barWidth + 2.0 * zoom;
-        health.plateHeight = barHeight + 2.0 * zoom;
-        health.plateRadius = barHeight * 0.5;
-        if (mob.npc || (config != nullptr && config->intangible)) {
-            // An NPC's plate is a mob's plate with the bar in its invulnerable
-            // state: full whatever the wire says -- which is what the server
-            // keeps it at anyway -- in the pale yellow a flower's bar turns
-            // under respawn protection, the one colour this game already
-            // spends on "cannot be hurt". Green sitting at full would read as
-            // "not hurt yet", which on a dummy taking a flood of numbers is the
-            // difference between a working dummy and a bug. An intangible mob
-            // (the fire ant hole) is the same promise: its brood is what you
-            // fight, not it.
-            health.fill = kInvulnerableHealth;
-        } else {
-            health.health = mob.barHealth;
-            health.lag = mob.barLag;
+        // An NPC's plate is a mob's plate with the bar in its invulnerable
+        // state: full whatever the wire says -- which is what the server keeps
+        // it at anyway -- in the pale yellow a flower's bar turns under
+        // respawn protection, the one colour this game already spends on
+        // "cannot be hurt". Green sitting at full would read as "not hurt
+        // yet", which on a dummy taking a flood of numbers is the difference
+        // between a working dummy and a bug. An intangible mob (the fire ant
+        // hole) is the same promise: its brood is what you fight, not it.
+        const bool invulnerable = mob.npc || (config != nullptr && config->intangible);
+        const double health = invulnerable ? 1.0 : clamp(mob.barHealth, 0.0, 1.0);
+        const double lag = invulnerable ? 0.0 : clamp(mob.barLag, 0.0, 1.0);
+        const double shield = invulnerable ? 0.0 : clamp(mob.barShield, 0.0, 1.0);
+        const auto fade = [](double share) { return std::min(share * kMobBarFadeIn, 1.0); };
+        // One of florr's round-capped strokes along the line, from its left
+        // end, filled as the capsule it covers: the same pixels, with no line
+        // cap for the web canvas to carry (ui::healthBar does the same).
+        const auto stroke = [&](double share, double width, std::uint32_t colour, double alpha) {
+            if (alpha <= 0.0) return;
+            const double w = width * zoom;
+            canvas.setGlobalAlpha(static_cast<float>(base * opacity * alpha));
+            ui::setFill(canvas, colour);
+            Path2D path;
+            path.roundRect(static_cast<float>(sx(-length * 0.5) - w * 0.5),
+                           static_cast<float>(sy(lineY) - w * 0.5),
+                           static_cast<float>(length * share * zoom + w), static_cast<float>(w),
+                           static_cast<float>(w * 0.5));
+            canvas.fill(path);
+        };
+        // Bottom to top, in florr's order. Each line is blended on its own at
+        // the plate's opacity, as florr's are, rather than as one layer.
+        stroke(1.0, kMobBarThickness, kMobBarTrack, 1.0);
+        stroke(lag, kMobBarThickness * kMobBarLagWidth, kMobBarLag, fade(lag));
+        stroke(health, kMobBarThickness * kMobBarHealthWidth,
+               invulnerable ? kInvulnerableHealth : ui::kHealth, fade(health));
+        if (shield > kMobBarShieldMin) {
+            stroke(shield, kMobBarThickness * kMobBarShieldWidth, ui::kPaper, fade(shield));
         }
-        ui::healthBar(canvas, health);
     }
 
-    if (options.names) {
-        ui::TextStyle tier;
-        tier.size = 10.0 * zoom;
-        tier.align = ui::Align::Right;
-        tier.baseline = ui::Baseline::Alphabetic;
-        tier.fill = rarityColor(mob.rarity);
-        ui::text(canvas, rarityLabel(mob.rarity), barX + barWidth, barY + 20.0 * zoom, tier);
+    canvas.setGlobalAlpha(static_cast<float>(base * opacity));
+    // florr's Text pads a run by its outline -- 2 x int(2 x size x 0.12) --
+    // and lays the padded box out, with the glyphs centred in it. Measured at
+    // design size: text scales with the zoom, so the layout holds at any zoom.
+    const auto pad = [](double size) { return 2.0 * std::floor(2.0 * size * ui::kTextStrokeRatio); };
+    // One label whose padded box starts at `boxLeft`.
+    const auto label = [&](const std::string& text, double size, std::uint32_t fill,
+                           double boxLeft, double y) {
+        ui::TextStyle style;
+        style.size = size * zoom;
+        style.fill = fill;
+        style.align = ui::Align::Left;
+        style.baseline = ui::Baseline::Middle;
+        ui::text(canvas, text, sx(boxLeft + pad(size) * 0.5), sy(y), style);
+    };
+    const auto boxWidth = [&](const std::string& text, double size) {
+        return ui::textWidth(canvas, text, size) + pad(size);
+    };
+
+    if (labelled && options.names) {
+        // Above the bar, from the left end of its track -- or, when the name is
+        // longer than the whole track, centred over it.
+        static const std::string kUnknownMob = "?";
+        const std::string& name = config ? config->name : kUnknownMob;
+        const double nameBox = boxWidth(name, kMobNameSize);
+        label(name, kMobNameSize, ui::kPaper, nameBox >= halfSpan * 2.0 ? -nameBox * 0.5 : -halfSpan,
+              lineY - kMobNameRaise);
     }
 
+    // The row under the bar: "Summon" from the track's left end and the tier
+    // flush with its right one. florr keeps "Summon" left of the middle and
+    // starts the tier at least one unit after it, pushing it past the end of
+    // the track rather than letting the two words run together.
+    //
     // A summon looks exactly like the wild animal it was hatched from, so its
     // plate is the one place that can tell a player which of two ladybugs is
-    // on their side: "Summon" opposite the tier, in the flower's own yellow.
-    // Drawn whenever any of the plate is: it captions the bar, and it is also
-    // part of what the mob is called, so either option alone still has to say
-    // whose it is.
-    if (mob.pet && (options.healthBars || options.names)) {
-        ui::TextStyle summon;
-        summon.size = 10.0 * zoom;
-        summon.align = ui::Align::Left;
-        summon.baseline = ui::Baseline::Alphabetic;
-        summon.fill = kPetLabelColor;
-        ui::text(canvas, kPetLabel, barX, barY + 20.0 * zoom, summon);
+    // on their side. Drawn whenever any of the plate is: it captions the bar,
+    // and it is also part of what the mob is called, so either option alone
+    // still has to say whose it is.
+    const double rowY = lineY + kMobTierDrop;
+    double tierFloor = -1e300;
+    if (labelled && mob.pet && (options.healthBars || options.names)) {
+        const std::string summon = kPetLabel;
+        const double box = boxWidth(summon, kMobTierSize);
+        const double left = std::min(-halfSpan, -1.0 - box);
+        label(summon, kMobTierSize, kPetLabelColor, left, rowY);
+        tierFloor = left + box + 1.0;
     }
-    canvas.restore();
+    if (labelled && options.names) {
+        const std::string tier = rarityLabel(mob.rarity);
+        const double box = boxWidth(tier, kMobTierSize);
+        label(tier, kMobTierSize, rarityColor(mob.rarity), std::max(tierFloor, halfSpan - box),
+              rowY);
+    }
 
     // The dummy is the one mob that reports what it is being hit for -- by
     // this viewer -- and it reports a zero rather than disappearing when
@@ -3565,13 +3604,11 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         if (damage != dummyDamage_.end()) {
             for (const auto& sample : damage->second) total += sample.second;
         }
-        ui::TextStyle dps;
-        dps.size = 10.0 * zoom;
-        dps.align = ui::Align::Right;
-        dps.baseline = ui::Baseline::Alphabetic;
-        ui::text(canvas, "DPS: " + ui::formatCompact(total / kDpsWindowSeconds),
-                 barX + barWidth, barY + 34.0 * zoom, dps);
+        const std::string dps = "DPS: " + ui::formatCompact(total / kDpsWindowSeconds);
+        label(dps, kMobTierSize, ui::kPaper, halfSpan - boxWidth(dps, kMobTierSize),
+              lineY + kMobDpsDrop);
     }
+    canvas.restore();
 }
 
 void WorldRenderer::drawMapElements(Canvas& canvas, const Camera& camera, Realm realm,
@@ -3668,8 +3705,10 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             mob.typeIndex = entity.typeIndex;
             mob.rarity = entity.rarity;
             mob.healthFraction = entity.healthFraction;
-            mob.barHealth = entity.healthBar.health;
-            mob.barLag = entity.healthBar.lag;
+            mob.barHealth = entity.plate.health;
+            mob.barLag = entity.plate.lag;
+            mob.barShield = entity.plate.shield;
+            mob.plateOpacity = entity.plate.opacity;
             mob.chasing = (entity.state & net::StateChasing) != 0;
             mob.pet = (entity.spawnFlags & net::SpawnIsPet) != 0;
             mob.unloaded = (entity.state & net::StateUnloaded) != 0;
@@ -3702,6 +3741,7 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             npc.radius = entity.radius;
             npc.typeIndex = entity.typeIndex;
             npc.rarity = entity.rarity;
+            npc.plateOpacity = entity.plate.opacity;
             npc.npc = true;
             drawMobBody(canvas, camera, npc, timeSeconds);
             mobLabels_.push_back(npc);

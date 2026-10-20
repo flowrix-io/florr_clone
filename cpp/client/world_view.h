@@ -51,6 +51,32 @@ private:
     bool primed_ = false;
 };
 
+/// What a mob's plate shows, eased the way florr eases it (the plate painter
+/// at 0x10078cb60 in ~/florr_images/client). Unlike HealthBarEase it starts
+/// at nothing: florr builds a mob's plate the first time the client meets the
+/// mob, at zero opacity over an empty bar, so a mob coming into view fades its
+/// plate in while the green fills up to its health.
+///
+/// Every value moves as florr's `x += (target - x)(1 - e^(-k dt))` does: the
+/// green, the white and the opacity at k = 0.01339/ms -- 0.2 of the gap per
+/// 60 Hz frame -- and the red at 0.00632/ms, 0.1. The red waits until the
+/// green has come within a thousandth of the health, so after a hit it holds
+/// while the green slides down and only then drains after it.
+struct MobPlateEase {
+    double health = 0;   ///< the green
+    double lag = 0;      ///< the red under it
+    double shield = 0;   ///< the white over it
+    double opacity = 0;  ///< the whole plate's, text included
+
+    /// Settles every value where step() is heading, for scenes assembled
+    /// without a stream (seedForTest), which should show the plate as it
+    /// looks once it has faded in.
+    void snap(double targetHealth, double targetShield, bool visible);
+    /// One frame toward the wire's values. `visible` is florr's rule for
+    /// whether the plate shows at all; see WorldView::plateShows.
+    void step(double targetHealth, double targetShield, bool visible, double dtSeconds);
+};
+
 /// One entity as the client knows it.
 struct RemoteEntity {
     std::uint32_t netId = 0;
@@ -91,6 +117,9 @@ struct RemoteEntity {
     /// What the health bar draws: `healthFraction` and `shieldFraction`,
     /// eased, and the red trail behind them. Stepped by interpolate().
     HealthBarEase healthBar;
+    /// Mob and NPC only: what the plate under the body draws, eased as florr
+    /// eases it. Stepped by interpolate().
+    MobPlateEase plate;
     double radius = 10;
     std::uint8_t state = 0;
 
@@ -291,10 +320,11 @@ public:
     /// Inserts an entity outright, for tests and for tools that assemble a
     /// scene with no socket behind it. Nothing on the wire path uses it.
     /// The health bar starts settled on the record's own health and shield,
-    /// as a spawn's does.
+    /// as a spawn's does, and so does a mob's plate, which a spawn's does not.
     void seedForTest(const RemoteEntity& entity) {
         RemoteEntity& seeded = entities_[entity.netId] = entity;
         seeded.healthBar.snap(entity.healthFraction, entity.shieldFraction);
+        seeded.plate.snap(entity.healthFraction, entity.shieldFraction, plateShows(seeded));
     }
 
     /// Names the viewer's own flower, which a snapshot otherwise does from
@@ -380,6 +410,13 @@ private:
     /// (a reconnect, a suspended laptop) re-anchors outright rather than
     /// crawling back over a minute.
     double toRenderClock(double serverMillis, double localMillis);
+
+    /// florr's rule for whether a mob's plate shows: never once its health is
+    /// gone, and otherwise always -- except on a chain's body bead, which
+    /// carries no name and shows its bar only while it is hurt or shielded.
+    /// That is the registry's label flag (+0xa4), clear in florr for exactly
+    /// the centipede and leech bodies. Without content every mob is labelled.
+    bool plateShows(const RemoteEntity&) const;
 
     std::unordered_map<std::uint32_t, RemoteEntity> entities_;
     const ContentRegistry* content_ = nullptr;

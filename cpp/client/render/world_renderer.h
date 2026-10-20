@@ -34,9 +34,9 @@ class Terrain;
 class WorldMaps;
 struct MobConfig;
 
-/// The "Summon" under a pet's bar. The flower's body yellow: the summon wears
-/// the colour of what summoned it.
-inline constexpr std::uint32_t kPetLabelColor = 0xFBE878u;
+/// The "Summon" under a pet's bar: florr's own colour for it, the Text the
+/// plate painter (0x10078cb60) builds for UI/Mob/Summon.
+inline constexpr std::uint32_t kPetLabelColor = 0xD2EB34u;
 
 /// Spawn-shield yellow: what a flower's health bar turns while respawn
 /// protection holds, and what an NPC's bar always is. One value for every bar
@@ -413,10 +413,13 @@ private:
         std::uint16_t typeIndex = 0;
         Rarity rarity = Rarity::Common;
         double healthFraction = 1.0;
-        /// What the plate's bar draws: the eased health and its red trail
-        /// (RemoteEntity::healthBar).
+        /// What the plate draws, eased as florr eases it
+        /// (RemoteEntity::plate): the green, the red under it, the white
+        /// over it and the whole plate's opacity.
         double barHealth = 1.0;
         double barLag = 1.0;
+        double barShield = 0.0;
+        double plateOpacity = 1.0;
         /// Locked on to a player. A neutral or hostile mob animates at double
         /// speed while it is.
         bool chasing = false;
@@ -436,8 +439,10 @@ private:
     /// `clockSeconds` is the frame clock; a chasing mob's artwork is advanced
     /// at twice that rate, which is where the two names differ.
     void drawMobBody(Canvas&, const Camera&, const MobDraw&, double clockSeconds) const;
-    /// Name, tier, health bar and (for a dummy) DPS, all below the body. A
-    /// pet's tier row also says "Summon"; an NPC's bar is its invulnerable one.
+    /// The plate under a mob: florr's (0x10078cb60) -- the name above its bar,
+    /// the tier below it, and (for a dummy) DPS under that. A pet's tier row
+    /// also says "Summon"; an NPC's bar is its invulnerable one; a chain's
+    /// body bead wears the bar alone.
     void drawMobLabel(Canvas&, const Camera&, const MobDraw&) const;
     /// The digger: a grey flower carrying a spinning cutter, never its SVG.
     void drawDiggerMob(Canvas&, const MobDraw&, double radius, double timeSeconds) const;

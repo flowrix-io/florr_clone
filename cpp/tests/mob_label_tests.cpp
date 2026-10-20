@@ -147,8 +147,11 @@ bool tierRowSplits(const char* id, Rarity rarity) {
     CHECK(barBottom >= 0);
     if (barBottom < 0) return false;
 
+    // The row right under the last full green one is the green's antialiased
+    // lower edge, bright enough to read as ink the length of the fill, so the
+    // scan starts one row lower. The track below that is too dark to count.
     std::vector<bool> inked(kFrameSize, false);
-    for (int y = barBottom + 1; y < std::min(kFrameSize, barBottom + 20); ++y) {
+    for (int y = barBottom + 2; y < std::min(kFrameSize, barBottom + 21); ++y) {
         for (int x = 0; x < kFrameSize; ++x) {
             const std::uint8_t* p = at(x, y);
             if (std::max(p[0], std::max(p[1], p[2])) > 80) inked[static_cast<std::size_t>(x)] = true;
@@ -185,11 +188,77 @@ TEST(only_the_head_of_a_leech_wears_a_health_bar) {
     CHECK(healthBarPixels("centipede_body") > 0);
 }
 
+namespace {
+
+/// The plate's track colour, which nothing else in these frames is.
+constexpr std::uint32_t kTrack = 0x222222u;
+
+/// One frame holding a single mob of `id` at `health`, with the shipped
+/// content on the view too, so the plate's chain-bead rule can see the mob.
+std::vector<std::uint8_t> frameAtHealth(const char* id, double health) {
+    CHECK(testsupport::fontsReady());
+    Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+    WorldView view;
+    view.setRealm(Realm::Overworld);
+    view.setContent(&shipped());
+    RemoteEntity mob = mobOfType(id);
+    mob.healthFraction = health;
+    view.seedForTest(mob);
+    WorldRenderer renderer;
+    renderer.setContent(&shipped());
+    renderer.draw(canvas, view, frameCamera(), kMobAt, 0.0);
+    return canvas.getImageData(0, 0, kFrameSize, kFrameSize);
+}
+
+/// The rows holding at least one pixel of exactly `color`, top first.
+std::vector<int> rowsOf(const std::vector<std::uint8_t>& pixels, std::uint32_t color) {
+    std::vector<int> rows;
+    for (int y = 0; y < kFrameSize; ++y) {
+        for (int x = 0; x < kFrameSize; ++x) {
+            const std::uint8_t* p =
+                &pixels[(static_cast<std::size_t>(y) * kFrameSize + static_cast<std::size_t>(x)) * 4];
+            if (p[0] == ((color >> 16) & 0xFF) && p[1] == ((color >> 8) & 0xFF) &&
+                p[2] == (color & 0xFF)) {
+                rows.push_back(y);
+                break;
+            }
+        }
+    }
+    return rows;
+}
+
+} // namespace
+
+TEST(a_centipede_bead_shows_its_bar_only_while_hurt) {
+    // florr labels every mob but a chain's body bead: a head's plate shows at
+    // full health, a bead's bar only once it is hurt.
+    CHECK(!rowsOf(frameAtHealth("centipede", 1.0), kTrack).empty());
+    CHECK(rowsOf(frameAtHealth("centipede_body", 1.0), kTrack).empty());
+    CHECK(!rowsOf(frameAtHealth("centipede_body", 0.5), kTrack).empty());
+}
+
+TEST(a_mobs_bar_hangs_ten_units_under_its_hitbox) {
+    // The track's top edge is ten units under the bottom of the collision
+    // circle, so its first fully covered row is the one starting there.
+    for (const char* id : {"ladybug", "baby_ant", "centipede"}) {
+        const RemoteEntity mob = mobOfType(id);
+        const double top = frameCamera().worldToScreen(kMobAt).y + mob.radius + 10.0;
+        const std::vector<int> rows = rowsOf(frameAtHealth(id, 0.5), kTrack);
+        CHECK(!rows.empty());
+        if (rows.empty()) continue;
+        // Half a row of slack above: a radius a hair over a whole number
+        // leaves the row it starts in 99.9% covered, which reads as exact.
+        CHECK(rows.front() > top - 0.5);
+        CHECK(rows.front() < top + 1.0);
+    }
+}
+
 TEST(a_pets_summon_label_never_runs_into_its_tier) {
-    // The narrowest plates there are: a 60-unit bar (spider) and a 72-unit
-    // one (ladybug), under the two longest tier names a low egg hatches.
+    // The shortest bars there are -- florr's 80 units at common, 90 at
+    // uncommon -- under the two longest tier names a low egg hatches.
     // "Summon" and "Common" side by side are wider than either bar, so this
-    // only holds because a pet's bar makes room for its own row.
+    // only holds because florr's row keeps "Summon" left of the middle and
+    // starts the tier after it, past the bar's end if it has to.
     for (const char* id : {"spider", "ladybug"}) {
         for (const Rarity rarity : {Rarity::Common, Rarity::Uncommon}) {
             CHECK(tierRowSplits(id, rarity));

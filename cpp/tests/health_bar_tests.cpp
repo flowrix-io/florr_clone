@@ -9,8 +9,9 @@
 #include <cstdint>
 #include <vector>
 
-// Every health bar is rysteria_gardn's (ui::healthBar, HealthBarEase) in the
-// plate it always had: a red trail of what was just lost, held a quarter
+// Every health bar but a mob's is rysteria_gardn's (ui::healthBar,
+// HealthBarEase) in the plate it always had: a red trail of what was just
+// lost, held a quarter
 // second after the hit and then drained, and -- under the HUD's see-through
 // layer -- a fill clipped apart from its plate rather than stacked on it, so
 // the plate does not darken the green.
@@ -155,4 +156,58 @@ TEST(a_health_bar_sits_in_the_plate_its_caller_gives_it) {
         CHECK_NEAR(at(130, 30, c), over(ui::kHealth, 1.0, c), 1.0);
         CHECK_NEAR(at(242, 30, c), over(kPlate, 1.0, c), 1.0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// A mob's plate (MobPlateEase) is florr's, not rysteria's: it starts from
+// nothing and its red waits for the green rather than for a clock.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Steps `plate` toward `health` (no shield), shown, for `millis`.
+void run(MobPlateEase& plate, double health, double millis) {
+    for (double t = 0; t < millis; t += kFrameMillis) plate.step(health, 0.0, true, kFrameSeconds);
+}
+
+} // namespace
+
+TEST(a_mobs_plate_fades_in_over_an_empty_bar_that_fills) {
+    MobPlateEase plate;
+    CHECK_EQ(plate.opacity, 0.0);
+    CHECK_EQ(plate.health, 0.0);
+    // florr's 0.2 of the gap per 60 Hz frame: a fifth of the way there after
+    // one frame, and all but settled after half a second.
+    run(plate, 0.8, kFrameMillis * 0.5);
+    CHECK_NEAR(plate.opacity, 0.2, 1e-6);
+    CHECK_NEAR(plate.health, 0.16, 1e-6);
+    run(plate, 0.8, 500.0);
+    CHECK_NEAR(plate.opacity, 1.0, 1e-3);
+    CHECK_NEAR(plate.health, 0.8, 1e-3);
+    // The red filled up behind the green, slower, but never past it.
+    CHECK(plate.lag <= plate.health + 1e-9);
+}
+
+TEST(a_mobs_red_trail_holds_until_the_green_has_landed) {
+    MobPlateEase plate;
+    plate.snap(1.0, 0.0, true);
+    plate.step(0.4, 0.0, true, kFrameSeconds);
+    // The green is on its way down and still well above the health, so the
+    // red has not moved.
+    CHECK(plate.health > 0.4 + 0.1);
+    CHECK_EQ(plate.lag, 1.0);
+    run(plate, 0.4, 600.0);
+    // The green has landed and the red is draining after it, at half its rate.
+    CHECK_NEAR(plate.health, 0.4, 1e-3);
+    CHECK(plate.lag < 1.0);
+    CHECK(plate.lag > 0.4);
+    run(plate, 0.4, 2000.0);
+    CHECK_NEAR(plate.lag, 0.4, 1e-3);
+}
+
+TEST(a_hidden_mob_plate_fades_out) {
+    MobPlateEase plate;
+    plate.snap(1.0, 0.0, true);
+    for (double t = 0; t < 1000.0; t += kFrameMillis) plate.step(1.0, 0.0, false, kFrameSeconds);
+    CHECK(plate.opacity < 1e-3);
 }
