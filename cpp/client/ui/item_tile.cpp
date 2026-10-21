@@ -500,8 +500,13 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         // No cap: gardn's own oversize rule lives inside the cluster, and every
         // petal it measures already fits its plate. The face clip is what
         // catches anything this game later adds that does not.
+        // The petal alone flashes, as it does on the field; the tint is not
+        // part of save()/restore(), so it is put back by hand.
+        const Color outerTint = canvas.colorTint();
+        if (tile.flash.a != 0) canvas.setColorTint(tile.flash);
         drawPetalCluster(canvas, sprites, tile.petalIndex, tile.rarity, stats.size, copies,
                          0.0, 0.0, 0.0, tile.timeSeconds, facesInward);
+        canvas.setColorTint(outerTint);
         canvas.restore();
     }
 

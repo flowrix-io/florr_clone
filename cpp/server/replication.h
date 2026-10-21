@@ -148,6 +148,17 @@ struct WireEvent {
     /// HUD's avatar flashes with every one of them.
     Entity struck = NULL_ENTITY;
 
+    /// Damage only, and never on the wire as such: the flower whose loadout
+    /// slot `wornSlot` holds the struck petal, NULL_ENTITY for anything that
+    /// is not a worn petal. That flower's bar flashes the slot's tile, so on
+    /// ITS wire `otherNetId` is written as 1 + `wornSlot` (see
+    /// net::DamageFlashOnly), and the hit reaches it wherever the petal is.
+    Entity wornBy = NULL_ENTITY;
+    std::uint8_t wornSlot = 0;
+    /// Sent to `wornBy` alone: the blow that broke the petal, which leaves
+    /// nothing in the world to flash but the tile it leaves behind.
+    bool wearerOnly = false;
+
     /// Lightning only: where each bolt ends, in world space. Empty for every
     /// other kind, and the only variable-length thing on the event wire.
     std::vector<Vec2> points;
@@ -169,11 +180,12 @@ public:
     /// `dealtByConnection` name the flower behind the hit, if any; see
     /// WireEvent::dealtBy. `share` is what the hit took as a fraction of the
     /// victim's max health, which is how bright the client flashes it.
-    /// `struck` is the body `netId` names; see WireEvent::struck.
-    void damage(std::uint32_t netId, double amount, Vec2 at, Realm realm,
-                std::uint8_t flags = 0, Entity dealtBy = NULL_ENTITY,
-                net::ConnectionId dealtByConnection = 0, double share = 0,
-                Entity struck = NULL_ENTITY) {
+    /// `struck` is the body `netId` names; see WireEvent::struck. Returns the
+    /// event, for the fields only some hits carry (WireEvent::wornBy).
+    WireEvent& damage(std::uint32_t netId, double amount, Vec2 at, Realm realm,
+                      std::uint8_t flags = 0, Entity dealtBy = NULL_ENTITY,
+                      net::ConnectionId dealtByConnection = 0, double share = 0,
+                      Entity struck = NULL_ENTITY) {
         WireEvent e;
         e.kind = net::EventKind::Damage;
         e.netId = netId;
@@ -189,6 +201,7 @@ public:
         e.struck = struck;
         e.positional = true;
         events_.push_back(e);
+        return events_.back();
     }
 
     void killed(std::uint32_t netId, Vec2 at, Realm realm) {

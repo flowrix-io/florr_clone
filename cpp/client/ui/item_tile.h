@@ -150,6 +150,13 @@ struct ItemTile {
     /// plate colour. Like `reload`, only the owner's bar is told.
     double health = 1.0;
 
+    /// The hit flash the petal in this slot is wearing (premultiplied, for
+    /// Canvas::setColorTint; alpha zero for none), laid over the petal drawn
+    /// on the tile and nothing else: the plate, the face, the wedge and the
+    /// labels keep their own colours. Like `health`, only the owner's bar is
+    /// told.
+    Color flash{0, 0, 0, 0};
+
     bool hovered = false;
     bool selected = false;
     bool disabled = false;  ///< greyed out; the caller also blocks the click

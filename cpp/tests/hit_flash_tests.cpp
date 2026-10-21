@@ -2,10 +2,15 @@
 
 #include "canvas.h"
 #include "client/camera.h"
+#include "client/render/sprites.h"
 #include "client/render/world_renderer.h"
+#include "client/ui/item_tile.h"
 #include "client/world_view.h"
 #include "render_rig.h"
+#include "shared/game/config.h"
+#include "shared/game/player_flags.h"
 #include "shared/net/protocol.h"
+#include "test_data.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -230,6 +235,201 @@ TEST(a_squadmates_hit_off_screen_flashes_but_puts_no_number_in_the_world) {
 
     CHECK(testsupport::differingPixels(nothing, frameAfter(0), 8) > 0);
     CHECK_EQ(testsupport::differingPixels(nothing, frameAfter(net::DamageOffView), 8), 0);
+}
+
+TEST(a_flash_only_hit_flashes_its_body_and_puts_no_number_in_the_world) {
+    // A petal's or a shot's hit: the server marks it, and it is there for the
+    // flash alone.
+    CHECK(testsupport::fontsReady());
+    WorldView view;
+    view.setRealm(Realm::Overworld);
+    WorldRenderer quiet;
+    Canvas blank = Canvas::createVirtual(kFrameSize, kFrameSize);
+    quiet.draw(blank, view, testsupport::frameCamera(kFrameSize, kAt), kAt, 0.0);
+
+    WorldRenderer renderer;
+    ViewEvent hit = hitFor(0.5);
+    hit.flag = net::DamageFlashOnly;
+    ingest(renderer, {hit});
+    renderer.update(0.0);
+    CHECK(renderer.hitTint(kVictim).a > 0);
+    Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+    renderer.draw(canvas, view, testsupport::frameCamera(kFrameSize, kAt), kAt, 0.0);
+    CHECK_EQ(testsupport::differingPixels(blank.getImageData(0, 0, kFrameSize, kFrameSize),
+                                          canvas.getImageData(0, 0, kFrameSize, kFrameSize), 8),
+             0);
+}
+
+namespace {
+
+const SpriteCache& shippedSprites() {
+    static const SpriteCache sprites = [] {
+        SpriteCache cache;
+        cache.build(testsupport::shippedContent(), testsupport::dataDir());
+        return cache;
+    }();
+    return sprites;
+}
+
+/// `body` drawn by a renderer that has just struck it and by one that has
+/// not, otherwise alike, at the clock `timeSeconds`: how many pixels differ.
+int pixelsTheFlashChanges(const RemoteEntity& body, double timeSeconds = 0.0) {
+    WorldView view;
+    view.setRealm(Realm::Overworld);
+    view.seedForTest(body);
+    const auto frame = [&](bool struck) {
+        WorldRenderer renderer;
+        renderer.setContent(&testsupport::shippedContent());
+        renderer.setSprites(&shippedSprites());
+        // The flash is the only difference: no number over either.
+        renderer.options.damageNumbers = false;
+        if (struck) ingest(renderer, {hitFor(1.0, body.netId)});
+        // 30 ms in: red, at the ceiling.
+        renderer.update(0.030);
+        Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+        renderer.draw(canvas, view, testsupport::frameCamera(kFrameSize, kAt), kAt, timeSeconds);
+        return canvas.getImageData(0, 0, kFrameSize, kFrameSize);
+    };
+    return testsupport::differingPixels(frame(false), frame(true), 8);
+}
+
+RemoteEntity bodyAt(net::EntityKind kind, std::uint16_t typeIndex, double radius) {
+    RemoteEntity body;
+    body.netId = kVictim;
+    body.kind = kind;
+    body.typeIndex = typeIndex;
+    body.rarity = Rarity::Common;
+    body.position = body.targetPosition = kAt;
+    body.needsSnap = false;
+    body.radius = radius;
+    return body;
+}
+
+} // namespace
+
+TEST(every_kind_of_body_that_can_be_struck_is_drawn_flashed) {
+    CHECK(testsupport::fontsReady());
+    const ContentRegistry& content = testsupport::shippedContent();
+    CHECK(content.loaded());
+    if (!content.loaded()) return;
+    const auto mob = [&](const char* id) {
+        return bodyAt(net::EntityKind::Mob, content.mobIndex(id),
+                      content.mobStats(content.mobIndex(id), Rarity::Common).radius);
+    };
+
+    CHECK(pixelsTheFlashChanges(mob("ladybug")) > 100);
+
+    // An NPC: the target dummy is there to be hit.
+    RemoteEntity npc = mob("target_dummy");
+    npc.kind = net::EntityKind::Npc;
+    CHECK(pixelsTheFlashChanges(npc) > 100);
+
+    // A flower's petal, a seed on a mob's ring and a wax lying on the ground.
+    const RemoteEntity petal = bodyAt(net::EntityKind::Petal, content.petalIndex("basic"), 10.0);
+    CHECK(pixelsTheFlashChanges(petal) > 30);
+    RemoteEntity seed = bodyAt(net::EntityKind::Petal, content.petalIndex("dandelion"), 10.0);
+    seed.spawnFlags = net::SpawnRingPetal;
+    CHECK(pixelsTheFlashChanges(seed) > 30);
+    RemoteEntity wax = bodyAt(net::EntityKind::Petal, content.petalIndex("wax"), 30.0);
+    wax.spawnFlags = net::SpawnLoosePetal;
+    CHECK(pixelsTheFlashChanges(wax) > 30);
+
+    // A shot.
+    CHECK(pixelsTheFlashChanges(
+              bodyAt(net::EntityKind::Projectile, content.petalIndex("missile"), 10.0)) > 30);
+}
+
+TEST(a_hit_on_a_worn_petal_flashes_its_tile_on_the_bar) {
+    // The server writes 1 + the slot into a flash-only hit on the viewer's
+    // own petal; 0 is a petal that has no tile here.
+    WorldRenderer renderer;
+    ViewEvent ours = hitFor(1.0, 501);
+    ours.flag = net::DamageFlashOnly;
+    ours.otherNetId = 3;
+    ViewEvent theirs = hitFor(1.0, 502);
+    theirs.flag = net::DamageFlashOnly;
+    ViewEvent nonsense = hitFor(1.0, 503);
+    nonsense.flag = net::DamageFlashOnly;
+    nonsense.otherNetId = kLoadoutActiveSlots + 1;
+    ingest(renderer, {ours, theirs, nonsense});
+    renderer.update(0.0);
+
+    // The tile flashes as the petal does.
+    CHECK(near(renderer.slotHitTint(2).a, 127));
+    CHECK_EQ(static_cast<int>(renderer.slotHitTint(2).a),
+             static_cast<int>(renderer.hitTint(501).a));
+    for (int slot = 0; slot < kLoadoutActiveSlots; ++slot) {
+        if (slot != 2) CHECK_EQ(static_cast<int>(renderer.slotHitTint(slot).a), 0);
+    }
+    CHECK_EQ(static_cast<int>(renderer.slotHitTint(-1).a), 0);
+    CHECK_EQ(static_cast<int>(renderer.slotHitTint(kLoadoutActiveSlots).a), 0);
+
+    renderer.update(0.2);
+    CHECK_EQ(static_cast<int>(renderer.slotHitTint(2).a), 0);
+}
+
+TEST(a_flashed_tile_washes_its_petal_and_nothing_else) {
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    CHECK(testsupport::fontsReady());
+    constexpr int kSide = 120;
+    const auto drawn = [&](Color flash) {
+        Canvas canvas = Canvas::createVirtual(kSide, kSide);
+        ui::ItemTile tile;
+        tile.petalIndex = content().petalIndex("basic");
+        tile.rarity = Rarity::Common;
+        tile.flash = flash;
+        ui::drawItemTile(canvas, shippedSprites(), {0, 0, kSide, kSide}, tile);
+        return canvas.getImageData(0, 0, kSide, kSide);
+    };
+    const std::vector<std::uint8_t> plain = drawn(Color{0, 0, 0, 0});
+    // Red at half strength: what a hit 30 ms old composites to.
+    const std::vector<std::uint8_t> struck = drawn(Color{127, 0, 0, 127});
+
+    // The petal in the middle is washed red...
+    const auto changedIn = [&](int top, int bottom) {
+        int changed = 0;
+        for (int y = top; y < bottom; ++y) {
+            for (int x = 0; x < kSide; ++x) {
+                const std::size_t i = (static_cast<std::size_t>(y) * kSide + x) * 4;
+                if (std::abs(plain[i] - struck[i]) > 8 || std::abs(plain[i + 1] - struck[i + 1]) > 8 ||
+                    std::abs(plain[i + 2] - struck[i + 2]) > 8) {
+                    ++changed;
+                }
+            }
+        }
+        return changed;
+    };
+    CHECK(changedIn(0, kSide) > 100);
+    // ...and nothing else is: not the plate's border across the top, not the
+    // face around the petal, not the name along the bottom.
+    CHECK_EQ(changedIn(0, kSide / 8), 0);
+    CHECK_EQ(changedIn(kSide * 3 / 4, kSide), 0);
+    const std::size_t corner = (static_cast<std::size_t>(kSide / 5) * kSide + kSide / 5) * 4;
+    for (int c = 0; c < 4; ++c) CHECK_EQ(static_cast<int>(struck[corner + c]), plain[corner + c]);
+}
+
+TEST(a_glitched_body_flashes_through_its_bursts_and_between_them) {
+    // A glitched flower, and the glitch flower mob, are recomposed out of a
+    // buffer of their own while a burst is on, and a blit carries no tint:
+    // the flash has to be painted into that buffer. Across three seconds of
+    // clock, which takes in both.
+    CHECK(testsupport::fontsReady());
+    const ContentRegistry& content = testsupport::shippedContent();
+    CHECK(content.loaded());
+    if (!content.loaded()) return;
+
+    RemoteEntity flower = bodyAt(net::EntityKind::Player, 0, playerRadiusForLevel(1));
+    flower.level = 1;
+    flower.renderFlags = PlayerRenderGlitch;
+    const std::uint16_t glitchMob = content.mobIndex("glitch_flower");
+    const RemoteEntity mob = bodyAt(net::EntityKind::Mob, glitchMob,
+                                    content.mobStats(glitchMob, Rarity::Common).radius);
+    for (int i = 0; i < 30; ++i) {
+        const double t = i * 0.1;
+        CHECK(pixelsTheFlashChanges(flower, t) > 100);
+        CHECK(pixelsTheFlashChanges(mob, t) > 100);
+    }
 }
 
 // The screen shake: a hit on the viewer's OWN flower pushes the world it is

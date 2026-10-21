@@ -647,6 +647,40 @@ TEST(a_squadmates_hit_reaches_the_viewer_however_far_away_it_lands) {
     CHECK((client.events()[1].flag & net::DamageOffView) == 0);
 }
 
+TEST(a_hit_on_your_own_worn_petal_names_its_slot_and_reaches_you_wherever_it_is) {
+    Fixture f;
+    const Entity stranger = f.addPlayer("cal", {1100, 1000});
+    WorldView client;
+    f.tick(client, 1, 1000);
+    client.events().clear();
+
+    const auto petalHit = [&](std::uint32_t netId, Vec2 at, Entity wearer, bool fatal) {
+        WireEvent& hit = f.events.damage(netId, 3, at, Realm::Overworld, net::DamageFlashOnly,
+                                         NULL_ENTITY, 0, 0.1);
+        hit.wornBy = wearer;
+        hit.wornSlot = 4;
+        hit.wearerOnly = fatal;
+    };
+    petalHit(501, {1010, 1000}, f.viewer, false);   // ours, on screen
+    petalHit(502, {1110, 1000}, stranger, false);   // theirs, on screen
+    petalHit(503, {60000, 1000}, f.viewer, false);  // ours, left far behind
+    petalHit(504, {1010, 1000}, f.viewer, true);    // ours, broken
+    petalHit(505, {1110, 1000}, stranger, true);    // theirs, broken: not ours to see
+    f.tick(client, 2, 1040);
+
+    CHECK_EQ(client.events().size(), std::size_t(4));
+    if (client.events().size() != 4) return;
+    // Slot 4 is written as 5: 0 is "no tile of yours".
+    CHECK_EQ(client.events()[0].netId, std::uint32_t(501));
+    CHECK_EQ(client.events()[0].otherNetId, std::uint32_t(5));
+    CHECK_EQ(client.events()[1].netId, std::uint32_t(502));
+    CHECK_EQ(client.events()[1].otherNetId, std::uint32_t(0));
+    CHECK_EQ(client.events()[2].netId, std::uint32_t(503));
+    CHECK_EQ(client.events()[2].otherNetId, std::uint32_t(5));
+    CHECK_EQ(client.events()[3].netId, std::uint32_t(504));
+    CHECK_EQ(client.events()[3].otherNetId, std::uint32_t(5));
+}
+
 TEST(a_lightning_strike_carries_its_bolts_and_the_next_event_still_decodes) {
     Fixture f;
     WorldView client;

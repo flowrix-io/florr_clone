@@ -676,6 +676,16 @@ private:
     double soakIntoCotton(World& world, Entity flower, Entity source, double amount,
                           double nowMillis, DamageKind kind);
 
+    /// Reports a hit on a body the game puts no number over -- a flower's
+    /// petal, a seed on a mob's ring, a shot -- so the client flashes it: a
+    /// Damage event marked net::DamageFlashOnly, for `share` of its own pool.
+    /// A petal worn in a loadout slot also flashes its tile on the wearer's
+    /// bar (WireEvent::wornBy). A `fatal` blow is reported only for such a
+    /// tile, and only to its wearer: a broken petal or a spent shot vanishes
+    /// on the next snapshot, and a flash on it would be bytes for nothing.
+    /// No-op for a body with no net id, or with no queue to report to.
+    void flashStruck(World& world, Entity body, double amount, double share, bool fatal);
+
     std::unique_ptr<Queries> queries_;
     World* boundWorld_ = nullptr;
     EventQueue* events_ = nullptr;

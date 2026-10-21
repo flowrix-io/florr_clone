@@ -783,15 +783,15 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     // flash for every swing at any of its neighbours, each
                     // at the floor's tenth at least, and twenty of those
                     // laid over each other wash the body out to white.
-                    std::vector<HitFlash>& hits = hitFlashes_[event.netId];
-                    if (hits.empty() || hits.back().atSeconds >= 0.0) {
-                        if (hits.size() >= kMaxHitFlashes) hits.erase(hits.begin());
-                        hits.emplace_back();
+                    foldHit(hitFlashes_[event.netId], event.radius);
+                    // A petal or a shot: the flash is the whole of it -- and
+                    // when the petal is one of ours, its tile's on the bar.
+                    if ((event.flag & net::DamageFlashOnly) != 0) {
+                        if (event.otherNetId >= 1 && event.otherNetId <= kLoadoutActiveSlots) {
+                            foldHit(slotFlashes_[event.otherNetId - 1], event.radius);
+                        }
+                        break;
                     }
-                    HitFlash& hit = hits.back();
-                    hit.share = std::min(1.0, hit.share + clamp(event.radius, 0.0, 1.0));
-                    hit.intensity = static_cast<float>(clamp(
-                        std::pow(hit.share, kHitFlashExponent), kHitFlashFloor, 1.0));
                     // The viewer's own flower being hit shakes the screen.
                     const auto self = view.entities().find(event.netId);
                     if (self != view.entities().end() && self->second.isSelf()) {
@@ -1068,17 +1068,10 @@ void WorldRenderer::ingestEvents(WorldView& view) {
 void WorldRenderer::update(double dt) {
     nowSeconds_ += dt;
     for (auto it = hitFlashes_.begin(); it != hitFlashes_.end();) {
-        std::vector<HitFlash>& hits = it->second;
-        for (HitFlash& hit : hits) {
-            if (hit.atSeconds < 0.0) hit.atSeconds = nowSeconds_;
-        }
-        hits.erase(std::remove_if(hits.begin(), hits.end(),
-                                  [this](const HitFlash& hit) {
-                                      return nowSeconds_ - hit.atSeconds >= kHitFlashSeconds;
-                                  }),
-                   hits.end());
-        it = hits.empty() ? hitFlashes_.erase(it) : std::next(it);
+        ageFlashes(it->second);
+        it = it->second.empty() ? hitFlashes_.erase(it) : std::next(it);
     }
+    for (std::vector<HitFlash>& hits : slotFlashes_) ageFlashes(hits);
 
     // The rituals the last frame showed still tracing: each pushes the shake
     // on its own 100 ms pace, the way florr's does every frame it draws one.
@@ -1183,9 +1176,40 @@ void WorldRenderer::update(double dt) {
     if (mobPaces_.size() > kMaxMobShadows) mobPaces_.clear();
 }
 
+void WorldRenderer::foldHit(std::vector<HitFlash>& hits, double share) {
+    if (hits.empty() || hits.back().atSeconds >= 0.0) {
+        if (hits.size() >= kMaxHitFlashes) hits.erase(hits.begin());
+        hits.emplace_back();
+    }
+    HitFlash& hit = hits.back();
+    hit.share = std::min(1.0, hit.share + clamp(share, 0.0, 1.0));
+    hit.intensity =
+        static_cast<float>(clamp(std::pow(hit.share, kHitFlashExponent), kHitFlashFloor, 1.0));
+}
+
+void WorldRenderer::ageFlashes(std::vector<HitFlash>& hits) const {
+    for (HitFlash& hit : hits) {
+        if (hit.atSeconds < 0.0) hit.atSeconds = nowSeconds_;
+    }
+    hits.erase(std::remove_if(hits.begin(), hits.end(),
+                              [this](const HitFlash& hit) {
+                                  return nowSeconds_ - hit.atSeconds >= kHitFlashSeconds;
+                              }),
+               hits.end());
+}
+
 Color WorldRenderer::hitTint(std::uint32_t netId) const {
     const auto found = hitFlashes_.find(netId);
     if (found == hitFlashes_.end()) return Color{0, 0, 0, 0};
+    return compositeFlashes(found->second);
+}
+
+Color WorldRenderer::slotHitTint(int slot) const {
+    if (slot < 0 || slot >= kLoadoutActiveSlots) return Color{0, 0, 0, 0};
+    return compositeFlashes(slotFlashes_[static_cast<std::size_t>(slot)]);
+}
+
+Color WorldRenderer::compositeFlashes(const std::vector<HitFlash>& hits) const {
     // Composited in bytes, cut back to a byte after every hit, in float, as
     // florr does it: each hit is a premultiplied colour laid OVER the ones
     // before it.
@@ -1195,7 +1219,7 @@ Color WorldRenderer::hitTint(std::uint32_t netId) const {
         return static_cast<std::uint8_t>(std::clamp(out, 0.0f, 255.0f));
     };
     Color tint{0, 0, 0, 0};
-    for (const HitFlash& hit : found->second) {
+    for (const HitFlash& hit : hits) {
         // Not stamped yet: ingested since the last update, so it is new.
         const double age = hit.atSeconds < 0.0 ? 0.0 : nowSeconds_ - hit.atSeconds;
         if (age >= kHitFlashSeconds) continue;
@@ -1915,7 +1939,12 @@ bool WorldRenderer::placeGlitchBody(std::uint32_t seed, int side,
     bodies.translate(static_cast<float>(placed.x + side * 0.5 * scale),
                      static_cast<float>(placed.y + side * 0.5 * scale));
     if (scale < 1.0) bodies.scale(static_cast<float>(scale), static_cast<float>(scale));
-    body(bodies);
+    {
+        // Under the body's hit flash -- the seed is its net id -- since the
+        // blits that recompose it out of the atlas carry no tint of their own.
+        const ScopedColorTint flash(bodies, hitTint(seed));
+        body(bodies);
+    }
     bodies.restore();
     glitchCells_[seed] = placed;
     return true;
@@ -2111,7 +2140,12 @@ void WorldRenderer::drawGlitched(Canvas& canvas, Vec2 screen, double radius, std
     buffer.clearRect(0, 0, static_cast<float>(side), static_cast<float>(side));
     buffer.save();
     buffer.translate(static_cast<float>(half), static_cast<float>(half));
-    body(buffer);
+    {
+        // The body's hit flash, which a blit out of the buffer cannot carry:
+        // it is painted in here, under the tint the caller put on `canvas`.
+        const ScopedColorTint flash(buffer, canvas.colorTint());
+        body(buffer);
+    }
     buffer.restore();
     constexpr double sourceX = 0;
     constexpr double sourceY = 0;
@@ -2207,11 +2241,13 @@ void WorldRenderer::drawFlower(Canvas& canvas, const RemoteEntity& entity, const
         drawFlowerBody(target, entity, timeSeconds);
     };
 
+    // A glitched flower flashes as well: drawGlitched paints its buffer under
+    // whatever tint the canvas has on.
+    const ScopedColorTint flash(canvas, hitTint(entity.netId));
     if (entity.renderFlags & PlayerRenderGlitch) {
         drawGlitched(canvas, screen, radius, entity.netId, timeSeconds, paintBody);
         return;
     }
-    const ScopedColorTint flash(canvas, hitTint(entity.netId));
     canvas.save();
     canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
     paintBody(canvas);
@@ -2632,6 +2668,9 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
         ui::setFill(canvas, rarityColor(entity.rarity), kPetalGlowAlpha);
         canvas.fillCircle(0, 0, static_cast<float>(diameter * 0.5 + kPetalGlowPad * zoom));
     }
+    // From here it is the petal itself, which flashes when it is struck; the
+    // two glows above are light, not petal.
+    const ScopedColorTint flash(canvas, hitTint(entity.netId));
     canvas.rotate(static_cast<float>(rotation));
     // Both axes: a petal that declares an X offset is drawn off it in the
     // browser build too, and dropping one of the two silently moves it.
@@ -3766,6 +3805,7 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             // visual_scale. entity.radius above is the body the server damages
             // from and stays where it is.
             const double diameter = artUnits * petalArtScale(config) * zoom;
+            const ScopedColorTint flash(canvas, hitTint(entity.netId));
             if (config && config->id == "gas" && entity.rarity == Rarity::Common) {
                 // Gas is a cloud rather than a petal, and there can be hundreds
                 // of it at once.

@@ -725,9 +725,20 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             return event.kind == net::EventKind::Damage && event.struck != NULL_ENTITY &&
                    exempt(event.struck);
         };
+        // A hit on one of this viewer's own worn petals flashes its tile on the
+        // bar, which is the HUD and not the world: it goes out wherever the
+        // petal is -- a wax left behind off screen, or in another realm -- and
+        // the blow that broke it goes to the wearer alone.
+        const auto ownTile = [&](const WireEvent& event) {
+            return event.kind == net::EventKind::Damage && event.wornBy != NULL_ENTITY &&
+                   event.wornBy == viewer;
+        };
         for (const WireEvent& event : frame.events->events()) {
+            const bool tile = ownTile(event);
+            if (event.wearerOnly && !tile) continue;
             const bool offView = event.positional && outsideView(event.position);
-            if (event.positional && (event.realm != realm || (offView && !squadmateHit(event)))) {
+            if (event.positional && !tile &&
+                (event.realm != realm || (offView && !squadmateHit(event)))) {
                 continue;
             }
             std::uint8_t flag = event.flag;
@@ -735,7 +746,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             if (offView) flag |= net::DamageOffView;
             out.u8(static_cast<std::uint8_t>(event.kind));
             out.u32(event.netId);
-            out.u32(event.otherNetId);
+            out.u32(tile ? event.wornSlot + 1u : event.otherNetId);
             out.f32(static_cast<float>(event.amount));
             out.position(event.position);
             out.f32(static_cast<float>(event.radius));

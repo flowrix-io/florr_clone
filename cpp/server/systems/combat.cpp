@@ -843,14 +843,16 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // client already colours and offsets a poison number away from the petal
     // hit that landed in the same tick, so nothing is buried by reporting one.
     //
-    // Those two channels are also the WHOLE of it: `enemiesDamaged` carries
-    // mobs and `playerDamaged` carries flowers, and nothing else in the world
-    // is ever narrated. A petal paying for its own swing therefore loses
-    // health silently, which is what setInstanceHealth() does.
-    // An NPC is narrated like the mob it is built from: a target dummy that
-    // showed no numbers would have nothing to count.
-    if (events_ != nullptr && (world.has<MobTag>(victim) || world.has<PlayerTag>(victim) ||
-                               world.has<NpcTag>(victim))) {
+    // Those two channels are the whole of what is NUMBERED: `enemiesDamaged`
+    // carries mobs and `playerDamaged` carries flowers. An NPC is numbered
+    // like the mob it is built from: a target dummy that showed no numbers
+    // would have nothing to count. Everything else that holds a pool -- a
+    // petal paying for its swing, a seed on a mob's ring, a shot -- is
+    // reported for the flash alone (flashStruck).
+    const bool numbered =
+        world.has<MobTag>(victim) || world.has<PlayerTag>(victim) || world.has<NpcTag>(victim);
+    if (!numbered) flashStruck(world, victim, applied, share, fatal);
+    if (events_ != nullptr && numbered) {
         // Reported against the body that was HIT. For everything but a leech
         // that is the victim itself; for a leech it is the segment the petal
         // touched, so the number rises off the bead the player is looking at
@@ -970,6 +972,31 @@ DamageResult CombatSystem::shareHit(World& world, std::vector<Entity> group, Ent
     }
     guard = false;
     return total;
+}
+
+void CombatSystem::flashStruck(World& world, Entity body, double amount, double share,
+                               bool fatal) {
+    if (events_ == nullptr) return;
+    // A petal in one of its flower's loadout slots has a tile on that
+    // flower's bar, which flashes with it. Not a lent Basic: its slot is
+    // kLentPetalSlot, and the borrower's bar has no tile for it.
+    Entity wearer = NULL_ENTITY;
+    std::uint8_t slot = 0;
+    if (const PetalInstance* petal = world.tryGet<PetalInstance>(body)) {
+        if (petal->slot < kLoadoutActiveSlots) {
+            wearer = petal->owner;
+            slot = petal->slot;
+        }
+    }
+    if (fatal && wearer == NULL_ENTITY) return;
+    const NetId* id = world.tryGet<NetId>(body);
+    const Transform* transform = world.tryGet<Transform>(body);
+    if (id == nullptr || transform == nullptr) return;
+    WireEvent& event = events_->damage(id->value, amount, transform->position, transform->realm,
+                                       net::DamageFlashOnly, NULL_ENTITY, 0, share, body);
+    event.wornBy = wearer;
+    event.wornSlot = slot;
+    event.wearerOnly = fatal;
 }
 
 // ---------------------------------------------------------------------------
@@ -2315,12 +2342,11 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // break/reload rhythm is most of what paces the fight.
             //
             // Exempt for a petal that names a `damageCooldown` -- glass and
-            // infinity never break on contact. Recoil rather than Direct, so
-            // the ring does not flash white for a cost the reference pays
-            // silently -- but it is a blow as far as armour goes, and a bone
-            // shrugs off the part of the bite its armour covers. The floating
-            // number takes care of itself: a petal is on neither of the
-            // reference's two damage-report channels.
+            // infinity never break on contact. Recoil rather than Direct, but
+            // a blow as far as armour goes: a bone shrugs off the part of the
+            // bite its armour covers. The petal flashes for what it lost, and
+            // carries no number: a petal is on neither of the reference's two
+            // damage-report channels (see flashStruck).
             //
             // A hostile NPC charges it too, at its mob's damage: a dummy that
             // let a ring hit for free would flatter every build tested on it.
@@ -2781,6 +2807,9 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                 world.add<Dead>(shot.entity);
                 break;
             }
+            // Through it and still flying: the hit cost it, so it flashes.
+            const double share = health->max > 0.0 ? cost / health->max : 0.0;
+            flashStruck(world, shot.entity, cost, share, false);
         }
     }
 }

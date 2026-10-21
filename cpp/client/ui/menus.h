@@ -1650,8 +1650,10 @@ private:
     const SvgDocument* icon(int index);
     /// The bar's box and slot scale for the screen it is being drawn on. The
     /// title screen gives it a fixed 900x210 region below centre; in game it
-    /// owns the whole viewport at three-quarter scale.
-    void drawLoadoutBar(Canvas&, Window&, NetClient&, const SpriteCache&, double timeSeconds);
+    /// owns the whole viewport at three-quarter scale. `renderer` is where the
+    /// tiles' hit flashes come from (WorldRenderer::slotHitTint).
+    void drawLoadoutBar(Canvas&, Window&, NetClient&, const SpriteCache&,
+                        const WorldRenderer& renderer, double timeSeconds);
     /// Pick-up and drop, run AFTER the open panel has had the same click. The
     /// bar is painted under the panel and so must not answer for a press the
     /// panel is standing on top of.

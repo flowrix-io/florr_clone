@@ -270,6 +270,81 @@ TEST(a_damage_event_carries_the_share_of_max_health_the_hit_took) {
     }
 }
 
+TEST(a_struck_petal_is_reported_to_flash_and_never_to_be_numbered) {
+    // A petal has no number over it, but it is struck like any body -- the
+    // bite it pays for its own swing, a flower's petal in PVP -- and flashes.
+    Arena a;
+    const Entity owner = a.player({2000, 2000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<NetId>(mob, NetId{11});
+    const Entity petal = a.world.create();
+    a.world.add<PetalTag>(petal);
+    PetalInstance instance;
+    instance.owner = owner;
+    instance.slot = 3;
+    a.world.add<PetalInstance>(petal, instance);
+    a.world.add<Transform>(petal, Transform{{1025, 1000}, 0.0});
+    a.world.add<Health>(petal, Health{40.0, 40.0, 0.0, 0.0});
+    a.world.add<Faction>(petal, Faction{Team::Players, false});
+    a.world.add<NetId>(petal, NetId{21});
+
+    const auto eventsFor = [&](std::uint32_t netId) {
+        std::vector<WireEvent> out;
+        for (const WireEvent& event : a.events.events()) {
+            if (event.kind == net::EventKind::Damage && event.netId == netId) out.push_back(event);
+        }
+        return out;
+    };
+
+    a.combat.beginTick(a.world, 1000.0, net::kTickSeconds, a.events);
+    a.combat.applyDamage(a.world, petal, mob, 10.0, 1000.0, DamageKind::Recoil);
+    a.combat.applyDamage(a.world, mob, petal, 10.0, 1000.0);
+    std::vector<WireEvent> petalHits = eventsFor(21);
+    CHECK_EQ(petalHits.size(), std::size_t(1));
+    if (petalHits.size() == 1) {
+        CHECK((petalHits[0].flag & net::DamageFlashOnly) != 0);
+        CHECK_NEAR(petalHits[0].radius, 0.25, 1e-9);
+        CHECK_NEAR(petalHits[0].position.x, 1025.0, 1e-9);
+        // Worn in slot 3, so its tile on the owner's bar flashes too.
+        CHECK_EQ(petalHits[0].wornBy, owner);
+        CHECK_EQ(static_cast<int>(petalHits[0].wornSlot), 3);
+        CHECK(!petalHits[0].wearerOnly);
+    }
+    // The mob's own hit is numbered as it always was.
+    const std::vector<WireEvent> mobHits = eventsFor(11);
+    CHECK_EQ(mobHits.size(), std::size_t(1));
+    if (mobHits.size() == 1) {
+        CHECK((mobHits[0].flag & net::DamageFlashOnly) == 0);
+        CHECK_EQ(mobHits[0].wornBy, NULL_ENTITY);
+    }
+
+    // The blow that breaks it goes to the wearer alone, for the tile: a broken
+    // petal is not drawn again, so nothing of it is left in the world.
+    a.combat.applyDamage(a.world, petal, mob, 100.0, 1100.0, DamageKind::Recoil);
+    CHECK(a.world.has<Dead>(petal));
+    petalHits = eventsFor(21);
+    CHECK_EQ(petalHits.size(), std::size_t(2));
+    if (petalHits.size() == 2) {
+        CHECK(petalHits[1].wearerOnly);
+        CHECK_EQ(petalHits[1].wornBy, owner);
+    }
+
+    // A body with a pool and no tile -- a seed on a mob's ring -- flashes
+    // while it stands and sends nothing for the blow that breaks it.
+    const Entity seed = a.world.create();
+    a.world.add<Transform>(seed, Transform{{1000, 1040}, 0.0});
+    a.world.add<Health>(seed, Health{40.0, 40.0, 0.0, 0.0});
+    a.world.add<Faction>(seed, Faction{Team::Hostiles, false});
+    a.world.add<NetId>(seed, NetId{22});
+    a.combat.applyDamage(a.world, seed, owner, 10.0, 1200.0);
+    std::vector<WireEvent> seedHits = eventsFor(22);
+    CHECK_EQ(seedHits.size(), std::size_t(1));
+    if (seedHits.size() == 1) CHECK_EQ(seedHits[0].wornBy, NULL_ENTITY);
+    a.combat.applyDamage(a.world, seed, owner, 100.0, 1300.0);
+    CHECK(a.world.has<Dead>(seed));
+    CHECK_EQ(eventsFor(22).size(), std::size_t(1));
+}
+
 TEST(damage_reduces_health_and_death_marks_dead_exactly_once) {
     Arena a;
     const Entity player = a.player({1000, 1000});
@@ -1048,6 +1123,43 @@ TEST(a_projectile_hits_the_nearest_target_once_and_expires) {
     // Already marked: a second tick must not deal the damage again.
     a.step(40.0);
     CHECK_NEAR(a.health(near), 75.0, 1e-9);
+}
+
+TEST(a_shot_that_flies_on_through_a_body_flashes_for_what_it_cost) {
+    // A shot's pool is its penetration, and every body it passes through
+    // takes some of it. One that survives the hit flashes for the share it
+    // lost; one the hit spends is gone, and sends nothing.
+    Arena a;
+    const Entity player = a.player({500, 1000});
+    a.mob({1000, 1000}, 1000.0);
+    const Entity shot = spawnShot(a, {1005, 1000}, {1000, 0}, 25.0, 500.0, player, player);
+    // What a body costs a shot is that body's own damage stat; this mob has
+    // none to bite back with, and costs the default.
+    a.world.add<Health>(shot, Health{5.0 * kProjectileDefaultBodyDamage,
+                                     5.0 * kProjectileDefaultBodyDamage});
+    a.world.add<NetId>(shot, NetId{31});
+
+    a.step(0.0);
+    CHECK(!a.world.has<Dead>(shot));
+    CHECK_NEAR(a.world.get<Health>(shot).current, 4.0 * kProjectileDefaultBodyDamage, 1e-9);
+    std::size_t flashes = 0;
+    for (const WireEvent& event : a.events.events()) {
+        if (event.kind != net::EventKind::Damage || event.netId != 31) continue;
+        ++flashes;
+        CHECK((event.flag & net::DamageFlashOnly) != 0);
+        CHECK_NEAR(event.radius, 0.2, 1e-9);
+    }
+    CHECK_EQ(flashes, std::size_t(1));
+
+    // The last of its pool: spent, and nothing sent.
+    a.world.get<Health>(shot).current = kProjectileDefaultBodyDamage;
+    a.world.get<Projectile>(shot).lastPosition = a.world.get<Transform>(shot).position;
+    a.events.clear();
+    a.step(1000.0);
+    CHECK(a.world.has<Dead>(shot));
+    for (const WireEvent& event : a.events.events()) {
+        CHECK(event.kind != net::EventKind::Damage || event.netId != 31);
+    }
 }
 
 TEST(a_fast_projectile_cannot_step_over_a_body_between_ticks) {

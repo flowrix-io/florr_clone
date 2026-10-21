@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 59;
+inline constexpr std::uint16_t kProtocolVersion = 60;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -859,6 +859,13 @@ enum DamageEventFlags : std::uint8_t {
     /// HUD's avatar and puts no number in the world. Set per viewer by the
     /// replicator, like DamageByViewer.
     DamageOffView = 1 << 4,
+    /// The body struck is one nothing numbers -- a flower's petal, a seed on a
+    /// mob's ring, a shot -- and the event is only there to flash it. On the
+    /// wire of the flower WEARING the petal, `otherNetId` is 1 + the loadout
+    /// slot it is in, so the bar flashes that tile too; 0 everywhere else. A
+    /// killing blow is sent only to that wearer, for the tile: nothing of the
+    /// petal is left in the world to flash.
+    DamageFlashOnly = 1 << 5,
 };
 
 /// One-off things that happened this tick, for effects the client can play

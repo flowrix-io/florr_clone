@@ -1441,7 +1441,8 @@ bool sameLoadout(const std::vector<Profile::Slot>& a, const std::vector<Profile:
 }  // namespace
 
 void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
-                                const SpriteCache& sprites, double timeSeconds) {
+                                const SpriteCache& sprites, const WorldRenderer& renderer,
+                                double timeSeconds) {
     const Profile& profile = net.profile();
     // Whether K or L is down this frame; see presetBankShown_.
     const int presetBank = inGame_ ? presetBankShown_ : -1;
@@ -1870,6 +1871,9 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         tile.reload = slotReloadProgress(net, entry.slot);
         tile.health = slotHealthFraction(net, entry.slot);
         tile.counter = slotCounterLabel(net, entry.slot);
+        // The petal in the slot being struck, on the field. Only in game: on
+        // the title screen nothing is out there to be hit.
+        if (inGame_) tile.flash = renderer.slotHitTint(entry.slot);
         const Rect box{anim.cx - anim.w * 0.5, anim.cy - anim.h * 0.5, anim.w, anim.h};
         if (!entry.rock) {
             drawItemTile(target, sprites, box, tile);
@@ -2727,7 +2731,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     };
     const auto bar = [&] {
         const int before = canvasOpsMark();
-        drawLoadoutBar(canvas, window, net, sprites, timeSeconds);
+        drawLoadoutBar(canvas, window, net, sprites, renderer, timeSeconds);
         opsBar_ += canvasOpsMark() - before;
     };
     if (inGame_) {

@@ -6,6 +6,7 @@
 // playing its death animation) lives in a pool here, seeded from the events
 // the server sent.
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -174,6 +175,12 @@ public:
     /// the flashes in flight are composited over one another oldest first,
     /// never past half strength (kHitFlashMaxAlpha).
     Color hitTint(std::uint32_t netId) const;
+
+    /// The same flash on the tile for the viewer's own loadout slot `slot`,
+    /// struck whenever the petal in it is (see net::DamageFlashOnly) --
+    /// including the blow that breaks it, which the petal itself is not left
+    /// to show. Alpha zero for a slot nothing has hit, or out of range.
+    Color slotHitTint(int slot) const;
 
     /// How far, in screen (design) units, the world is pushed this frame by
     /// hits on the viewer's own flower; zero with screenShake off. A screen
@@ -679,6 +686,17 @@ private:
         float intensity = 0.0f;
     };
     std::unordered_map<std::uint32_t, std::vector<HitFlash>> hitFlashes_;
+    /// The viewer's own loadout tiles, by slot, flashed the same way.
+    std::array<std::vector<HitFlash>, kLoadoutActiveSlots> slotFlashes_;
+
+    /// Folds a hit for `share` of the bar into the flash `hits` is yet to
+    /// draw, or starts one.
+    static void foldHit(std::vector<HitFlash>& hits, double share);
+    /// Stamps the flashes no frame has drawn yet with this one's clock, and
+    /// drops the ones that have run out.
+    void ageFlashes(std::vector<HitFlash>& hits) const;
+    /// What `hits` composite to now: see hitTint().
+    Color compositeFlashes(const std::vector<HitFlash>& hits) const;
 
     /// The screen shake (see shakeOffset()): the decaying pool of hits on the
     /// viewer's flower, the level eased toward "hit recently", when the last
