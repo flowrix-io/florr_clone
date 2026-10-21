@@ -35,6 +35,8 @@ enum EquipFlag : std::uint8_t {
     EquipLightningCutter = 1 << 5,
     /// The Champion's Crown, drawn on the flower's head.
     EquipCrown = 1 << 6,
+    /// A disc, drawn as a black ring around the flower. The last free bit.
+    EquipDisc = 1 << 7,
 };
 
 enum PlayerRenderFlag : std::uint32_t {

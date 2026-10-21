@@ -151,6 +151,14 @@
         "probability": 0.4,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "disc",
+        "rarity": "common",
+        "probability": 0.3,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },

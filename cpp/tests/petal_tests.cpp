@@ -79,6 +79,7 @@ const char* const kPetalsJson = R"JSON({
   "champion_crown":{"name":"Champion's Crown","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"equipFlags":"Crown","noPhysics":true,"color":"#FFDC06"},
   "rubber":   {"name":"Rubber","damage":1,"health":30,"size":1.2,"cooldown":2500,"count":1,"color":"#EEEEEE"},
   "amulet":   {"name":"Amulet","damage":0,"health":10,"size":1,"cooldown":2000,"count":1,"defendOnly":true,"color":"#FF94C9"},
+  "disc":     {"name":"Disc","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"equipFlags":"Disc","noPhysics":true,"color":"#111111"},
   "golden_leaf":{"name":"Golden Leaf","damage":1,"health":100,"size":1.2,"cooldown":200,"count":1,"color":"#EBEB34"},
   "cursor":   {"name":"Cursor","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"color":"#EEEEEE"},
   "ram":      {"name":"RAM","damage":10,"health":2,"size":1,"cooldown":3000,"count":1,"color":"#3498DB"},
@@ -4838,6 +4839,31 @@ TEST(an_amulet_turns_its_tiers_share_of_overheal_into_shield) {
     // Capped at max health, as a shell's shield is.
     CombatSystem::landHeal(rig.world, rig.player, health, health.max * 100.0);
     CHECK_NEAR(shield.amount, health.max, 1e-9);
+}
+
+TEST(a_disc_resists_collisions_by_florrs_curve_and_does_not_stack) {
+    if (!contentLoaded()) return;
+    // florr's 1 - 0.91^(tier+1): 9% at common, 1 - 0.91^7 at ultra.
+    CHECK_NEAR(fixture().registry.petalStats(petalId("disc"), Rarity::Common).collisionResist,
+               0.09, 1e-9);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("disc"), Rarity::Ultra).collisionResist,
+               1.0 - std::pow(0.91, 7), 1e-9);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("basic"), Rarity::Ultra).collisionResist,
+               0.0, 1e-12);
+
+    Rig rig;
+    rig.world.add<PlayerVisuals>(rig.player);
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().collisionDamageTakenScale, 1.0, 1e-12);
+    rig.equip(0, "disc", Rarity::Epic);
+    rig.equip(1, "disc", Rarity::Common);
+    rig.settleEquips();
+    // The better one alone: the common is a spare.
+    CHECK_NEAR(rig.modifiers().collisionDamageTakenScale, std::pow(0.91, 4), 1e-9);
+    // Worn, never out: florr gives it no body on the ring. Other flowers see
+    // it as the ring drawn around this one.
+    CHECK(rig.petals(0).empty());
+    CHECK(rig.world.get<PlayerVisuals>(rig.player).equipFlags & EquipDisc);
 }
 
 TEST(without_an_amulet_overheal_is_simply_lost) {

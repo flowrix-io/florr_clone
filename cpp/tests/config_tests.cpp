@@ -873,6 +873,9 @@ TEST(enums_and_colours_are_parsed_not_stored_as_text) {
     CHECK_EQ(r.petal(r.petalIndex("antennae")).equipFlags, std::uint8_t(EquipAntennae));
     CHECK_EQ(r.petal(r.petalIndex("sparkle")).equipFlags, std::uint8_t(EquipTest1));
     CHECK_EQ(r.petal(r.petalIndex("basic")).equipFlags, std::uint8_t(EquipNone));
+    // Worn as a ring around the flower, and nothing on the ring of petals.
+    CHECK_EQ(r.petal(r.petalIndex("disc")).equipFlags, std::uint8_t(EquipDisc));
+    CHECK(r.petal(r.petalIndex("disc")).noPhysics);
     // Worn on the head, and nothing on the ring: what it lends is the petal.
     const PetalConfig& crown = r.petal(r.petalIndex(kChampionCrownPetalId));
     CHECK_EQ(crown.equipFlags, std::uint8_t(EquipCrown));

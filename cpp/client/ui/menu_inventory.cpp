@@ -333,6 +333,15 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(cut);
     }
 
+    // Disc, florr's line, and the whole of what the petal does.
+    if (stats.collisionResist > 0.0) {
+        TooltipLine resist{"Collision Damage Resistance: +" +
+                               percentNumber(stats.collisionResist) + "%",
+                           12.0};
+        resist.alpha = 0.56;
+        lines.push_back(resist);
+    }
+
     // Bur alone. Its description says the petal debuffs armour and cannot say
     // by how much, and how much is the entire question a player has about it:
     // whether this one out-strips the tier standing in front of them.

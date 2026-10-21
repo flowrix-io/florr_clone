@@ -1006,6 +1006,9 @@ struct PetalStats {
     /// bar, itself included: 2.5% a tier. Zero for every other petal. See
     /// barReloadCut.
     double reloadCut = 0;
+    /// The share a disc takes off every body collision its flower suffers:
+    /// florr's 1 - 0.91^(tier+1), 9% at common. Zero for every other petal.
+    double collisionResist = 0;
     double shield = 0;
     double slowFactor = 1.0;
     double slowDurationMillis = 0;
@@ -1144,6 +1147,11 @@ inline bool petalConvertsOverheal(const PetalConfig& config) { return config.id 
 /// "seems to allow you to use your other petals even more", and its tooltip's
 /// "Reload: -X%". Its own and other golden leaves' too (user's rule).
 inline bool petalCutsReload(const PetalConfig& config) { return config.id == "golden_leaf"; }
+
+/// A disc blunts the collisions its flower takes -- florr's "Reduces damage
+/// taken from collisions with mobs and flowers". Worn, never out: florr gives
+/// it no body on the ring, as it gives the relic none.
+inline bool petalResistsCollisions(const PetalConfig& config) { return config.id == "disc"; }
 
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }

@@ -582,6 +582,10 @@ struct PlayerModifiers {
     /// The share of every heal past max health that becomes shield: the best
     /// worn amulet's figure. Zero without one.
     double overhealShield = 0.0;
+    /// What a body collision -- a mob's, a mob ring seat's, a hostile NPC's --
+    /// costs this flower, as a multiple of the hit: the best worn disc's
+    /// 1 - resist (discs do not stack). 1 without one.
+    double collisionDamageTakenScale = 1.0;
     /// A relic is worn: the damage this flower takes is split with the other
     /// wearers in its squad.
     bool sharesDamage = false;

@@ -666,6 +666,28 @@ TEST(mob_contact_is_paced_by_the_flowers_post_hit_window_alone) {
     CHECK_NEAR(a.health(player), 30.0, 1e-9);
 }
 
+TEST(a_disc_cuts_mob_contact_and_nothing_else) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
+    a.world.add<PlayerModifiers>(player);
+    a.world.get<PlayerModifiers>(player).collisionDamageTakenScale = 0.25;
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(player), 97.5, 1e-9);
+
+    // Any other hit -- a petal, a shot, a field -- lands whole.
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+    CHECK_NEAR(a.health(player), 87.5, 1e-9);
+
+    // And the flower's own body slam is no collision TAKEN.
+    a.world.add<ContactDamage>(player, ContactDamage{10.0, 0.0});
+    const double before = a.health(mob);
+    a.step(2000.0);
+    CHECK_NEAR(a.health(mob), before - 10.0, 1e-9);
+}
+
 TEST(contact_damage_needs_an_actual_overlap) {
     Arena a;
     const Entity player = a.player({1000, 1000});          // radius 20

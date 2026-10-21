@@ -1585,6 +1585,12 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             // second amulet is a spare, not a second share of the same heal.
             aggregate.modifiers.overhealShield =
                 std::max(aggregate.modifiers.overhealShield, stats.overhealShield);
+            // Disc, worn like the rubber and maximised like the amulet: it does
+            // not stack (user's rule), so a second disc is a spare and the
+            // best one alone sets the cut.
+            aggregate.modifiers.collisionDamageTakenScale =
+                std::min(aggregate.modifiers.collisionDamageTakenScale,
+                         1.0 - stats.collisionResist);
             // A relic is worn, never out: it has no body to break.
             if (petalSharesFlowerDamage(registry.petal(equipped.configIndex))) {
                 aggregate.modifiers.sharesDamage = true;

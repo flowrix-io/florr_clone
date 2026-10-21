@@ -1701,6 +1701,23 @@
         "count": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-14.25 -14.25 28.5 28.5\"><circle r=\"14\" fill=\"#bdc3c7\"/><circle r=\"11\" fill=\"#3498db\"/><path d=\"M11 0 0-4 0 4Z\" fill=\"#e74c3c\"/><path d=\"M-11 0 0-4 0 4Z\" fill=\"#ecf0f1\"/><circle r=\"2.8\" fill=\"#bdc3c7\"/></svg>"
     },
+    "disc": {
+        "name": "Disc",
+        "damage": 0,
+        "health": null,
+        "size": 1,
+        "speed": 0,
+        "range": 0,
+        "cooldown": 1,
+        "price": 40,
+        "visual_scale": 1.5,
+        "description": "Reduces damage taken from collisions with mobs.",
+        "color": "#111111",
+        "count": 0,
+        "equipFlags": "Disc",
+        "noPhysics": true,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-15 -15 30 30\"><path d=\"M-15 0a15 15 0 1 0 30 0a15 15 0 1 0-30 0ZM-12 0a12 12 0 1 0 24 0a12 12 0 1 0-24 0Z\" fill=\"#111111\" fill-rule=\"evenodd\"/></svg>"
+    },
     "sacrifice": {
         "name": "Sacrifice",
         "damage": 0,

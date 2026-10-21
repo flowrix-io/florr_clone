@@ -1186,6 +1186,15 @@ double knockbackTakenScale(const World& world, Entity e) {
                : 1.0;
 }
 
+/// What a body collision costs a body, as a multiple of the hit: a flower's
+/// worn discs, 1 for everything else.
+double collisionDamageTakenScale(const World& world, Entity e) {
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(e);
+    return modifiers != nullptr && modifiers->collisionDamageTakenScale >= 0.0
+               ? modifiers->collisionDamageTakenScale
+               : 1.0;
+}
+
 } // namespace
 
 void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, double strength) {
@@ -2279,6 +2288,12 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                  world.has<MobRingPetal>(victim))) {
                 swing *= source.shotDamageScale;
             }
+            // A disc's cut, on the one kind of hit it is for: a body colliding
+            // with the flower. florr's "mobs and flowers" -- but no flower's
+            // body hurts another here (see above), so a mob, a seat on its
+            // ring or a hostile NPC is every collision there is. A petal, a
+            // shot, a field or a shock goes past it whole.
+            if (mobTouchesPlayer) swing *= collisionDamageTakenScale(world, victim);
             DamageResult hit =
                 applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);
             // A swing of NOTHING is still a swing. canHit() has already vouched

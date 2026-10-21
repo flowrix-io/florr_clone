@@ -337,6 +337,7 @@ std::uint8_t parseEquipFlags(const std::string& text) {
     if (text == "Antennae") return EquipAntennae;
     if (text == "Test1") return EquipTest1;
     if (text == "Crown") return EquipCrown;
+    if (text == "Disc") return EquipDisc;
     // No flag is a perfectly good outcome for an ordinary petal.
     return EquipNone;
 }
@@ -1785,6 +1786,9 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     if (petalConvertsOverheal(c)) s.overhealShield = 0.05 * (rarityIndex(tier) + 1);
     // Golden leaf: florr's Reload -2.5% at common and 2.5% more a tier.
     if (petalCutsReload(c)) s.reloadCut = 0.025 * (rarityIndex(tier) + 1);
+    // Disc: florr's Collision Damage Resistance, 1 - 0.91^(tier+1) -- one more
+    // 0.91 of the hit kept back a tier, so no tier ever reaches immunity.
+    if (petalResistsCollisions(c)) s.collisionResist = 1.0 - std::pow(0.91, rarityIndex(tier) + 1);
     s.shield = c.burstShield * heal;
     // A slow's rarity is spent on landing it at all (stallPower), not on
     // making it deeper, so the factor and its duration are flat.

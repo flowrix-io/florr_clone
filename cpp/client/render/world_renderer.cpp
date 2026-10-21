@@ -154,6 +154,11 @@ void drawWornCrown(Canvas& canvas) {
                        static_cast<float>(crown.viewBoxHeight() * kWornCrownScale), 0.0f);
 }
 
+/// A worn disc turns the flower's own outline black: the petal's #111111, at
+/// the outline's own 3 units, and nothing added (user's choice). florr draws
+/// nothing for a worn disc -- its flower painter has no branch for one.
+constexpr std::uint32_t kWornDiscOutline = 0x111111u;
+
 // --- chat bubbles ----------------------------------------------------------
 //
 // The reference's geometry (rysteria_gardn Client/Render/RenderChat.cc and
@@ -2801,7 +2806,7 @@ void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint8_
     else if (faceFlags & FacePoisoned) baseColor = 0xCE76DBu;
     else if (faceFlags & FaceDandelioned) baseColor = ui::lighten(baseColor, 0.4);
 
-    ui::setFill(canvas, ui::shade(baseColor, 0.8));
+    ui::setFill(canvas, (equipFlags & EquipDisc) ? kWornDiscOutline : ui::shade(baseColor, 0.8));
     canvas.beginPath();
     canvas.arc(0, 0, 26.5f, 0, static_cast<float>(kTau));
     canvas.fill();
