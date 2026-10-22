@@ -664,6 +664,10 @@ struct MobConfig {
     /// dies (`undead_ms`): the mummy beetle's. Every other tier scales on a
     /// line through it -- see mobUndeadMillis. Zero for a mob that just dies.
     double undeadMillis = 0;
+    /// How long a COMMON one does (`undead_common_ms`), the line's other
+    /// point. Absent, an eighth of `undead_ms`: the line then meets zero one
+    /// tier below Common.
+    double undeadCommonMillis = 0;
     AmbushSpec ambush;
     DungeonSpec dungeon;
     LightningSpec lightning;
@@ -1179,11 +1183,11 @@ inline bool petalCutsReload(const PetalConfig& config) { return config.id == "go
 /// it no body on the ring, as it gives the relic none.
 inline bool petalResistsCollisions(const PetalConfig& config) { return config.id == "disc"; }
 
-/// How long a `rarity` mob of `config` stands Undead when struck down:
-/// `undead_ms` at Super, and a straight line through it and zero one tier
-/// below Common, so each tier stands an eighth of the Super figure longer
-/// than the one under it (user, 2026-10-21: "30 seconds at super, and linear
-/// scaling for rarities"). Zero for a mob that names none.
+/// How long a `rarity` mob of `config` stands Undead when struck down: a
+/// straight line through `undead_common_ms` at Common and `undead_ms` at
+/// Super, carried on past Super (user, 2026-10-22, the mummy beetle: "1
+/// second at common and 30 seconds at super. The scaling is linear"). Zero
+/// for a mob that names no `undead_ms`.
 double mobUndeadMillis(const MobConfig& config, Rarity rarity);
 
 /// A bandage turns its flower Undead on a killing blow instead of letting it

@@ -1063,6 +1063,11 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.deathSpawn = parseDeathSpawn(ctx, src, mobIds);
     m.remainsMillis = ctx.range(src, "remains_ms", 0.0, 0.0, kMaxDurationMillis);
     m.undeadMillis = ctx.range(src, "undead_ms", 0.0, 0.0, kMaxDurationMillis);
+    m.undeadCommonMillis =
+        ctx.range(src, "undead_common_ms", m.undeadMillis / 8.0, 0.0, kMaxDurationMillis);
+    if (src.contains("undead_common_ms") && !(m.undeadMillis > 0.0)) {
+        ctx.warn("undead_common_ms without undead_ms; the mob does not rise");
+    }
     m.ambush = parseAmbush(ctx, src, mobIds);
     m.dungeon = parseDungeon(ctx, src, mobIds);
     m.lightning = parseLightning(ctx, src);
@@ -1968,9 +1973,10 @@ bool loadContent(const std::string& dataDir, std::string& errorOut) {
 
 double mobUndeadMillis(const MobConfig& config, Rarity rarity) {
     if (!(config.undeadMillis > 0.0)) return 0.0;
-    const double rungs = static_cast<double>(static_cast<int>(rarity) + 1);
-    const double superRungs = static_cast<double>(static_cast<int>(Rarity::Super) + 1);
-    return config.undeadMillis * rungs / superRungs;
+    const double tier = static_cast<double>(static_cast<int>(rarity));
+    const double superTier = static_cast<double>(static_cast<int>(Rarity::Super));
+    const double rise = config.undeadMillis - config.undeadCommonMillis;
+    return std::max(0.0, config.undeadCommonMillis + rise * tier / superTier);
 }
 
 } // namespace flix
