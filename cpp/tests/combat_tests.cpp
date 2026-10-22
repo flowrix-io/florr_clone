@@ -1,11 +1,14 @@
 #include "test.h"
 
+#include "server/replication.h"
 #include "server/squads.h"
 #include "server/systems/combat.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
 #include "shared/game/spatial.h"
+#include "shared/game/terrain.h"
+#include "shared/net/protocol.h"
 
 #include <cmath>
 #include <string>
@@ -135,11 +138,27 @@ TEST(a_direct_player_hit_grants_the_typescript_fifty_millisecond_window) {
 
     CHECK(!arena.combat.applyDamage(arena.world, player, mob, 10.0, 1000.0).refused);
     CHECK_NEAR(arena.health(player), 90.0, 1e-9);
-    CHECK_NEAR(arena.world.get<Health>(player).invulnerableUntilMillis, 1050.0, 1e-9);
+    CHECK_NEAR(arena.world.get<Health>(player).hitCooldownUntilMillis, 1050.0, 1e-9);
     CHECK(arena.combat.applyDamage(arena.world, player, mob, 10.0, 1049.0).refused);
     CHECK_NEAR(arena.health(player), 90.0, 1e-9);
     CHECK(!arena.combat.applyDamage(arena.world, player, mob, 10.0, 1050.0).refused);
     CHECK_NEAR(arena.health(player), 80.0, 1e-9);
+}
+
+TEST(the_post_hit_window_is_not_replicated_as_invulnerability) {
+    Arena arena;
+    const Entity player = arena.player({0, 0});
+    const Entity mob = arena.mob({100, 0}, 100);
+
+    // A mob's bite refuses the next one for 50 ms, but the bar must not turn
+    // the spawn shield's yellow every time it lands.
+    CHECK(!arena.combat.applyDamage(arena.world, player, mob, 10.0, 1000.0).refused);
+    CHECK(arena.combat.applyDamage(arena.world, player, mob, 10.0, 1010.0).refused);
+    CHECK((computeEntityState(arena.world, player, 1010.0) & net::StateInvulnerable) == 0);
+
+    // Real invulnerability still shows.
+    arena.world.get<Health>(player).invulnerableUntilMillis = 5000.0;
+    CHECK((computeEntityState(arena.world, player, 1010.0) & net::StateInvulnerable) != 0);
 }
 
 TEST(a_sponge_queues_a_direct_hit_and_repays_it_after_invulnerability) {
@@ -654,7 +673,7 @@ TEST(mob_contact_is_paced_by_the_flowers_post_hit_window_alone) {
 
     a.step(0.0);
     CHECK_NEAR(a.health(player), 90.0, 1e-9);
-    CHECK_NEAR(a.world.get<Health>(player).invulnerableUntilMillis,
+    CHECK_NEAR(a.world.get<Health>(player).hitCooldownUntilMillis,
                kPostHitInvulnerabilityMillis, 1e-9);
 
     // 50 ms spans one 33 ms tick but not two, so resting contact costs a hit
@@ -2073,7 +2092,7 @@ TEST(a_flower_that_dodges_takes_nothing_but_still_spends_the_attack) {
     CHECK_NEAR(a.health(player), 100.0, 1e-9);
     // The window a landed hit buys, or mob contact would simply try again on
     // the next tick and the dodge would have cost the mob nothing.
-    CHECK_NEAR(a.world.get<Health>(player).invulnerableUntilMillis, 1050.0, 1e-9);
+    CHECK_NEAR(a.world.get<Health>(player).hitCooldownUntilMillis, 1050.0, 1e-9);
     // Root banks for blows that land; one that went wide spends no stack.
     CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 3);
 
@@ -2537,7 +2556,7 @@ TEST(armor_heavier_than_the_swing_absorbs_it_without_locking_the_mob) {
     CHECK_NEAR(a.health(mob), 100.0, 1e-9);
     // No post-hit window: a mob's is shared by everyone attacking it, so the
     // weakest petal in a ring must not be able to shield it from the rest.
-    CHECK_NEAR(a.world.get<Health>(mob).invulnerableUntilMillis, 0.0, 1e-12);
+    CHECK_NEAR(a.world.get<Health>(mob).hitCooldownUntilMillis, 0.0, 1e-12);
 
     const DamageResult hard = a.combat.applyDamage(a.world, mob, two, 80.0, 1000.0);
     CHECK_NEAR(hard.applied, 30.0, 1e-9);
@@ -2681,7 +2700,7 @@ TEST(a_root_stack_is_spent_even_when_it_swallows_the_blow_whole) {
     CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 0);
     // The flower still gets the post-hit window a shielded blow grants, which
     // is what stops one mob in contact draining the whole bank in a tick.
-    CHECK(a.world.get<Health>(player).invulnerableUntilMillis > 1000.0);
+    CHECK(a.world.get<Health>(player).hitCooldownUntilMillis > 1000.0);
 }
 
 TEST(a_drip_neither_spends_a_root_stack_nor_is_blunted_by_one) {
@@ -3144,6 +3163,65 @@ TEST(a_flower_bounces_off_a_gardn_mob_rather_than_walking_it_along) {
     CHECK_NEAR(a.world.get<Motion>(mob).velocity.x, -kGardnContactRecoil / 3.2, 1e-9);
 }
 
+TEST(a_mob_cannot_squish_a_flower_into_a_wall) {
+    // A mob meets walls as a point, so it walks right up to a wall with the
+    // flower it is chasing pinned in between. The flower's share of the
+    // overlap used to be written straight into its position: a super mob put
+    // it through a sewers rail in one tick, or so deep into a dirt bank that
+    // no face was in reach and it could not walk out. And once a wall held the
+    // flower, the mob's centre walked past it and the same push threw the
+    // flower out the far side of the mob. The flower is stepped through the
+    // walls now, and what the wall refuses of its share the mob takes back.
+    Terrain terrain;
+    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Wall);
+    const double face = 10.0 * kTileSize;   // the wall's west face
+
+    for (const bool anchored : {false, true}) {
+        Arena a;
+        a.combat.terrain = &terrain;
+        const Entity player = a.player({face - 20.0, 5000.0});   // resting on the face
+        a.world.get<Health>(player).invulnerableUntilMillis = 1e18;
+        const double mobRadius = 300.0;
+        const Entity mob = a.mob({face - 20.0 - (mobRadius + 20.0) + 1.0, 5000.0}, 1e9, 0.0,
+                                 mobRadius);
+        a.world.get<Body>(mob).mass = bodyMassForRadius(mobRadius);
+        a.world.add<ContactDamage>(mob, ContactDamage{5.0, kMobHitIntervalMillis});
+        if (anchored) {
+            MobAi ai;
+            ai.kind = AiKind::Stationary;
+            a.world.add<MobAi>(mob, ai);
+        }
+
+        int intoTheWall = 0;
+        int mobPastFlower = 0;
+        int mobMovedWhileAnchored = 0;
+        for (int tick = 0; tick < 90; ++tick) {
+            // A walking mob charges 10 units a tick into the flower; one that
+            // cannot walk was put down overlapping it and stays there.
+            if (!anchored) a.world.get<Transform>(mob).position.x += 10.0;
+            const Vec2 mobBefore = a.world.get<Transform>(mob).position;
+            a.step(1000.0 + tick * net::kTickMillis);
+            const Vec2 flower = a.world.get<Transform>(player).position;
+            const Vec2 mobAt = a.world.get<Transform>(mob).position;
+            if (flower.x > face - 20.0 + 1e-6 || terrain.blocked(flower, Realm::Overworld)) {
+                ++intoTheWall;
+            }
+            if (!(mobAt.x < flower.x)) ++mobPastFlower;
+            if (anchored && distance(mobAt, mobBefore) > 1e-9) ++mobMovedWhileAnchored;
+        }
+        CHECK_EQ(intoTheWall, 0);
+        CHECK_EQ(mobPastFlower, 0);
+        CHECK_EQ(mobMovedWhileAnchored, 0);
+        // The walking mob is held at the flower's skin: no deeper than the one
+        // tick's charge it has not been pushed back from yet.
+        if (!anchored) {
+            const double gap = a.world.get<Transform>(player).position.x -
+                               a.world.get<Transform>(mob).position.x;
+            CHECK(gap > mobRadius + 20.0 - 10.0 - 1e-6);
+        }
+    }
+}
+
 TEST(a_spinning_ring_is_decoration_and_bites_nobody) {
     const RingFixture& f = ringFixture();
     CHECK(f.ok);
@@ -3513,7 +3591,7 @@ TEST(a_cotton_that_catches_the_whole_hit_spares_the_flower_but_opens_its_window)
     CHECK_NEAR(a.world.get<Health>(player).flashUntilMillis, 0.0, 1e-12);
     // But the flower was hit, and is owed the window a hit buys -- or a mob
     // touching it would take the cotton apart on consecutive ticks.
-    CHECK_NEAR(a.world.get<Health>(player).invulnerableUntilMillis, 1050.0, 1e-9);
+    CHECK_NEAR(a.world.get<Health>(player).hitCooldownUntilMillis, 1050.0, 1e-9);
     CHECK(a.combat.applyDamage(a.world, player, mob, 10.0, 1049.0).refused);
     CHECK_NEAR(a.health(cotton), 10.0, 1e-9);
 }

@@ -28,6 +28,8 @@
 
 namespace flix {
 
+class ContentRegistry;
+
 /// Water costs a mob less than it costs a player.
 ///
 /// A player picks their route and can see the bank; a mob is steered by a
@@ -169,6 +171,15 @@ StepOutcome stepCollide(const Terrain& terrain, Realm realm, Vec2& position, Vec
 /// which is why they are written as failed `>` tests rather than `<=` ones.
 double sanitizeCollisionRadius(double radius);
 Vec2 sanitizeMovementVelocity(Vec2 velocity);
+
+/// Whether a shove leaves this mob where it stands.
+///
+/// gardn weighs a stationary mob at ten thousand times its mass, which at any
+/// shove a petal deals is "never". Here that is the mobs that cannot walk: a
+/// nest, a rock, a cactus, the target dummy. Nothing would ever walk one of
+/// them back, so a ring that nudged a nest would leave it wherever the fight
+/// ended, and in time inside a wall.
+bool anchoredAgainstKnockback(World& world, const ContentRegistry& registry, Entity e);
 
 // ---------------------------------------------------------------------------
 // MovementSystem

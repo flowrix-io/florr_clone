@@ -109,24 +109,6 @@ Vec2 takeKnockback(World& world, Entity e) {
     return impulse;
 }
 
-/// Whether a knockback leaves this mob where it stands.
-///
-/// gardn weighs a stationary mob at ten thousand times its mass, which at any
-/// shove a petal deals is "never". Here that is the mobs that cannot walk: a
-/// nest, a rock, a cactus, the target dummy. Nothing would ever walk one of
-/// them back, so a ring that nudged a nest would leave it wherever the fight
-/// ended, and in time inside a wall.
-bool anchoredAgainstKnockback(World& world, const ContentRegistry& registry, Entity e) {
-    if (const MobAi* ai = world.tryGet<MobAi>(e); ai != nullptr && ai->kind == AiKind::Stationary) {
-        return true;
-    }
-    const MobType* type = world.tryGet<MobType>(e);
-    if (type == nullptr || type->configIndex >= registry.mobCount()) return false;
-    // Zero, not "not positive": a moth's speed is written negative and it
-    // flies.
-    return registry.mob(type->configIndex).speed == 0.0;
-}
-
 /// The velocity to store after a step.
 ///
 /// On contact, velocity is rebuilt from what the body actually achieved. That
@@ -170,6 +152,21 @@ void softLooseContact(const Terrain& terrain, Realm realm, Vec2& slab, double sl
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// Shared with combat
+// ---------------------------------------------------------------------------
+
+bool anchoredAgainstKnockback(World& world, const ContentRegistry& registry, Entity e) {
+    if (const MobAi* ai = world.tryGet<MobAi>(e); ai != nullptr && ai->kind == AiKind::Stationary) {
+        return true;
+    }
+    const MobType* type = world.tryGet<MobType>(e);
+    if (type == nullptr || type->configIndex >= registry.mobCount()) return false;
+    // Zero, not "not positive": a moth's speed is written negative and it
+    // flies.
+    return registry.mob(type->configIndex).speed == 0.0;
+}
 
 // ---------------------------------------------------------------------------
 // Sanitisers and the step

@@ -6,6 +6,7 @@
 #include <limits>
 
 #include "server/loot_eligibility.h"
+#include "server/systems/movement.h"
 #include "shared/game/npc.h"
 
 namespace flix {
@@ -498,7 +499,7 @@ bool CombatSystem::canHit(const World& world, Entity victim, Entity source, doub
     // A body already at zero is a corpse this tick has not reaped yet. Hitting
     // it again would mark it Dead a second time and pay its bounty twice.
     if (health->current <= 0.0) return false;
-    if (nowMillis < health->invulnerableUntilMillis) return false;
+    if (health->shielded(nowMillis)) return false;
     // Kept out of every broadphase already; this is for whatever reaches a
     // victim some other way.
     if (world.has<Intangible>(victim)) return false;
@@ -751,8 +752,8 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         // have started.
         if (directPlayerHit) {
             Health& health = world.get<Health>(victim);
-            health.invulnerableUntilMillis = std::max(health.invulnerableUntilMillis,
-                                                      nowMillis + kPostHitInvulnerabilityMillis);
+            health.hitCooldownUntilMillis = std::max(health.hitCooldownUntilMillis,
+                                                     nowMillis + kPostHitInvulnerabilityMillis);
         }
         return result;
     }
@@ -767,8 +768,8 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
             effect.source = source;
             world.ensure<SpongeDamageState>(victim).effects.push_back(effect);
             Health& health = world.get<Health>(victim);
-            health.invulnerableUntilMillis =
-                std::max(health.invulnerableUntilMillis,
+            health.hitCooldownUntilMillis =
+                std::max(health.hitCooldownUntilMillis,
                          nowMillis + kPostHitInvulnerabilityMillis);
             return result;
         }
@@ -789,8 +790,8 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
             // cotton breaking relocates rows.
             if (directPlayerHit) {
                 Health& health = world.get<Health>(victim);
-                health.invulnerableUntilMillis =
-                    std::max(health.invulnerableUntilMillis,
+                health.hitCooldownUntilMillis =
+                    std::max(health.hitCooldownUntilMillis,
                              nowMillis + kPostHitInvulnerabilityMillis);
             }
             return result;
@@ -821,8 +822,8 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     }
     result.applied = applied;
     if (directPlayerHit) {
-        health.invulnerableUntilMillis =
-            std::max(health.invulnerableUntilMillis,
+        health.hitCooldownUntilMillis =
+            std::max(health.hitCooldownUntilMillis,
                      nowMillis + kPostHitInvulnerabilityMillis);
     }
 
@@ -1168,9 +1169,9 @@ bool CombatSystem::trySecondChance(World& world, Entity victim, double nowMillis
 
     Health& health = world.get<Health>(victim);
     health.current = 1.0;
-    // The talent's window replaces the 50 ms post-hit one rather than adding
-    // to it; every tier is longer, so taking the later of the two is the same
-    // rule stated without a special case.
+    // The talent's window is real invulnerability -- the bar shows it -- and
+    // runs alongside the 50 ms post-hit one (hitCooldownUntilMillis) rather
+    // than adding to it; every tier is longer, so the talent's is what holds.
     health.invulnerableUntilMillis = std::max(health.invulnerableUntilMillis,
                                               nowMillis + effect[0]);
     return true;
@@ -1292,10 +1293,24 @@ double massOf(World& world, Entity e) { return bodyMass(world.tryGet<Body>(e)); 
 /// the flower, so that jump shook the whole screen on every touch, and it
 /// shoved a flower brushing a mob exactly as hard as one running into it.
 ///
+/// The flower's share is stepped THROUGH THE WALLS, containment guard
+/// included, like any other flower move, and whatever of it a wall refuses
+/// the mob takes back, if it walks at all. A mob meets walls as a point, so it
+/// walks right up to a wall with the flower in between. Written straight into
+/// the position, the share was a jump of a hundred units or more there --
+/// through a sewers rail in one tick, or so deep into a dirt bank that the
+/// push-out found no face in reach and the flower could not walk out -- and
+/// once the mob's centre had passed the pinned flower, the same push threw it
+/// out the far side of the mob. Now a flower with its back to a wall holds the
+/// mob off at its skin. In the open nothing is refused and the mob is not
+/// moved, exactly as before. No terrain (a focused simulation) means no walls,
+/// and the share is a plain displacement.
+///
 /// `offset` runs from the mob to the flower. Lands before the
 /// damage/invulnerability branch, so an invulnerable player still bounces. A
 /// plain field write, safe inside the candidate loop.
-void bounceOffMob(World& world, Entity player, Entity mob, Vec2 offset, double overlap) {
+void bounceOffMob(World& world, const Terrain* terrain, Entity player, Entity mob,
+                  bool mobGivesWay, Vec2 offset, double overlap) {
     Transform* transform = world.tryGet<Transform>(player);
     if (transform == nullptr) return;
     const Vec2 direction = offset.normalized();
@@ -1304,7 +1319,25 @@ void bounceOffMob(World& world, Entity player, Entity mob, Vec2 offset, double o
     const double mobMass = massOf(world, mob);
     const double flowerMass = massOf(world, player);
     const double mobShare = mobMass / (flowerMass + mobMass);
-    if (overlap > 0.0) transform->position += direction * (overlap * mobShare);
+    if (overlap > 0.0) {
+        const double share = overlap * mobShare;
+        if (terrain == nullptr) {
+            transform->position += direction * share;
+        } else {
+            const Vec2 before = transform->position;
+            const Body* body = world.tryGet<Body>(player);
+            stepCollide(*terrain, transform->realm, transform->position, direction * share,
+                        body != nullptr ? body->radius : kPlayerBaseRadius, 1.0, true, true);
+            const Vec2 moved = transform->position - before;
+            const double refused =
+                share - std::max(0.0, moved.x * direction.x + moved.y * direction.y);
+            Transform* mobTransform = mobGivesWay ? world.tryGet<Transform>(mob) : nullptr;
+            if (refused > 0.0 && mobTransform != nullptr) {
+                stepCollide(*terrain, mobTransform->realm, mobTransform->position,
+                            direction * -refused, kMobWallRadius, 1.0, true, true);
+            }
+        }
+    }
 
     Motion* motion = world.tryGet<Motion>(player);
     if (motion == nullptr) return;
@@ -1574,8 +1607,8 @@ bool CombatSystem::rollDodge(World& world, Entity victim, double nowMillis) {
     // window is shared by every petal and every player attacking it.
     if (world.has<PlayerTag>(victim)) {
         Health& health = world.get<Health>(victim);
-        health.invulnerableUntilMillis =
-            std::max(health.invulnerableUntilMillis, nowMillis + kPostHitInvulnerabilityMillis);
+        health.hitCooldownUntilMillis =
+            std::max(health.hitCooldownUntilMillis, nowMillis + kPostHitInvulnerabilityMillis);
     }
     return true;
 }
@@ -1798,7 +1831,7 @@ void CombatSystem::tickSpongeDamage(World& world, double nowMillis, double dt) {
     deferred.each([&](Entity player, SpongeDamageState& state, Health& health) {
         // TypeScript pauses the repayment while any invulnerability is live;
         // it does not silently consume that portion of the stored hit.
-        if (nowMillis < health.invulnerableUntilMillis) return;
+        if (health.shielded(nowMillis)) return;
 
         std::size_t kept = 0;
         for (SpongeDamageEffect& effect : state.effects) {
@@ -2036,6 +2069,7 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
         source.isNpcBody = world.has<NpcTag>(e);
         source.isPet = world.has<Pet>(e);
         source.isPlayerBody = world.has<PlayerTag>(e);
+        source.givesWay = source.isMobBody && !anchoredAgainstKnockback(world, content, e);
         // A seed of a mob's ring is a piece of that mob's body, so it hits
         // like one: the same bounce off the flower (bounceOffMob), and the
         // one-contact-per-tick rule shared with the hull, so an animal wearing
@@ -2289,7 +2323,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 // -- a ladybug shoved across the map by a flower leaning on it.
                 if (firstBump) {
                     mobContactedPlayers_.push_back(victim);
-                    bounceOffMob(world, victim, source.attacker, offset,
+                    bounceOffMob(world, terrain, victim, source.attacker, source.givesWay, offset,
                                  source.radius + body->radius - offset.length());
                 }
                 // Every mob touching the flower recoils, the one-bump rule

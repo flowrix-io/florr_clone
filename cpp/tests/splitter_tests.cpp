@@ -538,6 +538,7 @@ TEST(losing_the_parked_half_takes_its_pets_with_it) {
     Health& health = world.get<Health>(parked);
     health.current = health.max * 1e-4;
     health.invulnerableUntilMillis = 0.0;
+    health.hitCooldownUntilMillis = 0.0;
     const Vec2 at = world.get<Transform>(parked).position;
     alice.sendChat("/admin spawn soldier_ant mythic " + std::to_string(static_cast<int>(at.x)) +
                    " " + std::to_string(static_cast<int>(at.y)) + " 1");

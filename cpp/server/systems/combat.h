@@ -35,6 +35,8 @@
 
 namespace flix {
 
+class Terrain;
+
 /// How long a hit keeps the client's white flash lit. Short: it reads as an
 /// impact rather than a status, and it is refreshed by every landed hit, so a
 /// sustained beating stays lit without anything having to track that.
@@ -189,6 +191,13 @@ public:
     /// squadded, which is the ordinary case; the loot system reads the same
     /// table so the two payouts cannot disagree about who earned the kill.
     const SquadEntityIndex* squads = nullptr;
+
+    /// The walls a mob's bump shoves a flower against. Null in a focused
+    /// simulation with no map, where the shove is a plain displacement; the
+    /// runtime MUST point it at the server's terrain, or a big mob walking
+    /// into a flower that stands against a wall pushes it into the wall --
+    /// through a thin one, and into a thick one deep enough to be stuck there.
+    const Terrain* terrain = nullptr;
 
     /// One complete combat tick. Kept for focused simulations; GameServer uses
     /// the three phase methods below so flower/petal contact can happen before
@@ -430,6 +439,11 @@ private:
         /// well as the flower (see kGardnContactRecoil). Resolved from the
         /// config in the gather.
         bool gardnRecoil = false;
+        /// A mob body that walks, so a flower it bumps can push it back:
+        /// whatever of the flower's share of the overlap a wall refuses, this
+        /// body takes (bounceOffMob). False for a nest or a cactus, which
+        /// nothing moves, and for an NPC, which never gives way.
+        bool givesWay = false;
         /// A glitch-family mob body: its touch marks the flower (see
         /// markGlitched). Resolved from the config in the gather, where the
         /// registry is at hand.

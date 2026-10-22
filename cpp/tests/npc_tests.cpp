@@ -757,6 +757,7 @@ TEST(a_hostile_npc_bites_the_flower_touching_it_and_breaks_the_petals_striking_i
         const double max = world.get<Health>(player).max;
         world.get<Health>(player).current = max;
         world.get<Health>(player).invulnerableUntilMillis = 0.0;
+        world.get<Health>(player).hitCooldownUntilMillis = 0.0;
         const Vec2 at = world.get<Transform>(npc).position;
         const double reach = world.get<Body>(npc).radius + world.get<Body>(player).radius;
         world.get<Transform>(player).position = at - Vec2{reach - 3.0, 0.0};

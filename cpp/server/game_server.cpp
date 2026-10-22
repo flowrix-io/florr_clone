@@ -531,6 +531,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // walls it is not standing among, so pads simply do not take bots.
     movement_->takesTeleporters = [this](Entity entity) { return botForEntity(entity) == nullptr; };
     loot_->terrain = terrain_.get();
+    combat_->terrain = terrain_.get();
 
     // A revived flower has to be un-announced to its own client, and only the
     // connection layer can do that.

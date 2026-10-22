@@ -125,6 +125,17 @@ struct Health {
     /// Damage is refused entirely before this time -- respawn protection.
     /// Infinity is the admin console's `god`, which never runs out.
     double invulnerableUntilMillis = 0;
+    /// The brief window every landed hit buys a flower
+    /// (kPostHitInvulnerabilityMillis), which is all that paces mob contact.
+    /// Refuses damage exactly as invulnerableUntilMillis does, but it is not
+    /// replicated as StateInvulnerable: a health bar that turned the spawn
+    /// shield's yellow on every bite would flash for the whole fight.
+    double hitCooldownUntilMillis = 0;
+
+    /// Whether either window is refusing damage at `nowMillis`.
+    bool shielded(double nowMillis) const {
+        return nowMillis < invulnerableUntilMillis || nowMillis < hitCooldownUntilMillis;
+    }
 
     double fraction() const { return max > 0 ? clamp(current / max, 0.0, 1.0) : 0.0; }
     bool alive() const { return current > 0; }
