@@ -31,7 +31,7 @@ inline constexpr std::array<const char*, kRarityCount> kRarityNames = {
 /// Display names, used on drop labels and inventory tooltips.
 inline constexpr std::array<const char*, kRarityCount> kRarityLabels = {
     "Common", "Uncommon", "Rare", "Epic", "Legendary",
-    "Mythic", "Ultra", "Super", "Unique", "Apex",
+    "Mythic", "Ultra", "Super", "Eternal", "Apex",
     "Universal",
 };
 
