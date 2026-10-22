@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 60;
+inline constexpr std::uint16_t kProtocolVersion = 61;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -644,7 +644,7 @@ enum class EntityKind : std::uint8_t {
 
 /// Immutable per-entity facts, sent once when an entity first enters view.
 ///
-/// A Player record additionally carries u8 face flags, u8 equipment flags,
+/// A Player record additionally carries u8 face flags, u16 equipment flags,
 /// u32 render flags, u16 level, u8 best-loadout rarity, u32 arena score
 /// (zero outside the PVP ring, where nothing keeps one), u8 shield in 255ths
 /// of max health and the str id of the custom skin that flower is wearing,
@@ -773,7 +773,7 @@ enum UpdateFields : std::uint8_t {
     FieldHealth   = 1 << 2,
     FieldState    = 1 << 3,   ///< u8 EntityState bits
     FieldSize     = 1 << 4,   ///< f32 radius; changes only on level-up or growth
-    /// u8 face flags, u8 equipment flags, u32 render/skin flags, u16 level,
+    /// u8 face flags, u16 equipment flags, u32 render/skin flags, u16 level,
     /// u8 best loadout rarity, u32 arena score, u8 shield (255ths of MAX
     /// health; the white pill rides the health bar, so that is the scale it
     /// has to be measured in), str equipped custom-skin id ("" for none).

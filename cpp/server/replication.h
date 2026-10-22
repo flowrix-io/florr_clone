@@ -63,7 +63,7 @@ public:
         double radius = -1;
         std::uint8_t state = 0xFF;    ///< 0xFF is not a valid state, forcing a first send
         std::uint8_t faceFlags = 0xFF;
-        std::uint8_t equipFlags = 0xFF;
+        std::uint16_t equipFlags = 0xFFFF;
         std::uint32_t renderFlags = 0xFFFFFFFFu;
         std::uint16_t level = 0;      ///< 0 is not a valid level, forcing a first send
         std::uint8_t bestRarity = 0xFF;
@@ -377,7 +377,7 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis);
 /// TypeScript renderer they were ported from drew them.
 struct PlayerVisualState {
     std::uint8_t faceFlags = FaceNone;
-    std::uint8_t equipFlags = EquipNone;
+    std::uint16_t equipFlags = EquipNone;
     std::uint32_t renderFlags = PlayerRenderNone;
     /// The plate under every flower reads its own level and tints itself with
     /// the best rarity anywhere in that flower's loadout, so both belong to

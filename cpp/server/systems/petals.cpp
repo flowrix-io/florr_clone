@@ -1470,7 +1470,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     // Every living flower regenerates one health per second even with an empty
     // loadout. Petal healing is added below and talent-scaled separately.
     aggregate.modifiers.passiveHealPerSecond = 1.0;
-    std::uint8_t equipFlags = EquipNone;
+    std::uint16_t equipFlags = EquipNone;
     // Whether the ring is physically pulled in, by updateRing's rule rather
     // than runActions': with both keys held the ring LUNGES, so a flower doing
     // that is not blocking. This is rysteria's `kDefending && !kAttacking`.
@@ -1591,6 +1591,13 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             aggregate.modifiers.collisionDamageTakenScale =
                 std::min(aggregate.modifiers.collisionDamageTakenScale,
                          1.0 - stats.collisionResist);
+            // Bandage, worn and maximised like the disc: the longest Undead
+            // alone counts, and a second bandage is a spare.
+            if (stats.undeadMillis > aggregate.modifiers.undeadMillis) {
+                aggregate.modifiers.undeadMillis = stats.undeadMillis;
+                aggregate.modifiers.unrevivableMillis = stats.unrevivableMillis;
+                aggregate.modifiers.undeadBodyDamageScale = 1.0 - stats.undeadBodyDamageCut;
+            }
             // A relic is worn, never out: it has no body to break.
             if (petalSharesFlowerDamage(registry.petal(equipped.configIndex))) {
                 aggregate.modifiers.sharesDamage = true;
@@ -1678,6 +1685,9 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             const double fraction = health->max > 0.0 ? health->current / health->max : 1.0;
             health->max = newMax;
             health->current = std::round(newMax * clamp(fraction, 0.0, 1.0));
+            // An Undead flower holds at 1 HP, which a shrinking pool would
+            // otherwise round down to the corpse it is not yet.
+            if (health->current < 1.0 && world.has<Undead>(player)) health->current = 1.0;
         }
     }
     if (ContactDamage* contact = world.tryGet<ContactDamage>(player)) {
@@ -2994,6 +3004,10 @@ bool PetalSystem::revivePlayerNear(World& world, Entity reviver, Realm realm, Ve
     for (const Entity other : playerList_) {
         if (other == reviver || !world.isAlive(other)) continue;
         if (!playerIsDown(world, other)) continue;
+        // A flower its bandage carried through Undead stays down a while.
+        if (const Unrevivable* lock = world.tryGet<Unrevivable>(other)) {
+            if (lock->active(nowMillis)) continue;
+        }
         const Transform* transform = world.tryGet<Transform>(other);
         if (transform == nullptr) continue;
         // A corpse at the same numbers on another map is not within reach of
@@ -3604,6 +3618,11 @@ Entity PetalSystem::hatchPetBody(World& world, const ContentRegistry& registry, 
     if (mob.evasion > 0.0) world.add<Evasion>(pet, Evasion{mob.evasion});
     world.add<Faction>(pet, faction);
     world.add<MobType>(pet, MobType{mobIndex, rarity, sizeJitter});
+    // A pet of an undead kind rises from its own killing blow too: florr's
+    // pharaoh crown summons Undead beetles to fight at your side.
+    if (const double undead = mobUndeadMillis(config, rarity); undead > 0.0) {
+        world.add<RisesUndead>(pet, RisesUndead{undead});
+    }
 
     MobAi ai;
     // Whatever the mob is in the wild, at this tier. The reference is

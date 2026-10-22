@@ -3704,6 +3704,29 @@
                  "width":0,
                  "x":6912,
                  "y":11648
+                }, 
+                {
+                 "height":0,
+                 "id":25,
+                 "name":"",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"id",
+                         "type":"string",
+                         "value":"pyramid_portal_desert"
+                        }, 
+                        {
+                         "name":"to",
+                         "type":"string",
+                         "value":"pyramid_portal"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":900,
+                 "y":1750
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -3789,7 +3812,7 @@
          "y":0
         }],
  "nextlayerid":9,
- "nextobjectid":25,
+ "nextobjectid":26,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",

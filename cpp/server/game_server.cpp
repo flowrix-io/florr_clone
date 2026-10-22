@@ -964,6 +964,16 @@ void GameServer::runSystems(double nowMillis, double dt) {
     markTickPhase("combat");
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,
                    net::kTickSeconds, commands_);
+    // What this tick's dead leave behind -- a tomb's mummy, its opened shell
+    // -- read while combat's corpses are still in the world.
+    {
+        std::vector<Entity> deadMobs;
+        for (const CombatSystem::DeathRecord& death : combat_->deaths()) {
+            if (!death.wasPlayer) deadMobs.push_back(death.entity);
+        }
+        spawning_->answerDeaths(world_, *terrain_, content(), deadMobs, rng_, nowMillis,
+                                net::kTickSeconds, commands_);
+    }
     markTickPhase("spawning");
     // After combat, so a dungeon cleared this tick drops its nest this tick,
     // and before loot, so the nest's drops are rolled in the same pass.

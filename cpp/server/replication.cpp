@@ -45,6 +45,8 @@ double replicatedRadius(World& world, Entity e) {
     if (const Body* body = world.tryGet<Body>(e)) return body->radius;
     // A sacrifice's star, which is twice the mob it summons.
     if (const SacrificeRitual* ritual = world.tryGet<SacrificeRitual>(e)) return ritual->radius;
+    // An opened tomb, at the size the tomb was drawn.
+    if (const MobRemains* remains = world.tryGet<MobRemains>(e)) return remains->radius;
     if (const GroundEffect* effect = world.tryGet<GroundEffect>(e)) {
         if (effect->kind == GroundEffectKind::Web && effect->radius > 0.0) return effect->radius;
     }
@@ -161,6 +163,8 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
         else if (input->current.attacking()) out.faceFlags |= FaceAttacking;
     }
     if (world.has<Dead>(e)) out.faceFlags |= FaceDeadEyes;
+    // A bandage's Undead, which everyone sees: the flower is wrapped in it.
+    if (world.has<Undead>(e)) out.faceFlags |= FaceUndead;
     if (const PlayerProgress* progress = world.tryGet<PlayerProgress>(e)) {
         out.level = static_cast<std::uint16_t>(std::max(1, progress->level));
     }
@@ -494,7 +498,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             computePlayerVisuals(world, candidate.entity, frame.nowMillis);
         if (info.kind == net::EntityKind::Player) {
             out.u8(visuals.faceFlags);
-            out.u8(visuals.equipFlags);
+            out.u16(visuals.equipFlags);
             out.u32(visuals.renderFlags);
             out.u16(visuals.level);
             out.u8(static_cast<std::uint8_t>(visuals.bestRarity));
@@ -662,7 +666,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         }
         if (mask & net::FieldPlayerVisuals) {
             out.u8(visuals.faceFlags);
-            out.u8(visuals.equipFlags);
+            out.u16(visuals.equipFlags);
             out.u32(visuals.renderFlags);
             out.u16(visuals.level);
             out.u8(static_cast<std::uint8_t>(visuals.bestRarity));

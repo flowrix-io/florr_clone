@@ -80,6 +80,7 @@ const char* const kPetalsJson = R"JSON({
   "rubber":   {"name":"Rubber","damage":1,"health":30,"size":1.2,"cooldown":2500,"count":1,"color":"#EEEEEE"},
   "amulet":   {"name":"Amulet","damage":0,"health":10,"size":1,"cooldown":2000,"count":1,"defendOnly":true,"color":"#FF94C9"},
   "disc":     {"name":"Disc","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"equipFlags":"Disc","noPhysics":true,"color":"#111111"},
+  "bandage":  {"name":"Bandage","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"noPhysics":true,"color":"#E5DAA1"},
   "golden_leaf":{"name":"Golden Leaf","damage":1,"health":100,"size":1.2,"cooldown":200,"count":1,"color":"#EBEB34"},
   "cursor":   {"name":"Cursor","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"color":"#EEEEEE"},
   "ram":      {"name":"RAM","damage":10,"health":2,"size":1,"cooldown":3000,"count":1,"color":"#3498DB"},
@@ -4864,6 +4865,36 @@ TEST(a_disc_resists_collisions_by_florrs_curve_and_does_not_stack) {
     // it as the ring drawn around this one.
     CHECK(rig.petals(0).empty());
     CHECK(rig.world.get<PlayerVisuals>(rig.player).equipFlags & EquipDisc);
+}
+
+TEST(a_bandage_carries_florrs_undead_figures_and_does_not_stack) {
+    if (!contentLoaded()) return;
+    // florr's tooltip: Undead 1.5 s x 1.4^tier, Unrevivable 30 s, Body
+    // Damage -75%, the last two flat.
+    const PetalStats mythic = fixture().registry.petalStats(petalId("bandage"), Rarity::Mythic);
+    CHECK_NEAR(mythic.undeadMillis, 1500.0 * std::pow(1.4, 5), 1e-6);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("bandage"), Rarity::Ultra).undeadMillis,
+               1500.0 * std::pow(1.4, 6), 1e-6);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("bandage"), Rarity::Common).undeadMillis,
+               1500.0, 1e-9);
+    CHECK_NEAR(mythic.unrevivableMillis, 30000.0, 1e-9);
+    CHECK_NEAR(mythic.undeadBodyDamageCut, 0.75, 1e-12);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("basic"), Rarity::Ultra).undeadMillis, 0.0,
+               1e-12);
+
+    Rig rig;
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().undeadMillis, 0.0, 1e-12);
+    rig.equip(0, "bandage", Rarity::Common);
+    rig.equip(1, "bandage", Rarity::Mythic);
+    rig.settleEquips();
+    // The better one alone: the common is a spare.
+    CHECK_NEAR(rig.modifiers().undeadMillis, 1500.0 * std::pow(1.4, 5), 1e-6);
+    CHECK_NEAR(rig.modifiers().unrevivableMillis, 30000.0, 1e-9);
+    CHECK_NEAR(rig.modifiers().undeadBodyDamageScale, 0.25, 1e-12);
+    // Worn, never out: florr gives it no body on the ring.
+    CHECK(rig.petals(0).empty());
+    CHECK(rig.petals(1).empty());
 }
 
 TEST(without_an_amulet_overheal_is_simply_lost) {

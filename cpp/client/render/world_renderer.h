@@ -18,6 +18,7 @@
 
 #include "client/camera.h"
 #include "client/chat_bubbles.h"
+#include "client/render/darkness.h"
 #include "client/render/sprites.h"
 #include "client/world_view.h"
 #include "shared/core/types.h"
@@ -159,6 +160,11 @@ struct DyingMob {
 class WorldRenderer {
 public:
     void setContent(const ContentRegistry* content) { content_ = content; }
+    /// A dark map's lights (client/render/darkness.h), or null on a lit map.
+    /// While set, nothing over the ground is drawn outside their outer discs:
+    /// florr's first dark stage. Held, not copied -- the caller keeps the
+    /// vector alive across draw().
+    void setLightClip(const std::vector<LightDisc>* discs) { lightClip_ = discs; }
     void setSprites(const SpriteCache* sprites) { sprites_ = sprites; }
 
     /// Turns this frame's server events into effects. Drains `view.events()`.
@@ -227,7 +233,7 @@ public:
     /// no skin, wearing `equipFlags`. `mouth` is the face's curve control --
     /// 15 smiles, 5 frowns. Public for the death card's flower and the HUD
     /// avatar of a dead flower, which are the corpse drawn somewhere else.
-    void drawDeadFlower(Canvas&, std::uint8_t equipFlags, double mouth,
+    void drawDeadFlower(Canvas&, std::uint16_t equipFlags, double mouth,
                         double timeSeconds) const;
 
     /// What every flower on screen has been heard saying, borrowed from
@@ -521,12 +527,15 @@ private:
     /// The spinning saw a worn cutter puts on the flower, in the caller's
     /// radius-25 art space. Drawn before the body so it reads as carried
     /// behind, and never as an orbiting petal -- a cutter takes no ring place.
-    void drawCutterBlade(Canvas&, std::uint8_t equipFlags, double timeSeconds) const;
+    void drawCutterBlade(Canvas&, std::uint16_t equipFlags, double timeSeconds) const;
+    /// An Undead flower's bandage, wrapped over the body in its radius-25 art
+    /// space: the petal's own picture, upright, at florr's worn-centre scale.
+    void drawUndeadWrap(Canvas&, double timeSeconds) const;
 
     /// The face, at an explicit mouth curve. A corpse is the one caller that
     /// needs a mouth the live attack/defend bits would never produce, and the
     /// digger the one that needs a body that is not flower yellow.
-    void drawFace(Canvas&, std::uint8_t faceFlags, std::uint8_t equipFlags, double eyeX,
+    void drawFace(Canvas&, std::uint8_t faceFlags, std::uint16_t equipFlags, double eyeX,
                   double eyeY, double mouth, double timeSeconds,
                   std::uint32_t bodyColor = 0xFFE763u) const;
 
@@ -578,6 +587,7 @@ private:
     const CustomSkin* wornSkin(const RemoteEntity&) const;
 
     const ContentRegistry* content_ = nullptr;
+    const std::vector<LightDisc>* lightClip_ = nullptr;
     const SpriteCache* sprites_ = nullptr;
     const std::vector<CustomSkin>* skinCatalog_ = nullptr;
     const ChatBubbles* chatBubbles_ = nullptr;

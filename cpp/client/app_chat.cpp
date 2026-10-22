@@ -702,12 +702,12 @@ constexpr NamedFlag kFaceFlagNames[] = {
     {"Poisoned", FacePoisoned},       {"Dandelioned", FaceDandelioned},
     {"DeadEyes", FaceDeadEyes},       {"SquareEyes", FaceSquareEyes},
     {"Attacking", FaceAttacking},     {"Defending", FaceDefending},
-    {"HasCorruption", FaceHasCorruption},
+    {"HasCorruption", FaceHasCorruption}, {"Undead", FaceUndead},
 };
 constexpr NamedFlag kEquipFlagNames[] = {
     {"Cutter", EquipCutter},     {"ThirdEye", EquipThirdEye}, {"Observer", EquipObserver},
     {"Antennae", EquipAntennae}, {"Test1", EquipTest1},  {"Crown", EquipCrown},
-    {"Disc", EquipDisc},
+    {"Disc", EquipDisc},         {"Bandage", EquipBandage},
 };
 constexpr NamedFlag kRenderFlagNames[] = {
     {"Pumpkin", PlayerRenderPumpkin},
@@ -1081,7 +1081,7 @@ bool App::handleClientCommand(const std::string& message) {
             return true;
         }
         override.overridesEquip = true;
-        override.equipFlags = static_cast<std::uint8_t>(value);
+        override.equipFlags = static_cast<std::uint16_t>(value);
         net_.addSystemMessage("Set local equipFlags to " + std::to_string(value));
     } else if (family == "render") {
         if (!foldFlags(kRenderFlagNames, names, value, unknown)) {

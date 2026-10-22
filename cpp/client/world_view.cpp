@@ -219,7 +219,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         double healthFraction;
         std::uint8_t state;
         std::uint8_t faceFlags;
-        std::uint8_t equipFlags;
+        std::uint16_t equipFlags;
         std::uint32_t renderFlags;
         std::uint16_t level;
         Rarity bestRarity;
@@ -251,7 +251,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         s.bestRarity = Rarity::Common;
         if (s.kind == net::EntityKind::Player) {
             s.faceFlags = reader.u8();
-            s.equipFlags = reader.u8();
+            s.equipFlags = reader.u16();
             s.renderFlags = reader.u32();
             s.level = reader.u16();
             s.bestRarity = clampRarity(reader.u8());
@@ -279,7 +279,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint8_t state;
         double radius;
         std::uint8_t faceFlags;
-        std::uint8_t equipFlags;
+        std::uint16_t equipFlags;
         std::uint32_t renderFlags;
         std::uint16_t level;
         Rarity bestRarity;
@@ -309,7 +309,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         if (u.mask & net::FieldSize) u.radius = reader.f32();
         if (u.mask & net::FieldPlayerVisuals) {
             u.faceFlags = reader.u8();
-            u.equipFlags = reader.u8();
+            u.equipFlags = reader.u16();
             u.renderFlags = reader.u32();
             u.level = reader.u16();
             u.bestRarity = clampRarity(reader.u8());

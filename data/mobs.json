@@ -2421,5 +2421,111 @@
                 }
             ]
         }
+    },
+    "mummy_beetle": {
+        "name": "Mummy Beetle",
+        "health": 100,
+        "damage": 30,
+        "size": 1.3333,
+        "visual_scale": 0.9339,
+        "visualOffsetX": -0.0244,
+        "speed": 0.52,
+        "chase_speed": 0.95,
+        "cooldown": 2000,
+        "xp": {
+            "common": 1,
+            "uncommon": 3,
+            "rare": 30,
+            "epic": 270,
+            "legendary": 1400,
+            "mythic": 32000,
+            "ultra": 150000,
+            "super": 1200000,
+            "unique": 6800000
+        },
+        "description": "This one seems like it shouldn't be alive...",
+        "color": "#83b05d",
+        "image": "$beetle_mummy",
+        "ai_type": "hostile",
+        "gardn_ai": true,
+        "range": 300,
+        "groups": {
+            "pyramid": 1
+        },
+        "noEggDrop": true,
+        "undead_ms": 30000
+    },
+    "pharaoh_beetle": {
+        "name": "Pharaoh Beetle",
+        "health": 100,
+        "damage": 30,
+        "size": 1.3333,
+        "visual_scale": 0.9339,
+        "visualOffsetX": -0.0244,
+        "speed": 0.52,
+        "chase_speed": 0.95,
+        "cooldown": 2000,
+        "xp": {
+            "common": 15,
+            "uncommon": 60,
+            "rare": 360,
+            "epic": 2400,
+            "legendary": 13500,
+            "mythic": 270000,
+            "ultra": 1350000,
+            "super": 10500000,
+            "unique": 54000000
+        },
+        "description": "That thing on its head looks valuable... We should steal it.",
+        "color": "#83b05d",
+        "image": "$beetle_pharaoh",
+        "ai_type": "hostile",
+        "gardn_ai": true,
+        "range": 750,
+        "groups": [],
+        "noEggDrop": true,
+        "periodic_spawn": {
+            "mobType": "mummy_beetle",
+            "intervalMs": 3000,
+            "lifetimeMs": 15000,
+            "maxAlive": 4,
+            "spawnRarityOffset": -1
+        },
+        "undead_ms": 30000
+    },
+    "tomb": {
+        "name": "Tomb",
+        "health": 150,
+        "damage": 3,
+        "size": 1.6667,
+        "visual_scale": 0.8665,
+        "speed": 0,
+        "cooldown": 2000,
+        "xp": {
+            "common": 2,
+            "uncommon": 6,
+            "rare": 60,
+            "epic": 540,
+            "legendary": 2800,
+            "mythic": 64000,
+            "ultra": 300000,
+            "super": 2400000,
+            "unique": 13600000
+        },
+        "description": "Huh, what could be in here?",
+        "color": "#a88642",
+        "image": "$tomb",
+        "ai_type": "passive",
+        "groups": {
+            "pyramid": 0.06
+        },
+        "range": 0,
+        "noEggDrop": true,
+        "death_spawn": {
+            "mobType": "mummy_beetle",
+            "chance": 0.3333,
+            "count": 1
+        },
+        "remains_ms": 10000
     }
 }

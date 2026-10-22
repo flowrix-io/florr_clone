@@ -787,7 +787,10 @@ void App::frame(double dt) {
         const Vec2 selfDrawn =
             net_.selfPlaced() ? net_.view().selfDrawnPosition() : net_.arrival();
         camera_.snapTo(selfDrawn);
+        prepareDarkness(selfDrawn);
         renderer_.draw(canvas, net_.view(), camera_, selfDrawn, timeSeconds_);
+        // A dark map's dark, over the world only, like the wash below.
+        drawDarkness(canvas);
         // Dead: the WORLD goes dim, and only the world. The reference's wash
         // goes between `render_game()` and its game UI window, so the HUD, the
         // minimap, the loadout bar and the card itself all stay at full

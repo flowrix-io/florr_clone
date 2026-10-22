@@ -291,7 +291,7 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
     Fixture f;
     f.world.add<PlayerVisuals>(f.viewer, PlayerVisuals{
         static_cast<std::uint8_t>(FaceDandelioned | FaceSquareEyes | FaceHasCorruption),
-        static_cast<std::uint8_t>(EquipCutter | EquipThirdEye | EquipObserver |
+        static_cast<std::uint16_t>(EquipCutter | EquipThirdEye | EquipObserver |
                                   EquipAntennae | EquipTest1),
         static_cast<std::uint32_t>(PlayerRenderPumpkin | PlayerRenderRobot),
         "",     // no custom skin: this case is about the built-in flag bits
@@ -314,7 +314,7 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
     CHECK((first.faceFlags & FaceSquareEyes) != 0);
     CHECK((first.faceFlags & FaceDefending) != 0);
     CHECK((first.faceFlags & FaceHasCorruption) != 0);
-    CHECK_EQ(first.equipFlags, static_cast<std::uint8_t>(EquipCutter | EquipThirdEye |
+    CHECK_EQ(first.equipFlags, static_cast<std::uint16_t>(EquipCutter | EquipThirdEye |
                                                           EquipObserver | EquipAntennae |
                                                           EquipTest1));
     CHECK_EQ(first.renderFlags, static_cast<std::uint32_t>(PlayerRenderPumpkin |
@@ -337,7 +337,7 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
     CHECK((second.faceFlags & FaceDefending) == 0);
     CHECK((second.faceFlags & (FacePoisoned | FaceDeadEyes | FaceDandelioned |
                                FaceSquareEyes | FaceHasCorruption)) == 0);
-    CHECK_EQ(second.equipFlags, std::uint8_t(EquipNone));
+    CHECK_EQ(second.equipFlags, std::uint16_t(EquipNone));
     CHECK_EQ(second.renderFlags, std::uint32_t(PlayerRenderRobot));
 }
 

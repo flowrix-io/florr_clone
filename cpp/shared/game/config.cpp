@@ -330,7 +330,7 @@ AiKind parseAi(Ctx& ctx, const std::string& text) {
     return AiKind::Neutral;
 }
 
-std::uint8_t parseEquipFlags(const std::string& text) {
+std::uint16_t parseEquipFlags(const std::string& text) {
     if (text == "Cutter") return EquipCutter;
     if (text == "ThirdEye") return EquipThirdEye;
     if (text == "Observer") return EquipObserver;
@@ -338,6 +338,7 @@ std::uint8_t parseEquipFlags(const std::string& text) {
     if (text == "Test1") return EquipTest1;
     if (text == "Crown") return EquipCrown;
     if (text == "Disc") return EquipDisc;
+    if (text == "Bandage") return EquipBandage;
     // No flag is a perfectly good outcome for an ordinary petal.
     return EquipNone;
 }
@@ -444,6 +445,23 @@ PeriodicSpawnSpec parsePeriodicSpawn(Ctx& ctx, const Json& owner,
     spec.rarityOffset = ctx.integer(node, "spawnRarityOffset", 0,
                                     -(kLadderRarityCount - 1), kLadderRarityCount - 1);
     spec.present = spec.mobIndex != kInvalidIndex && spec.maxAlive > 0;
+    return spec;
+}
+
+DeathSpawnSpec parseDeathSpawn(Ctx& ctx, const Json& owner,
+                              const std::unordered_map<std::string, std::uint16_t>& mobIds) {
+    DeathSpawnSpec spec;
+    if (!owner.contains("death_spawn")) return spec;
+    const Json& node = owner["death_spawn"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("death_spawn is ") + typeName(node) + ", not an object; ignored");
+        return spec;
+    }
+    spec.mobId = ctx.text(node, "mobType");
+    spec.mobIndex = ctx.link(mobIds, spec.mobId, "death_spawn mobType");
+    spec.chance = ctx.range(node, "chance", 1.0, 0.0, 1.0);
+    spec.count = ctx.integer(node, "count", 1, 0, 100);
+    spec.present = spec.mobIndex != kInvalidIndex && spec.count > 0 && spec.chance > 0.0;
     return spec;
 }
 
@@ -1042,6 +1060,9 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.projectile = parseProjectile(ctx, src, &petalIds);
     m.petalRing = parsePetalRing(ctx, src, petalIds);
     m.periodicSpawn = parsePeriodicSpawn(ctx, src, mobIds);
+    m.deathSpawn = parseDeathSpawn(ctx, src, mobIds);
+    m.remainsMillis = ctx.range(src, "remains_ms", 0.0, 0.0, kMaxDurationMillis);
+    m.undeadMillis = ctx.range(src, "undead_ms", 0.0, 0.0, kMaxDurationMillis);
     m.ambush = parseAmbush(ctx, src, mobIds);
     m.dungeon = parseDungeon(ctx, src, mobIds);
     m.lightning = parseLightning(ctx, src);
@@ -1789,6 +1810,14 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // Disc: florr's Collision Damage Resistance, 1 - 0.91^(tier+1) -- one more
     // 0.91 of the hit kept back a tier, so no tier ever reaches immunity.
     if (petalResistsCollisions(c)) s.collisionResist = 1.0 - std::pow(0.91, rarityIndex(tier) + 1);
+    // Bandage: florr's tooltip, read off its builder -- Undead 1500 ms x
+    // 1.4^tier, Unrevivable 30 s, Body Damage -75%. florr makes it only at
+    // mythic and ultra; here every tier is on the same curve.
+    if (petalDelaysDeath(c)) {
+        s.undeadMillis = 1500.0 * std::pow(1.4, rarityIndex(tier));
+        s.unrevivableMillis = 30000.0;
+        s.undeadBodyDamageCut = 0.75;
+    }
     s.shield = c.burstShield * heal;
     // A slow's rarity is spent on landing it at all (stallPower), not on
     // making it deeper, so the factor and its duration are flat.
@@ -1935,6 +1964,13 @@ const ContentRegistry& content() { return registry(); }
 
 bool loadContent(const std::string& dataDir, std::string& errorOut) {
     return registry().load(dataDir, errorOut);
+}
+
+double mobUndeadMillis(const MobConfig& config, Rarity rarity) {
+    if (!(config.undeadMillis > 0.0)) return 0.0;
+    const double rungs = static_cast<double>(static_cast<int>(rarity) + 1);
+    const double superRungs = static_cast<double>(static_cast<int>(Rarity::Super) + 1);
+    return config.undeadMillis * rungs / superRungs;
 }
 
 } // namespace flix

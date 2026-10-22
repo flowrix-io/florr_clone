@@ -1990,6 +1990,52 @@ void Canvas::darkenDevice(const std::uint8_t* mask,int mw,int mh,int dx,int dy) 
     rows(y0+height*band/bands,y0+height*(band+1)/bands);
   });
 }
+void Canvas::multiplyDevice(const std::uint8_t* mask,int mw,int mh,int dx,int dy,Color floor) {
+  if (!mask || mw<=0 || mh<=0 || state_.alpha<=0) return;
+  const int x0=std::max(0,dx), x1=std::min(width_,dx+mw);
+  const int y0=std::max(0,dy), y1=std::min(height_,dy+mh);
+  if (x0>=x1||y0>=y1) return;
+  const bool clipped=state_.clip!=nullptr;
+  const float alpha=state_.alpha;
+  // What survives of each channel under each mask value, 0..255.
+  const std::uint8_t floors[3]={floor.r,floor.g,floor.b};
+  std::array<std::array<std::uint16_t,256>,3> keep{};
+  for (int c=0;c<3;++c)
+    for (int m=0;m<256;++m)
+      keep[c][m]=static_cast<std::uint16_t>(255-std::lround(m*alpha*(255-floors[c])/255.f));
+  const auto scale=[](std::uint8_t v,std::uint32_t k) {
+    std::uint32_t t=v*k+0x80u;
+    return static_cast<std::uint8_t>((t+(t>>8))>>8);
+  };
+  const auto rows=[&](int ya,int yb) {
+  for (int y=ya;y<yb;++y) {
+    const std::uint8_t* src=mask+static_cast<std::size_t>(y-dy)*mw+(x0-dx);
+    Color* dst=pixels_.data()+static_cast<std::size_t>(y)*width_+x0;
+    for (int x=x0;x<x1;++x,++src,++dst) {
+      const unsigned m=*src;
+      if (m==0) continue;
+      if (clipped) {
+        const float a=m*(1.f/255.f)*alpha*clipAt(x,y);
+        if (a<=0.f) continue;
+        dst->r=static_cast<std::uint8_t>(std::lround(dst->r*(1.f-a*(255-floor.r)/255.f)));
+        dst->g=static_cast<std::uint8_t>(std::lround(dst->g*(1.f-a*(255-floor.g)/255.f)));
+        dst->b=static_cast<std::uint8_t>(std::lround(dst->b*(1.f-a*(255-floor.b)/255.f)));
+        continue;
+      }
+      dst->r=scale(dst->r,keep[0][m]);
+      dst->g=scale(dst->g,keep[1][m]);
+      dst->b=scale(dst->b,keep[2][m]);
+    }
+  }
+  };
+  BandPool& pool=BandPool::instance();
+  const int height=y1-y0;
+  const int bands=std::min(pool.maxBands(),std::max(1,height/kMinBandRows));
+  if (bands<=1 || static_cast<long long>(height)*(x1-x0)<kMinThreadedArea) { rows(y0,y1); return; }
+  pool.run(bands,[&](int band) {
+    rows(y0+height*band/bands,y0+height*(band+1)/bands);
+  });
+}
 #endif
 // The css() string is only ever read by the browser context, so building it on
 // the native path was one heap allocation per colour change per frame.

@@ -118,14 +118,23 @@ Entity splitWithPetsOnBothHalves(Harness& h, NetClient& client, const char* acco
         return NULL_ENTITY;
     }
     client.setLoadoutSlot(1, egg, Rarity::Common);
-    // Past the egg's equip cooldown, on both halves.
+    // Past the egg's equip cooldown, on both halves. A pet that has hatched
+    // is kept out of harm's way until the other half's has too: a wild mob at
+    // the door can kill a common soldier ant first, and whether one is about
+    // depends on everything else the world's dice were spent on. The roads
+    // out under test destroy the pets; none of them hurts one.
     if (!h.stepUntil({&client}, [&] {
             const std::vector<Entity> halves = bodiesNamed(world, account);
             if (halves.size() != 2) return false;
+            bool both = true;
             for (const Entity half : halves) {
-                if (petsOf(world, half).empty()) return false;
+                const std::vector<Entity> pets = petsOf(world, half);
+                for (const Entity pet : pets) {
+                    world.get<Health>(pet).invulnerableUntilMillis = 1e18;
+                }
+                if (pets.empty()) both = false;
             }
-            return true;
+            return both;
         }, 600)) {
         return NULL_ENTITY;
     }

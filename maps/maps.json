@@ -27,6 +27,7 @@
     { "file": "hel.tmj", "prestige": true },
     { "file": "ant_hell.tmj", "prestige": true },
     { "file": "sewers.tmj", "prestige": true },
+    { "file": "pyramid.tmj", "prestige": true },
     { "file": "termite_mound.tmj", "copies": 8 }
   ]
 }

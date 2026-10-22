@@ -342,6 +342,28 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(resist);
     }
 
+    // Bandage, florr's three lines: how long Undead lasts, what the body hits
+    // for meanwhile, and how long the flower then cannot be revived.
+    if (stats.undeadMillis > 0.0) {
+        const auto seconds = [](double millis) {
+            char buffer[32];
+            std::snprintf(buffer, sizeof buffer, "%g", std::round(millis / 10.0) / 100.0);
+            return std::string(buffer) + "s";
+        };
+        TooltipLine undead{"Undead: " + seconds(stats.undeadMillis), 12.0};
+        undead.alpha = 0.56;
+        undead.labelColor = kStatUndead;
+        lines.push_back(undead);
+        TooltipLine body{"Body Damage: -" + percentNumber(stats.undeadBodyDamageCut) + "%", 12.0};
+        body.alpha = 0.56;
+        body.labelColor = kStatDamage;
+        lines.push_back(body);
+        TooltipLine lock{"Unrevivable: " + seconds(stats.unrevivableMillis), 12.0};
+        lock.alpha = 0.56;
+        lock.labelColor = kStatDanger;
+        lines.push_back(lock);
+    }
+
     // Bur alone. Its description says the petal debuffs armour and cannot say
     // by how much, and how much is the entire question a player has about it:
     // whether this one out-strips the tier standing in front of them.

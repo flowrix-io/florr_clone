@@ -1,0 +1,9 @@
+<svg viewBox="0 0 256 256">
+	<path fill="none" stroke="#000" stroke-linejoin="round" stroke-opacity=".1" stroke-width="15" d="M128 0v64.852c14.384 17.877 13.014 43.712-3.18 59.968-16.256 16.194-42.091 17.564-59.968 3.18H0"/>
+	<path fill="#998c6a" d="M128 0v64.852c14.384 17.877 13.014 43.712-3.18 59.968-16.256 16.194-42.091 17.564-59.968 3.18H0V0Z"/>
+	<path fill="none" stroke="#7a7055" stroke-linejoin="round" stroke-width="5" d="M128 0v64.852c14.384 17.877 13.014 43.712-3.18 59.968-16.256 16.194-42.091 17.564-59.968 3.18H0"/>
+	<path fill="#7a7055" stroke="#7a7055" stroke-linejoin="round" stroke-width="5" d="M48.551 48.551H30.667L48.55 30.667Z"/>
+	<path fill="none" stroke="#7a7055" stroke-width="2.5" d="M1.25 128V1.25H128"/>
+	<path fill="#8a7e60" stroke="#8a7e60" stroke-linejoin="round" stroke-width="5" d="m101 101-14.142-2.83L98.17 86.858Zm-58.333 0 8 12h-16zM101 42.666l12-8v16z"/>
+	<path fill="#8a7e60" stroke="#8a7e60" stroke-linejoin="round" stroke-width="8" d="m13.692 32.646 4.467-.798.799 4.467-4.468.799zm52.68 59.913 2.874.97-.97 2.874-2.873-.97zm9.462-75.139 4.551 3.57-3.57 4.551-4.551-3.57z"/>
+</svg>

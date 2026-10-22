@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include "client/ease.h"
 #include "client/ui/draw.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
@@ -689,6 +690,34 @@ void bakeVignette(std::vector<std::uint8_t>& mask, int width, int height) {
 }
 
 } // namespace
+
+void App::prepareDarkness(Vec2 selfDrawn) {
+    const Realm realm = net_.view().realm();
+    if (realm != darkRealm_) {
+        darkMap_.clear();
+        darkRealm_ = realm;
+    }
+    const MapData* map = worldMaps_.forRealm(realm);
+    darkFrame_ = map != nullptr && map->isDark();
+    if (!darkFrame_) {
+        if (!darkMap_.lights().empty()) darkMap_.clear();
+        renderer_.setLightClip(nullptr);
+        return;
+    }
+    darkFloor_ = darknessFloor(map->darkColor());
+    // A scripted capture wants the lights where they come to rest, not
+    // wherever the requested frame catches them easing in.
+    const bool settle = config_.screenshotAfterFrames > 0;
+    gatherLights(net_.view(), selfDrawn, &content(), lightSources_);
+    darkMap_.step(lightSources_, easeStepSeconds(), settle);
+    darkMap_.discs(timeSeconds_, lightDiscs_);
+    renderer_.setLightClip(&lightDiscs_);
+}
+
+void App::drawDarkness(Canvas& canvas) {
+    if (!darkFrame_) return;
+    darkMap_.shade(canvas, renderer_.shakenCamera(camera_), lightDiscs_, darkFloor_);
+}
 
 double App::lowHealthTarget() const {
     // Dead is zero health, which is the screenshot's own full-strength state.

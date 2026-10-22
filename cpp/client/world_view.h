@@ -126,7 +126,7 @@ struct RemoteEntity {
     /// The three flag families used only by the player sprite. They arrive for
     /// player records in a snapshot and remain zero for all other entity kinds.
     std::uint8_t faceFlags = FaceNone;
-    std::uint8_t equipFlags = EquipNone;
+    std::uint16_t equipFlags = EquipNone;
     std::uint32_t renderFlags = PlayerRenderNone;
 
     /// Player-only: what the plate under the flower reads. `bestRarity` is the
@@ -375,7 +375,7 @@ public:
         bool overridesEquip = false;
         bool overridesRender = false;
         std::uint8_t faceFlags = FaceNone;
-        std::uint8_t equipFlags = EquipNone;
+        std::uint16_t equipFlags = EquipNone;
         std::uint32_t renderFlags = PlayerRenderNone;
     };
     LocalFlagOverride localFlags;

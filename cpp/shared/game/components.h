@@ -323,6 +323,36 @@ struct SecondChance {
     double readyAtMillis = 0;
 };
 
+/// A flower a worn bandage kept standing through a killing blow, or a mob
+/// that rises from one (RisesUndead): florr's Undead. It holds at 1 HP
+/// whatever hits it, nothing heals it, and its body hits for
+/// `bodyDamageScale` of its damage. At `untilMillis` it dies after all, to
+/// whoever struck the blow it was spared (CombatSystem::tickUndead), and a
+/// flower is then Unrevivable for `unrevivableMillis`. Once a life: the body
+/// that dies is the body that carried this.
+struct Undead {
+    double untilMillis = 0;
+    Entity killer = NULL_ENTITY;
+    double unrevivableMillis = 0;
+    double bodyDamageScale = 1.0;
+};
+
+/// A mob that is not killed by the blow that empties it but stands Undead
+/// for `millis` first, and dies then: mobs.json's `undead_ms`, scaled to the
+/// mob's tier (mobUndeadMillis). Put on at spawn, so the hit that empties it
+/// needs no content to know.
+struct RisesUndead {
+    double millis = 0;
+};
+
+/// A corpse no yggdrasil can raise before `untilMillis`: what dying out of
+/// Undead leaves behind (florr's Unrevivable).
+struct Unrevivable {
+    double untilMillis = 0;
+
+    bool active(double nowMillis) const { return nowMillis < untilMillis; }
+};
+
 /// A temporary pool of extra HP over the flower's own (shell, shield petal).
 /// Every kind of damage drains it before the health bar. A shell ADDS to it,
 /// capped at the flower's max health, as a rose adds to health; the shield
@@ -500,7 +530,7 @@ struct PlayerProgress {
 /// TypeScript's effectiveRenderFlags() rather than persisting an affliction.
 struct PlayerVisuals {
     std::uint8_t faceFlags = FaceNone;
-    std::uint8_t equipFlags = EquipNone;
+    std::uint16_t equipFlags = EquipNone;
     std::uint32_t renderFlags = PlayerRenderNone;
     /// A user-created skin worn on this body, by catalog id; empty for none.
     ///
@@ -586,6 +616,14 @@ struct PlayerModifiers {
     /// costs this flower, as a multiple of the hit: the best worn disc's
     /// 1 - resist (discs do not stack). 1 without one.
     double collisionDamageTakenScale = 1.0;
+    /// A worn bandage: how long a killing blow leaves this flower Undead
+    /// before it dies after all, and how long it then cannot be revived. The
+    /// best bandage's figures (they do not stack); zero without one.
+    double undeadMillis = 0.0;
+    double unrevivableMillis = 0.0;
+    /// What this flower's body hits for while it is Undead, as a multiple of
+    /// its body damage: the bandage's 1 - reduction.
+    double undeadBodyDamageScale = 1.0;
     /// A relic is worn: the damage this flower takes is split with the other
     /// wearers in its squad.
     bool sharesDamage = false;
@@ -1255,7 +1293,22 @@ struct DropItem {
 
 /// `Sacrifice` is not a field at all -- nothing reads a GroundEffect for it --
 /// but it rides the Effect wire kind with the others: see SacrificeRitual.
-enum class GroundEffectKind : std::uint8_t { Poison = 0, Web = 1, Radiation = 2, Sacrifice = 3 };
+enum class GroundEffectKind : std::uint8_t {
+    Poison = 0,
+    Web = 1,
+    Radiation = 2,
+    Sacrifice = 3,
+    /// What is left of a tomb once it is broken open: see MobRemains.
+    OpenTomb = 4,
+};
+
+/// What is left lying where a mob with `remains_ms` died -- florr's opened
+/// tomb, its lid gone and its insides dark. Nothing touches it and it
+/// touches nothing: streamed as an Effect of kind OpenTomb at `radius` (the
+/// dead mob's DRAWN radius) and its last facing, until its Lifetime runs out.
+struct MobRemains {
+    double radius = 0;
+};
 
 /// A sacrifice being answered: the ritual laid where a flower died wearing one.
 ///
@@ -1425,6 +1478,9 @@ FLIX_COMPONENT(flix::ShieldState);
 FLIX_COMPONENT(flix::ManaPool);
 FLIX_COMPONENT(flix::SpongeDamageState);
 FLIX_COMPONENT(flix::SecondChance);
+FLIX_COMPONENT(flix::Undead);
+FLIX_COMPONENT(flix::Unrevivable);
+FLIX_COMPONENT(flix::RisesUndead);
 FLIX_COMPONENT(flix::Bounty);
 FLIX_COMPONENT(flix::Loadout);
 FLIX_COMPONENT(flix::PetalRing);
@@ -1463,6 +1519,7 @@ FLIX_COMPONENT(flix::Projectile);
 FLIX_COMPONENT(flix::Lifetime);
 FLIX_COMPONENT(flix::DropItem);
 FLIX_COMPONENT(flix::SacrificeRitual);
+FLIX_COMPONENT(flix::MobRemains);
 FLIX_COMPONENT(flix::GroundEffect);
 FLIX_COMPONENT(flix::LightningBurst);
 FLIX_COMPONENT(flix::LightningClock);

@@ -318,6 +318,16 @@ struct PeriodicSpawnSpec {
     int rarityOffset = 0;
 };
 
+/// What a mob may let out when it dies (`death_spawn`): `count` of `mobId`
+/// at the dead mob's tier, with probability `chance`. The tomb's mummy.
+struct DeathSpawnSpec {
+    bool present = false;
+    std::string mobId;
+    std::uint16_t mobIndex = kInvalidIndex;
+    double chance = 0;
+    int count = 0;
+};
+
 /// A nest a flower walks INTO (`dungeon`): touching it carries the flower into
 /// a private copy of the map `mapId` (a manifest entry with `copies`), filled
 /// with `brood` -- and the nest falls, paying out like any kill, on the tick
@@ -646,6 +656,14 @@ struct MobConfig {
     ProjectileSpec projectile;
     PetalRingSpec petalRing;
     PeriodicSpawnSpec periodicSpawn;
+    DeathSpawnSpec deathSpawn;
+    /// How long what is left of this mob lies where it died (`remains_ms`):
+    /// florr's opened tomb. Zero for every mob that just goes.
+    double remainsMillis = 0;
+    /// How long a SUPER of this mob stands Undead when struck down before it
+    /// dies (`undead_ms`): the mummy beetle's. Every other tier scales on a
+    /// line through it -- see mobUndeadMillis. Zero for a mob that just dies.
+    double undeadMillis = 0;
     AmbushSpec ambush;
     DungeonSpec dungeon;
     LightningSpec lightning;
@@ -754,7 +772,7 @@ struct PetalConfig {
     /// petal touches a mob, and putting it there would make every tooltip and
     /// drop call it a weapon.
     double bodyDamage = 0;
-    std::uint8_t equipFlags = EquipNone;
+    std::uint16_t equipFlags = EquipNone;
 
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
@@ -1009,6 +1027,14 @@ struct PetalStats {
     /// The share a disc takes off every body collision its flower suffers:
     /// florr's 1 - 0.91^(tier+1), 9% at common. Zero for every other petal.
     double collisionResist = 0;
+    /// A bandage's Undead: how long a killing blow leaves its flower standing
+    /// before it dies after all -- florr's 1.5 s x 1.4^tier, 8.07 s at mythic
+    /// -- and how long it then cannot be revived (florr's flat 30 s), and the
+    /// share its body damage loses meanwhile (florr's flat 75%). Zero for
+    /// every other petal.
+    double undeadMillis = 0;
+    double unrevivableMillis = 0;
+    double undeadBodyDamageCut = 0;
     double shield = 0;
     double slowFactor = 1.0;
     double slowDurationMillis = 0;
@@ -1152,6 +1178,18 @@ inline bool petalCutsReload(const PetalConfig& config) { return config.id == "go
 /// taken from collisions with mobs and flowers". Worn, never out: florr gives
 /// it no body on the ring, as it gives the relic none.
 inline bool petalResistsCollisions(const PetalConfig& config) { return config.id == "disc"; }
+
+/// How long a `rarity` mob of `config` stands Undead when struck down:
+/// `undead_ms` at Super, and a straight line through it and zero one tier
+/// below Common, so each tier stands an eighth of the Super figure longer
+/// than the one under it (user, 2026-10-21: "30 seconds at super, and linear
+/// scaling for rarities"). Zero for a mob that names none.
+double mobUndeadMillis(const MobConfig& config, Rarity rarity);
+
+/// A bandage turns its flower Undead on a killing blow instead of letting it
+/// die -- florr's "Delays death until expiration". Worn, never out: florr
+/// gives it no body on the ring.
+inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "bandage"; }
 
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }

@@ -616,6 +616,106 @@ TEST(a_direct_spawn_below_min_rarity_is_raised_to_it) {
     CHECK_EQ(sim.world.get<MobType>(high).rarity, Rarity::Legendary);
 }
 
+TEST(the_pyramid_beetles_stand_undead_thirty_seconds_at_super_and_on_a_line_below_and_above) {
+    // User, 2026-10-21: "It should stay undead for 30 seconds at super, and
+    // linear scaling for rarities" -- an eighth of the Super figure a tier --
+    // the mummy beetle first, then "Also do for pharoah beetle".
+    Sim sim;
+    const std::uint16_t mummy = shipped().mobIndex("mummy_beetle");
+    const std::uint16_t pharaoh = shipped().mobIndex("pharaoh_beetle");
+    CHECK(mummy != kInvalidIndex);
+    CHECK(pharaoh != kInvalidIndex);
+    if (mummy == kInvalidIndex || pharaoh == kInvalidIndex) return;
+    for (const std::uint16_t beetle : {mummy, pharaoh}) {
+        const MobConfig& config = shipped().mob(beetle);
+        CHECK_NEAR(mobUndeadMillis(config, Rarity::Super), 30000.0, 1e-9);
+        CHECK_NEAR(mobUndeadMillis(config, Rarity::Common), 3750.0, 1e-9);
+        CHECK_NEAR(mobUndeadMillis(config, Rarity::Rare), 11250.0, 1e-9);
+        CHECK_NEAR(mobUndeadMillis(config, Rarity::Ultra), 26250.0, 1e-9);
+        CHECK_NEAR(mobUndeadMillis(config, Rarity::Unique), 33750.0, 1e-9);
+    }
+    // Nothing else in the shipped content rises.
+    for (std::uint16_t i = 0; i < shipped().mobCount(); ++i) {
+        if (i == mummy || i == pharaoh) continue;
+        CHECK_NEAR(mobUndeadMillis(shipped().mob(i), Rarity::Super), 0.0, 1e-12);
+    }
+    // And a spawned one carries its tier's time.
+    const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), mummy, Rarity::Epic,
+                                          kCentre, Realm::Overworld, sim.now, sim.rng);
+    CHECK(e != NULL_ENTITY);
+    if (e == NULL_ENTITY) return;
+    CHECK(sim.world.has<RisesUndead>(e));
+    if (const RisesUndead* rises = sim.world.tryGet<RisesUndead>(e)) {
+        CHECK_NEAR(rises->millis, 15000.0, 1e-9);
+    }
+}
+
+TEST(a_broken_tomb_lies_open_a_while_and_lets_a_mummy_out_a_third_of_the_time) {
+    // The tomb (2026-10-21, user): when it is broken it lies there opened for a
+    // while, and one time in three a mummy beetle comes out of it.
+    Sim sim;
+    const std::uint16_t tomb = shipped().mobIndex("tomb");
+    const std::uint16_t mummy = shipped().mobIndex("mummy_beetle");
+    CHECK(tomb != kInvalidIndex);
+    CHECK(mummy != kInvalidIndex);
+    if (tomb == kInvalidIndex || mummy == kInvalidIndex) return;
+    const MobConfig& config = shipped().mob(tomb);
+    CHECK(config.deathSpawn.present);
+    CHECK_EQ(config.deathSpawn.mobIndex, mummy);
+    CHECK_NEAR(config.deathSpawn.chance, 1.0 / 3.0, 1e-3);
+    CHECK(config.remainsMillis > 0.0);
+    // Nothing comes out of a tomb that is merely being hit any more.
+    CHECK(config.spawnWaves.empty());
+
+    const auto mummies = [&] {
+        int n = 0;
+        Query<MobType> mobs{sim.world};
+        mobs.each([&](Entity, MobType& type) {
+            if (type.configIndex == mummy) {
+                ++n;
+                CHECK_EQ(type.rarity, Rarity::Rare);
+            }
+        });
+        return n;
+    };
+    constexpr int kTombs = 300;
+    for (int i = 0; i < kTombs; ++i) {
+        const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), tomb, Rarity::Rare,
+                                              kCentre, Realm::Overworld, sim.now, sim.rng);
+        CHECK(e != NULL_ENTITY);
+        if (e == NULL_ENTITY) return;
+        sim.world.add<Dead>(e, Dead{NULL_ENTITY});
+        sim.spawner.answerDeaths(sim.world, sim.terrain, shipped(), {e}, sim.rng, sim.now, 0.0,
+                                 sim.commands);
+        sim.commands.flush();
+        sim.world.destroy(e);
+    }
+    const int out = mummies();
+    CHECK(out >= kTombs / 3 - 30);
+    CHECK(out <= kTombs / 3 + 30);
+
+    // One opened shell per tomb, drawn at the tomb's own size, and only for as
+    // long as remains_ms says.
+    std::vector<Entity> shells;
+    Query<MobRemains, Replicated> remains{sim.world};
+    remains.each([&](Entity e, MobRemains& shell, Replicated& replicated) {
+        shells.push_back(e);
+        CHECK(shell.radius > 0.0);
+        CHECK(replicated.kind == net::EntityKind::Effect);
+        CHECK_EQ(replicated.typeIndex, static_cast<std::uint16_t>(GroundEffectKind::OpenTomb));
+    });
+    CHECK_EQ(shells.size(), static_cast<std::size_t>(kTombs));
+    const double lifetime = config.remainsMillis / 1000.0;
+    sim.spawner.answerDeaths(sim.world, sim.terrain, shipped(), {}, sim.rng, sim.now,
+                             lifetime - 0.1, sim.commands);
+    sim.commands.flush();
+    for (const Entity e : shells) CHECK(sim.world.isAlive(e));
+    sim.spawner.answerDeaths(sim.world, sim.terrain, shipped(), {}, sim.rng, sim.now, 0.2,
+                             sim.commands);
+    sim.commands.flush();
+    for (const Entity e : shells) CHECK(!sim.world.isAlive(e));
+}
+
 TEST(a_mob_asked_for_at_universal_spawns_an_apex) {
     // Universal is a petal tier. An operator's `spawn bee universal`, or a
     // nest offset past the top, comes out at the top of the ladder.

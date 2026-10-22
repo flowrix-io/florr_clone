@@ -265,6 +265,14 @@ public:
     // times that, and over half a screen that is most of a frame.
     void darkenDevice(const std::uint8_t* mask, int maskWidth, int maskHeight, int deviceX,
                       int deviceY);
+    // darkenDevice toward a colour rather than black: a pixel under mask
+    // value m is multiplied, channel by channel, by 255 - m * (255 - floor) /
+    // 255 -- all of `floor` at 255, nothing at 0. The browser's `multiply`
+    // composite of a flat picture, for a whole-screen shade that has a hue.
+    // Same contract: device pixels, no transform, the clip and globalAlpha
+    // honoured.
+    void multiplyDevice(const std::uint8_t* mask, int maskWidth, int maskHeight, int deviceX,
+                        int deviceY, Color floor);
 #endif
 
     void clear(Color color = Color{255, 255, 255}); void clearRect(float x, float y, float width, float height);

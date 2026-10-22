@@ -367,6 +367,20 @@ public:
     /// where the content registry is; it cannot be checked here.
     const std::string& defaultMobGroup() const { return defaultMobGroup_; }
 
+    /// Whether the minimap is shown on this map: florr's own `minimap` map
+    /// property, true unless the map says false. The pyramid hides it.
+    bool showsMinimap() const { return minimap_; }
+
+    /// Whether this map is dark: it names a `darkness` colour. Everywhere but
+    /// round what gives off light -- flowers, pets, emissive petals, drops and
+    /// mobs -- the world is shaded down toward that colour and nothing on the
+    /// ground shows (client/render/darkness.h). The pyramid is; every other
+    /// map is lit.
+    bool isDark() const { return dark_; }
+    /// The dark's colour, 0xRRGGBB, florr's own per-map value: the pyramid's
+    /// is #120D00. Meaningless unless isDark().
+    std::uint32_t darkColor() const { return darkColor_; }
+
     /// The map's size in TILES. The map decides: the overworld is 128 tiles
     /// across and a termite mound's dungeon 32, and nothing here assumes
     /// either.
@@ -489,6 +503,9 @@ private:
     std::string displayName_;
     std::string biome_;
     std::string defaultMobGroup_;
+    bool minimap_ = true;
+    bool dark_ = false;
+    std::uint32_t darkColor_ = 0;
     /// The map's art, straight out of the file. Copied rather than referenced
     /// because the TiledMap that parsed it is a load-time scratch object and
     /// the renderer reads these every frame.

@@ -795,6 +795,13 @@ bool GalleryPanel::render(MenuContext& ctx) {
         if (stats.evasion > 0.0) {
             stat("Evasion: " + fixedDecimals(stats.evasion * 100.0, 0) + "%", 0.0);
         }
+        // florr's Mob/Attribute/UndeadDuration: how long this tier stands
+        // Undead when it is struck down.
+        if (const double undead = mobUndeadMillis(config, cell.rarity); undead > 0.0) {
+            char buffer[32];
+            std::snprintf(buffer, sizeof buffer, "%g", std::round(undead / 10.0) / 100.0);
+            stat("Undead: " + std::string(buffer) + "s", 0.0, kStatUndead);
+        }
         // The raw config figure, not the units-per-second the simulation runs
         // on, and the AUTHORED sign with it: the tooltip reads straight off
         // mobs.json, where the moth's -0.48 is what a player sees. The unit is

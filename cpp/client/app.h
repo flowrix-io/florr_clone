@@ -26,6 +26,7 @@
 #include "client/net_client.h"
 #include "client/ui/context_menu.h"
 #include "client/ui/text_select.h"
+#include "client/render/darkness.h"
 #include "client/render/sprites.h"
 #include "client/render/world_renderer.h"
 #include "client/ui/menus.h"
@@ -266,6 +267,13 @@ private:
     /// The edges of the screen going dark as the flower runs out of health.
     /// Over the world and under the HUD, like the death wash.
     void drawLowHealthVignette(Canvas&);
+    /// A dark map's lights (MapData::isDark), stepped for this frame and
+    /// handed to the renderer, which draws no entity outside them -- florr's
+    /// first stage, see client/render/darkness.h. Before the world is drawn.
+    void prepareDarkness(Vec2 selfDrawn);
+    /// The dark itself, multiplied over the world: florr's second stage.
+    /// Under the death wash and the vignette.
+    void drawDarkness(Canvas&);
     /// How dark that vignette should be this frame, 0 to 1, before easing.
     double lowHealthTarget() const;
     /// The screen-top health bars a super, unique or apex mob in view gets,
@@ -721,6 +729,15 @@ private:
     int vignetteWidth_ = 0;
     int vignetteHeight_ = 0;
     std::unique_ptr<Canvas> vignetteBitmap_;
+    /// A dark map's lights, florr's light table: one per entity, eased in
+    /// and out (see client/render/darkness.h). Emptied on a realm change.
+    DarkMap darkMap_;
+    std::vector<LightSource> lightSources_;
+    std::vector<LightDisc> lightDiscs_;
+    Realm darkRealm_ = Realm::Overworld;
+    /// This frame's map is dark, and its dark's floor colour.
+    bool darkFrame_ = false;
+    Color darkFloor_;
     /// Which announcement the banner last saw arrive, and when, on this
     /// app's clock. See drawAdminAnnouncement.
     std::uint32_t announcementSeen_ = 0;

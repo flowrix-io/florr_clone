@@ -377,7 +377,25 @@ TEST(a_sacrifice_star_kills_the_summons_in_it_and_reloads_the_eggs_in_it) {
         });
         return n;
     };
+    // Bob, his ring and his summons are kept out of harm's way while the test
+    // waits: a wild mob at the door can break an egg or kill a common soldier
+    // ant, and whether one is about depends on everything else the world's
+    // dice were spent on. The star kills by fell() and reloads by spending the
+    // slot, which no invulnerability stops.
+    const auto shield = [&] {
+        const double until = h.clock + 1000.0;
+        world.get<Health>(body).invulnerableUntilMillis = until;
+        Query<Pet, Health> pets{world};
+        pets.each([&](Entity, Pet& pet, Health& health) {
+            if (pet.owner == body) health.invulnerableUntilMillis = until;
+        });
+        Query<PetalInstance, Health> ring{world};
+        ring.each([&](Entity, PetalInstance& instance, Health& health) {
+            if (instance.owner == body) health.invulnerableUntilMillis = until;
+        });
+    };
     const auto ready = [&] {
+        shield();
         return !world.get<Loadout>(body).slots[0].broken && eggsOut() > 0 && firstPet() != NULL_ENTITY;
     };
     CHECK(h.stepUntil({&bob}, ready, 600));

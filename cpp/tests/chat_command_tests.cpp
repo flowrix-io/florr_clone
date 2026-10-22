@@ -1488,10 +1488,17 @@ TEST(a_player_squadded_with_a_bot_is_paid_for_what_the_bot_kills) {
         if (at == std::string::npos || at + 15 > log.size()) continue;
         squadId = log.substr(at, 15);
     }
-    CHECK(!squadId.empty());
-    if (squadId.empty()) return;
-
-    CHECK(say(h, owner, "/squad-join " + squadId));
+    if (!squadId.empty()) {
+        CHECK(say(h, owner, "/squad-join " + squadId));
+    } else {
+        // No bot happened to host in that time: a bot hosts on a 3% roll
+        // every eight to twelve seconds, so whether one has by now is down to
+        // where the bots' dice fall, which every change to the world moves.
+        // Then the player hosts and asks a bot in, which a bot with no squad
+        // of its own -- and none has one -- answers by joining outright.
+        CHECK(say(h, owner, "/squad-create public"));
+        CHECK(say(h, owner, "/squad-invite " + bots.front().second));
+    }
     h.step(3, {&owner});
     CHECK(owner.squad().members.size() >= 2);
     if (owner.squad().members.size() < 2) return;

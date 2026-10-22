@@ -1356,6 +1356,85 @@ TEST(a_yggdrasil_revival_takes_the_death_screen_back_down) {
     CHECK(distance(world.get<Transform>(aliceBody).position, before) > 50.0);
 }
 
+TEST(a_flower_its_bandage_let_die_stays_down_until_the_lock_runs_out) {
+    // Bots off, as for the yggdrasil test above: the revive under test must
+    // be Bob's.
+    Harness h("bandage-unrevivable", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice, bob;
+    CHECK(flix::testsupport::loginNew(h, alice, "alice", "password1"));
+    CHECK(flix::testsupport::loginNew(h, bob, "bob", "password2"));
+    alice.joinGame(1280, 720, {}, "alice");
+    bob.joinGame(1280, 720, {}, "bob");
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        return alice.status() == NetClient::Status::Playing &&
+               bob.status() == NetClient::Status::Playing;
+    }));
+
+    World& world = h.server.world();
+    Entity aliceBody = NULL_ENTITY;
+    Entity bobBody = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount, Transform> bodies{world};
+    bodies.each([&](Entity e, PlayerTag&, PlayerAccount& account, Transform&) {
+        if (account.username == "alice") aliceBody = e;
+        else if (account.username == "bob") bobBody = e;
+    });
+    CHECK(aliceBody != NULL_ENTITY);
+    CHECK(bobBody != NULL_ENTITY);
+    if (aliceBody == NULL_ENTITY || bobBody == NULL_ENTITY) return;
+
+    // Alice's bandage is holding her up past a killing blow, for one more
+    // second. Her own client sees her wrapped.
+    world.get<Health>(aliceBody).current = 1.0;
+    world.add<Undead>(aliceBody, Undead{h.clock + 1000.0, NULL_ENTITY, 30000.0, 0.25});
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        const auto mine = alice.view().entities().find(alice.view().self().netId);
+        return mine != alice.view().entities().end() && (mine->second.faceFlags & FaceUndead);
+    }));
+    CHECK(!alice.dead());
+
+    // Then the time is up, and she goes down.
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return alice.dead(); }));
+    CHECK(world.has<Dead>(aliceBody));
+    CHECK(!world.has<Undead>(aliceBody));
+    const double diedAt = h.clock;
+
+    // Bob stands over her with a yggdrasil out, and it raises nothing while
+    // the lock lasts.
+    const Vec2 corpse = world.get<Transform>(aliceBody).position;
+    world.get<Transform>(bobBody).position = corpse + Vec2{30, 0};
+    world.get<Transform>(bobBody).realm = world.get<Transform>(aliceBody).realm;
+    const std::uint16_t yggdrasil = content().petalIndex("yggdrasil");
+    CHECK(yggdrasil != kInvalidIndex);
+    world.get<Loadout>(bobBody).slots[0].configIndex = yggdrasil;
+    world.get<Loadout>(bobBody).slots[0].rarity = Rarity::Common;
+    // Bob is kept standing and his yggdrasil kept out through the wait: a
+    // wild mob wandering by may break it, which would put it on its 512 s
+    // reload and prove nothing about the lock.
+    const auto keepBobReady = [&] {
+        world.get<Health>(bobBody).invulnerableUntilMillis = h.clock + 1000.0;
+        LoadoutSlot& slot = world.get<Loadout>(bobBody).slots[0];
+        slot.broken = false;
+        slot.reloadReadyAtMillis = 0;
+    };
+    h.step(1, {&alice, &bob});
+    keepBobReady();
+    CHECK(!h.stepUntil({&alice, &bob}, [&] {
+        keepBobReady();
+        return !world.has<Dead>(aliceBody);
+    }, static_cast<int>(25000.0 / net::kTickMillis)));
+    CHECK(alice.dead());
+
+    // Once it has run out, the same petal raises her.
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        keepBobReady();
+        return !alice.dead();
+    }, static_cast<int>(10000.0 / net::kTickMillis)));
+    CHECK(h.clock - diedAt >= 30000.0);
+    CHECK(!world.has<Dead>(aliceBody));
+}
+
 TEST(a_sponge_prints_its_stored_damage_on_the_owners_bar) {
     // The whole path the loadout bar's number takes: a sponge in a real
     // server's loadout, the petal system publishing what the flower is still

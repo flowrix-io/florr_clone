@@ -1334,7 +1334,7 @@ private:
     int botStrafeDirection(Bot&, double nowMillis);
 
     /// The closest downed bot worth diverting to revive, or NULL_ENTITY.
-    Entity botFindReviveTarget(const Bot&) const;
+    Entity botFindReviveTarget(const Bot&, double nowMillis) const;
     bool botHasNearbyBuddy(const Bot&, double range) const;
 
     // -- bot loadout swaps -------------------------------------------------

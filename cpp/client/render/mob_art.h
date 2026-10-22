@@ -93,6 +93,9 @@ enum class MobArt : std::uint8_t {
     /// florr's assembler NPC: a machine on a tread, its gears turning on the
     /// mob's clock and its dial needles twitching.
     Assembler,
+    /// florr's pyramid: the mummy beetle, the pharaoh beetle (the same beetle
+    /// in a headdress) and the tomb.
+    BeetleMummy, BeetlePharaoh, Tomb,
 };
 
 /// How fast a walk cycle runs, in radians of phase per second.
@@ -197,6 +200,9 @@ struct MobArtAttributes {
     /// place of its own, gardn's friendly bit. Only a creature in the world
     /// can be one.
     bool pet = false;
+    /// What is left once the mob is broken open, for the one painter that
+    /// has such a state: florr's tomb, lid gone and its insides dark.
+    bool opened = false;
 };
 
 /// The time constants florr eases a mob's ground speed and its locked-on

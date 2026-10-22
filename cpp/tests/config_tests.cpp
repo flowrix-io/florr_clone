@@ -857,28 +857,30 @@ TEST(enums_and_colours_are_parsed_not_stored_as_text) {
     // to survive or it draws as an opaque white blob.
     CHECK_EQ(r.petal(r.petalIndex("bubble")).colorRgba, 0xFFFFFF00u);
 
-    CHECK_EQ(r.petal(r.petalIndex("cutter")).equipFlags, std::uint8_t(EquipCutter));
+    CHECK_EQ(r.petal(r.petalIndex("cutter")).equipFlags, std::uint16_t(EquipCutter));
     // Both bits, and the second one is DERIVED from the id: petals.json says
     // plain "Cutter" because the TypeScript build's loader, which read the same
     // file, threw on a name its frozen enum lacked. Losing this leaves the cyan
     // blade painted black.
     CHECK_EQ(r.petal(r.petalIndex("lightning_cutter")).equipFlags,
-             std::uint8_t(EquipCutter | EquipLightningCutter));
+             std::uint16_t(EquipCutter | EquipLightningCutter));
     // The body-damage grant rides the petal damage ladder: 3x a tier, so it
     // matches what a basic petal of the same rarity hits for.
     CHECK_NEAR(r.petalStats(r.petalIndex("cutter"), Rarity::Common).bodyDamage, 10.0, 1e-9);
     CHECK_NEAR(r.petalStats(r.petalIndex("cutter"), Rarity::Unique).bodyDamage, 65610.0, 1e-9);
-    CHECK_EQ(r.petal(r.petalIndex("third_eye")).equipFlags, std::uint8_t(EquipThirdEye));
-    CHECK_EQ(r.petal(r.petalIndex("observer")).equipFlags, std::uint8_t(EquipObserver));
-    CHECK_EQ(r.petal(r.petalIndex("antennae")).equipFlags, std::uint8_t(EquipAntennae));
-    CHECK_EQ(r.petal(r.petalIndex("sparkle")).equipFlags, std::uint8_t(EquipTest1));
-    CHECK_EQ(r.petal(r.petalIndex("basic")).equipFlags, std::uint8_t(EquipNone));
+    CHECK_EQ(r.petal(r.petalIndex("third_eye")).equipFlags, std::uint16_t(EquipThirdEye));
+    CHECK_EQ(r.petal(r.petalIndex("observer")).equipFlags, std::uint16_t(EquipObserver));
+    CHECK_EQ(r.petal(r.petalIndex("antennae")).equipFlags, std::uint16_t(EquipAntennae));
+    CHECK_EQ(r.petal(r.petalIndex("sparkle")).equipFlags, std::uint16_t(EquipTest1));
+    CHECK_EQ(r.petal(r.petalIndex("basic")).equipFlags, std::uint16_t(EquipNone));
     // Worn as a ring around the flower, and nothing on the ring of petals.
-    CHECK_EQ(r.petal(r.petalIndex("disc")).equipFlags, std::uint8_t(EquipDisc));
+    CHECK_EQ(r.petal(r.petalIndex("disc")).equipFlags, std::uint16_t(EquipDisc));
+    // Worn as a wrap round the flower, past the eighth bit.
+    CHECK_EQ(r.petal(r.petalIndex("bandage")).equipFlags, std::uint16_t(EquipBandage));
     CHECK(r.petal(r.petalIndex("disc")).noPhysics);
     // Worn on the head, and nothing on the ring: what it lends is the petal.
     const PetalConfig& crown = r.petal(r.petalIndex(kChampionCrownPetalId));
-    CHECK_EQ(crown.equipFlags, std::uint8_t(EquipCrown));
+    CHECK_EQ(crown.equipFlags, std::uint16_t(EquipCrown));
     CHECK(crown.noPhysics);
     CHECK(petalLendsBasic(crown));
     CHECK(petalHasOwnSource(crown));

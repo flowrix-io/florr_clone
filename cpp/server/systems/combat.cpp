@@ -834,6 +834,10 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // `health` dangles from this call on: the lockout is a component, and
     // adding one relocates the victim's row.
     if (fatal && trySecondChance(world, victim, nowMillis)) fatal = false;
+    // A worn bandage turns what is left of a killing blow into Undead: the
+    // flower stands at 1 HP until the bandage's time is up, and dies then.
+    // After Second Chance, which spares the flower outright.
+    if (fatal && tryUndead(world, victim, source, nowMillis)) fatal = false;
 
     creditSwing(world, victim, source, amount);
 
@@ -1130,7 +1134,8 @@ bool CombatSystem::grantXp(World& world, Entity player, double xp) {
         // The ring's pool is flat (PVP_MAX_HEALTH); a level gained in it
         // still heals, as the reference's level-up does.
         health->max = arena ? kArenaMaxHealth : std::round(maxHealthForLevel(level) * healthScale);
-        health->current = health->max;
+        // Not an Undead flower, which nothing heals: it keeps its 1 HP.
+        if (!world.has<Undead>(player)) health->current = health->max;
     }
     if (ContactDamage* contact = world.tryGet<ContactDamage>(player)) {
         // The worn cutter's bonus rides along, or the level-up would strip it
@@ -1169,6 +1174,57 @@ bool CombatSystem::trySecondChance(World& world, Entity victim, double nowMillis
     health.invulnerableUntilMillis = std::max(health.invulnerableUntilMillis,
                                               nowMillis + effect[0]);
     return true;
+}
+
+bool CombatSystem::tryUndead(World& world, Entity victim, Entity source, double nowMillis) {
+    // Already Undead: death is put off until the bandage's time runs out, and
+    // no blow brings it nearer. The clock is the first blow's.
+    if (world.has<Undead>(victim)) {
+        world.get<Health>(victim).current = 1.0;
+        return true;
+    }
+    // A mob of an undead kind (the mummy beetle) stands up out of the blow
+    // that empties it, for its tier's time, and goes on fighting.
+    if (const RisesUndead* rises = world.tryGet<RisesUndead>(victim)) {
+        const Undead undead{nowMillis + rises->millis, attributedSource(world, source), 0.0, 1.0};
+        // `rises` dangles from here: adding the component relocates the row.
+        world.add<Undead>(victim, undead);
+        world.get<Health>(victim).current = 1.0;
+        return true;
+    }
+    if (!world.has<PlayerTag>(victim)) return false;
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(victim);
+    if (modifiers == nullptr || !(modifiers->undeadMillis > 0.0)) return false;
+    const Undead undead{nowMillis + modifiers->undeadMillis, attributedSource(world, source),
+                        modifiers->unrevivableMillis, modifiers->undeadBodyDamageScale};
+    // `modifiers` dangles from here: adding the component relocates the row.
+    world.add<Undead>(victim, undead);
+    world.get<Health>(victim).current = 1.0;
+    return true;
+}
+
+void CombatSystem::tickUndead(World& world, double nowMillis) {
+    Query<Undead> walking{world};
+    walking.without<Dead>();
+    std::vector<Entity> expired;
+    walking.each([&](Entity e, Undead& undead) {
+        if (nowMillis >= undead.untilMillis) expired.push_back(e);
+    });
+    for (const Entity e : expired) {
+        const Undead undead = world.get<Undead>(e);
+        world.remove<Undead>(e);
+        // The death that was put off, to the one who dealt it -- or to
+        // nobody, when they have been reaped since.
+        const Entity killer = world.isAlive(undead.killer) ? undead.killer : NULL_ENTITY;
+        fell(world, e, killer);
+        if (world.has<PlayerTag>(e)) {
+            world.ensure<Unrevivable>(e).untilMillis = nowMillis + undead.unrevivableMillis;
+        } else {
+            // Everything else a mob's killing blow does (applyDamage).
+            mirrorSharedChain(world, e, true, killer);
+            collapseClearedNest(world, e, killer);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1453,6 +1509,8 @@ void CombatSystem::applyNoHeal(World& world, Entity victim, double durationMilli
 }
 
 bool CombatSystem::healingBlocked(const World& world, Entity entity, double nowMillis) {
+    // An Undead flower is dying on a clock, and nothing mends that.
+    if (world.has<Undead>(entity)) return true;
     const Afflictions* afflictions = world.tryGet<Afflictions>(entity);
     return afflictions != nullptr && afflictions->healBlocked(nowMillis);
 }
@@ -1604,6 +1662,7 @@ void CombatSystem::beginTick(World& world, double nowMillis, double dt, EventQue
     tickAfflictions(world, nowMillis, dt);
     tickSpongeDamage(world, nowMillis, dt);
     tickShieldDecay(world, dt);
+    tickUndead(world, nowMillis);
 }
 
 void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
@@ -2025,6 +2084,10 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
         }
         if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(e)) {
             source.damage *= modifiers->damageScale;
+        }
+        // An Undead flower's body hits for what its bandage leaves of it.
+        if (const Undead* undead = world.tryGet<Undead>(e)) {
+            source.damage *= undead->bodyDamageScale;
         }
         // recalculatePlayerStats() stores the flower's body damage ROUNDED and
         // every contact hit deals exactly that integer, so a level-10 flower

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <initializer_list>
 #include <utility>
 #include <vector>
 
@@ -284,6 +285,9 @@ MobArt mobArtFor(const std::string& image) {
         {"termite_egg", MobArt::TermiteEgg},
         {"ant_egg", MobArt::AntEgg},
         {"fire_ant_egg", MobArt::FireAntEgg},
+        {"beetle_mummy", MobArt::BeetleMummy},
+        {"beetle_pharaoh", MobArt::BeetlePharaoh},
+        {"tomb", MobArt::Tomb},
     };
     for (const auto& [marker, art] : kFlorr) {
         if (name == marker) return art;
@@ -370,6 +374,46 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                            static_cast<float>(-side * kSweep), 0.0f, static_cast<float>(kTau));
             canvas.fill();
             canvas.restore();
+        }
+    };
+
+    // One part of an SVG document florr draws whole (its asset painter,
+    // 0x1006d28c0) -- the pyramid mobs' wraps, headdress and tomb: a path
+    // filled and then outlined, or outlined first where the document says
+    // `paint-order: stroke`. kNoPaint skips either half; caps and joins are
+    // the document's, SVG's butt and miter where it names none.
+    constexpr std::uint32_t kNoPaint = 0xFFFFFFFFu;
+    struct SvgPart {
+        const Path2D* path;
+        std::uint32_t fill;
+        std::uint32_t stroke;
+        float width;
+        bool roundCap;
+        bool roundJoin;
+        bool strokeFirst;
+    };
+    const auto paintSvgParts = [&canvas](std::initializer_list<SvgPart> parts) {
+        for (const SvgPart& part : parts) {
+            const auto fill = [&] {
+                if (part.fill == kNoPaint) return;
+                ui::setFill(canvas, part.fill);
+                canvas.fill(*part.path);
+            };
+            const auto stroke = [&] {
+                if (part.stroke == kNoPaint) return;
+                ui::setStroke(canvas, part.stroke);
+                canvas.setLineWidth(part.width);
+                canvas.setLineCap(part.roundCap ? "round" : "butt");
+                canvas.setLineJoin(part.roundJoin ? "round" : "miter");
+                canvas.stroke(*part.path);
+            };
+            if (part.strokeFirst) {
+                stroke();
+                fill();
+            } else {
+                fill();
+                stroke();
+            }
         }
     };
 
@@ -2774,6 +2818,208 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 disc(0xCFC295u, attr.radius);
                 disc(0xFFF0B8u, attr.radius * 0.8);
             }
+            break;
+        }
+
+        case MobArt::BeetleMummy:
+        case MobArt::BeetlePharaoh: {
+            // florr's pyramid beetles, one painter for both (0x1007213e0),
+            // drawn for a radius of 40: the beetle's mandibles, its shell in
+            // undead green with the seam and six dimples in 0.9 of it, and
+            // three linen wraps laid over its back -- a document florr draws
+            // at 1.53. The mandibles close 0.2 rad each on the claw beat. The
+            // pharaoh wears its headdress over all that: a second document,
+            // turned a quarter so its face looks along +x, at 1.5.
+            static const Path2D mandibles[] = {
+                svgPathData("M -10 15 Q 15 30 35 15 Q 15 20 -10 5 Z"),
+                svgPathData("M -10 -15 Q 15 -30 35 -15 Q 15 -20 -10 -5 Z"),
+            };
+            static const Path2D shell = svgPathData("M0-30Q40-30 40 0 40 30 0 30-40 30-40 0-40-30 0-30Z");
+            static const Path2D seam = svgPathData("M-20 0Q0 -3 20 0");
+            static const Path2D wraps[] = {
+                svgPathData("M45 33.833c-.626 0-1.24.01-1.846.026l13.965 40.98c2.832-.723 5.298-1.751 7.396"
+                            "-3.094L51.718 34.193a59.444 59.444 0 0 0-6.718-.36z"),
+                svgPathData("M49.226 33.97 39.37 75.917a61.55 61.55 0 0 0 5.63.248 70 70 0 0 0 2.542-.05l9."
+                            "62-40.944c-2.385-.613-5.033-1.01-7.935-1.2Zm-9.002.035c-3.061.232-5.829.702-8."
+                            "302 1.416l-5.545 36.865c2.19 1.25 4.747 2.187 7.664 2.827z"),
+                svgPathData("m61.92 36.837-3.44 37.621c2.796-.847 5.207-2.014 7.22-3.525.432-.324.837-.669 "
+                            "1.23-1.023l2.472-27.038a16.881 16.881 0 0 0-3.701-3.804 20.818 20.818 0 0 0-3."
+                            "781-2.23zm-35.268.727c-.833.459-1.621.956-2.352 1.504a16.794 16.794 0 0 0-4.47"
+                            "8 5.02L25.5 71.754c2.456 1.569 5.412 2.709 8.87 3.434z"),
+            };
+            static const Path2D headdress[] = {
+                svgPathData("M76.268 34.156c-.106-.968-.57-2.98-1.031-4.398C69.47 28.2 62.569 27.441 55 27."
+                            "441c-7.569 0-14.47.76-20.237 2.317-.462 1.419-.925 3.43-1.03 4.398 5.5-1.312 1"
+                            "2.892-2.25 21.267-2.25s15.768.938 21.268 2.25zM70.87 67.272c1.01-1.167 1.953-2"
+                            ".605 2.704-4.075-4.813.125-12.2.375-18.575.375s-13.762-.25-18.575-.375c.751 1."
+                            "47 1.695 2.908 2.704 4.075 3.665.375 8.746.578 15.871.578s12.206-.203 15.871-."
+                            "578z"),
+                svgPathData("m68.56 28.38.127 4.4m-9.124-5.243V32m-18.124-3.62-.126 4.4m9.124-5.243V32m8.12"
+                            "6 31.55-.065 4.282m7.313-4.423-.377 4.243M51.437 63.55l.065 4.282M44.19 63.41l"
+                            ".377 4.243"),
+                svgPathData("M74.117 42.219c1.804 1.648 4.011 8.675 4.633 12.345.393 2.325-.242 3.375-1.255"
+                            " 4.45-1.014 1.075-2.286 2.073-2.838 3.337l-1.255 2.868c-.584 1.333-1.112 3.543"
+                            "-2.717 3.568l-3.073.049-.701-10.125c-2.57.322-7.322.655-11.911.655-4.59 0-9.34"
+                            "1-.333-11.91-.655l-.702 10.125-3.073-.049c-1.605-.025-2.133-2.235-2.717-3.568l"
+                            "-1.255-2.868c-.552-1.264-1.824-2.262-2.838-3.337-1.013-1.075-1.648-2.125-1.255"
+                            "-4.45.622-3.67 2.829-10.697 4.633-12.345 1.804-1.648 9.209-5.214 19.117-5.214 "
+                            "9.908 0 17.313 3.566 19.117 5.214z"),
+                svgPathData("M76.646 47.002c.439 1.18.845 2.443 1.19 3.662l-7.262.398 1.506-3.757zm2.02 7.1"
+                            "1c.029.152.06.31.084.452.225 1.328.112 2.237-.213 2.975l-11.285.56 1.904-3.497"
+                            "ZM76 60.513c-.552.572-1.05 1.165-1.344 1.836l-.535 1.226-6.851.315-.217-3.12zm"
+                            "-2.963 5.615c-.483 1.243-1.077 2.638-2.351 2.658l-3.075.049-.181-2.62zM57.162 "
+                            "37.066c1.596.084 3.117.255 4.545.49L59.1 59.284a108.01 108.01 0 0 1-3.098.074z"
+                            "m8.557 1.37c1.79.49 3.354 1.052 4.648 1.619l-5.644 18.884c-.913.081-1.932.154-"
+                            "3.026.22zm-32.365 8.566a49.122 49.122 0 0 0-1.19 3.662l7.262.398-1.506-3.757zm"
+                            "-2.02 7.11c-.029.152-.06.31-.084.452-.225 1.328-.112 2.237.213 2.975l11.285.56"
+                            "-1.904-3.497ZM34 60.513c.552.572 1.05 1.165 1.344 1.836l.535 1.226 6.851.315.2"
+                            "17-3.12zm2.963 5.615c.483 1.243 1.077 2.638 2.351 2.658l3.075.049.181-2.62zm15"
+                            ".875-29.063a41.228 41.228 0 0 0-4.545.49L50.9 59.284c1.017.039 2.054.064 3.098"
+                            ".074zm-8.557 1.37a34.169 34.169 0 0 0-4.648 1.619l5.644 18.884c.913.081 1.932."
+                            "154 3.026.22z"),
+                svgPathData("m35.883 42.219 5.101 12.734M74.117 42.22l-5.101 12.734"),
+                svgPathData("m42.866 61.927-.478 6.909-3.073-.049c-1.605-.025-2.133-2.235-2.717-3.568l-1.25"
+                            "5-2.868c-.552-1.264-1.824-2.262-2.838-3.337-1.013-1.075-1.648-2.125-1.255-4.45"
+                            ".622-3.67 2.829-10.697 4.633-12.345 1.804-1.648 9.209-5.214 19.117-5.214 9.908"
+                            " 0 17.313 3.566 19.117 5.214 1.804 1.648 4.011 8.675 4.633 12.345.393 2.325-.2"
+                            "42 3.375-1.255 4.45-1.014 1.075-2.286 2.073-2.838 3.337l-1.255 2.868c-.584 1.3"
+                            "33-1.112 3.543-2.717 3.568l-3.073.049-.478-6.909"),
+                svgPathData("m66.91 58.71.224 3.217 1.426-1.313.456-5.66c-2.939.264-8 .727-14.016.727-6.017"
+                            " 0-11.077-.463-14.016-.728l.456 5.66 1.426 1.314.223-3.216c2.57.322 7.322.655 "
+                            "11.911.655 4.59 0 9.341-.333 11.91-.655z"),
+                svgPathData("M49.944 54.185c.086 1.106 1.655 2.928 2.324 3.558.669.63 1.961 1.623 2.732 1.6"
+                            "23.77 0 2.063-.993 2.732-1.623.67-.63 2.238-2.452 2.324-3.558.086-1.106-1.345-"
+                            "4.35-5.056-4.35-3.711 0-5.142 3.244-5.056 4.35z"),
+                svgPathData("M52.19 52.2c0-1.047.849-2.366 2.81-2.366s2.81 1.319 2.81 2.365c0 1.047-1.51 2."
+                            "578-2.81 2.578s-2.81-1.531-2.81-2.578z"),
+                svgPathData("M52.773 53.554c.393 4.564 1.16 5.812 2.227 5.812s1.834-1.248 2.227-5.812"),
+            };
+
+            canvas.save();
+            const double s = attr.radius / 40.0;
+            canvas.scale(static_cast<float>(s), static_cast<float>(s));
+
+            const double close = 0.2 * clawBeat(attr);
+            ui::setFill(canvas, 0x333333u);
+            ui::setStroke(canvas, 0x333333u);
+            roundStrokes(canvas, 7.0);
+            for (int i = 0; i < 2; ++i) {
+                canvas.save();
+                canvas.translate(35.0f, 0.0f);
+                canvas.rotate(static_cast<float>(i == 0 ? -close : close));
+                canvas.fill(mandibles[i]);
+                canvas.stroke(mandibles[i]);
+                canvas.restore();
+            }
+
+            const std::uint32_t base = bodyColor(attr, 0x83B05Du);
+            const std::uint32_t mark = shadeOf(base, 0.9);
+            ui::setFill(canvas, base);
+            canvas.fill(shell);
+            ui::setStroke(canvas, mark);
+            canvas.stroke(shell);
+            canvas.stroke(seam);
+            ui::setFill(canvas, mark);
+            constexpr float kDimples[6][2] = {{-17, -12}, {-17, 12}, {0, -15},
+                                              {0, 15},    {17, -12}, {17, 12}};
+            for (const auto& d : kDimples) {
+                canvas.beginPath();
+                canvas.arc(d[0], d[1], 5.0f, 0.0f, static_cast<float>(kTau));
+                canvas.fill();
+            }
+
+            canvas.save();
+            canvas.transform(1.53f, 0.0f, 0.0f, 1.53f, -69.15f, -84.15f);
+            for (const Path2D& wrap : wraps) {
+                paintSvgParts({{&wrap, 0xE5DAA1u, 0xB7AE81u, 2.333f, true, true, false}});
+            }
+            canvas.restore();
+
+            if (art == MobArt::BeetlePharaoh) {
+                canvas.transform(0.0f, -1.5f, 1.5f, 0.0f, -67.5f, 82.5f);
+                paintSvgParts({
+                    {&headdress[0], 0xFFDC06u, 0xCCB005u, 1.366f, false, true, false},
+                    {&headdress[1], kNoPaint, 0xCCB005u, 1.366f, false, false, false},
+                    {&headdress[2], 0x2F39B1u, kNoPaint, 0.0f, false, false, false},
+                    {&headdress[3], 0xFFDC06u, kNoPaint, 0.0f, false, false, false},
+                    {&headdress[4], kNoPaint, 0x262E8Eu, 1.366f, false, false, false},
+                    {&headdress[5], kNoPaint, 0x262E8Eu, 1.366f, true, true, false},
+                    {&headdress[6], 0xFFDC06u, 0xCCB005u, 1.366f, false, true, false},
+                    {&headdress[7], 0xFFDC06u, 0xCCB005u, 1.366f, false, false, false},
+                    {&headdress[8], kNoPaint, 0xCCB005u, 1.366f, false, false, false},
+                    {&headdress[9], kNoPaint, 0xCCB005u, 1.366f, false, false, false},
+                });
+            }
+
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::Tomb: {
+            // florr's tomb (0x1007209e0): a sarcophagus, one document drawn
+            // for a radius of 40 at 0.95 and turned a quarter so its head
+            // lies along +x -- the wood, its red bands, the lid's rim, the
+            // folded arms, the face and the ankh held on the chest, the ankh
+            // outlined before it is filled. A summon's wood and rim are the
+            // yellow and its outline, as every pet's body is.
+            static const Path2D tomb[] = {
+                svgPathData("M21.15 61.565c0-13.98 2.715-23.554 7.144-29.99C31.085 11.502 41.481 6.45 55 6."
+                            "45s23.915 5.052 26.706 25.125c4.43 6.436 7.144 16.01 7.144 29.99 0 34.01-16.03"
+                            "9 41.985-33.85 41.985s-33.85-7.975-33.85-41.985z"),
+                svgPathData("M60 17.498a5 5 0 1 1-10 0 5 5 0 0 1 10 0zM22.289 47.381c-.43 2.406-.74 5.016-."
+                            "928 7.826h13.907c.712-3.06 1.761-5.67 3.152-7.826zm-1.127 15.041a90.2 90.2 0 0"
+                            " 0 .381 7.826h12.719a63.037 63.037 0 0 1 0-7.826zm1.465 15.043c.61 2.902 1.4 5"
+                            ".499 2.344 7.826H38.42c-1.39-2.156-2.44-4.766-3.152-7.826Zm65.084-30.084c.43 2"
+                            ".406.74 5.016.928 7.826H74.732c-.712-3.06-1.761-5.67-3.152-7.826Zm1.127 15.041"
+                            "a90.2 90.2 0 0 1-.381 7.826H75.738a63.037 63.037 0 0 0 0-7.826zm-1.465 15.043c"
+                            "-.61 2.902-1.4 5.499-2.344 7.826H71.58c1.39-2.156 2.44-4.766 3.152-7.826z"),
+                svgPathData("M88.85 61.565c0-13.98-2.715-23.554-7.144-29.99C78.915 11.502 68.519 6.45 55 6."
+                            "45s-23.915 5.052-26.706 25.125c-4.43 6.436-7.144 16.01-7.144 29.99 0 34.01 16."
+                            "039 41.985 33.85 41.985s33.85-7.975 33.85-41.985z"),
+                svgPathData("M65.084 49.596c6.263-11.343 5.904-21.337-1.077-29.981 2.54 8.803.679 18.876-5."
+                            "585 30.22zm-20.168 0c-6.263-11.343-5.904-21.337 1.077-29.981-2.54 8.803-.679 1"
+                            "8.876 5.585 30.22z"),
+                svgPathData("M55 39.669c13.333 0 20 8.89 20 26.667 0 17.778-6.667 26.666-20 26.666s-20-8.88"
+                            "8-20-26.666 6.667-26.667 20-26.667z"),
+                svgPathData("M50.113 58.463c.018 3.216 1.849 5.523 2.718 7.344-2.915-.12-5.896-.537-9.123-1"
+                            ".26l.029 4.952c3.442-.814 6.65-1.268 9.808-1.382.87 4.49-.532 9.686-1.96 14.74"
+                            "2l6.83.042c-1.428-5.056-2.83-10.254-1.96-14.743 3.159.114 6.366.57 9.808 1.383"
+                            "l.029-4.954c-3.227.723-6.208 1.14-9.123 1.26.87-1.82 2.7-4.128 2.718-7.344.027"
+                            "-4.8-2.277-8.717-4.887-8.733-2.61.016-4.914 3.893-4.887 8.693zm4.888-5.592c1.3"
+                            "34.007 2.599 2.441 2.582 5.411-.017 2.97-1.248 5.35-2.583 5.342-1.335.008-2.56"
+                            "6-2.413-2.583-5.383-.016-2.97 1.249-5.362 2.584-5.37z"),
+            };
+            // Broken open (florr's second document, the branch its flag
+            // picks): the same shell outline, filled with the dark of an
+            // empty coffin inside its wall.
+            static const Path2D hollow = svgPathData(
+                "M74.885 35.465c3.946 5.541 6.569 13.069 6.569 25.105 0 29.282-12.72 35.62-26.454 35."
+                "62-13.733 0-26.454-6.338-26.454-35.62 0-12.036 2.624-19.564 6.57-25.105C37.268 18.183"
+                " 44.576 13.65 55 13.65s17.733 4.533 19.885 21.815z");
+            const std::uint32_t wood = bodyColor(attr, 0xA88642u);
+            const std::uint32_t rim = rimColor(attr, 0x886D35u);
+
+            canvas.save();
+            const double s = attr.radius / 40.0;
+            canvas.scale(static_cast<float>(s), static_cast<float>(s));
+            canvas.transform(0.0f, 0.95f, -0.95f, 0.0f, 52.25f, -52.25f);
+            if (attr.opened) {
+                paintSvgParts({
+                    {&tomb[2], wood, rim, 4.667f, false, false, false},
+                    {&hollow, 0x655027u, rim, 4.667f, false, false, false},
+                });
+                canvas.restore();
+                break;
+            }
+            paintSvgParts({
+                {&tomb[0], wood, kNoPaint, 0.0f, false, false, false},
+                {&tomb[1], 0x884826u, kNoPaint, 0.0f, false, false, true},
+                {&tomb[2], kNoPaint, rim, 4.667f, false, false, false},
+                {&tomb[3], rim, rim, 4.667f, false, true, false},
+                {&tomb[4], wood, rim, 4.667f, false, false, false},
+                {&tomb[5], wood, rim, 6.667f, true, true, true},
+            });
+            canvas.restore();
             break;
         }
 

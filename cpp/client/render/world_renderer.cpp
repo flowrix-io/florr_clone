@@ -159,6 +159,22 @@ void drawWornCrown(Canvas& canvas) {
 /// nothing for a worn disc -- its flower painter has no branch for one.
 constexpr std::uint32_t kWornDiscOutline = 0x111111u;
 
+/// An Undead flower's body: florr's `Colors/undead`, the green its mummy
+/// beetle wears.
+constexpr std::uint32_t kUndeadBody = 0x83B05Du;
+
+/// Whether a flower is drawn wrapped in the bandage: for as long as it wears
+/// one (user, 2026-10-22: "always show the bandage drawing when it is
+/// equipped"), and while it is Undead.
+bool wrappedInBandage(std::uint8_t faceFlags, std::uint16_t equipFlags) {
+    return (faceFlags & FaceUndead) != 0 || (equipFlags & EquipBandage) != 0;
+}
+
+/// How much bigger a worn piece florr draws at the flower's centre is than the
+/// same petal on the ring: 1.65 x (25 + 1.5) / 25, the flower's outline radius
+/// over its body's, as its flower painter (0x1006c8ef0) scales the bandage.
+constexpr double kWornCentreScale = 1.65 * (kFlowerArtRadius + 1.5) / kFlowerArtRadius;
+
 // --- chat bubbles ----------------------------------------------------------
 //
 // The reference's geometry (rysteria_gardn Client/Render/RenderChat.cc and
@@ -2561,7 +2577,7 @@ void WorldRenderer::drawCorpse(Canvas& canvas, const RemoteEntity& entity, const
     canvas.restore();
 }
 
-void WorldRenderer::drawDeadFlower(Canvas& canvas, std::uint8_t equipFlags, double mouth,
+void WorldRenderer::drawDeadFlower(Canvas& canvas, std::uint16_t equipFlags, double mouth,
                                    double timeSeconds) const {
     drawFace(canvas, FaceDeadEyes, equipFlags, 0, 0, mouth, timeSeconds);
 }
@@ -2738,23 +2754,33 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         std::uint64_t variant = 1469598103934665603ull;
         for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
         variant = variant * 1099511628211ull + skin->shapes.size();
-        if (drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
-                              [&](Canvas& bitmap) {
-                                  bitmap.translate(static_cast<float>(reach),
-                                                   static_cast<float>(reach));
-                                  renderSkinShapes(bitmap, skin->shapes, kFlowerArtRadius);
-                              })) {
-            return;
+        if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
+                               [&](Canvas& bitmap) {
+                                   bitmap.translate(static_cast<float>(reach),
+                                                    static_cast<float>(reach));
+                                   renderSkinShapes(bitmap, skin->shapes, kFlowerArtRadius);
+                               })) {
+            renderSkinShapes(canvas, skin->shapes, kFlowerArtRadius);
         }
-        renderSkinShapes(canvas, skin->shapes, kFlowerArtRadius);
+        // A worn bandage shows through any body: the face's wrap, over the
+        // skin.
+        if (wrappedInBandage(entity.faceFlags, entity.equipFlags)) {
+            drawUndeadWrap(canvas, timeSeconds);
+        }
         return;
     }
     // Registration order in player-skins.ts is Pumpkin, then Robot. Preserve
     // that deterministic priority when a saved account somehow has both bits.
     if (entity.renderFlags & PlayerRenderPumpkin) {
         drawPumpkin(canvas, entity);
+        if (wrappedInBandage(entity.faceFlags, entity.equipFlags)) {
+            drawUndeadWrap(canvas, timeSeconds);
+        }
     } else if (entity.renderFlags & PlayerRenderRobot) {
         drawRobot(canvas, entity);
+        if (wrappedInBandage(entity.faceFlags, entity.equipFlags)) {
+            drawUndeadWrap(canvas, timeSeconds);
+        }
     } else {
         drawDefaultFlower(canvas, entity, timeSeconds);
     }
@@ -2769,7 +2795,7 @@ void WorldRenderer::drawDefaultFlower(Canvas& canvas, const RemoteEntity& entity
              active ? 4.0 : 14.5, timeSeconds);
 }
 
-void WorldRenderer::drawCutterBlade(Canvas& canvas, std::uint8_t equipFlags,
+void WorldRenderer::drawCutterBlade(Canvas& canvas, std::uint16_t equipFlags,
                                     double timeSeconds) const {
     if (!sprites_ || !content_) return;
     // The lightning cutter is the same blade in cyan, and carries its own bit
@@ -2791,7 +2817,18 @@ void WorldRenderer::drawCutterBlade(Canvas& canvas, std::uint8_t equipFlags,
                         std::fmod(timeSeconds * kPetalSpinRate * speed, kTau), timeSeconds);
 }
 
-void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint8_t equipFlags,
+void WorldRenderer::drawUndeadWrap(Canvas& canvas, double timeSeconds) const {
+    if (!sprites_ || !content_) return;
+    const std::uint16_t index = content_->petalIndex("bandage");
+    if (index == kInvalidIndex || !sprites_->petalDrawable(index)) return;
+    // The picture's box on the ring, at florr's centre scale: the strips lie
+    // across the whole flower, edge to edge of its outline.
+    const PetalConfig& config = content_->petal(index);
+    const double box = kPetalArtSize * config.size * petalArtScale(&config) * kWornCentreScale;
+    sprites_->drawPetal(canvas, index, Rarity::Common, 0, 0, box, 0, timeSeconds);
+}
+
+void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint16_t equipFlags,
                              double eyeX, double eyeY, double mouth, double timeSeconds,
                              std::uint32_t bodyColor) const {
     // First, so the blade sits BEHIND the body: gardn draws the cutter before
@@ -2803,6 +2840,7 @@ void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint8_
     // The status precedence is intentional: corruption identifies a flower
     // that can hurt other players, so it must remain visible through poison.
     if (faceFlags & FaceHasCorruption) baseColor = 0xD91313u;
+    else if (faceFlags & FaceUndead) baseColor = kUndeadBody;
     else if (faceFlags & FacePoisoned) baseColor = 0xCE76DBu;
     else if (faceFlags & FaceDandelioned) baseColor = ui::lighten(baseColor, 0.4);
 
@@ -2925,6 +2963,8 @@ void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint8_
         }
     }
 
+    // florr wraps the bandage on after the third eye and before the crown.
+    if (wrappedInBandage(faceFlags, equipFlags)) drawUndeadWrap(canvas, timeSeconds);
     if (equipFlags & EquipCrown) drawWornCrown(canvas);
 }
 
@@ -3905,6 +3945,20 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                                         static_cast<float>(radius));
                     break;
                 }
+                case GroundEffectKind::OpenTomb: {
+                    // The tomb's own painter in its broken-open state, at the
+                    // size and facing the tomb had when it fell.
+                    canvas.save();
+                    canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
+                    canvas.rotate(static_cast<float>(entity.angle));
+                    canvas.scale(static_cast<float>(zoom), static_cast<float>(zoom));
+                    MobArtAttributes attr;
+                    attr.radius = entity.radius;
+                    attr.opened = true;
+                    paintMobArt(canvas, MobArt::Tomb, attr);
+                    canvas.restore();
+                    break;
+                }
                 case GroundEffectKind::Poison:
                 default:
                     ui::disc(canvas, screen, radius, 0xFFE763u, 0xCFBB50u, 3.0 * zoom);
@@ -4234,6 +4288,27 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     }
     chargeOps(ops_.terrain);
 
+    // A dark map: florr draws every entity into a layer cut down to its
+    // lights' outer discs, so out of the light the ground shows and nothing on
+    // it does. A clip to the same discs is the same picture. No light at all
+    // clips to a speck off the screen, not to nothing -- an empty path is no
+    // clip.
+    const bool lightClipped = lightClip_ != nullptr;
+    if (lightClipped) {
+        canvas.save();
+        canvas.beginPath();
+        canvas.arc(-1000.0f, -1000.0f, 1.0f, 0.0f, static_cast<float>(kTau));
+        for (const LightDisc& disc : *lightClip_) {
+            const Vec2 at = camera.worldToScreen(disc.centre);
+            const auto r = static_cast<float>(disc.outer * camera.zoom());
+            if (r <= 0.0f) continue;
+            canvas.moveTo(static_cast<float>(at.x) + r, static_cast<float>(at.y));
+            canvas.arc(static_cast<float>(at.x), static_cast<float>(at.y), r, 0.0f,
+                       static_cast<float>(kTau));
+        }
+        canvas.clip();
+    }
+
     const Rect visible = camera.visibleWorld(0);
     // A body is kept until its whole extent is off screen, and the margin grows
     // with the body: a super-tier mob is wider than any fixed margin, and
@@ -4467,8 +4542,10 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
 
     drawEffects(canvas, camera);
     chargeOps(ops_.effects);
+    if (lightClipped) canvas.restore();
     // Last of all, over every body and every effect: what somebody is saying
-    // is the one thing on screen that must never be hidden behind the fight.
+    // is the one thing on screen that must never be hidden behind the fight --
+    // not by the dark either.
     drawChatBubbles(canvas, entities, camera, selfDrawn);
     chargeOps(ops_.bubbles);
 }

@@ -400,6 +400,10 @@ const SvgDocument* App::titleBackground(const std::string& backdrop) {
         {"ocean", "ocean.svg"},   {"hel", "hel.svg"},       {"ant_hell", "ant_hell.svg"},
         {"sewers", "sewers.svg"}, {"jungle", "jungle.svg"}, {"computer", "computer.svg"},
         {"unknown", "unknown.svg"},
+        // The pyramid has no ground artwork of its own: its backdrop is its
+        // floor tile, which is staged beside these. (A `pyramid.svg` here
+        // would collide with the tile of that name -- everything stages flat.)
+        {"pyramid", "pyramid_floor_c_0.svg"},
     };
     const auto entry = kFiles.find(backdrop);
     const std::string file = entry == kFiles.end() ? "land.svg" : entry->second;

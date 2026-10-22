@@ -1808,5 +1808,22 @@
         "equipFlags": "Crown",
         "noPhysics": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-30 -41.6 60 83.2\"><circle r=\"30\" fill-opacity=\".2\"/><g transform=\"matrix(1.1 0 0 1.1 -60.5 -60.5)\"><path fill=\"#ffdc06\" stroke=\"#ccb005\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"m48.125 18.194-4.5 8.526-8.375-4.22 4.625 13.75c3.875-.875 9.612-1.125 15.125-1.125s11.25.25 15.125 1.125L74.75 22.5l-8.375 4.22-4.5-8.526L55 25.875Z\"/><path fill=\"red\" stroke=\"#c00\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.334\" d=\"M40.375 31.373a2 2 0 1 1-4 0 2 2 0 0 1 4 0M51.22 29.57a2 2 0 1 1-4 0 2 2 0 0 1 4 0m18.405 1.802a2 2 0 1 0 4 0 2 2 0 0 0-4 0M58.78 29.57a2 2 0 1 0 4 0 2 2 0 0 0-4 0\"/></g></svg>"
+    },
+    "bandage": {
+        "name": "Bandage",
+        "damage": 0,
+        "health": null,
+        "size": 1,
+        "speed": 0,
+        "range": 0,
+        "cooldown": 1,
+        "price": 60,
+        "visual_scale": 1.56,
+        "description": "Turns the flower Undead for a limited time on death.\nDelays death until expiration.\nFlower Body Damage is reduced during this period.\nPrevents revival for some time afterwards.",
+        "color": "#E5DAA1",
+        "count": 0,
+        "noPhysics": true,
+        "equipFlags": "Bandage",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-15.6 -15.6 31.2 31.2\"><g transform=\"matrix(.5 0 0 .5 -27.5 -27.5)\"><path d=\"M83.767 66.323 35.649 79.058c3.04 2.47 6.516 4.39 10.247 5.562l31.345-8.293c2.778-2.894 5.02-6.296 6.526-10.004ZM41.972 26.931c-4.285 2.047-8.095 5.09-11.092 8.787l50.203 2.8a32.191 32.191 0 0 0-10.152-9.97Z\" fill=\"#e5daa1\" stroke=\"#b7ae81\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M28.784 71.38a32.587 32.587 0 0 0 7.606 8.264l35.464 1.203a32.607 32.607 0 0 0 8.096-7.73zm57.072-14.512-61.712 1.227a28.284 28.284 0 0 0 1.367 6.474l59.27-1.177a27.967 27.967 0 0 0 1.075-6.524zM68.85 27.38l-35.782 5.896a32 32 0 0 0-6.369 9.16l50.914-8.392a31.96 31.96 0 0 0-8.763-6.664Z\" fill=\"#e5daa1\" stroke=\"#b7ae81\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></g></svg>"
     }
 }

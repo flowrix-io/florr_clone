@@ -146,8 +146,8 @@ TEST(bots_spread_out_and_stay_in_the_world) {
 
 TEST(bots_are_spread_evenly_over_the_biomes) {
     // The population exists so a player does not meet an empty world -- and
-    // the world is seven biomes a bot can live in. A population that all stood
-    // in the first one left six biomes a player could walk into and find
+    // the world is eight biomes a bot can live in. A population that all stood
+    // in the first one left seven biomes a player could walk into and find
     // nothing alive, nobody playing, and (because a band is only stocked while
     // somebody is looking at it) not even mobs.
     Harness h("bots-biomes");

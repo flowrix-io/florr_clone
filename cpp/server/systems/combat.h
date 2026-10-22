@@ -554,6 +554,9 @@ private:
     void tickSpongeDamage(World& world, double nowMillis, double dt);
     /// Every shield shrinks by the same share of itself each second.
     void tickShieldDecay(World& world, double dt);
+    /// Ends every Undead whose time is up: the flower dies to the blow it was
+    /// spared, and cannot be revived for the bandage's while.
+    void tickUndead(World& world, double nowMillis);
     /// Takes the registry because a pollen puff reaches for the victim's
     /// CONFIG radius rather than the body it actually spawned with.
     void tickGroundEffects(World& world, const SpatialGrid& grid, const ContentRegistry& content,
@@ -649,6 +652,12 @@ private:
     /// are all covered by one lookup rather than by five call sites that each
     /// have to remember.
     bool trySecondChance(World& world, Entity victim, double nowMillis);
+
+    /// A worn bandage's Undead: turns a killing blow on a flower into 1 HP
+    /// held until the bandage's time runs out -- the first such blow starts
+    /// the clock, every later one is held too -- or leaves it lethal. Behind
+    /// applyDamage for the reason Second Chance is, and asked after it.
+    bool tryUndead(World& world, Entity victim, Entity source, double nowMillis);
 
     /// Rolls `victim`'s evasion against one direct hit. True means it missed;
     /// a flower that dodges is given the post-hit window a landed hit buys.

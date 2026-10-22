@@ -20,9 +20,12 @@ enum FaceFlag : std::uint8_t {
     FaceAttacking     = 1 << 4,
     FaceDefending     = 1 << 5,
     FaceHasCorruption = 1 << 6,
+    /// A worn bandage is holding the flower up past a killing blow (florr's
+    /// Undead): drawn in the undead green, wrapped in the bandage.
+    FaceUndead        = 1 << 7,
 };
 
-enum EquipFlag : std::uint8_t {
+enum EquipFlag : std::uint16_t {
     EquipNone     = 0,
     EquipCutter   = 1 << 0,
     EquipThirdEye = 1 << 1,
@@ -35,8 +38,11 @@ enum EquipFlag : std::uint8_t {
     EquipLightningCutter = 1 << 5,
     /// The Champion's Crown, drawn on the flower's head.
     EquipCrown = 1 << 6,
-    /// A disc, drawn as a black ring around the flower. The last free bit.
+    /// A disc, drawn as a black ring around the flower.
     EquipDisc = 1 << 7,
+    /// A bandage, drawn wrapped round the flower for as long as it is worn
+    /// (user, 2026-10-22) -- not only while it holds the flower Undead.
+    EquipBandage = 1 << 8,
 };
 
 enum PlayerRenderFlag : std::uint32_t {

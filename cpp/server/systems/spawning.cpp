@@ -705,6 +705,9 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     world.add<HitCooldowns>(e);
     world.add<Afflictions>(e);
     world.add<MobType>(e, MobType{mobIndex, rarity, jitter});
+    if (const double undead = mobUndeadMillis(config, rarity); undead > 0.0) {
+        world.add<RisesUndead>(e, RisesUndead{undead});
+    }
     if (config.intangible) world.add<Intangible>(e);
     if (config.colony) world.add<ColonyMember>(e);
 
@@ -877,6 +880,57 @@ void SpawnSystem::spawnBodyChain(World& world, const Terrain& terrain,
     }
 }
 
+void SpawnSystem::answerDeaths(World& world, const Terrain& terrain, const ContentRegistry& content,
+                               const std::vector<Entity>& dead, Rng& rng, double nowMillis,
+                               double dt, CommandBuffer& commands) {
+    // The remains already lying about grow older first, so what is laid
+    // below keeps every second of its own time.
+    Query<MobRemains, Lifetime> remains{world};
+    remains.each([&](Entity e, MobRemains&, Lifetime& lifetime) {
+        lifetime.remainingSeconds -= dt;
+        if (lifetime.remainingSeconds <= 0.0) commands.destroy(e);
+    });
+
+    for (const Entity e : dead) {
+        const MobType* type = world.tryGet<MobType>(e);
+        const Transform* transform = world.tryGet<Transform>(e);
+        if (type == nullptr || transform == nullptr) continue;
+        const MobConfig& config = content.mob(type->configIndex);
+        if (!config.deathSpawn.present && !(config.remainsMillis > 0.0)) continue;
+        // Copied out: everything created below may move the corpse's row.
+        const Rarity rarity = type->rarity;
+        const Vec2 at = transform->position;
+        const double angle = transform->angle;
+        const Realm realm = transform->realm;
+        const Body* body = world.tryGet<Body>(e);
+        const double drawnRadius = (body != nullptr ? body->radius : 0.0) * config.visualScale;
+
+        if (config.remainsMillis > 0.0 && drawnRadius > 0.0) {
+            const Entity shell = world.create();
+            world.add<Transform>(shell, Transform{at, angle, realm});
+            world.add<MobRemains>(shell, MobRemains{drawnRadius});
+            world.add<Lifetime>(shell, Lifetime{config.remainsMillis / 1000.0});
+            Replicated replicated;
+            replicated.kind = net::EntityKind::Effect;
+            replicated.typeIndex = static_cast<std::uint16_t>(GroundEffectKind::OpenTomb);
+            replicated.rarity = rarity;
+            world.add<Replicated>(shell, replicated);
+            if (netIds != nullptr) world.add<NetId>(shell, NetId{netIds->next()});
+        }
+
+        if (config.deathSpawn.present && rng.chance(config.deathSpawn.chance)) {
+            // Out of the tomb itself, as a hole's waves come out of the hole,
+            // and held to the ladder an escort is held to.
+            for (int i = 0; i < config.deathSpawn.count; ++i) {
+                const Entity child =
+                    spawnEscort(world, terrain, content, config.deathSpawn.mobIndex, rarity,
+                                escortSpawnPoint(at, rng), realm, NULL_ENTITY, nowMillis, rng, 1);
+                if (child == NULL_ENTITY) break;   // the global cap, nothing else
+            }
+        }
+    }
+}
+
 // An escort is placed by its NEST, not by a band. It comes up at the parent's
 // own centre (escortSpawnPoint, a unit off on a bearing of its own) and walks
 // out from there, so it is routinely standing over the band's edge on ground
@@ -887,9 +941,9 @@ Entity SpawnSystem::spawnEscort(World& world, const Terrain& terrain, const Cont
                                 std::uint16_t childIndex, Rarity nestRarity, Vec2 at, Realm realm,
                                 Entity parent, double nowMillis, Rng& rng, int depth) {
     if (census_.mobs >= mobCap) return NULL_ENTITY;
-    // All three paths come through here -- a hole's opening guard, its waves
-    // and a queen's soldiers -- so this is where a minion is held to ultra,
-    // however far above that its nest stands.
+    // Every such path comes through here -- a hole's opening guard, its
+    // waves, a queen's soldiers and a broken tomb's mummy -- so this is where
+    // a minion is held to ultra, however far above that its nest stands.
     const Entity child = spawnMobAt(world, terrain, content, childIndex, minionRarity(nestRarity),
                                     at, realm, nowMillis, rng, depth, kInvalidIndex);
     if (child == NULL_ENTITY || parent == NULL_ENTITY) return child;
@@ -1088,8 +1142,11 @@ void SpawnSystem::takeCensus(World& world, const ContentRegistry& content,
         // (src/server/playerState.ts:1041). Grown past the WAKE box by
         // kLatentSleepMargin, so nothing promoteLatent wakes is already
         // outside it.
+        // An Undead mob is dying on a clock and owes its killer a death: it
+        // stays up until it has had it, rather than going back to a record
+        // that would wake whole.
         const bool nearAnyone =
-            unattended || world.has<KeepAwake>(e) ||
+            unattended || world.has<KeepAwake>(e) || world.has<Undead>(e) ||
             seenBy(viewers, transform.realm, transform.position,
                    kLatentWakeMargin + kLatentSleepMargin);
 

@@ -1526,5 +1526,39 @@
         "maxQuantity": 1
       }
     ]
+  },
+  "mummy_beetle": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "bandage",
+        "rarity": "common",
+        "probability": 0.15,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "lentil",
+        "rarity": "common",
+        "probability": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "pharaoh_beetle": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "bandage",
+        "rarity": "common",
+        "probability": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
   }
 }

@@ -42,7 +42,7 @@ const char* const kFlorrMarkers[] = {
     "starfish", "jellyfish", "dandelion", "fly", "leafbug", "leafbug_shiny", "mantis",
     "bush", "roach", "moth", "firefly", "firefly_magic", "dummy",
     "termite_baby", "termite_worker", "termite_soldier", "termite_overmind", "termite_mound",
-    "termite_egg", "ant_egg", "fire_ant_egg",
+    "termite_egg", "ant_egg", "fire_ant_egg", "beetle_mummy", "beetle_pharaoh", "tomb",
 };
 
 constexpr int kSide = 96;
@@ -378,6 +378,18 @@ int pixelsOf(const std::vector<std::uint8_t>& rgba, std::uint32_t rgb) {
 
 } // namespace
 
+TEST(a_broken_tomb_is_drawn_open_and_empty) {
+    // florr's second tomb document: the lid gone, the inside dark.
+    constexpr std::uint32_t kInside = 0x655027u;
+    MobArtAttributes opened;
+    opened.opened = true;
+    const std::vector<std::uint8_t> closed = paint(MobArt::Tomb, MobArtAttributes{});
+    const std::vector<std::uint8_t> open = paint(MobArt::Tomb, opened);
+    CHECK(open != closed);
+    CHECK_EQ(pixelsOf(closed, kInside), 0);
+    CHECK(pixelsOf(open, kInside) > 200);
+}
+
 TEST(a_summon_wears_the_flower_yellow_on_its_body) {
     // gardn's SET_BASE_COLOR: a summon's body is its owner's flower colour.
     // Every painter with a body colour of its own repaints it -- the bee's
@@ -396,8 +408,12 @@ TEST(a_summon_wears_the_flower_yellow_on_its_body) {
         const std::vector<std::uint8_t> wild = paint(art, MobArtAttributes{});
         const std::vector<std::uint8_t> summoned = paint(art, pet);
         const int yellow = pixelsOf(summoned, kPetBodyColor);
-        if (yellow < 50) std::printf("    $%s summoned: %d yellow pixels\n", name.c_str(), yellow);
-        CHECK(yellow >= 50);
+        // The pharaoh's shell shows only round its rim, under the wraps and
+        // the headdress; the mummy beetle, the same painter bare-headed,
+        // answers for the body in full.
+        const int need = name == "beetle_pharaoh" ? 10 : 50;
+        if (yellow < need) std::printf("    $%s summoned: %d yellow pixels\n", name.c_str(), yellow);
+        CHECK(yellow >= need);
         CHECK(summoned != wild);
     }
 

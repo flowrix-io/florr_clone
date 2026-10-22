@@ -129,7 +129,7 @@ void drawDeathFlower(Canvas& canvas, const WorldRenderer& renderer, const Sprite
         Rarity rarity;
     };
     std::vector<Seat> ring;
-    std::uint8_t equipFlags = EquipNone;
+    std::uint16_t equipFlags = EquipNone;
     const std::size_t active =
         std::min(loadout.size(), static_cast<std::size_t>(kLoadoutActiveSlots));
     for (std::size_t i = 0; i < active; ++i) {

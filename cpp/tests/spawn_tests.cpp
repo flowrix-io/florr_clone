@@ -1093,6 +1093,55 @@ TEST(an_authored_band_and_region_still_parse) {
 // Doors: safe ground, and who may use which
 // ---------------------------------------------------------------------------
 
+TEST(the_pyramid_is_a_biome_of_its_own_the_title_screen_offers) {
+    // The pyramid (2026-10-21): a map and a biome of its own, one door the
+    // picker gives a tab, a prestige twin like every biome, a pad each way to
+    // the desert, and (user) dark inside with its minimap hidden.
+    WorldMaps maps;
+    std::string error;
+    CHECK(maps.load(dataDir(), nullptr, error));
+    const SpawnChoice* door = maps.choice("pyramid");
+    CHECK(door != nullptr);
+    if (door == nullptr) return;
+    CHECK_EQ(door->biome, std::string("pyramid"));
+    CHECK_EQ(door->label, std::string("Pyramid"));
+    CHECK(door->pickable);
+    const MapData* map = maps.forRealm(door->realm);
+    CHECK(map != nullptr && map->id() == "pyramid");
+    if (map == nullptr) return;
+    // Dark inside, in florr's own dark colour, and no minimap: florr's
+    // pyramid is found, not read.
+    CHECK(!map->showsMinimap());
+    CHECK(map->isDark());
+    CHECK_EQ(map->darkColor(), 0x120D00u);
+    bool twin = false;
+    const Realm twinRealm = maps.prestigeRealm(door->realm, twin);
+    CHECK(twin);
+    if (const MapData* prestige = maps.forRealm(twinRealm)) {
+        CHECK(!prestige->showsMinimap());
+        CHECK(prestige->isDark());
+        CHECK_EQ(prestige->darkColor(), map->darkColor());
+    }
+    // Every other map keeps its minimap and its light.
+    for (const MapData& other : maps.maps()) {
+        if (other.templateId() == "pyramid" || other.id() == "prestige_pyramid") continue;
+        CHECK(other.showsMinimap());
+        CHECK(!other.isDark());
+    }
+
+    bool desertToPyramid = false, pyramidToDesert = false;
+    for (const MapData& each : maps.maps()) {
+        if (each.prestige()) continue;
+        for (const MapElement& element : each.elements()) {
+            if (element.kind != MapElementKind::Teleporter) continue;
+            if (each.id() == "desert" && element.targetMap == "pyramid") desertToPyramid = true;
+            if (each.id() == "pyramid" && element.targetMap == "desert") pyramidToDesert = true;
+        }
+    }
+    CHECK(desertToPyramid);
+    CHECK(pyramidToDesert);
+}
+
 TEST(every_pickable_door_stands_on_safe_open_ground) {
     // The rule the picker relies on: a door the title screen offers puts a
     // fresh flower down on open ground whose difficulty is below the first one

@@ -502,6 +502,15 @@ public:
              const std::vector<RealmPoint>& players, Rng& rng, double nowMillis, double dt,
              CommandBuffer& commands);
 
+    /// What this tick's dead mobs leave behind, read before the reaper takes
+    /// them: a `death_spawn` mob, at the dead one's tier, rolled at its
+    /// chance (the tomb's mummy), and a mob's `remains_ms` -- its opened
+    /// shell, lying where it fell for that long. Also ages the remains already
+    /// lying about and clears the ones whose time is up.
+    void answerDeaths(World& world, const Terrain& terrain, const ContentRegistry& content,
+                      const std::vector<Entity>& dead, Rng& rng, double nowMillis, double dt,
+                      CommandBuffer& commands);
+
     /// Places one mob, with its nest escorts if it has any, and returns it.
     /// NULL_ENTITY when `mobIndex` names nothing, or when it is a unique or an
     /// apex its biome's clock is not ready for (bossCooldownLeft).

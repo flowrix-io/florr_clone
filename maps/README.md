@@ -764,10 +764,18 @@ Set these in Tiled under *Map → Map Properties → Custom Properties*.
 | `displayName` | the caption under the minimap | the map's id |
 | `biome` | which tab of the spawn picker this map's doors file under | **the map's id** |
 | `defaultMobGroup` | the mob group a band with no `mobs` of its own, and no region under it, spawns from | **`biome`** |
+| `minimap` | `false` hides the minimap on this map (florr's own property, and its default) | `true` |
+| `darkness` | a colour (Tiled's *color* type) that makes the map dark: everywhere but round what gives off light (flowers, pets, emissive petals, drops and mobs) the world is shaded down toward it and nothing on the ground is drawn. florr's pyramid uses `#120d00` | none: lit |
 
 Both defaults exist so that a one-biome map does not have to say its own name
 three times. `garden.tmj` declares none of them and is therefore the map
 `garden`, in biome `garden`, growing `garden` mobs.
+
+`pyramid.tmj` is the one map written by a program rather than drawn:
+`node scripts/generate-pyramid-map.js` lays its maze out with rrolf's maze
+generator and writes the file. It is an ordinary Tiled map afterwards and can
+be edited as one, but running the script again replaces it. It is also the map
+that sets `minimap: false` and a `darkness`.
 
 There is deliberately **no map-wide difficulty**. There used to be a
 `defaultDifficulty` property, for "how dangerous the ground no band covers is",
@@ -853,7 +861,11 @@ simply does not draw. Outside the map is black void.
 
 The nine `ground/*.svg` are **no longer map data**: a map's own bottom layer is
 its ground now. They are still staged because the title screen paints its
-backdrop with them, by bare name.
+backdrop with them, by bare name. A biome may name a tile instead: the
+pyramid's backdrop is its own floor, `pyramid_floor_c_0.svg`. It could not be a
+`ground/pyramid.svg`, because everything is staged into one flat directory and
+that name is already `tiles/pyramid.svg`'s -- one file would silently replace
+the other.
 
 ## Layer data format
 

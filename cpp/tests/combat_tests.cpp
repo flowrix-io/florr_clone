@@ -688,6 +688,98 @@ TEST(a_disc_cuts_mob_contact_and_nothing_else) {
     CHECK_NEAR(a.health(mob), before - 10.0, 1e-9);
 }
 
+TEST(a_bandage_holds_a_killing_blow_off_until_its_time_is_up) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({5000, 5000}, 100.0);
+    a.world.add<PlayerModifiers>(player);
+    PlayerModifiers& worn = a.world.get<PlayerModifiers>(player);
+    worn.undeadMillis = 2000.0;
+    worn.unrevivableMillis = 30000.0;
+    worn.undeadBodyDamageScale = 0.25;
+
+    // The killing blow leaves the flower standing at 1 HP, Undead.
+    const DamageResult blow = a.combat.applyDamage(a.world, player, mob, 500.0, 1000.0);
+    CHECK(!blow.killed);
+    CHECK_NEAR(a.health(player), 1.0, 1e-9);
+    CHECK(a.world.has<Undead>(player));
+    CHECK(!a.world.has<Dead>(player));
+
+    // Every later blow is held off too, and nothing heals it meanwhile.
+    CHECK(!a.combat.applyDamage(a.world, player, mob, 500.0, 1500.0).killed);
+    CHECK_NEAR(a.health(player), 1.0, 1e-9);
+    CHECK(CombatSystem::healingBlocked(a.world, player, 1500.0));
+
+    // Standing until the bandage's time is up -- the FIRST blow's clock...
+    a.step(2950.0);
+    CHECK(!a.world.has<Dead>(player));
+    // ...and dead once it is, to the mob that struck the blow it was spared,
+    // and out of a yggdrasil's reach for the bandage's while.
+    a.step(3000.0);
+    CHECK(a.world.has<Dead>(player));
+    CHECK(a.world.get<Dead>(player).killer == mob);
+    CHECK(!a.world.has<Undead>(player));
+    CHECK(a.world.has<Unrevivable>(player));
+    CHECK(a.world.get<Unrevivable>(player).active(3000.0 + 29999.0));
+    CHECK(!a.world.get<Unrevivable>(player).active(3000.0 + 30000.0));
+}
+
+TEST(without_a_bandage_a_killing_blow_kills) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({5000, 5000}, 100.0);
+    a.world.add<PlayerModifiers>(player);
+    CHECK(a.combat.applyDamage(a.world, player, mob, 500.0, 1000.0).killed);
+    CHECK(!a.world.has<Undead>(player));
+}
+
+TEST(an_undead_flower_hits_with_what_its_bandage_leaves_of_its_body) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 1000.0);
+    a.world.add<ContactDamage>(player, ContactDamage{40.0, 0.0});
+    a.world.add<Undead>(player, Undead{1e9, NULL_ENTITY, 30000.0, 0.25});
+    a.step(1000.0);
+    CHECK_NEAR(a.health(mob), 990.0, 1e-9);
+}
+
+TEST(a_mob_that_rises_undead_stands_through_its_killing_blow_then_dies_to_its_killer) {
+    // The mummy beetle (user, 2026-10-21): struck to 0 it is Undead for its
+    // tier's time, holding at 1 HP, and dies when the time is up -- to the
+    // flower that struck it down, for the drops and the XP.
+    Arena a;
+    const Entity player = a.player({5000, 5000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<RisesUndead>(mob, RisesUndead{2000.0});
+    CHECK(!a.combat.applyDamage(a.world, mob, player, 500.0, 1000.0).killed);
+    CHECK(!a.world.has<Dead>(mob));
+    CHECK(a.world.has<Undead>(mob));
+    CHECK_NEAR(a.health(mob), 1.0, 1e-9);
+    // No later blow brings it nearer; the clock is the first blow's.
+    CHECK(!a.combat.applyDamage(a.world, mob, player, 500.0, 2500.0).killed);
+    CHECK_NEAR(a.health(mob), 1.0, 1e-9);
+    a.step(2950.0);
+    CHECK(!a.world.has<Dead>(mob));
+    a.step(3000.0);
+    CHECK(a.world.has<Dead>(mob));
+    CHECK(a.world.get<Dead>(mob).killer == player);
+    CHECK(!a.world.has<Undead>(mob));
+    CHECK(!a.world.has<Unrevivable>(mob));
+    bool recorded = false;
+    for (const CombatSystem::DeathRecord& death : a.combat.deaths()) {
+        if (death.entity == mob) recorded = death.killer == player;
+    }
+    CHECK(recorded);
+}
+
+TEST(a_mob_that_does_not_rise_undead_dies_to_its_killing_blow) {
+    Arena a;
+    const Entity player = a.player({5000, 5000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    CHECK(a.combat.applyDamage(a.world, mob, player, 500.0, 1000.0).killed);
+    CHECK(!a.world.has<Undead>(mob));
+}
+
 TEST(contact_damage_needs_an_actual_overlap) {
     Arena a;
     const Entity player = a.player({1000, 1000});          // radius 20

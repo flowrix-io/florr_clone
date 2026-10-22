@@ -1883,7 +1883,7 @@ bool GameServer::botHasNearbyBuddy(const Bot& bot, double range) const {
     return false;
 }
 
-Entity GameServer::botFindReviveTarget(const Bot& bot) const {
+Entity GameServer::botFindReviveTarget(const Bot& bot, double nowMillis) const {
     // No yggdrasil, no revive capability, and no reason to make the trip. The
     // swap is checked first; a bot whose NATIVE loadout rolled a yggdrasil
     // also seeks corpses, because the petal works either way.
@@ -1908,6 +1908,11 @@ Entity GameServer::botFindReviveTarget(const Bot& bot) const {
         if (other.entity == bot.entity || other.entity == NULL_ENTITY) continue;
         if (!world_.isAlive(other.entity) || !world_.has<Dead>(other.entity)) continue;
         if (other.realm != bot.realm) continue;
+        // A body its bandage carried through Undead cannot be raised yet; a
+        // trip to it would only stand there.
+        if (const Unrevivable* lock = world_.tryGet<Unrevivable>(other.entity)) {
+            if (lock->active(nowMillis)) continue;
+        }
         const Transform* otherTransform = world_.tryGet<Transform>(other.entity);
         if (otherTransform == nullptr) continue;
         const double distSq = distanceSq(otherTransform->position, transform->position);
@@ -2785,7 +2790,7 @@ void GameServer::stepOneBot(Bot& bot, double nowMillis) {
         fleeing = true;
     }
 
-    const Entity downed = botFindReviveTarget(bot);
+    const Entity downed = botFindReviveTarget(bot, nowMillis);
 
     // --- what to do ------------------------------------------------------
     //
