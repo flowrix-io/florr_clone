@@ -8,6 +8,8 @@
     "build:server": "FLIX_BUILD=release node scripts/build-web.js server",
     "build:offline": "FLIX_BUILD=release node scripts/build-web.js offline",
     "build:offline:asmjs": "FLIX_BUILD=release node scripts/build-web.js offline-asmjs",
+    "build:skia": "FLIX_BUILD=release FLIX_RENDERER=skia node scripts/build-web.js all",
+    "build:offline:skia": "FLIX_BUILD=release FLIX_RENDERER=skia node scripts/build-web.js offline",
     "dev:cert": "node scripts/gen-dev-cert.js",
     "start": "npm run build && npm run start_nobuild",
     "build:dev": "FLIX_BUILD=dev node scripts/build-web.js all",

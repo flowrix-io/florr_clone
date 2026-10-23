@@ -632,6 +632,14 @@ against it, and the two builds consume that list differently:
   its own crossing into JavaScript, and a profile put about a third of the
   main thread in those crossings. Style strings are interned and sent once.
   The web link carries no SDL or WebGL layer at all.
+* **On the web with `-DFLIX_RENDERER=skia`** the same calls go to Skia
+  instead (`third_party/cpp_canvas/canvas_skia.cpp`), linked from a prebuilt
+  static Skia for wasm and drawing into one WebGL context on the page's
+  canvas: every `Canvas` is a GPU surface, and the window's is copied to the
+  drawing buffer at the end of the frame. The client code is unchanged; the
+  run-level text atlas stands down, since Skia keeps glyphs in its own. It is
+  an opt-in build (`npm run build:skia`), not what `npm run build` ships. See
+  the library's README for what it does differently.
 
 A mobs.json or petals.json entry's `image` is one of two things:
 

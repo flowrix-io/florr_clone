@@ -29,8 +29,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <limits>
 #include <string>
@@ -58,15 +60,18 @@ namespace {
 /// trailing rubbish, so `spawn bee rare 10x` is a diagnostic rather than ten,
 /// and on anything outside an int, which a narrowing cast would wrap into a
 /// different number entirely (4294967297 is 1).
+///
+/// strtoll rather than stoll, here and in parseNumber: an emscripten build
+/// never catches, so the throw stoll makes of "abc" or of a number past a long
+/// long would end the program. strtoll reads exactly what stoll reads, and its
+/// two failures are the two stoll threw for.
 bool parseInteger(const std::string& text, int& out) {
     if (text.empty()) return false;
-    std::size_t used = 0;
-    long long value = 0;
-    try {
-        value = std::stoll(text, &used);
-    } catch (...) {
-        return false;
-    }
+    char* end = nullptr;
+    errno = 0;
+    const long long value = std::strtoll(text.c_str(), &end, 10);
+    if (end == text.c_str() || errno == ERANGE) return false;
+    const std::size_t used = static_cast<std::size_t>(end - text.c_str());
     if (used != text.size()) return false;
     if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
         return false;
@@ -77,13 +82,11 @@ bool parseInteger(const std::string& text, int& out) {
 
 bool parseNumber(const std::string& text, double& out) {
     if (text.empty()) return false;
-    std::size_t used = 0;
-    double value = 0;
-    try {
-        value = std::stod(text, &used);
-    } catch (...) {
-        return false;
-    }
+    char* end = nullptr;
+    errno = 0;
+    const double value = std::strtod(text.c_str(), &end);
+    if (end == text.c_str() || errno == ERANGE) return false;
+    const std::size_t used = static_cast<std::size_t>(end - text.c_str());
     if (used != text.size() || !std::isfinite(value)) return false;
     out = value;
     return true;

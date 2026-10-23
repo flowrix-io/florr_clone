@@ -37,8 +37,10 @@ mob_draw_commands.json
 
 cpp/build/
 cpp/build-web/
+cpp/build-web-skia/
 cpp/build-rel/
 cpp/build-admin/
+skia-wasm/
 
 # TLS material the wasm server looks for in its working directory: cert.crt and
 # cert.key, a real certificate installed by hand, then dev-cert.crt and

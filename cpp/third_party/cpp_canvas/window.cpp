@@ -711,10 +711,17 @@ struct Window::Impl {
         std::max(1, static_cast<int>(std::lround(cssWidth * devicePixelRatio * renderScale)));
     const int wantPixelH =
         std::max(1, static_cast<int>(std::lround(cssHeight * devicePixelRatio * renderScale)));
+#ifdef CPP_CANVAS_SKIA
+    // Never swapped: the element holds the WebGL context every surface lives
+    // in (canvas_skia.cpp), and a fresh element would orphan all of them. A
+    // changed `desynchronized` takes effect on the next page load instead.
+    const bool swapElement = false;
+#else
     // A finger still down holds off the swap: its touchmove and touchend go
     // to the element it landed on, and a detached one passes them to nobody.
     const bool swapElement = canvas && elementDesynchronized != desynchronized &&
                              touches.empty() && pendingTouches.empty();
+#endif
     if (swapElement) replaceElement();
     if (wantPixelW != pixelWidth || wantPixelH != pixelHeight || !canvas || swapElement) {
       pixelWidth = wantPixelW;
@@ -1478,9 +1485,10 @@ void Window::present() {
   // batching them is worth about a third of the client's main-thread time.
   canvasFlushOps();
   // There is nothing to upload: the frame was drawn INTO the page's canvas
-  // element, through its own 2D context, so it is already on screen. The
-  // cursor is the only thing this still owes the host, on the same terms as
-  // the native path -- last word of the frame wins.
+  // element, through its own 2D context, so it is already on screen. (On the
+  // Skia backend the flush is what copies it there.) The cursor is the only
+  // thing this still owes the host, on the same terms as the native path --
+  // last word of the frame wins.
   impl_->applyCursor();
 #else
   if (!open_) return;

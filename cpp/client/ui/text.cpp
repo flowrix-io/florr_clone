@@ -148,6 +148,12 @@ bool Fonts::init(const std::string& dataDir, std::string& errorOut) {
             return false;
         }
     }
+#elif defined(CPP_CANVAS_SKIA)
+    // Skia sets text itself, in the staged face, and the face's metrics are
+    // compiled in. Without the file every run goes to the page's text engine
+    // instead, which still draws them, so a face that will not load is not an
+    // error here.
+    canvasRegisterFontFile(dataDir + "/Ubuntu-Bold.ttf");
 #else
     // The page's own text engine draws every run, in the Ubuntu the page
     // loads, and the face's metrics are compiled in: there is nothing to load.

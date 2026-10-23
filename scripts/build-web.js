@@ -53,6 +53,13 @@
  *
  * Env:
  *   FLIX_BUILD    dev | release (default release -- this is the shipping build)
+ *   FLIX_RENDERER canvas2d | skia (default canvas2d). What the client draws
+ *                 with: the page's Canvas2D, or Skia into WebGL from the
+ *                 prebuilt in skia-wasm/ (see cpp/CMakeLists.txt). A Skia build
+ *                 lives in cpp/build-web-skia, so switching renderer never
+ *                 rebuilds the other tree, and it stages the same files under
+ *                 the same names: whichever was staged last is what dist/ holds.
+ *                 There is no Skia offline-asmjs page.
  *
  * `npm run build` and `npm start` both pin FLIX_BUILD=release, so what they
  * produce does not depend on what happens to be in the environment; `npm run
@@ -69,7 +76,12 @@ const os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
 const CPP_DIR = path.join(ROOT, 'cpp');
-const BUILD_DIR = path.join(CPP_DIR, 'build-web');
+const renderer = process.env.FLIX_RENDERER || 'canvas2d';
+if (renderer !== 'canvas2d' && renderer !== 'skia') {
+    console.error(`\nbuild-web: FLIX_RENDERER must be canvas2d or skia, not '${renderer}'\n`);
+    process.exit(1);
+}
+const BUILD_DIR = path.join(CPP_DIR, renderer === 'skia' ? 'build-web-skia' : 'build-web');
 const DIST = path.join(ROOT, 'dist');
 
 // cmake target -> the files it emits, as [name in cpp/build-web, name in dist].
@@ -134,6 +146,9 @@ if (which !== 'all' && !TARGETS[which]) {
     );
 }
 const selected = which === 'all' ? DEPLOYMENT : [which];
+if (renderer === 'skia' && selected.includes('offline-asmjs')) {
+    fail('there is no Skia offline-asmjs page: the prebuilt Skia is compiled with SIMD, which wasm2js cannot translate');
+}
 
 const flavour = process.env.FLIX_BUILD || 'release';
 if (flavour !== 'dev' && flavour !== 'release') {
@@ -174,7 +189,7 @@ if (!copyOnly) {
     const previous = configuredFlavour();
     if (previous && previous !== flavour) {
         console.log(
-            `build-web: cpp/build-web holds a ${previous} build and this is a ` +
+            `build-web: ${path.relative(ROOT, BUILD_DIR)} holds a ${previous} build and this is a ` +
             `${flavour} one -- removing it so nothing is reused across the switch.`
         );
         fs.rmSync(BUILD_DIR, { recursive: true, force: true });
@@ -184,7 +199,8 @@ if (!copyOnly) {
     // re-runs cheaply, and it is what notices an edited CMakeLists.txt or a
     // flavour switch. emcmake is what puts the emscripten toolchain file on
     // the command line.
-    run('emcmake', ['cmake', '-S', CPP_DIR, '-B', BUILD_DIR, `-DFLIX_BUILD=${flavour}`]);
+    run('emcmake', ['cmake', '-S', CPP_DIR, '-B', BUILD_DIR, `-DFLIX_BUILD=${flavour}`,
+                    `-DFLIX_RENDERER=${renderer}`]);
     const jobs = String(os.cpus().length);
     for (const name of selected) {
         run('cmake', ['--build', BUILD_DIR, '--target', TARGETS[name].cmakeTarget, '-j', jobs]);
@@ -262,7 +278,7 @@ for (const name of selected) {
 // --copy-only builds nothing, so FLIX_BUILD says nothing about what was just
 // staged -- the cache of the tree it was copied from is the only witness.
 const staged = copyOnly ? (configuredFlavour() || 'unknown-flavour') : flavour;
-console.log(`\nStaged the ${staged} web build (${selected.join(', ')}) in dist/:`);
+console.log(`\nStaged the ${staged} ${renderer} web build (${selected.join(', ')}) in dist/:`);
 for (const [name, size, note] of copied) {
     const line = `  ${name.padEnd(16)} ${(size / 1024).toFixed(1).padStart(9)} KiB`;
     console.log(note ? `${line}   ${note}` : line);

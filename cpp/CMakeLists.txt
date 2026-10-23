@@ -61,12 +61,92 @@ if(NOT EMSCRIPTEN)
   pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 endif()
 
+# --- what the web client draws with ------------------------------------------
+# The browser build's Canvas has two backends, chosen with -DFLIX_RENDERER:
+#
+#   canvas2d  the page's own Canvas2D, fed a batched op stream
+#             (third_party/cpp_canvas/canvas.cpp). The default, and what ships.
+#   skia      Skia's GPU renderer in a WebGL context on the page's canvas
+#             (third_party/cpp_canvas/canvas_skia.cpp), linked from a prebuilt
+#             static Skia for wasm32-emscripten; see FLIX_SKIA_DIR below.
+#
+# The client code is the same either way: both are the one Canvas API. A
+# native build always draws with the software rasterizer, and the prebuilt
+# Skia is wasm only, so asking a native build for Skia is an error.
+set(FLIX_RENDERER "canvas2d" CACHE STRING "Web client renderer: canvas2d or skia")
+set_property(CACHE FLIX_RENDERER PROPERTY STRINGS canvas2d skia)
+if(NOT FLIX_RENDERER STREQUAL "canvas2d" AND NOT FLIX_RENDERER STREQUAL "skia")
+  message(FATAL_ERROR "FLIX_RENDERER must be canvas2d or skia, not '${FLIX_RENDERER}'")
+endif()
+if(FLIX_RENDERER STREQUAL "skia" AND NOT EMSCRIPTEN)
+  message(FATAL_ERROR "FLIX_RENDERER=skia is for the web build: configure with emcmake")
+endif()
+message(STATUS "flowrix: web renderer ${FLIX_RENDERER}")
+
+if(FLIX_RENDERER STREQUAL "skia")
+  # The libraries: rust-skia's prebuilt binaries for wasm32-unknown-emscripten,
+  # release 0.153.3 (Skia m153; features gl, svg, textlayout, webp, pdf; built
+  # with emscripten 4.0.6, -msimd128 and wasm longjmp), unpacked as they come.
+  # They are not part of the repository.
+  set(FLIX_SKIA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../skia-wasm" CACHE PATH
+      "Directory holding the prebuilt Skia static libraries for wasm")
+  if(NOT EXISTS "${FLIX_SKIA_DIR}/libskia.wasm.a")
+    message(FATAL_ERROR
+      "FLIX_RENDERER=skia needs the prebuilt Skia: no libskia.wasm.a in ${FLIX_SKIA_DIR}. "
+      "Point -DFLIX_SKIA_DIR at the unpacked rust-skia wasm32-unknown-emscripten binaries.")
+  endif()
+
+  # The headers. The prebuilt carries none, and they have to be the ones it was
+  # compiled from: rust-skia's fork of Skia at the tag its skia-bindings 0.153.3
+  # names in [package.metadata]. Fetched once into the build tree, pinned like
+  # the font, and only the two directories a program compiling against Skia
+  # reads are kept.
+  set(FLIX_SKIA_TAG m153-0.101.2)
+  set(FLIX_SKIA_HEADERS ${CMAKE_CURRENT_BINARY_DIR}/skia-${FLIX_SKIA_TAG})
+  if(NOT EXISTS "${FLIX_SKIA_HEADERS}/include/core/SkCanvas.h")
+    if(CMAKE_VERSION VERSION_LESS 3.18)
+      message(FATAL_ERROR "FLIX_RENDERER=skia needs CMake 3.18 or newer to unpack the Skia headers")
+    endif()
+    set(skia_archive ${CMAKE_CURRENT_BINARY_DIR}/skia-${FLIX_SKIA_TAG}.tar.gz)
+    message(STATUS "flowrix: fetching the Skia ${FLIX_SKIA_TAG} headers (about 70MB, once)")
+    file(DOWNLOAD "https://codeload.github.com/rust-skia/skia/tar.gz/${FLIX_SKIA_TAG}" "${skia_archive}"
+         EXPECTED_HASH SHA256=30c8b51a0a32fae63562c303bdc91605519a9598951422610e3fb8685b3c4f6f
+         TLS_VERIFY ON STATUS skia_status)
+    list(GET skia_status 0 skia_code)
+    list(GET skia_status 1 skia_message)
+    if(NOT skia_code EQUAL 0)
+      file(REMOVE "${skia_archive}")
+      message(FATAL_ERROR "Could not fetch the Skia ${FLIX_SKIA_TAG} headers: ${skia_message}")
+    endif()
+    file(ARCHIVE_EXTRACT INPUT "${skia_archive}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+         PATTERNS "skia-${FLIX_SKIA_TAG}/include" "skia-${FLIX_SKIA_TAG}/modules/skcms")
+    file(REMOVE "${skia_archive}")
+  endif()
+
+  # The prebuilt's setjmp/longjmp is wasm's own, which emscripten will not
+  # link beside its JavaScript exception throwing -- so nothing in this build
+  # may throw, and everything is compiled with -fno-exceptions. That changes
+  # nothing a program could see: an emscripten build never catches (exception
+  # catching is off by default), so a throw has always ended the program, and
+  # under -fno-exceptions the same failure aborts it instead. The whole build
+  # rather than the client's half, because the offline page links the server
+  # into the same wasm.
+  add_compile_options(-fno-exceptions)
+  add_link_options(-fno-exceptions)
+endif()
+
 # --- cpp_canvas: the vendored Canvas2D-alike renderer ------------------------
 # Upstream ships it as a demo executable, whose build files are not vendored;
 # built as a library here, straight from its sources, so both the client and
 # the render tools can link it.
+if(FLIX_RENDERER STREQUAL "skia")
+  set(FLIX_CANVAS_BACKEND third_party/cpp_canvas/canvas_skia.cpp)
+else()
+  set(FLIX_CANVAS_BACKEND third_party/cpp_canvas/canvas.cpp)
+endif()
 add_library(cpp_canvas STATIC
-  third_party/cpp_canvas/canvas.cpp
+  ${FLIX_CANVAS_BACKEND}
+  third_party/cpp_canvas/path2d.cpp
   third_party/cpp_canvas/svg.cpp
   third_party/cpp_canvas/font.cpp
   third_party/cpp_canvas/window.cpp
@@ -74,6 +154,37 @@ add_library(cpp_canvas STATIC
 )
 target_include_directories(cpp_canvas PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp_canvas)
 target_compile_options(cpp_canvas PRIVATE -w)   # third-party: not ours to lint
+if(FLIX_RENDERER STREQUAL "skia")
+  # PUBLIC: canvas.h and the client both branch on it.
+  target_compile_definitions(cpp_canvas PUBLIC CPP_CANVAS_SKIA)
+  # The headers are only ever read by canvas_skia.cpp -- nothing of Skia is in
+  # canvas.h -- and they must see what the prebuilt was compiled with: the
+  # public defines of a release (is_official_build) wasm build with WebGL
+  # Ganesh. SK_RELEASE outright, because a dev build here takes NDEBUG off and
+  # Skia would otherwise read that as a debug build, which lays some of its
+  # classes out differently.
+  target_include_directories(cpp_canvas PRIVATE ${FLIX_SKIA_HEADERS})
+  target_compile_definitions(cpp_canvas PRIVATE
+    SK_RELEASE SK_GANESH SK_GL SK_ASSUME_WEBGL=1 SKVX_DISABLE_SIMD SK_FORCE_8_BYTE_ALIGNMENT
+    SK_DISABLE_TRACING SK_CODEC_DECODES_BMP SK_CODEC_DECODES_WBMP)
+  target_compile_options(cpp_canvas PRIVATE "-msimd128")
+  # Link order: Skia, then what it calls into. A static archive only gives up
+  # the objects something asks for, so the codecs nothing here uses cost
+  # nothing.
+  target_link_libraries(cpp_canvas PUBLIC
+    ${FLIX_SKIA_DIR}/libskia.wasm.a
+    ${FLIX_SKIA_DIR}/libfreetype2.wasm.a
+    ${FLIX_SKIA_DIR}/libpng.wasm.a
+    ${FLIX_SKIA_DIR}/libjpeg.wasm.a
+    ${FLIX_SKIA_DIR}/libwebp.wasm.a
+    ${FLIX_SKIA_DIR}/libwuffs.wasm.a
+    ${FLIX_SKIA_DIR}/libskcms.wasm.a
+    ${FLIX_SKIA_DIR}/libexpat.wasm.a
+    ${FLIX_SKIA_DIR}/libzlib.wasm.a)
+  # WebGL 2 with a WebGL 1 fallback, and the longjmp the prebuilt was compiled
+  # for (FreeType's rasterizer and the image codecs use setjmp).
+  target_link_options(cpp_canvas PUBLIC "-sMAX_WEBGL_VERSION=2" "-sSUPPORT_LONGJMP=wasm")
+endif()
 # SDL is desktop-only and attached here rather than to the whole directory.
 # PUBLIC lets it reach the native client sources that open links through SDL.
 # Browser rendering and input use Canvas2D and DOM APIs directly, so the web
@@ -259,7 +370,8 @@ flix_stage_font(Ubuntu-Bold.ttf
 # run in the Ubuntu the page links from Google Fonts -- so the table is all of
 # it the client carries. The TTF itself is embedded only in the offline page,
 # which has nowhere to fetch a face from and registers this one with the
-# document. See the link options under EMSCRIPTEN below.
+# document, and in a Skia client (FLIX_RENDERER=skia), which sets text itself.
+# See the link options under EMSCRIPTEN below.
 add_executable(font_table tools/font_table.cpp)
 target_link_libraries(font_table PRIVATE cpp_canvas)
 target_include_directories(font_table PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -556,10 +668,22 @@ if(EMSCRIPTEN)
    "-fno-exceptions"
   )
   target_compile_options(flowrix_server PRIVATE "-flto")
+
+  # Everything staged but the font, for the Canvas2D client: the page links the
+  # same Ubuntu from Google Fonts and the browser draws every run in it, and
+  # what the client needs of the face is its metrics, which are compiled in
+  # (face_metrics.h). Skia sets text itself, so its client carries the face.
+  if(FLIX_RENDERER STREQUAL "skia")
+    set(FLIX_CLIENT_FONT_FILES "")
+  else()
+    set(FLIX_CLIENT_FONT_FILES "SHELL:--exclude-file *.ttf")
+  endif()
+
   target_link_options(flowrix_client PRIVATE
     ${FLIX_WEB_LINK_OPTIONS}
-    # Every draw goes through the page's own 2D context. There is deliberately
-    # no SDL or WebGL compatibility backend in this target.
+    # Every draw goes through the page's own 2D context, or, built with Skia,
+    # through the one WebGL context canvas_skia.cpp makes for itself. Either
+    # way there is no SDL or GL compatibility backend in this target.
     "-sENVIRONMENT=web"
     # The newer filesystem, for its pluggable backends: the client mounts one
     # of its own over browser storage so that a reload does not forget the
@@ -573,10 +697,7 @@ if(EMSCRIPTEN)
     "-sEVAL_CTORS=0"
     ${FLIX_WEB_CLIENT_OPT}
     ${FLIX_EMBED_DATA}
-    # Everything staged but the font. The page links the same Ubuntu from
-    # Google Fonts and the browser draws every run in it; what the client needs
-    # of the face is its metrics, and those are compiled in (face_metrics.h).
-    "SHELL:--exclude-file *.ttf"
+    ${FLIX_CLIENT_FONT_FILES}
     ${FLIX_EMBED_BOOT}
     # For a boot script (client/web/shell.html): the page loads the runtime
     # without starting main() and calls it when the script starts the game,
@@ -696,22 +817,27 @@ if(EMSCRIPTEN)
   #   * a place in `all`. wasm2js re-codegens the whole module and takes
   #     minutes, so this target is built by name (`npm run build:offline:asmjs`)
   #     and never as a side effect of building something else.
-  add_executable(flowrix_offline_asmjs EXCLUDE_FROM_ALL offline/main.cpp)
-  target_link_libraries(flowrix_offline_asmjs PRIVATE flix_server flix_client)
-  add_dependencies(flowrix_offline_asmjs flix_data)
-  set_target_properties(flowrix_offline_asmjs PROPERTIES
-                        OUTPUT_NAME offline-asmjs SUFFIX ".html")
-  set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS
-               ${FLIX_DATA_STAGED} ${FLIX_BOOT_TOOLS}
-               ${FLIX_LOCAL_BOOT_TOOLS})
-  set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS "${FLIX_OFFLINE_SHELL}")
-  target_compile_options(flowrix_offline_asmjs PRIVATE
-   "-flto"
-   "-fno-rtti"
-  )
-  target_link_options(flowrix_offline_asmjs PRIVATE
-    ${FLIX_OFFLINE_LINK_OPTIONS}
-    "-sWASM=0")
+  #
+  # Not built with Skia at all: the prebuilt is compiled with SIMD, which is
+  # the first of the two.
+  if(NOT FLIX_RENDERER STREQUAL "skia")
+    add_executable(flowrix_offline_asmjs EXCLUDE_FROM_ALL offline/main.cpp)
+    target_link_libraries(flowrix_offline_asmjs PRIVATE flix_server flix_client)
+    add_dependencies(flowrix_offline_asmjs flix_data)
+    set_target_properties(flowrix_offline_asmjs PROPERTIES
+                          OUTPUT_NAME offline-asmjs SUFFIX ".html")
+    set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS
+                 ${FLIX_DATA_STAGED} ${FLIX_BOOT_TOOLS}
+                 ${FLIX_LOCAL_BOOT_TOOLS})
+    set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS "${FLIX_OFFLINE_SHELL}")
+    target_compile_options(flowrix_offline_asmjs PRIVATE
+     "-flto"
+     "-fno-rtti"
+    )
+    target_link_options(flowrix_offline_asmjs PRIVATE
+      ${FLIX_OFFLINE_LINK_OPTIONS}
+      "-sWASM=0")
+  endif()
 endif()
 
 # --- tools -------------------------------------------------------------------

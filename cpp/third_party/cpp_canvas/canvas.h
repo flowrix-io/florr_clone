@@ -52,6 +52,14 @@ const char* canvasOpName(int code);
 /// Reads the stats accumulated since the last call, and zeroes them.
 CanvasFrameStats canvasTakeFrameStats();
 
+// CPP_CANVAS_SKIA picks the third backend: the same browser build, drawing
+// with Skia into WebGL instead of with the page's Canvas2D (canvas_skia.cpp).
+// It is a build-wide choice -- CMakeLists.txt compiles one backend or the
+// other -- and the web-only API below is the same on both.
+#if defined(CPP_CANVAS_SKIA) && !defined(__EMSCRIPTEN__)
+#error "the Skia backend is built for the browser only"
+#endif
+
 #ifdef __EMSCRIPTEN__
 /// Hands the frame's batched Canvas2D calls to the page.
 ///
@@ -59,6 +67,9 @@ CanvasFrameStats canvasTakeFrameStats();
 /// time (see canvas.cpp). Everything inside the canvas that has to observe
 /// them -- a readback, a canvas-to-canvas blit, a destroy -- flushes for
 /// itself; what is left is the end of the frame, which is Window::present().
+///
+/// On the Skia backend it is where the frame reaches the screen: the window's
+/// canvas is copied to the WebGL drawing buffer and the GPU work submitted.
 void canvasFlushOps();
 
 /// Images the PAGE fetches by URL -- a picture posted in chat.
@@ -75,6 +86,15 @@ void canvasFlushOps();
 int canvasRequestRemoteImage(const std::string& url);
 int canvasRemoteImageStatus(int handle, int& width, int& height);
 void canvasReleaseRemoteImage(int handle);
+#endif
+
+#ifdef CPP_CANVAS_SKIA
+/// The face Skia sets text in, read from a TrueType file. Skia has no system
+/// fonts to fall back on, so every setFont() gets this face whatever family it
+/// names; a run with a character the face lacks is set by the page's own text
+/// engine instead, as the Canvas2D backend sets every run. False when the file
+/// cannot be read or parsed, which leaves all text to the page.
+bool canvasRegisterFontFile(const std::string& path);
 #endif
 
 // Retained path object, equivalent to the browser's Path2D.
@@ -139,7 +159,7 @@ private:
     bool glyphOutlines_ = false;
 };
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) && !defined(CPP_CANVAS_SKIA)
 // The browser build's way with the transform. It is not one of the fields a
 // Canvas brings across before each call. A call drawn at matrix M is issued
 // under whatever matrix P the page already holds, its coordinates mapped
@@ -171,7 +191,9 @@ struct CanvasPageFrame {
 // canvas.cpp), and the drawing state, save/restore included, is kept on this
 // side. There, createVirtual() uses an OffscreenCanvas (with a detached
 // HTMLCanvasElement fallback); either way it can be composited with
-// drawCanvas().
+// drawCanvas(). Built with CPP_CANVAS_SKIA, a browser Canvas is a Skia surface
+// on the page's one WebGL context instead, and nothing is batched: each call
+// is a Skia call (canvas_skia.cpp).
 class Canvas {
 public:
     // `desynchronized` asks the browser for a low-latency context on the
@@ -368,7 +390,13 @@ private:
     Color fill_{0, 0, 0}, stroke_{0, 0, 0}; float lineWidth_ = 1.0f; Path2D currentPath_;
     Color tint_{0, 0, 0, 0};
     Color tinted(Color c) const;
-#ifdef __EMSCRIPTEN__
+#ifdef CPP_CANVAS_SKIA
+    // Everything Skia: the surface, the drawing state and the current path.
+    // Behind a pointer so that no Skia header reaches the rest of the program,
+    // and so that the state keeps its address when a Canvas is moved.
+    struct Skia;
+    std::unique_ptr<Skia> skia_;
+#elif defined(__EMSCRIPTEN__)
     // The drawing state, kept in wasm rather than in the browser context.
     //
     // save() and restore() never reach the page unless a clip makes them: a

@@ -14,6 +14,10 @@
 // raster flush, and one per bake would cost more than the text it replaced.
 // A run that misses draws live that frame.
 //
+// The Skia backend (CPP_CANVAS_SKIA) has none of those costs -- Skia keeps
+// stroked and filled glyphs in its own GPU atlas -- so there every run draws
+// live and the atlas stays empty.
+//
 // The native build has its own cache with the same key (text_cache.h).
 #include <cstddef>
 #include <string>

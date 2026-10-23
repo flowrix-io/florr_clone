@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 
@@ -239,13 +241,19 @@ std::vector<ZoneMobEntry> parseMobDistribution(const std::string& text, std::str
         }
         if (lookahead < text.size() &&
             (std::isdigit(static_cast<unsigned char>(text[lookahead])) || text[lookahead] == '.')) {
-            std::size_t consumed = 0;
-            try {
-                weight = std::stod(text.substr(lookahead), &consumed);
-            } catch (const std::exception&) {
-                consumed = 0;
+            // strtod rather than stod: an emscripten build never catches, so
+            // the throw stod makes of "." or "1e999" would end the program.
+            // Neither parses here, and the weight stays 1, as it did when the
+            // throw was caught.
+            const std::string rest = text.substr(lookahead);
+            char* end = nullptr;
+            errno = 0;
+            const double parsed = std::strtod(rest.c_str(), &end);
+            const std::size_t consumed = static_cast<std::size_t>(end - rest.c_str());
+            if (consumed > 0 && errno != ERANGE) {
+                weight = parsed;
+                at = lookahead + consumed;
             }
-            if (consumed > 0) at = lookahead + consumed;
         }
         if (!(weight > 0.0) || !std::isfinite(weight)) {
             warn("\"" + name + "\" has a weight of " + std::to_string(weight) + "; skipped");

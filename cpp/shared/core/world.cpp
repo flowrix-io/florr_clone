@@ -1,11 +1,32 @@
 #include "world.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <new>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace flix {
+
+namespace {
+
+/// A broken invariant. Thrown where the build has exceptions; where it does
+/// not -- the Skia web build compiles with -fno-exceptions -- the message is
+/// printed and the program aborted, which is what the uncaught throw came to.
+template <typename Error, typename... Args>
+[[noreturn]] void fail(Args&&... args) {
+#if defined(__cpp_exceptions)
+    throw Error(std::forward<Args>(args)...);
+#else
+    const Error error(std::forward<Args>(args)...);
+    std::fprintf(stderr, "flowrix: %s\n", error.what());
+    std::abort();
+#endif
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // entity.h
@@ -43,7 +64,7 @@ namespace detail {
 ComponentId registerComponent(ComponentInfo info) {
     Registry& r = registry();
     if (r.count >= kMaxComponents) {
-        throw std::runtime_error("component registry full; raise flix::kMaxComponents");
+        fail<std::runtime_error>("component registry full; raise flix::kMaxComponents");
     }
     info.id = static_cast<ComponentId>(r.count);
     r.entries[r.count++] = info;
@@ -70,7 +91,7 @@ void* alignedAllocate(std::size_t bytes, std::size_t align) {
     const std::size_t alignment = std::max<std::size_t>(align, alignof(std::max_align_t));
     const std::size_t rounded = ((bytes + alignment - 1) / alignment) * alignment;
     void* p = std::aligned_alloc(alignment, rounded);
-    if (!p) throw std::bad_alloc();
+    if (!p) fail<std::bad_alloc>();
     return p;
 }
 
@@ -234,7 +255,7 @@ bool World::destroy(Entity e) {
 
 void World::assertAlive(Entity e, const char* op) const {
     if (!isAlive(e)) {
-        throw std::runtime_error(std::string(op) + "() on dead or invalid " + entityToString(e));
+        fail<std::runtime_error>(std::string(op) + "() on dead or invalid " + entityToString(e));
     }
 }
 

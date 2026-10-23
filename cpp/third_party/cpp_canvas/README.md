@@ -10,7 +10,7 @@ matters: the game builds it from these sources and changes are made here. The
 demo's own build — its `CMakeLists.txt`, its `shell.html` and the instructions
 this file used to carry — is gone.
 
-## One API, two backends
+## One API, three backends
 
 - **Native** draws with a software rasterizer into its own pixels. A large fill
   is split into scanline bands across a thread pool that is created once (one
@@ -33,11 +33,33 @@ this file used to carry — is gone.
   Style strings are interned once, and the drawing state, save/restore
   included, is kept in wasm. Input comes from DOM events. Images the page
   fetches by URL (`canvasRequestRemoteImage`, for pictures posted in chat)
-  exist only here.
+  exist only here and in the Skia backend.
+- **Skia** (emscripten, built with `CPP_CANVAS_SKIA`; the CMake option
+  `FLIX_RENDERER=skia`) replaces the Canvas2D one for the same browser build
+  and draws with Skia's GPU renderer, Ganesh, linked from a prebuilt static
+  Skia. The page gets one WebGL context, on the window's element; every
+  `Canvas` is an `SkSurface` in it (a raster one only where the GPU has none
+  to give), each call is an `SkCanvas` call, and the state an `SkCanvas` does
+  not keep -- styles, line settings, font, alignment -- is saved and restored
+  beside it. The window's canvas is an offscreen surface too, copied to the
+  drawing buffer by `canvasFlushOps()`, so a frame outlives being shown as a
+  Canvas2D element's does. Text is set in the one face handed to
+  `canvasRegisterFontFile`; a run with a character that face lacks is set by
+  the page's Canvas2D and drawn as a bitmap. Remote images are fetched with
+  CORS, since their pixels have to come into wasm. Not done here: canvas
+  filters (none are parsed), shadows on images (shapes and text cast them),
+  and recovering a lost WebGL context, which reloads the page. Skia
+  antialiases as the browser does, analytically and single-sampled, so curved
+  strokes and concave fills are rasterized into masks on the CPU, and that is
+  this page's main thread where the browser would use its GPU process: dynamic
+  MSAA, Chrome's way around it, is one Skia disables on WebGL.
 
 ## The files
 
-- `canvas.h` / `canvas.cpp` — `Canvas`, `Path2D` and both backends.
+- `canvas.h` / `canvas.cpp` — `Canvas` and the software and Canvas2D
+  backends.
+- `canvas_skia.cpp` — the Skia backend, compiled instead of `canvas.cpp`.
+- `path2d.cpp` — `Path2D`, which every backend shares.
 - `font.h` / `font.cpp` — a TrueType reader that turns glyphs into `Path2D`
   outlines. The native `fillText` draws with it (a system face per generic
   family, or a built-in 5×7 bitmap when none is found), and the client's text
@@ -93,8 +115,21 @@ applied.
 
 ## How it is built
 
-`cpp/CMakeLists.txt` compiles `canvas.cpp`, `svg.cpp`, `font.cpp`,
-`window.cpp` and `touch_gesture.cpp` into the static library `cpp_canvas`,
-with warnings off as third-party code, for the client and the render tools to
-link. Natively it links SDL2 (found through `pkg-config`) and Threads; the web
-build links neither.
+`cpp/CMakeLists.txt` compiles `canvas.cpp` (or `canvas_skia.cpp`),
+`path2d.cpp`, `svg.cpp`, `font.cpp`, `window.cpp` and `touch_gesture.cpp` into
+the static library `cpp_canvas`, with warnings off as third-party code, for
+the client and the render tools to link. Natively it links SDL2 (found through
+`pkg-config`) and Threads; the web build links neither.
+
+With `-DFLIX_RENDERER=skia` (an emscripten configure only) it links the
+prebuilt Skia instead: rust-skia's `wasm32-unknown-emscripten` binaries,
+release 0.153.3 (Skia m153), unpacked in `skia-wasm/` at the repository root
+or wherever `-DFLIX_SKIA_DIR` points. They carry no headers, so the configure
+fetches the matching ones (rust-skia's Skia fork at tag `m153-0.101.2`, pinned
+by hash) into the build tree once. The prebuilt uses wasm's own
+setjmp/longjmp, which emscripten will not link beside its JavaScript exception
+throwing, so a Skia configure compiles the whole build with `-fno-exceptions`
+-- a change no emscripten build can observe, since none of them ever catches.
+`npm run build:skia` and `npm run build:offline:skia` build it into
+`cpp/build-web-skia`; there is no Skia `offline-asmjs` page, because the
+prebuilt is compiled with SIMD.
