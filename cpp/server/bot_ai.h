@@ -421,7 +421,12 @@ inline constexpr double kBotUnstickHoldMillis = 550.0;
 // Pathfinding
 // ---------------------------------------------------------------------------
 
-inline constexpr int kBotPathMaxNodes = 4000;
+/// Expansions one search may make: a whole 128x128 map. A search is only run
+/// once the goal is known to be reachable (BotPathScratch::region), so a cap
+/// it can hit is a path given up on that existed -- at 4000, measured, that
+/// was one search in four, and all the work spent before it with them. A
+/// full search costs about a millisecond.
+inline constexpr int kBotPathMaxNodes = 128 * 128;
 /// How many bots may recompute in one tick, so a whole raid repathing together
 /// cannot dominate a frame.
 inline constexpr int kBotPathMaxPerTick = 2;
@@ -641,6 +646,20 @@ struct BotPathScratch {
     /// world the map actually has.
     int cols = 0;
     int rows = 0;
+
+    /// What the search walks on, worked out once per realm from the map's
+    /// real collision shapes (GameServer::botBuildWalkGrid). `open`: a body
+    /// can stand at the tile's centre. `steps`: bit k set when the straight
+    /// line to the centre of neighbour kAStarNeighbours[k] is clear by
+    /// botRayHitsWall -- the test bots already steer and smooth by, so a path
+    /// is made of moves a bot will agree it can make.
+    std::vector<std::uint8_t> open;
+    std::vector<std::uint8_t> steps;
+    /// Which connected piece of that grid each tile is in, from 1; 0 for a
+    /// tile that is not open. Two tiles with different numbers have no path
+    /// between them, which is answered here instead of by a search that
+    /// walks the whole of the start's piece to find it out.
+    std::vector<std::uint16_t> region;
 
     /// Min-heap keyed by `f`, in parallel arrays: A* pushes up to eight times
     /// per expansion, and an array of nodes would allocate tens of thousands

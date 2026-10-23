@@ -13,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "shared/game/content_report.h"
 #include "shared/game/tiled_map.h"
 
 namespace flix {
@@ -693,37 +694,34 @@ bool Terrain::loadTiledMap(const std::string& path, std::string& errorOut, Realm
             list += ")";
         }
     }
-    std::fprintf(stderr,
-                 "[map] %s: collision from %s; negated by %s; scenery %s; %d wall, %d water, "
-                 "%d ground cells; %d shape sets over %d shaped cells, %d cells decked over\n",
-                 path.c_str(), collides.empty() ? "no layer" : collides.c_str(),
-                 negates.empty() ? "no layer" : negates.c_str(),
-                 scenery.empty() ? "(none)" : scenery.c_str(), map.wallCells(), map.waterCells(),
-                 map.groundCells(), collisionShapeSetCount(realm),
-                 collisionShapeCellCount(realm), collisionDeckedCellCount(realm));
+    contentNote("[map] %s: collision from %s; negated by %s; scenery %s; %d wall, %d water, "
+                "%d ground cells; %d shape sets over %d shaped cells, %d cells decked over\n",
+                path.c_str(), collides.empty() ? "no layer" : collides.c_str(),
+                negates.empty() ? "no layer" : negates.c_str(),
+                scenery.empty() ? "(none)" : scenery.c_str(), map.wallCells(), map.waterCells(),
+                map.groundCells(), collisionShapeSetCount(realm),
+                collisionShapeCellCount(realm), collisionDeckedCellCount(realm));
     for (const TiledLayer& layer : map.layers()) {
         // The two properties are opposites, so a layer with both says nothing
         // coherent. Negation wins -- said out loud, because the alternative is
         // an author whose wall layer quietly stopped being one.
         if (layer.conflicting) {
-            std::fprintf(stderr,
-                         "[map] WARNING %s: layer \"%s\" has both \"%s\" and \"%s\" set; they "
-                         "are opposites, so negation wins and that layer blocks nothing of its "
-                         "own; untick one of them\n",
-                         path.c_str(), layer.name.c_str(), kLayerCollisionProperty,
-                         kLayerNegateProperty);
+            contentWarning("[map] WARNING %s: layer \"%s\" has both \"%s\" and \"%s\" set; they "
+                           "are opposites, so negation wins and that layer blocks nothing of its "
+                           "own; untick one of them\n",
+                           path.c_str(), layer.name.c_str(), kLayerCollisionProperty,
+                           kLayerNegateProperty);
         }
         // A deck under the river it meant to deck. The layers are a stack and
         // negation only reaches DOWN, so a negating layer that cancels nothing
         // is nearly always in the wrong place in the layer panel.
         if (layer.negates && layer.paintedCells > 0 && layer.clearedCells == 0 &&
             layer.partialDeckCells == 0) {
-            std::fprintf(stderr,
-                         "[map] WARNING %s: layer \"%s\" has \"%s\" set but cancels no "
-                         "collision in any of its %d painted cells; negation only reaches the "
-                         "layers BELOW it, so check it is not under what it means to cancel\n",
-                         path.c_str(), layer.name.c_str(), kLayerNegateProperty,
-                         layer.paintedCells);
+            contentWarning("[map] WARNING %s: layer \"%s\" has \"%s\" set but cancels no "
+                           "collision in any of its %d painted cells; negation only reaches the "
+                           "layers BELOW it, so check it is not under what it means to cancel\n",
+                           path.c_str(), layer.name.c_str(), kLayerNegateProperty,
+                           layer.paintedCells);
         }
         // A DECK TILE THAT COVERS PART OF ITS CELL is the half-supported case,
         // and the one place this rule is not resolved at load: cancelling half
@@ -735,15 +733,14 @@ bool Terrain::loadTiledMap(const std::string& path, std::string& errorOut, Realm
         // Said out loud with the count, because the author's fix is one click:
         // give the deck tile a whole-tile shape, or none.
         if (layer.negates && layer.partialDeckCells > 0) {
-            std::fprintf(stderr,
-                         "[map] WARNING %s: layer \"%s\" negates, but in %d of its %d painted "
-                         "cells the tile carries collision shapes that cover only PART of the "
-                         "cell; those cancel the point tests over that shape and nothing else "
-                         "-- the coarse grid, the minimap and the swept tests still see the "
-                         "blocker, and a body may not be able to stand there. Give the deck "
-                         "tile a whole-tile shape, or no shape at all\n",
-                         path.c_str(), layer.name.c_str(), layer.partialDeckCells,
-                         layer.paintedCells);
+            contentWarning("[map] WARNING %s: layer \"%s\" negates, but in %d of its %d painted "
+                           "cells the tile carries collision shapes that cover only PART of the "
+                           "cell; those cancel the point tests over that shape and nothing else "
+                           "-- the coarse grid, the minimap and the swept tests still see the "
+                           "blocker, and a body may not be able to stand there. Give the deck "
+                           "tile a whole-tile shape, or no shape at all\n",
+                           path.c_str(), layer.name.c_str(), layer.partialDeckCells,
+                           layer.paintedCells);
         }
     }
     // A shape that leaves its tile still collides -- it is filed in every cell
@@ -751,10 +748,9 @@ bool Terrain::loadTiledMap(const std::string& path, std::string& errorOut, Realm
     // Tile Collision Editor rather than a decision, and nothing in the editor
     // shows it. Reported, with the distance, so it can be put back.
     if (collisionOverhangUnits(realm) > 0.0) {
-        std::fprintf(stderr,
-                     "[map] %s: a collision shape reaches %.3f world units outside its own tile; "
-                     "it still blocks, in every cell it reaches, but check it was meant\n",
-                     path.c_str(), collisionOverhangUnits(realm));
+        contentWarning("[map] %s: a collision shape reaches %.3f world units outside its own tile; "
+                       "it still blocks, in every cell it reaches, but check it was meant\n",
+                       path.c_str(), collisionOverhangUnits(realm));
     }
     // A cell on a colliding layer whose tile carries no shape blocks NOTHING.
     // Legal -- a walkable footpath painted onto the dirt layer is exactly this
@@ -766,25 +762,24 @@ bool Terrain::loadTiledMap(const std::string& path, std::string& errorOut, Realm
             if (!names.empty()) names += ", ";
             names += name;
         }
-        std::fprintf(stderr,
-                     "[map] WARNING %s: %d cells on a colliding layer use a tile with no "
-                     "collision shape and so block nothing (%s); draw shapes on them in Tiled's "
-                     "Tile Collision Editor, or move them to a layer that does not collide\n",
-                     path.c_str(), map.unshapedBlockingCells(), names.c_str());
+        contentWarning("[map] WARNING %s: %d cells on a colliding layer use a tile with no "
+                       "collision shape and so block nothing (%s); draw shapes on them in Tiled's "
+                       "Tile Collision Editor, or move them to a layer that does not collide\n",
+                       path.c_str(), map.unshapedBlockingCells(), names.c_str());
     }
     // A map nobody ticked a box on is walkable everywhere, boundary wall
     // included. Legal, and almost certainly not meant.
     if (collides.empty()) {
-        std::fprintf(stderr, "[map] %s: no layer has \"%s\" set, so nothing on it blocks\n",
-                     path.c_str(), kLayerCollisionProperty);
+        contentWarning("[map] %s: no layer has \"%s\" set, so nothing on it blocks\n",
+                       path.c_str(), kLayerCollisionProperty);
     }
     // Water art painted only where it cannot block: the editor shows a river
     // and the game gives you grass. Reported, not corrected -- the layer rule
     // wins, and the map needs the tiles moved onto a colliding layer.
     for (const std::string& name : map.strandedWaterTiles()) {
-        std::fprintf(stderr, "[map] %s: tile \"%s\" is tagged water but is painted only on "
-                             "layers that do not collide; those cells are plain ground\n",
-                     path.c_str(), name.c_str());
+        contentWarning("[map] %s: tile \"%s\" is tagged water but is painted only on "
+                       "layers that do not collide; those cells are plain ground\n",
+                       path.c_str(), name.c_str());
     }
     seed_ = 0;   // an authored map, not a generated one
     return true;
@@ -1103,9 +1098,8 @@ bool Terrain::setTiles(const std::vector<std::uint8_t>& tiles, int cols, int row
     // every cell holds one -- a small map floored entirely with dirt edges -- is
     // mostly walkable. So the map loads, with the middle as the last-resort
     // spawn; the doors on its object layers are what actually place a player.
-    std::fprintf(stderr,
-                 "[map] every cell of this %dx%d grid holds a blocking shape; spawnPoint() "
-                 "falls back to the middle of it\n", cols, rows);
+    contentWarning("[map] every cell of this %dx%d grid holds a blocking shape; spawnPoint() "
+                   "falls back to the middle of it\n", cols, rows);
     return true;
 }
 

@@ -6,6 +6,7 @@
 #include "server/systems/combat.h"
 #include "server/systems/spawning.h"
 #include "shared/game/components.h"
+#include "shared/game/content_report.h"
 #include "shared/game/rarity.h"
 
 namespace flix {
@@ -26,8 +27,8 @@ void DungeonSystem::index(const ContentRegistry& content) {
         if (copies.empty()) {
             // A content bug, not a runtime condition: the nest is an
             // untouchable stone until somebody stages the map.
-            std::fprintf(stderr, "[dungeon] %s leads into map \"%s\", which is not staged\n",
-                         config.id.c_str(), mapId.c_str());
+            contentWarning("[dungeon] %s leads into map \"%s\", which is not staged\n",
+                           config.id.c_str(), mapId.c_str());
         }
         for (const Realm realm : copies) {
             Instance instance;
@@ -111,8 +112,9 @@ bool DungeonSystem::populate(World& world, const Terrain& terrain, const Content
         }
         std::vector<Vec2> points;
         if (!map->spreadAt(entry.door, count, rng, terrain, points)) {
-            std::fprintf(stderr, "[dungeon] map \"%s\" has no spawn \"%s\"; its brood goes in the front door\n",
-                         instance.mapId.c_str(), entry.door.c_str());
+            contentWarning("[dungeon] map \"%s\" has no spawn \"%s\"; its brood goes in the "
+                           "front door\n",
+                           instance.mapId.c_str(), entry.door.c_str());
         }
         for (std::size_t i = points.size(); i > 1; --i) {
             std::swap(points[i - 1], points[rng.below(static_cast<std::uint32_t>(i))]);

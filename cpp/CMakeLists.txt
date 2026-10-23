@@ -619,7 +619,8 @@ if(EMSCRIPTEN)
   # data-only edit force a relink.
   set_property(TARGET flowrix_client APPEND PROPERTY LINK_DEPENDS
                ${FLIX_DATA_STAGED} ${FLIX_BOOT_TOOLS})
-  set_property(TARGET flowrix_server APPEND PROPERTY LINK_DEPENDS ${FLIX_DATA_STAGED})
+  set_property(TARGET flowrix_server APPEND PROPERTY LINK_DEPENDS ${FLIX_DATA_STAGED}
+               ${CMAKE_CURRENT_SOURCE_DIR}/server/node/pre_init.js)
 
   # Shared by both web targets. Memory grows because game state and transient
   # command data are not fixed-size; browser rendering itself stays in the
@@ -668,6 +669,17 @@ if(EMSCRIPTEN)
    "-fno-exceptions"
   )
   target_compile_options(flowrix_server PRIVATE "-flto")
+  # -flto on an executable reaches only that executable's own sources: here
+  # main.cpp, while the game is in the libraries it links, which arrive as
+  # finished wasm and are not optimised across. flix_server is the server's
+  # half of them and links into nothing a browser runs but the offline page,
+  # which links with -flto too. Release only, as the link's -O3 is: it adds
+  # the whole server's LTO codegen to every relink. Measured on a 68-flower
+  # world under Node it takes 5% off the tick; doing the same to flix_shared
+  # would add about 1% more, and would change the client's code with it.
+  if(FLIX_BUILD STREQUAL "release")
+    target_compile_options(flix_server PRIVATE "-flto")
+  endif()
 
   # Everything staged but the font, for the Canvas2D client: the page links the
   # same Ubuntu from Google Fonts and the browser draws every run in it, and
@@ -728,16 +740,25 @@ if(EMSCRIPTEN)
     # default stack runs out part-way through loading a real one -- silently,
     # in a release build, as an out-of-bounds access with no name on it. The
     # parser's own kMaxDepth of 200 is the bound on how far this has to go.
-    "-sSTACK_SIZE=4194304"
+    "-sSTACK_SIZE=8388608"
     # The database is a real file that has to survive a restart, so the one
     # directory it lives in is mounted from the host filesystem. Everything
     # else -- all of the embedded content above -- stays in memory.
     "-sFORCE_FILESYSTEM=1"
+    # What a crash leaves in the log: a [crash] report with the error and a
+    # deep stack, in place of Node's default, which printed the whole one-line
+    # glue. --profiling-funcs keeps the wasm's function names, which a release
+    # link otherwise strips, so that stack names the C++ it ran through rather
+    # than wasm-function[1234]. It costs the size of the names, and nothing
+    # per tick.
+    "SHELL:--pre-js ${CMAKE_CURRENT_SOURCE_DIR}/server/node/pre_init.js"
+    "--profiling-funcs"
     "-flto"
     "-msimd128"
     "-sEVAL_CTORS=0"
     "-lnodefs.js"
     "-sEXPORTED_RUNTIME_METHODS=['FS']"
+    "-O3"
     ${FLIX_EMBED_DATA}
     # The server sets no text.
     "SHELL:--exclude-file *.ttf")

@@ -14,6 +14,7 @@
 #include "shared/core/text.h"
 #include "shared/game/prestige.h"
 #include "shared/game/constants.h"
+#include "shared/game/content_report.h"
 #include "shared/game/terrain.h"
 
 namespace flix {
@@ -385,13 +386,12 @@ bool MapData::loadTiled(const std::string& path, std::string& errorOut, Realm re
     // stdout, not stderr: this is what the map RESOLVED to, not something
     // wrong with it. stderr stays the channel that means a map needs fixing,
     // so "no [map] lines on stderr" is still a meaningful thing to check.
-    std::fprintf(stdout,
-                 "[map] %s: %dx%d tiles, biome \"%s\", mobs \"%s\", %s, %d region%s, "
-                 "%d art files, %d layers, doors: %s%s\n",
-                 id_.c_str(), width_, height_, biome_.c_str(), defaultMobGroup_.c_str(),
-                 zones.c_str(), regions, regions == 1 ? "" : "s",
-                 static_cast<int>(artFiles_.size()), static_cast<int>(layers_.size()),
-                 doors.empty() ? "none" : doors.c_str(), npcs.c_str());
+    contentNote("[map] %s: %dx%d tiles, biome \"%s\", mobs \"%s\", %s, %d region%s, "
+                "%d art files, %d layers, doors: %s%s\n",
+                id_.c_str(), width_, height_, biome_.c_str(), defaultMobGroup_.c_str(),
+                zones.c_str(), regions, regions == 1 ? "" : "s",
+                static_cast<int>(artFiles_.size()), static_cast<int>(layers_.size()),
+                doors.empty() ? "none" : doors.c_str(), npcs.c_str());
     return true;
 }
 
@@ -527,9 +527,8 @@ void MapData::adopt(const Json& array) {
                     element.difficulty = authored.asDouble();
                     element.hasDifficulty = true;
                 } else {
-                    std::fprintf(stderr,
-                                 "[map] a spawn object's `difficulty` is not a number; the band "
-                                 "was read as a mob region\n");
+                    contentWarning("[map] a spawn object's `difficulty` is not a number; the band "
+                                   "was read as a mob region\n");
                 }
             }
             const std::string mobs = properties["mobs"].asString();
@@ -537,8 +536,8 @@ void MapData::adopt(const Json& array) {
                 std::string warning;
                 element.mobDistribution = parseMobDistribution(mobs, &warning);
                 if (!warning.empty()) {
-                    std::fprintf(stderr, "[map] spawn band \"%s\": %s\n", mobs.c_str(),
-                                 warning.c_str());
+                    contentWarning("[map] spawn band \"%s\": %s\n", mobs.c_str(),
+                                   warning.c_str());
                 }
             }
             // One mob for the whole shape instead of a population sized by its
@@ -549,10 +548,9 @@ void MapData::adopt(const Json& array) {
             if (properties.contains("singular")) {
                 element.singular = properties["singular"].asBool();
                 if (element.singular && !element.hasDifficulty) {
-                    std::fprintf(stderr,
-                                 "[map] a spawn object is marked `singular` but has no "
-                                 "`difficulty`, so it is a mob region and owns no population; "
-                                 "the flag does nothing\n");
+                    contentWarning("[map] a spawn object is marked `singular` but has no "
+                                   "`difficulty`, so it is a mob region and owns no population; "
+                                   "the flag does nothing\n");
                 }
             }
 
@@ -582,10 +580,9 @@ void MapData::adopt(const Json& array) {
                     if (radius > 0.0) {
                         element.padRadius = radius;
                     } else {
-                        std::fprintf(stderr,
-                                     "[map] teleporter \"%s\" has a radius of %g, which is no "
-                                     "size; it keeps the default %g\n",
-                                     element.padId.c_str(), radius, kTeleporterArtRadius);
+                        contentWarning("[map] teleporter \"%s\" has a radius of %g, which is no "
+                                       "size; it keeps the default %g\n",
+                                       element.padId.c_str(), radius, kTeleporterArtRadius);
                     }
                 }
             }
@@ -601,15 +598,14 @@ void MapData::adopt(const Json& array) {
                     element.npcEveryRarity = true;
                 } else if (!tryParseRarity(tier, element.npcRarity)) {
                     element.npcRarity = Rarity::Common;
-                    std::fprintf(stderr,
-                                 "[map] an npc's `rarity` \"%s\" is not a tier; it stands at "
-                                 "common\n",
-                                 tier.c_str());
+                    contentWarning("[map] an npc's `rarity` \"%s\" is not a tier; it stands at "
+                                   "common\n",
+                                   tier.c_str());
                 }
             }
         }
         if (element.kind == MapElementKind::Npc && element.npcId.empty()) {
-            std::fprintf(stderr, "[map] an npc object names no `npc`; nothing will stand there\n");
+            contentWarning("[map] an npc object names no `npc`; nothing will stand there\n");
             continue;
         }
         elements_.push_back(std::move(element));
@@ -633,7 +629,7 @@ void MapData::adopt(const Json& array) {
         if (element.spawnId.empty()) element.spawnId = slugOf(element.label);
         if (element.spawnId.empty()) element.spawnId = id_;
         if (element.spawnId.empty()) {
-            std::fprintf(stderr, "[map] a player spawn rectangle has no spawnId; ignored\n");
+            contentWarning("[map] a player spawn rectangle has no spawnId; ignored\n");
             continue;
         }
     }

@@ -7,6 +7,7 @@
 
 #include "shared/core/file.h"
 #include "shared/game/constants.h"
+#include "shared/game/content_report.h"
 
 namespace flix {
 
@@ -278,8 +279,8 @@ void readTileShapes(const Json& tile, const Json& tileset, const std::string& ti
     if (!(spaceW > 0.0)) spaceW = tileset["tilewidth"].asDouble();
     if (!(spaceH > 0.0)) spaceH = tileset["tileheight"].asDouble();
     if (!(spaceW > 0.0) || !(spaceH > 0.0)) {
-        std::fprintf(stderr, "[map] %s: tile \"%s\" has collision shapes but no tile size to "
-                             "read them in; ignoring them\n", path.c_str(), tileName.c_str());
+        contentWarning("[map] %s: tile \"%s\" has collision shapes but no tile size to "
+                       "read them in; ignoring them\n", path.c_str(), tileName.c_str());
         return;
     }
     const double scaleX = kTileSize / spaceW;
@@ -311,9 +312,9 @@ void readTileShapes(const Json& tile, const Json& tileset, const std::string& ti
         // one -- "inside" is undefined and a zero-width sliver would push a
         // body to whichever side rounding chose -- so it is skipped, loudly.
         if (object["polyline"].isArray()) {
-            std::fprintf(stderr, "[map] %s: tile \"%s\" has a POLYLINE collision shape; only "
-                                 "closed shapes collide, so it is ignored\n",
-                         path.c_str(), tileName.c_str());
+            contentWarning("[map] %s: tile \"%s\" has a POLYLINE collision shape; only "
+                           "closed shapes collide, so it is ignored\n",
+                           path.c_str(), tileName.c_str());
             continue;
         }
 
@@ -893,11 +894,10 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
                 // the "npcs" layer, and none of them ever stood), and it names
                 // this layer's kind as plainly as the singular does.
                 if (!kind.empty() && kind != spec.kind && kind != spec.layer) {
-                    std::fprintf(stderr,
-                                 "[map] object \"%s\" on layer \"%s\" has class \"%s\", not "
-                                 "\"%s\"; it is ignored\n",
-                                 object["name"].asString().c_str(), spec.layer, kind.c_str(),
-                                 spec.kind);
+                    contentWarning("[map] object \"%s\" on layer \"%s\" has class \"%s\", not "
+                                   "\"%s\"; it is ignored\n",
+                                   object["name"].asString().c_str(), spec.layer, kind.c_str(),
+                                   spec.kind);
                     continue;
                 }
 
@@ -955,9 +955,9 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
                     // An area, not a path. Reported rather than closed for the
                     // author: a polyline that happens to enclose something is
                     // not the same shape as the polygon they meant to draw.
-                    std::fprintf(stderr, "[map] %s: object on layer \"%s\" is a polyline; "
-                                         "a zone must be a closed polygon\n",
-                                 path.c_str(), spec.layer);
+                    contentWarning("[map] %s: object on layer \"%s\" is a polyline; "
+                                   "a zone must be a closed polygon\n",
+                                   path.c_str(), spec.layer);
                     continue;
                 }
                 element.set("properties", std::move(properties));

@@ -1348,6 +1348,8 @@ private:
     bool botFollowPath(Bot&, double nowMillis, Vec2 goal, double speedMultiplier,
                        double avoidStrength, Entity engaging = NULL_ENTITY);
     bool botFindPath(Realm, Vec2 start, Vec2 goal, std::vector<Vec2>& out);
+    /// Fills `scratch`'s walk grid for `realm`: see BotPathScratch::open.
+    void botBuildWalkGrid(Realm, BotPathScratch& scratch) const;
     void botClearPath(BotAiState&);
     int botStrafeDirection(Bot&, double nowMillis);
 

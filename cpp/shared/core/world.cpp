@@ -12,12 +12,16 @@ namespace flix {
 
 namespace {
 
-/// A broken invariant. Thrown where the build has exceptions; where it does
-/// not -- the Skia web build compiles with -fno-exceptions -- the message is
-/// printed and the program aborted, which is what the uncaught throw came to.
+/// A broken invariant. Thrown where a throw can be caught; where it cannot,
+/// the message is printed and the program aborted, which is what the uncaught
+/// throw came to. That is the Skia web build, which compiles with
+/// -fno-exceptions, and every other emscripten build as well: they compile
+/// throws but link with catching disabled, so a throw aborts on the spot and
+/// takes its message with it: in the Node server's log, every one of these
+/// was the same bare "Aborted(undefined)".
 template <typename Error, typename... Args>
 [[noreturn]] void fail(Args&&... args) {
-#if defined(__cpp_exceptions)
+#if defined(__cpp_exceptions) && (!defined(__EMSCRIPTEN__) || defined(__WASM_EXCEPTIONS__))
     throw Error(std::forward<Args>(args)...);
 #else
     const Error error(std::forward<Args>(args)...);

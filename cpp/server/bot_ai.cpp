@@ -1043,9 +1043,82 @@ void GameServer::botClearPath(BotAiState& ai) {
     ai.pathCreatedMillis = 0;
 }
 
+void GameServer::botBuildWalkGrid(Realm realm, BotPathScratch& scratch) const {
+    // Built from the shapes, not from the tile grid. A tile with any collision
+    // shape on it is a blocked tile there, and the maps edge every wall with
+    // such tiles -- mostly ground, a sliver of rock -- so that grid had bots
+    // standing on "walls" all the time: measured, more than four searches in
+    // five began on one, and nearly all of them failed.
+    const int cols = scratch.cols;
+    const int rows = scratch.rows;
+    const auto at = [cols](int tx, int ty) {
+        return static_cast<std::size_t>(ty) * static_cast<std::size_t>(cols) +
+               static_cast<std::size_t>(tx);
+    };
+    scratch.open.assign(scratch.stamp.size(), 0);
+    scratch.steps.assign(scratch.stamp.size(), 0);
+    for (int ty = 0; ty < rows; ++ty) {
+        for (int tx = 0; tx < cols; ++tx) {
+            const bool blocked = terrain_->blocked(Terrain::tileCenter(tx, ty), realm);
+            scratch.open[at(tx, ty)] = blocked ? 0 : 1;
+        }
+    }
+    // Each pair once, from the side that comes first; the step back is the
+    // same straight line.
+    constexpr std::size_t kForward[] = {0, 2, 4, 5};   // +x, +y, +x+y, +x-y
+    constexpr std::size_t kBack[] = {1, 3, 7, 6};
+    for (int ty = 0; ty < rows; ++ty) {
+        for (int tx = 0; tx < cols; ++tx) {
+            if (!scratch.open[at(tx, ty)]) continue;
+            for (std::size_t f = 0; f < 4; ++f) {
+                const Neighbour& step = kAStarNeighbours[kForward[f]];
+                const int nx = tx + step.dx;
+                const int ny = ty + step.dy;
+                if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+                if (!scratch.open[at(nx, ny)]) continue;
+                // No corner cutting: a diagonal needs both orthogonals open.
+                if (step.dx != 0 && step.dy != 0 &&
+                    (!scratch.open[at(nx, ty)] || !scratch.open[at(tx, ny)])) {
+                    continue;
+                }
+                const Vec2 from = Terrain::tileCenter(tx, ty);
+                if (botRayHitsWall(realm, from, Terrain::tileCenter(nx, ny))) continue;
+                scratch.steps[at(tx, ty)] |= static_cast<std::uint8_t>(1u << kForward[f]);
+                scratch.steps[at(nx, ny)] |= static_cast<std::uint8_t>(1u << kBack[f]);
+            }
+        }
+    }
+    // The connected pieces, by flood fill over those same steps.
+    scratch.region.assign(scratch.stamp.size(), 0);
+    std::vector<std::size_t> pending;
+    std::uint16_t next = 0;
+    for (std::size_t seed = 0; seed < scratch.region.size(); ++seed) {
+        if (!scratch.open[seed] || scratch.region[seed] != 0) continue;
+        if (next == 0xFFFF) break;   // a map cannot have this many; stop numbering
+        ++next;
+        scratch.region[seed] = next;
+        pending.push_back(seed);
+        while (!pending.empty()) {
+            const std::size_t cell = pending.back();
+            pending.pop_back();
+            const int tx = static_cast<int>(cell % static_cast<std::size_t>(cols));
+            const int ty = static_cast<int>(cell / static_cast<std::size_t>(cols));
+            for (std::size_t k = 0; k < std::size(kAStarNeighbours); ++k) {
+                if ((scratch.steps[cell] & (1u << k)) == 0) continue;
+                const std::size_t n = at(tx + kAStarNeighbours[k].dx, ty + kAStarNeighbours[k].dy);
+                if (scratch.region[n] != 0) continue;
+                scratch.region[n] = next;
+                pending.push_back(n);
+            }
+        }
+    }
+}
+
 bool GameServer::botFindPath(Realm realm, Vec2 start, Vec2 goal, std::vector<Vec2>& out) {
-    // 8-connected, octile heuristic, no corner cutting, and a blocked goal
-    // snapped to the nearest walkable tile. Bounded by kBotPathMaxNodes per
+    // 8-connected, octile heuristic, no corner cutting, over the walk grid
+    // (botBuildWalkGrid), with each end moved onto it when it is not: the
+    // start to the nearest tile the bot can see the centre of, the goal to
+    // the nearest tile the start can reach. Bounded by kBotPathMaxNodes per
     // call and by a per-tick budget above that, so a whole raid replanning
     // together cannot dominate a frame.
     out.clear();
@@ -1056,38 +1129,11 @@ bool GameServer::botFindPath(Realm realm, Vec2 start, Vec2 goal, std::vector<Vec
     const int cols = terrain_->tileCols(realm);
     const int rows = terrain_->tileRows(realm);
     if (cols <= 0 || rows <= 0) return false;
-    const auto blockedTile = [&](int tx, int ty) {
-        return tileBlocks(terrain_->atTile(tx, ty, realm));
-    };
-
-    const int sx = Terrain::toTileCoord(start.x);
-    const int sy = Terrain::toTileCoord(start.y);
-    int gx = Terrain::toTileCoord(goal.x);
-    int gy = Terrain::toTileCoord(goal.y);
-    if (sx < 0 || sy < 0 || sx >= cols || sy >= rows) return false;
-
-    if (blockedTile(gx, gy)) {
-        bool snapped = false;
-        for (int r = 1; r <= 4 && !snapped; ++r) {
-            for (int dy = -r; dy <= r && !snapped; ++dy) {
-                for (int dx = -r; dx <= r && !snapped; ++dx) {
-                    // Only the shell at radius r.
-                    if (std::abs(dx) != r && std::abs(dy) != r) continue;
-                    if (blockedTile(gx + dx, gy + dy)) continue;
-                    gx += dx;
-                    gy += dy;
-                    snapped = true;
-                }
-            }
-        }
-        if (!snapped) return false;
-    }
-    if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) return false;
-    if (sx == gx && sy == gy) return false;
 
     // One scratch per realm: the tables are indexed by tile, so a shared one
     // would resize and clear itself on every search that followed a search in
-    // a differently sized map.
+    // a differently sized map. The walk grid is built with it, once: the
+    // server never edits its terrain.
     if (botPath_.size() <= realmIndex(realm)) botPath_.resize(realmIndex(realm) + 1);
     BotPathScratch& scratch = botPath_[realmIndex(realm)];
     const std::size_t cells = static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows);
@@ -1098,6 +1144,78 @@ bool GameServer::botFindPath(Realm realm, Vec2 start, Vec2 goal, std::vector<Vec
         scratch.cameFrom.assign(cells, -1);
         scratch.stamp.assign(cells, 0);
         scratch.stampValue = 0;
+        botBuildWalkGrid(realm, scratch);
+    }
+    const auto open = [&](int tx, int ty) {
+        return tx >= 0 && ty >= 0 && tx < cols && ty < rows &&
+               scratch.open[static_cast<std::size_t>(ty) * cols + tx] != 0;
+    };
+
+    int sx = Terrain::toTileCoord(start.x);
+    int sy = Terrain::toTileCoord(start.y);
+    int gx = Terrain::toTileCoord(goal.x);
+    int gy = Terrain::toTileCoord(goal.y);
+    if (sx < 0 || sy < 0 || sx >= cols || sy >= rows) return false;
+
+    // A bot is often in the open part of a tile whose centre is not -- along
+    // every wall -- so the search may have to start a tile or two over. The
+    // nearest such centre in plain sight, and that centre becomes the path's
+    // first waypoint.
+    bool startMoved = false;
+    if (!open(sx, sy) || botRayHitsWall(realm, start, Terrain::tileCenter(sx, sy))) {
+        int bestX = 0;
+        int bestY = 0;
+        double bestSq = -1.0;
+        for (int r = 1; r <= 2 && bestSq < 0.0; ++r) {
+            for (int dy = -r; dy <= r; ++dy) {
+                for (int dx = -r; dx <= r; ++dx) {
+                    if (std::abs(dx) != r && std::abs(dy) != r) continue;
+                    if (!open(sx + dx, sy + dy)) continue;
+                    const Vec2 centre = Terrain::tileCenter(sx + dx, sy + dy);
+                    const double sq = distanceSq(start, centre);
+                    if (bestSq >= 0.0 && sq >= bestSq) continue;
+                    if (botRayHitsWall(realm, start, centre)) continue;
+                    bestX = sx + dx;
+                    bestY = sy + dy;
+                    bestSq = sq;
+                }
+            }
+        }
+        if (bestSq < 0.0) return false;
+        sx = bestX;
+        sy = bestY;
+        startMoved = true;
+    }
+
+    // The goal, likewise onto the grid -- and into the start's own piece of
+    // it: a goal the bot cannot reach becomes the nearest point near it that
+    // it can, and one with no such point fails here, unsearched.
+    const std::uint16_t home = scratch.region[static_cast<std::size_t>(sy) * cols + sx];
+    if (home == 0) return false;
+    const auto reachable = [&](int tx, int ty) {
+        return open(tx, ty) && scratch.region[static_cast<std::size_t>(ty) * cols + tx] == home;
+    };
+    if (!reachable(gx, gy)) {
+        bool snapped = false;
+        for (int r = 1; r <= 4 && !snapped; ++r) {
+            for (int dy = -r; dy <= r && !snapped; ++dy) {
+                for (int dx = -r; dx <= r && !snapped; ++dx) {
+                    // Only the shell at radius r.
+                    if (std::abs(dx) != r && std::abs(dy) != r) continue;
+                    if (!reachable(gx + dx, gy + dy)) continue;
+                    gx += dx;
+                    gy += dy;
+                    snapped = true;
+                }
+            }
+        }
+        if (!snapped) return false;
+    }
+    if (sx == gx && sy == gy) {
+        // Already there, unless getting onto the grid was itself the move.
+        if (!startMoved) return false;
+        out.push_back(Terrain::tileCenter(sx, sy));
+        return true;
     }
     // A wrap would make every stale entry suddenly "match", so the table is
     // cleared once in the four-billionth search rather than compared against a
@@ -1191,6 +1309,8 @@ bool GameServer::botFindPath(Realm realm, Vec2 start, Vec2 goal, std::vector<Vec
                 if (previous < 0) break;
                 index = static_cast<std::size_t>(previous);
             }
+            // Exclusive of the bot's own tile, but not of one it was moved to.
+            if (startMoved) scratch.path.push_back(Terrain::tileCenter(sx, sy));
             out.assign(scratch.path.rbegin(), scratch.path.rend());
             return !out.empty();
         }
@@ -1202,16 +1322,13 @@ bool GameServer::botFindPath(Realm realm, Vec2 start, Vec2 goal, std::vector<Vec
         const double g = scratch.gScore[index];
         if (f > g + octileHeuristic(tx, ty, gx, gy) + 1e-9) continue;
 
-        for (const Neighbour& step : kAStarNeighbours) {
+        // Bounds, corners and walls were all settled when the grid was built.
+        const std::uint8_t steps = scratch.steps[index];
+        for (std::size_t k = 0; k < std::size(kAStarNeighbours); ++k) {
+            if ((steps & (1u << k)) == 0) continue;
+            const Neighbour& step = kAStarNeighbours[k];
             const int nx = tx + step.dx;
             const int ny = ty + step.dy;
-            if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
-            if (blockedTile(nx, ny)) continue;
-            // No corner cutting: a diagonal needs both orthogonals clear.
-            if (step.dx != 0 && step.dy != 0) {
-                if (blockedTile(tx + step.dx, ty)) continue;
-                if (blockedTile(tx, ty + step.dy)) continue;
-            }
             const double tentative = g + step.cost;
             const std::size_t neighbourIndex = static_cast<std::size_t>(ny) * cols + nx;
             const bool seen = scratch.stamp[neighbourIndex] == stamp;
@@ -1247,7 +1364,13 @@ bool GameServer::botFollowPath(Bot& bot, double nowMillis, Vec2 goal, double spe
     const int goalTx = Terrain::toTileCoord(goal.x);
     const int goalTy = Terrain::toTileCoord(goal.y);
 
-    const bool exhausted = ai.hasPath && ai.pathIndex >= ai.pathNodes.size();
+    // A path walked to its end -- not the EMPTY one a failed search caches
+    // below. Counted as walked out, that one went stale on the very next tick,
+    // so the search it is there to save ran again every tick; back when nearly
+    // every search failed, those reruns were most of what the bots cost the
+    // server.
+    const bool exhausted =
+        ai.hasPath && !ai.pathNodes.empty() && ai.pathIndex >= ai.pathNodes.size();
     const bool goalMoved = !ai.hasPathGoal ||
                            std::abs(ai.pathGoalTileX - goalTx) > kBotPathGoalInvalidateTiles ||
                            std::abs(ai.pathGoalTileY - goalTy) > kBotPathGoalInvalidateTiles;

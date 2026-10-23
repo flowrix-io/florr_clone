@@ -33,6 +33,7 @@
 #include "shared/game/prestige.h"
 #include "shared/game/chat_images.h"
 #include "shared/game/config.h"
+#include "shared/game/content_report.h"
 #include "shared/game/shop.h"
 #include "shared/game/skin_format.h"
 #include "shared/game/skin_likeness.h"
@@ -401,7 +402,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
 
     if (!loadContent(config.dataDir, errorOut)) return false;
     for (const std::string& warning : content().warnings()) {
-        std::fprintf(stderr, "[content] %s\n", warning.c_str());
+        contentWarning("[content] %s\n", warning.c_str());
     }
 
     // A database that exists but will not parse is fatal at startup. Coming up
@@ -454,7 +455,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // annotation layer that will not load is only reported.
     if (!worldMaps_.load(config.dataDir, terrain_.get(), errorOut)) return false;
     for (const std::string& warning : worldMaps_.warnings()) {
-        std::fprintf(stderr, "[map] %s\n", warning.c_str());
+        contentWarning("[map] %s\n", warning.c_str());
     }
     // The broadphase was built before the maps were: its layers are sized to
     // the default world until it is told what shape each realm really is.
@@ -481,7 +482,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
         std::vector<std::string> npcWarnings;
         npcs_->loadSites(worldMaps_, content(), npcWarnings);
         for (const std::string& warning : npcWarnings) {
-            std::fprintf(stderr, "[map] %s\n", warning.c_str());
+            contentWarning("[map] %s\n", warning.c_str());
         }
     }
 

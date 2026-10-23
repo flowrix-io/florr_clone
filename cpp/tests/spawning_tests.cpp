@@ -1099,6 +1099,33 @@ TEST(a_cold_band_is_full_and_awake_on_its_first_pass) {
     CHECK_EQ(asleepInView(sim, kCentre, {kSpawnViewportHalfWidth, kSpawnViewportHalfHeight}), 0);
 }
 
+TEST(a_flower_that_jumps_across_a_band_lands_on_a_waking_screen) {
+    // The report this pins: "when I bubble, it takes a while for mobs to
+    // appear". A bubble covers thousands of units in a moment, which no wake
+    // margin sized for walking covers, and waking only on the population pass
+    // left the screen it landed on empty until the next one.
+    const Rect band{kCentre.x - 6000.0, kCentre.y - 3000.0, 12000.0, 6000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const Vec2 before{kCentre.x - 4000.0, kCentre.y};
+    const Vec2 after{kCentre.x + 4000.0, kCentre.y};
+
+    // The first tick is a population pass: everything round `before` wakes,
+    // and nothing round `after`, which is far outside its wake margin.
+    sim.tick({before});
+    const Rect landing{after.x - kSpawnViewportHalfWidth, after.y - kSpawnViewportHalfHeight,
+                       kSpawnViewportHalfWidth * 2.0, kSpawnViewportHalfHeight * 2.0};
+    CHECK_EQ(sim.mobsIn(landing), 0);
+
+    // One tick later -- well inside the pass's half second -- the flower is
+    // across the band, and the screen it landed on is awake on that tick.
+    sim.tick({after});
+    CHECK(sim.mobsIn(landing) > 5);
+    CHECK_EQ(asleepInView(sim, after, {kSpawnViewportHalfWidth, kSpawnViewportHalfHeight}), 0);
+}
+
 TEST(a_camera_petals_wide_view_is_awake_from_edge_to_edge) {
     // Unique antennae draws ten default screens of world. The band has to be
     // awake across ALL of it -- the flower's own reported viewport is the box,

@@ -1488,6 +1488,12 @@ void ContentRegistry::foldMapsIntoHash(const std::string& dataDir) {
     }
 }
 
+namespace {
+/// What petal `c` fields at `r`. Defined beside petalStats(), which reads it
+/// out of the table loadFiles() fills with it.
+PetalStats buildPetalStats(const PetalConfig& c, Rarity r);
+} // namespace
+
 bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& petalsPath,
                                 std::string& errorOut) {
     // Everything is built into locals and only committed at the end: a failed
@@ -1658,6 +1664,14 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
             magicSource_[i] = found->second;
         }
     }
+    // Likewise every petal's stats at every tier: see petalStats().
+    petalStats_.resize(petals_.size());
+    for (std::size_t i = 0; i < petals_.size(); ++i) {
+        for (int t = 0; t < kRarityCount; ++t) {
+            petalStats_[i][static_cast<std::size_t>(t)] =
+                buildPetalStats(petals_[i], static_cast<Rarity>(t));
+        }
+    }
     warnings_ = std::move(warnings);
     hash_ = hash;
     errorOut.clear();
@@ -1766,8 +1780,9 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     return s;
 }
 
-PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
-    const PetalConfig& c = petal(index);
+namespace {
+
+PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // Universal reads everything below at apex, `tier`, except health and
     // damage, which take `strength` -- apex's times sqrt(2).
     const Rarity graded = clampRarity(rarityIndex(r));
@@ -1986,6 +2001,25 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
         s.cameraZoom = 1.0 / antennaeVisionRangeScale(tier);
     }
     return s;
+}
+
+} // namespace
+
+const PetalStats& ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
+    // Every tier past the ends reads as the end it is past, which is what
+    // buildPetalStats() does with one too.
+    const auto tier = static_cast<std::size_t>(rarityIndex(clampRarity(rarityIndex(r))));
+    if (index < petalStats_.size()) return petalStats_[index][tier];
+    // An unknown index is the placeholder petal(), as everywhere else.
+    static const std::array<PetalStats, kRarityCount> kMissing = [this] {
+        std::array<PetalStats, kRarityCount> stats;
+        for (int t = 0; t < kRarityCount; ++t) {
+            stats[static_cast<std::size_t>(t)] =
+                buildPetalStats(petal(kInvalidIndex), static_cast<Rarity>(t));
+        }
+        return stats;
+    }();
+    return kMissing[tier];
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <limits>
 
+#include "shared/game/content_report.h"
 #include "shared/game/prestige.h"
 
 namespace flix {
@@ -1026,7 +1027,10 @@ void SpawnSystem::run(World& world, const Terrain& terrain, const ContentRegistr
         // difference between this and a spawner that follows the players
         // around.
         stockSpawnZones(world, terrain, content, viewers_, rng, nowMillis);
-        promoteLatent(world, terrain, content, viewers_, rng, nowMillis);
+        promoteLatent(world, terrain, content, viewers_, viewers_, rng, nowMillis);
+        wokenFrom_ = viewers_;
+    } else {
+        wakeAhead(world, terrain, content, rng, nowMillis);
     }
 
     // And that is all of it. There is no second pass behind the bands covering
@@ -1551,10 +1555,9 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
                 if (resolved.group == kInvalidIndex) resolved.mob = content.mobIndex(row.name);
                 if (resolved.group == kInvalidIndex && resolved.mob == kInvalidIndex &&
                     unknownZoneMobs_.insert(row.name).second) {
-                    std::fprintf(stderr,
-                                 "[spawn] map \"%s\" names \"%s\", which is neither a mob group "
-                                 "nor a mob\n",
-                                 map.id().c_str(), row.name.c_str());
+                    contentWarning("[spawn] map \"%s\" names \"%s\", which is neither a mob group "
+                                   "nor a mob\n",
+                                   map.id().c_str(), row.name.c_str());
                 }
                 zone.resolved.push_back(resolved);
             }
@@ -1601,11 +1604,10 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
         });
         if (!hasBand) {
             if (unknownZoneMobs_.insert("<" + map.id() + ":bands>").second) {
-                std::fprintf(stderr,
-                             "[spawn] map \"%s\" has no spawn band on it, so no mob will ever "
-                             "spawn there -- draw a `spawn` object with a `difficulty` to "
-                             "populate it\n",
-                             map.id().c_str());
+                contentWarning("[spawn] map \"%s\" has no spawn band on it, so no mob will ever "
+                               "spawn there -- draw a `spawn` object with a `difficulty` to "
+                               "populate it\n",
+                               map.id().c_str());
             }
             continue;
         }
@@ -1622,11 +1624,10 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
                 return band.realm == map.realm() && !band.resolved.empty();
             });
         if (!saysSomething && unknownZoneMobs_.insert("<" + map.id() + ":default>").second) {
-            std::fprintf(stderr,
-                         "[spawn] map \"%s\" names no mob group anywhere -- no `mobs` on any "
-                         "band, no mob region and no `defaultMobGroup`; its bands will stay "
-                         "empty\n",
-                         map.id().c_str());
+            contentWarning("[spawn] map \"%s\" names no mob group anywhere -- no `mobs` on any "
+                           "band, no mob region and no `defaultMobGroup`; its bands will stay "
+                           "empty\n",
+                           map.id().c_str());
         }
     }
 }
@@ -2139,13 +2140,40 @@ void SpawnSystem::returnVanished(World& world, const Terrain& terrain,
 // Waking it up
 // ---------------------------------------------------------------------------
 
+void SpawnSystem::wakeAhead(World& world, const Terrain& terrain, const ContentRegistry& content,
+                            Rng& rng, double nowMillis) {
+    // kLatentWakeMargin covers a WALK between passes. A bubble, a teleporter or
+    // a join covers thousands of units in one tick, and waking only on the pass
+    // left a flower arriving that way on an empty screen for up to half a
+    // second, then filled it all at once. So a viewer that has come more than
+    // half the margin from every point a wake was done from this pass is woken
+    // round now -- and only that viewer: re-walking every band for everyone
+    // every tick cost a sixth of a busy tick.
+    constexpr double kOutranSq = (kLatentWakeMargin * 0.5) * (kLatentWakeMargin * 0.5);
+    wakeSeers_.clear();
+    for (const Viewer& viewer : viewers_) {
+        bool covered = false;
+        for (const Viewer& woken : wokenFrom_) {
+            if (woken.realm == viewer.realm &&
+                distanceSq(woken.position, viewer.position) <= kOutranSq) {
+                covered = true;
+                break;
+            }
+        }
+        if (!covered) wakeSeers_.push_back(viewer);
+    }
+    if (wakeSeers_.empty()) return;
+    promoteLatent(world, terrain, content, wakeSeers_, viewers_, rng, nowMillis);
+    wokenFrom_.insert(wokenFrom_.end(), wakeSeers_.begin(), wakeSeers_.end());
+}
+
 void SpawnSystem::promoteLatent(World& world, const Terrain& terrain,
-                                const ContentRegistry& content,
+                                const ContentRegistry& content, const std::vector<Viewer>& seers,
                                 const std::vector<Viewer>& viewers, Rng& rng, double nowMillis) {
     // Nobody is looking at anything, so nothing has to be awake. This is also
     // what keeps an unattended server from paying for the population it holds:
     // the whole map is stocked and not one of it is simulated.
-    if (viewers.empty()) return;
+    if (seers.empty()) return;
 
     // Gathered first and woken nearest-first. There is no allowance per band:
     // a player arriving through a door, or wearing antennae that show half the
@@ -2160,12 +2188,12 @@ void SpawnSystem::promoteLatent(World& world, const Terrain& terrain,
         // The cheap rejection, and the reason this is affordable at all: one
         // rectangle test per viewer says whether the band's records are worth
         // walking, and on a map with two dozen bands almost none of them are.
-        if (!zoneInView(zone.bounds, zone.realm, viewers, kLatentWakeMargin)) continue;
+        if (!zoneInView(zone.bounds, zone.realm, seers, kLatentWakeMargin)) continue;
 
         for (std::size_t i = 0; i < zone.latent.size(); ++i) {
             const LatentMob& record = zone.latent[i];
             if (nowMillis < record.readyMillis ||
-                !seenBy(viewers, zone.realm, record.position, kLatentWakeMargin)) {
+                !seenBy(seers, zone.realm, record.position, kLatentWakeMargin)) {
                 continue;
             }
             // Nobody's lap, at the moment the body actually appears.
@@ -2194,7 +2222,7 @@ void SpawnSystem::promoteLatent(World& world, const Terrain& terrain,
                 continue;
             }
             double nearestSq = std::numeric_limits<double>::infinity();
-            for (const Viewer& viewer : viewers) {
+            for (const Viewer& viewer : seers) {
                 if (viewer.realm != zone.realm) continue;
                 nearestSq = std::min(nearestSq, distanceSq(viewer.position, record.position));
             }

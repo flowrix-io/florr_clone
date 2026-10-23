@@ -1363,7 +1363,11 @@ public:
     bool loaded() const { return !mobs_.empty(); }
 
     MobStats mobStats(std::uint16_t index, Rarity r) const;
-    PetalStats petalStats(std::uint16_t index, Rarity r) const;
+    /// Read out of a table worked out once at load: what a petal fields at a
+    /// tier is a page of ladders, pow()s and id compares, and the server asks
+    /// it a few thousand times a tick -- each worn slot twice over just to
+    /// fold the flower's modifiers.
+    const PetalStats& petalStats(std::uint16_t index, Rarity r) const;
 
     /// The mob groups, in first-mention order. A map's spawn band names one of
     /// these, or a mob id; the group is looked up first, so a group and a mob
@@ -1425,6 +1429,8 @@ private:
     std::vector<std::uint16_t> magicSource_;
     /// See standInMobs().
     std::vector<std::uint16_t> standIns_;
+    /// Petal index -> petalStats() at every tier. See there.
+    std::vector<std::array<PetalStats, kRarityCount>> petalStats_;
     std::vector<std::string> warnings_;
     std::uint32_t hash_ = 0;
 

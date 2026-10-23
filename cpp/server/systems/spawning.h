@@ -182,7 +182,8 @@ inline constexpr double kSpawnViewportHalfHeight = kViewportHeight * 0.5 + kView
 /// How far past the buffered viewport a latent mob is woken. It covers the
 /// population pass's own cadence: a flower crosses a few hundred units between
 /// passes, and a mob has to be alive before it is on screen rather than as it
-/// arrives there.
+/// arrives there. Anything faster than walking -- a bubble, a teleporter -- is
+/// woken round between passes instead (SpawnSystem::wakeAhead).
 inline constexpr double kLatentWakeMargin = 700.0;
 
 /// How far past the WAKE box a live mob still counts as seen.
@@ -258,7 +259,8 @@ inline constexpr double kLatentSleepDelayMillis = 3000.0;
 /// The census runs on its own cadence rather than every tick: it is
 /// O(mobs x players), and at 30Hz nothing about the population changes fast
 /// enough to need it more often than this. The promotion pass rides with it,
-/// which is what kLatentWakeMargin is sized against.
+/// which is what kLatentWakeMargin is sized against; between passes only a
+/// flower that has outrun that margin is woken round (SpawnSystem::wakeAhead).
 ///
 /// So does stocking: census, then top-up, then wake, all in one pass. A band
 /// that is short -- a cold start, or an operator's killall -- is therefore
@@ -823,11 +825,18 @@ private:
     /// next census looks for it on.
     void noteLiveBandMob(World& world, Entity e, std::uint16_t zone);
 
-    /// Brings every record somebody can now see to life, all in the same pass,
-    /// and none of them in a flower's lap. The cheap half is the rejection: a
-    /// band whose box no viewport touches is one rectangle test.
+    /// Brings every record `seers` can now see to life, all in the same pass,
+    /// and none of them in any of `viewers`' laps. The cheap half is the
+    /// rejection: a band whose box no viewport touches is one rectangle test.
+    /// `seers` is every viewer on the population pass and, between passes,
+    /// only those that have outrun what was woken for them (wakeAhead).
     void promoteLatent(World& world, const Terrain& terrain, const ContentRegistry& content,
-                       const std::vector<Viewer>& viewers, Rng& rng, double nowMillis);
+                       const std::vector<Viewer>& seers, const std::vector<Viewer>& viewers,
+                       Rng& rng, double nowMillis);
+    /// Between passes: wakes round every viewer that has moved further than
+    /// half of kLatentWakeMargin from everywhere a wake was last done from.
+    void wakeAhead(World& world, const Terrain& terrain, const ContentRegistry& content, Rng& rng,
+                   double nowMillis);
 
     /// True when a `neverAmbient` fixture of this type and tier already
     /// stands in `realm` -- in `section` of it when the realm is the
@@ -1036,6 +1045,10 @@ private:
     /// so the pass does not allocate once it has run a few times.
     std::vector<Viewer> viewers_;
     std::vector<Viewer> worldViewers_;
+    /// Where waking has been done from since the last population pass, and
+    /// the viewers wakeAhead() picked out this tick. See there.
+    std::vector<Viewer> wokenFrom_;
+    std::vector<Viewer> wakeSeers_;
     /// Whether anyone at all stands in each realm this pass. What keeps an
     /// arena or maze mob alive: those realms are populated whole, so "near a
     /// player" there means "someone is in here".
