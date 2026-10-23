@@ -497,6 +497,9 @@ constexpr ChangelogEntry kChangelog[] = {
     {"October 22, 2026",
       {
         "Added pyramid",
+        "Rate limited and added moderation to chat",
+        "New petal: Bandage",
+        "Bugfixes and polished some UI"
       }
     }
 };
