@@ -578,6 +578,13 @@ void GameServer::shutdown() {
 }
 
 std::size_t GameServer::persistAll() {
+    // Who is standing NOW, not as of the last population pass: this is the
+    // save a shutdown ends on, and a boss placed in that last half second is
+    // lost to the restart like any other.
+    if (bossClocksRestored_) {
+        spawning_->noteStandingBosses(world_);
+        persistBossClocks();
+    }
     std::size_t saved = 0;
     for (const auto& entry : sessions_) {
         if (!entry.second.playing()) continue;
@@ -613,23 +620,32 @@ void GameServer::persistBossClocks() {
     const double offset = static_cast<double>(database_.nowMillis()) - clockMillis_;
     for (const SpawnSystem::BiomeBossClock& clock : spawning_->bossClocks()) {
         if (!clock.scattered) continue;
+        // A boss still standing is one a restart would take away unkilled, so
+        // the cooldown it started is handed back: its clock is saved as of the
+        // moment the boss spent it, which the next run reads as ready. Once it
+        // dies the real ready time goes back in.
+        const double unique = clock.uniqueStanding
+                                  ? clock.uniqueReadyMillis - kUniqueSpawnCooldownMillis
+                                  : clock.uniqueReadyMillis;
+        const double apex = clock.apexStanding ? clock.apexReadyMillis - kApexSpawnCooldownMillis
+                                               : clock.apexReadyMillis;
         SavedBossClock* saved = nullptr;
         for (SavedBossClock& candidate : savedBossClocks_) {
             if (candidate.biome == clock.biome) saved = &candidate;
         }
-        if (saved != nullptr && saved->uniqueReadyMillis == clock.uniqueReadyMillis &&
-            saved->apexReadyMillis == clock.apexReadyMillis) {
+        if (saved != nullptr && saved->uniqueReadyMillis == unique &&
+            saved->apexReadyMillis == apex) {
             continue;
         }
         if (saved == nullptr) {
             savedBossClocks_.push_back(SavedBossClock{clock.biome});
             saved = &savedBossClocks_.back();
         }
-        saved->uniqueReadyMillis = clock.uniqueReadyMillis;
-        saved->apexReadyMillis = clock.apexReadyMillis;
+        saved->uniqueReadyMillis = unique;
+        saved->apexReadyMillis = apex;
         Json entry = Json::object();
-        entry["uniqueReadyAt"] = std::round(clock.uniqueReadyMillis + offset);
-        entry["apexReadyAt"] = std::round(clock.apexReadyMillis + offset);
+        entry["uniqueReadyAt"] = std::round(unique + offset);
+        entry["apexReadyAt"] = std::round(apex + offset);
         database_.rawTable("bossClocks")[clock.biome] = std::move(entry);
         database_.markDirty();
     }

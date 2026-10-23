@@ -653,18 +653,88 @@ TEST(boss_clocks_are_kept_in_the_database_and_survive_a_restart) {
     CHECK(sawText(client, "Spawned unique bee"));
     CHECK(say(h, client, "/admin spawn bee apex"));
     CHECK(sawText(client, "apex clock is cooling down"));
+}
 
-    // The console's charge reaches the table straight away: the unique clock
-    // there is a whole cooldown out again.
-    const Json& table = h.server.database().storedTable("bossClocks");
-    const double now = static_cast<double>(h.server.database().nowMillis());
-    bool charged = false;
-    for (const std::string& biome : table.keys()) {
-        if (table[biome]["uniqueReadyAt"].asDouble() > now + kUniqueSpawnCooldownMillis - 60000.0) {
-            charged = true;
+TEST(a_boss_standing_at_a_restart_hands_its_clock_back) {
+    // A unique the restart takes away was never killed, so it must not cost
+    // its biome a cooldown: while it stands the table holds its clock as of
+    // the moment it was spent, and a run booted from that table lets the
+    // next one in at once. Killed, it spent the clock for real, and the table
+    // is a whole cooldown out.
+    Json standing;
+    Json killed;
+    {
+        Harness h("cmd-boss-clock-standing", [](const std::string& path) {
+            seedUser(path, "boss", "password7", true);
+        });
+        if (!h.ready) { CHECK(false); return; }
+        NetClient client;
+        CHECK(loginAs(h, client, "boss", "password7"));
+        client.joinGame(1920, 1080, {}, "Boss");
+        CHECK(h.stepUntil({&client},
+                          [&] { return client.status() == NetClient::Status::Playing; }, 200));
+        h.clock += kApexSpawnCooldownMillis;
+        h.step(1, {&client});
+
+        const std::uint16_t bee = content().mobIndex("bee");
+        CHECK(say(h, client, "/admin spawn bee unique"));
+        CHECK(sawText(client, "Spawned unique bee"));
+        Entity boss = NULL_ENTITY;
+        Query<MobTag, MobType> mobs{h.server.world()};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (type.configIndex == bee && type.rarity == Rarity::Unique) boss = e;
+        });
+        CHECK(boss != NULL_ENTITY);
+        if (boss == NULL_ENTITY) return;
+
+        // Past a population pass, which is where a standing boss is noticed.
+        h.step(net::kTicksPerSecond, {&client});
+        standing = h.server.database().storedTable("bossClocks");
+
+        h.server.world().add<Dead>(boss, Dead{NULL_ENTITY});
+        h.step(net::kTicksPerSecond, {&client});
+        killed = h.server.database().storedTable("bossClocks");
+    }
+
+    // The bee's biome is the one clock the kill sent a whole cooldown out;
+    // while the bee stood, that same clock read as already spent.
+    double killedAt = 0.0;
+    std::string beeBiome;
+    for (const std::string& biome : killed.keys()) {
+        const double unique = killed[biome]["uniqueReadyAt"].asDouble();
+        if (unique > killedAt) {
+            killedAt = unique;
+            beeBiome = biome;
         }
     }
-    CHECK(charged);
+    CHECK(!beeBiome.empty());
+    if (beeBiome.empty()) return;
+    const double standingAt = standing[beeBiome]["uniqueReadyAt"].asDouble();
+    CHECK_NEAR(killedAt - standingAt, kUniqueSpawnCooldownMillis, 5000.0);
+
+    const auto bootFrom = [](const char* name, const Json& table) {
+        Harness h(name, [&](const std::string& path) {
+            seedUser(path, "boss", "password7", true);
+            Database db;
+            std::string error;
+            db.load(path, error);
+            db.rawTable("bossClocks") = table;
+            db.markDirty();
+            db.save();
+        });
+        if (!h.ready) return std::string("no server");
+        NetClient client;
+        loginAs(h, client, "boss", "password7");
+        client.joinGame(1920, 1080, {}, "Boss");
+        h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; },
+                    200);
+        say(h, client, "/admin spawn bee unique");
+        if (sawText(client, "Spawned unique bee")) return std::string("spawned");
+        if (sawText(client, "unique clock is cooling down")) return std::string("cooling");
+        return std::string("no answer");
+    };
+    CHECK_EQ(bootFrom("cmd-boss-clock-after-standing", standing), std::string("spawned"));
+    CHECK_EQ(bootFrom("cmd-boss-clock-after-kill", killed), std::string("cooling"));
 }
 
 TEST(spawn_with_a_bad_mob_type_spawns_nothing) {

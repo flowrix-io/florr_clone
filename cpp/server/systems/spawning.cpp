@@ -1741,7 +1741,10 @@ bool SpawnSystem::topBossTaken(World& world, Rarity rarity, Realm realm) {
     return taken;
 }
 
-void SpawnSystem::cullExtraTopBosses(World& world, CommandBuffer& commands) {
+void SpawnSystem::noteStandingBosses(World& world) {
+    // The final save can come before the spawner has ever run -- a server
+    // nobody joined -- and the query is only made on the first bind.
+    bind(world);
     // Pets never appear here: a pet carries no AmbientMob, and this is the
     // spawner's own population. Nor do the arena and the maze, which are not
     // biomes and never field a unique anyway.
@@ -1752,6 +1755,18 @@ void SpawnSystem::cullExtraTopBosses(World& world, CommandBuffer& commands) {
         if (!isWorldRealm(transform.realm) || !isWholeAnimal(world, e)) return;
         topBosses_.push_back(TopBoss{biomeKey(transform.realm), type.rarity, ambient.spawnOrder, e});
     });
+    for (BiomeBossClock& clock : bossClocks_) clock.uniqueStanding = clock.apexStanding = false;
+    for (const TopBoss& boss : topBosses_) {
+        if (boss.biome >= bossClocks_.size()) continue;
+        BiomeBossClock& clock = bossClocks_[boss.biome];
+        (boss.rarity == Rarity::Apex ? clock.apexStanding : clock.uniqueStanding) = true;
+    }
+}
+
+void SpawnSystem::cullExtraTopBosses(World& world, CommandBuffer& commands) {
+    // The extras culled below leave the first of each tier standing, so the
+    // flags this sets hold after the cull too.
+    noteStandingBosses(world);
     if (topBosses_.size() < 2) return;
 
     std::sort(topBosses_.begin(), topBosses_.end(), [](const TopBoss& a, const TopBoss& b) {

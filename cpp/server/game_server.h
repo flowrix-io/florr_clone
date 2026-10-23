@@ -891,7 +891,10 @@ private:
     /// re-deals one. restoreBossClocks hands the spawner what the table holds,
     /// once, on the first tick (the first time this run's clock is known);
     /// persistBossClocks writes back whatever moved since it last looked --
-    /// a scatter, an upgrade, a console spawn charging a clock.
+    /// a scatter, an upgrade, a console spawn charging a clock. While a unique
+    /// or apex stands in a biome its clock is written as of the moment that
+    /// boss spent it, so a restart that takes the boss away unkilled hands the
+    /// cooldown back and the clock comes up ready.
     void restoreBossClocks(double nowMillis);
     void persistBossClocks();
 

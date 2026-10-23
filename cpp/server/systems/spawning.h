@@ -629,11 +629,18 @@ public:
     /// biome share one clock. The ready times are meaningless until
     /// `scattered`: a biome's clocks are dealt out on the first pass that sees
     /// it (scatterBossClocks), because that pass is where the time is known.
+    ///
+    /// `uniqueStanding` / `apexStanding`: a whole wild animal of that tier is
+    /// alive in the biome, as of the last noteStandingBosses. What the save
+    /// reads to hand a cooldown back when a restart is about to take that
+    /// boss away unkilled.
     struct BiomeBossClock {
         std::string biome;
         double uniqueReadyMillis = 0;
         double apexReadyMillis = 0;
         bool scattered = false;
+        bool uniqueStanding = false;
+        bool apexStanding = false;
     };
     /// Every staged map's biome, in map order. Mutable so a test or an
     /// operator can wind a clock on; the list itself is the system's.
@@ -657,6 +664,11 @@ public:
     /// the console: an admin's unique or apex spends the clock a wild one
     /// would have. Nothing for any other tier or for a realm with no clock.
     void chargeBossClock(Rarity rarity, Realm realm, double nowMillis);
+
+    /// Sets every clock's `uniqueStanding` / `apexStanding` from the live
+    /// population. The population pass does this every half second; the final
+    /// save calls it too, so a boss placed in that last half second counts.
+    void noteStandingBosses(World& world);
 
     /// Seeds the stream the boss clocks are scattered and rolled from. Theirs
     /// alone, so an upgrade roll never moves what the world's own stream hands
