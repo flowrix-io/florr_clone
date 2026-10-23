@@ -737,6 +737,64 @@ TEST(a_boss_standing_at_a_restart_hands_its_clock_back) {
     CHECK_EQ(bootFrom("cmd-boss-clock-after-kill", killed), std::string("cooling"));
 }
 
+TEST(a_boss_cleared_by_killall_is_saved_gone_by_a_save_straight_after) {
+    // killall only queues its mobs for removal at the end of the tick, so a
+    // save landing first -- `/admin save` in the same breath -- still finds
+    // the boss in the world. It is gone all the same, and the file must say
+    // the clock it spent is spent.
+    Harness h("cmd-boss-clock-killall", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+    h.clock += kApexSpawnCooldownMillis;
+    h.step(1, {&client});
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "Spawned unique bee"));
+    h.step(net::kTicksPerSecond, {&client});
+
+    // The unique clocks as the database FILE holds them, in ms from now.
+    const auto onDisk = [&] {
+        Database db;
+        std::string error;
+        db.load(h.dbPath, error);
+        const Json& table = db.storedTable("bossClocks");
+        const double now = static_cast<double>(db.nowMillis());
+        std::vector<std::pair<std::string, double>> waits;
+        for (const std::string& biome : table.keys()) {
+            waits.emplace_back(biome, table[biome]["uniqueReadyAt"].asDouble() - now);
+        }
+        return waits;
+    };
+    // Standing, the bee's clock is saved spent: the one biome whose clock the
+    // file holds as ready, and only just.
+    CHECK(say(h, client, "/admin save"));
+    std::string beeBiome;
+    for (const auto& wait : onDisk()) {
+        if (wait.second <= 0.0 && wait.second > -60000.0) {
+            CHECK(beeBiome.empty());
+            beeBiome = wait.first;
+        }
+    }
+    CHECK(!beeBiome.empty());
+
+    const auto saves = [&] {
+        int n = 0;
+        for (const ChatLine& line : client.chat()) n += line.text.find("Saved ") == 0 ? 1 : 0;
+        return n;
+    };
+    const int savesBefore = saves();
+    client.sendChat("/admin killall");
+    client.sendChat("/admin save");
+    CHECK(h.stepUntil({&client}, [&] { return saves() > savesBefore; }, 60));
+    for (const auto& wait : onDisk()) {
+        if (wait.first == beeBiome) CHECK(wait.second > kUniqueSpawnCooldownMillis - 60000.0);
+    }
+}
+
 TEST(spawn_with_a_bad_mob_type_spawns_nothing) {
     Harness h("cmd-spawn-bad", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);

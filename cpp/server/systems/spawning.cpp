@@ -347,6 +347,7 @@ void SpawnSystem::bind(World& world) {
     // A corpse lying at a hole's rim is nobody for the brood to come out at.
     livingFlowers_.emplace(world);
     livingFlowers_->without<Dead>();
+    rituals_.emplace(world);
 }
 
 // ---------------------------------------------------------------------------
@@ -1741,7 +1742,7 @@ bool SpawnSystem::topBossTaken(World& world, Rarity rarity, Realm realm) {
     return taken;
 }
 
-void SpawnSystem::noteStandingBosses(World& world) {
+void SpawnSystem::noteStandingBosses(World& world, const CommandBuffer& commands) {
     // The final save can come before the spawner has ever run -- a server
     // nobody joined -- and the query is only made on the first bind.
     bind(world);
@@ -1756,17 +1757,30 @@ void SpawnSystem::noteStandingBosses(World& world) {
         topBosses_.push_back(TopBoss{biomeKey(transform.realm), type.rarity, ambient.spawnOrder, e});
     });
     for (BiomeBossClock& clock : bossClocks_) clock.uniqueStanding = clock.apexStanding = false;
+    // One already queued for removal -- an admin's killall, say -- is gone
+    // by the end of the tick, and a save before then must not keep it alive.
     for (const TopBoss& boss : topBosses_) {
-        if (boss.biome >= bossClocks_.size()) continue;
-        BiomeBossClock& clock = bossClocks_[boss.biome];
-        (boss.rarity == Rarity::Apex ? clock.apexStanding : clock.uniqueStanding) = true;
+        if (!commands.destroying(boss.entity)) markStanding(boss.biome, boss.rarity);
     }
+    // A pentagram still being drawn has spent its clock on a boss that is not
+    // out yet, and a restart loses that boss just the same.
+    rituals_->each([&](Entity e, SacrificeRitual& ritual, Transform& transform) {
+        if (ritual.mob != NULL_ENTITY || commands.destroying(e)) return;
+        markStanding(biomeKey(transform.realm), ritual.rarity);
+    });
+}
+
+void SpawnSystem::markStanding(std::uint32_t biome, Rarity rarity) {
+    if (biome >= bossClocks_.size()) return;
+    BiomeBossClock& clock = bossClocks_[biome];
+    if (rarity == Rarity::Apex) clock.apexStanding = true;
+    if (rarity == Rarity::Unique) clock.uniqueStanding = true;
 }
 
 void SpawnSystem::cullExtraTopBosses(World& world, CommandBuffer& commands) {
     // The extras culled below leave the first of each tier standing, so the
     // flags this sets hold after the cull too.
-    noteStandingBosses(world);
+    noteStandingBosses(world, commands);
     if (topBosses_.size() < 2) return;
 
     std::sort(topBosses_.begin(), topBosses_.end(), [](const TopBoss& a, const TopBoss& b) {

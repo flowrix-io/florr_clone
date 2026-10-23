@@ -631,7 +631,8 @@ public:
     /// it (scatterBossClocks), because that pass is where the time is known.
     ///
     /// `uniqueStanding` / `apexStanding`: a whole wild animal of that tier is
-    /// alive in the biome, as of the last noteStandingBosses. What the save
+    /// alive in the biome, or a sacrifice of that tier is still drawing its
+    /// pentagram there, as of the last noteStandingBosses. What the save
     /// reads to hand a cooldown back when a restart is about to take that
     /// boss away unkilled.
     struct BiomeBossClock {
@@ -666,9 +667,11 @@ public:
     void chargeBossClock(Rarity rarity, Realm realm, double nowMillis);
 
     /// Sets every clock's `uniqueStanding` / `apexStanding` from the live
-    /// population. The population pass does this every half second; the final
-    /// save calls it too, so a boss placed in that last half second counts.
-    void noteStandingBosses(World& world);
+    /// population and the sacrifice rituals still drawing their pentagram.
+    /// The population pass does this every half second, and every database
+    /// save again, so what reaches the disk is never half a second stale. A
+    /// boss or ritual already queued on `commands` for destruction is gone.
+    void noteStandingBosses(World& world, const CommandBuffer& commands);
 
     /// Seeds the stream the boss clocks are scattered and rolled from. Theirs
     /// alone, so an upgrade roll never moves what the world's own stream hands
@@ -880,6 +883,10 @@ private:
     /// no XP for a mob that should never have been there.
     void cullExtraTopBosses(World& world, CommandBuffer& commands);
 
+    /// Sets `biome`'s standing flag for `rarity` (unique or apex); nothing for
+    /// a key past every clock slot or any other tier.
+    void markStanding(std::uint32_t biome, Rarity rarity);
+
     /// The mob a band should place: the band's own distribution when it
     /// declares one, and otherwise whatever `at` would grow anyway -- the
     /// region under it, then the map's default.
@@ -973,6 +980,9 @@ private:
     std::optional<Query<Transform, Body, MobType, AmbushNest>> ambushNests_;
     /// The flowers an ambush can be sprung by: standing, not lying there.
     std::optional<Query<PlayerTag, Transform, Body, Health>> livingFlowers_;
+    /// Sacrifice rituals, whose boss counts as standing while its pentagram is
+    /// still being drawn (noteStandingBosses).
+    std::optional<Query<SacrificeRitual, Transform>> rituals_;
     /// Every mob, ambient or not: the boss census counts what is alive in the
     /// world, and a boss placed by a script is still a boss.
     std::optional<Query<MobTag, Transform, MobType>> allMobs_;

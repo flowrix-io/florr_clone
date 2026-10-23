@@ -578,21 +578,25 @@ void GameServer::shutdown() {
 }
 
 std::size_t GameServer::persistAll() {
-    // Who is standing NOW, not as of the last population pass: this is the
-    // save a shutdown ends on, and a boss placed in that last half second is
-    // lost to the restart like any other.
-    if (bossClocksRestored_) {
-        spawning_->noteStandingBosses(world_);
-        persistBossClocks();
-    }
     std::size_t saved = 0;
     for (const auto& entry : sessions_) {
         if (!entry.second.playing()) continue;
         persistPlayer(entry.second);
         ++saved;
     }
-    database_.save();
+    saveDatabase();
     return saved;
+}
+
+void GameServer::saveDatabase() {
+    // Which bosses stand NOW, not as of the last population pass: the file is
+    // what a restart -- a crash included -- comes back to, so a boss placed or
+    // killed in the last half second has to be on the right side of it.
+    if (bossClocksRestored_) {
+        spawning_->noteStandingBosses(world_, commands_);
+        persistBossClocks();
+    }
+    database_.save();
 }
 
 void GameServer::restoreBossClocks(double nowMillis) {
@@ -801,7 +805,7 @@ void GameServer::tick(double nowMillis) {
             if (entry.second.playing()) persistPlayer(entry.second);
         }
         database_.pruneExpiredSessions();
-        database_.save();
+        saveDatabase();
     }
     markTickPhase("persist");
 

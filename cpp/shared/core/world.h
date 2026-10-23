@@ -386,6 +386,16 @@ public:
 
     bool empty() const { return destroys_.empty() && deferred_.empty(); }
 
+    /// Whether `e` is queued to be destroyed at the next flush: still alive to
+    /// every query, but already gone as far as anything about to be saved is
+    /// concerned. A linear scan, for the odd entity rather than a whole pass.
+    bool destroying(Entity e) const {
+        for (const Entity queued : destroys_) {
+            if (queued == e) return true;
+        }
+        return false;
+    }
+
     /// Applies deferred work, then destroys. Destroys run last so a command
     /// that spawns a replacement for a dying entity is not itself undone.
     void flush() {

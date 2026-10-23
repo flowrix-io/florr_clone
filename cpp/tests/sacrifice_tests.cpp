@@ -163,6 +163,81 @@ TEST(dying_with_a_sacrifice_on_rough_ground_summons_an_apex_there_and_spends_it)
     CHECK(h.stepUntil({&alice}, [&] { return !world.isAlive(ritual); }, 10));
 }
 
+TEST(a_restart_during_a_sacrifice_hands_the_apex_clock_back) {
+    // The ritual spends its biome's apex clock the moment the pentagram
+    // starts. A restart before the apex is out, or while it stands, loses it
+    // unkilled, so what the save leaves on disk is a clock already spent --
+    // ready to the next run. Once the apex is dead the whole cooldown is.
+    Harness h("sacrifice-restart", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::uint16_t sacrifice = content().petalIndex(kSacrificePetalId);
+    if (sacrifice == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+    CHECK(wearSacrifice(h, alice, "alice", sacrifice));
+
+    World& world = h.server.world();
+    const Entity body = soleBody(world, "alice");
+    if (body == NULL_ENTITY) { CHECK(false); return; }
+    Vec2 at;
+    if (!overworldBandPoint(h.server, true, at)) { CHECK(false); return; }
+    world.get<Transform>(body).position = at;
+
+    // Each biome's apex wait as the database file would hold it: persistAll
+    // is the save a shutdown ends on, and the periodic one is the same call.
+    const auto savedApexWaits = [&] {
+        h.server.persistAll();
+        const Json& table = h.server.database().storedTable("bossClocks");
+        const double now = static_cast<double>(h.server.database().nowMillis());
+        std::vector<std::pair<std::string, double>> waits;
+        for (const std::string& biome : table.keys()) {
+            waits.emplace_back(biome, table[biome]["apexReadyAt"].asDouble() - now);
+        }
+        return waits;
+    };
+    // A fresh boot deals every apex clock somewhere inside one cooldown.
+    for (const auto& wait : savedApexWaits()) CHECK(wait.second > 0.0);
+
+    kill(world, body);
+    CHECK(h.stepUntil({&alice}, [&] { return ritualsIn(world).size() == 1; }, 10));
+    if (ritualsIn(world).size() != 1) return;
+    const Entity ritual = ritualsIn(world).front();
+    CHECK(world.get<SacrificeRitual>(ritual).mob == NULL_ENTITY);
+
+    // Mid-pentagram: exactly one biome's apex clock is spent, and it is saved
+    // as ready.
+    std::string biome;
+    for (const auto& wait : savedApexWaits()) {
+        if (wait.second <= 0.0) {
+            CHECK(biome.empty());
+            biome = wait.first;
+        }
+    }
+    CHECK(!biome.empty());
+    if (biome.empty()) return;
+
+    const auto savedWait = [&] {
+        for (const auto& wait : savedApexWaits()) {
+            if (wait.first == biome) return wait.second;
+        }
+        return -1e300;
+    };
+    // The apex out and standing: still saved as ready.
+    CHECK(h.stepUntil({&alice}, [&] { return world.get<SacrificeRitual>(ritual).mob != NULL_ENTITY; },
+                      static_cast<int>(kSacrificeRitualMillis / net::kTickMillis) + 10));
+    const Entity apex = world.get<SacrificeRitual>(ritual).mob;
+    if (apex == NULL_ENTITY) return;
+    CHECK(savedWait() <= 0.0);
+
+    // Dead, the apex spent the clock for real.
+    world.add<Dead>(apex, Dead{NULL_ENTITY});
+    h.step(2, {&alice});
+    CHECK(savedWait() > kApexSpawnCooldownMillis - 60000.0);
+}
+
 TEST(a_sacrifice_on_gentle_ground_is_turned_away_and_kept) {
     Harness h("sacrifice-gentle", {}, flix::testsupport::dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }

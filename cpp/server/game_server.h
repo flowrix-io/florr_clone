@@ -897,6 +897,10 @@ private:
     /// cooldown back and the clock comes up ready.
     void restoreBossClocks(double nowMillis);
     void persistBossClocks();
+    /// database_.save() behind a fresh look at which bosses stand, so the
+    /// boss clocks reach the disk exactly as they are. Every save goes
+    /// through here: the periodic one and persistAll.
+    void saveDatabase();
 
     // --- the sacrifice (server/sacrifice.cpp) -------------------------------
     /// Puts one Apex Sacrifice on the ground somewhere in Hel whenever its
