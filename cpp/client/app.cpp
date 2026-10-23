@@ -634,11 +634,17 @@ void App::frame(double dt) {
         tutorial_.update(window_, menus_.settings(), net_.profile(), timeSeconds_);
     }
 
+    // Taken on every screen, so a jump no world screen was up to see cannot
+    // play its iris over the next join.
+    const bool teleported = net_.takeTeleported();
     // Every drawn position advances here, BEFORE the screens see the frame.
     // The cursor control law measures from the flower's drawn position and the
     // camera pins to it, so easing after them would steer and frame the world
     // from a position one frame stale.
     if (screen_ == Screen::Playing || screen_ == Screen::Dead) {
+        // Before anything paints, so the iris holds up the frame from before
+        // the jump.
+        if (teleported) beginTeleportIris();
         net_.view().easeTimeConstantSeconds = easeTimeConstant(menus_.settings().interpolation);
         // renderClockMillis(), not the window's clock: snapshot arrivals are
         // stamped against this one, and mob playback has to be measured on
@@ -890,6 +896,9 @@ void App::frame(double dt) {
     markPhaseOps(OpPhase::Panels);
     updateTextSelection(canvas);
 
+    // Over the HUD and every panel, as the reference's iris is drawn on top
+    // of everything; only a scene change goes over it.
+    drawTeleportIris(canvas);
     // Last of all, over every other layer: the wipe is what hides the seam
     // between two scenes, so nothing may paint on top of it.
     drawSceneWipe(canvas);
@@ -1215,28 +1224,28 @@ void App::showSessionReplaced() {
 // Scene wipe
 // ---------------------------------------------------------------------------
 
-void App::beginSceneWipe(bool toGame) {
-    // Snapshot BEFORE the scene commits. Nothing has painted yet this frame, so
-    // the window still holds the outgoing scene whole -- which is exactly the
-    // still the wipe has to hold up while the incoming one builds itself.
+std::unique_ptr<Canvas> App::snapshotWindow() {
     Canvas& canvas = window_.canvas();
     // PIXELS, not design units: this is a copy of the backing store, and
     // asking for a design-sized rectangle of it would photograph the top-left
     // corner of the screen and stretch that over the whole wipe. It is drawn
-    // back at design size in drawSceneWipe, which is where the two spaces
-    // meet. Copy canvas-to-canvas rather than reading its pixels through C++:
-    // under Emscripten that stays entirely inside the browser's Canvas2D
-    // backend instead of moving a full frame into and back out of Wasm.
+    // back at design size by the wipe, which is where the two spaces meet.
+    // Copy canvas-to-canvas rather than reading its pixels through C++: under
+    // Emscripten that stays entirely inside the browser's Canvas2D backend
+    // instead of moving a full frame into and back out of Wasm.
     const int width = canvas.pixelWidth();
     const int height = canvas.pixelHeight();
-    std::unique_ptr<Canvas> snapshot;
-    if (width > 0 && height > 0) {
-        snapshot = std::make_unique<Canvas>(Canvas::createVirtual(width, height));
-        snapshot->drawCanvas(canvas, 0, 0, static_cast<float>(width),
-                             static_cast<float>(height));
-    }
+    if (width <= 0 || height <= 0) return nullptr;
+    auto snapshot = std::make_unique<Canvas>(Canvas::createVirtual(width, height));
+    snapshot->drawCanvas(canvas, 0, 0, static_cast<float>(width), static_cast<float>(height));
+    return snapshot;
+}
 
-    wipe_.snapshot = std::move(snapshot);
+void App::beginSceneWipe(bool toGame) {
+    // Snapshot BEFORE the scene commits. Nothing has painted yet this frame, so
+    // the window still holds the outgoing scene whole -- which is exactly the
+    // still the wipe has to hold up while the incoming one builds itself.
+    wipe_.snapshot = snapshotWindow();
     wipe_.holeGrows = toGame;
     wipe_.phase = SceneWipe::Phase::Covered;
     wipe_.phaseStartSeconds = timeSeconds_;
@@ -1332,6 +1341,88 @@ void App::drawSceneWipe(Canvas& canvas) {
     if (wipe_.phase == SceneWipe::Phase::Wiping && progress >= 1.0) {
         wipe_.phase = SceneWipe::Phase::Idle;
         wipe_.snapshot.reset();
+    }
+}
+
+void App::beginTeleportIris() {
+    // Before anything has painted this frame: the window still holds the last
+    // frame from before the jump, which is what the iris closes over.
+    teleportIris_.snapshot = snapshotWindow();
+    teleportIris_.phase = TeleportIris::Phase::Closing;
+    teleportIris_.phaseStartSeconds = timeSeconds_;
+}
+
+void App::drawTeleportIris(Canvas& canvas) {
+    if (teleportIris_.phase == TeleportIris::Phase::Idle) return;
+    // An iris still running when the world goes away would close over the
+    // title screen, and a scripted capture wants the world rather than the
+    // transition, as the scene wipe's does.
+    const bool inWorld = screen_ == Screen::Playing || screen_ == Screen::Dead;
+    if (!inWorld || config_.screenshotAfterFrames > 0) {
+        teleportIris_.phase = TeleportIris::Phase::Idle;
+        teleportIris_.snapshot.reset();
+        return;
+    }
+
+    /// Each way. The reference's IRIS_TRANSITION_DURATION.
+    constexpr double kIrisSeconds = 0.8;
+    const double progress =
+        std::min((timeSeconds_ - teleportIris_.phaseStartSeconds) / kIrisSeconds, 1.0);
+    const bool closing = teleportIris_.phase == TeleportIris::Phase::Closing;
+
+    const float width = static_cast<float>(canvas.width());
+    const float height = static_cast<float>(canvas.height());
+    const double centreX = width * 0.5;
+    const double centreY = height * 0.5;
+    const double maxRadius = std::sqrt(centreX * centreX + centreY * centreY);
+    // Closing eases in, from the whole screen down to nothing; opening eases
+    // out, from nothing to the whole screen.
+    const double inverse = 1.0 - progress;
+    const double eased = closing ? inverse * inverse * inverse : 1.0 - inverse * inverse * inverse;
+    const double radius = std::max(0.0, eased * maxRadius);
+
+    canvas.save();
+    canvas.beginPath();
+    if (closing && teleportIris_.snapshot) {
+        // Black everywhere, and the frame from before the jump inside the
+        // shrinking circle. Whatever the world has done since is behind both.
+        setFill(canvas, kInk);
+        canvas.fillRect(0, 0, width, height);
+        canvas.arc(static_cast<float>(centreX), static_cast<float>(centreY),
+                   static_cast<float>(radius), 0, static_cast<float>(kTau));
+        canvas.clip();
+        canvas.drawCanvas(*teleportIris_.snapshot, 0, 0, width, height);
+    } else {
+        // Black outside the circle and the live world inside it. The arc winds
+        // against the rectangle to punch the hole, and runs kTau -> 0 for the
+        // reason drawSceneWipe gives.
+        canvas.rect(0, 0, width, height);
+        canvas.arc(static_cast<float>(centreX), static_cast<float>(centreY),
+                   static_cast<float>(radius), static_cast<float>(kTau), 0.0f, true);
+        canvas.clip();
+        setFill(canvas, kInk);
+        canvas.fillRect(0, 0, width, height);
+    }
+    canvas.restore();
+
+    if (radius > 0) {
+        canvas.save();
+        setStroke(canvas, kInk);
+        canvas.setLineWidth(6.0f);
+        canvas.strokeCircle(static_cast<float>(centreX), static_cast<float>(centreY),
+                            static_cast<float>(radius));
+        canvas.restore();
+    }
+
+    if (progress >= 1.0) {
+        // Shut: the next frame starts opening on the far end of the jump.
+        if (closing) {
+            teleportIris_.phase = TeleportIris::Phase::Opening;
+            teleportIris_.phaseStartSeconds = timeSeconds_;
+            teleportIris_.snapshot.reset();
+        } else {
+            teleportIris_.phase = TeleportIris::Phase::Idle;
+        }
     }
 }
 

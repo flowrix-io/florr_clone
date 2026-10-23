@@ -5793,6 +5793,9 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
         pads->cooldownUntilMillis = clockMillis_ + kTeleporterCooldownMillis;
         pads->arriving = true;
     }
+    // Ahead of the RealmChange below, so the client still has the frame from
+    // before the jump to close the iris over.
+    sendTeleported(entity);
 
     // A pad that leads somewhere on the SAME map is a jump, not a move
     // between worlds: the grid under the body has not changed, so there is
@@ -5858,6 +5861,16 @@ void GameServer::sendRealmChange(Session& session, Vec2 position) {
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::RealmChange));
     w.position(position);
     writeMapGrid(w, *terrain_, session.realm);
+    connection->send(w);
+}
+
+void GameServer::sendTeleported(Entity entity) {
+    Session* session = sessionForEntity(entity);
+    if (session == nullptr || entity != session->entity) return;
+    net::Connection* connection = listener_.find(session->connection);
+    if (connection == nullptr) return;
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::Teleported));
     connection->send(w);
 }
 

@@ -77,6 +77,10 @@ struct MobPlateEase {
     void step(double targetHealth, double targetShield, bool visible, double dtSeconds);
 };
 
+/// How fast a flower charging a teleporter pad turns: the reference's
+/// `elapsed * 0.008` radians, elapsed in milliseconds.
+inline constexpr double kPadSpinRadiansPerSecond = 8.0;
+
 /// One entity as the client knows it.
 struct RemoteEntity {
     std::uint32_t netId = 0;
@@ -194,6 +198,11 @@ struct RemoteEntity {
     /// Smoothed eye-pupil offset in the flower's radius=25 local space.
     double eyeX = 0;
     double eyeY = 0;
+    /// How far a flower charging a teleporter pad (net::StatePadCharging) has
+    /// turned, in radians; zero off a pad. Advanced by WorldView::interpolate
+    /// and drawn as the BODY turning: its plate and its petals stay put, as
+    /// the reference's did.
+    double padSpin = 0;
 
     bool isSelf() const { return (spawnFlags & net::SpawnIsSelf) != 0; }
     /// A Petal record that is a seat on a MOB's ring rather than one of a

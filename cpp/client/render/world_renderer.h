@@ -565,12 +565,7 @@ private:
     /// gradient, so this is the same three-stop ramp painted as nested discs.
     /// `bands` buys smoothness with one filled disc each, which is why a glow
     /// the size of the screen asks for fewer of them.
-    /// `centreAlpha` and `kneeAlpha` are the ramp's first two stops. They are
-    /// parameters because the teleporter's own gradient is a third the petal
-    /// glow's strength and reusing the petal ramp scaled by a blanket
-    /// globalAlpha lands between the two.
-    void drawPetalGlow(Canvas&, double radius, std::uint32_t rgb, int bands = 16,
-                       double centreAlpha = 0.6, double kneeAlpha = 0.25) const;
+    void drawPetalGlow(Canvas&, double radius, std::uint32_t rgb, int bands = 16) const;
 
     /// Green, or the invulnerability yellow fading back to green over the
     /// 500 ms after a spawn shield drops.

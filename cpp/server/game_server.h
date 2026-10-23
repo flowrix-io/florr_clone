@@ -794,10 +794,11 @@ private:
     bool resolveCommandTarget(const std::string& identifier, CommandTarget& out);
 
     /// Moves a body within its realm, its velocity and knockback cleared so it
-    /// does not arrive sliding. It sends nothing: the client cuts its
-    /// interpolation by itself on any jump past kTeleportSnapDistance
+    /// does not arrive sliding. Its position needs no message: the client cuts
+    /// its interpolation by itself on any jump past kTeleportSnapDistance
     /// (client/interpolation.h, 600 units), which every teleport worth the
-    /// name exceeds, and eases across a shorter one.
+    /// name exceeds, and eases across a shorter one. Its client is told it was
+    /// teleported, for the iris (sendTeleported).
     void teleportEntity(Entity, Vec2);
 
     /// Drops a temporary admin grant, if this connection holds one. A grant is
@@ -984,6 +985,11 @@ private:
     /// point and the realm's whole tile grid. Resets the server-side view so
     /// everything in reach is restated from first sight.
     void sendRealmChange(Session&, Vec2 position);
+    /// Tells the client steering `entity` that it was just teleported
+    /// (ServerMessage::Teleported), which is what plays the iris over the
+    /// jump. Nothing for a bot, or for the parked half of a split: the client
+    /// is not looking through that one.
+    void sendTeleported(Entity entity);
     /// The account state a session's body plays with: the arena run's scratch
     /// record while there is one (see Session::arena), else the real account.
     /// Every inventory and loadout handler goes through here, which is what
@@ -1076,11 +1082,12 @@ private:
     /// client which map it is now standing on.
     ///
     /// This is what a teleporter does, and it is deliberately NOT
-    /// teleportEntity(): that one moves a body inside its own realm and can
-    /// stay silent because the client's own snap-distance rule covers it.
-    /// Crossing realms changes which grid is under the body, which nothing on
-    /// the client can infer. A pad whose target is the realm the body is
-    /// already in takes the silent path: same grid, nothing to resend.
+    /// teleportEntity(): that one moves a body inside its own realm and needs
+    /// no position on the wire because the client's own snap-distance rule
+    /// covers it. Crossing realms changes which grid is under the body, which
+    /// nothing on the client can infer. A pad whose target is the realm the
+    /// body is already in takes the short path: same grid, nothing to resend.
+    /// Either way the client is told it was teleported (sendTeleported).
     void moveEntityToRealm(Entity, Realm, Vec2 position);
 
     // -- bots --------------------------------------------------------------

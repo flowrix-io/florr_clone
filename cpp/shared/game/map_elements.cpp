@@ -569,6 +569,17 @@ void MapData::adopt(const Json& array) {
                 element.padId = properties["id"].asString();
                 if (element.padId.empty()) element.padId = element.spawnId;
                 element.toPad = properties["to"].asString();
+                if (properties.contains("radius")) {
+                    const double radius = properties["radius"].asDouble(0.0);
+                    if (radius > 0.0) {
+                        element.padRadius = radius;
+                    } else {
+                        std::fprintf(stderr,
+                                     "[map] teleporter \"%s\" has a radius of %g, which is no "
+                                     "size; it keeps the default %g\n",
+                                     element.padId.c_str(), radius, kTeleporterArtRadius);
+                    }
+                }
             }
 
             element.npcId = properties["npc"].asString();
@@ -651,24 +662,27 @@ MapData::TeleportStep MapData::stepTeleporters(Vec2 centre, double deltaSeconds,
 
         const Vec2 offset = step.position - element.centre();
         const double distSq = offset.lengthSq();
+        // Both reaches are stated for a pad of the default size and grow with
+        // the one the map gave it.
+        const double suction = kTeleporterSuctionRadius * element.padScale();
+        const double reach = kTeleporterRadius * element.padScale();
 
         // Suction reads the distance from BEFORE its own pull, and the pull of
         // one pad is carried into the next pad's measurement. Both fall out of
         // the reference walking the list with a running position; between two
         // pads close enough to overlap it is the difference between being
         // dragged onto one and being held between them.
-        if (distSq <= kTeleporterSuctionRadius * kTeleporterSuctionRadius && !onCooldown) {
+        if (distSq <= suction * suction && !onCooldown) {
             const double dist = std::sqrt(distSq);
             // A flower exactly on the centre has no direction to be pulled in;
             // the reference's `|| 1` keeps the division finite and the offset
             // is zero anyway.
             const double safe = dist > 0.0 ? dist : 1.0;
-            const double pull =
-                kTeleporterSuctionForce * (1.0 - safe / kTeleporterSuctionRadius) * deltaSeconds;
+            const double pull = kTeleporterSuctionForce * (1.0 - safe / suction) * deltaSeconds;
             step.position -= offset / safe * pull;
         }
 
-        if (distSq > kTeleporterRadius * kTeleporterRadius) continue;
+        if (distSq > reach * reach) continue;
         standingOn = static_cast<int>(i);
 
         // The pad a jump put the flower down on does not charge: its clock is

@@ -408,10 +408,12 @@ void GameServer::teleportEntity(Entity entity, Vec2 position) {
     // pushing it there arrives sliding.
     if (Motion* motion = world_.tryGet<Motion>(entity)) motion->velocity = {0, 0};
     if (Knockback* knockback = world_.tryGet<Knockback>(entity)) *knockback = Knockback{};
-    // No wire message: the client cuts its interpolation on any jump past
-    // kTeleportSnapDistance (600 units) on its own, which every teleport worth
-    // the name exceeds. One under that distance is close enough that easing to
-    // it looks better than snapping.
+    // No position on the wire: the client cuts its interpolation on any jump
+    // past kTeleportSnapDistance (600 units) on its own, which every teleport
+    // worth the name exceeds. One under that distance is close enough that
+    // easing to it looks better than snapping. It does hear that it was
+    // teleported, as the reference's playerTeleported told it, for the iris.
+    sendTeleported(entity);
 }
 
 // ---------------------------------------------------------------------------

@@ -836,6 +836,136 @@ TEST(paired_teleporters_lead_to_each_other_and_do_not_bounce) {
     flix::testsupport::removeDataDir(dir);
 }
 
+TEST(a_flower_charging_a_pad_spins_and_its_jump_plays_the_iris) {
+    using flix::testsupport::fixtureDoor;
+    using flix::testsupport::fixtureLinkedPad;
+    using flix::testsupport::fixtureMap;
+    using flix::testsupport::stageDataDir;
+    const double cell = kTileSize;
+    const Vec2 meadowPad{cell * 12, cell * 12};
+    const Vec2 warrenPad{cell * 8, cell * 8};
+    const std::string dir = stageDataDir(
+        "spin-pads",
+        {{"meadow", fixtureMap(24, 24,
+                               fixtureDoor("meadow", "Meadow", cell * 2, cell * 2, cell * 4,
+                                           cell * 4, true, 0.0),
+                               fixtureLinkedPad(meadowPad.x, meadowPad.y, "meadow_hole",
+                                                "warren_hole"))},
+         {"warren", fixtureMap(16, 16, std::string(),
+                               fixtureLinkedPad(warrenPad.x, warrenPad.y, "warren_hole",
+                                                "meadow_hole"))}});
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+    Harness h("spawn-spin-pads", {}, dir, 0);
+    if (!h.ready) { CHECK(false); flix::testsupport::removeDataDir(dir); return; }
+    bool found = false;
+    const Realm warren = h.server.worldMaps().realmOfId("warren", found);
+    CHECK(found);
+
+    NetClient client;
+    CHECK(loginNew(h, client, "spinner", "password7"));
+    client.joinGame(1280, 720, {}, "spinner");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+    World& world = h.server.world();
+    const Entity body = onlyPlayer(world);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) { flix::testsupport::removeDataDir(dir); return; }
+
+    // What the client was told about its own flower: the bit its body spins on.
+    const auto charging = [&] {
+        const auto it = client.view().entities().find(client.view().self().netId);
+        return it != client.view().entities().end() &&
+               (it->second.state & net::StatePadCharging) != 0;
+    };
+
+    // Off every pad: nothing charging, nothing to play.
+    h.step(2, {&client});
+    CHECK(!charging());
+    CHECK(!client.takeTeleported());
+
+    // On the meadow's pad it charges, and the jump tells the client -- once.
+    world.get<Transform>(body).position = meadowPad;
+    CHECK(h.stepUntil({&client}, charging, 30));
+    CHECK(h.stepUntil({&client}, [&] { return client.view().realm() == warren; }, 120));
+    CHECK(client.takeTeleported());
+    CHECK(!client.takeTeleported());
+
+    // Out on the pad it came out of, which does not charge, so it does not spin.
+    h.step(10, {&client});
+    CHECK(world.get<Transform>(body).realm == warren);
+    CHECK(!charging());
+    flix::testsupport::removeDataDir(dir);
+}
+
+TEST(a_pads_radius_and_colour_come_from_the_map_and_its_radius_sizes_its_reach) {
+    using flix::testsupport::fixtureDoor;
+    using flix::testsupport::fixtureMap;
+    using flix::testsupport::fixturePad;
+    using flix::testsupport::stageDataDir;
+    const double cell = kTileSize;
+    const Vec2 big{cell * 12, cell * 4};
+    const Vec2 plain{cell * 4, cell * 18};
+    // fixturePad's object with the two florr warp properties added to it, in
+    // the types Tiled writes them as.
+    std::string sized = fixturePad(big.x, big.y, "warren", "warren_gate");
+    sized.replace(sized.rfind("]}"), 2,
+                  ",{ \"name\": \"radius\", \"type\": \"float\", \"value\": 200 },"
+                  "{ \"name\": \"color\", \"type\": \"color\", \"value\": \"#ff3366cc\" }]}");
+    const std::string dir = stageDataDir(
+        "sized-pads",
+        {{"meadow", fixtureMap(24, 24,
+                               fixtureDoor("meadow", "Meadow", cell * 2, cell * 2, cell * 4,
+                                           cell * 4, true, 0.0),
+                               sized + "," + fixturePad(plain.x, plain.y, "warren",
+                                                        "warren_gate"))},
+         {"warren", fixtureMap(16, 16,
+                               fixtureDoor("warren_gate", "Warren", cell * 3, cell * 3, cell * 3,
+                                           cell * 3, false, 0.0),
+                               std::string())}});
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+    Terrain terrain;
+    WorldMaps maps;
+    std::string error;
+    const bool loaded = maps.load(dir, &terrain, error);
+    flix::testsupport::removeDataDir(dir);
+    CHECK(loaded);
+    const MapData* meadow = loaded ? maps.forRealm(Realm::Overworld) : nullptr;
+    const MapElement* bigPad = nullptr;
+    const MapElement* plainPad = nullptr;
+    if (meadow != nullptr) {
+        for (const MapElement& element : meadow->elements()) {
+            if (element.kind != MapElementKind::Teleporter) continue;
+            if (distanceSq(element.centre(), big) < 1.0) bigPad = &element;
+            if (distanceSq(element.centre(), plain) < 1.0) plainPad = &element;
+        }
+    }
+    CHECK(bigPad != nullptr && plainPad != nullptr);
+    if (bigPad == nullptr || plainPad == nullptr) return;
+
+    // Tiled's #AARRGGBB, alpha dropped; a pad that gives neither keeps florr's
+    // white at radius 100.
+    CHECK_NEAR(bigPad->padRadius, 200.0, 1e-9);
+    CHECK(bigPad->hasColor);
+    CHECK_EQ(bigPad->color, 0x3366CCu);
+    CHECK_NEAR(plainPad->padRadius, kTeleporterArtRadius, 1e-9);
+    CHECK(!plainPad->hasColor);
+
+    // A flower held still at `at` for longer than the dwell: does a pad take it?
+    const auto fires = [&](Vec2 at) {
+        TeleporterState state;
+        for (double now = 0; now <= kTeleporterDwellMillis + 100.0; now += 50.0) {
+            if (meadow->stepTeleporters(at, 0.05, now, state).fired >= 0) return true;
+        }
+        return false;
+    };
+    // Twice the size, twice the reach: 100 units out is past a plain pad's 60
+    // and inside the big one's 120.
+    CHECK(fires(big + Vec2{100.0, 0.0}));
+    CHECK(!fires(plain + Vec2{100.0, 0.0}));
+    CHECK(fires(plain + Vec2{50.0, 0.0}));
+}
+
 TEST(a_spawn_choice_the_maps_do_not_define_falls_back) {
     Harness h("spawn-unknown");
     if (!h.ready) { CHECK(false); return; }

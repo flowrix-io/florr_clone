@@ -775,6 +775,16 @@ public:
         arrivalOut = realmArrival_;
         return true;
     }
+    /// True once after the server reported this client's flower was moved by
+    /// a teleport (ServerMessage::Teleported) -- a pad, a nest, an admin.
+    /// Consumed by the App, which plays the iris over the jump. Arrives before
+    /// the RealmChange of a jump to another map, so the frame on screen when
+    /// this is taken is still the one from before it.
+    bool takeTeleported() {
+        const bool was = teleported_;
+        teleported_ = false;
+        return was;
+    }
     /// Where the server last put this flower's body -- the join's spawn, or a
     /// realm change's arrival -- for the frames between that message and the
     /// first snapshot of the new body. The view's own self position is zero
@@ -1060,6 +1070,7 @@ private:
     const WorldMaps* worldMaps_ = nullptr;
     Vec2 realmArrival_;
     bool realmChanged_ = false;
+    bool teleported_ = false;
     Profile profile_;
     std::string sessionToken_;
     std::vector<ChatLine> chat_;

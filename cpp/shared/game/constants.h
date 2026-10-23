@@ -145,6 +145,11 @@ inline constexpr double kRespawnInvulnerabilitySeconds = 3.0;
 // enough to beat a mob's 25-unit shove, so a player being knocked around on
 // top of a pad still goes through.
 
+/// The size of a pad that does not give one: florr's default warp radius,
+/// which is what its portal is drawn at. A pad's own `radius` scales the two
+/// reaches below by radius / this, so a pad drawn twice as big pulls and
+/// takes a flower from twice as far.
+inline constexpr double kTeleporterArtRadius = 100.0;
 inline constexpr double kTeleporterRadius = 60.0;
 inline constexpr double kTeleporterSuctionRadius = 150.0;
 inline constexpr double kTeleporterSuctionForce = 400.0;

@@ -117,6 +117,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::AbsorbResult:        return "absorbResult";
         case net::ServerMessage::TitanHolder:         return "titanHolder";
         case net::ServerMessage::SetUsernameResult:   return "setUsernameResult";
+        case net::ServerMessage::Teleported:          return "teleported";
     }
     return "unknown";
 }
@@ -1098,6 +1099,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::DebugStats:    handleDebugStats(reader); break;
         case net::ServerMessage::MazeInfo:      handleMazeInfo(reader); break;
         case net::ServerMessage::RealmChange:   handleRealmChange(reader); break;
+        case net::ServerMessage::Teleported:    teleported_ = true; break;
         case net::ServerMessage::ChangePasswordResult: handleChangePasswordResult(reader); break;
         case net::ServerMessage::SetUsernameResult: handleSetUsernameResult(reader); break;
         case net::ServerMessage::OracleResult:  handleOracleResult(reader); break;

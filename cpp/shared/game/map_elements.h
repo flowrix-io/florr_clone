@@ -27,6 +27,7 @@
 #include "shared/core/json.h"
 #include "shared/core/types.h"
 #include "shared/game/components.h"
+#include "shared/game/constants.h"
 #include "shared/game/difficulty.h"
 #include "shared/game/rarity.h"
 #include "shared/game/realm.h"
@@ -190,7 +191,8 @@ struct MapElement {
     /// Player spawn points only: what the title screen's button says. Empty
     /// means the button falls back to the id, title cased.
     std::string label;
-    /// Player spawn points only: the button's colour, 0xRRGGBB.
+    /// Player spawn points: the button's colour, 0xRRGGBB. Teleporters: the
+    /// portal's, which is white when the map does not give one.
     std::uint32_t color = 0xCCCCCCu;
     bool hasColor = false;
     /// Player spawn points only: the ground artwork the title screen tiles
@@ -235,6 +237,13 @@ struct MapElement {
     /// partner's centre), so everything downstream sees an ordinary pad.
     /// Ignored when `targetMap` is given.
     std::string toPad;
+    /// Teleporters only: how big the pad is, from its `radius` property --
+    /// florr's warp radius. The portal is drawn at it, and the pad's reach and
+    /// suction scale with it (padScale()).
+    double padRadius = kTeleporterArtRadius;
+    /// Teleporters only: padRadius against the default size, which is what
+    /// kTeleporterRadius and kTeleporterSuctionRadius are stated for.
+    double padScale() const { return padRadius / kTeleporterArtRadius; }
 
     /// NPCs only: WHICH NPC stands here, from the object's `npc` property --
     /// the mobs.json id of a mob that has an `npc` block, or nothing is placed

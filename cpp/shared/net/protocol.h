@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 61;
+inline constexpr std::uint16_t kProtocolVersion = 62;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -402,6 +402,13 @@ enum class ServerMessage : std::uint8_t {
                         ///< the account is now filed under (its stored
                         ///< spelling) on success, and empty on a refusal. The
                         ///< Profile follows a success. (Version 59.)
+    Teleported,         ///< (empty). This client's flower was just moved by a
+                        ///< teleport -- a pad, a nest's entrance or exit, an
+                        ///< admin's teleport -- and the client plays the iris
+                        ///< over the jump. Sent before the RealmChange a move
+                        ///< to another map also gets, so the frame the iris
+                        ///< closes over is still the one from before it.
+                        ///< (Version 62.)
 };
 
 // ---------------------------------------------------------------------------
@@ -801,9 +808,9 @@ inline constexpr double kPositionDeltaScale = 32.0;
 /// Transient visual state, refreshed whenever FieldState is set.
 ///
 /// The server sets every bit (computeEntityState in server/replication.cpp),
-/// but the client reads only four of them: Invulnerable, Unloaded, Dead and
-/// Chasing. Hurt, Poisoned, Slowed, Defending and Attacking are sent, and
-/// nothing on the client draws from them today.
+/// but the client reads only five of them: Invulnerable, Unloaded, Dead,
+/// Chasing and PadCharging. Hurt, Poisoned, Slowed, Defending and Attacking
+/// are sent, and nothing on the client draws from them today.
 enum EntityState : std::uint8_t {
     StateHurt      = 1 << 0,   ///< took damage recently (Health::flashUntilMillis);
                                ///< no client draws a flash from it
@@ -827,6 +834,11 @@ enum EntityState : std::uint8_t {
     /// that was already being sent -- and is what makes a chasing bug beat its
     /// wings at twice the rate an idle one does.
     StateChasing   = 1 << 7,
+    /// A flower charging up on a teleporter pad: standing on one that is not
+    /// the pad it just came out of (TeleporterState). Its body spins while
+    /// this is set. Shares the bit with StateChasing, which only a mob sets.
+    /// (Version 62.)
+    StatePadCharging = 1 << 7,
 };
 
 /// `flag` bits on a Damage event. Poison is called out because the client

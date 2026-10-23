@@ -616,6 +616,14 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
         e.eyeX += (std::cos(e.angle) * kFlowerEyeTravelX - e.eyeX) * eyeT;
         e.eyeY += (std::sin(e.angle) * kFlowerEyeTravelY - e.eyeY) * eyeT;
 
+        // A flower charging a pad turns at the reference's 0.008 rad/ms for as
+        // long as it stands there, and starts from upright on the next one.
+        if (isFlower && (e.state & net::StatePadCharging) != 0) {
+            e.padSpin += kPadSpinRadiansPerSecond * dtSeconds;
+        } else {
+            e.padSpin = 0.0;
+        }
+
         e.healthBar.step(e.healthFraction, e.shieldFraction, nowMillis, dtSeconds);
         if (e.kind == net::EntityKind::Mob || e.kind == net::EntityKind::Npc) {
             e.plate.step(e.healthFraction, e.shieldFraction, plateShows(e), dtSeconds);

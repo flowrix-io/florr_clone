@@ -792,6 +792,30 @@ private:
     void drawSceneWipe(Canvas&);
     /// True once the incoming scene has something worth revealing.
     bool wipeReadyToReveal() const;
+    /// A copy of what the window shows, in backing-store pixels, for a wipe to
+    /// hold up. Taken before anything has painted this frame, it is the last
+    /// frame whole. Null when the window has no pixels yet.
+    std::unique_ptr<Canvas> snapshotWindow();
+
+    // -- teleport iris -------------------------------------------------------
+    /// The wipe a teleport plays, as the reference's iris-transition.ts did:
+    /// the frame from before the jump shrinks to a point in black, then the
+    /// world at the far end opens back out of it, each over IRIS_TRANSITION_
+    /// DURATION. Kept apart from the scene wipe as the reference kept the two
+    /// apart: this one never changes screens, and the scene wipe never shows
+    /// black.
+    struct TeleportIris {
+        enum class Phase : std::uint8_t { Idle, Closing, Opening };
+        Phase phase = Phase::Idle;
+        double phaseStartSeconds = 0;
+        /// The frame from before the jump. Null means the copy failed, and the
+        /// closing iris shows the live world inside it instead, as the
+        /// reference's does without a screenshot.
+        std::unique_ptr<Canvas> snapshot;
+    };
+    TeleportIris teleportIris_;
+    void beginTeleportIris();
+    void drawTeleportIris(Canvas&);
 
     // -- menus ---------------------------------------------------------------
     /// Owns every panel, the menu bar, the loadout strip and what is being

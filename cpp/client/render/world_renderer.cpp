@@ -476,9 +476,38 @@ double petalArtScale(const PetalConfig* config) {
     return (config && config->visualScale > 0) ? config->visualScale : 1.0;
 }
 
-/// How far off screen a teleporter still counts as visible. Its glow is 130
-/// units wide, so it has to be drawn before its centre reaches the edge.
-constexpr double kTeleporterCull = 140.0;
+/// A teleporter is drawn as florr's web client draws a warp (client.wasm, the
+/// portal component of its entity painter): everything in units of the pad's
+/// radius (MapElement::padRadius) and in its colour, which is this when the
+/// map gives none.
+constexpr std::uint32_t kTeleporterColor = 0xFFFFFFu;
+
+/// How far off screen a teleporter still counts as visible, in its radii: its
+/// fastest sparks coast to 4 * 0.9 / ln 10 = 1.56 radii out, so it has to be
+/// drawn before its centre reaches the edge.
+constexpr double kTeleporterCullRadii = 1.6;
+
+/// A one-colour radial gradient, painted as nested discs because cpp_canvas
+/// has no gradient: each disc's alpha is solved so that the coverage
+/// accumulated over the discs still to come lands on `ramp(r)`. `ramp` takes
+/// the distance from the centre in the units of `radius`, and should be zero
+/// there.
+template <typename Ramp>
+void fillRadialRamp(Canvas& canvas, double radius, std::uint32_t rgb, int bands, Ramp ramp) {
+    const int kBands = std::max(2, bands);
+    double outerTarget = 0.0;
+    for (int k = kBands; k >= 1; --k) {
+        // Once the coverage is opaque, the discs inside it change nothing.
+        if (outerTarget >= 1.0) break;
+        const double outer = radius * k / kBands;
+        const double target = ramp(radius * (k - 0.5) / kBands);
+        const double alpha = 1.0 - (1.0 - target) / (1.0 - outerTarget);
+        outerTarget = target;
+        if (alpha <= 0.002) continue;
+        ui::setFill(canvas, rgb, alpha);
+        canvas.fillCircle(0, 0, static_cast<float>(outer));
+    }
+}
 
 /// The vertical leg of a number's throw at `t` of its life, in units of the
 /// apex: a parabola solved so it passes through 1 at kNumberArcPeak and keeps
@@ -2020,6 +2049,11 @@ void WorldRenderer::prepareGlitchAtlas(const EntityMap& entities, const Camera& 
             const RemoteEntity* flower = &entity;
             bursts.push_back({entity.netId, glitchSide(radius), fringes(entity.netId, bucket),
                               [this, flower, scale, timeSeconds](Canvas& target) {
+                                  // Turned on a pad, as drawFlower's own
+                                  // paintBody turns it.
+                                  if (flower->padSpin != 0.0) {
+                                      target.rotate(static_cast<float>(flower->padSpin));
+                                  }
                                   target.scale(static_cast<float>(scale),
                                                static_cast<float>(scale));
                                   drawFlowerBody(target, *flower, timeSeconds);
@@ -2258,6 +2292,10 @@ void WorldRenderer::drawFlower(Canvas& canvas, const RemoteEntity& entity, const
     const double scale = radius / kFlowerArtRadius;
 
     const auto paintBody = [&](Canvas& target) {
+        // Charging a pad: the body turns, face and all. Inside the glitch's
+        // buffer as much as outside it, as the reference applied the spin
+        // before the glitch read the transform.
+        if (entity.padSpin != 0.0) target.rotate(static_cast<float>(entity.padSpin));
         target.scale(static_cast<float>(scale), static_cast<float>(scale));
         drawFlowerBody(target, entity, timeSeconds);
     };
@@ -2582,30 +2620,16 @@ void WorldRenderer::drawDeadFlower(Canvas& canvas, std::uint16_t equipFlags, dou
     drawFace(canvas, FaceDeadEyes, equipFlags, 0, 0, mouth, timeSeconds);
 }
 
-void WorldRenderer::drawPetalGlow(Canvas& canvas, double radius, std::uint32_t rgb, int bands,
-                                  double centreAlpha, double kneeAlpha) const {
+void WorldRenderer::drawPetalGlow(Canvas& canvas, double radius, std::uint32_t rgb,
+                                  int bands) const {
     if (radius <= 1.0) return;
-    // The browser build bakes a three-stop radial gradient (for a petal: 0.6 at
-    // the centre, 0.25 at 40%, 0 at the rim). cpp_canvas has no gradient, so
-    // paint the same ramp as nested discs: each one's alpha is solved so that
-    // the accumulated coverage over the discs still to come lands on the ramp's
-    // value there.
-    const int kBands = std::max(2, bands);
-    const auto ramp = [radius, centreAlpha, kneeAlpha](double r) {
+    // The browser build bakes a three-stop radial gradient: 0.6 at the centre,
+    // 0.25 at 40%, 0 at the rim.
+    fillRadialRamp(canvas, radius, rgb, bands, [radius](double r) {
         const double knee = radius * 0.4;
-        if (r <= knee) return centreAlpha + (kneeAlpha - centreAlpha) * (r / knee);
-        return kneeAlpha * (1.0 - (r - knee) / (radius - knee));
-    };
-    double outerTarget = 0.0;
-    for (int k = kBands; k >= 1; --k) {
-        const double outer = radius * k / kBands;
-        const double target = ramp(radius * (k - 0.5) / kBands);
-        const double alpha = 1.0 - (1.0 - target) / (1.0 - outerTarget);
-        outerTarget = target;
-        if (alpha <= 0.002) continue;
-        ui::setFill(canvas, rgb, alpha);
-        canvas.fillCircle(0, 0, static_cast<float>(outer));
-    }
+        if (r <= knee) return 0.6 + (0.25 - 0.6) * (r / knee);
+        return 0.25 * (1.0 - (r - knee) / (radius - knee));
+    });
 }
 
 void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
@@ -3699,55 +3723,92 @@ void WorldRenderer::drawMapElements(Canvas& canvas, const Camera& camera, Realm 
                                     double timeSeconds) const {
     const MapData* map = mapFor(realm);
     if (!map) return;
-    const double zoom = camera.zoom();
+    // florr runs the portal on a millisecond clock, and every rate below is
+    // its own, per millisecond.
+    const double ms = timeSeconds * 1000.0;
 
     // Of everything the annotation layer carries, only the teleporters paint:
     // the browser build's MAP_COLORS are all fully transparent, its spawn
     // points draw nothing at all, and the spawn bands are tinted on the
     // minimap (ALT) but never on the ground.
-    const Rect visible = camera.visibleWorld(kTeleporterCull);
+    std::uint32_t pad = 0;
     for (const MapElement& element : map->elements()) {
         if (element.kind != MapElementKind::Teleporter) continue;
+        ++pad;
         const Vec2 centre = element.centre();
-        if (!visible.contains(centre)) continue;
+        if (!camera.visibleWorld(element.padRadius * kTeleporterCullRadii).contains(centre)) {
+            continue;
+        }
         const Vec2 at = camera.worldToScreen(centre);
+        const double radius = element.padRadius * camera.zoom();
+        const std::uint32_t color = element.hasColor ? element.color : kTeleporterColor;
 
         canvas.save();
         canvas.translate(static_cast<float>(at.x), static_cast<float>(at.y));
-        // The soft glow. cpp_canvas has no radial gradient, so the same three
-        // stops are painted as the nested discs drawPetalGlow builds -- the
-        // teleporter's OWN stops (0.3, 0.1, 0), not the petal ramp under a
-        // blanket alpha, which lands a quarter too opaque at the knee.
-        drawPetalGlow(canvas, 130.0 * zoom, 0xFFFFFFu, 16, 0.3, 0.1);
+        // The glow: a radial gradient, solid to a fifth of the radius and
+        // clear from seven tenths of it.
+        fillRadialRamp(canvas, radius * 0.7, color, 16, [radius](double r) {
+            return r <= radius * 0.2 ? 1.0 : (radius * 0.7 - r) / (radius * 0.5);
+        });
 
-        constexpr struct { double size, speed, alpha; } kSquares[] = {
-            {180.0, 0.8, 0.12}, {120.0, -1.3, 0.18}, {70.0, 1.8, 0.25},
-        };
-        for (const auto& square : kSquares) {
-            canvas.save();
-            canvas.rotate(static_cast<float>(timeSeconds * square.speed));
-            ui::setFill(canvas, 0xFFFFFFu, square.alpha);
-            const double side = square.size * zoom;
-            canvas.fillRect(static_cast<float>(-side * 0.5), static_cast<float>(-side * 0.5),
-                            static_cast<float>(side), static_cast<float>(side));
-            canvas.restore();
+        // The sparks: a square is born at the centre every 10 ms and lives a
+        // second. It leaves at U(1, 4) radii a second on a random heading,
+        // its speed falling to a tenth every second, so at age `a` it has
+        // coasted speed * (1 - 0.1^a) / ln 10 out. It spins at 4 pi a life,
+        // shrinks from a tenth of the radius to nothing and fades in and out
+        // on sin(life * pi). florr rolls each spark when it is born and
+        // steps it every frame; here the rolls are hashed from the pad and
+        // the spark's birth slot, and the flight is that step's closed form.
+        constexpr double kSparkSlotMs = 10.0;
+        const auto newest = static_cast<std::int64_t>(std::floor(ms / kSparkSlotMs));
+        for (std::int64_t slot = newest; slot > newest - 100; --slot) {
+            const double age = (ms - static_cast<double>(slot) * kSparkSlotMs) / 1000.0;
+            const double life = 1.0 - age;
+            const double half = life * 0.05 * radius;
+            if (life <= 0.0 || half < 0.15) continue;
+            const auto seed = static_cast<std::uint32_t>(slot);
+            const double speed = 1.0 + 3.0 * hash01(seed, pad * 2u);
+            const double heading = kTau * hash01(seed, pad * 2u + 1u);
+            const double reach = speed * (1.0 - std::pow(0.1, age)) / std::log(10.0) * radius;
+            const double x = std::cos(heading) * reach;
+            const double y = std::sin(heading) * reach;
+            const double spin = life * 2.0 * kTau;
+            const double c = std::cos(spin) * half;
+            const double s = std::sin(spin) * half;
+            ui::setFill(canvas, color, std::sin(life * kPi));
+            canvas.beginPath();
+            canvas.moveTo(static_cast<float>(x + c - s), static_cast<float>(y + s + c));
+            canvas.lineTo(static_cast<float>(x - c - s), static_cast<float>(y - s + c));
+            canvas.lineTo(static_cast<float>(x - c + s), static_cast<float>(y - s - c));
+            canvas.lineTo(static_cast<float>(x + c + s), static_cast<float>(y + s - c));
+            canvas.closePath();
+            canvas.fill();
         }
 
-        // Twelve particles spiralling inward, spread by the golden angle so
-        // they never bunch up into a visible spoke.
-        for (int i = 0; i < 12; ++i) {
-            const double seed = i * 137.508;
-            const double progress = std::fmod(timeSeconds * 0.8 + seed, 3.0) / 3.0;
-            const double angle = seed + timeSeconds * 0.5 + progress * 2.0;
-            const double radius = (1.0 - progress) * 120.0 * zoom;
-            ui::setFill(canvas, 0xFFFFFFu, progress * 0.7);
-            canvas.fillCircle(static_cast<float>(std::cos(angle) * radius),
-                              static_cast<float>(std::sin(angle) * radius),
-                              static_cast<float>(((1.0 - progress) * 3.0 + 0.5) * zoom));
+        // Eleven hexagons, a tenth of the radius apart and thickening inwards:
+        // hexagon k is 1 - 0.1k across, stroked 0.2 + 0.1k of that wide with
+        // round joins, at half alpha so the overlaps build up. All of them
+        // breathe 5% on sin(t * 0.01) and turn at 3 rad/s, each the other way
+        // from its neighbours.
+        const double breath = std::sin(ms * 0.01) * 0.05;
+        ui::setStroke(canvas, color, 0.5);
+        canvas.setLineJoin("round");
+        for (int k = 0; k <= 10; ++k) {
+            const double size = std::abs(1.0 - 0.1 * k + breath) * radius;
+            if (size < 0.25) continue;
+            const double turn = ms * 0.003 * (k % 2 == 0 ? 1.0 : -1.0);
+            canvas.beginPath();
+            for (int corner = 0; corner < 6; ++corner) {
+                const double angle = turn + corner * kTau / 6.0;
+                const auto x = static_cast<float>(std::cos(angle) * size);
+                const auto y = static_cast<float>(std::sin(angle) * size);
+                if (corner == 0) canvas.moveTo(x, y);
+                else canvas.lineTo(x, y);
+            }
+            canvas.closePath();
+            canvas.setLineWidth(static_cast<float>((0.2 + 0.1 * k) * size));
+            canvas.stroke();
         }
-
-        ui::setFill(canvas, 0xFFFFFFu, 0.9);
-        canvas.fillCircle(0, 0, static_cast<float>(4.0 * zoom));
         canvas.restore();
     }
 }

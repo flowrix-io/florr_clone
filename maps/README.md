@@ -657,6 +657,13 @@ A pad is a **point**. The usual way to wire one is in pairs, by name:
 | `id` | this pad's name, which another pad's `to` aims at. Falls back to the object's name |
 | `to` | the `id` of the pad this one leads to, on this map or any other. Write `<map id>:<pad id>` if a bare id is used on more than one map |
 
+Two more properties set how a pad looks, as florr's own warps do:
+
+| property | meaning |
+| --- | --- |
+| `color` | the portal's colour, a Tiled colour (`#AARRGGBB`, alpha ignored). White when left out |
+| `radius` | the portal's size in world units; 100 when left out. The pad's pull (150 at the default) and the reach it takes a flower from (60) grow with it in proportion |
+
 A flower that goes through a pad comes out on the pad its `to` names, so a
 two-way portal is two pads that name each other (`ah_portal_garden` ↔
 `ah_portal_ant_hell`). The pad it comes out on does nothing until the flower

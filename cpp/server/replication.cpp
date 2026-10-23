@@ -122,6 +122,12 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
         if (ai->target != NULL_ENTITY) state |= net::StateChasing;
         if (nowMillis < ai->stingLoadedAtMillis) state |= net::StateUnloaded;
     }
+    // On a pad and charging it -- which the pad a jump put the flower down on
+    // is not, until the flower has stepped off it. A cooldown blocks the jump,
+    // not the charge, so a flower back on that pad spins all the same.
+    if (const TeleporterState* pads = world.tryGet<TeleporterState>(e)) {
+        if (pads->pad >= 0 && !pads->arriving) state |= net::StatePadCharging;
+    }
     if (world.has<Dead>(e)) state |= net::StateDead;
     // A sacrifice whose pentagram is drawn and whose mob is out. See
     // net::StateRitualComplete.
