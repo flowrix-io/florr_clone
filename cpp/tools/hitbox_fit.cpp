@@ -480,8 +480,8 @@ Fit fitMob(const SpriteCache& sprites, Canvas& canvas, std::uint16_t index, cons
         MobMotion motion;
         motion.clockMs = frame * kFrameStep * 1000.0;
         motion.distance = frame * 17.0;
-        sprites.drawMob(canvas, index, kCentre, kCentre, kArtPx, 0.0, frame * kFrameStep, false,
-                        0.0, {1.0, 0.0}, &motion);
+        sprites.drawMob(canvas, index, Rarity::Common, kCentre, kCentre, kArtPx, 0.0,
+                        frame * kFrameStep, false, 0.0, {1.0, 0.0}, &motion);
         FrameFit pose;
         if (!fitFrame(canvas.getImageData(0, 0, kN, kN), options, pose)) continue;
         xs.push_back(pose.outer.x);
@@ -591,8 +591,8 @@ std::vector<std::uint8_t> artPanel(const SpriteCache& sprites, std::uint16_t ind
     canvas.clear(Color{30, 167, 97});
     const double drawn = kPanelHitbox * scale;
     const double mid = kPanel * 0.5;
-    sprites.drawMob(canvas, index, mid + offsetX * drawn, mid + offsetY * drawn, drawn * 2.0, 0.0,
-                    0.0);
+    sprites.drawMob(canvas, index, Rarity::Common, mid + offsetX * drawn, mid + offsetY * drawn,
+                    drawn * 2.0, 0.0, 0.0);
     canvas.setStrokeStyle(Color{255, 40, 40});
     canvas.setLineWidth(2.0f);
     canvas.strokeCircle(static_cast<float>(mid), static_cast<float>(mid),

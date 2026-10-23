@@ -4,8 +4,10 @@
 #include "client/render/mob_art.h"
 #include "client/render/sprites.h"
 #include "shared/game/config.h"
+#include "fixture_content.h"
 #include "test_data.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -155,4 +157,70 @@ TEST(a_super_square_is_repainted_green_with_a_derived_outline) {
         CHECK(repainted.second == outlineOf(0x8AFF69u));
     }
     CHECK(outlineOf(0x8AFF69u) == 0x6ECC54u);
+}
+
+TEST(the_square_mob_is_drawn_as_the_square_petal_is_at_every_tier) {
+    // mobs.json draws the square mob as the square petal (`$petal:square`): the
+    // petal's own sprite at the mob's tier, so the same box drawn either way is
+    // the same pixels -- yellow below super, green from there up, in the world
+    // and on a bestiary tile alike.
+    const ContentRegistry& content = shippedContent();
+    const std::uint16_t mob = content.mobIndex("square");
+    const std::uint16_t petal = content.petalIndex("square");
+    CHECK(mob != kInvalidIndex);
+    CHECK(petal != kInvalidIndex);
+    if (mob == kInvalidIndex || petal == kInvalidIndex) return;
+    SpriteCache sprites;
+    sprites.build(content, testsupport::dataDir());
+
+    const auto pixels = [](const std::function<void(Canvas&)>& paint) {
+        Canvas canvas = Canvas::createVirtual(64, 64);
+        paint(canvas);
+        return canvas.getImageData(0, 0, 64, 64);
+    };
+    for (const Rarity tier : {Rarity::Common, Rarity::Ultra, Rarity::Super, Rarity::Apex}) {
+        const std::vector<std::uint8_t> asPetal =
+            pixels([&](Canvas& c) { sprites.drawPetal(c, petal, tier, 32, 32, 64, 0, 0); });
+        const std::vector<std::uint8_t> asMob =
+            pixels([&](Canvas& c) { sprites.drawMob(c, mob, tier, 32, 32, 64, 0, 0); });
+        CHECK(asMob == asPetal);
+        const std::size_t middle = (32u * 64u + 32u) * 4u;
+        const std::uint32_t fill = (std::uint32_t{asMob[middle]} << 16) |
+                                   (std::uint32_t{asMob[middle + 1]} << 8) | asMob[middle + 2];
+        CHECK(fill == (rarityIndex(tier) >= rarityIndex(Rarity::Super) ? 0x8AFF69u : 0xFFE869u));
+    }
+
+    // The bestiary's picture wears the tier of its cell.
+    const auto tile = [&](Rarity tier) {
+        const std::vector<std::uint8_t> image = pixels(
+            [&](Canvas& c) { sprites.drawMobPicture(c, mob, tier, 32, 32, 64, 48, 0); });
+        const std::size_t middle = (32u * 64u + 32u) * 4u;
+        return (std::uint32_t{image[middle]} << 16) | (std::uint32_t{image[middle + 1]} << 8) |
+               image[middle + 2];
+    };
+    CHECK(tile(Rarity::Mythic) == 0xFFE869u);
+    CHECK(tile(Rarity::Unique) == 0x8AFF69u);
+}
+
+TEST(a_mob_drawn_as_a_petal_that_does_not_exist_is_a_plain_disc) {
+    ContentRegistry content;
+    std::string error;
+    CHECK(test::loadFixtureContent(content, testsupport::tempDir("flix_art_cache_petal_art"), R"({
+        "lost": {"name":"Lost","health":1,"damage":1,"size":1,"image":"$petal:nope"},
+        "found": {"name":"Found","health":1,"damage":1,"size":1,"image":"$petal:basic"}
+    })",
+                                   R"({
+        "basic": {"name":"Basic","damage":5,"health":5,"size":1,"cooldown":1000,"count":1,
+                  "image":"<svg viewBox=\"0 0 2 2\"><rect width=\"2\" height=\"2\" fill=\"#fff\"/></svg>"}
+    })",
+                                   error));
+    SpriteCache sprites;
+    sprites.build(content, testsupport::dataDir());
+    CHECK(!sprites.mobDrawable(content.mobIndex("lost")));
+    CHECK(sprites.mobDrawable(content.mobIndex("found")));
+    bool warned = false;
+    for (const std::string& w : sprites.warnings()) {
+        warned = warned || w.find("mob lost: draws petal 'nope'") != std::string::npos;
+    }
+    CHECK(warned);
 }

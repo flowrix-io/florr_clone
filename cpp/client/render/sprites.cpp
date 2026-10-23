@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <string_view>
 
 #include "client/ui/draw.h"
 #include "shared/game/config.h"
@@ -327,6 +328,9 @@ constexpr const char* kSpongeArt = R"SVG(<svg xmlns="http://www.w3.org/2000/svg"
     M 6.8 -20.92 L 11.8 -20.92 Q 11.8 -18.85 10.33 -17.39 Q 8.87 -15.92 6.8 -15.92 Q 4.73 -15.92 3.26 -17.39 Q 1.8 -18.85 1.8 -20.92 Q 1.8 -22.99 3.26 -24.46 Q 4.73 -25.92 6.8 -25.92 Q 8.87 -25.92 10.33 -24.46 Q 11.8 -22.99 11.8 -20.92" />
 </svg>)SVG";
 
+/// A mob `image` of `$petal:<id>` is drawn as petal <id> -- see MobConfig::image.
+constexpr std::string_view kPetalArtMarker = "$petal:";
+
 /// Expands a `$sponge:` palette marker into `kSpongeArt`; any other string is
 /// returned unchanged. Mirrors the browser build's resolveSpongeImage().
 std::string resolveArtwork(const std::string& source) {
@@ -530,15 +534,7 @@ bool SpriteCache::build(const ContentRegistry& content, const std::string& dataD
         out.usable = true;
     };
 
-    for (std::size_t i = 0; i < mobs_.size(); ++i) {
-        const MobConfig& config = content.mob(static_cast<std::uint16_t>(i));
-        compile(config.image, config.colorRgba, "mob " + config.id, mobs_[i]);
-        if (!mobs_[i].document) continue;
-        const std::string petArt = petArtwork(config.image);
-        if (!petArt.empty()) {
-            mobs_[i].petDocument = compileArt(resolveArtwork(petArt), "mob " + config.id + " (pet)");
-        }
-    }
+    // Petals first: a mob drawn as a petal is only as drawable as that petal.
     petalRepaints_.assign(petals_.size(), {});
     for (std::size_t i = 0; i < petals_.size(); ++i) {
         const PetalConfig& config = content.petal(static_cast<std::uint16_t>(i));
@@ -553,6 +549,32 @@ bool SpriteCache::build(const ContentRegistry& content, const std::string& dataD
                     config.colorRgba,
                     "petal " + config.id + " (" + rarityName(fill.from) + ")", repainted);
             if (repainted.document) petalRepaints_[i].push_back({fill.from, std::move(repainted)});
+        }
+    }
+
+    for (std::size_t i = 0; i < mobs_.size(); ++i) {
+        const MobConfig& config = content.mob(static_cast<std::uint16_t>(i));
+        // `$petal:<id>`: the mob is that petal's picture, drawn by the petal's
+        // own sprite at the mob's tier -- so whatever the petal looks like at a
+        // tier, repaint included, the mob does too, with nothing copied.
+        if (config.image.compare(0, kPetalArtMarker.size(), kPetalArtMarker) == 0) {
+            const std::string id = config.image.substr(kPetalArtMarker.size());
+            const std::uint16_t petal = content.petalIndex(id);
+            mobs_[i].color = rgbOf(config.colorRgba);
+            if (petal >= petals_.size()) {
+                warnings_.push_back("mob " + config.id + ": draws petal '" + id +
+                                    "', which does not exist; drawing a plain disc");
+                continue;
+            }
+            mobs_[i].petal = petal;
+            mobs_[i].usable = petals_[petal].usable;
+            continue;
+        }
+        compile(config.image, config.colorRgba, "mob " + config.id, mobs_[i]);
+        if (!mobs_[i].document) continue;
+        const std::string petArt = petArtwork(config.image);
+        if (!petArt.empty()) {
+            mobs_[i].petDocument = compileArt(resolveArtwork(petArt), "mob " + config.id + " (pet)");
         }
     }
 
@@ -658,12 +680,26 @@ void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y,
     canvas.restore();
 }
 
-void SpriteCache::drawMob(Canvas& canvas, std::uint16_t index, double x, double y, double diameter,
-                          double rotation, double timeSeconds, bool mirrored,
+const SpriteCache::Sprite& SpriteCache::petalSprite(std::uint16_t index, Rarity rarity) const {
+    // The highest repaint at or below this tier; they are stored ascending.
+    const Sprite* sprite = &petals_[index];
+    for (const PetalRepaint& repaint : petalRepaints_[index]) {
+        if (repaint.from <= rarity) sprite = &repaint.sprite;
+    }
+    return *sprite;
+}
+
+const SpriteCache::Sprite& SpriteCache::mobSprite(std::uint16_t index, Rarity rarity) const {
+    const Sprite& sprite = mobs_[index];
+    return sprite.petal ? petalSprite(*sprite.petal, rarity) : sprite;
+}
+
+void SpriteCache::drawMob(Canvas& canvas, std::uint16_t index, Rarity rarity, double x, double y,
+                          double diameter, double rotation, double timeSeconds, bool mirrored,
                           double worldRadius, Vec2 gaze, const MobMotion* motion) const {
     if (index >= mobs_.size()) return;
-    draw(canvas, mobs_[index], x, y, diameter, rotation, timeSeconds, mirrored, worldRadius,
-         gaze, motion);
+    draw(canvas, mobSprite(index, rarity), x, y, diameter, rotation, timeSeconds, mirrored,
+         worldRadius, gaze, motion);
 }
 
 const SpriteCache::PictureBounds& SpriteCache::pictureBounds(std::uint16_t index,
@@ -678,7 +714,8 @@ const SpriteCache::PictureBounds& SpriteCache::pictureBounds(std::uint16_t index
     const double centre = side * 0.5;
     Canvas probe = Canvas::createVirtual(side, side);
     for (const double t : kProbeTimes) {
-        draw(probe, mobs_[index], centre, centre, kProbeRadius * 2.0, 0.0, t, false, worldRadius);
+        draw(probe, mobSprite(index, Rarity::Common), centre, centre, kProbeRadius * 2.0, 0.0, t,
+             false, worldRadius);
     }
     const std::vector<std::uint8_t> rgba = probe.getImageData(0, 0, side, side);
     if (rgba.size() != static_cast<std::size_t>(side) * side * 4) return bounds;
@@ -701,15 +738,17 @@ const SpriteCache::PictureBounds& SpriteCache::pictureBounds(std::uint16_t index
     return bounds;
 }
 
-void SpriteCache::drawMobPicture(Canvas& canvas, std::uint16_t index, double x, double y,
-                                 double box, double diameter, double timeSeconds,
+void SpriteCache::drawMobPicture(Canvas& canvas, std::uint16_t index, Rarity rarity, double x,
+                                 double y, double box, double diameter, double timeSeconds,
                                  double worldRadius) const {
     if (index >= mobs_.size() || index >= mobPictureBounds_.size()) return;
+    // Measured on the common tier's art: a repaint changes colours, never the
+    // outline.
     const PictureBounds& bounds = pictureBounds(index, worldRadius);
     double radius = diameter * 0.5;
     const double reach = std::max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * radius;
     if (reach > box) radius *= box / reach;
-    draw(canvas, mobs_[index], x - (bounds.minX + bounds.maxX) * 0.5 * radius,
+    draw(canvas, mobSprite(index, rarity), x - (bounds.minX + bounds.maxX) * 0.5 * radius,
          y - (bounds.minY + bounds.maxY) * 0.5 * radius, radius * 2.0, 0.0, timeSeconds, false,
          worldRadius);
 }
@@ -744,12 +783,7 @@ void SpriteCache::drawPetal(Canvas& canvas, std::uint16_t index, Rarity rarity, 
                             double y, double diameter, double rotation,
                             double timeSeconds) const {
     if (index >= petals_.size()) return;
-    // The highest repaint at or below this tier; they are stored ascending.
-    const Sprite* sprite = &petals_[index];
-    for (const PetalRepaint& repaint : petalRepaints_[index]) {
-        if (repaint.from <= rarity) sprite = &repaint.sprite;
-    }
-    draw(canvas, *sprite, x, y, diameter, rotation, timeSeconds, false, 0.0);
+    draw(canvas, petalSprite(index, rarity), x, y, diameter, rotation, timeSeconds, false, 0.0);
 }
 
 } // namespace flix

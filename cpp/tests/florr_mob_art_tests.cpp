@@ -464,11 +464,11 @@ bool pictureReach(std::uint16_t type, Reach& out, bool fitted = true) {
     const double radius = shipped().mobStats(type, Rarity::Common).radius;
     for (const double t : {0.0, 0.4, 0.9, 1.7}) {
         if (fitted) {
-            shippedSprites().drawMobPicture(canvas, type, kView * 0.5, kView * 0.5, kPlateBox,
-                                            galleryBody(type), t, radius);
+            shippedSprites().drawMobPicture(canvas, type, Rarity::Common, kView * 0.5, kView * 0.5,
+                                            kPlateBox, galleryBody(type), t, radius);
         } else {
-            shippedSprites().drawMob(canvas, type, kView * 0.5, kView * 0.5, galleryBody(type),
-                                     0.0, t, false, radius);
+            shippedSprites().drawMob(canvas, type, Rarity::Common, kView * 0.5, kView * 0.5,
+                                     galleryBody(type), 0.0, t, false, radius);
         }
     }
     const std::vector<std::uint8_t> rgba = canvas.getImageData(0, 0, kN, kN);

@@ -1560,5 +1560,18 @@
         "maxQuantity": 1
       }
     ]
+  },
+  "square": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "square",
+        "rarity": "common",
+        "probability": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
   }
 }

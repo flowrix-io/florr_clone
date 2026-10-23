@@ -3367,8 +3367,8 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
         // with the mob, a dandelion's stalks pointed between its seeds.
         const double visualScale = config.visualScale > 0 ? config.visualScale : 1.0;
         const double facing = config.petalRing.shootOnHit ? 0.0 : rotation;
-        sprites_->drawMob(canvas, mob.typeIndex, 0.0, 0.0, radius * 2.0, facing, timeSeconds,
-                          mirrored, mob.radius * visualScale, {1.0, 0.0}, motion);
+        sprites_->drawMob(canvas, mob.typeIndex, mob.rarity, 0.0, 0.0, radius * 2.0, facing,
+                          timeSeconds, mirrored, mob.radius * visualScale, {1.0, 0.0}, motion);
     }
     canvas.restore();
 
@@ -3565,14 +3565,14 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         // toward its facing with the same time constant a player's are. So the
         // gaze is the facing, eased, in world space -- which with no
         // rotation applied is the art's space too.
-        sprites_->drawMob(canvas, mob.typeIndex, art.x, art.y, diameter, 0.0, timeSeconds, false,
-                          mob.radius * visualScale, mobGaze(mob), &motion);
+        sprites_->drawMob(canvas, mob.typeIndex, mob.rarity, art.x, art.y, diameter, 0.0,
+                          timeSeconds, false, mob.radius * visualScale, mobGaze(mob), &motion);
     } else if (sprites_ && sprites_->mobDrawable(mob.typeIndex)) {
         // The world radius is handed over beside the drawn one because the mobs
         // drawn by code cut their detail from how big the mob IS. Not the death
         // scale and not the zoom: a rock does not gain facets while it pops,
         // and it does not lose them when the camera pulls back.
-        sprites_->drawMob(canvas, mob.typeIndex, art.x, art.y, diameter, rotation,
+        sprites_->drawMob(canvas, mob.typeIndex, mob.rarity, art.x, art.y, diameter, rotation,
                           timeSeconds, mirrored, mob.radius * visualScale, {1.0, 0.0}, &motion);
     } else {
         // No artwork: the tier colour, which is at least the one fact about a

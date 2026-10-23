@@ -439,7 +439,10 @@ struct MobConfig {
     std::string description;
     std::string color;          ///< as written, for tooling and tooltips
     Rgba colorRgba = kOpaqueWhite;
-    std::string image;          ///< inline SVG source
+    /// Inline SVG source; or `$name`, a painter in mob_art.h; or
+    /// `$petal:<id>`, which draws the mob as petal <id> is drawn at the mob's
+    /// tier, repaints and all -- the square, which is its petal's picture.
+    std::string image;
 
     double damage = 0;
     double health = 1;
@@ -488,6 +491,20 @@ struct MobConfig {
     /// non-ambient for anything lower, which is the single place every spawner
     /// already looks.
     Rarity minRarity = Rarity::Common;
+
+    /// The chance, per tier, that a spawn band's roll comes out as THIS mob
+    /// instead of whatever it rolled (`replace_chance`) -- gardn's square, one
+    /// in 100,000 of every mob and one in 10,000 from super up. Written like
+    /// rarityFills, `{"common": 0.00001, "super": 0.0001}`: the highest entry
+    /// at or below the rolled tier wins, and a tier below every entry is never
+    /// replaced. Resolved to one figure per rung at load; zero for a mob that
+    /// replaces nothing, which is every mob but the square. It is the ONLY way
+    /// such a mob reaches a band, so one of these usually names no `groups`.
+    std::array<double, kLadderRarityCount> replaceChance{};
+    bool replacesMobs() const {
+        return std::any_of(replaceChance.begin(), replaceChance.end(),
+                           [](double chance) { return chance > 0.0; });
+    }
 
     bool hideRotation = false;   ///< draw upright regardless of heading
     bool noEggDrop = false;
@@ -1382,6 +1399,11 @@ public:
         return index < magicSource_.size() ? magicSource_[index] : kInvalidIndex;
     }
 
+    /// Every mob with a `replace_chance` (MobConfig::replaceChance), in index
+    /// order: what a band's roll may come out as instead of what it rolled.
+    /// Listed once here so the spawner never walks the whole roster per spawn.
+    const std::vector<std::uint16_t>& standInMobs() const { return standIns_; }
+
     /// The group `id` names, or kInvalidIndex.
     std::uint16_t mobGroupIndex(const std::string& id) const;
 
@@ -1401,6 +1423,8 @@ private:
     std::vector<std::uint16_t> magicForm_;
     /// The reverse: a magic petal -> the ordinary one it is the form of.
     std::vector<std::uint16_t> magicSource_;
+    /// See standInMobs().
+    std::vector<std::uint16_t> standIns_;
     std::vector<std::string> warnings_;
     std::uint32_t hash_ = 0;
 

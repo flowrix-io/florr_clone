@@ -1705,8 +1705,8 @@ TEST(the_oracle_painter_puts_its_pupil_where_it_looks_and_keeps_it_in_the_socket
     const double socket = 15.0 / 28.0 * diameter * 0.5;
     const auto frame = [&](Vec2 gaze) {
         Canvas canvas = Canvas::createVirtual(kFrame, kFrame);
-        sprites.drawMob(canvas, oracle, kFrame * 0.5, kFrame * 0.5, diameter, 0.0, 0.0, false, 0.0,
-                        gaze);
+        sprites.drawMob(canvas, oracle, Rarity::Common, kFrame * 0.5, kFrame * 0.5, diameter, 0.0,
+                        0.0, false, 0.0, gaze);
         return canvas.getImageData(0, 0, kFrame, kFrame);
     };
 
@@ -1855,7 +1855,7 @@ TEST(the_trader_painter_borders_only_the_rings_outer_edge_and_moves_its_eyes_lik
     const double c = kFrame * 0.5;
     const auto frame = [&](Vec2 gaze) {
         Canvas canvas = Canvas::createVirtual(kFrame, kFrame);
-        sprites.drawMob(canvas, trader, c, c, diameter, 0.0, 0.0, false, 0.0, gaze);
+        sprites.drawMob(canvas, trader, Rarity::Common, c, c, diameter, 0.0, 0.0, false, 0.0, gaze);
         return canvas.getImageData(0, 0, kFrame, kFrame);
     };
     const auto rgbAt = [&](const std::vector<std::uint8_t>& pixels, double angle, double art) {
@@ -2528,8 +2528,8 @@ TEST(the_titan_painter_draws_its_cog_and_scowl_and_moves_its_glints) {
     const double unit = diameter * 0.5 / 27.35;
     const auto frame = [&](Vec2 gaze) {
         Canvas canvas = Canvas::createVirtual(kFrame, kFrame);
-        sprites.drawMob(canvas, titan, kFrame * 0.5, kFrame * 0.5, diameter, 0.0, 0.0, false, 0.0,
-                        gaze);
+        sprites.drawMob(canvas, titan, Rarity::Common, kFrame * 0.5, kFrame * 0.5, diameter, 0.0,
+                        0.0, false, 0.0, gaze);
         return canvas.getImageData(0, 0, kFrame, kFrame);
     };
     const auto rgbAt = [&](const std::vector<std::uint8_t>& pixels, double ax, double ay) {
@@ -3182,8 +3182,8 @@ TEST(the_assembler_painter_draws_florrs_machine_and_turns_its_gears) {
         MobMotion motion;
         motion.clockMs = clockMs;
         motion.seed = 7;
-        sprites.drawMob(canvas, assembler, kFrame * 0.5, kFrame * 0.5, diameter, 0.0, 0.0, false,
-                        0.0, {1.0, 0.0}, &motion);
+        sprites.drawMob(canvas, assembler, Rarity::Common, kFrame * 0.5, kFrame * 0.5, diameter, 0.0,
+                        0.0, false, 0.0, {1.0, 0.0}, &motion);
         return canvas.getImageData(0, 0, kFrame, kFrame);
     };
     // A design-box point (florr's numbers) to the pixel it lands on.

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <sstream>
 
 #include "shared/core/file.h"
@@ -775,6 +776,42 @@ std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
     return xp;
 }
 
+/// `"replace_chance": {"common": 0.00001, "super": 0.0001}` -- see
+/// MobConfig::replaceChance. Resolved to one figure per rung: each tier takes
+/// the entry at or below it that is nearest. A tier that is not a ladder rung,
+/// or a figure that is not a chance, is dropped with a warning; a mob that
+/// spawned a hundred times too often is not a typo to load around quietly.
+std::array<double, kLadderRarityCount> parseReplaceChance(Ctx& ctx, const Json& src) {
+    std::array<double, kLadderRarityCount> chance{};
+    if (!src.contains("replace_chance")) return chance;
+    const Json& node = src["replace_chance"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("replace_chance is ") + typeName(node) + "; ignored");
+        return chance;
+    }
+    std::array<std::optional<double>, kLadderRarityCount> stated{};
+    for (const std::string& key : node.keys()) {
+        Rarity tier = Rarity::Common;
+        if (!tryParseRarity(key, tier) || rarityIndex(tier) >= kLadderRarityCount) {
+            ctx.warn("replace_chance names '" + key + "', which is no mob's tier; ignored");
+            continue;
+        }
+        const Json& value = node[key];
+        const double v = value.isNumber() ? value.asDouble() : -1.0;
+        if (!std::isfinite(v) || v < 0.0 || v > 1.0) {
+            ctx.warn("replace_chance." + key + " is not a chance between 0 and 1; ignored");
+            continue;
+        }
+        stated[static_cast<std::size_t>(rarityIndex(tier))] = v;
+    }
+    double carried = 0.0;
+    for (std::size_t i = 0; i < chance.size(); ++i) {
+        if (stated[i]) carried = *stated[i];
+        chance[i] = carried;
+    }
+    return chance;
+}
+
 /// The `npc` block: `{ "service": "oracle" }` for the oracle, `{ "service":
 /// "trader" }` for the trader, `{ "team": "hostile" }` for the target dummy,
 /// and `{ "service": "assembler", "recipes": [...] }` for an assembler.
@@ -951,6 +988,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     // weight, so it has to be read first.
     m.spawnWeight = ctx.range(src, "spawn_weight", 1.0, 0.0, 1000.0);
     m.minRarity = ctx.rarity(src, "min_rarity");
+    m.replaceChance = parseReplaceChance(ctx, src);
     if (src.contains("section")) {
         ctx.warn("still declares `section`, which the 3x3 grid used to index; "
                  "spawning is by named `groups` now and the field is ignored");
@@ -1596,6 +1634,11 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     mobIds_ = std::move(mobIds);
     petalIds_ = std::move(petalIds);
     petalOrder_ = std::move(petalOrder);
+
+    standIns_.clear();
+    for (std::size_t i = 0; i < mobs_.size(); ++i) {
+        if (mobs_[i].replacesMobs()) standIns_.push_back(static_cast<std::uint16_t>(i));
+    }
 
     // The magic conversion table, built once here rather than looked up per
     // drop: a mob dying is a hot path and this is a straight index.

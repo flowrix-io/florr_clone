@@ -1176,6 +1176,63 @@ TEST(the_shipped_bumble_bee_drops_pollen_and_out_cruises_a_bee) {
     CHECK_EQ(r.mobStats(r.mobIndex("bee"), Rarity::Common).cruiseSpeed, 0.0);
 }
 
+TEST(the_shipped_square_stands_in_for_one_mob_in_100000_and_one_super_in_10000) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t square = r.mobIndex("square");
+    CHECK(square != kInvalidIndex);
+    if (square == kInvalidIndex) return;
+    const MobConfig& mob = r.mob(square);
+    for (int i = 0; i < kLadderRarityCount; ++i) {
+        const double expected = i >= rarityIndex(Rarity::Super) ? 1.0 / 10000.0 : 1.0 / 100000.0;
+        CHECK_NEAR(mob.replaceChance[static_cast<std::size_t>(i)], expected, 1e-15);
+    }
+    CHECK(r.standInMobs() == std::vector<std::uint16_t>{square});
+    // The stand-in rule is the only way one reaches the map: in no group, so no
+    // band's group roll produces it, and no egg, which would put it in the shop.
+    CHECK(mob.groups.empty());
+    CHECK(mob.noEggDrop);
+    // gardn's: 20 health, 10 damage, a radius of 40.
+    CHECK_NEAR(r.mobStats(square, Rarity::Common).radius, 40.0, 0.01);
+    CHECK_EQ(r.mobStats(square, Rarity::Common).speed, 0.0);
+    // Drawn by the square petal's own sprite, not a copy of its artwork.
+    CHECK(mob.image == "$petal:square");
+    CHECK(r.petalIndex("square") != kInvalidIndex);
+}
+
+TEST(a_replace_chance_carries_up_to_the_next_tier_that_names_one) {
+    ContentRegistry r;
+    std::string error;
+    Synthetic files;
+    files.mobs = R"JSON({
+      "plain": {"name": "Plain", "health": 3, "damage": 1, "size": 1},
+      "late": {"name": "Late", "health": 3, "damage": 1, "size": 1,
+        "replace_chance": {"rare": 0.5, "mythic": 0.25}},
+      "odd": {"name": "Odd", "health": 3, "damage": 1, "size": 1,
+        "replace_chance": {"common": 2, "uncommon": "often", "universal": 0.5, "nope": 0.5}}
+    })JSON";
+    files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+        "cooldown": 1, "count": 1}})JSON";
+    CHECK(loadSynthetic(r, files, error));
+
+    const auto& late = r.mob(r.mobIndex("late")).replaceChance;
+    CHECK_EQ(late[rarityIndex(Rarity::Common)], 0.0);
+    CHECK_EQ(late[rarityIndex(Rarity::Uncommon)], 0.0);
+    CHECK_EQ(late[rarityIndex(Rarity::Rare)], 0.5);
+    CHECK_EQ(late[rarityIndex(Rarity::Legendary)], 0.5);
+    CHECK_EQ(late[rarityIndex(Rarity::Mythic)], 0.25);
+    CHECK_EQ(late[rarityIndex(Rarity::Apex)], 0.25);
+
+    // Nothing that is not a chance at a mob's tier is kept, and each is said.
+    CHECK(!r.mob(r.mobIndex("odd")).replacesMobs());
+    CHECK(warned(r, "replace_chance.common is not a chance"));
+    CHECK(warned(r, "replace_chance.uncommon is not a chance"));
+    CHECK(warned(r, "replace_chance names 'universal'"));
+    CHECK(warned(r, "replace_chance names 'nope'"));
+
+    CHECK(!r.mob(r.mobIndex("plain")).replacesMobs());
+    CHECK(r.standInMobs() == std::vector<std::uint16_t>{r.mobIndex("late")});
+}
+
 TEST(a_drop_with_nothing_to_drop_is_not_dropped) {
     ContentRegistry r;
     std::string error;

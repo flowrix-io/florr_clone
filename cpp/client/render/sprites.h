@@ -24,6 +24,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -67,8 +68,11 @@ public:
     /// `motion` is the creature's own clock and stride (the world renderer's
     /// mobMotion). Null -- a bestiary tile -- is a mob standing still whose
     /// clock is `timeSeconds`.
-    void drawMob(Canvas&, std::uint16_t index, double x, double y, double diameter,
-                 double rotation, double timeSeconds, bool mirrored = false,
+    ///
+    /// `rarity` is the mob's tier. Only a mob drawn as a petal (`$petal:<id>`)
+    /// reads it, to wear that petal's repaint for the tier as the petal does.
+    void drawMob(Canvas&, std::uint16_t index, Rarity rarity, double x, double y,
+                 double diameter, double rotation, double timeSeconds, bool mirrored = false,
                  double worldRadius = 0.0, Vec2 gaze = {1.0, 0.0},
                  const MobMotion* motion = nullptr) const;
 
@@ -86,8 +90,9 @@ public:
     /// `worldRadius` is as for drawMob. The measurement is in multiples of
     /// the drawn radius, which a painter's detail does not move, so it is
     /// taken once whatever radius later calls pass.
-    void drawMobPicture(Canvas&, std::uint16_t index, double x, double y, double box,
-                        double diameter, double timeSeconds, double worldRadius = 0.0) const;
+    void drawMobPicture(Canvas&, std::uint16_t index, Rarity rarity, double x, double y,
+                        double box, double diameter, double timeSeconds,
+                        double worldRadius = 0.0) const;
 
     /// Which painter draws mob `index`, or MobArt::None for a document. The
     /// world renderer asks so it can feed a painted eye the gaze it eases.
@@ -141,6 +146,9 @@ private:
         /// Set when the mob's `image` names a painter instead of declaring a
         /// document; `document` is then null and never consulted.
         MobArt art = MobArt::None;
+        /// Set when the mob's `image` is `$petal:<id>`: it is drawn as that
+        /// petal is, at the mob's tier, and nothing else here is consulted.
+        std::optional<std::uint16_t> petal;
         /// The mob's or petal's own `color`, which is both what a painter
         /// bodies its artwork in and what a sprite that would not compile is
         /// drawn as. One field because it is one fact about the entry.
@@ -166,6 +174,13 @@ private:
         Rarity from = Rarity::Common;
         Sprite sprite;
     };
+
+    /// Petal `index` as its `rarity` looks: the highest repaint at or below
+    /// the tier, or the base artwork.
+    const Sprite& petalSprite(std::uint16_t index, Rarity rarity) const;
+    /// Mob `index` as its `rarity` looks: its own artwork, or the petal's it
+    /// is drawn as.
+    const Sprite& mobSprite(std::uint16_t index, Rarity rarity) const;
 
     /// Where a mob's still picture paints, in multiples of its drawn radius
     /// about the point drawMob centres it on (+X the way it faces). The

@@ -616,6 +616,81 @@ TEST(a_direct_spawn_below_min_rarity_is_raised_to_it) {
     CHECK_EQ(sim.world.get<MobType>(high).rarity, Rarity::Legendary);
 }
 
+TEST(a_stand_in_takes_the_place_of_band_rolls_at_the_chance_its_tier_states) {
+    // The square's rule on invented figures big enough to measure: a quarter
+    // of every roll below super, and every super. The stand-in is in no group
+    // and no band names it, so this rule is the only way it reaches the map.
+    ContentRegistry content;
+    std::string error;
+    CHECK(test::loadFixtureContent(content, testsupport::tempDir("flix_stand_in_tests"), R"({
+        "plain":  {"name":"Plain","health":10,"damage":1,"size":1,"speed":0.2},
+        "pillar": {"name":"Pillar","health":10,"damage":1,"size":1,"speed":0.2,
+                   "min_rarity":"super"},
+        "square": {"name":"Square","health":10,"damage":1,"size":1,"speed":0,
+                   "replace_chance":{"common":0.25,"super":1}}
+    })",
+                                   R"({
+        "basic": {"name":"Basic","damage":5,"health":5,"size":1,"cooldown":1000,"count":1}
+    })",
+                                   error));
+    const std::uint16_t plain = content.mobIndex("plain");
+    const std::uint16_t square = content.mobIndex("square");
+
+    // Every mob a band holds, awake or asleep, by type and tier. Nobody is
+    // connected: the bands stock themselves anyway, the commons stay records,
+    // and the supers -- bosses -- stand as live mobs.
+    struct Stocked {
+        std::uint16_t type;
+        Rarity rarity;
+    };
+    const auto stock = [&](const Rect& band, const std::string& mobs) {
+        WorldMaps maps;
+        makeBandedWorld(maps, {band}, mobs);
+        Sim sim;
+        sim.spawner.worldMaps = &maps;
+        for (int i = 0; i < 40; ++i) {
+            sim.spawner.run(sim.world, sim.terrain, content, {}, sim.rng, sim.now,
+                            net::kTickSeconds, sim.commands);
+            sim.commands.flush();
+            sim.now += net::kTickMillis;
+        }
+        std::vector<Stocked> out;
+        for (const SpawnSystem::LatentSite& site : sim.latent()) {
+            out.push_back({site.mobIndex, site.rarity});
+        }
+        Query<MobTag, MobType> live{sim.world};
+        live.each([&](Entity, MobTag&, MobType& type) {
+            out.push_back({type.configIndex, type.rarity});
+        });
+        return out;
+    };
+
+    // Difficulty zero is all commons: about a quarter of them squares, and a
+    // square keeps the tier of the roll it took the place of.
+    const Rect wide{kCentre.x - 6000.0, kCentre.y - 6000.0, 12000.0, 12000.0};
+    const std::vector<Stocked> commons = stock(wide, "plain 100%");
+    CHECK(static_cast<int>(commons.size()) >= bandTarget(wide) * 3 / 4);
+    int squares = 0;
+    for (const Stocked& mob : commons) {
+        CHECK(mob.type == plain || mob.type == square);
+        CHECK(mob.rarity == Rarity::Common);
+        if (mob.type == square) ++squares;
+    }
+    // 360 rolls at a quarter: 90 expected, and these bounds are five standard
+    // deviations either side.
+    CHECK(squares > 50);
+    CHECK(squares < 130);
+
+    // Every super is a square, at super or the boss tier a ready clock made of it.
+    const Rect small{kCentre.x - 1000.0, kCentre.y - 1000.0, 2000.0, 2000.0};
+    const std::vector<Stocked> supers = stock(small, "pillar 100%");
+    CHECK(!supers.empty());
+    for (const Stocked& mob : supers) {
+        CHECK(mob.type == square);
+        CHECK(rarityIndex(mob.rarity) >= rarityIndex(Rarity::Super));
+    }
+}
+
 TEST(the_pyramid_beetles_stand_undead_on_a_line_through_their_super_figure) {
     // User, 2026-10-21: "It should stay undead for 30 seconds at super, and
     // linear scaling for rarities" -- the mummy beetle first, then "Also do
@@ -1150,30 +1225,44 @@ TEST(an_operators_killall_refills_the_screen_it_cleared_within_a_second) {
     // was last counted, at once -- so the screen the operator cleared is full
     // again within a second, rather than its share of a band-wide top-up
     // going everywhere else.
+    //
+    // The share that comes back AWAKE is summed over several streams. Each
+    // slot is scattered about where it was lost, so some land out of sight and
+    // wait as records, and one stream comes back anywhere from about 0.7 to
+    // 0.9 of what was cleared: on a single seed the bar below was a coin toss
+    // that any change to the spawn stream -- one roll more or less -- could
+    // flip either way.
     const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
-    WorldMaps maps;
-    makeBandedWorld(maps, {band}, "bee 100%");
-    Sim sim;
-    sim.spawner.worldMaps = &maps;
-    const std::vector<Vec2> players{kCentre};
-    for (int i = 0; i < 400; ++i) sim.tick(players);
-
     const Rect screen{kCentre.x - kSpawnViewportHalfWidth, kCentre.y - kSpawnViewportHalfHeight,
                       kSpawnViewportHalfWidth * 2.0, kSpawnViewportHalfHeight * 2.0};
-    const int awake = sim.mobCount();
-    const int onScreen = sim.mobsIn(screen);
-    CHECK(onScreen > 5);
+    const std::vector<Vec2> players{kCentre};
+    int awakeTotal = 0;
+    int refilledTotal = 0;
+    for (const std::uint32_t seed : {0xC0FFEEu, 1u, 2u, 3u, 4u, 5u}) {
+        WorldMaps maps;
+        makeBandedWorld(maps, {band}, "bee 100%");
+        Sim sim;
+        sim.rng = Rng(seed);
+        sim.spawner.worldMaps = &maps;
+        for (int i = 0; i < 400; ++i) sim.tick(players);
 
-    Query<MobTag> mobs{sim.world};
-    for (const Entity e : mobs.collect()) sim.world.destroy(e);
-    CHECK_EQ(sim.mobCount(), 0);
+        const int awake = sim.mobCount();
+        const int onScreen = sim.mobsIn(screen);
+        CHECK(onScreen > 5);
 
-    for (int i = 0; i < net::kTicksPerSecond; ++i) sim.tick(players);
+        Query<MobTag> mobs{sim.world};
+        for (const Entity e : mobs.collect()) sim.world.destroy(e);
+        CHECK_EQ(sim.mobCount(), 0);
 
-    CHECK(sim.populationIn(band) >= bandTarget(band) - 1);
-    CHECK(sim.mobCount() >= awake * 3 / 4);
-    // A uniform top-up would put a sixth of the refill on this box.
-    CHECK(sim.mobsIn(screen) >= onScreen / 2);
+        for (int i = 0; i < net::kTicksPerSecond; ++i) sim.tick(players);
+
+        CHECK(sim.populationIn(band) >= bandTarget(band) - 1);
+        // A uniform top-up would put a sixth of the refill on this box.
+        CHECK(sim.mobsIn(screen) >= onScreen / 2);
+        awakeTotal += awake;
+        refilledTotal += sim.mobCount();
+    }
+    CHECK(refilledTotal >= awakeTotal * 3 / 4);
 }
 
 TEST(no_part_of_a_waking_animal_lands_in_a_flowers_lap) {

@@ -41,6 +41,29 @@ bool alwaysAwake(const ContentRegistry& content, const MobType& type, bool prest
     return alwaysAwake(content, type.configIndex, type.rarity, prestige);
 }
 
+/// What a band's roll of `type` at `rarity` comes out as once the stand-ins --
+/// the mobs with a `replace_chance`, which is to say the square -- have had
+/// their chance to take its place. One draw however many stand-ins there are,
+/// and none at all when the content has none, so a roster without a square
+/// rolls exactly the stream it always did.
+///
+/// A permanent fixture is never replaced: the DPS row is furniture, and a
+/// square standing in a dummy's plot would be one for good.
+std::uint16_t rollStandIn(const ContentRegistry& content, std::uint16_t type, Rarity rarity,
+                          Rng& rng) {
+    const std::vector<std::uint16_t>& standIns = content.standInMobs();
+    if (standIns.empty() || content.mob(type).neverAmbient) return type;
+    const std::size_t tier = static_cast<std::size_t>(ladderIndex(rarity));
+    double roll = rng.unit();
+    for (const std::uint16_t standIn : standIns) {
+        // Never below a stand-in's own floor, the rule every other spawn obeys.
+        if (rarityIndex(rarity) < rarityIndex(content.mob(standIn).minRarity)) continue;
+        roll -= content.mob(standIn).replaceChance[tier];
+        if (roll < 0.0) return standIn;
+    }
+    return type;
+}
+
 /// The per-spawn size multiplier on the mob's nominal size: the `random_size`
 /// roll, times the fixture ramp (MobConfig::fixtureSizeScale). Both factors
 /// ride in the one number because the reference resolves them in the one
@@ -1978,6 +2001,12 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // A mob whose floor sits above super cannot stand in a twin at all; the
     // slot goes back to the band and is rolled afresh.
     if (zone.prestige && barredFromPrestige(rarity)) return false;
+
+    // Once in a long while the band does not grow what it rolled: a square
+    // stands there instead, one spawn in 100,000 and one super in 10,000.
+    // At the tier the band rolled, and before the boss upgrade below, so a
+    // super square can come out the biome's unique like any other super.
+    type = rollStandIn(content, type, rarity, rng);
 
     // A super may come out a unique or an apex instead, if its biome's clock
     // for that tier has run down. After the type roll, which is safe because a

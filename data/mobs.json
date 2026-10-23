@@ -2528,5 +2528,35 @@
             "count": 1
         },
         "remains_ms": 10000
+    },
+    "square": {
+        "name": "Square",
+        "health": 20,
+        "damage": 10,
+        "size": 1.3333,
+        "visual_scale": 0.8081,
+        "speed": 0,
+        "cooldown": 2000,
+        "xp": {
+            "common": 1,
+            "uncommon": 1,
+            "rare": 2,
+            "epic": 22,
+            "legendary": 206,
+            "mythic": 3100,
+            "ultra": 19800,
+            "super": 2100000,
+            "unique": 6800000
+        },
+        "description": "???",
+        "color": "#ffe869",
+        "image": "$petal:square",
+        "ai_type": "passive",
+        "range": 100,
+        "replace_chance": {
+            "common": 0.00001,
+            "super": 0.0001
+        },
+        "noEggDrop": false
     }
 }
