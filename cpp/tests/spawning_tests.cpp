@@ -616,13 +616,15 @@ TEST(a_direct_spawn_below_min_rarity_is_raised_to_it) {
     CHECK_EQ(sim.world.get<MobType>(high).rarity, Rarity::Legendary);
 }
 
-TEST(the_pyramid_beetles_stand_undead_thirty_seconds_at_super_and_on_a_line_below_and_above) {
+TEST(the_pyramid_beetles_stand_undead_on_a_line_through_their_super_figure) {
     // User, 2026-10-21: "It should stay undead for 30 seconds at super, and
     // linear scaling for rarities" -- the mummy beetle first, then "Also do
     // for pharoah beetle". User, 2026-10-22: "Mummy beetles should stay
     // undead for 1 second at common and 30 seconds at super. The scaling is
-    // linear." The pharaoh keeps the first line, an eighth of the Super
-    // figure a tier.
+    // linear." User, 2026-10-23: "The mummy beetle undead time should be
+    // changed to 8 seconds at super" -- Common stays 1 second, so a second a
+    // tier. The pharaoh keeps the first line, an eighth of its 30-second
+    // Super figure a tier.
     Sim sim;
     const std::uint16_t mummy = shipped().mobIndex("mummy_beetle");
     const std::uint16_t pharaoh = shipped().mobIndex("pharaoh_beetle");
@@ -631,12 +633,12 @@ TEST(the_pyramid_beetles_stand_undead_thirty_seconds_at_super_and_on_a_line_belo
     if (mummy == kInvalidIndex || pharaoh == kInvalidIndex) return;
     {
         const MobConfig& config = shipped().mob(mummy);
-        const double perTier = 29000.0 / 7.0;
+        const double perTier = 7000.0 / 7.0;
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Common), 1000.0, 1e-9);
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Uncommon), 1000.0 + perTier, 1e-9);
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Rare), 1000.0 + 2.0 * perTier, 1e-9);
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Ultra), 1000.0 + 6.0 * perTier, 1e-9);
-        CHECK_NEAR(mobUndeadMillis(config, Rarity::Super), 30000.0, 1e-9);
+        CHECK_NEAR(mobUndeadMillis(config, Rarity::Super), 8000.0, 1e-9);
         CHECK_NEAR(mobUndeadMillis(config, Rarity::Unique), 1000.0 + 8.0 * perTier, 1e-9);
     }
     {
@@ -659,7 +661,7 @@ TEST(the_pyramid_beetles_stand_undead_thirty_seconds_at_super_and_on_a_line_belo
     if (e == NULL_ENTITY) return;
     CHECK(sim.world.has<RisesUndead>(e));
     if (const RisesUndead* rises = sim.world.tryGet<RisesUndead>(e)) {
-        CHECK_NEAR(rises->millis, 1000.0 + 29000.0 * 3.0 / 7.0, 1e-9);
+        CHECK_NEAR(rises->millis, 4000.0, 1e-9);
     }
 }
 

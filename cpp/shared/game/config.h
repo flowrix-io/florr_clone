@@ -1186,8 +1186,9 @@ inline bool petalResistsCollisions(const PetalConfig& config) { return config.id
 /// How long a `rarity` mob of `config` stands Undead when struck down: a
 /// straight line through `undead_common_ms` at Common and `undead_ms` at
 /// Super, carried on past Super (user, 2026-10-22, the mummy beetle: "1
-/// second at common and 30 seconds at super. The scaling is linear"). Zero
-/// for a mob that names no `undead_ms`.
+/// second at common and 30 seconds at super. The scaling is linear"; its
+/// Super figure cut to 8 seconds 2026-10-23). Zero for a mob that names no
+/// `undead_ms`.
 double mobUndeadMillis(const MobConfig& config, Rarity rarity);
 
 /// A bandage turns its flower Undead on a killing blow instead of letting it
