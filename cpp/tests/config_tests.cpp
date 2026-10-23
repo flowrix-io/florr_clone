@@ -1674,3 +1674,41 @@ TEST(a_stinger_clump_splits_its_slots_damage_rather_than_multiplying_it) {
         CHECK_NEAR(s.damage * s.count, r.petal(stinger).damage * petalStrengthScale(t), 1e-6);
     }
 }
+
+TEST(only_the_best_copy_counts_names_worn_petals_and_the_moon) {
+    // The bar draws every copy but the best as not loaded, so each petal named
+    // has to be one with nothing of its own out on the ring: worn, or the moon
+    // the ring holds back. One that came to orbit would read as not loaded
+    // while it fought; one misspelt would name nothing at all.
+    const Shipped& s = shipped();
+    CHECK(s.ok);
+    if (!s.ok) return;
+    int named = 0;
+    for (std::uint16_t i = 0; i < s.registry.petalCount(); ++i) {
+        const PetalConfig& config = s.registry.petal(i);
+        if (!petalOnlyBestCopyCounts(config)) continue;
+        ++named;
+        if (petalAnchorsRing(config)) continue;
+        CHECK(config.noPhysics);
+        CHECK_EQ(s.registry.petalStats(i, Rarity::Common).count, 0);
+    }
+    CHECK_EQ(named, 7);
+}
+
+TEST(the_best_copy_is_the_highest_tier_and_the_leftmost_of_equals) {
+    std::array<EquippedPetal, kLoadoutActiveSlots> bar{};
+    const auto at = [&](int i) { return bar[static_cast<std::size_t>(i)]; };
+    CHECK_EQ(bestCopySlot(7, at), -1);
+
+    bar[1] = EquippedPetal{7, Rarity::Rare, Rarity::Rare};
+    CHECK_EQ(bestCopySlot(7, at), 1);
+    bar[3] = EquippedPetal{7, Rarity::Epic, Rarity::Epic};
+    bar[5] = EquippedPetal{7, Rarity::Epic, Rarity::Epic};
+    // Another petal, however good, is not a copy.
+    bar[6] = EquippedPetal{8, Rarity::Mythic, Rarity::Mythic};
+    CHECK_EQ(bestCopySlot(7, at), 3);
+    CHECK_EQ(bestCopySlot(8, at), 6);
+
+    bar[3] = EquippedPetal{};
+    CHECK_EQ(bestCopySlot(7, at), 5);
+}

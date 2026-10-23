@@ -183,12 +183,10 @@ bool championCrownTier(const ContentRegistry& registry, const Loadout& loadout, 
 
 /// The slot whose moon comes out, or -1 for a bar with none on its active row.
 ///
-/// The moon does not stack: however many are equipped, one flower has one.
-/// The highest tier wins and the leftmost of equals breaks the tie, so the
-/// answer depends on the bar alone -- not on which happened to reload first --
-/// and does not move while the bar does not. Every other moon slot holds
-/// nothing (reconcileSlots builds it with a count of zero).
-int liveMoonSlot(const ContentRegistry& registry, const Loadout& loadout);
+/// The moon does not stack: however many are equipped, one flower has one --
+/// the best copy (bestCopySlot). Every other moon slot holds nothing
+/// (reconcileSlots builds it with a count of zero).
+int liveMoonSlotOf(const ContentRegistry& registry, const Loadout& loadout);
 
 /// When a petal's scripted behaviour fires.
 ///

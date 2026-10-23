@@ -1118,7 +1118,7 @@ inline bool petalIsLooseBody(const PetalConfig& config) {
 ///
 /// It does not stack: one flower has one moon however many are on the bar.
 /// The highest tier among them is the one that comes out (the leftmost of
-/// equals) and the others hold nothing (liveMoonSlot in
+/// equals) and the others hold nothing (liveMoonSlotOf in
 /// server/systems/petals.cpp).
 inline bool petalAnchorsRing(const PetalConfig& config) { return config.id == kMoonPetalId; }
 
@@ -1254,6 +1254,25 @@ inline constexpr int kCrownMaxLoans = 25;
 /// `random` drop rows, and the gallery's mirror of them.
 inline bool petalHasOwnSource(const PetalConfig& config) {
     return petalIsSacrifice(config) || petalLendsBasic(config);
+}
+
+/// Whether every copy of this petal but the best one on the bar
+/// (bestCopySlot) does nothing at all, and is drawn there as not loaded.
+///
+/// The moon, which would come out but is held back, and the worn petals whose
+/// every effect is the best one's alone: a disc's cut, a bandage's Undead, a
+/// crown's loans, a cutter's slam and a lightning cutter's strike, an
+/// observer's zoom. A petal that does not stack but still comes out -- salt,
+/// amulet, cursor, lotus, root -- is on the ring blocking and reloading all
+/// the same, and is not one; nor is a worn petal with a share that stacks
+/// (antennae's magnetism, a relic's health), nor the sacrifice, whose second
+/// copy is the next death's.
+///
+/// By id for the reason petalIsClickToUse is.
+inline bool petalOnlyBestCopyCounts(const PetalConfig& config) {
+    return petalAnchorsRing(config) || petalResistsCollisions(config) ||
+           petalDelaysDeath(config) || petalLendsBasic(config) || config.id == "cutter" ||
+           config.id == "lightning_cutter" || config.id == "observer";
 }
 
 // ---------------------------------------------------------------------------
@@ -1502,6 +1521,35 @@ double barReloadCut(const ContentRegistry& registry, EquippedAt&& equippedAt) {
                         (1.0 - registry.petalStats(petal.configIndex, petal.rarity).reloadCut);
     }
     return cut;
+}
+
+/// The slot holding the best copy of petal `configIndex` on the active row, or
+/// -1 for a row with none. `equippedAt(i)` is active slot i as equipped
+/// (equippedPetal), so a mimic copying the petal is a copy at the mimic's tier
+/// and competes like any other.
+///
+/// The highest tier wins and the leftmost of equals breaks the tie, so the
+/// answer depends on the bar alone -- not on which happened to reload first --
+/// and does not move while the bar does not. For a petal that does not stack
+/// (petalOnlyBestCopyCounts) it is the one copy that counts.
+///
+/// A template over the accessor for the reason barReloadCut is one: the server
+/// lets only this moon out (liveMoonSlotOf), and the client draws every other
+/// copy of such a petal as not loaded.
+template <class EquippedAt>
+int bestCopySlot(std::uint16_t configIndex, EquippedAt&& equippedAt) {
+    int best = -1;
+    Rarity held = Rarity::Common;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const EquippedPetal petal = equippedAt(i);
+        if (petal.empty() || petal.configIndex != configIndex) continue;
+        // Strictly higher, so the leftmost of equal tiers keeps it.
+        if (best < 0 || rarityIndex(petal.rarity) > rarityIndex(held)) {
+            best = i;
+            held = petal.rarity;
+        }
+    }
+    return best;
 }
 
 // ---------------------------------------------------------------------------

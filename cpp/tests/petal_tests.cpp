@@ -4416,7 +4416,7 @@ TEST(a_flower_has_one_moon_however_many_are_equipped) {
     CHECK_EQ(moons.size(), std::size_t(1));
     if (moons.size() != 1) return;
     CHECK_EQ(int(rig.world.get<PetalInstance>(moons.front()).slot), 2);
-    CHECK_EQ(liveMoonSlot(fixture().registry, rig.world.get<Loadout>(rig.player)), 2);
+    CHECK_EQ(liveMoonSlotOf(fixture().registry, rig.world.get<Loadout>(rig.player)), 2);
     // The others sit ready, holding nothing.
     CHECK(!rig.slot(0).broken);
     CHECK(!rig.slot(4).broken);
@@ -4429,7 +4429,7 @@ TEST(a_flower_has_one_moon_however_many_are_equipped) {
     // Taking it off hands the moon to the next best, after its own reload.
     rig.unequip(2);
     rig.tick();
-    CHECK_EQ(liveMoonSlot(fixture().registry, rig.world.get<Loadout>(rig.player)), 4);
+    CHECK_EQ(liveMoonSlotOf(fixture().registry, rig.world.get<Loadout>(rig.player)), 4);
     CHECK(rig.tickUntil([&] { return moonOf(rig) != NULL_ENTITY; }, kMoonEquipTicks));
     const Entity next = moonOf(rig);
     if (next != NULL_ENTITY) {

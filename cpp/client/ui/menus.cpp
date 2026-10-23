@@ -1390,6 +1390,19 @@ double slotReloadProgress(const NetClient& net, int index) {
     return std::clamp(1.0 - remaining / total, 0.0, 1.0);
 }
 
+/// Whether the flower's slot `index` holds a petal that does nothing because a
+/// better copy of it is on the bar (petalOnlyBestCopyCounts). Nothing of it is
+/// out to break, so once its equip reload has run out the server reports
+/// nothing about it, and it would read as loaded.
+bool slotOutranked(const NetClient& net, int index) {
+    if (index < 0 || index >= kLoadoutActiveSlots) return false;
+    const Profile& profile = net.profile();
+    const auto equippedAt = [&](int i) { return profile.equipped(content(), i); };
+    const EquippedPetal equipped = equippedAt(index);
+    return !equipped.empty() && petalOnlyBestCopyCounts(content().petal(equipped.configIndex)) &&
+           bestCopySlot(equipped.configIndex, equippedAt) != index;
+}
+
 /// How much of the flower's slot `index` is still standing, for the tile fill.
 /// A slot the server has said nothing about -- a storage row, or the frames
 /// before the first snapshot -- reads as untouched.
@@ -1868,7 +1881,12 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         tile.petalIndex = anim.petalIndex;
         tile.rarity = anim.rarity;
         tile.timeSeconds = timeSeconds;
-        tile.reload = slotReloadProgress(net, entry.slot);
+        // An outranked petal wears the wedge whole, as a petal that has just
+        // broken does, for as long as the better one is on the bar -- not a
+        // sweep, because it is not on its way back.
+        tile.reload = inGame_ && slotOutranked(net, entry.slot)
+                          ? 0.0
+                          : slotReloadProgress(net, entry.slot);
         tile.health = slotHealthFraction(net, entry.slot);
         tile.counter = slotCounterLabel(net, entry.slot);
         // The petal in the slot being struck, on the field. Only in game: on

@@ -519,21 +519,9 @@ PetalStats instanceStats(const ContentRegistry& registry, const PetalInstance& i
 
 } // namespace
 
-int liveMoonSlot(const ContentRegistry& registry, const Loadout& loadout) {
-    int best = -1;
-    Rarity held = Rarity::Common;
-    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        // Resolved, so a mimic beside a moon is a moon at the mimic's tier and
-        // competes for the one place like any other.
-        const EquippedPetal slot = equippedPetal(registry, loadout, i);
-        if (slot.empty() || !petalAnchorsRing(registry.petal(slot.configIndex))) continue;
-        // Strictly higher, so the leftmost of equal tiers keeps it.
-        if (best < 0 || rarityIndex(slot.rarity) > rarityIndex(held)) {
-            best = i;
-            held = slot.rarity;
-        }
-    }
-    return best;
+int liveMoonSlotOf(const ContentRegistry& registry, const Loadout& loadout) {
+    return bestCopySlot(registry.petalIndex(kMoonPetalId),
+                        [&](int i) { return equippedPetal(registry, loadout, i); });
 }
 
 bool championCrownTier(const ContentRegistry& registry, const Loadout& loadout, Rarity& tier) {
@@ -794,7 +782,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
 
     // The moon does not stack: one slot's comes out, and every other moon on
     // the bar is built holding nothing.
-    const int moonSlot = liveMoonSlot(registry, loadout);
+    const int moonSlot = liveMoonSlotOf(registry, loadout);
 
     // Bucket the live petals by slot, dropping the handles the world has
     // already reaped and the ones combat killed this tick. Both count as
