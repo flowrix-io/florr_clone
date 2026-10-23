@@ -3689,6 +3689,11 @@
                  "point":true,
                  "properties":[
                         {
+                         "name":"color",
+                         "type":"color",
+                         "value":"#ff00ff00"
+                        }, 
+                        {
                          "name":"id",
                          "type":"string",
                          "value":"computer_portal_desert"

@@ -557,6 +557,11 @@
                  "point":true,
                  "properties":[
                         {
+                         "name":"color",
+                         "type":"color",
+                         "value":"#ff00ff00"
+                        }, 
+                        {
                          "name":"id",
                          "type":"string",
                          "value":"computer_portal"
@@ -875,7 +880,7 @@
          "visible":true,
          "x":0,
          "y":0
-        },
+        }, 
         {
          "draworder":"topdown",
          "id":8,
@@ -890,7 +895,7 @@
                          "name":"npc",
                          "type":"string",
                          "value":"assembler"
-                        },
+                        }, 
                         {
                          "name":"rarity",
                          "type":"string",
