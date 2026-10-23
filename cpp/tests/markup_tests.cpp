@@ -1,13 +1,13 @@
 #include "test.h"
 
-#include "client/ui/markup.h"
+#include "shared/game/markup.h"
 
 #include <string>
 
-using flix::ui::kWebMarkup;
-using flix::ui::markupPlainText;
-using flix::ui::MarkupSpan;
-using flix::ui::parseMarkup;
+using flix::kWebMarkup;
+using flix::markupPlainText;
+using flix::MarkupSpan;
+using flix::parseMarkup;
 
 // The chat wire carries markup, and this is where the rules about which tags
 // survive it are pinned down. Two of them matter beyond looks: <script> and
@@ -226,4 +226,15 @@ TEST(markup_style_attribute_only_yields_colour) {
     CHECK(spans[0].hasColor);
     // #abc expands the way CSS expands it.
     CHECK_EQ(spans[0].color, std::uint32_t{0xAABBCCu});
+}
+
+TEST(markup_links_can_be_read_either_way_whatever_the_build) {
+    // The server is built one way and serves clients of both, so it asks.
+    flix::MarkupOptions web;
+    web.links = true;
+    flix::MarkupOptions native;
+    native.links = false;
+    const std::string line = "see <a href=\"https://florr.io/\">this</a> now";
+    CHECK_EQ(flatten(parseMarkup(line, web)), std::string("see this now"));
+    CHECK_EQ(flatten(parseMarkup(line, native)), std::string("see  now"));
 }

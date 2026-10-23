@@ -1979,6 +1979,98 @@ TEST(a_whisper_reaches_one_player_and_echoes_to_the_sender) {
     CHECK(sawText(alice, "Usage: /w"));
 }
 
+TEST(a_line_with_a_blocked_word_reaches_nobody_and_the_speaker_is_told) {
+    Harness h("cmd-words", [](const std::string& path) {
+        seedUser(path, "alice", "password7");
+        seedUser(path, "bob", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    NetClient bob;
+    CHECK(loginAs(h, alice, "alice", "password7"));
+    CHECK(loginAs(h, bob, "bob", "password7"));
+
+    // Global: nothing of it goes out, the speaker's own copy included.
+    const std::size_t bobBefore = bob.chat().size();
+    CHECK(say(h, alice, "well <b>sh1t</b>, that hurt"));
+    h.step(10, {&alice, &bob});
+    CHECK(sawText(alice, "Your message was not sent: it contains a word that is not allowed"));
+    CHECK(!sawText(alice, "that hurt"));
+    CHECK_EQ(bob.chat().size(), bobBefore);
+
+    // A whisper takes the command path, and is refused the same way.
+    CHECK(say(h, alice, "/w bob you f.u.c.k"));
+    h.step(10, {&alice, &bob});
+    CHECK_EQ(bob.chat().size(), bobBefore);
+    CHECK(!sawText(alice, "f.u.c.k"));
+
+    // And a clean line still gets through.
+    alice.sendChat("good game");
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return bob.chat().size() > bobBefore; }, 120));
+    CHECK(lineReading(bob, "good game") != nullptr);
+}
+
+TEST(spam_is_refused_on_every_channel) {
+    Harness h("cmd-spam", [](const std::string& path) {
+        seedUser(path, "alice", "password7");
+        seedUser(path, "bob", "password7");
+        seedUser(path, "carol", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    NetClient bob;
+    NetClient carol;
+    const std::vector<NetClient*> all{&alice, &bob, &carol};
+    CHECK(loginAs(h, alice, "alice", "password7"));
+    CHECK(loginAs(h, bob, "bob", "password7"));
+    CHECK(loginAs(h, carol, "carol", "password7"));
+    const auto heard = [&](const NetClient& client, const std::string& text) {
+        int count = 0;
+        for (const ChatLine& line : client.chat()) count += line.text == text ? 1 : 0;
+        return count;
+    };
+
+    // The same line again, however it is dressed, is refused -- once.
+    alice.sendChat("anyone want to trade?");
+    CHECK(h.stepUntil(all, [&] { return heard(bob, "anyone want to trade?") == 1; }, 120));
+    CHECK(say(h, alice, "ANYONE want to trade??", 120));
+    CHECK(sawText(alice, "Your message was not sent: you said that a moment ago."));
+    h.step(10, all);
+    CHECK_EQ(heard(bob, "ANYONE want to trade??"), 0);
+
+    // Whispering it to somebody new is not saying it again.
+    CHECK(say(h, alice, "/w bob anyone want to trade?", 120));
+    h.step(10, all);
+    CHECK_EQ(heard(bob, "anyone want to trade?"), 2);
+
+    // A flood of one character never reaches anyone.
+    CHECK(say(h, alice, std::string(40, 'a'), 120));
+    CHECK(sawText(alice, "Your message was not sent: it is mostly the same thing over and over."));
+    h.step(10, all);
+    CHECK(!sawText(bob, std::string(40, 'a')));
+
+    // Once the window has passed the line is the speaker's to say again --
+    // the allowance has refilled by then too.
+    h.step(static_cast<int>(31.0 / net::kTickSeconds), all);
+    alice.sendChat("anyone want to trade?");
+    CHECK(h.stepUntil(all, [&] { return heard(bob, "anyone want to trade?") == 3; }, 120));
+
+    // A guild line spends the chat allowance, not the command one: a burst
+    // runs dry at the chat rate rather than six times faster.
+    carol.sendChat("/guild-create spams Spam Team");
+    CHECK(h.stepUntil(all, [&] { return carol.guild().joined; }, 200));
+    for (int i = 0; i < 8; ++i) carol.sendChat("/g line number " + std::to_string(i));
+    h.step(20, all);
+    int guildLines = 0;
+    for (const ChatLine& line : carol.chat()) {
+        if (line.channel == net::ChatChannel::Guild && line.author == "carol") ++guildLines;
+    }
+    CHECK_EQ(guildLines, 4);
+    CHECK(sawText(carol, "You are sending messages too quickly."));
+}
+
 TEST(a_local_line_reaches_only_the_players_who_can_see_the_speaker) {
     Harness h("cmd-local", [](const std::string& path) {
         seedUser(path, "alice", "password7");

@@ -708,7 +708,7 @@ private:
     /// One System line to one connection. Console output is one line per
     /// message rather than one message with embedded newlines, where the
     /// browser build joined its lines with `<br/>`; the client parses that
-    /// markup as well (client/ui/markup.cpp), so a reply may be either, and
+    /// markup as well (shared/game/markup.cpp), so a reply may be either, and
     /// /help and /guild-info are one message joined with `<br/>`.
     void sendSystem(net::Connection&, const std::string& text);
 
@@ -850,10 +850,14 @@ private:
     /// Local through sayInPublic, a guild or squad line, a whisper -- so the
     /// mute is one rule and its notice one sentence (server/chat_commands.cpp).
     bool speakerMuted(const Session&, net::Connection&);
-    /// Cuts every picture not served by a listed image host out of a line a
-    /// player is about to say to others, telling them what went and why.
-    /// False when nothing is left worth sending.
-    bool screenChatImages(net::Connection& speaker, std::string& text);
+    /// Readies a line a player is about to say to others on `channel` --
+    /// `to` is the recipient of a whisper, empty otherwise. Cuts every picture
+    /// not served by a listed image host, telling them what went and why, and
+    /// refuses the line outright if it draws a blocked word or is spam
+    /// (server/chat_moderation.h). False, with the speaker told why, when the
+    /// line is not to go out.
+    bool screenChatLine(Session&, net::Connection& speaker, net::ChatChannel channel,
+                        const std::string& to, std::string& text);
     /// A Local line, to every player in the speaker's realm whose viewport has
     /// the speaker's flower on it, the speaker included.
     void sendLocalChat(const Session& speaker, const std::string& text,

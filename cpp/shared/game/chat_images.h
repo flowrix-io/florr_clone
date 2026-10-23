@@ -9,8 +9,8 @@
 //
 // Both halves read this one list. The server strips a picture from anywhere
 // else before the line goes out, and tells the sender why
-// (GameServer::screenChatImages); the client refuses to fetch one even if a
-// line carrying it arrives anyway (client/ui/markup.cpp).
+// (GameServer::screenChatLine); the client refuses to fetch one even if a
+// line carrying it arrives anyway (shared/game/markup.cpp).
 
 #include <string>
 

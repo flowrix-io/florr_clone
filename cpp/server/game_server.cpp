@@ -16,6 +16,7 @@
 
 #include "server/admin_db_key.h"
 #include "server/auto_update.h"
+#include "server/chat_moderation.h"
 #include "server/guilds.h"
 #include "server/loot_eligibility.h"
 #include "server/text.h"
@@ -2261,6 +2262,17 @@ void GameServer::handleInput(Session& session, ByteReader& reader) {
 
 namespace {
 
+/// How long a line a player said stays theirs for the repeat check: the
+/// same line to the same place inside it is refused. Long enough that a line
+/// cannot come round again on the rate limit's every-two-seconds beat for a
+/// while, short enough that "gg" after one fight and "gg" after the next
+/// both go out.
+constexpr double kChatRepeatWindowMillis = 30000.0;
+
+constexpr const char* kBlockedWordNotice =
+    "<span style=\"color: #ff8866;\">Your message was not sent: it contains a word that is not "
+    "allowed in chat.</span>";
+
 /// True when a chat line names a raid tier as a bare word.
 ///
 /// The reference tests `/\b(super|unique)\b/i`, and the word boundary is the
@@ -2350,7 +2362,7 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
     if (speakerMuted(session, connection)) return;
 
     std::string said = text;
-    if (!screenChatImages(connection, said)) return;
+    if (!screenChatLine(session, connection, channel, "", said)) return;
 
     if (channel == net::ChatChannel::Local) {
         sendLocalChat(session, said, speakerNetId);
@@ -2365,19 +2377,59 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
     if (mentionsRaidTier(said)) triggerBotRaid(clockMillis_);
 }
 
-bool GameServer::screenChatImages(net::Connection& speaker, std::string& text) {
-    // Everyone, admins included: the client refuses any other host whoever
-    // posted it, so letting one through here would only send a picture
-    // nobody can see.
+bool GameServer::screenChatLine(Session& session, net::Connection& speaker,
+                                net::ChatChannel channel, const std::string& to,
+                                std::string& text) {
+    // Everyone, admins included, for all of it: the client refuses any other
+    // host whoever posted it, so letting one through here would only send a
+    // picture nobody can see -- and a full admin's line reaches the same
+    // players a guest's does.
     ChatImageFilter filtered = filterChatImages(text);
-    if (filtered.removed == 0) return true;
-    sendSystem(speaker, "<span style=\"color: #ff8866;\">" +
-                            std::string(filtered.removed == 1 ? "Your image was" : "Your images were") +
-                            " removed: images must come from a known image host (" +
-                            chatImageHostSummary() + ").</span>");
-    text = std::move(filtered.text);
-    // A line that was only the pictures is not sent as an empty one.
-    return text.find_first_not_of(' ') != std::string::npos;
+    if (filtered.removed != 0) {
+        sendSystem(speaker, "<span style=\"color: #ff8866;\">" +
+                                std::string(filtered.removed == 1 ? "Your image was" : "Your images were") +
+                                " removed: images must come from a known image host (" +
+                                chatImageHostSummary() + ").</span>");
+        text = std::move(filtered.text);
+    }
+    // A line that was only the pictures is not sent as an empty one, and
+    // neither is one of markup that draws nothing -- not even a notice, any
+    // more than an empty line gets one.
+    if (chatLineDrawsNothing(text)) return false;
+
+    // Refused, not starred: nothing of it reaches anyone. The word goes in
+    // the log, which is how an admin tells a false match from a real one;
+    // the speaker is not shown it.
+    const std::string word = blockedWordIn(text);
+    if (!word.empty()) {
+        std::printf("[chat] refused a line from %s (\"%s\"): %s\n", session.username.c_str(),
+                    word.c_str(), text.c_str());
+        sendSystem(speaker, kBlockedWordNotice);
+        return false;
+    }
+
+    if (chatLineFloods(text)) {
+        sendSystem(speaker, "<span style=\"color: #ff8866;\">Your message was not sent: it is "
+                            "mostly the same thing over and over.</span>");
+        return false;
+    }
+
+    // The same line to the same place again within the window. Where it went
+    // is part of it: whispering "hi" to two players is not saying it twice.
+    std::deque<Session::SaidLine>& recent = session.recentLines;
+    while (!recent.empty() && clockMillis_ - recent.front().atMillis > kChatRepeatWindowMillis) {
+        recent.pop_front();
+    }
+    const std::string key = std::to_string(static_cast<int>(channel)) + ' ' + lowerCase(to) +
+                            '\n' + chatRepeatKey(text);
+    for (const Session::SaidLine& said : recent) {
+        if (said.key != key) continue;
+        sendSystem(speaker, "<span style=\"color: #ff8866;\">Your message was not sent: you "
+                            "said that a moment ago.</span>");
+        return false;
+    }
+    recent.push_back({key, clockMillis_});
+    return true;
 }
 
 void GameServer::sendLocalChat(const Session& speaker, const std::string& text,

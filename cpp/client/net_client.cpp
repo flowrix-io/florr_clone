@@ -4,11 +4,11 @@
 #include <cstdio>
 #include <iterator>
 
-#include "client/ui/markup.h"
 #include "client/web/reload.h"
 #include "shared/game/absorb.h"
 #include "shared/core/text.h"
 #include "shared/game/map_elements.h"
+#include "shared/game/markup.h"
 
 namespace flix {
 
@@ -1681,7 +1681,7 @@ void NetClient::pushChat(net::ChatChannel channel, std::string author, std::stri
     // colour, so the styling is dropped rather than honoured -- but a line
     // whose tags were left in it would show them as literal angle brackets.
     if (channel == net::ChatChannel::Global || channel == net::ChatChannel::Local) {
-        std::string spoken = ui::markupPlainText(line.text);
+        std::string spoken = markupPlainText(line.text);
         // A bubble is one pill on one row; a hard break inside it would
         // otherwise draw as a missing glyph in the middle of the line.
         std::replace(spoken.begin(), spoken.end(), '\n', ' ');
@@ -1772,7 +1772,7 @@ void NetClient::handleChat(ByteReader& reader) {
     // minute old.
     if (channel == net::ChatChannel::Admin) {
         adminAnnouncement_.author = chat_.back().author;
-        adminAnnouncement_.text = ui::markupPlainText(chat_.back().text);
+        adminAnnouncement_.text = markupPlainText(chat_.back().text);
         ++adminAnnouncement_.sequence;
     }
 }

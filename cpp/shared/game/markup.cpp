@@ -1,4 +1,4 @@
-#include "client/ui/markup.h"
+#include "shared/game/markup.h"
 
 #include "shared/core/text.h"
 #include "shared/game/chat_images.h"
@@ -8,7 +8,7 @@
 #include <cctype>
 #include <cstdlib>
 
-namespace flix::ui {
+namespace flix {
 
 namespace {
 
@@ -199,7 +199,7 @@ struct Frame {
 };
 
 /// Folds a tag's own attributes into the style it pushes.
-void applyAttributes(const Tag& tag, MarkupSpan& style) {
+void applyAttributes(const Tag& tag, const MarkupOptions& options, MarkupSpan& style) {
     for (const auto& [name, value] : tag.attributes) {
         if (name == "color") {
             std::uint32_t rgb = 0;
@@ -236,7 +236,7 @@ void applyAttributes(const Tag& tag, MarkupSpan& style) {
                 if (semicolon == std::string::npos) break;
                 at = semicolon + 1;
             }
-        } else if (name == "href" && kWebMarkup) {
+        } else if (name == "href" && options.links) {
             // Only a real scheme, and only in a build that has a page to open
             // it in. A `javascript:` href is exactly what this whole file
             // exists to refuse.
@@ -247,7 +247,7 @@ void applyAttributes(const Tag& tag, MarkupSpan& style) {
 
 } // namespace
 
-std::vector<MarkupSpan> parseMarkup(const std::string& source) {
+std::vector<MarkupSpan> parseMarkup(const std::string& source, const MarkupOptions& options) {
     std::vector<MarkupSpan> spans;
     std::vector<Frame> stack;
     // Set while inside a dropped element, along with the tag that opened it so
@@ -343,7 +343,7 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source) {
             }
 
             TagKind kind = classify(tag.name);
-            if (kind == TagKind::Rich && !kWebMarkup) kind = TagKind::Dropped;
+            if (kind == TagKind::Rich && !options.links) kind = TagKind::Dropped;
 
             if (kind == TagKind::Break) {
                 flush();
@@ -419,7 +419,7 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source) {
             if (tag.name == "u") frame.style.underline = true;
             if (tag.name == "blink") frame.style.blink = true;
             if (tag.name == "a") frame.style.underline = true;
-            applyAttributes(tag, frame.style);
+            applyAttributes(tag, options, frame.style);
             if (tag.name == "a" && frame.style.href.empty()) {
                 // A link with nothing safe to open is just its own label.
                 frame.style.underline = false;
@@ -461,4 +461,4 @@ std::string markupPlainText(const std::string& source) {
     return out;
 }
 
-} // namespace flix::ui
+} // namespace flix

@@ -1116,7 +1116,7 @@ has not come up.
 
 Chat content is not plain text on the wire. The server sends
 `<b style="color: #2bffa4;">A super crab has spawned!</b>` and joins a long
-listing's lines (`/help`, `/guild-info`) with `<br/>`. `client/ui/markup.h`
+listing's lines (`/help`, `/guild-info`) with `<br/>`. `shared/game/markup.h`
 parses that subset into styled runs; the transcript in `App::drawChat` lays
 those out rather than splitting the raw string on spaces, which used to print
 the tags.
@@ -1147,6 +1147,26 @@ the tags.
   show embed" button for the other. Nothing here reinstates either, and no code
   path in this client executes or embeds what a chat line asks it to. If you
   are adding a tag, that is the line not to cross.
+
+The parser lives in `shared/` because the server reads lines with it too.
+**Chat auto-moderation** (`server/chat_moderation.h`) refuses a line a player
+says to others — Global, Local, squad, guild or whisper, all through
+`GameServer::screenChatLine` — when it draws a blocked word or is spam, and
+tells the speaker why; nothing of it reaches anyone. Spam is a line repeating
+what the speaker said to the same place in the last 30 seconds (compared
+folded: "Hi!!" is "hi"), a line that is mostly one short stretch over and over
+("aaaa…", "spam spam spam spam spam"), and a line that draws nothing; flooding
+is the session's rate limit, which every channel spends, squad and guild lines
+included. Admin announcements get the word check only. Every check judges what
+a client will *draw*, not the raw bytes: `fu<b></b>ck`, `f&#117;ck` and
+`fu<x>junk</x>ck` all draw a word their source does not spell, so the word
+check parses the line both ways a client may (with and without `<a>`) and
+folds look-alike and "fancy text" letters, stand-ins (`sh1t`, `a$$`), held
+letters, punctuation and spelled-out letters. Each listed word says whether it
+may sit inside a word, must start one, or must be the whole word, which is what
+keeps "class", "assassin" and "Scunthorpe" clean; the lists are at the top of
+`chat_moderation.cpp`, and a refused line is logged with the word that
+matched.
 
 ## The asset browser and boot scripts
 

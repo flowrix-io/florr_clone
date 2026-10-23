@@ -822,6 +822,13 @@ TEST(the_announce_gate_its_byte_cap_and_its_chat_budget) {
     CHECK(say(h, boss, "/admin announce", all));
     CHECK(sawText(boss, "Write a message after announce."));
 
+    // Refused like any other line with a blocked word in it: a full admin's
+    // reaches the same players. Not billed, as a refusal above it is not.
+    CHECK(say(h, boss, "/admin announce Doors open, you shit", all));
+    CHECK(sawText(boss, "Announcement not sent: it contains a word that is not allowed in chat."));
+    h.step(10, all);
+    CHECK(player.adminAnnouncement().text != "Doors open, you shit");
+
     // Billed as a line said to everyone: a burst runs dry.
     const int beforeBurst = adminLines(player);
     for (int i = 0; i < 6; ++i) boss.sendChat("/admin announce burst " + std::to_string(i));

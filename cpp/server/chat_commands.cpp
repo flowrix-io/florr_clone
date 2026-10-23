@@ -15,7 +15,7 @@
 //    server joined a reply's lines with `<br/>` inside one message. Here the
 //    console sends one message per line, the longer listings (/help,
 //    /guild-info) still arrive as one message joined with `<br/>`, and the
-//    client parses the markup either way (client/ui/markup.cpp). The verbs
+//    client parses the markup either way (shared/game/markup.cpp). The verbs
 //    this build added -- the boss timers, the bot and squad reports,
 //    spawn_npc, control, announce, the dashboard and the database editor among
 //    them -- have wording of their own.
@@ -40,6 +40,7 @@
 #include "server/admin_db_key.h"
 #include "server/auto_update.h"
 #include "server/bot_identity.h"
+#include "server/chat_moderation.h"
 #include "server/guilds.h"
 #include "server/systems/npcs.h"
 #include "server/systems/spawning.h"
@@ -440,8 +441,15 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out("You are not in a guild.");
             return true;
         }
+        // Billed as a line said to other players, which is what it is: on the
+        // command budget alone a guild could be buried at two lines a second.
+        if (!spend(session.chatAllowance)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "You are sending messages too quickly.");
+            return true;
+        }
         std::string said = argument;
-        if (!screenChatImages(connection, said)) return true;
+        if (!screenChatLine(session, connection, net::ChatChannel::Guild, "", said)) return true;
         const Json& guild = database_.storedTable("guilds")[guildName];
         const Json& members = guild["memberUsernames"];
         for (std::size_t i = 0; i < members.size(); ++i) {
@@ -463,8 +471,14 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out("You are not in a squad.");
             return true;
         }
+        // Billed as a guild line is.
+        if (!spend(session.chatAllowance)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "You are sending messages too quickly.");
+            return true;
+        }
         std::string said = argument;
-        if (!screenChatImages(connection, said)) return true;
+        if (!screenChatLine(session, connection, net::ChatChannel::Squad, "", said)) return true;
         // Signed with the speaker alone, as a guild line is: the channel is
         // what tags it "[Squad]".
         for (const SquadMemberId& member : squad->members) {
@@ -513,7 +527,9 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // whispering to whoever their latest line names. The name is the
         // account's own spelling, not what was typed.
         std::string said = message;
-        if (!screenChatImages(connection, said)) return true;
+        if (!screenChatLine(session, connection, net::ChatChannel::Whisper, target->username, said)) {
+            return true;
+        }
         sendChatTo(*peer, net::ChatChannel::Whisper, session.username, said);
         sendChatTo(connection, net::ChatChannel::WhisperSent, target->username, said);
         return true;
@@ -1170,6 +1186,14 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 " bytes.");
             return;
         }
+        // The word check alone: a banner is a full admin's deliberate act,
+        // not a line in a stream, so the spam checks have nothing to say
+        // about it -- and the rate limit below still bounds a burst.
+        const std::string said = escapedMarkup(rest);
+        if (!blockedWordIn(said).empty()) {
+            out("Announcement not sent: it contains a word that is not allowed in chat.");
+            return;
+        }
         // Billed as a line said to other players, which is what it is, the
         // way a whisper is: the command budget alone would let one admin
         // bury everyone in banners.
@@ -1183,7 +1207,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         std::printf("[admin] %s announced: %s\n", session.username.c_str(), rest.c_str());
         // Signed with the account's own name, which the server holds and no
         // client chooses.
-        broadcastChat(net::ChatChannel::Admin, session.username, escapedMarkup(rest), 0);
+        broadcastChat(net::ChatChannel::Admin, session.username, said, 0);
         return;
     }
 

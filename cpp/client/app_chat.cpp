@@ -7,7 +7,7 @@
 // drawChatField() are for.
 //
 // The transcript is where the server's markup lands. A line arrives as text
-// with tags in it, parseMarkup (client/ui/markup.h) turns those back into
+// with tags in it, parseMarkup (shared/game/markup.h) turns those back into
 // styled runs behind the channel's own "[Squad] name:" tag, and
 // layoutChatMessage() flows the runs into the column -- breaking between
 // words, and inside a word that will not fit a line of its own.
@@ -31,13 +31,13 @@
 #include <utility>
 
 #include "client/ui/draw.h"
-#include "client/ui/markup.h"
 #include "client/ui/remote_image.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/touch_scroll.h"
 #include "shared/core/text.h"
 #include "shared/game/html_entities.h"
+#include "shared/game/markup.h"
 #include "shared/game/rarity.h"
 
 namespace flix {
@@ -604,7 +604,7 @@ std::vector<ChatToken> chatLineTokens(const ChatLine& line) {
     // with <br/>. Splitting the raw string on spaces printed the tags as
     // words; parseMarkup turns them back into styling.
     bool afterWhitespace = true;
-    for (const ui::MarkupSpan& span : ui::parseMarkup(line.text)) {
+    for (const MarkupSpan& span : parseMarkup(line.text)) {
         if (span.lineBreak) {
             ChatToken token{{}, kChatTextSize, kPaper, false, false, false, true, false};
             token.code = span.code;

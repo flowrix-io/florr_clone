@@ -1,6 +1,11 @@
 #pragma once
 // The chat line's markup: the small HTML subset the server actually sends.
 //
+// Shared because the server reads lines the way the client draws them: chat
+// moderation (server/chat_moderation.h) has to judge what a reader will SEE,
+// which is not the raw string -- "fu<b></b>ck" and "f&#117;ck" both draw a
+// word the raw bytes do not contain.
+//
 // Chat content is not plain text on the wire. The server writes lines like
 //
 //     <b style="color: #2bffa4;">A super crab has spawned somewhere!</b>
@@ -39,7 +44,7 @@
 #include <string>
 #include <vector>
 
-namespace flix::ui {
+namespace flix {
 
 /// Whether this build may honour the tags that only mean something inside a
 /// real page. Only the emscripten build can, and it defines FLIX_WEB_BUILD.
@@ -70,7 +75,8 @@ struct MarkupSpan {
     std::uint32_t color = 0;    ///< 0xRRGGBB
 
     /// The destination of the enclosing <a href>, http(s) only. Always empty
-    /// unless kWebMarkup, because only a page can follow it.
+    /// unless links are honoured (MarkupOptions::links), because only a page
+    /// can follow it.
     ///
     /// Parsed and carried, not yet navigable: the transcript marks a link by
     /// underlining it, but nothing opens one. Making it clickable means
@@ -90,13 +96,21 @@ struct MarkupSpan {
     std::string image;
 };
 
+/// How to read a line. The defaults are this build's own reading.
+struct MarkupOptions {
+    /// Whether <a> is honoured as styling. False drops it with its content,
+    /// which is what a build with no page to open a link in does. The server
+    /// is built one way and serves clients of both, so it asks for each.
+    bool links = kWebMarkup;
+};
+
 /// Splits `source` into styled runs. Never throws and never fails: markup it
 /// cannot make sense of degrades to text, exactly as a browser's parser does.
-std::vector<MarkupSpan> parseMarkup(const std::string& source);
+std::vector<MarkupSpan> parseMarkup(const std::string& source, const MarkupOptions& options = {});
 
 /// The same content with every tag resolved away and every entity decoded,
 /// for the surfaces that draw one flat string. <br> becomes '\n', and an
 /// <img> the word "[image]".
 std::string markupPlainText(const std::string& source);
 
-} // namespace flix::ui
+} // namespace flix

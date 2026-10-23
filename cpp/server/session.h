@@ -9,6 +9,7 @@
 // ordinary operations rather than special cases.
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 
@@ -162,6 +163,15 @@ struct Session {
     double commandAllowance = 12;
     double inputAllowance = 60;
     double lastRefillMillis = 0;
+
+    /// The lines this connection said to other players lately, oldest
+    /// first, for the repeat check (GameServer::screenChatLine): where each
+    /// went and what it drew, folded (chatRepeatKey), and when.
+    struct SaidLine {
+        std::string key;
+        double atMillis = 0;
+    };
+    std::deque<SaidLine> recentLines;
 
     bool authenticated() const {
         return stage == SessionStage::Authenticated || stage == SessionStage::Playing;

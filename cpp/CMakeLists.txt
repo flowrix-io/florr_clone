@@ -55,7 +55,7 @@ add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 #
 # FLIX_WEB_BUILD is what the client compiles differently: the chat tags that
 # need a document to mean anything are honoured only where there is one. See
-# client/ui/markup.h.
+# shared/game/markup.h.
 if(NOT EMSCRIPTEN)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
@@ -107,6 +107,7 @@ add_library(flix_shared STATIC
   shared/game/spatial.cpp
   shared/game/chat_images.cpp
   shared/game/html_entities.cpp
+  shared/game/markup.cpp
 )
 target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -120,6 +121,7 @@ add_library(flix_server STATIC
   server/bot_ai.cpp
   server/auto_update.cpp
   server/chat_commands.cpp
+  server/chat_moderation.cpp
   server/replication.cpp
   server/session.cpp
   server/sacrifice.cpp
@@ -162,7 +164,6 @@ add_library(flix_client STATIC
   client/ui/text_input.cpp
   client/ui/text_select.cpp
   client/ui/context_menu.cpp
-  client/ui/markup.cpp
   client/ui/remote_image.cpp
   client/ui/menu_style.cpp
   client/ui/menu_widgets.cpp
