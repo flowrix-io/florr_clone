@@ -72,9 +72,10 @@ inline constexpr std::uint32_t kSelectionPlate = 0x1E3A63u;
 /// "HP:" in health green, "Damage:" in damage red. Florr's `Colors/<name>`
 /// string table, verbatim from its web build (~/florr_images/client.wasm),
 /// whose `<Petal|Mob>/Attribute/<stat>` strings also say which stat takes
-/// which colour. Its `generic` (#FFE763) is deliberately not used yet. The
-/// floating damage numbers are painted in the damage, poison and lightning
-/// ones.
+/// which colour. `generic` names the stats that are about nothing in
+/// particular (Evasion, Reload, Spawn Cost). The floating damage numbers are
+/// painted in the damage, poison and lightning ones.
+inline constexpr std::uint32_t kStatGeneric    = 0xFFE763u;
 inline constexpr std::uint32_t kStatHealth     = 0x66FF66u;
 inline constexpr std::uint32_t kStatDamage     = 0xFF6666u;
 inline constexpr std::uint32_t kStatArmor      = 0x666666u;

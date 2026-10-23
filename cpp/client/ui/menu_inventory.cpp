@@ -252,23 +252,80 @@ std::string percentNumber(double fraction) {
     return buffer;
 }
 
+/// One decimal, dropped when it is zero: a blueberry's 1.2 mana would read as
+/// 1 through abbreviate().
+std::string oneDecimal(double value) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%.1f", value);
+    std::string text = buffer;
+    if (text.size() > 2 && text.compare(text.size() - 2, 2, ".0") == 0) text.erase(text.size() - 2);
+    return text;
+}
+
+/// Seconds as florr's header prints them: always one decimal, "2.0s".
+std::string reloadSeconds(double millis) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%.1fs", millis / 1000.0);
+    return buffer;
+}
+
+/// florr's colour markup around `text`, for a TooltipLine with `markup` set.
+std::string colourMarkup(const std::string& text, std::uint32_t rgb) {
+    char open[24];
+    std::snprintf(open, sizeof open, "<c val=\"#%06X\">", rgb & 0xFFFFFFu);
+    return open + text + "</c>";
+}
+
 /// Name / tier / description / HP / damage, in the shared petal tooltip's
 /// order. HP and damage carry the account's skill tiers, since that is the
-/// number the player will actually see in the field.
+/// number the player will actually see in the field, and the reload carries
+/// `reloadScale` -- the Reload talent and the bar's golden leaves -- for the
+/// same reason.
 std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rarity,
-                                           const SkillSet& skills) {
+                                           const SkillSet& skills, double reloadScale) {
     const PetalConfig& config = content().petal(petalIndex);
     const PetalStats stats = content().petalStats(petalIndex, rarity);
     const double health = std::round(stats.health * skills.healthScale(SkillId::PetalHealth));
     const double damage = std::round(stats.damage * skills.effectScale(SkillId::Damage));
 
     std::vector<TooltipLine> lines;
-    lines.push_back({titleCase(config.name), 20.0});
+    // florr's header: on the name's right, what bringing the petal out costs
+    // in mana and how long its reload is, then the wait between spawning and
+    // acting -- a rose's heal, an orb's mana -- when it has one ("3.5s +
+    // 1.5s"). A worn petal has no reload and florr prints nothing for it.
+    TooltipLine title{titleCase(config.name), 20.0};
+    if (!config.noPhysics) {
+        if (stats.requiredMana > 0.0) {
+            // Paid on spawn, not on use -- see PetalConfig::requiredMana.
+            title.badges.push_back({oneDecimal(stats.requiredMana), kStatMana, TooltipIcon::Mana});
+            title.badges.push_back({" +"});
+        }
+        std::string reload = reloadSeconds(stats.reloadMillis * reloadScale);
+        const double charge = stats.mana > 0.0                         ? stats.manaChargeMillis
+                              : (stats.heal > 0.0 || stats.shield > 0.0) ? stats.healChargeMillis
+                                                                         : 0.0;
+        if (charge > 0.0) reload += " + " + reloadSeconds(charge);
+        title.badges.push_back({reload, kPaper, TooltipIcon::Reload});
+    }
+    lines.push_back(title);
     lines.push_back({rarityLabel(rarity), 14.0, rarityColor(rarity)});
     if (!config.description.empty()) {
-        TooltipLine body{config.description, 12.0};
+        // florr's descriptions, from its English table, colour markup and
+        // all. "{rarity}" is the card's own tier in its colour, as florr's
+        // {0:rarity} is: a champion's crown hands out a Basic of whatever tier
+        // the crown is.
+        std::string description = config.description;
+        static const std::string kRaritySlot = "{rarity}";
+        for (std::size_t at = description.find(kRaritySlot); at != std::string::npos;
+             at = description.find(kRaritySlot, at)) {
+            const std::string tier = colourMarkup(rarityLabel(rarity), rarityColor(rarity));
+            description.replace(at, kRaritySlot.size(), tier);
+            at += tier.size();
+        }
+        TooltipLine body{description, 12.0};
         body.gapBefore = 10.0;
         body.maxWidth = kTooltipWrapWidth;
+        body.markup = true;
         lines.push_back(body);
     }
 
@@ -281,13 +338,9 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     hp.altText = "HP: " + exactNumber(health);
     lines.push_back(hp);
 
-    // Blueberries land every hit as lightning, and nothing else on the card
-    // says so.
-    const std::string damageLabel = config.lightningDamage ? "Lightning Damage: " : "Damage: ";
+    const std::string damageLabel = "Damage: ";
     TooltipLine hit{damageLabel + abbreviate(damage), 12.0};
     hit.alpha = 0.56;
-    // Florr names blueberry-style damage "Damage: X (lightning)" with the
-    // name in damage red (Petal/Attribute/Damage/Lightning), lightning or not.
     hit.labelColor = kStatDamage;
     hit.altText = damageLabel + exactNumber(damage);
     // A tomato's hit grows while it is out, so the card gives the range it
@@ -296,6 +349,16 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         const double grown = std::round(damage * kTomatoMaxGrowth);
         hit.text = damageLabel + abbreviate(damage) + " ~ " + abbreviate(grown);
         hit.altText = damageLabel + exactNumber(damage) + " ~ " + exactNumber(grown);
+    }
+    // Blueberries land every hit as lightning: florr's
+    // Petal/Attribute/Damage/Lightning, "Damage: X (lightning)" with the
+    // note in lightning cyan.
+    if (config.lightningDamage) {
+        const std::string label = colourMarkup("Damage:", kStatDamage);
+        const std::string note = " " + colourMarkup("(lightning)", kStatLightning);
+        hit.text = label + " " + abbreviate(damage) + note;
+        hit.altText = label + " " + exactNumber(damage) + note;
+        hit.markup = true;
     }
     lines.push_back(hit);
 
@@ -314,6 +377,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         TooltipLine shove{"Flower Knockback: +" + exactNumber(stats.flowerKnockback * 100.0) + "%",
                           12.0};
         shove.alpha = 0.56;
+        shove.labelColor = kStatGeneric;
         lines.push_back(shove);
     }
 
@@ -323,6 +387,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
                                 "%",
                             12.0};
         convert.alpha = 0.56;
+        convert.labelColor = kStatGeneric;
         lines.push_back(convert);
     }
 
@@ -330,6 +395,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     if (stats.reloadCut > 0.0) {
         TooltipLine cut{"Reload: -" + percentNumber(stats.reloadCut) + "%", 12.0};
         cut.alpha = 0.56;
+        cut.labelColor = kStatGeneric;
         lines.push_back(cut);
     }
 
@@ -339,6 +405,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
                                percentNumber(stats.collisionResist) + "%",
                            12.0};
         resist.alpha = 0.56;
+        resist.labelColor = kStatGeneric;
         lines.push_back(resist);
     }
 
@@ -368,10 +435,10 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     // by how much, and how much is the entire question a player has about it:
     // whether this one out-strips the tier standing in front of them.
     if (stats.armorReduction > 0.0) {
-        TooltipLine strip{"Armor Shred: -" + abbreviate(stats.armorReduction), 12.0};
+        TooltipLine strip{"Armor Debuff: -" + abbreviate(stats.armorReduction), 12.0};
         strip.alpha = 0.56;
         strip.labelColor = kStatArmor;
-        strip.altText = "Armor Shred: -" + exactNumber(stats.armorReduction);
+        strip.altText = "Armor Debuff: -" + exactNumber(stats.armorReduction);
         lines.push_back(strip);
     }
 
@@ -408,6 +475,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     if (stats.modifiers.evasion > 0.0) {
         TooltipLine dodge{"Evasion: " + exactNumber(stats.modifiers.evasion * 100.0) + "%", 12.0};
         dodge.alpha = 0.56;
+        dodge.labelColor = kStatGeneric;
         lines.push_back(dodge);
     }
 
@@ -426,28 +494,19 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
 
     // The magic petals. Every one of these figures moves with rarity and none
     // of them can be read off the ring in play -- a player comparing two orbs
-    // has nothing else to go on -- so they belong on the card.
-    if (stats.requiredMana > 0.0) {
-        // Paid on spawn, not on use -- see PetalConfig::requiredMana. One
-        // decimal: a blueberry's 1.2 would read as 1 through abbreviate().
-        char figure[32];
-        std::snprintf(figure, sizeof figure, "%.1f", stats.requiredMana);
-        std::string text = figure;
-        if (text.size() > 2 && text.compare(text.size() - 2, 2, ".0") == 0) {
-            text.erase(text.size() - 2);
-        }
-        // Uncoloured, as is "Mana per Summon": florr's cost rows
-        // (Petal/Attribute/SpawnManaCost) name themselves in generic.
-        TooltipLine reload{"Mana per Reload: " + text, 12.0};
-        reload.alpha = 0.56;
-        lines.push_back(reload);
-    }
+    // has nothing else to go on -- so they belong on the card. What a reload
+    // costs is in the header, beside the reload; see the title above.
+    //
     // The magic stick: paid per storm rather than per reload of the petal,
-    // and the storm's span is what the payment buys.
+    // and the storm's span is what the payment buys. florr's
+    // Petal/Attribute/SpawnManaCost, "Spawn Cost: X mana".
     if (stats.petManaCost > 0.0) {
-        TooltipLine summon{"Mana per Summon: " + abbreviate(stats.petManaCost), 12.0};
+        const std::string label = colourMarkup("Spawn Cost:", kStatGeneric) + " ";
+        const std::string unit = " " + colourMarkup("mana", kStatMana);
+        TooltipLine summon{label + abbreviate(stats.petManaCost) + unit, 12.0};
         summon.alpha = 0.56;
-        summon.altText = "Mana per Summon: " + exactNumber(stats.petManaCost);
+        summon.markup = true;
+        summon.altText = label + exactNumber(stats.petManaCost) + unit;
         lines.push_back(summon);
     }
     if (config.petLifetimeMillis > 0.0) {
@@ -682,8 +741,12 @@ bool InventoryPanel::render(MenuContext& ctx) {
                              ctx.window.pointerIsTouch();
     if (tooltipDelay.update(hovered, ctx.timeSeconds, pointerDown) && hovered >= 0) {
         const Cell& cell = grid.cells[static_cast<std::size_t>(hovered)];
+        // The reload the bar would actually run, as the slot wedge times it.
+        const double reloadScale =
+            profile.skills.reloadScale() *
+            (1.0 - barReloadCut(content(), [&](int i) { return profile.equipped(content(), i); }));
         const std::vector<TooltipLine> lines =
-            petalTooltipLines(cell.petalIndex, cell.rarity, profile.skills);
+            petalTooltipLines(cell.petalIndex, cell.rarity, profile.skills, reloadScale);
         const bool alt = ctx.window.altHeld();
         const Vec2 size = measureTooltip(lines, 0.0, 0.0, alt);
         const Vec2 at = tooltipAnchor(hoveredRect, size, canvas.width(), canvas.height());

@@ -55,6 +55,18 @@ void scrollbar(Canvas&, Rect view, double contentHeight, double scroll, std::uin
 // Tooltips
 // ---------------------------------------------------------------------------
 
+/// The icon a TooltipBadge ends in.
+enum class TooltipIcon : std::uint8_t { None, Mana, Reload };
+
+/// One piece of florr's petal header, drawn after the name on its right: the
+/// mana a reload costs, the " +" between, and the reload, each 16 px and set
+/// edge to edge with the 15 px icon that follows it.
+struct TooltipBadge {
+    std::string text;
+    std::uint32_t color = kPaper;
+    TooltipIcon icon = TooltipIcon::None;
+};
+
 /// One row of a tooltip.
 ///
 /// Constructed rather than aggregate-initialised: the fields the browser grew
@@ -70,6 +82,7 @@ struct TooltipLine {
     /// pre-mixed grey, so they dim consistently over whatever they land on.
     double alpha = 1.0;
     /// Greedily word-wraps the row at this content width. Zero never wraps.
+    /// A '\n' in the text is a hard break either way.
     double maxWidth = 0.0;
     /// Rendered instead of `text` while ALT is held: the exact value behind an
     /// abbreviated one. Empty means the row has no alternate.
@@ -78,6 +91,12 @@ struct TooltipLine {
     /// -- in this colour at full alpha, and leaves the value after it in
     /// `color` at `alpha`. Empty paints the whole row in `color`.
     std::optional<std::uint32_t> labelColor;
+    /// Reads florr's colour markup in the text, `<c val="#RRGGBB">...</c>`:
+    /// a marked run is painted in its colour at full alpha, the rest in
+    /// `color` at `alpha`, as a labelColor row is.
+    bool markup = false;
+    /// Right-aligned on the line's first row, centred on it.
+    std::vector<TooltipBadge> badges;
 
     TooltipLine(std::string body = {}, double size = 12.0, std::uint32_t color = kPaper,
                 double gapBefore = 0.0)

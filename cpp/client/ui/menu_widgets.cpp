@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <utility>
+
+#include "svg.h"
 
 #include "client/ui/text.h"
 #include "client/ui/text_select.h"
@@ -91,13 +95,53 @@ constexpr double kTooltipPadY = 8.0;
 constexpr double kTooltipLineGap = 2.0;
 constexpr double kTooltipRadius = 6.0;
 
+/// Florr's petal header (client 0x10079f280): 16 px text, each piece in a box
+/// as wide as its glyphs plus the outline pad, and a 15 px icon after it.
+constexpr double kBadgeSize = 16.0;
+constexpr double kBadgeIcon = 15.0;
+/// Between the name and the header pieces. Ours: florr lays the two out with
+/// its own widget tree, whose spacing was not read.
+constexpr double kBadgeGap = 16.0;
+
+/// The reload icon: florr's own path, a 512 box centred on (256, 256).
+constexpr const char* kReloadIconPath =
+    "M263.09 50c-11.882-.007-23.875 1.018-35.857 3.13C142.026 68.156 75.156 135.026 60.13 "
+    "220.233 45.108 305.44 85.075 391.15 160.005 434.41c32.782 18.927 69.254 27.996 105.463 "
+    "27.553 46.555-.57 92.675-16.865 129.957-48.15l-30.855-36.768c-50.95 42.75-122.968 "
+    "49.05-180.566 15.797-57.597-33.254-88.152-98.777-76.603-164.274 11.55-65.497 62.672-116.62 "
+    "128.17-128.168 51.656-9.108 103.323 7.98 139.17 43.862L327 192h128V64l-46.34 "
+    "46.342C370.242 71.962 317.83 50.03 263.09 50z";
+
 double rowHeight(double size) { return std::ceil(size * 1.2); }
+
+/// florr's Text box pad, 2 * int(2 * size * outline ratio): the glyphs sit
+/// centred in their advance plus this.
+double badgePad() { return 2.0 * std::floor(2.0 * kBadgeSize * 0.12); }
+
+double badgesWidth(const std::vector<TooltipBadge>& badges) {
+    double width = 0;
+    for (const TooltipBadge& badge : badges) {
+        width += measure(badge.text, kBadgeSize) + badgePad();
+        if (badge.icon != TooltipIcon::None) width += kBadgeIcon;
+    }
+    return width;
+}
+
+/// A stretch of one row in one colour. `marked` runs came out of the line's
+/// markup and are painted at full alpha.
+struct TooltipRun {
+    std::string text;
+    std::uint32_t color;
+    bool marked;
+};
 
 /// One laid-out row: a tooltip line after alt substitution and word wrapping,
 /// with its top offset from the content's top edge.
 struct TooltipRow {
     const TooltipLine* line;
     std::string text;
+    /// A markup line's row, split where its colour changes. Empty otherwise.
+    std::vector<TooltipRun> runs;
     double y;
     /// The line's first row, the only one its label can be on.
     bool first;
@@ -108,6 +152,41 @@ struct TooltipLayout {
     double textWidth = 0;
     double textHeight = 0;
 };
+
+/// A line's text with florr's `<c val="#RRGGBB">` markup taken out, and the
+/// colour each byte was marked with (-1 for none).
+struct MarkedText {
+    std::string plain;
+    std::vector<std::int32_t> tint;
+};
+
+MarkedText parseColours(const std::string& s) {
+    static const std::string kOpen = "<c val=\"#";
+    static const std::string kClose = "</c>";
+    MarkedText out;
+    std::vector<std::int32_t> stack;
+    std::size_t i = 0;
+    while (i < s.size()) {
+        if (s.compare(i, kClose.size(), kClose) == 0) {
+            if (!stack.empty()) stack.pop_back();
+            i += kClose.size();
+            continue;
+        }
+        if (s.compare(i, kOpen.size(), kOpen) == 0) {
+            const std::size_t end = s.find("\">", i + kOpen.size());
+            if (end == i + kOpen.size() + 6) {
+                stack.push_back(static_cast<std::int32_t>(
+                    std::strtol(s.substr(i + kOpen.size(), 6).c_str(), nullptr, 16)));
+                i = end + 2;
+                continue;
+            }
+        }
+        out.plain += s[i];
+        out.tint.push_back(stack.empty() ? -1 : stack.back());
+        ++i;
+    }
+    return out;
+}
 
 /// One tooltip row: an OPAQUE outline under a fill that carries the row's
 /// alpha.
@@ -128,6 +207,90 @@ void paintRow(Canvas& canvas, const std::string& s, double x, double y, const Te
     paintRun(canvas, s, x, y + ascent(style.size), style, 1.0, fillAlpha);
 }
 
+/// Greedy wrap on spaces, as the browser does. A single word wider than the
+/// limit still gets its own row and overflows -- breaking mid-word would be
+/// worse to read than a slightly wide box.
+///
+/// Rows come out as [begin, end) byte ranges of `text`, shifted by `offset`,
+/// so a markup line can look up what colour each of their bytes was marked.
+void wrapParagraph(const std::string& text, std::size_t offset, double size, double maxWidth,
+                   std::vector<std::pair<std::size_t, std::size_t>>& out) {
+    const std::size_t before = out.size();
+    if (maxWidth > 0 && measure(text, size) > maxWidth) {
+        std::size_t rowStart = 0;
+        std::size_t rowEnd = 0;
+        bool started = false;
+        std::size_t at = 0;
+        while (at <= text.size()) {
+            const std::size_t space = text.find(' ', at);
+            const std::size_t wordEnd = space == std::string::npos ? text.size() : space;
+            if (started && measure(text.substr(rowStart, wordEnd - rowStart), size) > maxWidth) {
+                out.push_back({offset + rowStart, offset + rowEnd});
+                rowStart = at;
+            }
+            rowEnd = wordEnd;
+            started = true;
+            if (space == std::string::npos) break;
+            at = space + 1;
+        }
+        if (started) out.push_back({offset + rowStart, offset + rowEnd});
+    }
+    // An empty paragraph is still a row: florr's "<n/><n/>" is a blank line.
+    if (out.size() == before) out.push_back({offset, offset + text.size()});
+}
+
+/// The 15 px icon after a header piece, its box's top-left at (x, y).
+void paintBadgeIcon(Canvas& canvas, TooltipIcon icon, double x, double y) {
+    const float cx = static_cast<float>(x + kBadgeIcon * 0.5);
+    const float cy = static_cast<float>(y + kBadgeIcon * 0.5);
+    if (icon == TooltipIcon::Mana) {
+        // Two discs, florr's: a darker ring under the mana colour.
+        setFill(canvas, 0x35B8C6u);
+        canvas.beginPath();
+        canvas.arc(cx, cy, 6.0f, 0.0f, 6.2831853f);
+        canvas.fill();
+        setFill(canvas, kStatMana);
+        canvas.beginPath();
+        canvas.arc(cx, cy, 4.5f, 0.0f, 6.2831853f);
+        canvas.fill();
+        return;
+    }
+    if (icon != TooltipIcon::Reload) return;
+    // The arrow filled and widened by a 100-unit stroke in black, then filled
+    // and widened by a 50-unit one in white: a white arrow with a thin rim.
+    static const Path2D arrow = svgPathData(kReloadIconPath);
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.scale(static_cast<float>(kBadgeIcon * 0.002), static_cast<float>(kBadgeIcon * 0.002));
+    canvas.translate(-256.0f, -256.0f);
+    canvas.setLineJoin("round");
+    canvas.setLineCap("round");
+    for (const auto& [rgb, width] : {std::pair{kInk, 100.0f}, std::pair{kPaper, 50.0f}}) {
+        setFill(canvas, rgb);
+        setStroke(canvas, rgb);
+        canvas.setLineWidth(width);
+        canvas.fill(arrow);
+        canvas.stroke(arrow);
+    }
+    canvas.restore();
+}
+
+/// The header pieces, right-aligned to `right` and centred on `centreY`.
+void paintBadges(Canvas& canvas, const std::vector<TooltipBadge>& badges, double right,
+                 double centreY) {
+    double penX = right - badgesWidth(badges);
+    for (const TooltipBadge& badge : badges) {
+        TextStyle style = labelStyle(kBadgeSize, badge.color);
+        style.roundJoin = true;
+        paintRow(canvas, badge.text, penX + badgePad() * 0.5,
+                 centreY - rowHeight(kBadgeSize) * 0.5, style, 1.0);
+        penX += measure(badge.text, kBadgeSize) + badgePad();
+        if (badge.icon == TooltipIcon::None) continue;
+        paintBadgeIcon(canvas, badge.icon, penX, centreY - kBadgeIcon * 0.5);
+        penX += kBadgeIcon;
+    }
+}
+
 /// Resolves alt variants, wraps long lines and stacks the result top-down.
 ///
 /// Measurement and painting both run this, rather than each doing its own
@@ -137,39 +300,45 @@ TooltipLayout layoutRows(const std::vector<TooltipLine>& lines, bool alt) {
     TooltipLayout out;
     double y = 0;
     for (const TooltipLine& line : lines) {
-        const std::string& body = (alt && !line.altText.empty()) ? line.altText : line.text;
+        const std::string& raw = (alt && !line.altText.empty()) ? line.altText : line.text;
+        const MarkedText marked = line.markup ? parseColours(raw) : MarkedText{raw, {}};
+        const std::string& body = marked.plain;
         y += line.gapBefore;
 
-        // Greedy wrap on spaces, as the browser does. A single word wider than
-        // the limit still gets its own row and overflows -- breaking mid-word
-        // would be worse to read than a slightly wide box.
-        std::vector<std::string> pieces;
-        if (line.maxWidth > 0 && measure(body, line.size) > line.maxWidth) {
-            std::string current;
-            std::size_t at = 0;
-            while (at <= body.size()) {
-                const std::size_t space = body.find(' ', at);
-                const std::string word = body.substr(at, space == std::string::npos
-                                                             ? std::string::npos
-                                                             : space - at);
-                const std::string candidate = current.empty() ? word : current + " " + word;
-                if (!current.empty() && measure(candidate, line.size) > line.maxWidth) {
-                    pieces.push_back(current);
-                    current = word;
-                } else {
-                    current = candidate;
-                }
-                if (space == std::string::npos) break;
-                at = space + 1;
-            }
-            if (!current.empty()) pieces.push_back(current);
+        // A '\n' is a hard break, as florr's <n/> is, and each paragraph
+        // between them wraps on its own.
+        std::vector<std::pair<std::size_t, std::size_t>> pieces;
+        std::size_t start = 0;
+        while (true) {
+            const std::size_t end = body.find('\n', start);
+            wrapParagraph(body.substr(start, end == std::string::npos ? std::string::npos
+                                                                       : end - start),
+                          start, line.size, line.maxWidth, pieces);
+            if (end == std::string::npos) break;
+            start = end + 1;
         }
-        if (pieces.empty()) pieces.push_back(body);
 
-        for (std::string& piece : pieces) {
-            out.textWidth = std::max(out.textWidth, measure(piece, line.size));
-            out.rows.push_back({&line, std::move(piece), y, out.rows.empty() ||
-                                                            out.rows.back().line != &line});
+        for (const auto& [begin, end] : pieces) {
+            TooltipRow row{&line, body.substr(begin, end - begin), {}, y,
+                           out.rows.empty() || out.rows.back().line != &line};
+            if (line.markup) {
+                for (std::size_t i = begin; i < end; ++i) {
+                    const std::int32_t tint = marked.tint[i];
+                    if (row.runs.empty() || row.runs.back().marked != (tint >= 0) ||
+                        (tint >= 0 && row.runs.back().color != static_cast<std::uint32_t>(tint))) {
+                        row.runs.push_back({{}, tint >= 0 ? static_cast<std::uint32_t>(tint)
+                                                          : line.color,
+                                            tint >= 0});
+                    }
+                    row.runs.back().text += body[i];
+                }
+            }
+            double width = measure(row.text, line.size);
+            if (row.first && !line.badges.empty()) {
+                width += kBadgeGap + badgesWidth(line.badges);
+            }
+            out.textWidth = std::max(out.textWidth, width);
+            out.rows.push_back(std::move(row));
             y += rowHeight(line.size) + kTooltipLineGap;
         }
     }
@@ -229,6 +398,19 @@ Rect paintTooltip(Canvas& canvas, double x, double y, const std::vector<TooltipL
         style.roundJoin = true;
         double penX = x + kTooltipPadX;
         const double top = y + kTooltipPadY + row.y;
+        if (row.first && !row.line->badges.empty()) {
+            paintBadges(canvas, row.line->badges, x + size.x - kTooltipPadX,
+                        top + rowHeight(row.line->size) * 0.5);
+        }
+        if (!row.runs.empty()) {
+            for (const TooltipRun& run : row.runs) {
+                TextStyle tinted = style;
+                tinted.fill = run.color;
+                paintRow(canvas, run.text, penX, top, tinted, run.marked ? 1.0 : row.line->alpha);
+                penX += measure(run.text, row.line->size);
+            }
+            continue;
+        }
         const std::size_t colon = row.text.find(':');
         if (row.first && row.line->labelColor && colon != std::string::npos) {
             // The name is never dimmed -- only the value carries the row's alpha.
