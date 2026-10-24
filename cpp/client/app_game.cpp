@@ -370,30 +370,16 @@ void App::updateDead(double dt) {
     // hangs on the answer.
     scrollChat();
     // Chat swallows the keyboard while it is open, as it does in the living
-    // game: a line being typed when the body went down is sent by Enter, not
-    // spent on Continue. Not returned from -- a click on Continue or Close
-    // closes the line AND presses the button, which is one click, not two.
-    const bool chatting = chatOpen_ && !menus_.wantsText();
-    if (chatting) {
+    // game. Not returned from -- a click on Continue or Close closes the line
+    // AND presses the button, which is one click, not two.
+    if (chatOpen_ && !menus_.wantsText()) {
         editChatLine();
-    } else if (pressedChatBox() ||
-               (!deathCardVisible_ && window_.keyPressed(Key::Enter))) {
-        // With the card closed, Enter is chat's again: the slot under the
-        // dimmed world still says "Press Enter to chat...".
+    } else if (pressedChatBox() || window_.keyPressed(Key::Enter)) {
+        // Enter is chat's, card or no card: Continue has no key, and the slot
+        // under the dimmed world still says "Press Enter to chat...".
         chatOpen_ = true;
     }
     if (!deathCardVisible_) return;
-
-    // ENTER is the Continue button by another name, but only while the card
-    // that offers it is up -- Close takes the shortcut away with the button.
-    // Gated on the flag rather than on where the card has slid to, so it works
-    // from the frame of death. The reference spends the key on an immediate
-    // respawn: there the title screen IS the respawn screen, and here
-    // Continue is the way back to it.
-    if (!chatting && window_.keyPressed(Key::Enter)) {
-        leaveToTitle();
-        return;
-    }
 
     // The reference acts on the press, not the release, so the card is gone by
     // the time the button comes back up and a pressed state is never seen.
@@ -427,8 +413,7 @@ void App::drawDeathCard(Canvas& canvas, double time) {
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
 
     // Bold white with the ordinary 0.12-of-size outline. No hint line under
-    // the buttons: ENTER still continues while the card is up, it just is not
-    // written down any more.
+    // the buttons: Continue is a click, with no key behind it.
     TextStyle line;
     line.align = Align::Centre;
     line.size = kDeathDestroyedBySize;
