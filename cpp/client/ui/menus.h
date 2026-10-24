@@ -1173,41 +1173,77 @@ private:
 };
 
 /// The talent tree.
+/// The talent tree: florr's Talents window (menu_talents.cpp), read out of
+/// its client. A 650-square window at x = 95, its bottom 20 above the view's,
+/// rising from below and fading in on florr's open ease; inside, the tree on
+/// florr's grid, dragged sideways to scroll, and a node is bought by holding
+/// it down.
 class TalentsPanel {
 public:
     bool render(MenuContext&);
     void reset();
-    static double preferredWidth();
+    /// The window's open progress (0 = 50 below the view, 1 = seated), which
+    /// is also its opacity, and whether it is on its way out. Input is dead
+    /// below 0.9 and while closing, florr's rule.
+    void setOpen(double open, bool closing) {
+        open_ = open;
+        closing_ = closing;
+    }
     static Rect bounds(int viewWidth, int viewHeight);
 
 private:
     struct Node {
         SkillId skill = SkillId::Damage;
         int tier = 0;
-        /// Position in the tree's own space, before rotation.
-        Vec2 local;
-        Vec2 screen;
+        /// Where it stands on florr's grid: columns across, rows up.
+        Vec2 grid;
+        /// Where it was drawn this frame, in the view.
+        Vec2 at;
+        /// Eased 0..1: grown under the cursor, the tooltip, the "HOLD to
+        /// upgrade" hint.
+        double hover = 0;
+        double tooltip = 0;
+        double hint = 0;
+        /// The size wobble while it is held (and until its purchase lands),
+        /// and the pulse once it has.
+        double wobble = 0;
+        double pulse = 0;
+        /// Bought by a hold and not yet confirmed by the server.
+        bool requested = false;
+        double requestedMs = 0;
     };
 
     void layout();
 
     std::vector<Node> nodes_;
     bool laidOut_ = false;
-    /// Dragging anywhere in the card spins the whole fan about the flower.
-    double rotation_ = 0;
+    /// The rightmost column, which the scroll stops at.
+    double maxColumn_ = 0;
+    /// The column at the window's centre, and where a drag or the wheel has
+    /// asked it to go; the first eases after the second.
+    double scroll_ = 0;
+    double scrollTarget_ = 0;
+    bool scrollSet_ = false;
     bool dragging_ = false;
-    /// Where the press landed, and which node it landed on. Both outlive the
-    /// press because a press is still a click until it travels far enough to
-    /// become a spin, and the click belongs to the node it started on.
-    Vec2 dragPress_;
+    double dragLastX_ = 0;
+    /// The node a press landed on, how long it has been held, and whether
+    /// this hold already bought it.
     int pressedNode_ = -1;
-    /// Latched the moment the press clears the drag threshold: a gesture that
-    /// has become a spin stays one, even if the cursor comes back to where it
-    /// started.
-    bool dragMoved_ = false;
-    double rotationAtAnchor_ = 0;
-    /// Guards the reset button behind a second click.
+    int hoveredNode_ = -1;
+    double holdMs_ = 0;
+    bool holdBought_ = false;
+    /// The TP badge's tooltip, and the flower's bulge after a purchase.
+    double badgeTip_ = 0;
+    double flash_ = 0;
+    /// Close and Reset act on release, florr's buttons; Reset wants a second
+    /// click.
+    bool closeHeld_ = false;
+    bool resetHeld_ = false;
     bool confirmingReset_ = false;
+    double open_ = 1.0;
+    bool closing_ = false;
+    /// The grains a purchase throws.
+    SlotMotion grains_;
 };
 
 /// The star shop: the store's ten offers, the challenges that pay the stars to
@@ -1697,6 +1733,8 @@ private:
     /// The shop slides in from the left on the same ease: 0 = 50 past the
     /// view's left edge, 1 = seated.
     double shopOpen_ = 0;
+    /// The talent tree rises on it too, and fades in with it.
+    double talentsOpen_ = 0;
     /// That window's size as the open card last measured it -- it depends on
     /// the account's petals, which craftPanelBounds() is not handed.
     Vec2 craftSize_{610.0, 700.0};

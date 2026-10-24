@@ -1006,16 +1006,8 @@ Rect cornerPanel(double width, double height, double top, int, int) {
 } // namespace
 
 Rect InventoryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
-/// The talent card is SQUARE, alone among the list panels: the tree is a fan
-/// spun about its own centre, and a tall card would only add height the fan
-/// never reaches while cropping the width it spreads across. It keeps the
-/// family's left inset and bottom edge, so it still reads as one of the four;
-/// the family's nominal width is what the square's side replaces.
-Rect TalentsPanel::bounds(int w, int h) {
-    const Rect list = listPanel(preferredWidth(), w, h);
-    const double side = list.h;
-    return {list.x, list.bottom() - side, side, side};
-}
+// TalentsPanel::bounds is florr's seat for its window, with the window (see
+// menu_talents.cpp).
 
 /// The bestiary left the list family: it is a corner overlay, hung under the
 /// top icon row beside the other read-only cards, because it is one of them --
@@ -2494,7 +2486,7 @@ namespace {
 /// 300ms; the corner overlays are canvas panels drawn straight at the corner
 /// anchor with no transition at all, so only these three animate.
 bool slidesUp(MenuId id) {
-    return id == MenuId::Inventory || id == MenuId::Talents;
+    return id == MenuId::Inventory;
 }
 
 /// The size of the craft key's window as the flower's ground has it this
@@ -2688,9 +2680,14 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // all once it is back below 1e-5 -- florr's own cut-off.
     const double shopTarget = open_ == MenuId::Shop ? 1.0 : 0.0;
     shopOpen_ += (shopTarget - shopOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
+    // The talent tree rises like the craft window and fades in with it.
+    const double talentsTarget = open_ == MenuId::Talents ? 1.0 : 0.0;
+    talentsOpen_ +=
+        (talentsTarget - talentsOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
     if (open_ != MenuId::None) {
         if (open_ == MenuId::Crafting && drawn_ != MenuId::Crafting) craftOpen_ = 0.0;
         if (open_ == MenuId::Shop && drawn_ != MenuId::Shop) shopOpen_ = 0.0;
+        if (open_ == MenuId::Talents && drawn_ != MenuId::Talents) talentsOpen_ = 0.0;
         drawn_ = open_;
         panelSlide_ = slidesUp(open_) ? std::min(1.0, panelSlide_ + dt / kPanelSlideSeconds) : 1.0;
     } else if (drawn_ == MenuId::Crafting) {
@@ -2698,6 +2695,8 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
         if (craftOpen_ <= 0.001) drawn_ = MenuId::None;
     } else if (drawn_ == MenuId::Shop) {
         if (shopOpen_ < 1e-5) drawn_ = MenuId::None;
+    } else if (drawn_ == MenuId::Talents) {
+        if (talentsOpen_ < 1e-5) drawn_ = MenuId::None;
     } else if (drawn_ != MenuId::None) {
         panelSlide_ = slidesUp(drawn_) ? std::max(0.0, panelSlide_ - dt / kPanelSlideSeconds) : 0.0;
         if (panelSlide_ <= 0.0) drawn_ = MenuId::None;
@@ -2716,6 +2715,13 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
         const double away = -kSlotCardClosedDrop - panelRect_.w;
         panelRect_.x = away + (panelRect_.x - away) * clamp(shopOpen_, 0.0, 1.0);
         shop_.setSlide(shopOpen_, open_ != MenuId::Shop);
+    } else if (drawn_ == MenuId::Talents) {
+        // y = lerp(H + 50, seat, open), florr's; the open progress is also
+        // the window's opacity.
+        panelRect_ = panelBounds(drawn_, canvas.width(), canvas.height());
+        const double below = static_cast<double>(canvas.height()) + kSlotCardClosedDrop;
+        panelRect_.y += (1.0 - clamp(talentsOpen_, 0.0, 1.0)) * (below - panelRect_.y);
+        talents_.setOpen(talentsOpen_, open_ != MenuId::Talents);
     } else if (drawn_ != MenuId::None) {
         panelRect_ = panelBounds(drawn_, canvas.width(), canvas.height());
         // `transform: translateY(100vh)` -> `translateY(0)` over 300ms

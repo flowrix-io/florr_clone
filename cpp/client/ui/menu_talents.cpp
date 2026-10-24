@@ -1,18 +1,28 @@
-// The talent tree.
+// The talent tree: florr's Talents window.
 //
-// Seven branches fan out from the flower, one per stat, each a chain of tiers
-// on the rarity ladder. A branch walks outward in equal steps and turns a
-// little more with each step past the third, which is what keeps ten nodes
-// evenly spaced instead of crossing their neighbours. Second Chance,
-// Duplicator and Magnetism are not branches of their own: each forks off its
-// parent at the tier it needs -- rare Flower Health, mythic and legendary
-// Absorption -- and says so by growing out of that node. Prestige is not a
-// branch either: one node straight off the flower, in the gap between the
-// first branch and the last.
+// Measured out of florr's own client rather than off screenshots: the screen
+// render's talents slice (sub_1008d1230, 0x1008da402..0x1008da9c8, screen
+// state 7) was run under the ~/florr_images emulator and every Skia call it
+// made recorded, with the tree's body (0x10097c760), its tooltip builder
+// (0x1009812e0) and the overlay pass that paints tooltips. The numbers below
+// are those, at one window unit to the design unit.
 //
-// The fan is laid out in fixed pixels and is deliberately far larger than the
-// card -- most of it starts off the edge. Dragging spins the whole tree about
-// the flower, which is how the rest is reached, and the card clips the excess.
+// The window is 650 square at x = 95, its bottom 20 above the view's, rising
+// from 50 below the view and fading in on florr's open ease (MenuSystem).
+// Inside, 3 in from the edge and clipped there, the tree stands on florr's
+// grid: columns 65 apart, rows 65 apart going up, under a projection that
+// spreads the upper rows apart and bends the far columns down -- the tree is
+// a dome you scroll across. Every root runs down to the flower in the middle
+// of the bottom. Dragging the window sideways scrolls it, a column per 65
+// units; so does the wheel, a column a notch.
+//
+// A node is bought by HOLDING it: 250 ms down on one the account can afford
+// buys it and every tier still missing below it, the cost its badge shows.
+//
+// What is ours: the talents; how they are arranged -- the long branches wear
+// florr's zig-zag and spiral, but which branch stands where and everything
+// that forks off another is laid out for our tree (see branches()); and the
+// icons, which are the ones this tree always had.
 
 #include <algorithm>
 #include <array>
@@ -23,9 +33,11 @@
 
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
+#include "client/render/mob_art.h"
+#include "client/ui/text.h"
 #include "client/world_view.h"
-#include "shared/game/prestige.h"
 #include "shared/game/constants.h"
+#include "shared/game/prestige.h"
 
 namespace flix {
 
@@ -33,279 +45,417 @@ using namespace flix::ui;
 
 namespace {
 
-/// Step between two tiers of a branch, and the node drawn at each step.
-///
-/// Absolute design units, never fitted to the card. Scaling the fan down to
-/// make it fit would halve every node, every gap and every glyph, and would
-/// defeat the point of a tree you spin.
-///
-/// The step is what decides how much of the tree is REACHABLE without
-/// dragging, and it is not free to match the reference's own spacing: the fan
-/// opens from a pivot near the bottom edge, so a branch's third tier is
-/// already at the card's rim and every unit added to the step takes a whole
-/// tier off every branch that does not point straight up. At 100 a branch
-/// shows four or five tiers and the sideways ones keep three; the reference's
-/// wider 137 left barely two of each on the card and the rest behind a drag.
-/// The node keeps the reference's own size either way -- it is the step that
-/// gives way, not the node.
-constexpr double kBaseStep = 100.0;
-constexpr double kNodeRadius = 35.0;
-/// The node's rim, and the icon's full extent inside it. The glyph is drawn
-/// almost node-wide -- a small mark centred in a large disc reads as a bullet
-/// point rather than as the branch's own sign.
-constexpr double kNodeRim = 5.0;
-constexpr double kIconExtent = kNodeRadius * 0.89;
+// -- the window ---------------------------------------------------------------
 
-/// Curvature: nothing for the first three tiers, then a ramp to a third of a
-/// right angle per step, easing off on the last one so a branch does not end
-/// by folding back over itself.
-constexpr double kMaxTurn = kPi * 0.37;
-
-constexpr double kAvatarRadius = 47.0;
-/// The pivot sits near the BOTTOM of the card, not in the middle: the fan
-/// opens upward into the panel, and the flower anchors it to the lower edge.
-constexpr double kPivotAboveBottom = 70.0;
-
-constexpr double kDragThreshold = 5.0;
-/// Radians of spin per pixel of horizontal drag. A constant, not a fraction of
-/// the card, so the tree turns at the same rate in any window.
-constexpr double kRotationPerPixel = 0.008;
-
-/// Card geometry. The panel draws its own reset button rather than borrowing
-/// the shared chip: it keeps a radius the shared inlay would flatten.
-constexpr double kCardRadius = 6.0;
-constexpr double kResetWidth = 70.0;
+constexpr double kWindowSide = 650.0;
+constexpr double kWindowX = 95.0;
+constexpr double kWindowBottom = 20.0;
+/// The tree and the TP badge are clipped to the window less 3 a side.
+constexpr double kInset = 3.0;
+/// The title: 24 on a 1.4 line, 10 in.
+constexpr double kTitleSize = 24.0;
+constexpr double kPad = 10.0;
+constexpr double kLine = 1.4;
+/// The close button, the craft window's: 25 square, 39 in from the right.
+constexpr double kCloseSide = 25.0;
+constexpr double kCloseFromRight = 39.0;
+constexpr double kCloseRimGap = 2.0;
+/// Reset: a b4 r4 button 28 tall, 10 in from the bottom-right corner, 14
+/// either side of its 16-unit label (plus the label's outline padding).
 constexpr double kResetHeight = 28.0;
-/// The reset button and the stat lines sit closer to the card's edge than
-/// kMenuPadding puts the other panels' chrome: the tree runs under both, and
-/// every unit of margin is a unit of fan hidden behind an opaque button.
-constexpr double kChromeInset = 10.0;
+constexpr double kResetPadX = 14.0;
+constexpr double kResetLabelSize = 16.0;
+constexpr double kButtonBorder = 4.0;
+constexpr double kButtonRadius = 4.0;
+constexpr std::uint32_t kResetFace = 0xDE1F1Fu;
+constexpr std::uint32_t kResetIdleFace = 0x777777u;
 
-/// The TP counter: a disc in the card's own border colour with the number
-/// nearly filling it, and the unit spelled out beside it at half that weight.
-/// Deliberately larger than the title -- the one number a player opens this
-/// panel to read is how many points they have to spend.
-constexpr double kBadgeRadius = 21.0;
-/// The badge's centre, in from the card's top-left corner on both axes. Its
-/// own inset rather than kMenuPadding plus a radius: the disc is bigger than
-/// the chips the shared padding was chosen for, and hanging it off the corner
-/// by eye is what keeps it clear of both the border and the title.
-constexpr double kBadgeInset = 38.0;
-constexpr double kBadgeTextSize = 33.0;
-constexpr double kBadgeLabelSize = 21.0;
-constexpr double kCostTextSize = 19.0;
-/// The two lines beside the flower, and the drop from one baseline to the next.
-constexpr double kStatTextSize = 13.0;
-constexpr double kStatLineGap = 21.0;
+/// The TP badge, inside the clip: a 23-radius disc of the theme's shade
+/// centred 40 in, the count 36 on it, and "TP" 24 from 35 past its centre.
+/// Hovering the strip they make, 56 tall from 12 in, shows a tooltip.
+constexpr double kBadgeCentre = 40.0;
+constexpr double kBadgeRadius = 23.0;
+constexpr double kBadgeTextSize = 36.0;
+constexpr double kBadgeLabelSize = 24.0;
+constexpr double kBadgeLabelX = 35.0;
+constexpr double kBadgeHitInset = 12.0;
+constexpr double kBadgeHitHeight = 56.0;
+constexpr double kBadgeHitExtra = 63.0;
+constexpr double kBadgeTipY = 78.0;
+constexpr const char* kBadgeTip = "You can acquire more TP by leveling up";
+constexpr double kBadgeTipSize = 16.0;
 
-/// Connector weights, and the dash the locked ones are drawn with. The dash is
-/// measured for ROUND caps, which lengthen every painted segment and shorten
-/// every gap by one line width.
-constexpr double kLinkWidth = 7.0;
-constexpr double kLinkLockedWidth = 6.0;
-constexpr float kLinkDash = 8.0f;
-constexpr float kLinkDashGap = 11.0f;
+// -- the tree -----------------------------------------------------------------
 
-constexpr std::uint32_t kFlowerBody = 0xFBE878u;
-constexpr std::uint32_t kCostRed = 0xED706Bu;
-constexpr std::uint32_t kStatGreen = 0x7EEF6Du;
+/// florr's grid: 65 between columns and between rows, and the projection's
+/// two bends -- a row `y` up is spread 1 + y/4 times wider about the centre
+/// column, and a node X across drops X tanh(X/200).
+constexpr double kStep = 65.0;
+constexpr double kSpread = 0.25;
+constexpr double kBend = 0.005;
+/// The top row sits this far above the inner area's bottom, less the rows,
+/// and the flower 120 below the bottom row.
+constexpr double kTreeBottom = 190.0;
+constexpr double kFlowerDrop = 120.0;
+constexpr double kFlowerRadius = 50.0;
+constexpr double kHubRadius = 20.0;
+
+/// A node: a 38.5 disc in its rim colour under a 32.5 one in its fill. The
+/// cursor finds it within 32.5, and within 35.75 once it is already found.
+constexpr double kNodeRim = 38.5;
+constexpr double kNodeFace = 32.5;
+constexpr double kHitRadius = 32.5;
+constexpr double kHitRadiusHovered = 35.75;
+/// What is left to pay, on a 14 disc of the rim colour at (26, -26), 20 high
+/// and turned a sixteenth of a half turn.
+constexpr double kCostAt = 26.0;
+constexpr double kCostRadius = 14.0;
+constexpr double kCostSize = 20.0;
+constexpr double kCostTurn = kPi / 16.0;
+
+/// Connectors: 8 wide, round, in the theme's shade, kept 10 clear of both
+/// ends. Solid into a tier the account owns; otherwise 10-long dashes, one
+/// every 20.
+constexpr double kLinkWidth = 8.0;
+constexpr double kLinkInset = 10.0;
+constexpr double kDash = 10.0;
+constexpr double kDashPitch = 20.0;
+
+/// Holding a node: it buys after 250 ms and wobbles 10% in size, sin(0.03 t)
+/// with t in ms, until the purchase lands. A purchase the server never
+/// confirms stops wobbling after a few seconds.
+constexpr double kHoldMs = 250.0;
+constexpr double kWobbleRate = 0.03;
+constexpr double kRequestTimeoutMs = 3000.0;
+
+/// Every ease is x += (target - x)(1 - e^(-k dt)), dt in ms.
+constexpr double kScrollRate = 0.00632163;
+constexpr double kHoverRate = 0.0133886;
+constexpr double kTipRate = 0.0214005;
+constexpr double kFlashRate = 0.00435424;
+
+/// A purchase: 40 grains of the tier's colour from the node, and the flower
+/// bulging 10 bigger and back as its flash runs out.
+constexpr int kBurstGrains = 40;
+constexpr double kFlashBulge = 10.0;
+constexpr SlotBurstShape kBurstShape{200.0, 0.0, kTau};
+
 constexpr std::uint32_t kLockedFill = 0x777777u;
-constexpr std::uint32_t kLockedBorder = 0x606060u;
-constexpr std::uint32_t kCallToAction = 0xFFE65Du;
-constexpr std::uint32_t kStatGrey = 0xE0E0E0u;
-constexpr std::uint32_t kStatusGrey = 0xAAAAAAu;
-constexpr std::uint32_t kResetBorder = 0xA52B24u;
-constexpr std::uint32_t kResetFill = 0xCC362Du;
-constexpr std::uint32_t kResetHoverFill = 0xE0463Cu;
+constexpr std::uint32_t kLockedRim = 0x606060u;
+constexpr std::uint32_t kCostShort = 0xFF6666u;
+constexpr std::uint32_t kFlowerBody = 0xFBE878u;
 
-/// How far a node's border is taken below its own fill. Shallower than the
-/// shared darken() default: at a 5-unit rim on a saturated fill, a quarter
-/// reads as a black ring rather than as the same colour in shadow.
-constexpr double kRimShade = 0.20;
-/// How much of its rarity colour the next affordable tier shows through the
-/// locked grey. A tint, not the colour itself: the node has not been bought,
-/// and painting it as though it had is the one thing this panel must not say.
-constexpr double kAvailableTint = 0.30;
+/// florr's tooltip box: half-black, corners rounded 5 with quadratics, the
+/// text 7 in from either side, 5 from the top and 6 from the bottom. Over a
+/// node it stands with its bottom 43.5 above the node's centre; the hint
+/// under one has its top 40.5 below. A box never comes closer than 5 to the
+/// view's sides.
+constexpr double kTipPadX = 7.0;
+constexpr double kTipPadTop = 5.0;
+constexpr double kTipPadBottom = 6.0;
+constexpr double kTipRadius = 5.0;
+constexpr double kTipAbove = 43.5;
+constexpr double kTipBelow = 40.5;
+constexpr double kTipViewMargin = 5.0;
+constexpr double kTipNameSize = 24.0;
+constexpr double kTipBodySize = 14.0;
+/// Between the rarity and the description.
+constexpr double kTipGap = 16.0;
+/// The badge's tooltip hangs under a point; florr's box top is 7 above it.
+constexpr double kTipUnder = 7.0;
 
-/// Linear blend, `amount` of `top` over `bottom`.
-constexpr std::uint32_t mixColor(std::uint32_t bottom, std::uint32_t top, double amount) {
-    const auto channel = [=](int shift) -> std::uint32_t {
-        const double b = static_cast<double>((bottom >> shift) & 0xFF);
-        const double t = static_cast<double>((top >> shift) & 0xFF);
-        return static_cast<std::uint32_t>(b + (t - b) * amount + 0.5);
-    };
-    return (channel(16) << 16) | (channel(8) << 8) | channel(0);
-}
+/// The two lines beside the flower: 14 high, starting 65 to its right, the
+/// first ending level with its centre.
+constexpr double kStatSize = 14.0;
+constexpr double kStatX = 65.0;
 
-/// Second Chance's two tiers each spell out what they grant; there is no
-/// multiplier to quote.
-constexpr std::array<const char*, 2> kSecondChanceEffects = {
-    "0.3s invulnerability at 1 HP (60s cd)",
-    "1.5s invulnerability at 1 HP (30s cd)",
-};
-
-/// How a fork leaves its parent's node: `turn` off the parent's heading for the
-/// first step, then `bend` more for each step after it.
-///
-/// Per fork, because the two parents sit in very different places. Rare Flower
-/// Health is still on the straight part of its branch, and Second Chance can
-/// strike off to the outside of the curve. Mythic Absorption is the FARTHEST
-/// node on its branch, 488 out: striking outward from there puts Triplicator
-/// near 700, past anything a spin can bring onto the card, which no other node
-/// on the tree is. Following the branch's own curve instead keeps both tiers
-/// inside 500 and every other node at least 87 away -- measured across the
-/// whole fan, which is the only way to tell where there is room.
-///
-/// Magnetism leaves legendary Absorption on the other side, to the branch's
-/// left, which faces away from the flower. A straight run out that way passes
-/// 700, so it turns hard and curls back on itself: three tiers at 538, 573 and
-/// 574 from the flower, every one at least 100 clear of any other node. That
-/// is past the 500 the other nodes keep, but still inside the ~600 a spin can
-/// bring onto the card.
-struct ForkShape {
-    SkillId skill;
-    double turn;
-    double bend;
-};
-constexpr std::array<ForkShape, 3> kForkShapes = {{
-    {SkillId::SecondChance, -kPi / 3.0, 0.0},
-    {SkillId::Duplicator, kPi / 12.0, kPi / 6.0},
-    {SkillId::Magnetism, -kPi / 2.0, -kPi / 6.0},
-}};
-
-ForkShape forkShape(SkillId skill) {
-    for (const ForkShape& shape : kForkShapes) {
-        if (shape.skill == skill) return shape;
-    }
-    return {skill, 0.0, 0.0};
-}
-
-/// Body damage is never surfaced to the client, so the panel quotes the same
-/// fixed base the browser falls back to rather than inventing a level curve.
+/// Body damage is never surfaced to the client, so the line quotes a fixed
+/// base under the tree's multiplier rather than inventing a level curve.
 constexpr double kDisplayBodyDamage = 25.0;
 
-/// Every text call in this panel round-joins its outline. That is not the
-/// shared default -- panelTitle() and chip() leave the ambient miter join in
-/// place -- and on bold glyphs the difference is visible spikes off their
-/// corners, so the panel builds its own styles.
-TextStyle panelText(double size, std::uint32_t fill) {
+// -- the layout ---------------------------------------------------------------
+
+struct GridPoint {
+    double x;
+    double y;
+};
+
+/// florr's two shapes for a long branch, nine tiers each, as columns from the
+/// shape's left edge and rows up: the zig-zag its Petal Health climbs in, and
+/// the spiral its Reload winds in.
+constexpr std::array<GridPoint, 9> kZigZag = {{
+    {2, 0}, {1, 1}, {0, 0}, {0, 2}, {2, 2}, {2, 4}, {1, 3}, {0, 4}, {1, 5},
+}};
+constexpr std::array<GridPoint, 9> kSpiral = {{
+    {1, 0}, {0, 2}, {0, 3.5}, {1, 4}, {2, 4}, {3, 3}, {3, 1}, {1, 1.5}, {2, 2},
+}};
+
+/// The zig-zag from column `left`, mirrored when asked, with our apex tier
+/// added on top at `apex` (a column of the shape and a row).
+std::vector<GridPoint> zigZag(double left, bool mirrored, GridPoint apex) {
+    std::vector<GridPoint> points;
+    for (const GridPoint& p : kZigZag) points.push_back({left + (mirrored ? 2.0 - p.x : p.x), p.y});
+    points.push_back({left + apex.x, apex.y});
+    return points;
+}
+
+std::vector<GridPoint> spiral(double left) {
+    std::vector<GridPoint> points;
+    for (const GridPoint& p : kSpiral) points.push_back({left + p.x, p.y});
+    return points;
+}
+
+struct Branch {
+    SkillId skill;
+    std::vector<GridPoint> points;
+};
+
+/// Left to right. The long branches wear florr's shapes; what branches OFF
+/// them is ours, laid out for our forks:
+///   - Flower Health's zig-zag is mirrored so its rare tier stands at the
+///     bottom right, and Second Chance climbs away from it toward the
+///     middle;
+///   - Prestige stands alone just right of the flower;
+///   - Reload winds in the spiral (nine tiers, like florr's own);
+///   - Healing is four tiers up the start of a zig-zag;
+///   - Absorption's zig-zag is mirrored so legendary and mythic both stand
+///     on its left edge, a column clear of Healing: Magnetism hooks off
+///     legendary to the left and curls down and back in, and Duplicator
+///     climbs off mythic up-left above it.
+/// Checked across every scroll: no two nodes come closer than 92 (florr's own
+/// tree comes to 81), Magnetism's none closer than 116, and no connector
+/// crosses another.
+const std::vector<Branch>& branches() {
+    static const std::vector<Branch> kBranches = {
+        {SkillId::PetalHealth, zigZag(0.0, false, {2, 5.5})},
+        {SkillId::PetHealth, zigZag(3.5, false, {2, 5.5})},
+        {SkillId::PlayerHealth, zigZag(7.0, true, {0, 5.5})},
+        {SkillId::SecondChance, {{10.2, 1.0}, {10.7, 2.4}}},
+        {SkillId::Prestige, {{12.2, 0}}},
+        {SkillId::Damage, zigZag(13.7, false, {2, 5.5})},
+        {SkillId::Reload, spiral(17.2)},
+        {SkillId::Healing, {{21.7, 0}, {22.7, 1}, {21.7, 2}, {21.7, 4}}},
+        {SkillId::Magnetism, {{25.3, 2.5}, {23.7, 2.2}, {24.4, 0.6}}},
+        {SkillId::Absorbing, zigZag(27.0, true, {2, 5.5})},
+        {SkillId::Duplicator, {{26.0, 4.8}, {25.2, 5.5}}},
+    };
+    return kBranches;
+}
+
+/// Where the window first opens: the middle of the tree, Flower Health and
+/// Second Chance to the left of the flower and Prestige beside it.
+constexpr double kStartColumn = 11.0;
+
+/// The grid point `grid` under a scroll that has column `scroll` at the
+/// centre, relative to the tree's origin: florr's 0x100982860.
+Vec2 project(Vec2 grid, double scroll, double topRow) {
+    const double gx = grid.x - scroll;
+    const double across = gx * kStep;
+    return {across + kSpread * gx * grid.y * kStep,
+            kStep * (topRow - grid.y) + across * std::tanh(kBend * across)};
+}
+
+double ease(double dtMs, double rate) { return 1.0 - std::exp(-rate * dtMs); }
+
+/// A colour's channels scaled by `k` and pulled toward `toward` by the rest.
+std::uint32_t mixChannels(std::uint32_t c, double k, double toward) {
+    const auto channel = [&](int shift) {
+        const double v = static_cast<double>((c >> shift) & 0xFFu) * k + toward * (1.0 - k);
+        return static_cast<std::uint32_t>(std::clamp(v, 0.0, 255.0)) << shift;
+    };
+    return channel(16) | channel(8) | channel(0);
+}
+
+/// A tier's own colour: its rarity's, or Prestige's yellow.
+std::uint32_t tierColor(SkillId skill, int tier) {
+    return skill == SkillId::Prestige ? kPrestigeYellow : rarityColor(clampRarity(tier));
+}
+
+/// florr's labels: white unless told, black outline at 0.12 of the size, round
+/// joins, centred on `y`.
+TextStyle florrLabel(double size, std::uint32_t fill = kPaper, Align align = Align::Left) {
     TextStyle style;
     style.size = size;
     style.fill = fill;
+    style.align = align;
+    style.baseline = Baseline::Middle;
     style.roundJoin = true;
     return style;
 }
 
-/// The stat lines' own abbreviation: lower-case, and it stops at millions.
-/// Deliberately not the shared `abbreviate`, whose K/M/B/T suffixes would
-/// print a different string for the same number than the browser does.
-std::string abbreviateStat(double value) {
-    const double n = std::round(value);
-    char buffer[32];
-    if (n < 1000.0) {
-        std::snprintf(buffer, sizeof buffer, "%.0f", n);
-        return buffer;
-    }
-    const bool millions = n >= 1e6;
-    const double scaled = n / (millions ? 1e6 : 1e3);
-    // A whole number keeps no decimal at all: "2k", not "2.0k".
-    std::snprintf(buffer, sizeof buffer, scaled == std::floor(scaled) ? "%.0f%s" : "%.1f%s", scaled,
-                  millions ? "m" : "k");
-    return buffer;
+/// The padding florr's text widget adds to a run for its outline.
+double outlinePad(double size) {
+    return 2.0 * std::floor(2.0 * size * kTextStrokeRatio);
 }
 
-/// The pupil offset the avatar looks around with, in the flower's own
-/// radius-25 space.
-///
-/// The live smoothed offset of the player's own flower while there is a world
-/// to read one from, so the avatar aims where the player does. Outside the
-/// world -- and for a component that has never moved off zero -- it falls back
-/// to a glance to the right, which is what the browser's `|| 2` does and what
-/// the lobby therefore shows.
-Vec2 avatarEye(const WorldView& view) {
-    const auto found = view.entities().find(view.self().netId);
-    if (found == view.entities().end()) return {2.0, 0.0};
-    const RemoteEntity& self = found->second;
-    return {self.eyeX != 0.0 ? self.eyeX : 2.0, self.eyeY};
-}
+// -- the tooltip --------------------------------------------------------------
 
-/// The branches that grow out of the flower, in fan order: every skill but the
-/// forks, which grow out of another branch instead, and Prestige, which is a
-/// single node of its own (below). Pet Health is last, so it opens up-left
-/// beside Damage and the older branches keep their order.
-constexpr std::array<SkillId, kSkillCount - kSkillForks.size() - 1> kTrunks = {
-    SkillId::Damage,    SkillId::PetalHealth, SkillId::PlayerHealth, SkillId::Healing,
-    SkillId::Absorbing, SkillId::Reload,      SkillId::PetHealth,
+struct Run {
+    std::string text;
+    std::uint32_t color = kPaper;
 };
 
-/// Where a branch starts, in the fan. First one straight up.
-double branchAngle(int branchIndex, int branchCount) {
-    return -kPi * 0.5 + (kTau / branchCount) * branchIndex;
+struct TipRow {
+    double size = kTipBodySize;
+    std::vector<Run> runs;
+    double gapBefore = 0.0;
+};
+
+double rowWidth(const TipRow& row) {
+    double width = 0.0;
+    for (const Run& run : row.runs) width += measure(run.text, row.size);
+    return width;
 }
 
-/// Prestige's one node: halfway between the first branch (Damage, straight
-/// up) and the last (Pet Health, up-left), two steps out. One step out would
-/// sit 44 from each neighbour's first node, inside both; at two it keeps 89
-/// from every node on the tree, and its connector passes 43 from the centres
-/// of the two first nodes it runs between -- clear of their 35 radius. Up-left
-/// is on the card without a spin, which a root node a new player is meant to
-/// notice has to be.
-const double kPrestigeAngle =
-    branchAngle(0, static_cast<int>(kTrunks.size())) - kPi / static_cast<double>(kTrunks.size());
-constexpr double kPrestigeReach = 2.0 * kBaseStep;
-
-/// What a node's colour is once bought: its tier's, or Prestige's own yellow,
-/// which has no tier to borrow one from.
-std::uint32_t nodeColor(SkillId skill, int tier) {
-    return skill == SkillId::Prestige ? kPrestigeYellow : rarityColor(clampRarity(tier));
+Vec2 tipSize(const std::vector<TipRow>& rows) {
+    double width = 0.0;
+    double height = kTipPadTop + kTipPadBottom;
+    for (const TipRow& row : rows) {
+        width = std::max(width, rowWidth(row));
+        height += row.gapBefore + row.size * kLine;
+    }
+    return {width + kTipPadX * 2.0, height};
 }
 
-/// The one tooltip row that says what a tier is worth.
-std::string effectLine(SkillId skill, int tier) {
-    if (skill == SkillId::SecondChance) {
-        const auto at = static_cast<std::size_t>(tier);
-        return at < kSecondChanceEffects.size() ? kSecondChanceEffects[at] : std::string{};
+/// The box with its top-left at `at`, at `alpha`: black at half of it, the
+/// text at all of it.
+void paintTip(Canvas& canvas, Vec2 at, const std::vector<TipRow>& rows, double alpha) {
+    const Vec2 size = tipSize(rows);
+    const double base = canvas.globalAlpha();
+    canvas.save();
+    canvas.setGlobalAlpha(static_cast<float>(base * alpha * 0.5));
+    fillQuadRound(canvas, {at.x, at.y, size.x, size.y}, kTipRadius, kInk);
+    canvas.setGlobalAlpha(static_cast<float>(base * alpha));
+    double top = at.y + kTipPadTop;
+    for (const TipRow& row : rows) {
+        top += row.gapBefore;
+        double penX = at.x + kTipPadX;
+        const double middle = top + row.size * kLine * 0.5;
+        for (const Run& run : row.runs) {
+            text(canvas, run.text, penX, middle, florrLabel(row.size, run.color));
+            penX += measure(run.text, row.size);
+        }
+        top += row.size * kLine;
     }
-    if (skill == SkillId::Duplicator) {
-        return tier == 0 ? "+1 copy on petals with 2+ copies" : "+2 copies on petals with 2+ copies";
-    }
-    if (skill == SkillId::Prestige) return "Unlocks the Prestige biomes";
-    char buffer[48];
-    if (skill == SkillId::Magnetism) {
-        const auto at = static_cast<std::size_t>(tier);
-        if (at >= kMagnetismBonus.size()) return {};
-        std::snprintf(buffer, sizeof buffer, "+%.0f pickup range", kMagnetismBonus[at]);
-        return buffer;
-    }
-    if (skill == SkillId::Absorbing) {
-        std::snprintf(buffer, sizeof buffer, "%.0f%% absorb XP",
-                      scaleAt(kAbsorbSkillScale, tier) * 100.0);
-        return buffer;
-    }
-    // Quoted as the share of the wait that is LEFT, not as the share taken
-    // off: every other row on the card is a multiplier on the petal's own
-    // number, and "25% reload time" reads against them without the player
-    // having to work out which direction this one runs in.
-    if (skill == SkillId::Reload) {
-        std::snprintf(buffer, sizeof buffer, "%.0f%% reload time",
-                      scaleAt(kReloadSkillScale, tier) * 100.0);
-        return buffer;
-    }
-    // Petal Health and Pet Health quote the table the server applies, which
-    // is the whole point of it having one of its own.
-    if (skill == SkillId::PetalHealth || skill == SkillId::PetHealth) {
-        std::snprintf(buffer, sizeof buffer, "%.0f%% multiplier",
-                      scaleAt(kHealthSkillScale, tier) * 100.0);
-        return buffer;
-    }
-    // The effect curve for every other branch, including the two whose own
-    // numbers follow the gentler stat curve. That is what the browser quotes,
-    // and a tooltip promising 190% where the panel is showing 480% would be
-    // worse.
-    std::snprintf(buffer, sizeof buffer, "%.0f%% multiplier",
-                  scaleAt(kEffectSkillScale, tier) * 100.0);
+    canvas.restore();
+}
+
+/// Where a box of `size` stands centred on `x`, kept inside the view.
+double tipLeft(double x, double width, double viewWidth) {
+    const double left = x - width * 0.5;
+    return std::clamp(left, kTipViewMargin, std::max(kTipViewMargin, viewWidth - kTipViewMargin - width));
+}
+
+std::string percent(double fraction) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%.0f%%", fraction * 100.0);
     return buffer;
 }
+
+/// "from X% to Y%" over one of the tree's tables: what the tier below gave,
+/// or 100% with nothing below, and what this one gives.
+std::string fromTo(const std::array<double, kLadderRarityCount>& table, int tier) {
+    const double before = tier > 0 ? scaleAt(table, tier - 1) : 1.0;
+    return "from " + percent(before) + " to " + percent(scaleAt(table, tier)) + ".";
+}
+
+/// A tier's description, in florr's words for the talent where florr has it
+/// and in its manner where it does not: stat names in their stat colours.
+std::vector<TipRow> description(SkillId skill, int tier) {
+    std::vector<TipRow> rows;
+    const auto row = [&](std::vector<Run> runs) { rows.push_back({kTipBodySize, std::move(runs)}); };
+    char buffer[96];
+    switch (skill) {
+        case SkillId::PlayerHealth:
+            row({{"Increases base "}, {"Flower Health", kStatHealth},
+                 {" " + fromTo(kStatSkillScale, tier)}});
+            break;
+        case SkillId::Damage:
+            // One talent, two curves: a body slam on the stat table, every
+            // petal hit on the effect table (see recomputeModifiers).
+            row({{"Increases "}, {"Body Damage", kStatDamage}, {" " + fromTo(kStatSkillScale, tier)}});
+            row({{"Increases petal "}, {"Damage", kStatDamage},
+                 {" " + fromTo(kEffectSkillScale, tier)}});
+            break;
+        case SkillId::PetalHealth:
+            row({{"Increases "}, {"Petal Health", kStatHealth},
+                 {" " + fromTo(kHealthSkillScale, tier)}});
+            break;
+        case SkillId::PetHealth:
+            row({{"Increases "}, {"Health", kStatHealth},
+                 {" of summoned mobs " + fromTo(kHealthSkillScale, tier)}});
+            break;
+        case SkillId::Healing:
+            row({{"Increases "}, {"Healing", kStatHeal},
+                 {" from your petals " + fromTo(kEffectSkillScale, tier)}});
+            break;
+        case SkillId::Absorbing:
+            row({{"Increases absorb XP " + fromTo(kAbsorbSkillScale, tier)}});
+            break;
+        case SkillId::Reload: {
+            // A reload is a wait, so florr quotes what comes OFF it.
+            const double before = tier > 0 ? 1.0 - scaleAt(kReloadSkillScale, tier - 1) : 0.0;
+            const double after = 1.0 - scaleAt(kReloadSkillScale, tier);
+            row({{"Decreases the reload time for petals from -" + percent(before) + " to -" +
+                  percent(after) + "."}});
+            break;
+        }
+        case SkillId::SecondChance: {
+            const auto [duration, cooldown] = secondChanceEffect(tier);
+            if (tier == 0) {
+                std::snprintf(buffer, sizeof buffer,
+                              "Prevents death for %gs upon taking fatal damage. Has a %gs cooldown.",
+                              duration / 1000.0, cooldown / 1000.0);
+            } else {
+                std::snprintf(buffer, sizeof buffer,
+                              "Increases duration to %gs, decreases cooldown to %gs.",
+                              duration / 1000.0, cooldown / 1000.0);
+            }
+            row({{buffer}});
+            break;
+        }
+        case SkillId::Duplicator:
+            std::snprintf(buffer, sizeof buffer, "Adds %s for petals that have at least %d copies.",
+                          tier == 0 ? "an extra copy" : "two extra copies", kDuplicatorMinCopies);
+            row({{buffer}});
+            break;
+        case SkillId::Magnetism: {
+            const auto at = static_cast<std::size_t>(std::clamp(tier, 0, 2));
+            std::snprintf(buffer, sizeof buffer, "Increases petal pick up range by %.0f.",
+                          kMagnetismBonus[at]);
+            row({{buffer}});
+            break;
+        }
+        case SkillId::Prestige:
+            row({{"Unlocks the "}, {"Prestige", kPrestigeYellow}, {" biomes."}});
+            row({{"Every mob there is +1 rarity."}});
+            row({{"No Unique or Apex mobs spawn there."}});
+            break;
+        default: break;
+    }
+    return rows;
+}
+
+/// Name, rarity, then the description 16 under them. Prestige has no tier to
+/// name, so its box goes straight from the name to the description.
+std::vector<TipRow> tooltipRows(SkillId skill, int tier) {
+    std::vector<TipRow> rows;
+    rows.push_back({kTipNameSize, {{skillTierLabel(skill, tier)}}});
+    if (skill != SkillId::Prestige) {
+        const Rarity rarity = clampRarity(tier);
+        rows.push_back({kTipBodySize, {{rarityLabel(rarity), rarityColor(rarity)}}});
+    }
+    std::vector<TipRow> body = description(skill, tier);
+    if (!body.empty()) body.front().gapBefore = kTipGap;
+    rows.insert(rows.end(), body.begin(), body.end());
+    return rows;
+}
+
+// -- icons --------------------------------------------------------------------
+
+/// The icon's full extent inside a node: our own marks, unchanged from the
+/// tree they were drawn for.
+constexpr double kIconExtent = 35.0 * 0.89;
 
 /// A rounded plus. Two overlapping capsules rather than one traced outline:
 /// the corners the reference rounds are the four outer ends, and every one of
@@ -622,12 +772,10 @@ void drawIcon(Canvas& canvas, SkillId id, int tier, Vec2 at, double size) {
     canvas.restore();
 }
 
-/// The flower at the middle of the fan.
-///
-/// Drawn by scaling into the same 25-unit face space the world renderer uses,
-/// so the avatar and the body it upgrades are the same flower rather than two
-/// drifting approximations of one. Under that transform the stroke widths
-/// scale too, which is where the 2px eye rim and the 3px mouth come from.
+// -- the flower ---------------------------------------------------------------
+
+/// The flower at the root of the tree, its pupils turned toward the cursor.
+/// Drawn in the 25-unit face space the world renderer uses.
 void drawAvatar(Canvas& canvas, Vec2 at, double radius, Vec2 eye) {
     const auto eyeX = static_cast<float>(eye.x);
     const auto eyeY = static_cast<float>(eye.y);
@@ -654,8 +802,7 @@ void drawAvatar(Canvas& canvas, Vec2 at, double radius, Vec2 eye) {
     canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, kTauF);
     canvas.fill();
     // Pupils and rim are drawn clipped to the eyes, so only the inner half of
-    // the outline shows and a pupil at the edge is cut off rather than
-    // floating outside the eye.
+    // the outline shows and a pupil at the edge is cut off.
     canvas.clip();
     setFill(canvas, kPaper);
     canvas.beginPath();
@@ -682,372 +829,214 @@ void drawAvatar(Canvas& canvas, Vec2 at, double radius, Vec2 eye) {
     canvas.restore();
 }
 
+/// The stat lines' abbreviation: lower-case, and it stops at millions.
+std::string abbreviateStat(double value) {
+    const double n = std::round(value);
+    char buffer[32];
+    if (n < 1000.0) {
+        std::snprintf(buffer, sizeof buffer, "%.0f", n);
+        return buffer;
+    }
+    const bool millions = n >= 1e6;
+    const double scaled = n / (millions ? 1e6 : 1e3);
+    std::snprintf(buffer, sizeof buffer, scaled == std::floor(scaled) ? "%.0f%s" : "%.1f%s", scaled,
+                  millions ? "m" : "k");
+    return buffer;
+}
+
+/// A connector from `from` to `to`, 10 clear of each end; dashed from `from`.
+void drawLink(Canvas& canvas, Vec2 from, Vec2 to, bool dashed) {
+    const double length = distance(from, to);
+    if (length <= kLinkInset * 2.0) return;
+    const Vec2 along = (to - from) * (1.0 / length);
+    const Vec2 a = from + along * kLinkInset;
+    const double run = length - kLinkInset * 2.0;
+    canvas.beginPath();
+    if (!dashed) {
+        const Vec2 b = a + along * run;
+        canvas.moveTo(static_cast<float>(a.x), static_cast<float>(a.y));
+        canvas.lineTo(static_cast<float>(b.x), static_cast<float>(b.y));
+    } else {
+        for (double d = 0.0; d <= run; d += kDashPitch) {
+            const Vec2 p = a + along * d;
+            const Vec2 q = a + along * (d + kDash);
+            canvas.moveTo(static_cast<float>(p.x), static_cast<float>(p.y));
+            canvas.lineTo(static_cast<float>(q.x), static_cast<float>(q.y));
+        }
+    }
+    canvas.stroke();
+}
+
 } // namespace
 
-double TalentsPanel::preferredWidth() { return 600.0; }
+Rect TalentsPanel::bounds(int, int viewHeight) {
+    return {kWindowX, static_cast<double>(viewHeight) - kWindowBottom - kWindowSide, kWindowSide,
+            kWindowSide};
+}
 
 void TalentsPanel::reset() {
-    laidOut_ = false;
-    rotation_ = 0;
+    if (!laidOut_) layout();
     dragging_ = false;
-    dragMoved_ = false;
     pressedNode_ = -1;
+    hoveredNode_ = -1;
+    holdMs_ = 0;
+    holdBought_ = false;
+    badgeTip_ = 0;
+    flash_ = 0;
+    closeHeld_ = false;
+    resetHeld_ = false;
     confirmingReset_ = false;
+    for (Node& node : nodes_) {
+        node.hover = node.tooltip = node.hint = node.wobble = node.pulse = 0;
+        node.requested = false;
+    }
+    grains_.clear();
+    // The scroll is kept from one opening to the next, as florr keeps it.
+    if (!scrollSet_) {
+        scroll_ = scrollTarget_ = std::min(kStartColumn, maxColumn_);
+        scrollSet_ = true;
+    }
 }
 
 void TalentsPanel::layout() {
-    // Positions are in the tree's own space, with the flower at the origin, so
-    // the panel can move without relaying the whole fan out.
     nodes_.clear();
-
-    // Every main branch's node positions, so the sub-branches can fork off them.
-    // Indexed by SkillId rather than by place in the fan, which is what the
-    // fork looks its parent up by.
-    std::vector<std::vector<Vec2>> trunkPoints(kSkillCount);
-    std::vector<std::vector<double>> trunkAngles(kSkillCount);
-
-    constexpr int kBranchCount = static_cast<int>(kTrunks.size());
-    for (int branch = 0; branch < kBranchCount; ++branch) {
-        const SkillId id = kTrunks[static_cast<std::size_t>(branch)];
-        const auto at = static_cast<std::size_t>(id);
-        const int tiers = skillTierCount(id);
-        Vec2 cursor{0, 0};
-        double heading = branchAngle(branch, kBranchCount);
-
+    maxColumn_ = 0;
+    for (const Branch& branch : branches()) {
+        const int tiers = skillTierCount(branch.skill);
         for (int tier = 0; tier < tiers; ++tier) {
-            // Straight out for three steps, then a widening turn. A branch that
-            // curved from the first step would cross its neighbours; one that
-            // never curved would leave the panel by tier five.
-            if (tier >= 3) {
-                const double ramp = std::min(1.0, (tier - 3 + 1) / 4.0);
-                const double ease = tier == tiers - 1 ? 1.5 : 1.0;
-                heading += kMaxTurn * ramp * ease;
+            GridPoint point{0, 0};
+            if (tier < static_cast<int>(branch.points.size())) {
+                point = branch.points[static_cast<std::size_t>(tier)];
             }
-            cursor += Vec2::fromAngle(heading, kBaseStep);
-            trunkPoints[at].push_back(cursor);
-            trunkAngles[at].push_back(heading);
-            nodes_.push_back({id, tier, cursor, {}});
+            Node node;
+            node.skill = branch.skill;
+            node.tier = tier;
+            node.grid = {point.x, point.y};
+            nodes_.push_back(node);
+            maxColumn_ = std::max(maxColumn_, point.x);
         }
     }
-
-    // Each fork hangs off the node that unlocks it -- rare Flower Health,
-    // mythic and legendary Absorption -- so the prerequisite is legible as a shape and not
-    // only as tooltip text.
-    for (const SkillFork& fork : kSkillForks) {
-        const auto parent = static_cast<std::size_t>(fork.parent);
-        const int forkTier = rarityIndex(fork.requirement);
-        if (forkTier < 0 || forkTier >= static_cast<int>(trunkPoints[parent].size())) continue;
-        const ForkShape shape = forkShape(fork.child);
-        Vec2 cursor = trunkPoints[parent][static_cast<std::size_t>(forkTier)];
-        double heading = trunkAngles[parent][static_cast<std::size_t>(forkTier)] + shape.turn;
-        for (int tier = 0; tier < skillTierCount(fork.child); ++tier) {
-            if (tier > 0) heading += shape.bend;
-            cursor += Vec2::fromAngle(heading, kBaseStep);
-            nodes_.push_back({fork.child, tier, cursor, {}});
-        }
-    }
-
-    nodes_.push_back(
-        {SkillId::Prestige, 0, Vec2::fromAngle(kPrestigeAngle, kPrestigeReach), {}});
-
     laidOut_ = true;
 }
 
 bool TalentsPanel::render(MenuContext& ctx) {
     Canvas& canvas = ctx.canvas;
     const Profile& profile = ctx.net.profile();
-    const Rect panel = ctx.bounds;
     const SkillSet& skills = profile.skills;
     const int points = profile.talentPoints();
-
-    if (!laidOut_) layout();
-
-    // The card slides up from a full window below and back down again the way
-    // the inventory and the forge do: the menu system eases `ctx.bounds`, so
-    // everything below is laid out, drawn and hit-tested where the card stands
-    // this frame -- a mid-slide click lands on the button it is drawn under,
-    // as it does on the browser's transformed card.
-    //
-    // A drag, on the other hand, is measured in WINDOW coordinates, from the
-    // press and never from the card: while the card is still sliding it
-    // travels under a cursor that has not moved at all, and that must not add
-    // up to a spin.
+    const Rect panel = ctx.bounds;
+    const double dtMs = ctx.dt * 1000.0;
     const Vec2 mouse = ctx.mouse();
+    if (!laidOut_ || !scrollSet_) reset();
 
-    const Rect closeRect = closeButtonRect(panel);
-    const Rect resetRect{panel.right() - kChromeInset - kResetWidth,
-                         panel.bottom() - kChromeInset - kResetHeight, kResetWidth, kResetHeight};
-    const bool closeHovered = closeRect.contains(mouse);
-    const bool resetHovered = resetRect.contains(mouse);
-    // Leaving the button disarms it, so the armed state is never painted in
-    // the resting colour: the only two fills the browser has are rest and
-    // hover, and the cursor is on the button for the whole confirm.
-    if (!resetHovered) confirmingReset_ = false;
+    // florr kills the window's input below 0.9 open and on the way out.
+    const bool live = open_ >= 0.9 && !closing_;
 
-    // A press anywhere can still become a spin, so a drag is live from the
-    // press and only counts once it clears the threshold -- measured in both
-    // axes, because a press dragged straight down is a spin attempt and not a
-    // click. Once it counts it stays counted: a gesture that wandered 100px
-    // and came back is still a drag, and releasing it must not buy whatever it
-    // happened to land back on.
-    if (dragging_ && !dragMoved_ &&
-        distanceSq(mouse, dragPress_) >= kDragThreshold * kDragThreshold) {
-        dragMoved_ = true;
+    const Rect inner{panel.x + kInset, panel.y + kInset, panel.w - kInset * 2.0,
+                     panel.h - kInset * 2.0};
+    double topRow = 0;
+    for (const Node& node : nodes_) topRow = std::max(topRow, node.grid.y);
+    const Vec2 origin{inner.x + inner.w * 0.5, inner.bottom() - kStep * topRow - kTreeBottom};
+    const Vec2 flower = origin + Vec2{0.0, kStep * topRow + kFlowerDrop};
+
+    // -- the chrome's rects ---------------------------------------------------
+    const double rowMiddle = panel.y + kPad + kTitleSize * kLine * 0.5;
+    const Rect closeSquare{panel.right() - kCloseFromRight, rowMiddle - kCloseSide * 0.5,
+                           kCloseSide, kCloseSide};
+    const Rect closeHit{closeSquare.x - kCloseRimGap, closeSquare.y - kCloseRimGap,
+                        kCloseSide + kCloseRimGap * 2.0, kCloseSide + kCloseRimGap * 2.0};
+    const double resetWidth =
+        measure("Reset", kResetLabelSize) + outlinePad(kResetLabelSize) + kResetPadX * 2.0;
+    const Rect resetRect{panel.right() - kPad - resetWidth, panel.bottom() - kPad - kResetHeight,
+                         resetWidth, kResetHeight};
+    const Rect resetHit{resetRect.x - kButtonBorder * 0.5, resetRect.y - kButtonBorder * 0.5,
+                        resetRect.w + kButtonBorder, resetRect.h + kButtonBorder};
+    const std::string pointsText = std::to_string(points);
+    const Rect badgeHit{inner.x + kBadgeHitInset, inner.y + kBadgeHitInset,
+                        measure(pointsText, kBadgeTextSize) + outlinePad(kBadgeTextSize) +
+                            kBadgeHitExtra,
+                        kBadgeHitHeight};
+    bool anyOwned = false;
+    for (int s = 0; s < kSkillCount; ++s) anyOwned |= skills.level(static_cast<SkillId>(s)) >= 0;
+
+    const bool overClose = live && closeHit.contains(mouse);
+    const bool overReset = live && anyOwned && resetHit.contains(mouse);
+    if (!overReset) confirmingReset_ = false;
+
+    // -- scroll ---------------------------------------------------------------
+    if (dragging_) {
+        scrollTarget_ += (dragLastX_ - mouse.x) / kStep;
+        dragLastX_ = mouse.x;
     }
-    if (dragging_ && dragMoved_) {
-        rotation_ = rotationAtAnchor_ + (mouse.x - dragPress_.x) * kRotationPerPixel;
-    }
+    if (live && panel.contains(mouse)) scrollTarget_ -= ctx.wheel();
+    scrollTarget_ = std::clamp(scrollTarget_, 0.0, maxColumn_);
+    scroll_ += (scrollTarget_ - scroll_) * ease(dtMs, kScrollRate);
 
-    const Vec2 centre{panel.x + panel.w * 0.5, panel.bottom() - kPivotAboveBottom};
-    const double cosR = std::cos(rotation_);
-    const double sinR = std::sin(rotation_);
-    for (Node& node : nodes_) {
-        node.screen = {centre.x + node.local.x * cosR - node.local.y * sinR,
-                       centre.y + node.local.x * sinR + node.local.y * cosR};
-    }
+    for (Node& node : nodes_) node.at = origin + project(node.grid, scroll_, topRow);
 
-    // Exactly one node hovers. Walking the tree backwards picks the one drawn
-    // last, which is the one visibly on top wherever two overlap.
+    // -- what each node is ----------------------------------------------------
+    const auto owned = [&](const Node& node) {
+        return skills.prerequisiteMet(node.skill) && node.tier <= skills.level(node.skill);
+    };
+    const auto costOf = [&](const Node& node) {
+        return skillPurchaseCost(skills, node.skill, node.tier);
+    };
+    const auto affordable = [&](const Node& node) {
+        return !owned(node) && costOf(node) <= points;
+    };
+
+    // Exactly one node answers the cursor: the last drawn, which is the one
+    // on top, and never through the chrome drawn over the tree.
     int hovered = -1;
-    if (!dragMoved_ && panel.contains(mouse)) {
+    if (live && !dragging_ && inner.contains(mouse) && !closeHit.contains(mouse) &&
+        !resetHit.contains(mouse)) {
         for (int i = static_cast<int>(nodes_.size()) - 1; i >= 0; --i) {
-            if (distance(mouse, nodes_[static_cast<std::size_t>(i)].screen) <= kNodeRadius) {
+            const Node& node = nodes_[static_cast<std::size_t>(i)];
+            const double reach = i == hoveredNode_ ? kHitRadiusHovered : kHitRadius;
+            if (distance(mouse, node.at) <= reach) {
                 hovered = i;
                 break;
             }
         }
     }
+    hoveredNode_ = hovered;
 
-    panelCard(canvas, panel, kTalentsSkin, kMenuBorder, kCardRadius);
-
-    // Everything else is drawn inside the card, tooltip included: a branch
-    // that runs past the edge is meant to be spun back into view rather than
-    // painted over the world, and the browser gets the same clip for free
-    // from its canvas element's own rect.
-    canvas.save();
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
-                     static_cast<float>(panel.w), static_cast<float>(panel.h),
-                     static_cast<float>(kCardRadius));
-    canvas.clip();
-
-    // --- connectors --------------------------------------------------------
-    canvas.setLineCap("round");
-    for (std::size_t i = 0; i < nodes_.size(); ++i) {
-        const Node& node = nodes_[i];
-        const bool prereqMet = skills.prerequisiteMet(node.skill);
-        const bool unlocked = prereqMet && node.tier <= skills.level(node.skill);
-
-        Vec2 from = centre;
-        if (node.tier > 0) {
-            from = nodes_[i - 1].screen;
-        } else if (const SkillFork* fork = skillFork(node.skill)) {
-            const int forkTier = rarityIndex(fork->requirement);
-            for (const Node& candidate : nodes_) {
-                if (candidate.skill == fork->parent && candidate.tier == forkTier) {
-                    from = candidate.screen;
-                    break;
-                }
+    // -- input ----------------------------------------------------------------
+    bool keepOpen = true;
+    if (live && ctx.pressed() && panel.contains(mouse)) {
+        if (overClose) {
+            closeHeld_ = true;
+        } else if (overReset) {
+            resetHeld_ = true;
+        } else if (hovered >= 0) {
+            pressedNode_ = hovered;
+            holdMs_ = 0;
+            holdBought_ = false;
+        } else if (inner.contains(mouse)) {
+            dragging_ = true;
+            dragLastX_ = mouse.x;
+        }
+    }
+    const bool down = ctx.window.mouseDown(MouseButton::Left);
+    // A hold lasts while the press stays on its node and the node can still
+    // be bought; it buys once.
+    const bool holding = down && pressedNode_ >= 0 && pressedNode_ == hovered &&
+                         affordable(nodes_[static_cast<std::size_t>(pressedNode_)]);
+    if (holding) {
+        holdMs_ += dtMs;
+        Node& node = nodes_[static_cast<std::size_t>(pressedNode_)];
+        if (holdMs_ > kHoldMs && !holdBought_) {
+            holdBought_ = true;
+            for (const SkillStep& step : skillPurchasePath(skills, node.skill, node.tier)) {
+                ctx.net.requestUpgradeSkill(step.id, step.tier);
             }
-        }
-
-        // Both states are the card's own border colour, and only the LINE tells
-        // them apart: solid for a tier already bought, dashed for one that is
-        // not. Colouring the bought ones green instead would put a second,
-        // brighter palette behind a fan whose nodes are already ten colours,
-        // and the branch would stop reading as one continuous run.
-        setStroke(canvas, kTalentsSkin.border);
-        canvas.setLineWidth(static_cast<float>(unlocked ? kLinkWidth : kLinkLockedWidth));
-        canvas.setLineDash(unlocked ? std::vector<float>{}
-                                    : std::vector<float>{kLinkDash, kLinkDashGap});
-        canvas.beginPath();
-        canvas.moveTo(static_cast<float>(from.x), static_cast<float>(from.y));
-        canvas.lineTo(static_cast<float>(node.screen.x), static_cast<float>(node.screen.y));
-        canvas.stroke();
-    }
-    canvas.setLineDash({});
-    canvas.setLineCap("butt");
-
-    // --- nodes -------------------------------------------------------------
-    for (std::size_t i = 0; i < nodes_.size(); ++i) {
-        const Node& node = nodes_[i];
-        const bool prereqMet = skills.prerequisiteMet(node.skill);
-        const bool unlocked = prereqMet && node.tier <= skills.level(node.skill);
-        const int cost = skillTierCost(node.skill, node.tier);
-        const bool available =
-            prereqMet && node.tier == skills.level(node.skill) + 1 && points >= cost;
-
-        std::uint32_t fill = kLockedFill;
-        if (unlocked) {
-            fill = nodeColor(node.skill, node.tier);
-        } else if (available) {
-            // A TINT of the tier's own colour over the locked grey, so the one
-            // node a click would actually buy names its rarity without ever
-            // being mistaken for a node already owned.
-            fill = mixColor(kLockedFill, nodeColor(node.skill, node.tier), kAvailableTint);
-        }
-        const std::uint32_t border = fill == kLockedFill ? kLockedBorder : darken(fill, kRimShade);
-
-        disc(canvas, node.screen, kNodeRadius, border, border, 0.0);
-        disc(canvas, node.screen, kNodeRadius - kNodeRim, fill, fill, 0.0);
-        if (static_cast<int>(i) == hovered && (unlocked || available)) {
-            disc(canvas, node.screen, kNodeRadius - kNodeRim, kPaper, kPaper, 0.0, 0.2);
-        }
-        drawIcon(canvas, node.skill, node.tier, node.screen, kIconExtent);
-
-        // Only on a tier still to be bought. A price over an owned node is a
-        // number with nothing to do: the point of the label is what a click
-        // would cost, and every one of them shouting a receipt turns the fan
-        // into a field of red digits.
-        if (!unlocked) {
-            TextStyle price = panelText(kCostTextSize, kCostRed);
-            price.align = Align::Centre;
-            text(canvas, std::to_string(cost), node.screen.x + kNodeRadius * 0.7,
-                 node.screen.y - kNodeRadius * 0.85, price);
+            node.requested = true;
+            node.requestedMs = holdMs_;
         }
     }
-    drawAvatar(canvas, centre, kAvatarRadius, avatarEye(ctx.net.view()));
-
-    // --- header ------------------------------------------------------------
-    TextStyle title = panelText(kMenuTitleSize, kPaper);
-    title.align = Align::Centre;
-    title.baseline = Baseline::Top;
-    text(canvas, "Talents", panel.x + panel.w * 0.5, panel.y + kMenuPadding, title);
-
-    // A disc in the card's own border colour rather than the dark inlay the
-    // other panels' chips wear: it is a shadow under the number, not a plate
-    // the number sits on, and it is drawn only so the digit has something to
-    // separate it from the fan running behind the header.
-    const Vec2 badge{panel.x + kBadgeInset, panel.y + kBadgeInset};
-    disc(canvas, badge, kBadgeRadius, kTalentsSkin.border, kTalentsSkin.border, 0.0);
-    // Both sit a pixel below the badge's middle, which is where the browser
-    // puts them and what stops the digits reading as high in the plate.
-    const double badgeMiddle = badge.y + 1.0;
-    TextStyle badgeText = panelText(kBadgeTextSize, kPaper);
-    badgeText.align = Align::Centre;
-    text(canvas, std::to_string(points), badge.x, badgeMiddle, badgeText);
-    TextStyle badgeLabel = panelText(kBadgeLabelSize, kPaper);
-    badgeLabel.align = Align::Left;
-    text(canvas, "TP", badge.x + kBadgeRadius + 12.0, badgeMiddle, badgeLabel);
-
-    panelClose(canvas, closeRect, closeHovered);
-
-    // --- stats and reset ---------------------------------------------------
-    // The base is the live max health the server sent, the same number the
-    // browser reads off the local player. Petals, the arena and the server's
-    // own level curve all move it, so a curve evaluated here would quote a
-    // flower nobody is playing; only the lobby has no world to read one from,
-    // and there the level curve stands in.
-    //
-    // Scaled by the EFFECT curve rather than the stat curve, which is a
-    // deliberate choice in the reference and not a bug to correct here: these
-    // two lines advertise what the tree is worth, and the gentler curve reads
-    // as no progress at all.
-    const SelfState& self = ctx.net.view().self();
-    // Not while this client steers somebody else's flower: the self block is
-    // THAT flower's then, and these lines are about this account's tree.
-    const double baseHealth = self.maxHealth > 0.0 && !ctx.net.controllingFlower()
-                                  ? self.maxHealth
-                                  : maxHealthForLevel(profile.level);
-    const double health = baseHealth * skills.effectScale(SkillId::PlayerHealth);
-    const double bodyDamage = kDisplayBodyDamage * skills.effectScale(SkillId::Damage);
-
-    // Anchored to the FLOWER, not to the card's corner: these two lines say
-    // what the flower in the middle of the fan is currently worth, and reading
-    // them off the far edge of a card whose middle is that flower makes them
-    // look like a footer. Label and value are separate runs so the label can
-    // carry the stat's colour while the number stays white -- one white number
-    // beside a coloured word is legible at 13 units where a whole coloured
-    // sentence is not.
-    TextStyle statLabel = panelText(kStatTextSize, kStatGreen);
-    statLabel.baseline = Baseline::Alphabetic;
-    TextStyle statValue = panelText(kStatTextSize, kPaper);
-    statValue.baseline = Baseline::Alphabetic;
-
-    const double statX = centre.x + kAvatarRadius + 12.0;
-    const auto statLine = [&](const std::string& label, const std::string& value, double y,
-                              std::uint32_t color) {
-        statLabel.fill = color;
-        text(canvas, label, statX, y, statLabel);
-        text(canvas, value, statX + textWidth(canvas, label, kStatTextSize), y, statValue);
-    };
-    statLine("Flower Health: ", abbreviateStat(health), centre.y - 4.0, kStatGreen);
-    statLine("Body Damage: ", abbreviateStat(bodyDamage), centre.y + kStatLineGap - 4.0, kStatGrey);
-
-    // Drawn here rather than through chip(): the inner plate keeps a radius of
-    // 4 inside the outer 5, where inlaid()'s radius - 2 would flatten it to 3.
-    setFill(canvas, kResetBorder);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(resetRect.x), static_cast<float>(resetRect.y),
-                     static_cast<float>(resetRect.w), static_cast<float>(resetRect.h), 5.0f);
-    canvas.fill();
-    setFill(canvas, resetHovered ? kResetHoverFill : kResetFill);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(resetRect.x + 2.0), static_cast<float>(resetRect.y + 2.0),
-                     static_cast<float>(resetRect.w - 4.0), static_cast<float>(resetRect.h - 4.0),
-                     4.0f);
-    canvas.fill();
-    TextStyle resetLabel = panelText(14.0, kPaper);
-    resetLabel.align = Align::Centre;
-    text(canvas, "Reset", resetRect.x + resetRect.w * 0.5, resetRect.y + resetRect.h * 0.5 + 1.0,
-         resetLabel);
-
-    // --- tooltip -----------------------------------------------------------
-    if (hovered >= 0) {
-        const Node& node = nodes_[static_cast<std::size_t>(hovered)];
-        const Rarity rarity = clampRarity(node.tier);
-        const bool prereqMet = skills.prerequisiteMet(node.skill);
-        const bool unlocked = prereqMet && node.tier <= skills.level(node.skill);
-        const int cost = skillTierCost(node.skill, node.tier);
-        const bool nextTier = node.tier == skills.level(node.skill) + 1;
-        const bool available = prereqMet && nextTier && points >= cost;
-
-        std::vector<TooltipLine> lines;
-        lines.push_back({skillTierLabel(node.skill, node.tier), 20.0, kPaper});
-        if (node.skill == SkillId::Prestige) {
-            // No tier to name: what it opens, and what is different there.
-            lines.push_back({effectLine(node.skill, node.tier), 14.0, kPrestigeYellow});
-            lines.push_back({"Every mob there is +1 rarity", 12.0, kPaper, 10.0});
-            lines.push_back({"No Unique or Apex mobs spawn there", 12.0, kPaper});
-        } else {
-            lines.push_back({rarityLabel(rarity), 14.0, rarityColor(rarity)});
-            lines.push_back({effectLine(node.skill, node.tier), 12.0, kPaper, 10.0});
-        }
-        lines.push_back({"Cost: " + std::to_string(cost) + " TP", 12.0, kPaper});
-
-        if (!prereqMet) {
-            const SkillFork& fork = *skillFork(node.skill);
-            lines.push_back({std::string("Requires ") + rarityName(fork.requirement) + " " +
-                                 kSkillLabels[static_cast<std::size_t>(fork.parent)],
-                             12.0, kCostRed});
-        } else if (unlocked) {
-            lines.push_back({"Unlocked", 12.0, kStatGreen});
-        } else if (available) {
-            lines.push_back({"Click to unlock", 12.0, kCallToAction});
-        } else if (nextTier) {
-            lines.push_back({"Need " + std::to_string(cost - points) + " more TP", 12.0, kCostRed});
-        } else {
-            lines.push_back({"Locked", 12.0, kStatusGrey});
-        }
-
-        // Above the node and centred on it, not trailing the cursor: a box
-        // that follows the pointer covers the node being read.
-        const Vec2 size = measureTooltip(lines);
-        const double tx = clamp(node.screen.x - size.x * 0.5, panel.x + 4.0,
-                                panel.right() - 4.0 - size.x);
-        double ty = node.screen.y - kNodeRadius - size.y - 8.0;
-        if (ty < panel.y + 4.0) ty = node.screen.y + kNodeRadius + 8.0;
-        paintTooltip(canvas, tx, ty, lines);
-    }
-
-    canvas.restore();   // the card's clip
-
-    // --- input -------------------------------------------------------------
-    if (ctx.pressed() && panel.contains(mouse)) {
-        // The chrome acts on the press; only a node click is deferred, because
-        // it is the one gesture that might still turn into a spin.
-        if (closeHovered) return false;
-        if (resetHovered) {
+    if (!down) {
+        if (closeHeld_ && overClose) keepOpen = false;
+        if (resetHeld_ && overReset) {
             // Two clicks, because a reset cannot be undone and there is no
             // modal here to raise. The caption never changes.
             if (confirmingReset_) {
@@ -1056,34 +1045,196 @@ bool TalentsPanel::render(MenuContext& ctx) {
             } else {
                 confirmingReset_ = true;
             }
-            return true;
         }
-        dragging_ = true;
-        dragMoved_ = false;
-        dragPress_ = mouse;
-        // The click belongs to the node the PRESS landed on. Releasing over a
-        // different node after the tree has spun under the cursor is not a
-        // click on that one.
-        pressedNode_ = hovered;
-        rotationAtAnchor_ = rotation_;
-    }
-
-    if (dragging_ && !ctx.window.mouseDown(MouseButton::Left)) {
+        closeHeld_ = resetHeld_ = false;
         dragging_ = false;
-        // A spin is not a click on whatever happened to be under it.
-        if (!dragMoved_ && pressedNode_ >= 0) {
-            const Node& node = nodes_[static_cast<std::size_t>(pressedNode_)];
-            // Every node is asked for, affordable or not and however far up the
-            // branch. The server is the one that decides, and its refusal comes
-            // back as a notice that says why -- which is the answer the player
-            // wanted. Filtering here instead makes the same click do nothing at
-            // all and explain nothing.
-            ctx.net.requestUpgradeSkill(node.skill, node.tier);
-        }
-        dragMoved_ = false;
         pressedNode_ = -1;
     }
-    return true;
+
+    // -- the nodes' eases -----------------------------------------------------
+    const double hoverStep = ease(dtMs, kHoverRate);
+    const double tipStep = ease(dtMs, kTipRate);
+    for (std::size_t i = 0; i < nodes_.size(); ++i) {
+        Node& node = nodes_[i];
+        const bool isHovered = static_cast<int>(i) == hovered;
+        const bool isHeld = holding && static_cast<int>(i) == pressedNode_;
+        const bool canBuy = affordable(node);
+        if (node.requested && owned(node)) {
+            // The purchase landed: a pulse, the flower's bulge and a burst.
+            node.requested = false;
+            node.pulse = 1.0;
+            flash_ = 1.0;
+            grains_.burst(node.at, tierColor(node.skill, node.tier), kBurstGrains, kBurstShape);
+        }
+        if (node.requested && !isHeld) {
+            node.requestedMs += dtMs;
+            if (node.requestedMs > kRequestTimeoutMs) node.requested = false;
+        }
+        if (isHeld || node.requested) {
+            node.wobble = std::sin(kWobbleRate * (isHeld ? holdMs_ : node.requestedMs));
+        } else {
+            node.wobble -= node.wobble * hoverStep;
+        }
+        node.pulse -= node.pulse * hoverStep;
+        node.hover += ((isHovered && canBuy && !isHeld ? 1.0 : 0.0) - node.hover) * hoverStep;
+        node.tooltip += ((isHovered && !isHeld ? 1.0 : 0.0) - node.tooltip) * tipStep;
+        node.hint += ((isHovered && canBuy ? 1.0 : 0.0) - node.hint) * tipStep;
+    }
+    flash_ -= flash_ * ease(dtMs, kFlashRate);
+    badgeTip_ += ((live && badgeHit.contains(mouse) ? 1.0 : 0.0) - badgeTip_) * tipStep;
+
+    // -- paint ----------------------------------------------------------------
+    canvas.save();
+    // The whole window fades in with its open progress, florr's way.
+    canvas.setGlobalAlpha(static_cast<float>(std::clamp(open_, 0.0, 1.0)));
+    drawFlorrPanel(canvas, panel, kTalentsSkin.fill, kTalentsSkin.border);
+
+    canvas.save();
+    canvas.beginPath();
+    canvas.rect(static_cast<float>(inner.x), static_cast<float>(inner.y), static_cast<float>(inner.w),
+                static_cast<float>(inner.h));
+    canvas.clip();
+
+    // The TP badge.
+    const Vec2 badge{inner.x + kBadgeCentre, inner.y + kBadgeCentre};
+    setFill(canvas, kTalentsSkin.border);
+    canvas.fillCircle(static_cast<float>(badge.x), static_cast<float>(badge.y),
+                      static_cast<float>(kBadgeRadius));
+    text(canvas, pointsText, badge.x, badge.y, florrLabel(kBadgeTextSize, kPaper, Align::Centre));
+    text(canvas, "TP", badge.x + kBadgeLabelX, badge.y, florrLabel(kBadgeLabelSize));
+
+    // The connectors, all under the nodes: each tier from the one below it,
+    // a fork's first from the node it hangs off, a root from the flower.
+    setStroke(canvas, kTalentsSkin.border);
+    canvas.setLineWidth(static_cast<float>(kLinkWidth));
+    canvas.setLineCap("round");
+    canvas.setLineJoin("round");
+    for (std::size_t i = 0; i < nodes_.size(); ++i) {
+        const Node& node = nodes_[i];
+        const bool dashed = !owned(node);
+        if (node.tier > 0) {
+            drawLink(canvas, nodes_[i - 1].at, node.at, dashed);
+            continue;
+        }
+        if (const SkillFork* fork = skillFork(node.skill)) {
+            for (const Node& parent : nodes_) {
+                if (parent.skill == fork->parent && parent.tier == rarityIndex(fork->requirement)) {
+                    drawLink(canvas, parent.at, node.at, dashed);
+                    break;
+                }
+            }
+            continue;
+        }
+        // A root's dashes start at the node, florr's order.
+        drawLink(canvas, node.at, flower, dashed);
+    }
+
+    // The flower on its hub, bulging after a purchase.
+    setFill(canvas, kTalentsSkin.border);
+    canvas.fillCircle(static_cast<float>(flower.x), static_cast<float>(flower.y),
+                      static_cast<float>(kHubRadius));
+    const double bulge = flash_ > 1e-4 ? kFlashBulge * std::sin(kPi * (1.0 - flash_)) : 0.0;
+    const double look = std::atan2(mouse.y - flower.y, mouse.x - flower.x);
+    drawAvatar(canvas, flower, kFlowerRadius + bulge,
+               {std::cos(look) * kFlowerEyeTravelX, std::sin(look) * kFlowerEyeTravelY});
+    grains_.drawGrains(canvas, dtMs);
+
+    // The nodes.
+    for (const Node& node : nodes_) {
+        const bool isOwned = owned(node);
+        const int cost = isOwned ? 0 : costOf(node);
+        const bool canBuy = !isOwned && cost <= points;
+        const std::uint32_t own = tierColor(node.skill, node.tier);
+        std::uint32_t fill = kLockedFill;
+        std::uint32_t rim = kLockedRim;
+        if (isOwned) {
+            fill = own;
+            rim = slotCardShade(own);
+        } else if (canBuy) {
+            // Within reach: 30% of the tier's colour over the locked grey.
+            fill = mixChannels(own, 0.3, static_cast<double>(kLockedFill & 0xFFu));
+            rim = slotCardShade(fill);
+        }
+        const double pulse = node.pulse > 1e-4 ? 1.0 + 0.5 * std::sin(kPi * node.pulse) : 1.0;
+        const double scale = (1.0 + 0.1 * node.hover) * (1.0 + 0.1 * node.wobble) * pulse;
+
+        canvas.save();
+        canvas.translate(static_cast<float>(node.at.x), static_cast<float>(node.at.y));
+        canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
+        setFill(canvas, rim);
+        canvas.fillCircle(0.0f, 0.0f, static_cast<float>(kNodeRim));
+        setFill(canvas, fill);
+        canvas.fillCircle(0.0f, 0.0f, static_cast<float>(kNodeFace));
+        drawIcon(canvas, node.skill, node.tier, {0.0, 0.0}, kIconExtent);
+        if (!isOwned) {
+            setFill(canvas, rim);
+            canvas.fillCircle(static_cast<float>(kCostAt), static_cast<float>(-kCostAt),
+                              static_cast<float>(kCostRadius));
+            canvas.save();
+            canvas.translate(static_cast<float>(kCostAt), static_cast<float>(-kCostAt));
+            canvas.rotate(static_cast<float>(kCostTurn));
+            text(canvas, std::to_string(cost), 0.0, 0.0,
+                 florrLabel(kCostSize, canBuy ? kPaper : kCostShort, Align::Centre));
+            canvas.restore();
+        }
+        canvas.restore();
+    }
+
+    // What the flower in the middle is worth now. The live max health, which
+    // the tree already multiplies; outside the world -- or steering somebody
+    // else's flower -- the level curve stands in.
+    const SelfState& self = ctx.net.view().self();
+    const double health = self.maxHealth > 0.0 && !ctx.net.controllingFlower()
+                              ? self.maxHealth
+                              : maxHealthForLevel(profile.level) * skills.statScale(SkillId::PlayerHealth);
+    const double bodyDamage = kDisplayBodyDamage * skills.statScale(SkillId::Damage);
+    const double statX = flower.x + kStatX;
+    const auto statLine = [&](const char* name, std::uint32_t color, double value, double middle) {
+        text(canvas, name, statX, middle, florrLabel(kStatSize, color));
+        text(canvas, " " + abbreviateStat(value), statX + measure(name, kStatSize), middle,
+             florrLabel(kStatSize));
+    };
+    statLine("Flower Health:", kStatHealth, health, flower.y - kStatSize * kLine * 0.5);
+    statLine("Body Damage:", kStatDamage, bodyDamage, flower.y + kStatSize * kLine * 0.5);
+
+    canvas.restore();  // the tree's clip
+
+    // Reset, the title and the close button, over the tree.
+    drawFlorrButton(canvas, resetRect, anyOwned ? kResetFace : kResetIdleFace, kButtonBorder,
+                    kButtonRadius, overReset, overReset && resetHeld_);
+    text(canvas, "Reset", resetRect.x + resetRect.w * 0.5, resetRect.y + resetRect.h * 0.5,
+         florrLabel(kResetLabelSize, kPaper, Align::Centre));
+    text(canvas, "Talents", panel.x + panel.w * 0.5, rowMiddle,
+         florrLabel(kTitleSize, kPaper, Align::Centre));
+    drawFlorrClose(canvas, closeSquare, overClose, overClose && closeHeld_);
+    // florr paints the rim a second time, so nothing inside overruns it.
+    drawFlorrRim(canvas, panel, kTalentsSkin.border);
+
+    // -- tooltips, over everything ---------------------------------------------
+    const double viewWidth = static_cast<double>(canvas.width());
+    if (badgeTip_ > 1e-3) {
+        const std::vector<TipRow> rows = {{kBadgeTipSize, {{kBadgeTip}}}};
+        const Vec2 size = tipSize(rows);
+        const double anchorY = inner.y + kBadgeTipY;
+        paintTip(canvas, {tipLeft(badge.x, size.x, viewWidth), anchorY - kTipUnder}, rows, badgeTip_);
+    }
+    for (const Node& node : nodes_) {
+        if (node.tooltip > 1e-3) {
+            const std::vector<TipRow> rows = tooltipRows(node.skill, node.tier);
+            const Vec2 size = tipSize(rows);
+            paintTip(canvas,
+                     {tipLeft(node.at.x, size.x, viewWidth), node.at.y - kTipAbove - size.y},
+                     rows, node.tooltip);
+        }
+        if (node.hint > 1e-3) {
+            const std::vector<TipRow> rows = {{kTipBodySize, {{"HOLD to upgrade"}}}};
+            const Vec2 size = tipSize(rows);
+            paintTip(canvas, {tipLeft(node.at.x, size.x, viewWidth), node.at.y + kTipBelow}, rows,
+                     node.hint);
+        }
+    }
+    canvas.restore();  // the window's fade
+    return keepOpen;
 }
 
 } // namespace flix

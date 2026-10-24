@@ -333,6 +333,54 @@ TEST(magnetism_is_bought_over_the_wire_after_legendary_absorption) {
     CHECK_EQ(client.profile().talentPoints(), before - 5 - 8 - 12);
 }
 
+TEST(a_purchase_path_runs_through_every_missing_tier_parent_first) {
+    SkillSet skills;
+    // Nothing owned: Second Chance's second tier needs Flower Health up to
+    // rare first, then both of its own tiers.
+    const std::vector<SkillStep> path = skillPurchasePath(skills, SkillId::SecondChance, 1);
+    CHECK_EQ(path.size(), std::size_t{5});
+    CHECK(path[0].id == SkillId::PlayerHealth && path[0].tier == 0);
+    CHECK(path[2].id == SkillId::PlayerHealth && path[2].tier == rarityIndex(Rarity::Rare));
+    CHECK(path[3].id == SkillId::SecondChance && path[3].tier == 0);
+    CHECK(path[4].id == SkillId::SecondChance && path[4].tier == 1);
+    CHECK_EQ(skillPurchaseCost(skills, SkillId::SecondChance, 1), 1 + 2 + 3 + 1 + 2);
+
+    // A parent already past the fork's tier adds nothing; an owned tier, or
+    // one past the branch's top, is no purchase at all.
+    skills.set(SkillId::PlayerHealth, rarityIndex(Rarity::Epic));
+    CHECK_EQ(skillPurchaseCost(skills, SkillId::SecondChance, 0), 1);
+    CHECK(skillPurchasePath(skills, SkillId::PlayerHealth, 1).empty());
+    CHECK(skillPurchasePath(skills, SkillId::Magnetism, 3).empty());
+    CHECK_EQ(skillPurchaseCost(skills, SkillId::PlayerHealth, rarityIndex(Rarity::Mythic)), 8 + 12);
+}
+
+TEST(a_held_node_buys_its_whole_path_in_one_burst_of_requests) {
+    Harness h("talent-path", [](const std::string& path) {
+        seedAccount(path, "pathfinder", "password7", 0, 1e15);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("pathfinder", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(awaitProfile(h, client, [](const Profile& p) { return p.level > 100; }));
+
+    // What the talent tree sends when a hold completes: every step at once,
+    // before any answer comes back. The server takes them in order.
+    const int before = client.profile().talentPoints();
+    const int cost = skillPurchaseCost(client.profile().skills, SkillId::Duplicator, 0);
+    for (const SkillStep& step :
+         skillPurchasePath(client.profile().skills, SkillId::Duplicator, 0)) {
+        client.requestUpgradeSkill(step.id, step.tier);
+    }
+    CHECK(awaitProfile(h, client, [](const Profile& p) {
+        return p.skills.level(SkillId::Duplicator) == 0;
+    }));
+    CHECK_EQ(client.profile().skills.level(SkillId::Absorbing), rarityIndex(Rarity::Mythic));
+    CHECK_EQ(client.profile().talentPoints(), before - cost);
+}
+
 TEST(resetting_talents_hands_every_point_back) {
     Harness h("talent-reset");
     if (!h.ready) { CHECK(false); return; }

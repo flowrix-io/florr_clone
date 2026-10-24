@@ -49,12 +49,10 @@ inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCFBB50u};
 inline constexpr PanelSkin kTitanSkin{0x333333u, 0x292929u, 0x292929u};
 inline constexpr PanelSkin kAssemblerSkin{0x999999u, 0x7C7C7Cu, 0x7C7C7Cu};
 inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xA89D36u};
-/// The talent card is drawn against a reference screenshot rather than the
-/// browser build's CSS, so its body is that shot's dusty red
-/// rather than the pink the rest of the family was derived from. The border
-/// doubles as the tree's own ink: every connector and the TP badge are drawn
-/// in it, which is what makes the fan read as part of the card.
-inline constexpr PanelSkin kTalentsSkin{0xCC625Eu, 0xA44F4Cu, 0xA44F4Cu};
+/// florr's Talents window: its theme and the theme's 0.81 shade. The shade
+/// doubles as the tree's own ink -- every connector, the flower's hub and the
+/// TP badge are drawn in it.
+inline constexpr PanelSkin kTalentsSkin{0xDB5A5Au, 0xB14949u, 0xB14949u};
 /// The Account card wears the purple of the talents STRIP button (not the
 /// talent card's red above), and so does its own button on the top row.
 inline constexpr PanelSkin kAccountSkin{0x9D4EDDu, 0x7E3EB1u, 0x7E3EB1u};

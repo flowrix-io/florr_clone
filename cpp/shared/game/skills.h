@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "shared/game/rarity.h"
 
@@ -313,6 +314,39 @@ inline SkillId skillFromKey(const std::string& key) {
 inline int skillTierCount(SkillId id) {
     const std::size_t i = static_cast<std::size_t>(id);
     return i < kSkillTiers.size() ? kSkillTiers[i] : kLadderRarityCount;
+}
+
+/// One tier to buy: a branch and the tier on it.
+struct SkillStep {
+    SkillId id = SkillId::Damage;
+    int tier = 0;
+};
+
+/// Every tier still missing on the way to `tier` of `id`, in the order the
+/// server accepts them: a fork's parent up to the tier the fork hangs off
+/// first, then the branch itself from its next tier. Empty when `tier` is
+/// already owned or is not a tier of the branch. The talent tree buys a node
+/// and everything under it in one go, the way florr's does, by sending these
+/// one at a time -- each is a request the server checks on its own.
+inline std::vector<SkillStep> skillPurchasePath(const SkillSet& skills, SkillId id, int tier) {
+    std::vector<SkillStep> path;
+    if (tier < 0 || tier >= skillTierCount(id) || tier <= skills.level(id)) return path;
+    if (const SkillFork* fork = skillFork(id); fork != nullptr && !skills.prerequisiteMet(id)) {
+        for (int t = skills.level(fork->parent) + 1; t <= rarityIndex(fork->requirement); ++t) {
+            path.push_back({fork->parent, t});
+        }
+    }
+    for (int t = skills.level(id) + 1; t <= tier; ++t) path.push_back({id, t});
+    return path;
+}
+
+/// What skillPurchasePath costs in talent points.
+inline int skillPurchaseCost(const SkillSet& skills, SkillId id, int tier) {
+    int total = 0;
+    for (const SkillStep& step : skillPurchasePath(skills, id, tier)) {
+        total += skillTierCost(step.id, step.tier);
+    }
+    return total;
 }
 
 } // namespace flix
