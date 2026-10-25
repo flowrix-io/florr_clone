@@ -392,6 +392,12 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         int column = dropTier(rarity);
         if (column < 0) return;
         if (column < floorTier) column = floorTier;
+        // Below the petal's lowest tier the server drops nothing at all
+        // (petalComesAt), so there is no chance to quote.
+        if (drop.petalIndex != kInvalidIndex &&
+            !petalComesAt(content().petal(drop.petalIndex), static_cast<Rarity>(column))) {
+            return;
+        }
 
         DropRow* row = nullptr;
         for (DropRow& candidate : rows) {

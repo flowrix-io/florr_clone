@@ -18,15 +18,6 @@ namespace {
 /// half of that. Stated against `size` rather than against the petal's radius:
 /// dividing the radius back out is what hid the halved petal scale.
 constexpr double kPollenRadiusPerSize = 6.0;
-/// How fast the ring's extension multiplier travels, per second.
-///
-/// The reference does no server-side smoothing at all: the BROWSER ramps its
-/// petalExtension linearly at this rate between 0.7 and 2.0 and ships the
-/// finished multiplier in the input frame, which the server consumes raw. So
-/// the ramp lives here, on the multiplier, and the radius follows from it --
-/// easing the radius instead turned a tap-attack that reaches full extension
-/// in a twelfth of a second into a half-second swell.
-constexpr double kPetalExtensionRampPerSecond = 12.0;
 
 constexpr double kWebThrowDistance = 620.0;
 constexpr double kWebLifetimeSeconds = 10.0;
@@ -55,9 +46,9 @@ constexpr double kMaxPopTickTravel = kMinSubstepLength * kMaxSubstepCount;
 /// How long the ring takes to fly across when what it is laid out around
 /// changes -- a moon coming out, or breaking and handing the ring back to the
 /// flower. The centre jumps by the whole distance between the two in one
-/// tick, and the spring across a gap that wide flings the ring past it; the
-/// glide carries it over without the overshoot, as the spawn fly-out does.
-constexpr double kRingAnchorSwitchGlideMillis = kPetalSpawnGlideMillis;
+/// tick, and the ring step across a gap that wide flings the ring past it; the
+/// glide carries it over without the overshoot.
+constexpr double kRingAnchorSwitchGlideMillis = 300.0;
 
 /// An apex egg does not hatch an apex pet. The reference substitutes three
 /// unique ones, which is the top of the ladder a pet can actually reach. A
@@ -279,9 +270,9 @@ constexpr double kPearlRestSpeed = 1.0;
 /// while the ring stays extended, and hand it back to the ring the moment the
 /// ring draws back in.
 ///
-/// True when the petal has been placed here and the ring's spring must leave
-/// it alone. False when it is on the ring -- including the tick it is
-/// recalled, which arms the glide the spring pass then flies it home on.
+/// True when the petal has been placed here and the ring step must leave it
+/// alone. False when it is on the ring -- including the tick it is recalled,
+/// which arms the glide the ring pass then flies it home on.
 ///
 /// `flower` is where the flower is NOW, which is what the throw leaves from and
 /// what the leash is measured to; `bearing` is the pearl's place on the ring,
@@ -290,8 +281,8 @@ bool flyThrownPetal(PetalInstance& instance, Transform& transform, Vec2 flower, 
                     double leash, bool extending, double nowMillis, double dt) {
     if (!extending) {
         if (!instance.thrown) return false;
-        // Back to the ring. The glide rather than the spring, because the
-        // pearl may be a leash away and the spring across that gap is a jump.
+        // Back to the ring. The glide rather than the ring step, because the
+        // pearl may be a leash away and the step across that gap is a jump.
         instance.thrown = false;
         instance.flightVelocity = Vec2{};
         instance.glideUntilMillis = nowMillis + kPearlRecallGlideMillis;
@@ -305,8 +296,8 @@ bool flyThrownPetal(PetalInstance& instance, Transform& transform, Vec2 flower, 
         const double outward = offset.lengthSq() > 1e-12 ? offset.angle() : bearing;
         instance.flightVelocity = Vec2::fromAngle(outward, kPearlLaunchSpeed);
         instance.thrown = true;
-        // Whatever the ring was doing with it is over: it is not whipping
-        // round a mob, and it is not gliding anywhere.
+        // Whatever the ring was doing with it is over: it is not drawn to a
+        // mob, and it is not gliding anywhere.
         instance.attractedTo = NULL_ENTITY;
         instance.glideUntilMillis = 0.0;
     }
@@ -349,7 +340,7 @@ bool flyThrownPetal(PetalInstance& instance, Transform& transform, Vec2 flower, 
         transform.angle = wrapAngle(facing.angle());
         instance.facingAngle = transform.angle;
     }
-    // The spring has nothing to pick up from a pearl it did not fly.
+    // The ring step has nothing to pick up from a pearl it did not fly.
     instance.ringVelocity = Vec2{};
     return true;
 }
@@ -654,51 +645,31 @@ void PetalSystem::rebuildAttractionGrid(World& world) {
     });
 }
 
-bool PetalSystem::findAttractionTarget(World& world, Vec2 at, Realm realm, double radius,
-                                       AttractionTarget& out) {
-    if (!(radius > 0.0)) return false;
-    attractionGrid_.query(realm, at, radius, attractionCandidates_);
+Entity PetalSystem::attractor(World& world, Vec2 orbit, Realm realm, double radius,
+                              Entity holding) {
+    if (!(radius > 0.0)) return NULL_ENTITY;
+    attractionGrid_.query(realm, orbit, radius, attractionCandidates_);
 
-    Entity closest = NULL_ENTITY;
-    double closestDistanceSq = 0;
-    Vec2 closestPosition;
-    double closestRadius = 0;
+    Entity nearest = NULL_ENTITY;
+    double nearestClear = radius;
     for (const Entity mob : attractionCandidates_) {
-        // The grid is last tick's; a mob an earlier petal killed is still in
-        // it, and the reference skips exactly that case.
+        // The grid is last tick's; a mob an earlier petal killed is still in it.
         if (!world.isAlive(mob) || world.has<Dead>(mob)) continue;
         const Transform* transform = world.tryGet<Transform>(mob);
         const Body* body = world.tryGet<Body>(mob);
         if (transform == nullptr || body == nullptr) continue;
-        // Eligibility reaches to the mob's scaled BODY, but the winner is the
-        // one whose CENTRE is nearest -- both as the reference has it.
-        const double reach = radius + body->radius;
-        const double gap = distanceSq(transform->position, at);
-        if (gap > reach * reach) continue;
-        if (closest != NULL_ENTITY && gap >= closestDistanceSq) continue;
-        closest = mob;
-        closestDistanceSq = gap;
-        closestPosition = transform->position;
-        closestRadius = body->radius;
+        // Off the BODY's edge -- the circle the hit test uses, per-spawn size
+        // jitter and all.
+        const double edge = body->radius > 0.0 ? body->radius : kMobBaseRadius;
+        const double clear = (transform->position - orbit).length() - edge;
+        if (clear >= radius) continue;
+        if (mob == holding) return mob;
+        if (clear < nearestClear) {
+            nearest = mob;
+            nearestClear = clear;
+        }
     }
-    if (closest == NULL_ENTITY) return false;
-
-    // The BODY's radius, which is the circle the collision test uses, and not
-    // the tier radius out of the stat table.
-    //
-    // The two differ by the per-spawn size jitter, and the reference projects
-    // onto the tier figure -- which is a capture that cannot land a hit on any
-    // mob that rolled small. kMobOrbitRadiusScale pins the petal 0.85 tier
-    // radii from the centre while contact needs it inside `body + petal`, so a
-    // 0.55 roll on a big mob parks the ring in the gap: the petal visibly whips
-    // around its victim, deals nothing, and -- since a petal pays for its
-    // health only when it lands a hit -- never wears out either. Measuring off
-    // the body makes 0.85 mean 0.85 of the edge that is actually there, so the
-    // projection is inside the hitbox for every roll.
-    out.mob = closest;
-    out.position = closestPosition;
-    out.radius = closestRadius > 0.0 ? closestRadius : kMobBaseRadius;
-    return true;
+    return nearest;
 }
 
 // ---------------------------------------------------------------------------
@@ -1278,7 +1249,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     const Transform* ownerTransform = world.tryGet<Transform>(player);
     if (!ownerTransform) return NULL_ENTITY;
     // The ring's centre, not the flower's live position: placement this same
-    // tick springs from the previous committed centre, and starting the petal
+    // tick steps from the previous committed centre, and starting the petal
     // anywhere else would give it a tick of velocity it never earned.
     const PetalSlotState* ringState = world.tryGet<PetalSlotState>(player);
     const Vec2 origin = ringState != nullptr && ringState->ringCentreValid
@@ -1301,7 +1272,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
 
     const Entity petal = world.create();
     world.add<PetalTag>(petal);
-    // Born ON the flower and flown out over the spawn glide below, which is
+    // Born ON the flower and carried out by the ring step, which is
     // what makes a reload read as the petal coming back out rather than
     // reappearing on the ring -- except a loose petal, born where it was put
     // down above. In the flower's own space, of course.
@@ -1342,10 +1313,9 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     // What the client is sent to draw it at (replicatedAngle), and for a loose
     // petal nothing ever rewrites it: placePetals skips one.
     instance.facingAngle = restAngle;
-    // The fly-out. A first-order approach for this window instead of the
-    // spring, so a petal that starts on top of the flower does not get
-    // slingshotted past its orbit point on the way out.
-    instance.glideUntilMillis = nowMillis + kPetalSpawnGlideMillis;
+    // No fly-out of its own: it starts at rest on the ring's centre and the
+    // ring step carries it out, overshooting its place a little as gardn's
+    // petals do.
     // A non-projectile action waits out a full interval after the petal
     // arrives.
     instance.nextActionMillis = hasNonProjectileAction(config, stats)
@@ -1497,7 +1467,10 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             aggregate.modifiers.speedScale *= mods.speed;
             aggregate.modifiers.damageScale *= mods.damage;
             aggregate.modifiers.sizeScale *= mods.playerRadius;
-            aggregate.modifiers.rangeScale *= mods.range;
+            // Not summed: gardn sets its third eye's reach rather than
+            // adding to it, so the best one on the bar is the one that counts.
+            aggregate.modifiers.attackRange =
+                std::max(aggregate.modifiers.attackRange, mods.attackRange);
             // Camera zoom is deliberately not summed. It is the CLIENT's
             // (loadoutCameraZoom): the smallest cameraZoom over the active bar
             // wins and two of them never stack, and nothing puts it on the
@@ -1773,35 +1746,30 @@ void PetalSystem::updateRing(World& world, Entity player, const Aggregate& aggre
     const Body* body = world.tryGet<Body>(anchor != NULL_ENTITY ? anchor : player);
     const PlayerInput* input = world.tryGet<PlayerInput>(player);
     const double playerRadius = body ? body->radius : kPlayerBaseRadius;
-    // Matches TypeScript's `60 + (PLAYER_SIZE / 2) * (sizeMultiplier - 1)`.
-    // `playerRadius` is the equivalent scaled hitbox radius in C++.
-    const double neutralRadius = kPetalOrbitRestRadius + playerRadius - kPlayerBaseRadius;
 
-    // Attack wins over defend: the reference tests the extend button first and
-    // reaches the retract branch only when it is up, so a player holding both
+    // Attack wins over defend: gardn tests the attack button first and
+    // reaches the defend branch only when it is up, so a player holding both
     // lunges rather than blocks.
-    double target = 1.0;
+    double gap = kPetalOrbitRestGap;
     if (input) {
-        if (input->current.attacking()) target = kPetalOrbitAttackExtension;
-        else if (input->current.defending()) target = kPetalOrbitDefendExtension;
+        if (input->current.attacking()) gap = kPetalOrbitAttackGap;
+        else if (input->current.defending()) gap = kPetalOrbitDefendGap;
     }
 
-    // Linear, and on the MULTIPLIER rather than on the radius. The reference
-    // ramps the extension at a fixed 12 per second and derives the radius from
-    // whatever it currently is, so a tap reaches full reach in a twelfth of a
-    // second; easing the radius toward a target instead spent nearly half a
-    // second closing the same gap, which changed the reach of every burst.
-    const double step = kPetalExtensionRampPerSecond * std::max(0.0, dt);
-    ring->extension = clamp(ring->extension + clamp(target - ring->extension, -step, step),
-                            kPetalOrbitDefendExtension, kPetalOrbitAttackExtension);
+    // At once, as gardn sets its range: nothing eases the ring itself, and the
+    // petals' own step is the only thing carrying them out to it or back in.
+    ring->gap = gap;
 
-    const double rangeScale = std::max(0.0, aggregate.modifiers.rangeScale);
-    // What the ring is heading for, and where it is now. Both are published:
-    // the extension is what a defendOnly petal clamps, and the radius is what
-    // every other petal's orbit point is measured from.
-    ring->targetRadius = neutralRadius * target * rangeScale;
-    ring->radius = neutralRadius * ring->extension * rangeScale;
-    ring->spin = wrapAngle(ring->spin + kPetalSpinRate * aggregate.spinScale * dt);
+    // Both are published: the gap is what a defendOnly petal clamps, and the
+    // radius is what every other petal's orbit point is measured from. The
+    // third eye's reach goes on the attacking ring only, as gardn adds its
+    // `extra_range` there and nowhere else.
+    const double attackRange =
+        gap == kPetalOrbitAttackGap ? std::max(0.0, aggregate.modifiers.attackRange) : 0.0;
+    ring->radius = playerRadius + ring->gap + attackRange;
+    const double turn = kPetalSpinRate * aggregate.spinScale * dt;
+    ring->spin = wrapAngle(ring->spin + turn);
+    ring->clumpSpin = wrapAngle(ring->clumpSpin + turn * kPetalClumpSpinShare);
 }
 
 Entity PetalSystem::ringAnchorOf(World& world, Entity player) const {
@@ -1862,17 +1830,12 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     // The body the ring is laid out around: the moon's, while one is out.
     const Body* ownerBody = world.tryGet<Body>(anchor != NULL_ENTITY ? anchor : player);
     const double playerRadius = ownerBody ? ownerBody->radius : kPlayerBaseRadius;
-    const double neutralRadius = kPetalOrbitRestRadius + playerRadius - kPlayerBaseRadius;
-    const double rangeScale = std::max(0.0, aggregate.modifiers.rangeScale);
     // A defendOnly petal never flies out on attack but still pulls in on
-    // defend, which the reference states as clamping the extension at 1 rather
-    // than as a branch on the button.
-    const double defendOnlyRadius =
-        neutralRadius * std::min(ring->extension, 1.0) * rangeScale;
-    // Read here rather than off the ring's extension: the extension RAMPS, so
-    // it is still short of its target for a twelfth of a second after the
-    // button goes down, and a lunge gated on it would start late and -- worse
-    // -- keep going for that twelfth of a second after the button came up.
+    // defend: gardn leaves it on the resting range when the attack branch
+    // skips it, which is the gap clamped at rest -- and no third eye.
+    const double defendOnlyGap = std::min(ring->gap, kPetalOrbitRestGap);
+    const double defendOnlyRadius = playerRadius + defendOnlyGap;
+    // Whether the wing lunges: read off the buttons, as gardn gates it.
     const PlayerInput* input = world.tryGet<PlayerInput>(player);
     const bool attacking = input != nullptr && input->current.attacking();
     // Grown with the body the way the ring's rest radius is, so the leash
@@ -1928,7 +1891,7 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         if (!lent && instance->slot >= kLoadoutActiveSlots) continue;
         const PetalConfig& config = registry.petal(instance->configIndex);
         // Loose: its place is wherever it was last shoved to, which is the
-        // movement pass's to decide. No orbit, no spring, no attraction.
+        // movement pass's to decide. No orbit, no ring step, no attraction.
         if (petalIsLooseBody(config)) continue;
         const int subCount = std::max<int>(1, instance->subCount);
         // Worn on the flower rather than carried on the ring, and so never
@@ -1973,18 +1936,21 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
             // `clump_radius` of 10.
             const Body* body = world.tryGet<Body>(petal);
             const double spacing = (body ? body->radius : 0.0) * config.clumpSpacing;
-            // A clump that hangs off the ring moves its centre one spacing out
-            // and turns its first grain back toward the flower, which lands
-            // that grain on the orbit and fans the rest out past it.
-            double first = angle;
+            // gardn's grains: their first one points along the ring's clump
+            // heading, the same bearing for every clump on the ring, which
+            // turns at a fifth of the ring's own rate (kPetalClumpSpinShare).
+            //
+            // A clump that hangs off the ring is ours, not gardn's: it moves
+            // its centre one spacing out and turns its first grain back toward
+            // the flower, which lands that grain on the orbit and fans the
+            // rest out past it.
+            double first = ring->clumpSpin;
             if (config.clumpOutsideRing) {
                 orbit += Vec2::fromAngle(angle, spacing);
                 first = angle + kPi;
             }
             // The grain sits out along this bearing from the clump centre, so
-            // this is the way it faces -- and the way its volley goes. The
-            // offset is fed to `fromAngle` unwrapped, exactly as before, so the
-            // clump's positions are bit-for-bit what they were.
+            // this is the way it faces -- and the way its volley goes.
             const double sub = first + kTau * instance->subIndex / subCount;
             orbit += Vec2::fromAngle(sub, spacing);
             facingAngle = wrapAngle(sub);
@@ -1998,38 +1964,36 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
 
         // Three position modes, as the reference has them. A petal with no
         // physics -- and every fixed-direction petal is one -- is snapped onto
-        // its point and keeps no state: giving it a spring would let it lag
+        // its point and keeps no state: giving it the step would let it lag
         // behind the flower it is supposed to be painted on.
         //
         // A pearl is a fourth while its place on the ring is extended: off the
         // ring entirely, on the ground where it was shot to, and handed back to
-        // the spring the tick it is recalled. "Extended" is the ring's actual
-        // extension as THIS petal rides it -- the ramped multiplier, clamped
-        // for a defendOnly petal as its radius is above -- rather than which
-        // buttons are down, so the pearl goes out and comes in with the ring:
-        // attack and defend held together is an extended ring, and so an
-        // extended pearl.
-        const double extension =
-            config.defendOnly ? std::min(ring->extension, 1.0) : ring->extension;
+        // the ring the tick it is recalled. "Extended" is the ring's actual
+        // state as THIS petal rides it -- its gap, clamped for a defendOnly
+        // petal as its radius is above -- rather than which buttons are down,
+        // so the pearl goes out and comes in with the ring: attack and defend
+        // held together is an extended ring, and so an extended pearl.
+        const bool extended = (config.defendOnly ? defendOnlyGap : ring->gap) > kPetalOrbitRestGap;
         // A defendOnly petal stays in its place on the ring. Attraction would
-        // pull it out to whip around a mob, which is the swing it never makes.
-        // With a radius of zero, a petal that is already latched lets go of
-        // its mob the same way it would if the mob moved out of range.
+        // draw it out toward a mob, which is the swing it never makes. With a
+        // radius of zero it is drawn to nothing.
         const double petalAttraction = config.defendOnly ? 0.0 : attractionRadius;
         if (config.noPhysics || config.hasFixedDirection) {
             transform->position = orbit;
         } else if (!(throwsFromOrbit(config) &&
                      flyThrownPetal(*instance, *transform, committed, angle, pearlLeash,
-                                    extension > 1.0, nowMillis, dt))) {
-            stepPetalPhysics(world, registry, *instance, *transform, wornCentre, orbit, angle,
-                             petalAttraction, aggregate.spinScale, nowMillis, dt);
+                                    extended, nowMillis, dt))) {
+            stepPetalPhysics(world, registry, *instance, *transform, wornCentre, orbit,
+                             petalAttraction,
+                             kPetalSpinRate * aggregate.spinScale * ring->radius, nowMillis, dt);
         }
 
         // A petal that collides with the world is pushed back out of it, in
         // every one of the three modes: the reference resolves the finished
         // position rather than the orbit point, so a bulb dragged into a rock
         // slides along its face instead of orbiting through it. The velocity
-        // into the wall goes with it, or the spring drives the petal straight
+        // into the wall goes with it, or the step drives the petal straight
         // back inside on the next tick.
         if (config.wallCollide && terrain != nullptr) {
             const double radius =
@@ -2046,71 +2010,26 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
 
 void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry,
                                    PetalInstance& instance, Transform& transform, Vec2 home,
-                                   Vec2 orbit, double orbitAngle, double attractionRadius,
-                                   double spinScale, double nowMillis, double dt) {
-    // The force ramps in over the smoothing window rather than arriving at
-    // full strength, so a petal that appears on top of the flower is not
-    // slingshotted off the ring on its first tick.
-    const double sinceSpawn = std::max(0.0, nowMillis - instance.spawnedAtMillis);
-    const double smooth = std::min(1.0, sinceSpawn / kPetalSpawnSmoothMillis);
-
+                                   Vec2 orbit, double attractionRadius, double spinSpeed,
+                                   double nowMillis, double dt) {
     Vec2 target = orbit;
 
-    // Attraction. Measured from the ORBIT point rather than from where the
-    // spring has actually left the petal, so "30 units of attraction" lights
-    // up when a mob is 30 units from where the petal is about to swing past.
-    AttractionTarget locked;
-    const bool captured = !instance.homing &&
-                          findAttractionTarget(world, orbit, transform.realm, attractionRadius, locked);
-    if (captured) {
-        instance.attractedTo = locked.mob;
-    } else if (instance.attractedTo != NULL_ENTITY) {
-        const Entity released = instance.attractedTo;
-        instance.attractedTo = NULL_ENTITY;
-        // Only a mob that DIED earns the glide. One the ring simply swept past
-        // is still there to be re-acquired, and the spring closing that gap
-        // reads as the petal falling back into line; the same spring closing a
-        // corpse's gap reads as the whole ring jumping.
-        if (!world.isAlive(released) || world.has<Dead>(released)) {
-            instance.glideUntilMillis = nowMillis + kPetalReleaseGlideMillis;
-        }
-    }
-
-    if (captured) {
-        // Project onto a point just inside the mob's edge, along the bearing
-        // the orbit point has FROM the mob. As the ring turns, that bearing
-        // turns with it -- so the petal grinding its way around its victim
-        // falls out of the rotation already there, with no angular code.
-        const Vec2 fromMob = orbit - locked.position;
-        const double bearing = fromMob.lengthSq() > 0.0 ? fromMob.angle() : orbitAngle;
-        // The extra kick that makes the whip read as a whip. Stated against
-        // the ring's own rate, which is where the reference's 0.002 rad/ms
-        // came from.
-        const double kick = kPetalSpinRate * kMobOrbitSpinBoost * spinScale * dt;
-        target = locked.position +
-                 Vec2::fromAngle(bearing + kick, locked.radius * kMobOrbitRadiusScale);
-    }
-
     if (instance.homing) {
-        // Rose, shell and orb fly home to deliver their burst. Re-arming the
-        // glide every tick keeps the overshoot-free approach in play instead of
-        // the spring, so the petal tracks a moving flower and lands cleanly.
-        //
-        // The dive does NOT outrun a sprinting flower, and is not meant to: a
-        // first-order approach toward a target that is running away settles at
-        // a standing lag rather than arriving, so at speed the petal trails the
-        // flower it is diving into instead of touching it. That is the look the
-        // ring has always had. What stops it costing the burst is the landing
-        // window in runActions, which delivers the effect once the dive has
-        // been going long enough whether or not it ever made contact.
+        // Rose, shell and orb fly home to deliver their burst, as gardn's burst
+        // heal and shield do: aimed at the flower instead of the ring, and
+        // pushed there flat-out rather than pulled (kPetalHomingPush), fast
+        // enough to catch a running flower. The landing window in runActions
+        // still pays out a dive that a wall holds off.
         target = home;
-        instance.glideUntilMillis = nowMillis + kPetalReleaseGlideMillis;
     }
 
+    // The scripted flights: a recalled pearl, the ring changing hands. Nothing
+    // pulls a petal on one.
     if (instance.glideUntilMillis != 0.0 && nowMillis < instance.glideUntilMillis) {
+        instance.attractedTo = NULL_ENTITY;
         const double approach = 1.0 - std::exp(-kPetalGlideRate * std::max(0.0, dt));
         const Vec2 glided = transform.position + (target - transform.position) * approach;
-        // The glide still writes a velocity, so the spring picks up the motion
+        // The glide still writes a velocity, so the step picks up the motion
         // already under way when the window closes instead of starting cold.
         instance.ringVelocity = dt > 0.0 ? (glided - transform.position) / dt : Vec2{};
         transform.position = glided;
@@ -2118,28 +2037,53 @@ void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry
     }
     instance.glideUntilMillis = 0.0;
 
-    // Semi-implicit Euler, substepped. The integrator diverges outright once a
-    // slice exceeds ~0.089 s at these constants -- that is a petal flying off
-    // and never coming back -- and a loaded server is allowed a 0.1 s tick, so
-    // the step is cut rather than trusted. At the ordinary tick this is one
-    // substep of dt; the rest of the range only engages on a catch-up frame.
-    const int substeps =
-        std::min(kPetalSpringMaxSubsteps,
-                 std::max(1, static_cast<int>(std::ceil(std::max(0.0, dt) /
-                                                        kPetalSpringSubstepSeconds))));
-    const double subDt = std::max(0.0, dt) / substeps;
-    for (int step = 0; step < substeps; ++step) {
-        const Vec2 delta = target - transform.position;
-        const double distance = delta.length();
-        if (distance > 0.0) {
-            // Force proportional to the distance, so the pull grows the
-            // further the flower has run from its ring.
-            instance.ringVelocity +=
-                (delta / distance) * (kPetalSpringForce * distance * subDt * smooth);
+    // Attraction -- ours; gardn has none. A mob in reach of the petal's place
+    // on the ring takes it: the target becomes a point on the mob's edge,
+    // circling it against the ring's turn and as fast as the ring carries the
+    // petal, so the step brings the petal in on a spiral and round the mob
+    // until its place is out of reach or the mob dies. A new mob's point
+    // starts at the petal's own bearing from it, so the petal is drawn
+    // straight in, not across.
+    const Entity mob = instance.homing
+                           ? NULL_ENTITY
+                           : attractor(world, orbit, transform.realm, attractionRadius,
+                                       instance.attractedTo);
+    if (mob != NULL_ENTITY) {
+        const Vec2 centre = world.get<Transform>(mob).position;
+        const double radius = world.get<Body>(mob).radius;
+        const double edge = radius > 0.0 ? radius : kMobBaseRadius;
+        if (mob != instance.attractedTo) {
+            const Vec2 from = transform.position - centre;
+            instance.attractedBearing = std::atan2(from.y, from.x);
+        } else {
+            instance.attractedBearing = wrapAngle(
+                instance.attractedBearing - spinSpeed / edge * std::max(0.0, dt));
         }
-        instance.ringVelocity *= kPetalDamping;
-        transform.position += instance.ringVelocity * subDt;
+        target = centre + Vec2::fromAngle(instance.attractedBearing, edge);
     }
+    instance.attractedTo = mob;
+
+    // gardn's step, once per tick that has passed: keep a share of the
+    // velocity, add a share of the gap -- or, homing, the flat push -- and move
+    // by the velocity. In gardn's units, distance per tick, and run as whole
+    // ticks rather than stretched to a long one, because stretching it is not
+    // stable: a 0.1 s catch-up tick scaled up in one go flings the petal off.
+    // The ordinary tick is one step.
+    const double elapsedTicks = std::max(0.0, dt) / net::kTickSeconds;
+    const int steps =
+        dt > 0.0 ? std::clamp(static_cast<int>(std::lround(elapsedTicks)), 1, 4) : 0;
+    Vec2 perTick = instance.ringVelocity * net::kTickSeconds;
+    for (int step = 0; step < steps; ++step) {
+        const Vec2 gap = target - transform.position;
+        Vec2 acceleration = gap * kPetalPull;
+        if (instance.homing) {
+            const double distance = gap.length();
+            acceleration = distance > 0.0 ? gap * (kPetalHomingPush / distance) : Vec2{};
+        }
+        perTick = perTick * kPetalFriction + acceleration;
+        transform.position += perTick;
+    }
+    instance.ringVelocity = perTick / net::kTickSeconds;
 
     // Defence in depth. If the integrator ever does go non-finite, a petal
     // stranded at NaN is invisible and unkillable forever; snapping it back on
@@ -2322,10 +2266,8 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 const bool touched =
                     owner && distanceSq(transform->position, owner->position) <= contact * contact;
                 // Absorbed anyway. Contact is the normal way a burst is
-                // spent, but only a standing flower reliably gets one: the
-                // glide home settles into a lag against a running one and
-                // never closes it, and a wall can hold the petal off for as
-                // long as the flower stands behind it. Either way the petal
+                // spent, but a wall can hold the petal off for as long as
+                // the flower stands behind it, and then the petal
                 // would be stranded mid-dive forever -- no heal, and a slot
                 // that never reloads because the petal never died. Waiting
                 // out the window is the same delivery without the touch.

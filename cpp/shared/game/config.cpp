@@ -623,7 +623,6 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
     // reverses the ring rather than slowing it.
     mods.maxHealth     = ctx.range(node, "maxHealth", 1.0, -100.0, 100.0);
     mods.speed         = ctx.range(node, "speed", 1.0, -100.0, 100.0);
-    mods.range         = ctx.range(node, "range", 1.0, -100.0, 100.0);
     mods.rotationSpeed = ctx.range(node, "rotationSpeed", 1.0, -100.0, 100.0);
     mods.playerRadius  = ctx.range(node, "playerRadius", 1.0, -100.0, 100.0);
     mods.damage        = ctx.range(node, "damage", 1.0, -100.0, 100.0);
@@ -632,6 +631,7 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
     // AI widens its broadphase query by the largest one worn.
     mods.aggroRange    = ctx.range(node, "aggroRange", 1.0, 0.0, 10.0);
 
+    mods.attackRange           = ctx.range(node, "attackRange", 0.0, 0.0, kWorldSize);
     mods.luck                  = ctx.range(node, "luck", 0.0, -100.0, 100.0);
     mods.magnetism             = ctx.range(node, "magnetism", 0.0, 0.0, kWorldSize);
     mods.aggroRadius           = ctx.range(node, "aggroRadius", 0.0, -kWorldSize, kWorldSize);
@@ -642,7 +642,7 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
 
     for (const std::string& key : node.keys()) {
         static const char* kKnown[] = {
-            "maxHealth", "speed", "range", "rotationSpeed", "playerRadius", "damage",
+            "maxHealth", "speed", "attackRange", "rotationSpeed", "playerRadius", "damage",
             "aggroRange", "luck", "magnetism", "aggroRadius", "petalAttractionRadius",
             "poisonArmor", "evasion", "damageReflection",
         };
@@ -1197,6 +1197,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.cooldownMillis = ctx.range(src, "cooldown", kDefaultPetalReloadMillis, 0.0, kMaxCooldownMillis);
     p.count = ctx.integer(src, "count", 1, 0, 64);
     p.isAdminPetal = ctx.boolean(src, "isAdminPetal");
+    p.minRarity = ctx.rarity(src, "minRarity");
     p.tradable = ctx.boolean(src, "tradable", true);
 
     p.modifiers = parseModifiers(ctx, src);
@@ -1939,11 +1940,11 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // curve above.
     if (petalSharesFlowerDamage(c)) s.modifiers.maxHealth = 1.0 + 0.1 * (rarityIndex(tier) + 1);
     s.modifiers.speed = scaledMultiplier(c.modifiers.speed, modifier);
-    s.modifiers.range = scaledMultiplier(c.modifiers.range, modifier);
     s.modifiers.rotationSpeed = scaledMultiplier(c.modifiers.rotationSpeed, modifier);
     s.modifiers.playerRadius = scaledMultiplier(c.modifiers.playerRadius, modifier);
     s.modifiers.damage = scaledMultiplier(c.modifiers.damage, modifier);
     s.modifiers.aggroRange = petalAggroRangeScale(c.modifiers.aggroRange, tier);
+    s.modifiers.attackRange = petalAttackRange(c.modifiers.attackRange, tier, c.minRarity);
     s.modifiers.luck = c.modifiers.luck * modifier;
     s.modifiers.magnetism = c.modifiers.magnetism * modifier;
     s.modifiers.aggroRadius = c.modifiers.aggroRadius * modifier;

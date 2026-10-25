@@ -53,6 +53,8 @@ inline bool shopSellsPetal(std::uint16_t petalIndex) {
     if (petal.isAdminPetal) return false;
     // Handed out by a rule of their own: the sacrifice, the crown.
     if (petalHasOwnSource(petal)) return false;
+    // One that only comes from a tier the shop does not sell has no card.
+    if (!shopSellsRarity(petal.minRarity)) return false;
     constexpr char kEggSuffix[] = "_egg";
     constexpr std::size_t kEggSuffixLen = sizeof(kEggSuffix) - 1;
     if (petal.id.size() > kEggSuffixLen &&
@@ -154,6 +156,11 @@ inline std::vector<ShopOffer> shopOffers(std::int64_t rotation) {
         ShopOffer offer;
         offer.petalIndex = pool[taken];
         offer.rarity = tiers[static_cast<std::size_t>(rng.rangeInt(lowest, highest))];
+        // A petal that only comes from some tier up is offered there at the
+        // least. Lifted after the draw, so the rotation's stream -- and every
+        // other card in it -- is what it was.
+        const Rarity floor = content().petal(offer.petalIndex).minRarity;
+        if (rarityIndex(offer.rarity) < rarityIndex(floor)) offer.rarity = floor;
         offer.discountPercent = rng.chance(0.2) ? 10 * (1 + static_cast<int>(rng.below(3))) : 0;
         offer.price = std::floor(shopPrice(offer.petalIndex, offer.rarity) *
                                  static_cast<double>(100 - offer.discountPercent) / 100.0);

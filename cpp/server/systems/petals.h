@@ -136,7 +136,7 @@ struct PetalSlotState {
     /// What ringCentre was measured from: the moon it was laid out around, or
     /// NULL_ENTITY for the flower. A change is a ring flying from one centre
     /// to the other, which placePetals carries over on a glide rather than on
-    /// the spring.
+    /// the ring step.
     Entity ringAnchor = NULL_ENTITY;
     /// False until a centre has been recorded, and cleared whenever the flower
     /// stops being where it was -- a corpse's ring is torn down and the
@@ -281,31 +281,15 @@ private:
         double spinScale = 1.0;
     };
 
-    /// A mob a petal has latched onto, as the ring needs to see it.
-    ///
-    /// Two different radii of the same mob are in play and the reference is
-    /// deliberate about it: eligibility is measured against the BODY radius
-    /// the broadphase files -- the one carrying the per-spawn size jitter --
-    /// while the point the petal is projected onto is re-read from the stat
-    /// table, which has none. Collapsing them would move where an attracted
-    /// petal sits on every mob that rolled a body.
-    struct AttractionTarget {
-        Entity mob = NULL_ENTITY;
-        Vec2 position;
-        double radius = 0;
-    };
-
     void bindTo(World& world);
 
     /// Files every wild mob once per tick so the attraction lookup below is a
     /// cell walk rather than a scan of the world per petal per player.
     void rebuildAttractionGrid(World& world);
-    /// The nearest attractable mob whose body reaches within `radius` of `at`,
-    /// which is the petal's IDEAL orbit point rather than where the spring has
-    /// actually left it: "30 units of attraction" then lights up when a mob is
-    /// 30 units from where the petal is about to swing past.
-    bool findAttractionTarget(World& world, Vec2 at, Realm realm, double radius,
-                              AttractionTarget& out);
+    /// The mob a petal whose place on the ring is `orbit` should circle: the
+    /// one it already is, `holding`, while that mob's edge is within `radius`
+    /// of the place, otherwise the nearest such mob, or NULL_ENTITY for none.
+    Entity attractor(World& world, Vec2 orbit, Realm realm, double radius, Entity holding);
 
     void clearRing(World& world, Entity player);
     void reconcileSlots(World& world, const ContentRegistry& registry, Entity player,
@@ -355,7 +339,7 @@ private:
     /// reloading), in which case the ring orbits the flower as it always has.
     Entity ringAnchorOf(World& world, Entity player) const;
     /// Step every one of the player's petals: where its orbit point is, which
-    /// mob (if any) has captured it, and the spring or glide that carries it
+    /// mob (if any) has captured it, and the step or glide that carries it
     /// there. `aggregate` is wanted for the ring's spin rate, which is the one
     /// modifier PlayerModifiers does not carry.
     void placePetals(World& world, const ContentRegistry& registry, Entity player,
@@ -363,18 +347,21 @@ private:
                      const Terrain* terrain);
     /// Carry one petal from where it is to where it wants to be.
     ///
-    /// A petal is sprung toward its orbit point, not pinned to it: that is what
-    /// makes the ring trail a running flower, overshoot when it extends and
-    /// settle rather than snap. Two windows replace the spring with an
-    /// overshoot-free approach instead -- the fly-out when the petal appears
-    /// and the release after the mob it was orbiting died -- because the spring
-    /// crossing either of those gaps reads as the whole ring teleporting.
+    /// gardn's petal step (kPetalFriction) carries it toward its orbit point,
+    /// or -- homing -- toward the flower: that is what makes the ring trail a
+    /// running flower, overshoot when it extends and settle rather than snap.
+    /// A mob in reach of its orbit point takes it instead (attractor): the
+    /// step then carries it round the mob's edge against the ring's turn, at
+    /// `spinSpeed` -- the ring's own speed at its radius, units a second,
+    /// signed as its spin. Only the scripted flights
+    /// replace it with a glide: a recalled pearl and the ring changing hands,
+    /// each a gap the step would cross in one lunge.
     ///
     /// `home` is where a homing petal dives: the flower, even while the ring
     /// is laid out around a moon.
     void stepPetalPhysics(World& world, const ContentRegistry& registry, PetalInstance& instance,
-                          Transform& transform, Vec2 home, Vec2 orbit, double orbitAngle,
-                          double attractionRadius, double spinScale, double nowMillis, double dt);
+                          Transform& transform, Vec2 home, Vec2 orbit, double attractionRadius,
+                          double spinSpeed, double nowMillis, double dt);
     void runActions(World& world, const ContentRegistry& registry, Entity player,
                     double nowMillis, double dt);
 

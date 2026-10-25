@@ -1604,6 +1604,10 @@ TEST(a_player_squadded_with_a_bot_is_paid_for_what_the_bot_kills) {
     // boss callouts, and a bot that already has one refuses an invite
     // ("Player already has a squad"), so inviting by name only works on
     // whichever bot happens to be free that run.
+    //
+    // Only a squad hosted in the owner's own biome, though: bots are spread
+    // over every biome, and one hosting in the pyramid refuses a garden
+    // flower's join ("A squad cannot span biomes").
     std::string squadId;
     // Asked on a slow clock: the console refills two commands a second, and
     // a polling loop that drains the bucket leaves nothing for the spawn
@@ -1611,23 +1615,29 @@ TEST(a_player_squadded_with_a_bot_is_paid_for_what_the_bot_kills) {
     for (int attempt = 0; attempt < 20 && squadId.empty(); ++attempt) {
         owner.sendChat("/admin squads");
         h.step(30, {&owner});
-        const std::string log = transcript(owner);
-        const std::size_t at = log.rfind("squad_");
-        if (at == std::string::npos || at + 15 > log.size()) continue;
-        squadId = log.substr(at, 15);
+        for (const ChatLine& line : owner.chat()) {
+            if (line.text.rfind("squad_", 0) != 0 || line.text.size() < 15) continue;
+            if (line.text.find("(bot, Garden") == std::string::npos) continue;
+            squadId = line.text.substr(0, 15);
+        }
     }
     if (!squadId.empty()) {
         CHECK(say(h, owner, "/squad-join " + squadId));
+        h.step(3, {&owner});
     } else {
-        // No bot happened to host in that time: a bot hosts on a 3% roll
+        // No bot happened to host here in that time: a bot hosts on a 3% roll
         // every eight to twelve seconds, so whether one has by now is down to
         // where the bots' dice fall, which every change to the world moves.
-        // Then the player hosts and asks a bot in, which a bot with no squad
-        // of its own -- and none has one -- answers by joining outright.
+        // Then the player hosts and asks the bots in, one at a time: one with
+        // no squad of its own in the owner's biome answers by joining
+        // outright, and the rest -- elsewhere, or already hosting -- refuse.
         CHECK(say(h, owner, "/squad-create public"));
-        CHECK(say(h, owner, "/squad-invite " + bots.front().second));
+        for (const auto& bot : bots) {
+            CHECK(say(h, owner, "/squad-invite " + bot.second));
+            h.step(3, {&owner});
+            if (owner.squad().members.size() >= 2) break;
+        }
     }
-    h.step(3, {&owner});
     CHECK(owner.squad().members.size() >= 2);
     if (owner.squad().members.size() < 2) return;
 

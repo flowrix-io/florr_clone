@@ -436,6 +436,27 @@ TEST(the_shop_never_stocks_a_sacrifice) {
     CHECK(shopSellsPetal(content().petalIndex("rose")));
 }
 
+TEST(the_shop_never_offers_a_third_eye_below_legendary) {
+    // Its minRarity: a card that rolls lower is offered at legendary, and a
+    // purchase named below it is not for sale.
+    CHECK(ensureShippedContent());
+    const std::uint16_t thirdEye = content().petalIndex("third_eye");
+    CHECK(thirdEye != kInvalidIndex);
+    CHECK(shopSellsPetal(thirdEye));
+    CHECK(!petalComesAt(content().petal(thirdEye), Rarity::Epic));
+    CHECK(petalComesAt(content().petal(thirdEye), Rarity::Legendary));
+    int offered = 0;
+    for (std::int64_t rotation = 0; rotation < 3000; ++rotation) {
+        for (const ShopOffer& offer : shopOffers(rotation)) {
+            if (offer.petalIndex != thirdEye) continue;
+            ++offered;
+            CHECK(rarityIndex(offer.rarity) >= rarityIndex(Rarity::Legendary));
+            CHECK(shopSellsRarity(offer.rarity));
+        }
+    }
+    CHECK(offered > 0);
+}
+
 TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
     CHECK(ensureShippedContent());
     const double common = shopPrice("basic", Rarity::Common);

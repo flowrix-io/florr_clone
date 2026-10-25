@@ -87,7 +87,7 @@ bool finite(const PetalStats& s) {
            std::isfinite(s.damageIntervalMillis) && std::isfinite(s.cameraZoom) &&
            std::isfinite(s.visualScale) &&
            std::isfinite(s.modifiers.maxHealth) && std::isfinite(s.modifiers.speed) &&
-           std::isfinite(s.modifiers.range) && std::isfinite(s.modifiers.rotationSpeed) &&
+           std::isfinite(s.modifiers.attackRange) && std::isfinite(s.modifiers.rotationSpeed) &&
            std::isfinite(s.modifiers.playerRadius) && std::isfinite(s.modifiers.damage) &&
            std::isfinite(s.modifiers.luck) && std::isfinite(s.modifiers.magnetism) &&
            std::isfinite(s.modifiers.aggroRadius) &&
@@ -476,7 +476,7 @@ TEST(a_universal_petal_is_an_apex_one_with_sqrt2_its_health_and_damage) {
             u.count == a.count && near(u.cameraZoom, a.cameraZoom) &&
             near(u.modifiers.maxHealth, a.modifiers.maxHealth) &&
             near(u.modifiers.speed, a.modifiers.speed) &&
-            near(u.modifiers.range, a.modifiers.range) &&
+            near(u.modifiers.attackRange, a.modifiers.attackRange) &&
             near(u.modifiers.rotationSpeed, a.modifiers.rotationSpeed) &&
             near(u.modifiers.playerRadius, a.modifiers.playerRadius) &&
             near(u.modifiers.damage, a.modifiers.damage) &&
@@ -1174,6 +1174,26 @@ TEST(the_shipped_bumble_bee_drops_pollen_and_out_cruises_a_bee) {
     // In flower top speeds, like `speed`; a bee states none.
     CHECK(r.mobStats(bumble, Rarity::Common).cruiseSpeed > 0.0);
     CHECK_EQ(r.mobStats(r.mobIndex("bee"), Rarity::Common).cruiseSpeed, 0.0);
+}
+
+/// The user's third eye: nothing below legendary, 40 there, +50 a tier, and a
+/// universal one reads apex's. On the attacking ring only (PetalSystem).
+TEST(the_shipped_third_eye_reaches_40_at_legendary_and_50_more_a_tier) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t eye = r.petalIndex("third_eye");
+    CHECK(eye != kInvalidIndex);
+    if (eye == kInvalidIndex) return;
+    const auto reach = [&](Rarity tier) { return r.petalStats(eye, tier).modifiers.attackRange; };
+    for (const Rarity low : {Rarity::Common, Rarity::Uncommon, Rarity::Rare, Rarity::Epic}) {
+        CHECK_NEAR(reach(low), 0.0, 1e-9);
+    }
+    CHECK_NEAR(reach(Rarity::Legendary), 40.0, 1e-9);
+    CHECK_NEAR(reach(Rarity::Mythic), 90.0, 1e-9);
+    CHECK_NEAR(reach(Rarity::Ultra), 140.0, 1e-9);
+    CHECK_NEAR(reach(Rarity::Super), 190.0, 1e-9);
+    CHECK_NEAR(reach(Rarity::Unique), 240.0, 1e-9);
+    CHECK_NEAR(reach(Rarity::Apex), 290.0, 1e-9);
+    CHECK_NEAR(reach(Rarity::Universal), 290.0, 1e-9);
 }
 
 TEST(the_shipped_square_stands_in_for_one_mob_in_100000_and_one_super_in_10000) {

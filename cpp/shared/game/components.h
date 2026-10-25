@@ -478,15 +478,16 @@ struct Loadout {
 /// The orbiting ring's live geometry. On the player, not on each petal, so all
 /// of a flower's petals necessarily agree about where the ring is.
 struct PetalRing {
-    double radius = kPetalOrbitRestRadius;
-    double targetRadius = kPetalOrbitRestRadius;
+    double radius = kPlayerBaseRadius + kPetalOrbitRestGap;
     double spin = 0;       ///< current ring rotation, radians
-    /// The multiplier the ring's rest radius is scaled by, 0.7 (defend) to 2.0
-    /// (attack). It is the EXTENSION that ramps -- linearly, at 12 per second
-    /// -- and the radius follows from it; easing the radius instead turns a
-    /// tap-attack that should reach full extension in a twelfth of a second
-    /// into a half-second swell.
-    double extension = 1.0;
+    /// Where the clumps' grains point: turned at kPetalClumpSpinShare of the
+    /// ring's rate. Its own accumulator, because `spin` is wrapped to a turn
+    /// and a fifth of a wrapped angle would jump every time it wrapped.
+    double clumpSpin = 0;
+    /// How far past the flower's edge the ring sits: one of gardn's three
+    /// states (kPetalOrbitRestGap). Set straight from the buttons, as gardn
+    /// sets its range: the petals themselves are what travel, on the ring step.
+    double gap = kPetalOrbitRestGap;
 };
 
 struct PlayerInput {
@@ -589,7 +590,8 @@ struct PlayerModifiers {
     /// usual.
     double aggroRangeScale = 1.0;
     double petalAttractionRadius = 30.0; ///< base loose-petal attraction radius
-    double rangeScale = 1.0;    ///< petal reach
+    /// Extra attack reach, world units: the best attackRange on the bar.
+    double attackRange = 0.0;
     double cameraZoom = 1.0;
     double passiveHealPerSecond = 0.0;
     /// The mana pool the worn bar grants, summed over its slots, and what
@@ -1109,19 +1111,20 @@ struct PetalInstance {
     /// Next time this petal may heal, emit a field, or maintain summons.
     double nextActionMillis = 0;
 
-    /// Ring physics. The petal is sprung toward its orbit point rather than
-    /// pinned to it, so `Transform::position` is the integrated position and
-    /// this is the velocity carrying it there.
+    /// Ring physics. The petal is carried toward its orbit point by gardn's
+    /// step (kPetalFriction) rather than pinned to it, so `Transform::position`
+    /// is the integrated position and this is the velocity carrying it there,
+    /// in units per second.
     Vec2 ringVelocity;
     /// While this has not passed the petal eases toward its target with a
-    /// first-order approach instead of the spring: the fly-out from the flower
-    /// when it appears, and the release after a mob it was orbiting dies.
+    /// first-order approach instead of the step: a pearl flying home from the
+    /// ground, and the ring changing hands to or from a moon.
     double glideUntilMillis = 0;
-    /// The mob this petal is currently whipping around, or NULL_ENTITY. Kept
-    /// so that losing the lock because the mob DIED can arm the release glide,
-    /// while losing it because the mob walked away simply lets the spring pull
-    /// the petal home.
+    /// The mob this petal is orbiting, or NULL_ENTITY.
     Entity attractedTo = NULL_ENTITY;
+    /// Where on that mob's edge it is headed: the bearing from the mob's
+    /// centre, turning with the ring.
+    double attractedBearing = 0;
 
     /// A pearl that has left the ring: shot out onto the ground, where it
     /// stays -- leashed to its flower -- for as long as the ring is extended,

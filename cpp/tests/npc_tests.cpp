@@ -2062,7 +2062,7 @@ TEST(the_shipped_titan_stands_in_the_jungle_wearing_a_universal_ring) {
         // held to: it meets walls with its centre only, so its body and ring
         // would sweep through any wall closer than that.
         const double radius = content().mobStats(titan, site.rarity).radius;
-        const double ringReach = radius + kPetalOrbitRestRadius - kPlayerBaseRadius + 20.0;
+        const double ringReach = radius + kPetalOrbitRestGap + 20.0;
         const double cruiseReach = ringReach + kNpcLeashRadius + 200.0;
         const Vec2 placed = terrain.resolveCircle(site.position, cruiseReach, site.realm);
         CHECK_NEAR(placed.x, site.position.x, 1e-6);
@@ -2462,11 +2462,12 @@ TEST(the_titans_ring_orbits_it_as_a_flowers_does_and_kills_mobs_but_spares_flowe
     CHECK_NEAR(world.get<Health>(titan).max, stats.health, 1e-6);
     CHECK_NEAR(world.get<ContactDamage>(titan).amount, stats.damage, 1e-6);
     CHECK(radius > 400.0);
-    h.step(static_cast<int>(kPetalSpawnGlideMillis / net::kTickMillis) + 30, {&client});
+    // Two seconds: the ring step's swing out to a ring that wide has died away.
+    h.step(60, {&client});
     const std::vector<Entity> ring = petalsOf(world, titan);
     CHECK_EQ(ring.size(), std::size_t(10));
     const Vec2 centre = world.get<Transform>(titan).position;
-    const double orbit = radius + kPetalOrbitRestRadius - kPlayerBaseRadius;
+    const double orbit = radius + kPetalOrbitRestGap;
     for (const Entity petal : ring) {
         CHECK(world.get<PetalInstance>(petal).rarity == Rarity::Universal);
         CHECK(world.get<Faction>(petal).team == Team::Players);

@@ -697,7 +697,7 @@ int GameServer::botMapTierCeiling() const {
     return botMapCeiling_;
 }
 
-double GameServer::botPetalReach(const Bot& bot, double petalExtension) const {
+double GameServer::botPetalReach(const Bot& bot, double ringGap) const {
     // The whole combat controller is built on this one number: the distance at
     // which the orbiting petals reach the mob being fought. It is DERIVED from
     // the ring's own geometry rather than mirrored, because a hand copy of a
@@ -709,16 +709,16 @@ double GameServer::botPetalReach(const Bot& bot, double petalExtension) const {
 
     const Body* body = world_.tryGet<Body>(bot.entity);
     const double playerRadius = body ? body->radius : kPlayerBaseRadius;
-    const double neutralRadius = kPetalOrbitRestRadius + playerRadius - kPlayerBaseRadius;
 
-    double rangeScale = 1.0;
+    // The third eye's reach rides the attacking ring only.
+    double attackRange = 0.0;
     if (const PlayerModifiers* mods = world_.tryGet<PlayerModifiers>(bot.entity)) {
-        rangeScale = std::max(0.0, mods->rangeScale);
+        if (ringGap == kPetalOrbitAttackGap) attackRange = std::max(0.0, mods->attackRange);
     }
-    const double base = neutralRadius * petalExtension * rangeScale;
+    const double base = playerRadius + ringGap + attackRange;
     // A defendOnly petal (rose) never flies out on attack, so its radius is
-    // capped at the neutral orbit however far the ring is thrown.
-    const double defendOnlyBase = neutralRadius * std::min(petalExtension, 1.0) * rangeScale;
+    // capped at the resting orbit however far the ring is thrown.
+    const double defendOnlyBase = playerRadius + std::min(ringGap, kPetalOrbitRestGap);
     const PlayerSkillTree* tree = world_.tryGet<PlayerSkillTree>(bot.entity);
     const SkillSet* skills = tree ? &tree->skills : nullptr;
 
@@ -2059,7 +2059,7 @@ void GameServer::botSense(Bot& bot, double nowMillis, BotSenses& out) {
     out.at = transform->position;
     const Body* body = world_.tryGet<Body>(bot.entity);
     out.bodyRadius = body != nullptr ? body->radius : kPlayerBaseRadius;
-    out.reach = botPetalReach(bot, kPetalOrbitAttackExtension);
+    out.reach = botPetalReach(bot, kPetalOrbitAttackGap);
 
     // Damage taken since last tick. Nothing tells the controller it was hit,
     // and nothing needs to: the health it remembers from last tick is the

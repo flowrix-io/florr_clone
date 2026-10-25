@@ -491,8 +491,9 @@
         "noPhysics": true,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <path id=\"eyeShape\"\n          d=\"M 16 1\n             Q 28 16 16 31\n             Q 4 16 16 1 Z\" />\n  </defs>\n\n  <use href=\"#eyeShape\" fill=\"#111111\" />\n\n  <circle cx=\"16\" cy=\"16\" r=\"7.5\" fill=\"#eeeeee\" />\n\n  <use href=\"#eyeShape\"\n       fill=\"none\"\n       stroke=\"#111111\"\n       stroke-width=\"2.25\"\n       stroke-linecap=\"round\"\n       stroke-linejoin=\"round\" />\n</svg>",
         "isAdminPetal": false,
+        "minRarity": "legendary",
         "playerModifiers": {
-            "range": 1.15
+            "attackRange": 40
         }
     },
     "antennae": {

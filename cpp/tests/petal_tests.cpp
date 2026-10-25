@@ -40,7 +40,7 @@ const char* const kPetalsJson = R"JSON({
   "peaclump": {"name":"Peaclump","damage":6,"health":5,"size":1,"cooldown":1000,"count":4,"clumped":true,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#00FF00"},
   "emitter":  {"name":"Emitter","damage":2,"health":null,"size":1,"cooldown":1000,"count":1,"projectile":{"count":2,"spreadAngle":0.3,"speed":400,"distance":400},"color":"#00FF00"},
   "lucky":    {"name":"Lucky","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"luck":2,"speed":1.5,"magnetism":50},"color":"#FFD700"},
-  "reacher":  {"name":"Reacher","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"range":1.5},"color":"#00FFFF"},
+  "reacher":  {"name":"Reacher","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"attackRange":50},"color":"#00FFFF"},
   "anchor":   {"name":"Anchor","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"playerModifiers":{"rotationSpeed":0},"color":"#888888"},
   "inflator": {"name":"Inflator","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"playerRadius":1.5},"color":"#FF00FF"},
   "stinky":   {"name":"Stinky","damage":0,"health":1,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRange":0.75},"color":"#8B4513"},
@@ -187,21 +187,22 @@ struct Rig {
     /// modifier is zero -- the reference sums those as `+= modifier - 1`, so
     /// one of them cancels the base rate exactly.
     ///
-    /// A petal is not welded to its place on the ring: it is SPRUNG toward it
-    /// (PETAL_SPRING_FORCE), so on a turning ring it settles into a small fixed
-    /// lead and a slightly wider orbit and never sits on its target point. A
-    /// test about WHERE the ring puts a petal freezes the ring first and then
-    /// lets the spring arrive; a test about the turning itself does not, and
+    /// A petal is not welded to its place on the ring: gardn's step carries it
+    /// there (kPetalFriction), so on a turning ring it settles into a small
+    /// fixed lag and a slightly wider orbit and never sits on its target point.
+    /// A test about WHERE the ring puts a petal freezes the ring first and then
+    /// lets the step arrive; a test about the turning itself does not, and
     /// asserts against the steady state instead.
     ///
     /// It costs the LAST active slot, and one place on the ring with it.
     static constexpr int kAnchorSlot = kLoadoutActiveSlots - 1;
     void freezeRing() { equip(kAnchorSlot, "anchor"); }
 
-    /// Steps until the spring has carried every petal onto its target. With a
-    /// frozen ring the target does not move, so this converges to the point
-    /// itself rather than to an orbit around it.
-    void settleRing(int ticks = 120) { tick(ticks); }
+    /// Steps until the ring step has carried every petal onto its target. With
+    /// a frozen ring the target does not move, so this converges to the point
+    /// itself rather than to an orbit around it. Eight seconds: gardn's swing
+    /// keeps 0.794 of itself a tick, which this leaves far below a trillionth.
+    void settleRing(int ticks = 240) { tick(ticks); }
 
     void tick(int count = 1) {
         for (int i = 0; i < count; ++i) {
@@ -341,6 +342,11 @@ struct Rig {
 /// Angular distance, so a comparison across the -pi/+pi seam is not a failure.
 double angularGap(double a, double b) { return std::fabs(wrapAngle(a - b)); }
 
+/// gardn's three orbits for a new flower: its radius plus each state's gap.
+constexpr double kRestOrbit = kPlayerBaseRadius + kPetalOrbitRestGap;
+constexpr double kAttackOrbit = kPlayerBaseRadius + kPetalOrbitAttackGap;
+constexpr double kDefendOrbit = kPlayerBaseRadius + kPetalOrbitDefendGap;
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -402,49 +408,101 @@ TEST(petal_ring_rotates_at_the_spin_rate) {
                kPi, 1e-9);
 }
 
-TEST(attacking_and_defending_move_the_ring_smoothly) {
+/// The ring step is gardn's, restated for our 30 Hz tick: a petal knocked off
+/// its point travels back the way gardn's would, second for second. gardn's
+/// own step is run beside it at its own 20 Hz, and the two are compared at
+/// every instant both clocks share (every tenth of a second).
+TEST(the_ring_step_moves_a_petal_as_gardns_does) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basic");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 point = rig.position(petal);
+    const Vec2 out = (point - rig.position(rig.player)).normalized();
+    const double knock = 100.0;
+    rig.world.get<Transform>(petal).position = point + out * knock;
+
+    // gardn, Server/Process/Flower.cc and Motion.cc, per 20 Hz tick: friction
+    // DEFAULT_FRICTION * 1.5, acceleration half the gap.
+    double gardnGap = knock;
+    double gardnVelocity = 0.0;
+    double deepest = 0.0;
+    double worst = 0.0;
+    for (int tick = 1; tick <= 30; ++tick) {
+        rig.tick();
+        if (tick % 3 != 0) continue;
+        for (int step = 0; step < 2; ++step) {
+            gardnVelocity *= 1.0 - 0.5;
+            gardnVelocity += 0.5 * (0.0 - gardnGap);
+            gardnGap += gardnVelocity;
+        }
+        const Vec2 off = rig.position(petal) - point;
+        const double ours = off.x * out.x + off.y * out.y;
+        deepest = std::min(deepest, ours);
+        // The first tenth of a second is left out: the two clocks start the
+        // swing on different phases of a tick, which is all that separates
+        // them, and by the fifth of a second they have met.
+        if (tick >= 6) worst = std::max(worst, std::fabs(ours - gardnGap));
+    }
+    CHECK(worst < knock * 0.025);
+    // And it is gardn's swing, not a settle: it goes a quarter past the point.
+    CHECK(deepest < -knock * 0.2);
+}
+
+/// The buttons set the ring at once to one of gardn's three states, and the
+/// petals travel to it on the ring step: out past the extended ring and back,
+/// rather than gliding up to it.
+TEST(attacking_and_defending_set_the_ring_and_the_petals_travel_to_it) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "basic");
     rig.settleEquips();
 
-    const double rest = kPetalOrbitRestRadius;
-    CHECK_NEAR(rest, 60.0, 1e-9);
+    // gardn: `player.radius + 40`, `+ 100` attacking, `+ 15` defending.
+    const double rest = kRestOrbit;
+    CHECK_NEAR(rest, 65.0, 1e-9);
     CHECK_NEAR(rig.ring().radius, rest, 1e-9);
 
     rig.settleRing();
+    // On a turning ring the step holds the petal a fixed fraction outside its
+    // point, chasing it round; about a hundredth at the base spin rate.
     const double restOrbitRatio = rig.radiusOf(rig.petals(0).front()) / rig.ring().radius;
-    CHECK_NEAR(restOrbitRatio, 1.0, 0.01);
+    CHECK_NEAR(restOrbitRatio, 1.0, 0.02);
 
     rig.setFlags(net::InputAttack);
     rig.tick();
-    const double attackTarget = kPetalOrbitRestRadius * kPetalOrbitAttackExtension;
-    CHECK_NEAR(attackTarget, 120.0, 1e-9);
-    CHECK_NEAR(rig.ring().targetRadius, attackTarget, 1e-9);
-    // Eased: one tick moves toward the target without arriving at it.
-    CHECK(rig.ring().radius > rest);
-    CHECK(rig.ring().radius < attackTarget);
-    const double afterOne = rig.ring().radius;
-    rig.tick();
-    CHECK(rig.ring().radius > afterOne);
+    const double attackTarget = kAttackOrbit;
+    CHECK_NEAR(attackTarget, 125.0, 1e-9);
+    CHECK_NEAR(rig.ring().radius, attackTarget, 1e-9);
+    // The ring is there; the petal is on its way, not teleported.
+    const double afterOne = rig.radiusOf(rig.petals(0).front());
+    CHECK(afterOne > rest * restOrbitRatio);
+    CHECK(afterOne < attackTarget);
+    double furthest = afterOne;
+    for (int i = 0; i < 30; ++i) {
+        rig.tick();
+        furthest = std::max(furthest, rig.radiusOf(rig.petals(0).front()));
+    }
+    CHECK(furthest > attackTarget * 1.05);
 
     rig.tick(200);
-    CHECK_NEAR(rig.ring().radius, attackTarget, 1e-6);
-    // The petal is sprung toward the ring, not welded to it, so on a turning
-    // ring it holds station a fixed fraction outside its target point. What
-    // matters is that it followed the ring out: it orbits at the same
-    // proportion of the extended radius that it did of the resting one.
+    // It followed the ring out: it orbits at the same proportion of the
+    // extended radius that it did of the resting one.
     CHECK_NEAR(rig.radiusOf(rig.petals(0).front()) / rig.ring().radius, restOrbitRatio, 1e-6);
 
     rig.setFlags(net::InputDefend);
     rig.tick();
-    const double defendTarget = kPetalOrbitRestRadius * kPetalOrbitDefendExtension;
-    CHECK_NEAR(defendTarget, 42.0, 1e-9);
-    CHECK_NEAR(rig.ring().targetRadius, defendTarget, 1e-9);
-    CHECK(rig.ring().radius < attackTarget);
-    CHECK(rig.ring().radius > defendTarget);
+    const double defendTarget = kDefendOrbit;
+    CHECK_NEAR(defendTarget, 40.0, 1e-9);
+    CHECK_NEAR(rig.ring().radius, defendTarget, 1e-9);
+    const double afterDefend = rig.radiusOf(rig.petals(0).front());
+    CHECK(afterDefend < attackTarget * restOrbitRatio);
+    CHECK(afterDefend > defendTarget);
     rig.tick(200);
-    CHECK_NEAR(rig.ring().radius, defendTarget, 1e-6);
+    CHECK_NEAR(rig.radiusOf(rig.petals(0).front()) / rig.ring().radius, restOrbitRatio, 1e-6);
 
     // Both buttons at once is a lunge, not a block. The reference tests the
     // extend button FIRST -- `if (extendPressed) ... else if (retractPressed)`
@@ -452,17 +510,27 @@ TEST(attacking_and_defending_move_the_ring_smoothly) {
     // holding both throws the ring out rather than pulling it in.
     rig.setFlags(net::InputAttack | net::InputDefend);
     rig.tick();
-    CHECK_NEAR(rig.ring().targetRadius, attackTarget, 1e-9);
+    CHECK_NEAR(rig.ring().radius, attackTarget, 1e-9);
 }
 
-TEST(a_range_modifier_widens_the_ring) {
+/// gardn's third eye: extra reach on the ATTACKING ring and nowhere else, and
+/// a second one on the bar adds nothing, since gardn sets the figure.
+TEST(an_attack_range_modifier_reaches_further_only_while_attacking) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "reacher");
     rig.tick();
-    CHECK_NEAR(rig.ring().targetRadius, kPetalOrbitRestRadius * 1.5, 1e-9);
-    rig.tick(200);
-    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius * 1.5, 1e-6);
+    CHECK_NEAR(rig.ring().radius, kRestOrbit, 1e-9);
+    rig.setFlags(net::InputDefend);
+    rig.tick();
+    CHECK_NEAR(rig.ring().radius, kDefendOrbit, 1e-9);
+    rig.setFlags(net::InputAttack);
+    rig.tick();
+    CHECK_NEAR(rig.ring().radius, kAttackOrbit + 50.0, 1e-9);
+
+    rig.equip(1, "reacher");
+    rig.tick();
+    CHECK_NEAR(rig.ring().radius, kAttackOrbit + 50.0, 1e-9);
 }
 
 TEST(a_player_radius_modifier_scales_the_body_and_preserves_petal_clearance) {
@@ -475,8 +543,8 @@ TEST(a_player_radius_modifier_scales_the_body_and_preserves_petal_clearance) {
     CHECK_NEAR(playerRadius, kPlayerBaseRadius * 1.5, 1e-9);
     // TypeScript grows the neutral ring from 60 to 70, not to 90: the extra
     // body radius is added once, preserving the gap from the flower's edge.
-    CHECK_NEAR(rig.ring().targetRadius,
-               kPetalOrbitRestRadius + playerRadius - kPlayerBaseRadius, 1e-9);
+    CHECK_NEAR(rig.ring().radius,
+               playerRadius + kPetalOrbitRestGap, 1e-9);
 }
 
 TEST(a_clumped_slot_spawns_a_cluster_around_one_ring_position) {
@@ -510,6 +578,33 @@ TEST(a_clumped_slot_spawns_a_cluster_around_one_ring_position) {
     for (std::size_t i = 1; i < subAngles.size(); ++i) {
         CHECK_NEAR(subAngles[i] - subAngles[i - 1], kTau / 4.0, 1e-6);
     }
+}
+
+/// gardn's clumps: every clump on the ring points its grains the same way in
+/// the world, whatever its place on the ring, and that bearing turns at a
+/// fifth of the ring's own rate.
+TEST(clumps_point_their_grains_one_way_and_turn_at_a_fifth_of_the_ring) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "sandy");
+    rig.equip(1, "sandy");
+    rig.settleEquips();
+    rig.settleRing();
+
+    // The same grain on two clumps half a ring apart faces the same way.
+    for (int sub = 0; sub < 4; ++sub) {
+        const double a = rig.world.get<PetalInstance>(rig.petalWithSub(0, sub)).facingAngle;
+        const double b = rig.world.get<PetalInstance>(rig.petalWithSub(1, sub)).facingAngle;
+        CHECK_NEAR(angularGap(a, b), 0.0, 1e-9);
+        CHECK_NEAR(angularGap(a, rig.ring().clumpSpin + kTau * sub / 4.0), 0.0, 1e-9);
+    }
+
+    const double spin = rig.ring().spin;
+    const double clump = rig.ring().clumpSpin;
+    rig.tick(6);
+    const double ringTurn = wrapAngle(rig.ring().spin - spin);
+    CHECK(ringTurn > 0.0);
+    CHECK_NEAR(wrapAngle(rig.ring().clumpSpin - clump), ringTurn * kPetalClumpSpinShare, 1e-9);
 }
 
 TEST(a_clump_spacing_moves_the_grains_that_many_radii_out) {
@@ -569,7 +664,7 @@ TEST(an_empty_loadout_places_nothing_and_leaves_modifiers_neutral) {
     CHECK_EQ(rig.petals().size(), std::size_t(0));
     CHECK_NEAR(rig.modifiers().speedScale, 1.0, 1e-12);
     CHECK_NEAR(rig.modifiers().luck, 1.0, 1e-12);
-    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius, 1e-9);
+    CHECK_NEAR(rig.ring().radius, kRestOrbit, 1e-9);
 }
 
 TEST(a_worn_cutter_adds_body_damage_and_takes_no_ring_place) {
@@ -653,47 +748,169 @@ TEST(petals_worn_on_the_flower_leave_no_gap_in_the_ring) {
 // Attraction
 // ---------------------------------------------------------------------------
 
-TEST(an_attracted_petal_is_projected_inside_the_body_the_hit_test_uses) {
-    if (!contentLoaded()) return;
+namespace {
+
+/// A still, hard-to-kill mob of body radius `radius` at `at`, of the kind the
+/// attraction tests pull petals toward.
+Entity addAttractor(Rig& rig, Vec2 at, double radius, double jitter = 1.0) {
+    const Entity mob = rig.world.create();
+    rig.world.add<MobTag>(mob);
+    rig.world.add<MobType>(mob, MobType{fixture().registry.mobIndex("brute"), Rarity::Common, jitter});
+    rig.world.add<Transform>(mob, Transform{at, 0.0});
+    rig.world.add<Body>(mob, Body{radius, 1.0});
+    rig.world.add<Health>(mob, Health{1e9, 1e9, 0.0, 0.0});
+    rig.world.add<Faction>(mob, Faction{Team::Hostiles, false});
+    return mob;
+}
+
+} // namespace
+
+/// Settles a frozen ring's one basic petal, puts a mob `clear` units off its
+/// ring point along the way out (negative: the point is inside the mob), lets
+/// the petal go where the mob takes it, and reports where it came to rest. A
+/// frozen ring does not turn, so neither does the petal's point on the mob.
+struct AttractionRest {
+    Vec2 orbit;
+    Vec2 rest;
+    Vec2 mob;
+    double petalRadius = 0;
+    Entity attractedTo = NULL_ENTITY;
+    Entity mobEntity = NULL_ENTITY;
+};
+AttractionRest restBeside(double clear, double mobRadius, double jitter = 1.0) {
     Rig rig;
     rig.equip(0, "basic");
     rig.freezeRing();
     rig.settleRing();
-
     const Entity petal = rig.petals(0).front();
-    const double petalRadius = rig.world.get<Body>(petal).radius;
+    AttractionRest out;
+    out.orbit = rig.position(petal);
+    out.petalRadius = rig.world.get<Body>(petal).radius;
+    const Vec2 away = (out.orbit - rig.position(rig.player)).normalized();
+    out.mob = out.orbit + away * (clear + mobRadius);
+    out.mobEntity = addAttractor(rig, out.mob, mobRadius, jitter);
+    rig.tick(240);
+    out.rest = rig.position(petal);
+    out.attractedTo = rig.world.get<PetalInstance>(petal).attractedTo;
+    return out;
+}
 
-    // A mob that rolled SMALL. Its body is a little over half the tier radius
-    // the stat table quotes, and that gap is the whole bug: projecting onto the
-    // TIER radius parks the petal outside the circle the melee pass tests, so
-    // the ring whips around a mob it can never touch -- no damage out, and no
-    // health off the petal either, because a petal pays for its swing only when
-    // the swing lands. Nothing else about the capture looks wrong, which is why
-    // it read as "petal health sometimes does not go down".
+/// A mob whose edge is in reach of a petal's ring point takes the petal onto
+/// that edge -- the edge of the BODY the hit test uses, so a mob that rolled
+/// small is grazed too -- at the petal's own bearing from it.
+TEST(a_mob_in_reach_draws_a_petal_onto_its_edge) {
+    if (!contentLoaded()) return;
     const std::uint16_t brute = fixture().registry.mobIndex("brute");
-    const double statRadius = fixture().registry.mobStats(brute, Rarity::Common).radius;
     const double jitter = 0.55;
-    const double bodyRadius = statRadius * jitter;
-    // The trap only exists for a roll this small; assert the fixture is in it.
-    CHECK(statRadius * kMobOrbitRadiusScale > bodyRadius + petalRadius);
+    const double small = fixture().registry.mobStats(brute, Rarity::Common).radius * jitter;
+    for (const double clear : {10.0, 25.0}) {
+        const AttractionRest r = restBeside(clear, small, jitter);
+        CHECK(r.attractedTo == r.mobEntity);
+        CHECK_NEAR((r.rest - r.mob).length(), small, 1e-6);
+        // On the near side, where it came from.
+        CHECK(angularGap((r.rest - r.mob).angle(), (r.orbit - r.mob).angle()) < 1e-6);
+    }
+}
 
-    const Vec2 orbit = rig.world.get<Transform>(petal).position;
-    const Entity mob = rig.world.create();
-    rig.world.add<MobTag>(mob);
-    rig.world.add<MobType>(mob, MobType{brute, Rarity::Common, jitter});
-    rig.world.add<Transform>(mob, Transform{orbit + Vec2{20.0, 0.0}, 0.0});
-    rig.world.add<Body>(mob, Body{bodyRadius, 1.0});
-    rig.world.add<Health>(mob, Health{500.0, 500.0, 0.0, 0.0});
-    rig.world.add<Faction>(mob, Faction{Team::Hostiles, false});
+/// A petal whose ring point is buried in a mob is put on its edge too.
+TEST(a_petal_inside_a_mob_is_put_on_its_edge) {
+    if (!contentLoaded()) return;
+    // The ring point ten units inside a mob of radius 20.
+    const AttractionRest r = restBeside(-10.0, 20.0);
+    CHECK_NEAR((r.rest - r.mob).length(), 20.0, 1e-6);
+}
 
-    rig.tick(60);
+/// A ring point already on a mob's edge stays where it is, and a mob whose
+/// edge is out of reach of it takes nothing.
+TEST(a_mob_moves_nothing_on_its_edge_or_beyond_its_reach) {
+    if (!contentLoaded()) return;
+    const AttractionRest atEdge = restBeside(0.0, 20.0);
+    CHECK_NEAR((atEdge.rest - atEdge.orbit).length(), 0.0, 1e-6);
+    const double reach = PlayerModifiers{}.petalAttractionRadius;
+    const AttractionRest outOfReach = restBeside(reach + 5.0, 20.0);
+    CHECK_NEAR((outOfReach.rest - outOfReach.orbit).length(), 0.0, 1e-6);
+    CHECK(outOfReach.attractedTo == NULL_ENTITY);
+}
 
-    CHECK(rig.world.get<PetalInstance>(petal).attractedTo == mob);
-    const double gap = (rig.world.get<Transform>(petal).position -
-                        rig.world.get<Transform>(mob).position).length();
-    CHECK(gap < bodyRadius + petalRadius);
-    // And on the edge of the body it actually has, not buried in its middle.
-    CHECK(gap > bodyRadius * 0.5);
+/// The whole pass on a turning ring, for a small, a middling and a big mob:
+/// the petal leaves the ring for the mob, circles its edge against the ring's
+/// turn -- all the way round a small one -- for as long as its ring point is
+/// in reach, and goes back onto the ring once it has turned on. It is the
+/// ring's own step aimed at the mob, and the circle runs with the ring where
+/// the two meet, so nothing in it jolts.
+TEST(a_petal_orbits_a_mob_its_ring_passes_and_goes_back_after) {
+    if (!contentLoaded()) return;
+    for (const double radius : {10.0, 30.0, 100.0}) {
+        Rig rig;
+        rig.equip(0, "basic");
+        rig.settleEquips();
+        rig.settleRing();
+        const Entity petal = rig.petals(0).front();
+        const double petalRadius = rig.world.get<Body>(petal).radius;
+        const Vec2 centre = rig.position(rig.player);
+        // Half a turn ahead of the petal, five units outside its ring.
+        const double ahead = rig.angleOf(petal) + kPi;
+        const Vec2 at = centre + Vec2::fromAngle(ahead, kRestOrbit + 5.0 + radius);
+        addAttractor(rig, at, radius);
+
+        Vec2 last = rig.position(petal);
+        Vec2 lastVelocity{};
+        double worst = 0.0;
+        double around = 0.0;
+        double lastBearing = (rig.position(petal) - at).angle();
+        int touching = 0;
+        for (int i = 0; i < 60; ++i) {
+            rig.tick();
+            const Vec2 velocity = (rig.position(petal) - last) / net::kTickSeconds;
+            if (i > 0) worst = std::max(worst, (velocity - lastVelocity).length() / net::kTickSeconds);
+            last = rig.position(petal);
+            lastVelocity = velocity;
+            const double bearing = (rig.position(petal) - at).angle();
+            if (rig.world.get<PetalInstance>(petal).attractedTo != NULL_ENTITY) {
+                around += wrapAngle(bearing - lastBearing);
+            }
+            lastBearing = bearing;
+            if ((rig.position(petal) - at).length() < radius + petalRadius) ++touching;
+        }
+        CHECK(touching * net::kTickSeconds > 0.4);
+        // The ring turns the positive way; the circle, the other.
+        CHECK(around < 0.0);
+        if (radius == 10.0) CHECK(around < -2.0 * kPi * 0.8);
+        CHECK(worst < 20000.0);
+        // Gone on round the ring, and not yet back to the mob: on the ring.
+        rig.tick(30);
+        CHECK_NEAR(rig.radiusOf(petal), kRestOrbit, 1.0);
+    }
+}
+
+/// A pile of mobs on one spot takes a petal as one: it circles one of them and
+/// is not thrown about by the rest.
+TEST(a_pile_of_mobs_holds_a_petal_without_flinging_it) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basic");
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 centre = rig.position(rig.player);
+    const double radius = 20.0;
+    const Vec2 at = centre + Vec2::fromAngle(rig.angleOf(petal) + 0.5, kRestOrbit + 5.0 + radius);
+    for (int i = 0; i < 5; ++i) addAttractor(rig, at, radius);
+
+    Vec2 last = rig.position(petal);
+    Vec2 lastVelocity{};
+    double worst = 0.0;
+    double farthest = 0.0;
+    for (int i = 0; i < 90; ++i) {
+        rig.tick();
+        const Vec2 velocity = (rig.position(petal) - last) / net::kTickSeconds;
+        if (i > 0) worst = std::max(worst, (velocity - lastVelocity).length() / net::kTickSeconds);
+        last = rig.position(petal);
+        lastVelocity = velocity;
+        farthest = std::max(farthest, rig.radiusOf(petal));
+    }
+    CHECK(worst < 20000.0);
+    CHECK(farthest < kRestOrbit + 5.0 + radius * 2.0 + 20.0);
 }
 
 TEST(a_defend_only_petal_is_never_attracted) {
@@ -709,8 +926,8 @@ TEST(a_defend_only_petal_is_never_attracted) {
     CHECK(config.defendOnly);
     CHECK(!config.noPhysics && !config.hasFixedDirection);
 
-    // The same mob 20 units off the orbit point that draws a basic petal in
-    // the test above. That is well inside the base 30-unit attraction radius.
+    // A mob whose edge is 10 units off the orbit point, which draws a basic
+    // petal onto it (the tests above): well inside the base attraction radius.
     const Vec2 orbit = rig.world.get<Transform>(petal).position;
     const Entity mob = rig.world.create();
     rig.world.add<MobTag>(mob);
@@ -761,6 +978,7 @@ TEST(a_strike_reports_a_bolt_to_every_mob_it_hit) {
     Rig rig;
     rig.equip(0, "lightning");
     rig.settleEquips();
+    rig.settleRing();
 
     // One mob against the ring, which is what arms the petal, and two more well
     // inside the strike's thousand-unit reach but nowhere near the petal. All
@@ -781,6 +999,7 @@ TEST(a_strike_reports_a_bolt_to_every_mob_it_hit) {
     Rig far;
     far.equip(0, "lightning");
     far.settleEquips();
+    far.settleRing();
     addMob(far, far.world.get<Transform>(far.petals(0).front()).position);
     addMob(far, {1000.0 + kStrikeRadius + 200.0, 1000.0});
     CHECK(far.tickUntil([&] { return firstStrike(far) != nullptr; }, 120));
@@ -981,6 +1200,7 @@ TEST(a_strike_climbs_the_rarity_ladder_with_the_petal) {
     Rig bolt;
     bolt.equip(0, "lightning", Rarity::Apex);
     bolt.settleEquips();
+    bolt.settleRing();
     addMob(bolt, bolt.world.get<Transform>(bolt.petals(0).front()).position);
     CHECK(bolt.tickUntil([&] { return countStrikes(bolt) > 0; }, 120));
     CHECK_NEAR(lastStrikeDamage(bolt), 25.0 * petalStatScale(Rarity::Apex), 1e-6);
@@ -2107,12 +2327,12 @@ TEST(a_clump_pays_its_modifier_once_not_once_per_grain) {
     Rig rig;
     // sandy carries no modifiers, so this checks the slot-vs-instance rule
     // through the one number a four-count petal would inflate: the count of
-    // contributions, seen here as the range scale staying neutral.
+    // contributions, seen here as the reach staying the reacher's own.
     rig.equip(0, "sandy");
     rig.equip(1, "reacher");
     rig.settleEquips();
     CHECK_EQ(rig.petals().size(), std::size_t(5));
-    CHECK_NEAR(rig.modifiers().rangeScale, 1.5, 1e-9);
+    CHECK_NEAR(rig.modifiers().attackRange, 50.0, 1e-9);
 }
 
 TEST(rarity_scales_a_petals_published_numbers) {
@@ -2615,11 +2835,17 @@ TEST(a_ring_of_bubbles_stacks_into_one_pop_instead_of_cancelling) {
     // standing centre cancel on a symmetric ring and a ring of bubbles would
     // do nothing at all. They chain instead: each pop is aimed from where the
     // ones before it have already thrown the flower.
+    //
+    // Popped from their places on a settled ring, as in play. Two opposite
+    // bubbles line up exactly; four come out a little short of four pops,
+    // because the side bubbles sit off the line the first one threw the
+    // flower along and push partly across it.
     const auto reachOf = [](int bubbles) {
         Rig rig;
         rig.withMovement();
         for (int i = 0; i < bubbles; ++i) rig.equip(i, "bubble");
         rig.settleEquips();
+        rig.settleRing();
         const Vec2 before = rig.position(rig.player);
         rig.setFlags(net::InputDefend);
         rig.tick();
@@ -2630,7 +2856,9 @@ TEST(a_ring_of_bubbles_stacks_into_one_pop_instead_of_cancelling) {
     const double one = reachOf(1);
     CHECK_NEAR(one, 60.0, 1.0);
     CHECK_NEAR(reachOf(2), one * 2.0, 2.0);
-    CHECK_NEAR(reachOf(4), one * 4.0, 4.0);
+    const double four = reachOf(4);
+    CHECK(four > one * 3.5);
+    CHECK(four <= one * 4.0 + 1.0);
 }
 
 TEST(a_stacked_bubble_pop_never_outruns_what_a_tick_can_carry) {
@@ -3832,11 +4060,11 @@ TEST(a_wing_lunges_past_the_ring_and_comes_back_while_attacking) {
     CHECK_NEAR(rig.radiusOf(rig.petals(0).front()), rig.ring().radius, 0.5);
 
     rig.setFlags(net::InputAttack);
-    // Long enough for the extension ramp to finish, so every sample below is
-    // taken against a ring that has stopped moving and the only thing left
-    // travelling is the wing.
+    // Long enough for the swing out to the extended ring to die away, so
+    // every sample below is taken against petals that have stopped moving out
+    // and the only thing left travelling is the wing.
     rig.tick(60);
-    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius * kPetalOrbitAttackExtension, 1e-6);
+    CHECK_NEAR(rig.ring().radius, kAttackOrbit, 1e-6);
 
     const double ring = rig.ring().radius;
     std::vector<double> reach;
@@ -3960,7 +4188,7 @@ TEST(a_pearl_is_shot_out_and_comes_to_rest_on_the_ground_while_attacking) {
     }
     // It slid its authored distance, which puts it well past the extended ring.
     CHECK_NEAR(previous, start + kPearlLaunchSpeed / kPearlGroundFriction, 1.5);
-    CHECK(previous > kPetalOrbitRestRadius * kPetalOrbitAttackExtension + 80.0);
+    CHECK(previous > kAttackOrbit + 80.0);
     CHECK(rig.world.get<PetalInstance>(pearl).flightVelocity.lengthSq() == 0.0);
 
     // At rest means at rest: not creeping, not drifting back.
@@ -3977,7 +4205,7 @@ TEST(a_pearl_is_shot_out_and_comes_to_rest_on_the_ground_while_attacking) {
     const bool home = rig.tickUntil(
         [&] { return !rig.world.get<PetalInstance>(pearl).thrown; }, 10);
     CHECK(home);
-    CHECK_NEAR(rig.ring().extension, 1.0, 1e-9);
+    CHECK_NEAR(rig.ring().gap, kPetalOrbitRestGap, 1e-9);
     rig.tick(120);
     CHECK_NEAR(rig.radiusOf(pearl), rig.ring().radius, 0.5);
 }
@@ -4033,7 +4261,8 @@ TEST(a_pearl_is_dragged_along_at_its_leash_by_a_flower_walking_away) {
 /// The pearl goes out and comes in with the ring's EXTENSION, not with the
 /// buttons. Attack and defend held together is an extended ring -- attack wins
 /// -- so the pearl stays out; the ring drawing in brings it home on the tick
-/// the extension is back at rest, not on the tick a button changed.
+/// the extension is back at rest, which -- the ring switching at once, as
+/// gardn's does -- is the tick attack is let go.
 TEST(a_pearl_follows_the_rings_extension_not_the_buttons) {
     if (!contentLoaded()) return;
     Rig rig;
@@ -4046,28 +4275,22 @@ TEST(a_pearl_follows_the_rings_extension_not_the_buttons) {
     // Out on the first tick the ring reaches past its rest radius.
     rig.setFlags(net::InputAttack);
     rig.tick();
-    CHECK(rig.ring().extension > 1.0);
+    CHECK(rig.ring().gap > kPetalOrbitRestGap);
     CHECK(rig.world.get<PetalInstance>(pearl).thrown);
     rig.tick(9);
-    CHECK(rig.radiusOf(pearl) > kPetalOrbitRestRadius * kPetalOrbitAttackExtension);
+    CHECK(rig.radiusOf(pearl) > kAttackOrbit);
 
     // Defend on top of attack leaves the ring extended, and the pearl with it.
     rig.setFlags(net::InputAttack | net::InputDefend);
     rig.tick(30);
-    CHECK_NEAR(rig.ring().extension, kPetalOrbitAttackExtension, 1e-9);
+    CHECK_NEAR(rig.ring().gap, kPetalOrbitAttackGap, 1e-9);
     CHECK(rig.world.get<PetalInstance>(pearl).thrown);
 
-    // Defend alone draws the ring in over a few ticks; the pearl stays out
-    // for exactly as long as the ring is still extended.
+    // Defend alone draws the ring in, and the pearl comes home with it.
     rig.setFlags(net::InputDefend);
-    bool extendedAfterRelease = false;
-    for (int i = 0; i < 10; ++i) {
-        rig.tick();
-        const bool extended = rig.ring().extension > 1.0;
-        extendedAfterRelease = extendedAfterRelease || extended;
-        CHECK(rig.world.get<PetalInstance>(pearl).thrown == extended);
-    }
-    CHECK(extendedAfterRelease);
+    rig.tick();
+    CHECK_NEAR(rig.ring().gap, kPetalOrbitDefendGap, 1e-9);
+    CHECK(!rig.world.get<PetalInstance>(pearl).thrown);
     rig.tick(120);
     CHECK(!rig.world.get<PetalInstance>(pearl).thrown);
     CHECK_NEAR(rig.radiusOf(pearl), rig.ring().radius, 0.5);
@@ -4336,7 +4559,7 @@ TEST(the_ring_orbits_the_moon_as_it_would_a_flower_that_size) {
 
     // The rest radius off the MOON's edge: 60 for a 25-unit flower, so 65
     // around a 30-unit moon.
-    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius + 30.0 - kPlayerBaseRadius, 1e-9);
+    CHECK_NEAR(rig.ring().radius, 30.0 + kPetalOrbitRestGap, 1e-9);
     const Entity basic = rig.petals(1).front();
     const Entity anchor = rig.petals(Rig::kAnchorSlot).front();
     CHECK_NEAR(distance(rig.position(basic), centre), rig.ring().radius, 1e-3);
@@ -4395,7 +4618,7 @@ TEST(the_ring_flies_back_to_the_flower_when_its_moon_breaks) {
         gap = now;
     }
     rig.settleRing();
-    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius, 1e-9);
+    CHECK_NEAR(rig.ring().radius, kRestOrbit, 1e-9);
     CHECK_NEAR(rig.radiusOf(basic), rig.ring().radius, 1e-3);
 }
 

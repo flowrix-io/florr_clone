@@ -248,9 +248,16 @@ const std::vector<DropTables::Entry>& DropTables::guaranteedForMob(std::uint16_t
     return mergedByMob_[mobIndex];
 }
 
-std::uint16_t DropTables::randomPetal(Rng& rng) const {
+std::uint16_t DropTables::randomPetal(Rng& rng, Rarity rarity) const {
     if (droppable_.empty()) return basicPetal_;
-    return droppable_[rng.below(static_cast<std::uint32_t>(droppable_.size()))];
+    // A handful of draws, then the basic petal: with one petal in the pool
+    // held above common the first draw all but always stands.
+    for (int draw = 0; draw < 8; ++draw) {
+        const std::uint16_t index =
+            droppable_[rng.below(static_cast<std::uint32_t>(droppable_.size()))];
+        if (content_ == nullptr || petalComesAt(content_->petal(index), rarity)) return index;
+    }
+    return basicPetal_;
 }
 
 // ---------------------------------------------------------------------------
@@ -650,8 +657,12 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
                 Rarity rarity = graded ? finishDropRarity(base, mobRarity, rng) : base;
                 // The Random sentinel resolves per COPY, not per row.
                 std::uint16_t petalIndex = entry->kind == DropTables::Kind::RandomPetal
-                                               ? tables_.randomPetal(rng)
+                                               ? tables_.randomPetal(rng, rarity)
                                                : entry->petalIndex;
+                // A petal that does not come at the tier this copy rolled is
+                // not dropped at all -- not lifted to its floor, which would
+                // turn a common spider's third eye into a legendary one.
+                if (!petalComesAt(content.petal(petalIndex), rarity)) continue;
                 const std::uint16_t magic =
                     anyOrb ? content.magicFormOf(petalIndex) : kInvalidIndex;
                 const Vec2 scatter{rng.range(-50.0, 50.0), rng.range(-50.0, 50.0)};

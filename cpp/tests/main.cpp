@@ -719,7 +719,7 @@ TEST(the_games_own_components_arrive_with_their_defaults) {
     // entity that cannot move, cannot be hurt, and has no petals.
     CHECK_NEAR(w.add<PlayerModifiers>(e).speedScale, 1.0, 1e-12);
     CHECK_NEAR(w.get<PlayerModifiers>(e).damageScale, 1.0, 1e-12);
-    CHECK_NEAR(w.get<PlayerModifiers>(e).rangeScale, 1.0, 1e-12);
+    CHECK_NEAR(w.get<PlayerModifiers>(e).attackRange, 0.0, 1e-12);
     CHECK_NEAR(w.get<PlayerModifiers>(e).cameraZoom, 1.0, 1e-12);
     CHECK_NEAR(w.get<PlayerModifiers>(e).maxHealthScale, 1.0, 1e-12);
     CHECK_NEAR(w.add<Afflictions>(e).slowFactor, 1.0, 1e-12);

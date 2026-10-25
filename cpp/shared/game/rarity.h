@@ -300,6 +300,23 @@ inline double petalAggroRangeScale(double authored, Rarity r) {
     return std::pow(authored, ladderIndex(r) + 1);
 }
 
+/// What an attack-range modifier adds per tier above the lowest one its
+/// petal comes at.
+inline constexpr double kAttackRangePerTier = 50.0;
+
+/// An attack-range modifier (the third eye's) at a tier: the authored figure
+/// at `floor`, the petal's lowest tier, and kAttackRangePerTier more for every
+/// tier above it. Below its floor it does nothing. The user's numbers: 40 at
+/// legendary and +50 a tier, so
+///
+///   legendary 40, mythic 90, ultra 140, super 190, unique 240, apex 290.
+inline double petalAttackRange(double authored, Rarity r, Rarity floor) {
+    if (!(authored > 0.0)) return 0.0;
+    const int above = ladderIndex(r) - ladderIndex(floor);
+    if (above < 0) return 0.0;
+    return authored + kAttackRangePerTier * above;
+}
+
 /// A dodge chance at a tier: the authored common figure added once more per
 /// tier, so talisman's 0.03 is
 ///

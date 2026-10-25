@@ -1370,7 +1370,7 @@ private:
     /// standoff buffer. Derived from the ring's own geometry rather than
     /// copied from it: a hand copy that drifts does not fail, it just parks
     /// the bot outside the range its petals actually reach.
-    double botPetalReach(const Bot&, double petalExtension) const;
+    double botPetalReach(const Bot&, double ringGap) const;
     /// Highest petal rarity across the bot's active row, which is what decides
     /// the ground it wants to farm.
     int botMaxRarityIndex(const Bot&) const;

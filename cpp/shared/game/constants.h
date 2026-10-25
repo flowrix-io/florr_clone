@@ -274,19 +274,29 @@ inline int loadoutPresetIndex(const std::string& name) {
     return -1;
 }
 
-/// TypeScript's neutral petal orbit is 60 world units for a normal 20-unit
-/// player hitbox. When the player grows, only the body's added radius grows
-/// the orbit so the gap from its edge remains constant.
-inline constexpr double kPetalOrbitRestRadius = 60.0;
+/// gardn's three ring states, as the gap between the flower's EDGE and the
+/// orbit its petals are carried round on (Server/Process/Flower.cc):
+/// `player.radius + 40` at rest, `+ 100` while attacking and `+ 15` while
+/// defending -- 65, 125 and 40 from the centre of a new flower. Measured from
+/// the edge, so a grown flower keeps the same clearance.
+///
+/// Attack wins when both buttons are down, and a defendOnly petal stays at
+/// rest while attacking, both as gardn has them. The ring takes the state the
+/// buttons ask for at once; the petal step (kPetalFriction) carries each petal
+/// out or in.
+inline constexpr double kPetalOrbitRestGap = 40.0;
+inline constexpr double kPetalOrbitAttackGap = 100.0;
+inline constexpr double kPetalOrbitDefendGap = 15.0;
 
-/// TypeScript's fully extended and retracted petal-extension values. Attack
-/// and defend use these as targets; the ring's extension ramps between them
-/// at a fixed rate (kPetalExtensionRampPerSecond, server/systems/petals.cpp).
-inline constexpr double kPetalOrbitAttackExtension = 2.0;
-inline constexpr double kPetalOrbitDefendExtension = 0.7;
+/// How fast a clump's grains turn round its centre, as a share of the ring's
+/// own spin: gardn lays grain j of n at `2 pi j / n + heading * 0.2`
+/// (Flower.cc), a bearing in the WORLD shared by every clump on the ring
+/// rather than one measured from each clump's place on it. Oranges keep their
+/// own hang off the ring (clumpOutsideRing), which gardn has no petal for.
+inline constexpr double kPetalClumpSpinShare = 0.2;
 
 /// Ring spin, radians per second.
-inline constexpr double kPetalSpinRate = 2.0;
+inline constexpr double kPetalSpinRate = 2.5;
 
 /// The wing's "it comes and goes": while the flower is ATTACKING, a wing is
 /// carried this much further out than the rest of the ring, on a sine that is
@@ -375,54 +385,83 @@ inline constexpr double kPetalHitIntervalMillis = 0.0;
 
 // -- ring physics ------------------------------------------------------------
 //
-// A petal is not pinned to its orbit point; it is sprung toward it. That is
-// what makes the ring trail a sprinting flower, overshoot when the ring
-// extends, and settle rather than snap. Values are src/ecs/systems/petalRing.ts.
+// gardn's petal movement, and nothing else (the user's call): every tick a
+// petal's velocity loses a share to friction and gains a pull toward where it
+// should be, and the petal moves by its velocity. gardn writes it, per 20 Hz
+// tick (Server/Process/Flower.cc sets the acceleration, Motion.cc applies it
+// against the petal's friction of DEFAULT_FRICTION * 1.5), as
+//
+//     velocity *= 1 - 0.5
+//     velocity += 0.5 * (target - position)
+//     position += velocity
+//
+// That one step is what makes the ring trail a running flower, overshoot when
+// it extends or a petal spawns, and settle. There is no ramp on the ring's
+// extension, no glide on the way out of the flower and no ease on its centre:
+// each of those is a second force, and stacked on the step they read as forces
+// fighting over the petal.
+//
+// The figures below are gardn's restated for this server's 30 Hz tick so the
+// motion is the same second for second: the friction is 0.5^(20/30), the same
+// decay per second, and the pull is the one that keeps the swing's frequency.
+// Every fifth of a second the two land on the same spot
+// (petal_tests: the_ring_step_moves_a_petal_as_gardns_does), and a flower
+// running flat out leaves its ring about 15 units behind, as gardn's does.
 
-inline constexpr double kPetalSpringForce = 600.0;
-inline constexpr double kPetalDamping = 0.72;
-inline constexpr double kPetalSpringSubstepSeconds = 0.05;
-inline constexpr int kPetalSpringMaxSubsteps = 4;
+/// The share of a petal's velocity it keeps from one tick to the next.
+/// gardn's 1 - 0.5 per 20 Hz tick.
+inline constexpr double kPetalFriction = 0.629961;
+/// The share of the gap to its target added to a petal's per-tick velocity.
+/// gardn's 0.5 per 20 Hz tick.
+inline constexpr double kPetalPull = 0.255231;
+/// What a homing petal -- rose, shell, orb -- is pushed toward its flower by,
+/// in units per tick per tick, in place of the pull: gardn's burst heal and
+/// shield set the acceleration to a flat `PLAYER_ACCELERATION * 4` toward the
+/// flower (Petal.cc), which against the same friction tops out at 800 units a
+/// second. Restated for our tick to keep that top speed and that friction.
+inline constexpr double kPetalHomingPush = 9.867719;
 
-/// A petal that has just appeared starts AT the flower and flies out over this
-/// window; one that loses the mob it was orbiting because the mob DIED (rather
-/// than moved away) glides for the shorter one instead of being snapped back.
-inline constexpr double kPetalSpawnGlideMillis = 300.0;
-inline constexpr double kPetalReleaseGlideMillis = 250.0;
-/// Rate of the first-order approach used during either glide, per second.
+/// Rate of the first-order approach the two scripted flights still use -- a
+/// pearl recalled from the ground, and the ring changing hands to or from a
+/// moon -- per second. Neither is ring movement: both carry a petal across a
+/// gap a leash or a moon wide, which the step would cross in one lunge.
 inline constexpr double kPetalGlideRate = 14.0;
-/// The spring force ramps in over this window after a petal appears, so a
-/// fresh petal does not get slingshotted onto the ring.
-inline constexpr double kPetalSpawnSmoothMillis = 300.0;
 
 /// How long a homing petal -- rose, shell, orb -- gets to reach the flower
 /// before its burst is delivered without the touch.
 ///
 /// The dive is what spends the petal, and a dive that never lands is a petal
-/// that never heals and a slot that never reloads. It often does not land: the
-/// glide home settles at a standing lag against a flower that is running away
-/// (roughly its speed over kPetalGlideRate, which at top speed is wider than
-/// the flower's own body), so a sprinting player is never actually touched,
-/// and a wall the petal is pushed back out of can hold it off indefinitely.
-/// The burst is delivered anyway once the dive has had this long.
-///
-/// Against a standing flower the journey takes about 360 ms, so this is
-/// roughly three times what it is worth: long enough that a dive which would
-/// have arrived is never paid out early, short enough that the heal still
-/// arrives while it matters.
+/// that never heals and a slot that never reloads. On open ground it lands:
+/// the push outruns a running flower almost threefold. But a wall
+/// the petal is pushed back out of can hold it off for as long as the flower
+/// stands behind it, so the burst is delivered anyway once the dive has had
+/// this long -- long enough that a dive which would have arrived is never paid
+/// out early, short enough that the heal still arrives while it matters.
 inline constexpr double kPetalHomingTimeoutMillis = 1000.0;
 
 // -- attraction --------------------------------------------------------------
 //
 // Every player attracts petals, not just the ones carrying lentil: the base
 // radius is 30 (PlayerModifiers::petalAttractionRadius) and lentil raises it.
-// A petal inside that radius of a mob stops orbiting the flower and whips
-// around the mob's edge instead.
-
-/// Where on the mob the captured petal orbits, as a fraction of mob radius.
-inline constexpr double kMobOrbitRadiusScale = 0.85;
-/// Extra angular kick while orbiting a mob, so the ring visibly grinds.
-inline constexpr double kMobOrbitSpinBoost = 2.0;
+//
+// A mob whose edge comes within that radius of a petal's place on the ring
+// takes the petal (the user's call: "orbit the mob"). The petal's target
+// becomes a point on the mob's edge that circles it as fast as the ring
+// carries the petal, so gardn's step brings it in on a spiral and round the
+// mob, grazing it all the way, until its place on the ring is out of reach
+// again or the mob dies. A petal stays with its mob while that mob is in
+// reach; a free one goes to the nearest.
+//
+// The circle runs AGAINST the ring's turn, as a gear meshes: the near side of
+// the mob then runs the way the ring does, so the petal carries straight on
+// into its circle and leaves it running with its ring point. Turning with the
+// ring sent it back the way it came on contact and round to the far side of
+// a big mob, from where it was flung back across the body at four times the
+// jolt.
+//
+// No force of its own: it is the ring's step aimed somewhere else, so it is
+// as smooth as the ring. It replaced a force toward the edge, which landed a
+// petal in a zig-zag of bounces and could only hold it, never carry it round.
 
 // -- raindrop aura -----------------------------------------------------------
 //

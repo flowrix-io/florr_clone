@@ -134,8 +134,11 @@ public:
 
     /// One uniformly chosen droppable petal, for the `random` sentinel rows.
     /// Rolled per COPY rather than per row, so an apex garbage leaves ten
-    /// different petals rather than ten of one.
-    std::uint16_t randomPetal(Rng& rng) const;
+    /// different petals rather than ten of one. Only one that comes at
+    /// `rarity` (petalComesAt): a pick that does not is drawn again, so every
+    /// other petal's odds -- and every draw that never hits one -- are as
+    /// they were.
+    std::uint16_t randomPetal(Rng& rng, Rarity rarity) const;
 
 private:
     struct SourceEntry {

@@ -3614,7 +3614,8 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
 
     // The client sends what it wants, never what it costs. A price that came
     // off the wire is a price the client chose.
-    if (!shopSellsPetal(petalIndex) || !shopSellsRarity(rarity)) {
+    if (!shopSellsPetal(petalIndex) || !shopSellsRarity(rarity) ||
+        !petalComesAt(content().petal(petalIndex), rarity)) {
         sendShopResult(connection, net::ShopResultKind::Purchase, false, 0, "That is not for sale.");
         return;
     }

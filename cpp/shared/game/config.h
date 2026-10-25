@@ -391,7 +391,6 @@ struct PetalModifiers {
     // Multiplicative, neutral at 1.0.
     double maxHealth = 1.0;
     double speed = 1.0;
-    double range = 1.0;          ///< petal reach
     double rotationSpeed = 1.0;  ///< ring spin; negative reverses it
     double playerRadius = 1.0;
     double damage = 1.0;
@@ -401,6 +400,13 @@ struct PetalModifiers {
     double aggroRange = 1.0;
 
     // Additive, neutral at 0.
+    /// How much further out the ring is thrown while ATTACKING, in world units
+    /// on top of gardn's `+ 100` -- gardn's third eye `extra_range`. Never
+    /// moves the resting or defending ring, and does not stack: the best one
+    /// on the bar counts, as gardn sets the figure rather than adding to it.
+    /// Authored at the petal's lowest tier (`minRarity`) and stepped up from
+    /// there -- see petalAttackRange.
+    double attackRange = 0.0;
     double luck = 0.0;
     double magnetism = 0.0;              ///< extra pickup radius, units
     double aggroRadius = 0.0;            ///< extra mob notice range, units
@@ -750,6 +756,11 @@ struct PetalConfig {
     double price = 0;
 
     bool isAdminPetal = false;
+    /// The lowest tier this petal comes at: nothing drops it, and the shop
+    /// does not sell it, below this. One already held below it is still an
+    /// item -- it crafts up like any other -- but its tier gives it nothing to
+    /// do (the third eye's reach starts here; see petalAttackRange).
+    Rarity minRarity = Rarity::Common;
     /// Whether a trader NPC takes this petal for a coin. On unless petals.json
     /// says `"tradable": false` -- the basic petal, and the coin itself, which
     /// would otherwise trade for itself.
@@ -1271,6 +1282,13 @@ inline constexpr int kCrownMaxLoans = 25;
 /// `random` drop rows, and the gallery's mirror of them.
 inline bool petalHasOwnSource(const PetalConfig& config) {
     return petalIsSacrifice(config) || petalLendsBasic(config);
+}
+
+/// Whether the world hands this petal out at this tier: at or above its
+/// `minRarity`. What a drop, a `random` row, the shop and the gallery's
+/// mirror of the drops all ask before they put one in front of a player.
+inline bool petalComesAt(const PetalConfig& config, Rarity rarity) {
+    return rarityIndex(rarity) >= rarityIndex(config.minRarity);
 }
 
 /// Whether every copy of this petal but the best one on the bar

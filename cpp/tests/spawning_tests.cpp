@@ -3332,6 +3332,44 @@ TEST(a_kill_above_unusual_grades_exactly_one_of_its_rows) {
     }
 }
 
+/// The third eye comes at legendary and up (its minRarity): a spider whose
+/// roll lands it lower drops none -- not one lifted to legendary -- and one
+/// rare enough to roll legendary drops it there.
+TEST(a_spider_never_drops_a_third_eye_below_legendary) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(4242);
+
+    const std::uint16_t spider = shipped().mobIndex("spider");
+    const std::uint16_t thirdEye = shipped().petalIndex("third_eye");
+    CHECK(spider != kInvalidIndex);
+    CHECK(thirdEye != kInvalidIndex);
+    CHECK(shipped().petal(thirdEye).minRarity == Rarity::Legendary);
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+
+    int legendaryOrBetter = 0;
+    for (int tier = 0; tier <= rarityIndex(Rarity::Ultra); ++tier) {
+        for (int i = 0; i < 200; ++i) {
+            makeCorpse(world, spider, clampRarity(tier), kCentre, player, {player});
+            loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+            commands.flush();
+            for (const Entity drop : liveDrops(world)) {
+                const DropItem& item = world.get<DropItem>(drop);
+                if (item.configIndex == thirdEye) {
+                    CHECK(rarityIndex(item.rarity) >= rarityIndex(Rarity::Legendary));
+                    ++legendaryOrBetter;
+                }
+                world.destroy(drop);
+            }
+        }
+    }
+    // An ultra spider's chaff alone is legendary, so they do still come.
+    CHECK(legendaryOrBetter > 0);
+}
+
 TEST(which_row_is_graded_is_drawn_by_probability) {
     World world;
     CommandBuffer commands{world};
