@@ -410,6 +410,11 @@ private:
                       const PetalStats& stats, const EquippedPetal& equipped,
                       double health, double nowMillis);
     void destroySlotPetals(World& world, Loadout& loadout, std::uint8_t slot);
+    /// Takes one petal off the field for good -- broken, swapped out, or its
+    /// flower down -- with a Killed cue first, so every client in view plays
+    /// its death animation where it was, as gardn fades every petal its
+    /// server deletes.
+    void removePetal(World& world, Entity petal);
     void recallPets(World& world, PetalSlotState::Slot& state);
     void assignNetId(World& world, Entity e);
 

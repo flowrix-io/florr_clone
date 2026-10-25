@@ -18,6 +18,8 @@ const double kHealthBarEaseSeconds = easeTimeConstant(0.2);
 const double kHealthLagEaseSeconds = easeTimeConstant(0.2 / 3.0);
 /// How long the red trail holds after a hit before it starts to drain.
 constexpr double kHealthLagHoldMillis = 250.0;
+/// The most erased petals kept for a death cue between drains.
+constexpr std::size_t kMaxRemovedPetals = 1024;
 
 /// florr's plate eases: k = 0.013389/ms for the green, the white and the
 /// fade, k = 0.006322/ms for the red -- 0.2 and 0.1 of the gap per 60 Hz
@@ -83,6 +85,7 @@ void HealthBarEase::step(double targetHealth, double targetShield, double nowMil
 void WorldView::clear() {
     entities_.clear();
     events_.clear();
+    removedPetals_.clear();
     self_ = SelfState{};
     realm_ = Realm::Overworld;
     tick_ = 0;
@@ -447,7 +450,19 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         }
     }
 
-    for (const std::uint32_t netId : removals) entities_.erase(netId);
+    for (const std::uint32_t netId : removals) {
+        const auto it = entities_.find(netId);
+        if (it == entities_.end()) continue;
+        // Most of these simply left view and are never asked for. A flower
+        // that teleports drops its whole screen at once, so the pile is
+        // bounded in case nothing drains it.
+        const bool petal = it->second.kind == net::EntityKind::Petal ||
+                           it->second.kind == net::EntityKind::Projectile;
+        if (petal && removedPetals_.size() < kMaxRemovedPetals) {
+            removedPetals_.push_back(std::move(it->second));
+        }
+        entities_.erase(it);
+    }
 
     // One sample per snapshot for every buffered entity, the ones this
     // snapshot did not mention included. The server leaves out anything that

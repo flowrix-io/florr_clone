@@ -455,6 +455,41 @@ TEST(destroyed_entities_are_removed) {
     CHECK(client.entities().count(id) == 0);
 }
 
+/// A petal the server destroys is set aside as it was last drawn, beside the
+/// Killed cue that names it, so the renderer can play its death from it. A
+/// mob is not: its death replays the renderer's own shadow of it.
+TEST(a_destroyed_petal_is_set_aside_beside_its_death_cue) {
+    Fixture f;
+    const Entity petal = f.world.create();
+    f.world.add<Transform>(petal, Transform{{1050, 1000}, 0.0});
+    f.world.add<Body>(petal, Body{10, 1});
+    f.world.add<NetId>(petal, NetId{f.ids.next()});
+    Replicated rep;
+    rep.kind = net::EntityKind::Petal;
+    f.world.add<Replicated>(petal, rep);
+    const std::uint32_t petalId = netIdOf(f.world, petal);
+    const Entity mob = f.addMob({1100, 1000});
+    WorldView client;
+    f.tick(client, 1, 1000);
+    CHECK(client.removedPetals().empty());
+
+    f.events.killed(petalId, {1050, 1000}, Realm::Overworld);
+    f.world.destroy(petal);
+    f.world.destroy(mob);
+    f.tick(client, 2, 1040);
+    CHECK(client.entities().count(petalId) == 0);
+    CHECK_EQ(client.removedPetals().size(), std::size_t(1));
+    if (!client.removedPetals().empty()) {
+        CHECK_EQ(client.removedPetals().front().netId, petalId);
+        CHECK_EQ(client.removedPetals().front().kind, net::EntityKind::Petal);
+    }
+    bool cued = false;
+    for (const ViewEvent& e : client.events()) {
+        cued = cued || (e.kind == net::EventKind::Killed && e.netId == petalId);
+    }
+    CHECK(cued);
+}
+
 TEST(net_ids_are_never_reused) {
     Fixture f;
     const Entity first = f.addMob({1100, 1000});

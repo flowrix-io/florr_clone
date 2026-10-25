@@ -686,9 +686,7 @@ void PetalSystem::clearRing(World& world, Entity player) {
     // reload. A respawn pays those reloads regardless, because it arrives on a
     // brand new entity whose slot state has never seen a petal.
     if (Loadout* loadout = world.tryGet<Loadout>(player)) {
-        for (const Entity petal : loadout->spawned) {
-            if (world.isAlive(petal)) world.destroy(petal);
-        }
+        for (const Entity petal : loadout->spawned) removePetal(world, petal);
         loadout->spawned.clear();
     }
     if (PetalSlotState* state = world.tryGet<PetalSlotState>(player)) {
@@ -881,7 +879,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
                     slotState.instanceReadyAtMillis[instance->subIndex] = nowMillis + reload;
                 }
                 queueBreakBehaviour(world, registry, petal);
-                world.destroy(petal);
+                removePetal(world, petal);
             }
             live.resize(survivors);
         } else if (hasPool && !slot.broken && slotState.populated) {
@@ -904,7 +902,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
                 // reloading and runs nothing.
                 if (!live.empty()) queueBreakBehaviour(world, registry, live.front());
                 for (const Entity petal : live) {
-                    if (world.isAlive(petal) && world.has<Dead>(petal)) world.destroy(petal);
+                    if (world.isAlive(petal) && world.has<Dead>(petal)) removePetal(world, petal);
                 }
                 destroySlotPetals(world, loadout, slotId);
                 live.clear();
@@ -1361,12 +1359,23 @@ void PetalSystem::destroySlotPetals(World& world, Loadout& loadout, std::uint8_t
     for (const Entity petal : loadout.spawned) {
         const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
         if (instance && instance->slot == slot) {
-            world.destroy(petal);
+            removePetal(world, petal);
             continue;
         }
         loadout.spawned[kept++] = petal;
     }
     loadout.spawned.resize(kept);
+}
+
+void PetalSystem::removePetal(World& world, Entity petal) {
+    if (!world.isAlive(petal)) return;
+    // Outside a tick there is no queue to cue it on, and it simply goes.
+    const NetId* id = world.tryGet<NetId>(petal);
+    const Transform* transform = world.tryGet<Transform>(petal);
+    if (events_ != nullptr && id != nullptr && transform != nullptr) {
+        events_->killed(id->value, transform->position, transform->realm);
+    }
+    world.destroy(petal);
 }
 
 bool PetalSystem::spendSlot(World& world, const ContentRegistry& registry, Entity player,

@@ -371,6 +371,10 @@ public:
 
     /// Events from the most recent snapshot. Drained by the effects layer.
     std::vector<ViewEvent>& events() { return events_; }
+    /// The petals and shots those same snapshots erased, as they were last
+    /// drawn. A Killed event names one only after it is gone, and its death
+    /// animation replays this record. Drained with events().
+    std::vector<RemoteEntity>& removedPetals() { return removedPetals_; }
 
     /// Client-only overrides for the local flower's flag families.
     ///
@@ -433,6 +437,7 @@ private:
     /// frame by interpolate(). A member so a frame does not allocate it.
     std::unordered_map<std::uint32_t, std::uint32_t> ringAnchors_;
     std::vector<ViewEvent> events_;
+    std::vector<RemoteEntity> removedPetals_;
     SelfState self_;
     Realm realm_ = Realm::Overworld;
     std::uint32_t tick_ = 0;

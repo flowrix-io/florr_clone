@@ -65,8 +65,18 @@ constexpr std::uint32_t kDamageTextColor = ui::kStatDamage;
 /// the only feedback there is that something died.
 constexpr double kDeathAnimationSeconds = 0.2;
 
+/// gardn's death animation, which every entity it deletes plays and which a
+/// petal plays here: over 125 ms it fades out linearly while it grows to half
+/// as big again, standing where it was last drawn (Client/Rendering.cc
+/// _apply_damage_filter, deletion_animation += dt / 125).
+constexpr double kPetalDeathSeconds = 0.125;
+constexpr double kPetalDeathGrowth = 0.5;
+
 /// Ceilings on the two per-mob tables the renderer keeps of its own accord.
 constexpr std::size_t kMaxDyingMobs = 64;
+/// A flower going down takes its whole ring at once, and a screen of them is
+/// still a few hundred.
+constexpr std::size_t kMaxDyingPetals = 512;
 /// Loot that vanished at once -- leaving a world drops every drop in view in
 /// one frame -- animates out under the same kind of ceiling.
 constexpr std::size_t kMaxDyingDrops = 64;
@@ -913,8 +923,22 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                 dummyDamage_.erase(event.netId);
 
                 // The snapshot erased the entity before this event was read, so
-                // the death animation replays the last state it was DRAWN in.
-                // A miss here is a petal or a drop, neither of which animates.
+                // the death animation replays the last state it was DRAWN in:
+                // a petal's or a shot's the view set aside as it erased it,
+                // a mob's the shadow kept below. A drop has no death.
+                std::vector<RemoteEntity>& removed = view.removedPetals();
+                const auto petal =
+                    std::find_if(removed.begin(), removed.end(), [&](const RemoteEntity& e) {
+                        return e.netId == event.netId;
+                    });
+                if (petal != removed.end()) {
+                    if (dyingPetals_.size() < kMaxDyingPetals && !hiddenByOptions(*petal)) {
+                        dyingPetals_.push_back(DyingPetal{std::move(*petal), 0.0});
+                    }
+                    // Moved from, so it must not be found a second time.
+                    petal->netId = 0;
+                    break;
+                }
                 const auto shadow = mobShadows_.find(event.netId);
                 if (shadow == mobShadows_.end()) break;
                 if (dying_.size() < kMaxDyingMobs) {
@@ -1033,6 +1057,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         }
     }
     view.events().clear();
+    view.removedPetals().clear();
 
     // --- drops -----------------------------------------------------------
     //
@@ -1184,6 +1209,13 @@ void WorldRenderer::update(double dt) {
                                                                      : kDropDespawnSeconds);
                                      }),
                       dyingDrops_.end());
+
+    for (DyingPetal& petal : dyingPetals_) petal.ageSeconds += dt;
+    dyingPetals_.erase(std::remove_if(dyingPetals_.begin(), dyingPetals_.end(),
+                                      [](const DyingPetal& p) {
+                                          return p.ageSeconds >= kPetalDeathSeconds;
+                                      }),
+                       dyingPetals_.end());
 
     for (DyingMob& mob : dying_) mob.ageSeconds += dt;
     dying_.erase(std::remove_if(dying_.begin(), dying_.end(),
@@ -4473,6 +4505,23 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         mob.deathProgress = clamp(dying.ageSeconds / kDeathAnimationSeconds, 0.0, 1.0);
         drawMobBody(canvas, camera, mob, timeSeconds);
     };
+    // A destroyed petal or shot fades where it was last drawn while it grows,
+    // in the layer its live siblings are drawn in: gardn's filter, an alpha
+    // and a scale about its centre over the ordinary drawing.
+    const auto drawDyingPetal = [&](const DyingPetal& dying) {
+        const RemoteEntity& entity = dying.entity;
+        const double t = clamp(dying.ageSeconds / kPetalDeathSeconds, 0.0, 1.0);
+        const double scale = 1.0 + kPetalDeathGrowth * t;
+        if (!onScreen(entity.position, entity.radius * scale)) return;
+        const Vec2 screen = camera.worldToScreen(entity.position);
+        canvas.save();
+        canvas.setGlobalAlpha(static_cast<float>(canvas.globalAlpha() * (1.0 - t)));
+        canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
+        canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
+        canvas.translate(static_cast<float>(-screen.x), static_cast<float>(-screen.y));
+        drawEntity(canvas, entity, camera, entity.position, timeSeconds);
+        canvas.restore();
+    };
 
     mobLabels_.clear();
     for (const net::EntityKind kind : kOrder) {
@@ -4514,6 +4563,9 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             // out before isHole reads it as a mob's.
             if (mobs && (entity.isRingPetal() || isHole(entity.typeIndex))) continue;
             drawLive(entity);
+        }
+        for (const DyingPetal& dying : dyingPetals_) {
+            if (layerOf(dying.entity) == kind) drawDyingPetal(dying);
         }
         chargeOps(kind == net::EntityKind::Mob || kind == net::EntityKind::Npc ? ops_.mobs
                   : kind == net::EntityKind::Petal      ? ops_.petals

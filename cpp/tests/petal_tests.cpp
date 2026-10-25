@@ -3878,6 +3878,46 @@ TEST(buying_or_resetting_duplicator_rebuilds_the_slots_it_resizes) {
 // Wiring
 // ---------------------------------------------------------------------------
 
+/// A petal leaving the field -- broken, swapped out, or its flower down -- is
+/// cued as Killed where it was, so every client in view plays its death
+/// animation there, as gardn's does for every petal its server deletes.
+TEST(a_petal_leaving_the_field_is_cued_as_killed_where_it_was) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    std::uint32_t counter = 0;
+    rig.system.allocateNetId = [&counter] { return ++counter; };
+    rig.equip(0, "basic");
+    rig.equip(1, "basic");
+    rig.equip(2, "basic");
+    rig.settleEquips();
+    const auto cue = [&](std::uint32_t netId) -> const WireEvent* {
+        for (const WireEvent& e : rig.events.events()) {
+            if (e.kind == net::EventKind::Killed && e.netId == netId) return &e;
+        }
+        return nullptr;
+    };
+    const auto idOf = [&](int slot) { return rig.world.get<NetId>(rig.petals(slot).front()).value; };
+
+    const std::uint32_t broken = idOf(0);
+    const Vec2 brokenAt = rig.position(rig.petals(0).front());
+    rig.damage(rig.petals(0).front(), 10.0);
+    rig.tick();
+    CHECK(rig.slot(0).broken);
+    CHECK(cue(broken) != nullptr);
+    if (cue(broken) != nullptr) CHECK_NEAR((cue(broken)->position - brokenAt).length(), 0.0, 1e-9);
+
+    const std::uint32_t swapped = idOf(1);
+    rig.unequip(1);
+    rig.tick();
+    CHECK(cue(swapped) != nullptr);
+
+    const std::uint32_t downed = idOf(2);
+    rig.world.add<Dead>(rig.player, Dead{NULL_ENTITY});
+    rig.tick();
+    CHECK(cue(downed) != nullptr);
+}
+
+
 TEST(spawned_entities_take_net_ids_when_an_allocator_is_installed) {
     if (!contentLoaded()) return;
     Rig rig;

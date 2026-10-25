@@ -157,6 +157,14 @@ struct DyingMob {
     double ageSeconds = 0;
 };
 
+/// A petal or shot the server has already destroyed, fading out as gardn
+/// fades every entity it deletes. The whole record, so it is drawn by the
+/// same code as the live ones.
+struct DyingPetal {
+    RemoteEntity entity;
+    double ageSeconds = 0;
+};
+
 class WorldRenderer {
 public:
     void setContent(const ContentRegistry* content) { content_ = content; }
@@ -628,6 +636,8 @@ private:
     /// animation. Bounded: past the cap the oldest simply stops animating,
     /// which is invisible in the crowd that produced it.
     std::vector<DyingMob> dying_;
+    /// Petals and shots the server has destroyed, the same way.
+    std::vector<DyingPetal> dyingPetals_;
 
     /// The last state each visible mob was drawn in. A Killed event arrives
     /// AFTER the snapshot has already erased the entity, so the death
