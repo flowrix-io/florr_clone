@@ -523,7 +523,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
         if (r.w > 0 && r.h > 0) regions.push_back({r, act, index});
     };
 
-    overlayCard(canvas, panel, kAdminDbSkin);
+    panelCard(canvas, panel, kAdminDbSkin);
     TextStyle heading;
     heading.size = 22.0;
     heading.fill = kPaper;

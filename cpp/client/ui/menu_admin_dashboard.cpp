@@ -400,7 +400,7 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
         if (r.w > 0 && r.h > 0) regions.push_back({r, act, index});
     };
 
-    overlayCard(canvas, panel, kAdminDashboardSkin);
+    panelCard(canvas, panel, kAdminDashboardSkin);
     TextStyle heading;
     heading.size = kCardTitleSize;
     heading.fill = kPaper;

@@ -1442,7 +1442,7 @@ bool AssetsPanel::render(MenuContext& ctx) {
         if (r.w > 0 && r.h > 0) regions.push_back({r, act, index});
     };
 
-    overlayCard(canvas, panel, kAssetsSkin);
+    panelCard(canvas, panel, kAssetsSkin);
     {
         TextStyle heading;
         heading.size = 22.0;

@@ -93,14 +93,6 @@ void cardFrame(Canvas& canvas, Rect r, std::uint32_t fill, std::uint32_t border,
                     static_cast<float>(r.w - inset * 2), static_cast<float>(r.h - inset * 2));
 }
 
-void overlayCard(Canvas& canvas, Rect r, std::uint32_t fill, std::uint32_t border) {
-    cardFrame(canvas, r, fill, border, kOverlayBorder, kOverlayRadius);
-}
-
-void overlayCard(Canvas& canvas, Rect r, const PanelSkin& skin) {
-    overlayCard(canvas, r, skin.fill, skin.border);
-}
-
 void inlaid(Canvas& canvas, Rect r, std::uint32_t fill, std::uint32_t border, double borderWidth,
             double radius, double alpha) {
     if (r.w <= 0 || r.h <= 0) return;

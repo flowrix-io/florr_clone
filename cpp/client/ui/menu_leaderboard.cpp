@@ -24,8 +24,8 @@ constexpr double kHeaderHeight = 50.0;   ///< chrome above the scrolling body
 constexpr double kRowHeight = 40.0;
 constexpr double kColumnHeader = 30.0;
 constexpr double kScrollbarWidth = 10.0;
-/// The scrolling body and the track beside it stop this far short of the
-/// card's bottom edge, clear of its rounded corners.
+/// ui::scrollbar measures its viewport as the track plus this: the track stops
+/// this much short of the bottom of the span the board scrolls through.
 constexpr double kTrackBottomInset = 5.0;
 /// A thumb drag maps the pointer over the card height less this, which is the
 /// two insets the track sits between rather than the track's own length.
@@ -105,8 +105,10 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
     const Rect closeRect = closeButtonRect(panel);
     const Rect refreshRect{panel.right() - 140.0, panel.y + 10.0, 80.0, 30.0};
-    const Rect view{panel.x + 5.0, panel.y + kHeaderHeight, panel.w - 10.0,
-                    std::max(0.0, panel.h - kHeaderHeight - kTrackBottomInset)};
+    // Inside the card's border on three sides, so neither the rows nor the
+    // track ever paint over the frame.
+    const Rect view{panel.x + kMenuBorder, panel.y + kHeaderHeight, panel.w - kMenuBorder * 2,
+                    std::max(0.0, panel.h - kHeaderHeight - kMenuBorder)};
     const Rect bar{view.right() - kScrollbarWidth, view.y, kScrollbarWidth, view.h};
 
     // An empty board still reserves a row's worth of height, which is what
@@ -114,10 +116,11 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     scroll_.contentHeight = rows.empty() && !pending
                                 ? kRowHeight
                                 : kColumnHeader + static_cast<double>(rows.size()) * kRowHeight;
-    // Clamped against the header-to-bottom span, not against the clipped view:
-    // the two differ by the track inset, and at the end of a long board that
-    // last 5px of content sits under the card's rounded edge.
-    scroll_.viewHeight = panel.h - kHeaderHeight;
+    // Clamped against the viewport ui::scrollbar measures, not against the
+    // clipped view, so the thumb lands on the end of its track exactly when
+    // the board does; at the end of a long board that last 5px of content
+    // sits under the card's border.
+    scroll_.viewHeight = view.h + kTrackBottomInset;
     const bool scrollable = scroll_.contentHeight > scroll_.viewHeight;
 
     // The reference SUBTRACTS the wheel delta from its scroll offset, so a
@@ -155,7 +158,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
     if (closing) return false;
 
-    overlayCard(canvas, panel, kLeaderboardSkin);
+    panelCard(canvas, panel, kLeaderboardSkin);
 
     panelHeading(canvas, panel, "Leaderboard");
 

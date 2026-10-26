@@ -7,7 +7,7 @@
 // reference client, which has no in-client picker for them at all.
 //
 // This is an OVERLAY PANEL and is built from the same pieces as the other
-// eleven: overlayCard for the frame, panelHeading and panelClose for the
+// eleven: panelCard for the frame, panelHeading and panelClose for the
 // chrome, ui::button for the tabs and the actions, ui::chip for the small
 // controls, ui::inputField for the name box and ui::scrollbar for both lists.
 // It used to carry a private dialect of all of those -- its own card, its own
@@ -1106,7 +1106,7 @@ void Studio::drawConfirm(Canvas& canvas, Vec2 mouse) {
     regionClip = layout.panel;
     const Rect box{layout.panel.x + (layout.panel.w - 320.0) * 0.5,
                    layout.panel.y + (layout.panel.h - 116.0) * 0.5, 320.0, 116.0};
-    overlayCard(canvas, box, kSkinsSkin);
+    panelCard(canvas, box, kSkinsSkin);
     ui::text(canvas, "Delete \"" + clipChars(confirmName, 22) + "\"?", box.x + box.w * 0.5,
              box.y + 38.0, label(kSectionSize, Align::Centre));
 
@@ -1135,7 +1135,7 @@ void Studio::draw(MenuContext& ctx) {
 
     const Rect panel = layout.panel;
     regionClip = panel;
-    overlayCard(canvas, panel, kSkinsSkin);
+    panelCard(canvas, panel, kSkinsSkin);
     panelHeading(canvas, panel, "Skin Studio");
 
     const Rect closeRect = closeButtonRect(panel);

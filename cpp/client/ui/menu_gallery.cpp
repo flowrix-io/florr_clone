@@ -579,7 +579,7 @@ bool GalleryPanel::render(MenuContext& ctx) {
     // The overlay frame, not the tall list panels' 7px one: the bestiary is a
     // corner panel, and it sat in that row wearing a frame almost twice as
     // thick as settings' and changelog's either side of it.
-    overlayCard(canvas, panel, kGallerySkin);
+    panelCard(canvas, panel, kGallerySkin);
 
     TextStyle title = galleryStyle(24.0, kPaper);
     title.align = Align::Centre;

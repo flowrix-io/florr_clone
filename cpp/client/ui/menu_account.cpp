@@ -530,7 +530,7 @@ bool AccountPanel::render(MenuContext& ctx) {
     if (st.focused >= 0) ctx.wantsText = true;
 
     // --- card ---------------------------------------------------------------
-    overlayCard(canvas, panel, kAccountSkin);
+    panelCard(canvas, panel, kAccountSkin);
     const double contentX = panel.x + kPad;
     const double contentW = panel.w - kPad * 2;
     text(canvas, "Account", contentX, panel.y + kPad + kHeaderHeight * 0.5,

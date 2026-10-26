@@ -2250,7 +2250,7 @@ bool DebugPanel::render(MenuContext& ctx) {
     constexpr double kPad = 15.0;
     constexpr double kHeader = 30.0;
 
-    overlayCard(canvas, panel, kDebugSkin);
+    panelCard(canvas, panel, kDebugSkin);
 
     TextStyle heading;
     heading.size = 20.0;

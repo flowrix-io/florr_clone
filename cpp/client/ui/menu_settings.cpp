@@ -515,7 +515,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
     if (st.ipField.focused) ctx.wantsText = true;
 
     // --- card ---------------------------------------------------------------
-    overlayCard(canvas, panel, kSettingsSkin);
+    panelCard(canvas, panel, kSettingsSkin);
 
     text(canvas, "Settings", contentX, panel.y + kPad + kHeaderHeight * 0.5,
          bodyStyle(20.0, kPaper, kInk));

@@ -405,7 +405,7 @@ bool NotificationsPanel::render(MenuContext& ctx) {
         ctx.net.requestNotifications(kNotificationPage, entries.back().timestampMillis);
     }
 
-    overlayCard(canvas, panel, kNotificationsSkin);
+    panelCard(canvas, panel, kNotificationsSkin);
 
     TextStyle heading;
     heading.size = 20.0;

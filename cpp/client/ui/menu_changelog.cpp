@@ -710,7 +710,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
     }
     scroll_.offset = clamp(scroll_.offset, 0.0, maxScroll);
 
-    overlayCard(canvas, panel, kChangelogSkin);
+    panelCard(canvas, panel, kChangelogSkin);
 
     TextStyle heading;
     heading.size = 20.0;

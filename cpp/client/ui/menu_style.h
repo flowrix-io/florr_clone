@@ -6,7 +6,7 @@
 // three close crosses that differed only in their line cap, and four different
 // answers to "what does a panel's edge look like". This file is the one answer.
 //
-// The frame is the OVERLAY CARD: a rounded rect in the border colour with the
+// The frame is the PANEL CARD: a rounded rect in the border colour with the
 // body inset into it, which is the shape the settings and guild panels were
 // already drawing by hand. It is not a stroke. A stroke centres on the path,
 // so half of it lands outside the card and the outer corner is cut to
@@ -59,18 +59,6 @@ void fillStar(Canvas&, Vec2 centre, double radius, std::uint32_t rgb);
 void cardFrame(Canvas&, Rect, std::uint32_t fill, std::uint32_t border, double borderWidth,
                double radius);
 
-/// The overlay panels' frame. Thick enough to read as a border at a distance,
-/// and a corner just round enough to soften it.
-inline constexpr double kOverlayBorder = 4.0;
-inline constexpr double kOverlayRadius = 6.0;
-
-/// The frame the corner overlays wear: settings, changelog, notifications,
-/// leaderboard, skins, gallery, shop, debug and the two admin cards -- the
-/// guild's card is a `panelCard`. Use it for the panel itself; `inlaid` below
-/// is the button treatment, for the controls on it.
-void overlayCard(Canvas&, Rect, std::uint32_t fill, std::uint32_t border);
-void overlayCard(Canvas&, Rect, const PanelSkin&);
-
 /// The two-fill treatment at an arbitrary size, for slots and buttons. Unlike
 /// `cardFrame` the inner corner is ROUNDED, derived as `radius - 2`: this is
 /// the controls' shape, and a square-shouldered chip at 20px tall reads as a
@@ -78,8 +66,13 @@ void overlayCard(Canvas&, Rect, const PanelSkin&);
 void inlaid(Canvas&, Rect, std::uint32_t fill, std::uint32_t border, double borderWidth,
             double radius, double alpha = 1.0);
 
-/// The tall list panels' card: `cardFrame` with the panel's own border width
-/// and radius.
+/// THE panel frame: `cardFrame` at the inventory's border width and radius.
+/// The tall list panels and the corner panels (settings, changelog,
+/// notifications, leaderboard, skins, gallery, guild, account, debug and the
+/// admin cards) all wear it, so every card in the game has the same edge. The
+/// craft key's windows, the talents and the shop are florr's and draw florr's
+/// rim instead (drawFlorrPanel, menus.h). Use it for the panel itself;
+/// `inlaid` above is the button treatment, for the controls on it.
 void panelCard(Canvas&, Rect, const PanelSkin&, double borderWidth = kMenuBorder,
                double radius = kMenuRadius);
 
