@@ -1722,17 +1722,17 @@ private:
     /// The card being painted. It outlives `open_` by the length of the
     /// slide-out, which is the only reason the two are separate.
     MenuId drawn_ = MenuId::None;
-    /// 0 = a full viewport height below its anchor, 1 = seated. Only the tall
-    /// list panels use it -- in the reference they are DOM shells with a
-    /// transform transition, where the corner overlays are canvas panels drawn
-    /// straight in place (see slidesUp).
+    /// 0 = a full viewport height below its anchor, 1 = seated. Only the
+    /// inventory uses it -- in the reference it is a DOM shell with a
+    /// transform transition (see slidesUp).
     double panelSlide_ = 0;
     /// The craft key's window rises on florr's own ease instead (see
     /// kSlotCardOpenRate): 0 = 50 below the view, 1 = seated.
     double craftOpen_ = 0;
-    /// The shop slides in from the left on the same ease: 0 = 50 past the
-    /// view's left edge, 1 = seated.
-    double shopOpen_ = 0;
+    /// The shop slides in from the left on the same ease, and so does every
+    /// other card under the top icon row (see slidesFromLeft): 0 = 50 past
+    /// the view's left edge, 1 = seated. One value, since one card is drawn.
+    double sideOpen_ = 0;
     /// The talent tree rises on it too, and fades in with it.
     double talentsOpen_ = 0;
     /// That window's size as the open card last measured it -- it depends on

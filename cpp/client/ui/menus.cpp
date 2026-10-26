@@ -2482,11 +2482,24 @@ void DebugPanel::drawProfilingTab(MenuContext& ctx, Rect body) {
 
 namespace {
 
-/// The tall list panels are DOM shells that rise from `translateY(100vh)` over
-/// 300ms; the corner overlays are canvas panels drawn straight at the corner
-/// anchor with no transition at all, so only these three animate.
+/// The inventory is the reference's DOM shell that rises from
+/// `translateY(100vh)` over 300ms.
 bool slidesUp(MenuId id) {
     return id == MenuId::Inventory;
+}
+
+/// Every card hung under the top icon row slides in from the left the way
+/// florr's shop does -- the shop itself, the corner overlays, and the two
+/// reached from them (the database editor and the asset browser). The cards
+/// at the bottom-left keep their own entrances.
+bool slidesFromLeft(MenuId id) {
+    switch (id) {
+        case MenuId::None:
+        case MenuId::Inventory:
+        case MenuId::Crafting:
+        case MenuId::Talents: return false;
+        default: return true;
+    }
 }
 
 /// The size of the craft key's window as the flower's ground has it this
@@ -2677,24 +2690,25 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     const double craftTarget = open_ == MenuId::Crafting ? 1.0 : 0.0;
     craftOpen_ += (craftTarget - craftOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
     // The shop slides in from the left on the same ease, and is not drawn at
-    // all once it is back below 1e-5 -- florr's own cut-off.
-    const double shopTarget = open_ == MenuId::Shop ? 1.0 : 0.0;
-    shopOpen_ += (shopTarget - shopOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
+    // all once it is back below 1e-5 -- florr's own cut-off. Every other card
+    // under the top row rides the same slide.
+    const double sideTarget = slidesFromLeft(open_) ? 1.0 : 0.0;
+    sideOpen_ += (sideTarget - sideOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
     // The talent tree rises like the craft window and fades in with it.
     const double talentsTarget = open_ == MenuId::Talents ? 1.0 : 0.0;
     talentsOpen_ +=
         (talentsTarget - talentsOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
     if (open_ != MenuId::None) {
         if (open_ == MenuId::Crafting && drawn_ != MenuId::Crafting) craftOpen_ = 0.0;
-        if (open_ == MenuId::Shop && drawn_ != MenuId::Shop) shopOpen_ = 0.0;
+        if (slidesFromLeft(open_) && drawn_ != open_) sideOpen_ = 0.0;
         if (open_ == MenuId::Talents && drawn_ != MenuId::Talents) talentsOpen_ = 0.0;
         drawn_ = open_;
         panelSlide_ = slidesUp(open_) ? std::min(1.0, panelSlide_ + dt / kPanelSlideSeconds) : 1.0;
     } else if (drawn_ == MenuId::Crafting) {
         // Gone once it is out of sight below the view's edge.
         if (craftOpen_ <= 0.001) drawn_ = MenuId::None;
-    } else if (drawn_ == MenuId::Shop) {
-        if (shopOpen_ < 1e-5) drawn_ = MenuId::None;
+    } else if (slidesFromLeft(drawn_)) {
+        if (sideOpen_ < 1e-5) drawn_ = MenuId::None;
     } else if (drawn_ == MenuId::Talents) {
         if (talentsOpen_ < 1e-5) drawn_ = MenuId::None;
     } else if (drawn_ != MenuId::None) {
@@ -2709,12 +2723,12 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
         panelRect_ = craftPanelBounds(canvas.width(), canvas.height());
         const double below = static_cast<double>(canvas.height()) + kSlotCardClosedDrop;
         panelRect_.y += (1.0 - clamp(craftOpen_, 0.0, 1.0)) * (below - panelRect_.y);
-    } else if (drawn_ == MenuId::Shop) {
+    } else if (slidesFromLeft(drawn_)) {
         // x = lerp(-50 - w, seat, open): florr's slide, in from the left.
         panelRect_ = panelBounds(drawn_, canvas.width(), canvas.height());
         const double away = -kSlotCardClosedDrop - panelRect_.w;
-        panelRect_.x = away + (panelRect_.x - away) * clamp(shopOpen_, 0.0, 1.0);
-        shop_.setSlide(shopOpen_, open_ != MenuId::Shop);
+        panelRect_.x = away + (panelRect_.x - away) * clamp(sideOpen_, 0.0, 1.0);
+        if (drawn_ == MenuId::Shop) shop_.setSlide(sideOpen_, open_ != MenuId::Shop);
     } else if (drawn_ == MenuId::Talents) {
         // y = lerp(H + 50, seat, open), florr's; the open progress is also
         // the window's opacity.
