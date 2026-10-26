@@ -1229,6 +1229,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.speed = ctx.range(src, "speed", 0.0, -kMaxSpeedUnits, kMaxSpeedUnits);
     p.noPhysics = ctx.boolean(src, "noPhysics");
     p.defendOnly = ctx.boolean(src, "defendOnly");
+    p.ignoresMobs = ctx.boolean(src, "ignoresMobs");
     p.clumped = ctx.boolean(src, "clumped");
     p.clumpFacesInward = ctx.boolean(src, "clumpFacesInward");
     p.clumpSpacing = ctx.range(src, "clumpSpacing", 1.0, 0.0, kMaxSize);
@@ -1869,6 +1870,9 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     if (petalSoaksLightning(c)) s.flowerKnockback = 0.3 * (rarityIndex(tier) + 1);
     // Amulet: florr's Overheal Conversion, 5% at common and 5% more a tier.
     if (petalConvertsOverheal(c)) s.overhealShield = 0.05 * (rarityIndex(tier) + 1);
+    // Basil: florr's Heal Bonus, 20% at common and 5% more a tier -- 45% at
+    // mythic and 50% at ultra, the two tiers florr makes it at.
+    if (petalBoostsHealing(c)) s.healBonus = 0.2 + 0.05 * rarityIndex(tier);
     // Golden leaf: florr's Reload -2.5% at common and 2.5% more a tier.
     if (petalCutsReload(c)) s.reloadCut = 0.025 * (rarityIndex(tier) + 1);
     // Disc: florr's Collision Damage Resistance, 1 - 0.91^(tier+1) -- one more

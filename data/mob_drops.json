@@ -1238,6 +1238,14 @@
         "probability": 0.4,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "basil",
+        "rarity": "common",
+        "probability": 0.3,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },

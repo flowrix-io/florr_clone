@@ -391,6 +391,14 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(convert);
     }
 
+    // Basil. florr's own line, and the whole of what the petal does.
+    if (stats.healBonus > 0.0) {
+        TooltipLine bonus{"Heal Bonus: +" + percentNumber(stats.healBonus) + "%", 12.0};
+        bonus.alpha = 0.56;
+        bonus.labelColor = kStatHeal;
+        lines.push_back(bonus);
+    }
+
     // Golden leaf, florr's line: what it takes off the rest of the bar.
     if (stats.reloadCut > 0.0) {
         TooltipLine cut{"Reload: -" + percentNumber(stats.reloadCut) + "%", 12.0};

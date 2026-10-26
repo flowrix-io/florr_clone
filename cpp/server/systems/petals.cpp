@@ -1,6 +1,7 @@
 #include "server/systems/petals.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -1326,6 +1327,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     instance.charges = chargesFor(config);
     instance.soaksOwnerDamage = soaksOwnerDamage(config);
     instance.soaksOwnerLightning = petalSoaksLightning(config);
+    instance.ignoresMobs = config.ignoresMobs;
     world.add<PetalInstance>(petal, instance);
     if (loose) world.add<LoosePetal>(petal);
     // The moon: the ring's centre while it is out, and the only petal with
@@ -1448,6 +1450,9 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     // in the loop below.
     double aggroCut = 1.0;
     double aggroBoost = 1.0;
+    // Every worn basil's bonus, folded harmonically after the loop.
+    std::array<double, kLoadoutActiveSlots> healBonuses{};
+    std::size_t healBonusCount = 0;
 
     if (const Loadout* loadout = world.tryGet<Loadout>(player)) {
         // Storage grants nothing: the browser breaks out of this same sum at
@@ -1555,6 +1560,8 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             // second amulet is a spare, not a second share of the same heal.
             aggregate.modifiers.overhealShield =
                 std::max(aggregate.modifiers.overhealShield, stats.overhealShield);
+            // Basil, worn like the amulet, but it stacks: see the fold below.
+            if (stats.healBonus > 0.0) healBonuses[healBonusCount++] = stats.healBonus;
             // Disc, worn like the rubber and maximised like the amulet: it does
             // not stack (user's rule), so a second disc is a spare and the
             // best one alone sets the cut.
@@ -1604,6 +1611,14 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
         }
     }
     aggregate.modifiers.aggroRangeScale = aggroCut * aggroBoost;
+    // Basils stack harmonically (user's rule): best first, and the n-th best
+    // adds 1/n of its bonus -- so each one more is worth having, and a bar
+    // full of them still grows by less every time.
+    const auto healEnd = healBonuses.begin() + static_cast<std::ptrdiff_t>(healBonusCount);
+    std::sort(healBonuses.begin(), healEnd, [](double a, double b) { return a > b; });
+    for (std::size_t i = 0; i < healBonusCount; ++i) {
+        aggregate.modifiers.healBonus += healBonuses[i] / static_cast<double>(i + 1);
+    }
 
     // Talents multiply what the loadout already produces, so they are applied
     // to the finished aggregate: a tree bonus is one factor over the whole
@@ -1985,9 +2000,11 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // held together is an extended ring, and so an extended pearl.
         const bool extended = (config.defendOnly ? defendOnlyGap : ring->gap) > kPetalOrbitRestGap;
         // A defendOnly petal stays in its place on the ring. Attraction would
-        // draw it out toward a mob, which is the swing it never makes. With a
-        // radius of zero it is drawn to nothing.
-        const double petalAttraction = config.defendOnly ? 0.0 : attractionRadius;
+        // draw it out toward a mob, which is the swing it never makes -- and a
+        // petal that ignores mobs has no business being drawn to one either.
+        // With a radius of zero it is drawn to nothing.
+        const double petalAttraction =
+            config.defendOnly || config.ignoresMobs ? 0.0 : attractionRadius;
         if (config.noPhysics || config.hasFixedDirection) {
             transform->position = orbit;
         } else if (!(throwsFromOrbit(config) &&

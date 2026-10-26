@@ -79,6 +79,7 @@ const char* const kPetalsJson = R"JSON({
   "champion_crown":{"name":"Champion's Crown","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"equipFlags":"Crown","noPhysics":true,"color":"#FFDC06"},
   "rubber":   {"name":"Rubber","damage":1,"health":30,"size":1.2,"cooldown":2500,"count":1,"color":"#EEEEEE"},
   "amulet":   {"name":"Amulet","damage":0,"health":10,"size":1,"cooldown":2000,"count":1,"defendOnly":true,"color":"#FF94C9"},
+  "basil":    {"name":"Basil","damage":5,"health":15,"size":1.3,"cooldown":2500,"count":1,"defendOnly":true,"ignoresMobs":true,"color":"#319E40"},
   "disc":     {"name":"Disc","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"equipFlags":"Disc","noPhysics":true,"color":"#111111"},
   "bandage":  {"name":"Bandage","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"noPhysics":true,"color":"#E5DAA1"},
   "golden_leaf":{"name":"Golden Leaf","damage":1,"health":100,"size":1.2,"cooldown":200,"count":1,"color":"#EBEB34"},
@@ -5103,6 +5104,65 @@ TEST(an_amulet_turns_its_tiers_share_of_overheal_into_shield) {
     // Capped at max health, as a shell's shield is.
     CombatSystem::landHeal(rig.world, rig.player, health, health.max * 100.0);
     CHECK_NEAR(shield.amount, health.max, 1e-9);
+}
+
+TEST(a_basil_grows_every_heal_by_florrs_bonus_and_stacks_harmonically) {
+    if (!contentLoaded()) return;
+    // florr's Heal Bonus, 0.2 + 0.05 a tier: 45% at mythic, 50% at ultra.
+    CHECK_NEAR(fixture().registry.petalStats(petalId("basil"), Rarity::Mythic).healBonus, 0.45,
+               1e-9);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("basil"), Rarity::Ultra).healBonus, 0.5,
+               1e-9);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("basic"), Rarity::Ultra).healBonus, 0.0,
+               1e-12);
+
+    Rig rig;
+    Health& health = rig.world.get<Health>(rig.player);
+    health.current = health.max - 100.0;
+    CombatSystem::landHeal(rig.world, rig.player, health, 10.0);
+    CHECK_NEAR(health.current, health.max - 90.0, 1e-9);
+
+    rig.equip(0, "basil", Rarity::Mythic);
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().healBonus, 0.45, 1e-9);
+    // On the ring like any other petal: it has a body, unlike a disc -- one
+    // that mobs pass through (user's rule; see combat_tests).
+    const auto basils = rig.petals(0);
+    CHECK_EQ(basils.size(), std::size_t(1));
+    if (!basils.empty()) CHECK(rig.world.get<PetalInstance>(basils[0]).ignoresMobs);
+    CHECK(!fixture().registry.petal(petalId("basic")).ignoresMobs);
+
+    // Harmonically: best first, the n-th best at 1/n -- the mythic counts
+    // half once an ultra is worn, and a third once two are.
+    rig.equip(1, "basil", Rarity::Ultra);
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().healBonus, 0.5 + 0.45 / 2.0, 1e-9);
+    rig.equip(2, "basil", Rarity::Ultra);
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().healBonus, 0.5 + 0.5 / 2.0 + 0.45 / 3.0, 1e-9);
+    Health& grown = rig.world.get<Health>(rig.player);
+    grown.current = grown.max - 100.0;
+    CombatSystem::landHeal(rig.world, rig.player, grown, 10.0);
+    CHECK_NEAR(grown.current, grown.max - 81.0, 1e-9);
+    // Still never past max.
+    CombatSystem::landHeal(rig.world, rig.player, grown, grown.max);
+    CHECK_NEAR(grown.current, grown.max, 1e-9);
+}
+
+TEST(a_basil_grows_the_heal_an_amulet_keeps_the_overflow_of) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basil", Rarity::Ultra);
+    rig.equip(1, "amulet", Rarity::Epic);
+    rig.settleEquips();
+    Health& health = rig.world.get<Health>(rig.player);
+    ShieldState& shield = rig.world.get<ShieldState>(rig.player);
+    shield.amount = 0.0;
+    health.current = health.max - 10.0;
+    // 40 grows to 60: ten fill the bar, fifty spill, and the amulet keeps a fifth.
+    CombatSystem::landHeal(rig.world, rig.player, health, 40.0);
+    CHECK_NEAR(health.current, health.max, 1e-9);
+    CHECK_NEAR(shield.amount, 10.0, 1e-9);
 }
 
 TEST(a_disc_resists_collisions_by_florrs_curve_and_does_not_stack) {

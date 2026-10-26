@@ -625,6 +625,10 @@ struct PlayerModifiers {
     /// The share of every heal past max health that becomes shield: the best
     /// worn amulet's figure. Zero without one.
     double overhealShield = 0.0;
+    /// What every heal this flower receives is scaled up by, less one: every
+    /// worn basil's Heal Bonus, stacked harmonically (best + second / 2 +
+    /// third / 3 ...). Zero without one.
+    double healBonus = 0.0;
     /// What a body collision -- a mob's, a mob ring seat's, a hostile NPC's --
     /// costs this flower, as a multiple of the hit: the best worn disc's
     /// 1 - resist (discs do not stack). 1 without one.
@@ -1143,6 +1147,10 @@ struct PetalInstance {
     bool soaksOwnerDamage = false;
     /// The same, for LIGHTNING aimed at the flower and nothing else. Rubber's.
     bool soaksOwnerLightning = false;
+    /// PetalConfig::ignoresMobs, set at spawn for the same reason: canDamage,
+    /// which refuses every pair of this petal and a mob's doing, has no
+    /// registry to ask.
+    bool ignoresMobs = false;
 
     /// A compass's quarry: the mob its needle points at, and when it next
     /// looks for a better one. NULL_ENTITY between finds, and on every other

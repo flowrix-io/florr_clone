@@ -818,6 +818,10 @@ struct PetalConfig {
     double speed = 0;           ///< orbit speed for the petals that override it
     bool noPhysics = false;     ///< no body, no collision: a pure modifier
     bool defendOnly = false;    ///< only acts while the ring is pulled in
+    /// Nothing a mob does touches this petal -- its body, a seat on its ring,
+    /// its shots, its fields -- and the petal touches none of them (basil's,
+    /// user's rule). Flowers are not mobs: its PvP is untouched.
+    bool ignoresMobs = false;
     bool clumped = false;       ///< a count > 1 spawns as one cluster
     /// A clump's grains are drawn pointing at the clump's centre rather than
     /// spinning in step with the rest of the ring. Only means anything for a
@@ -1052,6 +1056,10 @@ struct PetalStats {
     /// The share of every heal past its flower's max health that this petal
     /// turns into shield: amulet's +5% a tier. Zero for every other petal.
     double overhealShield = 0;
+    /// What this petal adds to every heal its flower receives, as a share of
+    /// the heal: basil's +20% at common and 5% more a tier. Zero for every
+    /// other petal.
+    double healBonus = 0;
     /// The share a golden leaf takes off the reload of every petal on its
     /// bar, itself included: 2.5% a tier. Zero for every other petal. See
     /// barReloadCut.
@@ -1200,6 +1208,10 @@ inline bool petalSharesFlowerDamage(const PetalConfig& config) { return config.i
 
 /// An amulet turns part of its flower's overheal into shield.
 inline bool petalConvertsOverheal(const PetalConfig& config) { return config.id == "amulet"; }
+
+/// A basil makes every heal its flower receives land bigger -- florr's
+/// "Increases all healing received".
+inline bool petalBoostsHealing(const PetalConfig& config) { return config.id == "basil"; }
 
 /// A golden leaf shortens the reload of every petal on its bar -- florr's
 /// "seems to allow you to use your other petals even more", and its tooltip's

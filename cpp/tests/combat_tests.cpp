@@ -208,6 +208,7 @@ struct Fixture {
     std::uint16_t moon = kInvalidIndex;
     std::uint16_t plank = kInvalidIndex;
     std::uint16_t tomato = kInvalidIndex;
+    std::uint16_t basil = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -234,7 +235,8 @@ const Fixture& fixture() {
               "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35},
               "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6},
               "plank":{"name":"Plank","damage":18,"health":15,"size":3},
-              "tomato":{"name":"Tomato","damage":5,"health":10,"size":1}
+              "tomato":{"name":"Tomato","damage":5,"health":10,"size":1},
+              "basil":{"name":"Basil","damage":5,"health":15,"size":1.3,"defendOnly":true,"ignoresMobs":true}
             })",
             f.error);
         f.sting = f.registry.petalIndex("sting");
@@ -254,6 +256,7 @@ const Fixture& fixture() {
         f.moon = f.registry.petalIndex("moon");
         f.plank = f.registry.petalIndex("plank");
         f.tomato = f.registry.petalIndex("tomato");
+        f.basil = f.registry.petalIndex("basil");
         return f;
     }();
     return state;
@@ -3912,6 +3915,57 @@ TEST(a_plank_hits_a_shot_twenty_times_as_hard_as_a_mob) {
     // Against a shot, 20x -- where a plain petal of the same damage is not.
     CHECK(shotLossFrom(f.plank) >= 18.0 * kPlankShotDamageScale - 1e-9);
     CHECK(shotLossFrom(f.plain) < 18.0 * kPlankShotDamageScale);
+}
+
+TEST(a_basil_and_a_mob_pass_through_each_other) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    CHECK(f.registry.petal(f.basil).ignoresMobs);
+    // The flag rides the instance (petals.cpp sets it at spawn); this
+    // hand-built one is given it the same way.
+    const auto wear = [&](Arena& a, Entity player, std::uint16_t config, Vec2 at) {
+        const Entity petal = equipPetal(a, player, config, Rarity::Common, at);
+        a.world.add<Health>(petal, Health{15.0, 15.0, 0.0, 0.0});
+        a.world.get<PetalInstance>(petal).ignoresMobs = f.registry.petal(config).ignoresMobs;
+        return petal;
+    };
+
+    // Sitting on a mob: neither hurts the other. A plain petal in its place
+    // hits, so the overlap is real.
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1100, 1000}, 1000.0);
+        const Entity basil = wear(a, player, f.basil, {1100, 1000});
+        a.step(1000.0, f.registry);
+        CHECK_NEAR(a.health(mob), 1000.0, 1e-9);
+        CHECK_NEAR(a.health(basil), 15.0, 1e-9);
+        CHECK(!CombatSystem::canDamage(a.world, basil, mob));
+        CHECK(!CombatSystem::canDamage(a.world, mob, basil));
+    }
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1100, 1000}, 1000.0);
+        wear(a, player, f.plain, {1100, 1000});
+        a.step(1000.0, f.registry);
+        CHECK_NEAR(a.health(mob), 1000.0 - 10.0, 1e-9);
+    }
+
+    // A mob's shot flies through it, and it does not swing at the shot.
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({3000, 3000}, 100.0);
+        const Entity shot = hostileShot(a, mob, {1100, 1000}, 50.0);
+        a.world.get<Projectile>(shot).damage = 10.0;
+        const Entity basil = wear(a, player, f.basil, {1100, 1000});
+        a.step(1000.0, f.registry);
+        CHECK(a.world.isAlive(shot));
+        CHECK_NEAR(a.health(shot), 50.0, 1e-9);
+        CHECK_NEAR(a.health(basil), 15.0, 1e-9);
+    }
 }
 
 TEST(a_tomato_grows_a_base_hit_a_second_up_to_fourteen) {

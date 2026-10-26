@@ -84,6 +84,31 @@ bool oneConnection(const World& world, Entity a, Entity b) {
            first->connection == second->connection;
 }
 
+/// Whether `e` is a petal that ignores mobs (PetalConfig::ignoresMobs).
+bool ignoresMobs(const World& world, Entity e) {
+    const PetalInstance* petal = world.tryGet<PetalInstance>(e);
+    return petal != nullptr && petal->ignoresMobs;
+}
+
+/// Whether `e` is a mob's doing: a mob's or an NPC's body (a pet's too), a
+/// seat on a mob's ring, or a shot or field one of them put out. Walks the
+/// FIRER rather than the credit -- a pet's shot answers to its flower, but a
+/// mob fired it.
+bool mobsDoing(const World& world, Entity e) {
+    Entity current = e;
+    for (int hop = 0; hop < kMaxOwnerHops && current != NULL_ENTITY; ++hop) {
+        if (!world.isAlive(current)) return false;
+        if (world.has<MobTag>(current) || world.has<NpcTag>(current) ||
+            world.has<MobRingPetal>(current)) {
+            return true;
+        }
+        if (world.has<PlayerTag>(current)) return false;
+        const Projectile* shot = world.tryGet<Projectile>(current);
+        current = shot != nullptr ? shot->owner : ownerOf(world, current);
+    }
+    return false;
+}
+
 /// Whether one flower's petals may swing at another's.
 ///
 /// The two ways are not the same shape. BOTH duellists must be in the arena --
@@ -474,6 +499,13 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
     // actually share and because combat has no business knowing what a
     // splitter is. A bot's connection is 0 and two bots are still enemies.
     if (oneConnection(world, sourcePlayer, victimPlayer)) return false;
+    // A petal that ignores mobs (basil) and anything a mob does pass through
+    // each other, either way round. Here rather than in each pass so a body,
+    // a ring seat, a shot, a field and a shock are all one rule.
+    if ((ignoresMobs(world, source) && mobsDoing(world, victim)) ||
+        (ignoresMobs(world, victim) && mobsDoing(world, source))) {
+        return false;
+    }
 
     const TeamInfo attacker = teamOf(world, source);
     const TeamInfo defender = teamOf(world, victim);
@@ -1550,11 +1582,14 @@ bool CombatSystem::healingBlocked(const World& world, Entity entity, double nowM
 
 void CombatSystem::landHeal(World& world, Entity entity, Health& health, double amount) {
     if (!(amount > 0.0)) return;
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(entity);
+    // A worn basil grows the heal before the bar sees it, so what spills past
+    // max -- and what an amulet keeps of it -- is the grown heal's overflow.
+    if (modifiers != nullptr) amount *= 1.0 + modifiers->healBonus;
     const double before = health.current;
     health.current = std::min(health.max, health.current + amount);
     const double spill = amount - std::max(0.0, health.current - before);
     if (!(spill > 0.0)) return;
-    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(entity);
     if (modifiers == nullptr || !(modifiers->overhealShield > 0.0)) return;
     // Looked up rather than ensured: every flower is built with one, and
     // adding a column here would move the row `health` points into.

@@ -3138,6 +3138,33 @@ TEST(the_three_eggs_drop_florrs_ant_egg_and_the_termite_one_an_amulet) {
     }
 }
 
+TEST(the_queen_ant_drops_florrs_basil_from_mythic_up) {
+    // florr's ant queen table gives basil at 30%, and florr makes basil only
+    // at mythic and ultra -- here mythic and up, so a lower queen's roll
+    // drops nothing rather than a basil florr never made.
+    DropTables tables = shippedTables();
+    const std::uint16_t basil = shipped().petalIndex("basil");
+    const std::uint16_t queen = shipped().mobIndex("queen_ant");
+    CHECK(basil != kInvalidIndex);
+    CHECK(queen != kInvalidIndex);
+    if (basil == kInvalidIndex || queen == kInvalidIndex) return;
+    bool found = false;
+    for (const DropTables::Entry& row : tables.forMob(queen)) {
+        if (row.petalIndex != basil) continue;
+        found = true;
+        CHECK_NEAR(row.probability, 0.3, 1e-12);
+    }
+    CHECK(found);
+    const PetalConfig& config = shipped().petal(basil);
+    CHECK(!petalComesAt(config, Rarity::Legendary));
+    CHECK(petalComesAt(config, Rarity::Mythic));
+    // Defend only, and passes through mobs (user's rules).
+    CHECK(config.defendOnly);
+    CHECK(config.ignoresMobs);
+    CHECK_NEAR(shipped().petalStats(basil, Rarity::Mythic).healBonus, 0.45, 1e-9);
+    CHECK_NEAR(shipped().petalStats(basil, Rarity::Ultra).healBonus, 0.5, 1e-9);
+}
+
 TEST(the_merged_view_holds_one_row_per_drop_type) {
     // What every mob above common drops from: the same table with one row per
     // drop TYPE. A petal written on two lines -- common 0.5 and uncommon 0.1,

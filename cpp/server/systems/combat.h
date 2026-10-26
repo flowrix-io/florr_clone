@@ -321,10 +321,11 @@ public:
     /// does not cover.
     static bool healingBlocked(const World& world, Entity entity, double nowMillis);
 
-    /// Puts `amount` onto `health` -- `entity`'s own -- never past its max,
-    /// and turns the share of whatever spilled past it that a worn amulet
-    /// names (PlayerModifiers::overhealShield) into shield, capped at the
-    /// flower's max health as a shell's is. Every heal lands through here, for
+    /// Puts `amount`, grown by a worn basil's bonus (PlayerModifiers::
+    /// healBonus), onto `health` -- `entity`'s own -- never past its max, and
+    /// turns the share of whatever spilled past it that a worn amulet names
+    /// (PlayerModifiers::overhealShield) into shield, capped at the flower's
+    /// max health as a shell's is. Every heal lands through here, for
     /// the reason healingBlocked is one function. Asks no gate itself: the
     /// caller has already decided the heal is allowed.
     static void landHeal(World& world, Entity entity, Health& health, double amount);
