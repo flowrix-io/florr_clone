@@ -744,7 +744,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out("Usage: " + verb + " &lt;name&gt;");
             return true;
         }
-        const BotIdentity identity = botIdentityForName(argument, kLoadoutActiveSlots, kMaxLevel);
+        const BotIdentity identity = botIdentityForName(argument, kLoadoutActiveSlots);
         if (verb == "/level-from-string") {
             out("\"" + argument + "\" would be level " + std::to_string(identity.level) + ".");
             return true;

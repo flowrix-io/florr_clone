@@ -513,6 +513,14 @@ std::string formatCompact(double value) {
     return std::to_string(static_cast<long long>(std::llround(value)));
 }
 
+std::string formatWhole(double value) {
+    if (std::fabs(value) < 9.2e18) return std::to_string(static_cast<long long>(std::llround(value)));
+    // DBL_MAX is 309 digits.
+    char buf[320];
+    std::snprintf(buf, sizeof buf, "%.0f", value);
+    return buf;
+}
+
 std::string ellipsize(const std::string& text, double size, double width) {
     if (measure(text, size) <= width) return text;
     std::string out = text;

@@ -99,8 +99,7 @@ constexpr double kAnnouncementFillAlpha = 64.0 / 255.0;
 /// The reference's `formatNumber`: one decimal place and a suffix past a
 /// thousand, and the exact integer while ALT is held.
 std::string formatNumber(double value, bool raw) {
-    return raw ? std::to_string(static_cast<long long>(std::llround(value)))
-               : ui::formatCompact(value);
+    return raw ? ui::formatWhole(value) : ui::formatCompact(value);
 }
 
 /// The XP bar: an oversized black pill with the fill sitting flush inside it.

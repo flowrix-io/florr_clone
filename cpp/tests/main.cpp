@@ -4,6 +4,8 @@
 #include "shared/core/types.h"
 #include "shared/core/world.h"
 
+#include <cmath>
+#include <limits>
 #include <string>
 
 using namespace flix;
@@ -522,8 +524,30 @@ TEST(level_curve_is_consistent_with_its_inverse) {
     }
     CHECK_EQ(levelFromTotalXp(0).level, 1);
     CHECK_EQ(levelFromTotalXp(-100).level, 1);
-    // The curve must terminate rather than loop at an absurd total.
-    CHECK_EQ(levelFromTotalXp(1e300).level, kMaxLevel);
+}
+
+TEST(level_curve_has_no_cap) {
+    // Past the old 500 the curve carries on: halfway into level 600 reads as
+    // 600, however far the summed total has drifted from exact by then.
+    double total = 0;
+    for (int level = 1; level < 600; ++level) total += xpForNextLevel(level);
+    const LevelProgress at = levelFromTotalXp(total + xpForNextLevel(600) * 0.5);
+    CHECK_EQ(at.level, 600);
+    CHECK_EQ(at.xpForNext, xpForNextLevel(600));
+
+    // An absurd total still terminates, at a level the u16 on the wire holds,
+    // and leaves a finite threshold over a finite remainder for the bars.
+    const LevelProgress huge = levelFromTotalXp(1e300);
+    CHECK(huge.level > 600);
+    CHECK(huge.level <= 65535);
+    CHECK(std::isfinite(huge.xpForNext));
+    CHECK(huge.xpIntoLevel < huge.xpForNext);
+    // The top of what a double holds, and past it.
+    const int top = levelFromTotalXp(std::numeric_limits<double>::max()).level;
+    CHECK(top >= huge.level);
+    CHECK(top <= 65535);
+    CHECK_EQ(levelFromTotalXp(std::numeric_limits<double>::infinity()).level, top);
+    CHECK_EQ(levelFromTotalXp(std::numeric_limits<double>::quiet_NaN()).level, 1);
 }
 
 TEST(derived_player_stats_follow_the_typescript_level_curve) {

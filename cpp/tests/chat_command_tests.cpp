@@ -1260,7 +1260,7 @@ TEST(loadout_from_string_reports_the_build_the_world_would_spawn) {
     // Whatever the level is, it is the SAME level the bot factory rolls -- one
     // shared roll, so the console cannot describe a bot the world would not
     // build.
-    const BotIdentity expected = botIdentityForName("m28", kLoadoutActiveSlots, kMaxLevel);
+    const BotIdentity expected = botIdentityForName("m28", kLoadoutActiveSlots);
     CHECK(sawText(client, "would be level " + std::to_string(expected.level)));
 
     CHECK(say(h, client, "/loadout-from-string m28"));

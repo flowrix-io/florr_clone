@@ -150,10 +150,10 @@ struct BotIdentity {
     std::vector<Slot> slots;
 };
 
-inline BotIdentity botIdentityForName(const std::string& name, int slotCount, int maxLevel) {
+inline BotIdentity botIdentityForName(const std::string& name, int slotCount) {
     BotIdentity identity;
     BotRng rng(hashName(name));
-    identity.level = std::min(maxLevel, rollBotLevel(rng));
+    identity.level = rollBotLevel(rng);
     identity.slots.reserve(static_cast<std::size_t>(std::max(0, slotCount)));
     for (int i = 0; i < slotCount; ++i) {
         const char* id = kBotPetalPool[static_cast<std::size_t>(

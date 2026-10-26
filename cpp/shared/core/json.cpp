@@ -62,8 +62,10 @@ namespace {
 /// so an XP total reads as `12500`, matching what the JS writer produced.
 std::string formatNumber(double v) {
     if (std::isnan(v) || std::isinf(v)) return "0";
-    if (v == static_cast<double>(static_cast<std::int64_t>(v)) &&
-        std::abs(v) < 9.2e18) {
+    // Range first: casting a double outside int64 is undefined, and an XP
+    // total passes 9.2e18 just after level 500.
+    if (std::abs(v) < 9.2e18 &&
+        v == static_cast<double>(static_cast<std::int64_t>(v))) {
         return std::to_string(static_cast<std::int64_t>(v));
     }
     char buf[40];

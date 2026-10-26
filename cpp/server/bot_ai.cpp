@@ -598,7 +598,7 @@ Entity GameServer::createBotBody(const std::string& name, Realm realm, Vec2 spaw
     // come from server/bot_identity.h, which is also what the admin console's
     // /level-from-string and /loadout-from-string answer out of -- one roll,
     // so the console cannot describe a bot the world would not build.
-    const BotIdentity identity = botIdentityForName(name, kLoadoutActiveSlots, kMaxLevel);
+    const BotIdentity identity = botIdentityForName(name, kLoadoutActiveSlots);
     const int level = identity.level;
 
     const Entity entity = world_.create();

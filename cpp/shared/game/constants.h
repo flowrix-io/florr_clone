@@ -10,6 +10,8 @@
 // built from.
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <string>
 
 #include "shared/core/types.h"
@@ -164,7 +166,6 @@ inline constexpr double kLevelOneHealth = 110.0;
 inline constexpr int kHealthAnchorLevel = 130;
 inline constexpr double kHealthAtAnchorLevel = 30000.0;
 inline constexpr double kDamagePerLevel = 1.0;
-inline constexpr int kMaxLevel = 500;
 
 /// XP needed to go from `level` to `level + 1`.
 ///
@@ -183,17 +184,22 @@ struct LevelProgress {
     double xpForNext = kBaseXpRequirement;
 };
 
+/// There is no level cap. The walk ends because the total is held finite: a
+/// NaN reads as nothing and an infinite total as the largest double, and the
+/// threshold outgrows any finite total -- it overflows to infinity at level
+/// 9,189 -- so the top level a double can buy is in the low 9,100s, well
+/// inside the u16 every level travels in.
 inline LevelProgress levelFromTotalXp(double totalXp) {
     LevelProgress out;
-    double remaining = std::floor(std::max(0.0, totalXp));
-    while (out.level < kMaxLevel) {
+    double remaining =
+        std::floor(std::min(std::max(0.0, totalXp), std::numeric_limits<double>::max()));
+    for (;;) {
         const double need = xpForNextLevel(out.level);
         if (remaining < need) { out.xpForNext = need; break; }
         remaining -= need;
         ++out.level;
     }
     out.xpIntoLevel = remaining;
-    if (out.level >= kMaxLevel) out.xpForNext = xpForNextLevel(kMaxLevel);
     return out;
 }
 

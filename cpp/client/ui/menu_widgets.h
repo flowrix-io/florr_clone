@@ -160,6 +160,11 @@ std::string fixedDecimals(double value, int decimals);
 /// tier past T. The target dummy's DPS readout is written this way.
 std::string formatCompact(double value);
 
+/// The rounded whole number in full, at any size: what an ALT readout shows.
+/// Within the 64-bit range it is std::llround's; past it -- an XP threshold
+/// leaves that range at level 534 -- the double's own digits.
+std::string formatWhole(double value);
+
 /// Trims `text` to fit `width` at `size`, appending an ellipsis when it must.
 /// Trimmed a whole UTF-8 character at a time, never a byte.
 std::string ellipsize(const std::string& text, double size, double width);

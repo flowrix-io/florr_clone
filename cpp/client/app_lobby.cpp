@@ -140,8 +140,8 @@ void layPickerRow(std::vector<Rect>& out, std::size_t count, double width, doubl
 }
 
 /// How far through its level an XP total is, for the title gauge. Clamped,
-/// unlike the in-game bar: past the level cap the leftover keeps counting, and
-/// here there is no plate for an over-full fill to overhang.
+/// unlike the in-game bar: here there is no plate for an over-full fill to
+/// overhang.
 double levelFraction(const LevelProgress& progress) {
     return progress.xpForNext > 0 ? clamp(progress.xpIntoLevel / progress.xpForNext, 0.0, 1.0)
                                   : 0.0;
@@ -857,14 +857,13 @@ void App::drawTitleXpBar(Canvas& canvas, const Rect& track) {
     // ALT for the exact figures, as on the in-game bar.
     const LevelProgress progress = levelFromTotalXp(net_.profile().totalXp);
     const bool altHeld = window_.keyDown(Key::LeftAlt) || window_.keyDown(Key::RightAlt);
-    const auto whole = [](double v) { return std::to_string(std::llround(v)); };
     TextStyle label;
     label.size = std::max(h * kTitleXpTextShare, kTitleXpMinTextSize);
     label.align = Align::Centre;
     label.baseline = Baseline::Middle;
     text(canvas,
          altHeld ? "Lvl " + std::to_string(progress.level) + " - " +
-                       whole(progress.xpIntoLevel) + "/" + whole(progress.xpForNext)
+                       formatWhole(progress.xpIntoLevel) + "/" + formatWhole(progress.xpForNext)
                  : "Lvl " + std::to_string(progress.level) + " Flower",
          track.x + track.w * 0.5, middle, label);
 }
