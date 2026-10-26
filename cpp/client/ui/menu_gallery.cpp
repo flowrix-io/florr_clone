@@ -514,23 +514,6 @@ void galleryScrollbar(Canvas& canvas, Rect track, double contentHeight, double s
     canvas.fill();
 }
 
-void drawEmptyDropCell(Canvas& canvas, double cellX, double rowY) {
-    const double cardX = cellX + (kDropCellW - kCardSize) * 0.5;
-    setFill(canvas, kPaper, 0.05);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(cardX), static_cast<float>(rowY),
-                     static_cast<float>(kCardSize), static_cast<float>(kCardSize), 4.0f);
-    canvas.fill();
-
-    setStroke(canvas, kPaper, 0.1);
-    canvas.setLineWidth(1.0f);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(cardX + 0.5), static_cast<float>(rowY + 0.5),
-                     static_cast<float>(kCardSize - 1.0), static_cast<float>(kCardSize - 1.0),
-                     4.0f);
-    canvas.stroke();
-}
-
 void drawDropCard(Canvas& canvas, const SpriteCache& sprites, double cellX, double rowY,
                   Rarity rarity, const DropCell& cell, double timeSeconds) {
     const double cardX = cellX + (kDropCellW - kCardSize) * 0.5;
@@ -872,13 +855,12 @@ bool GalleryPanel::render(MenuContext& ctx) {
                 const double rowY = cy + static_cast<double>(r) * (kDropRowH + kDropRowGapY);
                 for (std::size_t i = 0; i < columns.size(); ++i) {
                     const double cellX = tableX + static_cast<double>(i) * kDropCellW;
+                    // A tier this row cannot drop at is left blank, not drawn
+                    // as an empty frame.
                     const DropCell& square = rows[r].cells[static_cast<std::size_t>(columns[i])];
-                    if (square.drop != nullptr) {
-                        drawDropCard(canvas, ctx.sprites, cellX, rowY, clampRarity(columns[i]),
-                                     square, ctx.timeSeconds);
-                    } else {
-                        drawEmptyDropCell(canvas, cellX, rowY);
-                    }
+                    if (square.drop == nullptr) continue;
+                    drawDropCard(canvas, ctx.sprites, cellX, rowY, clampRarity(columns[i]), square,
+                                 ctx.timeSeconds);
                 }
             }
         }
