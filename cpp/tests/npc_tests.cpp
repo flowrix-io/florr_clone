@@ -2671,8 +2671,9 @@ TEST(the_shipped_assembler_makes_a_sawblade_out_of_a_mimic_and_a_ram) {
 
     // The user's mimic + RAM = sawblade, and every one of florr's own recipes
     // (its client's table, 0x10234f910) whose petals all exist here -- ten of
-    // its twenty (user, 2026-10-14).
-    CHECK_EQ(config.npc.recipes.size(), std::size_t(11));
+    // its twenty (user, 2026-10-14) -- and two squares = pentagon (user,
+    // 2026-10-26).
+    CHECK_EQ(config.npc.recipes.size(), std::size_t(12));
     const int saw = recipeMaking(assembler, "sawblade");
     CHECK(saw >= 0);
     if (saw < 0) return;
@@ -2701,6 +2702,19 @@ TEST(the_shipped_assembler_makes_a_sawblade_out_of_a_mimic_and_a_ram) {
         const AssemblyRecipe& r = config.npc.recipes[static_cast<std::size_t>(bolt)];
         CHECK_EQ(r.outputs.size(), std::size_t(2));
         CHECK_EQ(r.takes(content().petalIndex("battery")), std::int64_t(3));
+    }
+    // A pentagon is two squares, and twice a square's damage and health.
+    const int pentagon = recipeMaking(assembler, "pentagon");
+    CHECK(pentagon >= 0);
+    if (pentagon >= 0) {
+        const AssemblyRecipe& r = config.npc.recipes[static_cast<std::size_t>(pentagon)];
+        CHECK_EQ(r.inputs.size(), std::size_t(1));
+        CHECK_EQ(r.takes(content().petalIndex("square")), std::int64_t(2));
+        CHECK_EQ(r.outputs.size(), std::size_t(1));
+        const PetalConfig& five = content().petal(content().petalIndex("pentagon"));
+        const PetalConfig& four = content().petal(content().petalIndex("square"));
+        CHECK_EQ(five.damage, 2.0 * four.damage);
+        CHECK_EQ(five.health, 2.0 * four.health);
     }
 }
 

@@ -2099,7 +2099,8 @@
                 { "from": [{ "petal": "battery", "count": 3 }], "to": ["battery", "lightning"] },
                 { "from": ["honey", "light"], "to": "pollen" },
                 { "from": [{ "petal": "triangle", "count": 10 }], "to": "cutter" },
-                { "from": ["mimic", "ram"], "to": "sawblade" }
+                { "from": ["mimic", "ram"], "to": "sawblade" },
+                { "from": [{ "petal": "square", "count": 2 }], "to": "pentagon" }
             ]
         },
         "noEggDrop": true

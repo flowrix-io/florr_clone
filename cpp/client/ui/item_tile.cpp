@@ -211,6 +211,9 @@ constexpr GardnIcon kGardnIcon[] = {
     {"computer_chip",              33,   10,  0,       0,     1},
     {"sawblade",              41.5,   10,  0,       0.2,     1},
     {"c++",              31,   10,  0,       0,     1},
+    // Not gardn's: the square's radius and outline (0.15 r) on a pentagon, so
+    // the two shapes sit on a plate at one scale.
+    {"pentagon",        30.78,   15,  0,       1, 0.954},   // art fills 95% of its box
 };
 
 /// How one petal is laid out inside a tile, in design units.
