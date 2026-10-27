@@ -59,19 +59,46 @@ EM_JS(void, flix_update_start, (const char* urlPtr), {
 
       say('[UPDATE] Step 2/4: downloading ' + url + ' ...');
       staging = fs.mkdtempSync(path.join(os.tmpdir(), 'florr-update-'));
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error('Download failed: HTTP ' + response.status + ' ' + response.statusText);
+      const zipPath = path.join(staging, 'build.zip');
+      // Streamed to disk, never held whole, and through the http/https
+      // modules the listener has already loaded. The server runs a few tens
+      // of MB short of prod's memory (no swap), and fetch() + arrayBuffer()
+      // cost ~40 MB for a 7 MB zipball -- undici, which nothing else in the
+      // server loads, plus the body twice over. That was enough for the
+      // kernel's OOM killer to take the server mid-download, every time, and
+      // a SIGKILL leaves no [crash] report behind.
+      const get = (from) => new Promise((resolve, reject) => {
+        const client = from.startsWith('http:') ? require('http') : require('https');
+        const request = client.get(from, { timeout: 60000 }, resolve);
+        request.on('timeout', () => request.destroy(new Error('Download stalled for 60 s.')));
+        request.on('error', reject);
+      });
+      let from = url;
+      let response = await get(from);
+      // fetch() followed redirects, and a FLORR_UPDATE_URL may well need one.
+      for (let hops = 0; response.statusCode >= 300 && response.statusCode < 400 &&
+                         response.headers.location; ++hops) {
+        response.resume();
+        if (hops === 5) throw new Error('Download failed: too many redirects.');
+        from = new URL(response.headers.location, from).href;
+        response = await get(from);
       }
-      const bytes = Buffer.from(await response.arrayBuffer());
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        response.resume();
+        throw new Error('Download failed: HTTP ' + response.statusCode + ' ' +
+                        response.statusMessage);
+      }
+      await require('stream/promises').pipeline(response, fs.createWriteStream(zipPath));
       // Zip local-file-header magic. Catches an error page saved as a "zip",
       // which is what a wrong branch name gets you.
-      if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4B) {
+      const magic = Buffer.alloc(4);
+      const fd = fs.openSync(zipPath, 'r');
+      const read = fs.readSync(fd, magic, 0, 4, 0);
+      fs.closeSync(fd);
+      if (read < 4 || magic[0] !== 0x50 || magic[1] !== 0x4B) {
         throw new Error('Downloaded file is not a zip archive.');
       }
-      const zipPath = path.join(staging, 'build.zip');
-      fs.writeFileSync(zipPath, bytes);
-      say('[UPDATE] Downloaded ' + (bytes.length / 1024 / 1024).toFixed(2) + ' MB');
+      say('[UPDATE] Downloaded ' + (fs.statSync(zipPath).size / 1024 / 1024).toFixed(2) + ' MB');
 
       say('[UPDATE] Step 3/4: extracting build...');
       const extracted = path.join(staging, 'extracted');

@@ -226,6 +226,7 @@ target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(flix_server STATIC
   server/game_server.cpp
   server/account_limits.cpp
+  server/account_search.cpp
   server/admin_dashboard.cpp
   server/admin_db.cpp
   server/admin_db_key.cpp

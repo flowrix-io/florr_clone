@@ -25,8 +25,9 @@ namespace flix::net {
 
 /// What an AdminDb client message asks for.
 enum class AdminDbOp : std::uint8_t {
-    /// str search, u32 offset -- one page of accounts whose name contains
-    /// `search`, case-insensitively. Answered with AdminDbReply::Accounts.
+    /// str search, u32 offset -- one page of the accounts `search` finds: by
+    /// name, case-insensitively, or by what they own and wear (the grammar is
+    /// in server/account_search.h). Answered with AdminDbReply::Accounts.
     List = 0,
     /// (empty) -- the editable top-level tables. Answered with Tables.
     Tables,
@@ -52,8 +53,11 @@ enum class AdminDbReply : std::uint8_t {
     /// str username -- open the editor, on this account when one is named.
     /// The answer to `/admin db`; the panel cannot be opened any other way.
     Open = 0,
-    /// str search, u32 offset, u32 totalMatched, u16 count,
-    /// { str username, u16 level, u8 AdminDbAccountFlags }*
+    /// str search, u32 offset, u32 totalMatched, str error, u16 count,
+    /// { str username, u16 level, u8 AdminDbAccountFlags, str note }*
+    /// `error` says why a search could not be read (and then nothing
+    /// matched); `note` is what a row was found by: "37" for one count,
+    /// "Mythic Rose 37, Level 80" for several.
     Accounts,
     /// u16 count, { str name, u8 isArray, u32 entries }*
     Tables,

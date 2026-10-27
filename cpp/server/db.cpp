@@ -557,22 +557,32 @@ bool Database::load(const std::string& path, std::string& errorOut) {
         return true;
     }
 
-    std::string text;
-    if (!readWholeFile(path, text, errorOut)) {
-        loadFailed_ = true;
-        return false;
-    }
-
-    Json root;
-    std::string parseError;
-    if (!Json::parse(text, root, parseError)) {
-        loadFailed_ = true;
-        errorOut = path + ": " + parseError;
-        return false;
-    }
-    if (!parseRoot(root, errorOut)) {
-        loadFailed_ = true;
-        return false;
+    // Each stage lets go of what the next one no longer needs. A wasm heap
+    // only grows, so whatever the load holds at its peak stays resident for as
+    // long as the server runs: this is the server's floor, not a passing
+    // spike. Holding the text, the whole tree and every record at once, then
+    // warming the save cache on top, took the prod database (15 MB, ~950k
+    // values) to a 276 MB peak for 133 MB of records -- and the heap to 307 MB,
+    // on a box with 909 MB and nothing else to give.
+    {
+        Json root;
+        {
+            std::string text;
+            if (!readWholeFile(path, text, errorOut)) {
+                loadFailed_ = true;
+                return false;
+            }
+            std::string parseError;
+            if (!Json::parse(text, root, parseError)) {
+                loadFailed_ = true;
+                errorOut = path + ": " + parseError;
+                return false;
+            }
+        }
+        if (!parseRoot(root, errorOut)) {
+            loadFailed_ = true;
+            return false;
+        }
     }
     // File order is not creation order, and creatorStanding walks newest first
     // and stops at its window.
@@ -593,15 +603,18 @@ bool Database::load(const std::string& path, std::string& errorOut) {
     return true;
 }
 
-bool Database::parseRoot(const Json& root, std::string& errorOut) {
+bool Database::parseRoot(Json& root, std::string& errorOut) {
     if (!root.isObject()) {
         errorOut = path_ + ": top level is not a JSON object";
         return false;
     }
     topKeyOrder_ = root.keys();
 
-    for (const std::string& key : root.keys()) {
-        const Json& value = root[key];
+    // Consumes `root`: a row's subtree is released the moment it is a record,
+    // and the tables kept as JSON are moved rather than copied, so the tree
+    // and what it becomes never both exist whole.
+    for (const std::string& key : topKeyOrder_) {
+        Json& value = root[key];
         // A collection that is present but is not an object is corruption, not
         // an old schema. Treating it as "no accounts" and carrying on is how a
         // damaged file becomes an empty one.
@@ -614,21 +627,28 @@ bool Database::parseRoot(const Json& root, std::string& errorOut) {
 
         if (key == "players") {
             for (const std::string& userId : value.keys()) {
-                players_.insert(userId) = playerFromJson(value[userId]);
+                Json& row = value[userId];
+                players_.insert(userId) = playerFromJson(row);
+                row = Json();
             }
         } else if (key == "users") {
             for (const std::string& name : value.keys()) {
+                Json& row = value[name];
                 Account& account = users_.insert(name);
-                account = accountFromJson(value[name], name);
+                account = accountFromJson(row, name);
                 indexUser(name, account);
+                row = Json();
             }
         } else if (key == "sessions") {
             for (const std::string& tokenHash : value.keys()) {
-                sessions_.insert(tokenHash) = sessionFromJson(value[tokenHash], tokenHash);
+                Json& row = value[tokenHash];
+                sessions_.insert(tokenHash) = sessionFromJson(row, tokenHash);
+                row = Json();
             }
         } else {
-            otherTop_[key] = value;
+            otherTop_[key] = std::move(value);
         }
+        value = Json();
     }
     return true;
 }

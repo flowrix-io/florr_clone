@@ -153,6 +153,30 @@ sent to it. Announcing is done from the dashboard or with `/admin announce`.
 
 A `<username>` is an account name, or a bot's name; there is no lookup by id.
 
+## Searching the database editor
+
+The database editor (`/admin db <key>`) is a separate panel, but its account
+search does more than names. Words are separated by spaces and an account must
+answer every one (the grammar lives in `cpp/server/account_search.h`):
+
+| search | finds accounts |
+|---|---|
+| `bob` | whose name contains "bob", in any case |
+| `level>=50` | at level 50 or more; `>`, `>=`, `<`, `<=`, `=` all work |
+| `petals>=5000` | owning 5,000 petals or more in all |
+| `mythic>=100` | owning 100 or more mythic petals |
+| `rose>10` | owning more than 10 roses, any rarity |
+| `mythic:rose>10` | the same at one rarity (`rose:mythic` too) |
+| `mythic:rose` | owning at least one mythic rose |
+| `loadout:rose` | wearing a rose; `loadout:mythic:rose`, `loadout:rose>=3`, `loadout:mythic` |
+
+Petals are named by id or display name, with case, spaces, underscores and
+hyphens ignored (`yin_yang`, `yinyang`); rarities by name or label (`eternal`
+is unique). Results are ordered by the first count, most first (fewest first
+when it is a `<`), and each row shows the counts it was found by. Counts come
+from the stored inventory (which includes worn petals) and the saved loadout. A
+word the server cannot read lists nobody and says why above the list.
+
 ## Protocol
 
 The dashboard talks over `ClientMessage::AdminDashboard` and

@@ -783,6 +783,7 @@ void NetClient::handleAdminDb(ByteReader& reader) {
             const std::string search = reader.str();
             const std::uint32_t offset = reader.u32();
             const std::uint32_t total = reader.u32();
+            std::string error = reader.str();
             const std::uint16_t count = reader.u16();
             std::vector<AdminDbAccountRow> rows;
             rows.reserve(count);
@@ -791,6 +792,7 @@ void NetClient::handleAdminDb(ByteReader& reader) {
                 row.username = reader.str();
                 row.level = reader.u16();
                 row.flags = reader.u8();
+                row.note = reader.str();
                 rows.push_back(std::move(row));
             }
             if (!reader.ok()) return;
@@ -802,6 +804,7 @@ void NetClient::handleAdminDb(ByteReader& reader) {
             db.accounts.insert(db.accounts.end(), std::make_move_iterator(rows.begin()),
                                std::make_move_iterator(rows.end()));
             db.listTotal = total;
+            db.listError = std::move(error);
             db.listPending = false;
             return;
         }

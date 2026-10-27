@@ -10,10 +10,13 @@
 
 #include <sys/stat.h>
 
+#include "server/account_search.h"
 #include "server/admin_db.h"
 #include "server/admin_db_key.h"
 #include "server/db.h"
 #include "server_harness.h"
+#include "test_data.h"
+#include "shared/game/config.h"
 #include "shared/net/admin_db.h"
 
 using namespace flix;
@@ -765,4 +768,145 @@ TEST(the_database_editor_edits_a_raw_table) {
     // A whole table is not replaced from here.
     boss.adminDbSet({}, "[]");
     CHECK(!awaitResult(h, {&boss}, boss));
+}
+
+// ---------------------------------------------------------------------------
+// Searching by value
+// ---------------------------------------------------------------------------
+
+TEST(an_account_search_reads_names_counts_and_loadout_words) {
+    const ContentRegistry& content = shippedContent();
+    account_search::Query q;
+    std::string error;
+
+    CHECK(account_search::parse("  Bob  ", content, q, error));
+    CHECK_EQ(q.names.size(), 1u);
+    CHECK_EQ(q.names[0], std::string("bob"));
+    CHECK(q.terms.empty());
+
+    // A rarity and a petal either way round, the petal by its display name.
+    CHECK(account_search::parse("Rose:MYTHIC>10 yin-yang>=2", content, q, error));
+    CHECK_EQ(q.terms.size(), 2u);
+    CHECK(q.terms[0].field == account_search::Field::Owned);
+    CHECK_EQ(q.terms[0].petal, std::string("rose"));
+    CHECK(!q.terms[0].anyRarity);
+    CHECK(q.terms[0].rarity == Rarity::Mythic);
+    CHECK(q.terms[0].compare == account_search::Compare::Greater);
+    CHECK_EQ(q.terms[0].value, 10.0);
+    CHECK_EQ(q.terms[0].label, std::string("Mythic Rose"));
+    CHECK_EQ(q.terms[1].petal, std::string("yin_yang"));
+    CHECK(q.terms[1].anyRarity);
+
+    // A loadout word is at least one slot unless it says otherwise; "eternal"
+    // is the label of the unique tier.
+    CHECK(account_search::parse("loadout:eternal:rose level<=5 petals=0", content, q, error));
+    CHECK_EQ(q.terms.size(), 3u);
+    CHECK(q.terms[0].field == account_search::Field::Loadout);
+    CHECK(q.terms[0].rarity == Rarity::Unique);
+    CHECK(q.terms[0].compare == account_search::Compare::AtLeast);
+    CHECK_EQ(q.terms[0].value, 1.0);
+    CHECK(q.terms[1].field == account_search::Field::Level);
+    CHECK(q.terms[1].compare == account_search::Compare::AtMost);
+    CHECK(q.terms[2].petal.empty());
+    CHECK(q.terms[2].compare == account_search::Compare::Equal);
+
+    // Each refusal names the word it could not read.
+    CHECK(!account_search::parse("rse>=1", content, q, error));
+    CHECK(error.find("\"rse\"") != std::string::npos);
+    CHECK(!account_search::parse("rose>=lots", content, q, error));
+    CHECK(error.find("rose>=lots") != std::string::npos);
+    CHECK(!account_search::parse("rose:light>1", content, q, error));
+    CHECK(error.find("two petals") != std::string::npos);
+    CHECK(!account_search::parse("mythic:epic>1", content, q, error));
+    CHECK(error.find("two rarities") != std::string::npos);
+}
+
+TEST(an_account_search_counts_the_inventory_and_the_loadout) {
+    PlayerRecord record;
+    record.addItem(Rarity::Mythic, "petal_rose", 7);
+    record.addItem(Rarity::Common, "petal_rose", 3);
+    record.addItem(Rarity::Common, "petal_light", 5);
+    record.loadout.resize(3);
+    StoredItem rose;
+    rose.rarity = Rarity::Mythic;
+    rose.petalType = "rose";
+    record.loadout[0] = rose;
+    record.loadout[2] = rose;
+
+    const ContentRegistry& content = shippedContent();
+    const auto read = [&](const std::string& text) {
+        account_search::Query q;
+        std::string error;
+        if (!account_search::parse(text, content, q, error) || q.terms.size() != 1) return -1.0;
+        return account_search::valueOf(q.terms[0], &record, 42);
+    };
+    CHECK_EQ(read("rose>0"), 10.0);
+    CHECK_EQ(read("mythic:rose>0"), 7.0);
+    CHECK_EQ(read("common>0"), 8.0);
+    CHECK_EQ(read("petals>0"), 15.0);
+    CHECK_EQ(read("loadout:rose"), 2.0);
+    CHECK_EQ(read("loadout:common:rose"), 0.0);
+    CHECK_EQ(read("loadout:>0"), 2.0);
+    CHECK_EQ(read("level>0"), 42.0);
+
+    account_search::Query q;
+    std::string error;
+    CHECK(account_search::parse("rose>0", content, q, error));
+    CHECK_EQ(account_search::valueOf(q.terms[0], nullptr, 1), 0.0);
+}
+
+TEST(the_database_editor_finds_accounts_by_what_they_own_and_wear) {
+    Harness h("admindb-search-values", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "alice", "password7");
+        seedUser(path, "bobby", "password7");
+        seedUser(path, "carol", "password7");
+        seedStack(path, "alice", "petal_rose", Rarity::Mythic, 12);
+        seedStack(path, "bobby", "petal_rose", Rarity::Mythic, 30);
+        seedStack(path, "carol", "petal_rose", Rarity::Common, 50);
+        Database db;
+        std::string error;
+        db.load(path, error);
+        StoredItem light;
+        light.rarity = Rarity::Epic;
+        light.petalType = "light";
+        db.progress(db.findUser("carol")->id).loadout = {light, std::nullopt};
+        db.markDirty();
+        db.save();
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
+    const auto list = [&](const std::string& search) {
+        boss.adminDbList(search, 0);
+        h.stepUntil({&boss}, [&] { return !boss.adminDb().listPending; }, 100);
+        std::string names;
+        for (const AdminDbAccountRow& row : boss.adminDb().accounts) {
+            names += (names.empty() ? "" : " ") + row.username;
+        }
+        return names;
+    };
+
+    // Most first, each row saying how many -- just the number, for one count.
+    CHECK_EQ(list("mythic:rose>=10"), std::string("bobby alice"));
+    CHECK_EQ(boss.adminDb().accounts[0].note, std::string("30"));
+    CHECK(boss.adminDb().listError.empty());
+    // Every rarity, and fewest first when the first count is a "<".
+    CHECK_EQ(list("rose<40 rose>=1"), std::string("alice bobby"));
+    CHECK_EQ(boss.adminDb().accounts[0].note, std::string("Rose 12, Rose 12"));
+    // Names and counts together.
+    CHECK_EQ(list("o rose>20"), std::string("carol bobby"));
+    CHECK_EQ(list("loadout:light"), std::string("carol"));
+    CHECK_EQ(boss.adminDb().accounts[0].note, std::string("1"));
+    CHECK_EQ(list("loadout:mythic:light"), std::string());
+
+    // An unreadable search says why and lists nobody.
+    CHECK_EQ(list("rse>=1"), std::string());
+    CHECK(boss.adminDb().listError.find("\"rse\"") != std::string::npos);
+    // A plain name still searches names, and clears the complaint.
+    CHECK_EQ(list("bob"), std::string("bobby"));
+    CHECK(boss.adminDb().listError.empty());
+    CHECK(boss.adminDb().accounts[0].note.empty());
 }

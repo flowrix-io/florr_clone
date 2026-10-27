@@ -96,6 +96,9 @@ public:
 
     /// Object keys in insertion order.
     const std::vector<std::string>& keys() const { return order_; }
+    /// Object members in KEY order, for a scan that reads every value and does
+    /// not care which comes first: going through keys() costs a lookup each.
+    const std::map<std::string, Json>& members() const { return fields_; }
 
     // -- serialisation
     /// `indent` of 0 writes compact JSON with no whitespace.

@@ -320,6 +320,9 @@ struct AdminDbAccountRow {
     std::string username;
     std::uint16_t level = 0;
     std::uint8_t flags = 0;   ///< net::AdminDbAccountFlags
+    /// What a search by value found it by ("37", or "Mythic Rose 37, Level 80"
+    /// for several counts); empty for a name.
+    std::string note;
 };
 
 /// One of the database's editable top-level tables.
@@ -349,6 +352,8 @@ struct AdminDbState {
     std::uint32_t listTotal = 0;
     std::vector<AdminDbAccountRow> accounts;
     bool listPending = false;
+    /// Why the server could not read `listSearch`; empty when it could.
+    std::string listError;
 
     std::vector<AdminDbTableRow> tables;
 

@@ -41,12 +41,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <unordered_set>
 #include <utility>
 
+#include "server/account_search.h"
 #include "server/game_server.h"
 #include "server/text.h"
+#include "shared/game/config.h"
 #include "shared/game/constants.h"
 
 namespace flix {
@@ -355,37 +358,92 @@ void GameServer::handleAdminDb(Session& session, net::Connection& connection, By
     }
 }
 
+namespace {
+
+/// A count as the list shows it, with thousands separated.
+std::string countText(double value) {
+    char buffer[48];
+    std::snprintf(buffer, sizeof buffer, "%.0f", std::fabs(value));
+    const std::string digits = buffer;
+    std::string out = value < 0 ? "-" : "";
+    for (std::size_t i = 0; i < digits.size(); ++i) {
+        if (i > 0 && (digits.size() - i) % 3 == 0) out += ',';
+        out += digits[i];
+    }
+    return out;
+}
+
+} // namespace
+
 void GameServer::adminDbList(net::Connection& connection, const std::string& search,
                              std::uint32_t offset) {
-    const std::string needle = lowerCase(trimmed(search));
+    // An unreadable search lists nobody and says why, rather than falling
+    // back to a name search for "rose>=1O" that finds nobody and says nothing.
+    account_search::Query query;
+    std::string queryError;
+    const bool parsed = account_search::parse(trimmed(search), content(), query, queryError);
+    const bool readsLevel =
+        std::any_of(query.terms.begin(), query.terms.end(), [](const account_search::Term& t) {
+            return t.field == account_search::Field::Level;
+        });
 
     std::unordered_set<std::string> online;
     for (const auto& entry : sessions_) {
-        if (entry.second.authenticated()) online.insert(entry.second.userId);
+        if (!entry.second.authenticated()) continue;
+        online.insert(entry.second.userId);
+        // A player's XP lives on the body until a save, as opening the
+        // account knows; the inventory and loadout are written as they change.
+        if (readsLevel) persistPlayer(entry.second);
     }
 
     struct Row {
         const Account* account;
         bool exact;
         bool online;
+        /// One per query term, in the query's order.
+        std::vector<double> values;
     };
     std::vector<Row> rows;
     // Read through the CONST database: the mutable lookups drop each row's
     // cached save text (Database::Table), and a search across every account
     // would otherwise make the next autosave re-serialise all of them.
     const Database& db = database_;
-    for (const std::string& name : db.usernames()) {
+    const std::vector<std::string> nobody;
+    for (const std::string& name : parsed ? db.usernames() : nobody) {
         const Account* account = db.findUser(name);
         if (account == nullptr) continue;
         const std::string lowered = lowerCase(account->username);
-        if (!needle.empty() && lowered.find(needle) == std::string::npos) continue;
-        rows.push_back({account, lowered == needle, online.count(account->id) != 0});
+        const bool named = std::all_of(query.names.begin(), query.names.end(),
+                                       [&](const std::string& part) {
+                                           return lowered.find(part) != std::string::npos;
+                                       });
+        if (!named) continue;
+        const PlayerRecord* record = db.findProgress(account->id);
+        const int level =
+            readsLevel ? levelFromTotalXp(record != nullptr ? record->totalXp : 0.0).level : 0;
+        std::vector<double> values;
+        for (const account_search::Term& term : query.terms) {
+            const double value = account_search::valueOf(term, record, level);
+            if (!account_search::satisfies(term, value)) break;
+            values.push_back(value);
+        }
+        if (values.size() != query.terms.size()) continue;
+        rows.push_back({account, query.names.size() == 1 && lowered == query.names[0],
+                        online.count(account->id) != 0, std::move(values)});
     }
-    // The exact name first, then whoever is on now, then the most recently
-    // active. The file is thousands of accounts deep and most are throwaway
-    // registrations; the order puts the people an admin is looking for first.
-    std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
+    // The exact name first, then by the first count the search asked about --
+    // most first, or fewest for a "<" -- then whoever is on now, then the most
+    // recently active. The file is thousands of accounts deep and most are
+    // throwaway registrations; the order puts the people an admin is looking
+    // for first.
+    const bool fewestFirst =
+        !query.terms.empty() && (query.terms[0].compare == account_search::Compare::Less ||
+                                 query.terms[0].compare == account_search::Compare::AtMost);
+    std::sort(rows.begin(), rows.end(), [&](const Row& a, const Row& b) {
         if (a.exact != b.exact) return a.exact;
+        if (!a.values.empty() && a.values[0] != b.values[0]) {
+            return fewestFirst ? a.values[0] < b.values[0] : a.values[0] > b.values[0];
+        }
         if (a.online != b.online) return a.online;
         if (a.account->lastActiveAtMillis != b.account->lastActiveAtMillis) {
             return a.account->lastActiveAtMillis > b.account->lastActiveAtMillis;
@@ -401,6 +459,7 @@ void GameServer::adminDbList(net::Connection& connection, const std::string& sea
     w.str(search);
     w.u32(static_cast<std::uint32_t>(first));
     w.u32(static_cast<std::uint32_t>(total));
+    w.str(queryError);
     w.u16(static_cast<std::uint16_t>(count));
     for (std::size_t i = first; i < first + count; ++i) {
         const Account& account = *rows[i].account;
@@ -409,6 +468,15 @@ void GameServer::adminDbList(net::Connection& connection, const std::string& sea
         w.u16(static_cast<std::uint16_t>(
             levelFromTotalXp(record != nullptr ? record->totalXp : 0.0).level));
         w.u8(adminDbAccountFlags(account));
+        // What the row was found by, so a list of "rose>=10" reads how many.
+        // One count is named by the search box above it; several need names.
+        std::string note;
+        for (std::size_t t = 0; t < query.terms.size(); ++t) {
+            if (t > 0) note += ", ";
+            if (query.terms.size() > 1) note += query.terms[t].label + " ";
+            note += countText(rows[i].values[t]);
+        }
+        w.str(note);
     }
     connection.send(w);
 }

@@ -555,15 +555,20 @@ bool AdminDbPanel::render(MenuContext& ctx) {
     double listTop = accountsTab.bottom() + 8.0;
     const Rect searchRect{left.x, listTop, left.w, kFieldHeight};
     if (s.accountsTab) {
-        inputField(canvas, searchRect, s.search, "Search accounts", s.searchField.focused, now,
-                   &s.searchField);
+        inputField(canvas, searchRect, s.search, "Name, rose>=10, loadout:rose",
+                   s.searchField.focused, now, &s.searchField);
         listTop = searchRect.bottom() + 6.0;
-        const std::string counted =
-            db.listPending && db.accounts.empty()
-                ? std::string("Searching...")
-                : withSeparators(db.accounts.size()) + " of " + withSeparators(db.listTotal) +
-                      (db.listTotal == 1 ? " account" : " accounts");
-        text(canvas, counted, left.x + 2.0, listTop + 7.0, label(12.0, kPaper));
+        if (!db.listError.empty() && !db.listPending) {
+            text(canvas, ellipsize(db.listError, 12.0, left.w - 4.0), left.x + 2.0,
+                 listTop + 7.0, label(12.0, kBadInk));
+        } else {
+            const std::string counted =
+                db.listPending && db.accounts.empty()
+                    ? std::string("Searching...")
+                    : withSeparators(db.accounts.size()) + " of " + withSeparators(db.listTotal) +
+                          (db.listTotal == 1 ? " account" : " accounts");
+            text(canvas, counted, left.x + 2.0, listTop + 7.0, label(12.0, kPaper));
+        }
         listTop += 18.0;
     }
     const Rect listView{left.x, listTop, left.w, std::max(0.0, left.bottom() - listTop)};
@@ -626,7 +631,18 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                     badgesW += w + 4.0;
                 }
                 text(canvas, level, row.right() - 8.0, cy, label(12.0, kPaper, Align::Right));
-                const double nameW = row.w - 30.0 - levelW - badgesW - 12.0;
+                double noteW = 0;
+                if (!account.note.empty()) {
+                    // The name first: the note has what the name leaves, and
+                    // never less than a quarter of the row.
+                    const double room = row.w - 30.0 - levelW - badgesW - 12.0 -
+                                        measure(account.username, 13.0) - 6.0;
+                    const std::string note =
+                        ellipsize(account.note, 12.0, std::max(room, row.w * 0.25));
+                    text(canvas, note, bx - 6.0, cy, label(12.0, kNumberInk, Align::Right));
+                    noteW = measure(note, 12.0) + 6.0;
+                }
+                const double nameW = row.w - 30.0 - levelW - badgesW - noteW - 12.0;
                 text(canvas, ellipsize(account.username, 13.0, nameW), row.x + 22.0, cy,
                      label(13.0));
                 addRegion(clipTo(row, listView), Act::PickAccount, i);
@@ -907,7 +923,8 @@ bool AdminDbPanel::render(MenuContext& ctx) {
     if (s.searchField.focused) {
         ctx.wantsText = true;
         TextEditOptions search;
-        search.maxBytes = 64;
+        // Room for a few counts at once: loadout:mythic:rose petals>=5000 ...
+        search.maxBytes = 160;
         if (editText(ctx.window, s.search, s.searchField, now, search)) s.searchChangedAt = now;
         if (enter) {
             s.searchChangedAt = -1;

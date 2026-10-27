@@ -635,7 +635,7 @@ public:
 
 private:
     void reset();
-    bool parseRoot(const Json& root, std::string& errorOut);
+    bool parseRoot(Json& root, std::string& errorOut);
     std::string newUserId();
     void indexUser(const std::string& storedKey, const Account& account);
     CreateResult createAccount(const std::string& username, const std::string& password,
