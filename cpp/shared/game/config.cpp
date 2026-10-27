@@ -594,6 +594,23 @@ DropProjectileSpec parseDropProjectile(Ctx& ctx, const Json& owner,
     return spec;
 }
 
+RecoverSpec parseRecover(Ctx& ctx, const Json& owner) {
+    RecoverSpec spec;
+    if (!owner.contains("recover")) return spec;
+    const Json& node = owner["recover"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("recover is ") + typeName(node) + ", not an object; ignored");
+        return spec;
+    }
+    // Defaults are the starfish's: under 40%, whole again ten seconds later.
+    spec.belowFraction = ctx.range(node, "below", 0.4, 0.0, 1.0);
+    spec.durationMillis = ctx.range(node, "durationMs", 10000.0, 0.0, kMaxDurationMillis);
+    // A line nothing falls under, or a heal that lands all at once, is refused
+    // here so the AI never starts one.
+    spec.present = spec.belowFraction > 0.0 && spec.durationMillis > 0.0;
+    return spec;
+}
+
 RadiationSpec parseRadiation(Ctx& ctx, const Json& owner) {
     RadiationSpec spec;
     if (!owner.contains("radiation")) return spec;
@@ -1111,6 +1128,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.lightning = parseLightning(ctx, src);
     m.web = parseWeb(ctx, src);
     m.dropProjectile = parseDropProjectile(ctx, src, petalIds);
+    m.recover = parseRecover(ctx, src);
 
     // The JSON states poison as damage per millisecond; the simulation thinks
     // in seconds, and converting once here keeps that unit out of every

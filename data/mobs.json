@@ -731,6 +731,10 @@
         "image": "$starfish",
         "ai_type": "hostile",
         "gardn_ai": true,
+        "recover": {
+            "below": 0.4,
+            "durationMs": 10000
+        },
         "range": 300,
         "groups": [
             "ocean"

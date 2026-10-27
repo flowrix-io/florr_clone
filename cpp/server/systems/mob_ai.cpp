@@ -1,5 +1,6 @@
 #include "server/systems/mob_ai.h"
 
+#include "server/systems/combat.h"
 #include "server/systems/movement.h"
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
@@ -411,6 +412,9 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.laysWeb = config.web.present &&
                         rarityIndex(rarity) >= rarityIndex(config.web.minRarity);
         drive.dropsProjectile = config.dropProjectile.present;
+        drive.recovers = config.recover.present;
+        drive.recoverBelow = config.recover.belowFraction;
+        drive.recoverMillis = config.recover.durationMillis;
         drive.valid = true;
     }
     return drive;
@@ -544,6 +548,26 @@ void MobAiSystem::dropProjectile(World& world, Entity self, double nowMillis,
     shot.identified = static_cast<bool>(allocateNetId);
     shot.netId = shot.identified ? allocateNetId() : 0;
     commands.defer([shot](World& deferred) { spawnShot(deferred, shot); });
+}
+
+void MobAiSystem::recover(World& world, Entity self, const Drive& drive, double nowMillis,
+                          double dt) {
+    MobAi* ai = world.tryGet<MobAi>(self);
+    Health* health = world.tryGet<Health>(self);
+    if (ai == nullptr || health == nullptr || !health->alive() || !(health->max > 0.0)) return;
+    if (!(ai->recoverPerSecond > 0.0)) {
+        if (health->current >= health->max * drive.recoverBelow) return;
+        // Fixed here and not re-derived each tick: a rate that chased the
+        // deficit would mend every hit taken on the way as well, and finish on
+        // time however hard the mob was being hit.
+        ai->recoverPerSecond = (health->max - health->current) / (drive.recoverMillis / 1000.0);
+    }
+    // A dandelion's lockout holds the heal without ending it: the mob keeps
+    // running, and picks up where it left off once the lockout lapses.
+    if (!CombatSystem::healingBlocked(world, self, nowMillis)) {
+        CombatSystem::landHeal(world, self, *health, ai->recoverPerSecond * dt);
+    }
+    if (health->current >= health->max) ai->recoverPerSecond = 0.0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1377,8 +1401,29 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
         ai.crabPhase = CrabPhase::None;
         return false;
     }
+    // Picked and held exactly as a chase would be, so a mending mob runs from
+    // whatever it would otherwise be fighting -- the flower that hurt it
+    // included -- and lets go at the same leash.
+    if (ai.recoverPerSecond > 0.0) return fleeTarget(world, transform, ai, chaseSpeed, desired);
     return pursueTarget(world, self, type, transform, body, ai, drive, chaseSpeed, nowMillis, dt,
                         desired, facing, commands);
+}
+
+bool MobAiSystem::fleeTarget(World& world, const Transform& transform, MobAi& ai,
+                             double chaseSpeed, Vec2& desired) {
+    const Transform* threat = world.tryGet<Transform>(ai.target);
+    if (threat == nullptr) {
+        ai.target = NULL_ENTITY;
+        ai.crabPhase = CrabPhase::None;
+        return false;
+    }
+    // A crab that turns tail mid-charge re-engages from the top of a sidle.
+    ai.crabPhase = CrabPhase::None;
+    const Vec2 away = transform.position - threat->position;
+    const double gap = away.length();
+    // Standing exactly on its target, any way out is away from it.
+    desired = gap > 0.0 ? away * (chaseSpeed / gap) : Vec2::fromAngle(transform.angle, chaseSpeed);
+    return true;
 }
 
 bool MobAiSystem::pursueTarget(World& world, Entity self, const MobType& type,
@@ -2459,13 +2504,15 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
         const Transform* at = world.tryGet<Transform>(self);
         const MobType* type = world.tryGet<MobType>(self);
         if (at == nullptr || type == nullptr) continue;
+        const Drive drive = driveFor(type->configIndex, type->rarity);
+        // Ahead of the stride, which it is not subject to; see recover().
+        if (drive.recovers) recover(world, self, drive, nowMillis, dt);
         if (!stepsThisTick(self, at->position, at->realm, type->rarity, activePlayers)) {
             ++stats_.skipped;
             driftUnwatched(world, self, nowMillis, dt);
             continue;
         }
 
-        const Drive drive = driveFor(type->configIndex, type->rarity);
         equipBehaviour(world, self, drive, nowMillis);
 
         // Re-fetched: equipBehaviour may have moved the mob to another

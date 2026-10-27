@@ -3410,3 +3410,113 @@ TEST(a_crab_that_loses_its_target_starts_its_next_fight_from_the_first_leg) {
     CHECK_EQ(sim.brainOf(crab).target, NULL_ENTITY);
     CHECK_EQ(sim.brainOf(crab).crabPhase, CrabPhase::None);
 }
+
+// ---------------------------------------------------------------------------
+// Mending (`recover`)
+// ---------------------------------------------------------------------------
+
+TEST(a_starfish_under_forty_percent_mends_to_full_in_ten_seconds) {
+    CHECK(contentReady());
+    CHECK(content().mob(content().mobIndex("starfish")).recover.present);
+    Sim sim;
+    const Entity mob = sim.spawnMob("starfish", kOrigin);
+    const auto hp = [&] { return sim.world.get<Health>(mob).current; };
+    const double max = sim.world.get<Health>(mob).max;
+    sim.world.get<Health>(mob).current = 0.39 * max;
+    // The only flower is far off, so the mob is on the far stride the whole
+    // time -- and the mend runs at full rate anyway.
+    sim.spawnPlayer(kOrigin + Vec2{kMobActiveRadius * 2.0, 0});
+
+    const int ticks = static_cast<int>(std::lround(10.0 / sim.dt));
+    sim.tick(ticks - 1);
+    CHECK(sim.totalSkipped > 0);
+    CHECK(hp() < max);
+    CHECK(hp() > 0.99 * max);
+    CHECK(sim.brainOf(mob).recoverPerSecond > 0.0);
+    sim.tick(2);
+    CHECK_NEAR(hp(), max, 1e-9);
+    CHECK_NEAR(sim.brainOf(mob).recoverPerSecond, 0.0, 1e-12);
+}
+
+TEST(a_starfish_above_the_line_and_a_mob_without_the_block_do_not_mend) {
+    CHECK(contentReady());
+    CHECK(!content().mob(content().mobIndex("soldier_ant")).recover.present);
+    Sim sim;
+    const Entity starfish = sim.spawnMob("starfish", kOrigin);
+    const Entity ant = sim.spawnMob("soldier_ant", kOrigin + Vec2{2000, 0});
+    const double starfishMax = sim.world.get<Health>(starfish).max;
+    const double antMax = sim.world.get<Health>(ant).max;
+    sim.world.get<Health>(starfish).current = 0.41 * starfishMax;
+    sim.world.get<Health>(ant).current = 0.1 * antMax;
+
+    sim.tick(60);
+    CHECK_NEAR(sim.world.get<Health>(starfish).current, 0.41 * starfishMax, 1e-9);
+    CHECK_NEAR(sim.world.get<Health>(ant).current, 0.1 * antMax, 1e-9);
+    CHECK_NEAR(sim.brainOf(starfish).recoverPerSecond, 0.0, 1e-12);
+}
+
+TEST(a_hit_taken_while_mending_costs_the_starfish_time) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity mob = sim.spawnMob("starfish", kOrigin);
+    const double max = sim.world.get<Health>(mob).max;
+    sim.world.get<Health>(mob).current = 0.3 * max;
+    sim.tick();
+    const double rate = sim.brainOf(mob).recoverPerSecond;
+    CHECK_NEAR(rate, 0.7 * max / 10.0, 1e-9);
+
+    // Knocked back down halfway through: the rate stays what it was, so the
+    // ten seconds are up with the hit still unmended.
+    const int ticks = static_cast<int>(std::lround(10.0 / sim.dt));
+    sim.tick(ticks / 2);
+    sim.world.get<Health>(mob).current -= 0.2 * max;
+    sim.tick(ticks - ticks / 2);
+    CHECK_NEAR(sim.brainOf(mob).recoverPerSecond, rate, 1e-12);
+    CHECK(sim.world.get<Health>(mob).current < 0.85 * max);
+}
+
+TEST(a_dandelion_lockout_holds_a_starfish_mend_without_ending_it) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity mob = sim.spawnMob("starfish", kOrigin);
+    const auto hp = [&] { return sim.world.get<Health>(mob).current; };
+    const double max = sim.world.get<Health>(mob).max;
+    sim.world.get<Health>(mob).current = 0.2 * max;
+    Afflictions afflictions;
+    afflictions.noHealUntilMillis = sim.now + 3000.0;
+    sim.world.add<Afflictions>(mob, afflictions);
+
+    sim.tick(60);                                   // two seconds, all locked
+    CHECK_NEAR(hp(), 0.2 * max, 1e-9);
+    CHECK(sim.brainOf(mob).recoverPerSecond > 0.0); // still mending, so still running
+
+    sim.tick(60);                                   // the lockout lapses at three
+    CHECK(hp() > 0.2 * max);
+    CHECK(hp() < max);
+}
+
+TEST(a_mending_starfish_runs_from_the_flower_and_hunts_again_once_whole) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity mob = sim.spawnMob("starfish", kOrigin);    // hostile, range 300
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{150, 0});
+    const double max = sim.world.get<Health>(mob).max;
+    sim.hurt(mob, player, 0.65 * max);
+
+    const double before = sim.gap(mob, player);
+    sim.tick(30);
+    CHECK_EQ(sim.brainOf(mob).target, player);
+    CHECK(sim.velocityOf(mob).x < 0.0);
+    CHECK(sim.gap(mob, player) > before + 50.0);
+    // Running is not hunting: the client must not spin it as if it were.
+    CHECK((computeEntityState(sim.world, mob, sim.now) & net::StateChasing) == 0);
+
+    // Whole again, it turns on a flower in its range like any hostile mob.
+    sim.tick(static_cast<int>(std::lround(10.0 / sim.dt)));
+    CHECK_NEAR(sim.world.get<Health>(mob).current, max, 1e-9);
+    sim.world.get<Transform>(player).position = sim.positionOf(mob) + Vec2{150, 0};
+    sim.tick(10);
+    CHECK_EQ(sim.brainOf(mob).target, player);
+    CHECK(sim.velocityOf(mob).x > 0.0);
+    CHECK((computeEntityState(sim.world, mob, sim.now) & net::StateChasing) != 0);
+}

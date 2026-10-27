@@ -246,6 +246,21 @@ struct DropProjectileSpec {
     double lifetimeMillis = 0;
 };
 
+/// A mob that mends itself when it is low (`recover`): the starfish's. Once
+/// its health falls below `belowFraction` of its max it heals back to full,
+/// and runs from what it was fighting until it is there.
+///
+/// The rate is fixed on the tick it starts -- the missing health over
+/// `durationMillis` -- so a starfish nobody touches is whole again in exactly
+/// that long, and a hit taken on the way costs it time rather than being
+/// quietly healed along with the rest. Every heal passes the heal gate, so a
+/// dandelion's lockout stops it for as long as the lockout runs.
+struct RecoverSpec {
+    bool present = false;
+    double belowFraction = 0;
+    double durationMillis = 0;
+};
+
 /// A ring of petals a mob carries, as a flower does.
 struct PetalRingSpec {
     bool present = false;
@@ -696,6 +711,7 @@ struct MobConfig {
     LightningSpec lightning;
     WebSpec web;
     DropProjectileSpec dropProjectile;
+    RecoverSpec recover;
 
     /// Poison the mob's touch applies. Stored per second, converted from the
     /// per-millisecond figure the JSON uses.

@@ -665,6 +665,11 @@ private:
         bool laysWeb = false;
         /// Drops a petal behind it on a clock. See DropProjectileSpec.
         bool dropsProjectile = false;
+        /// Mends itself below a health line, and runs while it does. See
+        /// RecoverSpec; the two figures are the spec's own.
+        bool recovers = false;
+        double recoverBelow = 0;
+        double recoverMillis = 0;
         bool valid = false;
     };
 
@@ -691,6 +696,13 @@ private:
     /// is due: a shot born at a standstill that lies where it fell for the
     /// spec's lifetime. Called beside layWeb, for the same reasons.
     void dropProjectile(World& world, Entity self, double nowMillis, CommandBuffer& commands);
+
+    /// A `recover` mob's mending: starts it once health falls under the line,
+    /// lands this tick's share through the heal gate, and ends it at full.
+    /// Every tick, LOD stride or not -- a heal that ran at a fifth of its rate
+    /// whenever the mob was far from a flower would take as long as the stride
+    /// says rather than as long as the config does.
+    void recover(World& world, Entity self, const Drive& drive, double nowMillis, double dt);
 
     /// Whether this mob runs its brain on this tick.
     ///
@@ -758,6 +770,11 @@ private:
                          const Body& body, MobAi& ai, const Drive& drive, double chaseSpeed,
                          double nowMillis, double dt, Vec2& desired, Vec2& facing,
                          CommandBuffer& commands);
+    /// A mending mob's answer to `ai.target`: straight away from it at
+    /// `chaseSpeed`, with no attack. Reports `desired` as steerAggressive does;
+    /// false when the target has no position, with the target cleared.
+    bool fleeTarget(World& world, const Transform& transform, MobAi& ai, double chaseSpeed,
+                    Vec2& desired);
     /// The chase itself, once `ai.target` is settled: closes on it at
     /// `chaseSpeed` (crab, bee weave, shooter standoff and volley included)
     /// and reports `desired` and `facing` as steerAggressive does. False when

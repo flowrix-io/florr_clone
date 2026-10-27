@@ -737,6 +737,9 @@ struct MobAi {
     double crabHeading = 0;
     /// Set while the mob is fleeing after being hurt (passive mobs).
     double fleeUntilMillis = 0;
+    /// Health a mob with a `recover` block is mending per second, and runs
+    /// from its target while it does; zero while it is not. See RecoverSpec.
+    double recoverPerSecond = 0;
     /// When this mob last let a volley go. Kept apart from `lastAttackMillis`,
     /// which paces contact damage: a hornet shoots on its config cooldown the
     /// whole way in and touches on a different clock once it arrives.
