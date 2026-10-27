@@ -229,15 +229,17 @@ struct Sim {
         totalPromotions += s.promotions;
     }
 
-    /// The intent phase alone. Chain geometry and facing are invariants that
-    /// hold BETWEEN intent and movement, so asserting them needs a tick that
-    /// stops there.
+    /// The intent phase alone, with the chain placement the server runs after
+    /// movement -- there is no movement here, so the two meet the same bodies.
+    /// Facing is an invariant that holds BETWEEN intent and movement, so
+    /// asserting it needs a tick that stops there.
     void tickIntent(int count = 1) {
         for (int i = 0; i < count; ++i) {
             rebuildGrid();
             refreshActive();
             CommandBuffer commands(world);
             ai.run(world, terrain, grid, active, now, dt, commands);
+            ai.placeChains(world, terrain, active);
             accumulate();
             commands.flush();
             now += net::kTickMillis;
@@ -254,8 +256,10 @@ struct Sim {
             movers.each([&](Entity, Transform& transform, Motion& motion) {
                 transform.position += motion.velocity * dt;
             });
-            // After the stand-in movement, which is where GameServer calls it:
-            // a seat is a rigid offset from a body that has just moved.
+            // After the stand-in movement, which is where GameServer calls
+            // both: a segment and a seat are placed off a body that has just
+            // moved.
+            ai.placeChains(world, terrain, active);
             ai.tickPetalRings(world, commands);
             commands.flush();
             now += net::kTickMillis;
@@ -626,7 +630,7 @@ TEST(a_wall_drops_a_hostile_target_only_after_a_second_and_a_half) {
 
     {
         Sim sim;
-        for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+        for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Solid);
         const Entity mob = sim.spawnMob("spider", kOrigin);
         const Entity player = sim.spawnPlayer(inSight);
         sim.tickIntent(2);
@@ -658,7 +662,7 @@ TEST(a_wall_drops_a_hostile_target_only_after_a_second_and_a_half) {
     {
         // Seen again part way through, and the grace starts over.
         Sim sim;
-        for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+        for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Solid);
         const Entity mob = sim.spawnMob("spider", kOrigin);
         const Entity player = sim.spawnPlayer(inSight);
         sim.tickIntent(2);
@@ -677,7 +681,7 @@ TEST(a_neutral_mob_chases_what_hurt_it_through_a_wall) {
     // gardn's neutral AI has no lose clause: neither range nor walls end it.
     Sim sim;
     const int wallTx = Terrain::toTileCoord(kOrigin.x) + 1;
-    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Solid);
     const Entity mob = sim.spawnMob("worker_ant", kOrigin);
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{-150, 0});
     sim.hurt(mob, player);
@@ -1612,7 +1616,7 @@ TEST(a_pet_behind_a_wall_is_stuck_rather_than_teleported_or_recalled) {
     CHECK(contentReady());
     Sim sim;
     const int wallTx = Terrain::toTileCoord(kOrigin.x) + 3;
-    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Solid);
     const Entity owner = sim.spawnPlayer(kOrigin);
     const Vec2 start = kOrigin + Vec2{kViewportWidth, 0};
     const Entity pet = sim.spawnMob("soldier_ant", start);
@@ -1802,7 +1806,7 @@ TEST(a_mob_does_not_aggro_through_a_wall) {
     Sim sim;
     // A solid column of tiles between the two, spanning the mob's whole range.
     const int wallTx = Terrain::toTileCoord(kOrigin.x) + 1;
-    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Wall);
+    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Solid);
 
     const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
     sim.spawnPlayer(Terrain::tileCenter(wallTx + 1, Terrain::toTileCoord(kOrigin.y)));
@@ -2797,9 +2801,11 @@ TEST(a_fast_chaser_weaves_as_wide_as_a_slow_one) {
 TEST(a_bee_ai_idle_stinger_closes_on_a_flower_straight) {
     CHECK(contentReady());
     // Same cruise off a target as the fly, but the approach is the line its
-    // shot is aimed along. Outside the hornet's standoff, so it keeps closing
-    // and there is a velocity to measure.
-    CHECK(chaseSplit("hornet", insideAggroOutsideStandoff("hornet")).widestSwing < 1e-6);
+    // shot is aimed along. Outside the wasp's standoff, so it keeps closing
+    // and there is a velocity to measure. The wasp and not the hornet: the
+    // hornet's flower stands inside the ease band, where it starts to circle
+    // (`hornet_ai`).
+    CHECK(chaseSplit("wasp", insideAggroOutsideStandoff("wasp")).widestSwing < 1e-6);
 }
 
 // ---------------------------------------------------------------------------
@@ -2809,14 +2815,15 @@ TEST(a_bee_ai_idle_stinger_closes_on_a_flower_straight) {
 TEST(a_shooter_closes_to_its_standoff_and_stops_there) {
     CHECK(contentReady());
     Sim sim;
-    const Entity hornet = sim.spawnMob("hornet", kOrigin);
-    // Inside the hornet's aggro range and outside the gap it wants to hold, so
+    const Entity wasp = sim.spawnMob("wasp", kOrigin);
+    // A wasp, because a hornet circles where it holds (`hornet_ai`, below).
+    // Inside the wasp's aggro range and outside the gap it wants to hold, so
     // the only way it reaches the standoff is by walking there.
-    const double start = insideAggroOutsideStandoff("hornet");
+    const double start = insideAggroOutsideStandoff("wasp");
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{start, 0});
 
-    const std::uint16_t index = content().mobIndex("hornet");
-    const double radius = sim.world.get<Body>(hornet).radius;
+    const std::uint16_t index = content().mobIndex("wasp");
+    const double radius = sim.world.get<Body>(wasp).radius;
     // A common shooter's reach IS its authored `distance` (see
     // kProjectileReachReferenceScale), which is what makes this readable.
     const double standoff = shooterStandoff(content().mob(index).projectile.distance, radius,
@@ -2825,21 +2832,65 @@ TEST(a_shooter_closes_to_its_standoff_and_stops_there) {
 
     sim.tick(200);
     // It closed...
-    CHECK(sim.gap(hornet, player) < start);
+    CHECK(sim.gap(wasp, player) < start);
     // ...to the gap and no further. A tick of travel of slack either way,
     // because the mob stops on the tick it arrives rather than mid-step.
     const double chase = content().mobStats(index, Rarity::Common).chaseSpeed;
     const double step = 2.0 * chase * net::kTickSeconds;
-    CHECK(sim.gap(hornet, player) > standoff - step);
-    CHECK(sim.gap(hornet, player) < standoff + step + kProjectileMaxRecoil);
+    CHECK(sim.gap(wasp, player) > standoff - step);
+    CHECK(sim.gap(wasp, player) < standoff + step + kProjectileMaxRecoil);
     // And it has SETTLED: nothing here strafes, and what is left of its travel
     // is the mob re-closing the few units its own recoil opens under it each
     // volley -- inside the ease band that is a crawl, not a mob still closing.
-    CHECK(sim.velocityOf(hornet).length() <=
+    CHECK(sim.velocityOf(wasp).length() <=
           chase * kProjectileMaxRecoil / kShooterStandoffEase + 1e-9);
     // Holding is not disengaging -- it still has the flower and is still
     // shooting at it from out there.
-    CHECK(sim.brainOf(hornet).target != NULL_ENTITY);
+    CHECK(sim.brainOf(wasp).target != NULL_ENTITY);
+    CHECK(shotCount(sim) > 0);
+}
+
+TEST(a_hornet_circles_its_flower_where_it_holds_instead_of_hanging_still) {
+    CHECK(contentReady());
+    const std::uint16_t index = content().mobIndex("hornet");
+    CHECK(content().mob(index).hornetStrafe);
+    CHECK(!content().mob(content().mobIndex("wasp")).hornetStrafe);
+
+    Sim sim;
+    const Entity hornet = sim.spawnMob("hornet", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{insideAggroOutsideStandoff("hornet"), 0});
+    const double radius = sim.world.get<Body>(hornet).radius;
+    const double standoff = shooterStandoff(content().mob(index).projectile.distance, radius,
+                                            kPlayerBaseRadius);
+    const double chase = content().mobStats(index, Rarity::Common).chaseSpeed;
+
+    // Ten seconds: long enough to go a good way round the flower.
+    const Vec2 startBearing = sim.positionOf(hornet) - sim.positionOf(player);
+    double sideways = 0.0;
+    for (int i = 0; i < 300; ++i) {
+        sim.tick();
+        const Vec2 toFlower = sim.positionOf(player) - sim.positionOf(hornet);
+        const double gap = toFlower.length();
+        // It keeps its range the whole way round: never inside a tick's
+        // travel of the ring, never out past what its missiles carry.
+        if (i >= 60) {
+            CHECK(gap > standoff - 2.0 * chase * net::kTickSeconds);
+            CHECK(gap < content().mob(index).projectile.distance + kPlayerBaseRadius);
+            // gardn's {-y, x}: the bearing turned a quarter, one way only.
+            const Vec2 side{-toFlower.y / gap, toFlower.x / gap};
+            sideways = std::max(sideways, sim.velocityOf(hornet).x * side.x +
+                                              sim.velocityOf(hornet).y * side.y);
+            CHECK(sim.velocityOf(hornet).x * side.x + sim.velocityOf(hornet).y * side.y > -1.0);
+        }
+    }
+    // Circling at gardn's fifth of its chase speed, give or take the ease band.
+    CHECK(sideways > 0.5 * kHornetStrafeScale * chase);
+    CHECK(sideways <= kHornetStrafeScale * chase + 1e-6);
+    // And it has gone round the flower, not sat at one point beside it.
+    const Vec2 endBearing = sim.positionOf(hornet) - sim.positionOf(player);
+    CHECK(std::abs(angleDelta(startBearing.angle(), endBearing.angle())) > 0.5);
+    // Still fighting: the circling is how it holds, not a disengagement.
+    CHECK_EQ(sim.brainOf(hornet).target, player);
     CHECK(shotCount(sim) > 0);
 }
 
@@ -3627,4 +3678,210 @@ TEST(a_mending_starfish_runs_from_the_flower_and_hunts_again_once_whole) {
     CHECK_EQ(sim.brainOf(mob).target, player);
     CHECK(sim.velocityOf(mob).x > 0.0);
     CHECK((computeEntityState(sim.world, mob, sim.now) & net::StateChasing) != 0);
+}
+
+// ---------------------------------------------------------------------------
+// The centipede crawl (`centipede_ai`)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A centipede head as the chain pass sees one: a mob at the front of a chain.
+/// Its body is left off -- the head alone is what steers.
+Entity spawnHead(Sim& sim, const char* id, Vec2 at) {
+    const Entity head = sim.spawnMob(id, at);
+    link(sim, head, NULL_ENTITY, 0.0);
+    return head;
+}
+
+double strollOf(const char* id) {
+    return content().mobStats(content().mobIndex(id), Rarity::Common).speed * kMobWanderSpeedScale;
+}
+
+} // namespace
+
+TEST(an_idle_centipede_crawls_without_stopping_on_a_heading_that_bends_both_ways) {
+    CHECK(contentReady());
+    for (const char* id : {"centipede", "centipede_body", "desert_centipede",
+                           "desert_centipede_body", "evil_centipede", "evil_centipede_body"}) {
+        CHECK(content().mob(content().mobIndex(id)).centipedeCrawl);
+    }
+    Sim sim;
+    const Entity head = spawnHead(sim, "centipede", kOrigin);
+    const double stroll = strollOf("centipede");
+    CHECK(stroll > 0.0);
+
+    // A minute: a dozen flips of the bend on average.
+    double last = sim.angleOf(head);
+    int left = 0;
+    int right = 0;
+    for (int i = 0; i < static_cast<int>(60.0 / sim.dt); ++i) {
+        sim.tick();
+        // Never a stop: every tick at the stroll a chain head walks at.
+        CHECK_NEAR(sim.velocityOf(head).length(), stroll, 1e-9);
+        // And never a jink: every tick bends gardn's 0.2 rad/s one way or the
+        // other, and the head points along where it is going.
+        const double turn = angleDelta(last, sim.angleOf(head));
+        CHECK_NEAR(std::abs(turn), kCentipedeTurnRate * sim.dt, 1e-9);
+        CHECK_NEAR(angleDelta(sim.velocityOf(head).angle(), sim.angleOf(head)), 0.0, 1e-9);
+        if (turn > 0.0) ++left;
+        else ++right;
+        last = sim.angleOf(head);
+    }
+    CHECK(left > 0);
+    CHECK(right > 0);
+}
+
+TEST(a_crawling_centipede_turns_off_a_wall_instead_of_grinding_into_it) {
+    CHECK(contentReady());
+    Sim sim;
+    const int wallTx = Terrain::toTileCoord(kOrigin.x) + 1;
+    for (int ty = 0; ty < kTilesPerAxis; ++ty) sim.terrain.setTile(wallTx, ty, Tile::Solid);
+    const double face = wallTx * kTileSize;
+    // Facing straight at the wall, 200-odd units off it.
+    const Entity head = spawnHead(sim, "centipede", kOrigin);
+    CHECK(face - kOrigin.x > 100.0);
+
+    // The stand-in movement walks through walls, so a head that did not turn
+    // would be found inside this one.
+    bool turned = false;
+    for (int i = 0; i < 300 && !turned; ++i) {
+        sim.tick();
+        turned = sim.velocityOf(head).x < 0.0;
+    }
+    CHECK(turned);
+    CHECK(sim.positionOf(head).x < face);
+    CHECK(sim.positionOf(head).x > face - kWallProbeDistance - 2.0 * strollOf("centipede") * sim.dt);
+}
+
+TEST(a_desert_centipede_turns_on_what_hurt_it_and_a_garden_one_never_does) {
+    CHECK(contentReady());
+    // gardn: tick_centipede_neutral for the desert one at every tier,
+    // tick_centipede_passive for the garden one.
+    const std::uint16_t desert = content().mobIndex("desert_centipede");
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        CHECK(content().mobStats(desert, clampRarity(t)).ai == AiKind::Neutral);
+    }
+    CHECK(content().mobStats(content().mobIndex("centipede"), Rarity::Common).ai ==
+          AiKind::Passive);
+
+    {
+        Sim sim;
+        const Entity head = spawnHead(sim, "desert_centipede", kOrigin);
+        const Entity player = sim.spawnPlayer(kOrigin + Vec2{0, 300});
+        sim.tickIntent(3);
+        CHECK_EQ(sim.brainOf(head).target, NULL_ENTITY);   // a bare flower is walked past
+        sim.hurt(head, player);
+        sim.tickIntent();
+        CHECK_EQ(sim.brainOf(head).target, player);
+        const double chase = content().mobStats(desert, Rarity::Common).chaseSpeed;
+        CHECK_NEAR(sim.velocityOf(head).y, chase, 1e-9);
+
+        // Its target gone, it crawls on from where the chase pointed it
+        // rather than snapping back to its old heading.
+        sim.world.add<Dead>(player, Dead{head});
+        sim.tickIntent();
+        CHECK_EQ(sim.brainOf(head).target, NULL_ENTITY);
+        CHECK_NEAR(sim.velocityOf(head).length(), strollOf("desert_centipede"), 1e-9);
+        CHECK(std::sin(sim.velocityOf(head).angle()) > 0.999);
+    }
+    {
+        Sim sim;
+        const Entity head = spawnHead(sim, "centipede", kOrigin);
+        const Entity player = sim.spawnPlayer(kOrigin + Vec2{0, 300});
+        sim.hurt(head, player);
+        sim.tickIntent(5);
+        CHECK_EQ(sim.brainOf(head).target, NULL_ENTITY);
+        CHECK_NEAR(sim.velocityOf(head).length(), strollOf("centipede"), 1e-9);
+    }
+}
+
+TEST(a_centipedes_beads_touch_and_a_pushed_one_swings_about_its_joint) {
+    CHECK(contentReady());
+    // gardn's Segment.cc: a bead sits its leader's radius plus its own plus
+    // 0.01 behind it -- touching. The leech keeps the tube its art is drawn as.
+    for (const char* id : {"centipede", "desert_centipede", "evil_centipede"}) {
+        const MobConfig& config = content().mob(content().mobIndex(id));
+        CHECK(config.gardnChain);
+        CHECK_NEAR(config.segmentSpacing(35.0, 30.0), 65.0 + kGardnSegmentGap, 1e-12);
+    }
+    const MobConfig& leech = content().mob(content().mobIndex("leech"));
+    CHECK(!leech.gardnChain);
+    CHECK_NEAR(leech.segmentSpacing(35.0, 30.0), 30.0 * kSegmentSpacingPerRadius, 1e-12);
+
+    Sim sim;
+    const Entity head = spawnHead(sim, "centipede", kOrigin);
+    const double radius = sim.world.get<Body>(head).radius;
+    const double spacing = content().mob(content().mobIndex("centipede")).segmentSpacing(radius, radius);
+    const Entity bead = sim.spawnMob("centipede_body", kOrigin - Vec2{spacing, 0.0});
+    link(sim, bead, head, spacing);
+    const Entity tail = sim.spawnMob("centipede_body", kOrigin - Vec2{2.0 * spacing, 0.0});
+    link(sim, tail, bead, spacing);
+
+    // Something shoves the middle bead sideways -- a flower, a petal, another
+    // bead -- before the chain is placed. It keeps its spacing but not its old
+    // line: the body bends at the joint, and the tail is drawn after it.
+    sim.world.get<Transform>(bead).position += Vec2{0.0, 30.0};
+    sim.tickIntent();
+    CHECK_NEAR(sim.gap(bead, head), spacing, 1e-9);
+    CHECK_NEAR(sim.gap(tail, bead), spacing, 1e-9);
+    CHECK(sim.positionOf(bead).y > kOrigin.y + 20.0);
+    CHECK(sim.positionOf(tail).y > kOrigin.y + 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// The digger (`digger_ai`)
+// ---------------------------------------------------------------------------
+
+TEST(an_idle_digger_roams_one_heading_for_five_seconds_then_picks_another) {
+    CHECK(contentReady());
+    const std::uint16_t index = content().mobIndex("digger");
+    CHECK(content().mob(index).diggerAi);
+    const double speed = content().mobStats(index, Rarity::Common).speed;
+
+    Sim sim;
+    const Entity digger = sim.spawnMob("digger", kOrigin);
+    sim.tick();
+    const double heading = sim.brainOf(digger).wanderAngle;
+    const int roam = static_cast<int>(kDiggerRoamMillis / net::kTickMillis);
+    for (int i = 1; i < roam - 1; ++i) {
+        sim.tick();
+        CHECK_NEAR(sim.brainOf(digger).wanderAngle, heading, 1e-12);
+    }
+    // Pushing the whole way, so it is going at its full speed by now -- not
+    // stopped between hops, as a hopping mob would be some of the time.
+    CHECK_NEAR(sim.velocityOf(digger).length(), speed, 0.01 * speed);
+    CHECK_NEAR(angleDelta(sim.velocityOf(digger).angle(), heading), 0.0, 1e-3);
+
+    sim.tick(3);
+    CHECK(std::abs(angleDelta(sim.brainOf(digger).wanderAngle, heading)) > 1e-9);
+}
+
+TEST(a_digger_fights_until_its_last_tenth_then_runs_from_its_target) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity digger = sim.spawnMob("digger", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{300, 0});
+    const double max = sim.world.get<Health>(digger).max;
+
+    // At a tenth and a bit it is still fighting.
+    sim.world.get<Health>(digger).current = 0.11 * max;
+    sim.tickIntent(30);
+    CHECK_EQ(sim.brainOf(digger).target, player);
+    CHECK(sim.velocityOf(digger).x > 0.0);
+    CHECK(!sim.brainOf(digger).fleeing);
+    CHECK((computeEntityState(sim.world, digger, sim.now) & net::StateChasing) != 0);
+
+    // At a tenth it turns tail, at the speed it was chasing at, and keeps the
+    // target only to run from it.
+    sim.world.get<Health>(digger).current = 0.1 * max;
+    sim.tickIntent(30);
+    CHECK_EQ(sim.brainOf(digger).target, player);
+    CHECK(sim.brainOf(digger).fleeing);
+    const double chase = content().mobStats(content().mobIndex("digger"), Rarity::Common).chaseSpeed;
+    CHECK_NEAR(sim.velocityOf(digger).x, -chase, 0.01 * chase);
+    CHECK((computeEntityState(sim.world, digger, sim.now) & net::StateChasing) == 0);
+    const double before = sim.gap(digger, player);
+    sim.tick(30);
+    CHECK(sim.gap(digger, player) > before + 100.0);
 }

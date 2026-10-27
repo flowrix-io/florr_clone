@@ -6,7 +6,7 @@
 // and nothing else: what is at a point, where does a circle end up once it is
 // out of the walls, and is there a clear straight line between two points.
 //
-// Every accessor is TOTAL: a read outside the grid answers Tile::Wall. That is
+// Every accessor is TOTAL: a read outside the grid answers Tile::Solid. That is
 // what closes the world -- no system special-cases the map edge, it is simply
 // wall all the way out -- and it means resolveCircle keeps a body inside the
 // map without a single bounds check of its own.
@@ -18,25 +18,26 @@
 // of that, and the difference between them matters at every call site:
 //
 //   the COARSE grid   one Tile per cell: does this cell hold ANY blocking
-//                     shape, and of what kind. What the minimap paints, what
-//                     the bots' flow field walks, what spawn placement rejects
-//                     conservatively, and the only thing that travels over the
-//                     wire.
+//                     shape -- Open or Solid, nothing more. What the bots'
+//                     flow field walks, what spawn placement rejects
+//                     conservatively, what the minimap falls back to, and the
+//                     only thing that travels over the wire.
 //   the SHAPES        the exact geometry, per realm, beside the grid. What
 //                     blocked(), resolveWall(), resolveCircle(), the segment
 //                     tests, hasLineOfSight() and inWater() answer from.
 //
-// A realm with no shape store -- a generated map, a grid a test wrote with
-// setTile(), a client whose data directory has no map for the realm it is in --
-// falls back to the whole 256-unit square of every blocking cell, which is the
-// old behaviour and is conservative: it blocks a little more than the art does,
-// never less.
+// A realm with no shape store -- a grid a test wrote with setTile(), a client
+// whose data directory has no map for the realm it is in -- falls back to the
+// whole 256-unit square of every Solid cell, which is conservative: it blocks a
+// little more than the art does, never less. Such a cell is never water: water
+// is a kind of SHAPE (the tileset's `water` tag), and a cell with no shapes has
+// none to be.
 //
 // A layer may also REMOVE collision: `negate_collision` cancels, where it has
 // a tile, what the layers below it contributed (tiled_map.h). That is a
 // bridge, and it is RESOLVED WHEN THE STORE IS BUILT -- the cancelled shapes
 // are never filed -- so both views above answer it without knowing it
-// happened, and a decked cell is Ground in the coarse grid, empty in the shape
+// happened, and a decked cell is Open in the coarse grid, empty in the shape
 // store and dry to inWater(). The one case that survives into a query is a
 // negating tile whose shapes cover only PART of its cell, which is the one
 // thing this cannot resolve away and the one the load report warns about; see
@@ -60,45 +61,33 @@ namespace flix {
 
 class TiledMap;
 
-/// Tile kinds a biome palette has a colour for, Ground through Stone: the
-/// size of a per-tile-kind table. Tile::Block, which nothing produces, is not
-/// one of them, and tileColor() paints it as ground.
-inline constexpr int kTileKindCount = 5;
-
-/// The character of one of the nine map sections: what the section is called,
-/// and what the renderer paints each tile kind as inside it. The same Tile is
-/// a different colour in the Garden and in Hel, which is the whole point of a
-/// biome here -- the grid stores geometry, the biome stores mood.
+/// The character of one of the nine sections: what it is called, and the
+/// colour of its ground. The maze paints its floor in the ground of the
+/// section it borrows (world_renderer.cpp); /biome names the sections.
 struct Biome {
     const char* name;
-    std::array<std::uint32_t, kTileKindCount> tileColors;   ///< 0xRRGGBB, indexed by Tile
+    std::uint32_t ground;   ///< 0xRRGGBB
 };
 
 /// Row-major, matching sectionAt(): top-left is 0, centre is 4.
 inline constexpr std::array<Biome, kSectionCount> kBiomes = {{
-    // name        ground      wall        water       sand        stone
-    {"Garden",   {{0x1EA761u, 0x7C7C7Cu, 0x4AA7F7u, 0xE8DCA6u, 0x9AA0A6u}}},
-    {"Desert",   {{0xD9CFA4u, 0xB08A55u, 0x4AA7F7u, 0xEAE4D0u, 0xC0A878u}}},
-    {"Hel",      {{0x8F0606u, 0x4E0303u, 0xE2591Bu, 0xB4634Bu, 0x6B2020u}}},
-    {"Ocean",    {{0x2F9E62u, 0x6E8FA8u, 0x2E86D8u, 0xE8DCA6u, 0x8FA6B8u}}},
-    {"Ant Hell", {{0xA8784Fu, 0x6B4930u, 0x4AA7F7u, 0xC8A375u, 0x8E6140u}}},
-    {"Jungle",   {{0x15A12Fu, 0x0B6B1Du, 0x2E8B7Fu, 0xCFC08Au, 0x5E7A4Au}}},
-    {"Sewers",   {{0x6B4A18u, 0x3F2200u, 0x5C7A2Eu, 0x8A7040u, 0x633500u}}},
-    {"Computer", {{0x0F3D2Au, 0x1B6E4Au, 0x00D885u, 0x1A2A24u, 0x101418u}}},
-    {"Unknown",  {{0x1A1730u, 0x2B2740u, 0x3A2E5Cu, 0x2A2440u, 0x231F38u}}},
+    {"Garden", 0x1EA761u},
+    {"Desert", 0xD9CFA4u},
+    {"Hel", 0x8F0606u},
+    {"Ocean", 0x2F9E62u},
+    {"Ant Hell", 0xA8784Fu},
+    {"Jungle", 0x15A12Fu},
+    {"Sewers", 0x6B4A18u},
+    {"Computer", 0x0F3D2Au},
+    {"Unknown", 0x1A1730u},
 }};
 
 /// The biome of a section index, or a neutral one for -1 (outside the map),
 /// so a renderer that walks past the edge still has something to paint.
 inline const Biome& biomeOf(int section) {
-    static const Biome kOutside{"Void", {{0x14171Cu, 0x14171Cu, 0x14171Cu, 0x14171Cu, 0x14171Cu}}};
+    static const Biome kOutside{"Void", 0x14171Cu};
     if (section < 0 || section >= kSectionCount) return kOutside;
     return kBiomes[static_cast<std::size_t>(section)];
-}
-
-inline std::uint32_t tileColor(int section, Tile tile) {
-    const int kind = static_cast<int>(tile);
-    return biomeOf(section).tileColors[static_cast<std::size_t>(kind < kTileKindCount ? kind : 0)];
 }
 
 // ---------------------------------------------------------------------------
@@ -308,29 +297,14 @@ public:
     /// rather than the test loosened.
     static constexpr double kCenterPathInflation = 0.5;
 
-    /// An ungenerated Terrain is all Ground: legal, walkable, and useless as a
-    /// map. Systems can run against one, which is what tests want.
+    /// A fresh Terrain is all Open: legal, walkable, and useless as a map.
+    /// Systems can run against one, which is what tests want.
     ///
     /// The overworld grid starts at the historical size (kTilesPerAxis square)
     /// so a harness that never loads a map gets the world it always did. Every
     /// other world realm starts EMPTY, which reads as solid everywhere: a
     /// realm nobody staged a map for is not somewhere a body can be.
     Terrain();
-
-    /// Builds the legacy procedural map for `seed`. Equal seeds give
-    /// byte-identical grids; production instead loads an authored map below.
-    /// Nothing outside the tests calls this any more: they keep it as a large,
-    /// varied, fully connected fixture for the collision, segment, spawn and
-    /// wire tests.
-    ///
-    /// Ends by flood-filling from the spawn and carving a corridor to anything
-    /// the noise walled off, so the postcondition is always isConnected().
-    ///
-    /// Reproducible across machines only as far as the floating point is: two
-    /// toolchains can land the odd tile on the other side of a threshold
-    /// (-ffp-contract=off on both would close that), which no test depends on
-    /// -- each compares grids generated by one build.
-    void generate(std::uint64_t seed);
 
     /// Loads a map's collision: the authored SHAPES, and the coarse grid over
     /// them. A map is a Tiled `.tmj` and nothing else; both are DERIVED from
@@ -462,15 +436,13 @@ public:
     /// do -- they answer for themselves -- so this asks only about maps.
     bool hasMap(Realm realm) const;
 
-    std::uint64_t seed() const { return seed_; }
-
     // -- reads --------------------------------------------------------------
 
-    /// Off the grid -- and every tile of a realm with no map -- reads as Wall,
+    /// Off the grid -- and every tile of a realm with no map -- reads as Solid,
     /// which is what keeps a body inside a map whatever its dimensions are.
     Tile atTile(int tx, int ty, Realm realm = Realm::Overworld) const {
         const Grid& g = grid(realm);
-        if (tx < 0 || ty < 0 || tx >= g.cols || ty >= g.rows) return Tile::Wall;
+        if (tx < 0 || ty < 0 || tx >= g.cols || ty >= g.rows) return Tile::Solid;
         return static_cast<Tile>(
             g.tiles[static_cast<std::size_t>(ty) * static_cast<std::size_t>(g.cols) +
                     static_cast<std::size_t>(tx)]);
@@ -487,7 +459,7 @@ public:
 
     /// Whether a point is inside something solid, in the given realm.
     ///
-    /// Overworld: a blocking tile. Maze: wall, fillets included -- the
+    /// Overworld: a blocking shape. Maze: wall, fillets included -- the
     /// reference's wander probe saw open ground there because its wall grid
     /// simply had no entry, and the maze here answers for itself instead.
     /// Arena: outside the ring, which is the arena's one wall.
@@ -527,19 +499,18 @@ public:
 
     /// Which of the nine sections a point is in, or -1 outside the map.
     ///
-    /// The section grid is the legacy procedural world's palette: which
-    /// colour the maze's ground borrows, plus the overworld-only /biome census
-    /// and whether a boss announcement says it spawned "somewhere". What lives
-    /// where is a mob group's business (MobGroup, config.h), not a corner of
-    /// the map's.
+    /// The section grid is a fixed nine-square of names and ground colours:
+    /// which colour the maze's ground borrows, plus the overworld-only /biome
+    /// census and whether a boss announcement says it spawned "somewhere".
+    /// What lives where is a mob group's business (MobGroup, config.h), not a
+    /// corner of the map's.
     int sectionAt(Vec2 p) const { return flix::sectionAt(p); }
     int sectionOfTile(int tx, int ty) const { return flix::sectionAt(tileCenter(tx, ty)); }
 
     /// A realm's fallback standing point, for a caller with nowhere better to
-    /// go: the connectivity root on a generated map, where it is guaranteed
-    /// walkable, and on an authored one the open cell nearest its middle (the
-    /// middle itself when every cell holds a shape). Players are placed by the
-    /// map's doors; see setTiles().
+    /// go: the open cell nearest the map's middle (the middle itself when every
+    /// cell holds a shape). Players are placed by the map's doors; see
+    /// setTiles().
     Vec2 spawnPoint(Realm realm = Realm::Overworld) const;
 
     // -- collision ----------------------------------------------------------
@@ -629,22 +600,17 @@ public:
     /// having left it.
     bool hasLineOfSight(Vec2 a, Vec2 b, Realm realm, int sampleCount = kLineOfSightSamples) const;
 
-    /// A walkable point within `radius` of `around`, avoiding water when it
-    /// can. Falls back to the nearest open tile, so it always returns
-    /// something a body can stand in.
+    /// A walkable point within `radius` of `around`. Falls back to the nearest
+    /// open tile, so it always returns something a body can stand in.
     Vec2 findOpenSpawn(Rng& rng, Vec2 around, double radius, Realm realm) const;
 
     /// The nearest tile a body can stand in, searched outward from `p`. False
     /// when everything within the search bound is solid.
     bool nearestOpenTile(Vec2 p, int& outTx, int& outTy, Realm realm = Realm::Overworld) const;
 
-    // -- invariants ---------------------------------------------------------
+    // -- statistics ---------------------------------------------------------
 
-    /// True when every non-blocking tile is reachable from the spawn. generate()
-    /// guarantees it; setTile() can break it, which is why it is public.
-    bool isConnected(Realm realm = Realm::Overworld) const;
-
-    /// Passable tile count, for tests and map statistics.
+    /// Open tile count, for tests and map statistics.
     int openTileCount(Realm realm = Realm::Overworld) const;
 
     // -- authoring ----------------------------------------------------------
@@ -793,13 +759,14 @@ private:
     ///
     /// `cols`/`rows` are the map's own dimensions, so two realms may be
     /// different shapes. An EMPTY grid (both zero) is a realm nothing was
-    /// staged for: every read off it is Wall, so no body can be there and no
+    /// staged for: every read off it is Solid, so no body can be there and no
     /// query has to special-case it.
     struct Grid {
         int cols = 0;
         int rows = 0;
         std::vector<std::uint8_t> tiles;
-        /// The connectivity root generate() chose, as a tile index.
+        /// Where spawnPoint() stands, as a tile index: the open cell nearest
+        /// the middle of the map.
         int spawnTile = 0;
     };
 
@@ -813,9 +780,8 @@ private:
     //
     // Each takes the cell it is asked about and answers from that cell's
     // authored shapes, falling back to the whole 256-unit square when the cell
-    // has none but its coarse Tile blocks. That fallback is what keeps a
-    // generated map, a grid a test wrote with setTile(), and a client with no
-    // map file working unchanged.
+    // has none but its coarse Tile is Solid. That fallback is what keeps a grid
+    // a test wrote with setTile(), and a client with no map file, working.
     //
     // The callers pass IN-GRID cells only; what a point off the grid is (wall
     // for gameplay, air for the sight test) is the caller's rule, not a cell's.
@@ -860,16 +826,6 @@ private:
     /// wire.
     bool install(Realm realm, std::vector<std::uint8_t> tiles, int cols, int rows);
 
-    void generateSections(Rng& rng);
-    void carveAntHell(Rng& rng);
-    void placeCircuitChips(Rng& rng);
-    int chooseGardenSpawn() const;
-    void carveDisc(Vec2 center, double radius, Tile t);
-    void carveCorridor(int fromTx, int fromTy, int toTx, int toTy, int halfWidth, Tile t);
-    /// Flood-fills from the spawn and digs the shortest wall-crossing route to
-    /// every region the fill missed.
-    void connectAll();
-
     /// One grid per realm. The arena's and the maze's slots stay empty: those
     /// two realms are geometry, not tiles, and every query dispatches to them
     /// before it ever looks in here.
@@ -877,7 +833,6 @@ private:
     /// One shape store per realm, empty until a map is loaded into it. The
     /// maze and the arena never have one -- they are geometry of their own.
     std::array<ShapeGrid, kMaxRealms> shapes_;
-    std::uint64_t seed_ = 0;
 };
 
 // ---------------------------------------------------------------------------

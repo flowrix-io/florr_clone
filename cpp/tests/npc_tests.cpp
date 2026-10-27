@@ -378,7 +378,7 @@ TEST(the_shipped_oracle_stands_on_open_ground_where_it_was_drawn) {
 TEST(an_npc_meets_walls_with_its_centre_not_its_body) {
     CHECK(ensureShippedContent());
     Terrain terrain;
-    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Wall);
+    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Solid);
     const double face = 10.0 * kTileSize;
     World world;
     NpcSystem npcs;
@@ -431,7 +431,7 @@ TEST(a_cruising_npc_flies_up_to_a_wall_with_its_centre) {
     // measured from the body it could never come nearer than its radius.
     CHECK(ensureShippedContent());
     Terrain terrain;
-    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Wall);
+    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Solid);
     const double face = 10.0 * kTileSize;
     World world;
     NpcSystem npcs;

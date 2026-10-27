@@ -153,8 +153,8 @@ TEST(a_client_collides_against_the_same_shapes_the_server_enforces) {
                      server.tiles(realm)));
     // And the diagonal cells read as wall in it, even though they block only
     // half of themselves: the coarse view says "something blocks here".
-    CHECK(server.atTile(9, 8, realm) == Tile::Wall);
-    CHECK(mine.atTile(9, 8, realm) == Tile::Wall);
+    CHECK(server.atTile(9, 8, realm) == Tile::Solid);
+    CHECK(mine.atTile(9, 8, realm) == Tile::Solid);
 
     // Now the exact answer, point for point, over the cells the diagonal runs
     // through. Not "close": the client runs the same function over the same
@@ -213,7 +213,7 @@ TEST(a_client_collides_against_the_same_shapes_the_server_enforces) {
     const int restTy = Terrain::toTileCoord(rest.y);
     CHECK_EQ(restTx, 9);
     CHECK_EQ(restTy, 8);
-    CHECK(server.atTile(restTx, restTy, realm) == Tile::Wall);
+    CHECK(server.atTile(restTx, restTy, realm) == Tile::Solid);
 
     // The client agrees about that resting place, exactly: it is not blocked,
     // and the client's own push-out leaves it where it is.
@@ -333,7 +333,7 @@ TEST(a_realm_change_rebuilds_the_clients_collision_shapes) {
         if (mine.blocked(p, cellar) != server.blocked(p, cellar)) ++disagreements;
         const int tx = Terrain::toTileCoord(p.x);
         const int ty = Terrain::toTileCoord(p.y);
-        if (mine.atTile(tx, ty, cellar) == Tile::Wall && !mine.blocked(p, cellar)) {
+        if (mine.atTile(tx, ty, cellar) == Tile::Solid && !mine.blocked(p, cellar)) {
             ++openInsideWallCells;
         }
     }

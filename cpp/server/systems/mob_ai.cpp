@@ -100,8 +100,8 @@ bool idleDrifting(World& world, Entity self, const MobAi& ai) {
     // of range walks back a stride at a time rather than hopping at full rate.
     const HoleTether* tether = world.tryGet<HoleTether>(self);
     if (tether != nullptr && tether->returning) return false;
-    // A chain head strolls to a destination point; the reference does not tag
-    // it idle either, so it stops when its stride does.
+    // A chain head crawls or strolls to a point; the reference does not tag it
+    // idle either, so it stops when its stride does.
     return !world.has<BodySegment>(self);
 }
 
@@ -389,6 +389,12 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.cruise = beeCruiseDrive(stats.speed, stats.cruiseSpeed);
         drive.beeChaseWeave = config.beeChaseWeave;
         drive.crabStrafe = config.crabStrafe;
+        // Read only by a chain head (steerIdle), so the flag goes on the body
+        // too: a piece cut off the chain is a head of its own, and crawls as
+        // gardn's does.
+        drive.centipedeCrawl = config.centipedeCrawl;
+        drive.diggerAi = config.diggerAi;
+        drive.hornetStrafe = config.hornetStrafe;
         drive.jumps = config.jump.present;
         drive.jumpDistance = config.jump.distance;
         drive.jumpPauseMillis = config.jump.pauseMillis;
@@ -1170,6 +1176,23 @@ Vec2 steerJump(MobAi& ai, Vec2 toTarget, double distance, double pauseMillis, do
     return Vec2{0, 0};
 }
 
+double turnOffWalls(const Terrain& terrain, Vec2 at, Realm realm, double heading) {
+    const Vec2 ahead = Vec2::fromAngle(heading);
+    const Vec2 probe = at + ahead * kWallProbeDistance;
+    // As a point, the way a mob meets the world (kMobWallRadius). The way the
+    // resolver pushes the probe back out is the wall's normal there.
+    const Terrain::WallResolution hit = terrain.resolveWall(probe, kMobWallRadius, realm);
+    if (!hit.collided) return heading;
+    const Vec2 push = hit.position - probe;
+    if (!(push.lengthSq() > kDirectionEpsilonSq)) return heading;
+    const Vec2 normal = push.normalized();
+    const double into = ahead.x * normal.x + ahead.y * normal.y;
+    // Already turning away -- a corner it reflected off last tick, or a probe
+    // a thin wall pushed out through its far face.
+    if (!(into < 0.0)) return heading;
+    return (ahead - normal * (2.0 * into)).angle();
+}
+
 Vec2 jumpFlight(MobAi& ai, double distance, double slow, double nowMillis, double dt) {
     if (!(ai.jumpRemaining > 0.0) || !(dt > 0.0)) return Vec2{0, 0};
     // Where the ease-out stands at the END of this tick: what is left of the
@@ -1232,13 +1255,53 @@ Vec2 MobAiSystem::wanderToPoint(WanderTarget& wander, Vec2 from, double speed, d
     return offset * (std::min(speed * kMobWanderSpeedScale, kMaxWanderSpeed) / gap);
 }
 
-Vec2 MobAiSystem::steerIdle(World& world, Entity self, const Transform& transform, Motion& motion,
-                            MobAi& ai, const Drive& drive, double slow, double nowMillis,
-                            double dt) {
-    // A centipede head keeps the destination wander deliberately: a chain that
-    // stopped dead every second would read as a broken animal rather than a
-    // crawling one, and the head is what the whole body traces.
+Vec2 MobAiSystem::crawl(const Terrain& terrain, const Transform& transform, MobAi& ai,
+                        const Drive& drive, double speed, double dt) {
+    // Bent from where the head POINTS, as gardn bends its angle: a chase that
+    // has just ended carries straight on into the crawl instead of snapping
+    // back to whatever heading the crawl last held.
+    double heading = drive.hideRotation ? ai.wanderAngle
+                                        : transform.angle + (drive.reversed ? kPi : 0.0);
+    if (ai.crawlTurn == 0) ai.crawlTurn = rng_.chance(0.5) ? 1 : -1;
+    if (rng_.chance(dt / kCentipedeFlipSeconds)) ai.crawlTurn = static_cast<std::int8_t>(-ai.crawlTurn);
+    heading += ai.crawlTurn * kCentipedeTurnRate * dt;
+    heading = wrapAngle(turnOffWalls(terrain, transform.position, transform.realm, heading));
+    ai.wanderAngle = heading;
+    if (!(speed > 0.0)) return Vec2{0, 0};
+    return Vec2::fromAngle(heading, std::min(speed * kMobWanderSpeedScale, kMaxWanderSpeed));
+}
+
+void MobAiSystem::roam(const Terrain& terrain, const Transform& transform, Motion& motion,
+                       MobAi& ai, const Drive& drive, double speed, double nowMillis, double dt) {
+    if (nowMillis >= ai.nextHeadingMillis) {
+        ai.nextHeadingMillis = nowMillis + kDiggerRoamMillis;
+        ai.wanderAngle = rng_.angle();
+    }
+    ai.wanderAngle = wrapAngle(turnOffWalls(terrain, transform.position, transform.realm,
+                                            ai.wanderAngle));
+    const Vec2 push = Vec2::fromAngle(ai.wanderAngle, std::min(std::max(speed, 0.0), kMaxWanderSpeed));
+    motion.velocity = drive.gardnMotion ? gardnStep(motion.velocity, push, dt) : push;
+}
+
+bool MobAiSystem::runsLow(World& world, Entity self, const Drive& drive) {
+    if (!drive.diggerAi) return false;
+    const Health* health = world.tryGet<Health>(self);
+    return health != nullptr && health->max > 0.0 &&
+           health->current <= health->max * kDiggerFleeBelow;
+}
+
+Vec2 MobAiSystem::steerIdle(World& world, const Terrain& terrain, Entity self,
+                            const Transform& transform, Motion& motion, MobAi& ai,
+                            const Drive& drive, double slow, double nowMillis, double dt) {
+    // A chain head never hops: a chain that stopped dead every second would
+    // read as a broken animal rather than a crawling one, and the head is what
+    // the whole body traces. A centipede crawls on gardn's bending heading;
+    // any other chain keeps the destination wander.
     if (world.has<BodySegment>(self)) {
+        if (drive.centipedeCrawl) {
+            motion.velocity = crawl(terrain, transform, ai, drive, drive.speed * slow, dt);
+            return Vec2::fromAngle(ai.wanderAngle);
+        }
         if (WanderTarget* wander = world.tryGet<WanderTarget>(self)) {
             motion.velocity =
                 wanderToPoint(*wander, transform.position, drive.speed * slow, nowMillis);
@@ -1250,6 +1313,13 @@ Vec2 MobAiSystem::steerIdle(World& world, Entity self, const Transform& transfor
     if (drive.jumps) {
         motion.velocity = jumpFlight(ai, drive.jumpDistance, slow, nowMillis, dt);
         return motion.velocity;
+    }
+    // A wild digger roams the map. A pet one hops where its owner stands, as
+    // every pet does: five seconds on one heading would walk it off its
+    // owner's screen and back on every cycle.
+    if (drive.diggerAi && !world.has<Pet>(self)) {
+        roam(terrain, transform, motion, ai, drive, drive.speed * slow, nowMillis, dt);
+        return Vec2::fromAngle(ai.wanderAngle);
     }
 
     driftPassive(world, self, motion, ai, drive, slow, nowMillis, dt);
@@ -1442,12 +1512,17 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
         // The next target is engaged from the top of a sidle, as gardn's crab
         // engages from a passive state.
         ai.crabPhase = CrabPhase::None;
+        ai.fleeing = false;
         return false;
     }
-    // Picked and held exactly as a chase would be, so a mending mob runs from
-    // whatever it would otherwise be fighting -- the flower that hurt it
-    // included -- and lets go at the same leash.
-    if (ai.recoverPerSecond > 0.0) return fleeTarget(world, transform, ai, chaseSpeed, desired);
+    // Picked and held exactly as a chase would be, so a mending mob -- or a
+    // digger on its last tenth -- runs from whatever it would otherwise be
+    // fighting, the flower that hurt it included, and lets go at the same
+    // leash. gardn's digger runs at the speed it chased at.
+    ai.fleeing = runsLow(world, self, drive);
+    if (ai.recoverPerSecond > 0.0 || ai.fleeing) {
+        return fleeTarget(world, transform, ai, chaseSpeed, desired);
+    }
     return pursueTarget(world, self, type, transform, body, ai, drive, chaseSpeed, nowMillis, dt,
                         desired, facing, commands);
 }
@@ -1530,12 +1605,25 @@ bool MobAiSystem::pursueTarget(World& world, Entity self, const MobType& type,
         // chase speed is: the gap is the behaviour, not a consequence of being
         // slower than what it is shooting at.
         const double standoff = shooterStandoff(drive.shotReach, body.radius, threatRadius);
+        // How far into the hold the mob is: 0 out past the ease band, 1 on or
+        // inside the ring.
+        double held = 0.0;
         if (gap <= standoff) {
             desired = Vec2{0, 0};
+            held = 1.0;
         } else if (gap < standoff + kShooterStandoffEase) {
             // Settling onto the ring rather than slamming into it; see
             // kShooterStandoffEase.
             desired *= (gap - standoff) / kShooterStandoffEase;
+            held = 1.0 - (gap - standoff) / kShooterStandoffEase;
+        }
+        // gardn's hornet circles where it holds, always the same way round:
+        // its push is the bearing turned a quarter, {-y, x}. Faded in across
+        // the ease band, as the closing speed fades out, so the hold does not
+        // switch between a dive and a sidestep from one tick to the next.
+        if (drive.hornetStrafe && held > 0.0 && gap > 0.0) {
+            const Vec2 side{-toTarget.y / gap, toTarget.x / gap};
+            desired += side * (chaseSpeed * kHornetStrafeScale * held);
         }
         // Off the BEARING and not off `desired`, which is now zero whenever the
         // mob is holding its ground: a shooter at its standoff still points at
@@ -1644,7 +1732,8 @@ bool MobAiSystem::stepsThisTick(Entity self, Vec2 position, Realm realm, Rarity 
     return (tick_ + entityIndex(self)) % static_cast<std::uint64_t>(kMobFarStride) == 0;
 }
 
-void MobAiSystem::driftUnwatched(World& world, Entity self, double nowMillis, double dt) {
+void MobAiSystem::driftUnwatched(World& world, const Terrain& terrain, Entity self,
+                                 double nowMillis, double dt) {
     Motion* motion = world.tryGet<Motion>(self);
     if (motion == nullptr) return;
 
@@ -1665,13 +1754,20 @@ void MobAiSystem::driftUnwatched(World& world, Entity self, double nowMillis, do
         motion->velocity = Vec2{0, 0};
         return;
     }
-    driftPassive(world, self, *motion, *ai, drive, slowFactorOf(world, self, nowMillis), nowMillis,
-                 dt);
+    const double slow = slowFactorOf(world, self, nowMillis);
+    Transform* transform = world.tryGet<Transform>(self);
+    // A roamer keeps roaming rather than dropping into a hop it never makes.
+    // No pet comes through here, so this one is always a wild digger.
+    if (drive.diggerAi && transform != nullptr) {
+        roam(terrain, *transform, *motion, *ai, drive, drive.speed * slow, nowMillis, dt);
+    } else {
+        driftPassive(world, self, *motion, *ai, drive, slow, nowMillis, dt);
+    }
 
     // The drift's heading IS the mob's facing over there -- the same ungated
     // integrator writes both -- so the angle keeps full rate as well, rather
     // than trailing the heading by up to a stride's worth of ticks.
-    if (Transform* transform = world.tryGet<Transform>(self)) {
+    if (transform != nullptr) {
         transform->angle = steerFacing(transform->angle, Vec2::fromAngle(ai->wanderAngle),
                                        drive.hideRotation, drive.reversed, kPi);
     }
@@ -1746,6 +1842,10 @@ void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGr
         break;
     }
 
+    // A digger that loses its target picks a fresh heading to roam on, as
+    // gardn's drops to kIdle, rather than finishing the old one.
+    if (driven && drive.diggerAi) ai.nextHeadingMillis = 0.0;
+
     if (driven && drive.gardnMotion) {
         // `desired` is what gardn's acceleration settles at; the velocity
         // builds into it and keeps its momentum through a turn, so a pursuit
@@ -1761,7 +1861,8 @@ void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGr
     } else if (driven) {
         motion.velocity = desired;
     } else {
-        desired = steerIdle(world, self, transform, motion, ai, drive, factor, nowMillis, dt);
+        desired = steerIdle(world, terrain, self, transform, motion, ai, drive, factor, nowMillis,
+                            dt);
     }
 
     // Facing follows what the mob is TRYING to do, falling back to what it is
@@ -1982,6 +2083,8 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
 
     Vec2 desired{0, 0};
     Vec2 facing{0, 0};
+    // Only the fight below runs; every other branch is doing something else.
+    ai.fleeing = false;
 
     if (!ownerAlive) {
         // Owner dead or gone: wander, straight at the destination.
@@ -2069,8 +2172,12 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
             ai.target = acquirePetPrey(world, terrain, grid, self, transform.position,
                                        transform.realm, ai, true, ownerPosition, range);
             // Then it fights exactly as the wild one does: the same chase, the
-            // same weave, the same standoff and volley.
-            if (ai.target != NULL_ENTITY) {
+            // same weave, the same standoff and volley -- and the same run
+            // once a digger is down to its last tenth.
+            ai.fleeing = ai.target != NULL_ENTITY && runsLow(world, self, drive);
+            if (ai.fleeing) {
+                driven = fleeTarget(world, transform, ai, chaseSpeed, desired);
+            } else if (ai.target != NULL_ENTITY) {
                 driven = pursueTarget(world, self, type, transform, body, ai, drive, chaseSpeed,
                                       nowMillis, dt, desired, facing, commands);
             } else {
@@ -2093,7 +2200,8 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
     } else if (driven) {
         motion.velocity = desired;
     } else {
-        desired = steerIdle(world, self, transform, motion, ai, drive, slow, nowMillis, dt);
+        desired = steerIdle(world, terrain, self, transform, motion, ai, drive, slow, nowMillis,
+                            dt);
     }
 
     const bool aimed = facing.lengthSq() > kDirectionEpsilonSq;
@@ -2563,7 +2671,7 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
         if (drive.recovers) recover(world, self, drive, nowMillis, dt);
         if (!stepsThisTick(self, at->position, at->realm, type->rarity, activePlayers)) {
             ++stats_.skipped;
-            driftUnwatched(world, self, nowMillis, dt);
+            driftUnwatched(world, terrain, self, nowMillis, dt);
             continue;
         }
 
@@ -2587,8 +2695,12 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     }
 
     steerPets(world, terrain, grid, nowMillis, dt, commands);
-    followChains(world, terrain, activePlayers);
     pruneBroods(world);
+}
+
+void MobAiSystem::placeChains(World& world, const Terrain& terrain,
+                              const std::vector<RealmPoint>& activePlayers) {
+    followChains(world, terrain, activePlayers);
 }
 
 } // namespace flix

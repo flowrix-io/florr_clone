@@ -343,8 +343,8 @@ inline std::string fixtureNpc(double x, double y, const std::string& npc,
 /// -- exactly as maps/garden.tmj is built. `solidAt` says which cells the
 /// walls layer paints; the default is a one-cell border, which is what most
 /// callers want. `waterAt` is the same for the water layer, and a cell it
-/// claims is a blocker of a different KIND: it still stops a body, and it is
-/// what tileIsWater() is true of. `diagonalAt` paints the DIAGONAL wall tile,
+/// claims is a blocker of a different KIND: it still stops a body, and its
+/// shape is what inWater() is true of. `diagonalAt` paints the DIAGONAL wall tile,
 /// whose authored shape is the triangle below its diagonal -- a cell that
 /// blocks half of itself, which is what the whole map is made of now and what
 /// a whole-cell collision reader cannot tell from a full wall.

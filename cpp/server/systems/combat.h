@@ -445,6 +445,10 @@ private:
         /// body takes (bounceOffMob). False for a nest or a cactus, which
         /// nothing moves, and for an NPC, which never gives way.
         bool givesWay = false;
+        /// A bead of a gardn chain (MobConfig::gardnChain) that gives way: a
+        /// flower touching it pushes it by the flower's share of the overlap,
+        /// gardn's _deal_push, and the chain pass turns that into a swing.
+        bool yieldsToFlower = false;
         /// A glitch-family mob body: its touch marks the flower (see
         /// markGlitched). Resolved from the config in the gather, where the
         /// registry is at hand.

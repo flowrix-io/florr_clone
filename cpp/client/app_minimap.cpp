@@ -247,12 +247,12 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
     //
     // Walls are one black silhouette whatever kind of wall they are -- castle,
     // dirt, a boulder -- because the shape is what a player reads a minimap
-    // for. WATER is the exception: it blocks like a wall (tileBlocks() is true
-    // of it) but it is the one blocker the map format still distinguishes, and
-    // a river drawn in the same black as a castle turns a recognisable
-    // coastline into a blob. The tileset's `water` tag exists for exactly this
-    // and for nothing else -- it never decides whether a shape blocks, only
-    // what kind of blocker it is.
+    // for. WATER is the exception: it blocks like a wall but it is the one
+    // kind of shape the map format still distinguishes, and a river drawn in
+    // the same black as a castle turns a recognisable coastline into a blob.
+    // The tileset's `water` tag exists for this and for the slow -- it never
+    // decides whether a shape blocks, only what kind of blocker it is, and it
+    // lives on the shape, never on the coarse cell.
     //
     // It is a few thousand short contours, and it happens ONCE per bake: this
     // whole layer is cached and only the key above rebuilds it. It goes on a

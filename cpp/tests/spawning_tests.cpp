@@ -2345,7 +2345,7 @@ TEST(no_mob_is_placed_inside_a_wall) {
     Sim sim;
     sim.spawner.worldMaps = &maps;
     for (int ty = 96; ty <= 104; ++ty) {
-        for (int tx = 103; tx <= 109; ++tx) sim.terrain.setTile(tx, ty, Tile::Wall);
+        for (int tx = 103; tx <= 109; ++tx) sim.terrain.setTile(tx, ty, Tile::Solid);
     }
     const std::vector<Vec2> players{player};
 
@@ -4865,7 +4865,7 @@ bool loadHornetBandAs(const std::string& name, Realm realm, MapData& out) {
 /// A flat, open `side`-tile grid installed as `realm`'s map.
 void installOpenGrid(Terrain& terrain, Realm realm, int side) {
     std::vector<std::uint8_t> tiles(static_cast<std::size_t>(side) * side,
-                                    static_cast<std::uint8_t>(Tile::Ground));
+                                    static_cast<std::uint8_t>(Tile::Open));
     CHECK(terrain.setTiles(tiles, side, side, realm));
 }
 
@@ -4981,7 +4981,7 @@ TEST(a_band_on_another_map_is_stocked_through_that_maps_own_terrain) {
     const int lastWall = static_cast<int>(std::ceil(16000.0 / kTileSize));
     for (int ty = firstWall; ty <= lastWall; ++ty) {
         for (int tx = firstWall; tx <= lastWall; ++tx) {
-            sim.terrain.setTile(tx, ty, Tile::Wall, Realm::Overworld);
+            sim.terrain.setTile(tx, ty, Tile::Solid, Realm::Overworld);
         }
     }
     CHECK(sim.terrain.blocked({9000, 9000}, Realm::Overworld));

@@ -720,10 +720,18 @@ struct MobAi {
     Entity target = NULL_ENTITY;
     double aggroRange = 0;
     double wanderAngle = 0;
-    /// The sandstorm's own heading clock: it re-rolls its direction three
-    /// times a second (kSandstormHeadingMillis), and nothing else in the AI
-    /// runs on it.
+    /// A heading clock for the two movers that re-pick their heading on a
+    /// timer rather than on a hop: the sandstorm, three times a second
+    /// (kSandstormHeadingMillis), and a roaming digger, every five
+    /// (kDiggerRoamMillis).
     double nextHeadingMillis = 0;
+    /// Which way a crawling centipede head is bending: +1, -1, or 0 for one
+    /// that has not crawled yet and picks a side on its first step. See
+    /// MobAiSystem::crawl.
+    std::int8_t crawlTurn = 0;
+    /// Set while a `digger_ai` mob is low enough to run from its target
+    /// rather than fight it, so the client does not draw it hunting.
+    bool fleeing = false;
     double lastAttackMillis = 0;
     /// The target a wall is hiding, and since when -- the grace a hostile mob
     /// gives it before letting go (kMobSightGraceMillis). NULL_ENTITY while
@@ -796,9 +804,11 @@ struct MobAi {
 /// Where a mob is walking to, when it walks to a POINT rather than steering on
 /// a heading.
 ///
-/// Only three movers use this -- centipede heads, sandstorms and ownerless
-/// pets. Every other mob with no target runs the stop-and-go passive machine
-/// below instead, which has no destination at all.
+/// Only three movers use this -- chain heads that do not crawl (the leech),
+/// sandstorms and ownerless pets. A centipede head carries one but crawls on a
+/// heading instead (MobConfig::centipedeCrawl), and every other mob with no
+/// target runs the stop-and-go passive machine below, which has no
+/// destination at all.
 struct WanderTarget {
     Vec2 destination;
     double pickedAtMillis = 0;

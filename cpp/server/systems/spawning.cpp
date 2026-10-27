@@ -231,7 +231,7 @@ SpawnFootprint spawnFootprint(const ContentRegistry& content, std::uint16_t mobI
     if (config.segmentCount > 0 && config.segmentBodyIndex < content.mobCount()) {
         // spawnBodyChain's own layout: segments stepped off the NOMINAL body.
         const double bodyRadius = content.mobStats(config.segmentBodyIndex, rarity).radius;
-        footprint.tail = config.segmentCount * bodyRadius * kSegmentSpacingPerRadius;
+        footprint.tail = config.segmentCount * config.segmentSpacing(bodyRadius, bodyRadius);
         footprint.tailRadius = bodyRadius * content.mob(config.segmentBodyIndex).maxRandomSize();
     }
     return footprint;
@@ -867,19 +867,23 @@ void SpawnSystem::spawnBodyChain(World& world, const Terrain& terrain,
     // mythic animal, not a big head towing a string of common beads.
     const MobStats bodyStats = content.mobStats(config.segmentBodyIndex, rarity);
     if (!(bodyStats.radius > 0.0)) return;
-    const double spacing = bodyStats.radius * kSegmentSpacingPerRadius;
+    // The first bead is spaced off the head's own body, the rest off a bead.
+    const Body* headBody = world.tryGet<Body>(head);
+    double leaderRadius = headBody != nullptr ? headBody->radius : bodyStats.radius;
 
     // Straight back from the head's facing, and stepped from the REQUESTED
     // points rather than the resolved ones: a segment nudged out of a wall must
     // not bend the rest of the body around it. The chain pass owns the shape
     // from the next tick onwards, and it starts from a straight animal.
-    const Vec2 step = Vec2::fromAngle(headAngle + kPi, spacing);
+    const Vec2 back = Vec2::fromAngle(headAngle + kPi);
 
     Entity ahead = head;
     Vec2 at = headPosition;
     for (int i = 1; i <= config.segmentCount; ++i) {
         if (census_.mobs >= mobCap) break;
-        at = at + step;
+        const double spacing = config.segmentSpacing(leaderRadius, bodyStats.radius);
+        leaderRadius = bodyStats.radius;
+        at = at + back * spacing;
         // Segments belong to the animal, not to the band: the head is the one
         // thing the band counted, and the chain is rebuilt from scratch every
         // time that head comes back to life.

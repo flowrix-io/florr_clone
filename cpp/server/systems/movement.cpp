@@ -1023,9 +1023,13 @@ void MovementSystem::buildSeparationSet(World& world) {
         entry.radius = sanitizeCollisionRadius(body.radius);
         if (const BodySegment* segment = world.tryGet<BodySegment>(e)) {
             entry.chainHead = segment->chainHead;
+            entry.ahead = segment->ahead;
+            entry.behind = segment->behind;
         }
         if (const MobType* type = world.tryGet<MobType>(e)) {
-            entry.noCollision = registry.mob(type->configIndex).noMobCollision;
+            const MobConfig& config = registry.mob(type->configIndex);
+            entry.noCollision = config.noMobCollision;
+            entry.gardnChain = config.gardnChain;
         }
         if (const HoleTether* tether = world.tryGet<HoleTether>(e)) {
             if (tether->emerging) entry.emergingFrom = tether->hole;
@@ -1064,9 +1068,17 @@ void MovementSystem::separateMobs(World& world, const Terrain& terrain) {
             if (slot == kNoSeparationEntry) continue;
             const SeparationEntry& other = separationSet_[slot];
             if (other.entity != candidate || other.entity == self.entity) continue;
-            // Segments of one centipede never push each other: the chain pass
-            // holds them in formation, and a physical shove makes them tangle.
-            if (self.chainHead != NULL_ENTITY && self.chainHead == other.chainHead) continue;
+            // Segments of one chain do not push each other where they are
+            // joined: the chain pass holds that pair at its spacing. A
+            // centipede's beads collide everywhere else, as gardn's do, so a
+            // body that curls round on itself is pushed back out rather than
+            // folding through its own beads; the chain pass turns the push into
+            // a swing about the joints. A leech's tube never pushes itself.
+            if (self.chainHead != NULL_ENTITY && self.chainHead == other.chainHead) {
+                const bool joined = self.ahead == other.entity || self.behind == other.entity ||
+                                    other.ahead == self.entity || other.behind == self.entity;
+                if (joined || !(self.gardnChain && other.gardnChain)) continue;
+            }
             // The exemption belongs to the PAIR: a mob flagged
             // no_mob_collision neither pushes nor is pushed.
             if (other.noCollision) continue;

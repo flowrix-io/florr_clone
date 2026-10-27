@@ -968,6 +968,9 @@ void GameServer::runSystems(double nowMillis, double dt) {
     markTickPhase("mob ai");
     movement_->runWorldPhase(world_, *terrain_, nowMillis, net::kTickSeconds);
     markTickPhase("mob movement");
+    // After the bodies have moved, as gardn places its segments: whatever
+    // pushed a bead this tick swings the chain rather than being undone.
+    mobAi_->placeChains(world_, *terrain_, activePlayers_);
     // AFTER the mobs have moved, for the reason a flower's ring is placed
     // after its own movement: a seat is a rigid offset from the body, and a
     // ring carried before the body moves trails it by a tick.

@@ -592,6 +592,25 @@ struct MobConfig {
     /// heading. See MobAiSystem::steerCrab.
     bool crabStrafe = false;
 
+    /// Crawls the way gardn's centipedes do (`centipede_ai`): off a target the
+    /// chain head never stops, walking on a heading that bends a little one
+    /// way and then the other, and turns off the walls it meets. Only a chain
+    /// head reads it. See MobAiSystem::crawl.
+    bool centipedeCrawl = false;
+
+    /// Fights the way gardn's digger does (`digger_ai`): off a target it roams
+    /// on one heading for five seconds at a time instead of hopping, and at a
+    /// tenth of its health or less it runs from what it is fighting rather
+    /// than closing on it. A pet keeps the run and hops near its owner. See
+    /// MobAiSystem::roam.
+    bool diggerAi = false;
+
+    /// Circles its target while it holds its standoff, the way gardn's hornet
+    /// does (`hornet_ai`), instead of hanging still in the air. Only a mob
+    /// with a projectile has a standoff to circle on. See
+    /// MobAiSystem::pursueTarget.
+    bool hornetStrafe = false;
+
     /// Moves the way gardn's walkers do (`gardn_ai`): one velocity carried
     /// between ticks under gardn's per-tick friction, so a pursuit accelerates
     /// into its speed and swings wide on a turn instead of snapping to it; an
@@ -645,6 +664,26 @@ struct MobConfig {
     /// not ten identical ones a radius apart -- and it lives here beside the
     /// two fields it reads so the rule cannot be spelled two ways.
     bool sharedChainBody() const { return sharedSegmentHealth && segmentCount == 0; }
+
+    /// A centipede's chain -- the head and its beads, of all three kinds --
+    /// collides the way gardn's does (Collision.cc, Segment.cc). Each bead is
+    /// an ordinary body: it sits exactly touching the one ahead of it
+    /// (kGardnSegmentGap), it collides with every bead of its own animal but
+    /// the two it is joined to, and a flower that walks into it pushes it by
+    /// its share of the overlap. The chain pass then pulls it back to its
+    /// spacing, so a push swings the body about its joints rather than
+    /// stretching it. A leech keeps its overlapping tube.
+    ///
+    /// Derived from the id beside the chain link, for the reason that is.
+    bool gardnChain = false;
+
+    /// How far a segment of `radius` holds behind a leader of `leaderRadius`
+    /// in one of this mob's chains: touching for a gardn chain, the drawn
+    /// tube's kSegmentSpacingPerRadius for any other.
+    double segmentSpacing(double leaderRadius, double radius) const {
+        return gardnChain ? leaderRadius + radius + kGardnSegmentGap
+                          : radius * kSegmentSpacingPerRadius;
+    }
 
     /// Some chain head's body type -- a centipede's bead or a leech's trailing
     /// tube, of either family. Set from the head's link once every mob is

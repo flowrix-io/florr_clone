@@ -47,9 +47,10 @@ inline int sectionAt(Vec2 p) {
     return cy * kSectionsPerAxis + cx;
 }
 
-/// Terrain is a tile grid: one coarse Tile byte per cell (what the minimap
-/// paints, the flow field walks and the wire carries), with each cell's
-/// authored collision SHAPES beside it for the exact tests (terrain.h).
+/// Terrain is a tile grid: one coarse Tile byte per cell, open or solid (what
+/// the flow field walks, the minimap falls back to and the wire carries), with
+/// each cell's authored collision SHAPES beside it for the exact tests
+/// (terrain.h).
 inline constexpr double kTileSize = 256.0;
 inline constexpr int kTilesPerAxis = static_cast<int>(kWorldSize / kTileSize);  // 234
 
@@ -71,23 +72,16 @@ inline constexpr int kMaxTilesPerAxis = 512;
 /// whose tile carries none, against its flat 256-unit rectangle.
 inline constexpr double kCollisionScanBuffer = 5.0;
 
+/// One coarse cell: open, or holding a blocking shape somewhere in it. That is
+/// all the coarse grid says. What KIND of blocker a shape is -- water, which
+/// slows and is painted blue -- belongs to the authored shape (the tileset's
+/// `water` tag, tiled_map.h), never to the cell.
 enum class Tile : std::uint8_t {
-    Ground = 0,
-    Wall = 1,     ///< blocks movement
-    Water = 2,    ///< blocks movement too; a blocker of a different KIND, drawn
-                  ///< as water and slowing anything that ends up inside one
-    Sand = 3,     ///< TypeScript custom tile 3: bridge (passable)
-    Stone = 4,    ///< TypeScript custom tile 4: sewage (solid)
-    Block = 5,    ///< TypeScript custom tile 5: block (solid)
+    Open = 0,
+    Solid = 1,
 };
 
-inline constexpr bool tileBlocks(Tile t) {
-    // The TypeScript collision predicate is `solid || water`. Water is drawn
-    // differently, but it is not walkable by players, mobs, projectiles, line
-    // of sight, or spawn placement.
-    return t == Tile::Wall || t == Tile::Water || t == Tile::Stone || t == Tile::Block;
-}
-inline constexpr bool tileIsWater(Tile t) { return t == Tile::Water; }
+inline constexpr bool tileBlocks(Tile t) { return t == Tile::Solid; }
 
 /// Multiplier applied to top speed while in water. Slow enough to matter,
 /// fast enough that crossing a river is not a punishment.
@@ -697,6 +691,11 @@ inline constexpr int kCentipedeSegmentCount = 9;
 /// MobArt::LeechBody case in client/render/mob_art.cpp). Two copies of it would
 /// be a chain that renders half a segment short of where it actually is.
 inline constexpr double kSegmentSpacingPerRadius = 1.8;
+
+/// What a gardn chain (MobConfig::gardnChain, the centipedes) leaves between
+/// two joined beads, skin to skin: gardn's Segment.cc holds a segment at its
+/// leader's radius plus its own plus this, so the two just touch.
+inline constexpr double kGardnSegmentGap = 0.01;
 
 // -- mob-carried petal rings -------------------------------------------------
 //

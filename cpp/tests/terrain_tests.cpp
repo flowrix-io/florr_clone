@@ -19,13 +19,34 @@ using namespace flix;
 
 namespace {
 
-/// One generated map, shared by the tests that only read it. Generation walks
-/// every tile of the grid (kTilesPerAxis squared) and a repair BFS; doing it
-/// per test case is pure waste.
+/// One large, varied map, shared by the tests that only read it: solid blobs
+/// of every size from a single tile up, scattered over open ground from a
+/// fixed seed, so walls stand alone, touch, and merge into ragged masses.
+/// Building it walks the whole grid (kTilesPerAxis squared); doing that per
+/// test case is pure waste.
 const Terrain& sharedMap() {
     static const Terrain map = [] {
+        std::vector<std::uint8_t> tiles(
+            static_cast<std::size_t>(kTilesPerAxis) * static_cast<std::size_t>(kTilesPerAxis),
+            static_cast<std::uint8_t>(Tile::Open));
+        Rng rng(0xC0FFEEull);
+        for (int blob = 0; blob < 900; ++blob) {
+            const int cx = static_cast<int>(rng.below(kTilesPerAxis));
+            const int cy = static_cast<int>(rng.below(kTilesPerAxis));
+            const double r = rng.range(0.5, 4.0);
+            for (int dy = -4; dy <= 4; ++dy) {
+                for (int dx = -4; dx <= 4; ++dx) {
+                    const int tx = cx + dx;
+                    const int ty = cy + dy;
+                    if (tx < 0 || ty < 0 || tx >= kTilesPerAxis || ty >= kTilesPerAxis) continue;
+                    if (dx * dx + dy * dy > r * r) continue;
+                    tiles[static_cast<std::size_t>(ty) * kTilesPerAxis + tx] =
+                        static_cast<std::uint8_t>(Tile::Solid);
+                }
+            }
+        }
         Terrain t;
-        t.generate(0xC0FFEEull);
+        t.setTiles(tiles, kTilesPerAxis, kTilesPerAxis);
         return t;
     }();
     return map;
@@ -65,24 +86,23 @@ const double kInfinity = std::numeric_limits<double>::infinity();
 
 TEST(fresh_terrain_is_open_ground) {
     Terrain t;
-    CHECK_EQ(t.at(Vec2{kWorldHalf, kWorldHalf}), Tile::Ground);
+    CHECK_EQ(t.at(Vec2{kWorldHalf, kWorldHalf}), Tile::Open);
     CHECK(!t.blocked(Vec2{kWorldHalf, kWorldHalf}, Realm::Overworld));
     CHECK(!t.inWater(Vec2{kWorldHalf, kWorldHalf}, Realm::Overworld));
     CHECK_EQ(t.openTileCount(), kTilesPerAxis * kTilesPerAxis);
-    CHECK(t.isConnected());
 }
 
 TEST(out_of_bounds_reads_are_wall) {
     Terrain t;
     // The whole point of the total accessor: nothing needs a bounds check to
     // discover the map has an edge.
-    CHECK_EQ(t.atTile(-1, 0), Tile::Wall);
-    CHECK_EQ(t.atTile(0, -1), Tile::Wall);
-    CHECK_EQ(t.atTile(kTilesPerAxis, 0), Tile::Wall);
-    CHECK_EQ(t.atTile(0, kTilesPerAxis), Tile::Wall);
-    CHECK_EQ(t.atTile(-100000, 100000), Tile::Wall);
-    CHECK_EQ(t.at(Vec2{-1.0, kWorldHalf}), Tile::Wall);
-    CHECK_EQ(t.at(Vec2{kWorldSize, kWorldHalf}), Tile::Wall);
+    CHECK_EQ(t.atTile(-1, 0), Tile::Solid);
+    CHECK_EQ(t.atTile(0, -1), Tile::Solid);
+    CHECK_EQ(t.atTile(kTilesPerAxis, 0), Tile::Solid);
+    CHECK_EQ(t.atTile(0, kTilesPerAxis), Tile::Solid);
+    CHECK_EQ(t.atTile(-100000, 100000), Tile::Solid);
+    CHECK_EQ(t.at(Vec2{-1.0, kWorldHalf}), Tile::Solid);
+    CHECK_EQ(t.at(Vec2{kWorldSize, kWorldHalf}), Tile::Solid);
     CHECK(t.blocked(Vec2{-50000, -50000}, Realm::Overworld));
     CHECK(t.blocked(Vec2{1e30, 1e30}, Realm::Overworld));
     // NaN has no tile; answering Wall is the closed-world answer.
@@ -103,86 +123,12 @@ TEST(tile_coordinates_clamp_instead_of_overflowing) {
 
 TEST(set_tile_ignores_out_of_range_writes) {
     Terrain t;
-    t.setTile(-1, -1, Tile::Water);
-    t.setTile(kTilesPerAxis, 5, Tile::Water);
+    t.setTile(-1, -1, Tile::Solid);
+    t.setTile(kTilesPerAxis, 5, Tile::Solid);
     CHECK_EQ(t.openTileCount(), kTilesPerAxis * kTilesPerAxis);
-    t.setTile(3, 4, Tile::Wall);
-    CHECK_EQ(t.atTile(3, 4), Tile::Wall);
+    t.setTile(3, 4, Tile::Solid);
+    CHECK_EQ(t.atTile(3, 4), Tile::Solid);
     CHECK_EQ(t.openTileCount(), kTilesPerAxis * kTilesPerAxis - 1);
-}
-
-// ---------------------------------------------------------------------------
-// Terrain: generation
-// ---------------------------------------------------------------------------
-
-TEST(generation_is_deterministic_for_a_seed) {
-    Terrain a, b;
-    a.generate(12345);
-    b.generate(12345);
-    CHECK_EQ(a.seed(), std::uint64_t(12345));
-    int differences = 0;
-    for (std::size_t i = 0; i < a.tileCount(); ++i) {
-        if (a.tiles()[i] != b.tiles()[i]) ++differences;
-    }
-    CHECK_EQ(differences, 0);
-}
-
-TEST(generation_differs_across_seeds) {
-    Terrain a, b;
-    a.generate(1);
-    b.generate(2);
-    int differences = 0;
-    for (std::size_t i = 0; i < a.tileCount(); ++i) {
-        if (a.tiles()[i] != b.tiles()[i]) ++differences;
-    }
-    // Not merely "some": a different seed is a different map, so a large
-    // fraction of the grid must move.
-    CHECK(differences > kTilesPerAxis * kTilesPerAxis / 10);
-}
-
-TEST(generated_map_is_fully_connected) {
-    // Every seed, not just the lucky one: the repair pass is what guarantees
-    // this, and a seed that happens to need no repair proves nothing.
-    for (std::uint64_t seed : {std::uint64_t(1), std::uint64_t(7), std::uint64_t(42),
-                               std::uint64_t(0xDEADBEEF), std::uint64_t(0)}) {
-        Terrain t;
-        t.generate(seed);
-        CHECK(t.isConnected());
-        CHECK(!t.blocked(t.spawnPoint(), Realm::Overworld));
-    }
-}
-
-TEST(generated_map_has_every_tile_kind_and_biome) {
-    const Terrain& t = sharedMap();
-    int kindCounts[kTileKindCount] = {0, 0, 0, 0, 0};
-    int openPerSection[kSectionCount] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
-    for (int ty = 0; ty < kTilesPerAxis; ++ty) {
-        for (int tx = 0; tx < kTilesPerAxis; ++tx) {
-            const Tile tile = t.atTile(tx, ty);
-            ++kindCounts[static_cast<int>(tile)];
-            const int section = t.sectionOfTile(tx, ty);
-            if (section >= 0 && !tileBlocks(tile)) ++openPerSection[section];
-        }
-    }
-    for (int k = 0; k < kTileKindCount; ++k) CHECK(kindCounts[k] > 0);
-    // A section with no floor is a section no player can ever visit.
-    for (int s = 0; s < kSectionCount; ++s) CHECK(openPerSection[s] > 0);
-}
-
-TEST(walling_off_a_pocket_breaks_connectivity) {
-    // Guards the guard: isConnected() must be able to say no, or the
-    // generation test above is vacuous.
-    Terrain t;
-    CHECK(t.isConnected());
-    for (int d = -1; d <= 1; ++d) {
-        t.setTile(5 + d, 4, Tile::Wall);
-        t.setTile(5 + d, 6, Tile::Wall);
-        t.setTile(4, 5 + d, Tile::Wall);
-        t.setTile(6, 5 + d, Tile::Wall);
-    }
-    CHECK(!t.isConnected());
-    t.setTile(5, 4, Tile::Ground);
-    CHECK(t.isConnected());
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +145,7 @@ TEST(resolve_circle_leaves_a_free_circle_untouched) {
 
 TEST(resolve_circle_pushes_a_circle_out_of_a_wall) {
     Terrain t;
-    t.setTile(10, 10, Tile::Wall);
+    t.setTile(10, 10, Tile::Solid);
     const Rect wall = Terrain::tileRect(10, 10);
 
     // Overlapping the wall's left face by 50 units.
@@ -218,7 +164,7 @@ TEST(resolve_circle_pushes_a_circle_out_of_a_wall) {
 TEST(resolve_circle_escapes_a_wall_it_is_buried_in) {
     Terrain t;
     for (int ty = 20; ty <= 24; ++ty) {
-        for (int tx = 20; tx <= 24; ++tx) t.setTile(tx, ty, Tile::Wall);
+        for (int tx = 20; tx <= 24; ++tx) t.setTile(tx, ty, Tile::Solid);
     }
     // Dead centre of a 5x5 block: no tile offers a push direction, so this is
     // the case that jitters forever if ejection is missing.
@@ -235,7 +181,7 @@ TEST(resolve_circle_escapes_a_wall_it_is_buried_in) {
 
 TEST(resolve_circle_ejects_a_shallow_embed_without_teleporting) {
     Terrain t;
-    t.setTile(10, 10, Tile::Wall);
+    t.setTile(10, 10, Tile::Solid);
     // Two units past the wall's left face: technically inside geometry, so the
     // ejection path runs, but the answer must still be two units back out and
     // not a jump to the middle of the neighbouring tile.
@@ -250,9 +196,9 @@ TEST(resolve_circle_ejects_a_shallow_embed_without_teleporting) {
 
 TEST(resolve_circle_settles_in_a_concave_corner) {
     Terrain t;
-    t.setTile(10, 10, Tile::Wall);
-    t.setTile(11, 10, Tile::Wall);
-    t.setTile(10, 11, Tile::Wall);
+    t.setTile(10, 10, Tile::Solid);
+    t.setTile(11, 10, Tile::Solid);
+    t.setTile(10, 11, Tile::Solid);
     // Just inside the free tile's top-left corner, overlapping all three.
     const Vec2 start{11 * kTileSize + 5.0, 11 * kTileSize + 5.0};
     const Vec2 out = t.resolveCircle(start, 60.0, Realm::Overworld);
@@ -273,8 +219,7 @@ TEST(resolve_circle_pushes_a_body_back_inside_the_world) {
 }
 
 TEST(resolve_circle_survives_nonsense_input) {
-    Terrain t;
-    t.generate(3);
+    const Terrain& t = sharedMap();
     const Vec2 cases[] = {
         Vec2{kQuietNan, kQuietNan},
         Vec2{kInfinity, 0.0},
@@ -316,7 +261,7 @@ TEST(resolve_circle_never_leaves_a_walkable_start_overlapping) {
 
 TEST(segment_blocked_sees_a_wall_across_the_line) {
     Terrain t;
-    for (int ty = 0; ty < kTilesPerAxis; ++ty) t.setTile(30, ty, Tile::Wall);
+    for (int ty = 0; ty < kTilesPerAxis; ++ty) t.setTile(30, ty, Tile::Solid);
     const double y = 40 * kTileSize + 17.0;
     CHECK(t.segmentBlocked(Vec2{25 * kTileSize, y}, Vec2{35 * kTileSize, y}, Realm::Overworld));
     CHECK(!t.segmentBlocked(Vec2{20 * kTileSize, y}, Vec2{29.9 * kTileSize, y}, Realm::Overworld));
@@ -329,7 +274,7 @@ TEST(segment_blocked_sees_a_wall_across_the_line) {
 
 TEST(segment_blocked_handles_degenerate_and_nonsense_endpoints) {
     Terrain t;
-    t.setTile(10, 10, Tile::Wall);
+    t.setTile(10, 10, Tile::Solid);
     const Vec2 inWall = Terrain::tileCenter(10, 10);
     const Vec2 open = Terrain::tileCenter(0, 0);
     CHECK(t.segmentBlocked(inWall, inWall, Realm::Overworld));       // zero length inside a wall
@@ -392,20 +337,17 @@ TEST(find_open_spawn_lands_somewhere_walkable) {
     }
     // Even asked about the middle of solid rock, and with no room to search.
     Terrain solid;
-    solid.fill(Tile::Wall);
-    solid.setTile(0, 0, Tile::Ground);
+    solid.fill(Tile::Solid);
+    solid.setTile(0, 0, Tile::Open);
     const Vec2 p = solid.findOpenSpawn(rng, Terrain::tileCenter(5, 5), 0.0, Realm::Overworld);
     CHECK(!solid.blocked(p, Realm::Overworld));
 }
 
 TEST(nearest_open_tile_gives_up_on_a_solid_map) {
     Terrain solid;
-    solid.fill(Tile::Wall);
+    solid.fill(Tile::Solid);
     int tx = -1, ty = -1;
     CHECK(!solid.nearestOpenTile(Vec2{kWorldHalf, kWorldHalf}, tx, ty));
-    // A solid map has nothing to connect, which isConnected() must report as
-    // connected rather than as a failure.
-    CHECK(solid.isConnected());
     CHECK_EQ(solid.openTileCount(), 0);
 }
 
@@ -428,11 +370,10 @@ TEST(sections_and_biomes_cover_the_map) {
     CHECK_EQ(std::string(biomeOf(-1).name), std::string("Void"));
     CHECK_EQ(std::string(biomeOf(kSectionCount).name), std::string("Void"));
 
-    // The same tile kind is a different colour per biome -- that is the whole
-    // reason the colour lives on the biome and not on the Tile.
-    CHECK(tileColor(0, Tile::Ground) != tileColor(2, Tile::Ground));
-    CHECK(tileColor(4, Tile::Wall) != tileColor(4, Tile::Ground));
-    CHECK_EQ(tileColor(0, Tile::Water), kBiomes[0].tileColors[static_cast<int>(Tile::Water)]);
+    // Each biome's ground is its own colour -- what the maze paints its floor
+    // in when it borrows one.
+    CHECK(biomeOf(0).ground != biomeOf(2).ground);
+    CHECK_EQ(biomeOf(4).ground, kBiomes[4].ground);
 }
 
 // ---------------------------------------------------------------------------
@@ -670,15 +611,14 @@ TEST(spatial_grid_does_not_allocate_once_warm) {
 
 namespace {
 
-constexpr std::uint8_t G = static_cast<std::uint8_t>(Tile::Ground);
-constexpr std::uint8_t W = static_cast<std::uint8_t>(Tile::Wall);
-constexpr std::uint8_t A = static_cast<std::uint8_t>(Tile::Water);
+constexpr std::uint8_t G = static_cast<std::uint8_t>(Tile::Open);
+constexpr std::uint8_t W = static_cast<std::uint8_t>(Tile::Solid);
 
-/// A 4x3 map with one of everything a derived grid can hold: a wall blob and
-/// a pond beside it.
+/// A 4x3 map with both things a derived grid can hold: a solid blob, and the
+/// open ground around it.
 const std::vector<std::uint8_t> kSmallTiles = {
     W, W, W, G,
-    W, A, G, G,
+    W, W, G, G,
     G, G, G, G,
 };
 
@@ -711,9 +651,9 @@ TEST(a_grid_travels_over_the_wire_at_its_own_size) {
         }
     }
     // Off the grid closes the world, on both sides.
-    CHECK(client.atTile(-1, 0, realm) == Tile::Wall);
-    CHECK(client.atTile(4, 0, realm) == Tile::Wall);
-    CHECK(client.atTile(0, 3, realm) == Tile::Wall);
+    CHECK(client.atTile(-1, 0, realm) == Tile::Solid);
+    CHECK(client.atTile(4, 0, realm) == Tile::Solid);
+    CHECK(client.atTile(0, 3, realm) == Tile::Solid);
     // And another realm is untouched: a grid arrives for the realm it names
     // and no other.
     CHECK(!client.hasMap(worldRealm(2)));
@@ -790,13 +730,16 @@ TEST(a_malformed_grid_off_the_wire_installs_nothing) {
         CHECK(!read(frame(0, 3, {}), client, error));
         CHECK(!client.hasMap(realm));
     }
-    {   // A tile value the engine has no Tile for.
-        Terrain client;
-        std::string error;
-        std::vector<std::uint8_t> bad = kSmallTiles;
-        bad[0] = 200;
-        CHECK(!read(frame(4, 3, bad), client, error));
-        CHECK(!client.hasMap(realm));
+    {   // A tile value the engine has no Tile for -- the old water byte
+        // included: the grid is open or solid and nothing else.
+        for (const std::uint8_t value : {std::uint8_t(2), std::uint8_t(200)}) {
+            Terrain client;
+            std::string error;
+            std::vector<std::uint8_t> bad = kSmallTiles;
+            bad[0] = value;
+            CHECK(!read(frame(4, 3, bad), client, error));
+            CHECK(!client.hasMap(realm));
+        }
     }
     {   // Truncated: the header promises more bytes than the frame holds.
         const ByteWriter w = frame(4, 3, kSmallTiles);
@@ -817,7 +760,7 @@ TEST(a_body_resting_against_a_wall_stops_at_the_flat_face) {
     Terrain t;
     const double west = 10.0 * kTileSize;      // the wall column's two faces
     const double east = 11.0 * kTileSize;
-    for (int ty = 0; ty < kTilesPerAxis; ++ty) t.setTile(10, ty, Tile::Wall);
+    for (int ty = 0; ty < kTilesPerAxis; ++ty) t.setTile(10, ty, Tile::Solid);
     const double radius = 20.0;
 
     const Vec2 fromWest = t.resolveCircle({west - 15.0, 5000.0}, radius, Realm::Overworld);
@@ -1042,13 +985,13 @@ TEST(a_rect_shape_blocks_inside_itself_and_leaves_the_rest_of_the_cell_walkable)
     CHECK(!t.blocked(inCell(1, 1, kTileSize - 10.0, kTileSize - 10.0), Realm::Overworld));
     // The coarse grid still calls the cell a wall: it says the cell HOLDS a
     // blocking shape, which is what the minimap and the flow field want.
-    CHECK(t.atTile(1, 1) == Tile::Wall);
+    CHECK(t.atTile(1, 1) == Tile::Solid);
     CHECK(t.hasCollisionShapes());
     CHECK_EQ(t.collisionShapeCellCount(), 1);
     CHECK_EQ(t.collisionShapeSetCount(), 1);
     // And a neighbouring cell nobody painted is open, shapes or no shapes.
     CHECK(!t.blocked(inCell(2, 1, 10.0, 10.0), Realm::Overworld));
-    CHECK(t.atTile(2, 1) == Tile::Ground);
+    CHECK(t.atTile(2, 1) == Tile::Open);
 
     // A rectangle over the WHOLE tile covers the WHOLE cell: the scale has to
     // reach the far corner, in both axes, rather than stopping short of it.
@@ -1107,7 +1050,7 @@ TEST(an_unshaped_tile_on_a_colliding_layer_blocks_nothing_in_terrain) {
     for (int ty = 0; ty < 3; ++ty) {
         for (int tx = 0; tx < 3; ++tx) {
             const bool middle = tx == 1 && ty == 1;
-            CHECK_EQ(t.atTile(tx, ty) == Tile::Wall, middle);
+            CHECK_EQ(t.atTile(tx, ty) == Tile::Solid, middle);
             CHECK_EQ(t.blocked(inCell(tx, ty, 150.0, 150.0), Realm::Overworld), middle);
         }
     }
@@ -1137,13 +1080,13 @@ TEST(a_shape_that_leaves_its_tile_blocks_and_is_reported_in_every_cell_it_reache
     CHECK_EQ(t.collisionShapeCellCount(), 3);
     CHECK_NEAR(t.collisionOverhangUnits(), 700.0 * kShapeScale - kTileSize, 1e-9);
     for (int tx = 2; tx <= 4; ++tx) {
-        CHECK_EQ(t.atTile(tx, 2), Tile::Wall);
+        CHECK_EQ(t.atTile(tx, 2), Tile::Solid);
         CHECK(t.blocked(inCell(tx, 2, 150.0, 150.0), Realm::Overworld));
     }
     // And it stops where the shape stops, rather than claiming a whole fourth
     // cell: the coarse grid is conservative by at most the cell the shape ends
     // in, never by a cell it never entered.
-    CHECK_EQ(t.atTile(5, 2), Tile::Ground);
+    CHECK_EQ(t.atTile(5, 2), Tile::Open);
     // The shape starts at cell (2, 2)'s left edge, so where it ends inside cell
     // (4, 2) is its own length less the two cells before it.
     const double endsAt = 700.0 * kShapeScale - 2.0 * kTileSize;
@@ -1154,7 +1097,7 @@ TEST(a_shape_that_leaves_its_tile_blocks_and_is_reported_in_every_cell_it_reache
     // invariant the whole-cell fallback and every coarse consumer rest on.
     for (int ty = 0; ty < 8; ++ty) {
         for (int tx = 0; tx < 8; ++tx) {
-            if (t.atTile(tx, ty) != Tile::Ground) continue;
+            if (t.atTile(tx, ty) != Tile::Open) continue;
             for (int sy = 0; sy < 5; ++sy) {
                 for (int sx = 0; sx < 5; ++sx) {
                     CHECK(!t.blocked(inCell(tx, ty, kTileSize * (0.1 + sx * 0.2),
@@ -1408,7 +1351,8 @@ TEST(water_is_the_shape_it_is_drawn_as_and_the_topmost_layer_names_the_kind) {
     over[4] = 3;                     // with a `corner` bridge over part of it
     CHECK(loadShapeMap(t, "water.tmj", 3, 3, gids, over));
 
-    CHECK(t.atTile(1, 0) == Tile::Water);
+    // The coarse cell only says solid; the water is the shape's.
+    CHECK(t.atTile(1, 0) == Tile::Solid);
     CHECK(t.inWater(inCell(1, 0, 150.0, 150.0), Realm::Overworld));
     CHECK(!t.inWater(inCell(0, 0, 150.0, 150.0), Realm::Overworld));   // open ground
     // Where the corner tile is drawn OVER the pond, the topmost shape names the
@@ -1440,7 +1384,7 @@ TEST(the_shipped_garden_stops_a_body_where_its_art_does) {
         return;
     }
     CHECK(t.hasCollisionShapes());
-    CHECK_EQ(t.collisionShapeCellCount(), map.wallCells() + map.waterCells());
+    CHECK_EQ(t.collisionShapeCellCount(), map.solidCells());
 
     // -- THE POINT OF THE CHANGE: a cell the coarse grid calls wall has
     // walkable ground in it, and the dirt layer is where most of it is.
@@ -1455,7 +1399,7 @@ TEST(the_shipped_garden_stops_a_body_where_its_art_does) {
     CHECK(dirtLayer < map.layers().size());
     for (int ty = 0; ty < map.height(); ++ty) {
         for (int tx = 0; tx < cols; ++tx) {
-            if (t.atTile(tx, ty) != Tile::Wall) continue;
+            if (t.atTile(tx, ty) != Tile::Solid) continue;
             ++wallCells;
             bool open = false;
             for (double ly = 10.0; ly < kTileSize && !open; ly += 20.0) {
@@ -1488,7 +1432,7 @@ TEST(the_shipped_garden_stops_a_body_where_its_art_does) {
     int probed = 0;
     for (int ty = 0; ty < map.height() && probed < 8; ++ty) {
         for (int tx = 0; tx < cols && probed < 8; ++tx) {
-            if (t.atTile(tx, ty) != Tile::Wall) continue;
+            if (t.atTile(tx, ty) != Tile::Solid) continue;
             // Exactly one colliding layer may paint this cell, or the faces of
             // two shapes would overlap and the prediction would not be the
             // tile's alone.
@@ -1571,8 +1515,8 @@ TEST(a_realm_keeps_its_shapes_only_while_they_still_describe_its_grid) {
     // A grid of a DIFFERENT shape is a different map, and shapes indexed at the
     // old width would be a world sheared diagonally. Dropped, and the realm
     // falls back to whole-cell collision, which is conservative and playable.
-    std::vector<std::uint8_t> other(16, static_cast<std::uint8_t>(Tile::Ground));
-    other[5] = static_cast<std::uint8_t>(Tile::Wall);
+    std::vector<std::uint8_t> other(16, static_cast<std::uint8_t>(Tile::Open));
+    other[5] = static_cast<std::uint8_t>(Tile::Solid);
     CHECK(t.setTiles(other, 4, 4, Realm::Overworld));
     CHECK(!t.hasCollisionShapes());
     CHECK(t.blocked(inCell(1, 1, 250.0, 50.0), Realm::Overworld));   // all of that cell now
@@ -1598,8 +1542,8 @@ TEST(writing_a_tile_by_hand_drops_the_realms_authored_shapes) {
     // setTile() says what a CELL is, and an authored cell's collision is not
     // one value -- there is no shape for "wall" to be written as. So a direct
     // write drops the realm's shapes and everything falls back to whole cells:
-    // conservative, visible here, and the reason generate() and the map-carving
-    // helpers cannot leave a realm half authored and half painted.
+    // conservative, visible here, and the reason a hand-painted cell cannot
+    // leave a realm half authored and half painted.
     Terrain t;
     std::vector<std::uint32_t> gids(9, 0);
     gids[4] = 5;                     // diag at (1,1)
@@ -1607,7 +1551,7 @@ TEST(writing_a_tile_by_hand_drops_the_realms_authored_shapes) {
     CHECK(t.hasCollisionShapes());
     CHECK(!t.blocked(inCell(1, 1, 250.0, 50.0), Realm::Overworld));
 
-    t.setTile(0, 0, Tile::Wall, Realm::Overworld);
+    t.setTile(0, 0, Tile::Solid, Realm::Overworld);
     CHECK(!t.hasCollisionShapes());
     CHECK(t.blocked(inCell(0, 0, 150.0, 150.0), Realm::Overworld));
     // ...and the cell that was half open is wholly solid again.
@@ -1720,7 +1664,7 @@ TEST(a_cell_with_no_shapes_hands_back_no_rings) {
     // hand back. A minimap that only drew rings would show nothing here, which
     // is why it falls back to the cell's square.
     Terrain plain;
-    plain.setTile(3, 4, Tile::Wall, Realm::Overworld);
+    plain.setTile(3, 4, Tile::Solid, Realm::Overworld);
     plain.collisionRingsAt(3, 4, Realm::Overworld, rings);
     CHECK(rings.empty());
     CHECK(plain.blocked(inCell(3, 4, kTileSize * 0.5, kTileSize * 0.5), Realm::Overworld));
@@ -1864,7 +1808,7 @@ TEST(an_unshaped_negating_tile_clears_its_whole_cell) {
     CHECK(loadDeckMap(map, t, "deck_whole.tmj", 3, 3, onlyMiddle(2u), onlyMiddle(1u)));
 
     // The coarse grid, the exact test and the store all agree the cell is open.
-    CHECK(t.atTile(1, 1) == Tile::Ground);
+    CHECK(t.atTile(1, 1) == Tile::Open);
     for (double ly = 10.0; ly < kTileSize; ly += 40.0) {
         for (double lx = 10.0; lx < kTileSize; lx += 40.0) {
             CHECK(!t.blocked(inCell(1, 1, lx, ly), Realm::Overworld));
@@ -1908,7 +1852,7 @@ TEST(a_shaped_negating_tile_clears_only_its_own_shape) {
     // such a cell blocked and only the exact store cancels it -- the coarse
     // view blocking a little more than the art does is what it has always
     // done, and it is the safe direction to be wrong in.
-    CHECK(t.atTile(1, 1) == Tile::Wall);
+    CHECK(t.atTile(1, 1) == Tile::Solid);
     CHECK_EQ(map.negatedCells(), 0);
     CHECK_EQ(t.collisionDeckedCellCount(), 0);
     // AND THE REPORT SAYS SO. A partial deck cleared no CELL -- it cancelled
@@ -1964,14 +1908,14 @@ TEST(a_deck_tile_that_covers_its_cell_is_the_same_deck_as_an_unshaped_one) {
     for (const Terrain* t : {&withShape, &withNone}) {
         // The coarse grid, the exact test, the store and the swept test all
         // agree the decked cell is open ground and everything else is wall.
-        CHECK(t->atTile(4, 1) == Tile::Ground);
+        CHECK(t->atTile(4, 1) == Tile::Open);
         CHECK(!t->blocked(inCell(4, 1, 150.0, 150.0), Realm::Overworld));
         CHECK(!t->inWater(inCell(4, 1, 150.0, 150.0), Realm::Overworld));
         CHECK(!t->resolveWall(inCell(4, 1, 150.0, 150.0), 20.0, Realm::Overworld).collided);
         std::vector<Terrain::CellCollisionRing> rings;
         t->collisionRingsAt(4, 1, Realm::Overworld, rings);
         CHECK(rings.empty());
-        CHECK(t->atTile(3, 1) == Tile::Wall);
+        CHECK(t->atTile(3, 1) == Tile::Solid);
         CHECK(t->blocked(inCell(3, 1, 150.0, 150.0), Realm::Overworld));
         int tx = -1, ty = -1;
         CHECK(t->nearestOpenTile(inCell(4, 1, 150.0, 150.0), tx, ty, Realm::Overworld));
@@ -2140,7 +2084,7 @@ TEST(a_negating_layer_does_not_cancel_a_colliding_layer_above_it) {
     Terrain t;
     CHECK(loadDeckMap(map, t, "deck_under_wall.tmj", 3, 3, onlyMiddle(2u), onlyMiddle(1u),
                       onlyMiddle(2u)));
-    CHECK(t.atTile(1, 1) == Tile::Wall);
+    CHECK(t.atTile(1, 1) == Tile::Solid);
     CHECK(t.blocked(inCell(1, 1, 150.0, 150.0), Realm::Overworld));
 
     // The same map without that upper layer is open, so it really is the layer
@@ -2148,7 +2092,7 @@ TEST(a_negating_layer_does_not_cancel_a_colliding_layer_above_it) {
     TiledMap without;
     Terrain open;
     CHECK(loadDeckMap(without, open, "deck_no_wall.tmj", 3, 3, onlyMiddle(2u), onlyMiddle(1u)));
-    CHECK(open.atTile(1, 1) == Tile::Ground);
+    CHECK(open.atTile(1, 1) == Tile::Open);
     CHECK(!open.blocked(inCell(1, 1, 150.0, 150.0), Realm::Overworld));
 }
 
@@ -2173,7 +2117,7 @@ TEST(a_layer_with_both_collision_properties_is_reported_and_negates) {
     CHECK(deck.conflicting);
     CHECK_EQ(map.unshapedBlockingCells(), 0);
     CHECK_EQ(map.negatedCells(), 1);
-    CHECK(t.atTile(1, 1) == Tile::Ground);
+    CHECK(t.atTile(1, 1) == Tile::Open);
     CHECK(!t.blocked(inCell(1, 1, 150.0, 150.0), Realm::Overworld));
 }
 
@@ -2188,11 +2132,11 @@ TEST(a_negated_water_cell_is_ground_and_is_not_water) {
     under[1] = 6u;   // and an undecked one at (1,0) as the control
     CHECK(loadDeckMap(map, t, "deck_water.tmj", 3, 3, under, onlyMiddle(1u)));
 
-    CHECK(t.atTile(1, 1) == Tile::Ground);
+    CHECK(t.atTile(1, 1) == Tile::Open);
     CHECK(!t.blocked(inCell(1, 1, 150.0, 150.0), Realm::Overworld));
     CHECK(!t.inWater(inCell(1, 1, 150.0, 150.0), Realm::Overworld));
 
-    CHECK(t.atTile(1, 0) == Tile::Water);
+    CHECK(t.atTile(1, 0) == Tile::Solid);
     CHECK(t.blocked(inCell(1, 0, 150.0, 150.0), Realm::Overworld));
     CHECK(t.inWater(inCell(1, 0, 150.0, 150.0), Realm::Overworld));
 }
@@ -2220,7 +2164,7 @@ TEST(the_coarse_grid_and_the_exact_queries_agree_on_a_negated_cell) {
         }
     }
     // And the wire carries the same answer, because it carries that grid.
-    CHECK_EQ(map.tiles()[4], static_cast<std::uint8_t>(Tile::Ground));
+    CHECK_EQ(map.tiles()[4], static_cast<std::uint8_t>(Tile::Open));
 }
 
 TEST(a_negating_layer_over_open_ground_cancels_nothing_and_says_so) {
@@ -2237,7 +2181,7 @@ TEST(a_negating_layer_over_open_ground_cancels_nothing_and_says_so) {
     CHECK_EQ(map.negatedCells(), 0);
     CHECK_EQ(t.collisionDeckedCellCount(), 0);
     // Nothing else changed: the cell was open before and is open now.
-    CHECK(t.atTile(1, 1) == Tile::Ground);
+    CHECK(t.atTile(1, 1) == Tile::Open);
     CHECK(!t.blocked(inCell(1, 1, 150.0, 150.0), Realm::Overworld));
 }
 
@@ -2286,7 +2230,7 @@ TEST(the_shipped_bridge_is_a_walkable_channel_and_the_river_still_blocks) {
             maxX = std::max(maxX, tx);
             row = ty;
             // Open in the coarse grid, open in the exact one, and dry.
-            CHECK(t.atTile(tx, ty) == Tile::Ground);
+            CHECK(t.atTile(tx, ty) == Tile::Open);
             CHECK(!t.blocked(Terrain::tileCenter(tx, ty), Realm::Overworld));
             CHECK(!t.inWater(Terrain::tileCenter(tx, ty), Realm::Overworld));
             std::vector<Terrain::CellCollisionRing> rings;

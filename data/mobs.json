@@ -915,6 +915,7 @@
         "image": "$hornet",
         "stinger": true,
         "ai_type": "hostile",
+        "hornet_ai": true,
         "bee_ai": "idle",
         "range": 300,
         "groups": [
@@ -1754,6 +1755,7 @@
         "color": "#8ac255",
         "image": "$centipede",
         "ai_type": "passive",
+        "centipede_ai": true,
         "range": 500,
         "groups": {
             "garden": 0.2
@@ -1781,6 +1783,7 @@
         "color": "#8ac255",
         "image": "$centipede_body",
         "ai_type": "passive",
+        "centipede_ai": true,
         "range": 0,
         "groups": {
             "garden": 0
@@ -1792,7 +1795,7 @@
         "damage": 10,
         "health": 25,
         "size": 1.1667,
-        "speed": 0.96,
+        "speed": 2.0,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -1808,7 +1811,8 @@
         "description": "A swift desert crawler leading a chain of body segments",
         "color": "#d4c66e",
         "image": "$centipede_desert",
-        "ai_type": "passive",
+        "ai_type": "neutral",
+        "centipede_ai": true,
         "range": 500,
         "groups": {
             "desert": 0.4
@@ -1819,7 +1823,7 @@
         "damage": 10,
         "health": 25,
         "size": 1.1667,
-        "speed": 0.96,
+        "speed": 2.0,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -1835,7 +1839,8 @@
         "description": "A segment of a desert centipede",
         "color": "#d4c66e",
         "image": "$centipede_desert_body",
-        "ai_type": "passive",
+        "ai_type": "neutral",
+        "centipede_ai": true,
         "range": 0,
         "groups": {
             "desert": 0
@@ -1847,7 +1852,7 @@
         "damage": 10,
         "health": 25,
         "size": 1.1667,
-        "speed": 0.48,
+        "speed": 1.0,
         "cooldown": 2000,
         "xp": {
             "common": 3,
@@ -1864,6 +1869,7 @@
         "color": "#905db0",
         "image": "$centipede_evil",
         "ai_type": "hostile",
+        "centipede_ai": true,
         "range": 500,
         "groups": {
             "jungle": 0.2
@@ -1893,6 +1899,7 @@
         "color": "#905db0",
         "image": "$centipede_evil_body",
         "ai_type": "hostile",
+        "centipede_ai": true,
         "range": 0,
         "groups": {
             "jungle": 0
@@ -1962,6 +1969,7 @@
         "color": "#999999",
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-40 -40 80 80\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path fill=\"#111111\" fill-rule=\"evenodd\" d=\"\n    M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0\n    M 24.749 24.749\n    Q 9.899 23.899 0 35\n    Q -9.899 23.899 -24.749 24.749\n    Q -23.899 9.899 -35 0\n    Q -23.899 -9.899 -24.749 -24.749\n    Q -9.899 -23.899 0 -35\n    Q 9.899 -23.899 24.749 -24.749\n    Q 23.899 -9.899 35 0\n    Q 23.899 9.899 24.749 24.749\n    Z\" />\n\n  <circle cx=\"0\" cy=\"0\" r=\"26.5\" fill=\"#7a7a7a\" />\n  <circle cx=\"0\" cy=\"0\" r=\"23.5\" fill=\"#999999\" />\n\n  <g fill=\"#000000\">\n    <rect x=\"-10\" y=\"-11.3\" width=\"6\" height=\"13\" />\n    <rect x=\"4\" y=\"-11.3\" width=\"6\" height=\"13\" />\n  </g>\n  <g fill=\"#ffffff\">\n    <rect x=\"-10\" y=\"-7.8\" width=\"6\" height=\"6\" />\n    <rect x=\"4\" y=\"-7.8\" width=\"6\" height=\"6\" />\n  </g>\n\n  <path d=\"M -6 10 Q 0 14.5 6 10\" fill=\"none\" stroke=\"#222222\" stroke-width=\"1.5\" stroke-linecap=\"round\" />\n</svg>",
         "ai_type": "hostile",
+        "digger_ai": true,
         "range": 600,
         "hideRotation": true
     },

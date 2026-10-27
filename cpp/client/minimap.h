@@ -96,8 +96,9 @@ struct MinimapSolid {
 /// a point's KIND in (cellLayerAt gives the kind to the TOPMOST ring holding
 /// the point). Painting in any other order colours a river black wherever it
 /// crosses a wall layer below it. The whole-cell fallback sits at the top of
-/// the stack, because the coarse Tile it comes from is itself the fold of the
-/// topmost layer that contributed to the cell.
+/// the stack, because the coarse Tile it comes from is itself the fold of
+/// every layer that contributed to the cell; it is never water, since a cell
+/// with no shapes has no kind.
 template <typename Fn>
 void eachMinimapSolid(const Terrain& terrain, Realm realm, Fn&& emit) {
     const int cols = terrain.tileCols(realm);
@@ -115,17 +116,15 @@ void eachMinimapSolid(const Terrain& terrain, Realm realm, Fn&& emit) {
             terrain.collisionRingsAt(tx, ty, realm, rings);
             if (rings.empty()) {
                 // No authored geometry, but the coarse grid still calls the
-                // cell blocked: a generated map, a grid a test wrote with
-                // setTile(), a client with no local map file. There the whole
-                // cell IS the collision -- it is exactly what blocked() and
-                // resolveWall() fall back to for such a cell -- so the square
-                // is what the minimap draws.
-                const Tile tile = terrain.atTile(tx, ty, realm);
-                if (!tileBlocks(tile)) continue;
+                // cell Solid: a grid a test wrote with setTile(), a client
+                // with no local map file. There the whole cell IS the
+                // collision -- it is exactly what blocked() and resolveWall()
+                // fall back to for such a cell -- so the square is what the
+                // minimap draws.
+                if (!tileBlocks(terrain.atTile(tx, ty, realm))) continue;
                 MinimapSolid solid;
                 solid.origin = {tx * kTileSize, ty * kTileSize};
-                solid.water = tileIsWater(tile);
-                solids.emplace_back(order(255, solid.water), solid);
+                solids.emplace_back(order(255, false), solid);
                 continue;
             }
             for (const Terrain::CellCollisionRing& ring : rings) {

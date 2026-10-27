@@ -24,11 +24,12 @@
 //                    it has in that cell, placed at the cell, turned by the
 //                    cell's flip bits and scaled from the tileset's tile size
 //                    to the map's
-//         blocked <- the cell holds at least one such shape, or a neighbouring
+//         Solid   <- the cell holds at least one such shape, or a neighbouring
 //                    cell's shape reaches into it (shapeReach)
-//         kind    <- Water if the TOPMOST contributing tile there is tagged
-//                    `water` in the tileset, otherwise Wall
-//         else       Ground
+//         else       Open
+//
+//     Whether a SHAPE is water is the tileset's `water` tag on its tile, and
+//     stays with the shape; the coarse cell has no kind.
 //
 //     A layer with `has_collision` false, or absent, NEVER blocks, whatever
 //     art it holds -- a painted pond on a background layer is scenery a body
@@ -63,8 +64,8 @@
 //     happens to be the topmost one, so today it cancels water, dirt and
 //     castle alike, but the rule is written as the stack it is.
 //
-//     A negated cell is GROUND: not Wall, not Water, so inWater() is false on
-//     a bridge deck. `has_collision` and `negate_collision` are independent
+//     A negated cell is OPEN, with no shape left in it to be water, so
+//     inWater() is false on a bridge deck. `has_collision` and `negate_collision` are independent
 //     properties and a layer carrying BOTH is incoherent -- the load report
 //     says so loudly and negation wins for that layer's cells.
 //
@@ -82,15 +83,14 @@
 //     reach.
 //
 //     The Tile grid below is the COARSE view of that: one value per cell,
-//     saying only whether the cell holds any blocking shape and what kind. It
-//     is what the minimap paints, what the bots' flow field walks, and what
-//     goes on the wire; the shapes are the exact answer, and Terrain keeps
-//     them beside the grid.
+//     saying only whether the cell holds any blocking shape -- Open or Solid.
+//     It is what the bots' flow field walks, what the minimap falls back to,
+//     and what goes on the wire; the shapes are the exact answer, and Terrain
+//     keeps them beside the grid.
 //
 //     The tileset's `water` tag says only what KIND of blocker a shape is --
-//     the minimap colour and tileIsWater(). It never decides whether anything
-//     blocks. Only three Tile values ever come out of here (Ground, Wall,
-//     Water).
+//     the minimap colour and Terrain::inWater(). It never decides whether
+//     anything blocks, and it never reaches the coarse grid.
 //
 //   - THE LAYERS ARE DRAWN BOTTOM TO TOP, IN FILE ORDER. Their NAMES mean
 //     nothing to the game; only their order and their `has_collision` do.
@@ -293,9 +293,11 @@ struct TiledTileType {
     std::string art;
     /// Index into TiledMap::artFiles(), or -1 for a tile with no image.
     int artIndex = -1;
-    /// What KIND of blocker this tile is where a colliding layer paints it --
-    /// Tile::Water rather than Tile::Wall. Never decides WHETHER a cell
-    /// blocks: on a layer that does not collide this tag does nothing at all.
+    /// What KIND of blocker this tile's shapes are where a colliding layer
+    /// paints it: water, which slows (Terrain::inWater) and is painted blue on
+    /// the minimap. A property of the SHAPES, never of the coarse cell. Never
+    /// decides WHETHER a cell blocks: on a layer that does not collide this
+    /// tag does nothing at all.
     bool water = false;
     bool coversEverything = false;  ///< see kTileCoversEverything
     /// The shapes the author drew on this tile, UNFLIPPED, already scaled from
@@ -379,9 +381,9 @@ public:
 
     /// The COARSE collision grid: row-major Tile values, width()*height() of
     /// them, derived from the layers and their tiles' shapes by the rule in the
-    /// header note -- a cell is non-Ground exactly when some colliding layer
-    /// paints a tile there that HAS shapes. Only ever Tile::Ground, Tile::Wall
-    /// or Tile::Water.
+    /// header note -- a cell is Solid exactly when some colliding layer paints a
+    /// tile there that HAS shapes (or one whose shapes reach into it), and Open
+    /// otherwise.
     ///
     /// The exact answer is the shapes themselves (palette()[cell.type].shapes,
     /// turned by the cell's flags); this is the one-value-per-cell view of it
@@ -390,9 +392,8 @@ public:
 
     /// How many cells the rule resolved to each Tile. Sums to width()*height();
     /// what the load report prints.
-    int wallCells() const { return wallCells_; }
-    int waterCells() const { return waterCells_; }
-    int groundCells() const { return groundCells_; }
+    int solidCells() const { return solidCells_; }
+    int openCells() const { return openCells_; }
 
     /// Cells where a COLLIDING layer paints a tile that carries no collision
     /// shape, and which therefore block nothing.
@@ -405,7 +406,7 @@ public:
     std::vector<std::string> unshapedBlockingTiles() const;
 
     /// Cells a `negate_collision` layer cleared out of the COARSE grid: cells
-    /// that some layer below had blocked and that are Ground because a layer
+    /// that some layer below had blocked and that are Open because a layer
     /// above decked them over. The 14 bridge cells of the shipped garden.
     ///
     /// Only whole-cell negation can show up here -- a negating tile that
@@ -416,9 +417,9 @@ public:
     int negatedCells() const { return negatedCells_; }
 
     /// How many cells hold at least one collision shape. The coarse grid's
-    /// wall + water count, by another route, and what tells a reader whether a
-    /// map has authored shapes at all.
-    int shapedBlockingCells() const { return wallCells_ + waterCells_; }
+    /// Solid count, by another route, and what tells a reader whether a map
+    /// has authored shapes at all.
+    int shapedBlockingCells() const { return solidCells_; }
 
     /// The annotations, as an array of elements. See the header note.
     const Json& elements() const { return elements_; }
@@ -431,7 +432,7 @@ public:
     const std::vector<TiledTileType>& palette() const { return palette_; }
 
     /// Water-tagged tiles THIS MAP paints, but only on layers that do not
-    /// collide -- so not one cell of them will ever be Tile::Water.
+    /// collide -- so not one of them is ever water anyone can be in.
     ///
     /// The one honest complaint left about the `water` tag. Since a layer
     /// decides blocking, a tile can no longer contradict itself; what it can
@@ -444,9 +445,8 @@ public:
 private:
     int width_ = 0;
     int height_ = 0;
-    int wallCells_ = 0;
-    int waterCells_ = 0;
-    int groundCells_ = 0;
+    int solidCells_ = 0;
+    int openCells_ = 0;
     std::vector<std::string> artFiles_;
     std::vector<TiledLayer> layers_;
     std::vector<std::uint8_t> tiles_;

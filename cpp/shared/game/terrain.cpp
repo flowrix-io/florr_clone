@@ -2,12 +2,10 @@
 
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <deque>
 #include <limits>
 #include <optional>
 #include <string>
@@ -21,71 +19,6 @@ namespace {
 
 constexpr int kAxis = kTilesPerAxis;
 constexpr int kTotalTiles = kAxis * kAxis;
-
-constexpr int kNeighborDx[4] = {1, -1, 0, 0};
-constexpr int kNeighborDy[4] = {0, 0, 1, -1};
-
-/// Value noise on a coarse lattice, sampled in TILE units.
-///
-/// Lattice noise rather than a per-tile hash because the map needs blobs, not
-/// static: a hash gives every tile an independent roll, which reads as gravel
-/// and walls nothing off in an interesting shape.
-class ValueNoise {
-public:
-    ValueNoise(Rng& rng, int cellTiles)
-        : cell_(std::max(1, cellTiles)), dim_(kAxis / std::max(1, cellTiles) + 3) {
-        values_.resize(static_cast<std::size_t>(dim_) * static_cast<std::size_t>(dim_));
-        for (double& v : values_) v = rng.unit();
-    }
-
-    double at(double tx, double ty) const {
-        const double fx = tx / cell_;
-        const double fy = ty / cell_;
-        const double bx = std::floor(fx);
-        const double by = std::floor(fy);
-        // Weights come from the unclamped fraction, indices from the clamped
-        // lattice cell, so a sample past the edge stays continuous.
-        const double sx = smoothstep(fx - bx);
-        const double sy = smoothstep(fy - by);
-        const int x0 = clamp(static_cast<int>(bx), 0, dim_ - 2);
-        const int y0 = clamp(static_cast<int>(by), 0, dim_ - 2);
-        const double a = value(x0, y0);
-        const double b = value(x0 + 1, y0);
-        const double c = value(x0, y0 + 1);
-        const double d = value(x0 + 1, y0 + 1);
-        return lerp(lerp(a, b, sx), lerp(c, d, sx), sy);
-    }
-
-private:
-    static double smoothstep(double t) { return t * t * (3.0 - 2.0 * t); }
-    double value(int x, int y) const {
-        return values_[static_cast<std::size_t>(y) * static_cast<std::size_t>(dim_) + static_cast<std::size_t>(x)];
-    }
-
-    int cell_;
-    int dim_;
-    std::vector<double> values_;
-};
-
-/// The noise the whole map is cut from. One shared set rather than one per
-/// biome, so features line up across a section boundary instead of stopping
-/// dead on it -- a river runs out of the Garden and into the Ocean.
-struct NoiseSet {
-    explicit NoiseSet(Rng& rng)
-        : coarse(rng, 24), medium(rng, 10), fine(rng, 4), altCoarse(rng, 14), altMedium(rng, 6) {}
-
-    double fbm(double tx, double ty) const {
-        return 0.55 * medium.at(tx, ty) + 0.30 * fine.at(tx, ty) + 0.15 * coarse.at(tx, ty);
-    }
-
-    ValueNoise coarse, medium, fine, altCoarse, altMedium;
-};
-
-/// Distance from a noise field's 0.5 level set, which draws winding lines
-/// (rivers, ridges, streams) instead of blobs.
-inline double ridge(double n) { return std::fabs(n - 0.5); }
-
-inline int wrapMod(int v, int m) { return ((v % m) + m) % m; }
 
 // ---------------------------------------------------------------------------
 // Collision geometry
@@ -339,89 +272,10 @@ bool rectHolds(const Rect& r, Vec2 p) {
     return p.x >= r.left() && p.x <= r.right() && p.y >= r.top() && p.y <= r.bottom();
 }
 
-Tile classifyGarden(int tx, int ty, const NoiseSet& n) {
-    if (n.altMedium.at(tx, ty) > 0.84) return Tile::Wall;      // boulders
-    if (n.medium.at(tx, ty) > 0.80) return Tile::Water;        // ponds
-    if (n.fine.at(tx, ty) > 0.74) return Tile::Sand;           // worn paths
-    return Tile::Ground;
-}
-
-Tile classifyDesert(int tx, int ty, const NoiseSet& n) {
-    if (n.medium.at(tx, ty) > 0.80) return Tile::Wall;         // mesas
-    if (n.altCoarse.at(tx, ty) < 0.07) return Tile::Water;     // oases
-    if (n.fine.at(tx, ty) > 0.80) return Tile::Stone;
-    return Tile::Sand;
-}
-
-Tile classifyHel(int tx, int ty, const NoiseSet& n) {
-    if (ridge(n.medium.at(tx, ty)) < 0.035) return Tile::Wall; // basalt ridges
-    if (n.altCoarse.at(tx, ty) > 0.78) return Tile::Water;     // impassable lava
-    return Tile::Ground;
-}
-
-Tile classifyOcean(int tx, int ty, const NoiseSet& n) {
-    const double height = 0.6 * n.coarse.at(tx, ty) + 0.4 * n.medium.at(tx, ty);
-    if (height > 0.70) return Tile::Ground;                    // island interior
-    if (height > 0.60) return Tile::Sand;                      // beach
-    if (height < 0.20 && n.altMedium.at(tx, ty) > 0.86) return Tile::Wall;  // spires
-    return Tile::Water;
-}
-
-Tile classifyJungle(int tx, int ty, const NoiseSet& n) {
-    const double canopy = 0.55 * n.medium.at(tx, ty) + 0.45 * n.fine.at(tx, ty);
-    if (canopy > 0.66) return Tile::Wall;                      // dense trees
-    if (ridge(n.altMedium.at(tx, ty)) < 0.025) return Tile::Water;  // streams
-    return Tile::Ground;
-}
-
-Tile classifySewers(int tx, int ty, const NoiseSet& n) {
-    // A rectilinear lane grid, deliberately unlike everything around it. The
-    // lanes are laid out by construction rather than by noise, so the section
-    // is connected before the repair pass ever looks at it.
-    const int mx = wrapMod(tx, 7);
-    const int my = wrapMod(ty, 7);
-    const bool lane = mx < 3 || my < 3;
-    if (!lane) return Tile::Wall;
-    if (n.fine.at(tx, ty) > 0.90) return Tile::Wall;           // collapsed rubble
-    if (mx == 1 || my == 1) return Tile::Water;                // the channel itself
-    return Tile::Ground;                                       // the ledges beside it
-}
-
-Tile classifyComputer(int tx, int ty, const NoiseSet&) {
-    // Circuit board: a lattice of trace lanes with board substrate between.
-    // Chips (walls) are stamped later, inside the cells, never on a lane.
-    if (wrapMod(tx, 9) == 0 || wrapMod(ty, 9) == 0) return Tile::Ground;
-    return Tile::Stone;
-}
-
-Tile classifyUnknown(int tx, int ty, const NoiseSet& n) {
-    const double v = n.fbm(tx, ty);
-    if (v > 0.70) return Tile::Wall;
-    if (v < 0.24) return Tile::Water;                          // voids
-    if (n.altCoarse.at(tx, ty) > 0.62) return Tile::Stone;
-    return Tile::Ground;
-}
-
-Tile classifyTile(int section, int tx, int ty, const NoiseSet& n) {
-    switch (section) {
-        case 0: return classifyGarden(tx, ty, n);
-        case 1: return classifyDesert(tx, ty, n);
-        case 2: return classifyHel(tx, ty, n);
-        case 3: return classifyOcean(tx, ty, n);
-        // Ant Hell starts solid; carveAntHell() digs the chambers out of it.
-        case 4: return Tile::Wall;
-        case 5: return classifyJungle(tx, ty, n);
-        case 6: return classifySewers(tx, ty, n);
-        case 7: return classifyComputer(tx, ty, n);
-        case 8: return classifyUnknown(tx, ty, n);
-        default: return Tile::Wall;
-    }
-}
-
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Construction and generation
+// Construction
 // ---------------------------------------------------------------------------
 
 Terrain::Terrain() {
@@ -431,7 +285,7 @@ Terrain::Terrain() {
     Grid& world = grid(Realm::Overworld);
     world.cols = kAxis;
     world.rows = kAxis;
-    world.tiles.assign(static_cast<std::size_t>(kTotalTiles), static_cast<std::uint8_t>(Tile::Ground));
+    world.tiles.assign(static_cast<std::size_t>(kTotalTiles), static_cast<std::uint8_t>(Tile::Open));
     world.spawnTile = index(world, kAxis / 2, kAxis / 2);
 }
 
@@ -441,7 +295,7 @@ bool Terrain::install(Realm realm, std::vector<std::uint8_t> tiles, int cols, in
     if (cols <= 0 || rows <= 0 || cols > kMaxTilesPerAxis || rows > kMaxTilesPerAxis) return false;
     if (tiles.size() != static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows)) return false;
     for (const std::uint8_t tile : tiles) {
-        if (tile > static_cast<std::uint8_t>(Tile::Block)) return false;
+        if (tile > static_cast<std::uint8_t>(Tile::Solid)) return false;
     }
     Grid& g = grid(realm);
     // Shapes are indexed by the grid's width, so a grid of a different shape
@@ -481,28 +335,6 @@ void Terrain::fill(Tile t, Realm realm) {
     clearCollisionShapes(realm);   // see setTile
 }
 
-void Terrain::generate(std::uint64_t seed) {
-    seed_ = seed;
-    Rng rng(seed);
-
-    // Draw order is the reproducibility contract: every rng consumer below
-    // runs exactly once, in this order, for any seed.
-    generateSections(rng);
-    carveAntHell(rng);
-    placeCircuitChips(rng);
-
-    // Players start in the Garden, not at the world centre.
-    //
-    // The centre section is the Ant Hell, which generates solid and is dug out
-    // into a tunnel network -- an interesting place to raid and a hostile place
-    // to be dropped into with a single Basic petal. The Garden is where the
-    // starter mobs live (the `garden` group in mobs.json), so that is where a
-    // new flower belongs.
-    grid(Realm::Overworld).spawnTile = chooseGardenSpawn();
-    connectAll();
-    assert(isConnected());
-}
-
 std::vector<std::uint8_t> encodeTileRle(const std::vector<std::uint8_t>& tiles) {
     std::vector<std::uint8_t> out;
     std::size_t at = 0;
@@ -532,7 +364,7 @@ std::vector<std::uint8_t> encodeTileRle(const std::vector<std::uint8_t>& tiles) 
 
 bool decodeTileRle(const std::uint8_t* data, std::size_t size, std::size_t expected,
                    std::vector<std::uint8_t>& out, std::string& errorOut) {
-    constexpr std::uint8_t maxValue = static_cast<std::uint8_t>(Tile::Block);
+    constexpr std::uint8_t maxValue = static_cast<std::uint8_t>(Tile::Solid);
     out.clear();
     out.reserve(expected);
     std::size_t at = 0;
@@ -694,12 +526,12 @@ bool Terrain::loadTiledMap(const std::string& path, std::string& errorOut, Realm
             list += ")";
         }
     }
-    contentNote("[map] %s: collision from %s; negated by %s; scenery %s; %d wall, %d water, "
-                "%d ground cells; %d shape sets over %d shaped cells, %d cells decked over\n",
+    contentNote("[map] %s: collision from %s; negated by %s; scenery %s; %d solid, %d open "
+                "cells; %d shape sets over %d shaped cells, %d cells decked over\n",
                 path.c_str(), collides.empty() ? "no layer" : collides.c_str(),
                 negates.empty() ? "no layer" : negates.c_str(),
-                scenery.empty() ? "(none)" : scenery.c_str(), map.wallCells(), map.waterCells(),
-                map.groundCells(), collisionShapeSetCount(realm),
+                scenery.empty() ? "(none)" : scenery.c_str(), map.solidCells(),
+                map.openCells(), collisionShapeSetCount(realm),
                 collisionShapeCellCount(realm), collisionDeckedCellCount(realm));
     for (const TiledLayer& layer : map.layers()) {
         // The two properties are opposites, so a layer with both says nothing
@@ -781,7 +613,6 @@ bool Terrain::loadTiledMap(const std::string& path, std::string& errorOut, Realm
                        "layers that do not collide; those cells are plain ground\n",
                        path.c_str(), name.c_str());
     }
-    seed_ = 0;   // an authored map, not a generated one
     return true;
 }
 
@@ -1073,13 +904,9 @@ bool Terrain::loadCollisionShapes(const std::string& path, std::string& errorOut
 bool Terrain::setTiles(const std::vector<std::uint8_t>& tiles, int cols, int rows, Realm realm) {
     if (!install(realm, tiles, cols, rows)) return false;
     Grid& g = grid(realm);
-    // The connectivity root is only meaningful for the overworld, which is the
-    // one grid generate() and chooseGardenSpawn() know how to reason about. On
-    // any other map the nearest open tile to the middle is the honest answer,
-    // and it is only ever a fallback for a caller with nowhere better to go.
-    g.spawnTile = realm == Realm::Overworld && cols == kAxis && rows == kAxis
-                      ? chooseGardenSpawn()
-                      : index(g, cols / 2, rows / 2);
+    // The nearest open tile to the middle: only ever a fallback for a caller
+    // with nowhere better to go.
+    g.spawnTile = index(g, cols / 2, rows / 2);
     if (!tileBlocks(atTile(g.spawnTile % g.cols, g.spawnTile / g.cols, realm))) return true;
     // A map whose middle is solid is perfectly legal -- a cave level starts
     // inside rock, and now that a cell blocks where its SHAPES are, an authored
@@ -1103,130 +930,8 @@ bool Terrain::setTiles(const std::vector<std::uint8_t>& tiles, int cols, int row
     return true;
 }
 
-void Terrain::generateSections(Rng& rng) {
-    // The procedural map is the OVERWORLD's, and only ever was: it is built
-    // out of the nine sections, which are a property of the default world's
-    // dimensions. Every other realm is authored.
-    Grid& g = grid(Realm::Overworld);
-    const NoiseSet noise(rng);
-    for (int ty = 0; ty < g.rows; ++ty) {
-        for (int tx = 0; tx < g.cols; ++tx) {
-            const int section = flix::sectionAt(tileCenter(tx, ty));
-            g.tiles[static_cast<std::size_t>(index(g, tx, ty))] =
-                static_cast<std::uint8_t>(classifyTile(section, tx, ty, noise));
-        }
-    }
-}
-
-/// An open tile near the middle of the Garden section, searched outward so the
-/// result is the closest walkable spot to the section's centre rather than the
-/// first one in scan order.
-int Terrain::chooseGardenSpawn() const {
-    const Grid& g = grid(Realm::Overworld);
-    const int perSection = g.cols / kSectionsPerAxis;
-    const int centreTx = perSection / 2;
-    const int centreTy = perSection / 2;
-
-    for (int radius = 0; radius < perSection; ++radius) {
-        for (int dy = -radius; dy <= radius; ++dy) {
-            for (int dx = -radius; dx <= radius; ++dx) {
-                // Only the ring at this radius; the interior was covered already.
-                if (std::max(std::abs(dx), std::abs(dy)) != radius) continue;
-                const int tx = centreTx + dx;
-                const int ty = centreTy + dy;
-                if (tx < 0 || ty < 0 || tx >= perSection || ty >= perSection) continue;
-                if (atTile(tx, ty) == Tile::Ground) return index(g, tx, ty);
-            }
-        }
-    }
-    // The Garden is noise-generated and always has ground, but if it somehow
-    // did not, the centre is still a defined tile and connectAll() will open it.
-    return index(g, centreTx, centreTy);
-}
-
-void Terrain::carveDisc(Vec2 center, double radius, Tile t) {
-    const Grid& g = grid(Realm::Overworld);
-    const int x0 = clamp(toTileCoord(center.x - radius), 0, g.cols - 1);
-    const int x1 = clamp(toTileCoord(center.x + radius), 0, g.cols - 1);
-    const int y0 = clamp(toTileCoord(center.y - radius), 0, g.rows - 1);
-    const int y1 = clamp(toTileCoord(center.y + radius), 0, g.rows - 1);
-    const double r2 = radius * radius;
-    for (int ty = y0; ty <= y1; ++ty) {
-        for (int tx = x0; tx <= x1; ++tx) {
-            if (distanceSq(tileCenter(tx, ty), center) <= r2) setTile(tx, ty, t);
-        }
-    }
-}
-
-void Terrain::carveCorridor(int fromTx, int fromTy, int toTx, int toTy, int halfWidth, Tile t) {
-    const int stepX = toTx >= fromTx ? 1 : -1;
-    const int stepY = toTy >= fromTy ? 1 : -1;
-    auto brush = [&](int cx, int cy) {
-        for (int dy = -halfWidth; dy <= halfWidth; ++dy) {
-            for (int dx = -halfWidth; dx <= halfWidth; ++dx) setTile(cx + dx, cy + dy, t);
-        }
-    };
-    // An L, not a diagonal: a diagonal staircase leaves single-tile pinch
-    // points that a body wider than a tile cannot squeeze through.
-    for (int x = fromTx; x != toTx + stepX; x += stepX) brush(x, fromTy);
-    for (int y = fromTy; y != toTy + stepY; y += stepY) brush(toTx, y);
-}
-
-void Terrain::carveAntHell(Rng& rng) {
-    const Vec2 center{kWorldHalf, kWorldHalf};
-    const int centerTx = toTileCoord(center.x);
-    const int centerTy = toTileCoord(center.y);
-
-    // The spawn plaza. Everything in the map hangs off this being open.
-    carveDisc(center, kTileSize * 5.0, Tile::Ground);
-
-    // Four tunnels out of the section, ending a couple of tiles beyond its
-    // edge so they meet whatever the neighbouring biome generated. Without
-    // these the repair pass would still connect the hill, but by one ragged
-    // corridor instead of four deliberate gates.
-    const int reach = static_cast<int>(kSectionSize / kTileSize) / 2 + 3;
-    carveCorridor(centerTx, centerTy, centerTx - reach, centerTy, 1, Tile::Ground);
-    carveCorridor(centerTx, centerTy, centerTx + reach, centerTy, 1, Tile::Ground);
-    carveCorridor(centerTx, centerTy, centerTx, centerTy - reach, 1, Tile::Ground);
-    carveCorridor(centerTx, centerTy, centerTx, centerTy + reach, 1, Tile::Ground);
-
-    const int inset = 6;
-    const int lo = centerTx - reach + inset;
-    const int hi = centerTx + reach - inset;
-
-    int prevTx = centerTx;
-    int prevTy = centerTy;
-    for (int i = 0; i < 16; ++i) {
-        const int cx = rng.rangeInt(lo, hi);
-        const int cy = rng.rangeInt(lo, hi);
-        const double radius = kTileSize * rng.range(2.0, 5.0);
-        carveDisc(tileCenter(cx, cy), radius, Tile::Ground);
-        carveCorridor(prevTx, prevTy, cx, cy, 1, Tile::Ground);
-        prevTx = cx;
-        prevTy = cy;
-    }
-}
-
-void Terrain::placeCircuitChips(Rng& rng) {
-    // Chips sit strictly inside a lattice cell, so the trace lanes stay clear
-    // and the section is connected without any repair.
-    const Grid& g = grid(Realm::Overworld);
-    for (int cellY = 0; cellY + 9 <= g.rows; cellY += 9) {
-        for (int cellX = 0; cellX + 9 <= g.cols; cellX += 9) {
-            if (flix::sectionAt(tileCenter(cellX + 4, cellY + 4)) != 7) continue;
-            if (!rng.chance(0.55)) continue;
-            const int size = rng.rangeInt(3, 5);
-            const int ox = cellX + 2;
-            const int oy = cellY + 2;
-            for (int y = 0; y < size; ++y) {
-                for (int x = 0; x < size; ++x) setTile(ox + x, oy + y, Tile::Wall);
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
-// Connectivity
+// Statistics
 // ---------------------------------------------------------------------------
 
 int Terrain::openTileCount(Realm realm) const {
@@ -1236,115 +941,6 @@ int Terrain::openTileCount(Realm realm) const {
         if (passableIndex(g, static_cast<int>(i))) ++n;
     }
     return n;
-}
-
-bool Terrain::isConnected(Realm realm) const {
-    const Grid& g = grid(realm);
-    if (g.tiles.empty()) return true;
-    const int total = static_cast<int>(g.tiles.size());
-    const int open = openTileCount(realm);
-    if (!passableIndex(g, g.spawnTile)) return open == 0;
-
-    std::vector<std::uint8_t> seen(static_cast<std::size_t>(total), 0);
-    std::vector<int> stack;
-    stack.reserve(256);
-    stack.push_back(g.spawnTile);
-    seen[static_cast<std::size_t>(g.spawnTile)] = 1;
-    int reached = 0;
-    while (!stack.empty()) {
-        const int cur = stack.back();
-        stack.pop_back();
-        ++reached;
-        const int cx = cur % g.cols;
-        const int cy = cur / g.cols;
-        for (int d = 0; d < 4; ++d) {
-            const int nx = cx + kNeighborDx[d];
-            const int ny = cy + kNeighborDy[d];
-            if (nx < 0 || ny < 0 || nx >= g.cols || ny >= g.rows) continue;
-            const int ni = index(g, nx, ny);
-            if (seen[static_cast<std::size_t>(ni)] || !passableIndex(g, ni)) continue;
-            seen[static_cast<std::size_t>(ni)] = 1;
-            stack.push_back(ni);
-        }
-    }
-    return reached == open;
-}
-
-void Terrain::connectAll() {
-    // 0-1 BFS from the spawn over the WHOLE grid: stepping onto an open tile
-    // costs nothing, stepping into a wall costs one. dist == 0 therefore means
-    // "reachable without digging", and the parent chain of any other tile is
-    // the cheapest route to dig for it.
-    //
-    // The generated map is the overworld's, so this repairs that grid alone.
-    Grid& g = grid(Realm::Overworld);
-    const std::int32_t total = static_cast<std::int32_t>(g.tiles.size());
-    constexpr std::int32_t kUnreached = std::numeric_limits<std::int32_t>::max();
-    std::vector<std::int32_t> dist(static_cast<std::size_t>(total), kUnreached);
-    std::vector<std::int32_t> parent(static_cast<std::size_t>(total), -1);
-    std::vector<std::uint8_t> settled(static_cast<std::size_t>(total), 0);
-
-    std::deque<std::int32_t> queue;
-    dist[static_cast<std::size_t>(g.spawnTile)] = 0;
-    queue.push_back(g.spawnTile);
-    while (!queue.empty()) {
-        const std::int32_t cur = queue.front();
-        queue.pop_front();
-        if (settled[static_cast<std::size_t>(cur)]) continue;
-        settled[static_cast<std::size_t>(cur)] = 1;
-        const int cx = cur % g.cols;
-        const int cy = cur / g.cols;
-        for (int d = 0; d < 4; ++d) {
-            const int nx = cx + kNeighborDx[d];
-            const int ny = cy + kNeighborDy[d];
-            if (nx < 0 || ny < 0 || nx >= g.cols || ny >= g.rows) continue;
-            const std::int32_t ni = index(g, nx, ny);
-            if (settled[static_cast<std::size_t>(ni)]) continue;
-            const std::int32_t cost = passableIndex(g, ni) ? 0 : 1;
-            const std::int32_t candidate = dist[static_cast<std::size_t>(cur)] + cost;
-            if (candidate < dist[static_cast<std::size_t>(ni)]) {
-                dist[static_cast<std::size_t>(ni)] = candidate;
-                parent[static_cast<std::size_t>(ni)] = cur;
-                if (cost == 0) queue.push_front(ni);
-                else queue.push_back(ni);
-            }
-        }
-    }
-
-    std::vector<std::int32_t> stack;
-    stack.reserve(256);
-    for (std::int32_t t = 0; t < total; ++t) {
-        if (!passableIndex(g, t) || dist[static_cast<std::size_t>(t)] == 0) continue;
-
-        for (std::int32_t cur = t; cur >= 0 && dist[static_cast<std::size_t>(cur)] != 0;
-             cur = parent[static_cast<std::size_t>(cur)]) {
-            if (!passableIndex(g, cur)) {
-                g.tiles[static_cast<std::size_t>(cur)] = static_cast<std::uint8_t>(Tile::Ground);
-            }
-        }
-
-        // The corridor joined t's whole region to the spawn's, so flood the
-        // region and mark it reached. Without this every tile of a walled-off
-        // lake would dig its own corridor, and the repair would be quadratic.
-        stack.clear();
-        stack.push_back(t);
-        dist[static_cast<std::size_t>(t)] = 0;
-        while (!stack.empty()) {
-            const std::int32_t cur = stack.back();
-            stack.pop_back();
-            const int cx = cur % g.cols;
-            const int cy = cur / g.cols;
-            for (int d = 0; d < 4; ++d) {
-                const int nx = cx + kNeighborDx[d];
-                const int ny = cy + kNeighborDy[d];
-                if (nx < 0 || ny < 0 || nx >= g.cols || ny >= g.rows) continue;
-                const std::int32_t ni = index(g, nx, ny);
-                if (dist[static_cast<std::size_t>(ni)] == 0 || !passableIndex(g, ni)) continue;
-                dist[static_cast<std::size_t>(ni)] = 0;
-                stack.push_back(ni);
-            }
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1424,9 +1020,9 @@ int Terrain::cellLayerAt(int tx, int ty, Vec2 p, Realm realm, bool& water) const
     // in the middle turned one shape-less blocking cell (a client's wire grid, a
     // test's setTile) into a solid 3x3 of open ground.
     if (base.x < 0.0 || base.y < 0.0 || base.x > kTileSize || base.y > kTileSize) return -1;
-    const Tile tile = atTile(tx, ty, realm);
-    if (!tileBlocks(tile)) return -1;
-    water = tileIsWater(tile);
+    // A cell with no shapes has no kind to be: it is never water.
+    if (!tileBlocks(atTile(tx, ty, realm))) return -1;
+    water = false;
     return 0;
 }
 

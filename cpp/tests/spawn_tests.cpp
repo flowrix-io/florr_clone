@@ -1639,9 +1639,9 @@ TEST(every_body_a_dense_map_places_stands_on_open_ground) {
     CHECK(flowerCount > 4);
     CHECK_EQ(inWall, 0);
 
-    // Every mob the spawner stood. Water counts as a wall here: tileBlocks()
-    // is true of it, and a mob standing in the pond is as stuck as one inside
-    // a castle.
+    // Every mob the spawner stood. Water counts as a wall here: it blocks
+    // like one, and a mob standing in the pond is as stuck as one inside a
+    // castle.
     int mobCount = 0;
     int mobsInWall = 0;
     Query<MobTag, Transform> mobs{world};

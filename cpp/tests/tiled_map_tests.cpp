@@ -25,10 +25,10 @@ using namespace flix;
 //
 // The rule every collision test here is about: a cell COLLIDES where the SHAPES
 // of its tile are, for each layer whose `has_collision` property is set; the
-// coarse Tile grid says only whether a cell holds any such shape, and it is
-// Water rather than Wall when the topmost contributing tile is tagged `water` in
-// the tileset. A layer decides which cells can collide; a tile decides where
-// inside them, and a tile with no shapes decides nowhere.
+// coarse Tile grid says only whether a cell holds any such shape -- Solid or
+// Open. Whether a shape is water is the tileset's `water` tag, and stays with the
+// shape. A layer decides which cells can collide; a tile decides where inside
+// them, and a tile with no shapes decides nowhere.
 
 namespace {
 
@@ -297,35 +297,31 @@ TEST(collision_is_the_layers_and_the_topmost_blocker_names_the_kind) {
     CHECK(map.layers()[2].collides);
 
     // Blocked wherever a COLLIDING layer has a tile, and nowhere else.
-    CHECK(tileAt(map, 0, 0) == Tile::Wall);     // castle
-    CHECK(tileAt(map, 1, 0) == Tile::Water);    // pond, on a layer that collides
-    CHECK(tileAt(map, 2, 0) == Tile::Ground);   // the same pond tile, on the background
-    CHECK(tileAt(map, 0, 1) == Tile::Ground);   // dirt, but only on the background
-    CHECK(tileAt(map, 1, 1) == Tile::Water);
-    CHECK(tileAt(map, 2, 1) == Tile::Wall);     // a plain bridge tile: no tile opts out
-    CHECK(tileAt(map, 0, 2) == Tile::Wall);     // castle OVER water: the topmost blocker wins
-    CHECK(tileAt(map, 1, 2) == Tile::Ground);
-    CHECK(tileAt(map, 2, 2) == Tile::Wall);
+    CHECK(tileAt(map, 0, 0) == Tile::Solid);     // castle
+    CHECK(tileAt(map, 1, 0) == Tile::Solid);     // pond, on a layer that collides
+    CHECK(tileAt(map, 2, 0) == Tile::Open);      // the same pond tile, on the background
+    CHECK(tileAt(map, 0, 1) == Tile::Open);      // dirt, but only on the background
+    CHECK(tileAt(map, 1, 1) == Tile::Solid);
+    CHECK(tileAt(map, 2, 1) == Tile::Solid);     // a plain bridge tile: no tile opts out
+    CHECK(tileAt(map, 0, 2) == Tile::Solid);     // castle over water
+    CHECK(tileAt(map, 1, 2) == Tile::Open);
+    CHECK(tileAt(map, 2, 2) == Tile::Solid);
 
-    // Only the three the derivation can produce, ever, and the counts the load
-    // report prints agree with the grid.
-    int walls = 0;
-    int water = 0;
-    int ground = 0;
+    // Only the two the derivation can produce, ever -- a pond is Solid like a
+    // castle, its water being the shape's -- and the counts the load report
+    // prints agree with the grid.
+    int solid = 0;
+    int open = 0;
     for (const std::uint8_t tile : map.tiles()) {
-        CHECK(tile == static_cast<std::uint8_t>(Tile::Ground) ||
-              tile == static_cast<std::uint8_t>(Tile::Wall) ||
-              tile == static_cast<std::uint8_t>(Tile::Water));
-        if (tile == static_cast<std::uint8_t>(Tile::Wall)) ++walls;
-        else if (tile == static_cast<std::uint8_t>(Tile::Water)) ++water;
-        else ++ground;
+        CHECK(tile == static_cast<std::uint8_t>(Tile::Open) ||
+              tile == static_cast<std::uint8_t>(Tile::Solid));
+        if (tile == static_cast<std::uint8_t>(Tile::Solid)) ++solid;
+        else ++open;
     }
-    CHECK_EQ(walls, 4);
-    CHECK_EQ(water, 2);
-    CHECK_EQ(ground, 3);
-    CHECK_EQ(map.wallCells(), walls);
-    CHECK_EQ(map.waterCells(), water);
-    CHECK_EQ(map.groundCells(), ground);
+    CHECK_EQ(solid, 6);
+    CHECK_EQ(open, 3);
+    CHECK_EQ(map.solidCells(), solid);
+    CHECK_EQ(map.openCells(), open);
 
     // The art: one entry per distinct file, in palette order, by bare name.
     const std::vector<std::string> expected = {"grass.svg", "castle.svg", "water.svg",
@@ -367,25 +363,24 @@ TEST(a_layer_that_does_not_collide_never_blocks_whatever_it_holds) {
                        error));
         CHECK(!map.layers()[0].collides);
         for (const std::uint8_t tile : map.tiles()) {
-            CHECK(tile == static_cast<std::uint8_t>(Tile::Ground));
+            CHECK(tile == static_cast<std::uint8_t>(Tile::Open));
         }
-        CHECK_EQ(map.wallCells(), 0);
-        CHECK_EQ(map.waterCells(), 0);
-        CHECK_EQ(map.groundCells(), 4);
+        CHECK_EQ(map.solidCells(), 0);
+        CHECK_EQ(map.openCells(), 4);
         // ...and the art is still there to draw.
         CHECK_EQ(int(cellAt(map, 0, 0, 0).art), 1);
         CHECK_EQ(int(cellAt(map, 0, 1, 0).art), 2);
     }
 
     // And the same painting on a layer that DOES collide blocks at every cell,
-    // as wall or as water depending only on the `water` tag.
+    // castle and water alike.
     TiledMap walls;
     CHECK(walls.load(write("walls.tmj", mapOf(2, 2, layer("art", 2, 2, painting, "true"))), error));
-    CHECK(tileAt(walls, 0, 0) == Tile::Wall);
-    CHECK(tileAt(walls, 1, 0) == Tile::Water);
-    CHECK(tileAt(walls, 0, 1) == Tile::Water);
-    CHECK(tileAt(walls, 1, 1) == Tile::Wall);
-    CHECK_EQ(walls.groundCells(), 0);
+    CHECK(tileAt(walls, 0, 0) == Tile::Solid);
+    CHECK(tileAt(walls, 1, 0) == Tile::Solid);
+    CHECK(tileAt(walls, 0, 1) == Tile::Solid);
+    CHECK(tileAt(walls, 1, 1) == Tile::Solid);
+    CHECK_EQ(walls.openCells(), 0);
 }
 
 TEST(an_empty_cell_on_a_colliding_layer_is_still_ground) {
@@ -396,10 +391,10 @@ TEST(an_empty_cell_on_a_colliding_layer_is_still_ground) {
     // empty cell paints nothing and blocks nothing however the layer is ticked.
     CHECK(map.load(write("holes.tmj", mapOf(2, 2, layer("castle", 2, 2, "2,0,0,2", "true"))),
                    error));
-    CHECK(tileAt(map, 0, 0) == Tile::Wall);
-    CHECK(tileAt(map, 1, 0) == Tile::Ground);
-    CHECK(tileAt(map, 0, 1) == Tile::Ground);
-    CHECK(tileAt(map, 1, 1) == Tile::Wall);
+    CHECK(tileAt(map, 0, 0) == Tile::Solid);
+    CHECK(tileAt(map, 1, 0) == Tile::Open);
+    CHECK(tileAt(map, 0, 1) == Tile::Open);
+    CHECK(tileAt(map, 1, 1) == Tile::Solid);
     CHECK_EQ(int(cellAt(map, 0, 1, 0).art), -1);
 }
 
@@ -418,7 +413,7 @@ TEST(flip_bits_reach_the_art_and_turn_the_collision_shapes) {
     CHECK((rotated.flags & kTileFlipDiagonal) != 0);
     // ...they have to be masked off before the GID is resolved, or the tile
     // would not resolve at all and the cell would not block...
-    CHECK(tileAt(map, 2, 2) == Tile::Wall);
+    CHECK(tileAt(map, 2, 2) == Tile::Solid);
     // An unflipped cell of the same tile carries no bits.
     CHECK_EQ(int(cellAt(map, 2, 0, 0).flags & (kTileFlipHorizontal | kTileFlipVertical |
                                                kTileFlipDiagonal)), 0);
@@ -432,8 +427,8 @@ TEST(a_map_with_no_object_layers_loads) {
                    error));
     CHECK(error.empty());
     CHECK(map.elements().size() == 0);
-    CHECK(tileAt(map, 0, 1) == Tile::Wall);
-    CHECK(tileAt(map, 0, 0) == Tile::Ground);
+    CHECK(tileAt(map, 0, 1) == Tile::Solid);
+    CHECK(tileAt(map, 0, 0) == Tile::Open);
     // A map with no properties of its own is not a map with no properties:
     // it is an empty object, which every default reads through.
     CHECK(map.properties().isObject());
@@ -548,7 +543,7 @@ TEST(water_art_painted_only_where_it_cannot_block_is_reported) {
     CHECK(bad.size() == 1);
     if (!bad.empty()) CHECK(bad[0] == "water.svg");
     // The map still loads; the layer rule wins, and those cells are ground.
-    CHECK(tileAt(stranded, 0, 0) == Tile::Ground);
+    CHECK(tileAt(stranded, 0, 0) == Tile::Open);
 
     // The three-layer fixture paints the same water tile on a layer that DOES
     // collide as well, so it is not stranded and nothing is reported.
@@ -575,9 +570,9 @@ TEST(the_derived_grid_reaches_a_client_through_terrain_and_the_wire) {
     CHECK(error.empty());
     CHECK_EQ(server.tileCols(realm), 3);
     CHECK_EQ(server.tileRows(realm), 3);
-    CHECK(server.atTile(0, 0, realm) == Tile::Wall);
-    CHECK(server.atTile(1, 0, realm) == Tile::Water);
-    CHECK(server.atTile(2, 0, realm) == Tile::Ground);
+    CHECK(server.atTile(0, 0, realm) == Tile::Solid);
+    CHECK(server.atTile(1, 0, realm) == Tile::Solid);   // the pond: its water is its shape's
+    CHECK(server.atTile(2, 0, realm) == Tile::Open);
     CHECK(server.blocked(Terrain::tileCenter(0, 0), realm));
     CHECK(!server.blocked(Terrain::tileCenter(2, 0), realm));
     CHECK(server.inWater(Terrain::tileCenter(1, 1), realm));
@@ -642,14 +637,25 @@ TEST(the_shipped_map_loads) {
     CHECK(!map.layers()[0].collides);
     CHECK(!scenery.empty());
 
-    CHECK_EQ(map.wallCells() + map.waterCells() + map.groundCells(), side * side);
-    if (map.wallCells() == 0 || map.waterCells() == 0 || map.groundCells() == 0) {
-        std::printf("  garden.tmj derived %d wall, %d water, %d ground cells\n", map.wallCells(),
-                    map.waterCells(), map.groundCells());
+    CHECK_EQ(map.solidCells() + map.openCells(), side * side);
+    if (map.solidCells() == 0 || map.openCells() == 0) {
+        std::printf("  garden.tmj derived %d solid, %d open cells\n", map.solidCells(),
+                    map.openCells());
     }
-    CHECK(map.wallCells() > 0);
-    CHECK(map.waterCells() > 0);
-    CHECK(map.groundCells() > 0);
+    CHECK(map.solidCells() > 0);
+    CHECK(map.openCells() > 0);
+    // And a river: water-tagged tiles painted where they collide. The coarse
+    // grid cannot say so -- water is a kind of shape, not of cell.
+    int riverCells = 0;
+    for (const TiledLayer& layer : map.layers()) {
+        if (!layer.collides) continue;
+        for (const TiledCell& cell : layer.cells) {
+            if (cell.type >= 0 && map.palette()[static_cast<std::size_t>(cell.type)].water) {
+                ++riverCells;
+            }
+        }
+    }
+    CHECK(riverCells > 0);
 
     // THE DOOR HAS TO HAVE SOMEWHERE TO STAND. Roughly half of this map is
     // solid by design, and the one rectangle that must not be is the one the
@@ -713,10 +719,10 @@ TEST(a_tile_with_no_collision_shape_blocks_nothing_even_on_a_colliding_layer) {
     // very much does collide.
     CHECK(map.load(write("unshaped.tmj", mapOf(2, 2, layer("walls", 2, 2, "1,1,2,1", "true"))),
                    error));
-    CHECK_EQ(map.wallCells(), 1);            // only the castle, which has a shape
-    CHECK_EQ(map.groundCells(), 3);
-    CHECK(tileAt(map, 0, 0) == Tile::Ground);
-    CHECK(tileAt(map, 0, 1) == Tile::Wall);
+    CHECK_EQ(map.solidCells(), 1);           // only the castle, which has a shape
+    CHECK_EQ(map.openCells(), 3);
+    CHECK(tileAt(map, 0, 0) == Tile::Open);
+    CHECK(tileAt(map, 0, 1) == Tile::Solid);
     CHECK_EQ(map.unshapedBlockingCells(), 3);
     const std::vector<std::string> named = map.unshapedBlockingTiles();
     CHECK(named.size() == 1);
@@ -731,7 +737,7 @@ TEST(a_tile_with_no_collision_shape_blocks_nothing_even_on_a_colliding_layer) {
     CHECK(clean.load(write("three_layers.tmj", threeLayerMap()), error));
     CHECK_EQ(clean.unshapedBlockingCells(), 0);
     CHECK(clean.unshapedBlockingTiles().empty());
-    CHECK_EQ(clean.shapedBlockingCells(), clean.wallCells() + clean.waterCells());
+    CHECK_EQ(clean.shapedBlockingCells(), clean.solidCells());
 
     // And it counts CELLS, not (cell, layer) pairs. The shipped map has three
     // colliding layers, so an author who brushed one shapeless tile across the
@@ -743,7 +749,7 @@ TEST(a_tile_with_no_collision_shape_blocks_nothing_even_on_a_colliding_layer) {
         layer("walls", 2, 2, "1,1,1,1", "true") + ",\n" + layer("more", 2, 2, "1,1,1,1", "true");
     CHECK(twice.load(write("unshaped_twice.tmj", mapOf(2, 2, both)), error));
     CHECK_EQ(twice.unshapedBlockingCells(), 4);
-    CHECK_EQ(twice.groundCells(), 4);
+    CHECK_EQ(twice.openCells(), 4);
 }
 
 TEST(a_tiles_shapes_are_scaled_from_the_tilesets_tile_size_onto_the_cell) {
@@ -1000,9 +1006,9 @@ TEST(the_shipped_map_collides_with_authored_shapes_everywhere) {
     }
     CHECK_EQ(map.unshapedBlockingCells(), 0);
     CHECK(map.unshapedBlockingTiles().empty());
-    // Every shaped cell is a non-Ground cell and the other way about, which is
+    // Every shaped cell is a Solid cell and the other way about, which is
     // what makes the coarse grid a faithful summary of the shapes.
-    CHECK_EQ(map.shapedBlockingCells(), map.wallCells() + map.waterCells());
+    CHECK_EQ(map.shapedBlockingCells(), map.solidCells());
     CHECK(map.shapedBlockingCells() > 1000);
 
     // The structural tiles are shaped and the scenery is not -- and the shapes

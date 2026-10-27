@@ -314,6 +314,13 @@ private:
         double radius = 0;
         /// The centipede this mob belongs to, NULL_ENTITY for anything else.
         Entity chainHead = NULL_ENTITY;
+        /// The two segments this one is joined to, which the chain pass holds
+        /// at their spacing.
+        Entity ahead = NULL_ENTITY;
+        Entity behind = NULL_ENTITY;
+        /// A gardn chain (MobConfig::gardnChain): collides with its own
+        /// animal everywhere but at its joints.
+        bool gardnChain = false;
         /// The config's `no_mob_collision`: neither pushes nor is pushed.
         bool noCollision = false;
         /// The parent this mob is still climbing out of (HoleTether::emerging),

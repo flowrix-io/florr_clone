@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 62;
+inline constexpr std::uint16_t kProtocolVersion = 63;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -421,7 +421,8 @@ enum class ServerMessage : std::uint8_t {
 //   u16 cols
 //   u16 rows           the map's own dimensions -- maps are not all one size
 //   u32 byteCount
-//   u8  bytes[]        the tile ids, run-length encoded (terrain.h)
+//   u8  bytes[]        the tiles, 0 Open or 1 Solid, run-length encoded
+//                      (terrain.h)
 //
 // The dimensions travel WITH the tiles because the client has no map file to
 // read them out of, and a grid interpreted at the wrong width is a world
@@ -431,11 +432,12 @@ enum class ServerMessage : std::uint8_t {
 // COLLISION ONLY. What a cell looks like is not on this wire at all: the
 // artwork is the map file's own tile layers, which the client reads out of the
 // staged data directory for itself (shared/game/tiled_map.h), and this grid is
-// the authoritative three-value shape the server collides with -- derived on
+// the authoritative open/solid view the server collides with -- derived on
 // the server from which layers the author marked as colliding, so a client
-// never has to agree with one about it. A generated realm (the arena, the
-// maze) sends 0x0 with an empty stream. (Version 21: one tile stream, where
-// there used to be two.)
+// never has to agree with one about it. Whether a shape is water is the map
+// file's to say, not this grid's. A generated realm (the arena, the maze)
+// sends 0x0 with an empty stream. (Version 21: one tile stream, where there
+// used to be two. Version 63: two values, where there used to be six.)
 
 /// What a notification announces. The stripe down a card's left edge is the
 /// only thing that distinguishes them. The TypeScript build carried the first

@@ -3657,12 +3657,15 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         const MobStats bodyStats = registry.mobStats(config.segmentBodyIndex, rarity);
         const double bodyRadius = bodyStats.radius * petSizeScale;
         if (!(bodyRadius > 0.0)) continue;
-        const double spacing = bodyRadius * kSegmentSpacingPerRadius;
-        const Vec2 step = Vec2::fromAngle(angle + kPi, spacing);
+        const Body* headBody = world.tryGet<Body>(pet);
+        double leaderRadius = headBody != nullptr ? headBody->radius : bodyRadius;
+        const Vec2 back = Vec2::fromAngle(angle + kPi);
         Entity ahead = pet;
         Vec2 place = spawnAt;
         for (int s = 1; s <= config.segmentCount && owned < kMaxPetEntitiesPerPlayer; ++s) {
-            place = place + step;
+            const double spacing = config.segmentSpacing(leaderRadius, bodyRadius);
+            leaderRadius = bodyRadius;
+            place = place + back * spacing;
             const Entity segment =
                 hatchPetBody(world, registry, player, slot, config.segmentBodyIndex, rarity, place,
                              angle, realm, bodyRadius, petSizeScale, strength, expiresAtMillis);

@@ -3131,6 +3131,7 @@ struct RecoilFixture {
     std::uint16_t walker = kInvalidIndex;    ///< `gardn_ai`
     std::uint16_t plodder = kInvalidIndex;   ///< without it -- passive, as every neutral
                                              ///< and hostile walker moves on gardn's
+    std::uint16_t bead = kInvalidIndex;      ///< a centipede's body: a gardn chain
 };
 
 const RecoilFixture& recoilFixture() {
@@ -3139,12 +3140,15 @@ const RecoilFixture& recoilFixture() {
         f.ok = test::loadFixtureContent(f.registry, testsupport::tempDir("flix_combat_recoil_tests"),
                                         R"({
   "walker": {"name":"Walker","health":100,"damage":5,"size":1,"speed":0.5,"gardn_ai":true},
-  "plodder":{"name":"Plodder","health":100,"damage":5,"size":1,"speed":0.5,"ai_type":"passive"}
+  "plodder":{"name":"Plodder","health":100,"damage":5,"size":1,"speed":0.5,"ai_type":"passive"},
+  "centipede":{"name":"Centipede","health":100,"damage":5,"size":1,"speed":0.5,"ai_type":"passive"},
+  "centipede_body":{"name":"Centipede","health":100,"damage":5,"size":1,"speed":0.5,"ai_type":"passive"}
 })",
                                         R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1}})",
                                         f.error);
         f.walker = f.registry.mobIndex("walker");
         f.plodder = f.registry.mobIndex("plodder");
+        f.bead = f.registry.mobIndex("centipede_body");
         return f;
     }();
     return state;
@@ -3203,6 +3207,38 @@ TEST(a_flower_bounces_off_a_gardn_mob_rather_than_walking_it_along) {
     CHECK_NEAR(a.world.get<Motion>(mob).velocity.x, -kGardnContactRecoil / 3.2, 1e-9);
 }
 
+TEST(a_flower_pushes_a_centipede_bead_off_it_and_the_pair_ends_just_touching) {
+    const RecoilFixture& f = recoilFixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    CHECK(f.registry.mob(f.bead).gardnChain);
+    CHECK(!f.registry.mob(f.plodder).gardnChain);
+
+    // gardn's _deal_push moves BOTH bodies, each by the other's share of the
+    // mass, so the overlap is gone in one tick: 1 for the flower, 1 + 30/25
+    // for this bead. Anything else that walks gives the flower its share and
+    // keeps its own place.
+    const auto after = [&](std::uint16_t config) {
+        Arena a;
+        const Entity mob = a.mob({1000, 1000}, 100.0, 0.0, 30.0);
+        a.world.get<Body>(mob).mass = bodyMassForRadius(30.0);
+        a.world.add<MobType>(mob, MobType{config, Rarity::Common, 1.0});
+        a.world.add<ContactDamage>(mob, ContactDamage{5.0, kMobHitIntervalMillis});
+        const Entity player = a.player({1040, 1000});           // 10 units of overlap
+        a.step(1000.0, f.registry);
+        return std::pair<Vec2, Vec2>{a.world.get<Transform>(mob).position,
+                                     a.world.get<Transform>(player).position};
+    };
+    const double mobMass = bodyMassForRadius(30.0);
+    const auto [bead, beadFlower] = after(f.bead);
+    CHECK_NEAR(bead.x, 1000.0 - 10.0 * 1.0 / (1.0 + mobMass), 1e-9);
+    CHECK_NEAR(bead.y, 1000.0, 1e-9);
+    CHECK_NEAR(distance(bead, beadFlower), 50.0, 1e-9);
+    const auto [plodder, plodderFlower] = after(f.plodder);
+    CHECK_NEAR(plodder.x, 1000.0, 1e-9);
+    CHECK(distance(plodder, plodderFlower) < 50.0);
+}
+
 TEST(a_mob_cannot_squish_a_flower_into_a_wall) {
     // A mob meets walls as a point, so it walks right up to a wall with the
     // flower it is chasing pinned in between. The flower's share of the
@@ -3213,7 +3249,7 @@ TEST(a_mob_cannot_squish_a_flower_into_a_wall) {
     // flower out the far side of the mob. The flower is stepped through the
     // walls now, and what the wall refuses of its share the mob takes back.
     Terrain terrain;
-    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Wall);
+    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Solid);
     const double face = 10.0 * kTileSize;   // the wall's west face
 
     for (const bool anchored : {false, true}) {

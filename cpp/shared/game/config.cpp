@@ -1058,6 +1058,9 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.cruiseSpeed = ctx.speed(src, "cruiseSpeed");
     m.chaseSpeed = ctx.speed(src, "chase_speed");
     m.crabStrafe = ctx.boolean(src, "crab_ai");
+    m.centipedeCrawl = ctx.boolean(src, "centipede_ai");
+    m.diggerAi = ctx.boolean(src, "digger_ai");
+    m.hornetStrafe = ctx.boolean(src, "hornet_ai");
     m.gardnMotion = ctx.boolean(src, "gardn_ai");
 
     // Rules the reference states by NAME rather than in the JSON. They are
@@ -1078,6 +1081,11 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     // pool, so hitting the tail hurts the head and the whole chain dies
     // together. A centipede is the opposite and keeps a pool per bead.
     m.sharedSegmentHealth = id == "leech" || id == "leech_body";
+    // gardn's centipedes are bodies like any other; see MobConfig::gardnChain.
+    // The beads carry it too: they are what collides and what gets pushed.
+    for (const char* centipede : {"centipede", "desert_centipede", "evil_centipede"}) {
+        if (id == centipede || id == std::string(centipede) + "_body") m.gardnChain = true;
+    }
 
     if (src.contains("random_size")) {
         const Json& jitter = src["random_size"];
@@ -1805,8 +1813,9 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     // hostile again at the one tier the reference's override table never
     // reached.
     if (c.id == "ladybug" && tier >= rarityIndex(Rarity::Rare)) s.ai = AiKind::Neutral;
-    if ((c.id == "centipede" || c.id == "centipede_body" ||
-         c.id == "desert_centipede" || c.id == "desert_centipede_body") &&
+    // The desert centipede needs no rung here: gardn's is neutral at every
+    // tier (tick_centipede_neutral), and its mobs.json says so.
+    if ((c.id == "centipede" || c.id == "centipede_body") &&
         tier >= rarityIndex(Rarity::Epic)) {
         s.ai = AiKind::Neutral;
     }

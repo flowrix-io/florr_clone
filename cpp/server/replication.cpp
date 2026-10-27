@@ -120,8 +120,9 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
     }
     if (const MobAi* ai = world.tryGet<MobAi>(e)) {
         // A mending mob holds its target only to run from it, and a starfish
-        // spinning as if it were hunting would say the opposite.
-        if (ai->target != NULL_ENTITY && !(ai->recoverPerSecond > 0.0)) {
+        // spinning as if it were hunting would say the opposite. So does a
+        // digger on its last tenth.
+        if (ai->target != NULL_ENTITY && !(ai->recoverPerSecond > 0.0) && !ai->fleeing) {
             state |= net::StateChasing;
         }
         if (nowMillis < ai->stingLoadedAtMillis) state |= net::StateUnloaded;

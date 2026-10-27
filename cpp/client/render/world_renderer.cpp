@@ -1404,7 +1404,7 @@ void WorldRenderer::drawMaze(Canvas& canvas, const Camera& camera) const {
         const Rect floor = intersection(visible, square);
         if (floor.w > 0 && floor.h > 0) {
             const Vec2 at = camera.worldToScreen({floor.x, floor.y});
-            ui::setFill(canvas, tileColor(section, Tile::Ground));
+            ui::setFill(canvas, biomeOf(section).ground);
             canvas.fillRect(static_cast<float>(at.x), static_cast<float>(at.y),
                             static_cast<float>(floor.w * camera.zoom()),
                             static_cast<float>(floor.h * camera.zoom()));

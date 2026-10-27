@@ -321,21 +321,19 @@ TEST(a_shape_that_overhangs_into_its_neighbours_is_drawn_once) {
 }
 
 TEST(a_blocking_cell_with_no_shapes_falls_back_to_its_square) {
-    // A grid with no authored geometry at all -- a generated map, a client with
-    // no local map file, a test that called setTile. The collision there IS the
-    // cell, so the square is the honest picture of it.
+    // A grid with no authored geometry at all -- a client with no local map
+    // file, a test that called setTile. The collision there IS the cell, so the
+    // square is the honest picture of it -- and never water, because water is a
+    // kind of shape and a shapeless cell has none.
     Terrain plain;
-    plain.setTile(2, 1, Tile::Wall, Realm::Overworld);
-    plain.setTile(2, 2, Tile::Water, Realm::Overworld);
+    plain.setTile(2, 1, Tile::Solid, Realm::Overworld);
+    plain.setTile(2, 2, Tile::Solid, Realm::Overworld);
     const std::vector<Solid> solids = solidsOf(plain);
     CHECK_EQ(solids.size(), std::size_t{2});
-    int walls = 0, water = 0;
     for (const Solid& solid : solids) {
         CHECK(solid.points.empty());
-        if (solid.water) ++water; else ++walls;
+        CHECK(!solid.water);
     }
-    CHECK_EQ(walls, 1);
-    CHECK_EQ(water, 1);
     for (const Solid& solid : solids) {
         CHECK(covers(solid, {solid.origin.x + 150.0, solid.origin.y + 150.0}));
         CHECK(plain.blocked({solid.origin.x + 150.0, solid.origin.y + 150.0}, Realm::Overworld));

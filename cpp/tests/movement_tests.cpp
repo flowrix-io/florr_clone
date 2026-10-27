@@ -109,7 +109,7 @@ struct Fixture {
     /// A full-height wall at tile column `tx`, i.e. x in
     /// [tx*kTileSize, (tx+1)*kTileSize).
     void wallColumn(int tx) {
-        for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(tx, ty, Tile::Wall);
+        for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(tx, ty, Tile::Solid);
     }
 };
 
@@ -212,24 +212,6 @@ TEST(an_unset_or_corrupt_speed_modifier_means_unmodified) {
     CHECK_NEAR(fx.velocityOf(zeroed).x, kPlayerMaxSpeed, 0.5);
     CHECK_NEAR(fx.velocityOf(broken).x, kPlayerMaxSpeed, 0.5);
     CHECK(std::isfinite(fx.positionOf(broken).x));
-}
-
-TEST(water_blocks_a_player_like_a_wall) {
-    Fixture fx;
-    for (int ty = 0; ty < fx.terrain.tileRows(); ++ty) {
-        fx.terrain.setTile(10, ty, Tile::Water);
-    }
-    const Entity player = fx.spawnPlayer({2000, 5000});
-    fx.drive(player, 0.0, 1.0);
-    fx.step(200);
-
-    const Vec2 at = fx.positionOf(player);
-    CHECK(!fx.terrain.blocked(at, Realm::Overworld));
-    CHECK(at.x <= kWallWest - kPlayerBaseRadius + 1e-6);
-    CHECK(at.x >= kWallWest - kPlayerBaseRadius - 20.1);
-    // TypeScript resolves position but keeps the attempted velocity while the
-    // input remains held, so the following tick continues pressing the face.
-    CHECK_NEAR(fx.velocityOf(player).x, kPlayerMaxSpeed, 1.0);
 }
 
 TEST(a_slow_never_reaches_a_flowers_top_speed) {
@@ -550,22 +532,6 @@ TEST(a_mob_moves_at_the_velocity_the_ai_gave_it) {
     CHECK_NEAR(fx.positionOf(mob).x, 5000.0 + 200.0 * dt * 10.0, 1e-6);
 }
 
-TEST(water_blocks_a_mob_like_a_wall) {
-    Fixture fx;
-    for (int ty = 0; ty < fx.terrain.tileRows(); ++ty) {
-        fx.terrain.setTile(10, ty, Tile::Water);
-    }
-    const Entity mob = fx.spawnMob({2000, 5000});
-    for (int i = 0; i < 200; ++i) {
-        fx.world.get<Motion>(mob).velocity = {200, 0};
-        fx.step(1);
-    }
-
-    const Vec2 at = fx.positionOf(mob);
-    CHECK(!fx.terrain.blocked(at, Realm::Overworld));
-    CHECK(at.x <= kWallWest - kMobWallRadius + 1e-6);
-}
-
 TEST(a_mob_meets_a_wall_with_its_centre_not_its_body) {
     // The body is what fights and is shoved; against terrain only the centre
     // counts. A big mob walks until its middle touches the wall, half of it
@@ -591,7 +557,7 @@ TEST(a_mob_fits_through_a_gap_narrower_than_its_body) {
     // its centre fits, so it goes through.
     Fixture fx;
     fx.wallColumn(10);
-    fx.terrain.setTile(10, 19, Tile::Ground);   // y in [19, 20) tiles
+    fx.terrain.setTile(10, 19, Tile::Open);   // y in [19, 20) tiles
     const double gapMid = 19.5 * kTileSize;
     const Entity mob = fx.spawnMob({kWallWest - 300.0, gapMid}, 4.0 * kTileSize * 0.5);
     for (int i = 0; i < 120; ++i) {
@@ -625,6 +591,56 @@ TEST(separation_cannot_shove_a_mob_into_a_wall) {
     CHECK(fx.positionOf(a).x > kWallWest - 1.0);
     // And the separation did act: the one with room to go was pushed away.
     CHECK(fx.positionOf(a).x - fx.positionOf(b).x > 20.0);
+}
+
+TEST(a_centipede_collides_with_its_own_beads_everywhere_but_its_joints) {
+    // gardn's segments are ordinary bodies: a centipede curled round on itself
+    // is pushed back out of its own beads. The two a bead is joined to are the
+    // exception -- the chain pass holds that pair at its spacing. A leech's
+    // tube never pushes itself.
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    if (!error.empty()) return;
+
+    for (const char* id : {"centipede_body", "leech_body"}) {
+        const std::uint16_t index = content().mobIndex(id);
+        Fixture fx;
+        // head - joined - curled: `curled` has come round onto the head.
+        const Vec2 home{5000, 5000};
+        const Entity head = fx.spawnMob(home, 30.0);
+        const Entity joined = fx.spawnMob(home + Vec2{40.0, 0.0}, 30.0);
+        const Entity curled = fx.spawnMob(home + Vec2{0.0, 40.0}, 30.0);
+        for (const Entity e : {head, joined, curled}) {
+            fx.world.add<MobType>(e, MobType{index, Rarity::Common, 1.0});
+        }
+        BodySegment link;
+        link.chainHead = head;
+        link.head = true;
+        link.behind = joined;
+        fx.world.add<BodySegment>(head, link);
+        link.head = false;
+        link.ahead = head;
+        link.behind = curled;
+        fx.world.add<BodySegment>(joined, link);
+        link.ahead = joined;
+        link.behind = NULL_ENTITY;
+        fx.world.add<BodySegment>(curled, link);
+
+        fx.step(1);
+        const bool gardn = content().mob(index).gardnChain;
+        CHECK(gardn == (std::string(id) == "centipede_body"));
+        if (gardn) {
+            // Head and curled bead pushed apart along the line between them.
+            CHECK(fx.positionOf(head).y < home.y - 1.0);
+            CHECK(fx.positionOf(curled).y > home.y + 40.0 + 1.0);
+            CHECK_NEAR(fx.positionOf(head).x, home.x, 1e-9);
+        } else {
+            CHECK_NEAR(distance(fx.positionOf(head), home), 0.0, 1e-9);
+            CHECK_NEAR(distance(fx.positionOf(curled), home + Vec2{0.0, 40.0}), 0.0, 1e-9);
+        }
+        // Joined both ways round, so nothing pushes the middle bead.
+        CHECK_NEAR(distance(fx.positionOf(joined), home + Vec2{40.0, 0.0}), 0.0, 1e-9);
+    }
 }
 
 TEST(a_child_climbs_out_of_its_parent_without_shoving_it) {
@@ -1048,7 +1064,7 @@ TEST(a_zero_dt_tick_changes_nothing_but_still_resolves_geometry) {
 
 TEST(step_collide_is_usable_without_a_world) {
     Terrain terrain;
-    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Wall);
+    for (int ty = 0; ty < terrain.tileRows(); ++ty) terrain.setTile(10, ty, Tile::Solid);
 
     Vec2 position{kWallWest - 100.0, 5000};
     const StepOutcome open = stepCollide(terrain, Realm::Overworld, position, {100, 0}, 20.0, 0.04);
@@ -1078,9 +1094,9 @@ TEST(the_containment_guard_holds_on_every_authored_map) {
     const Realm other = worldRealm(1);
     Terrain terrain;
     std::vector<std::uint8_t> tiles(static_cast<std::size_t>(kTilesPerAxis) * kTilesPerAxis,
-                                    static_cast<std::uint8_t>(Tile::Ground));
+                                    static_cast<std::uint8_t>(Tile::Open));
     const auto wall = [&](int tx, int ty) {
-        tiles[static_cast<std::size_t>(ty) * kTilesPerAxis + tx] = static_cast<std::uint8_t>(Tile::Wall);
+        tiles[static_cast<std::size_t>(ty) * kTilesPerAxis + tx] = static_cast<std::uint8_t>(Tile::Solid);
     };
     // A staircase of tiles touching at their corners -- the diagonal seams the
     // guard exists for -- plus a solid column beside it.

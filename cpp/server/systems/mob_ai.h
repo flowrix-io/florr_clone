@@ -100,7 +100,8 @@ inline constexpr int kTargetLosRayCap = 8;
 
 // -- the idle drift machine --------------------------------------------------
 //
-// Every idle mob that is not a centipede head runs gardn's two-state hop:
+// Every idle mob that is not a chain head, a wild digger or a bee-style cruiser
+// runs gardn's two-state hop:
 // stand still for a second, pick a heading, coast half a second on friction
 // alone, then accelerate through a two-second parabolic ramp and stop. It is
 // what gives the field its characteristic pulse -- a mob that instead cruises
@@ -239,6 +240,66 @@ Vec2 steerJump(MobAi& ai, Vec2 toTarget, double distance, double pauseMillis, do
 /// off `ai.jumpRemaining`; zero on the ground. `slow` scales it.
 Vec2 jumpFlight(MobAi& ai, double distance, double slow, double nowMillis, double dt);
 
+// -- the centipede crawl -----------------------------------------------------
+//
+// gardn's tick_centipede_passive. A chain head with `centipede_ai` never stops
+// while it has nothing to chase: it walks on its own facing, which bends at a
+// steady rate one way, flips to bending the other way at random moments --
+// five seconds apart on average -- and so draws long S-curves the body can
+// trace. It walks at the stroll a chain head always has (kMobWanderSpeedScale
+// of its speed); gardn's own crawl rates are content, not behaviour.
+//
+// What it does with a target is the mob's `ai_type`, as in gardn: the plain
+// centipede ignores everything (tick_centipede_passive), the desert one turns
+// on what hurt it (tick_centipede_neutral), the evil one hunts
+// (tick_centipede_aggro).
+
+/// How fast the crawl bends, radians a second: gardn's 0.2 / TPS a tick.
+inline constexpr double kCentipedeTurnRate = 0.2;
+/// The mean time between two flips of the bend, seconds: gardn flips with a
+/// chance of 1 / (5 * TPS) every tick, which is memoryless with this mean.
+inline constexpr double kCentipedeFlipSeconds = 5.0;
+
+// -- the digger --------------------------------------------------------------
+//
+// gardn's tick_digger. Off a target it picks a heading and holds it for five
+// seconds, pushing along it at its full `speed` the whole time, then picks
+// another: it roams rather than hops. With a target it chases like any hostile
+// mob until its health is down to a tenth, and from then on runs straight away
+// from that target at its chase speed instead.
+
+/// How long one roaming heading holds.
+inline constexpr double kDiggerRoamMillis = 5000.0;
+/// At or below this fraction of its health a digger runs rather than fights:
+/// gardn attacks while `health / max_health > 0.1`.
+inline constexpr double kDiggerFleeBelow = 0.1;
+
+// -- the hornet --------------------------------------------------------------
+//
+// gardn's tick_hornet_aggro. Inside its standoff a `hornet_ai` shooter does not
+// hang still: it pushes sideways across its bearing at a fifth of its chase
+// speed, always the same way round, so it circles the flower it is shooting at
+// while keeping its range. The radial part of the hold is unchanged -- it
+// still closes from outside and never gives ground -- so the circling only
+// replaces the dead stop.
+
+/// The sideways push, as a fraction of the chase speed: gardn's 0.2.
+inline constexpr double kHornetStrafeScale = 0.2;
+
+// -- walls -------------------------------------------------------------------
+
+/// How far ahead of an idle walker on a held heading (a crawling centipede, a
+/// roaming digger) the AI looks for a wall to turn off. gardn reflects both
+/// headings off the arena's edge the moment a mob touches it; a walker that
+/// held its heading into a wall here would grind along it for seconds, since
+/// neither of these re-picks often enough to get itself out.
+inline constexpr double kWallProbeDistance = 24.0;
+
+/// `heading` turned off whatever wall lies kWallProbeDistance ahead of `at`,
+/// mirror-fashion: the part of it into the wall is turned round, the part
+/// along it kept. Unchanged when nothing is ahead or it already points away.
+double turnOffWalls(const Terrain& terrain, Vec2 at, Realm realm, double heading);
+
 // -- the bee cruise ----------------------------------------------------------
 //
 // Bees do not hop. They cruise continuously along a heading that sways
@@ -321,9 +382,10 @@ Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double ceiling, double nowMi
 
 // -- walking to a point ------------------------------------------------------
 //
-// Centipede heads and ownerless pets wander to a POINT rather than on a
-// heading, which is what keeps a centipede's turns long and smooth instead of
-// hopping like the animals behind it.
+// Chain heads without `centipede_ai` (the leech) and ownerless pets wander to a
+// POINT rather than on a heading, which keeps a chain's turns long and smooth
+// instead of hopping like the animals behind it. A centipede crawls instead;
+// see crawl().
 
 /// How far from where it stands a walker picks its next point, whatever its
 /// size.
@@ -633,6 +695,20 @@ public:
     /// to be.
     void tickPetalRings(World& world, CommandBuffer& commands);
 
+    /// Pulls every chain segment back to its spacing behind the one ahead of
+    /// it, turned to face it. Run AFTER movement, where gardn places its
+    /// segments (Simulation.cc: collide, move, then tick_segment_behavior):
+    /// whatever pushed a segment this tick -- a flower, a petal's knockback,
+    /// another bead of its own centipede -- has already moved it, so the
+    /// placement keeps the direction the push left it in and the body swings
+    /// about its joints. Placed before the head moved instead, the first
+    /// segment trailed a tick of the head's travel behind its spacing.
+    ///
+    /// Reads the chains run() repaired this tick, so it belongs to the same
+    /// tick as that run(). `activePlayers` is the LOD list run() was given.
+    void placeChains(World& world, const Terrain& terrain,
+                     const std::vector<RealmPoint>& activePlayers);
+
 
     /// Per-run counters. Reset at the top of every run(), so they describe the
     /// last tick and nothing else. `targetScans` is the one that matters: it is
@@ -673,6 +749,13 @@ private:
         bool beeChaseWeave = false;
         /// Fights by sidestepping and charging. See steerCrab().
         bool crabStrafe = false;
+        /// A chain head that crawls on a bending heading. See crawl().
+        bool centipedeCrawl = false;
+        /// Roams on held headings, and runs below kDiggerFleeBelow of its
+        /// health. See roam().
+        bool diggerAi = false;
+        /// Circles its target inside its standoff. See pursueTarget().
+        bool hornetStrafe = false;
         /// Holds still off a target and jumps at one. See steerJump(); the
         /// two figures are JumpSpec's own.
         bool jumps = false;
@@ -758,7 +841,8 @@ private:
     /// travel until something stops it. The exception is the idle drift: the
     /// reference's passive integrator carries no distance gate at all, so a
     /// mob left idling keeps hopping at full rate however far away it is.
-    void driftUnwatched(World& world, Entity self, double nowMillis, double dt);
+    void driftUnwatched(World& world, const Terrain& terrain, Entity self, double nowMillis,
+                        double dt);
 
     void steerMob(World& world, const Terrain& terrain, const SpatialGrid& grid,
                   Entity self, Transform& transform, Motion& motion, const Body& body,
@@ -769,11 +853,25 @@ private:
     /// its own store and its own friction -- and returns the heading facing
     /// should follow. `slow` is what a web or a pincer leaves of the mob's
     /// speed this tick.
-    Vec2 steerIdle(World& world, Entity self, const Transform& transform, Motion& motion,
-                   MobAi& ai, const Drive& drive, double slow, double nowMillis, double dt);
+    Vec2 steerIdle(World& world, const Terrain& terrain, Entity self, const Transform& transform,
+                   Motion& motion, MobAi& ai, const Drive& drive, double slow, double nowMillis,
+                   double dt);
     void driftPassive(World& world, Entity self, Motion& motion, MobAi& ai, const Drive& drive,
                       double slow, double nowMillis, double dt);
     Vec2 wanderToPoint(WanderTarget& wander, Vec2 from, double speed, double nowMillis);
+    /// One tick of a `centipede_ai` head's crawl at `speed` (already slowed).
+    /// Bends the heading, turns it off a wall ahead, and returns the velocity;
+    /// the heading is left in `ai.wanderAngle`.
+    Vec2 crawl(const Terrain& terrain, const Transform& transform, MobAi& ai, const Drive& drive,
+               double speed, double dt);
+    /// One tick of a `digger_ai` mob's roam at `speed` (already slowed):
+    /// re-picks the heading on its clock, turns it off a wall ahead, and
+    /// writes the velocity -- through gardn's integrator for a gardn mover.
+    /// The heading is left in `ai.wanderAngle`.
+    void roam(const Terrain& terrain, const Transform& transform, Motion& motion, MobAi& ai,
+              const Drive& drive, double speed, double nowMillis, double dt);
+    /// Whether a `digger_ai` mob is low enough to run rather than fight.
+    static bool runsLow(World& world, Entity self, const Drive& drive);
 
     /// Weather. Blows toward a point re-picked on its own fast clock, and from
     /// kSandstormSuckRarity up drags the players around it in as it goes.

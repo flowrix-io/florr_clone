@@ -532,7 +532,7 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
     unshapedBlockingCells_ = 0;
     negatedCells_ = 0;
     width_ = height_ = 0;
-    wallCells_ = waterCells_ = groundCells_ = 0;
+    solidCells_ = openCells_ = 0;
 
     Json map;
     if (!parseJsonFile(path, map, errorOut)) return false;
@@ -700,13 +700,9 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
 
     // A LAYER decides whether a cell can collide, the TILE's shapes decide
     // whether it does. `blockedCell` accumulates over the layers that carry
-    // `has_collision`, but only where the tile there actually has a shape;
-    // `waterCell` is overwritten by each contributing cell, so the last such
-    // layer to paint one -- the topmost contributor -- decides what KIND of
-    // blocker the cell is. Layers without the property are art and touch
-    // neither array. See the header.
+    // `has_collision`, but only where the tile there actually has a shape.
+    // Layers without the property are art and do not touch it. See the header.
     std::vector<std::uint8_t> blockedCell(cellCount, 0);
-    std::vector<std::uint8_t> waterCell(cellCount, 0);
     // A cell is counted ONCE however many colliding layers paint an unshaped
     // tile into it: the warning it feeds is "this many cells of your map look
     // solid and are not", and a number that grew with the layer count could
@@ -716,17 +712,7 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
     // however many decks are stacked over it, for the same reason as above.
     std::vector<std::uint8_t> negatedCell(cellCount, 0);
     // A shape the author dragged or turned out of its tile blocks in a cell
-    // its tile was never painted in (shapeReach). Those writes are collected
-    // per layer and applied after it, so that a cell's OWN tile on a layer
-    // still decides that cell's kind -- an overhang only ever adds a blocker,
-    // it never renames one.
-    struct Overhang {
-        std::size_t cell;
-        bool water;
-    };
-    std::vector<Overhang> overhangs;
-    std::vector<std::uint32_t> ownedOnLayer(cellCount, 0);
-    std::uint32_t layerStamp = 0;
+    // its tile was never painted in (shapeReach), so it blocks that cell too.
     // Reach is a property of a (tile, orientation) pair, not of a cell, and
     // computing it means turning the tile's rings; done once per pair.
     std::unordered_map<std::uint64_t, ShapeReach> reachOfPair;
@@ -765,8 +751,6 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
         out.conflicting = ticked && out.negates;
         out.collides = ticked && !out.negates;
         out.cells.resize(cellCount);
-        ++layerStamp;
-        overhangs.clear();
         for (std::size_t i = 0; i < cellCount; ++i) {
             const std::uint32_t raw = gids[i];
             const std::uint32_t gid = raw & kGidMask;
@@ -810,7 +794,6 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
                         negatedCell[i] = 1;
                     }
                     blockedCell[i] = 0;
-                    waterCell[i] = 0;
                     continue;
                 }
                 // A PARTIAL deck. One Tile per cell cannot say "half of this
@@ -830,8 +813,6 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
                 continue;
             }
             blockedCell[i] = 1;
-            waterCell[i] = type.water ? 1 : 0;
-            ownedOnLayer[i] = layerStamp;
             const ShapeReach& reach = reachFor(typeIndex, cell.flags);
             if (reach.ownCellOnly()) continue;
             const int tx = static_cast<int>(i % static_cast<std::size_t>(width_));
@@ -842,17 +823,10 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
                     const int nx = tx + dx;
                     const int ny = ty + dy;
                     if (nx < 0 || ny < 0 || nx >= width_ || ny >= height_) continue;
-                    overhangs.push_back(
-                        {static_cast<std::size_t>(ny) * static_cast<std::size_t>(width_) +
-                             static_cast<std::size_t>(nx),
-                         type.water});
+                    blockedCell[static_cast<std::size_t>(ny) * static_cast<std::size_t>(width_) +
+                                static_cast<std::size_t>(nx)] = 1;
                 }
             }
-        }
-        for (const Overhang& reached : overhangs) {
-            if (ownedOnLayer[reached.cell] == layerStamp) continue;
-            blockedCell[reached.cell] = 1;
-            waterCell[reached.cell] = reached.water ? 1 : 0;
         }
         layers_.push_back(std::move(out));
     }
@@ -866,13 +840,10 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
     }
     tiles_.resize(cellCount);
     for (std::size_t i = 0; i < cellCount; ++i) {
-        const Tile tile = blockedCell[i] == 0 ? Tile::Ground
-                        : waterCell[i] != 0   ? Tile::Water
-                                              : Tile::Wall;
+        const Tile tile = blockedCell[i] == 0 ? Tile::Open : Tile::Solid;
         tiles_[i] = static_cast<std::uint8_t>(tile);
-        if (tile == Tile::Wall) ++wallCells_;
-        else if (tile == Tile::Water) ++waterCells_;
-        else ++groundCells_;
+        if (tile == Tile::Solid) ++solidCells_;
+        else ++openCells_;
     }
 
     // -- annotations --------------------------------------------------------
@@ -983,12 +954,11 @@ std::vector<std::string> TiledMap::strandedWaterTiles() const {
     std::vector<std::string> out;
     for (std::size_t i = 0; i < palette_.size(); ++i) {
         // Painted, but never anywhere it can block: every cell holding it will
-        // be Ground, whatever the tag says and whatever the editor draws.
+        // be Open, whatever the tag says and whatever the editor draws.
         if (!palette_[i].water) continue;
         if (i >= paintedOnScenery_.size() || paintedOnScenery_[i] == 0) continue;
         if (i < paintedOnBlocker_.size() && paintedOnBlocker_[i] != 0) continue;
-        static_assert(tileIsWater(Tile::Water), "a blocking water tile becomes Tile::Water");
-        static_assert(!tileIsWater(Tile::Ground) && !tileBlocks(Tile::Ground),
+        static_assert(!tileBlocks(Tile::Open),
                       "a tile on a layer that does not collide leaves the cell walkable");
         out.push_back(palette_[i].name);
     }

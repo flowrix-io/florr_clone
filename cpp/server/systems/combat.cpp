@@ -1444,6 +1444,31 @@ void recoilOffFlower(World& world, Entity mob, Entity flower, Vec2 offset) {
     motion->velocity -= direction * (kGardnContactRecoil * flowerShare);
 }
 
+/// The mob's half of gardn's _deal_push, for a bead of a gardn chain: the
+/// flower's share of the pair's mass, times the overlap, moves the BEAD back
+/// off the flower, so with the flower's own share (bounceOffMob) the two end
+/// the tick just touching. Stepped through the walls as the point a mob meets
+/// them as. The chain pass then pulls the bead back to its spacing from the
+/// one ahead, which is what makes a flower leaning on a centipede swing its
+/// body rather than stretch it. `offset` runs from the mob to the flower. A
+/// plain field write, safe inside the candidate loop.
+void yieldToFlower(World& world, const Terrain* terrain, Entity mob, Entity flower, Vec2 offset,
+                   double overlap) {
+    if (!(overlap > 0.0)) return;
+    Transform* transform = world.tryGet<Transform>(mob);
+    if (transform == nullptr) return;
+    const Vec2 direction = offset.normalized();
+    if (direction.lengthSq() < 1e-12) return;
+    const double flowerMass = massOf(world, flower);
+    const double share = overlap * flowerMass / (flowerMass + massOf(world, mob));
+    if (terrain == nullptr) {
+        transform->position -= direction * share;
+    } else {
+        stepCollide(*terrain, transform->realm, transform->position, direction * -share,
+                    kMobWallRadius, 1.0, true, true);
+    }
+}
+
 /// A glitch mob's touch -- body or shot -- leaves the flower glitched.
 ///
 /// Infection is a property of TOUCH, not of damage: playerState.ts sets it
@@ -2174,6 +2199,7 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
             // Wild only: a pet's velocity is published raw by its own pass,
             // which would drop the recoil on the next tick anyway.
             source.gardnRecoil = source.isMobBody && !source.isPet && stats.gardnMotion;
+            source.yieldsToFlower = source.givesWay && config.gardnChain;
             if (config.lightning.present && config.lightning.onContact) {
                 // Past the BODY. A flower touching this mob has its centre a
                 // whole body radius away, so a reach measured from the centre
@@ -2399,6 +2425,10 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 // notwithstanding: that rule stops a pile stacking shoves on
                 // the FLOWER, and each mob in the pile still hit it.
                 if (source.gardnRecoil) recoilOffFlower(world, source.attacker, victim, offset);
+                if (source.yieldsToFlower) {
+                    yieldToFlower(world, terrain, source.attacker, victim, offset,
+                                  source.radius + body->radius - offset.length());
+                }
                 if (!firstBump) continue;
                 if (source.glitchInfecting) markGlitched(world, victim);
 

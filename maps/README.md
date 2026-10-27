@@ -166,8 +166,9 @@ negated(cell) <- a layer with negate_collision = true has a tile here, and
                      shapes covering only part    -> only that shape, and
                                                      only for point tests
                                                      (see the warning below)
-kind          <- a negated cell is GROUND. Not wall, not water: a flower on a
-                 bridge over a river is on planks, and `inWater()` is false.
+kind          <- a negated cell is OPEN, with no shape left to be water: a
+                 flower on a bridge over a river is on planks, and
+                 `inWater()` is false.
 ```
 
 **No shapes means the whole cell here — the opposite of what it means on a
@@ -219,8 +220,8 @@ many of each layer's painted cells it actually opened:
 
 ```
 [map] data/garden.tmj: collision from water, dirt, castle; negated by bridge
-(14 of 14 cells cleared); scenery background; 7028 wall, 1113 water, 8243
-ground cells; 93 shape sets over 8141 shaped cells, 14 cells decked over
+(14 of 14 cells cleared); scenery background; 8141 solid, 8243 open cells;
+93 shape sets over 8141 shaped cells, 14 cells decked over
 ```
 
 `14 of 14` is the number to read after ticking the box. It counts cells where
@@ -239,8 +240,9 @@ case above.
 
 ### The coarse grid, which is still per cell
 
-Beside the exact shapes the engine keeps the old one-value-per-cell grid, now
-meaning *"some shape in this cell blocks"*. It is what the bots' flow field
+Beside the exact shapes the engine keeps a one-value-per-cell grid, `Open` or
+`Solid`, meaning *"some shape in this cell blocks"* and nothing more — it has no
+wall or water kinds. It is what the bots' flow field
 walks, what spawn placement rejects conservatively, the fast reject before any
 shape test, and the only collision that goes over the wire. It over-states walls
 — a cell with a sliver of wall in it reads as solid — which is the safe
@@ -285,25 +287,26 @@ is still the right tool when what you want is *no wall there*. What a layer
 **can** now do is cancel the wall while keeping the art: `negate_collision`,
 next.
 
-Only three tile values ever come out of the reader — ground, wall and water —
-and the engine's `Tile` enum, `tileBlocks()` and `tileIsWater()` are unchanged.
-Water blocks movement, as it always has.
+Only two tile values ever come out of the reader — open and solid — and that is
+all the engine's `Tile` enum holds. Water blocks movement like any other shape
+on a colliding layer; what makes it water is the shape, below.
 
 ### The tileset's `water`, which is a kind and not a verdict
 
 A tile in `tileset.tsj` may carry a `water` boolean. It answers **what kind of
-blocker this cell is**, never **whether it blocks**:
+blocker this tile's shapes are**, never **whether they block**, and it stays on
+the shapes — the coarse grid never hears of it:
 
 | property | meaning |
 | --- | --- |
-| `water` | a blocking cell whose topmost blocker is tagged this reads as water rather than wall |
+| `water` | where a colliding layer paints this tile, its shapes are water rather than wall; the topmost shape over a point names the kind |
 | `covers_everything` | a drawing hint, not collision: see below |
 
 The difference is visible rather than physical — the minimap paints a water
-shape its own colour, and `tileIsWater()` is what anything asking "is this thing
-in the drink" reads — because water already blocked before any of this. Tagging a
-tile `water` and painting it on a non-colliding layer produces plain ground:
-the kind is only ever asked about a cell that is already blocked.
+shape its own colour, and `Terrain::inWater()` is what anything asking "is this
+thing in the drink" reads — because water already blocked before any of this.
+Tagging a tile `water` and painting it on a non-colliding layer produces plain
+ground: the kind is only ever asked about a shape that already blocks.
 
 With `solid` gone there is nothing left in the tileset that can contradict the
 engine: `water` is a label on a decision the layer already made.
@@ -335,8 +338,8 @@ off this one, which is only what the map happened to say the day it was written:
 
 ```
 [map] data/garden.tmj: collision from water, dirt, castle; negated by bridge
-(14 of 14 cells cleared); scenery background; 7028 wall, 1113 water, 8243
-ground cells; 93 shape sets over 8141 shaped cells, 14 cells decked over
+(14 of 14 cells cleared); scenery background; 8141 solid, 8243 open cells;
+93 shape sets over 8141 shaped cells, 14 cells decked over
 ```
 
 A second line appears when a collision shape reaches outside the tile it was
@@ -1134,8 +1137,8 @@ is still redrawing, so read your own boot lines rather than these numbers:
 
 ```
 [map] data/garden.tmj: collision from water, dirt, castle; negated by bridge
-(14 of 14 cells cleared); scenery background; 7028 wall, 1113 water, 8243
-ground cells; 93 shape sets over 8141 shaped cells, 14 cells decked over
+(14 of 14 cells cleared); scenery background; 8141 solid, 8243 open cells;
+93 shape sets over 8141 shaped cells, 14 cells decked over
 [map] data/garden.tmj: a collision shape reaches 0.333 world units outside its
 own tile; it still blocks, in every cell it reaches, but check it was meant
 [map] garden: 128x128 tiles, biome "garden", mobs "garden", 26 bands difficulty
