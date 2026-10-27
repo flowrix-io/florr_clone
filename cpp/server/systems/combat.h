@@ -659,6 +659,11 @@ private:
     /// else. Adds Dead, so not safe against iteration either.
     void collapseClearedNest(World& world, Entity fallen, Entity killer);
 
+    /// Every bubble mob that died this tick pops: the flower credited with it
+    /// is thrown clear of it, as far as a bubble petal throws one
+    /// (kBubblePopDistance). Run once the tick's deaths are all in.
+    void popBubbles(World& world, const ContentRegistry& content);
+
     void awardBounty(World& world, Entity victim);
 
     /// Turns a killing blow on a flower into 1 HP plus the talent's own

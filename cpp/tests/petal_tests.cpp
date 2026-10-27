@@ -2855,7 +2855,7 @@ TEST(a_ring_of_bubbles_stacks_into_one_pop_instead_of_cancelling) {
         return distance(before, rig.position(rig.player));
     };
     const double one = reachOf(1);
-    CHECK_NEAR(one, 60.0, 1.0);
+    CHECK_NEAR(one, kBubblePopDistance, 1.0);
     CHECK_NEAR(reachOf(2), one * 2.0, 2.0);
     const double four = reachOf(4);
     CHECK(four > one * 3.5);
@@ -2912,15 +2912,39 @@ TEST(defending_pops_a_bubble_and_pushes_the_flower) {
     rig.tick();
     const double firstStep = distance(before, rig.position(rig.player));
     CHECK(firstStep > 0.0);
-    CHECK(firstStep < 60.0 * 0.4);
+    CHECK(firstStep < kBubblePopDistance * 0.4);
     // Spent, and off the ring, the same tick the reference spends it.
     CHECK(rig.slot(0).broken);
     CHECK_EQ(rig.petals(0).size(), std::size_t(0));
 
     // The whole pop arrives, and the flower comes to rest rather than coasting.
     rig.tick(60);
-    CHECK_NEAR(distance(before, rig.position(rig.player)), 60.0, 1.0);
+    CHECK_NEAR(distance(before, rig.position(rig.player)), kBubblePopDistance, 1.0);
     CHECK_NEAR(rig.velocity(rig.player).length(), 0.0, 0.01);
+}
+
+TEST(every_bubble_throws_the_flower_gardns_distance_at_every_tier) {
+    if (!contentLoaded()) return;
+    // gardn's reach, not a ladder: a better bubble reloads faster and throws
+    // no further, and the magic one dashes as far as the plain one pops.
+    // Measured as the impulse the pop hands a standing flower, which is what
+    // the reach is spent from.
+    const auto impulseOf = [](const char* id, Rarity tier) {
+        Rig rig;
+        rig.equip(0, "vessel");
+        rig.equip(1, id, tier);
+        rig.settleEquips();
+        rig.tick();
+        rig.setFlags(net::InputDefend);
+        rig.setMove(0.0);
+        rig.tick();
+        return rig.velocity(rig.player).length();
+    };
+    const double common = impulseOf("bubble", Rarity::Common);
+    CHECK(common > 0.0);
+    CHECK_NEAR(impulseOf("bubble", Rarity::Legendary), common, 1e-9);
+    CHECK_NEAR(impulseOf("bubble", Rarity::Apex), common, 1e-9);
+    CHECK_NEAR(impulseOf("magic_bubble", Rarity::Common), common, 1e-9);
 }
 
 TEST(a_bubble_pop_never_covers_its_reach_in_one_tick) {
@@ -4728,7 +4752,7 @@ TEST(a_bubble_on_a_moons_ring_throws_the_moon_and_not_the_flower) {
 
     // The flower's reach, carried by the moon instead; the flower never moved.
     const Vec2 thrown = rig.position(body) - moonBefore;
-    CHECK_NEAR(thrown.length(), 60.0, 1.0);
+    CHECK_NEAR(thrown.length(), kBubblePopDistance, 1.0);
     CHECK_NEAR(thrown.normalized().x * away.x + thrown.normalized().y * away.y, 1.0, 1e-6);
     CHECK_NEAR(rig.velocity(body).length(), 0.0, 0.01);
     CHECK_NEAR(distance(rig.position(rig.player), flowerBefore), 0.0, 1e-9);

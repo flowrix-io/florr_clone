@@ -25,25 +25,6 @@ constexpr double kWebLifetimeSeconds = 10.0;
 constexpr double kPollenLifetimeSeconds = 5.0;
 constexpr double kPollenHitIntervalMillis = 500.0;
 
-/// How far a bubble pop carries the flower, before rarity: the reach the
-/// browser reference gave a common one, and the number every rarity is a
-/// multiple of.
-constexpr double kBubblePopDistance = 60.0;
-constexpr double kBubblePopDistancePerRarity = 0.6;
-
-/// The most ground one tick of a pop may cover, however many bubbles went off
-/// at once.
-///
-/// Two ceilings, and this is the lower: stepCollide carries a body at most
-/// `substepLength * kMaxSubstepCount` in a tick and TRUNCATES the rest, so a
-/// stacked pop past that is reach the flower is charged for and never travels;
-/// and the client stops easing a flower that moved more than 600 units between
-/// snapshots and snaps it instead, which is the teleport this petal was
-/// rewritten to stop being. Written from the substep FLOOR rather than the
-/// flower's own radius so a grown flower -- whose budget is larger -- is held
-/// to the same smoothness the client can still draw.
-constexpr double kMaxPopTickTravel = kMinSubstepLength * kMaxSubstepCount;
-
 /// How long the ring takes to fly across when what it is laid out around
 /// changes -- a moon coming out, or breaking and handing the ring back to the
 /// flower. The centre jumps by the whole distance between the two in one
@@ -2352,9 +2333,9 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
 
             Motion* motion = world.tryGet<Motion>(thrownBody);
             if (owner != nullptr && motion != nullptr && push.lengthSq() > 0.0) {
-                const double reach =
-                    kBubblePopDistance
-                    * (1.0 + ladderIndex(instance->rarity) * kBubblePopDistancePerRarity);
+                // gardn's reach at every tier: a better bubble reloads faster
+                // and throws no further.
+                const double reach = kBubblePopDistance;
                 const Vec2 bearing = push.normalized();
                 // Added to the velocity the flower already has, as the
                 // reference adds it: a pop taken while running carries the run

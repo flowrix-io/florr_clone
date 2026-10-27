@@ -116,6 +116,29 @@ inline constexpr double kMaxSubstepPenetration = 6.5;
 /// kMaxSubstepPenetration shortens takes more of them over the same reach.
 inline constexpr int kMaxSubstepCount = 16;
 
+/// How far a bubble pop carries the flower: gardn's bubble, the same at every
+/// rarity and for every bubble -- the petal, the magic one and the bubble mob.
+///
+/// gardn adds `PLAYER_ACCELERATION * 0.56` = 1.4 to the flower's velocity and
+/// moves it `velocity * 125 * (1 - damping)` a tick while damping it, which
+/// sums to 125 units per unit of velocity: 175 in all. Its damping (0.992 per
+/// millisecond, an e-fold every 0.125 s) is this server's friction to within
+/// a percent, so the same reach spent through shoveSpeed glides the same way.
+inline constexpr double kBubblePopDistance = 175.0;
+
+/// The most ground one tick of a pop may cover, however many bubbles went off
+/// at once.
+///
+/// Two ceilings, and this is the lower: stepCollide carries a body at most
+/// `substepLength * kMaxSubstepCount` in a tick and TRUNCATES the rest, so a
+/// stacked pop past that is reach the flower is charged for and never travels;
+/// and the client stops easing a flower that moved more than 600 units between
+/// snapshots and snaps it instead, which is the teleport the bubble was
+/// rewritten to stop being. Written from the substep FLOOR rather than the
+/// flower's own radius so a grown flower -- whose budget is larger -- is held
+/// to the same smoothness the client can still draw.
+inline constexpr double kMaxPopTickTravel = kMinSubstepLength * kMaxSubstepCount;
+
 /// Speed ceiling applied to every entity before it is integrated, so one
 /// arithmetic accident upstream cannot put a body 1e30 units away.
 inline constexpr double kMaxMovementSpeed = 20000.0;

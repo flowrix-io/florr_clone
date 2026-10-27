@@ -3,6 +3,7 @@
 #include "server/replication.h"
 #include "server/squads.h"
 #include "server/systems/combat.h"
+#include "server/systems/movement.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
@@ -199,6 +200,7 @@ struct Fixture {
     std::uint16_t spore = kInvalidIndex;
     std::uint16_t grunt = kInvalidIndex;
     std::uint16_t glitch = kInvalidIndex;
+    std::uint16_t bubble = kInvalidIndex;
     std::uint16_t burr = kInvalidIndex;
     std::uint16_t taproot = kInvalidIndex;
     std::uint16_t dandy = kInvalidIndex;
@@ -218,7 +220,8 @@ const Fixture& fixture() {
         f.ok = test::loadFixtureContent(f.registry, testsupport::tempDir("flix_combat_tests"),
             R"({
               "grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":0.2,"section":[0]},
-              "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":0.5,"section":[7]}
+              "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":0.5,"section":[7]},
+              "bubble":{"name":"Bubble","health":1,"damage":5,"size":1,"speed":0}
             })",
             R"({
               "frost":{"name":"Frost","damage":1,"health":5,"size":1,"slowFactor":0.5,"slowDuration":1000},
@@ -247,6 +250,7 @@ const Fixture& fixture() {
         f.spore = f.registry.petalIndex("spore");
         f.grunt = f.registry.mobIndex("grunt");
         f.glitch = f.registry.mobIndex("glitch");
+        f.bubble = f.registry.mobIndex("bubble");
         f.burr = f.registry.petalIndex("burr");
         f.taproot = f.registry.petalIndex("taproot");
         f.dandy = f.registry.petalIndex("dandy");
@@ -1960,6 +1964,39 @@ TEST(a_petal_without_a_knockback_field_uses_the_game_default) {
     a.step(0.0, f.registry);
     CHECK(a.world.has<Knockback>(mob));
     CHECK(a.world.get<Knockback>(mob).impulse.x > 0.0);
+}
+
+TEST(a_popped_bubble_mob_throws_its_flower_as_far_as_a_bubble_petal) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    // Popped by a petal on its near side, out of the flower's own reach: the
+    // flower is thrown clear of the bubble with the impulse a bubble petal's
+    // pop hands it, whatever the bubble's tier.
+    for (const Rarity tier : {Rarity::Common, Rarity::Mythic}) {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity bubble = a.mob({1060, 1000}, 1.0);
+        a.world.add<MobType>(bubble, MobType{f.bubble, tier});
+        equipPetal(a, player, f.plain, Rarity::Common, {1035, 1000});
+
+        a.step(0.0, f.registry);
+        CHECK(a.world.has<Dead>(bubble));
+        const Vec2 thrown = a.world.get<Motion>(player).velocity;
+        CHECK_NEAR(thrown.x, -shoveSpeed(kBubblePopDistance, net::kTickSeconds, true), 1e-9);
+        CHECK_NEAR(thrown.y, 0.0, 1e-9);
+    }
+
+    // Any other mob just dies.
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity grunt = a.mob({1060, 1000}, 1.0);
+    a.world.add<MobType>(grunt, MobType{f.grunt, Rarity::Common});
+    equipPetal(a, player, f.plain, Rarity::Common, {1035, 1000});
+    a.step(0.0, f.registry);
+    CHECK(a.world.has<Dead>(grunt));
+    CHECK_NEAR(a.world.get<Motion>(player).velocity.length(), 0.0, 1e-12);
 }
 
 TEST(rarity_scales_a_petals_damage_off_the_config) {

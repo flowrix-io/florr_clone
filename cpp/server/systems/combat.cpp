@@ -1113,6 +1113,37 @@ void CombatSystem::collapseClearedNest(World& world, Entity fallen, Entity kille
     awardBounty(world, nest);
 }
 
+void CombatSystem::popBubbles(World& world, const ContentRegistry& content) {
+    for (const DeathRecord& death : deaths_) {
+        if (death.wasPlayer || !world.isAlive(death.entity)) continue;
+        const MobType* type = world.tryGet<MobType>(death.entity);
+        if (type == nullptr || content.mob(type->configIndex).id != "bubble") continue;
+        // The flower that popped it, whether by body, petal, shot or pet --
+        // combat has already walked the credit back to the flower. A bubble
+        // finished by a mob, or by a flower that fell the same tick, throws
+        // nobody.
+        const Entity flower = death.killer;
+        if (flower == NULL_ENTITY || !world.isAlive(flower) || !world.has<PlayerTag>(flower) ||
+            !isStanding(world, flower)) {
+            continue;
+        }
+        const Transform* bubble = world.tryGet<Transform>(death.entity);
+        const Transform* at = world.tryGet<Transform>(flower);
+        Motion* motion = world.tryGet<Motion>(flower);
+        if (bubble == nullptr || at == nullptr || motion == nullptr || at->realm != bubble->realm) {
+            continue;
+        }
+        // Clear of the bubble, as a petal's pop throws the flower clear of the
+        // petal, and added to whatever the flower was already doing.
+        const Vec2 bearing = (at->position - bubble->position).normalized();
+        if (bearing.lengthSq() < 1e-12) continue;
+        motion->velocity +=
+            bearing * shoveSpeed(kBubblePopDistance, net::kTickSeconds, /*decaysFirst=*/true);
+        // A cluster popped at once stacks, under the petal's ceiling.
+        motion->velocity = motion->velocity.clampedLength(kMaxPopTickTravel / net::kTickSeconds);
+    }
+}
+
 void CombatSystem::awardBounty(World& world, Entity victim) {
     const Bounty* bounty = world.tryGet<Bounty>(victim);
     if (bounty == nullptr || bounty->xp <= 0.0) return;
@@ -1774,6 +1805,9 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
     tickMobLightning(world, grid, content, nowMillis);
     tickProjectiles(world, grid, content, nowMillis, dt);
     tickGroundEffects(world, grid, content, nowMillis, dt);
+    // Last, so a bubble that went down to poison, a petal or a shot this tick
+    // -- in any phase -- pops all the same.
+    popBubbles(world, content);
 
     if (tick_ % kCooldownPruneTicks == 0) {
         queries_->cooldowns.each([&](Entity, HitCooldowns& cooldowns) { cooldowns.prune(nowMillis); });
