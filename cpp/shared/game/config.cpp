@@ -611,6 +611,24 @@ RecoverSpec parseRecover(Ctx& ctx, const Json& owner) {
     return spec;
 }
 
+JumpSpec parseJump(Ctx& ctx, const Json& owner) {
+    JumpSpec spec;
+    if (!owner.contains("jump")) return spec;
+    const Json& node = owner["jump"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("jump is ") + typeName(node) + ", not an object; ignored");
+        return spec;
+    }
+    // Defaults are the shell's: 50 units a jump, a second on the ground
+    // between them.
+    spec.distance = ctx.range(node, "distance", 50.0, 0.0, kWorldSize);
+    spec.pauseMillis = ctx.range(node, "pauseMs", 1000.0, 0.0, kMaxDurationMillis);
+    // A jump that goes nowhere would leave the mob sitting still for good,
+    // target or not.
+    spec.present = spec.distance > 0.0;
+    return spec;
+}
+
 RadiationSpec parseRadiation(Ctx& ctx, const Json& owner) {
     RadiationSpec spec;
     if (!owner.contains("radiation")) return spec;
@@ -1129,6 +1147,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.web = parseWeb(ctx, src);
     m.dropProjectile = parseDropProjectile(ctx, src, petalIds);
     m.recover = parseRecover(ctx, src);
+    m.jump = parseJump(ctx, src);
 
     // The JSON states poison as damage per millisecond; the simulation thinks
     // in seconds, and converting once here keeps that unit out of every
@@ -1793,7 +1812,7 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     }
     s.gardnMotion = c.gardnMotion ||
                     ((s.ai == AiKind::Neutral || s.ai == AiKind::Hostile) && c.speed != 0.0 &&
-                     c.segmentCount == 0 && !c.chainBody);
+                     c.segmentCount == 0 && !c.chainBody && !c.jump.present);
     // min_rarity is enforced in exactly one place: below its tier the mob is
     // not ambient, and every spawner already filters on that.
     s.ambient = tier >= rarityIndex(c.minRarity) && !c.groups.empty() && !c.neverAmbient;

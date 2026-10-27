@@ -389,6 +389,9 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.cruise = beeCruiseDrive(stats.speed, stats.cruiseSpeed);
         drive.beeChaseWeave = config.beeChaseWeave;
         drive.crabStrafe = config.crabStrafe;
+        drive.jumps = config.jump.present;
+        drive.jumpDistance = config.jump.distance;
+        drive.jumpPauseMillis = config.jump.pauseMillis;
         drive.gardnMotion = stats.gardnMotion;
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
@@ -1147,6 +1150,40 @@ Vec2 steerCrab(MobAi& ai, Vec2 toTarget, double ownRadius, double strafeSpeed, d
     return length > 0.0 ? walk * (strafeSpeed / length) : Vec2{0, 0};
 }
 
+Vec2 steerJump(MobAi& ai, Vec2 toTarget, double distance, double pauseMillis, double slow,
+               double nowMillis, double dt, Vec2& facing) {
+    // Landed and rested: take off at where the target is now. Standing right
+    // on it, there is no heading to jump along, so it waits.
+    if (!(ai.jumpRemaining > 0.0) && nowMillis - ai.jumpStartMillis >= kMobJumpMillis + pauseMillis &&
+        toTarget.lengthSq() > kDirectionEpsilonSq) {
+        ai.jumpStartMillis = nowMillis;
+        ai.jumpHeading = toTarget.angle();
+        ai.jumpRemaining = distance;
+    }
+    if (ai.jumpRemaining > 0.0) {
+        // In the air it goes where it was aimed, wherever the target has gone.
+        facing = Vec2::fromAngle(ai.jumpHeading);
+        return jumpFlight(ai, distance, slow, nowMillis, dt);
+    }
+    // On the ground it sits still, turned toward the target.
+    facing = toTarget;
+    return Vec2{0, 0};
+}
+
+Vec2 jumpFlight(MobAi& ai, double distance, double slow, double nowMillis, double dt) {
+    if (!(ai.jumpRemaining > 0.0) || !(dt > 0.0)) return Vec2{0, 0};
+    // Where the ease-out stands at the END of this tick: what is left of the
+    // jump falls as (1 - t)^2. Booked against what was left rather than
+    // against last tick's time, so the steps add up to `distance` exactly
+    // even when the server's step and its clock disagree.
+    const double rest =
+        1.0 - std::min((nowMillis - ai.jumpStartMillis + dt * 1000.0) / kMobJumpMillis, 1.0);
+    const double left = std::min(ai.jumpRemaining, distance * rest * rest);
+    const double step = ai.jumpRemaining - left;
+    ai.jumpRemaining = left;
+    return Vec2::fromAngle(ai.jumpHeading, step * slow / dt);
+}
+
 BeeCruiseDrive beeCruiseDrive(double speed, double cruiseSpeed) {
     if (!(cruiseSpeed > 0.0)) return BeeCruiseDrive{speed, kBeeCruiseSpeed};
     const double ceiling = std::min(cruiseSpeed, kMaxWanderSpeed);
@@ -1207,6 +1244,12 @@ Vec2 MobAiSystem::steerIdle(World& world, Entity self, const Transform& transfor
                 wanderToPoint(*wander, transform.position, drive.speed * slow, nowMillis);
             return motion.velocity;
         }
+    }
+    // A jumper holds still and keeps its heading: no hop, no turn. A jump
+    // already in the air when the target was lost lands first.
+    if (drive.jumps) {
+        motion.velocity = jumpFlight(ai, drive.jumpDistance, slow, nowMillis, dt);
+        return motion.velocity;
     }
 
     driftPassive(world, self, motion, ai, drive, slow, nowMillis, dt);
@@ -1450,6 +1493,11 @@ bool MobAiSystem::pursueTarget(World& world, Entity self, const MobType& type,
         desired = steerCrab(ai, toTarget, body.radius, chaseSpeed, nowMillis, facing);
         return true;
     }
+    if (drive.jumps) {
+        desired = steerJump(ai, toTarget, drive.jumpDistance, drive.jumpPauseMillis,
+                            slowFactorOf(world, self, nowMillis), nowMillis, dt, facing);
+        return true;
+    }
 
     desired = gap > 0.0 ? toTarget * (chaseSpeed / gap) : Vec2{0, 0};
     // A `bee_ai: "always"` mob weaves across its bearing rather than flying a
@@ -1611,6 +1659,12 @@ void MobAiSystem::driftUnwatched(World& world, Entity self, double nowMillis, do
     // A mob that has never thought has never been handed the drift machine
     // either; driftPassive() holds it still until its first step equips it.
     const Drive drive = driveFor(type->configIndex, type->rarity);
+    // A jumper has no drift, and turning it to the drift's heading would be
+    // the one rotation it never makes.
+    if (drive.jumps) {
+        motion->velocity = Vec2{0, 0};
+        return;
+    }
     driftPassive(world, self, *motion, *ai, drive, slowFactorOf(world, self, nowMillis), nowMillis,
                  dt);
 

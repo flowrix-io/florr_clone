@@ -214,6 +214,31 @@ inline constexpr double kCrabChargeScale = 2.2 / 1.25;
 Vec2 steerCrab(MobAi& ai, Vec2 toTarget, double ownRadius, double strafeSpeed, double nowMillis,
                Vec2& facing);
 
+// -- the jumper --------------------------------------------------------------
+//
+// A mob with a `jump` block (the shell) holds perfectly still off a target: it
+// neither hops nor turns. On one it jumps its `distance` straight at it on a
+// heading locked at take-off, lands, sits out `pauseMs` turned toward it, and
+// jumps again. The jump is an ease-out -- off the ground at twice its average
+// speed, slowing to land -- and is booked by the distance still to cover, so
+// it lands exactly `distance` away in open ground whatever the tick did. A web
+// shortens it in proportion. Velocity is published raw: gardn's integrator
+// would smear a 50-unit jump into a glide.
+
+/// How long one jump is in the air.
+inline constexpr double kMobJumpMillis = 250.0;
+
+/// One tick of a jumper's fight against a target `toTarget` away. Takes off
+/// once the last jump has landed and `pauseMillis` has passed, returns the
+/// velocity it wants and writes where it faces into `facing`: the locked
+/// heading in the air, the target on the ground.
+Vec2 steerJump(MobAi& ai, Vec2 toTarget, double distance, double pauseMillis, double slow,
+               double nowMillis, double dt, Vec2& facing);
+
+/// The velocity that carries a jump in the air through this tick, booking it
+/// off `ai.jumpRemaining`; zero on the ground. `slow` scales it.
+Vec2 jumpFlight(MobAi& ai, double distance, double slow, double nowMillis, double dt);
+
 // -- the bee cruise ----------------------------------------------------------
 //
 // Bees do not hop. They cruise continuously along a heading that sways
@@ -648,6 +673,11 @@ private:
         bool beeChaseWeave = false;
         /// Fights by sidestepping and charging. See steerCrab().
         bool crabStrafe = false;
+        /// Holds still off a target and jumps at one. See steerJump(); the
+        /// two figures are JumpSpec's own.
+        bool jumps = false;
+        double jumpDistance = 0;
+        double jumpPauseMillis = 0;
         /// Carries its velocity under gardn's friction and hops gardn's
         /// stride. See MobStats::gardnMotion.
         bool gardnMotion = false;

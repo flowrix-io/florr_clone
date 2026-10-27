@@ -735,6 +735,11 @@ struct MobAi {
     CrabPhase crabPhase = CrabPhase::None;
     double crabPhaseMillis = 0;
     double crabHeading = 0;
+    /// A jumper's (MobConfig::jump) last take-off, the heading it was locked
+    /// onto, and how much of that jump is still to cover -- zero once landed.
+    double jumpStartMillis = 0;
+    double jumpHeading = 0;
+    double jumpRemaining = 0;
     /// Set while the mob is fleeing after being hurt (passive mobs).
     double fleeUntilMillis = 0;
     /// Health a mob with a `recover` block is mending per second, and runs

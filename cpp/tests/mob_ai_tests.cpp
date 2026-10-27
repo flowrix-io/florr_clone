@@ -3412,6 +3412,114 @@ TEST(a_crab_that_loses_its_target_starts_its_next_fight_from_the_first_leg) {
 }
 
 // ---------------------------------------------------------------------------
+// The jumper (`jump`)
+// ---------------------------------------------------------------------------
+
+TEST(an_unprovoked_shell_neither_moves_nor_turns_watched_or_not) {
+    CHECK(contentReady());
+    const std::uint16_t index = content().mobIndex("shell");
+    CHECK(content().mob(index).jump.present);
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        CHECK(!content().mobStats(index, clampRarity(t)).gardnMotion);
+    }
+
+    for (const bool watched : {true, false}) {
+        Sim sim;
+        sim.autoActive = watched;
+        const Entity shell = sim.spawnMob("shell", kOrigin);
+        sim.world.get<Transform>(shell).angle = 1.0;
+        // A drift heading of its own, which an idle hop would turn it to.
+        sim.brainOf(shell).wanderAngle = 2.5;
+        // A bare flower in sight: a neutral mob walks past it.
+        sim.spawnPlayer(kOrigin + Vec2{150, 0});
+        sim.tick(240);                                  // two idle hop cycles
+        CHECK_EQ(sim.brainOf(shell).target, NULL_ENTITY);
+        CHECK_NEAR(sim.positionOf(shell).x, kOrigin.x, 1e-9);
+        CHECK_NEAR(sim.positionOf(shell).y, kOrigin.y, 1e-9);
+        CHECK_NEAR(sim.angleOf(shell), 1.0, 1e-12);
+    }
+}
+
+TEST(a_provoked_shell_jumps_fifty_units_at_its_target_then_rests_a_second) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity shell = sim.spawnMob("shell", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{300, 0});
+    sim.hurt(shell, player);
+
+    // Takes off on the tick it is provoked, straight at the flower, and
+    // lands fifty units on.
+    sim.tick();
+    CHECK_EQ(sim.brainOf(shell).target, player);
+    CHECK(sim.velocityOf(shell).x > 0.0);
+    CHECK(std::cos(sim.angleOf(shell)) > 0.999);
+    // Ticks run until the first one on the ground, which ends the count.
+    int air = 1;
+    while (sim.velocityOf(shell).lengthSq() > 0.0 && air < 30) {
+        sim.tick();
+        ++air;
+    }
+    CHECK_NEAR((air - 1) * net::kTickMillis, kMobJumpMillis, net::kTickMillis);
+    CHECK_NEAR(sim.positionOf(shell).x, kOrigin.x + 50.0, 1e-6);
+    CHECK_NEAR(sim.positionOf(shell).y, kOrigin.y, 1e-6);
+
+    // On the ground for a second, turning to follow the flower but going
+    // nowhere.
+    const Vec2 landed = sim.positionOf(shell);
+    sim.world.get<Transform>(player).position = landed + Vec2{0, 300};
+    int ground = 0;
+    while (sim.velocityOf(shell).lengthSq() == 0.0 && ground < 90) {
+        CHECK_NEAR(sim.positionOf(shell).x, landed.x, 1e-9);
+        CHECK_NEAR(sim.positionOf(shell).y, landed.y, 1e-9);
+        sim.tick();
+        ++ground;
+    }
+    CHECK(std::sin(sim.angleOf(shell)) > 0.999);
+    // The second take-off: the full pause after landing, give or take a tick.
+    CHECK_NEAR((air - 1 + ground) * net::kTickMillis, kMobJumpMillis + 1000.0,
+               net::kTickMillis);
+
+    // And that jump goes where the flower went.
+    sim.tick(30);
+    CHECK_NEAR(sim.positionOf(shell).x, landed.x, 1e-6);
+    CHECK_NEAR(sim.positionOf(shell).y, landed.y + 50.0, 1e-6);
+}
+
+TEST(a_shell_that_loses_its_target_mid_jump_lands_and_holds_still) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity shell = sim.spawnMob("shell", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{0, 300});
+    sim.hurt(shell, player);
+    sim.tick(3);                                        // in the air
+    CHECK(sim.velocityOf(shell).y > 0.0);
+    sim.world.add<Dead>(player, Dead{shell});
+    sim.tick(60);
+    CHECK_EQ(sim.brainOf(shell).target, NULL_ENTITY);
+    CHECK_NEAR(sim.positionOf(shell).x, kOrigin.x, 1e-6);
+    CHECK_NEAR(sim.positionOf(shell).y, kOrigin.y + 50.0, 1e-6);
+    const double angle = sim.angleOf(shell);
+    CHECK(std::sin(angle) > 0.999);
+    sim.tick(120);
+    CHECK_NEAR(sim.positionOf(shell).y, kOrigin.y + 50.0, 1e-6);
+    CHECK_NEAR(sim.angleOf(shell), angle, 1e-12);
+}
+
+TEST(a_webbed_shell_jumps_short_in_proportion) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity shell = sim.spawnMob("shell", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{300, 0});
+    Afflictions afflictions;
+    afflictions.slowFactor = 0.5;
+    afflictions.slowUntilMillis = sim.now + 60000.0;
+    sim.world.add<Afflictions>(shell, afflictions);
+    sim.hurt(shell, player);
+    sim.tick(15);
+    CHECK_NEAR(sim.positionOf(shell).x, kOrigin.x + 25.0, 1e-6);
+}
+
+// ---------------------------------------------------------------------------
 // Mending (`recover`)
 // ---------------------------------------------------------------------------
 

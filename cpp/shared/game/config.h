@@ -261,6 +261,19 @@ struct RecoverSpec {
     double durationMillis = 0;
 };
 
+/// A mob that fights in jumps (`jump`): the shell's. Off a target it holds
+/// perfectly still -- no hop, no turn. On one it jumps `distance` units
+/// straight at it, lands, sits `pauseMillis` facing it, and jumps again.
+///
+/// A jumper publishes its own velocity rather than riding gardn's integrator
+/// (MobStats::gardnMotion), which would smear the jump into a glide. See
+/// MobAiSystem's jump notes.
+struct JumpSpec {
+    bool present = false;
+    double distance = 0;
+    double pauseMillis = 0;
+};
+
 /// A ring of petals a mob carries, as a flower does.
 struct PetalRingSpec {
     bool present = false;
@@ -712,6 +725,7 @@ struct MobConfig {
     WebSpec web;
     DropProjectileSpec dropProjectile;
     RecoverSpec recover;
+    JumpSpec jump;
 
     /// Poison the mob's touch applies. Stored per second, converted from the
     /// per-millisecond figure the JSON uses.
@@ -1017,7 +1031,8 @@ struct MobStats {
     /// on that integrator, and a mob published raw goes from its drift to full
     /// chase speed in one tick and pivots on the spot. Derived per tier because
     /// the AI kind is: a rare bee is neutral and a common one passive. Chains
-    /// are left out -- the head tows the body and keeps its own walk.
+    /// are left out -- the head tows the body and keeps its own walk -- and so
+    /// is a jumper (JumpSpec), whose jump is a fixed distance of its own.
     bool gardnMotion = false;
 
     /// True when an ambient group roll may produce this mob AT THIS TIER.

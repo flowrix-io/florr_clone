@@ -797,6 +797,10 @@
         "color": "#b5b200",
         "image": "$shell",
         "ai_type": "neutral",
+        "jump": {
+            "distance": 200,
+            "pauseMs": 1000
+        },
         "groups": [
             "ocean"
         ]
