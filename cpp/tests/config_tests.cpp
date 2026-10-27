@@ -675,7 +675,7 @@ TEST(the_ocean_group_holds_every_ocean_mob) {
 
     // The roster ported from the reference. A mob missing its group is a mob
     // that loads, draws in the bestiary and never once reaches the water.
-    for (const char* id : {"starfish", "jellyfish", "bubble", "sponge_1", "sponge_2",
+    for (const char* id : {"starfish", "jellyfish", "bubble", "sponge",
                            "shell", "crab", "leech"}) {
         const std::uint16_t index = r.mobIndex(id);
         CHECK(index != kInvalidIndex);

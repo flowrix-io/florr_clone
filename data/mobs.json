@@ -737,7 +737,7 @@
         ],
         "hideRotation": true
     },
-    "sponge_2": {
+    "sponge": {
         "name": "Sponge",
         "health": 100,
         "damage": 10,
@@ -759,39 +759,10 @@
         },
         "description": "Lots of holes and lots of health",
         "color": "#000000",
-        "image": "$sponge:#EFC99A,#A88156",
+        "image": "$sponge:#EFC99A,#C1A27C;#A7829C,#87697E;#8D6CA5,#725785",
         "ai_type": "passive",
         "range": 100,
-        "groups": [
-            "ocean"
-        ],
-        "noEggDrop": true
-    },
-    "sponge_1": {
-        "name": "Sponge",
-        "health": 100,
-        "damage": 10,
-        "size": 1.3257,
-        "random_size": [1.3257, 2.6513],
-        "visual_scale": 1.1315,
-        "speed": 0,
-        "cooldown": 2000,
-        "xp": {
-            "common": 1,
-            "uncommon": 1,
-            "rare": 2,
-            "epic": 22,
-            "legendary": 222,
-            "mythic": 722,
-            "ultra": 22220,
-            "super": 700000,
-            "unique": 2000000
-        },
-        "description": "Lots of holes and lots of health",
-        "color": "#000000",
-        "image": "$sponge:#8d6ca5,#634975,sponge_1",
-        "ai_type": "passive",
-        "range": 100,
+        "spawn_weight": 2,
         "groups": [
             "ocean"
         ],
@@ -861,7 +832,7 @@
         "health": 35,
         "damage": 10,
         "size": 0.7,
-        "speed": 0.96,
+        "speed": 2.0,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -888,7 +859,7 @@
         "health": 35,
         "damage": 10,
         "size": 0.7,
-        "speed": 0.96,
+        "speed": 2.0,
         "cooldown": 2000,
         "xp": {
             "common": 1,

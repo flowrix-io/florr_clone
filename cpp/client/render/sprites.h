@@ -143,6 +143,11 @@ private:
         /// document's colours is the body, so this is null for every other
         /// document, and a pet wearing one looks like the wild mob.
         std::shared_ptr<SvgDocument> petDocument;
+        /// Every palette of a marker that names more than one, the first being
+        /// `document` itself; empty otherwise. A mob in the world wears
+        /// palettes[netId % size] -- flooooio's sponge is one of three colours
+        /// by `id % 3` -- and everywhere else wears `document`.
+        std::vector<std::shared_ptr<SvgDocument>> palettes;
         /// Set when the mob's `image` names a painter instead of declaring a
         /// document; `document` is then null and never consulted.
         MobArt art = MobArt::None;

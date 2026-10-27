@@ -647,8 +647,9 @@ A mobs.json or petals.json entry's `image` is one of two things:
   canvas calls and fitted into whatever box a call site asks for
   (`client/render/sprites.*`). Nearly every petal is one, and a few mobs.
   `$sponge:<body>,<detail>` is a palette marker that expands into one built-in
-  document, because the sponge petal and both sponge mobs are the same vector
-  in two colours.
+  document (flooooio's sponge mob). It may name several palettes, `;` between
+  them; a mob in the world then wears palette `netId % count` -- the sponge
+  is one of three colours -- and the gallery wears the first.
 * **A `$marker` naming a painter** in `paintMobArt`
   (`client/render/mob_art.h`) — most mobs now, and the moon petal. A painter
   generates its geometry every frame from the radius and a clock, which a

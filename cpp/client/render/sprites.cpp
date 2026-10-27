@@ -17,15 +17,19 @@ namespace {
 /// are stored as 0xRRGGBBAA by the loader; the drawing layer works in RGB.
 std::uint32_t rgbOf(std::uint32_t rgba) { return rgba >> 8; }
 
-/// The sponge artwork, transcribed verbatim from `src/sponge_svg.ts`.
+/// The sponge MOB's artwork: flooooio's MobRendererSponge (body, outline,
+/// pores, all nonzero fills, art radius 25), transcribed verbatim from
+/// `src/sponge_svg.ts`. Its outline and pores are flooooio's darkened(body,
+/// 0.19) in mobs.json. The sponge PETAL is gardn's drawing, a document of its
+/// own in petals.json.
 ///
-/// The sponge petal and both sponge mobs are the same 300-line vector and
-/// differ only in two fill colours, so mobs.json and petals.json carry a
-/// `$sponge:<body>,<detail>[,<id>]` palette marker instead of three copies of
-/// the path data -- the browser build expanded it in resolveSpongeImage() as
-/// it loaded the configs, and resolveArtwork() below does here. Handing that
-/// marker straight to the SVG compiler is what left all three sponges painting
-/// as flat discs.
+/// Every sponge is the same 300-line vector in one of three palettes, picked
+/// per entity as flooooio does, so mobs.json carries a
+/// `$sponge:<body>,<detail>[,<id>]` palette marker -- several of them, `;`
+/// between -- instead of copies of the path data. The browser build expanded
+/// it in resolveSpongeImage() as it loaded the configs, and resolveArtwork()
+/// below does here. Handing that marker straight to the SVG compiler is what
+/// left the sponges painting as flat discs.
 constexpr const char* kSpongeArt = R"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-40 -40 80 80"${idAttr}>
   
   <path fill="${bodyColor}" d="
@@ -331,19 +335,39 @@ constexpr const char* kSpongeArt = R"SVG(<svg xmlns="http://www.w3.org/2000/svg"
 /// A mob `image` of `$petal:<id>` is drawn as petal <id> -- see MobConfig::image.
 constexpr std::string_view kPetalArtMarker = "$petal:";
 
-/// Expands a `$sponge:` palette marker into `kSpongeArt`; any other string is
-/// returned unchanged. Mirrors the browser build's resolveSpongeImage().
+/// The palettes a `$sponge:` marker names, `;` between them
+/// (`$sponge:<body>,<detail>;<body>,<detail>`), each handed back as a marker
+/// of its own and in order. Anything else comes back alone. The first is the
+/// picture wherever no entity stands behind it -- the gallery, a tooltip --
+/// which is the colour flooooio draws a specimen in.
+std::vector<std::string> artworkPalettes(const std::string& source) {
+    static const std::string kMarker = "$sponge:";
+    if (source.compare(0, kMarker.size(), kMarker) != 0) return {source};
+    std::vector<std::string> out;
+    std::size_t at = kMarker.size();
+    for (;;) {
+        const std::size_t end = source.find(';', at);
+        out.push_back(kMarker + source.substr(at, end == std::string::npos ? end : end - at));
+        if (end == std::string::npos) return out;
+        at = end + 1;
+    }
+}
+
+/// Expands a `$sponge:` palette marker -- its first palette -- into
+/// `kSpongeArt`; any other string is returned unchanged. Mirrors the browser
+/// build's resolveSpongeImage().
 std::string resolveArtwork(const std::string& source) {
     static const std::string kMarker = "$sponge:";
     if (source.compare(0, kMarker.size(), kMarker) != 0) return source;
+    const std::string palette = source.substr(0, source.find(';'));
 
     // `<body>,<detail>[,<id>]`. A missing id means no id attribute at all,
     // which is what the reference's template literal produces for it.
     std::string field[3];
     std::size_t at = kMarker.size();
-    for (int i = 0; i < 3 && at <= source.size(); ++i) {
-        const std::size_t comma = source.find(',', at);
-        field[i] = source.substr(at, comma == std::string::npos ? std::string::npos : comma - at);
+    for (int i = 0; i < 3 && at <= palette.size(); ++i) {
+        const std::size_t comma = palette.find(',', at);
+        field[i] = palette.substr(at, comma == std::string::npos ? std::string::npos : comma - at);
         if (comma == std::string::npos) break;
         at = comma + 1;
     }
@@ -359,21 +383,24 @@ std::string resolveArtwork(const std::string& source) {
 }
 
 /// The same `$sponge:` marker in a summon's palette: the body in
-/// kPetBodyColor and the detail in its gardn outline, the id kept. Empty for
-/// any other artwork -- a document is the picture it is, and only a palette
-/// marker says which of its colours is the body.
+/// kPetBodyColor and the detail in its gardn outline, the first palette's id
+/// kept. One picture however many palettes the wild mob has -- a summon is
+/// yellow whichever sponge it is. Empty for any other artwork -- a document
+/// is the picture it is, and only a palette marker says which of its colours
+/// is the body.
 std::string petArtwork(const std::string& source) {
     static const std::string kMarker = "$sponge:";
     if (source.compare(0, kMarker.size(), kMarker) != 0) return {};
+    const std::string palette = source.substr(0, source.find(';'));
     const auto hex = [](std::uint32_t rgb) {
         char out[8];
         std::snprintf(out, sizeof out, "#%06x", static_cast<unsigned>(rgb & 0xFFFFFFu));
         return std::string(out);
     };
     std::string out = kMarker + hex(kPetBodyColor) + "," + hex(outlineOf(kPetBodyColor));
-    const std::size_t detail = source.find(',', kMarker.size());
-    const std::size_t id = detail == std::string::npos ? detail : source.find(',', detail + 1);
-    if (id != std::string::npos) out += source.substr(id);
+    const std::size_t detail = palette.find(',', kMarker.size());
+    const std::size_t id = detail == std::string::npos ? detail : palette.find(',', detail + 1);
+    if (id != std::string::npos) out += palette.substr(id);
     return out;
 }
 
@@ -576,6 +603,16 @@ bool SpriteCache::build(const ContentRegistry& content, const std::string& dataD
         if (!petArt.empty()) {
             mobs_[i].petDocument = compileArt(resolveArtwork(petArt), "mob " + config.id + " (pet)");
         }
+        const std::vector<std::string> palettes = artworkPalettes(config.image);
+        if (palettes.size() < 2) continue;
+        mobs_[i].palettes.push_back(mobs_[i].document);
+        for (std::size_t p = 1; p < palettes.size(); ++p) {
+            auto document = compileArt(resolveArtwork(palettes[p]),
+                                       "mob " + config.id + " (palette " + std::to_string(p) + ")");
+            // A palette that will not build wears the first one's colours,
+            // rather than leaving a hole in the netId rotation.
+            mobs_[i].palettes.push_back(document ? std::move(document) : mobs_[i].document);
+        }
     }
 
     return !mobs_.empty() && !petals_.empty();
@@ -661,8 +698,14 @@ void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y,
         return;
     }
 
-    const SvgDocument& document =
-        motion && motion->pet && sprite.petDocument ? *sprite.petDocument : *sprite.document;
+    const SvgDocument* document = sprite.document.get();
+    if (motion && motion->pet && sprite.petDocument) {
+        document = sprite.petDocument.get();
+    } else if (motion && !sprite.palettes.empty()) {
+        // flooooio's `id % 3`: the entity's own id picks its colour, so a
+        // sponge keeps one for its whole life and neighbours differ.
+        document = sprite.palettes[motion->seed % sprite.palettes.size()].get();
+    }
     canvas.save();
     canvas.translate(static_cast<float>(x), static_cast<float>(y));
     if (rotation != 0.0) canvas.rotate(static_cast<float>(rotation));
@@ -671,12 +714,12 @@ void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y,
     // width() instead is what made the artwork render at wildly wrong sizes --
     // these documents declare width="32" while drawing in a viewBox many times
     // that, and the two are unrelated.
-    document.renderFitted(canvas,
-                          static_cast<float>(-diameter * 0.5),
-                          static_cast<float>(-diameter * 0.5),
-                          static_cast<float>(diameter),
-                          static_cast<float>(diameter),
-                          static_cast<float>(timeSeconds));
+    document->renderFitted(canvas,
+                           static_cast<float>(-diameter * 0.5),
+                           static_cast<float>(-diameter * 0.5),
+                           static_cast<float>(diameter),
+                           static_cast<float>(diameter),
+                           static_cast<float>(timeSeconds));
     canvas.restore();
 }
 

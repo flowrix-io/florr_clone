@@ -605,6 +605,31 @@ TEST(legacy_consumables_load_as_their_petals) {
     CHECK_EQ(saved["inventory"]["epic"]["petal_shell"].asInt(), 7);
 }
 
+TEST(the_two_old_sponge_mobs_kills_load_as_one_sponge) {
+    // sponge_1 and sponge_2 were one mob per colour; they are one `sponge`
+    // now. A gallery keeps every kill it showed: summed tier by tier into
+    // whatever the account already has under the new id.
+    Json stored;
+    std::string error;
+    CHECK(Json::parse(R"({"mobKills": {
+        "sponge_1": {"common": 4, "epic": 2},
+        "sponge_2": {"common": 6, "mythic": 1},
+        "sponge": {"common": 1},
+        "bee": {"common": 9}}})",
+                      stored, error));
+    const PlayerRecord record = parsePlayerRecord(stored);
+    CHECK_EQ(record.killCount("sponge", Rarity::Common), 11);
+    CHECK_EQ(record.killCount("sponge", Rarity::Epic), 2);
+    CHECK_EQ(record.killCount("sponge", Rarity::Mythic), 1);
+    CHECK_EQ(record.killCount("bee", Rarity::Common), 9);
+    CHECK(!record.mobKills.contains("sponge_1"));
+    CHECK(!record.mobKills.contains("sponge_2"));
+
+    const Json saved = playerRecordJson(record);
+    CHECK(!saved["mobKills"].contains("sponge_2"));
+    CHECK_EQ(saved["mobKills"]["sponge"]["common"].asInt(), 11);
+}
+
 TEST(an_unmarked_record_keeps_its_worn_petals_out_of_the_bag) {
     // The old shape: worn petals are not in the stored inventory, so the load
     // must not take them out of it a second time. The next save migrates it.

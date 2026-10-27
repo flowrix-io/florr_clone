@@ -178,6 +178,38 @@ void convertLegacyConsumables(Json& inventory) {
     }
 }
 
+/// Mob ids that were folded into another, and the mob each one became. The
+/// sponge was two mobs, one per colour, until it became one mob that picks its
+/// colour per entity (2026-10-26).
+struct LegacyMob {
+    const char* id;
+    const char* mob;
+};
+constexpr LegacyMob kLegacyMobs[] = {
+    {"sponge_1", "sponge"},
+    {"sponge_2", "sponge"},
+};
+
+/// Folds a retired mob's kills into the mob it became, tier by tier, so the
+/// gallery keeps the count it showed: `{"sponge_1": {"epic": 2}, "sponge_2":
+/// {"epic": 3}}` becomes `{"sponge": {"epic": 5}}`. The old key goes -- this
+/// build has no mob by that id, so it would only ever sit in the record unseen.
+void convertLegacyMobKills(Json& mobKills) {
+    if (!mobKills.isObject()) return;
+    for (const LegacyMob& legacy : kLegacyMobs) {
+        if (!mobKills.contains(legacy.id)) continue;
+        const Json old = mobKills[legacy.id];
+        mobKills.erase(legacy.id);
+        if (!old.isObject()) continue;
+        Json& into = mobKills[legacy.mob];
+        for (const std::string& tier : old.keys()) {
+            const std::int64_t sum = std::max<std::int64_t>(0, into[tier].asInt64(0)) +
+                                     std::max<std::int64_t>(0, old[tier].asInt64(0));
+            into[tier] = static_cast<int>(std::min<std::int64_t>(sum, kMaxStackCount));
+        }
+    }
+}
+
 // -- record <-> JSON ---------------------------------------------------------
 
 PlayerRecord playerFromJson(const Json& value) {
@@ -194,6 +226,7 @@ PlayerRecord playerFromJson(const Json& value) {
     if (value["inventory"].isObject()) record.inventory = value["inventory"];
     convertLegacyConsumables(record.inventory);
     if (value["mobKills"].isObject()) record.mobKills = value["mobKills"];
+    convertLegacyMobKills(record.mobKills);
     // Branches this build does not know are dropped rather than kept as raw
     // JSON: a tier only means something to the code that applies it, and
     // round-tripping one would let it silently reappear as a bonus.

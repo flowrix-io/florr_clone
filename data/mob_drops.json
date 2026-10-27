@@ -499,35 +499,14 @@
       }
     ]
   },
-  "sponge_1": {
+  "sponge": {
     "guaranteed": true,
     "drops": [
       {
         "type": "petal",
         "itemType": "sponge",
         "rarity": "common",
-        "probability": 0.75,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
-        "itemType": "coral",
-        "rarity": "common",
-        "probability": 0.05,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      }
-    ]
-  },
-  "sponge_2": {
-    "guaranteed": true,
-    "drops": [
-      {
-        "type": "petal",
-        "itemType": "sponge",
-        "rarity": "common",
-        "probability": 1,
+        "probability": 0.875,
         "minQuantity": 1,
         "maxQuantity": 1
       },

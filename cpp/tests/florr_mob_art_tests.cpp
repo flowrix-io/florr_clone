@@ -229,7 +229,7 @@ namespace {
 constexpr int kRingSize = 200;
 std::vector<std::uint8_t> mobFrame(const char* id, double angle, std::uint8_t state,
                                    const std::vector<RemoteEntity>& seeds,
-                                   std::uint8_t spawnFlags = 0) {
+                                   std::uint8_t spawnFlags = 0, std::uint32_t netId = 7) {
     const std::uint16_t type = shipped().mobIndex(id);
     WorldRenderer renderer;
     renderer.setContent(&shipped());
@@ -240,7 +240,7 @@ std::vector<std::uint8_t> mobFrame(const char* id, double angle, std::uint8_t st
     view.setRealm(Realm::Overworld);
     const Vec2 at{1000.0, 1000.0};
     RemoteEntity mob;
-    mob.netId = 7;
+    mob.netId = netId;
     mob.kind = net::EntityKind::Mob;
     mob.position = mob.targetPosition = at;
     mob.needsSnap = false;
@@ -436,10 +436,39 @@ TEST(a_pet_in_the_world_is_drawn_yellow_and_a_wild_one_is_not) {
 
     // The sponge is a document, but its palette marker says which colour is
     // its body, so it has a summon's copy too.
-    const std::vector<std::uint8_t> sponge = mobFrame("sponge_2", 0.0, 0, {});
-    const std::vector<std::uint8_t> petSponge = mobFrame("sponge_2", 0.0, 0, {}, net::SpawnIsPet);
+    const std::vector<std::uint8_t> sponge = mobFrame("sponge", 0.0, 0, {});
+    const std::vector<std::uint8_t> petSponge = mobFrame("sponge", 0.0, 0, {}, net::SpawnIsPet);
     CHECK_EQ(pixelsOf(sponge, kPetBodyColor), 0);
     CHECK(pixelsOf(petSponge, kPetBodyColor) >= 200);
+}
+
+TEST(a_sponge_wears_one_of_three_colours_picked_by_its_id) {
+    // flooooio's `id % 3`: tan, mauve, purple. The netId picks, so one
+    // sponge keeps its colour for life and neighbours differ.
+    const std::uint32_t kBodies[3] = {0xEFC99Au, 0xA7829Cu, 0x8D6CA5u};
+    for (std::uint32_t netId = 30; netId < 36; ++netId) {
+        const std::vector<std::uint8_t> frame = mobFrame("sponge", 0.0, 0, {}, 0, netId);
+        for (std::uint32_t i = 0; i < 3; ++i) {
+            const int body = pixelsOf(frame, kBodies[i]);
+            if (i == netId % 3) {
+                if (body < 200) std::printf("    netId %u: %d body pixels\n", netId, body);
+                CHECK(body >= 200);
+            } else {
+                CHECK_EQ(body, 0);
+            }
+        }
+    }
+
+    // No entity behind it -- the gallery -- is the first palette, the colour
+    // flooooio draws a specimen in.
+    Canvas canvas = Canvas::createVirtual(kSide, kSide);
+    canvas.clear(Color{kBackground, kBackground, kBackground});
+    shippedSprites().drawMob(canvas, shipped().mobIndex("sponge"), Rarity::Common, kSide * 0.5,
+                             kSide * 0.5, 80.0, 0.0, 0.0);
+    const std::vector<std::uint8_t> still = canvas.getImageData(0, 0, kSide, kSide);
+    CHECK(pixelsOf(still, kBodies[0]) >= 200);
+    CHECK_EQ(pixelsOf(still, kBodies[1]), 0);
+    CHECK_EQ(pixelsOf(still, kBodies[2]), 0);
 }
 
 namespace {

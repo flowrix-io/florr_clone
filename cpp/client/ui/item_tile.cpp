@@ -139,8 +139,7 @@ struct GardnIcon {
     ///
     /// Measured by rasterising each document at 512px in a browser and
     /// taking the alpha bounding box, which is the same fit the sprite cache
-    /// applies. Sponge has no document -- it is a C++ painter, which draws
-    /// to the size it is handed -- so it takes 1.
+    /// applies.
     double box;
 };
 constexpr GardnIcon kGardnIcon[] = {
@@ -162,7 +161,7 @@ constexpr GardnIcon kGardnIcon[] = {
     {"iris",               17,    7,  0,       0,     1},
     {"leaf",            38.25,   10,  0,      -1,     1},
     {"light",             17,    7,  0,       0,     1},
-    {"lightning",          21,   10,  0,       0, 0.775},   // art fills 78% of its box
+    {"lightning",          21,   10,  0,       1,     1},
     {"lotus",            26.5,   12,  0,     0.1,     1},
     {"magnet",           42.5,   12,  0,       0,     1},
     {"missile",            27,   10,  0,       1,     1},
@@ -184,7 +183,7 @@ constexpr GardnIcon kGardnIcon[] = {
     {"sand",               17,    7, 10,       0, 0.852},   // art fills 85% of its box
     {"shell",              31,   10,  0,       0, 0.973},   // art fills 97% of its box
     {"soil",               24,   10,  0,       0, 0.488},   // art fills 49% of its box
-    {"sponge",           34.5,   12,  0,       0,     1},
+    {"sponge",           34.5,   12,  0,       1, 0.983},   // art fills 98% of its box
     {"square",           23.5,   15,  0,  1.7854, 0.969},   // art fills 97% of its box
     {"starfish",           26,    8,  0,       -1, 0.797},   // art fills 80% of its box
     {"stick",              27,   15,  0,       1,     1},
