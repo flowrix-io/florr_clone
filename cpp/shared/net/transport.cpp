@@ -16,6 +16,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 
 namespace flix::net {
 
@@ -29,6 +30,12 @@ constexpr std::size_t kReadChunk = 16 * 1024;
 /// compact it. Erasing after every frame would memmove the remainder each
 /// time; waiting forever would grow the buffer without bound.
 constexpr std::size_t kCompactThreshold = 64 * 1024;
+
+/// The clock arrivals are stamped on. Only ever compared with itself.
+double steadyMillis() {
+    using clock = std::chrono::steady_clock;
+    return std::chrono::duration<double, std::milli>(clock::now().time_since_epoch()).count();
+}
 
 #ifndef __EMSCRIPTEN__
 bool setNonBlocking(int fd) {
@@ -114,16 +121,23 @@ void Connection::send(const ByteWriter& message) { send(message.data(), message.
 #ifdef __EMSCRIPTEN__
 
 bool Connection::readAvailable(std::string& errorOut) {
+    // Read into a scratch buffer and appended, rather than read into a
+    // resized inbound_: resizing zero-fills the whole chunk, and the server
+    // reads every connection each time anything arrives on any of them
+    // (flix_server_wake), so that would be 16 KB cleared per connection per
+    // arrival, nearly all of it to find nothing waiting. One buffer will do:
+    // this never re-enters.
+    static std::byte scratch[kReadChunk];
     while (true) {
-        const std::size_t at = inbound_.size();
-        inbound_.resize(at + kReadChunk);
-        const int n = web::recv(fd_, inbound_.data() + at, static_cast<int>(kReadChunk));
+        double ageMillis = 0;
+        const int n = web::recv(fd_, scratch, static_cast<int>(kReadChunk), ageMillis);
         if (n > 0) {
-            inbound_.resize(at + static_cast<std::size_t>(n));
-            if (static_cast<std::size_t>(n) < kReadChunk) return true;
+            inbound_.insert(inbound_.end(), scratch, scratch + n);
+            noteArrival(static_cast<std::size_t>(n), steadyMillis() - ageMillis);
+            // Not the end even when short: a read stops at the end of each
+            // delivery, so only an empty one says the queue is drained.
             continue;
         }
-        inbound_.resize(at);
         if (n == 0) return true;   // nothing waiting, which is not an end
         const std::string reason = web::error(fd_);
         errorOut = reason.empty() ? "peer closed" : reason;
@@ -165,6 +179,7 @@ bool Connection::readAvailable(std::string& errorOut) {
         const ssize_t n = ::recv(fd_, inbound_.data() + at, kReadChunk, 0);
         if (n > 0) {
             inbound_.resize(at + static_cast<std::size_t>(n));
+            noteArrival(static_cast<std::size_t>(n), steadyMillis());
             // A short read means the socket is drained; going round again
             // would only earn an EAGAIN.
             if (static_cast<std::size_t>(n) < kReadChunk) return true;
@@ -205,6 +220,15 @@ std::size_t Connection::transportBuffered() const { return 0; }
 
 #endif  // __EMSCRIPTEN__
 
+void Connection::noteArrival(std::size_t bytes, double atMillis) {
+    streamRead_ += bytes;
+    arrivals_.push_back(Arrival{streamRead_, atMillis});
+}
+
+double Connection::frameAgeMillis() const {
+    return std::max(0.0, steadyMillis() - frameArrivedMillis_);
+}
+
 void Connection::compactOutbound() {
     if (outboundSent_ == outbound_.size()) {
         outbound_.clear();
@@ -233,6 +257,17 @@ bool Connection::nextFrame(std::vector<std::byte>& out) {
     const std::byte* body = inbound_.data() + inboundConsumed_ + kFrameHeaderBytes;
     out.assign(body, body + length);
     inboundConsumed_ += kFrameHeaderBytes + length;
+
+    // The frame arrived with the read holding its last byte. A read it ends
+    // exactly is done with; one it ends inside also starts the next frame.
+    streamFramed_ += kFrameHeaderBytes + length;
+    while (!arrivals_.empty() && arrivals_.front().streamEnd < streamFramed_) {
+        arrivals_.pop_front();
+    }
+    if (!arrivals_.empty()) {
+        frameArrivedMillis_ = arrivals_.front().atMillis;
+        if (arrivals_.front().streamEnd == streamFramed_) arrivals_.pop_front();
+    }
 
     if (inboundConsumed_ == inbound_.size()) {
         inbound_.clear();

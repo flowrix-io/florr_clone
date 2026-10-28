@@ -46,6 +46,13 @@ EM_JS(void, flix_net_init, (), {
     infoTimeoutMs: 1500,
     webTransportTimeoutMs: 2500,
 
+    // Called after bytes land in any channel's queue, when set. The Node
+    // server sets it (server/main.cpp, flix_wake_on_arrival) to handle them
+    // without waiting for its next timer; nothing else does. It may run with
+    // the module mid-call -- an in-page pair delivers inside send() -- so
+    // whatever it does to reach the module has to happen later.
+    onDelivered: null,
+
     alloc(slot) {
       const reuse = this.slots.indexOf(null);
       if (reuse >= 0) { this.slots[reuse] = slot; return reuse; }
@@ -65,6 +72,9 @@ EM_JS(void, flix_net_init, (), {
         cfConnectingIp: "",
         error: "",
         chunks: [],
+        // When each of `chunks` landed, on performance.now(): what lets the
+        // C++ side tell how long a message sat here before it was read.
+        arrivals: [],
         head: null,
         headAt: 0,
         queued: 0,
@@ -77,11 +87,14 @@ EM_JS(void, flix_net_init, (), {
 
     // Received bytes, appended whole. The reader never re-slices: recv() walks
     // the chunk list with an offset, so a large message is handed out across
-    // as many calls as the caller's buffer needs without copying twice.
+    // as many calls as the caller's buffer needs without copying twice. Each
+    // is stamped with when it landed.
     deliver(channel, bytes) {
       if (!channel || channel.state === 2 || !bytes || bytes.length === 0) return;
       channel.chunks.push(bytes);
+      channel.arrivals.push(performance.now());
       channel.queued += bytes.length;
+      if (this.onDelivered) this.onDelivered();
     },
 
     fail(channel, reason) {
@@ -872,23 +885,26 @@ EM_JS(int, flix_ch_state, (int id), {
   return slot ? slot.state : 2;
 });
 
-EM_JS(int, flix_ch_recv, (int id, char* out, int capacity), {
+EM_JS(int, flix_ch_recv, (int id, char* out, int capacity, double* agePtr), {
   const channel = Module.flixNet.get(id);
   if (!channel || channel.listener) return -1;
-  let written = 0;
-  while (written < capacity && channel.chunks.length > 0) {
-    const chunk = channel.chunks[0];
-    const take = Math.min(capacity - written, chunk.length - channel.headAt);
-    HEAPU8.set(chunk.subarray(channel.headAt, channel.headAt + take), out + written);
-    written += take;
-    channel.headAt += take;
-    channel.queued -= take;
-    if (channel.headAt >= chunk.length) { channel.chunks.shift(); channel.headAt = 0; }
-  }
   // Closed AND drained is the only end-of-stream: bytes that arrived before
   // the close still belong to the caller.
-  if (written === 0 && channel.state === 2) return -1;
-  return written;
+  if (channel.chunks.length === 0) return channel.state === 2 ? -1 : 0;
+  // From the oldest chunk only, never across two, so the one age written
+  // back is true of every byte handed out.
+  const chunk = channel.chunks[0];
+  const take = Math.min(capacity, chunk.length - channel.headAt);
+  HEAPU8.set(chunk.subarray(channel.headAt, channel.headAt + take), out);
+  HEAPF64[agePtr >> 3] = Math.max(0, performance.now() - channel.arrivals[0]);
+  channel.headAt += take;
+  channel.queued -= take;
+  if (channel.headAt >= chunk.length) {
+    channel.chunks.shift();
+    channel.arrivals.shift();
+    channel.headAt = 0;
+  }
+  return take;
 });
 
 EM_JS(int, flix_ch_send, (int id, const char* data, int size), {
@@ -981,8 +997,8 @@ int accept(int listener) { return flix_ch_accept(listener); }
 
 State state(int channel) { return static_cast<State>(flix_ch_state(channel)); }
 
-int recv(int channel, void* buffer, int capacity) {
-    return flix_ch_recv(channel, static_cast<char*>(buffer), capacity);
+int recv(int channel, void* buffer, int capacity, double& ageMillis) {
+    return flix_ch_recv(channel, static_cast<char*>(buffer), capacity, &ageMillis);
 }
 
 bool send(int channel, const void* data, int size) {

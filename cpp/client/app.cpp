@@ -699,20 +699,6 @@ void App::frame(double dt) {
     chatTabs_.fill(Rect{});
     chatTabChecks_.fill(Rect{});
 
-    // One heartbeat a second while the socket is up, as the reference's own
-    // interval does. It is what makes the ping readout a number.
-    // Every status the socket can be in once the handshake has passed: Ready
-    // is only the gap before login, and a heartbeat that stopped there would
-    // leave the readout on "--" for the whole session -- which is exactly what
-    // it did.
-    const NetClient::Status status = net_.status();
-    const bool socketUp = status == NetClient::Status::Ready ||
-                          status == NetClient::Status::LoggedIn ||
-                          status == NetClient::Status::Playing;
-    if (socketUp && timeSeconds_ >= nextPingSeconds_) {
-        net_.sendPing();
-        nextPingSeconds_ = timeSeconds_ + 1.0;
-    }
     // The bag and bar the menus draw, checked against the server's copy. A
     // count edited in memory, or a Profile that never landed, gets the real
     // one sent back; agreeing costs four bytes and no answer.
@@ -770,6 +756,12 @@ void App::frame(double dt) {
     if (menus_.takeAdminGrantRequest() && config_.grantAdmin) {
         config_.grantAdmin(net_.sessionToken());
     }
+
+    // What this frame's update sent -- the input frame, a ping, a click's
+    // request -- leaves before the draw, not at the next frame's poll: that
+    // wait was a whole frame on every round trip (34 ms loopback ping at
+    // 60 fps, 17 with this).
+    net_.flush();
 
     // --- draw -------------------------------------------------------------
     // Forgotten before the draw, and set again by whoever paints it. Both the
@@ -913,6 +905,25 @@ void App::frame(double dt) {
     // the set is complete.
     publishKeyboardRegions();
     window_.present();
+
+    // One heartbeat a second while the socket is up, as the reference's own
+    // interval does. It is what makes the ping readout a number.
+    // Every status the socket can be in once the handshake has passed: Ready
+    // is only the gap before login, and a heartbeat that stopped there would
+    // leave the readout on "--" for the whole session -- which is exactly what
+    // it did.
+    //
+    // Last in the frame, after the draw: in a page, a reply cannot be taken
+    // off the socket while a frame is still running, so a ping sent earlier
+    // would time the rest of the frame along with the round trip.
+    const NetClient::Status status = net_.status();
+    const bool socketUp = status == NetClient::Status::Ready ||
+                          status == NetClient::Status::LoggedIn ||
+                          status == NetClient::Status::Playing;
+    if (socketUp && timeSeconds_ >= nextPingSeconds_) {
+        net_.sendPing();
+        nextPingSeconds_ = timeSeconds_ + 1.0;
+    }
 #ifdef __EMSCRIPTEN__
     // After present(), because present() is what hands the op stream over.
     // These are the previous frame's figures by the time the counters draw

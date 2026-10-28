@@ -783,6 +783,12 @@ void GameServer::serviceNetwork(int timeoutMillis) {
     listener_.poll(*this, timeoutMillis);
 }
 
+void GameServer::serviceArrivals() {
+    if (!running_.load()) return;
+    serviceNetwork(0);
+    listener_.flush();
+}
+
 std::size_t GameServer::playerCount() const {
     std::size_t n = 0;
     for (const auto& entry : sessions_) {

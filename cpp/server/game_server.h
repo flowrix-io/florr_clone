@@ -150,6 +150,13 @@ public:
     /// and drives this from a timer callback instead.
     bool step();
 
+    /// step()'s network half alone, with nothing ticked: every message that
+    /// has arrived is handled and whatever that answered leaves now. The
+    /// emscripten build calls it the moment bytes land, so a request is not
+    /// left waiting out the 60 Hz timer that drives step(). Does nothing once
+    /// the server has stopped.
+    void serviceArrivals();
+
     /// Flushes every playing account and the database, then drops the
     /// listener. run() does this on the way out; the emscripten build calls it
     /// when step() first returns false.

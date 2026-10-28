@@ -66,6 +66,13 @@ public:
     void closeGracefully() { closing_ = true; }
     bool closing() const { return closing_; }
 
+    /// How long ago the frame being handled arrived: when the bytes that
+    /// completed it reached this process, read inside onMessage. The web
+    /// backend knows the moment the page or Node took them off the network,
+    /// which can be most of a frame before a client's poll reads them; a
+    /// socket only knows when they were read, so there it is about zero.
+    double frameAgeMillis() const;
+
 private:
     friend class Listener;
     friend class Dialer;
@@ -103,6 +110,20 @@ private:
 
     std::vector<std::byte> inbound_;
     std::size_t inboundConsumed_ = 0;
+
+    /// Records that `bytes` more were read, which arrived at `atMillis`.
+    void noteArrival(std::size_t bytes, double atMillis);
+    /// When each read's bytes arrived, oldest first, keyed by where they end
+    /// in the stream (counted from the first byte ever read, so compacting
+    /// `inbound_` moves nothing). Only reads not yet wholly framed are kept.
+    struct Arrival {
+        std::uint64_t streamEnd = 0;
+        double atMillis = 0;
+    };
+    std::deque<Arrival> arrivals_;
+    std::uint64_t streamRead_ = 0;
+    std::uint64_t streamFramed_ = 0;
+    double frameArrivedMillis_ = 0;
 
     std::vector<std::byte> outbound_;
     std::size_t outboundSent_ = 0;

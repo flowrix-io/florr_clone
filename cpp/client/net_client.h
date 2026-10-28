@@ -542,6 +542,11 @@ public:
     /// render loop keeps its cadence even when nothing arrives.
     void poll(int timeoutMillis = 0);
 
+    /// Hands everything sent since the last poll to the socket now. poll()
+    /// does this too, but only after reading, at the top of a frame -- so a
+    /// request made while the frame updates waits for the NEXT one.
+    void flush() { dialer_.flush(); }
+
     Status status() const { return status_; }
     /// Whether this client is holding an account: logged in, or in a game.
     /// Everything the server says about an account or a world is only
@@ -1033,7 +1038,9 @@ private:
     void handleSquadUpdate(ByteReader&);
     void handleGuildUpdate(ByteReader&);
     void handleGuildInviteReceived(ByteReader&);
-    void handlePong(ByteReader&);
+    /// `arrivedMillis` is when the pong's bytes reached the page, on
+    /// renderClockMillis() -- see onMessage.
+    void handlePong(ByteReader&, double arrivedMillis);
     void handleDebugStats(ByteReader&);
     void handleKick(ByteReader&);
     void handleSessionReplaced(ByteReader&);
@@ -1143,6 +1150,9 @@ private:
     static constexpr std::size_t kPingSamples = 10;
     std::vector<double> pingHistory_;
     double averagePingMillis_ = 0;
+    /// When the last ping left, to the fraction: the wire carries whole
+    /// milliseconds, which is most of a loopback round trip.
+    double pingSentMillis_ = 0;
 
     /// Wire bytes since the last takeWireStats(), indexed by opcode. Two flat
     /// arrays rather than a map keyed by name: the counting happens on every

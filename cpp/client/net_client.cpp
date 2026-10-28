@@ -1044,8 +1044,11 @@ void NetClient::requestRespawn() {
 void NetClient::sendPing() {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::Ping);
-    w.u64(static_cast<std::uint64_t>(renderClockMillis()));
+    pingSentMillis_ = renderClockMillis();
+    w.u64(static_cast<std::uint64_t>(pingSentMillis_));
     send(w);
+    // Out now, so the time it carries is the time it left.
+    dialer_.flush();
 }
 
 void NetClient::sendProfileCheck() {
@@ -1069,7 +1072,7 @@ void NetClient::sendProfileCheck() {
 
 // -- incoming ---------------------------------------------------------------
 
-void NetClient::onMessage(net::Connection&, ByteReader& reader) {
+void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
     // Before the opcode is read, so this is the whole frame; plus the four
     // framing bytes the transport has already stripped.
     const std::size_t frameBytes = reader.remaining() + 4;
@@ -1110,7 +1113,13 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::Revived:      handleRevived(reader); break;
         case net::ServerMessage::CraftResult:  handleCraftResult(reader); break;
         case net::ServerMessage::Leaderboard:  handleLeaderboard(reader); break;
-        case net::ServerMessage::Pong:         handlePong(reader); break;
+        // Timed from when the bytes arrived, not from this read of them. The
+        // client reads once a frame, so a reply that came straight back still
+        // sat in the page until the next one, and the readout said the frame
+        // rate (17 ms on loopback at 60 fps) instead of the round trip.
+        case net::ServerMessage::Pong:
+            handlePong(reader, renderClockMillis() - connection.frameAgeMillis());
+            break;
         case net::ServerMessage::Kick:         handleKick(reader); break;
         case net::ServerMessage::DailyStreak:  handleDailyStreak(reader); break;
         case net::ServerMessage::ShopResult:   handleShopResult(reader); break;
@@ -1936,12 +1945,17 @@ void NetClient::handleRevived(ByteReader& reader) {
                                          : "You were revived by " + reviverName + ".");
 }
 
-void NetClient::handlePong(ByteReader& reader) {
+void NetClient::handlePong(ByteReader& reader, double arrivedMillis) {
     const std::uint64_t sentAt = reader.u64();
     reader.u64();   // server time
     if (!reader.ok()) return;
 
-    pingHistory_.push_back(renderClockMillis() - static_cast<double>(sentAt));
+    // The answer to the last ping is timed from when that one left exactly;
+    // any older one, from the whole millisecond it carried.
+    const double sentMillis = sentAt == static_cast<std::uint64_t>(pingSentMillis_)
+                                  ? pingSentMillis_
+                                  : static_cast<double>(sentAt);
+    pingHistory_.push_back(std::max(0.0, arrivedMillis - sentMillis));
     if (pingHistory_.size() > kPingSamples) pingHistory_.erase(pingHistory_.begin());
     double total = 0;
     for (const double sample : pingHistory_) total += sample;

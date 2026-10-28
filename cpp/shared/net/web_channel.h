@@ -91,9 +91,11 @@ int accept(int listener);
 
 State state(int channel);
 
-/// Copies up to `capacity` received bytes. Returns the count, 0 when nothing
-/// has arrived, and -1 when the channel is closed and drained.
-int recv(int channel, void* buffer, int capacity);
+/// Copies up to `capacity` received bytes, all from the oldest delivery not
+/// yet read -- never from two at once -- and sets `ageMillis` to how long ago
+/// that delivery landed. Returns the count, 0 when nothing has arrived, and -1
+/// when the channel is closed and drained.
+int recv(int channel, void* buffer, int capacity, double& ageMillis);
 
 /// Queues `size` bytes. False when the channel is not open.
 bool send(int channel, const void* data, int size);

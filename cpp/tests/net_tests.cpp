@@ -9,7 +9,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace flix;
@@ -376,6 +378,58 @@ TEST(oversized_length_prefix_is_refused) {
     CHECK_EQ(serverSide.disconnects.size(), std::size_t(1));
     CHECK(serverSide.messages.empty());
     CHECK_EQ(server.connectionCount(), std::size_t(0));
+    ::close(fd);
+}
+
+// A frame is as old as the read that COMPLETED it, which is what the ping
+// readout is timed from (NetClient::handlePong): a frame whose last bytes came
+// well after its first must not be dated by the first.
+TEST(a_frame_is_dated_by_the_read_that_completed_it) {
+    Listener server;
+    std::uint16_t port = 0;
+    if (!startOnFreePort(server, port)) { CHECK(false); return; }
+
+    struct AgeRecorder : Recorder {
+        std::vector<double> ages;
+        void onMessage(Connection& c, ByteReader& r) override {
+            Recorder::onMessage(c, r);
+            ages.push_back(c.frameAgeMillis());
+        }
+    } serverSide;
+
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(fd >= 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    CHECK(::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
+    for (int i = 0; i < 50 && serverSide.connects.empty(); ++i) server.poll(serverSide, 2);
+    CHECK_EQ(serverSide.connects.size(), std::size_t(1));
+
+    // Two frames as the wire carries them: a length prefix, then the bytes.
+    std::vector<std::byte> wire;
+    for (const std::string& text : {std::string("first"), std::string("second, in two parts")}) {
+        const ByteWriter w = textFrame(text);
+        const auto length = static_cast<std::uint32_t>(w.size());
+        const auto* prefix = reinterpret_cast<const std::byte*>(&length);
+        wire.insert(wire.end(), prefix, prefix + sizeof length);
+        wire.insert(wire.end(), w.data(), w.data() + w.size());
+    }
+    // The first frame whole and a few bytes of the second, which then waits.
+    const std::size_t firstPart = textFrame("first").size() + 4 + 6;
+    CHECK(::send(fd, wire.data(), firstPart, 0) == static_cast<ssize_t>(firstPart));
+    for (int i = 0; i < 100 && serverSide.messages.empty(); ++i) server.poll(serverSide, 2);
+    CHECK_EQ(serverSide.messages.size(), std::size_t(1));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    const std::size_t rest = wire.size() - firstPart;
+    CHECK(::send(fd, wire.data() + firstPart, rest, 0) == static_cast<ssize_t>(rest));
+    for (int i = 0; i < 100 && serverSide.messages.size() < 2; ++i) server.poll(serverSide, 2);
+    CHECK_EQ(serverSide.messages.size(), std::size_t(2));
+    CHECK_EQ(serverSide.messages[1], std::string("second, in two parts"));
+    // Read just now, not 60 ms ago with its first bytes.
+    CHECK(serverSide.ages.size() == 2 && serverSide.ages[1] < 30.0);
     ::close(fd);
 }
 

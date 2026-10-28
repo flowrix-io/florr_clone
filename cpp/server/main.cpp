@@ -17,6 +17,20 @@
 #include <emscripten.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+namespace {
+/// The running server, for flix_server_wake. Null before start() and again
+/// once shutdown() has run.
+flix::GameServer* g_wasmServer = nullptr;
+}  // namespace
+
+/// Handles what has just arrived, between two passes of the main loop. Called
+/// from JavaScript only, from the hook armWakeOnArrival installs.
+extern "C" EMSCRIPTEN_KEEPALIVE void flix_server_wake() {
+    if (g_wasmServer) g_wasmServer->serviceArrivals();
+}
+#endif
+
 namespace {
 
 #ifndef __EMSCRIPTEN__
@@ -184,6 +198,28 @@ EM_JS(void, flix_catch_stop_signals, (), {
 
 /// Whether one of those signals has arrived since the listeners went in.
 EM_JS(int, flix_stop_signalled, (), { return Module.flixStopSignal ? 1 : 0; });
+
+/// Has bytes landing on any socket run flix_server_wake, so what arrived is
+/// answered at once rather than at the main loop's next pass. That loop is a
+/// 60 Hz timer under Node, and waiting it out was up to 17 ms of every round
+/// trip -- a ping, a login, a craft. Once per turn of the event loop however
+/// many sockets spoke in it: setImmediate runs after Node has dispatched all
+/// the I/O it found, which is also what keeps the wake outside any callback
+/// that is itself inside the module. Off again with 0.
+EM_JS(void, flix_wake_on_arrival, (int on), {
+    const net = Module.flixNet;
+    if (!net) return;
+    if (!on) { net.onDelivered = null; return; }
+    let pending = false;
+    net.onDelivered = () => {
+        if (pending) return;
+        pending = true;
+        setImmediate(() => {
+            pending = false;
+            _flix_server_wake();
+        });
+    };
+});
 #endif
 
 } // namespace
@@ -250,6 +286,8 @@ int main(int argc, char** argv) {
     // point has nothing to save, and may end the process the way it always
     // has.
     flix_catch_stop_signals();
+    g_wasmServer = server;
+    flix_wake_on_arrival(1);
     emscripten_set_main_loop_arg(
         [](void* handle) {
             auto* running = static_cast<flix::GameServer*>(handle);
@@ -259,6 +297,8 @@ int main(int argc, char** argv) {
             // restart reaches the same place having set its own code first.
             if (flix_stop_signalled()) running->stop();
             if (running->step()) return;
+            flix_wake_on_arrival(0);
+            g_wasmServer = nullptr;
             running->shutdown();
             emscripten_cancel_main_loop();
             const int code = reportExit(running->exitCode());
