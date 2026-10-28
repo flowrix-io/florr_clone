@@ -103,6 +103,12 @@ struct Session {
     /// server's tick clock. See kTitanHolderQueryMillis.
     double nextTitanQueryMillis = 0;
 
+    /// When the last Profile went to this connection, and when its next
+    /// ProfileCheck is worth folding the bag for, both on the server's tick
+    /// clock. See GameServer::handleProfileCheck.
+    double profileSentMillis = 0;
+    double nextProfileCheckMillis = 0;
+
     /// The spawn point this connection asked to start at, from JoinGame.
     ///
     /// One of WorldMaps::spawnChoices()' ids -- a player spawn rectangle on

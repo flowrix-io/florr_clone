@@ -645,6 +645,10 @@ public:
     void forgetTitanHolder(std::uint16_t petalIndex) { titanHolders_.erase(petalIndex); }
     void requestRespawn();
     void sendPing();
+    /// Tells the server what the held Profile's bag and bar fold to
+    /// (net::ProfileDigest), so it can send the real one back when they have
+    /// drifted apart. Nothing while signed out.
+    void sendProfileCheck();
     /// Buys the NEXT tier of a branch. The server refuses anything else, so
     /// the panel never has to guess whether a jump would be allowed.
     void requestUpgradeSkill(SkillId skill, int tier);

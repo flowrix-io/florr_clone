@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 64;
+inline constexpr std::uint16_t kProtocolVersion = 65;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -216,6 +216,14 @@ enum class ClientMessage : std::uint8_t {
                         ///< write, and only a guest may ask. The account is the
                         ///< session's, as ChangePassword's is. Answered with
                         ///< SetUsernameResult. (Version 59.)
+    ProfileCheck,       ///< u32 digest -- a ProfileDigest of the bag and bar in
+                        ///< the last Profile this client read, every
+                        ///< kProfileCheckMillis while signed in. A server whose
+                        ///< own copy folds to something else sends the Profile
+                        ///< again, which is how a client whose memory was
+                        ///< edited, or which missed one, comes back into line.
+                        ///< Answered with nothing when the two agree.
+                        ///< (Version 65.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -952,5 +960,48 @@ inline std::uint32_t contentHash(const std::string& text, std::uint32_t seed = 2
     }
     return h;
 }
+
+// ---------------------------------------------------------------------------
+// Profile check
+// ---------------------------------------------------------------------------
+
+/// How often a signed-in client sends ClientMessage::ProfileCheck.
+inline constexpr double kProfileCheckMillis = 2000.0;
+
+/// A fingerprint of the bag and the bar as a Profile carries them, folded the
+/// same way at both ends: by the client over the Profile it last read, and by
+/// the server over the record it would send now.
+///
+/// Order-free on purpose. Each stack is mixed on its own and the mixes are
+/// SUMMED, so the server's dictionary order and the client's list order cannot
+/// matter; a slot mixes in its own index, so the bar's order does. It detects
+/// drift and is not a security boundary: every request that spends a petal is
+/// checked against the server's record whatever a client says this is.
+class ProfileDigest {
+public:
+    void stack(std::uint16_t petalIndex, std::uint8_t rarity, std::uint32_t count) {
+        sum_ += mix((std::uint64_t{1} << 56) | (std::uint64_t{rarity} << 48) |
+                    (std::uint64_t{petalIndex} << 32) | count);
+    }
+    void slot(std::size_t slot, std::uint16_t petalIndex, std::uint8_t rarity) {
+        sum_ += mix((std::uint64_t{2} << 56) | ((std::uint64_t{slot} & 0xFFFFu) << 32) |
+                    (std::uint64_t{rarity} << 16) | petalIndex);
+    }
+    std::uint32_t value() const {
+        const std::uint64_t h = mix(sum_);
+        return static_cast<std::uint32_t>(h ^ (h >> 32));
+    }
+
+private:
+    /// splitmix64's finaliser: every input bit reaches every output bit, so
+    /// one stack's count moving by one changes the whole sum.
+    static std::uint64_t mix(std::uint64_t x) {
+        x += 0x9E3779B97F4A7C15ull;
+        x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+        x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+        return x ^ (x >> 31);
+    }
+    std::uint64_t sum_ = 0;
+};
 
 } // namespace flix::net

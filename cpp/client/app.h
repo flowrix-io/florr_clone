@@ -587,6 +587,8 @@ private:
     /// only thing the Ping readout and the connection-quality band have to go
     /// on -- without it both are permanently "--".
     double nextPingSeconds_ = 0;
+    /// When the next ProfileCheck is due (net::kProfileCheckMillis).
+    double nextProfileCheckSeconds_ = 0;
 
     /// Wire bytes in the last whole second, and the heaviest opcodes in it.
     /// Sampled on the same once-a-second boundary the frame counter rolls on,

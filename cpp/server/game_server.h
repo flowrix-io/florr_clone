@@ -334,6 +334,13 @@ private:
     void handleInput(Session&, ByteReader&);
     void handleChat(Session&, net::Connection&, ByteReader&);
     void handleSetLoadout(Session&, ByteReader&);
+    /// A client's digest of the bag and bar it holds, against the server's
+    /// own copy: the Profile goes again when they disagree and none has gone
+    /// lately enough to still be on its way.
+    void handleProfileCheck(Session&, net::Connection&, ByteReader&);
+    /// The ProfileDigest of what sendProfile would put in the bag and the bar
+    /// for this session right now.
+    std::uint32_t profileDigest(Session&);
     void handleSwapLoadout(Session&, ByteReader&);
     void handleSwapLoadoutRows(Session&, net::Connection&);
     void handleSaveLoadoutPreset(Session&, net::Connection&, ByteReader&);
@@ -819,6 +826,11 @@ private:
     void sendChangePasswordResult(net::Connection&, bool ok, const std::string& token,
                                   const std::string& reason);
     void sendProfile(Session&, net::Connection&);
+    /// The answer to a request the record cannot cover. The client offered
+    /// petals it was showing and the server's copy does not have, so what it
+    /// shows is wrong -- edited, or a Profile behind -- and the real one goes
+    /// back at once rather than at the next ProfileCheck.
+    void resyncProfile(Session&, net::Connection&);
     /// Claims today's daily-login reward and tells the client, so the title
     /// screen's streak card has something to count down. Called BEFORE
     /// sendProfile: the claim credits stars to the record, and a profile built

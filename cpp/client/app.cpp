@@ -713,6 +713,13 @@ void App::frame(double dt) {
         net_.sendPing();
         nextPingSeconds_ = timeSeconds_ + 1.0;
     }
+    // The bag and bar the menus draw, checked against the server's copy. A
+    // count edited in memory, or a Profile that never landed, gets the real
+    // one sent back; agreeing costs four bytes and no answer.
+    if (net_.haveSession() && timeSeconds_ >= nextProfileCheckSeconds_) {
+        net_.sendProfileCheck();
+        nextProfileCheckSeconds_ = timeSeconds_ + net::kProfileCheckMillis / 1000.0;
+    }
 
     // Every frame, on every screen, open or not: the debug panel's graphs are
     // meant to already hold history when it is opened. See

@@ -73,6 +73,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::AdminDashboard:      return "adminDashboard";
         case net::ClientMessage::RegisterGuest:       return "registerGuest";
         case net::ClientMessage::SetUsername:         return "setUsername";
+        case net::ClientMessage::ProfileCheck:        return "profileCheck";
     }
     return "unknown";
 }
@@ -1043,6 +1044,24 @@ void NetClient::sendPing() {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::Ping);
     w.u64(static_cast<std::uint64_t>(renderClockMillis()));
+    send(w);
+}
+
+void NetClient::sendProfileCheck() {
+    if (!haveSession()) return;
+    // Folded from the Profile as it sits in memory now, not as it arrived: a
+    // count edited in place since is exactly what the server is asked about.
+    net::ProfileDigest digest;
+    for (const Profile::Stack& stack : profile_.inventory) {
+        digest.stack(stack.petalIndex, static_cast<std::uint8_t>(stack.rarity), stack.count);
+    }
+    for (std::size_t i = 0; i < profile_.loadout.size(); ++i) {
+        const Profile::Slot& slot = profile_.loadout[i];
+        digest.slot(i, slot.petalIndex, static_cast<std::uint8_t>(slot.rarity));
+    }
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::ProfileCheck);
+    w.u32(digest.value());
     send(w);
 }
 

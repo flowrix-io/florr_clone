@@ -107,6 +107,16 @@ constexpr double kSlowTickLogMillis = net::kTickMillis * 3.0;
 /// The batch a craft consumes.
 constexpr int kCraftBatch = 5;
 
+/// How long a Profile is given to land before a ProfileCheck that disagrees
+/// with the record is taken to mean it never will. Far past any round trip a
+/// playable connection has; a check inside it is simply answered by the next.
+constexpr double kProfileResyncGraceMillis = 2000.0;
+
+/// The closest together two ProfileChecks are each worth a walk of the bag.
+/// The shipping client sends one every kProfileCheckMillis; one sooner is
+/// dropped rather than paid for.
+constexpr double kProfileCheckFloorMillis = net::kProfileCheckMillis * 0.5;
+
 // The database stores petals by NAME, because that is the shape real accounts
 // are already saved in; the wire uses a dense index, because a name in every
 // snapshot would cost more than the whole rest of the message. These two
@@ -145,6 +155,28 @@ bool takeFromInventory(PlayerRecord& record, std::uint16_t petalIndex, Rarity ra
 void giveToInventory(PlayerRecord& record, std::uint16_t petalIndex, Rarity rarity, int count) {
     if (petalIndex == kNoPetal || count <= 0) return;
     record.addItem(rarity, inventoryKey(petalIndex), count);
+}
+
+/// Every stack of the bag exactly as the Profile carries it, as
+/// `visit(petalIndex, rarity, count)`. The inventory is a sparse dictionary of
+/// rarity -> item name -> count. Anything whose name this build does not know
+/// (an item from a newer server, or a non-petal) is skipped for the wire but
+/// left untouched in the record, so it survives the next save. sendProfile
+/// writes what this visits and profileDigest folds it, so the bag a client is
+/// checked against is the bag it would be sent.
+template <typename Visit>
+void forEachProfileStack(const PlayerRecord& record, Visit&& visit) {
+    for (const std::string& rarityName : record.inventory.keys()) {
+        const Rarity rarity = parseRarity(rarityName);
+        const Json& byType = record.inventory[rarityName];
+        for (const std::string& key : byType.keys()) {
+            const auto count = static_cast<std::uint32_t>(PlayerRecord::stackCount(byType[key]));
+            if (count == 0) continue;
+            const std::uint16_t index = petalIndexFromInventoryKey(key);
+            if (index == kInvalidIndex) continue;
+            visit(index, rarity, count);
+        }
+    }
 }
 
 /// Whether the account holds `petalIndex` at universal anywhere: in the bag
@@ -1312,6 +1344,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::Input:         handleInput(*session, reader); break;
         case net::ClientMessage::Chat:          handleChat(*session, connection, reader); break;
         case net::ClientMessage::SetLoadout:    handleSetLoadout(*session, reader); break;
+        case net::ClientMessage::ProfileCheck:  handleProfileCheck(*session, connection, reader); break;
         case net::ClientMessage::SwapLoadout:   handleSwapLoadout(*session, reader); break;
         case net::ClientMessage::SwapLoadoutRows: handleSwapLoadoutRows(*session, connection); break;
         case net::ClientMessage::SaveLoadoutPreset:
@@ -1954,26 +1987,14 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
     w.u16(static_cast<std::uint16_t>(levelFromTotalXp(trackXp).level));
     w.f64(std::max(0.0, record.stars));
 
-    // The inventory is a sparse dictionary of rarity -> item name -> count.
-    // Anything whose name this build does not know (an item from a newer
-    // server, or a non-petal) is skipped for the wire but left untouched in
-    // the record, so it survives the next save.
     const std::size_t stackCountAt = w.reserveU16();
     std::uint16_t stackCount = 0;
-    for (const std::string& rarityName : record.inventory.keys()) {
-        const Rarity rarity = parseRarity(rarityName);
-        const Json& byType = record.inventory[rarityName];
-        for (const std::string& key : byType.keys()) {
-            const auto count = static_cast<std::uint32_t>(PlayerRecord::stackCount(byType[key]));
-            if (count == 0) continue;
-            const std::uint16_t index = petalIndexFromInventoryKey(key);
-            if (index == kInvalidIndex) continue;
-            w.u16(index);
-            w.u8(static_cast<std::uint8_t>(rarity));
-            w.u32(count);
-            ++stackCount;
-        }
-    }
+    forEachProfileStack(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
+        w.u16(index);
+        w.u8(static_cast<std::uint8_t>(rarity));
+        w.u32(count);
+        ++stackCount;
+    });
     w.patchU16(stackCountAt, stackCount);
 
     // The ring the flower is actually wearing, which in the maze is the
@@ -2059,6 +2080,11 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
     }
 
     connection.send(w);
+    session.profileSentMillis = clockMillis_;
+}
+
+void GameServer::resyncProfile(Session& session, net::Connection& connection) {
+    sendProfile(session, connection);
 }
 
 void GameServer::sendDailyStreak(Session& session, net::Connection& connection) {
@@ -2508,8 +2534,16 @@ void GameServer::handleSetLoadout(Session& session, ByteReader& reader) {
     if (record.loadout.size() < kLoadoutSlots) record.loadout.resize(kLoadoutSlots);
 
     // Equipping must come out of the inventory, or a client can name any petal
-    // it likes and simply be given it.
-    if (petalIndex != kNoPetal && !takeFromInventory(record, petalIndex, rarity, 1)) return;
+    // it likes and simply be given it. The server's bag is the only one that
+    // counts: a stack the client shows and this record does not hold was
+    // edited into its memory or is a Profile out of date, and either way it is
+    // put right.
+    if (petalIndex != kNoPetal && !takeFromInventory(record, petalIndex, rarity, 1)) {
+        if (net::Connection* connection = listener_.find(session.connection)) {
+            resyncProfile(session, *connection);
+        }
+        return;
+    }
 
     // Whatever was in the slot goes back to the inventory. Doing this after the
     // take, not before, means a failed take cannot also have emptied the slot.
@@ -2536,6 +2570,37 @@ void GameServer::handleSetLoadout(Session& session, ByteReader& reader) {
     if (net::Connection* connection = listener_.find(session.connection)) {
         sendProfile(session, *connection);
     }
+}
+
+std::uint32_t GameServer::profileDigest(Session& session) {
+    const PlayerRecord& record = liveRecord(session);
+    net::ProfileDigest digest;
+    forEachProfileStack(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
+        digest.stack(index, static_cast<std::uint8_t>(rarity), count);
+    });
+    // The bar as sendProfile writes it: the maze's ring is the account's one
+    // tier down.
+    const Realm realm = session.playing() ? session.realm : Realm::Overworld;
+    for (std::size_t i = 0; i < kLoadoutSlots; ++i) {
+        const WornSlot worn = wornSlot(record, i, realm);
+        digest.slot(i, worn.petalIndex, static_cast<std::uint8_t>(worn.rarity));
+    }
+    return digest.value();
+}
+
+void GameServer::handleProfileCheck(Session& session, net::Connection& connection,
+                                    ByteReader& reader) {
+    const std::uint32_t claimed = reader.u32();
+    if (!reader.ok() || !session.authenticated()) return;
+    if (clockMillis_ < session.nextProfileCheckMillis) return;
+    session.nextProfileCheckMillis = clockMillis_ + kProfileCheckFloorMillis;
+
+    // A Profile sent a moment ago is most likely still on its way, and the
+    // client folded the one before it. Not answered: it replaces the whole
+    // bag when it lands, and the next check says whether it did.
+    if (clockMillis_ - session.profileSentMillis < kProfileResyncGraceMillis) return;
+    if (claimed == profileDigest(session)) return;
+    sendProfile(session, connection);
 }
 
 void GameServer::handleSwapLoadout(Session& session, ByteReader& reader) {
@@ -2678,6 +2743,7 @@ void GameServer::handleCraft(Session& session, net::Connection& connection, Byte
         w.u8(0);
         w.str("Not enough petals to craft.");
         connection.send(w);
+        resyncProfile(session, connection);
         return;
     }
 
@@ -2804,6 +2870,7 @@ void GameServer::handleOracleCraft(Session& session, net::Connection& connection
     PlayerRecord& record = liveRecord(session);
     if (!takeFromInventory(record, petalIndex, rarity, cost)) {
         refuse("Not enough petals.");
+        resyncProfile(session, connection);
         return;
     }
     const Rarity made = upgradeRarity(rarity);
@@ -2888,6 +2955,7 @@ void GameServer::handleTrade(Session& session, net::Connection& connection, Byte
     PlayerRecord& record = liveRecord(session);
     if (!takeFromInventory(record, petalIndex, rarity, 1)) {
         refuse("You don't have that petal.");
+        resyncProfile(session, connection);
         return;
     }
     giveToInventory(record, coin, rarity, 1);
@@ -2980,6 +3048,7 @@ void GameServer::handleAssemble(Session& session, net::Connection& connection,
         if (need > kMaxStackCount ||
             record.itemCount(rarity, inventoryKey(input.petal)) < need) {
             reply(0, "You don't have enough " + content().petal(input.petal).name + ".");
+            resyncProfile(session, connection);
             return;
         }
     }
@@ -3072,6 +3141,7 @@ void GameServer::handleAbsorb(Session& session, net::Connection& connection,
         }
         if (record.itemCount(stack.rarity, inventoryKey(stack.petalIndex)) < stack.count) {
             reply(false, 0, 0, "You don't have enough " + petal.name + ".");
+            resyncProfile(session, connection);
             return;
         }
         units += static_cast<double>(stack.count) * absorbUnits(stack.rarity);
@@ -3160,6 +3230,7 @@ void GameServer::handleTitanForge(Session& session, net::Connection& connection,
     if (!takeFromInventory(record, petalIndex, Rarity::Apex, kTitanForgeCost)) {
         reply(false, "You need " + std::to_string(kTitanForgeCost) + " Apex " +
                          content().petal(petalIndex).name + " to forge it.");
+        resyncProfile(session, connection);
         return;
     }
     giveToInventory(record, petalIndex, Rarity::Universal, 1);
