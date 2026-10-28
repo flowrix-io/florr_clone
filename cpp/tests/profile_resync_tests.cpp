@@ -243,3 +243,73 @@ TEST(a_profile_check_right_behind_a_profile_waits_for_it) {
     CHECK(h.stepUntil({&client}, [&] { return client.profile().stackCount(rose, Rarity::Rare) == 4u; },
                       kPromptTicks));
 }
+
+TEST(pickups_banked_on_one_tick_are_told_in_one_profile) {
+    // A Profile is the whole account, and banking used to send one per pickup
+    // and per kill. A veteran's runs to 8-14 KB, so a tick that collected a
+    // handful put tens of KB in front of their next snapshot. Three drops
+    // taken at once are one Profile, carrying all three.
+    Harness h("resync-coalesce", [](const std::string& path) {
+        seedTinkerer(path, [](PlayerRecord&) {});
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    if (rose == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(login(h, client));
+    client.joinGame(1920, 1080, {}, "Tinkerer");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    if (body == NULL_ENTITY) { CHECK(false); return; }
+
+    const auto dropUnder = [&] {
+        const Transform& at = world.get<Transform>(body);
+        const Entity drop = world.create();
+        world.add<DropTag>(drop);
+        world.add<Transform>(drop, Transform{at.position, 0.0, at.realm});
+        world.add<Body>(drop, Body{10.0, 1.0});
+        DropItem item;
+        item.configIndex = rose;
+        item.rarity = Rarity::Common;
+        world.add<DropItem>(drop, std::move(item));
+        world.add<Lifetime>(drop, Lifetime{30.0});
+        world.add<Replicated>(drop, Replicated{net::EntityKind::Drop, 0, rose, Rarity::Common, 0});
+    };
+    // Profile bytes the client has read since the last call. Every Profile of
+    // this account is the same size: the counts change, not the stacks.
+    const auto profileBytes = [&] {
+        std::uint32_t in = 0, out = 0;
+        std::vector<NetClient::WireEvent> top;
+        client.takeWireStats(in, out, top, 64);
+        for (const NetClient::WireEvent& event : top) {
+            if (event.incoming && std::string(event.name) == "profile") return event.bytes;
+        }
+        return 0u;
+    };
+
+    h.step(kPastGraceTicks, {&client});
+    profileBytes();
+    dropUnder();
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.profile().stackCount(rose, Rarity::Common) == 1u;
+    }, 120));
+    h.step(kPromptTicks, {&client});
+    const std::uint32_t one = profileBytes();
+    CHECK(one > 0);
+
+    dropUnder();
+    dropUnder();
+    dropUnder();
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.profile().stackCount(rose, Rarity::Common) == 4u;
+    }, 120));
+    h.step(kPromptTicks, {&client});
+    CHECK_EQ(profileBytes(), one);
+}

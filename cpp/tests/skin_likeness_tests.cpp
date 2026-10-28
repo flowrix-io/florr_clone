@@ -363,3 +363,29 @@ TEST(a_catalog_full_of_copies_is_folded_into_its_originals_at_start) {
     client.requestLogin("wearer", "hunter2!");
     CHECK(h.stepUntil({&client}, [&] { return client.skinCatalog().size() == 2; }));
 }
+
+TEST(signing_in_leaves_the_skin_catalog_s_save_text_cached) {
+    // Every sign-in is sent the catalog. Read through rawTable it lost the
+    // table's cached text, so the next save dumped every skin again: on the
+    // live database, a 370 ms tick on every save that followed a sign-in.
+    Harness h("skin-catalog-cache", [&](const std::string& path) {
+        Database db;
+        std::string error;
+        db.load(path, error);
+        db.rawTable("customSkins")["sk_a"] =
+            skinToJson(storedSkin("sk_a", "original", "artist", 100, starterWithMouth()));
+        db.markDirty();
+        db.save();
+    }, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    // The first tick saves, which caches whatever the start-up pass touched.
+    h.step(2, {});
+    const Database& db = h.server.database();
+    CHECK(db.tableTextCached("customSkins"));
+
+    NetClient client;
+    CHECK(registerAs(h, client, "viewer"));
+    CHECK(h.stepUntil({&client}, [&] { return client.skinCatalog().size() == 1; }));
+    CHECK(db.tableTextCached("customSkins"));
+}

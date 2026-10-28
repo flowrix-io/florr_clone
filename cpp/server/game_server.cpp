@@ -698,6 +698,11 @@ bool GameServer::step() {
     // the remainder of the tick.
     const int waitMillis = static_cast<int>(std::max(0.0, nextTickMillis_ - now));
     serviceNetwork(std::min(waitMillis, 5));
+    // What the handlers just answered -- a Pong, an AuthResult, a CraftResult
+    // -- leaves now, not at the next drain. Under Node that drain is the next
+    // step, a whole 60 Hz timer away, or the end of a tick: on loopback it was
+    // half of every round trip (median 21 ms without this flush, 10 with it).
+    listener_.flush();
 
     const double tickNow = monotonicMillis();
     if (tickNow >= nextTickMillis_) {
@@ -900,6 +905,8 @@ void GameServer::tick(double nowMillis) {
         // rather than firing a burst of catch-up frames.
         nextSnapshotMillis_ += net::kSnapshotMillis;
         if (nextSnapshotMillis_ < nowMillis) nextSnapshotMillis_ = nowMillis + net::kSnapshotMillis;
+        sendDueProfiles();
+        markTickPhase("profiles");
         replicate(nowMillis);
         markTickPhase("replicate");
         // One-shot events ride inside the snapshot here, where the reference
@@ -1123,9 +1130,8 @@ void GameServer::bankPickups() {
         giveToInventory(liveRecord(*session), pickup.petalIndex, pickup.rarity, 1);
         database_.markDirty();
 
-        if (net::Connection* connection = listener_.find(session->connection)) {
-            sendProfile(*session, *connection);
-        }
+        // Owed, not sent: see sendDueProfiles.
+        session->profileDue = true;
         announceRarePickup(*session, pickup.petalIndex, pickup.rarity);
     }
 }
@@ -2081,6 +2087,26 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
 
     connection.send(w);
     session.profileSentMillis = clockMillis_;
+    // Whatever was owed is in this one.
+    session.profileDue = false;
+}
+
+void GameServer::sendDueProfiles() {
+    // A Profile is the whole account -- every stack and the whole kill ledger,
+    // 8 KB at the 90th percentile of the live database and 14 KB at the top --
+    // and banking used to send one per kill and per pickup. An AoE tick that
+    // kills ten mobs put 140 KB in front of that player's next snapshot, and
+    // `banking` stood out in prod's slow-tick log. One per snapshot carries the
+    // same final state, in the same flush as the snapshot that shows the kill.
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        if (!session.profileDue) continue;
+        if (net::Connection* connection = listener_.find(entry.first)) {
+            sendProfile(session, *connection);
+        } else {
+            session.profileDue = false;
+        }
+    }
 }
 
 void GameServer::resyncProfile(Session& session, net::Connection& connection) {
@@ -3511,9 +3537,8 @@ void GameServer::bankKills() {
             }
             database_.markDirty();
 
-            if (net::Connection* connection = listener_.find(session->connection)) {
-                sendProfile(*session, *connection);
-            }
+            // Owed, not sent: see sendDueProfiles.
+            session->profileDue = true;
         }
 
         announceBossDefeat(death.entity, *type, ranked);
@@ -3980,7 +4005,10 @@ void GameServer::broadcastDebugStats() {
 }
 
 void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) {
-    const Json& skins = database_.rawTable("customSkins");
+    // storedTable, not rawTable: this only reads, and rawTable drops the
+    // table's cached text (Database::Table). Sent on every sign-in, that made
+    // the next save re-dump every custom skin -- the 370 ms `persist` ticks.
+    const Json& skins = database_.storedTable("customSkins");
     const PlayerRecord& record = database_.progress(session.userId);
 
     ByteWriter w;
@@ -4093,7 +4121,8 @@ void GameServer::handleEquipSkin(Session& session, net::Connection& connection,
     const std::string id = reader.str();
     if (!reader.ok() || !session.authenticated()) return;
 
-    const Json& catalog = database_.rawTable("customSkins");
+    // Read-only, so storedTable: see sendSkinCatalog.
+    const Json& catalog = database_.storedTable("customSkins");
     if (!id.empty() && !catalog[id].isObject()) {
         sendSkinChat(connection, "That skin no longer exists.");
         return;

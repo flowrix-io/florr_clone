@@ -826,6 +826,9 @@ private:
     void sendChangePasswordResult(net::Connection&, bool ok, const std::string& token,
                                   const std::string& reason);
     void sendProfile(Session&, net::Connection&);
+    /// One Profile to every session a kill or a pickup marked profileDue
+    /// since the last snapshot. Called on snapshot ticks only.
+    void sendDueProfiles();
     /// The answer to a request the record cannot cover. The client offered
     /// petals it was showing and the server's copy does not have, so what it
     /// shows is wrong -- edited, or a Profile behind -- and the real one goes

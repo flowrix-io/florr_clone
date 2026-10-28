@@ -610,6 +610,12 @@ public:
     /// `{}`. Returns a null Json when the table is absent.
     const Json& storedTable(const std::string& key) const { return otherTop_[key]; }
 
+    /// Whether the next save writes table `key` from text it already holds
+    /// rather than dumping it again: false once rawTable or rawArrayTable has
+    /// handed it out since the last save. What keeps a read-only path honest
+    /// about which of the three it calls.
+    bool tableTextCached(const std::string& key) const { return otherTopText_.count(key) != 0; }
+
     /// The array-shaped counterpart of rawTable(), for `notifications`.
     ///
     /// rawTable() COERCES its value to an object, which is right for the

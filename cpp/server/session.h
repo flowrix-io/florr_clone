@@ -108,6 +108,9 @@ struct Session {
     /// clock. See GameServer::handleProfileCheck.
     double profileSentMillis = 0;
     double nextProfileCheckMillis = 0;
+    /// A kill or a pickup changed the account since the last Profile, and one
+    /// is owed: GameServer::sendDueProfiles sends it with the next snapshot.
+    bool profileDue = false;
 
     /// The spawn point this connection asked to start at, from JoinGame.
     ///
