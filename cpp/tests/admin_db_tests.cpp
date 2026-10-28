@@ -5,6 +5,7 @@
 #include "test.h"
 
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <string>
 
@@ -16,6 +17,7 @@
 #include "server/db.h"
 #include "server_harness.h"
 #include "test_data.h"
+#include "shared/core/civil_date.h"
 #include "shared/game/config.h"
 #include "shared/net/admin_db.h"
 
@@ -838,7 +840,7 @@ TEST(an_account_search_counts_the_inventory_and_the_loadout) {
         account_search::Query q;
         std::string error;
         if (!account_search::parse(text, content, q, error) || q.terms.size() != 1) return -1.0;
-        return account_search::valueOf(q.terms[0], &record, 42);
+        return account_search::valueOf(q.terms[0], {nullptr, &record, 0}, 42);
     };
     CHECK_EQ(read("rose>0"), 10.0);
     CHECK_EQ(read("mythic:rose>0"), 7.0);
@@ -852,7 +854,121 @@ TEST(an_account_search_counts_the_inventory_and_the_loadout) {
     account_search::Query q;
     std::string error;
     CHECK(account_search::parse("rose>0", content, q, error));
-    CHECK_EQ(account_search::valueOf(q.terms[0], nullptr, 1), 0.0);
+    CHECK_EQ(account_search::valueOf(q.terms[0], {}, 1), 0.0);
+}
+
+TEST(an_account_search_reads_dates_times_ago_and_flags) {
+    const ContentRegistry& content = shippedContent();
+    account_search::Query q;
+    std::string error;
+    const double minute = 60000.0;
+    const double day = 1440 * minute;
+    const double october = static_cast<double>(daysFromCivil(2026, 10, 1)) * day;
+
+    // A date is the whole month, day or minute it names, in UTC.
+    CHECK(account_search::parse("created>=2026-10-01 active<2026-10 created=2026-10-01T18:30",
+                                content, q, error));
+    CHECK_EQ(q.terms.size(), 3u);
+    CHECK(q.terms[0].field == account_search::Field::Created);
+    CHECK(!q.terms[0].ago);
+    CHECK_EQ(q.terms[0].value, october);
+    CHECK_EQ(q.terms[0].span, day);
+    CHECK(q.terms[1].field == account_search::Field::Active);
+    CHECK_EQ(q.terms[1].span, 31 * day);
+    CHECK_EQ(q.terms[2].value, october + (18 * 60 + 30) * minute);
+    CHECK_EQ(q.terms[2].span, minute);
+
+    // A time ago is exact, unless it is an "=".
+    CHECK(account_search::parse("active<7d last_active>=12h created=3d", content, q, error));
+    CHECK(q.terms[0].ago);
+    CHECK_EQ(q.terms[0].value, 7 * day);
+    CHECK_EQ(q.terms[0].span, 0.0);
+    CHECK(q.terms[1].field == account_search::Field::Active);
+    CHECK_EQ(q.terms[1].value, 12 * 60 * minute);
+    CHECK_EQ(q.terms[2].span, day);
+
+    // The account's own numbers, and its flags.
+    CHECK(account_search::parse("stars>100 xp>=1e6 streak=3 is:guest not:muted", content, q,
+                                error));
+    CHECK_EQ(q.terms.size(), 5u);
+    CHECK(q.terms[0].field == account_search::Field::Stars);
+    CHECK(q.terms[1].field == account_search::Field::Xp);
+    CHECK_EQ(q.terms[1].value, 1e6);
+    CHECK(q.terms[2].field == account_search::Field::Streak);
+    CHECK(q.terms[3].field == account_search::Field::Guest);
+    CHECK_EQ(q.terms[3].value, 1.0);
+    CHECK(q.terms[4].field == account_search::Field::Muted);
+    CHECK_EQ(q.terms[4].value, 0.0);
+
+    CHECK(!account_search::parse("created>=yesterday", content, q, error));
+    CHECK(error.find("created>=yesterday") != std::string::npos);
+    // A bare number is not a year, nor days: it says which it means.
+    CHECK(!account_search::parse("active<7", content, q, error));
+    CHECK(!account_search::parse("created>=2026-13-01", content, q, error));
+    CHECK(!account_search::parse("is:banned", content, q, error));
+    CHECK(error.find("is:banned") != std::string::npos);
+    CHECK(!account_search::parse("stars>=lots", content, q, error));
+}
+
+TEST(an_account_search_reads_when_an_account_was_made_and_seen) {
+    const std::int64_t hour = 3600000;
+    const std::int64_t day = 24 * hour;
+    const std::int64_t now = daysFromCivil(2026, 10, 27) * day + 12 * hour;
+    Account account;
+    account.createdAtMillis = daysFromCivil(2026, 10, 1) * day + 18 * hour;
+    account.lastActiveAtMillis = now - 3 * day - hour;
+    account.guest = true;
+    PlayerRecord record;
+    record.stars = 250;
+    record.dailyStreak = 4;
+    const account_search::Subject seen{&account, &record, now};
+    // Never signed in, and made before the file kept the date.
+    const Account blank;
+    const account_search::Subject never{&blank, nullptr, now};
+
+    const ContentRegistry& content = shippedContent();
+    const auto matches = [&](const account_search::Subject& subject, const std::string& text) {
+        account_search::Query q;
+        std::string error;
+        std::vector<double> values;
+        return account_search::parse(text, content, q, error) &&
+               account_search::termsMatch(q, subject, values);
+    };
+    // A day runs from its first moment to its last.
+    CHECK(matches(seen, "created=2026-10-01"));
+    CHECK(matches(seen, "created<=2026-10-01"));
+    CHECK(!matches(seen, "created>2026-10-01"));
+    CHECK(!matches(seen, "created<2026-10-01"));
+    CHECK(matches(seen, "created>=2026-10 created<2026-11"));
+    CHECK(matches(seen, "created=2026-10-01T18:00"));
+    CHECK(!matches(seen, "created>=2026-10-01T18:01"));
+    // How long ago reads as said: seen 3 days and an hour ago.
+    CHECK(matches(seen, "active<7d active>3d active=3d active>=73h"));
+    CHECK(!matches(seen, "active<3d"));
+    CHECK(matches(seen, "created>25d created<26d"));
+    CHECK(matches(seen, "stars>=250 streak=4 is:guest not:admin not:muted"));
+    CHECK(!matches(seen, "is:admin"));
+    // Never is longer ago than anything, and an unknown date is the epoch.
+    CHECK(matches(never, "active>3650d created>3650d created<2020-01-01"));
+    CHECK(!matches(never, "active<3650d"));
+
+    account_search::Query q;
+    std::string error;
+    CHECK(account_search::parse("created>=2026-10-01 active<7d is:guest stars>0", content, q,
+                                error));
+    const auto shown = [&](std::size_t t, const account_search::Subject& subject) {
+        return account_search::valueText(q.terms[t], account_search::valueOf(q.terms[t], subject, 0));
+    };
+    CHECK_EQ(shown(0, seen), std::string("2026-10-01 18:00"));
+    CHECK_EQ(shown(0, never), std::string("unknown"));
+    CHECK_EQ(shown(1, seen), std::string("3d ago"));
+    CHECK_EQ(shown(1, never), std::string("never"));
+    CHECK_EQ(shown(2, seen), std::string());
+    CHECK_EQ(account_search::valueText(q.terms[3], 1234), std::string("1,234"));
+    // In the units a search is typed in.
+    CHECK_EQ(account_search::valueText(q.terms[1], 59.9 * 60000), std::string("59m ago"));
+    CHECK_EQ(account_search::valueText(q.terms[1], 47.9 * hour), std::string("47h ago"));
+    CHECK_EQ(account_search::valueText(q.terms[1], 48.0 * hour), std::string("2d ago"));
 }
 
 TEST(the_database_editor_finds_accounts_by_what_they_own_and_wear) {
@@ -909,4 +1025,72 @@ TEST(the_database_editor_finds_accounts_by_what_they_own_and_wear) {
     CHECK_EQ(list("bob"), std::string("bobby"));
     CHECK(boss.adminDb().listError.empty());
     CHECK(boss.adminDb().accounts[0].note.empty());
+}
+
+TEST(the_database_editor_finds_accounts_by_when_they_were_made_and_seen) {
+    const std::int64_t hour = 3600000;
+    const std::int64_t day = 24 * hour;
+    // The server reads the wall clock, so the times are set against it.
+    const std::int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+    Harness h("admindb-search-dates", [&](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "alice", "password7");
+        seedUser(path, "bobby", "password7");
+        seedUser(path, "carol", "password7");
+        Database db;
+        std::string error;
+        db.load(path, error);
+        Account* alice = db.findUser("alice");
+        alice->createdAtMillis = now - 2 * day - hour;
+        alice->lastActiveAtMillis = now - hour;
+        Account* bobby = db.findUser("bobby");
+        bobby->createdAtMillis = now - 40 * day;
+        bobby->lastActiveAtMillis = now - 45 * day;
+        // Older than the dates: never seen, made who knows when.
+        Account* carol = db.findUser("carol");
+        carol->createdAtMillis = 0;
+        carol->lastActiveAtMillis = 0;
+        carol->guest = true;
+        db.progress(alice->id).stars = 500;
+        db.markDirty();
+        db.save();
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
+    const auto list = [&](const std::string& search) {
+        boss.adminDbList(search, 0);
+        h.stepUntil({&boss}, [&] { return !boss.adminDb().listPending; }, 100);
+        std::string names;
+        for (const AdminDbAccountRow& row : boss.adminDb().accounts) {
+            names += (names.empty() ? "" : " ") + row.username;
+        }
+        return names;
+    };
+    const auto note = [&](std::size_t row) {
+        return row < boss.adminDb().accounts.size() ? boss.adminDb().accounts[row].note
+                                                    : std::string("(no row)");
+    };
+
+    // Made in the last week: boss just now, alice two days ago -- newest first.
+    CHECK_EQ(list("created<7d"), std::string("boss alice"));
+    CHECK_EQ(note(1), std::string("2d ago"));
+    // Not seen for a month, longest first; never is longest of all.
+    CHECK_EQ(list("active>30d"), std::string("carol bobby"));
+    CHECK_EQ(note(0), std::string("never"));
+    CHECK_EQ(note(1), std::string("45d ago"));
+    // A date: an unknown one is the epoch, before any date at all.
+    const std::string twoDaysAgo = civilFromDays((now - 2 * day - hour) / day);
+    CHECK_EQ(list("created<=" + twoDaysAgo), std::string("carol bobby alice"));
+    CHECK_EQ(note(0), std::string("unknown"));
+    // Flags say nothing in the note; the counts beside them still do.
+    CHECK_EQ(list("is:guest"), std::string("carol"));
+    CHECK_EQ(note(0), std::string());
+    CHECK_EQ(list("not:guest stars>=100"), std::string("alice"));
+    CHECK_EQ(note(0), std::string("Stars 500"));
+    CHECK_EQ(list("is:admin"), std::string("boss"));
 }

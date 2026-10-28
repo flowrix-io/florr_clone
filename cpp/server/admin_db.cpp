@@ -41,7 +41,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstdio>
 #include <unordered_set>
 #include <utility>
@@ -358,23 +357,6 @@ void GameServer::handleAdminDb(Session& session, net::Connection& connection, By
     }
 }
 
-namespace {
-
-/// A count as the list shows it, with thousands separated.
-std::string countText(double value) {
-    char buffer[48];
-    std::snprintf(buffer, sizeof buffer, "%.0f", std::fabs(value));
-    const std::string digits = buffer;
-    std::string out = value < 0 ? "-" : "";
-    for (std::size_t i = 0; i < digits.size(); ++i) {
-        if (i > 0 && (digits.size() - i) % 3 == 0) out += ',';
-        out += digits[i];
-    }
-    return out;
-}
-
-} // namespace
-
 void GameServer::adminDbList(net::Connection& connection, const std::string& search,
                              std::uint32_t offset) {
     // An unreadable search lists nobody and says why, rather than falling
@@ -409,26 +391,16 @@ void GameServer::adminDbList(net::Connection& connection, const std::string& sea
     // would otherwise make the next autosave re-serialise all of them.
     const Database& db = database_;
     const std::vector<std::string> nobody;
+    // The clock lastActiveAt is stamped by, which "active<7d" counts back on.
+    const std::int64_t now = db.nowMillis();
     for (const std::string& name : parsed ? db.usernames() : nobody) {
         const Account* account = db.findUser(name);
-        if (account == nullptr) continue;
-        const std::string lowered = lowerCase(account->username);
-        const bool named = std::all_of(query.names.begin(), query.names.end(),
-                                       [&](const std::string& part) {
-                                           return lowered.find(part) != std::string::npos;
-                                       });
-        if (!named) continue;
-        const PlayerRecord* record = db.findProgress(account->id);
-        const int level =
-            readsLevel ? levelFromTotalXp(record != nullptr ? record->totalXp : 0.0).level : 0;
+        if (account == nullptr || !account_search::namesMatch(query, account->username)) continue;
         std::vector<double> values;
-        for (const account_search::Term& term : query.terms) {
-            const double value = account_search::valueOf(term, record, level);
-            if (!account_search::satisfies(term, value)) break;
-            values.push_back(value);
-        }
-        if (values.size() != query.terms.size()) continue;
-        rows.push_back({account, query.names.size() == 1 && lowered == query.names[0],
+        const account_search::Subject subject{account, db.findProgress(account->id), now};
+        if (!account_search::termsMatch(query, subject, values)) continue;
+        rows.push_back({account,
+                        query.names.size() == 1 && lowerCase(account->username) == query.names[0],
                         online.count(account->id) != 0, std::move(values)});
     }
     // The exact name first, then by the first count the search asked about --
@@ -472,9 +444,11 @@ void GameServer::adminDbList(net::Connection& connection, const std::string& sea
         // One count is named by the search box above it; several need names.
         std::string note;
         for (std::size_t t = 0; t < query.terms.size(); ++t) {
-            if (t > 0) note += ", ";
+            const std::string text = account_search::valueText(query.terms[t], rows[i].values[t]);
+            if (text.empty()) continue;
+            if (!note.empty()) note += ", ";
             if (query.terms.size() > 1) note += query.terms[t].label + " ";
-            note += countText(rows[i].values[t]);
+            note += text;
         }
         w.str(note);
     }

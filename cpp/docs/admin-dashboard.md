@@ -163,6 +163,13 @@ answer every one (the grammar lives in `cpp/server/account_search.h`):
 |---|---|
 | `bob` | whose name contains "bob", in any case |
 | `level>=50` | at level 50 or more; `>`, `>=`, `<`, `<=`, `=` all work |
+| `stars>=1000`, `xp>=1e6`, `streak>=7` | by stars, total XP, or daily login streak |
+| `created>=2026-10-01` | made on or after 1 October (UTC) |
+| `active<2026-09` | last signed in before September |
+| `created=2026-10-01T18:30` | made in that minute; a date is the whole month, day or minute it names |
+| `active<7d` | signed in less than 7 days ago; `m`, `h`, `d` and `w` all work |
+| `created>30d` | made more than 30 days ago |
+| `is:guest`, `not:muted` | by a flag: `admin`, `muted` or `guest` |
 | `petals>=5000` | owning 5,000 petals or more in all |
 | `mythic>=100` | owning 100 or more mythic petals |
 | `rose>10` | owning more than 10 roses, any rarity |
@@ -172,10 +179,47 @@ answer every one (the grammar lives in `cpp/server/account_search.h`):
 
 Petals are named by id or display name, with case, spaces, underscores and
 hyphens ignored (`yin_yang`, `yinyang`); rarities by name or label (`eternal`
-is unique). Results are ordered by the first count, most first (fewest first
-when it is a `<`), and each row shows the counts it was found by. Counts come
-from the stored inventory (which includes worn petals) and the saved loadout. A
-word the server cannot read lists nobody and says why above the list.
+is unique). Results are ordered by the first word's value, most first (fewest
+first when it is a `<`), and each row shows what it was found by: a count, a
+date, or how long ago. Counts come from the stored inventory (which includes
+worn petals) and the saved loadout. A word the server cannot read lists nobody
+and says why above the list.
+
+`created` and `active` take either a date or a time ago, and each reads as it
+is said: `active>=2026-10-20` is on or after the 20th, and `active<7d` is less
+than 7 days ago. Two words make a range: `created>=2026-10-01
+created<2026-10-08`. Accounts older than the server's records of these have
+none. They show as "unknown" and "never", count as longer ago than any time
+ago, and as earlier than any date.
+
+### Searching the backups
+
+`backup_search` runs the same search over the database's backups
+(`db_backups/`, one level above the database's directory), one backup at a
+time, newest first. It answers when an account had something and when it went.
+
+```sh
+cmake --build cpp/build --target backup_search -j8
+cpp/build/backup_search --user bob ~/db_backups 'mythic:rose>=5'
+cpp/build/backup_search ~/db_backups 'loadout:mythic:rose petals>=5000'
+```
+
+The first argument is a backups directory, or one database file. The rest is
+the search, quoted, since a shell reads `>` and `<` as redirections. A time
+ago (`active<7d`) counts back from now, not from when the backup was taken;
+give a date to ask about a backup's own week.
+
+`--user NAME` keeps only the account with exactly that name and shows it in
+every backup: its counts, marked `(no match)` where it misses the search, or
+that it is not there. With a name and no search, it lists the backups the
+account is in. `--limit N` caps the accounts printed per backup (20; 0 prints
+all).
+
+It only reads the files and never writes to them. Each backup holds every
+password hash, and parses to several times its size, so do not run it on the
+server: copy the backups off (`scp`, `rsync`), search the copy, and delete the
+copy afterwards. It exits 0 when some backup matched, 1 when none did, and 2 on
+an unreadable search or file.
 
 ## Protocol
 

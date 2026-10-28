@@ -892,6 +892,14 @@ target_link_libraries(bot_probe PRIVATE flix_server flix_client)
 target_compile_definitions(bot_probe PRIVATE FLIX_TEST_DATA_DIR="${FLIX_DATA_DIR}")
 add_dependencies(bot_probe flix_data)
 
+# The database editor's account search, run over the database's backups: which
+# snapshots an account had something in. Reads them as JSON and writes
+# nothing. See the file's own header.
+add_executable(backup_search tools/backup_search.cpp)
+target_link_libraries(backup_search PRIVATE flix_server)
+target_compile_definitions(backup_search PRIVATE FLIX_TEST_DATA_DIR="${FLIX_DATA_DIR}")
+add_dependencies(backup_search flix_data)
+
 # What a loadout full of projectile petals costs a server tick, in
 # milliseconds -- the figure behind "one flower on full gas lags everyone".
 # See the file's own header.
