@@ -12,6 +12,7 @@
 #include <deque>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "server/db.h"
 #include "shared/core/entity.h"
@@ -103,13 +104,25 @@ struct Session {
     /// server's tick clock. See kTitanHolderQueryMillis.
     double nextTitanQueryMillis = 0;
 
-    /// When the last Profile went to this connection, and when its next
-    /// ProfileCheck is worth folding the bag for, both on the server's tick
-    /// clock. See GameServer::handleProfileCheck.
-    double profileSentMillis = 0;
+    /// The revision of the last Profile or ProfileDelta sent on this
+    /// connection, 0 before the first, and when its next ProfileCheck is worth
+    /// folding the bag for, on the server's tick clock. See
+    /// GameServer::handleProfileCheck.
+    std::uint32_t profileRevision = 0;
     double nextProfileCheckMillis = 0;
-    /// A kill or a pickup changed the account since the last Profile, and one
-    /// is owed: GameServer::sendDueProfiles sends it with the next snapshot.
+    /// What kills and pickups changed since the last Profile or delta: the
+    /// bag's (petal, rarity) groups and the ledger's (mob, rarity) cells, each
+    /// listed once. GameServer::sendDueProfiles sends them with the next
+    /// snapshot, as a ProfileDelta.
+    struct ProfileCell {
+        std::uint16_t index = 0;
+        Rarity rarity = Rarity::Common;
+        bool operator==(const ProfileCell& o) const { return index == o.index && rarity == o.rarity; }
+    };
+    std::vector<ProfileCell> stacksDue;
+    std::vector<ProfileCell> killsDue;
+    /// Whether anything is owed: a delta has nothing to say but its header
+    /// when a kill earned no ledger cell this client is shown.
     bool profileDue = false;
 
     /// The spawn point this connection asked to start at, from JoinGame.

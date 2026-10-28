@@ -119,6 +119,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::TitanHolder:         return "titanHolder";
         case net::ServerMessage::SetUsernameResult:   return "setUsernameResult";
         case net::ServerMessage::Teleported:          return "teleported";
+        case net::ServerMessage::ProfileDelta:        return "profileDelta";
     }
     return "unknown";
 }
@@ -1061,6 +1062,7 @@ void NetClient::sendProfileCheck() {
     }
     ByteWriter w;
     beginMessage(w, net::ClientMessage::ProfileCheck);
+    w.u32(profile_.revision);
     w.u32(digest.value());
     send(w);
 }
@@ -1099,6 +1101,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::Welcome:      handleWelcome(reader); break;
         case net::ServerMessage::AuthResult:   handleAuthResult(reader); break;
         case net::ServerMessage::Profile:      handleProfile(reader); break;
+        case net::ServerMessage::ProfileDelta: handleProfileDelta(reader); break;
         case net::ServerMessage::JoinAccepted: handleJoinAccepted(reader); break;
         case net::ServerMessage::Snapshot:     view_.applySnapshot(reader); break;
         case net::ServerMessage::Chat:         handleChat(reader); break;
@@ -1260,6 +1263,7 @@ void NetClient::handleAuthResult(ByteReader& reader) {
 
 void NetClient::handleProfile(ByteReader& reader) {
     Profile next;
+    next.revision = reader.u32();
     next.username = reader.str();
     const std::uint8_t accountFlags = reader.u8();
     next.guest = (accountFlags & net::kAccountGuest) != 0;
@@ -1331,6 +1335,72 @@ void NetClient::handleProfile(ByteReader& reader) {
     profile_ = std::move(next);
     oracleReadyAtMillis_ = renderClockMillis() + static_cast<double>(profile_.oracleCooldownMillis);
     traderReadyAtMillis_ = renderClockMillis() + static_cast<double>(profile_.traderCooldownMillis);
+}
+
+void NetClient::handleProfileDelta(ByteReader& reader) {
+    const std::uint32_t revision = reader.u32();
+    const double totalXp = reader.f64();
+    const int level = reader.u16();
+    const double stars = reader.f64();
+
+    struct Group {
+        std::uint16_t petalIndex;
+        Rarity rarity;
+        std::vector<std::uint32_t> counts;
+    };
+    std::vector<Group> groups(reader.u16());
+    for (Group& group : groups) {
+        group.petalIndex = reader.u16();
+        group.rarity = clampRarity(reader.u8());
+        group.counts.resize(reader.u8());
+        for (std::uint32_t& count : group.counts) count = reader.u32();
+    }
+    struct Cell {
+        std::uint16_t mobIndex;
+        Rarity rarity;
+        std::uint32_t count;
+    };
+    std::vector<Cell> cells(reader.u16());
+    for (Cell& cell : cells) {
+        cell.mobIndex = reader.u16();
+        cell.rarity = clampRarity(reader.u8());
+        cell.count = reader.u32();
+    }
+    // Whole or not at all, as a Profile is.
+    if (!reader.ok()) return;
+
+    profile_.revision = revision;
+    profile_.totalXp = totalXp;
+    profile_.level = level;
+    profile_.stars = stars;
+    std::vector<Profile::Stack>& bag = profile_.inventory;
+    for (const Group& group : groups) {
+        // The group's stacks become exactly the ones listed. Overwritten in
+        // place, so a stack keeps its spot -- the grid draws the bag in its
+        // own order -- and a stack new to the bag goes last, where the
+        // server's walk would put it too.
+        std::size_t next = 0;
+        for (std::size_t i = 0; i < bag.size();) {
+            if (bag[i].petalIndex != group.petalIndex || bag[i].rarity != group.rarity) {
+                ++i;
+                continue;
+            }
+            if (next < group.counts.size()) {
+                bag[i].count = group.counts[next++];
+                ++i;
+            } else {
+                bag.erase(bag.begin() + static_cast<std::ptrdiff_t>(i));
+            }
+        }
+        for (; next < group.counts.size(); ++next) {
+            bag.push_back({group.petalIndex, group.rarity, group.counts[next]});
+        }
+    }
+    for (const Cell& cell : cells) {
+        const std::size_t at =
+            static_cast<std::size_t>(cell.mobIndex) * kRarityCount + rarityIndex(cell.rarity);
+        if (at < profile_.mobKills.size()) profile_.mobKills[at] = cell.count;
+    }
 }
 
 void NetClient::handleCraftResult(ByteReader& reader) {

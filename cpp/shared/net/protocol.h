@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 65;
+inline constexpr std::uint16_t kProtocolVersion = 66;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -216,20 +216,26 @@ enum class ClientMessage : std::uint8_t {
                         ///< write, and only a guest may ask. The account is the
                         ///< session's, as ChangePassword's is. Answered with
                         ///< SetUsernameResult. (Version 59.)
-    ProfileCheck,       ///< u32 digest -- a ProfileDigest of the bag and bar in
-                        ///< the last Profile this client read, every
-                        ///< kProfileCheckMillis while signed in. A server whose
-                        ///< own copy folds to something else sends the Profile
-                        ///< again, which is how a client whose memory was
-                        ///< edited, or which missed one, comes back into line.
+    ProfileCheck,       ///< u32 revision, u32 digest -- a ProfileDigest of the
+                        ///< bag and bar this client holds, every
+                        ///< kProfileCheckMillis while signed in, and the
+                        ///< revision of the last Profile or ProfileDelta it
+                        ///< applied. A server that last sent that revision and
+                        ///< owes nothing since, and whose own copy folds to
+                        ///< something else, sends the whole Profile again:
+                        ///< how a client whose memory was edited, or which
+                        ///< missed something, comes back into line. A check
+                        ///< behind the server's revision describes a state the
+                        ///< server has moved on from and is not judged.
                         ///< Answered with nothing when the two agree.
-                        ///< (Version 65.)
+                        ///< (Version 65; the revision, version 66.)
 };
 
 enum class ServerMessage : std::uint8_t {
     Welcome = 1,        ///< u16 protocolVersion, u8 accepted, str reason
     AuthResult,         ///< u8 status(AuthStatus), str token, str username, str reason
-    Profile,            ///< str username, u8 accountFlags (AccountFlags), then
+    Profile,            ///< u32 revision (see ProfileDelta), str username,
+                        ///< u8 accountFlags (AccountFlags), then
                         ///< the full account state: xp, level, stars, inventory, loadout,
                         ///< skins, the talent tree and the mob-kill ledger,
                         ///< then u32 milliseconds until the account may craft
@@ -417,6 +423,21 @@ enum class ServerMessage : std::uint8_t {
                         ///< to another map also gets, so the frame the iris
                         ///< closes over is still the one from before it.
                         ///< (Version 62.)
+    ProfileDelta,       ///< What kills and pickups changed since the last
+                        ///< Profile or delta, instead of the whole account
+                        ///< again: u32 revision, f64 xp, u16 level, f64 stars
+                        ///< (the Profile's own header fields), u16 groups,
+                        ///< { u16 itemType, u8 rarity, u8 n, { u32 count }*n }*,
+                        ///< u16 kills, { u16 mobIndex, u8 rarity, u32 count }*.
+                        ///< A group REPLACES every stack the client holds of
+                        ///< that petal and rarity with the n listed, which is
+                        ///< what the whole Profile would carry for it now --
+                        ///< n = 0 when none is left. A kill cell is the
+                        ///< ledger's new count. Applied, it leaves the client
+                        ///< exactly where that Profile would. `revision` counts
+                        ///< Profiles and deltas together, per connection, from
+                        ///< 1; ProfileCheck reports the last one applied.
+                        ///< (Version 66.)
 };
 
 // ---------------------------------------------------------------------------

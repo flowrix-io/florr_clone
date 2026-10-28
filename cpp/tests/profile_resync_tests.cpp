@@ -11,8 +11,10 @@
 
 #include "test.h"
 
+#include <algorithm>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "client/net_client.h"
 #include "server/db.h"
@@ -29,9 +31,9 @@ namespace {
 constexpr const char* kName = "tinkerer";
 constexpr const char* kPassword = "password7";
 
-/// Comfortably past the server's resync grace: a check sent after this long
-/// cannot be racing a Profile still on its way.
-constexpr int kPastGraceTicks = 75;
+/// Long enough for any answer to a check to land, and for the next check to
+/// be past the server's floor between two (kProfileCheckFloorMillis, 1 s).
+constexpr int kSettleTicks = 75;
 
 /// A refusal is answered in the same breath; this is a round trip and change,
 /// and far inside the ProfileCheck period.
@@ -91,6 +93,61 @@ bool slotEmpty(const NetClient& client, int slot) {
     const auto& loadout = client.profile().loadout;
     return static_cast<std::size_t>(slot) < loadout.size() &&
            loadout[static_cast<std::size_t>(slot)].empty();
+}
+
+/// The flower this client steers, once it has joined.
+Entity bodyOf(Harness& h) {
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{h.server.world()};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    return body;
+}
+
+bool joinWorld(Harness& h, NetClient& client) {
+    client.joinGame(1920, 1080, {}, "Tinkerer");
+    return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; },
+                       200) &&
+           bodyOf(h) != NULL_ENTITY;
+}
+
+/// A drop lying under `body`, which the next tick's loot pass collects.
+void dropUnder(Harness& h, Entity body, std::uint16_t petal, Rarity rarity) {
+    World& world = h.server.world();
+    const Transform& at = world.get<Transform>(body);
+    const Entity drop = world.create();
+    world.add<DropTag>(drop);
+    world.add<Transform>(drop, Transform{at.position, 0.0, at.realm});
+    world.add<Body>(drop, Body{10.0, 1.0});
+    DropItem item;
+    item.configIndex = petal;
+    item.rarity = rarity;
+    world.add<DropItem>(drop, std::move(item));
+    world.add<Lifetime>(drop, Lifetime{30.0});
+    world.add<Replicated>(drop, Replicated{net::EntityKind::Drop, 0, petal, rarity, 0});
+}
+
+/// Bytes of server message `name` the client has read since the last call --
+/// which also resets every counter.
+std::uint32_t takeIncoming(NetClient& client, const char* name) {
+    std::uint32_t in = 0, out = 0;
+    std::vector<NetClient::WireEvent> top;
+    client.takeWireStats(in, out, top, 64);
+    for (const NetClient::WireEvent& event : top) {
+        if (event.incoming && std::string(event.name) == name) return event.bytes;
+    }
+    return 0;
+}
+
+/// Sends a ProfileCheck and steps long enough for any answer to land, and
+/// for the next check to be past the server's floor. True when the answer
+/// was a whole Profile.
+bool checkBroughtProfile(Harness& h, NetClient& client) {
+    takeIncoming(client, "profile");
+    client.sendProfileCheck();
+    h.step(kSettleTicks, {&client});
+    return takeIncoming(client, "profile") > 0;
 }
 
 } // namespace
@@ -176,7 +233,7 @@ TEST(a_profile_check_that_disagrees_brings_the_real_profile_back) {
 
     NetClient client;
     CHECK(login(h, client));
-    h.step(kPastGraceTicks, {&client});
+    h.step(kSettleTicks, {&client});
 
     // Nothing is asked of the server: the edit sits there until the check.
     setHeldCount(client, rose, Rarity::Rare, 999);
@@ -208,7 +265,7 @@ TEST(a_profile_check_that_agrees_is_answered_with_nothing) {
 
     NetClient client;
     CHECK(login(h, client));
-    h.step(kPastGraceTicks, {&client});
+    h.step(kSettleTicks, {&client});
 
     // Stars are not in the digest, so a Profile -- which would overwrite
     // them -- is the only thing that could put this back.
@@ -218,8 +275,8 @@ TEST(a_profile_check_that_agrees_is_answered_with_nothing) {
     CHECK_EQ(client.profile().stars, -12345.0);
 }
 
-TEST(a_profile_check_right_behind_a_profile_waits_for_it) {
-    Harness h("resync-grace", [](const std::string& path) {
+TEST(a_profile_check_behind_the_server_s_revision_is_not_judged) {
+    Harness h("resync-revision", [](const std::string& path) {
         seedTinkerer(path, [](PlayerRecord& record) {
             record.addItem(Rarity::Rare, "petal_rose", 4);
         });
@@ -230,27 +287,159 @@ TEST(a_profile_check_right_behind_a_profile_waits_for_it) {
 
     NetClient client;
     CHECK(login(h, client));
-    // The login's own Profile went just now. A check that disagrees inside
-    // the grace is taken for one folded before that Profile landed.
+    h.step(kSettleTicks, {&client});
+
+    // A check folded before the latest Profile landed -- here, one that names
+    // the revision before it -- describes a bag the server has moved on from.
+    // However wrong it looks, it is not answered.
     setHeldCount(client, rose, Rarity::Rare, 999);
-    client.sendProfileCheck();
-    h.step(kPromptTicks * 3, {&client});
+    const std::uint32_t latest = client.profile().revision;
+    CHECK(latest > 0);
+    editInMemory(client).revision = latest - 1;
+    CHECK(!checkBroughtProfile(h, client));
     CHECK_EQ(client.profile().stackCount(rose, Rarity::Rare), 999u);
 
-    // Once the grace has run out, the Profile is presumed lost and goes again.
-    h.step(kPastGraceTicks, {&client});
-    client.sendProfileCheck();
-    CHECK(h.stepUntil({&client}, [&] { return client.profile().stackCount(rose, Rarity::Rare) == 4u; },
-                      kPromptTicks));
+    // Caught up, the same disagreement is a desync, and is repaired at once.
+    editInMemory(client).revision = latest;
+    CHECK(checkBroughtProfile(h, client));
+    CHECK_EQ(client.profile().stackCount(rose, Rarity::Rare), 4u);
 }
 
-TEST(pickups_banked_on_one_tick_are_told_in_one_profile) {
-    // A Profile is the whole account, and banking used to send one per pickup
-    // and per kill. A veteran's runs to 8-14 KB, so a tick that collected a
-    // handful put tens of KB in front of their next snapshot. Three drops
-    // taken at once are one Profile, carrying all three.
-    Harness h("resync-coalesce", [](const std::string& path) {
-        seedTinkerer(path, [](PlayerRecord&) {});
+TEST(pickups_are_told_as_a_delta_that_leaves_the_digests_agreeing) {
+    // A Profile is the whole account -- 8 to 14 KB for a veteran -- and
+    // banking used to send one per pickup and per kill. Pickups now send the
+    // stacks they changed, and the client that applies them holds exactly
+    // what a Profile would have given it: its next check agrees.
+    Harness h("resync-delta", [](const std::string& path) {
+        seedTinkerer(path, [](PlayerRecord& record) {
+            record.addItem(Rarity::Rare, "petal_rose", 4);
+            record.addItem(Rarity::Common, "petal_basic", 12);
+        });
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t light = content().petalIndex("light");
+    if (rose == kInvalidIndex || light == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(login(h, client));
+    CHECK(joinWorld(h, client));
+    const Entity body = bodyOf(h);
+    h.step(kSettleTicks, {&client});
+    takeIncoming(client, "profile");
+
+    // Three of a stack it holds and one of a petal new to the bag, taken on
+    // one tick: one delta, two groups.
+    dropUnder(h, body, rose, Rarity::Rare);
+    dropUnder(h, body, rose, Rarity::Rare);
+    dropUnder(h, body, rose, Rarity::Rare);
+    dropUnder(h, body, light, Rarity::Epic);
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.profile().stackCount(rose, Rarity::Rare) == 7u &&
+               client.profile().stackCount(light, Rarity::Epic) == 1u;
+    }, 120));
+    h.step(kPromptTicks, {&client});
+    CHECK_EQ(takeIncoming(client, "profile"), 0u);
+    CHECK_EQ(client.profile().stackCount(content().petalIndex("basic"), Rarity::Common), 12u);
+
+    // And the delta was small: a header and two groups, not a bag.
+    dropUnder(h, body, rose, Rarity::Rare);
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.profile().stackCount(rose, Rarity::Rare) == 8u;
+    }, 120));
+    h.step(kPromptTicks, {&client});
+    const std::uint32_t delta = takeIncoming(client, "profileDelta");
+    CHECK(delta > 0u);
+    CHECK(delta < 64u);
+
+    CHECK(!checkBroughtProfile(h, client));
+}
+
+TEST(a_kill_is_told_as_a_delta_cell_of_the_ledger) {
+    Harness h("resync-kill", [](const std::string& path) {
+        seedUser(path, kName, kPassword, true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::uint16_t bee = content().mobIndex("bee");
+    if (bee == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(login(h, client));
+    CHECK(joinWorld(h, client));
+    const Entity body = bodyOf(h);
+    CHECK(say(h, client, "/admin spawn bee common"));
+    h.step(kPromptTicks, {&client});
+    takeIncoming(client, "profile");
+
+    World& world = h.server.world();
+    std::vector<Entity> bees;
+    Query<MobTag, MobType> mobs{world};
+    mobs.each([&](Entity e, MobTag&, MobType& type) {
+        if (type.configIndex == bee && type.rarity == Rarity::Common) bees.push_back(e);
+    });
+    CHECK(!bees.empty());
+    if (bees.empty()) return;
+    const Entity target = bees.front();
+    // A sliver of health against the flower's bare body, with a real fight's
+    // worth of credit so the kill is this flower's to bank.
+    if (Bounty* bounty = world.tryGet<Bounty>(target)) {
+        bounty->credit(body, world.get<Health>(target).max);
+    }
+    CHECK(h.stepUntil({&client}, [&] {
+        if (world.isAlive(target) && !world.has<Dead>(target)) {
+            if (Armor* armor = world.tryGet<Armor>(target)) armor->amount = 0.0;
+            Health& health = world.get<Health>(target);
+            health.current = std::min(health.current, 0.01);
+            world.get<Transform>(target).position = world.get<Transform>(body).position + Vec2{30, 0};
+        }
+        return client.profile().killCount(bee, Rarity::Common) == 1u;
+    }, 300));
+    h.step(kPromptTicks, {&client});
+    CHECK_EQ(takeIncoming(client, "profile"), 0u);
+    CHECK(!checkBroughtProfile(h, client));
+}
+
+TEST(a_client_that_drifted_under_deltas_is_sent_the_whole_profile) {
+    // A delta only restates what it touched. A stack edited in memory
+    // elsewhere in the bag survives it, and the check that follows -- caught
+    // up, with nothing owed -- is what puts it back.
+    Harness h("resync-drift", [](const std::string& path) {
+        seedTinkerer(path, [](PlayerRecord& record) {
+            record.addItem(Rarity::Rare, "petal_rose", 4);
+        });
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t basic = content().petalIndex("basic");
+    if (rose == kInvalidIndex || basic == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(login(h, client));
+    CHECK(joinWorld(h, client));
+    const Entity body = bodyOf(h);
+    h.step(kSettleTicks, {&client});
+
+    setHeldCount(client, rose, Rarity::Rare, 999);
+    dropUnder(h, body, basic, Rarity::Common);
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.profile().stackCount(basic, Rarity::Common) == 1u;
+    }, 120));
+    CHECK_EQ(client.profile().stackCount(rose, Rarity::Rare), 999u);
+
+    CHECK(checkBroughtProfile(h, client));
+    CHECK_EQ(client.profile().stackCount(rose, Rarity::Rare), 4u);
+    CHECK_EQ(client.profile().stackCount(basic, Rarity::Common), 1u);
+}
+
+TEST(a_delta_restates_every_stack_a_legacy_bag_keeps_for_one_petal) {
+    // A bag from before the "petal_" prefix can hold one petal under two
+    // names, and the Profile sends both. A delta for that petal has to say
+    // both as well, or the client's digest would never agree again.
+    Harness h("resync-legacy", [](const std::string& path) {
+        seedTinkerer(path, [](PlayerRecord& record) {
+            record.addItem(Rarity::Common, "rose", 2);
+            record.addItem(Rarity::Common, "petal_rose", 3);
+        });
     }, dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
     const std::uint16_t rose = content().petalIndex("rose");
@@ -258,58 +447,26 @@ TEST(pickups_banked_on_one_tick_are_told_in_one_profile) {
 
     NetClient client;
     CHECK(login(h, client));
-    client.joinGame(1920, 1080, {}, "Tinkerer");
-    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
-
-    World& world = h.server.world();
-    Entity body = NULL_ENTITY;
-    Query<PlayerTag, PlayerAccount> people{world};
-    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
-        if (account.connection != 0) body = e;
-    });
-    if (body == NULL_ENTITY) { CHECK(false); return; }
-
-    const auto dropUnder = [&] {
-        const Transform& at = world.get<Transform>(body);
-        const Entity drop = world.create();
-        world.add<DropTag>(drop);
-        world.add<Transform>(drop, Transform{at.position, 0.0, at.realm});
-        world.add<Body>(drop, Body{10.0, 1.0});
-        DropItem item;
-        item.configIndex = rose;
-        item.rarity = Rarity::Common;
-        world.add<DropItem>(drop, std::move(item));
-        world.add<Lifetime>(drop, Lifetime{30.0});
-        world.add<Replicated>(drop, Replicated{net::EntityKind::Drop, 0, rose, Rarity::Common, 0});
-    };
-    // Profile bytes the client has read since the last call. Every Profile of
-    // this account is the same size: the counts change, not the stacks.
-    const auto profileBytes = [&] {
-        std::uint32_t in = 0, out = 0;
-        std::vector<NetClient::WireEvent> top;
-        client.takeWireStats(in, out, top, 64);
-        for (const NetClient::WireEvent& event : top) {
-            if (event.incoming && std::string(event.name) == "profile") return event.bytes;
+    CHECK(joinWorld(h, client));
+    const Entity body = bodyOf(h);
+    h.step(kSettleTicks, {&client});
+    const auto held = [&] {
+        std::vector<std::uint32_t> counts;
+        for (const Profile::Stack& stack : client.profile().inventory) {
+            if (stack.petalIndex == rose && stack.rarity == Rarity::Common) counts.push_back(stack.count);
         }
-        return 0u;
+        std::sort(counts.begin(), counts.end());
+        return counts;
     };
+    const std::vector<std::uint32_t> before = held();
+    // Both names survived the load, so this is the legacy bag it is about.
+    CHECK_EQ(before.size(), std::size_t(2));
 
-    h.step(kPastGraceTicks, {&client});
-    profileBytes();
-    dropUnder();
-    CHECK(h.stepUntil({&client}, [&] {
-        return client.profile().stackCount(rose, Rarity::Common) == 1u;
-    }, 120));
+    dropUnder(h, body, rose, Rarity::Common);
+    CHECK(h.stepUntil({&client}, [&] { return held() != before; }, 120));
     h.step(kPromptTicks, {&client});
-    const std::uint32_t one = profileBytes();
-    CHECK(one > 0);
-
-    dropUnder();
-    dropUnder();
-    dropUnder();
-    CHECK(h.stepUntil({&client}, [&] {
-        return client.profile().stackCount(rose, Rarity::Common) == 4u;
-    }, 120));
-    h.step(kPromptTicks, {&client});
-    CHECK_EQ(profileBytes(), one);
+    std::uint32_t total = 0;
+    for (const std::uint32_t count : held()) total += count;
+    CHECK_EQ(total, 6u);
+    CHECK(!checkBroughtProfile(h, client));
 }

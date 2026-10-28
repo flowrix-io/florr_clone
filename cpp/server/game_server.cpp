@@ -107,11 +107,6 @@ constexpr double kSlowTickLogMillis = net::kTickMillis * 3.0;
 /// The batch a craft consumes.
 constexpr int kCraftBatch = 5;
 
-/// How long a Profile is given to land before a ProfileCheck that disagrees
-/// with the record is taken to mean it never will. Far past any round trip a
-/// playable connection has; a check inside it is simply answered by the next.
-constexpr double kProfileResyncGraceMillis = 2000.0;
-
 /// The closest together two ProfileChecks are each worth a walk of the bag.
 /// The shipping client sends one every kProfileCheckMillis; one sooner is
 /// dropped rather than paid for.
@@ -163,11 +158,15 @@ void giveToInventory(PlayerRecord& record, std::uint16_t petalIndex, Rarity rari
 /// (an item from a newer server, or a non-petal) is skipped for the wire but
 /// left untouched in the record, so it survives the next save. sendProfile
 /// writes what this visits and profileDigest folds it, so the bag a client is
-/// checked against is the bag it would be sent.
+/// checked against is the bag it would be sent. `only` skips every tier that
+/// is not it: the walk a ProfileDelta makes for one group, which has to see
+/// exactly what the Profile's walk sees there.
 template <typename Visit>
-void forEachProfileStack(const PlayerRecord& record, Visit&& visit) {
+void forEachProfileStack(const PlayerRecord& record, Visit&& visit,
+                         std::optional<Rarity> only = std::nullopt) {
     for (const std::string& rarityName : record.inventory.keys()) {
         const Rarity rarity = parseRarity(rarityName);
+        if (only && rarity != *only) continue;
         const Json& byType = record.inventory[rarityName];
         for (const std::string& key : byType.keys()) {
             const auto count = static_cast<std::uint32_t>(PlayerRecord::stackCount(byType[key]));
@@ -177,6 +176,31 @@ void forEachProfileStack(const PlayerRecord& record, Visit&& visit) {
             visit(index, rarity, count);
         }
     }
+}
+
+/// Every cell of the kill ledger exactly as the Profile carries it, as
+/// `visit(mobIndex, rarity, count)`, in the order it is written: two entries
+/// that land on one cell leave the client holding the later one. sendProfile
+/// writes what this visits and a ProfileDelta's cells are read through it.
+template <typename Visit>
+void forEachProfileKill(const PlayerRecord& record, Visit&& visit) {
+    for (const std::string& mobId : record.mobKills.keys()) {
+        const std::uint16_t index = content().mobIndex(mobId);
+        if (index == kInvalidIndex) continue;
+        const Json& byTier = record.mobKills[mobId];
+        if (!byTier.isObject()) continue;
+        for (const std::string& tier : byTier.keys()) {
+            const std::uint32_t count = static_cast<std::uint32_t>(std::max(0, byTier[tier].asInt()));
+            if (count == 0) continue;
+            visit(index, parseRarity(tier), count);
+        }
+    }
+}
+
+/// Lists `cell` among `due` once.
+void noteDue(std::vector<Session::ProfileCell>& due, std::uint16_t index, Rarity rarity) {
+    const Session::ProfileCell cell{index, rarity};
+    if (std::find(due.begin(), due.end(), cell) == due.end()) due.push_back(cell);
 }
 
 /// Whether the account holds `petalIndex` at universal anywhere: in the bag
@@ -1131,6 +1155,7 @@ void GameServer::bankPickups() {
         database_.markDirty();
 
         // Owed, not sent: see sendDueProfiles.
+        noteDue(session->stacksDue, pickup.petalIndex, pickup.rarity);
         session->profileDue = true;
         announceRarePickup(*session, pickup.petalIndex, pickup.rarity);
     }
@@ -1982,6 +2007,7 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
 
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::Profile));
+    w.u32(++session.profileRevision);
     w.str(session.username);
     std::uint8_t accountFlags = 0;
     if (const Account* account = std::as_const(database_).findUserById(session.userId)) {
@@ -2035,20 +2061,12 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
     // inventory is: a gallery cell is worth less than an account's history.
     const std::size_t killCountAt = w.reserveU16();
     std::uint16_t killCount = 0;
-    for (const std::string& mobId : record.mobKills.keys()) {
-        const std::uint16_t index = content().mobIndex(mobId);
-        if (index == kInvalidIndex) continue;
-        const Json& byTier = record.mobKills[mobId];
-        if (!byTier.isObject()) continue;
-        for (const std::string& tier : byTier.keys()) {
-            const std::uint32_t count = static_cast<std::uint32_t>(std::max(0, byTier[tier].asInt()));
-            if (count == 0) continue;
-            w.u16(index);
-            w.u8(static_cast<std::uint8_t>(parseRarity(tier)));
-            w.u32(count);
-            ++killCount;
-        }
-    }
+    forEachProfileKill(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
+        w.u16(index);
+        w.u8(static_cast<std::uint8_t>(rarity));
+        w.u32(count);
+        ++killCount;
+    });
     w.patchU16(killCountAt, killCount);
 
     // How long until the account may use an oracle again, as a DURATION: the
@@ -2086,9 +2104,62 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
     }
 
     connection.send(w);
-    session.profileSentMillis = clockMillis_;
-    // Whatever was owed is in this one.
+    clearProfileDue(session);
+}
+
+void GameServer::clearProfileDue(Session& session) {
+    // Whatever was owed is in what was just sent.
+    session.stacksDue.clear();
+    session.killsDue.clear();
     session.profileDue = false;
+}
+
+void GameServer::sendProfileDelta(Session& session, net::Connection& connection) {
+    // Read exactly as sendProfile reads them -- the same record, the same
+    // track, the same walkers -- so a client that applies this holds what the
+    // whole Profile would have given it, and the digests still agree.
+    const PlayerRecord& record = liveRecord(session);
+    const bool onMazeTrack = session.playing() && session.realm == Realm::Maze;
+    const double trackXp = onMazeTrack ? record.mazeTotalXp : record.totalXp;
+
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::ProfileDelta));
+    w.u32(++session.profileRevision);
+    w.f64(trackXp);
+    w.u16(static_cast<std::uint16_t>(levelFromTotalXp(trackXp).level));
+    w.f64(std::max(0.0, record.stars));
+
+    w.u16(static_cast<std::uint16_t>(session.stacksDue.size()));
+    std::vector<std::uint32_t> counts;
+    for (const Session::ProfileCell& group : session.stacksDue) {
+        counts.clear();
+        forEachProfileStack(record, [&](std::uint16_t index, Rarity, std::uint32_t count) {
+            if (index == group.index) counts.push_back(count);
+        }, group.rarity);
+        w.u16(group.index);
+        w.u8(static_cast<std::uint8_t>(group.rarity));
+        // Two names for one petal in one tier is a legacy record's oddity,
+        // and 255 of them is not a record at all.
+        const std::size_t n = std::min<std::size_t>(counts.size(), 0xFF);
+        w.u8(static_cast<std::uint8_t>(n));
+        for (std::size_t i = 0; i < n; ++i) w.u32(counts[i]);
+    }
+
+    w.u16(static_cast<std::uint16_t>(session.killsDue.size()));
+    for (const Session::ProfileCell& cell : session.killsDue) {
+        // The last entry on the cell, as the client keeps it from a Profile;
+        // none at all is a cell the Profile leaves at zero.
+        std::uint32_t last = 0;
+        forEachProfileKill(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
+            if (index == cell.index && rarity == cell.rarity) last = count;
+        });
+        w.u16(cell.index);
+        w.u8(static_cast<std::uint8_t>(cell.rarity));
+        w.u32(last);
+    }
+
+    connection.send(w);
+    clearProfileDue(session);
 }
 
 void GameServer::sendDueProfiles() {
@@ -2096,15 +2167,18 @@ void GameServer::sendDueProfiles() {
     // 8 KB at the 90th percentile of the live database and 14 KB at the top --
     // and banking used to send one per kill and per pickup. An AoE tick that
     // kills ten mobs put 140 KB in front of that player's next snapshot, and
-    // `banking` stood out in prod's slow-tick log. One per snapshot carries the
-    // same final state, in the same flush as the snapshot that shows the kill.
+    // `banking` stood out in prod's slow-tick log. Now a snapshot tick sends
+    // what changed since the last one: the touched stacks and ledger cells,
+    // tens of bytes, in the same flush as the snapshot that shows the kill.
+    // A client that drifts anyway is caught by ProfileCheck and sent the whole
+    // Profile, which is the only repair a delta needs.
     for (auto& entry : sessions_) {
         Session& session = entry.second;
         if (!session.profileDue) continue;
         if (net::Connection* connection = listener_.find(entry.first)) {
-            sendProfile(session, *connection);
+            sendProfileDelta(session, *connection);
         } else {
-            session.profileDue = false;
+            clearProfileDue(session);
         }
     }
 }
@@ -2616,15 +2690,17 @@ std::uint32_t GameServer::profileDigest(Session& session) {
 
 void GameServer::handleProfileCheck(Session& session, net::Connection& connection,
                                     ByteReader& reader) {
+    const std::uint32_t revision = reader.u32();
     const std::uint32_t claimed = reader.u32();
     if (!reader.ok() || !session.authenticated()) return;
     if (clockMillis_ < session.nextProfileCheckMillis) return;
     session.nextProfileCheckMillis = clockMillis_ + kProfileCheckFloorMillis;
 
-    // A Profile sent a moment ago is most likely still on its way, and the
-    // client folded the one before it. Not answered: it replaces the whole
-    // bag when it lands, and the next check says whether it did.
-    if (clockMillis_ - session.profileSentMillis < kProfileResyncGraceMillis) return;
+    // Folded before the last Profile or delta landed: it describes a bag the
+    // server has since changed and told the client about, so a mismatch
+    // proves nothing. Nor does one while a change is banked and owed to the
+    // next snapshot. Either way the next check, two seconds on, is judged.
+    if (revision != session.profileRevision || session.profileDue) return;
     if (claimed == profileDigest(session)) return;
     sendProfile(session, connection);
 }
@@ -3537,7 +3613,9 @@ void GameServer::bankKills() {
             }
             database_.markDirty();
 
-            // Owed, not sent: see sendDueProfiles.
+            // Owed, not sent: see sendDueProfiles. The stars ride in every
+            // delta's header.
+            noteDue(session->killsDue, type->configIndex, type->rarity);
             session->profileDue = true;
         }
 

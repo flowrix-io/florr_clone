@@ -28,6 +28,9 @@ class WorldMaps;
 
 /// The account state the server sends after login, and keeps up to date.
 struct Profile {
+    /// The server's count of the Profile or ProfileDelta last applied, which
+    /// ProfileCheck reports back so the server knows which state it is judging.
+    std::uint32_t revision = 0;
     std::string username;
     /// The server made this account and named it, and its owner may still
     /// pick a name of their own -- once (net::kAccountGuest).
@@ -996,6 +999,7 @@ private:
     void handleWelcome(ByteReader&);
     void handleAuthResult(ByteReader&);
     void handleProfile(ByteReader&);
+    void handleProfileDelta(ByteReader&);
     void handleJoinAccepted(ByteReader&);
     void handleRealmChange(ByteReader&);
     void handleMazeInfo(ByteReader&);
