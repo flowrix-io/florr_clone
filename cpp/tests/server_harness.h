@@ -620,15 +620,19 @@ inline bool loginAs(Harness& h, NetClient& client, const char* name, const char*
 
 /// A registered account with a known password, so a test can log clients in
 /// against the same database. `admin` sets the account's admin flag, which is
-/// what makes it a full admin -- never its name.
+/// what makes it a full admin -- never its name -- and `adminTier` its tier.
 inline void seedUser(const std::string& path, const std::string& username,
-                     const std::string& password, bool admin = false) {
+                     const std::string& password, bool admin = false,
+                     int adminTier = kTopAdminTier) {
     Database db;
     std::string error;
     db.load(path, error);
     db.setPasswordCost(4);   // the default cost makes this the slowest step of a test
     CreateResult created = db.createUser(username, password);
-    if (created.ok() && admin) created.account->admin = true;
+    if (created.ok() && admin) {
+        created.account->admin = true;
+        created.account->adminTier = adminTier;
+    }
     db.markDirty();
     db.save();
 }

@@ -13,32 +13,114 @@ username or nameplate is special.
 
 - A **full admin** is an account whose database record says `"admin": true`.
 - A **temporary admin** holds a one-life grant from a full admin
-  (`/admin grant_admin <username>`). It ends when they respawn, leave the world,
-  disconnect, have it revoked (`/admin revoke_admin`), or sign in again on the
-  same connection, as anyone: a sign-in from inside the world takes the flower
-  out first, as leaving does.
+  (`/admin grant_admin <username> [tier]`). It ends when they respawn, leave the
+  world, disconnect, have it revoked (`/admin revoke_admin`), or sign in again
+  on the same connection, as anyone: a sign-in from inside the world takes the
+  flower out first, as leaving does.
 
-Both see the dashboard and may use all of it except announcements:
+Both see the dashboard and may use all of it except announcements, as far as
+their tier allows:
 
 | | full admin | temporary admin |
 |---|---|---|
 | player list and bags | yes | yes |
 | control a player's flower | yes | yes, except a full admin's |
-| spawn, give | yes | yes |
+| spawn, give | by tier | by tier |
 | announce | yes | no |
+
+### Tiers
+
+Every admin has a tier from 1 to 4. Tier 1 can do everything; each tier below
+it loses one more power and keeps the losses of the tiers above it:
+
+| tier | update the server | give petals | spawn mobs |
+|---|---|---|---|
+| 1 | yes | yes | yes |
+| 2 | no | yes | yes |
+| 3 | no | no | yes |
+| 4 | no | no | no |
+
+- **Update** is `/admin update`, every form of it, `status` included.
+- **Give** is `/admin give` (to anyone, yourself included) and the database
+  editor (`/admin db`), which can write any player's bag.
+- **Spawn** is `/admin spawn` and `/admin spawn_npc`.
+
+A refused command says which tiers may run it, for example "Tier 3 admins
+cannot give petals (tiers 1-2 only)." The dashboard's Spawn and Give tabs stay
+on screen for every tier; the server refuses, and the refusal lands in chat.
+`/help` says which tier you are.
+
+A full admin's tier is the account's `adminTier` in the database, beside
+`"admin": true`: `"adminTier": 3`. Without it the account is tier 1, which is
+every admin from before tiers. A value that is not a whole number from 1 to 4
+reads as tier 4. The database editor refuses to change it, as it refuses the
+admin flag; in game, only promotion and demotion move it.
+
+### Promoting and demoting an admin
+
+A full admin can move an admin of a **lower** tier:
+
+- `/admin promote_admin <username> [tier]` raises them, up to the promoter's
+  own tier and no further; one tier up without a tier.
+- `/admin demote_admin <username> [tier]` lowers them, down to tier 4; one
+  tier down without a tier.
+
+So a tier 2 admin can raise a tier 4 admin to tier 3 or 2 (not 1), lower a
+tier 3 admin to tier 4, and cannot move another tier 2 admin, a tier 1 admin,
+or themselves. Nobody demotes a tier 1 admin. Like a ban, both work by account
+name, online or offline, and an online admin's new powers apply at once: a
+demotion past tier 2 locks the database editor again, and a later promotion
+asks for its key again.
+
+Both move an admin; neither makes or unmakes one. The target must already be a
+full admin (`"admin": true`, set on the server's machine); a temporary grant's
+tier is chosen with `grant_admin`. A banned admin is unbanned before a
+promotion, so a ban stays in reach of the admin who made it; a demotion does
+not wait for it.
+
+A temporary grant's tier is the grantor's own unless they name one, and they
+may name only their own tier or a lower one (a larger number): a tier 2 admin
+can lend tier 2, 3 or 4. `/admin list_admins` shows each grant's tier.
+
+### Banning an admin
+
+A full admin can bar an admin of a **lower** tier from every admin power with
+`/admin ban_admin <username>`, and give them back with `/admin unban_admin
+<username>`. Never their own tier or a higher one: tier 1 bans tiers 2-4, tier
+2 bans 3-4, tier 3 bans 4, tier 4 bans nobody, and nobody bans a tier 1 admin.
+A temporary admin cannot ban, and is not banned: `revoke_admin` takes a grant
+back.
+
+The ban is on the account, by account name, online or offline, and lasts
+until a higher tier lifts it. The account keeps its admin flag and tier, but no
+session of it holds any admin power: the console answers "You are banned from
+using admin permissions.", the dashboard and database editor close, a flower it
+was steering goes back, it can be muted like anyone else, and no one can lend
+it a temporary grant. `/admin list_admins` lists banned admins, their tier and
+who banned them. The database editor cannot change a ban (`adminBanned`,
+`adminBannedBy`, `adminBannedAt` in the account's record).
+
+### Admin passwords
+
+No admin's password can be changed from inside the game, at any tier, banned
+or not: not by its owner in Settings, not by another admin in the database
+editor. The refusal is the database's own (`Database::setPassword`), under
+every handler, so no other code path can reach an admin's password either. To
+change one, stop the server, remove `"admin": true` from the account, start
+it, change the password, then put the flag back the same way.
 
 ### Becoming an admin on a local server
 
 Stop the server (Ctrl-C, `pm2 stop` or a SIGTERM; it saves everything on the
 way out), open its database file (`inventory.json` in its working directory by
 default, or whatever `--db` names; `npm start` uses `dist/inventory.json`),
-find the account under `"users"` and add `"admin": true` to it, then start the
-server again. The server keeps the database in memory and writes it back on its
+find the account under `"users"` and add `"admin": true` to it (and
+`"adminTier": N` for any tier but 1), then start the server again. The server keeps the database in memory and writes it back on its
 own, so an edit made while it runs is overwritten.
 
 The single-file offline page has a **Grant Admin** button in Settings >
-Advanced that makes the account its own client is signed into a full admin,
-since that server runs in the player's own browser tab. It hands the server
+Advanced that makes the account its own client is signed into a tier 1 full
+admin, since that server runs in the player's own browser tab. It hands the server
 that client's session token, never a name. The page's database editor key is
 fixed, so its confirmation says it, as do `/admin db`'s usage line and its
 wrong-key refusal there. Every other server keeps its key in
@@ -65,10 +147,10 @@ you.
   while that player is in the PVP ring playing on the ring's kit. **Control**,
   **Release** and **Refresh** sit above the bag.
 - **Spawn**: a mob, a rarity up to the top of the ladder, and an amount; sent as
-  `/admin spawn <mob> <rarity> <amount>`, at your own flower.
+  `/admin spawn <mob> <rarity> <amount>`, at your own flower. Tiers 1-3.
 - **Give**: a petal, any rarity up to universal, and an amount, to the player
   picked on the Players tab; sent as `/admin give <username> <petal> <rarity>
-  <amount>`.
+  <amount>`. Tiers 1-2.
 - **Announce**: the text of an announcement; sent as `/admin announce <text>`.
 
 Spawn, Give and Announce go out as console commands, so the server's answer
@@ -150,12 +232,20 @@ sent to it. Announcing is done from the dashboard or with `/admin announce`.
 | `/admin control <username>` | steer that player's flower |
 | `/admin release` | give it back; says so when there is nothing to release |
 | `/admin announce <message>` | a banner for everyone (full admins only) |
+| `/admin grant_admin <username> [tier]` | lend the console for one life, at your tier or below (full admins only) |
+| `/admin revoke_admin <username>` | take a temporary grant back |
+| `/admin list_admins` | the temporary grants, with their tiers, and banned admins |
+| `/admin ban_admin <username>` | bar a lower-tier admin from every admin power (full admins only) |
+| `/admin unban_admin <username>` | lift it (full admins only, from a higher tier) |
+| `/admin promote_admin <username> [tier]` | raise a lower-tier admin, up to your own tier; one tier up by default (full admins only) |
+| `/admin demote_admin <username> [tier]` | lower a lower-tier admin, down to tier 4; one tier down by default (full admins only) |
 
 A `<username>` is an account name, or a bot's name; there is no lookup by id.
 
 ## Searching the database editor
 
-The database editor (`/admin db <key>`) is a separate panel, but its account
+The database editor (`/admin db <key>`, full admins at tiers 1-2) is a
+separate panel, but its account
 search does more than names. Words are separated by spaces and an account must
 answer every one (the grammar lives in `cpp/server/account_search.h`):
 

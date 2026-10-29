@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "server/account_limits.h"
+#include "server/admin_tiers.h"
 #include "server/bot_ai.h"
 #include "server/db.h"
 #include "server/replication.h"
@@ -783,8 +784,14 @@ private:
 
     /// Whether this session may run admin commands: a database admin, or the
     /// holder of a temporary grant. `session.admin` alone is the database flag
-    /// and deliberately does not move when a grant is made.
+    /// (less a ban) and deliberately does not move when a grant is made.
     bool effectiveAdmin(const Session&) const;
+    /// The tier this session's console runs at (server/admin_tiers.h): the
+    /// account's own for a database admin, the grant's for a temporary one, or
+    /// 0 for anyone else.
+    int adminTier(const Session&) const;
+    /// Whether this session's console holds `power`. False for a non-admin.
+    bool adminMay(const Session&, AdminPower) const;
 
     /// What an admin command's `<player>` argument resolved to.
     ///
@@ -825,6 +832,13 @@ private:
     /// as another account on the same socket (releaseOnAccountChange); and
     /// `/admin revoke_admin`.
     void revokeTempAdmin(net::ConnectionId);
+
+    /// Puts `account`'s admin standing (Account::adminActive) and tier on every
+    /// session signed into it, after `/admin ban_admin`, `unban_admin`,
+    /// `promote_admin` or `demote_admin` moved them, and tells each one
+    /// `notice`. Standing lost ends any control it was steering with, and a
+    /// tier that may no longer use the database editor locks it again.
+    void restateAdminStanding(const Account&, const std::string& notice);
 
     void sendAuthResult(net::Connection&, net::AuthStatus, const std::string& token,
                         const std::string& username, const std::string& reason);
@@ -1475,6 +1489,8 @@ private:
     struct TempAdminGrant {
         std::string grantedBy;
         double grantedAtMillis = 0;
+        /// Chosen by whoever lent it, at their own tier or below.
+        int tier = kTopAdminTier;
     };
     std::unordered_map<net::ConnectionId, TempAdminGrant> tempAdmins_;
     /// Where the `/admin db` key is kept, read again on every attempt so an

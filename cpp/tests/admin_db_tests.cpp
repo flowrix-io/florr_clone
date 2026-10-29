@@ -692,6 +692,82 @@ TEST(the_database_editor_never_changes_the_admin_flag) {
     }
 }
 
+TEST(the_database_editor_needs_a_tier_that_may_give_and_never_changes_a_tier) {
+    Harness h("admindb-tier", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true, 2);
+        seedUser(path, "low", "password7", true, 3);
+        seedUser(path, "bob", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient low;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, low, "low", "password7"));
+
+    // The editor writes any bag, so a tier that may not give may not open it,
+    // key or no key.
+    CHECK(say(h, low, "/admin db " + h.server.adminDbKey()));
+    CHECK(sawText(low, "Tier 3 admins cannot open the database editor"));
+    h.step(10, {&boss, &low});
+    CHECK(!low.adminDb().openRequested);
+    low.adminDbList("", 0);
+    h.step(30, {&boss, &low});
+    CHECK(low.adminDb().accounts.empty());
+
+    // Tier 2 may. And no tier is written from it: not raised on yourself, not
+    // lowered on another admin, not put on an account that has none.
+    CHECK(unlock(h, boss));
+    CHECK(openAccount(h, {&boss}, boss, "boss"));
+    boss.adminDbSet({"account", "adminTier"}, "1");
+    CHECK(!awaitResult(h, {&boss}, boss));
+    CHECK(boss.adminDb().resultMessage.find("admin flag, tier and ban") != std::string::npos);
+    boss.adminDbRemove({"account", "adminTier"});
+    CHECK(!awaitResult(h, {&boss}, boss));
+    CHECK(openAccount(h, {&boss}, boss, "low"));
+    boss.adminDbSet({"account", "adminTier"}, "4");
+    CHECK(!awaitResult(h, {&boss}, boss));
+    CHECK(openAccount(h, {&boss}, boss, "bob"));
+    boss.adminDbSet({"account", "adminTier"}, "1");
+    CHECK(!awaitResult(h, {&boss}, boss));
+
+    CHECK_EQ(h.server.database().findUser("boss")->adminTier, 2);
+    CHECK_EQ(h.server.database().findUser("low")->adminTier, 3);
+    CHECK_EQ(h.server.database().findUser("bob")->adminTier, kTopAdminTier);
+}
+
+TEST(the_database_editor_never_sets_an_admins_password_or_ban) {
+    Harness h("admindb-admin-password", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true, 1);
+        seedUser(path, "low", "password7", true, 4);
+        seedUser(path, "bob", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
+
+    // Not a lower tier's, and not the editor's own user's.
+    for (const char* name : {"low", "boss"}) {
+        const std::string hashBefore = h.server.database().findUser(name)->passwordHash;
+        boss.adminDbSetPassword(name, "brandnew9");
+        CHECK(!awaitResult(h, {&boss}, boss));
+        CHECK(boss.adminDb().resultMessage.find("Admin passwords cannot be changed") !=
+              std::string::npos);
+        CHECK_EQ(h.server.database().findUser(name)->passwordHash, hashBefore);
+    }
+
+    // A ban is ban_admin's, held to the tiers; the editor does not reach it.
+    CHECK(openAccount(h, {&boss}, boss, "low"));
+    for (const char* field : {"adminBanned", "adminBannedBy", "adminBannedAt"}) {
+        boss.adminDbSet({"account", field}, "true");
+        CHECK(!awaitResult(h, {&boss}, boss));
+        CHECK(boss.adminDb().resultMessage.find("admin flag, tier and ban") != std::string::npos);
+    }
+    CHECK(!h.server.database().findUser("low")->adminBanned);
+}
+
 TEST(the_database_editor_resets_a_password) {
     Harness h("admindb-actions", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);

@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "server/admin_tiers.h"
 #include "server/db.h"
 #include "shared/core/entity.h"
 #include "shared/game/realm.h"
@@ -46,7 +47,12 @@ struct Session {
     std::string userId;
     std::string username;
     std::string token;
+    /// The account's admin flag, less a ban (Account::adminActive), copied at
+    /// sign-in and moved by ban_admin / unban_admin while signed in.
     bool admin = false;
+    /// The account's admin tier, copied with `admin` and read only while it is
+    /// set. A temporary grant's tier is on the grant (GameServer::adminTier).
+    int adminTier = kTopAdminTier;
     /// The session whose flower this one is steering through the admin
     /// dashboard's control, or 0. A CONNECTION and not a body: control follows
     /// the target's ACTIVE half (see `entity`), which a splitter swaps under

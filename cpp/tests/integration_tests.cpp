@@ -27,6 +27,7 @@ using flix::testsupport::Harness;
 using flix::testsupport::onlyPlayer;
 using flix::testsupport::playersVisibleTo;
 using flix::testsupport::sawText;
+using flix::testsupport::seedUser;
 
 } // namespace
 
@@ -173,6 +174,35 @@ TEST(a_changed_password_replaces_the_old_one) {
     fresh.requestLogin("changer", "second-password");
     CHECK(h.stepUntil({&fresh}, [&] { return fresh.authAnswered; }));
     CHECK_EQ(static_cast<int>(fresh.authStatus), static_cast<int>(net::AuthStatus::Ok));
+}
+
+TEST(an_admins_password_cannot_be_changed_at_any_tier) {
+    Harness h("changepw-admin", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true, 1);
+        seedUser(path, "low", "password7", true, 4);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    for (const char* name : {"boss", "low"}) {
+        NetClient client;
+        CHECK(loginAs(h, client, name, "password7"));
+        client.requestChangePassword("password7", "a-new-password8");
+        CHECK(h.stepUntil({&client}, [&] { return client.passwordOutcome().pending; }));
+        CHECK(!client.passwordOutcome().ok);
+        CHECK_EQ(client.passwordOutcome().message, std::string("Admin passwords cannot be changed."));
+        CHECK(!client.sessionTokenRenewed);
+
+        // The old one still opens the account, and the new one does not.
+        NetClient again;
+        CHECK(loginAs(h, again, name, "password7"));
+        NetClient wrong;
+        CHECK(connectClient(h, wrong));
+        wrong.authAnswered = false;
+        wrong.requestLogin(name, "a-new-password8");
+        CHECK(h.stepUntil({&wrong}, [&] { return wrong.authAnswered; }));
+        CHECK_EQ(static_cast<int>(wrong.authStatus),
+                 static_cast<int>(net::AuthStatus::BadCredentials));
+    }
 }
 
 TEST(a_change_password_needs_the_current_one) {

@@ -26,6 +26,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "server/admin_tiers.h"
 #include "server/crypto.h"
 #include "shared/core/json.h"
 #include "shared/game/rarity.h"
@@ -139,6 +140,20 @@ struct Account {
     /// only -- the stored value's shape decides how it is checked.
     bool isPlainText = false;
     bool admin = false;
+    /// How much of the console `admin` reaches (server/admin_tiers.h). Read
+    /// only while `admin` is set. An absent field is tier 1, which every admin
+    /// from before tiers is; one that is there but is not a tier reads as the
+    /// bottom one, so a typo in the file never hands out more than it meant.
+    int adminTier = kTopAdminTier;
+    /// Barred from every admin power by an admin of a higher tier (`/admin
+    /// ban_admin`) until one lifts it. The account stays an admin -- its tier,
+    /// its locked password -- but no session of it holds the console.
+    bool adminBanned = false;
+    std::int64_t adminBannedAtMillis = 0;
+    std::string adminBannedBy;
+    /// Whether a session signed into this account holds admin powers: the
+    /// flag, less a ban.
+    bool adminActive() const { return admin && !adminBanned; }
     /// Wall-clock millis of the last successful authentication. Drives the
     /// daily-active count, so it must survive restarts: wall clock, not the
     /// server's monotonic tick clock.
@@ -467,8 +482,13 @@ public:
     /// used by an administrative reset. It does not revoke sessions either --
     /// see revokeSessionsForUser, which the caller decides the timing of.
     /// Sets `passwordChosen`: whoever set it, somebody now knows it.
+    ///
+    /// Never an ADMIN's password (kAdminPasswordLocked), whoever asks and
+    /// whatever either side's tier: see the body for why.
     bool setPassword(const std::string& username, const std::string& password,
                      std::string& reasonOut);
+    /// What every road to an admin's password answers.
+    static constexpr const char* kAdminPasswordLocked = "Admin passwords cannot be changed.";
 
     /// The account rules, and the only copy of them: 3 to 16 of letters,
     /// digits and underscore, starting with a letter; a password of 8 to 72

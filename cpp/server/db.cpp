@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cerrno>
+#include <cmath>
 #include <cstdio>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -330,6 +331,18 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.passwordHash = value["password"].asString();
     account.isPlainText = value["isPlainText"].asBool(false);
     account.admin = value["admin"].asBool(false);
+    if (value.contains("adminTier")) {
+        // Hand-written on the server's machine, so read strictly: a value that
+        // is not a whole number from 1 to 4 is the bottom tier, never the top.
+        const Json& tier = value["adminTier"];
+        const double number = tier.isNumber() ? tier.asDouble(0) : 0;
+        const bool whole = number >= kTopAdminTier && number <= kBottomAdminTier &&
+                           number == std::floor(number);
+        account.adminTier = whole ? static_cast<int>(number) : kBottomAdminTier;
+    }
+    account.adminBanned = value["adminBanned"].asBool(false);
+    account.adminBannedAtMillis = static_cast<std::int64_t>(value["adminBannedAt"].asDouble(0));
+    account.adminBannedBy = value["adminBannedBy"].asString();
     account.lastActiveAtMillis = static_cast<std::int64_t>(value["lastActiveAt"].asDouble(0));
     account.muted = value["muted"].asBool(false);
     account.mutedAtMillis = static_cast<std::int64_t>(value["mutedAt"].asDouble(0));
@@ -339,7 +352,8 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.guest = value["guest"].asBool(false);
     account.passwordChosen = value["passwordChosen"].asBool(true);
 
-    collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "lastActiveAt",
+    collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "adminTier",
+                          "adminBanned", "adminBannedAt", "adminBannedBy", "lastActiveAt",
                           "muted", "mutedAt", "mutedBy", "createdAt", "createdFromHash", "guest",
                           "passwordChosen"},
                   account.extra);
@@ -353,6 +367,16 @@ Json accountToJson(const Account& account) {
     out["password"] = account.passwordHash;
     if (account.isPlainText) out["isPlainText"] = true;
     if (account.admin) out["admin"] = true;
+    // Kept whether or not `admin` is set, so taking the flag away for a while
+    // and giving it back does not quietly promote the account to tier 1.
+    if (account.adminTier != kTopAdminTier) out["adminTier"] = account.adminTier;
+    if (account.adminBanned) {
+        out["adminBanned"] = true;
+        if (account.adminBannedAtMillis != 0) {
+            out["adminBannedAt"] = millisJson(account.adminBannedAtMillis);
+        }
+        if (!account.adminBannedBy.empty()) out["adminBannedBy"] = account.adminBannedBy;
+    }
     if (account.lastActiveAtMillis != 0) out["lastActiveAt"] = millisJson(account.lastActiveAtMillis);
     if (account.muted) {
         out["muted"] = true;
@@ -1378,6 +1402,20 @@ bool Database::verifyPassword(const std::string& username, const std::string& pa
 
 bool Database::setPassword(const std::string& username, const std::string& password,
                            std::string& reasonOut) {
+    // An admin's password never changes from inside the running server, by
+    // its owner, by another admin of any tier, or by anything else that ends
+    // up here: a bug in some handler, a forged request, memory an exploit has
+    // corrupted into calling this. Who holds an admin account is decided on
+    // the server's own machine, like the flag itself (admin_db.cpp), so to
+    // change one: take `admin` off the account in the file, change the
+    // password, and put the flag back. Asked first and on the stored flag, so
+    // the answer is the same whatever password came with the request. The
+    // const lookup, as a refusal changes nothing (Database::Table).
+    if (const Account* stored = std::as_const(*this).findUser(username);
+        stored != nullptr && stored->admin) {
+        reasonOut = kAdminPasswordLocked;
+        return false;
+    }
     if (!validPassword(password, reasonOut)) return false;
 
     Account* account = findUser(username);

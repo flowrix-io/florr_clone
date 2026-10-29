@@ -296,6 +296,18 @@ bool GameServer::effectiveAdmin(const Session& session) const {
     return session.admin || tempAdmins_.count(session.connection) != 0;
 }
 
+int GameServer::adminTier(const Session& session) const {
+    // The database flag first: a full admin never holds a grant (grant_admin
+    // refuses one), so there is no second tier to choose between.
+    if (session.admin) return session.adminTier;
+    const auto grant = tempAdmins_.find(session.connection);
+    return grant != tempAdmins_.end() ? grant->second.tier : 0;
+}
+
+bool GameServer::adminMay(const Session& session, AdminPower power) const {
+    return adminTierAllows(adminTier(session), power);
+}
+
 bool GameServer::speakerMuted(const Session& session, net::Connection& connection) {
     // Through the const lookup: this only reads the flag, and the mutable one
     // would drop the speaker's cached row on every line they say.
@@ -316,8 +328,14 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
     const std::string userId = record->userId;
     Account* account = database_.findUserById(userId);
     if (account == nullptr) return false;
-    if (!account->admin) {
+    if (!account->adminActive() || account->adminTier != kTopAdminTier) {
+        // The top tier, and no ban: this is the player's own server, in their
+        // own page.
         account->admin = true;
+        account->adminTier = kTopAdminTier;
+        account->adminBanned = false;
+        account->adminBannedAtMillis = 0;
+        account->adminBannedBy.clear();
         // In memory until the database is next written: the periodic save half
         // a minute out, or sooner when the page goes away -- the offline
         // page's pagehide handler flushes every account and the database into
@@ -334,6 +352,7 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
     for (auto& [id, session] : sessions_) {
         if (!session.authenticated() || session.userId != userId) continue;
         session.admin = true;
+        session.adminTier = kTopAdminTier;
         net::Connection* connection = listener_.find(id);
         if (connection == nullptr) continue;
         // The same resend a temporary grant does, and for the same reason: the
@@ -372,6 +391,31 @@ void GameServer::revokeTempAdmin(net::ConnectionId id) {
     // autocomplete. Resending it is how a revoked console disappears from the
     // grantee's screen rather than lingering until their next login.
     if (net::Connection* connection = listener_.find(id)) sendSkinCatalog(*session, *connection);
+}
+
+void GameServer::restateAdminStanding(const Account& account, const std::string& notice) {
+    // Every connection signed into the account, by its id, as grantAdmin
+    // walks them.
+    for (auto& [id, session] : sessions_) {
+        if (!session.authenticated() || session.userId != account.id) continue;
+        session.admin = account.adminActive();
+        session.adminTier = account.adminTier;
+        // As a revoked grant does: control was taken on the standing that is
+        // gone.
+        if (!session.admin && session.controlling != 0) {
+            endControl(session, "Control ended: your admin permissions were banned.", true);
+        }
+        // And the editor's key was typed by an admin who could use the editor,
+        // which a ban or a demotion past tier 2 says this one cannot now: every
+        // op re-checks, and an unban or promotion asks for the key again.
+        if (!adminMay(session, AdminPower::GivePetals)) session.adminDbUnlockedFor.clear();
+        net::Connection* connection = listener_.find(id);
+        if (connection == nullptr) continue;
+        // The catalog's leading flag is the client's standing: it closes the
+        // admin panels and hides the /admin rows, or brings them back.
+        sendSkinCatalog(session, *connection);
+        sendSystem(*connection, notice);
+    }
 }
 
 bool GameServer::resolveCommandTarget(const std::string& identifier, CommandTarget& out) {
@@ -563,6 +607,13 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
 
     if (verb == "/admin" || verb == "/cmd") {
         if (!effectiveAdmin(session)) {
+            // A banned admin already knows the console is there, so they are
+            // told why it does not answer.
+            const Account* own = std::as_const(database_).findUserById(session.userId);
+            if (own != nullptr && own->admin && own->adminBanned) {
+                out("You are banned from using admin permissions.");
+                return true;
+            }
             // The browser build denies the command's EXISTENCE rather than the
             // permission, and so does this: telling a stranger that a console
             // is there is half of finding a way into it.
@@ -812,26 +863,38 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             // There is no lookup by id: a player is named by account, and a
             // bot -- which has none -- by the name over its flower.
             help += "A &lt;username&gt; is an account name, or a bot's name.<br/>";
+            // The tiers in one line (server/admin_tiers.h), so the "(tiers
+            // 1-3)" marks in the listing below read without a key.
+            help += "You are a tier " + std::to_string(adminTier(session)) +
+                    " admin. Tier 1 can do everything; tier 2 cannot update the server; tier 3 "
+                    "also cannot give petals; tier 4 also cannot spawn mobs.<br/>";
             help += "Available server commands: save, list-players, list-sockets, "
                     "set_max_enemies, set_bot_count &lt;0-" + std::to_string(kMaxBots) +
                     "|default&gt;, bots (what the bot population is doing), squads (who the "
                     "loot rule pools), spawn &lt;mobType&gt; &lt;rarity&gt; "
-                    "[x] [y] [amount] [stack|unstack], spawn_npc &lt;mobType&gt; [rarity] "
-                    "[players|hostile|neutral] (any mob, as an NPC where you stand), "
+                    "[x] [y] [amount] [stack|unstack] (tiers 1-3), spawn_npc &lt;mobType&gt; "
+                    "[rarity] [players|hostile|neutral] (any mob, as an NPC where you stand; "
+                    "tiers 1-3), "
                     "clear_npcs, killall (kill all wild "
                     "mobs), teleport "
                     "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
                     "(move every bot only), give &lt;username&gt; &lt;itemType&gt; "
-                    "&lt;rarity&gt; [amount], set_skin &lt;username&gt; "
+                    "&lt;rarity&gt; [amount] (tiers 1-2), set_skin &lt;username&gt; "
                     "&lt;skin|none&gt;, corrupt &lt;username&gt; [on|off|toggle] "
                     "(corrupted flowers fight players anywhere, not just in PVP), god "
                     "[on|off|toggle] (make yourself invulnerable), control &lt;username&gt; "
                     "(steer another player's flower with your own controls), release (give "
                     "it back), announce &lt;message&gt; (a banner for every player; full "
                     "admins only), gui (open the admin dashboard), grant_admin "
-                    "&lt;username&gt; (lend the admin console until they respawn), "
-                    "revoke_admin &lt;username&gt;, list_admins, mute "
+                    "&lt;username&gt; [tier] (lend the admin console until they respawn, at "
+                    "your own tier or below), "
+                    "revoke_admin &lt;username&gt;, list_admins (temporary grants and banned "
+                    "admins), ban_admin &lt;username&gt; (bar a lower-tier admin from every "
+                    "admin power until unbanned), unban_admin &lt;username&gt;, promote_admin "
+                    "&lt;username&gt; [tier] (raise a lower-tier admin, up to your own tier; "
+                    "default one tier up), demote_admin &lt;username&gt; [tier] (lower a "
+                    "lower-tier admin; default one tier down), mute "
                     "&lt;username&gt; (bar an account from chat, persists across "
                     "sessions), unmute &lt;username&gt;, unmute_all (lift every mute), "
                     "notification &lt;type&gt; "
@@ -839,8 +902,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
                     "name&gt; &lt;username&gt;, restart [&lt;N&gt;(s|m|h)|cancel|status], "
                     "backup_db [list], db [username] (open the database editor; full admins "
-                    "only), update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
-                    "DB first, then installs latest build + restarts), change-maze "
+                    "only, tiers 1-2), update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
+                    "DB first, then installs latest build + restarts; tier 1 only), change-maze "
                     "[next|garden|desert|ocean|&lt;dayNumber&gt;], sacrifice (lay Hel's "
                     "Apex Sacrifice now)";
         }
@@ -1129,6 +1192,15 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     } else {
         out("[ADMIN] " + session.username + " executed: " + command);
     }
+
+    // The tier's powers (server/admin_tiers.h), asked before a verb reads its
+    // arguments: a usage line for a command this tier cannot run would only
+    // read as an invitation to type it again.
+    const auto lacks = [&](AdminPower power) {
+        if (adminMay(session, power)) return false;
+        out(adminTierRefusal(adminTier(session), power));
+        return true;
+    };
 
     // -- flower control and announcements ----------------------------------
     //
@@ -1519,6 +1591,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "spawn") {
+        if (lacks(AdminPower::SpawnMobs)) return;
         // Grammar, everything after <mob> <rarity> optional:
         //   spawn <mob> <rarity>                          -> 1 on you
         //   spawn <mob> <rarity> <amount> [stack|unstack] -> N on you
@@ -1707,6 +1780,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "spawn_npc") {
+        // A mob all the same, and `hostile` stands it on the mobs' side.
+        if (lacks(AdminPower::SpawnMobs)) return;
         // The NPC half of a creature `spawn` makes an enemy of: the same
         // mobs.json entry, standing still (or cruising, if it flies like a
         // bee) with a pool that never moves, where the admin is standing. ANY
@@ -2019,6 +2094,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "give") {
+        // To anyone, the giver included: a tier that may not hand petals out
+        // may not hand them to itself either.
+        if (lacks(AdminPower::GivePetals)) return;
         if (words.size() < 4 || words.size() > 5) {
             out("Usage: give <username> <itemType> <rarity> [amount]");
             out("  amount: how many to give (default 1).");
@@ -2095,8 +2173,24 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("Only a full admin can grant or revoke admin access.");
             return;
         }
-        if (words.size() != 2) {
-            out("Usage: " + verb + " <username>");
+        if (words.size() != 2 && !(granting && words.size() == 3)) {
+            out(granting ? "Usage: grant_admin <username> [tier 1-4]  (default: your own tier)"
+                         : "Usage: revoke_admin <username>");
+            return;
+        }
+        // Lent at the lender's own tier unless a lower one is named, and never
+        // a higher one: a grant must not reach what its lender cannot.
+        const int ownTier = adminTier(session);
+        int tier = ownTier;
+        if (words.size() == 3 && (!parseInteger(words[2], tier) || !validAdminTier(tier))) {
+            out("Invalid tier \"" + words[2] + "\". A tier is a whole number from " +
+                std::to_string(kTopAdminTier) + " (everything) to " +
+                std::to_string(kBottomAdminTier) + ".");
+            return;
+        }
+        if (tier < ownTier) {
+            out("You are a tier " + std::to_string(ownTier) + " admin, so you can grant tier " +
+                std::to_string(ownTier) + " to " + std::to_string(kBottomAdminTier) + " only.");
             return;
         }
         CommandTarget target;
@@ -2112,22 +2206,30 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 out(target.name + " is already a full admin.");
                 return;
             }
+            // A banned admin's session holds no standing, so the test above
+            // passes them; a grant would be the way round the ban.
+            const Account* held = std::as_const(database_).findUserById(target.session->userId);
+            if (held != nullptr && held->adminBanned) {
+                out(target.name + " is banned from admin permissions. unban_admin lifts it.");
+                return;
+            }
             if (tempAdmins_.count(target.session->connection) != 0) {
                 out(target.name + " already has a temporary admin grant.");
                 return;
             }
             tempAdmins_[target.session->connection] = {
-                session.username, static_cast<double>(database_.nowMillis())};
+                session.username, static_cast<double>(database_.nowMillis()), tier};
             if (peer != nullptr) {
                 // Resent so the grantee's own client learns it is admin and
                 // stops hiding the /admin rows in its command autocomplete.
                 sendSkinCatalog(*target.session, *peer);
-                sendSystem(*peer, "<span style=\"color: #ffb74d;\">You have been granted admin "
-                                  "commands until you respawn. Use /admin &lt;command&gt; or "
-                                  "/help.</span>");
+                sendSystem(*peer, "<span style=\"color: #ffb74d;\">You have been granted tier " +
+                                      std::to_string(tier) +
+                                      " admin commands until you respawn. Use /admin "
+                                      "&lt;command&gt; or /help.</span>");
             }
-            out("Granted temporary admin to " + target.name + " (" + grantId +
-                ") until they respawn.");
+            out("Granted temporary admin to " + target.name + " (" + grantId + ") at tier " +
+                std::to_string(tier) + " until they respawn.");
             return;
         }
         if (tempAdmins_.count(target.session->connection) == 0) {
@@ -2143,12 +2245,162 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         return;
     }
 
+    if (verb == "ban_admin" || verb == "unban_admin") {
+        const bool banning = verb == "ban_admin";
+        // A database admin's act, as grant_admin is: a console lent for one
+        // life does not reach the standing of the admins who lend them.
+        if (!session.admin) {
+            out("Only a full admin can ban or unban admins.");
+            return;
+        }
+        if (words.size() != 2) {
+            out("Usage: " + verb + " <username>");
+            return;
+        }
+        // By account name, online or not, as mute is: the ban is on the
+        // account and outlives the session. Never by nameplate.
+        Account* account = database_.findUser(words[1]);
+        if (account == nullptr) {
+            out("No account named \"" + words[1] + "\" exists.");
+            return;
+        }
+        if (!account->admin) {
+            out(account->username + " is not a full admin. A temporary grant is taken back with "
+                                    "revoke_admin.");
+            return;
+        }
+        // Downward only: a higher tier (a smaller number) over a lower one.
+        // Nobody reaches their own tier, themselves included, so tier 1 is
+        // banned by nobody and tier 4 bans nobody.
+        const int ownTier = adminTier(session);
+        if (account->adminTier <= ownTier) {
+            out("You can only " + std::string(banning ? "ban" : "unban") +
+                " admins of a lower tier than your own (tier " + std::to_string(ownTier) + "). " +
+                account->username + " is tier " + std::to_string(account->adminTier) + ".");
+            return;
+        }
+        if (account->adminBanned == banning) {
+            out(account->username + (banning ? " is already banned from admin permissions."
+                                             : " is not banned from admin permissions."));
+            return;
+        }
+        account->adminBanned = banning;
+        account->adminBannedAtMillis = banning ? database_.nowMillis() : 0;
+        account->adminBannedBy = banning ? session.username : std::string();
+        database_.markDirty();
+        // The echo reaches the sender alone, so the log is the one record.
+        std::printf("[admin] %s %s %s (tier %d)\n", session.username.c_str(),
+                    banning ? "banned" : "unbanned", account->username.c_str(), account->adminTier);
+        const bool online = sessionForUser(account->username) != nullptr;
+        restateAdminStanding(*account,
+                             banning ? "<span style=\"color: #ff8866;\">You have been banned from "
+                                       "using admin permissions by a higher-tier admin.</span>"
+                                     : "<span style=\"color: #6eff6e;\">Your admin permissions "
+                                       "have been restored.</span>");
+        const std::string who =
+            account->username + " (tier " + std::to_string(account->adminTier) + ")";
+        out((banning ? "Banned " + who + " from admin permissions"
+                     : "Unbanned " + who + ": admin permissions restored") +
+            (online ? "." : " (offline)."));
+        return;
+    }
+
+    if (verb == "promote_admin" || verb == "demote_admin") {
+        // ban_admin's rules, in both directions: a full admin moves an admin
+        // of a lower tier, up to their own tier and no further, or down to the
+        // bottom. So nobody moves themselves, a peer or anyone above them, and
+        // nobody hands out a tier they do not hold.
+        const bool raising = verb == "promote_admin";
+        const std::string doing = raising ? "promote" : "demote";
+        if (!session.admin) {
+            out("Only a full admin can " + doing + " admins.");
+            return;
+        }
+        if (words.size() != 2 && words.size() != 3) {
+            out("Usage: " + verb + " <username> [tier]  (default: one tier " +
+                (raising ? "up" : "down") + ")");
+            return;
+        }
+        // Moves an admin, never makes or unmakes one: who holds the flag is
+        // still decided on the server's own machine (admin_db.cpp).
+        Account* account = database_.findUser(words[1]);
+        if (account == nullptr) {
+            out("No account named \"" + words[1] + "\" exists.");
+            return;
+        }
+        if (!account->admin) {
+            out(account->username + " is not a full admin. A temporary grant's tier is chosen "
+                                    "with grant_admin.");
+            return;
+        }
+        const int ownTier = adminTier(session);
+        const int from = account->adminTier;
+        if (from <= ownTier) {
+            out("You can only " + doing + " admins of a lower tier than your own (tier " +
+                std::to_string(ownTier) + "). " + account->username + " is tier " +
+                std::to_string(from) + ".");
+            return;
+        }
+        if (!raising && from == kBottomAdminTier && words.size() == 2) {
+            out(account->username + " is already tier " + std::to_string(kBottomAdminTier) +
+                ", the bottom tier.");
+            return;
+        }
+        int to = raising ? from - 1 : from + 1;
+        if (words.size() == 3 && (!parseInteger(words[2], to) || !validAdminTier(to))) {
+            out("Invalid tier \"" + words[2] + "\". A tier is a whole number from " +
+                std::to_string(kTopAdminTier) + " (everything) to " +
+                std::to_string(kBottomAdminTier) + ".");
+            return;
+        }
+        if (raising && to < ownTier) {
+            out("You can promote up to your own tier (tier " + std::to_string(ownTier) +
+                ") only.");
+            return;
+        }
+        if (raising ? to >= from : to <= from) {
+            out(account->username + " is already tier " + std::to_string(from) + "; " + verb +
+                " only " + (raising ? "raises" : "lowers") + " a tier.");
+            return;
+        }
+        // A ban is lifted first, by whoever may: raised while barred, the
+        // admin could land on a tier the banner can no longer reach. Lowered,
+        // they stay in reach, so a demotion does not wait for it.
+        if (raising && account->adminBanned) {
+            out(account->username + " is banned from admin permissions. unban_admin lifts it "
+                                    "first.");
+            return;
+        }
+        account->adminTier = to;
+        database_.markDirty();
+        std::printf("[admin] %s %s %s from tier %d to tier %d\n", session.username.c_str(),
+                    raising ? "promoted" : "demoted", account->username.c_str(), from, to);
+        const bool online = sessionForUser(account->username) != nullptr;
+        restateAdminStanding(*account, std::string("<span style=\"color: ") +
+                                           (raising ? "#6eff6e" : "#ff8866") +
+                                           ";\">You have been " +
+                                           (raising ? "promoted" : "demoted") + " to tier " +
+                                           std::to_string(to) + " admin.</span>");
+        out(std::string(raising ? "Promoted " : "Demoted ") + account->username + " from tier " +
+            std::to_string(from) + " to tier " + std::to_string(to) +
+            (online ? "." : " (offline)."));
+        return;
+    }
+
     if (databaseEditor) {
         // The database flag, as grant_admin checks it: the editor resets
         // passwords and rewrites any record, which a console lent for one life
         // must not reach.
         if (!session.admin) {
             out("Only a full admin can open the database editor.");
+            return;
+        }
+        // And a tier that may give petals: the editor writes any bag, which
+        // would be the way round `give` for every tier that may not.
+        if (!adminMay(session, AdminPower::GivePetals)) {
+            out("Tier " + std::to_string(adminTier(session)) +
+                " admins cannot open the database editor: it can write any player's petals "
+                "(tiers 1-" + std::to_string(lowestTierWith(AdminPower::GivePetals)) + " only).");
             return;
         }
         // And the key, which only the server's machine knows (it is in a file
@@ -2197,21 +2449,40 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "list_admins") {
-        // Temporary grants only. Permanent admins are a database flag, not a
-        // thing with a lifetime, and listing them here would read as if they
-        // were about to expire.
+        // Temporary grants, and banned admins. Permanent admins in good
+        // standing are a database flag, not a thing with a lifetime, and
+        // listing them here would read as if they were about to expire.
+        const double now = static_cast<double>(database_.nowMillis());
         if (tempAdmins_.empty()) {
             out("No temporary admin grants are active.");
-            return;
+        } else {
+            out("Temporary admins (" + std::to_string(tempAdmins_.size()) + "):");
+            for (const auto& [id, grant] : tempAdmins_) {
+                const Session* holder = sessionFor(id);
+                const std::string name = holder != nullptr ? holder->username : "Unknown";
+                out(name + " (" + std::to_string(id) + ") \xE2\x80\x94 tier " +
+                    std::to_string(grant.tier) + ", granted by " + grant.grantedBy + ", " +
+                    std::to_string(static_cast<long>((now - grant.grantedAtMillis) / 1000)) +
+                    "s ago");
+            }
         }
-        out("Temporary admins (" + std::to_string(tempAdmins_.size()) + "):");
-        const double now = static_cast<double>(database_.nowMillis());
-        for (const auto& [id, grant] : tempAdmins_) {
-            const Session* holder = sessionFor(id);
-            const std::string name = holder != nullptr ? holder->username : "Unknown";
-            out(name + " (" + std::to_string(id) + ") \xE2\x80\x94 granted by " + grant.grantedBy +
-                ", " + std::to_string(static_cast<long>((now - grant.grantedAtMillis) / 1000)) +
-                "s ago");
+        std::vector<std::string> banned;
+        for (const std::string& username : database_.usernames()) {
+            // The const lookup, as delete_guests reads.
+            const Account* account = std::as_const(database_).findUser(username);
+            if (account == nullptr || !account->admin || !account->adminBanned) continue;
+            banned.push_back(account->username + " \xE2\x80\x94 tier " +
+                             std::to_string(account->adminTier) + ", banned by " +
+                             (account->adminBannedBy.empty() ? std::string("Unknown")
+                                                             : account->adminBannedBy) +
+                             (account->adminBannedAtMillis != 0
+                                  ? ", " + agoLabel(static_cast<std::int64_t>(now) -
+                                                    account->adminBannedAtMillis)
+                                  : std::string()));
+        }
+        if (!banned.empty()) {
+            out("Banned admins (" + std::to_string(banned.size()) + "):");
+            for (const std::string& row : banned) out("  " + row);
         }
         return;
     }
@@ -2232,8 +2503,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             return;
         }
         // Muting a full admin is refused, so a temporary grantee cannot
-        // silence the admin who lent them the console.
-        if (muting && account->admin) {
+        // silence the admin who lent them the console. A banned admin holds
+        // no admin standing, this immunity included.
+        if (muting && account->adminActive()) {
             out(account->username + " is a full admin and cannot be muted.");
             return;
         }
@@ -2633,6 +2905,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "update") {
+        // Every form of it, status included: the tier is "does not touch the
+        // update", not "may watch one".
+        if (lacks(AdminPower::UpdateServer)) return;
         const std::string arg = lowerCase(rest);
         if (arg == "status") {
             out(autoupdate::inProgress() ? "Update in progress. " + autoupdate::lastStatus()

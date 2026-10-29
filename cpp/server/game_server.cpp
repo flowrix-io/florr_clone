@@ -1621,7 +1621,8 @@ void GameServer::beginNewAccount(Session& session, net::Connection& connection,
     // Assigned, never left as it was: an account can be made on a socket that
     // is already signed in, and a full admin's flag must not carry over into
     // the account it has just made. A new account is never an admin.
-    session.admin = account.admin;
+    session.admin = account.adminActive();
+    session.adminTier = account.adminTier;
     session.token = database_.createSession(session.userId, session.username);
 
     grantStarterKit(database_.progress(session.userId));
@@ -1676,7 +1677,8 @@ void GameServer::handleLogin(Session& session, net::Connection& connection, Byte
     replaceOtherSessions(session, account->id);
     session.userId = account->id;
     session.username = account->username;
-    session.admin = account->admin;
+    session.admin = account->adminActive();
+    session.adminTier = account->adminTier;
     session.token = database_.createSession(account->id, account->username);
     session.stage = SessionStage::Authenticated;
     sendAuthResult(connection, net::AuthStatus::Ok, session.token, account->username, "");
@@ -1713,7 +1715,8 @@ void GameServer::handleResume(Session& session, net::Connection& connection, Byt
     // Assigned whether or not the lookup lands, so a flag left on this socket
     // by whoever was signed in on it before can never ride along.
     const Account* account = database_.findUser(username);
-    session.admin = account != nullptr && account->admin;
+    session.admin = account != nullptr && account->adminActive();
+    session.adminTier = account != nullptr ? account->adminTier : kTopAdminTier;
     sendAuthResult(connection, net::AuthStatus::Ok, token, username, "");
     sendDailyStreak(session, connection);
     sendProfile(session, connection);
@@ -1743,6 +1746,16 @@ void GameServer::handleChangePassword(Session& session, net::Connection& connect
     // account's password, and an anonymous socket has no account to name.
     if (!session.authenticated() || session.username.empty()) {
         sendChangePasswordResult(connection, false, "", "You are not signed in.");
+        return;
+    }
+
+    // An admin account's password is never changed in game (setPassword says
+    // why, and refuses it again), so it is refused before a bcrypt verify or
+    // an attempt from the budget is spent finding that out. On the account's
+    // flag, not the session's: a banned admin is locked all the same.
+    if (const Account* own = std::as_const(database_).findUserById(session.userId);
+        own != nullptr && own->admin) {
+        sendChangePasswordResult(connection, false, "", Database::kAdminPasswordLocked);
         return;
     }
 
@@ -1998,6 +2011,7 @@ void GameServer::signOut(Session& session) {
     // for -- so an anonymous session must not keep either.
     session.username.clear();
     session.admin = false;
+    session.adminTier = kTopAdminTier;
     session.displayName.clear();
     // Last: despawnPlayer() puts the stage back to Authenticated, and this is
     // what the socket actually is now.

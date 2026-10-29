@@ -363,6 +363,116 @@ TEST(the_admin_flag_comes_only_from_the_file) {
     std::remove(freshPath.c_str());
 }
 
+TEST(an_admin_tier_is_read_strictly_and_kept_by_a_save) {
+    // Absent is tier 1: every admin from before tiers keeps everything, and
+    // its row is written back without the field. A real tier survives a save.
+    // Anything else in the field -- out of range, fractional, a string -- is
+    // a hand edit gone wrong, and reads as the BOTTOM tier, never the top.
+    const std::string path = scratchPath("admin-tier");
+    const char* hash = "$2b$12$2XTXtpXNuMonJ9HX442GYeByWDfnKcgsxGWvOK.v7LBQcqAzNhmqu";
+    writeFile(path, std::string(R"({
+  "users": {
+    "old": {"id": "u-old", "username": "old", "admin": true, "password": ")") + hash + R"("},
+    "two": {"id": "u-two", "username": "two", "admin": true, "adminTier": 2, "password": ")" + hash + R"("},
+    "four": {"id": "u-four", "username": "four", "admin": true, "adminTier": 4, "password": ")" + hash + R"("},
+    "zero": {"id": "u-zero", "username": "zero", "admin": true, "adminTier": 0, "password": ")" + hash + R"("},
+    "nine": {"id": "u-nine", "username": "nine", "admin": true, "adminTier": 9, "password": ")" + hash + R"("},
+    "half": {"id": "u-half", "username": "half", "admin": true, "adminTier": 1.5, "password": ")" + hash + R"("},
+    "word": {"id": "u-word", "username": "word", "admin": true, "adminTier": "1", "password": ")" + hash + R"("},
+    "huge": {"id": "u-huge", "username": "huge", "admin": true, "adminTier": 1e300, "password": ")" + hash + R"("}
+  },
+  "players": {}
+})");
+
+    Database db;
+    std::string error;
+    CHECK(db.load(path, error));
+    const auto tierOf = [&](const char* name) {
+        const Account* account = db.findUser(name);
+        return account != nullptr ? account->adminTier : -1;
+    };
+    CHECK_EQ(tierOf("old"), 1);
+    CHECK_EQ(tierOf("two"), 2);
+    CHECK_EQ(tierOf("four"), 4);
+    for (const char* malformed : {"zero", "nine", "half", "word", "huge"}) {
+        CHECK_EQ(tierOf(malformed), kBottomAdminTier);
+    }
+
+    db.markDirty();
+    CHECK(db.save());
+    Json saved;
+    std::string parseError;
+    CHECK(Json::parse(readFile(path), saved, parseError));
+    CHECK(!saved["users"]["old"].contains("adminTier"));
+    CHECK_EQ(saved["users"]["two"]["adminTier"].asInt(), 2);
+    CHECK_EQ(saved["users"]["four"]["adminTier"].asInt(), 4);
+    CHECK_EQ(saved["users"]["word"]["adminTier"].asInt(), kBottomAdminTier);
+
+    // A ban rides along the same way, and stays off a row that has none.
+    db.findUser("two")->adminBanned = true;
+    db.findUser("two")->adminBannedBy = "old";
+    db.findUser("two")->adminBannedAtMillis = 1700000000000;
+    db.markDirty();
+    CHECK(db.save());
+    Database reread;
+    CHECK(reread.load(path, error));
+    const Account* banned = reread.findUser("two");
+    CHECK(banned != nullptr);
+    if (banned != nullptr) {
+        CHECK(banned->adminBanned);
+        CHECK(!banned->adminActive());
+        CHECK(banned->admin);
+        CHECK_EQ(banned->adminTier, 2);
+        CHECK_EQ(banned->adminBannedBy, std::string("old"));
+        CHECK_EQ(banned->adminBannedAtMillis, static_cast<std::int64_t>(1700000000000));
+    }
+    CHECK(Json::parse(readFile(path), saved, parseError));
+    CHECK(!saved["users"]["old"].contains("adminBanned"));
+
+    // And the tiers themselves: each one below the top loses one more power.
+    CHECK(adminTierAllows(1, AdminPower::UpdateServer));
+    CHECK(!adminTierAllows(2, AdminPower::UpdateServer));
+    CHECK(adminTierAllows(2, AdminPower::GivePetals));
+    CHECK(!adminTierAllows(3, AdminPower::GivePetals));
+    CHECK(adminTierAllows(3, AdminPower::SpawnMobs));
+    CHECK(!adminTierAllows(4, AdminPower::SpawnMobs));
+    CHECK(!adminTierAllows(0, AdminPower::SpawnMobs));
+
+    std::remove(path.c_str());
+}
+
+TEST(the_database_never_sets_an_admins_password) {
+    // Whoever is asking: the refusal is the database's own, below every
+    // handler, so no road through the server -- a bug, a forged request --
+    // reaches an admin's password. Same answer whatever password came with
+    // the request, banned or not; an ordinary account is unaffected.
+    const std::string path = scratchPath("admin-password");
+    std::remove(path.c_str());
+    Database db;
+    std::string error;
+    CHECK(db.load(path, error));
+    db.setPasswordCost(crypto::kBcryptMinCost);
+    CHECK(db.createUser("keeper", "the-old-password").ok());
+    CHECK(db.createUser("plain", "the-old-password").ok());
+    db.findUser("keeper")->admin = true;
+    db.findUser("keeper")->adminTier = 4;
+    const std::string hashBefore = db.findUser("keeper")->passwordHash;
+
+    std::string reason;
+    CHECK(!db.setPassword("keeper", "a-fine-new-password", reason));
+    CHECK_EQ(reason, std::string(Database::kAdminPasswordLocked));
+    CHECK(!db.setPassword("keeper", "short", reason));
+    CHECK_EQ(reason, std::string(Database::kAdminPasswordLocked));
+    db.findUser("keeper")->adminBanned = true;
+    CHECK(!db.setPassword("keeper", "a-fine-new-password", reason));
+    CHECK_EQ(db.findUser("keeper")->passwordHash, hashBefore);
+    CHECK(db.verifyPassword("keeper", "the-old-password"));
+
+    CHECK(db.setPassword("plain", "a-fine-new-password", reason));
+    CHECK(db.verifyPassword("plain", "a-fine-new-password"));
+    std::remove(path.c_str());
+}
+
 TEST(sessions_are_stored_hashed_and_expire) {
     const std::string path = scratchPath("sessions");
     std::remove(path.c_str());

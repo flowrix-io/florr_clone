@@ -22,7 +22,9 @@
 //    commands, so the server's answer lands in chat where the console's
 //    answers always do. Each tab keeps its own rarity, held to what its
 //    command takes: a mob stops at the top of the ladder, a petal may be given
-//    at universal.
+//    at universal. An admin tier without the power (tier 3 and 4 may not give,
+//    tier 4 may not spawn; server/admin_tiers.h) still sees both tabs, as a
+//    temporary grant sees Announce: the server refuses, and says so in chat.
 //
 //  * Announce: `/admin announce`, with the field held to the same byte cap the
 //    server enforces (net::kMaxAnnouncementBytes). A temporary grant may type

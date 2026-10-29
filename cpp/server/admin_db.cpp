@@ -1,7 +1,8 @@
 // The admin database editor: the server half of the panel that `/admin db`
 // opens.
 //
-// Who may use it is the DATABASE flag, `session.admin`, and nothing else. The
+// Who may use it is the DATABASE flag, `session.admin`, at a tier that may give
+// petals (server/admin_tiers.h), since the editor writes any bag. The
 // console's temporary grants are lent for one life (see grant_admin), and this
 // panel reaches further than the console does -- it resets passwords and
 // rewrites any record -- so a loan does not extend to it. Every op
@@ -19,11 +20,15 @@
 //    fields -- id, username, password -- are not editable: the first two key
 //    the indices the whole database is looked up through, and a password is
 //    set through its own action, which hashes it and revokes the sessions.
-//    Nor is `admin`, for anyone, on any account: who holds the keys to the
-//    server is a security decision, and one compromised or careless admin
-//    session must not be able to mint more admins -- or lock the others out --
-//    from a panel. It is set on the server's own machine, not from inside the
-//    game.
+//    Nor are `admin` and `adminTier`, for anyone, on any account: who holds
+//    the keys to the server is a security decision, and one compromised or
+//    careless admin session must not be able to mint more admins, raise its
+//    own tier, or lock the others out from a panel. The flag is set on the
+//    server's own machine, not from inside the game, and a tier moves in game
+//    only through promote_admin and demote_admin. Nor is an admin ban
+//    (`adminBanned...`): those commands and ban_admin hold tiers and bans to
+//    the tier order, which the editor would step round. And an admin's password is not set here either
+//    (Database::setPassword).
 //
 //  * One of the unmodelled top-level TABLES (codes, guilds, notifications,
 //    customSkins, ...), edited as the raw JSON it already is. Every handler
@@ -300,7 +305,10 @@ void GameServer::handleAdminDb(Session& session, net::Connection& connection, By
     // Not a word to anyone else, as `/admin` answers a stranger: an editor
     // that said "you are not allowed" would be confirming it exists.
     // The key, too: typed this connection, by the account signed in now.
+    // The tier as `/admin db` asks it: the editor writes any bag, so a tier
+    // that may not give petals may not use it.
     if (!session.authenticated() || !session.admin) return;
+    if (!adminMay(session, AdminPower::GivePetals)) return;
     if (session.adminDbUnlockedFor.empty() || session.adminDbUnlockedFor != session.userId) return;
 
     const auto op = static_cast<AdminDbOp>(reader.u8());
@@ -546,8 +554,9 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
                    "changed here.");
             return;
         }
-        if (field == "admin") {
-            refuse("The admin flag cannot be changed from the editor, for security.");
+        if (field == "admin" || field == "adminTier" || field.rfind("adminBanned", 0) == 0) {
+            refuse("The admin flag, tier and ban cannot be changed from the editor, for security. "
+                   "Use promote_admin, demote_admin, ban_admin and unban_admin.");
             return;
         }
     }
@@ -570,13 +579,16 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
             return;
         }
         Account updated = parseAccountRecord(row, username);
-        // Whatever the JSON says now, these four stay what they were: the
-        // checks above refused a path to them, and this is the belt to those
-        // braces.
+        // Whatever the JSON says now, these stay what they were: the checks
+        // above refused a path to them, and this is the belt to those braces.
         updated.id = account->id;
         updated.username = account->username;
         updated.passwordHash = account->passwordHash;
         updated.admin = account->admin;
+        updated.adminTier = account->adminTier;
+        updated.adminBanned = account->adminBanned;
+        updated.adminBannedAtMillis = account->adminBannedAtMillis;
+        updated.adminBannedBy = account->adminBannedBy;
         *account = std::move(updated);
         after = accountRecordJson(*account);
     } else {
@@ -705,6 +717,12 @@ void GameServer::adminDbAccountAction(Session& session, net::Connection& connect
     };
 
     if (op == AdminDbOp::SetPassword) {
+        // Any admin's, at any tier, the editor's own user included
+        // (Database::setPassword says why, and refuses it again).
+        if (account->admin) {
+            refuse(std::string(Database::kAdminPasswordLocked) + " Not even from the editor.");
+            return;
+        }
         if (self) {
             refuse("Change your own password from Settings: it asks for the current one.");
             return;

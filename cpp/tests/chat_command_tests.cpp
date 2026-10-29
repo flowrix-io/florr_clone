@@ -985,6 +985,438 @@ TEST(a_temporary_grant_opens_the_console_and_closes_on_respawn) {
     CHECK(sawText(helper, "Command does not exist."));
 }
 
+TEST(each_admin_tier_loses_one_more_power) {
+    // Tier 1 updates, gives and spawns; tier 2 cannot update; tier 3 cannot
+    // give either; tier 4 cannot spawn either. Everything else in the console
+    // stays open to all four.
+    Harness h("cmd-tiers", [](const std::string& path) {
+        seedUser(path, "one", "password7", true, 1);
+        seedUser(path, "two", "password7", true, 2);
+        seedUser(path, "three", "password7", true, 3);
+        seedUser(path, "four", "password7", true, 4);
+        seedUser(path, "target", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient one, two, three, four;
+    CHECK(loginAs(h, one, "one", "password7"));
+    CHECK(loginAs(h, two, "two", "password7"));
+    CHECK(loginAs(h, three, "three", "password7"));
+    CHECK(loginAs(h, four, "four", "password7"));
+    NetClient* admins[] = {&one, &two, &three, &four};
+
+    const std::string targetId = h.server.database().findUser("target")->id;
+    const auto roses = [&] {
+        const PlayerRecord* record = h.server.database().findProgress(targetId);
+        return record != nullptr ? record->itemCount(Rarity::Legendary, "petal_rose") : 0;
+    };
+
+    for (int tier = 1; tier <= 4; ++tier) {
+        NetClient& admin = *admins[tier - 1];
+        const std::string n = std::to_string(tier);
+
+        // `update` is refused before it does anything -- a native build has
+        // nothing to install, which is tier 1's answer here.
+        std::uint64_t mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin update now"));
+        if (tier == 1) {
+            CHECK(sawTextSince(admin, mark, "cannot update itself"));
+        } else {
+            CHECK(sawTextSince(admin, mark,
+                               "Tier " + n + " admins cannot update the server (tier 1 only)."));
+        }
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin update status"));
+        CHECK_EQ(sawTextSince(admin, mark, "cannot update the server"), tier > 1);
+
+        const int rosesBefore = roses();
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin give target rose legendary"));
+        if (tier <= 2) {
+            CHECK(sawTextSince(admin, mark, "Gave legendary rose petal to target"));
+            CHECK_EQ(roses(), rosesBefore + 1);
+        } else {
+            CHECK(sawTextSince(admin, mark,
+                               "Tier " + n + " admins cannot give petals (tiers 1-2 only)."));
+            CHECK_EQ(roses(), rosesBefore);
+        }
+        // Refused before the usage line, not after it.
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin give"));
+        CHECK_EQ(sawTextSince(admin, mark, "Usage: give"), tier <= 2);
+
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin spawn bee rare"));
+        if (tier <= 3) {
+            CHECK(sawTextSince(admin, mark, "Spawned rare bee"));
+        } else {
+            CHECK(sawTextSince(admin, mark,
+                               "Tier 4 admins cannot spawn mobs (tiers 1-3 only)."));
+            CHECK(!sawTextSince(admin, mark, "Spawned"));
+        }
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin spawn_npc bee"));
+        CHECK_EQ(sawTextSince(admin, mark, "cannot spawn mobs"), tier == 4);
+
+        // The rest of the console is every tier's.
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin list-players"));
+        CHECK(sawTextSince(admin, mark, "[ADMIN] " + std::string(tier == 1   ? "one"
+                                                                 : tier == 2 ? "two"
+                                                                 : tier == 3 ? "three"
+                                                                             : "four") +
+                                            " executed: list-players"));
+        CHECK(!sawTextSince(admin, mark, "admins cannot"));
+
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/help"));
+        CHECK(sawTextSince(admin, mark, "You are a tier " + n + " admin."));
+    }
+    CHECK_EQ(roses(), 2);
+}
+
+TEST(a_grant_is_lent_at_the_lenders_tier_or_below) {
+    Harness h("cmd-grant-tier", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true, 2);
+        seedUser(path, "helper", "password7");
+        seedUser(path, "aide", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss, helper, aide;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, helper, "helper", "password7"));
+    CHECK(loginAs(h, aide, "aide", "password7"));
+    helper.joinGame(1920, 1080, {}, "Helper");
+    aide.joinGame(1920, 1080, {}, "Aide");
+    std::vector<NetClient*> all{&boss, &helper, &aide};
+    CHECK(h.stepUntil(all, [&] {
+        return helper.status() == NetClient::Status::Playing &&
+               aide.status() == NetClient::Status::Playing;
+    }, 200));
+
+    // Never above the lender's own tier, and only a tier that exists.
+    CHECK(say(h, boss, "/admin grant_admin helper 1"));
+    CHECK(sawText(boss, "You are a tier 2 admin, so you can grant tier 2 to 4 only."));
+    CHECK(say(h, boss, "/admin grant_admin helper 5"));
+    CHECK(sawText(boss, "Invalid tier \"5\""));
+    CHECK(say(h, boss, "/admin grant_admin helper two"));
+    CHECK(sawText(boss, "Invalid tier \"two\""));
+    h.step(10, all);
+    CHECK(!helper.isSkinAdmin());
+
+    // Unnamed, it is the lender's own.
+    CHECK(say(h, boss, "/admin grant_admin helper"));
+    CHECK(sawText(boss, "Granted temporary admin to helper ("));
+    CHECK(sawText(boss, ") at tier 2 until they respawn."));
+    CHECK(h.stepUntil(all, [&] { return helper.isSkinAdmin(); }, 120));
+    CHECK(sawText(helper, "You have been granted tier 2 admin commands"));
+    CHECK(say(h, helper, "/admin update now"));
+    CHECK(sawText(helper, "Tier 2 admins cannot update the server"));
+    CHECK(say(h, helper, "/admin give helper rose legendary"));
+    CHECK(sawText(helper, "Gave legendary rose petal to helper"));
+
+    // Named, a lower one.
+    CHECK(say(h, boss, "/admin grant_admin aide 4"));
+    CHECK(sawText(boss, ") at tier 4 until they respawn."));
+    CHECK(h.stepUntil(all, [&] { return aide.isSkinAdmin(); }, 120));
+    CHECK(say(h, aide, "/admin give aide rose legendary"));
+    CHECK(sawText(aide, "Tier 4 admins cannot give petals"));
+    CHECK(say(h, aide, "/admin spawn bee rare"));
+    CHECK(sawText(aide, "Tier 4 admins cannot spawn mobs"));
+    CHECK(!sawText(aide, "Spawned"));
+
+    CHECK(say(h, boss, "/admin list_admins"));
+    CHECK(sawText(boss, "tier 2, granted by boss"));
+    CHECK(sawText(boss, "tier 4, granted by boss"));
+}
+
+TEST(a_higher_tier_bans_and_unbans_a_lower_one) {
+    Harness h("cmd-ban-admin", [](const std::string& path) {
+        seedUser(path, "one", "password7", true, 1);
+        seedUser(path, "two", "password7", true, 2);
+        seedUser(path, "peer", "password7", true, 2);
+        seedUser(path, "three", "password7", true, 3);
+        seedUser(path, "four", "password7", true, 4);
+        seedUser(path, "away", "password7", true, 4);
+        seedUser(path, "victim", "password7");
+        seedUser(path, "helper", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient one, two, three, four, victim, helper;
+    CHECK(loginAs(h, one, "one", "password7"));
+    CHECK(loginAs(h, two, "two", "password7"));
+    CHECK(loginAs(h, three, "three", "password7"));
+    CHECK(loginAs(h, four, "four", "password7"));
+    CHECK(loginAs(h, victim, "victim", "password7"));
+    CHECK(loginAs(h, helper, "helper", "password7"));
+    three.joinGame(1920, 1080, {}, "Three");
+    victim.joinGame(1920, 1080, {}, "Victim");
+    helper.joinGame(1920, 1080, {}, "Helper");
+    std::vector<NetClient*> all{&one, &two, &three, &four, &victim, &helper};
+    CHECK(h.stepUntil(all, [&] {
+        return three.status() == NetClient::Status::Playing &&
+               victim.status() == NetClient::Status::Playing &&
+               helper.status() == NetClient::Status::Playing;
+    }, 200));
+    const auto banned = [&](const char* name) {
+        return h.server.database().findUser(name)->adminBanned;
+    };
+
+    // Only downward: not up, not across, not yourself, and tier 4 reaches
+    // nobody.
+    CHECK(say(h, four, "/admin ban_admin three"));
+    CHECK(sawText(four, "You can only ban admins of a lower tier than your own (tier 4). three is "
+                        "tier 3."));
+    CHECK(say(h, three, "/admin ban_admin three"));
+    CHECK(sawText(three, "three is tier 3."));
+    CHECK(say(h, two, "/admin ban_admin peer"));
+    CHECK(sawText(two, "peer is tier 2."));
+    CHECK(say(h, two, "/admin ban_admin one"));
+    CHECK(sawText(two, "one is tier 1."));
+    CHECK(!banned("three") && !banned("peer") && !banned("one"));
+
+    // Steering a flower when the ban lands: it goes back.
+    CHECK(say(h, three, "/admin control victim"));
+    CHECK(h.stepUntil(all, [&] { return three.controllingFlower(); }, 60));
+
+    CHECK(say(h, two, "/admin ban_admin three"));
+    CHECK(sawText(two, "Banned three (tier 3) from admin permissions."));
+    CHECK(banned("three"));
+    CHECK(h.stepUntil(all, [&] { return !three.isSkinAdmin(); }, 120));
+    CHECK(sawText(three, "You have been banned from using admin permissions"));
+    CHECK(sawText(three, "Control ended: your admin permissions were banned."));
+    CHECK(h.stepUntil(all, [&] { return !three.controllingFlower(); }, 60));
+    const std::uint64_t beforeRefusal = three.chatSequence();
+    CHECK(say(h, three, "/admin list-players"));
+    CHECK(sawTextSince(three, beforeRefusal, "You are banned from using admin permissions."));
+    CHECK(!sawTextSince(three, beforeRefusal, "[ADMIN] three executed"));
+    CHECK(say(h, two, "/admin ban_admin three"));
+    CHECK(sawText(two, "three is already banned from admin permissions."));
+
+    // A banned admin holds none of an admin's standing: a grant would be the
+    // way round the ban, and the mute immunity goes with the rest.
+    CHECK(say(h, one, "/admin grant_admin three"));
+    CHECK(sawText(one, "three is banned from admin permissions."));
+    CHECK(!three.isSkinAdmin());
+    CHECK(say(h, one, "/admin mute three"));
+    CHECK(sawText(one, "Muted three."));
+    CHECK(say(h, one, "/admin unmute three"));
+
+    // The ban is on the account: offline too, and it outlives the session.
+    CHECK(say(h, two, "/admin ban_admin away"));
+    CHECK(sawText(two, "Banned away (tier 4) from admin permissions (offline)."));
+    NetClient awayClient;
+    CHECK(loginAs(h, awayClient, "away", "password7"));
+    h.step(10, {&awayClient});
+    CHECK(!awayClient.isSkinAdmin());
+
+    // A temporary grantee is not banned, and does not ban.
+    CHECK(say(h, one, "/admin grant_admin helper"));
+    CHECK(h.stepUntil(all, [&] { return helper.isSkinAdmin(); }, 120));
+    CHECK(say(h, two, "/admin ban_admin helper"));
+    CHECK(sawText(two, "helper is not a full admin."));
+    CHECK(say(h, helper, "/admin unban_admin four"));
+    CHECK(sawText(helper, "Only a full admin can ban or unban admins."));
+
+    CHECK(say(h, one, "/admin list_admins"));
+    CHECK(sawText(one, "Banned admins (2):"));
+    CHECK(sawText(one, "three \xE2\x80\x94 tier 3, banned by two"));
+
+    // Lifted the same way: only from above.
+    CHECK(say(h, four, "/admin unban_admin three"));
+    CHECK(sawText(four, "You can only unban admins of a lower tier than your own (tier 4)."));
+    CHECK(say(h, one, "/admin unban_admin three"));
+    CHECK(sawText(one, "Unbanned three (tier 3): admin permissions restored."));
+    CHECK(!banned("three"));
+    CHECK(h.stepUntil(all, [&] { return three.isSkinAdmin(); }, 120));
+    CHECK(sawText(three, "Your admin permissions have been restored."));
+    CHECK(say(h, three, "/admin list-players"));
+    CHECK(sawText(three, "[ADMIN] three executed: list-players"));
+    CHECK(say(h, one, "/admin unban_admin three"));
+    CHECK(sawText(one, "three is not banned from admin permissions."));
+}
+
+TEST(a_higher_tier_promotes_a_lower_one_up_to_its_own_tier) {
+    Harness h("cmd-promote-admin", [](const std::string& path) {
+        seedUser(path, "one", "password7", true, 1);
+        seedUser(path, "two", "password7", true, 2);
+        seedUser(path, "peer", "password7", true, 2);
+        seedUser(path, "three", "password7", true, 3);
+        seedUser(path, "four", "password7", true, 4);
+        seedUser(path, "away", "password7", true, 4);
+        seedUser(path, "plain", "password7");
+        seedUser(path, "helper", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient one, two, three, four, helper;
+    CHECK(loginAs(h, one, "one", "password7"));
+    CHECK(loginAs(h, two, "two", "password7"));
+    CHECK(loginAs(h, three, "three", "password7"));
+    CHECK(loginAs(h, four, "four", "password7"));
+    CHECK(loginAs(h, helper, "helper", "password7"));
+    helper.joinGame(1920, 1080, {}, "Helper");
+    std::vector<NetClient*> all{&one, &two, &three, &four, &helper};
+    CHECK(h.stepUntil(all, [&] { return helper.status() == NetClient::Status::Playing; }, 200));
+    const auto tierOf = [&](const char* name) {
+        return h.server.database().findUser(name)->adminTier;
+    };
+
+    // Before: tier 4 cannot spawn.
+    CHECK(say(h, four, "/admin spawn bee rare"));
+    CHECK(sawText(four, "Tier 4 admins cannot spawn mobs"));
+
+    // One tier up by default, and the new powers are live at once.
+    CHECK(say(h, two, "/admin promote_admin four"));
+    CHECK(sawText(two, "Promoted four from tier 4 to tier 3."));
+    CHECK_EQ(tierOf("four"), 3);
+    CHECK(h.stepUntil(all, [&] { return sawText(four, "You have been promoted to tier 3 admin."); },
+                      60));
+    std::uint64_t mark = four.chatSequence();
+    CHECK(say(h, four, "/admin spawn bee rare"));
+    CHECK(sawTextSince(four, mark, "Spawned rare bee"));
+
+    // Up to the promoter's own tier, and no further.
+    CHECK(say(h, two, "/admin promote_admin four 1"));
+    CHECK(sawText(two, "You can promote up to your own tier (tier 2) only."));
+    CHECK_EQ(tierOf("four"), 3);
+    CHECK(say(h, two, "/admin promote_admin four 2"));
+    CHECK(sawText(two, "Promoted four from tier 3 to tier 2."));
+    mark = four.chatSequence();
+    CHECK(say(h, four, "/help"));
+    CHECK(sawTextSince(four, mark, "You are a tier 2 admin."));
+
+    // Never a peer, a higher tier, or yourself; and a tier must be a tier and
+    // a raise.
+    CHECK(say(h, two, "/admin promote_admin four"));
+    CHECK(sawText(two, "four is tier 2."));
+    CHECK(say(h, two, "/admin promote_admin peer"));
+    CHECK(sawText(two, "peer is tier 2."));
+    CHECK(say(h, three, "/admin promote_admin two"));
+    CHECK(sawText(three, "two is tier 2."));
+    CHECK(say(h, three, "/admin promote_admin three"));
+    CHECK(sawText(three, "three is tier 3."));
+    CHECK(say(h, one, "/admin promote_admin three x"));
+    CHECK(sawText(one, "Invalid tier \"x\""));
+    CHECK(say(h, one, "/admin promote_admin three 4"));
+    CHECK(sawText(one, "three is already tier 3; promote_admin only raises a tier."));
+    CHECK_EQ(tierOf("two"), 2);
+    CHECK_EQ(tierOf("peer"), 2);
+    CHECK_EQ(tierOf("three"), 3);
+
+    // It raises admins; it does not make them, and temporary admins do not
+    // promote.
+    CHECK(say(h, one, "/admin promote_admin plain"));
+    CHECK(sawText(one, "plain is not a full admin."));
+    CHECK(!h.server.database().findUser("plain")->admin);
+    CHECK(say(h, one, "/admin grant_admin helper"));
+    CHECK(h.stepUntil(all, [&] { return helper.isSkinAdmin(); }, 120));
+    CHECK(say(h, helper, "/admin promote_admin three"));
+    CHECK(sawText(helper, "Only a full admin can promote admins."));
+
+    // A banned admin is unbanned first.
+    CHECK(say(h, one, "/admin ban_admin three"));
+    CHECK(say(h, one, "/admin promote_admin three"));
+    CHECK(sawText(one, "three is banned from admin permissions. unban_admin lifts it first."));
+    CHECK_EQ(tierOf("three"), 3);
+
+    // Offline by account name, and saved; tier 1 reaches tier 1.
+    CHECK(say(h, one, "/admin promote_admin away 1"));
+    CHECK(sawText(one, "Promoted away from tier 4 to tier 1 (offline)."));
+    h.server.persistAll();
+    Database probe;
+    std::string error;
+    CHECK(probe.load(h.dbPath, error));
+    const Account* stored = probe.findUser("away");
+    CHECK(stored != nullptr);
+    if (stored != nullptr) CHECK_EQ(stored->adminTier, 1);
+}
+
+TEST(a_higher_tier_demotes_a_lower_one) {
+    Harness h("cmd-demote-admin", [](const std::string& path) {
+        seedUser(path, "one", "password7", true, 1);
+        seedUser(path, "two", "password7", true, 2);
+        seedUser(path, "peer", "password7", true, 2);
+        seedUser(path, "three", "password7", true, 3);
+        seedUser(path, "four", "password7", true, 4);
+        seedUser(path, "away", "password7", true, 3);
+        seedUser(path, "plain", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient one, two, four;
+    CHECK(loginAs(h, one, "one", "password7"));
+    CHECK(loginAs(h, two, "two", "password7"));
+    CHECK(loginAs(h, four, "four", "password7"));
+    std::vector<NetClient*> all{&one, &two, &four};
+    const auto tierOf = [&](const char* name) {
+        return h.server.database().findUser(name)->adminTier;
+    };
+    const auto editorAnswers = [&] {
+        two.adminDbList("", 0);
+        h.step(30, all);
+        return !two.adminDb().accounts.empty();
+    };
+
+    // Tier 2 holds the editor's key when the demotion lands.
+    CHECK(say(h, two, "/admin db " + h.server.adminDbKey()));
+    CHECK(h.stepUntil(all, [&] { return two.adminDb().openRequested; }, 60));
+
+    // One tier down by default, and the lost powers are gone at once.
+    CHECK(say(h, one, "/admin demote_admin two"));
+    CHECK(sawText(one, "Demoted two from tier 2 to tier 3."));
+    CHECK_EQ(tierOf("two"), 3);
+    CHECK(h.stepUntil(all, [&] { return sawText(two, "You have been demoted to tier 3 admin."); },
+                      60));
+    CHECK(say(h, two, "/admin give two rose legendary"));
+    CHECK(sawText(two, "Tier 3 admins cannot give petals"));
+    CHECK(!editorAnswers());
+
+    // Promoted back, the editor asks for its key again.
+    CHECK(say(h, one, "/admin promote_admin two"));
+    CHECK(sawText(one, "Promoted two from tier 3 to tier 2."));
+    h.step(10, all);
+    CHECK(!editorAnswers());
+    CHECK(say(h, two, "/admin db " + h.server.adminDbKey()));
+    CHECK(editorAnswers());
+
+    // Named, and only downward: to the bottom and not past it.
+    CHECK(say(h, one, "/admin demote_admin three 4"));
+    CHECK(sawText(one, "Demoted three from tier 3 to tier 4 (offline)."));
+    CHECK(say(h, one, "/admin demote_admin four"));
+    CHECK(sawText(one, "four is already tier 4, the bottom tier."));
+    CHECK(say(h, one, "/admin demote_admin peer 1"));
+    CHECK(sawText(one, "peer is already tier 2; demote_admin only lowers a tier."));
+    CHECK(say(h, one, "/admin demote_admin peer 9"));
+    CHECK(sawText(one, "Invalid tier \"9\""));
+    CHECK_EQ(tierOf("peer"), 2);
+
+    // Never a peer, a higher tier, or yourself; tier 4 demotes nobody.
+    CHECK(say(h, two, "/admin demote_admin peer"));
+    CHECK(sawText(two, "You can only demote admins of a lower tier than your own (tier 2). peer "
+                       "is tier 2."));
+    CHECK(say(h, two, "/admin demote_admin one"));
+    CHECK(sawText(two, "one is tier 1."));
+    CHECK(say(h, two, "/admin demote_admin two"));
+    CHECK(sawText(two, "two is tier 2."));
+    CHECK(say(h, four, "/admin demote_admin three"));
+    CHECK(sawText(four, "three is tier 4."));
+    CHECK_EQ(tierOf("one"), 1);
+    CHECK_EQ(tierOf("peer"), 2);
+
+    // It does not unmake an admin, and a ban does not hold it up: lowered,
+    // the banned admin stays in the banner's reach.
+    CHECK(say(h, one, "/admin demote_admin plain"));
+    CHECK(sawText(one, "plain is not a full admin."));
+    CHECK(say(h, one, "/admin ban_admin away"));
+    CHECK(say(h, one, "/admin demote_admin away"));
+    CHECK(sawText(one, "Demoted away from tier 3 to tier 4 (offline)."));
+    CHECK(h.server.database().findUser("away")->adminBanned);
+    CHECK(h.server.database().findUser("away")->admin);
+}
+
 TEST(a_local_grant_makes_an_admin_the_respawn_does_not_take_back) {
     // GameServer::grantAdmin is what the offline page's Grant Admin button
     // calls: the server is in the player's own page, so the grant is a direct
