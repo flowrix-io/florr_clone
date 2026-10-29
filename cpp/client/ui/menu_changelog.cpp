@@ -506,7 +506,23 @@ constexpr ChangelogEntry kChangelog[] = {
       {
         "Changed petal physics",
         "New petal: Basil",
-      }}
+      }
+    },
+    {"October 28, 2026",
+      {
+        "New petal: Spaceship",
+        "New petal: Cube",
+        "New petal: Pentagon",
+        "Improved rates of many zones",
+        "Clover from soldier ant rate increased from 0.1 to 0.4",
+        "Optimized server performance",
+        "Fixed ocean mob AI",
+        "Fixed most top UI not sliding in",
+        "Admins now can level up infinitely, past level 500",
+        "Added admin tiers",
+        "Reworked bubble petal"
+      }
+    },
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
