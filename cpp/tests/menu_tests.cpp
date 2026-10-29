@@ -595,8 +595,41 @@ TEST(a_magic_petal_is_drawn_at_the_size_of_the_petal_it_is_the_form_of) {
         CHECK_NEAR(got.tilt, want.tilt, 1e-12);
         // And it is a real measurement rather than the fallback that happened
         // to agree: every one of these six is drawn at something other than
-        // the flat 20 units a petal gardn does not have would take.
-        CHECK(std::fabs(got.diameter - ui::kPetalIconSize * sizeStat) > 1e-9);
+        // the basic-sized box an unscaled petal gardn does not have would take.
+        const double fallback =
+            ui::petalIconMetric(content().petalIndex("basic"), 1.0).diameter * sizeStat;
+        CHECK(std::fabs(got.diameter - fallback) > 1e-9);
+    }
+}
+
+TEST(a_petal_gardn_lacks_is_drawn_as_large_as_basic) {
+    // An unscaled petal no table row measures is fitted to basic by its
+    // PICTURE, not by its box. splitter's disc covers under nine tenths of its
+    // padded viewBox, and fitting the box drew it at 0.77 of basic.
+    std::string error;
+    CHECK(loadContent(dataDir(), error));
+    SpriteCache sprites;
+    sprites.build(content(), dataDir());
+
+    const std::uint16_t basic = content().petalIndex("basic");
+    const std::uint16_t splitter = content().petalIndex("splitter");
+    if (basic == kInvalidIndex || splitter == kInvalidIndex) { CHECK(false); return; }
+    // Padded, or the rest says nothing.
+    CHECK(sprites.petalCoverage(splitter) < 0.95);
+
+    const double size = content().petal(splitter).size;
+    const double picture =
+        ui::petalIconMetric(splitter, size, &sprites).diameter * sprites.petalCoverage(splitter);
+    CHECK_NEAR(picture, ui::petalIconMetric(basic, 1.0).diameter * size, 1e-9);
+
+    // A petal that authors a visual_scale states its whole box with it,
+    // padding and all -- basil's is florr's 42 / 26 -- and is taken as written.
+    const std::uint16_t basil = content().petalIndex("basil");
+    if (basil == kInvalidIndex) { CHECK(false); return; }
+    const PetalConfig& scaled = content().petal(basil);
+    if (scaled.visualScale != 1.0) {
+        CHECK_NEAR(ui::petalIconMetric(basil, scaled.size, &sprites).diameter,
+                   ui::kPetalIconSize * scaled.size * scaled.visualScale, 1e-9);
     }
 }
 

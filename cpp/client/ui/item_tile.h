@@ -54,14 +54,16 @@ inline constexpr double kItemTileDesign = 60.0;
 inline constexpr double kPetalArtSize = 20.0;
 
 /// Design units of icon DIAMETER per unit of `size`, for a tile whose petal
-/// gardn does not have.
+/// gardn does not have and which authors a `visual_scale`: the box that scale
+/// is stated against.
 ///
 /// The same figure as kPetalArtSize, and not the same constant: a tile is
 /// written in its own 60-unit design cell and the world in world units, so the
 /// two are free to move apart again. This is where they HAVE moved apart --
 /// see kGardnIcon in the .cpp, which sizes a tile's icon from what gardn
 /// actually draws rather than from any radius. This constant is only the
-/// fallback for the petals gardn has never had.
+/// fallback for the petals gardn has never had, and a petal that authors no
+/// scale is drawn as large as basic instead.
 inline constexpr double kPetalIconSize = 20.0;
 
 /// gardn lifts the icon off centre to leave room for the name along the bottom
@@ -81,7 +83,8 @@ inline constexpr double kItemTilePlateShade = 0.8;
 /// fitting every petal to the same box throws that away, and so does sizing
 /// one by its collision radius when gardn's picture of it is twice that.
 /// gardn's measured drawing size is what kGardnIcon holds; a petal gardn does
-/// not have falls back to kPetalIconSize x `sizeStat` x `visual_scale`.
+/// not have falls back to kPetalIconSize x `sizeStat` x `visual_scale` when it
+/// authors a scale, and otherwise to a picture as large as basic's x `sizeStat`.
 ///
 /// `maxDiameter` is a caller's backstop for that fallback and nothing more:
 /// gardn's own oversize rule (shrink a petal whose radius passes 20) is
@@ -104,11 +107,16 @@ void drawPetalCluster(Canvas&, const SpriteCache&, std::uint16_t petalIndex, Rar
 /// gardn's own measurement wherever gardn has the petal, and a magic petal
 /// taking the measurement of the petal it is the magic form of -- the two are
 /// one picture in two colours, so one measurement serves both.
+///
+/// `sprites` measures how much of its box a fallback petal's art fills, which
+/// is what fits an unscaled one to basic's size; without one the art is taken
+/// to fill its box.
 struct PetalIconMetric {
     double diameter = 0;
     double tilt = 0;
 };
-PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat);
+PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat,
+                                const SpriteCache* sprites = nullptr);
 
 /// One item, and the states a surface needs to show it in.
 struct ItemTile {

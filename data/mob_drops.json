@@ -64,7 +64,7 @@
         "type": "petal",
         "itemType": "clover",
         "rarity": "common",
-        "probability": 0.1,
+        "probability": 0.4,
         "minQuantity": 1,
         "maxQuantity": 1
       }

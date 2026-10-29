@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "client/render/art_cache.h"
@@ -119,9 +120,10 @@ constexpr double kGardnShrinkAbove = 20.0;
 ///
 /// All three are rarity-invariant in gardn: it calls radius a tactical knob,
 /// not a power knob. A petal gardn does not have -- every egg past the ant's,
-/// and this game's own additions -- is not in here and falls back to
-/// kPetalIconSize x `sizeStat` x `visual_scale`. Add a row when gardn grows
-/// one, never to hand-tune an icon: this is a port, not a taste.
+/// and this game's own additions -- is not in here and falls back to basic's
+/// size, or to its own `visual_scale` (see clusterShape). Add a row when gardn
+/// grows one, or florr has the petal to measure, never to hand-tune an icon:
+/// this is a port, not a taste.
 struct GardnIcon {
     const char* id;
     double drawn;   ///< the picture's width in gardn units, outline included
@@ -148,6 +150,7 @@ constexpr GardnIcon kGardnIcon[] = {
     {"bone",             38.5,   12,  0,       1, 0.664},   // art fills 66% of its box
     {"bubble",             27,   12,  0,       0,     1},
     {"cactus",           33.5,   15,  0,       0, 0.824},   // art fills 82% of its box
+    {"poison_cactus",           33.5,   15,  0,       0, 0.824},   // art fills 82% of its box
     {"corn",               32,   16,  0,     0.5, 0.965},   // art fills 96% of its box
     {"cutter",             70,   40,  0,       0, 0.875},   // shrinks 20/40; fills 88% of its box
     {"dahlia",             17,    7, 10,       0,     1},
@@ -211,10 +214,25 @@ constexpr GardnIcon kGardnIcon[] = {
     {"computer_chip",              33,   10,  0,       0,     1},
     {"sawblade",              41.5,   10,  0,       0.2,     1},
     {"c++",              31,   10,  0,       0,     1},
+    // Not gardn's: florr's own clover (~/florr_images/petal_svg/clover.svg),
+    // which draws 26.2 across where florr's basic draws gardn's 23 -- the two
+    // games share their units. Radius from our size 1.
+    {"clover",           26.2,   10,  0,       0, 0.875},   // art fills 88% of its box
     // Not gardn's: the square's radius and outline (0.15 r) on a pentagon, so
     // the two shapes sit on a plate at one scale.
     {"pentagon",        30.78,   15,  0,       1, 0.954},   // art fills 95% of its box
 };
+
+/// What gardn draws basic at, per unit of `size`: the picture a petal on the
+/// fallback is fitted to when it authors no `visual_scale` of its own.
+constexpr double gardnDrawn(std::string_view id) {
+    for (const GardnIcon& row : kGardnIcon) {
+        if (id == row.id) return row.drawn;
+    }
+    return 0.0;
+}
+constexpr double kFallbackDrawn = gardnDrawn("basic");
+static_assert(kFallbackDrawn > 0.0, "kGardnIcon lost its basic row");
 
 /// How one petal is laid out inside a tile, in design units.
 struct ClusterShape {
@@ -235,11 +253,20 @@ struct ClusterShape {
 /// content registry is loaded before anything draws and never reloaded, and a
 /// panel of sixty tiles would otherwise run sixty string scans a frame.
 ///
-/// `visual_scale` multiplies the FALLBACK only. It is this game's way of
-/// saying "gardn draws this one much bigger than its radius" -- root is
-/// authored at 1.87 for exactly that reason -- and for a petal that is in the
-/// table above, that statement is already the measurement.
-ClusterShape clusterShape(std::uint16_t petalIndex, double sizeStat, int count) {
+/// `visual_scale` sizes the FALLBACK only. It is this game's way of saying
+/// "the reference draws this one much bigger than its radius" -- root is
+/// authored at 1.87 for exactly that reason, basil at florr's 42 / 26 -- and
+/// for a petal that is in the table above, that statement is already the
+/// measurement. Such a scale states the size of the whole box, padding and
+/// all, so it is taken as written.
+///
+/// A fallback petal that authors none is drawn as large as basic: its
+/// picture, not its box, is basic's width per unit of `size`. Fitting the box
+/// instead drew every padded document smaller than basic by its padding --
+/// splitter at 0.77 of it. `sprites` measures that padding; without one the
+/// art is taken to fill its box.
+ClusterShape clusterShape(const SpriteCache* sprites, std::uint16_t petalIndex, double sizeStat,
+                          int count) {
     static const std::vector<const GardnIcon*> byIndex = [] {
         std::vector<const GardnIcon*> out(content().petalCount(), nullptr);
         for (std::uint16_t i = 0; i < content().petalCount(); ++i) {
@@ -282,8 +309,14 @@ ClusterShape clusterShape(std::uint16_t petalIndex, double sizeStat, int count) 
     // exactly as the world renderer's petalArtScale() reads it.
     const double scale =
         petalIndex < content().petalCount() ? content().petal(petalIndex).visualScale : 0.0;
-    const double radius = kPetalIconSize * 0.5 * (sizeStat > 0 ? sizeStat : 1.0);
-    out.diameter = radius * 2.0 * (scale > 0 ? scale : 1.0);
+    const double size = sizeStat > 0 ? sizeStat : 1.0;
+    const double radius = kPetalIconSize * 0.5 * size;
+    if (scale > 0 && scale != 1.0) {
+        out.diameter = radius * 2.0 * scale;
+    } else {
+        const double coverage = sprites != nullptr ? sprites->petalCoverage(petalIndex) : 1.0;
+        out.diameter = kFallbackDrawn * size / (coverage > 0 ? coverage : 1.0);
+    }
     // Kept to the petal's size rather than gardn's fixed ring, because this
     // game authors petal size per petal: a fixed ring would leave a large
     // petal's cluster fused into a blob and a small one's scattered. And the
@@ -307,8 +340,9 @@ const SkillSet* viewerSkills = nullptr;
 
 void setViewerSkills(const SkillSet* skills) { viewerSkills = skills; }
 
-PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat) {
-    const ClusterShape shape = clusterShape(petalIndex, sizeStat, 1);
+PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat,
+                                const SpriteCache* sprites) {
+    const ClusterShape shape = clusterShape(sprites, petalIndex, sizeStat, 1);
     return PetalIconMetric{shape.diameter * shape.shrink, shape.tilt};
 }
 
@@ -328,7 +362,7 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
     // A configured count below one means "not a stack" -- third eye, antennae
     // and the observer all declare zero and are drawn as a single icon.
     const int drawCount = count >= 1 ? count : 1;
-    const ClusterShape shape = clusterShape(petalIndex, sizeStat, drawCount);
+    const ClusterShape shape = clusterShape(&sprites, petalIndex, sizeStat, drawCount);
 
     // gardn's own clamp is the `shrink` inside the shape; `maxDiameter` is a
     // caller's backstop on top of it, and a petal gardn measures is already

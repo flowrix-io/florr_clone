@@ -515,6 +515,12 @@ constexpr double kProbeTimes[] = {0.0,  0.17, 0.41, 0.58, 0.83, 1.07,
 /// fainter than this is not part of the silhouette anyone sees.
 constexpr std::uint8_t kProbeAlpha = 16;
 
+/// The box a petal's coverage is measured in, in pixels -- a pixel is under a
+/// percent of it -- and how many boxes wide the canvas is, so art that strokes
+/// past its box is measured rather than cropped.
+constexpr double kCoverageProbeBox = 128.0;
+constexpr double kCoverageProbeReach = 2.0;
+
 } // namespace
 
 std::shared_ptr<SvgDocument> SpriteCache::compileArt(const std::string& source,
@@ -535,6 +541,7 @@ bool SpriteCache::build(const ContentRegistry& content, const std::string& dataD
     mobs_.assign(content.mobCount(), Sprite{});
     mobPictureBounds_.assign(content.mobCount(), PictureBounds{});
     petals_.assign(content.petalCount(), Sprite{});
+    petalCoverage_.assign(content.petalCount(), 0.0);
 
     const auto compile = [this](const std::string& source, std::uint32_t colorRgba,
                                 const std::string& label, Sprite& out) {
@@ -807,6 +814,40 @@ bool SpriteCache::petalAnimated(std::uint16_t index) const {
     // bake blind: reported as animated so they take the long way.
     if (!sprite.usable || !sprite.document) return true;
     return sprite.document->animated();
+}
+
+double SpriteCache::petalCoverage(std::uint16_t index) const {
+    if (index >= petals_.size() || index >= petalCoverage_.size()) return 1.0;
+    double& coverage = petalCoverage_[index];
+    if (coverage > 0.0) return coverage;
+    coverage = 1.0;
+    const Sprite& sprite = petals_[index];
+    if (!sprite.usable || !sprite.document) return coverage;
+
+    const int side = static_cast<int>(std::ceil(kCoverageProbeReach * kCoverageProbeBox));
+    const double centre = side * 0.5;
+    Canvas probe = Canvas::createVirtual(side, side);
+    // A still document is the same picture at every moment; one draw is it.
+    for (const double t : kProbeTimes) {
+        draw(probe, sprite, centre, centre, kCoverageProbeBox, 0.0, t, false, 0.0);
+        if (!sprite.document->animated()) break;
+    }
+    const std::vector<std::uint8_t> rgba = probe.getImageData(0, 0, side, side);
+    if (rgba.size() != static_cast<std::size_t>(side) * side * 4) return coverage;
+
+    int minX = side, minY = side, maxX = -1, maxY = -1;
+    for (int y = 0; y < side; ++y) {
+        for (int x = 0; x < side; ++x) {
+            if (rgba[(static_cast<std::size_t>(y) * side + x) * 4 + 3] < kProbeAlpha) continue;
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+        }
+    }
+    if (maxX < 0) return coverage;
+    coverage = std::max(maxX + 1 - minX, maxY + 1 - minY) / kCoverageProbeBox;
+    return coverage;
 }
 
 Vec2 SpriteCache::petalOrigin(std::uint16_t index) const {

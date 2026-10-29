@@ -122,6 +122,16 @@ public:
     /// and for art that is not a document. Assumes the default xMidYMid meet.
     Vec2 petalOrigin(std::uint16_t index) const;
 
+    /// How much of the box drawPetal fits petal `index` into its artwork
+    /// actually paints, along the longer side: 1 for a document whose
+    /// viewBox hugs its picture, under 1 for a padded one -- splitter's disc
+    /// covers 0.88 of its box -- and over 1 for art that strokes outside it.
+    ///
+    /// Measured, not authored, as drawMobPicture's reach is: the common tier's
+    /// art is rasterised once, over the same clock moments, the first time it
+    /// is asked for. 1 for art that cannot be measured.
+    double petalCoverage(std::uint16_t index) const;
+
     /// The artwork of one map tile, by the BARE file name its tileset names
     /// (`grass_c_0.svg`). Read out of the data directory the first time it is
     /// asked for and kept thereafter, so a frame never touches the disk twice
@@ -202,6 +212,8 @@ private:
     /// reason tileArt_ is: it reports what the artwork already paints.
     mutable std::vector<PictureBounds> mobPictureBounds_;
     std::vector<Sprite> petals_;
+    /// Per petal, filled on first use by petalCoverage(); 0 is "not yet".
+    mutable std::vector<double> petalCoverage_;
     /// Per petal, ascending by `from`. Empty for almost every petal.
     std::vector<std::vector<PetalRepaint>> petalRepaints_;
     /// Where tile artwork is staged, from build().
