@@ -697,6 +697,7 @@ TEST(the_database_editor_needs_a_tier_that_may_give_and_never_changes_a_tier) {
         seedUser(path, "boss", "password7", true, 2);
         seedUser(path, "low", "password7", true, 3);
         seedUser(path, "bob", "password7");
+        seedUser(path, "owner", "password7", true, kOwnerAdminTier);
     }, dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
 
@@ -721,7 +722,7 @@ TEST(the_database_editor_needs_a_tier_that_may_give_and_never_changes_a_tier) {
     CHECK(openAccount(h, {&boss}, boss, "boss"));
     boss.adminDbSet({"account", "adminTier"}, "1");
     CHECK(!awaitResult(h, {&boss}, boss));
-    CHECK(boss.adminDb().resultMessage.find("admin flag, tier and ban") != std::string::npos);
+    CHECK(boss.adminDb().resultMessage.find("admin flag, tier, owner and ban") != std::string::npos);
     boss.adminDbRemove({"account", "adminTier"});
     CHECK(!awaitResult(h, {&boss}, boss));
     CHECK(openAccount(h, {&boss}, boss, "low"));
@@ -731,9 +732,23 @@ TEST(the_database_editor_needs_a_tier_that_may_give_and_never_changes_a_tier) {
     boss.adminDbSet({"account", "adminTier"}, "1");
     CHECK(!awaitResult(h, {&boss}, boss));
 
+    // Nor the owner: not made from here, on yourself or on anyone, and not
+    // unmade on the owner's own row, which a tier 1 or 2 could reach.
+    CHECK(openAccount(h, {&boss}, boss, "boss"));
+    boss.adminDbSet({"account", "owner"}, "true");
+    CHECK(!awaitResult(h, {&boss}, boss));
+    CHECK(boss.adminDb().resultMessage.find("admin flag, tier, owner and ban") !=
+          std::string::npos);
+    CHECK(openAccount(h, {&boss}, boss, "owner"));
+    boss.adminDbRemove({"account", "owner"});
+    CHECK(!awaitResult(h, {&boss}, boss));
+    boss.adminDbSet({"account", "adminTier"}, "1");
+    CHECK(!awaitResult(h, {&boss}, boss));
+
     CHECK_EQ(h.server.database().findUser("boss")->adminTier, 2);
     CHECK_EQ(h.server.database().findUser("low")->adminTier, 3);
     CHECK_EQ(h.server.database().findUser("bob")->adminTier, kTopAdminTier);
+    CHECK_EQ(h.server.database().findUser("owner")->adminTier, kOwnerAdminTier);
 }
 
 TEST(the_database_editor_never_sets_an_admins_password_or_ban) {
@@ -763,7 +778,7 @@ TEST(the_database_editor_never_sets_an_admins_password_or_ban) {
     for (const char* field : {"adminBanned", "adminBannedBy", "adminBannedAt"}) {
         boss.adminDbSet({"account", field}, "true");
         CHECK(!awaitResult(h, {&boss}, boss));
-        CHECK(boss.adminDb().resultMessage.find("admin flag, tier and ban") != std::string::npos);
+        CHECK(boss.adminDb().resultMessage.find("admin flag, tier, owner and ban") != std::string::npos);
     }
     CHECK(!h.server.database().findUser("low")->adminBanned);
 }

@@ -1417,6 +1417,98 @@ TEST(a_higher_tier_demotes_a_lower_one) {
     CHECK(h.server.database().findUser("away")->admin);
 }
 
+TEST(the_server_owner_is_tier_one_that_manages_tier_one) {
+    Harness h("cmd-owner", [](const std::string& path) {
+        seedUser(path, "owner", "password7", true, kOwnerAdminTier);
+        seedUser(path, "one", "password7", true, 1);
+        seedUser(path, "peer", "password7", true, 1);
+        seedUser(path, "helper", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient owner, one, helper;
+    CHECK(loginAs(h, owner, "owner", "password7"));
+    CHECK(loginAs(h, one, "one", "password7"));
+    CHECK(loginAs(h, helper, "helper", "password7"));
+    helper.joinGame(1920, 1080, {}, "Helper");
+    std::vector<NetClient*> all{&owner, &one, &helper};
+    CHECK(h.stepUntil(all, [&] { return helper.status() == NetClient::Status::Playing; }, 200));
+    const auto tierOf = [&](const char* name) {
+        return h.server.database().findUser(name)->adminTier;
+    };
+
+    // Tier 1's powers, every one of them.
+    CHECK(say(h, owner, "/help"));
+    CHECK(sawText(owner, "You are the server owner."));
+    CHECK(say(h, owner, "/admin update now"));
+    CHECK(sawText(owner, "cannot update itself"));
+    CHECK(say(h, owner, "/admin give helper rose legendary"));
+    CHECK(sawText(owner, "Gave legendary rose petal to helper"));
+    CHECK(say(h, owner, "/admin spawn bee rare"));
+    CHECK(sawText(owner, "Spawned rare bee"));
+    CHECK(!sawText(owner, "admins cannot"));
+
+    // And over tier 1: bans, unbans, demotes and promotes it back.
+    CHECK(say(h, owner, "/admin ban_admin one"));
+    CHECK(sawText(owner, "Banned one (tier 1) from admin permissions."));
+    CHECK(h.stepUntil(all, [&] { return !one.isSkinAdmin(); }, 60));
+    CHECK(say(h, owner, "/admin unban_admin one"));
+    CHECK(sawText(owner, "Unbanned one (tier 1): admin permissions restored."));
+    CHECK(h.stepUntil(all, [&] { return one.isSkinAdmin(); }, 60));
+    CHECK(say(h, owner, "/admin demote_admin one"));
+    CHECK(sawText(owner, "Demoted one from tier 1 to tier 2."));
+    CHECK_EQ(tierOf("one"), 2);
+    CHECK(say(h, owner, "/admin promote_admin one"));
+    CHECK(sawText(owner, "Promoted one from tier 2 to tier 1."));
+    CHECK_EQ(tierOf("one"), 1);
+    // The command allowance (12, refilled at two a second) runs dry before
+    // the end otherwise.
+    h.step(150, all);
+
+    // Ownership is not a tier: never promoted to, never lent.
+    CHECK(say(h, owner, "/admin promote_admin one 0"));
+    CHECK(sawText(owner, "Invalid tier \"0\""));
+    CHECK(sawText(owner, "Server owner is not a tier"));
+    CHECK(say(h, owner, "/admin promote_admin one"));
+    CHECK(sawText(owner, "one is already tier 1, the top tier."));
+    CHECK_EQ(tierOf("one"), 1);
+    CHECK(say(h, owner, "/admin grant_admin helper 0"));
+    CHECK(sawText(owner, "Invalid tier \"0\""));
+    CHECK(say(h, owner, "/admin grant_admin helper"));
+    CHECK(sawText(owner, ") at tier 1 until they respawn."));
+    CHECK(h.stepUntil(all, [&] { return helper.isSkinAdmin(); }, 120));
+
+    // Tier 1 reaches neither the owner nor a peer; the owner not itself.
+    CHECK(say(h, one, "/admin ban_admin owner"));
+    CHECK(sawText(one, "You can only ban admins of a lower tier than your own (tier 1). owner is "
+                       "the server owner."));
+    CHECK(say(h, one, "/admin demote_admin owner"));
+    CHECK(sawText(one, "You can only demote admins of a lower tier than your own (tier 1)."));
+    CHECK(say(h, one, "/admin ban_admin peer"));
+    CHECK(sawText(one, "peer is tier 1."));
+    CHECK(say(h, owner, "/admin demote_admin owner"));
+    CHECK(sawText(owner, "lower tier than your own (the server owner). owner is the server "
+                         "owner."));
+    CHECK_EQ(tierOf("owner"), kOwnerAdminTier);
+    CHECK(!h.server.database().findUser("owner")->adminBanned);
+
+    // The offline page's Grant Admin button leaves an owner the owner.
+    CHECK(h.server.grantAdmin(owner.sessionToken()));
+    CHECK_EQ(tierOf("owner"), kOwnerAdminTier);
+    CHECK(h.stepUntil(all, [&] { return sawText(owner, "You are now an admin."); }, 60));
+    CHECK(say(h, owner, "/admin ban_admin peer"));
+    CHECK(sawText(owner, "Banned peer (tier 1) from admin permissions (offline)."));
+
+    // Written back as the owner field, not as a tier.
+    h.server.persistAll();
+    Database probe;
+    std::string error;
+    CHECK(probe.load(h.dbPath, error));
+    const Account* stored = probe.findUser("owner");
+    CHECK(stored != nullptr);
+    if (stored != nullptr) CHECK_EQ(stored->adminTier, kOwnerAdminTier);
+}
+
 TEST(a_local_grant_makes_an_admin_the_respawn_does_not_take_back) {
     // GameServer::grantAdmin is what the offline page's Grant Admin button
     // calls: the server is in the player's own page, so the grant is a direct

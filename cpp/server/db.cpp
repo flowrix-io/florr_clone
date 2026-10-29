@@ -331,7 +331,12 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.passwordHash = value["password"].asString();
     account.isPlainText = value["isPlainText"].asBool(false);
     account.admin = value["admin"].asBool(false);
-    if (value.contains("adminTier")) {
+    if (value["owner"].asBool(false)) {
+        // The server owner, by its own field and only a JSON `true`: never a
+        // number in adminTier, where a mistyped value must read low, not high.
+        // It outranks any adminTier beside it.
+        account.adminTier = kOwnerAdminTier;
+    } else if (value.contains("adminTier")) {
         // Hand-written on the server's machine, so read strictly: a value that
         // is not a whole number from 1 to 4 is the bottom tier, never the top.
         const Json& tier = value["adminTier"];
@@ -352,10 +357,10 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.guest = value["guest"].asBool(false);
     account.passwordChosen = value["passwordChosen"].asBool(true);
 
-    collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "adminTier",
-                          "adminBanned", "adminBannedAt", "adminBannedBy", "lastActiveAt",
-                          "muted", "mutedAt", "mutedBy", "createdAt", "createdFromHash", "guest",
-                          "passwordChosen"},
+    collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "owner",
+                          "adminTier", "adminBanned", "adminBannedAt", "adminBannedBy",
+                          "lastActiveAt", "muted", "mutedAt", "mutedBy", "createdAt",
+                          "createdFromHash", "guest", "passwordChosen"},
                   account.extra);
     return account;
 }
@@ -369,7 +374,11 @@ Json accountToJson(const Account& account) {
     if (account.admin) out["admin"] = true;
     // Kept whether or not `admin` is set, so taking the flag away for a while
     // and giving it back does not quietly promote the account to tier 1.
-    if (account.adminTier != kTopAdminTier) out["adminTier"] = account.adminTier;
+    if (account.adminTier == kOwnerAdminTier) {
+        out["owner"] = true;
+    } else if (account.adminTier != kTopAdminTier) {
+        out["adminTier"] = account.adminTier;
+    }
     if (account.adminBanned) {
         out["adminBanned"] = true;
         if (account.adminBannedAtMillis != 0) {

@@ -787,8 +787,8 @@ private:
     /// (less a ban) and deliberately does not move when a grant is made.
     bool effectiveAdmin(const Session&) const;
     /// The tier this session's console runs at (server/admin_tiers.h): the
-    /// account's own for a database admin, the grant's for a temporary one, or
-    /// 0 for anyone else.
+    /// account's own for a database admin (kOwnerAdminTier for the server
+    /// owner), the grant's for a temporary one, or kNotAnAdmin for anyone else.
     int adminTier(const Session&) const;
     /// Whether this session's console holds `power`. False for a non-admin.
     bool adminMay(const Session&, AdminPower) const;

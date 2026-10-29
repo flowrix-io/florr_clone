@@ -265,6 +265,15 @@ std::string mintCode(Rng& rng) {
     return code;
 }
 
+/// grant_admin's and promote_admin's answer to a tier word that is not 1-4.
+/// The owner's rank is not among them, and says where it is set instead.
+std::string invalidTier(const std::string& word) {
+    return "Invalid tier \"" + word + "\". A tier is a whole number from " +
+           std::to_string(kTopAdminTier) + " (everything) to " +
+           std::to_string(kBottomAdminTier) +
+           ". Server owner is not a tier: it is set only in the database file on the server.";
+}
+
 /// The two lines several commands share, spelled once. The mute notice is
 /// the reference's own coloured span, and every road a line takes to another
 /// player sends it through GameServer::speakerMuted; the unknown-command line
@@ -301,7 +310,7 @@ int GameServer::adminTier(const Session& session) const {
     // refuses one), so there is no second tier to choose between.
     if (session.admin) return session.adminTier;
     const auto grant = tempAdmins_.find(session.connection);
-    return grant != tempAdmins_.end() ? grant->second.tier : 0;
+    return grant != tempAdmins_.end() ? grant->second.tier : kNotAnAdmin;
 }
 
 bool GameServer::adminMay(const Session& session, AdminPower power) const {
@@ -328,11 +337,11 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
     const std::string userId = record->userId;
     Account* account = database_.findUserById(userId);
     if (account == nullptr) return false;
-    if (!account->adminActive() || account->adminTier != kTopAdminTier) {
+    if (!account->adminActive() || account->adminTier > kTopAdminTier) {
         // The top tier, and no ban: this is the player's own server, in their
-        // own page.
+        // own page. An owner is left the owner.
         account->admin = true;
-        account->adminTier = kTopAdminTier;
+        account->adminTier = std::min(account->adminTier, kTopAdminTier);
         account->adminBanned = false;
         account->adminBannedAtMillis = 0;
         account->adminBannedBy.clear();
@@ -352,7 +361,7 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
     for (auto& [id, session] : sessions_) {
         if (!session.authenticated() || session.userId != userId) continue;
         session.admin = true;
-        session.adminTier = kTopAdminTier;
+        session.adminTier = account->adminTier;
         net::Connection* connection = listener_.find(id);
         if (connection == nullptr) continue;
         // The same resend a temporary grant does, and for the same reason: the
@@ -865,9 +874,12 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             help += "A &lt;username&gt; is an account name, or a bot's name.<br/>";
             // The tiers in one line (server/admin_tiers.h), so the "(tiers
             // 1-3)" marks in the listing below read without a key.
-            help += "You are a tier " + std::to_string(adminTier(session)) +
-                    " admin. Tier 1 can do everything; tier 2 cannot update the server; tier 3 "
-                    "also cannot give petals; tier 4 also cannot spawn mobs.<br/>";
+            help += (adminTier(session) == kOwnerAdminTier
+                         ? std::string("You are the server owner.")
+                         : "You are a tier " + std::to_string(adminTier(session)) + " admin.") +
+                    " Tier 1 can do everything; tier 2 cannot update the server; tier 3 also "
+                    "cannot give petals; tier 4 also cannot spawn mobs. The server owner is tier "
+                    "1 that can also manage tier 1 admins.<br/>";
             help += "Available server commands: save, list-players, list-sockets, "
                     "set_max_enemies, set_bot_count &lt;0-" + std::to_string(kMaxBots) +
                     "|default&gt;, bots (what the bot population is doing), squads (who the "
@@ -2174,18 +2186,18 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             return;
         }
         if (words.size() != 2 && !(granting && words.size() == 3)) {
-            out(granting ? "Usage: grant_admin <username> [tier 1-4]  (default: your own tier)"
+            out(granting ? "Usage: grant_admin <username> [tier 1-4]  (default: your own tier, "
+                           "or 1 from the owner)"
                          : "Usage: revoke_admin <username>");
             return;
         }
         // Lent at the lender's own tier unless a lower one is named, and never
-        // a higher one: a grant must not reach what its lender cannot.
+        // a higher one: a grant must not reach what its lender cannot. The
+        // owner lends tier 1 at most: ownership is never lent.
         const int ownTier = adminTier(session);
-        int tier = ownTier;
+        int tier = std::max(ownTier, kTopAdminTier);
         if (words.size() == 3 && (!parseInteger(words[2], tier) || !validAdminTier(tier))) {
-            out("Invalid tier \"" + words[2] + "\". A tier is a whole number from " +
-                std::to_string(kTopAdminTier) + " (everything) to " +
-                std::to_string(kBottomAdminTier) + ".");
+            out(invalidTier(words[2]));
             return;
         }
         if (tier < ownTier) {
@@ -2270,13 +2282,13 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             return;
         }
         // Downward only: a higher tier (a smaller number) over a lower one.
-        // Nobody reaches their own tier, themselves included, so tier 1 is
-        // banned by nobody and tier 4 bans nobody.
+        // Nobody reaches their own tier, themselves included, so the owner is
+        // banned by nobody, tier 1 only by the owner, and tier 4 bans nobody.
         const int ownTier = adminTier(session);
         if (account->adminTier <= ownTier) {
             out("You can only " + std::string(banning ? "ban" : "unban") +
-                " admins of a lower tier than your own (tier " + std::to_string(ownTier) + "). " +
-                account->username + " is tier " + std::to_string(account->adminTier) + ".");
+                " admins of a lower tier than your own (" + adminTierLabel(ownTier) + "). " +
+                account->username + " is " + adminTierLabel(account->adminTier) + ".");
             return;
         }
         if (account->adminBanned == banning) {
@@ -2309,7 +2321,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         // ban_admin's rules, in both directions: a full admin moves an admin
         // of a lower tier, up to their own tier and no further, or down to the
         // bottom. So nobody moves themselves, a peer or anyone above them, and
-        // nobody hands out a tier they do not hold.
+        // nobody hands out a tier they do not hold. The owner moves tier 1
+        // admins, and promotes to tier 1 at most: ownership is not a tier.
         const bool raising = verb == "promote_admin";
         const std::string doing = raising ? "promote" : "demote";
         if (!session.admin) {
@@ -2336,9 +2349,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         const int ownTier = adminTier(session);
         const int from = account->adminTier;
         if (from <= ownTier) {
-            out("You can only " + doing + " admins of a lower tier than your own (tier " +
-                std::to_string(ownTier) + "). " + account->username + " is tier " +
-                std::to_string(from) + ".");
+            out("You can only " + doing + " admins of a lower tier than your own (" +
+                adminTierLabel(ownTier) + "). " + account->username + " is " +
+                adminTierLabel(from) + ".");
             return;
         }
         if (!raising && from == kBottomAdminTier && words.size() == 2) {
@@ -2346,11 +2359,16 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 ", the bottom tier.");
             return;
         }
+        // And the top, for the owner's one step up from tier 1: that step would
+        // land on the owner's rank, which is not a tier anyone is promoted to.
+        if (raising && from == kTopAdminTier && words.size() == 2) {
+            out(account->username + " is already tier " + std::to_string(kTopAdminTier) +
+                ", the top tier. Server owner is set only in the database file on the server.");
+            return;
+        }
         int to = raising ? from - 1 : from + 1;
         if (words.size() == 3 && (!parseInteger(words[2], to) || !validAdminTier(to))) {
-            out("Invalid tier \"" + words[2] + "\". A tier is a whole number from " +
-                std::to_string(kTopAdminTier) + " (everything) to " +
-                std::to_string(kBottomAdminTier) + ".");
+            out(invalidTier(words[2]));
             return;
         }
         if (raising && to < ownTier) {
@@ -2471,8 +2489,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // The const lookup, as delete_guests reads.
             const Account* account = std::as_const(database_).findUser(username);
             if (account == nullptr || !account->admin || !account->adminBanned) continue;
-            banned.push_back(account->username + " \xE2\x80\x94 tier " +
-                             std::to_string(account->adminTier) + ", banned by " +
+            banned.push_back(account->username + " \xE2\x80\x94 " +
+                             adminTierLabel(account->adminTier) + ", banned by " +
                              (account->adminBannedBy.empty() ? std::string("Unknown")
                                                              : account->adminBannedBy) +
                              (account->adminBannedAtMillis != 0

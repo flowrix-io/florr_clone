@@ -30,11 +30,13 @@ their tier allows:
 
 ### Tiers
 
-Every admin has a tier from 1 to 4. Tier 1 can do everything; each tier below
-it loses one more power and keeps the losses of the tiers above it:
+Every admin has a tier from 1 to 4, or is the server owner. Tier 1 can do
+everything; each tier below it loses one more power and keeps the losses of the
+tiers above it. The server owner ranks above tier 1:
 
 | tier | update the server | give petals | spawn mobs |
 |---|---|---|---|
+| owner | yes | yes | yes |
 | 1 | yes | yes | yes |
 | 2 | no | yes | yes |
 | 3 | no | no | yes |
@@ -50,11 +52,24 @@ cannot give petals (tiers 1-2 only)." The dashboard's Spawn and Give tabs stay
 on screen for every tier; the server refuses, and the refusal lands in chat.
 `/help` says which tier you are.
 
+The **server owner** has tier 1's powers and is the one rank above tier 1, so
+it can ban, unban, demote and promote tier 1 admins as every tier does the
+tiers below it. Nobody can ban or demote the owner. Owner is not a tier you can
+hand out in game: the owner promotes to tier 1 at most, a grant from the owner
+is tier 1 unless it names a lower one, and the database editor refuses the
+field. More than one account can be owner; owners
+cannot act on each other.
+
 A full admin's tier is the account's `adminTier` in the database, beside
 `"admin": true`: `"adminTier": 3`. Without it the account is tier 1, which is
 every admin from before tiers. A value that is not a whole number from 1 to 4
 reads as tier 4. The database editor refuses to change it, as it refuses the
 admin flag; in game, only promotion and demotion move it.
+
+The owner is its own field, `"owner": true`, beside `"admin": true`, and it
+beats any `adminTier` on the same account. Only a JSON `true` counts. The owner
+is never `"adminTier": 0`, which reads as tier 4 like any other bad tier, so a
+typo never makes an owner. Take `"owner"` out and the account is tier 1.
 
 ### Promoting and demoting an admin
 
@@ -67,7 +82,7 @@ A full admin can move an admin of a **lower** tier:
 
 So a tier 2 admin can raise a tier 4 admin to tier 3 or 2 (not 1), lower a
 tier 3 admin to tier 4, and cannot move another tier 2 admin, a tier 1 admin,
-or themselves. Nobody demotes a tier 1 admin. Like a ban, both work by account
+or themselves. Only the owner demotes a tier 1 admin. Like a ban, both work by account
 name, online or offline, and an online admin's new powers apply at once: a
 demotion past tier 2 locks the database editor again, and a later promotion
 asks for its key again.
@@ -86,8 +101,9 @@ can lend tier 2, 3 or 4. `/admin list_admins` shows each grant's tier.
 
 A full admin can bar an admin of a **lower** tier from every admin power with
 `/admin ban_admin <username>`, and give them back with `/admin unban_admin
-<username>`. Never their own tier or a higher one: tier 1 bans tiers 2-4, tier
-2 bans 3-4, tier 3 bans 4, tier 4 bans nobody, and nobody bans a tier 1 admin.
+<username>`. Never their own tier or a higher one: the owner bans tiers 1-4,
+tier 1 bans tiers 2-4, tier 2 bans 3-4, tier 3 bans 4, tier 4 bans nobody, and
+nobody bans the owner.
 A temporary admin cannot ban, and is not banned: `revoke_admin` takes a grant
 back.
 
@@ -115,12 +131,13 @@ Stop the server (Ctrl-C, `pm2 stop` or a SIGTERM; it saves everything on the
 way out), open its database file (`inventory.json` in its working directory by
 default, or whatever `--db` names; `npm start` uses `dist/inventory.json`),
 find the account under `"users"` and add `"admin": true` to it (and
-`"adminTier": N` for any tier but 1), then start the server again. The server keeps the database in memory and writes it back on its
+`"adminTier": N` for any tier but 1, or `"owner": true` for the server
+owner), then start the server again. The server keeps the database in memory and writes it back on its
 own, so an edit made while it runs is overwritten.
 
 The single-file offline page has a **Grant Admin** button in Settings >
 Advanced that makes the account its own client is signed into a tier 1 full
-admin, since that server runs in the player's own browser tab. It hands the server
+admin (an owner stays the owner), since that server runs in the player's own browser tab. It hands the server
 that client's session token, never a name. The page's database editor key is
 fixed, so its confirmation says it, as do `/admin db`'s usage line and its
 wrong-key refusal there. Every other server keeps its key in

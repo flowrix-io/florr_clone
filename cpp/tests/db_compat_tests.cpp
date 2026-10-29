@@ -379,7 +379,10 @@ TEST(an_admin_tier_is_read_strictly_and_kept_by_a_save) {
     "nine": {"id": "u-nine", "username": "nine", "admin": true, "adminTier": 9, "password": ")" + hash + R"("},
     "half": {"id": "u-half", "username": "half", "admin": true, "adminTier": 1.5, "password": ")" + hash + R"("},
     "word": {"id": "u-word", "username": "word", "admin": true, "adminTier": "1", "password": ")" + hash + R"("},
-    "huge": {"id": "u-huge", "username": "huge", "admin": true, "adminTier": 1e300, "password": ")" + hash + R"("}
+    "huge": {"id": "u-huge", "username": "huge", "admin": true, "adminTier": 1e300, "password": ")" + hash + R"("},
+    "boss": {"id": "u-boss", "username": "boss", "admin": true, "owner": true, "password": ")" + hash + R"("},
+    "over": {"id": "u-over", "username": "over", "admin": true, "owner": true, "adminTier": 3, "password": ")" + hash + R"("},
+    "fake": {"id": "u-fake", "username": "fake", "admin": true, "owner": "true", "password": ")" + hash + R"("}
   },
   "players": {}
 })");
@@ -397,6 +400,11 @@ TEST(an_admin_tier_is_read_strictly_and_kept_by_a_save) {
     for (const char* malformed : {"zero", "nine", "half", "word", "huge"}) {
         CHECK_EQ(tierOf(malformed), kBottomAdminTier);
     }
+    // The owner is its own field, a JSON true and nothing else, over any tier
+    // beside it. Not 0 in adminTier ("zero" above), and not a string.
+    CHECK_EQ(tierOf("boss"), kOwnerAdminTier);
+    CHECK_EQ(tierOf("over"), kOwnerAdminTier);
+    CHECK_EQ(tierOf("fake"), kTopAdminTier);
 
     db.markDirty();
     CHECK(db.save());
@@ -407,6 +415,11 @@ TEST(an_admin_tier_is_read_strictly_and_kept_by_a_save) {
     CHECK_EQ(saved["users"]["two"]["adminTier"].asInt(), 2);
     CHECK_EQ(saved["users"]["four"]["adminTier"].asInt(), 4);
     CHECK_EQ(saved["users"]["word"]["adminTier"].asInt(), kBottomAdminTier);
+    CHECK(saved["users"]["boss"]["owner"].asBool(false));
+    CHECK(!saved["users"]["boss"].contains("adminTier"));
+    CHECK(!saved["users"]["over"].contains("adminTier"));
+    CHECK(!saved["users"]["old"].contains("owner"));
+    CHECK(!saved["users"]["fake"].contains("owner"));
 
     // A ban rides along the same way, and stays off a row that has none.
     db.findUser("two")->adminBanned = true;
@@ -436,7 +449,9 @@ TEST(an_admin_tier_is_read_strictly_and_kept_by_a_save) {
     CHECK(!adminTierAllows(3, AdminPower::GivePetals));
     CHECK(adminTierAllows(3, AdminPower::SpawnMobs));
     CHECK(!adminTierAllows(4, AdminPower::SpawnMobs));
-    CHECK(!adminTierAllows(0, AdminPower::SpawnMobs));
+    CHECK(adminTierAllows(kOwnerAdminTier, AdminPower::UpdateServer));
+    CHECK(!adminTierAllows(kNotAnAdmin, AdminPower::SpawnMobs));
+    CHECK(!adminTierAllows(5, AdminPower::SpawnMobs));
 
     std::remove(path.c_str());
 }

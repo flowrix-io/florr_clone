@@ -20,14 +20,15 @@
 //    fields -- id, username, password -- are not editable: the first two key
 //    the indices the whole database is looked up through, and a password is
 //    set through its own action, which hashes it and revokes the sessions.
-//    Nor are `admin` and `adminTier`, for anyone, on any account: who holds
-//    the keys to the server is a security decision, and one compromised or
-//    careless admin session must not be able to mint more admins, raise its
-//    own tier, or lock the others out from a panel. The flag is set on the
-//    server's own machine, not from inside the game, and a tier moves in game
-//    only through promote_admin and demote_admin. Nor is an admin ban
-//    (`adminBanned...`): those commands and ban_admin hold tiers and bans to
-//    the tier order, which the editor would step round. And an admin's password is not set here either
+//    Nor are `admin`, `adminTier` and `owner`, for anyone, on any account:
+//    who holds the keys to the server is a security decision, and one
+//    compromised or careless admin session must not be able to mint more
+//    admins, raise its own tier, or lock the others out from a panel. The
+//    flag and the owner are set on the server's own machine, not from inside
+//    the game, and a tier moves in game only through promote_admin and
+//    demote_admin. Nor is an admin ban (`adminBanned...`): those commands and
+//    ban_admin hold tiers and bans to the tier order, which the editor would
+//    step round. And an admin's password is not set here either
 //    (Database::setPassword).
 //
 //  * One of the unmodelled top-level TABLES (codes, guilds, notifications,
@@ -554,9 +555,10 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
                    "changed here.");
             return;
         }
-        if (field == "admin" || field == "adminTier" || field.rfind("adminBanned", 0) == 0) {
-            refuse("The admin flag, tier and ban cannot be changed from the editor, for security. "
-                   "Use promote_admin, demote_admin, ban_admin and unban_admin.");
+        if (field == "admin" || field == "adminTier" || field == "owner" ||
+            field.rfind("adminBanned", 0) == 0) {
+            refuse("The admin flag, tier, owner and ban cannot be changed from the editor, for "
+                   "security. Use promote_admin, demote_admin, ban_admin and unban_admin.");
             return;
         }
     }

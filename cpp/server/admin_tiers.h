@@ -4,6 +4,7 @@
 // Tier 1 is everything an admin could do before tiers existed. Each tier below
 // it loses one more power and keeps every loss of the tiers above it:
 //
+//   owner   everything, and reaches tier 1 admins (below)
 //   tier 1  everything
 //   tier 2  cannot update the server
 //   tier 3  cannot update the server or give petals
@@ -18,10 +19,19 @@
 // grant carries a tier of its own, chosen by the admin who lends it, at their
 // own tier or below.
 //
+// The SERVER OWNER is a rank above tier 1, kOwnerAdminTier: tier 1's powers,
+// and the one rank that stands over tier 1 admins, so it bans, unbans, demotes
+// and promotes them as every tier does the tiers below it. It is the account's
+// `"owner": true`, set only in the database file -- never in game, where no
+// command names it as a tier to grant or promote to, and never from the
+// editor -- and it is NOT a number in `adminTier`, whose strict read turns a
+// mistyped value into the bottom tier, never the top.
+//
 // A full admin may also ban an admin of a LOWER tier from every admin power,
 // and lift it (`ban_admin`, `unban_admin`): never their own tier or a higher
-// one, so tier 1 is banned by nobody and tier 4 bans nobody. The ban is on the
-// account (Account::adminBanned) and leaves its tier and flag where they are.
+// one, so the owner is banned by nobody and tier 4 bans nobody. The ban is on
+// the account (Account::adminBanned) and leaves its tier and flag where they
+// are.
 //
 // Everything else the console does -- announce, the database editor's key,
 // grant_admin -- keeps its own rule on top of this one (chat_commands.cpp).
@@ -31,8 +41,12 @@
 
 namespace flix {
 
+/// The server owner's rank: above every tier, so it reaches tier 1.
+inline constexpr int kOwnerAdminTier = 0;
 inline constexpr int kTopAdminTier = 1;
 inline constexpr int kBottomAdminTier = 4;
+/// What GameServer::adminTier says of a session that holds no admin standing.
+inline constexpr int kNotAnAdmin = -1;
 
 enum class AdminPower {
     UpdateServer,   ///< `update`
@@ -50,14 +64,23 @@ constexpr int lowestTierWith(AdminPower power) {
     return kTopAdminTier;
 }
 
+/// A tier an admin can be given in game -- granted, promoted or demoted to:
+/// 1 to 4. The owner's rank is not one of them.
 constexpr bool validAdminTier(int tier) {
     return tier >= kTopAdminTier && tier <= kBottomAdminTier;
 }
 
-/// Whether an admin of `tier` holds `power`. Anything that is not a tier holds
-/// nothing, so a caller that passes "not an admin" (0) is refused too.
+/// Whether an admin of `tier` holds `power`. Anything that is not a tier or
+/// the owner's rank holds nothing, so "not an admin" is refused too.
 constexpr bool adminTierAllows(int tier, AdminPower power) {
-    return validAdminTier(tier) && tier <= lowestTierWith(power);
+    return tier >= kOwnerAdminTier && tier <= kBottomAdminTier &&
+           tier <= lowestTierWith(power);
+}
+
+/// "the server owner" or "tier 3", for "X is ..." and "(...)".
+inline std::string adminTierLabel(int tier) {
+    return tier == kOwnerAdminTier ? std::string("the server owner")
+                                   : "tier " + std::to_string(tier);
 }
 
 /// "update the server", for a refusal's "Tier 3 admins cannot ...".

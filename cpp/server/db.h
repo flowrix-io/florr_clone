@@ -144,6 +144,8 @@ struct Account {
     /// only while `admin` is set. An absent field is tier 1, which every admin
     /// from before tiers is; one that is there but is not a tier reads as the
     /// bottom one, so a typo in the file never hands out more than it meant.
+    /// kOwnerAdminTier for the server owner, which the file says as
+    /// `"owner": true` instead (accountFromJson).
     int adminTier = kTopAdminTier;
     /// Barred from every admin power by an admin of a higher tier (`/admin
     /// ban_admin`) until one lifts it. The account stays an admin -- its tier,
