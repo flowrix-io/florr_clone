@@ -202,7 +202,7 @@ inline constexpr double kLatentSleepMargin = 500.0;
 ///
 /// It says nothing about how many mobs the world holds: the map is stocked to
 /// its own area whatever this is, and the rest of that population is latent.
-inline constexpr int kMaxLiveMobs = 900;
+inline constexpr int kMaxLiveMobs = 3000;
 
 /// Every escort -- a hole's or a server's guard and waves, a queen's soldiers
 /// -- comes up out of the CENTRE of whatever spawned it, this far off it on a
