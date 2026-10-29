@@ -152,6 +152,15 @@ struct ProjectileSpec {
     /// leaves this empty.
     std::string ammoPetalId;
     std::uint16_t ammoPetalIndex = kInvalidIndex;
+
+    /// A shot that SUMMONS where it lands on a mob -- the spaceship's glitch
+    /// flowers. Each landing hatches one more of the owner's pets there while
+    /// fewer than `summonMax` are out, counted across the whole flower; at the
+    /// cap it moves the one placed longest ago there instead
+    /// (PetalSystem::landShots). Petals only: a mob's shot summons nothing.
+    std::string summonMobId;
+    std::uint16_t summonMobIndex = kInvalidIndex;
+    int summonMax = 0;
 };
 
 /// A mob that throws lightning.

@@ -1801,7 +1801,7 @@
     },
     "sawblade": {
         "name": "Sawblade",
-        "damage": 20,
+        "damage": 25,
         "health": 10,
         "size": 1,
         "cooldown": 2500,
@@ -1862,5 +1862,41 @@
         "ignoresMobs": true,
         "minRarity": "mythic",
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-21 -18.6 42 37.2\"><g transform=\"matrix(1 0 0 1 3 0)\"><path d=\"M 0 0 C 3 -10.5 11 -3.5 15.5 0 C 11 3.5 3 10.5 0 0 Z\" fill=\"none\" stroke=\"#288034\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M 0 0 C 3 -10.5 11 -3.5 15.5 0 C 11 3.5 3 10.5 0 0 Z\" fill=\"#319e40\"/></g><g transform=\"matrix(-0.5 0.866025 -0.866025 -0.5 -1.5 2.598076)\"><path d=\"M 0 0 C 3 -10.5 11 -3.5 15.5 0 C 11 3.5 3 10.5 0 0 Z\" fill=\"none\" stroke=\"#288034\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M 0 0 C 3 -10.5 11 -3.5 15.5 0 C 11 3.5 3 10.5 0 0 Z\" fill=\"#319e40\"/></g><g transform=\"matrix(-0.5 -0.866025 0.866025 -0.5 -1.5 -2.598076)\"><path d=\"M 0 0 C 3 -10.5 11 -3.5 15.5 0 C 11 3.5 3 10.5 0 0 Z\" fill=\"none\" stroke=\"#288034\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M 0 0 C 3 -10.5 11 -3.5 15.5 0 C 11 3.5 3 10.5 0 0 Z\" fill=\"#319e40\"/></g><path d=\"M 3.5 0 Q 8 -2 13.5 0 M -1.75 3.031 Q -2.268 7.928 -6.75 11.691 M -1.75 -3.031 Q -5.732 -5.928 -6.75 -11.691\" fill=\"none\" stroke=\"#288034\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+    },
+    "cube": {
+        "name": "Cube",
+        "damage": 10,
+        "health": 10,
+        "size": 1,
+        "cooldown": 2500,
+        "price": 10,
+        "description": "It's the same as a square, but in 3D.",
+        "color": "#00ff00",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\">\n  <g transform=\"translate(16, 16)\">\n    \n    <g transform=\"translate(0, 8) scale(1, 0.5)\">\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; -360\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#8B00FF\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\"/>\n      </g>\n    </g>\n\n    <g>\n      <animateTransform attributeName=\"transform\" type=\"translate\" values=\"0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4\" dur=\"4s\" repeatCount=\"indefinite\" />\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"scale\" values=\"-1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <g>\n          <animateTransform attributeName=\"transform\" type=\"skewY\" values=\"0; 14.036; 23.413; 26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565; -23.413; -14.036; 0\" dur=\"4s\" repeatCount=\"indefinite\" />\n          <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#FFFF00\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\" />\n        </g>\n      </g>\n    </g>\n\n    <g>\n      <animateTransform attributeName=\"transform\" type=\"translate\" values=\"-8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0\" dur=\"4s\" repeatCount=\"indefinite\" />\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"scale\" values=\"0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <g>\n          <animateTransform attributeName=\"transform\" type=\"skewY\" values=\"26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565\" dur=\"4s\" repeatCount=\"indefinite\" />\n          <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#00FF00\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\" />\n        </g>\n      </g>\n    </g>\n\n    <g>\n      <animateTransform attributeName=\"transform\" type=\"translate\" values=\"8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0\" dur=\"4s\" repeatCount=\"indefinite\" />\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"scale\" values=\"0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <g>\n          <animateTransform attributeName=\"transform\" type=\"skewY\" values=\"-26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565\" dur=\"4s\" repeatCount=\"indefinite\" />\n          <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#FF7F00\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\" />\n        </g>\n      </g>\n    </g>\n\n    <g>\n      <animateTransform attributeName=\"transform\" type=\"translate\" values=\"0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4\" dur=\"4s\" repeatCount=\"indefinite\" />\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"scale\" values=\"1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <g>\n          <animateTransform attributeName=\"transform\" type=\"skewY\" values=\"0; -14.036; -23.413; -26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565; 23.413; 14.036; 0\" dur=\"4s\" repeatCount=\"indefinite\" />\n          <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#FF0000\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\" />\n        </g>\n      </g>\n    </g>\n\n    <g transform=\"translate(0, -8) scale(1, 0.5)\">\n      <g>\n        <animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; -360\" dur=\"4s\" repeatCount=\"indefinite\" />\n        <rect x=\"-8\" y=\"-8\" width=\"16\" height=\"16\" fill=\"#0000FF\" fill-opacity=\"0.8\" stroke=\"#111\" stroke-width=\"0.5\" stroke-linejoin=\"round\"/>\n      </g>\n    </g>\n    \n  </g>\n</svg>"
+    },
+    "spaceship": {
+        "name": "Spaceship",
+        "damage": 15,
+        "health": 5,
+        "size": 1,
+        "cooldown": 5000,
+        "price": 150,
+        "description": "There may be aliens inside this petal.",
+        "color": "#7c7c7c",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><path d=\"M9.195 16.32c.053-.803-.856-2.039-1.839-2.409-.982-.37-2.937-.18-4.057.19S.667 15.709.636 16.132s1.944.38 2.472.507.856.126.698.253-1.66.201-1.649.508c.01.306.899 1.109 1.712 1.33.814.223 2.283.402 3.17 0s2.103-1.605 2.156-2.408\" fill=\"#f90\"/><path d=\"M9.2 16.316c.035-.602-.578-1.529-1.24-1.806s-1.981-.134-2.736.143-1.775 1.203-1.796 1.52 1.311.285 1.667.38.577.095.47.19-1.118.15-1.111.38.606.832 1.154.998 1.54.301 2.138 0c.598-.3 1.418-1.204 1.454-1.805\" fill=\"#ff0\"/><path d=\"M22.193 20.444c.908.59-2.463 2.996-3.931 3.967-1.47.97-3.974 2.448-4.882 1.857-.91-.59-2.04-4.431-.571-5.402s8.475-1.013 9.384-.422m-.508-8.943c.91-.591-2.462-2.997-3.93-3.968-1.47-.97-3.974-2.448-4.883-1.857s-2.039 4.432-.57 5.403 8.475 1.012 9.383.422m-7.798 2.284c.306.908.856 3.127-.19 4.374s-4.85 3.403-6.087 3.107-1.205-3.286-1.331-4.882-.36-4.079.57-4.692 3.836.666 5.009 1.015 1.723.169 2.029 1.078\" fill=\"#2ddd07\"/><path d=\"M10.717 8.966c-.486 1.215-.951 4.174-.951 6.467s.063 5.97.95 7.291 1.882.761 4.376.634c2.494-.126 7.915-.147 10.588-1.394 2.674-1.247 5.368-4.153 5.453-6.087s-1.87-4.227-4.946-5.516c-3.075-1.29-10.926-1.987-13.505-2.22s-1.479-.39-1.965.825\" fill=\"#25b706\"/><path d=\"M17.843 13.841c.53.484.78 2.11.418 2.815-.362.703-1.868 1.51-2.593 1.407s-1.66-1.305-1.757-2.023.516-1.92 1.172-2.287 2.23-.396 2.76.088zm5.832 5.01c-.856-.003-2.438-1.244-2.723-2.16s.312-2.84 1.012-3.332c.701-.492 2.504-.177 3.191.382s1.18 2.118.933 2.97-1.557 2.144-2.413 2.14z\" stroke-width=\".566\" fill=\"#efefef\" stroke=\"#666\" stroke-linejoin=\"round\"/></svg>",
+        "isAdminPetal": false,
+        "minRarity": "super",
+        "projectile": {
+            "count": 1,
+            "distance": 700,
+            "speed": 350,
+            "spreadAngle": 0,
+            "seekRange": 1000,
+            "seekCone": 0.7853981633974483,
+            "summonMobType": "glitch_flower",
+            "summonMax": 3
+        }
     }
 }

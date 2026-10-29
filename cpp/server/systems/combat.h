@@ -180,6 +180,19 @@ struct DamageResult {
     bool dodged = false;
 };
 
+/// A summoning shot (ProjectileSpec::summonMobIndex) that landed on a mob this
+/// tick. Combat only sees it land; the summon is the ring's business, and the
+/// server hands the list over once combat is done (PetalSystem::landShots).
+struct ShotLanding {
+    Entity owner = NULL_ENTITY;
+    std::uint8_t slot = kLoadoutSlots;
+    std::uint16_t petalIndex = kNoPetal;
+    Rarity rarity = Rarity::Common;
+    Realm realm = Realm::Overworld;
+    /// The point on the shot's path closest to the mob it hit.
+    Vec2 at;
+};
+
 class CombatSystem {
 public:
     CombatSystem();
@@ -373,6 +386,10 @@ public:
     };
     const std::vector<DeathRecord>& deaths() const { return deaths_; }
 
+    /// Summoning shots that landed on a mob during the last run(), in the
+    /// order they landed.
+    const std::vector<ShotLanding>& shotLandings() const { return shotLandings_; }
+
     /// Pays `xp` onto `player`'s live PlayerProgress and, when that crosses a
     /// level, applies the level-up at once: the new level's health (full) and
     /// body damage. Every XP the world pays goes through here -- a kill's,
@@ -554,6 +571,8 @@ private:
         Entity victim = NULL_ENTITY;
         Vec2 offset;
         double distanceSquared = 0;
+        /// The point on the shot's path closest to the victim.
+        Vec2 at;
     };
 
     struct PoisonTick {
@@ -794,6 +813,7 @@ private:
     /// player each tick. Reused rather than allocated in resolveMelee().
     std::vector<Entity> mobContactedPlayers_;
     std::vector<DeathRecord> deaths_;
+    std::vector<ShotLanding> shotLandings_;
     /// The segments behind a shared chain's pool owner, gathered before any of
     /// them is touched. A member so a hit on a leech allocates nothing.
     std::vector<Entity> chainScratch_;

@@ -5,6 +5,7 @@
 #include "server/db.h"
 #include "server/game_server.h"
 #include "server/systems/mob_ai.h"
+#include "server/systems/petals.h"
 #include "server_harness.h"
 #include "shared/game/config.h"
 
@@ -1757,4 +1758,89 @@ TEST(a_wax_is_put_down_through_the_real_server_loop_and_arrives_loose) {
     if (seen == nullptr) return;
     CHECK(!seen->isRingPetal());
     CHECK_NEAR(seen->radius, 90.0, 0.01);
+}
+
+TEST(spaceship_shots_bring_at_most_three_glitch_flowers_through_the_real_server_loop) {
+    // The unit tests drive each half on its own -- combat books the landing,
+    // the ring answers it. This fires real shots through the server's tick,
+    // from a spaceship in every slot, so the cap is the flower's and not each
+    // slot's.
+    Harness h("spaceship", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(flix::testsupport::loginNew(h, client, "astronaut", "long-enough-password"));
+    client.joinGame(1280, 720);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity player = NULL_ENTITY;
+    Query<PlayerTag> players{world};
+    players.each([&](Entity e, PlayerTag&) { player = e; });
+    CHECK(player != NULL_ENTITY);
+    if (player == NULL_ENTITY) return;
+    world.get<Health>(player).invulnerableUntilMillis = 1e18;
+    const Realm realm = world.get<Transform>(player).realm;
+    Loadout& loadout = world.get<Loadout>(player);
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        LoadoutSlot& slot = loadout.slots[static_cast<std::size_t>(i)];
+        slot.configIndex = content().petalIndex("spaceship");
+        slot.rarity = Rarity::Super;
+    }
+    net::InputFrame attack;
+    attack.sequence = 1;
+    attack.flags = net::InputAttack;
+    client.sendInput(attack);
+
+    // Wild mobs held in a ring around the flower, out past its petals and well
+    // inside a shot's reach, so whichever way a spaceship faces when it fires
+    // there is one ahead of it. Too tough to die, so none runs out.
+    std::vector<Entity> targets;
+    CHECK(h.stepUntil({&client}, [&] {
+        targets.clear();
+        Query<MobTag, Transform, Health> mobs{world};
+        mobs.without<Pet, BodySegment, Intangible>();
+        mobs.each([&](Entity e, MobTag&, Transform& transform, Health&) {
+            if (transform.realm == realm && targets.size() < 8) targets.push_back(e);
+        });
+        return targets.size() >= 4;
+    }, 400));
+    if (targets.size() < 4) return;
+    for (const Entity target : targets) world.get<Health>(target) = Health{1e15, 1e15, 0.0, 0.0};
+    const auto pin = [&] {
+        const Vec2 centre = world.get<Transform>(player).position;
+        for (std::size_t i = 0; i < targets.size(); ++i) {
+            Transform* transform = world.tryGet<Transform>(targets[i]);
+            if (transform == nullptr) continue;
+            const double angle = kTau * static_cast<double>(i) / static_cast<double>(targets.size());
+            transform->position = centre + Vec2::fromAngle(angle, 400.0);
+            if (Motion* motion = world.tryGet<Motion>(targets[i])) motion->velocity = {0, 0};
+        }
+    };
+
+    const std::uint16_t glitchFlower = content().mobIndex("glitch_flower");
+    int most = 0;
+    const auto summoned = [&] {
+        int count = 0;
+        Query<Pet, MobType> pets{world};
+        pets.each([&](Entity, Pet& pet, MobType& type) {
+            if (pet.owner == player && type.configIndex == glitchFlower) ++count;
+        });
+        most = std::max(most, count);
+        return count;
+    };
+    CHECK(h.stepUntil({&client}, [&] { pin(); return summoned() == 3; }, 1500));
+    const std::vector<Entity> firstThree = world.get<PetalSlotState>(player).shotSummons;
+    CHECK_EQ(firstThree.size(), std::size_t(3));
+    if (firstThree.size() != 3) return;
+
+    // Landings at the cap bring no fourth: they move the oldest out to where
+    // they hit, which sends it, still standing, to the back of the line.
+    const Entity oldest = firstThree.front();
+    CHECK(h.stepUntil({&client}, [&] {
+        pin();
+        summoned();
+        const std::vector<Entity>& now = world.get<PetalSlotState>(player).shotSummons;
+        return world.isAlive(oldest) && !now.empty() && now.back() == oldest;
+    }, 1500));
+    CHECK_EQ(most, 3);
 }

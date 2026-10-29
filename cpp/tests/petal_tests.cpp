@@ -86,7 +86,8 @@ const char* const kPetalsJson = R"JSON({
   "cursor":   {"name":"Cursor","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"color":"#EEEEEE"},
   "ram":      {"name":"RAM","damage":10,"health":2,"size":1,"cooldown":3000,"count":1,"color":"#3498DB"},
   "sawblade": {"name":"Sawblade","damage":20,"health":10,"size":1,"cooldown":2500,"count":1,"defendOnly":true,"color":"#AAAAAA"},
-  "carrot":   {"name":"Carrot","damage":18,"health":18,"size":1.4,"cooldown":1000,"count":1,"projectile":{"count":1,"distance":500,"speed":300,"spreadAngle":0},"color":"#F09148"}
+  "carrot":   {"name":"Carrot","damage":18,"health":18,"size":1.4,"cooldown":1000,"count":1,"projectile":{"count":1,"distance":500,"speed":300,"spreadAngle":0},"color":"#F09148"},
+  "saucer":   {"name":"Saucer","damage":15,"health":5,"size":1,"cooldown":1000,"count":1,"projectile":{"count":1,"distance":700,"speed":350,"spreadAngle":0,"summonMobType":"critter","summonMax":3},"color":"#7C7C7C"}
 })JSON";
 
 const char* const kMobsJson = R"JSON({
@@ -3633,6 +3634,81 @@ TEST(unequipping_a_summoner_recalls_its_pets) {
     CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
     rig.unequip(0);
     rig.tick();
+    CHECK_EQ(rig.petCount(), std::size_t(0));
+}
+
+TEST(a_summoning_shot_brings_one_summon_per_landing_up_to_its_cap) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(2, "saucer");
+    rig.settleEquips();
+    // Sitting on the ring hatches nothing: it is not an egg.
+    CHECK_EQ(rig.petCount(), std::size_t(0));
+
+    const std::uint16_t saucer = petalId("saucer");
+    const auto land = [&](Vec2 at) {
+        rig.system.landShots(rig.world, fixture().registry,
+                             {ShotLanding{rig.player, 2, saucer, Rarity::Common,
+                                          Realm::Overworld, at}},
+                             nullptr);
+    };
+    const auto summons = [&] { return rig.world.get<PetalSlotState>(rig.player).shotSummons; };
+
+    const Vec2 spots[] = {{1500, 1000}, {1000, 1500}, {500, 1000}};
+    for (const Vec2 at : spots) land(at);
+    CHECK_EQ(rig.petCount(), std::size_t(3));
+    const std::vector<Entity> placed = summons();
+    CHECK_EQ(placed.size(), std::size_t(3));
+    if (placed.size() != 3) return;
+    for (std::size_t i = 0; i < placed.size(); ++i) {
+        const Entity pet = placed[i];
+        CHECK_EQ(rig.world.get<MobType>(pet).configIndex, fixture().registry.mobIndex("critter"));
+        CHECK_EQ(rig.world.get<Pet>(pet).owner, rig.player);
+        CHECK_EQ(static_cast<int>(rig.world.get<Pet>(pet).slot), 2);
+        // Where the shot landed, give or take the spread a squad lands with.
+        const double spread = rig.world.get<Body>(pet).radius * 2.0 + kPlayerBaseRadius;
+        CHECK(distance(rig.position(pet), spots[i]) <= spread + 1e-9);
+    }
+
+    // At the cap a landing moves the oldest there instead, and makes it the
+    // newest: the next landing moves the one after it.
+    land({1200, 1200});
+    CHECK_EQ(rig.petCount(), std::size_t(3));
+    CHECK_NEAR(rig.position(placed[0]).x, 1200.0, 1e-9);
+    CHECK_NEAR(rig.position(placed[0]).y, 1200.0, 1e-9);
+    CHECK_EQ(summons().back(), placed[0]);
+    land({800, 800});
+    CHECK_NEAR(rig.position(placed[1]).x, 800.0, 1e-9);
+    CHECK_NEAR(rig.position(placed[1]).y, 800.0, 1e-9);
+    CHECK_NEAR(rig.position(placed[0]).x, 1200.0, 1e-9);
+
+    // A summon killed in the field frees its place for the next landing.
+    rig.world.add<Dead>(placed[2]);
+    rig.reap();
+    land({1000, 600});
+    CHECK_EQ(rig.petCount(), std::size_t(3));
+    CHECK(rig.world.isAlive(placed[0]));
+    CHECK(rig.world.isAlive(placed[1]));
+
+    // The ring leaves them be while the petal stays on, and recalls them
+    // with it.
+    rig.tick(30);
+    CHECK_EQ(rig.petCount(), std::size_t(3));
+    rig.unequip(2);
+    rig.tick();
+    CHECK_EQ(rig.petCount(), std::size_t(0));
+}
+
+TEST(a_summoning_shot_landing_after_its_petal_came_off_summons_nothing) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(2, "basic");
+    rig.settleEquips();
+    // In flight when the saucer was swapped out for the basic.
+    rig.system.landShots(rig.world, fixture().registry,
+                         {ShotLanding{rig.player, 2, petalId("saucer"), Rarity::Common,
+                                      Realm::Overworld, {1500, 1000}}},
+                         nullptr);
     CHECK_EQ(rig.petCount(), std::size_t(0));
 }
 

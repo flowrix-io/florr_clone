@@ -1056,6 +1056,9 @@ void GameServer::runSystems(double nowMillis, double dt) {
     });
     markTickPhase("regrid");
     combat_->runWorldPhase(world_, grid_, content(), nowMillis, dt);
+    // A summoning shot -- the spaceship's -- is only SEEN landing by combat;
+    // the summon is the ring's, made once combat has stopped walking the world.
+    petals_->landShots(world_, content(), combat_->shotLandings(), terrain_.get());
     markTickPhase("combat");
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,
                    net::kTickSeconds, commands_);

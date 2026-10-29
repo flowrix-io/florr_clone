@@ -1774,6 +1774,7 @@ void CombatSystem::beginTick(World& world, double nowMillis, double dt, EventQue
     bind(world);
     events_ = &events;
     deaths_.clear();
+    shotLandings_.clear();
     ++tick_;
 
     // Standing damage first, so a mob that was already dying from poison is
@@ -2845,6 +2846,8 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         const std::uint16_t petalIndex = projectile->petalConfigIndex;
         const Rarity rarity = projectile->rarity;
         const bool infecting = projectile->glitchInfecting;
+        const Entity owner = projectile->owner;
+        const std::uint8_t slot = projectile->slot;
         // A blueberry's shot lands as lightning, exactly as its body does.
         const DamageKind hitKind =
             petalIndex != kNoPetal && content.petal(petalIndex).lightningDamage
@@ -2908,7 +2911,7 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                 markGlitched(world, victim);
             }
             if (!canHit(world, victim, shot.entity, nowMillis)) continue;
-            impacts_.push_back({victim, offset, distanceSquared});
+            impacts_.push_back({victim, offset, distanceSquared, nearest});
         }
         if (impacts_.empty()) continue;
 
@@ -2928,6 +2931,8 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             hasStats ? content.petalStats(petalIndex, rarity) : PetalStats{};
         const double reloadInterval = hasStats ? stats.damageIntervalMillis
                                                : kPetalHitIntervalMillis;
+        const bool summons =
+            hasStats && content.petal(petalIndex).projectile.summonMobIndex != kInvalidIndex;
 
         for (const ShotImpact& impact : impacts_) {
             if (!world.isAlive(shot.entity) || world.has<Dead>(shot.entity)) break;
@@ -2948,6 +2953,7 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // no longer has the components this reads.
             const double cost = bodyDamageOf(world, content, impact.victim);
             const bool victimIsShot = world.has<Projectile>(impact.victim);
+            const bool victimIsMob = world.has<MobTag>(impact.victim);
 
             DamageResult hit =
                 applyDamage(world, impact.victim, shot.entity, damage, nowMillis, hitKind);
@@ -2974,6 +2980,12 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // A dodged shot flew past: no riders, and none of its pool spent
             // on a body it never touched.
             if (hit.dodged) continue;
+
+            // Recorded rather than answered: a summon is a create, and this
+            // loop may not change the world's shape under the shot.
+            if (summons && victimIsMob && !hit.refused) {
+                shotLandings_.push_back({owner, slot, petalIndex, rarity, shot.realm, impact.at});
+            }
 
             // Riders belong to flesh. A shot cannot be poisoned, slowed or
             // shoved -- it has no Afflictions, and nothing but its own flight

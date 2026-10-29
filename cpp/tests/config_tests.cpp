@@ -1161,6 +1161,45 @@ TEST(a_web_that_catches_nothing_is_not_laid) {
     CHECK(fine.minRarity == Rarity::Common);
 }
 
+TEST(the_shipped_spaceship_summons_up_to_three_glitch_flowers_where_it_lands) {
+    const ContentRegistry& r = shipped().registry;
+    const ProjectileSpec& shot = r.petal(r.petalIndex("spaceship")).projectile;
+    CHECK(shot.present);
+    CHECK_EQ(shot.summonMobIndex, r.mobIndex("glitch_flower"));
+    CHECK_EQ(shot.summonMax, 3);
+    // Not an egg: nothing is hatched while the petal merely sits on the ring.
+    CHECK_EQ(r.petal(r.petalIndex("spaceship")).petMobIndex, kInvalidIndex);
+}
+
+TEST(a_shot_summoning_an_unknown_mob_is_a_plain_shot) {
+    ContentRegistry r;
+    std::string error;
+    Synthetic files;
+    files.mobs = R"JSON({
+      "real": {"name": "Real", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "hostile", "groups": ["garden"]}
+    })JSON";
+    files.petals = R"JSON({
+      "ghostly": {"name": "Ghostly", "health": 3, "damage": 1, "size": 1, "cooldown": 1,
+        "count": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "projectile": {"speed": 300, "distance": 500, "summonMobType": "ghost", "summonMax": 3}},
+      "summoner": {"name": "Summoner", "health": 3, "damage": 1, "size": 1, "cooldown": 1,
+        "count": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "projectile": {"speed": 300, "distance": 500, "summonMobType": "real"}}
+    })JSON";
+    CHECK(loadSynthetic(r, files, error));
+    const ProjectileSpec& ghostly = r.petal(r.petalIndex("ghostly")).projectile;
+    CHECK(ghostly.present);
+    CHECK_EQ(ghostly.summonMobIndex, kInvalidIndex);
+    CHECK_EQ(ghostly.summonMax, 0);
+    CHECK(warned(r, "projectile summonMobType 'ghost' is not defined"));
+    // A summon with no cap named brings one.
+    const ProjectileSpec& summoner = r.petal(r.petalIndex("summoner")).projectile;
+    CHECK_EQ(summoner.summonMobIndex, r.mobIndex("real"));
+    CHECK_EQ(summoner.summonMax, 1);
+}
+
 TEST(the_shipped_bumble_bee_drops_pollen_and_out_cruises_a_bee) {
     const ContentRegistry& r = shipped().registry;
     const std::uint16_t bumble = r.mobIndex("bumble_bee");

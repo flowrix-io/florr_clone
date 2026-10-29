@@ -1237,6 +1237,10 @@ struct Projectile {
     double remainingDistance = 0;
     std::uint16_t petalConfigIndex = kNoPetal;
     Rarity rarity = Rarity::Common;
+    /// The loadout slot of the petal that fired it, kLoadoutSlots for a shot
+    /// no ring fired. What a summoning shot files its summon under, so taking
+    /// the petal off recalls what its shots brought in.
+    std::uint8_t slot = kLoadoutSlots;
     /// Homing cone and range, both zero for a dumb projectile.
     double seekRange = 0;
     double seekCone = 0;

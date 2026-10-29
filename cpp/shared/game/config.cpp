@@ -349,7 +349,8 @@ std::uint16_t parseEquipFlags(const std::string& text) {
 // ---------------------------------------------------------------------------
 
 ProjectileSpec parseProjectile(Ctx& ctx, const Json& owner,
-                               const std::unordered_map<std::string, std::uint16_t>* petalIds) {
+                               const std::unordered_map<std::string, std::uint16_t>* petalIds,
+                               const std::unordered_map<std::string, std::uint16_t>* mobIds = nullptr) {
     ProjectileSpec spec;
     if (!owner.contains("projectile")) return spec;
     const Json& node = owner["projectile"];
@@ -387,6 +388,15 @@ ProjectileSpec parseProjectile(Ctx& ctx, const Json& owner,
     if (petalIds != nullptr) {
         spec.ammoPetalId = ctx.text(node, "petalType");
         spec.ammoPetalIndex = ctx.link(*petalIds, spec.ammoPetalId, "projectile petalType");
+    }
+    // A cap is only read beside a summon that resolved, so a mob named wrong
+    // leaves a plain shot rather than one that summons nothing up to a cap.
+    if (mobIds != nullptr) {
+        spec.summonMobId = ctx.text(node, "summonMobType");
+        spec.summonMobIndex = ctx.link(*mobIds, spec.summonMobId, "projectile summonMobType");
+        spec.summonMax = spec.summonMobIndex != kInvalidIndex
+                             ? ctx.integer(node, "summonMax", 1, 1, 64)
+                             : 0;
     }
     return spec;
 }
@@ -1248,7 +1258,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.modifiers = parseModifiers(ctx, src);
 
     p.knockback = ctx.range(src, "knockback", p.knockback, -kMaxBaseStat, kMaxBaseStat);
-    p.projectile = parseProjectile(ctx, src, nullptr);
+    p.projectile = parseProjectile(ctx, src, nullptr, &mobIds);
     p.range = ctx.range(src, "range", 0.0, 0.0, kWorldSize);
     p.bodyDamage = ctx.range(src, "bodyDamage", 0.0, 0.0, kMaxBaseStat);
     p.armorReduction = ctx.range(src, "armorReduction", 0.0, 0.0, kMaxBaseStat);

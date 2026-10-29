@@ -2572,6 +2572,7 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
         projectile.remainingDistance = spec.distance;
         projectile.petalConfigIndex = configIndex;
         projectile.rarity = rarity;
+        if (shooter != nullptr) projectile.slot = shooter->slot;
         projectile.seekRange = spec.seekRange;
         projectile.seekCone = spec.seekCone;
         // A petal that fires ITSELF is its own ammunition, so the weave comes
@@ -3768,6 +3769,86 @@ void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry
     // it, which is the whole point of the petal.
     summonPets(world, registry, player, slot, mobIndex, petRarity, kFlowerPetCount, at, *state,
                strengthBoost(rarity));
+}
+
+void PetalSystem::landShots(World& world, const ContentRegistry& registry,
+                            const std::vector<ShotLanding>& landings, const Terrain* terrain) {
+    // Placed rather than moved, so the rescue that movement must never use is
+    // the right call here: a shot flies over walls, and where it touched a mob
+    // hugging one can be inside it.
+    const auto putDown = [&](Entity pet, Vec2 at, Realm realm) {
+        Transform* transform = world.tryGet<Transform>(pet);
+        if (transform == nullptr) return;
+        const Body* body = world.tryGet<Body>(pet);
+        transform->position =
+            terrain != nullptr && body != nullptr ? terrain->resolveCircle(at, body->radius, realm)
+                                                  : at;
+    };
+
+    for (const ShotLanding& landing : landings) {
+        if (landing.petalIndex == kNoPetal || landing.slot >= kLoadoutActiveSlots) continue;
+        const ProjectileSpec& spec = registry.petal(landing.petalIndex).projectile;
+        const std::uint16_t mobIndex = spec.summonMobIndex;
+        if (mobIndex == kInvalidIndex || spec.summonMax <= 0) continue;
+        if (!world.isAlive(landing.owner) || world.has<Dead>(landing.owner)) continue;
+        PetalSlotState* state = world.tryGet<PetalSlotState>(landing.owner);
+        const Transform* ownerAt = world.tryGet<Transform>(landing.owner);
+        if (state == nullptr || ownerAt == nullptr) continue;
+        // A shot outlives the ring that fired it. One that lands after its
+        // petal came off has nothing left to file a summon under -- filed
+        // under whatever replaced it, the summon would outlast every recall
+        // meant to take it -- and one that lands after the flower left the
+        // realm would summon where the flower is not.
+        PetalSlotState::Slot& slotState = state->slots[landing.slot];
+        if (slotState.configIndex != landing.petalIndex || ownerAt->realm != landing.realm) {
+            continue;
+        }
+
+        // A recalled, killed or retired summon leaves its handle behind.
+        std::vector<Entity>& summons = state->shotSummons;
+        summons.erase(std::remove_if(summons.begin(), summons.end(),
+                                     [&](Entity pet) {
+                                         return !world.isAlive(pet) || world.has<Dead>(pet);
+                                     }),
+                      summons.end());
+        const auto ofType = [&](Entity pet) {
+            const MobType* type = world.tryGet<MobType>(pet);
+            return type != nullptr && type->configIndex == mobIndex;
+        };
+        const int out = static_cast<int>(std::count_if(summons.begin(), summons.end(), ofType));
+
+        if (out < spec.summonMax) {
+            // The flower petal's rule for the tier: apex is clamped to unique
+            // rather than left to multiply the one summon this landing buys.
+            const Rarity petRarity =
+                ladderRarity(landing.rarity) == Rarity::Apex ? Rarity::Unique : landing.rarity;
+            const std::size_t before = slotState.pets.size();
+            summonPets(world, registry, landing.owner, landing.slot, mobIndex, petRarity, 1,
+                       landing.at, *state, strengthBoost(landing.rarity));
+            if (slotState.pets.size() > before) {
+                const Entity pet = slotState.pets[before];
+                putDown(pet, world.get<Transform>(pet).position, landing.realm);
+                summons.push_back(pet);
+                continue;
+            }
+            // The pet cap had no room for another: the ones out answer by
+            // moving instead.
+        }
+
+        const auto oldest = std::find_if(summons.begin(), summons.end(), ofType);
+        if (oldest == summons.end()) continue;
+        const Entity pet = *oldest;
+        const Transform* petAt = world.tryGet<Transform>(pet);
+        if (petAt == nullptr || petAt->realm != landing.realm) continue;
+        putDown(pet, landing.at, landing.realm);
+        // Whatever it was doing where it was, as an admin teleport drops it.
+        if (Motion* motion = world.tryGet<Motion>(pet)) motion->velocity = {0, 0};
+        if (Knockback* knockback = world.tryGet<Knockback>(pet)) *knockback = Knockback{};
+        // Placed now, so it is the newest: the next landing at the cap moves
+        // the one that has stood longest instead of this one again.
+        summons.erase(oldest);
+        summons.push_back(pet);
+    }
 }
 
 } // namespace flix

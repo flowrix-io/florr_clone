@@ -27,6 +27,7 @@ namespace flix {
 
 class Terrain;
 class EventQueue;
+struct ShotLanding;
 
 /// How long a root takes to bank one armour stack, and how many it may hold.
 ///
@@ -171,6 +172,13 @@ struct PetalSlotState {
         double readyAtMillis = 0;
     };
     Lent lent;
+
+    /// What this flower's summoning shots have brought in where they landed --
+    /// the spaceship's glitch flowers -- in the order they were last placed,
+    /// oldest first. Each is ALSO filed among its slot's `pets`, which is what
+    /// recalls it with the petal; this list only orders them, so that a
+    /// landing at the cap knows which one to move.
+    std::vector<Entity> shotSummons;
 };
 
 /// PetalInstance::slot on a lent petal: past every loadout slot, so the guards
@@ -261,6 +269,18 @@ public:
     /// or whose owner has nothing equipped that hatches it.
     void reloadHatcher(World& world, const ContentRegistry& registry, Entity pet,
                        double nowMillis);
+
+    /// Answers this tick's summoning shots (CombatSystem::shotLandings), after
+    /// combat: each one hatches one more of its summon where it landed, filed
+    /// under the slot that fired it, while the flower has fewer than the
+    /// shot's `summonMax` of them out. At the cap it moves the one placed
+    /// longest ago there instead, which makes it the newest.
+    ///
+    /// `terrain` is what a moved summon is put down outside of: a shot flies
+    /// over walls, so the point it landed at can be inside one. Null in a test
+    /// with no map.
+    void landShots(World& world, const ContentRegistry& registry,
+                   const std::vector<ShotLanding>& landings, const Terrain* terrain);
 
     /// A yggdrasil raised `revived` off the ground.
     ///

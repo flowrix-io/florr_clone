@@ -211,6 +211,7 @@ struct Fixture {
     std::uint16_t plank = kInvalidIndex;
     std::uint16_t tomato = kInvalidIndex;
     std::uint16_t basil = kInvalidIndex;
+    std::uint16_t saucer = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -239,7 +240,8 @@ const Fixture& fixture() {
               "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6},
               "plank":{"name":"Plank","damage":18,"health":15,"size":3},
               "tomato":{"name":"Tomato","damage":5,"health":10,"size":1},
-              "basil":{"name":"Basil","damage":5,"health":15,"size":1.3,"defendOnly":true,"ignoresMobs":true}
+              "basil":{"name":"Basil","damage":5,"health":15,"size":1.3,"defendOnly":true,"ignoresMobs":true},
+              "saucer":{"name":"Saucer","damage":10,"health":5,"size":1,"projectile":{"speed":300,"distance":500,"summonMobType":"grunt","summonMax":3}}
             })",
             f.error);
         f.sting = f.registry.petalIndex("sting");
@@ -261,6 +263,7 @@ const Fixture& fixture() {
         f.plank = f.registry.petalIndex("plank");
         f.tomato = f.registry.petalIndex("tomato");
         f.basil = f.registry.petalIndex("basil");
+        f.saucer = f.registry.petalIndex("saucer");
         return f;
     }();
     return state;
@@ -2941,6 +2944,56 @@ TEST(a_dandelion_seed_carries_the_lockout_to_what_it_lands_on) {
     CHECK(a.health(player) < 100.0);
     CHECK(CombatSystem::healingBlocked(a.world, player, 1000.0));
     CHECK(!CombatSystem::healingBlocked(a.world, player, 11001.0));
+}
+
+TEST(a_summoning_shot_reports_where_it_landed_on_a_mob) {
+    const Fixture& f = fixture();
+    Arena a;
+    const Entity player = a.player({500, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    const Entity shot = spawnDurableShot(a, {980, 1000}, {300, 0}, 10.0, 500.0, player, player, 5.0);
+    Projectile& projectile = a.world.get<Projectile>(shot);
+    projectile.petalConfigIndex = f.saucer;
+    projectile.rarity = Rarity::Rare;
+    projectile.slot = 2;
+
+    a.step(1000.0, f.registry);
+    CHECK(a.health(mob) < 100.0);
+    const std::vector<ShotLanding>& landings = a.combat.shotLandings();
+    CHECK_EQ(landings.size(), std::size_t(1));
+    if (landings.size() != 1) return;
+    CHECK_EQ(landings[0].owner, player);
+    CHECK_EQ(static_cast<int>(landings[0].slot), 2);
+    CHECK_EQ(landings[0].petalIndex, f.saucer);
+    CHECK(landings[0].rarity == Rarity::Rare);
+    CHECK_NEAR(landings[0].at.x, 980.0, 1e-9);
+    CHECK_NEAR(landings[0].at.y, 1000.0, 1e-9);
+
+    // Read per tick: the next one starts empty. The shot is taken away first,
+    // since one with pool to spare lands on the same mob again.
+    a.world.destroy(shot);
+    a.step(1100.0, f.registry);
+    CHECK(a.combat.shotLandings().empty());
+}
+
+TEST(only_a_summoning_shot_landing_on_a_mob_is_reported) {
+    const Fixture& f = fixture();
+    Arena a;
+    const Entity player = a.player({500, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    // An ordinary petal's shot on the same mob.
+    const Entity plain = spawnDurableShot(a, {980, 1000}, {300, 0}, 10.0, 500.0, player, player, 5.0);
+    a.world.get<Projectile>(plain).petalConfigIndex = f.plain;
+    // A summoning shot from the other side, landing on a flower.
+    const Entity target = a.player({2000, 1000});
+    const Entity hostile =
+        spawnDurableShot(a, {1980, 1000}, {300, 0}, 10.0, 500.0, mob, mob, 5.0, Team::Hostiles);
+    a.world.get<Projectile>(hostile).petalConfigIndex = f.saucer;
+
+    a.step(1000.0, f.registry);
+    CHECK(a.health(mob) < 100.0);
+    CHECK(a.health(target) < 100.0);
+    CHECK(a.combat.shotLandings().empty());
 }
 
 
