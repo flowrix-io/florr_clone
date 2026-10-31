@@ -2482,7 +2482,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // victim has BEFORE this hit.
             double swing = swingDamage(world, source.damage, source.critDamage, victim);
             // The first Icosahedron hit keeps its normal damage; each bounce
-            // retains 75% of the previous hit (10 -> 7.5 -> 5.625 at common).
+            // retains 75% of the previous hit, using the petal's current stats.
             if (const auto* petal = world.tryGet<PetalInstance>(source.attacker)) {
                 if (petal->ricochet.enabled && petal->ricochet.active) {
                     swing *= std::pow(0.75, petal->ricochet.hits);

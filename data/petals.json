@@ -1877,8 +1877,8 @@
     },
     "icosahedron": {
         "name": "Icosahedron",
-        "damage": 10,
-        "health": 10,
+        "damage": 19,
+        "health": 20,
         "size": 1,
         "cooldown": 2500,
         "price": 10,
