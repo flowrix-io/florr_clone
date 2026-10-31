@@ -1885,7 +1885,7 @@
         "description": "19kisme's special shape",
         "color": "#8B5CF6",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g stroke=\"#38235e\" stroke-width=\"0.8\" stroke-linejoin=\"round\"><path d=\"M16 2 3 9 16 8Z\" fill=\"#c4b5fd\"/><path d=\"M16 2 16 8 29 9Z\" fill=\"#a78bfa\"/><path d=\"M3 9 3 23 8 22Z\" fill=\"#7c3aed\"/><path d=\"M3 9 8 22 16 8Z\" fill=\"#a78bfa\"/><path d=\"M16 8 24 22 29 9Z\" fill=\"#8b5cf6\"/><path d=\"M29 9 24 22 29 23Z\" fill=\"#6d28d9\"/><path d=\"M16 8 8 22 24 22Z\" fill=\"#c4b5fd\"/><path d=\"M3 23 16 30 8 22Z\" fill=\"#6d28d9\"/><path d=\"M8 22 16 30 24 22Z\" fill=\"#8b5cf6\"/><path d=\"M24 22 16 30 29 23Z\" fill=\"#5b21b6\"/></g></svg>"
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g stroke=\"#38235e\" stroke-width=\"0.8\" stroke-linejoin=\"round\"><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0 16 16;360 16 16\" dur=\"6s\" repeatCount=\"indefinite\"/><path d=\"M16 2 3 9 16 8Z\" fill=\"#c4b5fd\"/><path d=\"M16 2 16 8 29 9Z\" fill=\"#a78bfa\"/><path d=\"M3 9 3 23 8 22Z\" fill=\"#7c3aed\"/><path d=\"M3 9 8 22 16 8Z\" fill=\"#a78bfa\"/><path d=\"M16 8 24 22 29 9Z\" fill=\"#8b5cf6\"/><path d=\"M29 9 24 22 29 23Z\" fill=\"#6d28d9\"/><path d=\"M16 8 8 22 24 22Z\" fill=\"#c4b5fd\"/><path d=\"M3 23 16 30 8 22Z\" fill=\"#6d28d9\"/><path d=\"M8 22 16 30 24 22Z\" fill=\"#8b5cf6\"/><path d=\"M24 22 16 30 29 23Z\" fill=\"#5b21b6\"/></g></svg>"
     },
     "spaceship": {
         "name": "Spaceship",

@@ -73,6 +73,24 @@ TEST(art_cache_is_a_no_op_off_the_web) {
 
 using flix::testsupport::shippedContent;
 
+TEST(icosahedron_art_animates_in_the_actual_petal_renderer) {
+    const ContentRegistry& content = shippedContent();
+    const auto id = content.petalIndex("icosahedron");
+    CHECK(id != kInvalidIndex);
+    if (id == kInvalidIndex) return;
+    const auto art = SvgDocument::fromString(content.petal(id).image);
+    CHECK(!art.empty());
+    CHECK(art.animated());
+    SpriteCache sprites;
+    sprites.build(content, testsupport::dataDir());
+    const auto frame = [&](double time) {
+        Canvas canvas = Canvas::createVirtual(64, 64);
+        sprites.drawPetal(canvas, id, Rarity::Common, 32, 32, 64, 0, time);
+        return canvas.getImageData(0, 0, 64, 64);
+    };
+    CHECK(frame(0.0) != frame(0.75));
+}
+
 TEST(every_procedural_marker_in_the_shipped_mobs_compiles) {
     // The failure this pins is SILENT. An `image` naming a painter this build
     // does not have -- a typo, or a painter added to mobs.json and not to

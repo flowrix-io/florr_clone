@@ -2451,6 +2451,9 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 }
             }
 
+            if (const auto* petal = world.tryGet<PetalInstance>(source.attacker)) {
+                if (!petal->ricochet.allowsHit(victim, nowMillis)) continue;
+            }
             if (!canHit(world, victim, source.attacker, nowMillis)) continue;
 
             // Almost nothing is throttled in the reference, and the throttle
@@ -2545,6 +2548,15 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // still took something, and still feeds.
             if (source.lifesteal > 0.0 && hit.applied > 0.0) {
                 stealLife(world, source.owner, hit.applied * source.lifesteal, nowMillis);
+            }
+
+            // Record the bounce only after a real hit, and re-fetch after damage
+            // may have moved an ECS row. Clearing the target prevents a second
+            // hit in this same candidate loop (or on a previously visited mob).
+            if (landed && source.isPetal && world.has<MobTag>(victim)) {
+                if (auto* petal = world.tryGet<PetalInstance>(source.attacker)) {
+                    petal->ricochet.landed(victim, nowMillis);
+                }
             }
 
             // The petal pays for the hit out of its own health, at the mob's

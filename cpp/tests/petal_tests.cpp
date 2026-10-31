@@ -22,6 +22,7 @@ namespace {
 
 const char* const kPetalsJson = R"JSON({
   "basic":    {"name":"Basic","damage":10,"health":10,"size":2,"cooldown":1200,"count":1,"color":"#90EE90"},
+  "icosahedron":{"name":"Icosahedron","damage":10,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#8B5CF6"},
   "sandy":    {"name":"Sandy","damage":4,"health":12,"size":1,"cooldown":800,"count":4,"clumped":true,"color":"#8B0000"},
   "spready":  {"name":"Spready","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"color":"#F0BD48"},
   "hanging":  {"name":"Hanging","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"clumpOutsideRing":true,"color":"#F0BD48"},
@@ -966,6 +967,149 @@ Entity addMob(Rig& rig, Vec2 at, const char* type = "critter") {
     rig.world.add<Health>(mob, Health{10000.0, 10000.0, 0.0, 0.0});
     rig.world.add<Faction>(mob, Faction{Team::Hostiles, false});
     return mob;
+}
+
+void ricochetCombatTick(Rig& rig, CombatSystem& combat) {
+    SpatialGrid grid;
+    Query<Transform, Body> bodies{rig.world};
+    bodies.each([&](Entity e, Transform& at, Body& body) {
+        grid.insert(e, at.realm, at.position, body.radius);
+    });
+    combat.run(rig.world, grid, fixture().registry, rig.now, net::kTickSeconds,
+               rig.commands, rig.events);
+    rig.commands.flush();
+}
+
+TEST(icosahedron_ricochet_hits_three_distinct_mobs_once_then_returns) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 start = rig.position(petal);
+    const Entity first = addMob(rig, start);
+    const Entity second = addMob(rig, start + Vec2{100, 0});
+    const Entity third = addMob(rig, start + Vec2{200, 0});
+    const Entity fourth = addMob(rig, start + Vec2{300, 0});
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    CHECK(rig.world.get<PetalInstance>(petal).ricochet.active);
+    CHECK(rig.tickUntil([&] {
+        ricochetCombatTick(rig, combat);
+        return !rig.world.get<PetalInstance>(petal).ricochet.active;
+    }, 120));
+    for (const Entity mob : {first, second, third}) {
+        CHECK_NEAR(rig.world.get<Health>(mob).current, 9990.0, 1e-9);
+    }
+    CHECK_NEAR(rig.world.get<Health>(fourth).current, 10000.0, 1e-9);
+    CHECK(distanceSq(rig.position(petal), start) < 1.0);
+    CHECK(rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis > rig.now);
+    CHECK_NEAR(rig.world.get<Health>(petal).current, 7.0, 1e-9);
+    for (int i = 0; i < 10; ++i) {
+        rig.tick();
+        ricochetCombatTick(rig, combat);
+    }
+    CHECK_NEAR(rig.world.get<Health>(first).current, 9990.0, 1e-9);
+}
+
+TEST(icosahedron_ricochet_skips_invalid_targets_and_recovers_when_target_dies) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 start = rig.position(petal);
+    const Entity first = addMob(rig, start);
+    const Entity friendly = addMob(rig, start + Vec2{30, 0});
+    rig.world.get<Faction>(friendly).team = Team::Players;
+    const Entity dead = addMob(rig, start + Vec2{40, 0});
+    rig.world.get<Health>(dead).current = 0;
+    const Entity elsewhere = addMob(rig, start + Vec2{50, 0});
+    rig.world.get<Transform>(elsewhere).realm = Realm::Arena;
+    const Entity invulnerable = addMob(rig, start + Vec2{60, 0});
+    rig.world.get<Health>(invulnerable).invulnerableUntilMillis = rig.now + 10000;
+    const Entity tooFar = addMob(rig, start + Vec2{800, 0});
+    const Entity target = addMob(rig, start + Vec2{150, 0});
+    // Start from a confirmed first hit; placement should pick only the valid mob.
+    rig.world.get<PetalInstance>(petal).ricochet.landed(first, rig.now);
+    rig.tick();
+    CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.target, target);
+    rig.world.destroy(target);
+    rig.tick();
+    if (rig.world.get<PetalInstance>(petal).ricochet.active) {
+        CHECK(rig.world.get<PetalInstance>(petal).ricochet.returning);
+        CHECK(rig.tickUntil([&] {
+            return !rig.world.get<PetalInstance>(petal).ricochet.active;
+        }, 120));
+    }
+    CHECK(distanceSq(rig.position(petal), start) < 1.0);
+    CHECK_NEAR(rig.world.get<Health>(tooFar).current, 10000.0, 1e-9);
+}
+
+TEST(icosahedron_ricochet_only_hits_one_overlapping_mob_per_tick) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 start = rig.position(petal);
+    const Entity a = addMob(rig, start);
+    const Entity b = addMob(rig, start);
+    const Entity c = addMob(rig, start);
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.hits, 1);
+    CHECK_NEAR(rig.world.get<Health>(a).current + rig.world.get<Health>(b).current +
+                   rig.world.get<Health>(c).current, 29990.0, 1e-9);
+    CHECK(rig.tickUntil([&] {
+        ricochetCombatTick(rig, combat);
+        return !rig.world.get<PetalInstance>(petal).ricochet.active;
+    }, 120));
+    for (const Entity mob : {a, b, c}) {
+        CHECK_NEAR(rig.world.get<Health>(mob).current, 9990.0, 1e-9);
+    }
+}
+
+TEST(icosahedron_ricochet_breaks_and_reloads_with_fresh_flight_state) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.settleEquips();
+    const Entity petal = rig.petals(0).front();
+    rig.world.get<Health>(petal).current = 1.0;
+    addMob(rig, rig.position(petal));
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    CHECK(rig.world.has<Dead>(petal));
+    rig.reap();
+    rig.tick();
+    CHECK(rig.petals(0).empty());
+    CHECK(rig.tickUntil([&] { return !rig.petals(0).empty(); }, 120));
+    const auto& flight = rig.world.get<PetalInstance>(rig.petals(0).front()).ricochet;
+    CHECK(flight.enabled);
+    CHECK(!flight.active);
+    CHECK_EQ(flight.hits, 0);
+}
+
+TEST(icosahedron_ricochet_times_out_against_an_unconfirmed_target) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.settleEquips();
+    const Entity petal = rig.petals(0).front();
+    const Entity first = addMob(rig, rig.position(petal));
+    addMob(rig, rig.position(petal) + Vec2{100, 0});
+    rig.world.get<PetalInstance>(petal).ricochet.landed(first, rig.now);
+    // No combat tick ever confirms arrival: even an un-hittable chase must end.
+    CHECK(rig.tickUntil([&] {
+        return !rig.world.get<PetalInstance>(petal).ricochet.active;
+    }, 120));
 }
 
 const WireEvent* firstStrike(const Rig& rig) {

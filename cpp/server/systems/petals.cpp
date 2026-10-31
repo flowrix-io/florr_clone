@@ -238,6 +238,69 @@ double lungeReach(const PetalConfig& config, double ageMillis) {
 /// nothing else -- asked by id for the reason lungeReach is.
 bool throwsFromOrbit(const PetalConfig& config) { return config.id == "pearl"; }
 
+/// The normal combat pass lands each bounce; this only steers the real petal.
+/// A bounded chain and return window keep an escaping target or owner from
+/// stranding the slot. Queries never create entities, so these references stay valid.
+bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
+                      Transform& transform, Vec2 orbit, Vec2 flower,
+                      double reloadMillis, double nowMillis, double dt) {
+    auto& flight = instance.ricochet;
+    if (!flight.enabled || !flight.active) return false;
+    if (nowMillis >= flight.deadlineMillis ||
+        distanceSq(transform.position, flower) > 600.0 * 600.0) {
+        if (!flight.returning) {
+            flight.returning = true;
+            flight.deadlineMillis = nowMillis + 1000.0;
+        }
+    }
+
+    const auto validTarget = [&](Entity mob) {
+        const Transform* at = world.tryGet<Transform>(mob);
+        const Faction* faction = world.tryGet<Faction>(mob);
+        return at && world.has<MobTag>(mob) && at->realm == transform.realm &&
+               !world.has<Pet>(mob) && (!faction || faction->team != Team::Players) &&
+               !flight.visitedMob(mob) &&
+               distanceSq(at->position, flower) <= 600.0 * 600.0 &&
+               CombatSystem::canHit(world, mob, petal, nowMillis);
+    };
+    if (!flight.returning && !validTarget(flight.target)) {
+        flight.target = NULL_ENTITY;
+        double nearest = 250.0 * 250.0;
+        Query<MobTag, Transform, Body> mobs{world};
+        mobs.each([&](Entity mob, MobTag&, Transform& at, Body&) {
+            const double gap = distanceSq(at.position, transform.position);
+            if (gap < nearest && validTarget(mob)) {
+                nearest = gap;
+                flight.target = mob;
+            }
+        });
+        if (flight.target == NULL_ENTITY) {
+            flight.returning = true;
+            flight.deadlineMillis = nowMillis + 1000.0;
+        }
+    }
+    const Vec2 destination = flight.returning
+                                 ? orbit : world.get<Transform>(flight.target).position;
+    const Vec2 offset = destination - transform.position;
+    const double distance = offset.length();
+    const double step = 900.0 * std::max(0.0, dt);
+    // Stop on the target rather than tunnelling past it at low tick rates.
+    transform.position += distance > step && distance > 1e-9
+                              ? offset * (step / distance) : offset;
+    if (distance > 1e-9) instance.facingAngle = transform.angle = offset.angle();
+    instance.ringVelocity = Vec2{};
+    instance.attractedTo = NULL_ENTITY;
+    if (flight.returning && (distance <= step || nowMillis >= flight.deadlineMillis)) {
+        transform.position = orbit;
+        flight.active = false;
+        flight.returning = false;
+        flight.target = NULL_ENTITY;
+        flight.hits = 0;
+        flight.readyAtMillis = nowMillis + std::max(2500.0, reloadMillis);
+    }
+    return true;
+}
+
 /// Whether hits aimed at the flower land on this petal first. Cotton's, by id
 /// for the same reason; combat reads the answer off PetalInstance.
 bool soaksOwnerDamage(const PetalConfig& config) { return config.id == "cotton"; }
@@ -1309,6 +1372,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     instance.soaksOwnerDamage = soaksOwnerDamage(config);
     instance.soaksOwnerLightning = petalSoaksLightning(config);
     instance.ignoresMobs = config.ignoresMobs;
+    instance.ricochet.enabled = config.id == "icosahedron";
     world.add<PetalInstance>(petal, instance);
     if (loose) world.add<LoosePetal>(petal);
     // The moon: the ring's centre while it is out, and the only petal with
@@ -1986,7 +2050,11 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // With a radius of zero it is drawn to nothing.
         const double petalAttraction =
             config.defendOnly || config.ignoresMobs ? 0.0 : attractionRadius;
-        if (config.noPhysics || config.hasFixedDirection) {
+        if (instance->ricochet.active &&
+            flyRicochetPetal(world, petal, *instance, *transform, orbit, committedFlower,
+                             instanceStats(registry, *instance).reloadMillis, nowMillis, dt)) {
+            // Flight placement is complete; the usual wall resolution below still applies.
+        } else if (config.noPhysics || config.hasFixedDirection) {
             transform->position = orbit;
         } else if (!(throwsFromOrbit(config) &&
                      flyThrownPetal(*instance, *transform, committed, angle, pearlLeash,

@@ -1092,6 +1092,39 @@ struct Spawner {
 // ---------------------------------------------------------------------------
 
 struct PetalInstance {
+    /// Server-only Icosahedron flight state; positions use ordinary petal replication.
+    struct Ricochet {
+        bool enabled = false;
+        bool active = false;
+        bool returning = false;
+        Entity target = NULL_ENTITY;
+        std::array<Entity, 3> visited{};
+        std::uint8_t hits = 0;
+        double deadlineMillis = 0;
+        double readyAtMillis = 0;
+
+        bool visitedMob(Entity mob) const {
+            for (std::uint8_t i = 0; i < hits; ++i) {
+                if (visited[i] == mob) return true;
+            }
+            return false;
+        }
+        bool allowsHit(Entity victim, double nowMillis) const {
+            return !enabled || (!active && nowMillis >= readyAtMillis) ||
+                   (active && !returning && target == victim && !visitedMob(victim));
+        }
+        void landed(Entity victim, double nowMillis) {
+            if (!enabled || returning || nowMillis < readyAtMillis || visitedMob(victim)) return;
+            if (!active) {
+                active = true;
+                hits = 0;
+                deadlineMillis = nowMillis + 2000.0;
+            }
+            if (hits < visited.size()) visited[hits++] = victim;
+            target = NULL_ENTITY;
+            if (hits == visited.size()) returning = true;
+        }
+    } ricochet;
     Entity owner = NULL_ENTITY;
     /// The player a mob's ledger enters this petal's damage under, when that is
     /// not `owner`: the wearer of the Champion's Crown that LENT it (see
