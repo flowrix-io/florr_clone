@@ -50,7 +50,9 @@ inline constexpr int kNotAnAdmin = -1;
 
 enum class AdminPower {
     UpdateServer,   ///< `update`
-    GivePetals,     ///< `give`, and the database editor, which can write any bag
+    GivePetals,     ///< `give`, the database editor, which can write any bag, and
+                    ///< everything that becomes petals in somebody's bag: the
+                    ///< star code verbs and `sacrifice`
     SpawnMobs,      ///< `spawn` and `spawn_npc`
 };
 

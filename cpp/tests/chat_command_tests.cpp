@@ -1058,6 +1058,23 @@ TEST(each_admin_tier_loses_one_more_power) {
         CHECK(say(h, admin, "/admin spawn_npc bee"));
         CHECK_EQ(sawTextSince(admin, mark, "cannot spawn mobs"), tier == 4);
 
+        // A star code is petals at the shop and the sacrifice is an Apex
+        // petal on the ground: both are giving, and refused with it.
+        const std::size_t codesBefore = h.server.database().storedTable("codes").keys().size();
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin generate_code 1000000000 0"));
+        CHECK_EQ(sawTextSince(admin, mark, "[CODE GENERATED]"), tier <= 2);
+        CHECK_EQ(sawTextSince(admin, mark,
+                              "Tier " + n + " admins cannot give petals (tiers 1-2 only)."),
+                 tier > 2);
+        CHECK_EQ(h.server.database().storedTable("codes").keys().size(),
+                 codesBefore + (tier <= 2 ? 1 : 0));
+        for (const char* verb : {"/admin list_codes", "/admin delete_code NOPE", "/admin sacrifice"}) {
+            mark = admin.chatSequence();
+            CHECK(say(h, admin, verb));
+            CHECK_EQ(sawTextSince(admin, mark, "cannot give petals"), tier > 2);
+        }
+
         // The rest of the console is every tier's.
         mark = admin.chatSequence();
         CHECK(say(h, admin, "/admin list-players"));
@@ -1122,6 +1139,12 @@ TEST(a_grant_is_lent_at_the_lenders_tier_or_below) {
     CHECK(h.stepUntil(all, [&] { return aide.isSkinAdmin(); }, 120));
     CHECK(say(h, aide, "/admin give aide rose legendary"));
     CHECK(sawText(aide, "Tier 4 admins cannot give petals"));
+    // Nor stars, which the shop turns into petals on any account the code
+    // is passed to.
+    std::uint64_t mark = aide.chatSequence();
+    CHECK(say(h, aide, "/admin generate_code 1000000000 0"));
+    CHECK(sawTextSince(aide, mark, "Tier 4 admins cannot give petals"));
+    CHECK(!sawTextSince(aide, mark, "[CODE GENERATED]"));
     CHECK(say(h, aide, "/admin spawn bee rare"));
     CHECK(sawText(aide, "Tier 4 admins cannot spawn mobs"));
     CHECK(!sawText(aide, "Spawned"));

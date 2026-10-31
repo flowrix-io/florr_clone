@@ -6269,11 +6269,18 @@ void GameServer::endArenaRun(Session& session) {
     // A quarter of every stack looted in the ring, rounded down, reaches the
     // account (exitPvpArena); the ring's own petals and whatever was equipped
     // out of its bag do not.
+    //
+    // The ring's own petal is left out at every tier. A starter basic taken
+    // off the bar lands in this bag exactly as a looted one does, so a client
+    // that joined, emptied the bar and left banked a quarter of the kit every
+    // lap -- and one crafted up in the ring first came out a tier higher.
+    const std::uint16_t starter = content().petalIndex("basic");
     const Json& bag = session.arena->inventory;
     for (const std::string& rarityName : bag.keys()) {
         const Rarity rarity = parseRarity(rarityName);
         const Json& byType = bag[rarityName];
         for (const std::string& key : byType.keys()) {
+            if (starter != kInvalidIndex && petalIndexFromInventoryKey(key) == starter) continue;
             const int kept = static_cast<int>(
                 std::floor(PlayerRecord::stackCount(byType[key]) * kArenaInventoryKeepRatio));
             if (kept <= 0) continue;
