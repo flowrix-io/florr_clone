@@ -1628,7 +1628,14 @@ TEST(a_command_never_takes_a_nameplate_for_the_player_it_names) {
         // give does, and never on the flower wearing it.
         const int aliceBefore = roses(aliceId);
         CHECK(say(h, boss, "/admin give alice rose rare 2"));
-        CHECK(sawTextSince(boss, mark, "petal to alice (offline)"));
+        // A title-screen account now receives its updated Profile on its
+        // authenticated socket; only a disconnected account is "offline".
+        CHECK(sawTextSince(boss, mark, "petal to alice ("));
+        if (alice.status() == NetClient::Status::Offline) {
+            CHECK(sawTextSince(boss, mark, "petal to alice (offline)"));
+        } else {
+            CHECK(!sawTextSince(boss, mark, "petal to alice (offline)"));
+        }
         CHECK_EQ(roses(aliceId), aliceBefore + 2);
         CHECK_EQ(roses(malloryId), 0);
         CHECK(!sawTextSince(boss, mark, "Granted"));
