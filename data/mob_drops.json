@@ -772,6 +772,14 @@
     "drops": [
       {
         "type": "petal",
+        "itemType": "icosahedron",
+        "rarity": "common",
+        "probability": 0.19,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
         "itemType": "random",
         "rarity": "common",
         "probability": 0.002,
