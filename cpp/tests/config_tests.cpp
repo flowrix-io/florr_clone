@@ -415,7 +415,7 @@ TEST(petal_stats_scale_across_rarities) {
         const PetalStats s = r.petalStats(basic, rarity);
         CHECK_NEAR(s.damage, damage * petalStrengthScale(rarity), std::fabs(s.damage) * 1e-9);
         CHECK_NEAR(s.health, health * petalStrengthScale(rarity), std::fabs(s.health) * 1e-9);
-        CHECK_NEAR(s.reloadMillis, reload, 1e-9);   // reload is flat across tiers
+        CHECK_NEAR(s.reloadMillis, rarity == Rarity::Admin ? reload / 10.0 : reload, 1e-9);
         CHECK(s.breakable);
     }
 
@@ -608,8 +608,8 @@ TEST(salt_reflects_all_of_a_same_tier_hit_and_climbs_the_ladder_from_there) {
     // All of a hit from its own tier, at every tier: the ladder is applied
     // against the attacker at the moment of the hit, not baked in here.
     for (int t = 0; t < kRarityCount; ++t) {
-        CHECK_NEAR(r.petalStats(salt, static_cast<Rarity>(t)).modifiers.damageReflection, 1.0,
-                   1e-12);
+        CHECK_NEAR(r.petalStats(salt, static_cast<Rarity>(t)).modifiers.damageReflection,
+                   t == rarityIndex(Rarity::Admin) ? 10.0 : 1.0, 1e-12);
     }
     // Read as a modifier, not dropped as an unknown key.
     CHECK(!warned(r, "unknown key 'damageReflection'"));
@@ -1827,4 +1827,33 @@ TEST(the_best_copy_is_the_highest_tier_and_the_leftmost_of_equals) {
 
     bar[3] = EquippedPetal{};
     CHECK_EQ(bestCopySlot(7, at), 5);
+}
+
+TEST(admin_petals_boost_universal_combat_and_utility_effects) {
+    const ContentRegistry& r = shipped().registry;
+    for (std::size_t i = 0; i < r.petalCount(); ++i) {
+        const PetalStats& u = r.petalStats(i, Rarity::Universal);
+        const PetalStats& a = r.petalStats(i, Rarity::Admin);
+        CHECK_NEAR(a.damage, u.damage * 25.0, std::max(1.0, u.damage) * 1e-9);
+        CHECK_NEAR(a.health, u.health * 25.0, std::max(1.0, u.health) * 1e-9);
+        CHECK_NEAR(a.heal, u.heal * 10.0, std::max(1.0, u.heal) * 1e-9);
+        CHECK(std::isfinite(a.damage));
+        CHECK(std::isfinite(a.health));
+        CHECK(!craftsOutOf(Rarity::Admin));
+        CHECK_EQ(oracleCraftCost(Rarity::Admin), 0);
+    }
+    CHECK_NEAR(r.petalStats(r.petalIndex("lentil"), Rarity::Admin).modifiers.petalAttractionRadius,
+               kWorldSize * 0.2, 1e-9);
+}
+
+TEST(icosahedron_has_rarity_scaled_petal_armor) {
+    const ContentRegistry& r = shipped().registry;
+    const auto index = r.petalIndex("icosahedron");
+    CHECK(index != kInvalidIndex);
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const Rarity rarity = static_cast<Rarity>(tier);
+        const double expected = 10.0 * kMobArmorScale[ladderIndex(rarity)] *
+                                (rarity == Rarity::Admin ? 10.0 : 1.0);
+        CHECK_NEAR(r.petalStats(index, rarity).petalArmor, expected, 1e-9);
+    }
 }

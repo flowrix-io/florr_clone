@@ -1845,7 +1845,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // damage, which take `strength` -- apex's times sqrt(2).
     const Rarity graded = clampRarity(rarityIndex(r));
     const Rarity tier = ladderRarity(graded);
-    const double strength = petalStrengthScale(graded);
+    const double strength = petalStrengthScale(graded == Rarity::Admin ? Rarity::Universal : graded);
     const double stat = petalStatScale(tier);
     const double heal = petalHealScale(tier);
     const double modifier = petalModifierScale(tier);
@@ -2060,6 +2060,56 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     }
     if (c.id == "antennae" && rarityIndex(tier) >= rarityIndex(Rarity::Rare)) {
         s.cameraZoom = 1.0 / antennaeVisionRangeScale(tier);
+    }
+    // Admin starts with universal combat strength and apex utility, then
+    // boosts the useful effects. Apply AFTER all named-petal overrides so
+    // special petals receive the same treatment as ordinary ones.
+    if (graded == Rarity::Admin) {
+        constexpr double boost = 10.0;
+        s.damage *= 25.0;
+        s.health *= 25.0;
+        s.bodyDamage *= 25.0;
+        s.critDamage *= 25.0;
+        s.poisonPerSecond *= 25.0;
+        s.armorReduction *= boost;
+        s.armorPerStack *= boost;
+        s.petalArmor *= boost;
+        s.heal *= boost;
+        s.passiveHealPerSecond *= boost;
+        s.maxMana *= boost;
+        s.mana *= boost;
+        s.passiveManaPerSecond *= boost;
+        s.shield *= boost;
+        s.knockback *= boost;
+        s.webRadius *= boost;
+        s.attractionForce *= boost;
+        s.healBonus *= boost;
+        s.overhealShield *= boost;
+        s.undeadMillis *= boost;
+        s.reloadCut = std::min(0.95, s.reloadCut * boost);
+        s.collisionResist = std::min(0.95, s.collisionResist * boost);
+        s.lifesteal = std::min(1.0, s.lifesteal * boost);
+        s.reloadMillis = std::max(50.0, s.reloadMillis / boost);
+        s.healChargeMillis /= boost;
+        s.manaChargeMillis /= boost;
+        s.requiredMana /= boost;
+        s.petManaCost /= boost;
+        s.cameraZoom = std::max(0.05, s.cameraZoom / (s.cameraZoom < 1.0 ? boost : 1.0));
+        auto& m = s.modifiers;
+        m.maxHealth = 1.0 + (m.maxHealth - 1.0) * boost;
+        m.damage = 1.0 + (m.damage - 1.0) * boost;
+        if (m.speed > 1.0) m.speed = std::min(10.0, 1.0 + (m.speed - 1.0) * boost);
+        if (m.playerRadius > 1.0) m.playerRadius = std::min(10.0, 1.0 + (m.playerRadius - 1.0) * boost);
+        m.rotationSpeed = 1.0 + (m.rotationSpeed - 1.0) * boost;
+        m.attackRange *= boost;
+        m.luck *= boost;
+        m.magnetism *= boost;
+        m.aggroRadius *= boost;
+        m.petalAttractionRadius *= boost;
+        m.poisonArmor *= boost;
+        m.evasion = std::min(0.95, m.evasion * boost);
+        m.damageReflection *= boost;
+        if (c.id == "lentil") m.petalAttractionRadius = kWorldSize * 0.2;
     }
     return s;
 }

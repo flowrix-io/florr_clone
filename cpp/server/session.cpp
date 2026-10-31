@@ -27,6 +27,8 @@ constexpr double kMaxLoginAttempts = 5;
 constexpr double kMaxChatAllowance = 4;
 constexpr double kMaxCommandAllowance = 12;
 constexpr double kMaxInputAllowance = 60;
+constexpr double kMaxInventoryAllowance = 20;
+constexpr double kInventoryRefillPerSecond = 10;
 
 constexpr std::size_t kMaxChatLength = 200;
 
@@ -47,6 +49,8 @@ void refillAllowances(Session& session, double nowMillis) {
         std::min(kMaxChatAllowance, session.chatAllowance + elapsed * kChatRefillPerSecond);
     session.inputAllowance =
         std::min(kMaxInputAllowance, session.inputAllowance + elapsed * kInputRefillPerSecond);
+    session.inventoryAllowance = std::min(
+        kMaxInventoryAllowance, session.inventoryAllowance + elapsed * kInventoryRefillPerSecond);
     session.commandAllowance = std::min(
         kMaxCommandAllowance, session.commandAllowance + elapsed * kCommandRefillPerSecond);
 }

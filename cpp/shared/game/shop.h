@@ -40,7 +40,7 @@ inline double shopPrice(const std::string& petalId, Rarity rarity) {
 /// crafting and for killing things, and a star price would make both pointless.
 /// Universal is only ever given.
 inline bool shopSellsRarity(Rarity rarity) {
-    return rarity != Rarity::Unique && rarity != Rarity::Apex && rarity != Rarity::Universal;
+    return rarityIndex(rarity) < rarityIndex(Rarity::Unique);
 }
 
 /// Admin-only petals never appear in the shop, whatever their price says --

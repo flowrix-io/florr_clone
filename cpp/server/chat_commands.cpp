@@ -892,7 +892,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
                     "(move every bot only), give &lt;username&gt; &lt;itemType&gt; "
-                    "&lt;rarity&gt; [amount] (tiers 1-2), set_skin &lt;username&gt; "
+                    "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] (tiers 1-2), set_skin &lt;username&gt; "
                     "&lt;skin|none&gt;, corrupt &lt;username&gt; [on|off|toggle] "
                     "(corrupted flowers fight players anywhere, not just in PVP), god "
                     "[on|off|toggle] (make yourself invulnerable), control &lt;username&gt; "
@@ -2109,8 +2109,45 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         // To anyone, the giver included: a tier that may not hand petals out
         // may not hand them to itself either.
         if (lacks(AdminPower::GivePetals)) return;
+        if (words.size() >= 2 && lowerCase(words[1]) == "all") {
+            Rarity rarity = Rarity::Common;
+            int amount = 0;
+            if ((words.size() != 4 && words.size() != 5) || !parseRarityStrict(lowerCase(words[2]), rarity) ||
+                !parseInteger(words[3], amount) || amount < 1 || amount > kMaxStackCount) {
+                out("Usage: give all <rarity> <amount> [username] (1 to " +
+                    std::to_string(kMaxStackCount) + ")");
+                return;
+            }
+            CommandTarget target;
+            const bool self = words.size() == 4;
+            target.session = !self ? sessionForUser(words[4]) : nullptr;
+            const bool online = target.session != nullptr;
+            const Account* offline = !self && !online ? database_.findUser(words[4]) : nullptr;
+            const std::string userId = self ? session.userId
+                : online ? target.session->userId : offline != nullptr ? offline->id : std::string();
+            if (userId.empty()) {
+                out("Player \"" + words[4] + "\" not found.");
+                return;
+            }
+            PlayerRecord& record = database_.progress(userId);
+            for (std::size_t i = 0; i < content().petalCount(); ++i) {
+                record.addItem(rarity, "petal_" + content().petal(i).id, amount);
+            }
+            database_.markDirty();
+            // One profile for the whole batch, rather than one per petal.
+            if (self) sendProfile(session, connection);
+            else if (online) {
+                if (net::Connection* peer = listener_.find(target.session->connection)) {
+                    sendProfile(*target.session, *peer);
+                }
+            }
+            out("Gave " + std::to_string(amount) + "x every " + rarityName(rarity) +
+                " petal to " + (self ? std::string("yourself") : words[4]) + ".");
+            return;
+        }
         if (words.size() < 4 || words.size() > 5) {
             out("Usage: give <username> <itemType> <rarity> [amount]");
+            out("       give all <rarity> <amount> [username]");
             out("  amount: how many to give (default 1).");
             out("  Works for online players and offline accounts alike, by account name");
             out("  \xE2\x80\x94 offline gives are saved directly to the account.");
@@ -2147,7 +2184,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         // half a command, and the live inventory is rebuilt from the record on
         // the next connection anyway.
         CommandTarget target;
-        const bool online = resolveCommandTarget(words[1], target) && target.session != nullptr;
+        target.session = sessionForUser(words[1]);
+        const bool online = target.session != nullptr;
+        if (online) target.name = target.session->username;
         const std::string userId =
             online ? target.session->userId
                    : [&] {

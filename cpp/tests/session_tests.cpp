@@ -129,3 +129,20 @@ TEST(session_stages_gate_what_is_allowed) {
     session.entity = makeEntity(3, 0);
     CHECK(session.playing());
 }
+
+TEST(inventory_allowance_refills_without_banking_or_spending_movement) {
+    Session session;
+    session.lastRefillMillis = 1000;
+    for (int i = 0; i < 20; ++i) CHECK(spend(session.inventoryAllowance));
+    CHECK(!spend(session.inventoryAllowance));
+    CHECK_NEAR(session.inputAllowance, 60.0, 1e-9);
+    refillAllowances(session, 1050);
+    CHECK(!spend(session.inventoryAllowance));
+    refillAllowances(session, 1100);
+    CHECK(spend(session.inventoryAllowance));
+    CHECK(!spend(session.inventoryAllowance));
+    refillAllowances(session, 1000); // Backwards clocks earn no extra tokens.
+    CHECK(!spend(session.inventoryAllowance));
+    refillAllowances(session, 3601100);
+    CHECK_NEAR(session.inventoryAllowance, 20.0, 1e-9);
+}

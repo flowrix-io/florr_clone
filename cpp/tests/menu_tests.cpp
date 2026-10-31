@@ -479,6 +479,7 @@ TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
     CHECK(!shopSellsRarity(Rarity::Unique));
     CHECK(!shopSellsRarity(Rarity::Apex));
     CHECK(!shopSellsRarity(Rarity::Universal));
+    CHECK(!shopSellsRarity(Rarity::Admin));
     // Nor does any rotation ever put one on a card.
     for (std::int64_t rotation = 0; rotation < 500; ++rotation) {
         for (const ShopOffer& offer : shopOffers(rotation)) {

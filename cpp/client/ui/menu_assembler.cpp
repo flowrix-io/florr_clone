@@ -249,7 +249,7 @@ bool AssemblerPanel::render(MenuContext& ctx, std::uint16_t mobIndex, Rarity tie
         return true;
     }
     const AssemblyRecipe& recipe = recipes[recipeIndex];
-    const int most = tier == Rarity::Universal ? 0 : affordable(profile, recipe, tier);
+    const int most = rarityIndex(tier) >= kLadderRarityCount ? 0 : affordable(profile, recipe, tier);
 
     // --- the count -----------------------------------------------------------
     // Typed while the field has the caret; held to what the bag can make, and

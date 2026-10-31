@@ -1369,6 +1369,32 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         return;
     }
 
+    // Bill before dispatch, including invalid requests. These handlers can
+    // reapply a whole ring, scan the bag and send a full Profile; without a
+    // shared ceiling a modified client can do that once per packet, and
+    // alternate message types to evade a per-handler limit. Excess requests
+    // have no side effects and produce no reply to amplify the flood.
+    switch (id) {
+        case net::ClientMessage::SetLoadout:
+        case net::ClientMessage::SwapLoadout:
+        case net::ClientMessage::SwapLoadoutRows:
+        case net::ClientMessage::SaveLoadoutPreset:
+        case net::ClientMessage::LoadLoadoutPreset:
+        case net::ClientMessage::Craft:
+        case net::ClientMessage::OracleCraft:
+        case net::ClientMessage::Trade:
+        case net::ClientMessage::TitanForge:
+        case net::ClientMessage::Assemble:
+        case net::ClientMessage::Absorb:
+        case net::ClientMessage::BuyPetal:
+        case net::ClientMessage::UpgradeSkill:
+        case net::ClientMessage::ResetSkills:
+        case net::ClientMessage::RedeemCode:
+            if (!session->authenticated() || !spend(session->inventoryAllowance)) return;
+            break;
+        default: break;
+    }
+
     switch (id) {
         case net::ClientMessage::Hello:         handleHello(*session, connection, reader); break;
         case net::ClientMessage::Register:      handleRegister(*session, connection, reader); break;
@@ -3073,7 +3099,7 @@ void GameServer::handleTrade(Session& session, net::Connection& connection, Byte
     // Never universal: a universal coin would be a universal nobody gave.
     const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
     if (petalIndex >= content().petalCount() || !content().petal(petalIndex).tradable ||
-        rarity == Rarity::Universal || coin == kInvalidIndex) {
+        rarityIndex(rarity) >= kLadderRarityCount || coin == kInvalidIndex) {
         refuse("The trader will not take that.");
         return;
     }
@@ -3155,7 +3181,7 @@ void GameServer::handleAssemble(Session& session, net::Connection& connection,
     }
     // Universal is forged at the titan and nowhere else: an assembler an
     // operator stood at universal makes nothing.
-    if (rarity == Rarity::Universal) {
+    if (rarityIndex(rarity) >= kLadderRarityCount) {
         reply(0, "The assembler cannot work at that rarity.");
         return;
     }

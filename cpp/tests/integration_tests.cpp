@@ -1874,3 +1874,31 @@ TEST(spaceship_shots_bring_at_most_three_glitch_flowers_through_the_real_server_
     }, 1500));
     CHECK_EQ(most, 3);
 }
+
+TEST(inventory_packet_flood_shares_a_budget_across_opcodes_and_recovers) {
+    Harness h("inventory-flood");
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestRegister("flooder", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(!client.profile().loadout[0].empty());
+    // Invalid swaps still cost work and must consume the same bucket as a
+    // different mutation. One TCP burst, before advancing the server clock.
+    for (int i = 0; i < 100; ++i) client.swapLoadoutSlots(0, 0);
+    client.setLoadoutSlot(0, kNoPetal, Rarity::Common);
+    h.step(3, {&client});
+    const Account* account = h.server.database().findUser("flooder");
+    CHECK(account != nullptr);
+    if (account == nullptr) return;
+    const PlayerRecord* record = h.server.database().findProgress(account->id);
+    CHECK(record != nullptr);
+    if (record == nullptr) return;
+    CHECK(record->loadout[0].has_value());
+    // Excess packets are dropped, never queued to execute after a refill.
+    h.step(30, {&client});
+    CHECK(record->loadout[0].has_value());
+    client.setLoadoutSlot(0, kNoPetal, Rarity::Common);
+    CHECK(h.stepUntil({&client}, [&] { return client.profile().loadout[0].empty(); }));
+    CHECK(!record->loadout[0].has_value());
+}

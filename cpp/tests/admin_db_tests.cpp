@@ -1416,3 +1416,22 @@ TEST(the_database_editor_finds_accounts_by_when_they_were_made_and_seen) {
     CHECK_EQ(note(0), std::string("Stars 500"));
     CHECK_EQ(list("is:admin"), std::string("boss"));
 }
+
+TEST(database_editor_cannot_mint_admin_rarity_petals) {
+    Harness h("admindb-admin-rarity", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
+    CHECK(openAccount(h, {&boss}, boss, "boss"));
+    boss.adminDbSet({"progress", "inventory"}, R"({"admin":{"petal_lentil":1}})");
+    CHECK(!awaitResult(h, {&boss}, boss));
+    CHECK_EQ(boss.profile().stackCount(content().petalIndex("lentil"), Rarity::Admin), 0u);
+    // A loadout without an owned copy is normalized away by the record
+    // parser; a whole progress edit supplying both must also be refused.
+    boss.adminDbSet({"progress"}, R"({"inventory":{"admin":{"petal_lentil":1}},"loadout":[{"type":"petal","petalType":"lentil","rarity":"admin"}]})");
+    CHECK(!awaitResult(h, {&boss}, boss));
+    CHECK(boss.profile().loadout[0].rarity != Rarity::Admin);
+}

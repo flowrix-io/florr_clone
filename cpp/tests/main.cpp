@@ -409,7 +409,7 @@ TEST(rarity_steps_clamp_at_both_ends) {
     CHECK_EQ(downgradeRarity(Rarity::Apex), Rarity::Unique);
     CHECK_EQ(clampRarity(-5), Rarity::Common);
     // Any tier, universal included; the ladder clamp stops at apex.
-    CHECK_EQ(clampRarity(999), Rarity::Universal);
+    CHECK_EQ(clampRarity(999), Rarity::Admin);
     CHECK_EQ(clampLadderRarity(999), Rarity::Apex);
     CHECK_EQ(clampLadderRarity(-5), Rarity::Common);
 }
@@ -435,7 +435,7 @@ TEST(rarity_scaling_is_monotonic) {
 
 TEST(universal_sits_above_the_ladder_and_nothing_climbs_to_it) {
     CHECK_EQ(rarityIndex(Rarity::Universal), kLadderRarityCount);
-    CHECK_EQ(kRarityCount, kLadderRarityCount + 1);
+    CHECK_EQ(kRarityCount, kLadderRarityCount + 2);
     CHECK(parseRarity("universal") == Rarity::Universal);
     CHECK_EQ(std::string(rarityLabel(Rarity::Universal)), std::string("Universal"));
     CHECK_EQ(rarityColor(Rarity::Universal), 0x555555u);
@@ -755,4 +755,15 @@ TEST(the_games_own_components_arrive_with_their_defaults) {
     // An empty loadout slot must read as empty, not as petal index 0.
     CHECK_EQ(w.add<Loadout>(p).slots[0].configIndex, kNoPetal);
     CHECK(w.get<Loadout>(p).slots[3].empty());
+}
+
+TEST(admin_rarity_stays_outside_all_progression_ladders) {
+    CHECK_EQ(rarityIndex(Rarity::Admin), rarityIndex(Rarity::Universal) + 1);
+    CHECK_EQ(parseRarity("admin"), Rarity::Admin);
+    CHECK_EQ(std::string(rarityLabel(Rarity::Admin)), std::string("Admin"));
+    CHECK_EQ(ladderRarity(Rarity::Admin), Rarity::Apex);
+    CHECK_EQ(upgradeRarity(Rarity::Apex), Rarity::Apex);
+    CHECK_EQ(upgradeRarity(Rarity::Universal), Rarity::Universal);
+    CHECK(!craftsOutOf(Rarity::Admin));
+    CHECK_EQ(oracleCraftCost(Rarity::Admin), 0);
 }

@@ -738,7 +738,24 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
             refuse(error);
             return;
         }
-        record = parsePlayerRecord(row);
+        PlayerRecord updated = parsePlayerRecord(row);
+        // The Admin rarity is minted only by `give`, never by editing a bag
+        // or a loadout row (including a patch on the entire progress object).
+        const auto adminCount = [](const PlayerRecord& progress, const std::string& petal) {
+            std::int64_t count = progress.itemCount(Rarity::Admin, "petal_" + petal);
+            for (const auto& slot : progress.loadout) {
+                if (slot && slot->rarity == Rarity::Admin && slot->petalType == petal) ++count;
+            }
+            return count;
+        };
+        for (std::size_t i = 0; i < content().petalCount(); ++i) {
+            const std::string& petal = content().petal(i).id;
+            if (adminCount(updated, petal) > adminCount(record, petal)) {
+                refuse("Admin rarity petals can only be created with the give command.");
+                return;
+            }
+        }
+        record = std::move(updated);
         after = playerRecordJson(record);
     }
     database_.markDirty();

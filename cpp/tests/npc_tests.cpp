@@ -154,7 +154,7 @@ TEST(the_oracle_charges_the_stated_price_for_every_tier) {
     // The design's own numbers, tier by tier -- "unusual" is this game's
     // uncommon. Apex and universal cost nothing because nothing crafts out of
     // either.
-    const int expected[] = {7, 11, 19, 34, 65, 128, 253, 506, 1012, 0, 0};
+    const int expected[] = {7, 11, 19, 34, 65, 128, 253, 506, 1012, 0, 0, 0};
     static_assert(sizeof(expected) / sizeof(expected[0]) == kRarityCount);
     for (int i = 0; i < kRarityCount; ++i) {
         CHECK_EQ(oracleCraftCost(static_cast<Rarity>(i)), expected[i]);

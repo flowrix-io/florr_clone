@@ -3536,3 +3536,93 @@ TEST(a_dead_summon_is_not_announced) {
     h.step(10, {&client});
     CHECK(!sawText(client, "Super Bee has been defeated"));
 }
+
+TEST(give_all_admin_petals_is_self_only_and_requires_give_permission) {
+    Harness h("cmd-give-all-admin", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "visitor", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, visitor;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    visitor.sendChat("/admin give all admin 3");
+    h.step(3, {&boss, &visitor});
+    for (std::size_t i = 0; i < content().petalCount(); ++i) {
+        CHECK_EQ(visitor.profile().stackCount(i, Rarity::Admin), 0u);
+    }
+    boss.sendChat("/admin give all admin 3");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] {
+        return sawText(boss, "Gave 3x every admin petal to yourself.");
+    }));
+    for (std::size_t i = 0; i < content().petalCount(); ++i) {
+        CHECK_EQ(boss.profile().stackCount(i, Rarity::Admin), 3u);
+        CHECK_EQ(visitor.profile().stackCount(i, Rarity::Admin), 0u);
+    }
+    const auto lentil = content().petalIndex("lentil");
+    boss.setLoadoutSlot(0, lentil, Rarity::Admin);
+    CHECK(h.stepUntil({&boss}, [&] {
+        return boss.profile().loadout[0].rarity == Rarity::Admin;
+    }));
+    CHECK_EQ(boss.profile().stackCount(lentil, Rarity::Admin), 2u);
+    boss.sendChat("/admin give boss lentil admin 2");
+    CHECK(h.stepUntil({&boss}, [&] {
+        return boss.profile().stackCount(lentil, Rarity::Admin) == 4u;
+    }));
+}
+
+TEST(give_all_rejects_bad_amounts_and_rarities_without_partial_grants) {
+    Harness h("cmd-give-all-invalid", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    for (const char* command : {"/admin give all admin 0", "/admin give all admin -1",
+                                "/admin give all admin 99999999999999999",
+                                "/admin give all nope 2", "/admin give all admin"}) {
+        boss.sendChat(command);
+        h.step(3, {&boss});
+    }
+    for (std::size_t i = 0; i < content().petalCount(); ++i) {
+        CHECK_EQ(boss.profile().stackCount(i, Rarity::Admin), 0u);
+    }
+}
+
+TEST(give_all_can_target_online_and_offline_accounts) {
+    Harness h("cmd-give-all-target", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "visitor", "password7");
+        seedUser(path, "absent", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, visitor;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    boss.sendChat("/admin give all admin 2 visitor");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] {
+        return sawText(boss, "Gave 2x every admin petal to visitor.");
+    }));
+    for (std::size_t i = 0; i < content().petalCount(); ++i) {
+        CHECK_EQ(visitor.profile().stackCount(i, Rarity::Admin), 2u);
+        CHECK_EQ(boss.profile().stackCount(i, Rarity::Admin), 0u);
+    }
+    boss.sendChat("/admin give all rare 4 absent");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] {
+        return sawText(boss, "Gave 4x every rare petal to absent.");
+    }));
+    const Account* account = h.server.database().findUser("absent");
+    CHECK(account != nullptr);
+    if (account == nullptr) return;
+    const PlayerRecord* record = h.server.database().findProgress(account->id);
+    CHECK(record != nullptr);
+    if (record == nullptr) return;
+    for (std::size_t i = 0; i < content().petalCount(); ++i) {
+        CHECK_EQ(record->itemCount(Rarity::Rare, "petal_" + content().petal(i).id), 4);
+    }
+    boss.sendChat("/admin give all admin 2 nobody");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return sawText(boss, "not found"); }));
+    for (std::size_t i = 0; i < content().petalCount(); ++i) {
+        CHECK_EQ(boss.profile().stackCount(i, Rarity::Admin), 0u);
+    }
+}

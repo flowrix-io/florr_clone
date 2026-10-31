@@ -523,6 +523,9 @@ constexpr ChangelogEntry kChangelog[] = {
         "Reworked bubble petal"
       }
     },
+    {"October 30, 2026",
+     {"New petal: Icosahedron",
+      "Buffed Icosahedron with armor that scales with rarity"}},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

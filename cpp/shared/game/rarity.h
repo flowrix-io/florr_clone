@@ -1,9 +1,9 @@
 #pragma once
 // Rarity: the single axis both mobs and items are graded on.
 //
-// Eleven tiers: the ten-rung LADDER, common through apex, and universal above
-// it. Everything that scales with rarity scales off the index, so there is one
-// ordered table and no string comparisons in any hot path.
+// Twelve tiers: the ten-rung LADDER, common through apex, then universal
+// and the give-only Admin tier above it. Rarity curves use the same ordered
+// table, with no string comparisons in any hot path.
 
 #include <array>
 #include <cstdint>
@@ -16,7 +16,7 @@ namespace flix {
 enum class Rarity : std::uint8_t {
     Common = 0, Uncommon, Rare, Epic, Legendary,
     Mythic, Ultra, Super, Unique, Apex,
-    Universal,
+    Universal, Admin,
     Count
 };
 
@@ -25,14 +25,14 @@ inline constexpr int kRarityCount = static_cast<int>(Rarity::Count);
 inline constexpr std::array<const char*, kRarityCount> kRarityNames = {
     "common", "uncommon", "rare", "epic", "legendary",
     "mythic", "ultra", "super", "unique", "apex",
-    "universal",
+    "universal", "admin",
 };
 
 /// Display names, used on drop labels and inventory tooltips.
 inline constexpr std::array<const char*, kRarityCount> kRarityLabels = {
     "Common", "Uncommon", "Rare", "Epic", "Legendary",
     "Mythic", "Ultra", "Super", "Eternal", "Apex",
-    "Universal",
+    "Universal", "Admin",
 };
 
 /// Tier colours. These carry meaning at a glance -- a player reads rarity from
@@ -50,6 +50,7 @@ inline constexpr std::array<std::uint32_t, kRarityCount> kRarityColors = {
     0xEEEEEEu,  // unique     white
     0xFF00FFu,  // apex       magenta
     0x555555u,  // universal  grey
+    0xFFB020u,  // admin      gold
 };
 
 inline constexpr int rarityIndex(Rarity r) { return static_cast<int>(r); }
@@ -67,16 +68,16 @@ inline constexpr std::uint32_t rarityColor(Rarity r) {
 /// itself. Every mob, drop, spawn band, craft and talent tier lives on it, and
 /// every per-tier table in the game has one entry per rung.
 ///
-/// Universal sits above it and is reached by nothing but an operator's `give`:
-/// no mob is universal, nothing drops at it, nothing crafts into or out of it,
-/// and neither the shop nor the trader deals in it. A universal petal reads
-/// every curve and table at apex except health and damage, which are sqrt(2)
-/// times apex's -- see petalStrengthScale.
+/// Universal sits above the ladder: it is forged at the titan or given by
+/// an operator. Admin sits above Universal and is created only by `give`.
+/// Neither tier drops, crafts through the ladder, or trades in the shop.
+/// Universal reads utility at apex and health/damage at sqrt(2) times apex;
+/// Admin boosts that baseline further in buildPetalStats.
 inline constexpr Rarity kTopLadderRarity = Rarity::Apex;
 inline constexpr int kLadderRarityCount = rarityIndex(kTopLadderRarity) + 1;
 
 /// The rung a tier reads the ladder's tables and curves at: itself, or apex
-/// for universal.
+/// for universal and Admin.
 inline constexpr Rarity ladderRarity(Rarity r) {
     return rarityIndex(r) < kLadderRarityCount ? r : kTopLadderRarity;
 }
@@ -103,7 +104,7 @@ inline constexpr Rarity downgradeRarity(Rarity r) {
     return i > 0 ? static_cast<Rarity>(i - 1) : r;
 }
 
-/// Any tier, universal included: what a rarity read off the wire or out of a
+/// Any tier, universal and Admin included: what a rarity read off the wire or out of a
 /// save becomes.
 inline constexpr Rarity clampRarity(int index) {
     return static_cast<Rarity>(clamp(index, 0, kRarityCount - 1));
@@ -212,13 +213,14 @@ inline double petalStatScale(Rarity r) {
 inline constexpr double kUniversalStrengthBoost = 1.4142135623730951;  // sqrt(2)
 
 /// What a tier's health and damage are over its ladder rung's: sqrt(2) for
-/// universal, 1 on the ladder.
+/// universal, 25 times that for Admin, 1 on the ladder.
 inline double strengthBoost(Rarity r) {
-    return r == Rarity::Universal ? kUniversalStrengthBoost : 1.0;
+    return r == Rarity::Admin ? kUniversalStrengthBoost * 25.0
+         : r == Rarity::Universal ? kUniversalStrengthBoost : 1.0;
 }
 
 /// Petal HEALTH and DAMAGE per tier -- petalStatScale, with universal at
-/// sqrt(2) times apex. The one way universal differs from apex in a fight.
+/// sqrt(2) times apex and Admin another 25 times that.
 inline double petalStrengthScale(Rarity r) {
     return petalStatScale(r) * strengthBoost(r);
 }
@@ -367,6 +369,7 @@ inline constexpr std::array<int, kRarityCount> kOracleCraftCost = {
     1012,  // unique    -> apex
     0,     // apex: nothing above it
     0,     // universal: only ever given
+    0,     // admin: give command only
 };
 
 inline constexpr int oracleCraftCost(Rarity from) {
