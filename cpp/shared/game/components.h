@@ -1102,6 +1102,9 @@ struct PetalInstance {
         std::uint8_t hits = 0;
         double deadlineMillis = 0;
         double readyAtMillis = 0;
+        // Suppress contact only on the return tick, not throughout the chain
+        // cooldown: on the ring this is still a normal damage-dealing petal.
+        double returnedAtMillis = -1;
 
         bool visitedMob(Entity mob) const {
             for (std::uint8_t i = 0; i < hits; ++i) {
@@ -1110,7 +1113,7 @@ struct PetalInstance {
             return false;
         }
         bool allowsHit(Entity victim, double nowMillis) const {
-            return !enabled || (!active && nowMillis >= readyAtMillis) ||
+            return !enabled || (!active && nowMillis > returnedAtMillis) ||
                    (active && !returning && target == victim && !visitedMob(victim));
         }
         void landed(Entity victim, double nowMillis) {

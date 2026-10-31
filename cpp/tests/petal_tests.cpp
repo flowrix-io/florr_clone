@@ -996,7 +996,9 @@ TEST(icosahedron_ricochet_hits_three_distinct_mobs_once_then_returns) {
     CombatSystem combat;
     ricochetCombatTick(rig, combat);
     CHECK(rig.world.get<PetalInstance>(petal).ricochet.active);
+    double furthestTravel = 0.0;
     CHECK(rig.tickUntil([&] {
+        furthestTravel = std::max(furthestTravel, distance(rig.position(petal), start));
         ricochetCombatTick(rig, combat);
         return !rig.world.get<PetalInstance>(petal).ricochet.active;
     }, 120));
@@ -1004,14 +1006,20 @@ TEST(icosahedron_ricochet_hits_three_distinct_mobs_once_then_returns) {
     CHECK_NEAR(rig.world.get<Health>(second).current, 9992.5, 1e-9);
     CHECK_NEAR(rig.world.get<Health>(third).current, 9994.375, 1e-9);
     CHECK_NEAR(rig.world.get<Health>(fourth).current, 10000.0, 1e-9);
+    CHECK(furthestTravel >= 160.0);
     CHECK(distanceSq(rig.position(petal), start) < 1.0);
     CHECK(rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis > rig.now);
     CHECK_NEAR(rig.world.get<Health>(petal).current, 7.0, 1e-9);
-    for (int i = 0; i < 10; ++i) {
+    // Back on the ring, ordinary hits still work while the next chain charges.
+    // First remove its old target so it cannot wear the petal down to a break.
+    rig.world.destroy(first);
+    const Entity solo = addMob(rig, rig.position(petal));
+    for (int i = 0; i < 2; ++i) {
         rig.tick();
         ricochetCombatTick(rig, combat);
     }
-    CHECK_NEAR(rig.world.get<Health>(first).current, 9990.0, 1e-9);
+    CHECK(rig.world.get<Health>(solo).current < 10000.0);
+    CHECK(!rig.world.get<PetalInstance>(petal).ricochet.active);
 }
 
 TEST(icosahedron_ricochet_skips_invalid_targets_and_recovers_when_target_dies) {
@@ -1109,6 +1117,65 @@ TEST(icosahedron_ricochet_times_out_against_an_unconfirmed_target) {
     CHECK(rig.tickUntil([&] {
         return !rig.world.get<PetalInstance>(petal).ricochet.active;
     }, 120));
+}
+
+TEST(icosahedron_bounces_continue_when_each_hit_kills_its_stationary_target) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 start = rig.position(petal);
+    const Entity a = addMob(rig, start);
+    const Entity b = addMob(rig, start + Vec2{100, 0});
+    const Entity c = addMob(rig, start + Vec2{200, 0});
+    for (const Entity mob : {a, b, c}) rig.world.get<Health>(mob).current = 5.0;
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    rig.reap();
+    CHECK(!rig.world.isAlive(a));
+    CHECK(rig.tickUntil([&] {
+        ricochetCombatTick(rig, combat);
+        rig.reap();
+        return !rig.world.get<PetalInstance>(petal).ricochet.active;
+    }, 120));
+    CHECK(!rig.world.isAlive(b));
+    CHECK(!rig.world.isAlive(c));
+    CHECK(distanceSq(rig.position(petal), start) < 1.0);
+}
+
+TEST(icosahedron_ricochet_rearms_after_cooldown_and_unequips_cleanly_in_flight) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Entity first = addMob(rig, rig.position(petal));
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    CHECK(rig.world.get<PetalInstance>(petal).ricochet.active);
+    CHECK(rig.tickUntil([&] {
+        return !rig.world.get<PetalInstance>(petal).ricochet.active;
+    }, 120));
+    const double ready = rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis;
+    rig.world.destroy(first);
+    CHECK(rig.tickUntil([&] { return rig.now >= ready; }, 120));
+    const Entity next = addMob(rig, rig.position(petal));
+    addMob(rig, rig.position(petal) + Vec2{100, 0});
+    ricochetCombatTick(rig, combat);
+    const auto& flight = rig.world.get<PetalInstance>(petal).ricochet;
+    CHECK(flight.active);
+    CHECK_EQ(flight.hits, 1);
+    CHECK(flight.visitedMob(next));
+    rig.tick();
+    rig.unequip(0);
+    rig.tick();
+    CHECK(!rig.world.isAlive(petal));
+    CHECK(rig.petals(0).empty());
 }
 
 const WireEvent* firstStrike(const Rig& rig) {

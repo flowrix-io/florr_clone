@@ -297,6 +297,7 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
         flight.target = NULL_ENTITY;
         flight.hits = 0;
         flight.readyAtMillis = nowMillis + std::max(2500.0, reloadMillis);
+        flight.returnedAtMillis = nowMillis;
     }
     return true;
 }

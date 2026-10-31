@@ -77,7 +77,6 @@ bool DropTables::load(const ContentRegistry& content, const std::string& path, s
             source.kind = itemId == "random" ? Kind::RandomPetal : Kind::Petal;
             source.rarityOffset = rarityOffset;
             source.probability = clamp(entry["probability"].asDouble(), 0.0, 1.0);
-            source.rollAtAllRarities = entry["rollAtAllRarities"].asBool(false);
             source.minCount = std::max(1, entry["minQuantity"].asInt(1));
             source.maxCount = std::max(source.minCount, entry["maxQuantity"].asInt(source.minCount));
             loaded.push_back(std::move(source));
@@ -149,7 +148,6 @@ void DropTables::resolve(const ContentRegistry& content) {
             source.kind == Kind::Petal ? content.petalIndex(source.petalId) : kNoPetal;
         resolved.rarityOffset = source.rarityOffset;
         resolved.probability = source.probability;
-        resolved.rollAtAllRarities = source.rollAtAllRarities;
         resolved.minCount = source.minCount;
         resolved.maxCount = source.maxCount;
         byMob_[mobIndex].push_back(resolved);
@@ -208,8 +206,6 @@ void DropTables::resolve(const ContentRegistry& content) {
             // The chance either authored line would have fired, which is what
             // those two lines meant together before the merge.
             into->probability = 1.0 - (1.0 - into->probability) * (1.0 - row.probability);
-            // Any ordinary row still guarantees the merged petal above common.
-            into->rollAtAllRarities = into->rollAtAllRarities && row.rollAtAllRarities;
             into->rarityOffset = std::max(into->rarityOffset, row.rarityOffset);
             into->minCount = std::max(into->minCount, row.minCount);
             into->maxCount = std::max(into->maxCount, row.maxCount);
@@ -723,17 +719,13 @@ void LootSystem::rollTable(const std::vector<DropTables::Entry>& table, Rarity m
         return;
     }
 
-    // Ordinary rows above common are guaranteed. Opt-in rare rows still roll
-    // once per kill; above unusual `probability` is also spent in pickFeatured on
+    // Every mob above common leaves one of every drop it has. Nothing is
+    // rolled here: above unusual `probability` is spent in pickFeatured on
     // WHICH row is the graded drop, so a low-probability row is not a rare
     // drop any more, it is a reliably WEAK one. The table handed in is the
     // merged one, so two authored lines naming one petal are one drop rather
     // than two.
-    for (const DropTables::Entry& entry : table) {
-        if (!entry.rollAtAllRarities || rng.chance(entry.probability)) {
-            selected_.push_back(&entry);
-        }
-    }
+    for (const DropTables::Entry& entry : table) selected_.push_back(&entry);
 }
 
 std::size_t LootSystem::pickFeatured(Rng& rng) const {
