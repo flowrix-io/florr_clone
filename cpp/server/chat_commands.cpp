@@ -917,7 +917,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "only, tiers 1-2), update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
                     "DB first, then installs latest build + restarts; tier 1 only), change-maze "
                     "[next|garden|desert|ocean|&lt;dayNumber&gt;], sacrifice (lay Hel's "
-                    "Apex Sacrifice now)";
+                    "Apex Sacrifice now; tiers 1-2), generate_code &lt;stars&gt; [maxUses], "
+                    "list_codes, delete_code &lt;code&gt; (star codes; tiers 1-2)";
         }
         out(help);
         return true;
@@ -2653,7 +2654,12 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
     // -- star codes --------------------------------------------------------
 
+    // Every code verb is a giving tier's. A code is stars, and stars are
+    // petals at the shop -- one minted unlimited by a tier that may not give
+    // was a `give` to everyone it was passed to. Listing them is the same:
+    // a live code read off the list redeems on any account.
     if (verb == "generate_code" || verb == "gen_code") {
+        if (lacks(AdminPower::GivePetals)) return;
         if (words.size() < 2) {
             out("Usage: generate_code <stars> [maxUses]");
             out("  Default maxUses is 1. Use 0 for unlimited.");
@@ -2721,6 +2727,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "list_codes") {
+        if (lacks(AdminPower::GivePetals)) return;
         const Json& codes = database_.storedTable("codes");
         if (!codes.isObject() || codes.keys().empty()) {
             out("No codes have been generated.");
@@ -2742,6 +2749,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "delete_code") {
+        if (lacks(AdminPower::GivePetals)) return;
         if (words.size() != 2) {
             out("Usage: delete_code <code>");
             return;
@@ -3080,6 +3088,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "sacrifice" || verb == "spawn_sacrifice" || verb == "spawn-sacrifice") {
+        // An Apex petal on the ground is an Apex petal in whichever bag walks
+        // over it first, the caller's included: a gift, and gated as one.
+        if (lacks(AdminPower::GivePetals)) return;
         out(adminPlaceSacrifice());
         return;
     }

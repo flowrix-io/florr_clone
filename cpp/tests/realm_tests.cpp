@@ -585,11 +585,22 @@ TEST(an_arena_run_never_touches_the_account_it_is_played_from) {
     }));
     CHECK_EQ(accountItems(rose), 0);
 
-    // Out through the door: a quarter of the run's twelve, and the account's
-    // own kit back on the client.
+    // The ring's five starter basics taken off the bar sit in the run's bag
+    // beside the loot, and must not leave with it: join, unequip, leave was a
+    // free basic every lap.
+    for (std::uint8_t slot = 0; slot < 5; ++slot) {
+        client.setLoadoutSlot(slot, kNoPetal, Rarity::Common);
+    }
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.profile().stackCount(basic, Rarity::Common) == 5;
+    }));
+
+    // Out through the door: a quarter of the run's twelve, none of its basics,
+    // and the account's own kit back on the client.
     client.leaveGame();
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
     CHECK_EQ(accountItems(rose), 3);
+    CHECK_EQ(accountItems(basic), accountBasics);
     CHECK(h.stepUntil({&client}, [&] {
         return client.profile().stackCount(basic, Rarity::Common) ==
                static_cast<std::uint32_t>(accountBasics);
