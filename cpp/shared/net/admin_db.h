@@ -46,6 +46,13 @@ enum class AdminDbOp : std::uint8_t {
     SignOut,
     // 7 was DeleteAccount. Removed for security: the editor cannot delete an
     // account. Do not reuse the code -- an old client may still send it.
+    /// u8 scope, str key, path, text base, text edited -- the text view's
+    /// save. `base` is the value at `path` as the panel opened it and `edited`
+    /// what the admin made of it, both JSON. What differs between the two is
+    /// applied to the value as it stands NOW, so a field the admin did not
+    /// touch keeps whatever it holds -- a player in the world earns while the
+    /// admin types. Answered with Node + Result.
+    Patch = 8,
 };
 
 /// What an AdminDb server message carries.
@@ -97,6 +104,11 @@ inline constexpr std::size_t kAdminDbMaxString = 4096;
 /// children are sent unloaded. Well under the 1 MiB frame cap.
 inline constexpr std::size_t kAdminDbNodeBudget = 256 * 1024;
 
+/// The longest JSON a Patch carries in each of its two texts. Two of them
+/// and the rest of the message stay under the 1 MiB frame cap, which a frame
+/// over would close the connection on rather than be refused.
+inline constexpr std::size_t kAdminDbMaxText = 480 * 1024;
+
 /// A path into a document: one step per level, an array index written as its
 /// decimal. Steps rather than one "a/b/c" string so a key holding a slash
 /// needs no escaping.
@@ -104,6 +116,12 @@ using AdminDbPath = std::vector<std::string>;
 
 void writeAdminDbPath(ByteWriter&, const AdminDbPath&);
 AdminDbPath readAdminDbPath(ByteReader&);
+
+/// A text longer than the wire's own string, which caps at 64 KiB and would
+/// cut a record's JSON short: a u32 length and the bytes. The reader refuses
+/// (and fails `r`) a length over kAdminDbMaxText or past the frame's end.
+void writeAdminDbText(ByteWriter&, const std::string&);
+std::string readAdminDbText(ByteReader&);
 
 /// One node of a document, as the client holds it.
 struct AdminDbNode {
@@ -140,5 +158,10 @@ bool readAdminDbNode(ByteReader&, AdminDbNode& out);
 
 /// `value` as one line of compact JSON, for the panel to show and edit.
 std::string adminDbScalarText(const AdminDbNode&);
+
+/// The node as JSON, for the text view. False when any part of it was not
+/// sent -- a long string, a container never opened -- since text missing a
+/// part would read, and save, as that part deleted.
+bool adminDbNodeJson(const AdminDbNode&, Json& out);
 
 } // namespace flix::net

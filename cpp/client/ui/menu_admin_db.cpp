@@ -14,13 +14,23 @@
 // row through the same parse a restart would, and what comes back is drawn.
 // So the tree is always what the database holds, and the line at the foot of
 // the card says so when the server stored something other than what was typed.
+//
+// Any object or array can also be opened as TEXT -- the account's progress
+// record, the one the database file keeps under the account's id, from the
+// header's Text button, and anything else from its row's. The text is the
+// value's JSON in the editor the asset browser uses (code_editor.h); saving it
+// sends the text as it was opened beside the text as it stands, and the server
+// applies what differs between them (AdminDbOp::Patch). The text is then
+// rebuilt from what the server says it stored.
 
 #include <algorithm>
+#include <cstdlib>
 #include <ctime>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "client/ui/code_editor.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
@@ -88,6 +98,13 @@ enum class Act : std::uint8_t {
     SavePassword,
     CancelPassword,
     SignOut,
+    /// A row's Text button: that value, as text.
+    OpenText,
+    /// The header's: the account's progress record, as text.
+    DocText,
+    SaveText,
+    RevertText,
+    CloseText,
 };
 
 struct Hit {
@@ -151,6 +168,21 @@ struct State {
     bool passwording = false;
     std::string password;
     TextFieldState passwordField;
+
+    /// The text view: one value of the open document as JSON.
+    bool texting = false;
+    net::AdminDbPath textPath;
+    /// The value as the text was built from it, compact -- what a save sends
+    /// as its base, so the server can tell the admin's changes from the rest.
+    std::string textBase;
+    CodeEditor textEditor;
+    /// AdminDbState::nodeSeq when the text was built.
+    std::uint32_t textNodeSeq = 0;
+    /// A save is out. Its answer is the Result after resultSeq moves past
+    /// `textSaveResult`; a Node landing before it means something was stored.
+    bool textSaving = false;
+    std::uint32_t textSaveResult = 0;
+    std::uint32_t textSaveNode = 0;
 
     /// The one destructive button waiting for its second click.
     std::string armed;
@@ -431,6 +463,162 @@ void commitAdd(State& s, NetClient& net) {
     s.addValueField.blur();
 }
 
+/// The value at `path` as JSON, or false when the panel does not hold all of
+/// it -- see adminDbNodeJson.
+bool valueAt(const AdminDbState& db, const net::AdminDbPath& path, Json& out) {
+    const net::AdminDbNode* node = const_cast<net::AdminDbNode&>(db.root).find(path);
+    return node != nullptr && net::adminDbNodeJson(*node, out);
+}
+
+/// Whether a row's value can be opened as text: a container, and every part
+/// of it sent.
+bool textable(const net::AdminDbNode& node) {
+    if (node.unloaded) return false;
+    for (const net::AdminDbNode& child : node.children) {
+        if (!textable(child)) return false;
+    }
+    return true;
+}
+
+/// Where the text view's value sits in the database FILE, as its keys read
+/// there: an account's progress record is filed under the account's id in
+/// `players`, its row under its name in `users`.
+std::string fileLocation(const AdminDbState& db, const net::AdminDbPath& path) {
+    std::string out;
+    std::size_t from = 0;
+    if (db.scope == net::AdminDbScope::Account && !path.empty()) {
+        const bool progress = path[0] == "progress";
+        std::string filedAs = db.key;
+        if (progress) {
+            const net::AdminDbNode* id =
+                const_cast<net::AdminDbNode&>(db.root).find({"account", "id"});
+            filedAs = id != nullptr && id->type == Json::Type::String ? id->text : "?";
+        }
+        out = std::string(progress ? "players" : "users") + " \xE2\x80\xBA " + jsonEscape(filedAs);
+        from = 1;
+    } else {
+        out = db.key;
+    }
+    for (std::size_t i = from; i < path.size(); ++i) out += " \xE2\x80\xBA " + path[i];
+    return out;
+}
+
+void openText(State& s, const AdminDbState& db, const net::AdminDbPath& path, double now) {
+    Json value;
+    if (!valueAt(db, path, value)) {
+        setStatus(s, "Part of that was too long to send, so it cannot be shown as text.", false);
+        return;
+    }
+    cancelEdits(s);
+    s.passwording = false;
+    s.passwordField.blur();
+    s.texting = true;
+    s.textPath = path;
+    s.textBase = value.dump();
+    s.textEditor.load(value.dump(2), assets::Syntax::Json);
+    s.textEditor.focusAtStart(now);
+    s.textNodeSeq = db.nodeSeq;
+    s.textSaving = false;
+}
+
+/// Builds the text again from what the panel holds now, keeping the view.
+void reloadText(State& s, const AdminDbState& db) {
+    Json value;
+    s.textNodeSeq = db.nodeSeq;
+    if (!valueAt(db, s.textPath, value)) return;
+    s.textBase = value.dump();
+    s.textEditor.reload(value.dump(2));
+}
+
+void closeText(State& s) {
+    s.texting = false;
+    s.textSaving = false;
+    s.textEditor.blur();
+}
+
+void saveText(State& s, AdminDbState& db, NetClient& net) {
+    if (s.textSaving) return;
+    Json edited;
+    std::string error;
+    if (!Json::parse(s.textEditor.text(), edited, error)) {
+        // "at offset 1234" is no help in a page of text; a line is.
+        const std::size_t at = error.rfind(" at offset ");
+        if (at != std::string::npos) {
+            const std::size_t offset =
+                std::min<std::size_t>(std::strtoull(error.c_str() + at + 11, nullptr, 10),
+                                      s.textEditor.text().size());
+            const std::string& text = s.textEditor.text();
+            const std::size_t line = static_cast<std::size_t>(
+                std::count(text.begin(), text.begin() + static_cast<std::ptrdiff_t>(offset), '\n'));
+            error = error.substr(0, at) + " on line " + std::to_string(line + 1);
+        }
+        setStatus(s, "Not saved: that is not valid JSON -- " + error + ".", false);
+        return;
+    }
+    const std::string compact = edited.dump();
+    if (compact == s.textBase) {
+        setStatus(s, "Nothing to save: the text holds what it was opened with.", true);
+        return;
+    }
+    if (!net.adminDbPatch(s.textPath, s.textBase, compact)) {
+        setStatus(s, "Too large to save in one go (" +
+                         withSeparators(static_cast<double>(compact.size() / 1024)) +
+                         " KB). Open a smaller part of it as text.", false);
+        return;
+    }
+    s.textSaving = true;
+    s.textSaveResult = db.resultSeq;
+    s.textSaveNode = db.nodeSeq;
+    setStatus(s, "Saving...", true);
+}
+
+/// The right column while it shows text: where the value is filed in the
+/// database file, its buttons, and the editor. A press outside `keepFocus`
+/// takes the caret.
+void textView(MenuContext& ctx, State& s, AdminDbState& db, NetClient& net, Rect area,
+              Rect keepFocus, std::vector<Hit>& regions) {
+    Canvas& canvas = ctx.canvas;
+    const Vec2 mouse = ctx.mouse();
+    const double now = ctx.timeSeconds;
+    const Rect toolbar{area.x + 10.0, area.y, area.w - 20.0, 34.0};
+    const Rect box{area.x + 6.0, toolbar.bottom(), area.w - 12.0,
+                   area.bottom() - 6.0 - toolbar.bottom()};
+
+    // Input first, against this frame's layout, as the asset browser does.
+    const CodeEditor::Layout layout = s.textEditor.layout(box);
+    if (s.textEditor.update(ctx, layout, keepFocus).saveRequested) saveText(s, db, net);
+
+    const double cy = toolbar.y + toolbar.h * 0.5;
+    double bx = toolbar.right();
+    const auto action = [&](const std::string& caption, Act act, ChipStyle style, double w,
+                            bool enabled = true) {
+        const Rect r{bx - w, cy - 12.0, w, 24.0};
+        style.textSize = 12.0;
+        style.enabled = enabled;
+        chip(canvas, r, caption, enabled && r.contains(mouse), style);
+        if (enabled) regions.push_back({r, act, -1});
+        bx -= w + 6.0;
+    };
+    const bool dirty = s.textEditor.dirty();
+    const bool closeArmed = isArmed(s, "text-close", now);
+    action(closeArmed ? "Discard?" : "Close", Act::CloseText, closeArmed ? kDangerChip : kChip,
+           closeArmed ? 70.0 : 54.0);
+    const bool revertArmed = isArmed(s, "text-revert", now);
+    action(revertArmed ? "Sure?" : "Revert", Act::RevertText, revertArmed ? kDangerChip : kChip,
+           62.0, dirty || revertArmed);
+    action(s.textSaving ? "Saving" : "Save", Act::SaveText, kGoChip, 60.0,
+           dirty && !s.textSaving);
+
+    double x = toolbar.x;
+    const std::string where =
+        ellipsize(fileLocation(db, s.textPath), 14.0, std::max(40.0, bx - x - 90.0));
+    text(canvas, where, x, cy, label(14.0));
+    x += measure(where, 14.0) + 10.0;
+    if (dirty) badge(canvas, "MODIFIED", x, cy, kAdminInk);
+
+    s.textEditor.draw(canvas, layout, mouse, now);
+}
+
 } // namespace
 
 double AdminDbPanel::preferredWidth() { return kWidth; }
@@ -446,6 +634,7 @@ void AdminDbPanel::reset() {
     cancelEdits(s);
     s.passwording = false;
     s.passwordField.blur();
+    s.textEditor.blur();
     s.armed.clear();
 }
 
@@ -507,6 +696,22 @@ bool AdminDbPanel::render(MenuContext& ctx) {
         cancelEdits(s);
         s.passwording = false;
         s.armed.clear();
+        closeText(s);
+    }
+    if (s.texting && s.textSaving && db.resultSeq != s.textSaveResult) {
+        // A Node ahead of the Result is the server re-sending what it stored;
+        // the text is rebuilt from that. A refusal sends no Node, and the
+        // admin's text is left for them to fix.
+        s.textSaving = false;
+        if (db.nodeSeq != s.textSaveNode) reloadText(s, db);
+    } else if (s.texting && !s.textSaving && db.nodeSeq != s.textNodeSeq &&
+               !s.textEditor.dirty()) {
+        reloadText(s, db);
+    }
+    if (s.texting && db.loaded &&
+        const_cast<net::AdminDbNode&>(db.root).find(s.textPath) == nullptr) {
+        closeText(s);
+        setStatus(s, "What the text view had open is no longer there.", false);
     }
     if (!s.armed.empty() && now - s.armedAt > kArmSeconds) s.armed.clear();
 
@@ -692,7 +897,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                 (db.flags & net::AdminDbOnline) != 0 ? kOnlineDot : kOfflineDot);
             hx += 16.0;
         }
-        const double actionsW = accountDoc ? 2 * 92.0 + 6.0 : 100.0;
+        const double actionsW = accountDoc ? 2 * 92.0 + 70.0 + 12.0 : 100.0;
         const std::string title = ellipsize(db.key, 18.0, right.w - actionsW - 160.0);
         text(canvas, title, hx, hy, name);
         hx += measure(title, 18.0) + 10.0;
@@ -703,16 +908,25 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                  label(12.0, kPaper));
 
             double bx = right.right() - 10.0;
-            const auto action = [&](const std::string& caption, Act act, const ChipStyle& style) {
-                const Rect r{bx - 92.0, hy - 13.0, 92.0, 26.0};
+            const auto action = [&](const std::string& caption, Act act, const ChipStyle& style,
+                                    double w = 92.0) {
+                const Rect r{bx - w, hy - 13.0, w, 26.0};
                 chip(canvas, r, caption, r.contains(mouse), style);
                 addRegion(r, act);
-                bx -= 92.0 + 6.0;
+                bx -= w + 6.0;
             };
             const bool signOutArmed = isArmed(s, "account-signout", now);
             action(signOutArmed ? "Sure?" : "Sign out", Act::SignOut,
                    signOutArmed ? kDangerChip : kChip);
             action("Password", Act::Password, kChip);
+            // The progress record: the part of an account the file keeps
+            // under its id, and the part an admin types out most.
+            if (!s.texting) action("Text", Act::DocText, kChip, 70.0);
+        } else if (s.texting) {
+            if (db.loaded) {
+                text(canvas, entriesText(db.root.size, db.root.type == Json::Type::Array), hx, hy,
+                     label(12.0, kPaper));
+            }
         } else {
             const AdminDbTableRow* table = nullptr;
             for (const AdminDbTableRow& t : db.tables) {
@@ -746,156 +960,172 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             treeTop += 36.0;
         }
 
-        treeView = Rect{right.x + 4.0, treeTop, right.w - 8.0, right.bottom() - 4.0 - treeTop};
         setFill(canvas, kPaper, 0.12);
         canvas.fillRect(static_cast<float>(right.x + 8.0), static_cast<float>(treeTop - 3.0),
                         static_cast<float>(right.w - 16.0), 1.0f);
-
-        if (!db.loaded) {
-            text(canvas, "Loading...", treeView.x + treeView.w * 0.5, treeView.y + 30.0,
-                 label(14.0, kPaper, Align::Centre));
+        if (s.texting) {
+            textView(ctx, s, db, net, Rect{right.x, treeTop, right.w, right.bottom() - treeTop},
+                     right, regions);
         } else {
-            net::AdminDbPath path;
-            if (s.adding && s.addParent.empty()) {
-                TreeRow add;
-                add.kind = TreeRow::Kind::Add;
-                rows.push_back(add);
-            }
-            flatten(db.root, path, 0, s, accountDoc, rows);
-            if (rows.empty()) {
-                text(canvas, "Empty.", treeView.x + treeView.w * 0.5, treeView.y + 30.0,
+            treeView = Rect{right.x + 4.0, treeTop, right.w - 8.0, right.bottom() - 4.0 - treeTop};
+
+            if (!db.loaded) {
+                text(canvas, "Loading...", treeView.x + treeView.w * 0.5, treeView.y + 30.0,
                      label(14.0, kPaper, Align::Centre));
-            }
-        }
-
-        s.tree.contentHeight = static_cast<double>(rows.size()) * kTreeRow + 8.0;
-        s.tree.viewHeight = treeView.h;
-        if (treeView.contains(mouse)) s.tree.offset -= ctx.wheel() * kWheelStep;
-        s.tree.offset -= touchScroll(ctx.window, treeView, s.tree.maxOffset() > 0);
-        s.tree.offset = clamp(s.tree.offset, 0.0, s.tree.maxOffset());
-
-        canvas.save();
-        clipCanvas(canvas, treeView);
-        const double rowRight = treeView.right() - kScrollbarWidth - 6.0;
-        double y = treeView.y + 4.0 - s.tree.offset;
-        for (std::size_t i = 0; i < rows.size(); ++i, y += kTreeRow) {
-            const TreeRow& row = rows[i];
-            const Rect rowRect{treeView.x + 2.0, y, rowRight - treeView.x - 2.0, kTreeRow};
-            if (rowRect.bottom() < treeView.y || rowRect.y > treeView.bottom()) continue;
-            const double cy = y + kTreeRow * 0.5;
-            const double x0 = treeView.x + 10.0 + row.depth * kIndent;
-            const bool hovered = clipTo(rowRect, treeView).contains(mouse);
-
-            if (row.kind == TreeRow::Kind::Loading) {
-                text(canvas, "Loading...", x0 + 12.0, cy, label(12.0, kNullInk));
-                continue;
-            }
-            if (row.kind == TreeRow::Kind::Add) {
-                fillRound(canvas, Rect{rowRect.x, rowRect.y + 1.0, rowRect.w, rowRect.h - 2.0},
-                          4.0, kPaper, 0.12);
-                double fx = x0 + 12.0;
-                if (!s.addToArray) {
-                    const Rect keyRect{fx, y + 2.0, 150.0, kTreeRow - 4.0};
-                    inputField(canvas, keyRect, s.addKey, "name", s.addKeyField.focused, now,
-                               &s.addKeyField);
-                    trackTextMouse(ctx.window, s.addKeyField, keyRect,
-                                   inputFieldRun(keyRect, s.addKey, s.addKeyField), s.addKey, now);
-                    fx = keyRect.right() + 6.0;
-                }
-                const Rect save{rowRight - 56.0, y + 3.0, 52.0, kTreeRow - 6.0};
-                const Rect valueRect{fx, y + 2.0, std::max(60.0, save.x - 6.0 - fx), kTreeRow - 4.0};
-                inputField(canvas, valueRect, s.addValue, "value", s.addValueField.focused, now,
-                           &s.addValueField);
-                trackTextMouse(ctx.window, s.addValueField, valueRect,
-                               inputFieldRun(valueRect, s.addValue, s.addValueField), s.addValue,
-                               now);
-                ChipStyle small = kGoChip;
-                small.textSize = 12.0;
-                chip(canvas, save, "Add", save.contains(mouse), small);
-                addRegion(clipTo(save, treeView), Act::SaveAdd);
-                continue;
-            }
-
-            const net::AdminDbNode& node = *row.node;
-            const bool editingThis = s.editing && s.editPath == row.path;
-            if (hovered || editingThis) {
-                fillRound(canvas, rowRect, 4.0, kPaper, 0.09);
-            }
-            const bool container = node.container();
-            const bool open = container && s.expanded.count(pathKey(row.path)) != 0;
-            if (container) disclosure(canvas, x0 + 4.0, cy, open);
-
-            const std::string keyText = row.parentIsArray ? "[" + row.key + "]" : row.key;
-            const double keyX = x0 + 12.0;
-            const double keyMax = std::max(40.0, (rowRight - keyX) * 0.45);
-            const std::string shownKey = ellipsize(keyText, 13.0, keyMax);
-            text(canvas, shownKey, keyX, cy,
-                 label(13.0, row.parentIsArray ? kNullInk : kPaper));
-            const double valueX = keyX + measure(shownKey, 13.0) + 12.0;
-
-            // The row's buttons, right-aligned: an x on everything that may be
-            // deleted, and a + on everything that can hold more. Collected
-            // apart and filed AFTER the row's own region, because the click
-            // pass tests the last-filed first and a button must beat its row.
-            double bx = rowRight - 4.0;
-            const bool showActions = (hovered || editingThis) && !row.locked;
-            std::vector<Hit> buttons;
-            const auto rowButton = [&](const std::string& caption, Act act, const ChipStyle& style,
-                                       double w) {
-                const Rect r{bx - w, y + 3.0, w, kTreeRow - 6.0};
-                ChipStyle small = style;
-                small.textSize = 12.0;
-                chip(canvas, r, caption, r.contains(mouse), small);
-                const Rect hitbox = clipTo(r, treeView);
-                if (hitbox.w > 0 && hitbox.h > 0) {
-                    buttons.push_back({hitbox, act, static_cast<int>(i)});
-                }
-                bx -= w + 4.0;
-            };
-
-            Hit rowRegion{clipTo(rowRect, treeView), Act::None, static_cast<int>(i)};
-            if (editingThis) {
-                rowButton("Save", Act::SaveEdit, kGoChip, 52.0);
-                const Rect field{valueX, y + 2.0, std::max(80.0, bx - 4.0 - valueX), kTreeRow - 4.0};
-                inputField(canvas, field, s.editText, "", s.editField.focused, now, &s.editField);
-                trackTextMouse(ctx.window, s.editField, field,
-                               inputFieldRun(field, s.editText, s.editField), s.editText, now);
             } else {
-                const bool armed = isArmed(s, "rm:" + pathKey(row.path), now);
-                if ((showActions || armed) && !row.fixed) {
-                    rowButton(armed ? "Delete?" : "x", Act::Remove, kDangerChip, armed ? 64.0 : 22.0);
+                net::AdminDbPath path;
+                if (s.adding && s.addParent.empty()) {
+                    TreeRow add;
+                    add.kind = TreeRow::Kind::Add;
+                    rows.push_back(add);
                 }
-                if (showActions && container && !node.unloaded) {
-                    rowButton("+", Act::Add, kGoChip, 22.0);
+                flatten(db.root, path, 0, s, accountDoc, rows);
+                if (rows.empty()) {
+                    text(canvas, "Empty.", treeView.x + treeView.w * 0.5, treeView.y + 30.0,
+                         label(14.0, kPaper, Align::Centre));
                 }
-                const double valueMax = std::max(20.0, bx - 6.0 - valueX);
-                const std::string shown = ellipsize(valueText(node), 13.0, valueMax);
-                text(canvas, shown, valueX, cy,
-                     label(13.0, container ? kNullInk : valueInk(node)));
-                const std::string when = timestampHint(row.key, node);
-                const double whenX = valueX + measure(shown, 13.0) + 10.0;
-                if (!when.empty() && whenX + measure(when, 12.0) < bx - 6.0) {
-                    text(canvas, when, whenX, cy, label(12.0, kNullInk));
-                }
-                if (row.locked && hovered) {
-                    text(canvas, "read only", rowRight - 6.0, cy,
-                         label(11.0, kNullInk, Align::Right));
-                }
-                rowRegion.act = container ? Act::Toggle : (row.locked ? Act::None : Act::Edit);
             }
-            if (rowRegion.rect.w > 0 && rowRegion.rect.h > 0) regions.push_back(rowRegion);
-            regions.insert(regions.end(), buttons.begin(), buttons.end());
+
+            s.tree.contentHeight = static_cast<double>(rows.size()) * kTreeRow + 8.0;
+            s.tree.viewHeight = treeView.h;
+            if (treeView.contains(mouse)) s.tree.offset -= ctx.wheel() * kWheelStep;
+            s.tree.offset -= touchScroll(ctx.window, treeView, s.tree.maxOffset() > 0);
+            s.tree.offset = clamp(s.tree.offset, 0.0, s.tree.maxOffset());
+
+            canvas.save();
+            clipCanvas(canvas, treeView);
+            const double rowRight = treeView.right() - kScrollbarWidth - 6.0;
+            double y = treeView.y + 4.0 - s.tree.offset;
+            for (std::size_t i = 0; i < rows.size(); ++i, y += kTreeRow) {
+                const TreeRow& row = rows[i];
+                const Rect rowRect{treeView.x + 2.0, y, rowRight - treeView.x - 2.0, kTreeRow};
+                if (rowRect.bottom() < treeView.y || rowRect.y > treeView.bottom()) continue;
+                const double cy = y + kTreeRow * 0.5;
+                const double x0 = treeView.x + 10.0 + row.depth * kIndent;
+                const bool hovered = clipTo(rowRect, treeView).contains(mouse);
+
+                if (row.kind == TreeRow::Kind::Loading) {
+                    text(canvas, "Loading...", x0 + 12.0, cy, label(12.0, kNullInk));
+                    continue;
+                }
+                if (row.kind == TreeRow::Kind::Add) {
+                    fillRound(canvas, Rect{rowRect.x, rowRect.y + 1.0, rowRect.w, rowRect.h - 2.0},
+                              4.0, kPaper, 0.12);
+                    double fx = x0 + 12.0;
+                    if (!s.addToArray) {
+                        const Rect keyRect{fx, y + 2.0, 150.0, kTreeRow - 4.0};
+                        inputField(canvas, keyRect, s.addKey, "name", s.addKeyField.focused, now,
+                                   &s.addKeyField);
+                        trackTextMouse(ctx.window, s.addKeyField, keyRect,
+                                       inputFieldRun(keyRect, s.addKey, s.addKeyField), s.addKey,
+                                       now);
+                        fx = keyRect.right() + 6.0;
+                    }
+                    const Rect save{rowRight - 56.0, y + 3.0, 52.0, kTreeRow - 6.0};
+                    const Rect valueRect{fx, y + 2.0, std::max(60.0, save.x - 6.0 - fx),
+                                         kTreeRow - 4.0};
+                    inputField(canvas, valueRect, s.addValue, "value", s.addValueField.focused, now,
+                               &s.addValueField);
+                    trackTextMouse(ctx.window, s.addValueField, valueRect,
+                                   inputFieldRun(valueRect, s.addValue, s.addValueField),
+                                   s.addValue, now);
+                    ChipStyle small = kGoChip;
+                    small.textSize = 12.0;
+                    chip(canvas, save, "Add", save.contains(mouse), small);
+                    addRegion(clipTo(save, treeView), Act::SaveAdd);
+                    continue;
+                }
+
+                const net::AdminDbNode& node = *row.node;
+                const bool editingThis = s.editing && s.editPath == row.path;
+                if (hovered || editingThis) {
+                    fillRound(canvas, rowRect, 4.0, kPaper, 0.09);
+                }
+                const bool container = node.container();
+                const bool open = container && s.expanded.count(pathKey(row.path)) != 0;
+                if (container) disclosure(canvas, x0 + 4.0, cy, open);
+
+                const std::string keyText = row.parentIsArray ? "[" + row.key + "]" : row.key;
+                const double keyX = x0 + 12.0;
+                const double keyMax = std::max(40.0, (rowRight - keyX) * 0.45);
+                const std::string shownKey = ellipsize(keyText, 13.0, keyMax);
+                text(canvas, shownKey, keyX, cy,
+                     label(13.0, row.parentIsArray ? kNullInk : kPaper));
+                const double valueX = keyX + measure(shownKey, 13.0) + 12.0;
+
+                // The row's buttons, right-aligned: an x on everything that may be
+                // deleted, and a + on everything that can hold more. Collected
+                // apart and filed AFTER the row's own region, because the click
+                // pass tests the last-filed first and a button must beat its row.
+                double bx = rowRight - 4.0;
+                const bool showActions = (hovered || editingThis) && !row.locked;
+                std::vector<Hit> buttons;
+                const auto rowButton = [&](const std::string& caption, Act act,
+                                           const ChipStyle& style, double w) {
+                    const Rect r{bx - w, y + 3.0, w, kTreeRow - 6.0};
+                    ChipStyle small = style;
+                    small.textSize = 12.0;
+                    chip(canvas, r, caption, r.contains(mouse), small);
+                    const Rect hitbox = clipTo(r, treeView);
+                    if (hitbox.w > 0 && hitbox.h > 0) {
+                        buttons.push_back({hitbox, act, static_cast<int>(i)});
+                    }
+                    bx -= w + 4.0;
+                };
+
+                Hit rowRegion{clipTo(rowRect, treeView), Act::None, static_cast<int>(i)};
+                if (editingThis) {
+                    rowButton("Save", Act::SaveEdit, kGoChip, 52.0);
+                    const Rect field{valueX, y + 2.0, std::max(80.0, bx - 4.0 - valueX),
+                                     kTreeRow - 4.0};
+                    inputField(canvas, field, s.editText, "", s.editField.focused, now,
+                               &s.editField);
+                    trackTextMouse(ctx.window, s.editField, field,
+                                   inputFieldRun(field, s.editText, s.editField), s.editText, now);
+                } else {
+                    const bool armed = isArmed(s, "rm:" + pathKey(row.path), now);
+                    if ((showActions || armed) && !row.fixed) {
+                        rowButton(armed ? "Delete?" : "x", Act::Remove, kDangerChip,
+                                  armed ? 64.0 : 22.0);
+                    }
+                    if (showActions && container && !node.unloaded) {
+                        rowButton("+", Act::Add, kGoChip, 22.0);
+                        if (textable(node)) rowButton("Text", Act::OpenText, kChip, 40.0);
+                    }
+                    const double valueMax = std::max(20.0, bx - 6.0 - valueX);
+                    const std::string shown = ellipsize(valueText(node), 13.0, valueMax);
+                    text(canvas, shown, valueX, cy,
+                         label(13.0, container ? kNullInk : valueInk(node)));
+                    const std::string when = timestampHint(row.key, node);
+                    const double whenX = valueX + measure(shown, 13.0) + 10.0;
+                    if (!when.empty() && whenX + measure(when, 12.0) < bx - 6.0) {
+                        text(canvas, when, whenX, cy, label(12.0, kNullInk));
+                    }
+                    if (row.locked && hovered) {
+                        text(canvas, "read only", rowRight - 6.0, cy,
+                             label(11.0, kNullInk, Align::Right));
+                    }
+                    rowRegion.act = container ? Act::Toggle : (row.locked ? Act::None : Act::Edit);
+                }
+                if (rowRegion.rect.w > 0 && rowRegion.rect.h > 0) regions.push_back(rowRegion);
+                regions.insert(regions.end(), buttons.begin(), buttons.end());
+            }
+            canvas.restore();
+            scrollbar(canvas,
+                      Rect{treeView.x, treeView.y + 4.0, treeView.w - 2.0, treeView.h - 13.0},
+                      s.tree.contentHeight, s.tree.offset, kAdminDbSkin.accent, kScrollbarWidth);
         }
-        canvas.restore();
-        scrollbar(canvas, Rect{treeView.x, treeView.y + 4.0, treeView.w - 2.0, treeView.h - 13.0},
-                  s.tree.contentHeight, s.tree.offset, kAdminDbSkin.accent, kScrollbarWidth);
     }
 
     // -- the footer: how the last request went -------------------------------
 
     {
         const double fy = footerTop + kFooterHeight * 0.5 - 3.0;
-        const std::string hint = "Enter saves, Esc cancels";
+        const std::string hint =
+            !s.texting ? std::string("Enter saves, Esc cancels")
+                       : "Ln " + std::to_string(s.textEditor.caretLine()) + ", Col " +
+                             std::to_string(s.textEditor.caretColumn()) +
+                             (s.textEditor.focused() ? "   Ctrl+S saves, Ctrl+Z undoes" : "");
         const double hintW = measure(hint, 12.0);
         text(canvas, hint, panel.right() - kPad, fy, label(12.0, kPaper, Align::Right));
         if (!s.status.empty()) {
@@ -1056,6 +1286,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                 break;
             case Act::Password:
                 cancelEdits(s);
+                s.textEditor.blur();
                 s.passwording = !s.passwording;
                 s.password.clear();
                 if (s.passwording) s.passwordField.focusAtEnd(s.password, now);
@@ -1078,6 +1309,24 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                 break;
             case Act::SignOut:
                 if (confirmArmed(s, "account-signout", now)) net.adminDbSignOut(db.key);
+                break;
+            case Act::OpenText:
+                if (row != nullptr) openText(s, db, row->path, now);
+                break;
+            case Act::DocText:
+                openText(s, db, {"progress"}, now);
+                break;
+            case Act::SaveText:
+                saveText(s, db, net);
+                break;
+            case Act::RevertText:
+                if (confirmArmed(s, "text-revert", now)) {
+                    reloadText(s, db);
+                    setStatus(s, "Back to what the database holds.", true);
+                }
+                break;
+            case Act::CloseText:
+                if (!s.textEditor.dirty() || confirmArmed(s, "text-close", now)) closeText(s);
                 break;
         }
         break;

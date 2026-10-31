@@ -746,6 +746,23 @@ void NetClient::adminDbSet(const net::AdminDbPath& path, const std::string& json
     send(w);
 }
 
+bool NetClient::adminDbPatch(const net::AdminDbPath& path, const std::string& baseJson,
+                             const std::string& editedJson) {
+    if (!adminDb_.documentOpen) return false;
+    if (baseJson.size() > net::kAdminDbMaxText || editedJson.size() > net::kAdminDbMaxText) {
+        return false;
+    }
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::Patch);
+    w.u8(static_cast<std::uint8_t>(adminDb_.scope));
+    w.str(adminDb_.key);
+    net::writeAdminDbPath(w, path);
+    net::writeAdminDbText(w, baseJson);
+    net::writeAdminDbText(w, editedJson);
+    send(w);
+    return true;
+}
+
 void NetClient::adminDbRemove(const net::AdminDbPath& path) {
     if (!adminDb_.documentOpen) return;
     ByteWriter w;
@@ -847,6 +864,7 @@ void NetClient::handleAdminDb(ByteReader& reader) {
             } else if (net::AdminDbNode* target = db.root.find(path)) {
                 *target = std::move(node);
             }
+            ++db.nodeSeq;
             return;
         }
         case net::AdminDbReply::Result: {

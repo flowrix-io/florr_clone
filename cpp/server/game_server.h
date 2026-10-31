@@ -420,7 +420,8 @@ private:
     bool sendAdminDbTable(net::Connection&, const std::string& table, const net::AdminDbPath&);
     std::uint8_t adminDbAccountFlags(const Account&) const;
     void adminDbList(net::Connection&, const std::string& search, std::uint32_t offset);
-    void adminDbEdit(Session&, net::Connection&, ByteReader&, bool remove);
+    /// Set, Remove and Patch: one edit of an account or a table.
+    void adminDbEdit(Session&, net::Connection&, ByteReader&, net::AdminDbOp);
     void adminDbAccountAction(Session&, net::Connection&, net::AdminDbOp, ByteReader&);
     /// Pushes an edited account onto its live sessions: the body's XP and
     /// level, everything applyAccountToSession copies, and a fresh profile.

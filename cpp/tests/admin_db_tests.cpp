@@ -119,6 +119,10 @@ TEST(admin_db_tree_round_trips_and_goes_shallow_when_large) {
     CHECK(node.child("b")->children[1].type == Json::Type::Null);
     CHECK_EQ(node.find({"c", "d"})->text, std::string("e"));
     CHECK_EQ(node.find({"b", "2"})->text, std::string("x"));
+    // And back to JSON, which is what the text view shows.
+    Json back;
+    CHECK(net::adminDbNodeJson(node, back));
+    CHECK_EQ(back.dump(), small.dump());
 
     // Past the budget the children arrive shut, with their sizes still exact,
     // and a string too long to carry arrives as its length alone.
@@ -141,6 +145,85 @@ TEST(admin_db_tree_round_trips_and_goes_shallow_when_large) {
     CHECK_EQ(shallow.child("entry7")->size, 1u);
     CHECK(shallow.child("long")->unloaded);
     CHECK_EQ(shallow.child("long")->size, static_cast<std::uint32_t>(net::kAdminDbMaxString + 10));
+    // Text missing a part would save as that part deleted, so there is none.
+    CHECK(!net::adminDbNodeJson(shallow, back));
+}
+
+TEST(a_text_edit_applies_only_what_the_admin_changed) {
+    const Json base = Json::parseOrNull(
+        R"({"stars":3,"totalXP":100,"inventory":{"rare":{"petal_rose":2,"petal_basic":1}},)"
+        R"("loadout":[{"petalType":"rose"},null],"old":true})");
+    const Json edited = Json::parseOrNull(
+        R"({"stars":9,"totalXP":100,"inventory":{"rare":{"petal_rose":2},"epic":{"petal_rose":1}},)"
+        R"("loadout":[null,{"petalType":"rose"}],"new":"x"})");
+    const std::vector<admin_db::Change> changes = admin_db::diff(base, edited);
+    // stars, rare.petal_basic gone, epic added, the loadout WHOLE, old gone,
+    // new added -- and nothing for what is the same on both sides.
+    CHECK_EQ(changes.size(), std::size_t{6});
+    bool loadoutWhole = false;
+    for (const admin_db::Change& change : changes) {
+        CHECK(change.path.front() != "totalXP");
+        if (change.path == net::AdminDbPath{"loadout"}) loadoutWhole = !change.remove;
+    }
+    CHECK(loadoutWhole);
+    CHECK(admin_db::diff(base, base).empty());
+
+    // Applied to the record as it is NOW. The player earned XP and a rose
+    // while the admin typed; neither is undone, and every change lands.
+    Json now = Json::parseOrNull(
+        R"({"stars":3,"totalXP":250,"inventory":{"rare":{"petal_rose":3,"petal_basic":1}},)"
+        R"("loadout":[{"petalType":"rose"},null],"old":true})");
+    std::string error;
+    CHECK(admin_db::patchAt(now, {}, changes, error));
+    CHECK_EQ(now["stars"].asDouble(), 9.0);
+    CHECK_EQ(now["totalXP"].asDouble(), 250.0);
+    CHECK_EQ(now["inventory"]["rare"]["petal_rose"].asDouble(), 3.0);
+    CHECK(!now["inventory"]["rare"].contains("petal_basic"));
+    CHECK_EQ(now["inventory"]["epic"]["petal_rose"].asDouble(), 1.0);
+    CHECK(now["loadout"].items()[0].isNull());
+    CHECK(!now.contains("old"));
+    CHECK_EQ(now["new"].asString(), std::string("x"));
+
+    // Below a path, and all or none: a change under a level that has gone
+    // since is refused, and the change before it is not left behind.
+    Json doc = Json::object();
+    doc["progress"] = Json::parseOrNull(R"({"stars":3,"inventory":{}})");
+    Json moved = base;
+    moved["inventory"]["rare"]["petal_new"] = Json(1.0);
+    std::vector<admin_db::Change> late = admin_db::diff(base, edited);
+    for (const admin_db::Change& change : admin_db::diff(base, moved)) late.push_back(change);
+    CHECK(!admin_db::patchAt(doc, {"progress"}, late, error));
+    CHECK_EQ(doc["progress"]["stars"].asDouble(), 3.0);
+    CHECK(!admin_db::patchAt(doc, {"elsewhere"}, changes, error));
+    // A removal of what is already gone is already done.
+    Json bare = Json::parseOrNull(R"({"stars":1})");
+    CHECK(admin_db::patchAt(bare, {}, {{{"old"}, true, Json()}}, error));
+    CHECK_EQ(bare.dump(), std::string(R"({"stars":1})"));
+}
+
+TEST(a_text_longer_than_a_wire_string_travels_whole) {
+    // The wire's own string stops at 64 KiB; a record's JSON need not.
+    const std::string text(100 * 1024, 'a');
+    ByteWriter w;
+    net::writeAdminDbText(w, text);
+    w.u8(7);
+    ByteReader r(w.buffer());
+    CHECK(net::readAdminDbText(r) == text);
+    CHECK_EQ(r.u8(), 7);
+    CHECK(r.ok());
+
+    // A length the frame does not hold, or past the cap, fails the reader.
+    ByteWriter lie;
+    lie.u32(1000);
+    lie.raw("abc", 3);
+    ByteReader rl(lie.buffer());
+    CHECK(net::readAdminDbText(rl).empty());
+    CHECK(!rl.ok());
+    ByteWriter over;
+    net::writeAdminDbText(over, std::string(net::kAdminDbMaxText + 1, 'b'));
+    ByteReader ro(over.buffer());
+    CHECK(net::readAdminDbText(ro).empty());
+    CHECK(!ro.ok());
 }
 
 // ---------------------------------------------------------------------------
@@ -860,6 +943,154 @@ TEST(the_database_editor_edits_a_raw_table) {
 
     // A whole table is not replaced from here.
     boss.adminDbSet({}, "[]");
+    CHECK(!awaitResult(h, {&boss}, boss));
+
+    // An entry, as text.
+    Json entry;
+    CHECK(net::adminDbNodeJson(*docNode(boss, {"0"}), entry));
+    Json typed = entry;
+    typed["message"] = Json("as text");
+    CHECK(boss.adminDbPatch({"0"}, entry.dump(), typed.dump()));
+    CHECK(awaitResult(h, {&boss}, boss));
+    h.step(5, {&boss});
+    CHECK_EQ(docNode(boss, {"0", "message"})->text, std::string("as text"));
+    CHECK_EQ(boss.adminDb().root.size, 1u);
+}
+
+TEST(the_text_view_saves_a_record_without_undoing_the_player) {
+    Harness h("admindb-text", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "bob", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient bob;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
+    CHECK(loginAs(h, bob, "bob", "password7"));
+    bob.joinGame(1920, 1080, {}, "Bob");
+    CHECK(h.stepUntil({&boss, &bob}, [&] { return bob.status() == NetClient::Status::Playing; },
+                      200));
+    CHECK(openAccount(h, {&boss, &bob}, boss, "bob"));
+
+    // The text, as the panel builds it from the tree: the progress record.
+    Json opened;
+    CHECK(net::adminDbNodeJson(*docNode(boss, {"progress"}), opened));
+    CHECK(opened.isObject());
+
+    // The record moves on while the admin types.
+    boss.adminDbSet({"progress", "stars"}, "77");
+    CHECK(awaitResult(h, {&boss, &bob}, boss));
+
+    Json typed = opened;
+    typed["totalXP"] = Json(50000.0);
+    typed["inventory"]["rare"]["petal_rose"] = Json(3.0);
+    CHECK(boss.adminDbPatch({"progress"}, opened.dump(), typed.dump()));
+    CHECK(awaitResult(h, {&boss, &bob}, boss));
+    CHECK(boss.adminDb().resultMessage.find("Saved 2 changes to progress on bob") !=
+          std::string::npos);
+
+    // What was typed reached the player in the world; what was not typed --
+    // the stars, which the text still held at their old figure -- stayed.
+    const std::uint16_t rose = content().petalIndex("rose");
+    CHECK(h.stepUntil({&boss, &bob}, [&] {
+        bool hasRose = false;
+        for (const Profile::Stack& stack : bob.profile().inventory) {
+            if (stack.petalIndex == rose && stack.rarity == Rarity::Rare && stack.count == 3) {
+                hasRose = true;
+            }
+        }
+        return hasRose && bob.profile().totalXp == 50000.0;
+    }, 100));
+    CHECK_EQ(bob.profile().stars, 77.0);
+    CHECK_EQ(docNode(boss, {"progress", "stars"})->number, 77.0);
+
+    // A field the server works out for itself is not stored, and it says so.
+    Json now;
+    CHECK(net::adminDbNodeJson(*docNode(boss, {"progress"}), now));
+    Json derived = now;
+    derived["tp"] = Json(999.0);
+    CHECK(boss.adminDbPatch({"progress"}, now.dump(), derived.dump()));
+    CHECK(!awaitResult(h, {&boss, &bob}, boss));
+    CHECK(boss.adminDb().resultMessage.find("Not saved") != std::string::npos);
+    CHECK(boss.adminDb().resultMessage.find("tp") != std::string::npos);
+
+    // A whole half that is not an object would parse as an empty record.
+    CHECK(boss.adminDbPatch({"progress"}, now.dump(), "[]"));
+    CHECK(!awaitResult(h, {&boss, &bob}, boss));
+    h.step(5, {&boss, &bob});
+    CHECK_EQ(docNode(boss, {"progress", "stars"})->number, 77.0);
+
+    // Text that is the same as it was opened saves nothing.
+    CHECK(boss.adminDbPatch({"progress"}, now.dump(), now.dump()));
+    CHECK(awaitResult(h, {&boss, &bob}, boss));
+    CHECK(boss.adminDb().resultMessage.find("Nothing to save") != std::string::npos);
+}
+
+TEST(the_text_view_never_changes_what_the_editor_locks) {
+    Harness h("admindb-text-locks", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "bob", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
+    CHECK(openAccount(h, {&boss}, boss, "bob"));
+
+    // The whole account row, as text. Every locked field, added or changed,
+    // is refused, and refused as locked -- the path checks never see these,
+    // as the path is the row, and the parse putting them back afterwards
+    // would only say "not saved".
+    Json row;
+    CHECK(net::adminDbNodeJson(*docNode(boss, {"account"}), row));
+    struct Locked {
+        const char* field;
+        Json value;
+        const char* reason;
+    };
+    const std::vector<Locked> locked = {
+        {"admin", Json(true), "admin flag"},
+        {"adminTier", Json(1.0), "admin flag"},
+        {"owner", Json(true), "admin flag"},
+        {"adminBanned", Json(true), "admin flag"},
+        {"username", Json("robert"), "files the account under"},
+        {"id", Json("someoneelse"), "files the account under"},
+        {"password", Json("hunter2"), "Set password"},
+    };
+    for (const Locked& lock : locked) {
+        Json typed = row;
+        typed[lock.field] = lock.value;
+        CHECK(boss.adminDbPatch({"account"}, row.dump(), typed.dump()));
+        CHECK(!awaitResult(h, {&boss}, boss));
+        CHECK(boss.adminDb().resultMessage.find(lock.reason) != std::string::npos);
+    }
+    Json noId = row;
+    noId.erase("id");
+    CHECK(boss.adminDbPatch({"account"}, row.dump(), noId.dump()));
+    CHECK(!awaitResult(h, {&boss}, boss));
+    CHECK(boss.adminDb().resultMessage.find("files the account under") != std::string::npos);
+    boss.adminDbFetch({});
+    h.step(5, {&boss});
+    CHECK((boss.adminDb().flags & net::AdminDbIsAdmin) == 0);
+    CHECK_EQ(docNode(boss, {"account", "username"})->text, std::string("bob"));
+
+    // What is not locked is saved from the same text.
+    Json muted = row;
+    muted["muted"] = Json(true);
+    CHECK(boss.adminDbPatch({"account"}, row.dump(), muted.dump()));
+    CHECK(awaitResult(h, {&boss}, boss));
+    h.step(5, {&boss});
+    CHECK((boss.adminDb().flags & net::AdminDbMuted) != 0);
+
+    // And the password still works: the text never held the hash.
+    NetClient bob;
+    CHECK(loginAs(h, bob, "bob", "password7"));
+
+    // Only the account's two halves are documents.
+    CHECK(boss.adminDbPatch({"elsewhere"}, "{}", R"({"a":1})"));
     CHECK(!awaitResult(h, {&boss}, boss));
 }
 

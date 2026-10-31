@@ -110,6 +110,24 @@ AdminDbPath readAdminDbPath(ByteReader& r) {
     return path;
 }
 
+void writeAdminDbText(ByteWriter& w, const std::string& text) {
+    w.u32(static_cast<std::uint32_t>(text.size()));
+    w.raw(text.data(), text.size());
+}
+
+std::string readAdminDbText(ByteReader& r) {
+    const std::uint32_t size = r.u32();
+    if (size > kAdminDbMaxText || size > r.remaining()) {
+        // Read past the end on purpose: it is what fails the reader.
+        const std::size_t left = r.remaining();
+        for (std::size_t i = 0; i <= left; ++i) r.u8();
+        return {};
+    }
+    std::string text(size, '\0');
+    for (std::uint32_t i = 0; i < size; ++i) text[i] = static_cast<char>(r.u8());
+    return text;
+}
+
 AdminDbNode* AdminDbNode::child(const std::string& key) {
     for (std::size_t i = 0; i < keys.size(); ++i) {
         if (keys[i] == key) return &children[i];
@@ -158,6 +176,31 @@ std::string adminDbScalarText(const AdminDbNode& node) {
         case Json::Type::Object: break;
     }
     return {};
+}
+
+bool adminDbNodeJson(const AdminDbNode& node, Json& out) {
+    if (node.unloaded) return false;
+    switch (node.type) {
+        case Json::Type::Null: out = Json(); return true;
+        case Json::Type::Bool: out = Json(node.boolean); return true;
+        case Json::Type::Number: out = Json(node.number); return true;
+        case Json::Type::String: out = Json(node.text); return true;
+        case Json::Type::Array:
+            out = Json::array();
+            for (const AdminDbNode& child : node.children) {
+                Json item;
+                if (!adminDbNodeJson(child, item)) return false;
+                out.push(std::move(item));
+            }
+            return true;
+        case Json::Type::Object:
+            out = Json::object();
+            for (std::size_t i = 0; i < node.children.size(); ++i) {
+                if (!adminDbNodeJson(node.children[i], out[node.keys[i]])) return false;
+            }
+            return true;
+    }
+    return false;
 }
 
 } // namespace flix::net

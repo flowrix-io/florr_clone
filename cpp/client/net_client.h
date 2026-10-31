@@ -369,6 +369,9 @@ struct AdminDbState {
     net::AdminDbNode root;
     /// Paths asked for and not answered yet, so their rows can say so.
     std::vector<net::AdminDbPath> fetching;
+    /// Moves every time a Node lands in `root`, so the text view can tell
+    /// that what it was built from has been replaced.
+    std::uint32_t nodeSeq = 0;
 
     /// The last edit's or action's answer. `resultSeq` moves on every one, so
     /// the panel can tell a new answer from the one it is already showing.
@@ -720,6 +723,11 @@ public:
     void adminDbFetch(const net::AdminDbPath&);
     /// `json` is the new value as JSON text, which the server parses.
     void adminDbSet(const net::AdminDbPath&, const std::string& json);
+    /// The text view's save: the value at `path` as it was opened and as it
+    /// was edited, both JSON (see AdminDbOp::Patch). False, and nothing sent,
+    /// when either is longer than one message may carry.
+    bool adminDbPatch(const net::AdminDbPath&, const std::string& baseJson,
+                      const std::string& editedJson);
     void adminDbRemove(const net::AdminDbPath&);
     void adminDbSetPassword(const std::string& username, const std::string& password);
     void adminDbSignOut(const std::string& username);

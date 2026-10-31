@@ -295,6 +295,7 @@ add_library(flix_client STATIC
   client/ui/menu_admin_db.cpp
   client/ui/menu_assets.cpp
   client/ui/asset_files.cpp
+  client/ui/code_editor.cpp
   client/ui/menu_talents.cpp
   client/ui/menu_shop.cpp
   client/ui/menu_skins.cpp

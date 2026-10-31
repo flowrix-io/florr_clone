@@ -42,6 +42,13 @@
 // profile: without the flush the next autosave would write the body's figure
 // back over the edit, and without the push the edit would not show until the
 // player respawned.
+//
+// The panel's text view saves a whole value at once -- the progress record
+// filed under the account's id, say -- and it saves it as a PATCH: the text as
+// it was opened and as the admin left it. Only what differs between those two
+// is applied, and to the record as it stands after the flush, so a record
+// typed over for a minute does not put back the petals its player picked up
+// during that minute.
 
 #include "server/admin_db.h"
 
@@ -187,6 +194,64 @@ std::string describePath(const net::AdminDbPath& path) {
     return out.empty() ? std::string("(root)") : out;
 }
 
+namespace {
+
+void diffInto(const Json& base, const Json& edited, net::AdminDbPath& path,
+              std::vector<Change>& out) {
+    if (base.isObject() && edited.isObject()) {
+        for (const std::string& key : base.keys()) {
+            path.push_back(key);
+            if (!edited.contains(key)) out.push_back({path, true, Json()});
+            else diffInto(base[key], edited[key], path, out);
+            path.pop_back();
+        }
+        for (const std::string& key : edited.keys()) {
+            if (base.contains(key)) continue;
+            path.push_back(key);
+            out.push_back({path, false, edited[key]});
+            path.pop_back();
+        }
+        return;
+    }
+    if (base.dump() != edited.dump()) out.push_back({path, false, edited});
+}
+
+} // namespace
+
+std::vector<Change> diff(const Json& base, const Json& edited) {
+    std::vector<Change> out;
+    net::AdminDbPath path;
+    diffInto(base, edited, path, out);
+    return out;
+}
+
+bool patchAt(Json& root, const net::AdminDbPath& path, const std::vector<Change>& changes,
+             std::string& error) {
+    const Json* target = nodeAt(root, path);
+    if (target == nullptr) {
+        error = "\"" + describePath(path) + "\" does not exist any more.";
+        return false;
+    }
+    // Worked on a copy and written back whole, so a change refused halfway
+    // through leaves nothing of the ones before it behind.
+    Json updated = *target;
+    for (const Change& change : changes) {
+        if (change.path.empty()) {
+            updated = change.value;
+        } else if (change.remove) {
+            if (nodeAt(updated, change.path) == nullptr) continue;
+            if (!removeAt(updated, change.path, error)) return false;
+        } else if (!setAt(updated, change.path, change.value, error)) {
+            return false;
+        }
+    }
+    if (path.empty()) {
+        root = std::move(updated);
+        return true;
+    }
+    return setAt(root, path, std::move(updated), error);
+}
+
 } // namespace admin_db
 
 // ---------------------------------------------------------------------------
@@ -225,6 +290,24 @@ Json accountDocument(const Account& account, const PlayerRecord* record) {
     doc["account"] = std::move(shown);
     doc["progress"] = record != nullptr ? playerRecordJson(*record) : Json::object();
     return doc;
+}
+
+/// Why the account row's `field` cannot be changed from the editor, or empty
+/// when it can. See the top of this file for each.
+std::string lockedFieldReason(const std::string& field) {
+    if (field == "password") {
+        return "Use Set password: a password is stored hashed, never as typed.";
+    }
+    if (field == "id" || field == "username") {
+        return "\"" + field + "\" is what the database files the account under; it cannot be "
+               "changed here.";
+    }
+    if (field == "admin" || field == "adminTier" || field == "owner" ||
+        field.rfind("adminBanned", 0) == 0) {
+        return "The admin flag, tier, owner and ban cannot be changed from the editor, for "
+               "security. Use promote_admin, demote_admin, ban_admin and unban_admin.";
+    }
+    return {};
 }
 
 } // namespace
@@ -357,7 +440,8 @@ void GameServer::handleAdminDb(Session& session, net::Connection& connection, By
         }
         case AdminDbOp::Set:
         case AdminDbOp::Remove:
-            adminDbEdit(session, connection, reader, op == AdminDbOp::Remove);
+        case AdminDbOp::Patch:
+            adminDbEdit(session, connection, reader, op);
             return;
         case AdminDbOp::SetPassword:
         case AdminDbOp::SignOut:
@@ -465,11 +549,20 @@ void GameServer::adminDbList(net::Connection& connection, const std::string& sea
 }
 
 void GameServer::adminDbEdit(Session& session, net::Connection& connection, ByteReader& reader,
-                             bool remove) {
+                             net::AdminDbOp op) {
+    const bool remove = op == AdminDbOp::Remove;
+    const bool patch = op == AdminDbOp::Patch;
     const auto scope = static_cast<AdminDbScope>(reader.u8());
     const std::string key = reader.str();
     const AdminDbPath path = net::readAdminDbPath(reader);
-    const std::string valueText = remove ? std::string() : reader.str();
+    std::string baseText;
+    std::string valueText;
+    if (patch) {
+        baseText = net::readAdminDbText(reader);
+        valueText = net::readAdminDbText(reader);
+    } else if (!remove) {
+        valueText = reader.str();
+    }
     if (!reader.ok()) return;
     if (scope != AdminDbScope::Account && scope != AdminDbScope::Table) return;
 
@@ -485,8 +578,45 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
             return;
         }
     }
+    // A patch is the difference between the text the panel opened and the
+    // text it saved, applied below to the value as it is now.
+    std::vector<admin_db::Change> changes;
+    if (patch) {
+        Json base;
+        std::string error;
+        if (!Json::parse(baseText, base, error)) {
+            refuse("The text the editor opened could not be read: " + error);
+            return;
+        }
+        changes = admin_db::diff(base, value);
+        if (changes.empty()) {
+            sendAdminDbResult(connection, true, scope, key, false,
+                              "Nothing to save: the text holds what it was opened with.");
+            return;
+        }
+    }
+    const auto apply = [&](Json& doc, const AdminDbPath& at, std::string& error) {
+        if (remove) return admin_db::removeAt(doc, at, error);
+        if (patch) return admin_db::patchAt(doc, at, changes, error);
+        return admin_db::setAt(doc, at, value, error);
+    };
     const std::string where = admin_db::describePath(path);
-    const std::string verb = remove ? "deleted" : "set";
+    const std::string verb = remove ? "deleted" : patch ? "patched" : "set";
+    const std::string counted =
+        std::to_string(changes.size()) + (changes.size() == 1 ? " change" : " changes");
+    std::string logged;
+    if (patch) {
+        std::string named;
+        for (const admin_db::Change& change : changes) {
+            named += named.empty() ? "" : ", ";
+            named += change.path.empty() ? std::string("all of it")
+                                         : admin_db::describePath(change.path);
+        }
+        if (named.size() > 160) named = named.substr(0, 160) + "...";
+        logged = " (" + counted + ": " + named + ")";
+    } else if (!remove) {
+        logged = " = " + logValue(value);
+    }
 
     // -- a table -------------------------------------------------------------
     if (scope == AdminDbScope::Table) {
@@ -505,15 +635,13 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
         Json& table = database_.storedTable(key).isArray() ? database_.rawArrayTable(key)
                                                            : database_.rawTable(key);
         std::string error;
-        const bool ok = remove ? admin_db::removeAt(table, path, error)
-                               : admin_db::setAt(table, path, value, error);
-        if (!ok) {
+        if (!apply(table, path, error)) {
             refuse(error);
             return;
         }
         database_.markDirty();
         std::printf("[ADMIN-DB] %s %s %s.%s%s\n", session.username.c_str(), verb.c_str(),
-                    key.c_str(), where.c_str(), remove ? "" : (" = " + logValue(value)).c_str());
+                    key.c_str(), where.c_str(), logged.c_str());
 
         // The edited entry's parent, so the row and its siblings are current
         // -- an append or a delete renumbers an array's tail.
@@ -526,7 +654,9 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
             }
         }
         sendAdminDbResult(connection, true, scope, key, false,
-                          (remove ? "Deleted " : "Saved ") + key + "." + where + ".");
+                          remove  ? "Deleted " + key + "." + where + "."
+                          : patch ? "Saved " + counted + " to " + key + "." + where + "."
+                                  : "Saved " + key + "." + where + ".");
         return;
     }
 
@@ -538,27 +668,24 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
     }
     const std::string username = account->username;
     const std::string userId = account->id;
-    if (path.size() < 2 || (path[0] != "account" && path[0] != "progress")) {
+    // One field at least, but for a patch, which may take a whole half: the
+    // text view opens on the progress record or the account row entire.
+    if (path.size() < (patch ? 1u : 2u) || (path[0] != "account" && path[0] != "progress")) {
         refuse("Pick a field inside the account or its progress.");
         return;
     }
     const AdminDbPath inner(path.begin() + 1, path.end());
     const bool accountRow = path[0] == "account";
-    if (accountRow) {
-        const std::string& field = inner.front();
-        if (field == "password") {
-            refuse("Use Set password: a password is stored hashed, never as typed.");
-            return;
-        }
-        if (field == "id" || field == "username") {
-            refuse("\"" + field + "\" is what the database files the account under; it cannot be "
-                   "changed here.");
-            return;
-        }
-        if (field == "admin" || field == "adminTier" || field == "owner" ||
-            field.rfind("adminBanned", 0) == 0) {
-            refuse("The admin flag, tier, owner and ban cannot be changed from the editor, for "
-                   "security. Use promote_admin, demote_admin, ban_admin and unban_admin.");
+    // Either half whole is read back through a parse that makes an empty
+    // record of anything but an object: a stray `[]` would wipe it.
+    if (inner.empty() && !value.isObject()) {
+        refuse("The " + path[0] + " is one JSON object, so the text must be one: { ... }.");
+        return;
+    }
+    if (accountRow && !inner.empty()) {
+        const std::string why = lockedFieldReason(inner.front());
+        if (!why.empty()) {
+            refuse(why);
             return;
         }
     }
@@ -574,11 +701,21 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
     if (accountRow) {
         Json row = accountRecordJson(*account);
         before = row;
-        const bool ok = remove ? admin_db::removeAt(row, inner, error)
-                               : admin_db::setAt(row, inner, value, error);
-        if (!ok) {
+        if (!apply(row, inner, error)) {
             refuse(error);
             return;
+        }
+        // A patch on the whole row names its fields one level down, where the
+        // check above does not look; and nothing else may reach them either.
+        for (const Json* side : {&before, &row}) {
+            for (const std::string& field : side->keys()) {
+                const std::string why = lockedFieldReason(field);
+                if (!why.empty() &&
+                    std::as_const(before)[field].dump() != std::as_const(row)[field].dump()) {
+                    refuse(why);
+                    return;
+                }
+            }
         }
         Account updated = parseAccountRecord(row, username);
         // Whatever the JSON says now, these stay what they were: the checks
@@ -597,9 +734,7 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
         PlayerRecord& record = database_.progress(userId);
         Json row = playerRecordJson(record);
         before = row;
-        const bool ok = remove ? admin_db::removeAt(row, inner, error)
-                               : admin_db::setAt(row, inner, value, error);
-        if (!ok) {
+        if (!apply(row, inner, error)) {
             refuse(error);
             return;
         }
@@ -608,7 +743,7 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
     }
     database_.markDirty();
     std::printf("[ADMIN-DB] %s %s %s:%s%s\n", session.username.c_str(), verb.c_str(),
-                username.c_str(), where.c_str(), remove ? "" : (" = " + logValue(value)).c_str());
+                username.c_str(), where.c_str(), logged.c_str());
 
     adminDbRefreshLive(userId);
     sendAdminDbAccount(connection, username, {});
@@ -617,6 +752,43 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
     // drops what it does not understand and derives what it can -- `tp` is
     // worked out from the level, `muted: "yes"` is not a true -- and an editor
     // that answered "saved" to those would be lying about the database.
+    if (patch) {
+        // A change counts as stored if it landed as typed, or if it moved the
+        // field at all -- a value set back to its default reads back absent.
+        // One that left the field as it was did nothing.
+        const auto same = [](const Json* a, const Json* b) {
+            return a == nullptr || b == nullptr ? a == b : a->dump() == b->dump();
+        };
+        std::vector<std::string> ignored;
+        for (const admin_db::Change& change : changes) {
+            AdminDbPath full = inner;
+            full.insert(full.end(), change.path.begin(), change.path.end());
+            const Json* landed = admin_db::nodeAt(after, full);
+            const Json* wanted = change.remove ? nullptr : &change.value;
+            if (!same(landed, wanted) && same(landed, admin_db::nodeAt(before, full))) {
+                ignored.push_back(admin_db::describePath(full));
+            }
+        }
+        std::string message;
+        if (ignored.empty()) {
+            message = "Saved " + counted + " to " + where + " on " + username + ".";
+        } else {
+            std::string names;
+            for (std::size_t i = 0; i < ignored.size() && i < 3; ++i) {
+                names += (i == 0 ? "" : ", ") + ignored[i];
+            }
+            if (ignored.size() > 3) names += " and " + std::to_string(ignored.size() - 3) + " more";
+            const std::string why =
+                " (the server works it out for itself, or does not accept that value): " + names +
+                ".";
+            message = ignored.size() == changes.size()
+                          ? "Not saved" + why
+                          : "Saved " + std::to_string(changes.size() - ignored.size()) + " of " +
+                                counted + " to " + where + " on " + username + ". Not saved" + why;
+        }
+        sendAdminDbResult(connection, ignored.empty(), scope, key, false, message);
+        return;
+    }
     std::string message;
     bool stored = true;
     const Json* landed = admin_db::nodeAt(after, inner);

@@ -299,6 +299,32 @@ created<2026-10-08`. Accounts older than the server's records of these have
 none. They show as "unknown" and "never", count as longer ago than any time
 ago, and as earlier than any date.
 
+### Editing as text
+
+Next to the tree, any object or array in the editor can be opened as JSON text
+and edited in one go. **Text** in an account's header opens its progress
+record, which the database file keeps under the account's id (`players ›
+"f78zsg7ns23v"` above the text). **Text** on any object's or array's row opens
+that value: the account row, the inventory, or an entry of a table such as a
+guild. The editor is the asset browser's: Ctrl+S saves, Ctrl+Z undoes, Esc lets
+go of the caret. **Revert** goes back to what the database holds, and **Close**
+returns to the tree.
+
+A save applies only what you changed. The panel sends the text as it opened
+it beside the text as you left it, and the server writes the difference onto
+the record as it is now. A field you did not touch keeps its current value, so
+a player who earns XP or picks up petals while you type keeps them. An array
+is one value: change one loadout slot and the whole loadout is written. After
+a save the text is rebuilt from what was stored. The line at the foot of the
+panel names any change the server did not keep, for example `tp`, which it
+works out from the level.
+
+The same fields are locked as in the tree: `id`, `username`, `password`,
+`admin`, `adminTier`, `owner` and the `adminBanned` fields. A save that adds,
+changes or removes any of them is refused as a whole. Text with an error is
+not sent, and the footer gives the line. A value that holds text too long to
+send (over 4 KB) cannot be opened as text.
+
 ### Searching the backups
 
 `backup_search` runs the same search over the database's backups

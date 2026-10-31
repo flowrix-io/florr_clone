@@ -2,7 +2,8 @@
 // place, and the script the next page load runs instead of the game.
 //
 // The Files tab is a folder list on the left and the open file on the right. A
-// text file opens in an editor -- the caret, selection, clipboard and keys of
+// text file opens in an editor (client/ui/code_editor.h, which the database
+// editor's text view shares) -- the caret, selection, clipboard and keys of
 // every text field in the client (text_input.h), scrolling both ways, colour
 // for JSON, scripts and SVG, undo, and a live preview beside an SVG -- and
 // anything else opens as a hex dump. Where a file lives decides what saving it
@@ -19,8 +20,6 @@
 // and closing it does not throw away a half-edited file.
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -29,11 +28,11 @@
 #include "svg.h"
 
 #include "client/ui/asset_files.h"
+#include "client/ui/code_editor.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
-#include "client/ui/text_select.h"
 #include "client/ui/touch_scroll.h"
 #include "client/web/boot.h"
 #ifdef __EMSCRIPTEN__
@@ -55,19 +54,13 @@ constexpr double kListWidth = 290.0;
 constexpr double kListRow = 26.0;
 constexpr double kChipHeight = 24.0;
 constexpr double kToolbarHeight = 38.0;
-constexpr double kCodeSize = 13.0;
-constexpr double kLineHeight = 18.0;
 constexpr double kScrollbarWidth = 10.0;
 constexpr double kListWheelStep = 60.0;
-constexpr double kWheelLines = 3.0;
-constexpr std::size_t kWheelColumns = 12;
 constexpr double kPreviewWidth = 240.0;
 constexpr double kBootRow = 60.0;
 /// The largest file the panel opens. Nothing it is for is bigger -- a map is
 /// half a megabyte -- and the editor holds three copies of what it opens.
 constexpr std::size_t kOpenLimit = 8u << 20;
-/// How far the editor lets a file grow.
-constexpr std::size_t kEditLimit = 16u << 20;
 /// How long a button that throws something away stays armed for its second
 /// click.
 constexpr double kArmSeconds = 3.0;
@@ -75,21 +68,9 @@ constexpr double kArmSeconds = 3.0;
 constexpr double kPreviewDebounce = 0.35;
 /// How long a message holds the footer before the open file's note returns.
 constexpr double kStatusSeconds = 8.0;
-/// A tab is drawn this many spaces wide.
-constexpr int kTabSpaces = 4;
-/// Runs of text longer than this are drawn in pieces, each placed where the
-/// editor's own arithmetic says it starts. The page's text engine kerns and
-/// the layout here does not, and over a long run the two drift apart until a
-/// caret sits beside the letter it is in front of.
-constexpr std::size_t kRunChunk = 24;
 /// The largest boot tool read for its summary.
 constexpr std::size_t kToolLimit = 1u << 20;
 
-constexpr std::uint32_t kEditorFill = 0x1B1F23u;
-constexpr std::uint32_t kGutterFill = 0x22272Cu;
-constexpr std::uint32_t kGutterInk = 0x6E7A84u;
-constexpr std::uint32_t kCurrentLineFill = 0x2A3138u;
-constexpr std::uint32_t kSelectionFill = 0x355F8Fu;
 constexpr std::uint32_t kPreviewFill = 0xD8DDE0u;
 constexpr std::uint32_t kMutedInk = 0xD5E4E1u;
 constexpr std::uint32_t kFolderInk = 0xFFD27Au;
@@ -97,13 +78,8 @@ constexpr std::uint32_t kOkInk = 0xB9F6A6u;
 constexpr std::uint32_t kBadInk = 0xFFB0B0u;
 constexpr std::uint32_t kDirtyInk = 0xFFC94Du;
 
-constexpr std::uint32_t kTextInk = 0xE6E6E6u;
 constexpr std::uint32_t kStringInk = 0xFFE9A8u;
 constexpr std::uint32_t kNumberInk = 0xA8E6FFu;
-constexpr std::uint32_t kKeywordInk = 0xD9BFFFu;
-constexpr std::uint32_t kCommentInk = 0x8FA88Fu;
-constexpr std::uint32_t kPunctuationInk = 0xA9B1B8u;
-constexpr std::uint32_t kTagInk = 0x7FC8FFu;
 constexpr std::uint32_t kAttributeInk = 0xB9F6A6u;
 
 constexpr ChipStyle kChip{0x5D7A76u, 0x445C59u};
@@ -157,28 +133,9 @@ struct Place {
 struct OpenFile {
     bool open = false;
     std::string path;
-    /// The buffer, and what the file held when it was opened or last saved.
-    std::string text;
-    std::string saved;
     bool binary = false;
-    bool dirty = false;
-    assets::Syntax syntax = assets::Syntax::Plain;
-    /// What a Tab key types: the file's own first indent.
-    std::string indent = "    ";
-    std::vector<std::size_t> lines;
-    /// The longest line, in bytes, which is how far the view may scroll right.
-    std::size_t longest = 0;
-    TextFieldState field;
-    assets::EditHistory history;
-    double scrollY = 0;
-    /// The horizontal scroll, in BYTES into every line. A proportional face
-    /// has no columns, but scrolling by pixels would mean measuring each long
-    /// line from its start every frame -- a map's tile layer is a single line
-    /// of tens of kilobytes. Moving every line's start along by the same count
-    /// of bytes keeps the cost to what is on screen.
-    std::size_t scrollCol = 0;
-    /// Set by a keyboard edit or move, so the frame brings the caret into view.
-    bool follow = false;
+    /// The buffer and its view. A binary file is in it too, as a hex dump.
+    CodeEditor editor;
     bool svg = false;
     bool preview = true;
     std::shared_ptr<SvgDocument> drawing;
@@ -222,9 +179,6 @@ struct State {
     /// thing to press.
     bool choiceChanged = false;
     Scroller bootList;
-
-    bool barDragging = false;
-    double barGrab = 0;
 };
 
 State& state() {
@@ -289,8 +243,6 @@ void clipCanvas(Canvas& canvas, Rect r) {
     canvas.clip();
 }
 
-bool isLead(char byte) { return (static_cast<unsigned char>(byte) & 0xC0) != 0x80; }
-
 /// `path` cut from the FRONT until it fits: the end of a path is the part
 /// that says where you are.
 std::string ellipsizeFront(const std::string& path, double size, double width) {
@@ -326,20 +278,6 @@ bool confirmArmed(State& s, const std::string& what, double now) {
     return false;
 }
 
-std::uint32_t tokenInk(assets::Token token) {
-    switch (token) {
-        case assets::Token::String: return kStringInk;
-        case assets::Token::Number: return kNumberInk;
-        case assets::Token::Keyword: return kKeywordInk;
-        case assets::Token::Comment: return kCommentInk;
-        case assets::Token::Punctuation: return kPunctuationInk;
-        case assets::Token::Tag: return kTagInk;
-        case assets::Token::Attribute: return kAttributeInk;
-        case assets::Token::Text: break;
-    }
-    return kTextInk;
-}
-
 /// Whether a file at `path` is kept by browser storage rather than memory.
 bool inStorage(const std::string& path) {
 #ifdef __EMSCRIPTEN__
@@ -367,258 +305,6 @@ std::string locationNote(const std::string& path) {
     if (settings) return "On disk. Saving it reloads the settings.";
     return "On disk.";
 #endif
-}
-
-// --- the editor's arithmetic ------------------------------------------------
-
-/// The advance of each ASCII character at the editor's size, measured once.
-double asciiAdvance(unsigned char c) {
-    static std::array<double, 128> table{};
-    static bool ready = false;
-    if (!ready) {
-        for (int i = 0x20; i < 0x7F; ++i) {
-            table[static_cast<std::size_t>(i)] = measure(std::string(1, static_cast<char>(i)),
-                                                         kCodeSize);
-        }
-        // Not kept until the face could measure: a zero width is a font that
-        // has not loaded, not a space that takes no room.
-        ready = table[static_cast<std::size_t>(' ')] > 0;
-    }
-    return c < 0x80 ? table[c] : 0.0;
-}
-
-/// The width one character takes in the editor, and where the next begins. A
-/// tab is kTabSpaces spaces; a carriage return and the other controls take
-/// nothing, as nothing is drawn for them.
-double advanceAt(const std::string& buffer, std::size_t at, std::size_t& next) {
-    const auto c = static_cast<unsigned char>(buffer[at]);
-    if (c < 0x80) {
-        next = at + 1;
-        if (c == '\t') return asciiAdvance(' ') * kTabSpaces;
-        return asciiAdvance(c);
-    }
-    next = utf8Next(buffer, at);
-    return measure(buffer.substr(at, next - at), kCodeSize);
-}
-
-/// The width of [from, to), stopping early once it passes `cap`.
-double widthOf(const std::string& buffer, std::size_t from, std::size_t to,
-               double cap = 1e300) {
-    double width = 0;
-    std::size_t at = from;
-    while (at < to && width <= cap) {
-        std::size_t next = at;
-        width += advanceAt(buffer, at, next);
-        at = next;
-    }
-    return width;
-}
-
-/// The characters of [from, to) as they are drawn: a tab as spaces, the
-/// controls left out.
-std::string displayed(const std::string& buffer, std::size_t from, std::size_t to) {
-    std::string out;
-    out.reserve(to - from);
-    for (std::size_t i = from; i < to; ++i) {
-        const char c = buffer[i];
-        if (c == '\t') out.append(static_cast<std::size_t>(kTabSpaces), ' ');
-        else if (static_cast<unsigned char>(c) >= 0x20 && c != 0x7F) out += c;
-    }
-    return out;
-}
-
-/// Draws [from, to) of `buffer` with its left edge at `x`, in short pieces --
-/// see kRunChunk.
-void drawRun(Canvas& canvas, const std::string& buffer, std::size_t from, std::size_t to,
-             double x, double y, std::uint32_t ink) {
-    const TextStyle style = label(kCodeSize, ink);
-    std::size_t at = from;
-    while (at < to) {
-        std::size_t end = std::min(to, at + kRunChunk);
-        while (end < to && !isLead(buffer[end])) ++end;
-        const std::string piece = displayed(buffer, at, end);
-        if (!piece.empty()) text(canvas, piece, x, y, style);
-        x += widthOf(buffer, at, end);
-        at = end;
-    }
-}
-
-void reindex(OpenFile& f) {
-    f.lines = assets::lineStarts(f.text);
-    f.longest = 0;
-    for (std::size_t i = 0; i < f.lines.size(); ++i) {
-        const std::size_t end = i + 1 < f.lines.size() ? f.lines[i + 1] - 1 : f.text.size();
-        f.longest = std::max(f.longest, end - f.lines[i]);
-    }
-}
-
-/// The first indented line's indent, as what Tab types: a tab if the file
-/// indents with tabs, that many spaces if with spaces, four if it has none.
-std::string indentOf(const std::string& buffer) {
-    std::size_t at = 0;
-    for (int line = 0; line < 2000 && at < buffer.size(); ++line) {
-        const std::size_t end = std::min(buffer.find('\n', at), buffer.size());
-        if (at < end && buffer[at] == '\t') return "\t";
-        std::size_t spaces = 0;
-        while (at + spaces < end && buffer[at + spaces] == ' ') ++spaces;
-        if (spaces > 0 && at + spaces < end) return std::string(std::min<std::size_t>(spaces, 8), ' ');
-        at = end + 1;
-    }
-    return "    ";
-}
-
-std::size_t rowCount(const OpenFile& f) {
-    return f.binary ? (f.text.size() + 15) / 16 : f.lines.size();
-}
-
-/// Where line `line` ends, its newline left out.
-std::size_t lineEnd(const OpenFile& f, std::size_t line) {
-    return line + 1 < f.lines.size() ? f.lines[line + 1] - 1 : f.text.size();
-}
-
-/// Where the shown part of line `line` begins: the horizontal scroll's count
-/// of bytes in, on a character boundary, and never past the line's end.
-std::size_t visibleStart(const OpenFile& f, std::size_t line) {
-    const std::size_t stop = lineEnd(f, line);
-    std::size_t at = std::min(f.lines[line] + f.scrollCol, stop);
-    while (at < stop && !isLead(f.text[at])) ++at;
-    return at;
-}
-
-struct EditorLayout {
-    Rect box;      ///< the editor's plate
-    Rect gutter;   ///< line numbers, or a hex dump's offsets
-    Rect view;     ///< where lines are drawn and where a press places the caret
-    Rect bar;      ///< the vertical scrollbar's track
-    Rect preview;  ///< an SVG's preview; empty when there is none
-};
-
-EditorLayout layoutEditor(Rect box, const OpenFile& f) {
-    EditorLayout out;
-    if (f.svg && f.preview && !f.binary) {
-        out.preview = Rect{box.right() - kPreviewWidth, box.y, kPreviewWidth, box.h};
-        box.w -= kPreviewWidth + 8.0;
-    }
-    out.box = box;
-    double gutterW = 0;
-    if (f.binary) {
-        gutterW = widthOf("00000000", 0, 8) + 16.0;
-    } else {
-        int digits = 3;
-        for (std::size_t n = f.lines.size(); n >= 1000; n /= 10) ++digits;
-        gutterW = digits * asciiAdvance('0') + 18.0;
-    }
-    out.gutter = Rect{box.x, box.y, gutterW, box.h};
-    out.bar = Rect{box.right() - kScrollbarWidth - 4.0, box.y + 4.0, kScrollbarWidth, box.h - 8.0};
-    const double viewX = box.x + gutterW + 6.0;
-    out.view = Rect{viewX, box.y + 4.0, std::max(10.0, out.bar.x - 4.0 - viewX), box.h - 8.0};
-    return out;
-}
-
-double maxScrollY(const OpenFile& f, const EditorLayout& layout) {
-    return std::max(0.0, static_cast<double>(rowCount(f)) * kLineHeight + kLineHeight * 0.5 -
-                             layout.view.h);
-}
-
-void clampScroll(OpenFile& f, const EditorLayout& layout) {
-    f.scrollY = clamp(f.scrollY, 0.0, maxScrollY(f, layout));
-    if (f.scrollCol > f.longest) f.scrollCol = f.longest;
-}
-
-struct Thumb {
-    bool shown = false;
-    Rect rect;
-    double travel = 0;
-};
-
-Thumb thumbOf(const OpenFile& f, const EditorLayout& layout) {
-    const double content = static_cast<double>(rowCount(f)) * kLineHeight + kLineHeight * 0.5;
-    if (content <= layout.view.h || layout.bar.h <= 0) return {};
-    const double height = std::max(28.0, layout.bar.h * (layout.view.h / content));
-    const double top = maxScrollY(f, layout);
-    const double y = layout.bar.y + (top > 0 ? f.scrollY / top : 0.0) * (layout.bar.h - height);
-    return {true, Rect{layout.bar.x, y, layout.bar.w, height}, layout.bar.h - height};
-}
-
-/// The byte offset a point lands on: the line under it, and the character
-/// boundary nearest it on that line.
-std::size_t offsetAt(const OpenFile& f, const EditorLayout& layout, Vec2 point) {
-    if (f.lines.empty()) return 0;
-    const double row = std::floor((point.y - layout.view.y + f.scrollY) / kLineHeight);
-    const std::size_t line =
-        row < 0 ? 0 : std::min(static_cast<std::size_t>(row), f.lines.size() - 1);
-    const std::size_t stop = lineEnd(f, line);
-    std::size_t at = visibleStart(f, line);
-    double x = layout.view.x;
-    while (at < stop) {
-        std::size_t next = at;
-        const double width = advanceAt(f.text, at, next);
-        if (point.x < x + width * 0.5) return at;
-        x += width;
-        at = next;
-    }
-    return stop;
-}
-
-/// Where `offset` on line `line` is drawn. An offset scrolled off to the left
-/// is just left of the view, which is where a highlight that starts there is
-/// cut off.
-double xOf(const OpenFile& f, const EditorLayout& layout, std::size_t line, std::size_t offset) {
-    const std::size_t from = visibleStart(f, line);
-    if (offset < from) return layout.view.x - 1.0;
-    return layout.view.x + widthOf(f.text, from, offset, layout.view.w + 20.0);
-}
-
-/// Scrolls so the caret is on screen, with some room around it.
-void followCaret(OpenFile& f, const EditorLayout& layout) {
-    const std::size_t caret = std::min(f.field.selection.caret, f.text.size());
-    const std::size_t line = assets::lineOf(f.lines, caret);
-    const double top = static_cast<double>(line) * kLineHeight;
-    if (top < f.scrollY) f.scrollY = top;
-    if (top + kLineHeight > f.scrollY + layout.view.h) f.scrollY = top + kLineHeight - layout.view.h;
-
-    const std::size_t start = f.lines[line];
-    const std::size_t column = caret - start;
-    const double span = layout.view.w - 16.0;
-    if (column < f.scrollCol) {
-        f.scrollCol = column > 8 ? column - 8 : 0;
-    } else if (widthOf(f.text, visibleStart(f, line), caret, span + 1.0) > span) {
-        // Back from the caret until three quarters of the view is behind it.
-        double behind = 0;
-        std::size_t at = caret;
-        while (at > start) {
-            const std::size_t prev = utf8Prev(f.text, at);
-            std::size_t next = prev;
-            behind += advanceAt(f.text, prev, next);
-            if (behind > span * 0.75) break;
-            at = prev;
-        }
-        f.scrollCol = at - start;
-    }
-    clampScroll(f, layout);
-}
-
-void replaceSelection(OpenFile& f, const std::string& with) {
-    TextSelection& selection = f.field.selection;
-    const std::size_t begin = std::min(selection.begin(), f.text.size());
-    const std::size_t end = std::min(selection.end(), f.text.size());
-    if (f.text.size() - (end - begin) + with.size() > kEditLimit) return;
-    f.text.replace(begin, end - begin, with);
-    selection.collapse(begin + with.size());
-}
-
-/// After Enter: the new line starts with the indent of the one it broke from.
-void carryIndent(OpenFile& f) {
-    const std::size_t caret = f.field.selection.caret;
-    if (caret == 0 || caret > f.text.size() || f.text[caret - 1] != '\n') return;
-    std::size_t start = caret - 1;
-    while (start > 0 && f.text[start - 1] != '\n') --start;
-    std::size_t end = start;
-    while (end < caret - 1 && (f.text[end] == ' ' || f.text[end] == '\t')) ++end;
-    if (end == start || f.text.size() + (end - start) > kEditLimit) return;
-    const std::string indent = f.text.substr(start, end - start);
-    f.text.insert(caret, indent);
-    f.field.selection.collapse(caret + indent.size());
 }
 
 // --- files ------------------------------------------------------------------
@@ -672,29 +358,23 @@ void openFile(State& s, const std::string& path, double now) {
     f.open = true;
     f.path = path;
     f.binary = !assets::looksLikeText(bytes);
-    f.syntax = assets::syntaxFor(path);
     f.svg = !f.binary && assets::extensionOf(path) == "svg";
     f.previewDue = f.svg ? now : -1.0;
-    f.text = bytes;
-    f.saved = std::move(bytes);
-    f.indent = indentOf(f.text);
-    reindex(f);
-    f.history.reset(f.text);
+    f.editor.load(std::move(bytes), assets::syntaxFor(path), f.binary);
     s.armed.clear();
 }
 
 void saveFile(MenuContext& ctx, State& s) {
     OpenFile& f = s.file;
     std::string error;
-    if (!assets::writeWhole(f.path, f.text, error)) {
+    if (!assets::writeWhole(f.path, f.editor.text(), error)) {
         setStatus(s, "Could not save " + assets::baseName(f.path) + ": " + error, false,
                   ctx.timeSeconds);
         return;
     }
-    f.saved = f.text;
-    f.dirty = false;
+    f.editor.markSaved();
     std::string message = "Saved " + assets::baseName(f.path) + " (" +
-                          assets::formatSize(f.text.size()) + ")";
+                          assets::formatSize(f.editor.text().size()) + ")";
     if (!settingsFile().empty() && f.path == settingsFile()) {
         // Or the client writes the settings it holds back over this file on
         // the way out, and the edit is gone.
@@ -775,122 +455,6 @@ double badge(Canvas& canvas, const std::string& word, double x, double cy, std::
     fillRound(canvas, Rect{x, cy - 8.0, width, 16.0}, 4.0, kInk, 0.35);
     text(canvas, word, x + width * 0.5, cy, label(10.0, ink, Align::Centre));
     return width;
-}
-
-void drawText(Canvas& canvas, const OpenFile& f, const EditorLayout& layout, double now) {
-    const std::size_t rows = rowCount(f);
-    const std::size_t first = static_cast<std::size_t>(std::max(0.0, std::floor(f.scrollY / kLineHeight)));
-    const std::size_t shown = static_cast<std::size_t>(layout.view.h / kLineHeight) + 2;
-    const std::size_t last = std::min(rows, first + shown);
-    const TextSelection& selection = f.field.selection;
-    const std::size_t caret = std::min(selection.caret, f.text.size());
-    const std::size_t caretLine = assets::lineOf(f.lines, caret);
-    const double right = layout.view.right();
-
-    for (std::size_t line = first; line < last; ++line) {
-        const double top = layout.view.y + static_cast<double>(line) * kLineHeight - f.scrollY;
-        const double cy = top + kLineHeight * 0.5;
-        const std::size_t start = f.lines[line];
-        const std::size_t stop = lineEnd(f, line);
-        const std::size_t from = visibleStart(f, line);
-
-        if (line == caretLine && f.field.focused) {
-            setFill(canvas, kCurrentLineFill);
-            canvas.fillRect(static_cast<float>(layout.view.x - 4.0), static_cast<float>(top),
-                            static_cast<float>(layout.view.w + 4.0),
-                            static_cast<float>(kLineHeight));
-        }
-
-        // The selection, cut to this line; a selected newline shows as a
-        // sliver past the line's end.
-        if (!selection.empty() && selection.begin() <= stop && selection.end() > start) {
-            const std::size_t a = std::max(selection.begin(), start);
-            const std::size_t b = std::min(selection.end(), stop);
-            const double x0 = std::max(layout.view.x - 4.0, xOf(f, layout, line, a));
-            double x1 = std::min(right, xOf(f, layout, line, b));
-            if (selection.end() > stop) x1 = std::min(right, x1 + 6.0);
-            if (x1 > x0) {
-                setFill(canvas, kSelectionFill);
-                canvas.fillRect(static_cast<float>(x0), static_cast<float>(top), static_cast<float>(x1 - x0),
-                                static_cast<float>(kLineHeight));
-            }
-        }
-
-        // What fits, coloured. The colouring runs over the shown part alone.
-        std::size_t to = from;
-        for (double x = layout.view.x; to < stop && x < right;) {
-            std::size_t next = to;
-            x += advanceAt(f.text, to, next);
-            to = next;
-        }
-        if (to > from) {
-            const std::string visible = f.text.substr(from, to - from);
-            double x = layout.view.x;
-            for (const assets::Span& span : assets::highlightLine(visible, f.syntax)) {
-                drawRun(canvas, visible, span.begin, span.end, x, cy, tokenInk(span.token));
-                x += widthOf(visible, span.begin, span.end);
-            }
-        }
-    }
-
-    if (f.field.focused && caretVisible(f.field, now) && caretLine >= first && caretLine < last) {
-        const double x = xOf(f, layout, caretLine, caret);
-        if (x >= layout.view.x - 1.0 && x <= right) {
-            const double top = layout.view.y + static_cast<double>(caretLine) * kLineHeight - f.scrollY;
-            setFill(canvas, kPaper);
-            canvas.fillRect(static_cast<float>(x), static_cast<float>(top + 2.0), 1.5f,
-                            static_cast<float>(kLineHeight - 4.0));
-        }
-    }
-}
-
-void drawGutter(Canvas& canvas, const OpenFile& f, const EditorLayout& layout) {
-    const std::size_t rows = rowCount(f);
-    const std::size_t first = static_cast<std::size_t>(std::max(0.0, std::floor(f.scrollY / kLineHeight)));
-    const std::size_t last = std::min(rows, first + static_cast<std::size_t>(layout.view.h / kLineHeight) + 2);
-    const std::size_t caretLine =
-        f.binary ? rows : assets::lineOf(f.lines, std::min(f.field.selection.caret, f.text.size()));
-    for (std::size_t row = first; row < last; ++row) {
-        const double cy = layout.view.y + static_cast<double>(row) * kLineHeight - f.scrollY +
-                          kLineHeight * 0.5;
-        if (f.binary) {
-            text(canvas, assets::hexRow(f.text, row * 16).substr(0, 8), layout.gutter.x + 8.0, cy,
-                 label(kCodeSize, kGutterInk));
-        } else {
-            text(canvas, std::to_string(row + 1), layout.gutter.right() - 8.0, cy,
-                 label(kCodeSize, row == caretLine && f.field.focused ? kPaper : kGutterInk,
-                       Align::Right));
-        }
-    }
-}
-
-void drawHex(Canvas& canvas, const OpenFile& f, const EditorLayout& layout) {
-    const std::size_t rows = rowCount(f);
-    const std::size_t first = static_cast<std::size_t>(std::max(0.0, std::floor(f.scrollY / kLineHeight)));
-    const std::size_t last = std::min(rows, first + static_cast<std::size_t>(layout.view.h / kLineHeight) + 2);
-    // Four groups of four bytes, each at a fixed place: the face is not a
-    // monospace one, and the columns would wander from row to row otherwise.
-    double group = 0;
-    for (const char* sample : {"00 00 00 00", "bb bb bb bb", "dd dd dd dd", "ee ee ee ee"}) {
-        group = std::max(group, widthOf(sample, 0, 11));
-    }
-    group += 12.0;
-    for (std::size_t row = first; row < last; ++row) {
-        const double cy = layout.view.y + static_cast<double>(row) * kLineHeight - f.scrollY +
-                          kLineHeight * 0.5;
-        const std::string line = assets::hexRow(f.text, row * 16);
-        for (int g = 0; g < 4; ++g) {
-            const std::size_t at = 10 + static_cast<std::size_t>(g) * 12 + (g >= 2 ? 1 : 0);
-            if (at < line.size()) {
-                text(canvas, line.substr(at, 11), layout.view.x + g * group, cy,
-                     label(kCodeSize, g % 2 == 0 ? kTextInk : kNumberInk));
-            }
-        }
-        if (line.size() > 60) {
-            text(canvas, line.substr(60), layout.view.x + 4 * group + 8.0, cy,
-                 label(kCodeSize, kStringInk));
-        }
-    }
 }
 
 void drawPreview(Canvas& canvas, const OpenFile& f, Rect box, double now) {
@@ -1054,113 +618,22 @@ void filesTab(MenuContext& ctx, State& s, std::vector<Hit>& regions, Rect body) 
     const Rect toolbar{right.x + 8.0, right.y, right.w - 16.0, kToolbarHeight};
     const Rect editorBox{right.x + 6.0, toolbar.bottom(), right.w - 12.0,
                          right.bottom() - 6.0 - toolbar.bottom()};
-    const EditorLayout layout = layoutEditor(editorBox, f);
+    Rect codeBox = editorBox;
+    Rect previewBox{};
+    if (f.svg && f.preview && !f.binary) {
+        previewBox = Rect{codeBox.right() - kPreviewWidth, codeBox.y, kPreviewWidth, codeBox.h};
+        codeBox.w -= kPreviewWidth + 8.0;
+    }
+    const CodeEditor::Layout layout = f.editor.layout(codeBox);
 
-    // Pointer first, against this frame's layout, so a press lands where the
-    // frame it was aimed at drew the text.
-    const Thumb thumb = thumbOf(f, layout);
-    if (s.barDragging) {
-        if (window.mouseDown(MouseButton::Left) && thumb.shown && thumb.travel > 0) {
-            f.scrollY = (mouse.y - s.barGrab - layout.bar.y) / thumb.travel * maxScrollY(f, layout);
-        } else {
-            s.barDragging = false;
-        }
-    }
-    const bool pressOnBar = ctx.pressed() && thumb.shown && insideInclusive(layout.bar, mouse);
-    if (pressOnBar) {
-        s.barGrab = thumb.rect.contains(mouse) ? mouse.y - thumb.rect.y : thumb.rect.h * 0.5;
-        s.barDragging = true;
-        if (thumb.travel > 0) {
-            f.scrollY = (mouse.y - s.barGrab - layout.bar.y) / thumb.travel * maxScrollY(f, layout);
-        }
-    }
-    if (!f.binary && !pressOnBar && !s.barDragging) {
-        trackTextMouseWith(
-            window, f.field, layout.view, f.text, now,
-            [&](Vec2 point) { return offsetAt(f, layout, point); }, false);
-        if (insideInclusive(layout.view, mouse)) window.setCursorShape(CursorShape::Text);
-        // A drag past the top or bottom edge keeps the view moving that way.
-        if (f.field.dragging) {
-            if (mouse.y < layout.view.y) f.scrollY -= (layout.view.y - mouse.y) * ctx.dt * 12.0;
-            if (mouse.y > layout.view.bottom()) {
-                f.scrollY += (mouse.y - layout.view.bottom()) * ctx.dt * 12.0;
-            }
-        }
-    }
-    // A press anywhere off the file -- the list, the header -- takes the caret.
-    if (ctx.pressed() && !right.contains(mouse)) f.field.blur();
-
-    if (insideInclusive(layout.box, mouse)) {
-        const float wheel = ctx.wheel();
-        if (wheel != 0 && window.shiftHeld()) {
-            const double step = static_cast<double>(wheel) * static_cast<double>(kWheelColumns);
-            const double col = static_cast<double>(f.scrollCol) - step;
-            f.scrollCol = col <= 0 ? 0 : static_cast<std::size_t>(col);
-        } else if (wheel != 0) {
-            f.scrollY -= static_cast<double>(wheel) * kWheelLines * kLineHeight;
-        }
-    }
-    f.scrollY -= touchScroll(window, layout.view, maxScrollY(f, layout) > 0);
-
-    // The keyboard, while the editor has the caret.
-    if (!f.binary && f.field.focused) {
-        ctx.wantsText = true;
-        window.setClaimedShortcuts({Key::S, Key::Z, Key::Y});
-        const bool ctrl = window.ctrlHeld();
-        const TextSelection before = f.field.selection;
-        bool changed = false;
-        bool rewound = false;
-        if (ctrl && window.keyPressed(Key::S)) {
-            saveFile(ctx, s);
-        } else if (ctrl && (window.keyPressed(Key::Y) ||
-                            (window.keyPressed(Key::Z) && window.shiftHeld()))) {
-            rewound = f.history.redo(f.text, f.field.selection);
-        } else if (ctrl && window.keyPressed(Key::Z)) {
-            rewound = f.history.undo(f.text, f.field.selection);
-        } else {
-            if (!ctrl && window.keyTyped(Key::Tab)) {
-                replaceSelection(f, f.indent);
-                changed = true;
-            }
-            TextEditOptions typing;
-            typing.multiline = true;
-            typing.maxBytes = kEditLimit;
-            const bool enter = window.keyPressed(Key::Enter);
-            if (editText(window, f.text, f.field, now, typing)) {
-                changed = true;
-                if (enter) carryIndent(f);
-            }
-            // Ctrl+Home and Ctrl+End reach the ends of the file; the line's
-            // ends are editText's.
-            if (ctrl && window.keyTyped(Key::Home)) {
-                f.field.selection.caret = 0;
-                if (!window.shiftHeld()) f.field.selection.anchor = 0;
-            }
-            if (ctrl && window.keyTyped(Key::End)) {
-                f.field.selection.caret = f.text.size();
-                if (!window.shiftHeld()) f.field.selection.anchor = f.text.size();
-            }
-        }
-        if (changed || rewound) {
-            reindex(f);
-            f.dirty = f.text != f.saved;
-            if (changed) f.history.record(f.text, before, f.field.selection, now);
-            if (f.svg) f.previewDue = now + kPreviewDebounce;
-            f.field.caretSeconds = now;
-        }
-        if (changed || rewound || f.field.selection.caret != before.caret ||
-            f.field.selection.anchor != before.anchor) {
-            f.follow = true;
-        }
-        if (window.keyPressed(Key::Escape)) f.field.blur();
-    }
-    clampScroll(f, layout);
-    if (f.follow) {
-        followCaret(f, layout);
-        f.follow = false;
-    }
+    // Pointer and keys first, against this frame's layout, so a press lands
+    // where the frame it was aimed at drew the text. A press anywhere off the
+    // file -- the list, the header -- takes the caret.
+    const CodeEditor::Input input = f.editor.update(ctx, layout, right);
+    if (input.saveRequested) saveFile(ctx, s);
+    if (input.changed && f.svg) f.previewDue = now + kPreviewDebounce;
     if (f.svg && f.preview && f.previewDue >= 0 && now >= f.previewDue) {
-        f.drawing = std::make_shared<SvgDocument>(SvgDocument::fromString(f.text));
+        f.drawing = std::make_shared<SvgDocument>(SvgDocument::fromString(f.editor.text()));
         f.previewDue = -1;
     }
 
@@ -1188,8 +661,8 @@ void filesTab(MenuContext& ctx, State& s, std::vector<Hit>& regions, Rect body) 
         if (!f.binary) {
             const bool revertArmed = isArmed(s, "revert", now);
             action(revertArmed ? "Sure?" : "Revert", Act::Revert, revertArmed ? kDangerChip : kChip,
-                   62.0, f.dirty || revertArmed);
-            action("Save", Act::Save, kGoChip, 56.0, f.dirty);
+                   62.0, f.editor.dirty() || revertArmed);
+            action("Save", Act::Save, kGoChip, 56.0, f.editor.dirty());
         }
         if (!f.binary && assets::extensionOf(f.path) == "js" && web::bootScriptsSupported()) {
             action("Set as boot", Act::SetBoot, kChip, 92.0);
@@ -1203,7 +676,7 @@ void filesTab(MenuContext& ctx, State& s, std::vector<Hit>& regions, Rect body) 
                                             std::max(40.0, (bx - x) * 0.6));
         text(canvas, title, x, cy, name);
         x += measure(title, 16.0) + 10.0;
-        if (f.dirty) x += badge(canvas, "MODIFIED", x, cy, kDirtyInk) + 6.0;
+        if (f.editor.dirty()) x += badge(canvas, "MODIFIED", x, cy, kDirtyInk) + 6.0;
         if (f.binary) x += badge(canvas, "BINARY", x, cy, kNumberInk) + 6.0;
         if (bx - x > 30.0) {
             text(canvas, ellipsizeFront(assets::parentPath(f.path), 12.0, bx - x - 8.0), x, cy,
@@ -1213,43 +686,8 @@ void filesTab(MenuContext& ctx, State& s, std::vector<Hit>& regions, Rect body) 
 
     // -- the editor ----------------------------------------------------------
 
-    fillRound(canvas, layout.box, 6.0, kEditorFill);
-    {
-        canvas.save();
-        clipCanvas(canvas, layout.box);
-        setFill(canvas, kGutterFill);
-        canvas.fillRect(static_cast<float>(layout.gutter.x), static_cast<float>(layout.gutter.y),
-                        static_cast<float>(layout.gutter.w), static_cast<float>(layout.gutter.h));
-        // The file's own words are not the page's: a drag here moves the
-        // caret, and must not also start the page selection.
-        TextCaptureScope capture(false);
-        canvas.save();
-        clipCanvas(canvas, Rect{layout.gutter.x, layout.view.y, layout.gutter.w, layout.view.h});
-        drawGutter(canvas, f, layout);
-        canvas.restore();
-        canvas.save();
-        clipCanvas(canvas, Rect{layout.view.x - 4.0, layout.view.y, layout.view.w + 4.0, layout.view.h});
-        if (f.binary) drawHex(canvas, f, layout);
-        else drawText(canvas, f, layout, now);
-        canvas.restore();
-        canvas.restore();
-    }
-    if (thumb.shown) {
-        // Measured again: the keyboard and the wheel have moved it since.
-        const Thumb moved = thumbOf(f, layout);
-        setFill(canvas, kPaper, 0.06);
-        canvas.beginPath();
-        canvas.roundRect(static_cast<float>(layout.bar.x), static_cast<float>(layout.bar.y),
-                         static_cast<float>(layout.bar.w), static_cast<float>(layout.bar.h), 5.0f);
-        canvas.fill();
-        const bool lit = s.barDragging || insideInclusive(moved.rect, mouse);
-        setFill(canvas, kPaper, lit ? 0.5 : 0.28);
-        canvas.beginPath();
-        canvas.roundRect(static_cast<float>(moved.rect.x), static_cast<float>(moved.rect.y),
-                         static_cast<float>(moved.rect.w), static_cast<float>(moved.rect.h), 5.0f);
-        canvas.fill();
-    }
-    if (layout.preview.w > 0) drawPreview(canvas, f, layout.preview, now);
+    f.editor.draw(canvas, layout, mouse, now);
+    if (previewBox.w > 0) drawPreview(canvas, f, previewBox, now);
 }
 
 void bootTab(MenuContext& ctx, State& s, std::vector<Hit>& regions, Rect body) {
@@ -1415,11 +853,10 @@ void AssetsPanel::reset() {
     State& s = state();
     // What was open stays open, edits and all; only what cannot outlive the
     // card -- a caret, a drag, an armed button, a half-typed name -- goes.
-    s.file.field.blur();
+    s.file.editor.blur();
     s.newField.blur();
     s.naming = false;
     s.armed.clear();
-    s.barDragging = false;
     if (!s.started) start(s);
     else relist(s);
     loadBoot(s);
@@ -1482,15 +919,12 @@ bool AssetsPanel::render(MenuContext& ctx) {
         if (s.tab == Tab::Files && s.file.open) {
             const OpenFile& f = s.file;
             if (f.binary) {
-                where = assets::formatSize(f.text.size());
+                where = assets::formatSize(f.editor.text().size());
             } else {
-                const std::size_t caret = std::min(f.field.selection.caret, f.text.size());
-                const std::size_t line = assets::lineOf(f.lines, caret);
-                std::size_t column = 1;
-                for (std::size_t i = f.lines[line]; i < caret; i = utf8Next(f.text, i)) ++column;
-                where = "Ln " + std::to_string(line + 1) + ", Col " + std::to_string(column) +
-                        "   " + assets::formatSize(f.text.size()) +
-                        (f.field.focused ? "   Ctrl+S saves, Ctrl+Z undoes, Esc leaves" : "");
+                where = "Ln " + std::to_string(f.editor.caretLine()) + ", Col " +
+                        std::to_string(f.editor.caretColumn()) + "   " +
+                        assets::formatSize(f.editor.text().size()) +
+                        (f.editor.focused() ? "   Ctrl+S saves, Ctrl+Z undoes, Esc leaves" : "");
             }
         }
         const double whereW = measure(where, 12.0);
@@ -1553,7 +987,7 @@ bool AssetsPanel::render(MenuContext& ctx) {
             break;
         case Act::TabBoot:
             s.tab = Tab::Boot;
-            f.field.blur();
+            f.editor.blur();
             loadBoot(s);
             break;
         case Act::Place: {
@@ -1577,7 +1011,7 @@ bool AssetsPanel::render(MenuContext& ctx) {
                 const std::string path = assets::joinPath(s.dir, entry.name);
                 if (entry.directory) {
                     enterDirectory(s, path);
-                } else if (f.open && f.dirty && path != f.path &&
+                } else if (f.open && f.editor.dirty() && path != f.path &&
                            !confirmArmed(s, "open:" + path, now)) {
                     setStatus(s, assets::baseName(f.path) +
                                      " has changes that are not saved. Click again to drop them.",
@@ -1618,7 +1052,7 @@ bool AssetsPanel::render(MenuContext& ctx) {
             s.newField.blur();
             relist(s);
             openFile(s, path, now);
-            f.field.focusAtEnd(f.text, now);
+            f.editor.focusAtEnd(now);
             setStatus(s, "Made " + path + ".", true, now);
             break;
         }
@@ -1633,7 +1067,7 @@ bool AssetsPanel::render(MenuContext& ctx) {
             }
             break;
         case Act::CloseFile:
-            if (!f.dirty || confirmArmed(s, "close", now)) {
+            if (!f.editor.dirty() || confirmArmed(s, "close", now)) {
                 f = OpenFile{};
                 s.armed.clear();
             }
@@ -1655,7 +1089,7 @@ bool AssetsPanel::render(MenuContext& ctx) {
         case Act::SetBoot:
             // The buffer as it stands, saved or not: what is on screen is what
             // the next load should run.
-            if (f.open) useBootScript(s, f.path, f.text, now);
+            if (f.open) useBootScript(s, f.path, f.editor.text(), now);
             break;
         case Act::Preview:
             f.preview = !f.preview;
