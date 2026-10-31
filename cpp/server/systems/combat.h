@@ -375,6 +375,10 @@ public:
     /// a refused hit consumes no cooldown and lands no poison either.
     static bool canHit(const World& world, Entity victim, Entity source, double nowMillis);
 
+    /// Keep a valid held target, or select the closest unvisited enemy within
+    /// bounce range. Shared by flight steering and the first-hit survival gate.
+    static Entity ricochetTarget(World& world, Entity petal, double nowMillis);
+
     /// Deaths marked during the last run(), oldest first. The loot system
     /// reads the ledger off the corpse itself (Bounty survives until the
     /// reaper runs at the end of the tick); this is for the server and for

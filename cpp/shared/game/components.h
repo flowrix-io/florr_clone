@@ -1098,7 +1098,10 @@ struct PetalInstance {
         bool active = false;
         bool returning = false;
         Entity target = NULL_ENTITY;
-        std::array<Entity, 3> visited{};
+        std::array<Entity, 4> visited{};
+        // Only when a second valid mob was found on the first hit. Expires
+        // on arrival, return, or the bounded flight timeout.
+        bool protectSecondHit = false;
         std::uint8_t hits = 0;
         double deadlineMillis = 0;
         double readyAtMillis = 0;
@@ -1124,6 +1127,7 @@ struct PetalInstance {
                 deadlineMillis = nowMillis + 2000.0;
             }
             if (hits < visited.size()) visited[hits++] = victim;
+            if (hits >= 2) protectSecondHit = false;
             target = NULL_ENTITY;
             if (hits == visited.size()) returning = true;
         }

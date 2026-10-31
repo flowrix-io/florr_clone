@@ -1879,7 +1879,7 @@
         "name": "Icosahedron",
         "damage": 19,
         "health": 20,
-        "size": 1,
+        "size": 2,
         "cooldown": 2500,
         "price": 10,
         "description": "19kisme's special shape",

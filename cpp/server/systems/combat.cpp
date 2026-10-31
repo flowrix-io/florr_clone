@@ -524,6 +524,35 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
     return attacker.friendlyFire || defender.friendlyFire;
 }
 
+Entity CombatSystem::ricochetTarget(World& world, Entity petal, double nowMillis) {
+    const auto* instance = world.tryGet<PetalInstance>(petal);
+    const auto* at = world.tryGet<Transform>(petal);
+    const auto* owner = instance ? world.tryGet<Transform>(instance->owner) : nullptr;
+    if (!instance || !at || !owner) return NULL_ENTITY;
+    const auto& flight = instance->ricochet;
+    const auto valid = [&](Entity mob) {
+        const auto* target = world.tryGet<Transform>(mob);
+        const auto* faction = world.tryGet<Faction>(mob);
+        return target && world.has<MobTag>(mob) && target->realm == at->realm &&
+               !world.has<Pet>(mob) && (!faction || faction->team != Team::Players) &&
+               !flight.visitedMob(mob) &&
+               distanceSq(target->position, owner->position) <= 450.0 * 450.0 &&
+               canHit(world, mob, petal, nowMillis);
+    };
+    if (valid(flight.target)) return flight.target;
+    Entity best = NULL_ENTITY;
+    double nearest = 180.0 * 180.0;
+    Query<MobTag, Transform, Body> mobs{world};
+    mobs.each([&](Entity mob, MobTag&, Transform& target, Body&) {
+        const double gap = distanceSq(target.position, at->position);
+        if (gap < nearest && valid(mob)) {
+            nearest = gap;
+            best = mob;
+        }
+    });
+    return best;
+}
+
 bool CombatSystem::canHit(const World& world, Entity victim, Entity source, double nowMillis) {
     if (!world.isAlive(victim) || world.has<Dead>(victim)) return false;
     const Health* health = world.tryGet<Health>(victim);
@@ -831,6 +860,16 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     }
 
     Health& health = world.get<Health>(victim);
+    // Icosahedron gets one protected trip to a confirmed second enemy, even
+    // against a mob whose contact damage exceeds its whole health pool.
+    // Once the second hit lands, normal lethal recoil resumes immediately.
+    if (const auto* petal = world.tryGet<PetalInstance>(victim)) {
+        const auto& flight = petal->ricochet;
+        if (flight.enabled && flight.active && !flight.returning &&
+            flight.protectSecondHit && flight.hits == 1 && nowMillis < flight.deadlineMillis) {
+            amount = std::min(amount, std::max(0.0, health.current - 1.0));
+        }
+    }
     // What the health bar actually lost, which is what the caller is told and
     // what the floating number reads. The LEDGER is credited the full swing
     // instead -- see creditSwing().
@@ -2312,7 +2351,9 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
         // Resolved once per source, for the shots below: the answer canDamage()
         // would reach for every one of them.
         const Entity sourcePlayer = creditedPlayer(world, source.attacker);
+        bool ricochetHit = false;
         for (const Entity victim : candidates_) {
+            if (ricochetHit) break;
             if (victim == source.attacker) continue;
             // A shot is judged off the filing table before anything is looked
             // up, because a cloud of them is most of what a body standing in
@@ -2563,6 +2604,14 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             if (landed && source.isPetal && world.has<MobTag>(victim)) {
                 if (auto* petal = world.tryGet<PetalInstance>(source.attacker)) {
                     petal->ricochet.landed(victim, nowMillis);
+                    if (petal->ricochet.active && petal->ricochet.hits == 1) {
+                        petal->ricochet.target = ricochetTarget(world, source.attacker, nowMillis);
+                        petal->ricochet.protectSecondHit =
+                            petal->ricochet.target != NULL_ENTITY;
+                    }
+                    // Arming the next target now protects the first contact,
+                    // but movement must get a tick before the next bounce lands.
+                    ricochetHit = petal->ricochet.enabled && petal->ricochet.active;
                 }
             }
 

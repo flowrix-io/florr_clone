@@ -22,7 +22,7 @@ namespace {
 
 const char* const kPetalsJson = R"JSON({
   "basic":    {"name":"Basic","damage":10,"health":10,"size":2,"cooldown":1200,"count":1,"color":"#90EE90"},
-  "icosahedron":{"name":"Icosahedron","damage":10,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#8B5CF6"},
+  "icosahedron":{"name":"Icosahedron","damage":10,"health":10,"size":2,"cooldown":2500,"count":1,"color":"#8B5CF6"},
   "sandy":    {"name":"Sandy","damage":4,"health":12,"size":1,"cooldown":800,"count":4,"clumped":true,"color":"#8B0000"},
   "spready":  {"name":"Spready","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"color":"#F0BD48"},
   "hanging":  {"name":"Hanging","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"clumpOutsideRing":true,"color":"#F0BD48"},
@@ -980,7 +980,7 @@ void ricochetCombatTick(Rig& rig, CombatSystem& combat) {
     rig.commands.flush();
 }
 
-TEST(icosahedron_ricochet_hits_three_distinct_mobs_once_then_returns) {
+TEST(icosahedron_ricochet_hits_at_most_four_distinct_mobs_once_then_returns) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "icosahedron");
@@ -990,9 +990,10 @@ TEST(icosahedron_ricochet_hits_three_distinct_mobs_once_then_returns) {
     const Entity petal = rig.petals(0).front();
     const Vec2 start = rig.position(petal);
     const Entity first = addMob(rig, start);
-    const Entity second = addMob(rig, start + Vec2{100, 0});
-    const Entity third = addMob(rig, start + Vec2{200, 0});
-    const Entity fourth = addMob(rig, start + Vec2{300, 0});
+    const Entity second = addMob(rig, start + Vec2{80, 0});
+    const Entity third = addMob(rig, start + Vec2{160, 0});
+    const Entity fourth = addMob(rig, start + Vec2{240, 0});
+    const Entity fifth = addMob(rig, start + Vec2{320, 0});
     CombatSystem combat;
     ricochetCombatTick(rig, combat);
     CHECK(rig.world.get<PetalInstance>(petal).ricochet.active);
@@ -1005,11 +1006,12 @@ TEST(icosahedron_ricochet_hits_three_distinct_mobs_once_then_returns) {
     CHECK_NEAR(rig.world.get<Health>(first).current, 9990.0, 1e-9);
     CHECK_NEAR(rig.world.get<Health>(second).current, 9992.5, 1e-9);
     CHECK_NEAR(rig.world.get<Health>(third).current, 9994.375, 1e-9);
-    CHECK_NEAR(rig.world.get<Health>(fourth).current, 10000.0, 1e-9);
-    CHECK(furthestTravel >= 160.0);
+    CHECK_NEAR(rig.world.get<Health>(fourth).current, 9995.78125, 1e-9);
+    CHECK_NEAR(rig.world.get<Health>(fifth).current, 10000.0, 1e-9);
+    CHECK(furthestTravel >= 200.0);
     CHECK(distanceSq(rig.position(petal), start) < 1.0);
     CHECK(rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis > rig.now);
-    CHECK_NEAR(rig.world.get<Health>(petal).current, 7.0, 1e-9);
+    CHECK_NEAR(rig.world.get<Health>(petal).current, 6.0, 1e-9);
     // Back on the ring, ordinary hits still work while the next chain charges.
     // First remove its old target so it cannot wear the petal down to a break.
     rig.world.destroy(first);
@@ -1081,6 +1083,75 @@ TEST(icosahedron_ricochet_only_hits_one_overlapping_mob_per_tick) {
     }, 120));
     CHECK_NEAR(rig.world.get<Health>(a).current + rig.world.get<Health>(b).current +
                    rig.world.get<Health>(c).current, 29976.875, 1e-9);
+}
+
+TEST(icosahedron_guarantees_a_second_hit_against_lethal_contact_then_can_break) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 start = rig.position(petal);
+    const Entity first = addMob(rig, start);
+    const Entity second = addMob(rig, start + Vec2{100, 0});
+    const Entity third = addMob(rig, start + Vec2{200, 0});
+    rig.world.add<ContactDamage>(first, ContactDamage{10000});
+    rig.world.add<ContactDamage>(second, ContactDamage{10000});
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    CHECK(!rig.world.has<Dead>(petal));
+    CHECK_NEAR(rig.world.get<Health>(petal).current, 1.0, 1e-9);
+    CHECK(rig.world.get<PetalInstance>(petal).ricochet.protectSecondHit);
+    // Incoming damage during the short flight cannot steal the promised hit.
+    combat.applyDamage(rig.world, petal, first, 10000, rig.now, DamageKind::Poison);
+    CHECK(!rig.world.has<Dead>(petal));
+    CHECK(rig.tickUntil([&] {
+        ricochetCombatTick(rig, combat);
+        return rig.world.has<Dead>(petal);
+    }, 60));
+    CHECK_NEAR(rig.world.get<Health>(second).current, 9992.5, 1e-9);
+    CHECK_NEAR(rig.world.get<Health>(third).current, 10000.0, 1e-9);
+    CHECK(!rig.world.get<PetalInstance>(petal).ricochet.protectSecondHit);
+}
+
+TEST(icosahedron_does_not_gain_protection_when_only_one_enemy_is_in_range) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.settleEquips();
+    const Entity petal = rig.petals(0).front();
+    const Entity first = addMob(rig, rig.position(petal));
+    rig.world.add<ContactDamage>(first, ContactDamage{10000});
+    // A friendly mob nearby must not grant a free survival window.
+    const Entity friendly = addMob(rig, rig.position(petal) + Vec2{100, 0});
+    rig.world.get<Faction>(friendly).team = Team::Players;
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    CHECK(rig.world.has<Dead>(petal));
+    CHECK(!rig.world.get<PetalInstance>(petal).ricochet.protectSecondHit);
+}
+
+TEST(icosahedron_second_hit_protection_ends_if_its_only_next_target_disappears) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Entity first = addMob(rig, rig.position(petal));
+    const Entity second = addMob(rig, rig.position(petal) + Vec2{100, 0});
+    rig.world.add<ContactDamage>(first, ContactDamage{10000});
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    CHECK(rig.world.get<PetalInstance>(petal).ricochet.protectSecondHit);
+    rig.world.destroy(second);
+    rig.tick();
+    CHECK(!rig.world.get<PetalInstance>(petal).ricochet.protectSecondHit);
+    combat.applyDamage(rig.world, petal, first, 10000, rig.now);
+    CHECK(rig.world.has<Dead>(petal));
 }
 
 TEST(icosahedron_ricochet_breaks_and_reloads_with_fresh_flight_state) {
@@ -4089,6 +4160,39 @@ void buyDuplicator(Rig& rig, int tier) {
     SkillSet& skills = rig.world.ensure<PlayerSkillTree>(rig.player).skills;
     skills.set(kDuplicatorParent, rarityIndex(kDuplicatorRequirement));
     skills.set(SkillId::Duplicator, tier);
+}
+
+TEST(icosahedron_equipped_copies_do_not_cancel_each_others_second_hit_protection) {
+    // Both copies must survive their first recoil independently.
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.equip(1, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const std::array<Entity, 2> petals{rig.petals(0).front(), rig.petals(1).front()};
+    const Vec2 start = rig.position(petals[0]);
+    rig.world.get<Transform>(petals[1]).position = start;
+    const Entity first = addMob(rig, start);
+    const Entity second = addMob(rig, start + Vec2{100, 0});
+    rig.world.add<ContactDamage>(first, ContactDamage{10000});
+    rig.world.add<ContactDamage>(second, ContactDamage{10000});
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    rig.tick();
+    for (const Entity petal : petals) {
+        CHECK(!rig.world.has<Dead>(petal));
+        CHECK(rig.world.isAlive(petal));
+        CHECK_NEAR(rig.world.get<Health>(petal).current, 1.0, 1e-9);
+    }
+    CHECK(rig.tickUntil([&] {
+        ricochetCombatTick(rig, combat);
+        return rig.world.has<Dead>(petals[0]) && rig.world.has<Dead>(petals[1]);
+    }, 60));
+    for (const Entity petal : petals) {
+        CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.hits, 2);
+    }
 }
 
 TEST(duplicator_adds_one_copy_to_a_clump_and_triplicator_two) {

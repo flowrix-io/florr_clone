@@ -254,31 +254,14 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
         }
     }
 
-    const auto validTarget = [&](Entity mob) {
-        const Transform* at = world.tryGet<Transform>(mob);
-        const Faction* faction = world.tryGet<Faction>(mob);
-        return at && world.has<MobTag>(mob) && at->realm == transform.realm &&
-               !world.has<Pet>(mob) && (!faction || faction->team != Team::Players) &&
-               !flight.visitedMob(mob) &&
-               distanceSq(at->position, flower) <= 450.0 * 450.0 &&
-               CombatSystem::canHit(world, mob, petal, nowMillis);
-    };
-    if (!flight.returning && !validTarget(flight.target)) {
-        flight.target = NULL_ENTITY;
-        double nearest = 180.0 * 180.0;
-        Query<MobTag, Transform, Body> mobs{world};
-        mobs.each([&](Entity mob, MobTag&, Transform& at, Body&) {
-            const double gap = distanceSq(at.position, transform.position);
-            if (gap < nearest && validTarget(mob)) {
-                nearest = gap;
-                flight.target = mob;
-            }
-        });
+    if (!flight.returning) {
+        flight.target = CombatSystem::ricochetTarget(world, petal, nowMillis);
         if (flight.target == NULL_ENTITY) {
             flight.returning = true;
             flight.deadlineMillis = nowMillis + 1000.0;
         }
     }
+    if (flight.returning) flight.protectSecondHit = false;
     const Vec2 destination = flight.returning
                                  ? orbit : world.get<Transform>(flight.target).position;
     const Vec2 offset = destination - transform.position;
@@ -296,6 +279,7 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
         flight.returning = false;
         flight.target = NULL_ENTITY;
         flight.hits = 0;
+        flight.protectSecondHit = false;
         flight.readyAtMillis = nowMillis + std::max(2500.0, reloadMillis);
         flight.returnedAtMillis = nowMillis;
     }
