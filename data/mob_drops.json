@@ -774,7 +774,8 @@
         "type": "petal",
         "itemType": "icosahedron",
         "rarity": "common",
-        "probability": 0.19,
+        "probability": 0.07,
+        "rollAtAllRarities": true,
         "minQuantity": 1,
         "maxQuantity": 1
       },

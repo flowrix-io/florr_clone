@@ -3047,6 +3047,68 @@ TEST(a_dead_nest_stops_producing) {
 // Drop tables
 // ---------------------------------------------------------------------------
 
+TEST(icosahedron_balanced_drop_chance_is_rolled_at_every_garbage_tier) {
+    const auto garbage = shipped().mobIndex("garbage");
+    const auto icosahedron = shipped().petalIndex("icosahedron");
+    const auto gas = shipped().petalIndex("gas");
+    CHECK(garbage != kInvalidIndex);
+    CHECK(icosahedron != kInvalidIndex);
+    const auto tables = shippedTables();
+    for (const auto* table : {&tables.forMob(garbage), &tables.guaranteedForMob(garbage)}) {
+        bool found = false;
+        for (const auto& row : *table) {
+            if (row.petalIndex != icosahedron) continue;
+            found = true;
+            CHECK(row.rollAtAllRarities);
+            CHECK_NEAR(row.probability, 0.07, 1e-12);
+        }
+        CHECK(found);
+    }
+    // Isolate the direct row from Garbage's independent random-petal bonus,
+    // which can also choose Icosahedron (ten times per apex batch).
+    const auto path = testsupport::tempDir("flix_icosahedron_balance") + "/drops.json";
+    CHECK(testsupport::writeText(path, R"({"garbage":{"drops":[
+        {"type":"petal","itemType":"icosahedron","rarity":"common",
+         "probability":0.07,"rollAtAllRarities":true},
+        {"type":"petal","itemType":"gas","rarity":"uncommon","probability":0.5}
+    ]}})"));
+    Rng rng(191919);
+    constexpr int kills = 1000;
+    for (int tier = 0; tier < kLadderRarityCount; ++tier) {
+        World world;
+        CommandBuffer commands{world};
+        SpatialGrid grid;
+        LootSystem loot;
+        std::string error;
+        CHECK(loot.loadTables(shipped(), path, error));
+        EventQueue events;
+        const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+        int droppedOnKills = 0;
+        for (int i = 0; i < kills; ++i) {
+            const Entity corpse = makeCorpse(world, garbage, clampRarity(tier), kCentre,
+                                             player, {player});
+            loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+            commands.flush();
+            bool foundShape = false;
+            bool foundGas = false;
+            for (const Entity drop : liveDrops(world)) {
+                const auto& item = world.get<DropItem>(drop);
+                foundShape = foundShape || item.configIndex == icosahedron;
+                foundGas = foundGas || item.configIndex == gas;
+                world.destroy(drop);
+            }
+            droppedOnKills += foundShape ? 1 : 0;
+            // The opt-in gate must not nerf ordinary rows on the same mob.
+            if (tier > 0) CHECK(foundGas);
+            world.destroy(corpse);
+        }
+        const double fraction = droppedOnKills / double(kills);
+        // Allows RNG variation, but catches double rolls and guaranteed drops.
+        CHECK(fraction > 0.04);
+        CHECK(fraction < 0.105);
+    }
+}
+
 TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     DropTables tables = shippedTables();
     // Every id in the table is one the content defines. A line that does not

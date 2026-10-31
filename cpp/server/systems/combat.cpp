@@ -2481,6 +2481,13 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // A claw's bonus is decided here, per victim, off the health the
             // victim has BEFORE this hit.
             double swing = swingDamage(world, source.damage, source.critDamage, victim);
+            // The first Icosahedron hit keeps its normal damage; each bounce
+            // retains 75% of the previous hit (10 -> 7.5 -> 5.625 at common).
+            if (const auto* petal = world.tryGet<PetalInstance>(source.attacker)) {
+                if (petal->ricochet.enabled && petal->ricochet.active) {
+                    swing *= std::pow(0.75, petal->ricochet.hits);
+                }
+            }
             // A plank's 20x, against the things that are not bodies: a shot,
             // a petal, a seat on a mob's ring.
             if (source.shotDamageScale != 1.0 &&

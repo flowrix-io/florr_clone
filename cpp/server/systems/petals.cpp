@@ -247,7 +247,7 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
     auto& flight = instance.ricochet;
     if (!flight.enabled || !flight.active) return false;
     if (nowMillis >= flight.deadlineMillis ||
-        distanceSq(transform.position, flower) > 600.0 * 600.0) {
+        distanceSq(transform.position, flower) > 450.0 * 450.0) {
         if (!flight.returning) {
             flight.returning = true;
             flight.deadlineMillis = nowMillis + 1000.0;
@@ -260,12 +260,12 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
         return at && world.has<MobTag>(mob) && at->realm == transform.realm &&
                !world.has<Pet>(mob) && (!faction || faction->team != Team::Players) &&
                !flight.visitedMob(mob) &&
-               distanceSq(at->position, flower) <= 600.0 * 600.0 &&
+               distanceSq(at->position, flower) <= 450.0 * 450.0 &&
                CombatSystem::canHit(world, mob, petal, nowMillis);
     };
     if (!flight.returning && !validTarget(flight.target)) {
         flight.target = NULL_ENTITY;
-        double nearest = 250.0 * 250.0;
+        double nearest = 180.0 * 180.0;
         Query<MobTag, Transform, Body> mobs{world};
         mobs.each([&](Entity mob, MobTag&, Transform& at, Body&) {
             const double gap = distanceSq(at.position, transform.position);

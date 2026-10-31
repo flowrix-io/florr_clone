@@ -1000,9 +1000,9 @@ TEST(icosahedron_ricochet_hits_three_distinct_mobs_once_then_returns) {
         ricochetCombatTick(rig, combat);
         return !rig.world.get<PetalInstance>(petal).ricochet.active;
     }, 120));
-    for (const Entity mob : {first, second, third}) {
-        CHECK_NEAR(rig.world.get<Health>(mob).current, 9990.0, 1e-9);
-    }
+    CHECK_NEAR(rig.world.get<Health>(first).current, 9990.0, 1e-9);
+    CHECK_NEAR(rig.world.get<Health>(second).current, 9992.5, 1e-9);
+    CHECK_NEAR(rig.world.get<Health>(third).current, 9994.375, 1e-9);
     CHECK_NEAR(rig.world.get<Health>(fourth).current, 10000.0, 1e-9);
     CHECK(distanceSq(rig.position(petal), start) < 1.0);
     CHECK(rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis > rig.now);
@@ -1071,9 +1071,8 @@ TEST(icosahedron_ricochet_only_hits_one_overlapping_mob_per_tick) {
         ricochetCombatTick(rig, combat);
         return !rig.world.get<PetalInstance>(petal).ricochet.active;
     }, 120));
-    for (const Entity mob : {a, b, c}) {
-        CHECK_NEAR(rig.world.get<Health>(mob).current, 9990.0, 1e-9);
-    }
+    CHECK_NEAR(rig.world.get<Health>(a).current + rig.world.get<Health>(b).current +
+                   rig.world.get<Health>(c).current, 29976.875, 1e-9);
 }
 
 TEST(icosahedron_ricochet_breaks_and_reloads_with_fresh_flight_state) {

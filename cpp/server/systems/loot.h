@@ -90,10 +90,13 @@ public:
         /// unusual that row is graded against the mob that left it instead.
         int rarityOffset = 0;
         /// On a common mob, the chance the row drops at all. On every mob
-        /// above one the row always drops, and above an unusual one this is
+        /// above one the row drops unless rollAtAllRarities is enabled; above unusual this is
         /// its WEIGHT in the draw for which row is the graded drop -- see
         /// LootSystem::pickFeatured.
         double probability = 0.0;
+        /// Opt-in rare drop: roll probability at every mob tier, rather than
+        /// guaranteeing this row above common. Rarity grading stays unchanged.
+        bool rollAtAllRarities = false;
         int minCount = 1;
         int maxCount = 1;
     };
@@ -147,6 +150,7 @@ private:
         Kind kind = Kind::Petal;
         int rarityOffset = 0;  ///< authored rarity index (legacy field name)
         double probability = 0.0;
+        bool rollAtAllRarities = false;
         int minCount = 1;
         int maxCount = 1;
     };
