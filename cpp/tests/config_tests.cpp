@@ -1855,7 +1855,7 @@ TEST(icosahedron_has_rarity_scaled_petal_armor) {
     CHECK(index != kInvalidIndex);
     for (int tier = 0; tier < kRarityCount; ++tier) {
         const Rarity rarity = static_cast<Rarity>(tier);
-        const double expected = 10.0 * kMobArmorScale[ladderIndex(rarity)] *
+        const double expected = 10.0 * petalStatScale(rarity) *
                                 (rarity == Rarity::Admin ? 10.0 : 1.0);
         CHECK_NEAR(r.petalStats(index, rarity).petalArmor, expected, 1e-9);
     }
@@ -1868,4 +1868,19 @@ TEST(admin_golden_leaf_stacks_cannot_erase_reload_times) {
     CHECK_NEAR(barReloadCut(registry, [&](int) {
         return EquippedPetal{leaf, Rarity::Admin, Rarity::Admin};
     }), 0.5, 1e-9);
+}
+
+TEST(admin_secondary_effects_are_stronger_without_changing_ordinary_petals) {
+    const auto& registry = shipped().registry;
+    const auto pincer = registry.petalIndex("pincer");
+    const auto& ordinary = registry.petalStats(pincer, Rarity::Universal);
+    const auto& admin = registry.petalStats(pincer, Rarity::Admin);
+    CHECK_NEAR(ordinary.slowFactor, 0.5, 1e-9);
+    CHECK_NEAR(admin.slowFactor, 0.05, 1e-9);
+    CHECK_NEAR(admin.slowDurationMillis, ordinary.slowDurationMillis * 10.0, 1e-9);
+    CHECK_NEAR(admin.reloadMillis, ordinary.reloadMillis * 0.5, 1e-9);
+    const auto bone = registry.petalIndex("bone");
+    CHECK_NEAR(registry.petalStats(bone, Rarity::Apex).petalArmor, 7290.0, 1e-9);
+    const auto ico = registry.petalIndex("icosahedron");
+    CHECK_NEAR(registry.petalStats(ico, Rarity::Apex).petalArmor, 196830.0, 1e-9);
 }

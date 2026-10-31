@@ -57,9 +57,9 @@ constexpr double kMaxSpeedScale = 8.0;
 /// rooted. Nothing in the game roots a player, and a PlayerModifiers that no
 /// phase has recomputed yet reads as all zeroes -- which must not come out as
 /// a flower frozen on its first tick.
-double sanitizeSpeedScale(double scale) {
+double sanitizeSpeedScale(double scale, bool adminSpeed = false) {
     if (!(scale > 0.0)) return 1.0;
-    return scale < kMaxSpeedScale ? scale : kMaxSpeedScale;
+    return std::min(scale, adminSpeed ? 20.0 : kMaxSpeedScale);
 }
 
 double substepLength(double sanitizedRadius) {
@@ -436,7 +436,7 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         // rather than have it applied retroactively to momentum they had.
         double maxSpeed = kPlayerMaxSpeed;
         if (const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(e)) {
-            maxSpeed *= sanitizeSpeedScale(mods->speedScale);
+            maxSpeed *= sanitizeSpeedScale(mods->speedScale, mods->adminSpeed);
         }
         // Afflictions::slowFactor is deliberately NOT read. Slows are a mob
         // affliction in the reference -- its one writer refuses any victim

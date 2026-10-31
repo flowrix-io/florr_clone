@@ -648,6 +648,8 @@ struct PlayerModifiers {
     /// BELOW that tier walk to its pointer (MobAiSystem::steerPet).
     bool controlsPets = false;
     Rarity petControlRarity = Rarity::Common;
+    /// Set only by server-resolved Admin speed equipment, never client input.
+    bool adminSpeed = false;
 };
 
 /// What a player's replication is cut to. Which space the player is in is
@@ -1098,9 +1100,11 @@ struct PetalInstance {
         bool active = false;
         bool returning = false;
         Entity target = NULL_ENTITY;
-        std::array<Entity, 4> visited{};
-        // Only when a second valid mob was found on the first hit. Expires
-        // on arrival, return, or the bounded flight timeout.
+        std::array<Entity, 32> visited{};
+        std::uint8_t maxHits = 4;
+        double arrivedAtMillis = 0;
+        // Only while travelling to a valid second mob; no distance leash.
+        // Ends on the second hit, loss of valid targets, or return.
         bool protectSecondHit = false;
         std::uint8_t hits = 0;
         double deadlineMillis = 0;
@@ -1129,7 +1133,12 @@ struct PetalInstance {
             if (hits < visited.size()) visited[hits++] = victim;
             if (hits >= 2) protectSecondHit = false;
             target = NULL_ENTITY;
-            if (hits == visited.size()) returning = true;
+            deadlineMillis = nowMillis + 2000.0;
+            arrivedAtMillis = 0;
+            if (hits >= std::clamp<int>(maxHits, 2, static_cast<int>(visited.size()))) {
+                returning = true;
+                deadlineMillis = nowMillis + 1000.0;
+            }
         }
     } ricochet;
     Entity owner = NULL_ENTITY;

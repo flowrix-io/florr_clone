@@ -315,6 +315,17 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         // {0:rarity} is: a champion's crown hands out a Basic of whatever tier
         // the crown is.
         std::string description = config.description;
+        if (rarity == Rarity::Admin) {
+            if (config.id == "glitch") description = "Fully heals touched mobs. Healing lockouts still apply.";
+            else if (config.id == "powder") description = "Grants extreme movement speed.";
+            else if (config.id == "faster") description = "Rapidly spins petals in a stable orbit.";
+            else if (config.id == "pincer") description = "Slows mobs to 5% movement speed for an extended duration.";
+            else if (config.id == "web") description = "Creates a huge, long-lasting web that slows mobs to 5% movement speed.";
+        }
+        if (config.id == "icosahedron") {
+            description += "\nRicochets through up to " + std::to_string(icosahedronMaxHits(rarity)) +
+                " mobs. The second target can be anywhere in the same realm.";
+        }
         static const std::string kRaritySlot = "{rarity}";
         for (std::size_t at = description.find(kRaritySlot); at != std::string::npos;
              at = description.find(kRaritySlot, at)) {
@@ -359,6 +370,11 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         hit.text = label + " " + abbreviate(damage) + note;
         hit.altText = label + " " + exactNumber(damage) + note;
         hit.markup = true;
+    }
+    if (rarity == Rarity::Admin && config.id == "glitch") {
+        hit.text = "Healing: Full mob health";
+        hit.altText = hit.text;
+        hit.labelColor = kStatHealth;
     }
     lines.push_back(hit);
 

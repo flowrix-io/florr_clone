@@ -210,6 +210,16 @@ inline double petalStatScale(Rarity r) {
 }
 
 /// What universal's health and damage are over apex's.
+/// Icosahedron's maximum distinct ricochet targets, including first contact.
+inline constexpr int icosahedronMaxHits(Rarity r) {
+    constexpr std::array<int, kRarityCount> limits = {4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 32};
+    return limits[static_cast<std::size_t>(rarityIndex(clampRarity(rarityIndex(r))))];
+}
+
+/// Multipliers for scripted effects that do not read PetalStats.
+inline constexpr double adminEffectScale(Rarity r) { return r == Rarity::Admin ? 10.0 : 1.0; }
+inline constexpr double adminReachScale(Rarity r) { return r == Rarity::Admin ? 3.0 : 1.0; }
+
 inline constexpr double kUniversalStrengthBoost = 1.4142135623730951;  // sqrt(2)
 
 /// What a tier's health and damage are over its ladder rung's: sqrt(2) for

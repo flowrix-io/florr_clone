@@ -767,3 +767,14 @@ TEST(admin_rarity_stays_outside_all_progression_ladders) {
     CHECK(!craftsOutOf(Rarity::Admin));
     CHECK_EQ(oracleCraftCost(Rarity::Admin), 0);
 }
+
+TEST(icosahedron_ricochet_limits_increase_with_rarity) {
+    CHECK_EQ(icosahedronMaxHits(Rarity::Common), 4);
+    CHECK_EQ(icosahedronMaxHits(Rarity::Apex), 20);
+    CHECK_EQ(icosahedronMaxHits(Rarity::Universal), 24);
+    CHECK_EQ(icosahedronMaxHits(Rarity::Admin), 32);
+    for (int i = 1; i < kRarityCount; ++i) {
+        CHECK(icosahedronMaxHits(static_cast<Rarity>(i)) >
+              icosahedronMaxHits(static_cast<Rarity>(i - 1)));
+    }
+}

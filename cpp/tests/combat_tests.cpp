@@ -2847,7 +2847,7 @@ TEST(a_dandelions_lockout_is_flat_across_the_rarity_ladder) {
     // about the lockout rather than about the loader doing nothing at all.
     for (int t = 0; t < kRarityCount; ++t) {
         const PetalStats s = f.registry.petalStats(f.dandy, clampRarity(t));
-        CHECK_NEAR(s.noHealDurationMillis, 10000.0, 1e-9);
+        CHECK_NEAR(s.noHealDurationMillis, t == rarityIndex(Rarity::Admin) ? 100000.0 : 10000.0, 1e-9);
     }
     CHECK(f.registry.petalStats(f.dandy, Rarity::Mythic).damage >
           f.registry.petalStats(f.dandy, Rarity::Common).damage);
@@ -4176,4 +4176,20 @@ TEST(rubber_scales_the_knockback_its_flower_takes) {
     a.combat.applyKnockback(a.world, rubbery, {1, 0}, 10.0);
     CHECK_NEAR(a.world.get<Knockback>(rubbery).impulse.x,
                2.5 * a.world.get<Knockback>(plain).impulse.x, 1e-9);
+}
+
+TEST(admin_glitch_full_heals_a_mob_but_respects_healing_lockouts) {
+    const Fixture& f = fixture();
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 1000000.0);
+    const Entity petal = equipPetal(a, player, f.plain, Rarity::Admin, {1000, 1000});
+    a.world.get<Health>(mob).current = 1.0;
+    const auto healed = a.combat.applyDamage(a.world, mob, petal, -10.0, 1000.0);
+    CHECK_NEAR(a.health(mob), 1000000.0, 1e-9);
+    CHECK_NEAR(healed.applied, -999999.0, 1e-9);
+    a.world.get<Health>(mob).current = 10.0;
+    a.combat.applyNoHeal(a.world, mob, 10000.0, 1100.0);
+    a.combat.applyDamage(a.world, mob, petal, -10.0, 1200.0);
+    CHECK_NEAR(a.health(mob), 10.0, 1e-9);
 }

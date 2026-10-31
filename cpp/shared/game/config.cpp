@@ -1866,7 +1866,10 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // above ultra with it: it is the same kind of number doing the same job
     // -- a flat amount off each hit the wearer takes -- so a bone and a mob
     // of one tier are as hard to scratch as each other.
-    s.petalArmor = c.petalArmor * kMobArmorScale[static_cast<std::size_t>(rarityIndex(tier))];
+    // Icosahedron keeps growing on the full 3x ladder; other armored petals
+    // retain the existing mob-armor curve, which flattens after ultra.
+    s.petalArmor = c.petalArmor * (c.id == "icosahedron" ? petalStatScale(tier)
+        : kMobArmorScale[static_cast<std::size_t>(rarityIndex(tier))]);
     // A claw's bonus is damage, so it is on the damage ladder beside `damage`.
     s.critDamage = c.clawCritDamage * strength;
     // A fraction of the damage dealt, and that damage already climbs.
@@ -2086,9 +2089,18 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.healBonus *= boost;
         s.overhealShield *= boost;
         s.undeadMillis *= boost;
+        s.unrevivableMillis *= 0.5;
+        s.undeadBodyDamageCut /= boost;
         s.reloadCut = std::min(0.5, s.reloadCut * boost);
         s.collisionResist = std::min(0.95, s.collisionResist * boost);
-        s.lifesteal = std::min(1.0, s.lifesteal * boost);
+        s.lifesteal *= boost;
+        s.poisonDurationMillis *= boost;
+        s.noHealDurationMillis *= boost;
+        s.slowDurationMillis *= boost;
+        if (s.slowFactor < 1.0) s.slowFactor = std::min(0.05, s.slowFactor);
+        s.spongeDamageDurationMillis *= boost;
+        s.flowerKnockback *= boost;
+        s.damageIntervalMillis *= 0.5;
         s.reloadMillis *= 0.5;
         s.healChargeMillis *= 0.5;
         s.manaChargeMillis *= 0.5;
@@ -2098,9 +2110,11 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         auto& m = s.modifiers;
         m.maxHealth = 1.0 + (m.maxHealth - 1.0) * boost;
         m.damage = 1.0 + (m.damage - 1.0) * boost;
-        if (m.speed > 1.0) m.speed = std::min(10.0, 1.0 + (m.speed - 1.0) * boost);
+        if (m.speed > 1.0) m.speed = std::min(20.0, 1.0 + (m.speed - 1.0) * boost);
         if (m.playerRadius > 1.0) m.playerRadius = std::min(10.0, 1.0 + (m.playerRadius - 1.0) * boost);
-        m.rotationSpeed = 1.0 + (m.rotationSpeed - 1.0) * boost;
+        m.rotationSpeed = std::clamp(1.0 + (m.rotationSpeed - 1.0) * boost, -6.0, 6.0);
+        if (m.aggroRange < 1.0) m.aggroRange /= boost;
+        else if (m.aggroRange > 1.0) m.aggroRange *= boost;
         m.attackRange *= boost;
         m.luck *= boost;
         m.magnetism *= boost;
