@@ -415,7 +415,7 @@ TEST(petal_stats_scale_across_rarities) {
         const PetalStats s = r.petalStats(basic, rarity);
         CHECK_NEAR(s.damage, damage * petalStrengthScale(rarity), std::fabs(s.damage) * 1e-9);
         CHECK_NEAR(s.health, health * petalStrengthScale(rarity), std::fabs(s.health) * 1e-9);
-        CHECK_NEAR(s.reloadMillis, rarity == Rarity::Admin ? reload / 10.0 : reload, 1e-9);
+        CHECK_NEAR(s.reloadMillis, rarity == Rarity::Admin ? reload / 2.0 : reload, 1e-9);
         CHECK(s.breakable);
     }
 
@@ -1837,6 +1837,9 @@ TEST(admin_petals_boost_universal_combat_and_utility_effects) {
         CHECK_NEAR(a.damage, u.damage * 25.0, std::max(1.0, u.damage) * 1e-9);
         CHECK_NEAR(a.health, u.health * 25.0, std::max(1.0, u.health) * 1e-9);
         CHECK_NEAR(a.heal, u.heal * 10.0, std::max(1.0, u.heal) * 1e-9);
+        CHECK_NEAR(a.reloadMillis, u.reloadMillis * 0.5, 1e-9);
+        CHECK_NEAR(a.healChargeMillis, u.healChargeMillis * 0.5, 1e-9);
+        CHECK_NEAR(a.manaChargeMillis, u.manaChargeMillis * 0.5, 1e-9);
         CHECK(std::isfinite(a.damage));
         CHECK(std::isfinite(a.health));
         CHECK(!craftsOutOf(Rarity::Admin));
@@ -1856,4 +1859,13 @@ TEST(icosahedron_has_rarity_scaled_petal_armor) {
                                 (rarity == Rarity::Admin ? 10.0 : 1.0);
         CHECK_NEAR(r.petalStats(index, rarity).petalArmor, expected, 1e-9);
     }
+}
+
+TEST(admin_golden_leaf_stacks_cannot_erase_reload_times) {
+    const auto& registry = shipped().registry;
+    const auto leaf = registry.petalIndex("golden_leaf");
+    CHECK_NEAR(registry.petalStats(leaf, Rarity::Admin).reloadCut, 0.5, 1e-9);
+    CHECK_NEAR(barReloadCut(registry, [&](int) {
+        return EquippedPetal{leaf, Rarity::Admin, Rarity::Admin};
+    }), 0.5, 1e-9);
 }

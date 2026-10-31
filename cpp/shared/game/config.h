@@ -1653,13 +1653,17 @@ inline PetalStats equippedPetalStats(const ContentRegistry& registry, const Equi
 template <class EquippedAt>
 double barReloadCut(const ContentRegistry& registry, EquippedAt&& equippedAt) {
     double cut = 0.0;
+    bool adminLeaf = false;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
         const EquippedPetal petal = equippedAt(i);
         if (petal.empty() || !petalCutsReload(registry.petal(petal.configIndex))) continue;
+        adminLeaf = adminLeaf || petal.rarity == Rarity::Admin;
         cut = 1.0 - (1.0 - cut) *
                         (1.0 - registry.petalStats(petal.configIndex, petal.rarity).reloadCut);
     }
-    return cut;
+    // Admin petals already reload twice as fast. Their leaves share a
+    // ceiling so stacking them cannot erase the remaining cooldown.
+    return adminLeaf ? std::min(cut, 0.5) : cut;
 }
 
 /// The slot holding the best copy of petal `configIndex` on the active row, or

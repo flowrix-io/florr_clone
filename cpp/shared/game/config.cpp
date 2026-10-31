@@ -2086,12 +2086,12 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.healBonus *= boost;
         s.overhealShield *= boost;
         s.undeadMillis *= boost;
-        s.reloadCut = std::min(0.95, s.reloadCut * boost);
+        s.reloadCut = std::min(0.5, s.reloadCut * boost);
         s.collisionResist = std::min(0.95, s.collisionResist * boost);
         s.lifesteal = std::min(1.0, s.lifesteal * boost);
-        s.reloadMillis = std::max(50.0, s.reloadMillis / boost);
-        s.healChargeMillis /= boost;
-        s.manaChargeMillis /= boost;
+        s.reloadMillis *= 0.5;
+        s.healChargeMillis *= 0.5;
+        s.manaChargeMillis *= 0.5;
         s.requiredMana /= boost;
         s.petManaCost /= boost;
         s.cameraZoom = std::max(0.05, s.cameraZoom / (s.cameraZoom < 1.0 ? boost : 1.0));

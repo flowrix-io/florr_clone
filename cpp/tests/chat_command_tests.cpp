@@ -3633,3 +3633,69 @@ TEST(give_all_can_target_online_and_offline_accounts) {
         CHECK_EQ(boss.profile().stackCount(i, Rarity::Admin), 0u);
     }
 }
+
+TEST(give_all_excludes_multiple_petals_without_removing_owned_copies) {
+    Harness h("cmd-give-exclude", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    const auto basic = content().petalIndex("basic");
+    const auto rose = content().petalIndex("rose");
+    const auto lentil = content().petalIndex("lentil");
+    boss.sendChat("/admin give boss basic admin 2");
+    CHECK(h.stepUntil({&boss}, [&] { return boss.profile().stackCount(basic, Rarity::Admin) == 2; }));
+    boss.sendChat("/admin give all admin 3 --exclude BASIC,rose basic");
+    CHECK(h.stepUntil({&boss}, [&] { return boss.profile().stackCount(lentil, Rarity::Admin) == 3; }));
+    for (std::size_t i = 0; i < content().petalCount(); ++i) {
+        CHECK_EQ(boss.profile().stackCount(i, Rarity::Admin), i == basic ? 2u : i == rose ? 0u : 3u);
+    }
+}
+
+TEST(give_all_exclusions_support_online_and_offline_targets) {
+    Harness h("cmd-give-exclude-target", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "visitor", "password7");
+        seedUser(path, "absent", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, visitor;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    const auto basic = content().petalIndex("basic");
+    const auto rose = content().petalIndex("rose");
+    const auto lentil = content().petalIndex("lentil");
+    boss.sendChat("/admin give all admin 4 visitor --exclude basic rose");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return visitor.profile().stackCount(lentil, Rarity::Admin) == 4; }));
+    CHECK_EQ(visitor.profile().stackCount(basic, Rarity::Admin), 0u);
+    CHECK_EQ(visitor.profile().stackCount(rose, Rarity::Admin), 0u);
+    boss.sendChat("/admin give all admin 5 absent --exclude basic,rose");
+    CHECK(h.stepUntil({&boss}, [&] { return sawText(boss, "to absent."); }));
+    const auto* account = h.server.database().findUser("absent");
+    CHECK(account != nullptr);
+    if (account == nullptr) return;
+    const auto* record = h.server.database().findProgress(account->id);
+    CHECK(record != nullptr);
+    if (record == nullptr) return;
+    CHECK_EQ(record->itemCount(Rarity::Admin, "petal_basic"), 0);
+    CHECK_EQ(record->itemCount(Rarity::Admin, "petal_rose"), 0);
+    CHECK_EQ(record->itemCount(Rarity::Admin, "petal_lentil"), 5);
+}
+
+TEST(give_all_invalid_exclusions_refuse_the_entire_grant) {
+    Harness h("cmd-give-exclude-invalid", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    for (const char* command : {"/admin give all admin 2 --exclude",
+         "/admin give all admin 2 --exclude rose nope", "/admin give all admin 2 --exclude rose,",
+         "/admin give all admin 2 boss --wrong basic"}) {
+        CHECK(say(h, boss, command));
+        for (std::size_t i = 0; i < content().petalCount(); ++i) {
+            CHECK_EQ(boss.profile().stackCount(i, Rarity::Admin), 0u);
+        }
+    }
+}

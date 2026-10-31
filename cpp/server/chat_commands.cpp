@@ -892,7 +892,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
                     "(move every bot only), give &lt;username&gt; &lt;itemType&gt; "
-                    "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] (tiers 1-2), set_skin &lt;username&gt; "
+                    "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] [--exclude &lt;petal&gt; ...] (tiers 1-2), set_skin &lt;username&gt; "
                     "&lt;skin|none&gt;, corrupt &lt;username&gt; [on|off|toggle] "
                     "(corrupted flowers fight players anywhere, not just in PVP), god "
                     "[on|off|toggle] (make yourself invulnerable), control &lt;username&gt; "
@@ -2112,25 +2112,55 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         if (words.size() >= 2 && lowerCase(words[1]) == "all") {
             Rarity rarity = Rarity::Common;
             int amount = 0;
-            if ((words.size() != 4 && words.size() != 5) || !parseRarityStrict(lowerCase(words[2]), rarity) ||
+            if (words.size() < 4 || !parseRarityStrict(lowerCase(words[2]), rarity) ||
                 !parseInteger(words[3], amount) || amount < 1 || amount > kMaxStackCount) {
-                out("Usage: give all <rarity> <amount> [username] (1 to " +
+                out("Usage: give all <rarity> <amount> [username] [--exclude <petal> ...] (1 to " +
                     std::to_string(kMaxStackCount) + ")");
                 return;
             }
+            std::size_t next = 4;
+            const bool self = next == words.size() || words[next] == "--exclude";
+            const std::string username = self ? std::string() : words[next++];
+            std::vector<bool> excluded(content().petalCount(), false);
+            std::string excludedNames;
+            if (next < words.size()) {
+                if (words[next++] != "--exclude" || next == words.size()) {
+                    out("Usage: give all <rarity> <amount> [username] [--exclude <petal> ...]");
+                    return;
+                }
+                for (; next < words.size(); ++next) {
+                    // Accept space-separated IDs and comma-separated lists.
+                    std::size_t begin = 0;
+                    do {
+                        const std::size_t comma = words[next].find(',', begin);
+                        const std::string name = lowerCase(words[next].substr(begin, comma - begin));
+                        const std::uint16_t index = content().petalIndex(name);
+                        if (name.empty() || index == kInvalidIndex) {
+                            out("Unknown excluded petal \"" + name + "\". Nothing was given.");
+                            return;
+                        }
+                        if (!excluded[index]) {
+                            excluded[index] = true;
+                            excludedNames += (excludedNames.empty() ? "" : ", ") + name;
+                        }
+                        if (comma == std::string::npos) break;
+                        begin = comma + 1;
+                    } while (true);
+                }
+            }
             CommandTarget target;
-            const bool self = words.size() == 4;
-            target.session = !self ? sessionForUser(words[4]) : nullptr;
+            target.session = !self ? sessionForUser(username) : nullptr;
             const bool online = target.session != nullptr;
-            const Account* offline = !self && !online ? database_.findUser(words[4]) : nullptr;
+            const Account* offline = !self && !online ? database_.findUser(username) : nullptr;
             const std::string userId = self ? session.userId
                 : online ? target.session->userId : offline != nullptr ? offline->id : std::string();
             if (userId.empty()) {
-                out("Player \"" + words[4] + "\" not found.");
+                out("Player \"" + username + "\" not found.");
                 return;
             }
             PlayerRecord& record = database_.progress(userId);
             for (std::size_t i = 0; i < content().petalCount(); ++i) {
+                if (excluded[i]) continue;
                 record.addItem(rarity, "petal_" + content().petal(i).id, amount);
             }
             database_.markDirty();
@@ -2142,12 +2172,13 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 }
             }
             out("Gave " + std::to_string(amount) + "x every " + rarityName(rarity) +
-                " petal to " + (self ? std::string("yourself") : words[4]) + ".");
+                " petal" + (excludedNames.empty() ? std::string() : " except " + excludedNames) +
+                " to " + (self ? std::string("yourself") : username) + ".");
             return;
         }
         if (words.size() < 4 || words.size() > 5) {
             out("Usage: give <username> <itemType> <rarity> [amount]");
-            out("       give all <rarity> <amount> [username]");
+            out("       give all <rarity> <amount> [username] [--exclude <petal> ...]");
             out("  amount: how many to give (default 1).");
             out("  Works for online players and offline accounts alike, by account name");
             out("  \xE2\x80\x94 offline gives are saved directly to the account.");
