@@ -889,7 +889,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                          ? std::string("You are the server owner.")
                          : "You are a tier " + std::to_string(adminTier(session)) + " admin.") +
                     " Tier 1 can do everything; tier 2 cannot update the server; tier 3 also "
-                    "cannot give petals; tier 4 also cannot spawn mobs. The server owner is tier "
+                    "cannot give petals except to themselves; tier 4 also cannot spawn mobs. "
+                    "The server owner is tier "
                     "1 that can also manage tier 1 admins.<br/>";
             help += "Available server commands: save, list-players, list-sockets, "
                     "set_max_enemies, set_bot_count &lt;0-" + std::to_string(kMaxBots) +
@@ -903,7 +904,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
                     "(move every bot only), give &lt;username&gt; &lt;itemType&gt; "
-                    "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] [--exclude &lt;petal&gt; ...] (tiers 1-2), set_skin &lt;username&gt; "
+                    "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] [--exclude &lt;petal&gt; ...] (tiers 1-2; tiers 3-4 to themselves only), set_skin &lt;username&gt; "
                     "&lt;skin|none&gt;, corrupt &lt;username&gt; [on|off|toggle] "
                     "(corrupted flowers fight players anywhere, not just in PVP), god "
                     "[on|off|toggle] (make yourself invulnerable), control &lt;username&gt; "
@@ -2140,9 +2141,28 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "give") {
-        // To anyone, the giver included: a tier that may not hand petals out
-        // may not hand them to itself either.
-        if (lacks(AdminPower::GivePetals)) return;
+        // A tier that may give petals gives them to anyone. A database admin
+        // of a lower tier gives them to their own account only -- "own" by
+        // the session's account id, never by a name. A temporary grant below
+        // the giving tiers gives nothing at all: otherwise a tier 3 admin
+        // could hand petals to anyone by lending them the console.
+        const bool toAnyone = adminMay(session, AdminPower::GivePetals);
+        const std::string givingTiers =
+            "tiers 1-" + std::to_string(lowestTierWith(AdminPower::GivePetals));
+        if (!toAnyone && !session.admin) {
+            out("A temporary tier " + std::to_string(adminTier(session)) +
+                " admin cannot give petals (" + givingTiers + " only).");
+            return;
+        }
+        // Asked before "not found", so a refused tier learns nothing of which
+        // offline accounts exist.
+        const auto refusedFor = [&](const std::string& userId) {
+            if (toAnyone || (!userId.empty() && userId == session.userId)) return false;
+            out("Tier " + std::to_string(adminTier(session)) +
+                " admins can give petals only to themselves (" + givingTiers +
+                " give to anyone).");
+            return true;
+        };
         if (words.size() >= 2 && lowerCase(words[1]) == "all") {
             Rarity rarity = Rarity::Common;
             int amount = 0;
@@ -2188,6 +2208,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             const Account* offline = !self && !online ? database_.findUser(username) : nullptr;
             const std::string userId = self ? session.userId
                 : online ? target.session->userId : offline != nullptr ? offline->id : std::string();
+            if (refusedFor(userId)) return;
             if (userId.empty()) {
                 out("Player \"" + username + "\" not found.");
                 return;
@@ -2261,6 +2282,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                          const Account* account = database_.findUser(words[1]);
                          return account != nullptr ? account->id : std::string();
                      }();
+        if (refusedFor(userId)) return;
         if (userId.empty()) {
             out("Player \"" + words[1] + "\" not found. Use list-players to see online players, "
                 "or double-check the username for offline accounts.");

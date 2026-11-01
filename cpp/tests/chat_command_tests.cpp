@@ -987,8 +987,8 @@ TEST(a_temporary_grant_opens_the_console_and_closes_on_respawn) {
 
 TEST(each_admin_tier_loses_one_more_power) {
     // Tier 1 updates, gives and spawns; tier 2 cannot update; tier 3 cannot
-    // give either; tier 4 cannot spawn either. Everything else in the console
-    // stays open to all four.
+    // give either, except to themselves; tier 4 cannot spawn either.
+    // Everything else in the console stays open to all four.
     Harness h("cmd-tiers", [](const std::string& path) {
         seedUser(path, "one", "password7", true, 1);
         seedUser(path, "two", "password7", true, 2);
@@ -1004,6 +1004,7 @@ TEST(each_admin_tier_loses_one_more_power) {
     CHECK(loginAs(h, three, "three", "password7"));
     CHECK(loginAs(h, four, "four", "password7"));
     NetClient* admins[] = {&one, &two, &three, &four};
+    const char* names[] = {"one", "two", "three", "four"};
 
     const std::string targetId = h.server.database().findUser("target")->id;
     const auto roses = [&] {
@@ -1036,14 +1037,41 @@ TEST(each_admin_tier_loses_one_more_power) {
             CHECK(sawTextSince(admin, mark, "Gave legendary rose petal to target"));
             CHECK_EQ(roses(), rosesBefore + 1);
         } else {
-            CHECK(sawTextSince(admin, mark,
-                               "Tier " + n + " admins cannot give petals (tiers 1-2 only)."));
+            CHECK(sawTextSince(admin, mark, "Tier " + n + " admins can give petals only to "
+                                            "themselves (tiers 1-2 give to anyone)."));
             CHECK_EQ(roses(), rosesBefore);
         }
-        // Refused before the usage line, not after it.
+        // Every bulk give to someone else too, and an unknown name is refused
+        // the same way, not answered with "not found".
+        for (const char* line : {"/admin give all common 1 target", "/admin give nobody rose legendary"}) {
+            mark = admin.chatSequence();
+            CHECK(say(h, admin, line));
+            CHECK_EQ(sawTextSince(admin, mark, "can give petals only to themselves"), tier > 2);
+        }
+        CHECK_EQ(roses(), rosesBefore + (tier <= 2 ? 1 : 0));
+        // Every tier gives to its own account, by name or by leaving it out.
+        const std::string ownId = h.server.database().findUser(names[tier - 1])->id;
+        const auto ownCount = [&](Rarity rarity) {
+            const PlayerRecord* record = h.server.database().findProgress(ownId);
+            return record != nullptr ? record->itemCount(rarity, "petal_rose") : 0;
+        };
+        const int legendaryBefore = ownCount(Rarity::Legendary);
+        const int epicBefore = ownCount(Rarity::Epic);
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin give " + std::string(names[tier - 1]) + " rose legendary 2"));
+        CHECK(sawTextSince(admin, mark, "Gave 2x legendary rose petal to " +
+                                            std::string(names[tier - 1])));
+        CHECK_EQ(ownCount(Rarity::Legendary), legendaryBefore + 2);
+        mark = admin.chatSequence();
+        CHECK(say(h, admin, "/admin give all epic 3"));
+        CHECK(sawTextSince(admin, mark, "Gave 3x every epic petal to yourself."));
+        CHECK_EQ(ownCount(Rarity::Epic), epicBefore + 3);
         mark = admin.chatSequence();
         CHECK(say(h, admin, "/admin give"));
-        CHECK_EQ(sawTextSince(admin, mark, "Usage: give"), tier <= 2);
+        CHECK(sawTextSince(admin, mark, "Usage: give"));
+        // The command allowance (12, refilled at two a second) runs dry before
+        // the end otherwise.
+        h.step(150, {&one, &two, &three, &four});
 
         mark = admin.chatSequence();
         CHECK(say(h, admin, "/admin spawn bee rare"));
@@ -1078,11 +1106,8 @@ TEST(each_admin_tier_loses_one_more_power) {
         // The rest of the console is every tier's.
         mark = admin.chatSequence();
         CHECK(say(h, admin, "/admin list-players"));
-        CHECK(sawTextSince(admin, mark, "[ADMIN] " + std::string(tier == 1   ? "one"
-                                                                 : tier == 2 ? "two"
-                                                                 : tier == 3 ? "three"
-                                                                             : "four") +
-                                            " executed: list-players"));
+        CHECK(sawTextSince(admin, mark,
+                           "[ADMIN] " + std::string(names[tier - 1]) + " executed: list-players"));
         CHECK(!sawTextSince(admin, mark, "admins cannot"));
 
         mark = admin.chatSequence();
@@ -1137,8 +1162,11 @@ TEST(a_grant_is_lent_at_the_lenders_tier_or_below) {
     CHECK(say(h, boss, "/admin grant_admin aide 4"));
     CHECK(sawText(boss, ") at tier 4 until they respawn."));
     CHECK(h.stepUntil(all, [&] { return aide.isSkinAdmin(); }, 120));
+    // Not even to itself, as a database tier 4 admin may: otherwise a tier 3
+    // or 4 admin could pass petals to anyone by lending the console.
     CHECK(say(h, aide, "/admin give aide rose legendary"));
-    CHECK(sawText(aide, "Tier 4 admins cannot give petals"));
+    CHECK(sawText(aide, "A temporary tier 4 admin cannot give petals (tiers 1-2 only)."));
+    CHECK(!sawText(aide, "Gave"));
     // Nor stars, which the shop turns into petals on any account the code
     // is passed to.
     std::uint64_t mark = aide.chatSequence();
@@ -1393,8 +1421,8 @@ TEST(a_higher_tier_demotes_a_lower_one) {
     CHECK_EQ(tierOf("two"), 3);
     CHECK(h.stepUntil(all, [&] { return sawText(two, "You have been demoted to tier 3 admin."); },
                       60));
-    CHECK(say(h, two, "/admin give two rose legendary"));
-    CHECK(sawText(two, "Tier 3 admins cannot give petals"));
+    CHECK(say(h, two, "/admin give one rose legendary"));
+    CHECK(sawText(two, "Tier 3 admins can give petals only to themselves"));
     CHECK(!editorAnswers());
 
     // Promoted back, the editor asks for its key again.

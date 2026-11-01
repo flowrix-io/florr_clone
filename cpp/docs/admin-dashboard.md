@@ -39,12 +39,15 @@ tiers above it. The server owner ranks above tier 1:
 | owner | yes | yes | yes |
 | 1 | yes | yes | yes |
 | 2 | no | yes | yes |
-| 3 | no | no | yes |
-| 4 | no | no | no |
+| 3 | no | to themselves | yes |
+| 4 | no | to themselves | no |
 
 - **Update** is `/admin update`, every form of it, `status` included.
-- **Give** is `/admin give` (to anyone, yourself included) and the database
-  editor (`/admin db`), which can write any player's bag.
+- **Give** is `/admin give` and the database editor (`/admin db`), which can
+  write any player's bag. Tiers 3 and 4 may still `/admin give` to their own
+  account (by account, not by name), but not open the editor; a temporary
+  grant at tier 3 or 4 gives nothing, or a tier 3 admin could hand petals to
+  anyone by lending the console.
 - **Spawn** is `/admin spawn` and `/admin spawn_npc`.
 
 A refused command says which tiers may run it, for example "Tier 3 admins
@@ -167,7 +170,7 @@ you.
   `/admin spawn <mob> <rarity> <amount>`, at your own flower. Tiers 1-3.
 - **Give**: a petal, any rarity up to universal, and an amount, to the player
   picked on the Players tab; sent as `/admin give <username> <petal> <rarity>
-  <amount>`. Tiers 1-2.
+  <amount>`. Tiers 1-2; tiers 3-4 to themselves only.
 - **Announce**: the text of an announcement; sent as `/admin announce <text>`.
 
 Spawn, Give and Announce go out as console commands, so the server's answer

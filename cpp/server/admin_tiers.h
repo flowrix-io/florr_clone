@@ -7,8 +7,12 @@
 //   owner   everything, and reaches tier 1 admins (below)
 //   tier 1  everything
 //   tier 2  cannot update the server
-//   tier 3  cannot update the server or give petals
-//   tier 4  cannot update the server, give petals or spawn mobs
+//   tier 3  cannot update the server or give petals to anyone but themselves
+//   tier 4  cannot update the server, give petals to anyone but themselves or
+//           spawn mobs
+//
+// "To themselves" is a database admin's own account, by id. A temporary grant
+// at tier 3 or 4 gives nothing (chat_commands.cpp, `give`).
 //
 // A database admin's tier is the account's `adminTier` (absent means 1, which
 // is what every admin from before tiers is), written in the database file on
@@ -50,9 +54,9 @@ inline constexpr int kNotAnAdmin = -1;
 
 enum class AdminPower {
     UpdateServer,   ///< `update`
-    GivePetals,     ///< `give`, the database editor, which can write any bag, and
-                    ///< everything that becomes petals in somebody's bag: the
-                    ///< star code verbs and `sacrifice`
+    GivePetals,     ///< `give` to another account, the database editor, which
+                    ///< can write any bag, and everything that becomes petals
+                    ///< in somebody's bag: the star code verbs and `sacrifice`
     SpawnMobs,      ///< `spawn` and `spawn_npc`
 };
 
