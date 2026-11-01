@@ -468,6 +468,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // with an empty one would serve every returning player a blank account and,
     // worse, save that over the file they still had.
     if (!database_.load(config.databasePath, errorOut)) return false;
+    if (config.passwordCost > 0) database_.setPasswordCost(config.passwordCost);
     foldLookAlikeSkins();
 
     // Kept in a file beside the database, never anywhere a client can reach:

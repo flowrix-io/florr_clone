@@ -5,6 +5,9 @@
 // here is a stub: below the socket it is the shipping code path, which is the
 // whole point -- a test that mocks the server tests the mock.
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -132,6 +135,9 @@ struct Harness {
         config.databasePath = dbPath;
         config.worldSeed = 12345;
         config.botCount = bots;
+        // The cheapest cost there is, as seedUser() writes its accounts at: a
+        // test about accounts is not a test of how slow bcrypt is.
+        config.passwordCost = crypto::kBcryptMinCost;
         if (configure) configure(config);
 
         std::string error;
@@ -147,15 +153,91 @@ struct Harness {
     /// The server's socket and its simulation are stepped separately, exactly
     /// as run() interleaves them, so a test sees the same ordering production
     /// does rather than a convenient fiction.
+    ///
+    /// Each poll may wait a millisecond, because loopback delivery is not
+    /// instant -- on macOS about one send in five is not yet readable when the
+    /// sender returns -- and a poll that gave up at once would see a reply a
+    /// step late. But a wait only ever ends early because bytes arrived, and
+    /// the peer runs on this same thread, so once everything it wrote has been
+    /// read, the wait cannot end in anything: it is a millisecond spent for
+    /// nothing, and it used to be most of the suite's running time. So each
+    /// poll waits exactly when something may still be on its way to it (see
+    /// clientWait and serverWait) and otherwise looks and moves on, which
+    /// delivers every byte on the same step it was delivered on before.
     void step(int ticks, std::vector<NetClient*> clients) {
         for (int i = 0; i < ticks; ++i) {
-            for (NetClient* c : clients) c->poll(1);
-            server.serviceNetwork(1);
+            for (NetClient* c : clients) c->poll(clientWait(*c));
+            server.serviceNetwork(serverWait(clients));
             clock += net::kTickMillis;
             server.tick(clock);
             server.serviceNetwork(0);
-            for (NetClient* c : clients) c->poll(1);
+            for (NetClient* c : clients) c->poll(clientWait(*c));
         }
+    }
+
+    /// The server's end of `client`'s connection, or null when it cannot be
+    /// told apart: the connect has not finished, the server has not accepted
+    /// it yet, or the server is already hanging up on it. Paired by port: the
+    /// client's local port is the server's view of its peer's.
+    net::Connection* serverEndOf(const NetClient& client) {
+        const net::Connection* mine = client.dialer().connection();
+        if (mine == nullptr || !mine->open() || !client.dialer().connected()) return nullptr;
+        const int port = socketPort(mine->fd(), false);
+        if (port <= 0) return nullptr;
+        net::Connection* theirs = nullptr;
+        server.listener().each([&](net::Connection& c) {
+            if (theirs == nullptr && c.open() && !c.closing() && socketPort(c.fd(), true) == port) {
+                theirs = &c;
+            }
+        });
+        return theirs;
+    }
+
+    /// How long `client`'s poll may wait: a millisecond while the server has
+    /// written it bytes it has not read -- or while that cannot be told -- and
+    /// none once it has read everything the server sent. Also while it holds
+    /// bytes the kernel has not taken yet, as before: a full socket can empty
+    /// during the wait, and on one with room the poll returns at once anyway.
+    int clientWait(const NetClient& client) {
+        const net::Connection* theirs = serverEndOf(client);
+        if (theirs == nullptr) return 1;
+        const net::Connection& mine = *client.dialer().connection();
+        return theirs->bytesWritten() > mine.bytesRead() || mine.pendingBytes() > 0 ? 1 : 0;
+    }
+
+    /// How long the server's poll may wait: a millisecond while any client
+    /// has written it bytes it has not read, while a client is still being
+    /// accepted, while it holds a connection none of `clients` accounts for
+    /// -- a client the test is not stepping may have sent it anything -- and
+    /// while it has bytes queued that the kernel has not taken yet.
+    int serverWait(const std::vector<NetClient*>& clients) {
+        std::size_t accounted = 0;
+        for (const NetClient* c : clients) {
+            const net::Connection* mine = c->dialer().connection();
+            if (mine == nullptr || !mine->open()) continue;
+            const net::Connection* theirs = serverEndOf(*c);
+            if (theirs == nullptr || mine->bytesWritten() > theirs->bytesRead()) return 1;
+            ++accounted;
+        }
+        if (accounted != server.listener().connectionCount()) return 1;
+        bool queued = false;
+        server.listener().each([&](net::Connection& c) { queued = queued || c.pendingBytes() > 0; });
+        return queued ? 1 : 0;
+    }
+
+    /// A socket's own port (`peer` false) or its peer's (`peer` true), or 0.
+    static int socketPort(int fd, bool peer) {
+        sockaddr_storage address{};
+        socklen_t length = sizeof address;
+        auto* raw = reinterpret_cast<sockaddr*>(&address);
+        if ((peer ? ::getpeername(fd, raw, &length) : ::getsockname(fd, raw, &length)) != 0) return 0;
+        if (address.ss_family == AF_INET) {
+            return ntohs(reinterpret_cast<const sockaddr_in*>(&address)->sin_port);
+        }
+        if (address.ss_family == AF_INET6) {
+            return ntohs(reinterpret_cast<const sockaddr_in6*>(&address)->sin6_port);
+        }
+        return 0;
     }
 
     /// Steps until `done` holds or the budget runs out; returns whether it did.

@@ -355,12 +355,18 @@ TEST(a_client_redials_a_server_that_restarted) {
     if (!second.ready) { CHECK(false); return; }
     CHECK(second.port == port);
 
-    // The backoff starts at a second, so this is real elapsed time rather than
-    // simulated ticks; the budget covers two or three attempts.
-    const bool back = second.stepUntil({&client},
-                                       [&] { return client.status() == NetClient::Status::Ready ||
-                                                    client.status() == NetClient::Status::LoggedIn; },
-                                       2000);
+    // The backoff starts at a second of real time, so the budget is real time
+    // too, not ticks -- a step costs next to nothing once nothing is in
+    // flight, and 2000 of them no longer outlast one backoff. Five seconds
+    // covers two or three attempts.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    bool back = false;
+    while (!back && std::chrono::steady_clock::now() < deadline) {
+        second.step(1, {&client});
+        back = client.status() == NetClient::Status::Ready ||
+               client.status() == NetClient::Status::LoggedIn;
+        if (!back) ::usleep(1000);
+    }
     CHECK(back);
     CHECK(client.reconnected);
 

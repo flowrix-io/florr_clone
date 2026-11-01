@@ -304,6 +304,11 @@ public:
     /// defaults below rather than falling back to an empty string.
     bool loadTiled(const std::string& path, std::string& errorOut,
                    Realm realm = Realm::Overworld);
+    /// The same, from a map already read (see Terrain::loadTiledMap). `path`
+    /// is still where it came from: the id defaults to its stem, and
+    /// sourcePath() reports it.
+    bool loadTiled(const TiledMap& map, const std::string& path, std::string& errorOut,
+                   Realm realm = Realm::Overworld);
 
     bool loaded() const { return !elements_.empty(); }
     const std::vector<MapElement>& elements() const { return elements_; }

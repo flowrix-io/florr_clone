@@ -320,10 +320,18 @@ void MapData::reset(Realm realm) {
 }
 
 bool MapData::loadTiled(const std::string& path, std::string& errorOut, Realm realm) {
-    reset(realm);
-
     TiledMap map;
-    if (!map.load(path, errorOut)) return false;
+    if (!map.load(path, errorOut)) {
+        reset(realm);
+        return false;
+    }
+    return loadTiled(map, path, errorOut, realm);
+}
+
+bool MapData::loadTiled(const TiledMap& map, const std::string& path, std::string& errorOut,
+                        Realm realm) {
+    (void)errorOut;   // nothing past the read can fail
+    reset(realm);
     sourcePath_ = path;
 
     // The id is the file stem unless a caller already named this map. It is
@@ -940,38 +948,62 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
     }
 
     maps_.resize(slots.size());
-    for (std::size_t i = 0; i < slots.size(); ++i) {
-        const Realm realm = worldRealm(static_cast<int>(i));
+    // Each FILE is read once, however many realms it fills -- the dungeon's
+    // copies, a map and its prestige twin -- and both halves of a realm, its
+    // walls and its annotations, install from that one read. A read per half
+    // per slot was most of a server's boot. Realms are independent of each
+    // other, so going file by file changes only the order the load report
+    // prints in, and one file is held at a time, as it always was: a boot on
+    // a box with no memory to spare depends on that.
+    std::vector<bool> done(slots.size(), false);
+    for (std::size_t first = 0; first < slots.size(); ++first) {
+        if (done[first]) continue;
         // A manifest entry is a file name beside the manifest; one that
         // already holds a '/' is taken as the path it is.
-        const std::string path = slots[i].find('/') == std::string::npos
-                                     ? dataDir + "/" + slots[i]
-                                     : slots[i];
-        if (terrain != nullptr && !terrain->loadTiledMap(path, errorOut, realm)) return false;
-        const std::string stem = stemOf(slots[i]);
-        const bool twin = copyOf[i] < 0;
-        // The first copy keeps the plain stem, so a teleporter or an admin
-        // naming the map still finds one; the rest are numbered from 2. A
-        // twin loads under the plain stem too, so every default the loader
-        // derives from the id -- the biome, the mob group, an unnamed door's
-        // spawn id -- comes out the same as the plain map's, and is renamed
-        // once it is in.
-        maps_[i].setId(copyOf[i] <= 0 ? stem : stem + "#" + std::to_string(copyOf[i] + 1));
-        maps_[i].setTemplateId(stem);
-        std::string annotationError;
-        if (!maps_[i].loadTiled(path, annotationError, realm)) {
-            // The annotation layer is optional: a map without one still has
-            // walls and can be walked around. Losing it silently is what is
-            // not acceptable.
-            warnings_.push_back(path + ": " + annotationError +
-                                "; this map has no spawns or teleporters");
-        }
-        if (twin) {
-            MapData& map = maps_[i];
-            map.prestige_ = true;
-            map.setId(kPrestigeMapPrefix + stem);
-            map.displayName_ = std::string(kPrestigeLabel) + " " +
-                               (map.displayName_.empty() ? titleCase(stem) : map.displayName_);
+        const std::string path = slots[first].find('/') == std::string::npos
+                                     ? dataDir + "/" + slots[first]
+                                     : slots[first];
+        // A file that does not read leaves `file` null, and the loaders below
+        // then read it for themselves, failing with the reason as they always
+        // have.
+        TiledMap read;
+        std::string readError;
+        const TiledMap* file = read.load(path, readError) ? &read : nullptr;
+        for (std::size_t i = first; i < slots.size(); ++i) {
+            if (done[i] || slots[i] != slots[first]) continue;
+            done[i] = true;
+            const Realm realm = worldRealm(static_cast<int>(i));
+            if (terrain != nullptr &&
+                !(file != nullptr ? terrain->loadTiledMap(*file, path, errorOut, realm)
+                                  : terrain->loadTiledMap(path, errorOut, realm))) {
+                return false;
+            }
+            const std::string stem = stemOf(slots[i]);
+            const bool twin = copyOf[i] < 0;
+            // The first copy keeps the plain stem, so a teleporter or an admin
+            // naming the map still finds one; the rest are numbered from 2. A
+            // twin loads under the plain stem too, so every default the loader
+            // derives from the id -- the biome, the mob group, an unnamed
+            // door's spawn id -- comes out the same as the plain map's, and is
+            // renamed once it is in.
+            maps_[i].setId(copyOf[i] <= 0 ? stem : stem + "#" + std::to_string(copyOf[i] + 1));
+            maps_[i].setTemplateId(stem);
+            std::string annotationError;
+            if (!(file != nullptr ? maps_[i].loadTiled(*file, path, annotationError, realm)
+                                  : maps_[i].loadTiled(path, annotationError, realm))) {
+                // The annotation layer is optional: a map without one still
+                // has walls and can be walked around. Losing it silently is
+                // what is not acceptable.
+                warnings_.push_back(path + ": " + annotationError +
+                                    "; this map has no spawns or teleporters");
+            }
+            if (twin) {
+                MapData& map = maps_[i];
+                map.prestige_ = true;
+                map.setId(kPrestigeMapPrefix + stem);
+                map.displayName_ = std::string(kPrestigeLabel) + " " +
+                                   (map.displayName_.empty() ? titleCase(stem) : map.displayName_);
+            }
         }
     }
 

@@ -550,6 +550,11 @@ public:
     /// request made while the frame updates waits for the NEXT one.
     void flush() { dialer_.flush(); }
 
+    /// The transport underneath, for reading: its state and its socket's byte
+    /// counts. The test harness pairs these with the server's end to tell
+    /// whether anything is on its way to either side.
+    const net::Dialer& dialer() const { return dialer_; }
+
     Status status() const { return status_; }
     /// Whether this client is holding an account: logged in, or in a game.
     /// Everything the server says about an account or a world is only

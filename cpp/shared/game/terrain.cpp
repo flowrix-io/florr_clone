@@ -467,6 +467,11 @@ bool readMapGrid(ByteReader& in, Terrain& terrain, Realm& realmOut, std::string&
 bool Terrain::loadTiledMap(const std::string& path, std::string& errorOut, Realm realm) {
     TiledMap map;
     if (!map.load(path, errorOut)) return false;
+    return loadTiledMap(map, path, errorOut, realm);
+}
+
+bool Terrain::loadTiledMap(const TiledMap& map, const std::string& path, std::string& errorOut,
+                           Realm realm) {
     // Dimensions come from the FILE. What is still refused is a map bigger
     // than the engine will hold -- see kMaxTilesPerAxis -- because past that
     // the grid stops fitting on the wire and the DDA's step bound stops being

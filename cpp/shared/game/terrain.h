@@ -334,6 +334,11 @@ public:
     /// WorldMaps::load calls it once per realm the manifest names.
     bool loadTiledMap(const std::string& path, std::string& errorOut,
                       Realm realm = Realm::Overworld);
+    /// The same, from a map already read. WorldMaps::load reads each file once
+    /// and hands it to this and to MapData::loadTiled both; `path` only names
+    /// the map in errors and in the load report.
+    bool loadTiledMap(const TiledMap& map, const std::string& path, std::string& errorOut,
+                      Realm realm = Realm::Overworld);
 
     /// Installs ONE REALM'S AUTHORED SHAPES from a map already read, leaving
     /// the coarse grid exactly as it is.

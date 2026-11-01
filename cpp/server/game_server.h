@@ -129,6 +129,12 @@ struct ServerConfig {
     /// key seeded from its address and secret would differ per install -- and
     /// that machine is the player's own anyway.
     std::string fixedAdminDbKey;
+    /// The bcrypt cost new passwords are hashed at, or 0 for the database's
+    /// own (crypto::kBcryptDefaultCost). Only the test harness sets it: at the
+    /// default, every registration and every password change is a fifth of a
+    /// second of CPU, which is the point in production and nothing but a wait
+    /// in a test.
+    int passwordCost = 0;
 };
 
 class GameServer : public net::TransportHandler {
@@ -224,6 +230,10 @@ public:
     /// `timeoutMillis`. run() interleaves this with tick(); a test drives the
     /// two itself.
     void serviceNetwork(int timeoutMillis);
+
+    /// The sockets serviceNetwork() services. For a test harness that steps
+    /// the server itself and needs to see what is still in flight on them.
+    net::Listener& listener() { return listener_; }
 
     World& world() { return world_; }
     /// The account store, for reading. Tests assert against it and the console

@@ -179,6 +179,7 @@ bool Connection::writeAvailable(std::string& errorOut) {
             return false;
         }
         outboundSent_ += chunk;
+        streamWritten_ += chunk;
     }
     compactOutbound();
     return true;
@@ -223,6 +224,7 @@ bool Connection::writeAvailable(std::string& errorOut) {
         );
         if (n > 0) {
             outboundSent_ += static_cast<std::size_t>(n);
+            streamWritten_ += static_cast<std::uint64_t>(n);
             continue;
         }
         if (wouldBlock()) break;

@@ -62,6 +62,13 @@ public:
     /// on behalf of a client that has stopped reading.
     std::size_t pendingBytes() const { return outbound_.size() - outboundSent_; }
 
+    /// Every byte read off the socket, and every byte handed to it, since it
+    /// opened. The two ends of one connection compare these to know whether
+    /// anything is still on its way between them: the test harness waits on a
+    /// socket only while its peer has written more than it has read.
+    std::uint64_t bytesRead() const { return streamRead_; }
+    std::uint64_t bytesWritten() const { return streamWritten_; }
+
     /// Marks the connection for close once its queued bytes have drained, or
     /// once kCloseDrainMillis have passed, whichever is first: a peer that
     /// has stopped reading never drains anything. Nothing it sends from here
@@ -138,6 +145,7 @@ private:
 
     std::vector<std::byte> outbound_;
     std::size_t outboundSent_ = 0;
+    std::uint64_t streamWritten_ = 0;
 };
 
 /// Callbacks a transport owner implements. All are invoked from poll().
@@ -246,6 +254,9 @@ public:
     State state() const { return state_; }
     bool connected() const { return state_ == State::Connected; }
     const std::string& error() const { return error_; }
+    /// The socket, while there is one: from connect() until a failure or a
+    /// disconnect() lets go of it.
+    const Connection* connection() const { return connection_.get(); }
 
     /// Queues a frame. Safe before the connect completes; it drains after.
     void send(const ByteWriter& message);

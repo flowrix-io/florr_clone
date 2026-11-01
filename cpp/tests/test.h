@@ -3,6 +3,7 @@
 // TEST(); main() runs them all and reports every failure rather than aborting
 // on the first, so one broken invariant does not hide the next.
 
+#include <chrono>
 #include <cmath>
 #include <type_traits>
 #include <cstdio>
@@ -46,15 +47,23 @@ inline int runAll() {
     int ran = 0;
     int failed = 0;
     // `FLIX_TEST_FILTER=<substring>` runs only the cases whose name contains
-    // it. The suite is a few minutes end to end, and diagnosing one failure
+    // it. The suite is a minute end to end, and diagnosing one failure
     // by re-running the whole suite is how a diagnosis turns into a guess.
     const char* only = std::getenv("FLIX_TEST_FILTER");
+    // `FLIX_TEST_TIMES=1` prints each case's wall time, to find the slow ones.
+    const bool times = std::getenv("FLIX_TEST_TIMES") != nullptr;
     for (auto& c : cases()) {
         if (only != nullptr && std::string(c.name).find(only) == std::string::npos) continue;
         currentCase() = c.name;
         ++ran;
         const int before = failures();
+        const auto start = std::chrono::steady_clock::now();
         c.fn();
+        if (times) {
+            const std::chrono::duration<double, std::milli> ms = std::chrono::steady_clock::now() - start;
+            std::printf("  %9.1f ms  %s\n", ms.count(), c.name);
+            std::fflush(stdout);
+        }
         if (failures() > before) ++failed;
     }
     // The count is of the cases that RAN, not of the ones registered: a filter
