@@ -30,6 +30,11 @@ constexpr std::size_t kReadChunk = 16 * 1024;
 /// compact it. Erasing after every frame would memmove the remainder each
 /// time; waiting forever would grow the buffer without bound.
 constexpr std::size_t kCompactThreshold = 64 * 1024;
+/// How long a connection marked for close may take to drain what is queued
+/// for it. Long enough for any reader at all to take a refusal or a
+/// SessionReplaced; a peer still holding bytes after this has stopped reading,
+/// and would otherwise keep the connection open for as long as it liked.
+constexpr double kCloseDrainMillis = 10000.0;
 
 /// The clock arrivals are stamped on. Only ever compared with itself.
 double steadyMillis() {
@@ -95,6 +100,19 @@ void Connection::shutdownNow() {
     ::close(fd_);
 #endif
     fd_ = -1;
+}
+
+void Connection::closeGracefully() {
+    if (closing_) return;
+    closing_ = true;
+    closingSinceMillis_ = steadyMillis();
+}
+
+void Connection::discardInbound() {
+    inbound_.clear();
+    inboundConsumed_ = 0;
+    arrivals_.clear();
+    streamFramed_ = streamRead_;
 }
 
 void Connection::markFailed(const std::string& reason) {
@@ -248,8 +266,11 @@ bool Connection::nextFrame(std::vector<std::byte>& out) {
     std::memcpy(&length, inbound_.data() + inboundConsumed_, sizeof length);
     if (length > kMaxFrameBytes) {
         // Refuse before allocating: a corrupt or hostile prefix must cost a
-        // dropped connection, not a gigabyte.
-        closing_ = true;
+        // dropped connection, not a gigabyte. Failed rather than closed
+        // gracefully: a graceful close waits for the outbound queue, and
+        // while it waited every read appended to a buffer this prefix would
+        // never let drain.
+        markFailed("frame of " + std::to_string(length) + " bytes refused");
         return false;
     }
     if (available < kFrameHeaderBytes + length) return false;
@@ -427,16 +448,30 @@ bool Listener::service(Connection& c, bool readable, bool writable, TransportHan
 
     if (readable) {
         const bool alive = c.readAvailable(error);
+        // A connection the server is done with is not listened to while its
+        // last bytes drain: a replaced session, a refused handshake. What it
+        // sends is discarded unread -- acting on it would let a socket go on
+        // talking after its close, and keeping it would let one that never
+        // drains buffer without limit.
+        if (c.closing()) c.discardInbound();
         while (c.nextFrame(frameScratch_)) {
             ByteReader reader(frameScratch_.data(), frameScratch_.size());
             handler.onMessage(c, reader);
             ++delivered;
             // A handler may have closed this connection out from under us.
             if (!c.open()) return false;
+            if (c.closing()) {
+                c.discardInbound();
+                break;
+            }
         }
         if (!alive) return false;
     }
 
+    if (c.failed()) {
+        error = c.failure_;
+        return false;
+    }
     // Counted with what the transport is still holding: on the web backend
     // most of a slow peer's backlog lives there, and a cap that only saw this
     // object's half would never fire.
@@ -446,6 +481,10 @@ bool Listener::service(Connection& c, bool readable, bool writable, TransportHan
     }
     if (c.closing() && !c.wantsWrite()) {
         error = "closed by server";
+        return false;
+    }
+    if (c.closing() && steadyMillis() - c.closingSinceMillis_ > kCloseDrainMillis) {
+        error = "close timed out";
         return false;
     }
     return true;
@@ -519,7 +558,9 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
         if (!c.open() || fds[slot].fd != c.fd()) continue;
         const short revents = fds[slot].revents;
         ++slot;
-        if (revents == 0) continue;
+        // A closing connection is serviced with nothing to do, so its drain
+        // deadline is checked: a peer that stopped reading raises no event.
+        if (revents == 0 && !c.closing()) continue;
 
         std::string error;
         if (!service(c, (revents & (POLLIN | POLLHUP | POLLERR)) != 0, (revents & POLLOUT) != 0,

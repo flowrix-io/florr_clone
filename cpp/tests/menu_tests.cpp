@@ -1006,11 +1006,11 @@ TEST(a_redeemed_star_code_is_written_to_the_feed) {
     CHECK_EQ(client.notifications().size(), static_cast<std::size_t>(1));
     const NotificationEntry& notice = client.notifications().front();
     CHECK_EQ(static_cast<int>(notice.kind), static_cast<int>(net::NotificationKind::StarCode));
-    // The code as STORED, not as typed, and the star the TypeScript build
-    // wrote -- so a feed that build saved reads the same as one written here.
+    // The star the TypeScript build wrote, but never the code: the feed is
+    // readable before sign-in, and a code with uses left would be public.
     CHECK_EQ(notice.message,
-             std::string("Star code \"FREESTARS\" redeemed by @coder [coder]! +250 "
-                         "\xE2\xAD\x90 Stars"));
+             std::string("A star code was redeemed by @coder [coder]! +250 \xE2\xAD\x90 Stars"));
+    CHECK(notice.message.find("FREESTARS") == std::string::npos);
 }
 
 TEST(a_mythic_kill_is_worth_stars_and_a_common_one_is_not) {

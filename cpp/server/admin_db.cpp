@@ -668,6 +668,15 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
     }
     const std::string username = account->username;
     const std::string userId = account->id;
+    // Downward only, as ban_admin and promote_admin are: another admin's
+    // record is editable only from a higher tier than theirs. The locked
+    // fields kept the tier itself out of reach, but not the rest -- a tier 2
+    // could wipe the owner's progress or set the mute the mute command refuses.
+    if (userId != session.userId && account->admin && account->adminTier <= adminTier(session)) {
+        refuse(username + " is " + adminTierLabel(account->adminTier) +
+               ". You can only edit admins of a lower tier than your own.");
+        return;
+    }
     // One field at least, but for a patch, which may take a whole half: the
     // text view opens on the progress record or the account row entire.
     if (path.size() < (patch ? 1u : 2u) || (path[0] != "account" && path[0] != "progress")) {
@@ -941,6 +950,13 @@ void GameServer::adminDbAccountAction(Session& session, net::Connection& connect
     if (op == AdminDbOp::SignOut) {
         if (self) {
             refuse("Use Log Out in Settings to sign yourself out.");
+            return;
+        }
+        // Downward only, as an edit is: signed out over and over, the owner
+        // could be kept off their own server from tier 2.
+        if (account->admin && account->adminTier <= adminTier(session)) {
+            refuse(username + " is " + adminTierLabel(account->adminTier) +
+                   ". You can only sign out admins of a lower tier than your own.");
             return;
         }
         const int revoked = database_.revokeSessionsForUser(username);

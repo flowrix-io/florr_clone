@@ -587,4 +587,17 @@ bool chatLineDrawsNothing(const std::string& line) {
     return !drawsSomething;
 }
 
+bool chatLineBreaksRows(const std::string& line) {
+    // Both readings: the server serves clients that honour <a> and clients
+    // that drop it with its content, and a break inside one counts for either.
+    for (const bool links : {false, true}) {
+        MarkupOptions options;
+        options.links = links;
+        for (const MarkupSpan& span : parseMarkup(line, options)) {
+            if (span.lineBreak) return true;
+        }
+    }
+    return false;
+}
+
 } // namespace flix

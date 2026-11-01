@@ -381,6 +381,86 @@ TEST(oversized_length_prefix_is_refused) {
     ::close(fd);
 }
 
+namespace {
+
+/// A raw client socket on `port`, accepted by `server` before it returns.
+int rawPeer(Listener& server, Recorder& serverSide, std::uint16_t port) {
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    for (int i = 0; i < 50 && serverSide.connects.empty(); ++i) server.poll(serverSide, 2);
+    return fd;
+}
+
+/// More than loopback's buffers hold, so a peer that never reads leaves the
+/// connection with output queued for as long as the test runs.
+void queueMoreThanThePeerWillRead(Listener& server) {
+    server.maxPendingBytes = 256u << 20;
+    const std::string chunk(60000, 'x');
+    server.each([&](Connection& c) {
+        for (int i = 0; i < 600; ++i) c.send(textFrame(chunk));
+    });
+    for (int i = 0; i < 20; ++i) server.flush();
+}
+
+} // namespace
+
+// A refused prefix used to mark the connection for a graceful close, which
+// waits for its output to drain -- and a peer that never reads never lets it,
+// so the connection stayed, appending every read to a buffer the refused
+// prefix would never let it frame.
+TEST(an_oversized_prefix_is_refused_with_output_still_queued) {
+    Listener server;
+    std::uint16_t port = 0;
+    if (!startOnFreePort(server, port)) { CHECK(false); return; }
+    Recorder serverSide;
+    const int fd = rawPeer(server, serverSide, port);
+    CHECK(fd >= 0);
+    CHECK_EQ(serverSide.connects.size(), std::size_t(1));
+
+    queueMoreThanThePeerWillRead(server);
+    const std::uint32_t bogus = 0x40000000u;
+    CHECK(::send(fd, &bogus, sizeof bogus, 0) == static_cast<ssize_t>(sizeof bogus));
+
+    for (int i = 0; i < 300 && serverSide.disconnects.empty(); ++i) server.poll(serverSide, 2);
+    CHECK_EQ(serverSide.disconnects.size(), std::size_t(1));
+    if (!serverSide.disconnects.empty()) {
+        CHECK(serverSide.disconnects[0].find("refused") != std::string::npos);
+    }
+    CHECK_EQ(server.connectionCount(), std::size_t(0));
+    ::close(fd);
+}
+
+// Once the server is done with a connection, nothing more it says reaches
+// the handler -- a replaced session's socket must not act while it drains.
+TEST(a_closing_connection_is_not_listened_to) {
+    Listener server;
+    std::uint16_t port = 0;
+    if (!startOnFreePort(server, port)) { CHECK(false); return; }
+    Recorder serverSide;
+    const int fd = rawPeer(server, serverSide, port);
+    CHECK(fd >= 0);
+
+    queueMoreThanThePeerWillRead(server);
+    server.each([](Connection& c) { c.closeGracefully(); });
+
+    const ByteWriter said = textFrame("after the close");
+    const std::uint32_t length = static_cast<std::uint32_t>(said.size());
+    CHECK(::send(fd, &length, sizeof length, 0) == static_cast<ssize_t>(sizeof length));
+    CHECK(::send(fd, said.data(), said.size(), 0) == static_cast<ssize_t>(said.size()));
+
+    for (int i = 0; i < 100; ++i) server.poll(serverSide, 2);
+    CHECK(serverSide.messages.empty());
+    ::close(fd);
+}
+
 // A frame is as old as the read that COMPLETED it, which is what the ping
 // readout is timed from (NetClient::handlePong): a frame whose last bytes came
 // well after its first must not be dated by the first.

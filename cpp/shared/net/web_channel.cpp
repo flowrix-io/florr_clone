@@ -591,6 +591,20 @@ EM_JS(int, flix_ch_listen,
   // application frame at 1 MiB and transport.cpp hands the transport at most
   // 16 KiB at a time, so nothing legitimate comes close.
   const kMaxMessageBytes = 1 << 20;
+  // What Node may be holding for a socket before a ping goes unanswered. A
+  // pong is written here, inside the data handler, where the C++ backlog cap
+  // (transport.cpp) never sees it until its next pass -- so a peer that pings
+  // and never reads had this side queue pongs for it as fast as it could send
+  // them, a hundred megabytes and more for one socket. The RFC lets a pong
+  // answer only the most recent ping, and no browser pings at all.
+  const kPongBacklogBytes = 64 * 1024;
+  // How long a socket this side has closed is given to finish closing. end()
+  // queues the close frame behind whatever is already buffered, and a peer
+  // that has stopped reading never takes it: the socket, and every byte
+  // queued on it, would stay for as long as the peer kept it open.
+  const kCloseGraceMs = 5000;
+  // How long a WebTransport session has from arriving to opening its stream.
+  const kWebTransportOpenMs = 10000;
 
   // A frame this side sends: FIN always set, never masked (the RFC forbids a
   // server masking), and header and payload in one allocation so they leave as
@@ -678,34 +692,61 @@ EM_JS(int, flix_ch_listen,
     // bufferedAmount answers in the page, and the backpressure signal
     // writeAvailable() stops feeding.
     channel.bufferedFn = () => socket.writableLength || 0;
-    channel.closer = () => { try { socket.end(encode(0x8, Buffer.alloc(0))); } catch (e) { } };
     open.add(socket);
 
-    // A close this side starts: say why in the frame, then stop reading. The
-    // socket is ended rather than destroyed so the close frame is actually
-    // flushed, and paused so a peer that keeps talking cannot keep this
+    // Every close this side makes, whoever asked for it: the close frame is
+    // queued with end() rather than the socket destroyed, so that it is
+    // actually flushed -- and the socket is destroyed anyway once
+    // kCloseGraceMs have passed, for the peer that never takes it.
+    let ending = false;
+    const end = (payload) => {
+      if (ending) return;
+      ending = true;
+      try { socket.end(encode(0x8, payload)); } catch (e) { }
+      setTimeout(() => { try { socket.destroy(); } catch (e) { } }, kCloseGraceMs).unref();
+    };
+    channel.closer = () => end(Buffer.alloc(0));
+
+    // A close this side starts over the peer`s own bytes: say why in the
+    // frame, then stop reading, so a peer that keeps talking cannot keep this
     // connection`s buffer growing after it has been given up on.
     const drop = (reason, code) => {
       const payload = Buffer.allocUnsafe(2);
       payload.writeUInt16BE(code, 0);
-      try { socket.pause(); socket.end(encode(0x8, payload)); } catch (e) { }
+      try { socket.pause(); } catch (e) { }
+      end(payload);
       net.fail(channel, reason);
     };
 
-    // `held` is what has arrived and has not parsed into a whole frame yet.
+    // `held` is what has arrived and has been joined into one buffer; `parts`
+    // is what has arrived since, not yet joined, and `need` how many bytes the
+    // parser has to see before it can get any further. Joining every chunk on
+    // arrival copied the whole of a half-delivered frame once per chunk -- a
+    // 1 MiB frame paced out in small segments cost the server a second of CPU
+    // per connection -- so chunks are only joined once there are enough of
+    // them to finish what the parser is waiting for.
     // `fragments` is a message still being delivered across continuation
     // frames -- which no browser sends, and which the protocol allows.
     let held = head && head.length ? Buffer.from(head) : Buffer.alloc(0);
+    let parts = [];
+    let partBytes = 0;
+    let need = 2;
     let fragments = null;
     let fragmentBytes = 0;
 
     const consume = (chunk) => {
       if (channel.state === 2) return;
       if (chunk && chunk.length) {
-        held = held.length === 0 ? chunk : Buffer.concat([held, chunk]);
+        parts.push(chunk);
+        partBytes += chunk.length;
+        if (held.length + partBytes < need) return;
+        held = Buffer.concat(held.length === 0 ? parts : [held].concat(parts),
+                             held.length + partBytes);
+        parts = [];
+        partBytes = 0;
       }
       for (;;) {
-        if (held.length < 2) return;
+        if (held.length < 2) { need = 2; return; }
         const first = held[0];
         const second = held[1];
         // No extension was negotiated, so a reserved bit means the peer is
@@ -717,11 +758,11 @@ EM_JS(int, flix_ch_listen,
         let length = second & 0x7f;
         let at = 2;
         if (length === 126) {
-          if (held.length < 4) return;
+          if (held.length < 4) { need = 4; return; }
           length = held.readUInt16BE(2);
           at = 4;
         } else if (length === 127) {
-          if (held.length < 10) return;
+          if (held.length < 10) { need = 10; return; }
           // The high half of the 64-bit length: refused rather than read,
           // since anything in it is orders of magnitude past the cap.
           if (held.readUInt32BE(2) !== 0) return drop("frame too large", 1009);
@@ -734,7 +775,7 @@ EM_JS(int, flix_ch_listen,
         if ((second & 0x80) === 0) return drop("client frame is not masked", 1002);
         if (control && (length > 125 || !fin)) return drop("bad control frame", 1002);
         if (length > kMaxMessageBytes) return drop("frame too large", 1009);
-        if (held.length < at + 4 + length) return;
+        if (held.length < at + 4 + length) { need = at + 4 + length; return; }
 
         // Unmasked into a buffer of its own. What is left of `held` is a view
         // onto the same memory the next frame will be read from, so the
@@ -746,12 +787,14 @@ EM_JS(int, flix_ch_listen,
         held = held.subarray(at + length);
 
         if (opcode === 0x8) {                  // close: echo the status back
-          try { socket.end(encode(0x8, payload.subarray(0, 2))); } catch (e) { }
+          end(payload.subarray(0, 2));
           net.fail(channel, "peer closed");
           return;
         }
         if (opcode === 0x9) {                  // ping: the pong carries it back
-          try { socket.write(encode(0xa, payload)); } catch (e) { }
+          if ((socket.writableLength || 0) < kPongBacklogBytes) {
+            try { socket.write(encode(0xa, payload)); } catch (e) { }
+          }
           continue;
         }
         if (opcode === 0xa) continue;          // pong, to a ping this never sends
@@ -832,10 +875,16 @@ EM_JS(int, flix_ch_listen,
           (async () => {
             const channel = net.channel();
             let slot = -1;
+            // A session that never finishes its handshake, or never opens the
+            // stream the client always opens first, is closed rather than held:
+            // nothing else would ever let it go.
+            const deadline = setTimeout(() => { try { session.close(); } catch (e) { } },
+                                        kWebTransportOpenMs);
             try {
               await session.ready;
               const streams = session.incomingBidirectionalStreams.getReader();
               const first = await streams.read();
+              clearTimeout(deadline);
               if (first.done || !first.value) throw new Error("no stream");
               const writer = first.value.writable.getWriter();
               const reader = first.value.readable.getReader();
@@ -858,6 +907,7 @@ EM_JS(int, flix_ch_listen,
               }
               net.fail(channel, "stream ended");
             } catch (e) {
+              clearTimeout(deadline);
               net.fail(channel, e);
               try { session.close(); } catch (ignored) { }
             }

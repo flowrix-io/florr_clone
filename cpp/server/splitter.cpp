@@ -439,6 +439,11 @@ void GameServer::handleUsePetal(Session& session, ByteReader& reader) {
     // what happens.
     if (!petalIsClickToUse(content().petal(entry.configIndex))) return;
     if (entry.broken) return;
+    // The switch spends splitterSlotOf()'s slot and nothing else, so that is
+    // the only one a click may name. With two splitters worn, a click on the
+    // second one -- never spent, so never broken -- switched halves as often
+    // as clicks could be sent.
+    if (static_cast<int>(slot) != splitterSlotOf(session.entity)) return;
 
     // A splitter that has not split yet is doing its job on the tick clock --
     // the service above splits on equip -- so a click before that lands has

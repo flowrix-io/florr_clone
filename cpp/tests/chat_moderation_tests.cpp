@@ -5,6 +5,7 @@
 #include <string>
 
 using flix::blockedWordIn;
+using flix::chatLineBreaksRows;
 using flix::chatLineDrawsNothing;
 using flix::chatLineFloods;
 using flix::chatRepeatKey;
@@ -140,4 +141,20 @@ TEST(a_line_of_nothing_but_dropped_markup_draws_nothing) {
     CHECK(!chatLineDrawsNothing("hi"));
     CHECK(!chatLineDrawsNothing(":)"));
     CHECK(!chatLineDrawsNothing("<img src=\"https://i.imgur.com/a.png\">"));
+}
+
+TEST(a_line_that_would_start_a_row_of_its_own_breaks_rows) {
+    // The forged System line: a break, then a row dressed as the server.
+    CHECK(chatLineBreaksRows("hi<br><span style=\"color:#ffb74d\">[Admin] owner: wipe</span>"));
+    CHECK(chatLineBreaksRows("hi<br/>there"));
+    CHECK(chatLineBreaksRows("hi<BR >there"));
+    CHECK(chatLineBreaksRows("<b>hi<br></b>"));
+    // A <pre> opened mid-line starts its own row too.
+    CHECK(chatLineBreaksRows("hi <pre>there</pre>"));
+    // Inside a link, in a build that honours links and one that drops them.
+    CHECK(chatLineBreaksRows("<a href=\"https://example.com\">x<br>y</a>"));
+    // Ordinary dress, an escaped tag, and the word in prose are all one row.
+    CHECK(!chatLineBreaksRows("<b>bold</b> and <span style=\"color:red\">red</span>"));
+    CHECK(!chatLineBreaksRows("type &lt;br&gt; for a break"));
+    CHECK(!chatLineBreaksRows("a br b"));
 }

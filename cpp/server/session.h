@@ -38,6 +38,10 @@ enum class SessionStage : std::uint8_t {
 struct Session {
     net::ConnectionId connection = 0;
     SessionStage stage = SessionStage::Greeting;
+    /// When the socket opened, on monotonicMillis(). A session still in
+    /// Greeting kGreetingMillis after it is closed (GameServer::reapUngreeted):
+    /// the client sends its Hello the moment it connects.
+    double connectedAtMillis = 0;
     /// Where the connection really comes from, worked out once when it opened:
     /// the TCP peer, or the address a trusted proxy in front of the server
     /// named (clientAddress, server/account_limits.h). What every abuse limit
@@ -193,6 +197,11 @@ struct Session {
     /// Inventory, loadout and talent mutations share a budget: alternating
     /// opcodes must not bypass the limit or spend the movement budget.
     double inventoryAllowance = 20;
+    /// Everything else a player asks for by clicking: joining, leaving and
+    /// respawning, skins, guild actions, the leaderboard and the feed. Each
+    /// answers with a Profile, a map grid, a broadcast or a walk of a whole
+    /// table, and none is something a person does many times a second.
+    double requestAllowance = 10;
     double lastRefillMillis = 0;
 
     /// The lines this connection said to other players lately, oldest

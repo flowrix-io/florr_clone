@@ -61,4 +61,10 @@ bool chatLineFloods(const std::string& line);
 /// would reach everyone as an empty line under the speaker's name.
 bool chatLineDrawsNothing(const std::string& line);
 
+/// Whether `line` would start a row of its own anywhere -- a <br>, or a <pre>
+/// opened mid-line -- as read by the same parser every client draws it with.
+/// A row a player's line starts has no "[Global] name:" in front of it, so it
+/// can be dressed as a System line or an admin's announcement.
+bool chatLineBreaksRows(const std::string& line);
+
 } // namespace flix

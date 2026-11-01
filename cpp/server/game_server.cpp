@@ -12,6 +12,7 @@
 #include <iterator>
 #include <optional>
 #include <random>
+#include <unordered_set>
 #include <utility>
 
 #include "server/admin_db_key.h"
@@ -420,10 +421,12 @@ std::string numberText(double value) {
 /// brackets. One rendering, so a boss kill and an apex pickup name the same
 /// player the same way.
 std::string creditedPlayerMarkup(const Session& session) {
+    // Escaped: a nameplate is whatever printable text its player typed, and
+    // these lines go to everyone. "<!--" cut the rest of the announcement off.
     const std::string playerName =
         session.displayName.empty() ? session.username : session.displayName;
-    return "<span style=\"color: #00ff00;\">@" + session.username +
-           "</span> [<span style=\"color: yellow;\">" + playerName + "</span>]";
+    return "<span style=\"color: #00ff00;\">@" + escapedMarkup(session.username) +
+           "</span> [<span style=\"color: yellow;\">" + escapedMarkup(playerName) + "</span>]";
 }
 
 } // namespace
@@ -841,6 +844,7 @@ void GameServer::tick(double nowMillis) {
     if (nowMillis >= nextSocketAuditMillis_) {
         nextSocketAuditMillis_ = nowMillis + 1000.0;
         reapSessionsWithoutSockets();
+        reapUngreeted();
     }
 
     for (auto& entry : sessions_) refillAllowances(entry.second, nowMillis);
@@ -1310,6 +1314,7 @@ Session* GameServer::sessionForEntity(Entity e) {
 void GameServer::onConnect(net::Connection& connection) {
     Session session;
     session.connection = connection.id();
+    session.connectedAtMillis = monotonicMillis();
     session.clientAddress = clientAddress(connection.peer(), connection.forwarded());
     sessions_[connection.id()] = std::move(session);
     views_[connection.id()] = ClientView{};
@@ -1356,6 +1361,19 @@ void GameServer::reapSessionsWithoutSockets() {
     }
 }
 
+void GameServer::reapUngreeted() {
+    // Generous: the shipping client's Hello is its first frame, sent from the
+    // transport's own connect callback, so only a socket that means to say
+    // nothing is still here after this.
+    constexpr double kGreetingMillis = 15000.0;
+    const double now = monotonicMillis();
+    for (const auto& [id, session] : sessions_) {
+        if (session.stage != SessionStage::Greeting) continue;
+        if (now - session.connectedAtMillis < kGreetingMillis) continue;
+        if (net::Connection* connection = listener_.find(id)) connection->closeGracefully();
+    }
+}
+
 void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
     Session* session = sessionFor(connection.id());
     if (!session) return;
@@ -1392,6 +1410,30 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::RedeemCode:
             if (!session->authenticated() || !spend(session->inventoryAllowance)) return;
             break;
+        // The same rule for everything else that is dear to answer. Not
+        // gated on sign-in here: the leaderboard and the feed are read from
+        // the title screen, and each handler below checks its own standing.
+        case net::ClientMessage::JoinGame:
+        case net::ClientMessage::LeaveGame:
+        case net::ClientMessage::Respawn:
+        case net::ClientMessage::SetSkin:
+        case net::ClientMessage::EquipSkin:
+        case net::ClientMessage::DeleteSkin:
+        case net::ClientMessage::RequestLeaderboard:
+        case net::ClientMessage::RequestNotifications:
+        case net::ClientMessage::GuildCreate:
+        case net::ClientMessage::GuildEdit:
+        case net::ClientMessage::GuildInvite:
+        case net::ClientMessage::GuildAccept:
+        case net::ClientMessage::GuildDecline:
+        case net::ClientMessage::GuildKick:
+        case net::ClientMessage::GuildLeave:
+        case net::ClientMessage::GuildSquadAll:
+        case net::ClientMessage::GuildInviteToSquad:
+            if (!spend(session->requestAllowance)) return;
+            break;
+        // PublishSkin is billed too, but by its handler, which says so: a
+        // player retrying a refused design should hear why nothing happened.
         default: break;
     }
 
@@ -1718,6 +1760,15 @@ void GameServer::handleLogin(Session& session, net::Connection& connection, Byte
 void GameServer::handleResume(Session& session, net::Connection& connection, ByteReader& reader) {
     const std::string token = reader.str();
     if (!reader.ok()) return;
+
+    // On the login budget like every other way in. A token cannot be guessed,
+    // but each resume is answered with the whole welcome -- Profile, skin
+    // catalogue, guild, chat backlog -- and unbudgeted, one socket replaying
+    // its own token could ask for that as fast as it could send.
+    if (!spend(session.loginAttemptsAllowed)) {
+        sendAuthResult(connection, net::AuthStatus::RateLimited, "", "", "Too many attempts. Wait a moment.");
+        return;
+    }
 
     const Database::Session* record = database_.resolveSession(token);
     if (!record) {
@@ -2596,6 +2647,16 @@ bool GameServer::screenChatLine(Session& session, net::Connection& speaker,
     // more than an empty line gets one.
     if (chatLineDrawsNothing(text)) return false;
 
+    // One line, one row. A <br> -- which sanitizeChat's newline stripping
+    // never sees -- started a row with nothing in front of it, and a colour
+    // span then made that row a System line or an admin's announcement, which
+    // the chat backlog replayed to everyone who signed in after.
+    if (chatLineBreaksRows(text)) {
+        sendSystem(speaker, "<span style=\"color: #ff8866;\">Your message was not sent: a chat "
+                            "line cannot contain line breaks.</span>");
+        return false;
+    }
+
     // Refused, not starred: nothing of it reaches anyone. The word goes in
     // the log, which is how an admin tells a false match from a real one;
     // the speaker is not shown it.
@@ -3236,6 +3297,11 @@ void GameServer::handleAbsorb(Session& session, net::Connection& connection,
     const int stackCount = reader.u16();
     std::vector<Stack> stacks;
     stacks.reserve(static_cast<std::size_t>(std::min(stackCount, kMaxAbsorbStacks)));
+    // Where each (petal, tier) already sits in `stacks`. A search of the list
+    // per entry was quadratic in what the client sent, and ran before
+    // anything was validated: 4096 junk pairs cost milliseconds of tick a
+    // request.
+    std::unordered_map<std::uint32_t, std::size_t> seen;
     bool malformed = stackCount <= 0 || stackCount > kMaxAbsorbStacks;
     for (int i = 0; i < stackCount && !malformed; ++i) {
         Stack stack;
@@ -3245,18 +3311,17 @@ void GameServer::handleAbsorb(Session& session, net::Connection& connection,
         const std::uint8_t rarity = reader.u8();
         stack.count = reader.u32();
         if (!reader.ok()) break;
-        if (rarity >= kRarityCount) {
+        if (rarity >= kRarityCount || stack.petalIndex >= content().petalCount()) {
             malformed = true;
             break;
         }
         stack.rarity = static_cast<Rarity>(rarity);
         // One stack per petal and tier: a request naming one twice is asking
         // for the sum of them, and is checked against the bag as that.
-        const auto same = std::find_if(stacks.begin(), stacks.end(), [&](const Stack& other) {
-            return other.petalIndex == stack.petalIndex && other.rarity == stack.rarity;
-        });
-        if (same != stacks.end()) same->count += stack.count;
-        else stacks.push_back(stack);
+        const std::uint32_t key = (std::uint32_t{stack.petalIndex} << 8) | rarity;
+        const auto [it, fresh] = seen.emplace(key, stacks.size());
+        if (fresh) stacks.push_back(stack);
+        else stacks[it->second].count += stack.count;
     }
     if (!reader.ok() || !session.authenticated()) return;
 
@@ -3559,8 +3624,8 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
     broadcastChat(net::ChatChannel::System, "",
                   std::string("<b style=\"color: ") + tierColor + ";\">" + article + " " + tier +
                       " " + petal + verb + "<b style=\"color: #00ff00;\">@" +
-                      session.username + "</b> [<b style=\"color: yellow;\">" + playerName +
-                      "</b>]</b>");
+                      escapedMarkup(session.username) + "</b> [<b style=\"color: yellow;\">" +
+                      escapedMarkup(playerName) + "</b>]</b>");
 
     addNotification(forged                   ? "universal_craft"
                     : made == Rarity::Apex   ? "apex_craft"
@@ -3980,14 +4045,14 @@ void GameServer::handleRedeemCode(Session& session, net::Connection& connection,
     sendProfile(session, connection);
     sendShopResult(connection, net::ShopResultKind::Redeem, true, stars, {});
 
-    // The star is U+2B50, exactly as the browser build wrote it. The row
-    // stored here is kept identical to the rows that build stored, which the
-    // feed still holds -- the shipped face having no glyph for it is the
-    // panel's problem to solve, not a reason to write a different history.
+    // The star is U+2B50, exactly as the browser build wrote it. The code
+    // itself is NOT in the row, as the browser build had it: the feed is read
+    // by anyone who has said Hello, signed in or not, so a code good for more
+    // than one use was published to all of them by its first redemption.
     const std::string playerName =
         session.displayName.empty() ? session.username : session.displayName;
-    addNotification("star_code", "Star code \"" + code + "\" redeemed by @" + session.username +
-                                    " [" + playerName + "]! +" + numberText(stars) +
+    addNotification("star_code", "A star code was redeemed by @" + session.username + " [" +
+                                    playerName + "]! +" + numberText(stars) +
                                     " \xE2\xAD\x90 Stars");
 }
 
@@ -4148,15 +4213,51 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
     w.boolean(effectiveAdmin(session));
     w.str(record.equippedSkinId);
     const std::size_t at = w.reserveU16();
+
+    // One frame holds as much of the catalogue as fits, and no more. A client
+    // drops any frame past kMaxFrameBytes and redials, so a catalogue that
+    // outgrew it -- a few dozen full-size skins from one account would do --
+    // ended every sign-in, every player's, admins' too, with nothing to show
+    // why. The skins someone online is wearing go first, so every flower in
+    // the world still draws; what is left out is only missing from the
+    // studio's Browse tab, and a worn skin it lacks draws as the plain flower.
+    constexpr std::size_t kCatalogBudget = net::kMaxFrameBytes - 64 * 1024;
+    std::unordered_set<std::string> worn{record.equippedSkinId};
+    for (const auto& entry : sessions_) {
+        if (entry.second.userId.empty()) continue;
+        if (const PlayerRecord* other = database_.findProgress(entry.second.userId)) {
+            worn.insert(other->equippedSkinId);
+        }
+    }
     std::uint16_t count = 0;
-    for (const std::string& id : skins.keys()) {
+    bool full = false;
+    const auto add = [&](const std::string& id) {
         const CustomSkin skin = skinFromJson(skins[id]);
-        if (skin.id.empty() || skin.shapes.empty()) continue;
+        if (skin.id.empty() || skin.shapes.empty()) return;
+        const std::size_t before = w.size();
         writeCustomSkin(w, skin);
+        if (w.size() > kCatalogBudget || count == 0xFFFF) {
+            w.buffer().resize(before);
+            full = true;
+            return;
+        }
         ++count;
+    };
+    for (const std::string& id : skins.keys()) {
+        if (worn.count(id) != 0) add(id);
+    }
+    for (const std::string& id : skins.keys()) {
+        if (worn.count(id) == 0) add(id);
     }
     w.patchU16(at, count);
     connection.send(w);
+    // Once per process: past this point it is true of every sign-in.
+    static bool reported = false;
+    if (full && !reported) {
+        reported = true;
+        std::printf("[skins] the catalogue no longer fits one frame; sent %u of %zu skins\n",
+                    static_cast<unsigned>(count), skins.keys().size());
+    }
 }
 
 void GameServer::handlePublishSkin(Session& session, net::Connection& connection,
@@ -4173,6 +4274,13 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
     }
     if (!reader.ok() || !session.authenticated()) return;
 
+    // Three clicks' worth of the request budget: every attempt, refused or
+    // not, rasterises the skin and compares it with the whole catalogue, and
+    // one that lands is broadcast to every player.
+    if (!spend(session.requestAllowance, 3.0)) {
+        sendSkinChat(connection, "You are publishing too quickly. Wait a few seconds.");
+        return;
+    }
     if (isGuestName(session.username)) {
         sendSkinChat(connection, "Create a (non-guest) account to publish skins.");
         return;
@@ -4183,10 +4291,12 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
         return;
     }
 
-    Json& catalog = database_.rawTable("customSkins");
-    // Read through a const view: Json's non-const operator[] CREATES the key
-    // it is handed, so a lookup that misses would quietly grow the table.
-    const Json& stored = catalog;
+    // Read through storedTable, and the mutable table taken only for the
+    // write at the end: rawTable drops the catalogue's cached text, and every
+    // refusal below used to cost the next save a re-dump of every skin. (A
+    // const view also keeps Json's non-const operator[] from CREATING the key
+    // a lookup misses.)
+    const Json& stored = database_.storedTable("customSkins");
     // Authors are matched case-blind, as the reference matches them: the
     // account "Rose" and the author string "rose" are one person.
     const std::string me = lowerCase(session.username);
@@ -4230,7 +4340,7 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
     skin.author = session.username;
     skin.shapes = check.shapes;
     skin.createdAt = static_cast<double>(database_.nowMillis());
-    catalog[skin.id] = skinToJson(skin);
+    database_.rawTable("customSkins")[skin.id] = skinToJson(skin);
     database_.markDirty();
     skinLooks_[skin.id] = CachedSkinLook{skinShapesHash(skin.shapes), std::move(look)};
 
@@ -4275,8 +4385,11 @@ void GameServer::handleDeleteSkin(Session& session, net::Connection& connection,
     const std::string id = reader.str();
     if (!reader.ok() || !session.authenticated()) return;
 
-    Json& catalog = database_.rawTable("customSkins");
-    const Json& stored = catalog;
+    // Checked through storedTable, and only a delete that will happen takes
+    // the mutable table: rawTable drops the catalogue's cached text, so a
+    // refused delete -- a name that does not exist, a skin that is not yours
+    // -- used to cost the next save a re-dump of every custom skin.
+    const Json& stored = database_.storedTable("customSkins");
     if (!stored[id].isObject()) return;
     const std::string author = stored[id]["author"].asString();
     const std::string name = stored[id]["name"].asString();
@@ -4287,7 +4400,7 @@ void GameServer::handleDeleteSkin(Session& session, net::Connection& connection,
         sendSkinChat(connection, "You can only take down your own skins.");
         return;
     }
-    catalog.erase(id);
+    database_.rawTable("customSkins").erase(id);
     skinLooks_.erase(id);
     database_.markDirty();
 
@@ -5361,11 +5474,13 @@ void GameServer::departSquad(Session& session, net::Connection* connection,
     // Promotion first, then the departure: that is the order the reference
     // emits them in, because the promotion happens inside its leaveSquad and
     // the "has left" line is said by the caller afterwards.
+    // Nameplates are escaped wherever they land in a notice: the client reads
+    // these lines as markup, and a nameplate is whatever its player typed.
     if (departure.promoted.valid()) {
-        sendSquadSystem(*remaining, squadDisplayName(departure.promoted) +
+        sendSquadSystem(*remaining, escapedMarkup(squadDisplayName(departure.promoted)) +
                                         " is now the squad leader.");
     }
-    sendSquadSystem(*remaining, leaverName + " has left the squad.");
+    sendSquadSystem(*remaining, escapedMarkup(leaverName) + " has left the squad.");
     broadcastSquadUpdate(*remaining);
 }
 
@@ -5379,10 +5494,10 @@ void GameServer::removeBotFromSquad(Entity body) {
     Squad* remaining = squads_.find(departure.squadId);
     if (remaining == nullptr) return;
     if (departure.promoted.valid()) {
-        sendSquadSystem(*remaining, squadDisplayName(departure.promoted) +
+        sendSquadSystem(*remaining, escapedMarkup(squadDisplayName(departure.promoted)) +
                                         " is now the squad leader.");
     }
-    sendSquadSystem(*remaining, name + " has left the squad.");
+    sendSquadSystem(*remaining, escapedMarkup(name) + " has left the squad.");
     broadcastSquadUpdate(*remaining);
 }
 

@@ -62,8 +62,11 @@ public:
     /// on behalf of a client that has stopped reading.
     std::size_t pendingBytes() const { return outbound_.size() - outboundSent_; }
 
-    /// Marks the connection for close once its queued bytes have drained.
-    void closeGracefully() { closing_ = true; }
+    /// Marks the connection for close once its queued bytes have drained, or
+    /// once kCloseDrainMillis have passed, whichever is first: a peer that
+    /// has stopped reading never drains anything. Nothing it sends from here
+    /// on is handed to the handler.
+    void closeGracefully();
     bool closing() const { return closing_; }
 
     /// How long ago the frame being handled arrived: when the bytes that
@@ -92,11 +95,17 @@ private:
     /// Drops what has already gone out. Called at the end of every write
     /// drain, by both backends.
     void compactOutbound();
+    /// Throws away everything read and not yet framed. What a closing
+    /// connection's reads come to: its peer is not listened to any more, and
+    /// keeping what it sends would let a socket that never drains buffer
+    /// without limit.
+    void discardInbound();
     void shutdownNow();
-    /// Records that a write outside poll() -- a flush -- found the socket
-    /// dead. The descriptor stays open and nothing more is queued or sent;
-    /// the owner's next poll() reports it through the handler and only then
-    /// closes it. See Listener::flush for why the close may not happen here.
+    /// Records that the connection is dead: a write outside poll() -- a flush
+    /// -- found the socket gone, or the peer broke the framing contract. The
+    /// descriptor stays open and nothing more is queued or sent; the owner's
+    /// next poll() reports it through the handler and only then closes it.
+    /// See Listener::flush for why the close may not happen here.
     void markFailed(const std::string& reason);
     bool failed() const { return !failure_.empty(); }
 
@@ -105,7 +114,9 @@ private:
     std::string peer_;
     ForwardedHeaders forwarded_;
     bool closing_ = false;
-    /// Why a flush found the socket dead; empty while it is not.
+    /// When closeGracefully() was first called, on the transport's steady clock.
+    double closingSinceMillis_ = 0;
+    /// Why the connection is dead (see markFailed); empty while it is not.
     std::string failure_;
 
     std::vector<std::byte> inbound_;

@@ -83,6 +83,10 @@ void usage(const char* program) {
 
 int main(int argc, char** argv) {
     flix::AppConfig config;
+#ifdef __EMSCRIPTEN__
+    /// The server the page dials, when it is not the page's own (shell.html).
+    std::string sessionScope;
+#endif
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -156,6 +160,9 @@ int main(int argc, char** argv) {
         }
         else if (arg == "--user") config.autoUsername = next("--user");
         else if (arg == "--password") config.autoPassword = next("--password");
+#ifdef __EMSCRIPTEN__
+        else if (arg == "--session-scope") sessionScope = next("--session-scope");
+#endif
         else if (arg == "--help" || arg == "-h") { usage(argv[0]); return 0; }
         else {
             std::fprintf(stderr, "unknown option: %s\n", arg.c_str());
@@ -171,9 +178,24 @@ int main(int argc, char** argv) {
     // read-only, and stays in memory where it belongs. The boot script the
     // asset browser names for the next load is kept there too, because the
     // page has to read it before there is any wasm (client/web/boot.h).
-    if (flix::web::mountStorage({kSessionName, std::string(kSessionName) + "-settings",
+    //
+    // A token is only ever presented to the server that issued it. A page
+    // dialling a server other than its own keeps that server's session (and
+    // its settings, which follow the session's name) under a name of its own;
+    // the page's own server keeps the plain name every stored session already
+    // has, so nobody's sign-in moves.
+    std::string sessionName = kSessionName;
+    if (!sessionScope.empty()) {
+        sessionName += "-";
+        for (const char c : sessionScope) {
+            const bool safe = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' ||
+                              c == '-' || c == ':';
+            sessionName += safe ? c : '_';
+        }
+    }
+    if (flix::web::mountStorage({sessionName, sessionName + "-settings",
                                  flix::web::kBootPathName, flix::web::kBootScriptName})) {
-        config.sessionFile = std::string(flix::web::kStorageDirectory) + "/" + kSessionName;
+        config.sessionFile = std::string(flix::web::kStorageDirectory) + "/" + sessionName;
     }
 
 #ifndef FLIX_DEV_BUILD

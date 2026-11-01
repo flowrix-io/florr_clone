@@ -19,6 +19,7 @@
 #include "server/admin_db_key.h"
 #include "server/db.h"
 #include "server/game_server.h"
+#include "server/systems/loot.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
@@ -773,6 +774,13 @@ struct GameServerPeer {
     static Entity sacrificeDrop(const GameServer& server) { return server.sacrificeDrop_; }
     static double sacrificeReadyMillis(const GameServer& server) {
         return server.sacrificeReadyMillis_;
+    }
+
+    /// The drops picked up on the last tick that ran the loot pass, as the
+    /// server is about to bank them: the one record of loot arriving that no
+    /// snapshot can drop or merge.
+    static const std::vector<LootSystem::Pickup>& lastPickups(const GameServer& server) {
+        return server.loot_->pickups();
     }
 
     /// The session signed in as `username`, or nullptr. None for a socket that

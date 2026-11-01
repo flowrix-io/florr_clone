@@ -280,6 +280,10 @@ private:
     /// through the transport has stopped telling us -- the one that did once
     /// left a flower standing in the world for nobody (see Listener::flush).
     void reapSessionsWithoutSockets();
+    /// Closes every connection that has not sent its Hello within
+    /// kGreetingMillis of opening. Nothing else ever ends a socket that stays
+    /// silent, and each one holds a session, a view and a descriptor.
+    void reapUngreeted();
     void handleRegister(Session&, net::Connection&, ByteReader&);
     /// A new guest account (Database::createGuest), on Register's limits and
     /// with Register's welcome.

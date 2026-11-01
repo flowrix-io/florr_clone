@@ -43,6 +43,7 @@
 #include "server/auto_update.h"
 #include "server/bot_identity.h"
 #include "server/chat_moderation.h"
+#include "server/crypto.h"
 #include "server/guilds.h"
 #include "server/systems/npcs.h"
 #include "server/systems/spawning.h"
@@ -257,11 +258,21 @@ std::string localeTimestamp(std::int64_t millis) {
 
 /// Eight characters of A-Z0-9, as the browser build minted them, so codes from
 /// before and after the port look the same and paste into the same shop field.
-std::string mintCode(Rng& rng) {
+///
+/// From the token source, not a seeded Rng: a code is a bearer credential for
+/// stars, and one seeded from the clock let anybody holding one code work out
+/// the seed offline and list the codes minted after it.
+std::string mintCode() {
     static const char kAlphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     std::string code;
     code.reserve(8);
-    for (int i = 0; i < 8; ++i) code.push_back(kAlphabet[rng.below(36)]);
+    while (code.size() < 8) {
+        std::uint8_t byte = 0;
+        crypto::secureRandom().bytes(&byte, 1);
+        // 252 is the largest multiple of 36 a byte holds; drawing again above
+        // it keeps every character equally likely.
+        if (byte < 252) code.push_back(kAlphabet[byte % 36]);
+    }
     return code;
 }
 
@@ -972,7 +983,7 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
         }
         const std::string splitRefusal =
             splitSquadRefusal(me, "You are") +
-            splitSquadRefusal(target, squadDisplayName(target) + " is");
+            splitSquadRefusal(target, escapedMarkup(squadDisplayName(target)) + " is");
         if (!splitRefusal.empty()) {
             out(splitRefusal);
             return;
@@ -991,7 +1002,7 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
                 return;
             }
             const std::string wrongBiome =
-                squadBiomeRefusal(*squad, target, squadDisplayName(target) + " is");
+                squadBiomeRefusal(*squad, target, escapedMarkup(squadDisplayName(target)) + " is");
             if (!wrongBiome.empty()) {
                 out(wrongBiome);
                 return;
@@ -1001,7 +1012,8 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
                 out(error);
                 return;
             }
-            sendSquadSystem(*squad, squadDisplayName(target) + " has joined the squad.");
+            sendSquadSystem(*squad,
+                            escapedMarkup(squadDisplayName(target)) + " has joined the squad.");
             broadcastSquadUpdate(*squad);
             return;
         }
@@ -1054,8 +1066,9 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
             // client's entity table carries only the handful the server
             // actually needs, and one more name in it is one more thing to
             // keep true.
-            lines += squad->id + " \xE2\x80\x94 leader: " + squadDisplayName(squad->leader) +
-                     " (" + std::to_string(squad->members.size()) + "/" +
+            lines += squad->id + " \xE2\x80\x94 leader: " +
+                     escapedMarkup(squadDisplayName(squad->leader)) + " (" +
+                     std::to_string(squad->members.size()) + "/" +
                      std::to_string(kMaxSquadSize) + ") [/squad-join " + squad->id + "]";
         }
         out("<span style=\"color: #4fc3f7;\">Public squads:<br/>" + lines + "</span>");
@@ -1082,7 +1095,7 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
         }
         Squad* squad = squads_.find(argument);
         if (squad == nullptr) return;
-        sendSquadSystem(*squad, squadDisplayName(me) + " has joined the squad.");
+        sendSquadSystem(*squad, escapedMarkup(squadDisplayName(me)) + " has joined the squad.");
         broadcastSquadUpdate(*squad);
         return;
     }
@@ -1136,7 +1149,7 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
         }
         Squad* squad = squads_.find(squadId);
         if (squad == nullptr) return;
-        sendSquadSystem(*squad, squadDisplayName(me) + " has joined the squad.");
+        sendSquadSystem(*squad, escapedMarkup(squadDisplayName(me)) + " has joined the squad.");
         broadcastSquadUpdate(*squad);
         return;
     }
@@ -1166,7 +1179,8 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
         std::string lines;
         for (const SquadMemberId& member : squad->members) {
             if (!lines.empty()) lines += "<br/>";
-            lines += "@" + squadAccountName(member) + " [" + squadDisplayName(member) + "]";
+            lines += "@" + escapedMarkup(squadAccountName(member)) + " [" +
+                     escapedMarkup(squadDisplayName(member)) + "]";
             if (squad->leader == member) lines += " (Leader)";
         }
         out("<span style=\"color: #4fc3f7;\">Squad " + squad->id + " [" +
@@ -1213,6 +1227,21 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         if (adminMay(session, power)) return false;
         out(adminTierRefusal(adminTier(session), power));
         return true;
+    };
+
+    // A server-log line for everything that puts petals, stars or powers into
+    // an account. These write straight to the record, and before this they
+    // left nothing behind but the reply on the admin's own screen -- so petals
+    // that turned up in the file could not be told from a dupe. The standing
+    // is in the line, a temporary grant's lender with it.
+    const auto audit = [&](const std::string& what) {
+        std::string standing = "tier " + std::to_string(adminTier(session));
+        if (!session.admin) {
+            const auto grant = tempAdmins_.find(session.connection);
+            if (grant != tempAdmins_.end()) standing += ", lent by " + grant->second.grantedBy;
+        }
+        std::printf("[admin] %s (%s) %s\n", session.username.c_str(), standing.c_str(),
+                    what.c_str());
     };
 
     // -- flower control and announcements ----------------------------------
@@ -1380,6 +1409,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // on the next save (Database::Table).
             const Account* account = std::as_const(database_).findUser(username);
             if (account == nullptr) continue;
+            // The name is only a pattern -- registration does not refuse one
+            // shaped like a guest's -- so the one account it must never take
+            // is an admin's, whatever it is called.
+            if (account->admin) continue;
             const PlayerRecord* record = database_.findProgress(account->id);
             if (record != nullptr && !Database::isStarterProgress(*record)) continue;
             // Never delete an account that is logged in right now: the session
@@ -1500,7 +1533,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             bool pooled = false;
             for (const SquadMemberId& member : squad.members) {
                 const Entity body = squadEntityOf(member);
-                line += " " + squadDisplayName(member) + "(";
+                line += " " + escapedMarkup(squadDisplayName(member)) + "(";
                 if (body == NULL_ENTITY) {
                     ++bodiless;
                     line += "no body";
@@ -2175,6 +2208,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("Gave " + std::to_string(amount) + "x every " + rarityName(rarity) +
                 " petal" + (excludedNames.empty() ? std::string() : " except " + excludedNames) +
                 " to " + (self ? std::string("yourself") : username) + ".");
+            audit("gave " + std::to_string(amount) + "x every " + rarityName(rarity) + " petal" +
+                  (excludedNames.empty() ? std::string() : " except " + excludedNames) + " to " +
+                  (self ? session.username : database_.canonicalUsername(username)));
             return;
         }
         if (words.size() < 4 || words.size() > 5) {
@@ -2243,6 +2279,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         out("Gave " + amountLabel + rarityText + " " + itemType + " petal to " +
             (online ? target.name + " (" + std::to_string(target.session->connection) + ")"
                     : database_.canonicalUsername(words[1]) + " (offline)"));
+        audit("gave " + std::to_string(amount) + "x " + rarityText + " " + itemType + " to " +
+              (online ? target.name : database_.canonicalUsername(words[1]) + " (offline)"));
         return;
     }
 
@@ -2313,6 +2351,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             }
             out("Granted temporary admin to " + target.name + " (" + grantId + ") at tier " +
                 std::to_string(tier) + " until they respawn.");
+            audit("granted temporary tier " + std::to_string(tier) + " admin to " + target.name);
             return;
         }
         if (tempAdmins_.count(target.session->connection) == 0) {
@@ -2688,11 +2727,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         }
 
         Json& codes = database_.rawTable("codes");
-        Rng codeRng(static_cast<std::uint64_t>(database_.nowMillis()) * 0x9E3779B97F4A7C15ull ^
-                    static_cast<std::uint64_t>(codes.keys().size()));
         std::string code;
         for (int attempt = 0; attempt < 100; ++attempt) {
-            code = mintCode(codeRng);
+            code = mintCode();
             if (!codes.contains(code)) break;
             code.clear();
         }
@@ -2723,6 +2760,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         out(maxUses > 0 ? "Max Uses: " + std::to_string(maxUses) : "Max Uses: Unlimited");
         out("Created by: " + session.username);
         out("Players can redeem this code in the shop!");
+        // Not the code itself: it is a bearer credential for stars, and the
+        // log is read by more than its holder. The table keeps createdBy.
+        audit("generated a star code worth " + wholeNumber(stars) + " stars, " +
+              (maxUses > 0 ? std::to_string(maxUses) + " use(s)" : std::string("unlimited uses")));
         return;
     }
 

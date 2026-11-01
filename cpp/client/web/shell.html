@@ -84,7 +84,23 @@
   const port = query.get('port') || location.port || defaultPort;
 
   const args = ['--data', 'data', '--host', host, '--port', port];
-  for (const name of ['user', 'password']) {
+  // The stored session token belongs to the server that issued it. A page
+  // told to dial any server but its own keeps that server's session apart
+  // (main.cpp, --session-scope): otherwise a link to this page naming
+  // somebody else's server had it present them this server's token.
+  const ownHost = (location.hostname || '127.0.0.1').toLowerCase();
+  const ownPort = location.port || defaultPort;
+  if (host.toLowerCase() !== ownHost || port !== ownPort) {
+    args.push('--session-scope', host.toLowerCase() + ':' + port);
+  }
+  // A scripted sign-in and seeded chat lines are for the rigs, which load the
+  // page from this machine or from disk. Anywhere else a link could sign a
+  // visitor into an account of its choosing -- saving that token over theirs,
+  // which for a guest is the only key to the account -- or print lines of
+  // its choosing as if the server had said them.
+  const local = location.protocol === 'file:' ||
+                ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
+  for (const name of local ? ['user', 'password'] : []) {
     const value = query.get(name);
     if (value !== null) args.push('--' + name, value);
   }
@@ -93,7 +109,7 @@
   // Forces the touch controls up on a desktop browser, which reports a mouse
   // and would otherwise never show them. For looking at them, not for playing.
   if (query.get('mobile') !== null) args.push('--mobile');
-  for (const line of query.getAll('chat')) args.push('--chat', line);
+  for (const line of local ? query.getAll('chat') : []) args.push('--chat', line);
 
   // What the game is created with (createFlowrix, below). It is the page's
   // global Module too, unless a boot script runs: see the boot section.
