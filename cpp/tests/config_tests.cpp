@@ -527,11 +527,12 @@ TEST(player_modifiers_scale_by_kind) {
     CHECK_NEAR(r.petalStats(cactus, Rarity::Common).modifiers.maxHealth, 1.1, 1e-12);
     CHECK_NEAR(r.petalStats(cactus, Rarity::Unique).modifiers.maxHealth, 1.4, 1e-12);
 
-    // A non-positive multiplier is a sign flip, not a bonus: yin_yang reverses
-    // the ring at every tier and never spins it four times as fast backwards.
+    // yin_yang is no multiplier at any tier: it turns the ring by how many
+    // are worn, as gardn's does (petalCyclesRingSpin).
     const std::uint16_t yinYang = r.petalIndex("yin_yang");
-    CHECK_NEAR(r.petalStats(yinYang, Rarity::Common).modifiers.rotationSpeed, -1.0, 1e-12);
-    CHECK_NEAR(r.petalStats(yinYang, Rarity::Apex).modifiers.rotationSpeed, -1.0, 1e-12);
+    CHECK(petalCyclesRingSpin(r.petal(yinYang)));
+    CHECK_NEAR(r.petalStats(yinYang, Rarity::Common).modifiers.rotationSpeed, 1.0, 1e-12);
+    CHECK_NEAR(r.petalStats(yinYang, Rarity::Apex).modifiers.rotationSpeed, 1.0, 1e-12);
 
     // A petal with no playerModifiers block is neutral in every field.
     const PetalStats basic = r.petalStats(r.petalIndex("basic"), Rarity::Apex);

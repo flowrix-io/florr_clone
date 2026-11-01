@@ -45,6 +45,7 @@ const char* const kPetalsJson = R"JSON({
   "faster": {"name":"Faster","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"noPhysics":true,"playerModifiers":{"rotationSpeed":1.1},"color":"#FFFFFF"},
   "powder": {"name":"Powder","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"playerModifiers":{"speed":1.1},"color":"#000000"},
   "anchor":   {"name":"Anchor","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"playerModifiers":{"rotationSpeed":0},"color":"#888888"},
+  "yin_yang": {"name":"Yin Yang","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"color":"#000000"},
   "inflator": {"name":"Inflator","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"playerRadius":1.5},"color":"#FF00FF"},
   "stinky":   {"name":"Stinky","damage":0,"health":1,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRange":0.75},"color":"#8B4513"},
   "glowy":    {"name":"Glowy","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRadius":150},"color":"#FFFF00"},
@@ -411,6 +412,29 @@ TEST(petal_ring_rotates_at_the_spin_rate) {
     // carry the whole ring, not slide one petal along it.
     CHECK_NEAR(angularGap(rig.angleOf(rig.petals(0).front()), rig.angleOf(rig.petals(1).front())),
                kPi, 1e-9);
+}
+
+/// gardn's yin yang (Server/Process/Flower.cc): the number worn, mod 3, turns
+/// the ring with its spin, against it, or not at all, and a bar of nothing
+/// else spins it five times as fast.
+TEST(yin_yangs_turn_the_ring_by_how_many_are_worn) {
+    if (!contentLoaded()) return;
+    const auto turnWith = [](int yinYangs) {
+        Rig rig;
+        for (int i = 0; i < yinYangs; ++i) rig.equip(i, "yin_yang");
+        rig.tick();
+        const double before = rig.ring().spin;
+        rig.tick(5);
+        return wrapAngle(rig.ring().spin - before);
+    };
+    const double turn = kPetalSpinRate * net::kTickSeconds * 5.0;
+    CHECK_NEAR(turnWith(0), turn, 1e-9);
+    CHECK_NEAR(turnWith(1), -turn, 1e-9);
+    CHECK_NEAR(turnWith(2), 0.0, 1e-9);
+    CHECK_NEAR(turnWith(3), turn, 1e-9);
+    CHECK_NEAR(turnWith(4), -turn, 1e-9);
+    CHECK_NEAR(turnWith(kLoadoutActiveSlots - 1), turn, 1e-9);
+    CHECK_NEAR(turnWith(kLoadoutActiveSlots), 5.0 * turn, 1e-9);
 }
 
 /// The ring step is gardn's, restated for our 30 Hz tick: a petal knocked off

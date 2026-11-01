@@ -664,8 +664,8 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
         ctx.warn(std::string("playerModifiers is ") + typeName(node) + ", not an object; ignored");
         return mods;
     }
-    // Multipliers may be negative on purpose: yin_yang's -1 rotationSpeed
-    // reverses the ring rather than slowing it.
+    // Multipliers may be negative on purpose: a -1 rotationSpeed reverses the
+    // ring rather than slowing it.
     mods.maxHealth     = ctx.range(node, "maxHealth", 1.0, -100.0, 100.0);
     mods.speed         = ctx.range(node, "speed", 1.0, -100.0, 100.0);
     mods.rotationSpeed = ctx.range(node, "rotationSpeed", 1.0, -100.0, 100.0);

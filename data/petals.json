@@ -748,11 +748,8 @@
         "description": "This mysterious petal affects the rotation of your petals in unpredictable ways.",
         "color": "#000000",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-110 -110 220 220\" width=\"32\" height=\"32\">\n  <g stroke-width=\"3\">\n    <path d=\"M 0 100 A 100 100 0 0 1 0 -100 A 50 50 0 0 1 0 0 A 50 50 0 0 0 0 100 Z\" \n          fill=\"#ffffff\" stroke=\"#cfcfcf\" />\n    \n    <path d=\"M 0 -100 A 100 100 0 0 1 0 100 A 50 50 0 0 1 0 0 A 50 50 0 0 0 0 -100 Z\" \n          fill=\"#333333\" stroke=\"#292929\" />\n    \n    <path d=\"M -100 0 A 100 100 0 0 1 0 -100 A 50 50 0 0 1 0 0\" \n          fill=\"none\" stroke=\"#cfcfcf\" />\n  </g>\n</svg>\n",
-        "isAdminPetal": false,
-        "playerModifiers": {
-            "rotationSpeed": -1
-        }
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-11.5 -11.5 23 23\"><path d=\"M0 10A10 10 0 0 1 0 -10A5 5 0 0 1 0 0A5 5 0 0 0 0 10\" fill=\"#ffffff\" stroke=\"#cfcfcf\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M0 -10A10 10 0 0 1 0 10A5 5 0 0 1 0 0A5 5 0 0 0 0 -10\" fill=\"#333333\" stroke=\"#292929\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M-10 0A10 10 0 0 1 0 -10A5 5 0 0 1 0 0\" fill=\"none\" stroke=\"#cfcfcf\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+        "isAdminPetal": false
     },
     "lentil": {
         "name": "Lentil",

@@ -1315,6 +1315,10 @@ double mobUndeadMillis(const MobConfig& config, Rarity rarity);
 /// gives it no body on the ring.
 inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "bandage"; }
 
+/// A yin yang turns its flower's ring by how many of them are worn, not by a
+/// multiplier (PetalSystem::recomputeModifiers, after gardn's Flower.cc).
+inline bool petalCyclesRingSpin(const PetalConfig& config) { return config.id == "yin_yang"; }
+
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }
 

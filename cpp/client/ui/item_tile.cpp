@@ -200,7 +200,7 @@ constexpr GardnIcon kGardnIcon[] = {
     {"web",                24,   10,  0,       0, 0.957},   // art fills 96% of its box
     {"wing",               33,   10,  0,       1,     1},
     {"yggdrasil",        26.5,   12,  0,     kPi, 0.932},   // art fills 93% of its box
-    {"yin_yang",           23,   10,  0,       0, 0.926},   // art fills 93% of its box
+    {"yin_yang",           23,   10,  0,       0,     1},
     {"yucca",              31,   10,  0,      -1, 0.969},   // art fills 97% of its box
     {"fang",              31,   10,  0,      1, 0.969},   // art fills 97% of its box
     {"coral",              31,   10,  0,      1, 0.969},   // art fills 97% of its box

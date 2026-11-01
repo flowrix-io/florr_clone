@@ -1503,6 +1503,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     // The strongest worn poo and the strongest worn bulb; see the aggro pair
     // in the loop below.
     bool adminSpin = false;
+    int yinYangs = 0;
     double aggroCut = 1.0;
     double aggroBoost = 1.0;
     // Every worn basil's bonus, folded harmonically after the loop.
@@ -1552,6 +1553,9 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             // `rotationSpeed += modifier - 1`.
             aggregate.spinScale += mods.rotationSpeed - 1.0;
             adminSpin = adminSpin || (equipped.rarity == Rarity::Admin && mods.rotationSpeed != 1.0);
+            // Counted worn, broken or not: gardn tallies the loadout, not the
+            // ring.
+            if (petalCyclesRingSpin(registry.petal(equipped.configIndex))) ++yinYangs;
 
             aggregate.modifiers.luck += mods.luck;
             aggregate.modifiers.magnetism += mods.magnetism;
@@ -1668,6 +1672,12 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             }
         }
     }
+    // gardn's yin yang (Server/Process/Flower.cc): the count worn, mod 3,
+    // turns the ring with its spin, against it, or not at all, at any tier --
+    // and a bar of nothing else spins it five times over.
+    if (yinYangs == kLoadoutActiveSlots) aggregate.spinScale *= 5.0;
+    else if (yinYangs % 3 == 1) aggregate.spinScale = -aggregate.spinScale;
+    else if (yinYangs % 3 == 2) aggregate.spinScale = 0.0;
     // High angular frequencies collapse the spring-followed petals toward
     // the hub. Bound the finished Admin ring, including stacked Faster petals.
     if (adminSpin) aggregate.spinScale = std::clamp(aggregate.spinScale, -6.0, 6.0);
