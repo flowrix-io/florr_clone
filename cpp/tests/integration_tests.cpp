@@ -893,6 +893,21 @@ TEST(a_camera_petal_lets_its_wearer_claim_the_world_it_draws) {
     CHECK(claimed().x < drawn.x * 1.05);
     CHECK(claimed().y < drawn.y * 1.05);
 
+    // A silent modified client cannot retain the view after unequipping.
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{};
+    h.step(2, {&client});
+    CHECK(claimed().x <= 2600.0);
+    CHECK(claimed().y <= 2600.0);
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{antennae, Rarity::Unique, 0.0, false};
+    report(drawn);
+    CHECK_NEAR(claimed().x, drawn.x, 1e-6);
+
+    // A zero-size report also cannot retain the claim.
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{};
+    report({0, 0});
+    CHECK(claimed().x <= 2600.0);
+    CHECK(claimed().y <= 2600.0);
+
     // Taken off, the next packet is held to the flat allowance again.
     world.get<Loadout>(body).slots[0] = LoadoutSlot{};
     report(drawn);

@@ -281,7 +281,7 @@ std::uint32_t decodeAt(const std::string& text, std::size_t at, std::size_t& len
         if ((byte(at + i) & 0xC0) != 0x80) return 0xFFFD;
         codePoint = codePoint << 6 | (byte(at + i) & 0x3F);
     }
-    if (codePoint < smallest || codePoint > 0x10FFFF) return 0xFFFD;
+    if (codePoint < smallest || codePoint > 0x10FFFF || (codePoint >= 0xD800 && codePoint <= 0xDFFF)) return 0xFFFD;
     length = need;
     return codePoint;
 }
@@ -325,6 +325,7 @@ struct Word {
     /// "fu-ck" are spelled round the filter, but "rabbit-chasing" and
     /// "mis-hit" only happen to have "bitch" and "shit" across the hyphen.
     bool through = false;
+    bool spaced = false;
     std::vector<bool> pieceStarts;
 };
 
@@ -385,6 +386,27 @@ std::vector<Word> wordsIn(const std::vector<Drawn>& drawn) {
     endWritten();
     endThrough();
     endSpelled();
+    // Read whole chunks across separators, never a suffix of an innocent
+    // word ("push it"). Bound the work even for a line of tiny chunks.
+    for (std::size_t start = 0; start < drawn.size(); ++start) {
+        if (drawn[start].kind != Kind::Letter ||
+            (start > 0 && (drawn[start - 1].kind == Kind::Letter ||
+                           drawn[start - 1].kind == Kind::Hidden))) continue;
+        Word joined;
+        joined.through = true;
+        joined.spaced = true;
+        bool gap = false;
+        for (std::size_t i = start; i < drawn.size() && joined.cells.size() < 32; ++i) {
+            if (drawn[i].kind == Kind::Letter) {
+                joined.pieceStarts.push_back(joined.cells.empty());
+                joined.cells.push_back(drawn[i].cell);
+            } else if (drawn[i].kind != Kind::Hidden) {
+                if (gap && !joined.cells.empty()) words.push_back(joined);
+                gap = gap || drawn[i].kind == Kind::Gap;
+            }
+        }
+        if (gap && !joined.cells.empty()) words.push_back(joined);
+    }
     return words;
 }
 
@@ -449,6 +471,7 @@ bool findListed(const Word& read, const Listed& listed, Found&& found) {
         if (read.through && !read.pieceStarts[from]) continue;
         const std::size_t to = matchEnd(word, from, listed.word);
         if (to == kNoMatch) continue;
+        if (read.spaced && to != word.size()) continue;
         if (onlyStandIns(word, from, to)) continue;
         if (listed.fit == Fit::Whole && !endsWord(word, to)) continue;
         if (found(from, to)) return true;
@@ -560,7 +583,11 @@ bool chatLineFloods(const std::string& line) {
     // not on anyone's screen as twenty of anything.
     std::vector<std::uint32_t> drawn;
     eachDrawn(line, [&](std::uint32_t codePoint, const MarkupSpan&) {
-        if (codePoint >= 'A' && codePoint <= 'Z') codePoint += 'a' - 'A';
+        Cell cell;
+        if (read(codePoint, cell) == Kind::Letter && !cell.standIn) {
+            codePoint = 'a';
+            while ((cell.letters & letter(static_cast<char>(codePoint))) == 0) ++codePoint;
+        }
         if (codePoint == ' ' && !drawn.empty() && drawn.back() == ' ') return;
         drawn.push_back(codePoint);
     });

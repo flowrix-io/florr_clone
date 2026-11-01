@@ -158,3 +158,16 @@ TEST(a_line_that_would_start_a_row_of_its_own_breaks_rows) {
     CHECK(!chatLineBreaksRows("type &lt;br&gt; for a break"));
     CHECK(!chatLineBreaksRows("a br b"));
 }
+
+TEST(chunked_filter_evasion_preserves_ordinary_word_boundaries) {
+    for (const char* line : {"fu ck", "sh it", "bi tch", "kill your self", "hey fu ck you", "f uck"})
+        CHECK(blocked(line));
+    for (const char* line : {"push it", "this hit", "as soon as possible", "a classic", "rabbit chasing"})
+        CHECK(!blocked(line));
+}
+
+TEST(unicode_dress_does_not_hide_a_repetitive_flood) {
+    std::string line;
+    for (int i = 0; i < 20; ++i) line += i % 3 == 0 ? "a" : i % 3 == 1 ? "á" : "а";
+    CHECK(chatLineFloods(line));
+}

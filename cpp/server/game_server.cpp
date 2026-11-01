@@ -1267,6 +1267,13 @@ void GameServer::replicate(double nowMillis) {
         net::Connection* connection = listener_.find(session.connection);
         if (!connection) continue;
 
+        // Revalidate even when a modified client stops reporting its window.
+        // Removing camera equipment must revoke the previously granted view.
+        if (PlayerLocation* own = world_.tryGet<PlayerLocation>(session.entity)) {
+            own->viewport = claimableViewport(world_, session.entity, content(),
+                                             own->viewport.x, own->viewport.y);
+        }
+
         collectSquadBodies(session, squadBodies);
         frame.alwaysVisible = squadBodies.empty() ? nullptr : &squadBodies;
 
