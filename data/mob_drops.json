@@ -1584,5 +1584,26 @@
         "maxQuantity": 1
       }
     ]
+  },
+  "c--": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "c--",
+        "rarity": "common",
+        "probability": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "yin_yang",
+        "rarity": "common",
+        "probability": 1.0,
+        "minQuantity": 5,
+        "maxQuantity": 5
+      }
+    ]
   }
 }

@@ -444,21 +444,6 @@ Vec2 tooltipAnchor(Rect anchor, Vec2 size, double viewWidth, double viewHeight) 
 // Text helpers
 // ---------------------------------------------------------------------------
 
-std::string titleCase(const std::string& id) {
-    std::string out;
-    bool capitalise = true;
-    for (const unsigned char raw : id) {
-        if (raw == '_' || raw == ' ' || raw == '-') {
-            if (!out.empty() && out.back() != ' ') out += ' ';
-            capitalise = true;
-            continue;
-        }
-        out += static_cast<char>(capitalise ? std::toupper(raw) : std::tolower(raw));
-        capitalise = false;
-    }
-    return out;
-}
-
 std::string abbreviate(double value) {
     if (!std::isfinite(value)) return "inf";
     const double magnitude = std::fabs(value);

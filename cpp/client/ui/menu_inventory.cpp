@@ -127,7 +127,7 @@ TooltipDelay tooltipDelay;
 bool matchesSearch(std::uint16_t petalIndex, const std::string& needle) {
     if (needle.empty()) return true;
     const PetalConfig& config = content().petal(petalIndex);
-    return lowerCase(titleCase(config.name)).find(needle) != std::string::npos ||
+    return lowerCase(config.name).find(needle) != std::string::npos ||
            lowerCase(config.id).find(needle) != std::string::npos;
 }
 
@@ -293,7 +293,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     // in mana and how long its reload is, then the wait between spawning and
     // acting -- a rose's heal, an orb's mana -- when it has one ("3.5s +
     // 1.5s"). A worn petal has no reload and florr prints nothing for it.
-    TooltipLine title{titleCase(config.name), 20.0};
+    TooltipLine title{config.name, 20.0};
     if (!config.noPhysics) {
         if (stats.requiredMana > 0.0) {
             // Paid on spawn, not on use -- see PetalConfig::requiredMana.

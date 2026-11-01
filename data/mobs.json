@@ -2100,7 +2100,8 @@
                 { "from": ["honey", "light"], "to": "pollen" },
                 { "from": [{ "petal": "triangle", "count": 10 }], "to": "cutter" },
                 { "from": ["mimic", "ram"], "to": "sawblade" },
-                { "from": [{ "petal": "square", "count": 2 }], "to": "pentagon" }
+                { "from": [{ "petal": "square", "count": 2 }], "to": "pentagon" },
+                { "from": [{ "petal": "computer_chip", "count": 30 }], "to": "c++" }
             ]
         },
         "noEggDrop": true
@@ -2546,5 +2547,34 @@
             "super": 0.0001
         },
         "noEggDrop": false
+    },
+    "c--": {
+        "name": "C--",
+        "health": 175,
+        "damage": 22,
+        "size": 0.6667,
+        "visual_scale": 1.1898,
+        "visualOffsetX": -0.0033,
+        "speed": 0.2,
+        "cooldown": 2000,
+        "xp": {
+            "common": 1,
+            "uncommon": 2,
+            "rare": 5,
+            "epic": 35,
+            "legendary": 490,
+            "mythic": 8200,
+            "ultra": 200000,
+            "super": 1600000,
+            "unique": 8000000
+        },
+        "description": "A leak in the game code, but in the wrong direction",
+        "color": "#ffffff",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><path fill=\"#309c00\" d=\"m16 15.953 13.813-7.975c.222.385.36.82.36 1.21v13.531c0 .39-.138.824-.36 1.21z\"/><path fill=\"#228200\" d=\"M14.772 31.611 3.053 24.845c-.337-.195-.644-.531-.867-.917L16 15.953l13.813 7.975c-.223.386-.53.722-.867.917l-11.719 6.766c-.675.39-1.78.39-2.455 0\"/><path fill=\"#7dd164\" d=\"M16 15.953 2.186 23.928c-.222-.385-.36-.82-.36-1.209V9.187c0-.78.552-1.736 1.227-2.126L14.773.295c.674-.39 1.779-.39 2.454 0l11.719 6.766c.338.195.644.532.867.917z\"/><g fill=\"#fff\"><path d=\"M16 25.402c-5.21 0-9.45-4.238-9.45-9.449s4.24-9.45 9.45-9.45a9.48 9.48 0 0 1 8.183 4.723l-4.09 2.366A4.75 4.75 0 0 0 16 11.229a4.73 4.73 0 0 0-4.725 4.724A4.73 4.73 0 0 0 16 20.678c1.681 0 3.25-.906 4.093-2.364l4.09 2.366A9.48 9.48 0 0 1 16 25.402\"/><path d=\"M22.3 15.428h3.149v1.05h-3.15zm3.936 0h3.15v1.05h-3.15z\"/></g></svg>",
+        "ai_type": "neutral",
+        "range": 100,
+        "groups": {
+            "computer": 0.0001
+        }
     }
 }

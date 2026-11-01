@@ -221,6 +221,7 @@ constexpr GardnIcon kGardnIcon[] = {
     // Not gardn's: the square's radius and outline (0.15 r) on a pentagon, so
     // the two shapes sit on a plate at one scale.
     {"pentagon",        30.78,   15,  0,       1, 0.954},   // art fills 95% of its box
+    {"c--",              31,   10,  0,       0,     1},
 };
 
 /// What gardn draws basic at, per unit of `size`: the picture a petal on the
@@ -547,7 +548,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
     }
 
     if (filled && tile.showName) {
-        const std::string name = titleCase(content().petal(tile.petalIndex).name);
+        const std::string& name = content().petal(tile.petalIndex).name;
         if (!name.empty()) {
             TextStyle label;
             label.size = kNameSize;

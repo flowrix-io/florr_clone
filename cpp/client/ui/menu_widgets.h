@@ -140,9 +140,6 @@ struct TooltipDelay {
 // Text helpers
 // ---------------------------------------------------------------------------
 
-/// "poison_cactus" -> "Poison Cactus". The one place ids become prose.
-std::string titleCase(const std::string& id);
-
 /// 19725 -> "19.7K". Used wherever a stat would otherwise overflow its cell.
 /// Uppercase suffix, as `abbreviateNumber` produces.
 std::string abbreviate(double value);
