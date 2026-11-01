@@ -1103,6 +1103,7 @@ struct PetalInstance {
         std::array<Entity, 32> visited{};
         std::uint8_t maxHits = 4;
         double arrivedAtMillis = 0;
+        double targetDeadlineMillis = 0;
         // Only while travelling to a valid second mob; no distance leash.
         // Ends on the second hit, loss of valid targets, or return.
         bool protectSecondHit = false;
@@ -1135,6 +1136,7 @@ struct PetalInstance {
             target = NULL_ENTITY;
             deadlineMillis = nowMillis + 2000.0;
             arrivedAtMillis = 0;
+            targetDeadlineMillis = 0;
             if (hits >= std::clamp<int>(maxHits, 2, static_cast<int>(visited.size()))) {
                 returning = true;
                 deadlineMillis = nowMillis + 1000.0;

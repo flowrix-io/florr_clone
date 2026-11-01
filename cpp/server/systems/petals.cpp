@@ -249,7 +249,12 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
     if (!flight.returning) {
         const Entity previous = flight.target;
         flight.target = CombatSystem::ricochetTarget(world, petal, nowMillis);
-        if (flight.target != previous) flight.arrivedAtMillis = 0;
+        if (flight.target != previous) {
+            flight.arrivedAtMillis = 0;
+            flight.targetDeadlineMillis = 0;
+        }
+        if (flight.target != NULL_ENTITY && flight.targetDeadlineMillis == 0)
+            flight.targetDeadlineMillis = nowMillis + 1000.0;
         const bool overdueArrival = flight.arrivedAtMillis > 0 &&
                                     nowMillis - flight.arrivedAtMillis >= 1000.0;
         if (flight.target == NULL_ENTITY || overdueArrival ||
@@ -258,12 +263,9 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
             flight.returning = true;
             flight.deadlineMillis = nowMillis + 1000.0;
         } else if (flight.hits < 2) {
-            // The promised second hit has no range/time leash. Retain a
-            // finite travel deadline for damage protection, renewed from the
-            // actual remaining distance as the target moves.
-            const double travel = distance(transform.position,
-                world.get<Transform>(flight.target).position) / 900.0 * 1000.0;
-            flight.deadlineMillis = nowMillis + std::max(2000.0, travel + 1000.0);
+            // Preserve the second target at any distance, with at most one
+            // second of travel. Arrival still needs a real combat hit.
+            flight.deadlineMillis = flight.targetDeadlineMillis + 1000.0;
             flight.protectSecondHit = true;
         }
     }
@@ -272,7 +274,14 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
                                  ? orbit : world.get<Transform>(flight.target).position;
     const Vec2 offset = destination - transform.position;
     const double distance = offset.length();
-    const double step = 900.0 * std::max(0.0, dt);
+    const double elapsed = std::max(0.0, dt);
+    double step = 900.0 * elapsed;
+    if (!flight.returning) {
+        const double remaining = (flight.targetDeadlineMillis - nowMillis) * 0.001;
+        // Recompute toward moving targets without extending the deadline.
+        if (remaining <= elapsed) step = distance;
+        else step = std::max(step, distance * elapsed / remaining);
+    }
     // Stop on the target rather than tunnelling past it at low tick rates.
     transform.position += distance > step && distance > 1e-9
                               ? offset * (step / distance) : offset;
@@ -291,6 +300,7 @@ bool flyRicochetPetal(World& world, Entity petal, PetalInstance& instance,
         flight.hits = 0;
         flight.protectSecondHit = false;
         flight.arrivedAtMillis = 0;
+        flight.targetDeadlineMillis = 0;
         flight.readyAtMillis = nowMillis + std::max(instance.rarity == Rarity::Admin ? 1250.0 : 2500.0,
                                                    reloadMillis);
         flight.returnedAtMillis = nowMillis;

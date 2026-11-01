@@ -171,3 +171,11 @@ TEST(unicode_dress_does_not_hide_a_repetitive_flood) {
     for (int i = 0; i < 20; ++i) line += i % 3 == 0 ? "a" : i % 3 == 1 ? "á" : "а";
     CHECK(chatLineFloods(line));
 }
+
+TEST(additional_slurs_are_blocked_including_disguised_and_chunked_forms) {
+    for (const char* line : {"niglet", "NIGLETS", "n1glet", "nig let", "nig.let",
+                            "nignog", "nig nog", "zipperhead", "porch monkey",
+                            "shemale", "mongoloid", "negroid"}) CHECK(blocked(line));
+    for (const char* line : {"Nigeria", "Niger", "night light", "zipper", "monkey", "Mongolia"})
+        CHECK(!blocked(line));
+}

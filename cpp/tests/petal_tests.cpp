@@ -6116,7 +6116,7 @@ TEST(icosahedron_scaled_armor_is_spawned_and_blunts_real_damage) {
     CHECK_NEAR(rig.world.get<Health>(petal).current, before - 7.0, 1e-9);
 }
 
-TEST(icosahedron_second_hit_ignores_distance_and_outlives_the_old_flight_timeout) {
+TEST(icosahedron_reaches_a_distant_moving_second_target_within_one_second) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "icosahedron");
@@ -6132,14 +6132,13 @@ TEST(icosahedron_second_hit_ignores_distance_and_outlives_the_old_flight_timeout
     ricochetCombatTick(rig, combat);
     CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.hits, 1);
     CHECK(rig.world.get<PetalInstance>(petal).ricochet.protectSecondHit);
-    rig.tick(100); // More than the old two-second deadline, still travelling.
-    combat.applyDamage(rig.world, petal, first, 1000000.0, rig.now);
-    CHECK(!rig.world.has<Dead>(petal));
-    CHECK(!rig.world.get<PetalInstance>(petal).ricochet.returning);
-    for (int i = 0; i < 400 && rig.world.get<PetalInstance>(petal).ricochet.hits < 2; ++i) {
+    const double started = rig.now;
+    for (int i = 0; i < 60 && rig.world.get<PetalInstance>(petal).ricochet.hits < 2; ++i) {
+        rig.world.get<Transform>(second).position.x += 100.0;
         rig.tick();
         ricochetCombatTick(rig, combat);
     }
+    CHECK(rig.now - started <= 1050.0); // One tick to acquire the target.
     CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.hits, 2);
     CHECK(rig.world.get<Health>(second).current < 10000.0);
 }

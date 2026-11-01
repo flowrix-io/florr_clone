@@ -62,7 +62,10 @@ constexpr Listed kBlocked[] = {
     {"chink", Fit::Whole},      {"spic", Fit::Whole},      {"kike", Fit::Whole},
     {"gook", Fit::Whole},       {"coon", Fit::Whole},      {"paki", Fit::Whole},
     {"beaner", Fit::Whole},     {"wetback", Fit::Inside},  {"raghead", Fit::Inside},
-    {"towelhead", Fit::Inside},
+    {"towelhead", Fit::Inside}, {"niglet", Fit::Inside},
+    {"nignog", Fit::Inside},    {"negroid", Fit::Whole},
+    {"zipperhead", Fit::Inside}, {"porchmonkey", Fit::Inside},
+    {"shemale", Fit::Whole},    {"mongoloid", Fit::Whole},
     // Harassment.
     {"kys", Fit::Whole},        {"killyourself", Fit::Inside},
 };
