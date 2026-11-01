@@ -2,7 +2,7 @@
 // Rarity: the single axis both mobs and items are graded on.
 //
 // Twelve tiers: the ten-rung LADDER, common through apex, then universal
-// and the give-only Admin tier above it. Rarity curves use the same ordered
+// and the operator-only Admin tier above it. Rarity curves use the same ordered
 // table, with no string comparisons in any hot path.
 
 #include <array>
@@ -69,7 +69,8 @@ inline constexpr std::uint32_t rarityColor(Rarity r) {
 /// every per-tier table in the game has one entry per rung.
 ///
 /// Universal sits above the ladder: it is forged at the titan or given by
-/// an operator. Admin sits above Universal and is created only by `give`.
+/// an operator. Admin sits above Universal and is created only by an operator
+/// (`give`, or the database editor).
 /// Neither tier drops, crafts through the ladder, or trades in the shop.
 /// Universal reads utility at apex and health/damage at sqrt(2) times apex;
 /// Admin boosts that baseline further in buildPetalStats.
