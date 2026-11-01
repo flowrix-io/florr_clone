@@ -8,7 +8,8 @@
 //   PLACING   every map's `npcs` layer is read once into a list of SITES, and a
 //             site whose NPC is missing gets a fresh one on the next tick --
 //             at start-up, and after anything (an operator, a test) destroyed
-//             the last one. There is no death to wait out: nothing an NPC is
+//             the last one. Explicit admin-cursor removals suppress their site
+//             until sites reload. There is no death to wait out: nothing an NPC is
 //             hit by takes anything off it, so a missing one is a hole in the
 //             map, not a casualty. A site drawn as an AREA puts its NPC on a
 //             spot picked inside it each time (the assemblers, roaming the
@@ -77,6 +78,7 @@ public:
         Rarity rarity = Rarity::Common;
         /// The NPC standing on it now, or NULL_ENTITY until the first run().
         Entity entity = NULL_ENTITY;
+        bool suppressed = false; // Explicit admin removal, until sites reload.
         /// The area a roaming site's NPC is put down somewhere inside, picked
         /// afresh each time it is placed; empty (`roams` false) for a point.
         bool roams = false;
@@ -135,6 +137,10 @@ public:
     /// own at that tier, pulled down as a band's fixture is for a target dummy
     /// (MobConfig::fixtureSizeScale).
     static double npcRadius(const ContentRegistry& content, std::uint16_t mobIndex, Rarity rarity);
+
+    /// Keep an explicitly removed map NPC absent until sites reload.
+    void suppressRespawn(Entity entity);
+    void restoreRemovedSites(const std::vector<Realm>& realms);
 
     const std::vector<Site>& sites() const { return sites_; }
 

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 68;
+inline constexpr std::uint16_t kProtocolVersion = 69;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -543,6 +543,8 @@ inline constexpr std::size_t kMaxAnnouncementBytes = 120;
 enum InputFlags : std::uint8_t {
     InputAttack  = 1 << 0,
     InputDefend  = 1 << 1,
+    InputAdminDrag = 1 << 2,
+    InputAdminRemove = 1 << 3,
 };
 
 /// One tick of intent from a client.

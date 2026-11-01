@@ -339,7 +339,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.kind = static_cast<net::EventKind>(reader.u8());
         e.netId = reader.u32();
         e.otherNetId = reader.u32();
-        e.amount = reader.f32();
+        e.amount = reader.f64();
         e.position = reader.position();
         e.radius = reader.f32();
         e.flag = reader.u8();

@@ -174,6 +174,9 @@ struct Session {
     /// Input sequence already applied. Inputs at or below this are replays and
     /// are dropped, so a duplicated packet cannot move the player twice.
     std::uint32_t lastInputSequence = 0;
+    Entity cursorDragged = NULL_ENTITY;
+    Entity cursorBody = NULL_ENTITY;
+    std::uint8_t cursorButtons = 0;
 
     /// Whether this body's death has already been announced. A player's corpse
     /// KEEPS its Dead tag so the client goes on being sent a dead flower, so

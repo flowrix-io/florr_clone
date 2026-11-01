@@ -444,30 +444,43 @@ Vec2 tooltipAnchor(Rect anchor, Vec2 size, double viewWidth, double viewHeight) 
 // Text helpers
 // ---------------------------------------------------------------------------
 
-std::string abbreviate(double value) {
-    if (!std::isfinite(value)) return "inf";
+namespace {
+struct NumberTier { double scale; const char* suffix; };
+constexpr NumberTier kNumberTiers[] = {
+    {1e57, "OcD"}, {1e54, "SpD"}, {1e51, "SxD"}, {1e48, "QiD"}, {1e45, "QaD"},
+    {1e42, "TD"}, {1e39, "DD"}, {1e36, "UD"}, {1e33, "Dc"}, {1e30, "No"},
+    {1e27, "Oc"}, {1e24, "Sp"}, {1e21, "Sx"}, {1e18, "Qi"}, {1e15, "Qa"},
+    {1e12, "T"}, {1e9, "B"}, {1e6, "M"}, {1e3, "K"},
+};
+std::string compactNumber(double value, bool trimZero) {
+    if (std::isnan(value)) return "NaN";
+    if (!std::isfinite(value)) return value < 0 ? "-inf" : "inf";
     const double magnitude = std::fabs(value);
-    char buffer[32];
-    if (magnitude < 1000.0) {
-        std::snprintf(buffer, sizeof buffer, "%.0f", value);
-    } else if (magnitude < 1e6) {
-        std::snprintf(buffer, sizeof buffer, "%.1fK", value / 1e3);
-    } else if (magnitude < 1e9) {
-        std::snprintf(buffer, sizeof buffer, "%.1fM", value / 1e6);
-    } else if (magnitude < 1e12) {
-        std::snprintf(buffer, sizeof buffer, "%.1fB", value / 1e9);
-    } else {
-        std::snprintf(buffer, sizeof buffer, "%.1fT", value / 1e12);
+    char buffer[48];
+    if (magnitude >= 1e60) {
+        std::snprintf(buffer, sizeof buffer, "%.1e", value);
+        return buffer;
     }
-    std::string out = buffer;
-    // "1.0k" reads worse than "1k", and the trailing zero is never news.
-    const std::size_t dot = out.find(".0");
-    if (dot != std::string::npos) out.erase(dot, 2);
-    return out;
+    for (const auto& tier : kNumberTiers) {
+        // Promote values whose displayed rounding would otherwise be 1000K.
+        if (magnitude >= tier.scale * 0.99995) {
+            std::snprintf(buffer, sizeof buffer, "%.1f%s", value / tier.scale, tier.suffix);
+            std::string out = buffer;
+            const auto dot = out.find(".0");
+            if (trimZero && dot != std::string::npos) out.erase(dot, 2);
+            return out;
+        }
+    }
+    std::snprintf(buffer, sizeof buffer, "%.0f", value);
+    return buffer;
 }
+} // namespace
+
+std::string abbreviate(double value) { return compactNumber(value, true); }
 
 std::string withSeparators(double value) {
-    char buffer[48];
+    if (!std::isfinite(value)) return abbreviate(value);
+    char buffer[320];
     std::snprintf(buffer, sizeof buffer, "%.0f", std::fabs(value));
     std::string digits = buffer;
     std::string out;
@@ -484,19 +497,7 @@ std::string fixedDecimals(double value, int decimals) {
     return buffer;
 }
 
-std::string formatCompact(double value) {
-    static constexpr struct { double scale; const char* suffix; } kSteps[] = {
-        {1e12, "T"}, {1e9, "B"}, {1e6, "M"}, {1e3, "K"},
-    };
-    char buf[32];
-    for (const auto& step : kSteps) {
-        if (value >= step.scale) {
-            std::snprintf(buf, sizeof buf, "%.1f%s", value / step.scale, step.suffix);
-            return buf;
-        }
-    }
-    return std::to_string(static_cast<long long>(std::llround(value)));
-}
+std::string formatCompact(double value) { return compactNumber(value, false); }
 
 std::string formatWhole(double value) {
     if (std::fabs(value) < 9.2e18) return std::to_string(static_cast<long long>(std::llround(value)));

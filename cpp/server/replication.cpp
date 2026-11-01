@@ -762,7 +762,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u8(static_cast<std::uint8_t>(event.kind));
             out.u32(event.netId);
             out.u32(tile ? event.wornSlot + 1u : event.otherNetId);
-            out.f32(static_cast<float>(event.amount));
+            out.f64(event.amount);
             out.position(event.position);
             out.f32(static_cast<float>(event.radius));
             out.u8(flag);

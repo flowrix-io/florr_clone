@@ -1835,8 +1835,12 @@ TEST(admin_petals_boost_universal_combat_and_utility_effects) {
     for (std::size_t i = 0; i < r.petalCount(); ++i) {
         const PetalStats& u = r.petalStats(i, Rarity::Universal);
         const PetalStats& a = r.petalStats(i, Rarity::Admin);
-        CHECK_NEAR(a.damage, u.damage * 25.0, std::max(1.0, u.damage) * 1e-9);
-        CHECK_NEAR(a.health, u.health * 25.0, std::max(1.0, u.health) * 1e-9);
+        // Sparkle is explicitly capped at INT32_MAX rather than boosted.
+        const bool sparkle = r.petal(i).id == "sparkle";
+        CHECK_NEAR(a.damage, sparkle ? 2147483647.0 : u.damage * 25.0,
+                   std::max(1.0, u.damage) * 1e-9);
+        CHECK_NEAR(a.health, sparkle ? 2147483647.0 : u.health * 25.0,
+                   std::max(1.0, u.health) * 1e-9);
         CHECK_NEAR(a.heal, u.heal * 10.0, std::max(1.0, u.heal) * 1e-9);
         CHECK_NEAR(a.reloadMillis, u.reloadMillis * 0.5, 1e-9);
         CHECK_NEAR(a.healChargeMillis, u.healChargeMillis * 0.5, 1e-9);
@@ -1884,4 +1888,16 @@ TEST(admin_secondary_effects_are_stronger_without_changing_ordinary_petals) {
     CHECK_NEAR(registry.petalStats(bone, Rarity::Apex).petalArmor, 7290.0, 1e-9);
     const auto ico = registry.petalIndex("icosahedron");
     CHECK_NEAR(registry.petalStats(ico, Rarity::Apex).petalArmor, 196830.0, 1e-9);
+}
+
+TEST(admin_sparkle_has_int32_limit_health_damage_and_armor) {
+    const auto& registry = shipped().registry;
+    const auto sparkle = registry.petalIndex("sparkle");
+    CHECK(sparkle != kInvalidIndex);
+    const auto& stats = registry.petalStats(sparkle, Rarity::Admin);
+    CHECK_NEAR(stats.damage, 2147483647.0, 0.01);
+    CHECK_NEAR(stats.health, 2147483647.0, 0.01);
+    CHECK_NEAR(stats.petalArmor, 2147483647.0, 0.01);
+    CHECK_NEAR(registry.petalStats(sparkle, Rarity::Common).damage, 9999999999.0, 0.01);
+    CHECK_NEAR(registry.petalStats(sparkle, Rarity::Common).petalArmor, 0.0, 0.01);
 }

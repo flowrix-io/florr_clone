@@ -1711,3 +1711,18 @@ TEST(a_pets_shot_still_files_with_the_pets_after_the_pet_is_gone) {
     CHECK(foreign(client, f.world, shot));
     CHECK(petFlagged(client, f.world, shot));
 }
+
+TEST(huge_damage_events_do_not_overflow_float32_on_the_wire) {
+    Fixture f;
+    const Entity mob = f.addMob({1100, 1000});
+    WorldView client;
+    f.tick(client, 1, 1000);
+    client.events().clear();
+    f.events.damage(netIdOf(f.world, mob), 1e57, {1100, 1000}, Realm::Overworld);
+    f.tick(client, 2, 1040);
+    CHECK_EQ(client.events().size(), std::size_t(1));
+    if (!client.events().empty()) {
+        CHECK(std::isfinite(client.events()[0].amount));
+        CHECK_NEAR(client.events()[0].amount, 1e57, 1e42);
+    }
+}

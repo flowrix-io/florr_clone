@@ -186,9 +186,23 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     return e;
 }
 
+void NpcSystem::restoreRemovedSites(const std::vector<Realm>& realms) {
+    for (Site& site : sites_) {
+        if (std::find(realms.begin(), realms.end(), site.realm) != realms.end()) site.suppressed = false;
+    }
+}
+
+void NpcSystem::suppressRespawn(Entity entity) {
+    if (entity == NULL_ENTITY) return;
+    for (Site& site : sites_) {
+        if (site.entity == entity) site.suppressed = true;
+    }
+}
+
 void NpcSystem::placeMissing(World& world, const Terrain& terrain, const ContentRegistry& content,
                              double nowMillis) {
     for (Site& site : sites_) {
+        if (site.suppressed) continue;
         if (site.entity != NULL_ENTITY && world.isAlive(site.entity) && world.has<NpcTag>(site.entity)) {
             continue;
         }

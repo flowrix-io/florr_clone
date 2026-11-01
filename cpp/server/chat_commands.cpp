@@ -924,7 +924,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "notification &lt;type&gt; "
                     "&lt;message&gt;, clear_notifications, delete_guests, list_today_logins, "
                     "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
-                    "name&gt; &lt;username&gt;, restart [&lt;N&gt;(s|m|h)|cancel|status], "
+                    "name&gt; &lt;username&gt;, restart [&lt;biome&gt; ...|&lt;N&gt;(s|m|h)|cancel|status|list], "
                     "backup_db [list], db [username] (open the database editor; full admins "
                     "only, tiers 1-2), update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
                     "DB first, then installs latest build + restarts; tier 1 only), change-maze "
@@ -2988,6 +2988,61 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
     if (verb == "restart") {
         const std::string arg = lowerCase(rest);
+        double duration = 0;
+        if (!arg.empty() && arg != "status" && arg != "cancel" && arg != "abort" &&
+            !parseDurationMillis(arg, duration)) {
+            if (lacks(AdminPower::SpawnMobs)) return;
+            const auto normalized = [](std::string name) {
+                name = lowerCase(name);
+                std::replace(name.begin(), name.end(), '-', '_');
+                return name;
+            };
+            std::vector<std::string> available;
+            for (const auto& map : worldMaps_.maps()) {
+                const std::string name = normalized(map.biome());
+                if (std::find(available.begin(), available.end(), name) == available.end()) available.push_back(name);
+            }
+            std::string names;
+            for (const auto& name : available) names += (names.empty() ? "" : ", ") + name;
+            if (arg == "list") { out("Biomes: " + names); return; }
+            std::string targets = arg;
+            std::replace(targets.begin(), targets.end(), ',', ' ');
+            const auto requested = splitWords(targets);
+            if (requested.empty()) { out("Usage: restart <biome> [biome ...]. Biomes: " + names); return; }
+            std::vector<Realm> realms;
+            // Resolve the entire request before removing anything: one typo
+            // must not restart the valid biomes preceding it.
+            for (const auto& word : requested) {
+                const std::string name = normalized(word);
+                bool found = false;
+                for (const auto& map : worldMaps_.maps()) {
+                    if (normalized(map.biome()) != name && normalized(map.id()) != name) continue;
+                    found = true;
+                    if (std::find(realms.begin(), realms.end(), map.realm()) == realms.end()) realms.push_back(map.realm());
+                }
+                if (!found) { out("Unknown biome: " + word + ". Biomes: " + names); return; }
+            }
+            std::vector<Entity> removed;
+            Query<Transform> entities{world_};
+            entities.each([&](Entity e, Transform& transform) {
+                if (std::find(realms.begin(), realms.end(), transform.realm) == realms.end() ||
+                    world_.has<PlayerTag>(e) || world_.has<Pet>(e)) return;
+                bool clear = world_.has<MobTag>(e) || world_.has<NpcTag>(e) ||
+                             world_.has<DropTag>(e) || world_.has<ProjectileTag>(e) || world_.has<GroundEffect>(e);
+                if (const auto* petal = world_.tryGet<PetalInstance>(e)) {
+                    clear = clear || ((world_.has<MobTag>(petal->owner) || world_.has<NpcTag>(petal->owner)) && !world_.has<Pet>(petal->owner));
+                }
+                if (clear) removed.push_back(e);
+            });
+            // No death records: resets never award XP, drops or kill credit.
+            for (const Entity e : removed) world_.destroy(e);
+            npcs_->restoreRemovedSites(realms);
+            npcs_->placeMissing(world_, *terrain_, content(), clockMillis_);
+            out("Restarted biome(s): " + targets + " (" + std::to_string(removed.size()) +
+                " world entities cleared; players, inventories and boss cooldowns preserved).");
+            audit("restarted biome(s): " + targets);
+            return;
+        }
         if (arg.empty()) {
             out(scheduleRestart(60000.0, "admin")
                     ? "Restart scheduled in 60 seconds. Use \"restart cancel\" to abort."

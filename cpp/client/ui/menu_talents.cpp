@@ -829,20 +829,8 @@ void drawAvatar(Canvas& canvas, Vec2 at, double radius, Vec2 eye) {
     canvas.restore();
 }
 
-/// The stat lines' abbreviation: lower-case, and it stops at millions.
-std::string abbreviateStat(double value) {
-    const double n = std::round(value);
-    char buffer[32];
-    if (n < 1000.0) {
-        std::snprintf(buffer, sizeof buffer, "%.0f", n);
-        return buffer;
-    }
-    const bool millions = n >= 1e6;
-    const double scaled = n / (millions ? 1e6 : 1e3);
-    std::snprintf(buffer, sizeof buffer, scaled == std::floor(scaled) ? "%.0f%s" : "%.1f%s", scaled,
-                  millions ? "m" : "k");
-    return buffer;
-}
+/// Share the same magnitude suffixes as inventory and combat readouts.
+std::string abbreviateStat(double value) { return abbreviate(value); }
 
 /// A connector from `from` to `to`, 10 clear of each end; dashed from `from`.
 void drawLink(Canvas& canvas, Vec2 from, Vec2 to, bool dashed) {

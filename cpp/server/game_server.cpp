@@ -1042,6 +1042,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     markTickPhase("mob ai");
     movement_->runWorldPhase(world_, *terrain_, nowMillis, net::kTickSeconds);
     markTickPhase("mob movement");
+    serviceAdminCursor();
     // After the bodies have moved, as gardn places its segments: whatever
     // pushed a bead this tick swings the chain rather than being undone.
     mobAi_->placeChains(world_, *terrain_, activePlayers_);
@@ -2470,6 +2471,103 @@ void GameServer::leaveWorld(Session& session) {
     // first would move their view back onto a flower that is about to go.
     despawnPlayer(session, true);
     revokeTempAdmin(session.connection);
+}
+
+void GameServer::serviceAdminCursor() {
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        if (!session.playing() || !adminMay(session, AdminPower::SpawnMobs)) {
+            session.cursorDragged = NULL_ENTITY;
+            session.cursorBody = NULL_ENTITY;
+            session.cursorButtons = 0;
+            continue;
+        }
+        const Entity owner = session.entity;
+        const auto* input = world_.tryGet<PlayerInput>(owner);
+        const auto* origin = world_.tryGet<Transform>(owner);
+        const auto* loadout = world_.tryGet<Loadout>(owner);
+        bool equipped = false;
+        if (loadout) {
+            for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+                const EquippedPetal slot = equippedPetal(content(), *loadout, i);
+                if (!slot.empty() && slot.rarity == Rarity::Admin &&
+                    content().petal(slot.configIndex).id == "cursor") equipped = true;
+            }
+        }
+        if (!equipped || !input || !origin || world_.has<Dead>(owner) ||
+            session.controlling != 0 || session.controlledBy != 0) {
+            session.cursorDragged = NULL_ENTITY;
+            session.cursorBody = NULL_ENTITY;
+            session.cursorButtons = 0;
+            continue;
+        }
+        if (session.cursorBody != owner) {
+            session.cursorDragged = NULL_ENTITY;
+            session.cursorButtons = 0;
+            session.cursorBody = owner;
+        }
+        const auto buttons = input->current.flags;
+        const bool drag = (buttons & net::InputAdminDrag) != 0;
+        const bool remove = (buttons & net::InputAdminRemove) != 0;
+        const Vec2 requested = Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
+        const auto* location = world_.tryGet<PlayerLocation>(owner);
+        const Vec2 claim = location ? location->viewport : Vec2{kViewportWidth, kViewportHeight};
+        const Vec2 viewport = claimableViewport(world_, owner, content(), claim.x, claim.y);
+        const Vec2 pointer = origin->position + Vec2{clamp(requested.x, -viewport.x * 0.5, viewport.x * 0.5),
+                                                     clamp(requested.y, -viewport.y * 0.5, viewport.y * 0.5)};
+        const Realm realm = origin->realm;
+        const auto valid = [&](Entity entity, bool deleting) {
+            const auto* transform = world_.tryGet<Transform>(entity);
+            return transform && transform->realm == realm && !world_.has<Dead>(entity) &&
+                !world_.has<PlayerTag>(entity) &&
+                (deleting ? (world_.has<DropTag>(entity) || world_.has<NpcTag>(entity))
+                          : (world_.has<MobTag>(entity) || world_.has<NpcTag>(entity)));
+        };
+        const auto pick = [&](bool deleting) {
+            Entity selected = NULL_ENTITY;
+            double best = 1e100;
+            Query<Transform> candidates{world_};
+            candidates.each([&](Entity e, Transform& transform) {
+                if (!valid(e, deleting)) return;
+                const auto* body = world_.tryGet<Body>(e);
+                const double radius = std::max(20.0, body ? body->radius : 20.0);
+                const double d = distanceSq(pointer, transform.position);
+                // Distance to the centre relative to size makes tiny drops
+                // selectable even beside a large NPC.
+                const double score = d / (radius * radius);
+                if (score <= 1.0 && (score < best || (score == best && e < selected))) {
+                    best = score;
+                    selected = e;
+                    if (!deleting) {
+                        const auto* segment = world_.tryGet<BodySegment>(e);
+                        if (segment && valid(segment->chainHead, false)) selected = segment->chainHead;
+                    }
+                }
+            });
+            return selected;
+        };
+        if (remove && !(session.cursorButtons & net::InputAdminRemove)) {
+            const Entity selected = pick(true);
+            if (selected != NULL_ENTITY) {
+                if (session.cursorDragged == selected) session.cursorDragged = NULL_ENTITY;
+                npcs_->suppressRespawn(selected);
+                // Outside ECS queries and before the new broadphase/loot pass:
+                // an item under the owner cannot be picked up after deletion.
+                world_.destroy(selected); // No death, rewards or new loot.
+            }
+        }
+        if (!drag || remove) session.cursorDragged = NULL_ENTITY;
+        else if (!(session.cursorButtons & net::InputAdminDrag)) session.cursorDragged = pick(false);
+        if (session.cursorDragged != NULL_ENTITY) {
+            if (!valid(session.cursorDragged, false)) session.cursorDragged = NULL_ENTITY;
+            else {
+                world_.get<Transform>(session.cursorDragged).position = pointer;
+                if (auto* npc = world_.tryGet<Npc>(session.cursorDragged)) npc->home = pointer;
+                if (auto* motion = world_.tryGet<Motion>(session.cursorDragged)) motion->velocity = Vec2{};
+            }
+        }
+        session.cursorButtons = buttons;
+    }
 }
 
 void GameServer::handleInput(Session& session, ByteReader& reader) {

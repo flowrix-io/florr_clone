@@ -3240,3 +3240,34 @@ TEST(the_assembler_painter_draws_florrs_machine_and_turns_its_gears) {
     CHECK(gearChanged > 20);
     CHECK_EQ(bodyChanged, 0);
 }
+
+TEST(admin_removed_map_npcs_do_not_immediately_respawn) {
+    CHECK(ensureShippedContent());
+    WorldMaps maps;
+    Terrain terrain;
+    std::string error;
+    CHECK(maps.load(dataDir(), &terrain, error));
+    World world;
+    NpcSystem npcs;
+    std::vector<std::string> warnings;
+    npcs.loadSites(maps, content(), warnings);
+    npcs.placeMissing(world, terrain, content(), 0);
+    CHECK(!npcs.sites().empty());
+    if (npcs.sites().empty()) return;
+    const Entity original = npcs.sites()[0].entity;
+    CHECK(world.isAlive(original));
+    world.destroy(original);
+    npcs.placeMissing(world, terrain, content(), 33);
+    const Entity replacement = npcs.sites()[0].entity;
+    CHECK(world.isAlive(replacement)); // Ordinary missing-NPC recovery remains.
+    npcs.suppressRespawn(replacement);
+    world.destroy(replacement);
+    npcs.placeMissing(world, terrain, content(), 66);
+    npcs.placeMissing(world, terrain, content(), 99);
+    CHECK(!world.isAlive(npcs.sites()[0].entity));
+    CHECK(npcs.sites()[0].suppressed);
+    npcs.restoreRemovedSites({npcs.sites()[0].realm});
+    npcs.placeMissing(world, terrain, content(), 132);
+    CHECK(world.isAlive(npcs.sites()[0].entity));
+    CHECK(!npcs.sites()[0].suppressed);
+}

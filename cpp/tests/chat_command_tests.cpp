@@ -3750,3 +3750,59 @@ TEST(give_all_invalid_exclusions_refuse_the_entire_grant) {
         }
     }
 }
+
+TEST(restarting_selected_biomes_is_atomic_and_preserves_players_and_other_biomes) {
+    Harness h("restart-biomes", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "visitor", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, visitor;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    boss.joinGame(1000, 800);
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return boss.status() == NetClient::Status::Playing; }));
+    Session* session = GameServerPeer::sessionOf(h.server, "boss");
+    if (!session) { CHECK(false); return; }
+    const Entity player = session->entity;
+    Realm garden = Realm::Overworld, desert = Realm::Overworld, other = Realm::Overworld;
+    for (const auto& map : h.server.worldMaps().maps()) {
+        if (map.id() == "garden") garden = map.realm();
+        if (map.id() == "desert") desert = map.realm();
+        if (map.id() == "ocean") other = map.realm();
+    }
+    CHECK(garden != desert);
+    CHECK(other != garden);
+    World& world = h.server.world();
+    const auto mob = [&](Realm realm) {
+        const Entity e = world.create();
+        world.add<Transform>(e, Transform{{1000, 1000}, 0, realm});
+        world.add<MobTag>(e);
+        return e;
+    };
+    const Entity a = mob(garden), b = mob(desert), c = mob(other);
+    const Entity pet = mob(garden);
+    world.add<Pet>(pet);
+    const auto progress = playerRecordJson(*h.server.database().findProgress(session->userId)).dump();
+    CHECK(say(h, visitor, "/admin restart garden"));
+    CHECK(world.isAlive(a));
+    CHECK(say(h, boss, "/admin restart garden not_a_biome"));
+    CHECK(sawText(boss, "Unknown biome:"));
+    CHECK(world.isAlive(a)); // No partial restart on a misspelling.
+    CHECK(world.isAlive(b));
+    CHECK(say(h, boss, "/admin restart garden,desert"));
+    CHECK(sawText(boss, "Restarted biome(s):"));
+    CHECK(!world.isAlive(a));
+    CHECK(!world.isAlive(b));
+    CHECK(world.isAlive(c));
+    CHECK(world.isAlive(pet));
+    CHECK(world.isAlive(player));
+    CHECK_EQ(playerRecordJson(*h.server.database().findProgress(session->userId)).dump(), progress);
+    const Entity a2 = mob(garden), b2 = mob(desert);
+    CHECK(say(h, boss, "/admin restart garden desert"));
+    CHECK(!world.isAlive(a2));
+    CHECK(!world.isAlive(b2));
+    CHECK(say(h, boss, "/admin restart status"));
+    CHECK(sawText(boss, "No restart scheduled."));
+    CHECK_EQ(h.server.exitCode(), 0);
+}

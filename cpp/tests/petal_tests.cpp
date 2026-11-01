@@ -21,6 +21,8 @@ namespace {
 // allowed to change.
 
 const char* const kPetalsJson = R"JSON({
+  "magic_orb": {"name":"Orb","damage":1,"health":5,"size":1,"cooldown":3500,"count":1,"burstMana":10,"burstManaChargeMs":1000,"color":"#42E3F5"},
+  "sparkle": {"name":"Sparkle","damage":9999999999,"health":99999,"size":1,"cooldown":500,"count":1,"color":"#FFD700"},
   "basic":    {"name":"Basic","damage":10,"health":10,"size":2,"cooldown":1200,"count":1,"color":"#90EE90"},
   "icosahedron":{"name":"Icosahedron","damage":10,"health":10,"petalArmor":10,"size":2,"cooldown":2500,"count":1,"color":"#8B5CF6"},
   "sandy":    {"name":"Sandy","damage":4,"health":12,"size":1,"cooldown":800,"count":4,"clumped":true,"color":"#8B0000"},
@@ -6197,4 +6199,50 @@ TEST(icosahedron_admin_chain_stops_at_its_rarity_limit_without_rehitting_mobs) {
     CHECK_EQ(hit, 32);
     CHECK(rig.tickUntil([&] { return !rig.world.get<PetalInstance>(petal).ricochet.active; }, 120));
     CHECK_NEAR(rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis - rig.now, 1250.0, 1e-6);
+}
+
+TEST(admin_sparkle_int_limit_stats_spawn_without_combat_overflow) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "sparkle", Rarity::Admin);
+    rig.settleEquips();
+    const Entity petal = rig.petals(0).front();
+    constexpr double limit = 2147483647.0;
+    CHECK_NEAR(rig.world.get<Health>(petal).max, limit, 0.01);
+    CHECK_NEAR(rig.world.get<Armor>(petal).amount, limit, 0.01);
+    CHECK_NEAR(rig.world.get<ContactDamage>(petal).amount, limit, 0.01);
+    const Entity mob = addMob(rig, rig.position(petal));
+    CombatSystem combat;
+    combat.applyDamage(rig.world, petal, mob, limit + 7.0, rig.now, DamageKind::Recoil);
+    CHECK_NEAR(rig.world.get<Health>(petal).current, limit - 7.0, 0.01);
+    combat.applyDamage(rig.world, mob, petal, limit, rig.now);
+    CHECK(std::isfinite(rig.world.get<Health>(mob).current));
+    CHECK(rig.world.get<Health>(mob).current <= 0);
+}
+
+TEST(admin_orb_keeps_mana_full_and_pays_costs_larger_than_the_pool) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "magic_orb", Rarity::Admin);
+    rig.equip(1, "magicmissile");
+    rig.settleEquips();
+    CHECK(!rig.petals(1).empty()); // Costs 30, while the pool only holds 1.
+    CHECK(rig.world.get<ManaPool>(rig.player).infinite);
+    CHECK(rig.world.get<ManaPool>(rig.player).canAfford(1e57));
+    for (int i = 0; i < 4; ++i) {
+        rig.world.get<ManaPool>(rig.player).current = 0;
+        rig.world.add<Dead>(rig.petals(1).front(), Dead{});
+        rig.tick(60);
+        CHECK(!rig.petals(1).empty());
+        const auto& mana = rig.world.get<ManaPool>(rig.player);
+        CHECK_NEAR(mana.current, mana.max, 0.01);
+        CHECK(std::isfinite(mana.current));
+        CHECK(std::isfinite(mana.max));
+    }
+    rig.unequip(0);
+    rig.tick();
+    const auto& mana = rig.world.get<ManaPool>(rig.player);
+    CHECK(!mana.infinite);
+    CHECK(!mana.canAfford(30));
+    CHECK_NEAR(mana.max, 0, 0.01);
 }

@@ -135,31 +135,11 @@ TextStyle galleryStyle(double size, std::uint32_t fill) {
     return style;
 }
 
-/// `abbreviateNumber` from the reference. Deliberately not the shared
-/// `abbreviate()`: this one stops at B rather than growing a T tier, and its
-/// thousands suffix is a lowercase k.
+/// Gallery counts share the full stat suffix range, retaining lowercase k.
 std::string abbreviateNumber(double value) {
-    if (!std::isfinite(value)) return "\xE2\x88\x9E";
-    char buffer[32];
-    const char* suffix = "";
-    if (value < 1000.0) {
-        std::snprintf(buffer, sizeof buffer, "%.0f", std::floor(value + 0.5));
-        return buffer;
-    }
-    if (value < 1e6) {
-        std::snprintf(buffer, sizeof buffer, "%.1f", value / 1e3);
-        suffix = "k";
-    } else if (value < 1e9) {
-        std::snprintf(buffer, sizeof buffer, "%.1f", value / 1e6);
-        suffix = "M";
-    } else {
-        std::snprintf(buffer, sizeof buffer, "%.1f", value / 1e9);
-        suffix = "B";
-    }
-    std::string out = buffer;
-    // "1.0k" reads worse than "1k", and the trailing zero is never news.
-    if (out.size() > 2 && out.compare(out.size() - 2, 2, ".0") == 0) out.erase(out.size() - 2);
-    return out + suffix;
+    std::string out = abbreviate(value);
+    if (!out.empty() && out.back() == 'K') out.back() = 'k';
+    return out;
 }
 
 // ---------------------------------------------------------------------------

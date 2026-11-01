@@ -1010,3 +1010,105 @@ TEST(dashboard_requests_are_billed_like_the_console_commands_they_stand_in_for) 
     CHECK(!helper.adminDashboard().playersRefused);
     CHECK(!helper.adminDashboard().players.empty());
 }
+
+TEST(admin_cursor_drags_any_mob_and_removes_drops_and_oracle_without_rewards) {
+    Harness h("admin-cursor", [](const std::string& path) {
+        seedUsers(path, {"boss", "visitor"}, {"boss"});
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, visitor;
+    const std::vector<NetClient*> all{&boss, &visitor};
+    CHECK(enterWorld(h, all, {"boss", "visitor"}, {"Boss", "Visitor"}));
+    World& world = h.server.world();
+    Session* session = GameServerPeer::sessionOf(h.server, "boss");
+    CHECK(session != nullptr);
+    if (!session) return;
+    const Entity owner = session->entity;
+    protect(world, owner);
+    world.get<Loadout>(owner).slots[0] = LoadoutSlot{content().petalIndex("cursor"), Rarity::Admin, 0, false};
+    const Vec2 origin = world.get<Transform>(owner).position;
+    const Realm realm = world.get<Transform>(owner).realm;
+    const auto makeTarget = [&](Vec2 at, Realm where) {
+        const Entity e = world.create();
+        Transform t;
+        t.position = at;
+        t.realm = where;
+        world.add<Transform>(e, t);
+        world.add<Body>(e, Body{25, 1000000}); // Anchored mass cannot resist a drag.
+        world.add<Motion>(e);
+        world.add<MobTag>(e);
+        return e;
+    };
+    const Entity mob = makeTarget(origin + Vec2{200, 0}, realm);
+    const Entity elsewhere = makeTarget(origin + Vec2{200, 0},
+        realm == Realm::Overworld ? Realm::Arena : Realm::Overworld);
+    std::uint32_t seq = 0;
+    const auto point = [&](double dist, std::uint8_t flags, double angle = 0.0) {
+        net::InputFrame frame;
+        frame.sequence = ++seq;
+        frame.aimDistance = static_cast<std::uint16_t>(dist);
+        frame.flags = flags;
+        frame.aimAngle = angle;
+        boss.sendInput(frame);
+        h.step(2, all);
+    };
+    point(200, net::InputAdminDrag);
+    CHECK_EQ(session->cursorDragged, mob);
+    point(350, net::InputAdminDrag);
+    CHECK_NEAR(world.get<Transform>(mob).position.x, origin.x + 350, 2.0);
+    CHECK(world.get<Transform>(elsewhere).realm != realm);
+    point(350, 0);
+    point(500, 0);
+    CHECK_EQ(session->cursorDragged, NULL_ENTITY);
+    CHECK_NEAR(world.get<Transform>(mob).position.x, origin.x + 350, 2.0);
+
+    // Unequipping and lost privileges revoke an existing grab immediately.
+    point(350, net::InputAdminDrag);
+    CHECK_EQ(session->cursorDragged, mob);
+    world.get<Loadout>(owner).slots[0] = LoadoutSlot{};
+    point(400, net::InputAdminDrag);
+    CHECK_EQ(session->cursorDragged, NULL_ENTITY);
+    world.get<Loadout>(owner).slots[0] = LoadoutSlot{content().petalIndex("cursor"), Rarity::Admin, 0, false};
+    session->admin = false;
+    point(350, 0);
+    point(350, net::InputAdminDrag);
+    CHECK_EQ(session->cursorDragged, NULL_ENTITY);
+    session->admin = true;
+    point(350, 0);
+
+    const Entity drop = world.create();
+    Transform dropped;
+    dropped.position = origin + Vec2{200, 0};
+    dropped.realm = realm;
+    world.add<Transform>(drop, dropped);
+    world.add<DropTag>(drop);
+    const auto xpBefore = world.get<PlayerProgress>(owner).totalXp;
+    // A modified client sending the new flags still cannot edit the world.
+    session->admin = false;
+    point(200, net::InputAdminRemove);
+    CHECK(world.isAlive(drop));
+    session->admin = true;
+    point(200, 0);
+    world.get<Loadout>(owner).slots[0].rarity = Rarity::Universal;
+    point(200, net::InputAdminRemove);
+    CHECK(world.isAlive(drop));
+    world.get<Loadout>(owner).slots[0].rarity = Rarity::Admin;
+    point(200, 0);
+    point(200, net::InputAdminRemove);
+    CHECK(!world.isAlive(drop));
+    CHECK(world.isAlive(mob)); // Remove is for world items/NPCs, not ordinary mobs.
+    CHECK_EQ(world.get<PlayerProgress>(owner).totalXp, xpBefore);
+    point(0, 0);
+
+    CHECK(say(h, boss, "/admin spawn_npc oracle common"));
+    Entity oracle = NULL_ENTITY;
+    Query<NpcTag, Transform> npcs{world};
+    npcs.each([&](Entity e, NpcTag&, Transform& t) {
+        if (t.realm == realm && distanceSq(t.position, origin) < 100.0) oracle = e;
+    });
+    CHECK(oracle != NULL_ENTITY);
+    const Vec2 toOracle = world.get<Transform>(oracle).position - world.get<Transform>(owner).position;
+    point(toOracle.length(), net::InputAdminRemove, toOracle.angle());
+    CHECK(!world.isAlive(oracle));
+    CHECK(world.isAlive(owner));
+}

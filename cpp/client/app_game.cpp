@@ -289,6 +289,14 @@ void App::sendInputFrame(double dt) {
     lastAimAngle_ = input.aimAngle;
     lastAimDistance_ = input.aimDistance;
 
+    bool adminCursor = false;
+    if (net_.isSkinAdmin()) {
+        for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+            const EquippedPetal slot = net_.profile().equipped(content(), i);
+            if (!slot.empty() && slot.rarity == Rarity::Admin &&
+                content().petal(slot.configIndex).id == "cursor") adminCursor = true;
+        }
+    }
     const Vec2 pointer{window_.mouseX(), window_.mouseY()};
     // A press that landed on a line of chat is a text selection, not a swing.
     // Checked against the PREVIOUS frame's runs because this pass runs before
@@ -300,11 +308,15 @@ void App::sendInputFrame(double dt) {
                            selectable.overTextLastFrame(pointer));
     if (!chatOpen_ && !menuOpen && !textDrag && !menus_.capturesMouse(pointer) &&
         !tutorial_.capturesMouse(pointer)) {
-        if (window_.mouseDown(MouseButton::Left) ||
+        // These are pointer buttons only; keyboard petal controls do not edit
+        // the world. Authority and the worn petal are rechecked by the server.
+        if (window_.mouseDown(MouseButton::Left)) input.flags |= net::InputAdminDrag;
+        if (window_.mouseDown(MouseButton::Right)) input.flags |= net::InputAdminRemove;
+        if ((!adminCursor && window_.mouseDown(MouseButton::Left)) ||
             boundKeyDown(window_, settings.controlKey(ControlAction::ExtendPetals))) {
             input.flags |= net::InputAttack;
         }
-        if (window_.mouseDown(MouseButton::Right) ||
+        if ((!adminCursor && window_.mouseDown(MouseButton::Right)) ||
             boundKeyDown(window_, settings.controlKey(ControlAction::RetractPetals))) {
             input.flags |= net::InputDefend;
         }

@@ -534,10 +534,11 @@ double numberSizeFor(double base, double value) {
     return base + (kNumberMaxSize - base) * t;
 }
 
-/// Damage is shown as a whole number however large it gets -- abbreviating it
-/// would read as a different game from the browser build.
+/// Keep ordinary hit numbers whole; large hits use the shared suffix range
+/// instead of overflowing llround's signed 64-bit result.
 std::string formatDamage(double value) {
-    return std::to_string(static_cast<long long>(std::llround(value)));
+    return !std::isfinite(value) || std::fabs(value) >= 1e12
+               ? ui::abbreviate(value) : ui::formatWhole(value);
 }
 
 /// Ultra and up glitter: florr's drop pass tests the rarity byte against 6,

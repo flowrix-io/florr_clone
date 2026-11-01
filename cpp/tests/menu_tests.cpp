@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "client/ui/item_tile.h"
+#include "client/ui/menu_widgets.h"
 #include "server_harness.h"
 #include "shared/game/shop.h"
 #include "shared/game/skills.h"
@@ -1282,4 +1283,21 @@ TEST(a_saved_tier_past_the_top_of_its_branch_loads_clamped) {
         }
     }
     std::remove(path.c_str());
+}
+
+TEST(number_abbreviations_cover_every_thousand_tier_through_10_to_57) {
+    const char* suffixes[] = {"K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No",
+                              "Dc", "UD", "DD", "TD", "QaD", "QiD", "SxD", "SpD", "OcD"};
+    for (int i = 0; i < 19; ++i) {
+        const double value = std::pow(10.0, (i + 1) * 3);
+        CHECK_EQ(ui::abbreviate(value), "1" + std::string(suffixes[i]));
+        CHECK_EQ(ui::abbreviate(-value), "-1" + std::string(suffixes[i]));
+        CHECK_EQ(ui::formatCompact(value), "1.0" + std::string(suffixes[i]));
+        CHECK_EQ(ui::abbreviate(value * 1.5), "1.5" + std::string(suffixes[i]));
+    }
+    CHECK_EQ(ui::abbreviate(950), std::string("950"));
+    CHECK_EQ(ui::abbreviate(999950), std::string("1M"));
+    CHECK_EQ(ui::abbreviate(0), std::string("0"));
+    CHECK(ui::abbreviate(1e60).find('e') != std::string::npos);
+    CHECK(ui::withSeparators(1e57).size() > 60);
 }

@@ -13,6 +13,7 @@
 //    is -- and that changes at most once in its lifetime.
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -388,9 +389,11 @@ struct ShieldState {
 struct ManaPool {
     double current = 0;
     double max = 0;
+    // Infinite use is a rule, never an IEEE infinity in saved/wire numbers.
+    bool infinite = false;
 
     bool has() const { return max > 0.0; }
-    bool canAfford(double cost) const { return cost <= 0.0 || current >= cost; }
+    bool canAfford(double cost) const { return std::isfinite(cost) && (cost <= 0.0 || infinite || current >= cost); }
 };
 
 /// Root's armour, which a flower COLLECTS and SPENDS.
@@ -600,6 +603,7 @@ struct PlayerModifiers {
     /// pool itself (ManaPool) is written from these two.
     double maxMana = 0.0;
     double passiveManaPerSecond = 0.0;
+    bool infiniteMana = false; // Server-resolved Admin Orb equipped.
     /// Flat poison DPS absorbed. Multiple lotus petals use the strongest one,
     /// rather than stacking.
     double poisonArmor = 0.0;

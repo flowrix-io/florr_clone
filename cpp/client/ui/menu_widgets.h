@@ -153,8 +153,8 @@ std::string fixedDecimals(double value, int decimals);
 
 /// The reference's formatNumber: one decimal and a magnitude letter past a
 /// thousand (1e3 K, 1e6 M, 1e9 B, 1e12 T, as "%.1f%s"), the rounded whole
-/// number below it. Unlike `abbreviate` it keeps the ".0", and it has no
-/// tier past T. The target dummy's DPS readout is written this way.
+/// number below it. Unlike `abbreviate` it keeps the ".0", without
+/// trailing-zero removal. Supports suffixes through 1e57 (OcD).
 std::string formatCompact(double value);
 
 /// The rounded whole number in full, at any size: what an ALT readout shows.

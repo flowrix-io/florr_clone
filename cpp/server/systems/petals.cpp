@@ -458,9 +458,11 @@ double slotHealthFraction(World& world, const PetalSlotState::Slot& state,
 /// came back anyway is a petal with no cost, and one that took the mana and did
 /// not come back is a petal that eats the pool. The caller acts only on true.
 bool spendMana(World& world, Entity player, double cost) {
+    if (!std::isfinite(cost)) return false;
     if (!(cost > 0.0)) return true;
     ManaPool* pool = world.tryGet<ManaPool>(player);
-    if (pool == nullptr || pool->current < cost) return false;
+    if (pool == nullptr || !pool->canAfford(cost)) return false;
+    if (pool->infinite) { pool->current = pool->max; return true; }
     pool->current -= cost;
     return true;
 }
@@ -472,6 +474,7 @@ bool spendMana(World& world, Entity player, double cost) {
 /// succeeds. Collapsing the two would bill a clump for a grain the world
 /// refused to create.
 bool canAffordMana(World& world, Entity player, double cost) {
+    if (!std::isfinite(cost)) return false;
     if (!(cost > 0.0)) return true;
     const ManaPool* pool = world.tryGet<ManaPool>(player);
     return pool != nullptr && pool->canAfford(cost);
@@ -1587,6 +1590,8 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             // decision the bar is there to make -- unlike lotus's poison
             // armour just below, which is a threshold a second copy cannot
             // raise.
+            if (equipped.rarity == Rarity::Admin && registry.petal(equipped.configIndex).id == "magic_orb")
+                aggregate.modifiers.infiniteMana = true;
             aggregate.modifiers.maxMana += stats.maxMana;
             aggregate.modifiers.passiveManaPerSecond += stats.passiveManaPerSecond;
             aggregate.modifiers.poisonArmor =
@@ -1802,7 +1807,8 @@ void PetalSystem::applyPassiveHeal(World& world, Entity player, const Aggregate&
 
 void PetalSystem::updateManaPool(World& world, Entity player, const Aggregate& aggregate,
                                  double dt) {
-    const double max = std::max(0.0, aggregate.modifiers.maxMana);
+    const bool infinite = aggregate.modifiers.infiniteMana;
+    const double max = std::max(infinite ? 1.0 : 0.0, aggregate.modifiers.maxMana);
     ManaPool* pool = world.tryGet<ManaPool>(player);
     // Nothing on the bar grants a pool and the flower has never carried one:
     // the overwhelmingly common case, and it must not put a component on every
@@ -1824,6 +1830,8 @@ void PetalSystem::updateManaPool(World& world, Entity player, const Aggregate& a
     }
 
     pool->max = max;
+    pool->infinite = infinite;
+    if (infinite) { pool->current = max; return; }
     pool->current += aggregate.modifiers.passiveManaPerSecond * dt;
     // Clamped DOWN as well as up: taking a magic flower off shrinks the pool,
     // and mana it can no longer hold is spilled rather than banked against the

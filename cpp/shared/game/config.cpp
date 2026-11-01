@@ -2124,6 +2124,12 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         m.evasion = std::min(0.95, m.evasion * boost);
         m.damageReflection *= boost;
         if (c.id == "lentil") m.petalAttractionRadius = kWorldSize * 0.2;
+        if (c.id == "sparkle") {
+            constexpr double intLimit = 2147483647.0;
+            s.damage = intLimit;
+            s.health = intLimit;
+            s.petalArmor = intLimit;
+        }
     }
     return s;
 }

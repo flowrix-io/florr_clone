@@ -302,7 +302,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin guild_force_join", "Force a player into a guild", true},
     {"/admin guild_list", "List all guilds", true},
     {"/admin guild_info", "Show info for a guild by id", true},
-    {"/admin restart", "Schedule server restart: restart [<N>(s|m|h)|cancel|status]", true},
+    {"/admin restart", "Restart selected biomes or schedule server restart: restart [<biome> ...|<N>(s|m|h)|cancel|status|list]", true},
     {"/admin backup_db", "Back up the database: backup_db [list]", true},
     {"/admin db", "Open the database editor (full admins): /admin db <key> [username]", true},
     {"/admin gui", "Open the admin dashboard: players, bags, control, spawn, give, announce", true},
