@@ -507,7 +507,7 @@ private:
                          std::vector<Entity>& out);
     /// Raise the first corpse in `realm` within reach of a yggdrasil. Returns
     /// whether one was raised, which is what spends the petal.
-    bool revivePlayerNear(World& world, Entity reviver, Realm realm, Vec2 at, double nowMillis);
+    bool revivePlayerNear(World& world, Entity reviver, Realm realm, Vec2 at, double nowMillis, Rarity rarity);
     /// The field laid, or NULL_ENTITY when it would be nothing.
     Entity emitGroundEffect(World& world, Entity player, Vec2 at, GroundEffectKind kind,
                             double radius, double damagePerSecond, double slowFactor,

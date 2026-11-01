@@ -22,7 +22,7 @@ namespace {
 
 const char* const kPetalsJson = R"JSON({
   "basic":    {"name":"Basic","damage":10,"health":10,"size":2,"cooldown":1200,"count":1,"color":"#90EE90"},
-  "icosahedron":{"name":"Icosahedron","damage":10,"health":10,"size":2,"cooldown":2500,"count":1,"color":"#8B5CF6"},
+  "icosahedron":{"name":"Icosahedron","damage":10,"health":10,"petalArmor":10,"size":2,"cooldown":2500,"count":1,"color":"#8B5CF6"},
   "sandy":    {"name":"Sandy","damage":4,"health":12,"size":1,"cooldown":800,"count":4,"clumped":true,"color":"#8B0000"},
   "spready":  {"name":"Spready","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"color":"#F0BD48"},
   "hanging":  {"name":"Hanging","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"clumpOutsideRing":true,"color":"#F0BD48"},
@@ -42,6 +42,8 @@ const char* const kPetalsJson = R"JSON({
   "emitter":  {"name":"Emitter","damage":2,"health":null,"size":1,"cooldown":1000,"count":1,"projectile":{"count":2,"spreadAngle":0.3,"speed":400,"distance":400},"color":"#00FF00"},
   "lucky":    {"name":"Lucky","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"luck":2,"speed":1.5,"magnetism":50},"color":"#FFD700"},
   "reacher":  {"name":"Reacher","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"attackRange":50},"color":"#00FFFF"},
+  "faster": {"name":"Faster","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"noPhysics":true,"playerModifiers":{"rotationSpeed":1.1},"color":"#FFFFFF"},
+  "powder": {"name":"Powder","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"playerModifiers":{"speed":1.1},"color":"#000000"},
   "anchor":   {"name":"Anchor","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"playerModifiers":{"rotationSpeed":0},"color":"#888888"},
   "inflator": {"name":"Inflator","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"playerRadius":1.5},"color":"#FF00FF"},
   "stinky":   {"name":"Stinky","damage":0,"health":1,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRange":0.75},"color":"#8B4513"},
@@ -1011,7 +1013,8 @@ TEST(icosahedron_ricochet_hits_at_most_four_distinct_mobs_once_then_returns) {
     CHECK(furthestTravel >= 200.0);
     CHECK(distanceSq(rig.position(petal), start) < 1.0);
     CHECK(rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis > rig.now);
-    CHECK_NEAR(rig.world.get<Health>(petal).current, 6.0, 1e-9);
+    // Its armor absorbs the four small recoil chips from the chain.
+    CHECK_NEAR(rig.world.get<Health>(petal).current, 10.0, 1e-9);
     // Back on the ring, ordinary hits still work while the next chain charges.
     // First remove its old target so it cannot wear the petal down to a break.
     rig.world.destroy(first);
@@ -1050,6 +1053,11 @@ TEST(icosahedron_ricochet_skips_invalid_targets_and_recovers_when_target_dies) {
     CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.target, target);
     rig.world.destroy(target);
     rig.tick();
+    // The second hit now searches the entire realm when the nearer mob dies.
+    CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.target, tooFar);
+    CHECK_NEAR(rig.world.get<Health>(tooFar).current, 10000.0, 1e-9);
+    rig.world.destroy(tooFar);
+    rig.tick();
     if (rig.world.get<PetalInstance>(petal).ricochet.active) {
         CHECK(rig.world.get<PetalInstance>(petal).ricochet.returning);
         CHECK(rig.tickUntil([&] {
@@ -1057,7 +1065,6 @@ TEST(icosahedron_ricochet_skips_invalid_targets_and_recovers_when_target_dies) {
         }, 120));
     }
     CHECK(distanceSq(rig.position(petal), start) < 1.0);
-    CHECK_NEAR(rig.world.get<Health>(tooFar).current, 10000.0, 1e-9);
 }
 
 TEST(icosahedron_ricochet_only_hits_one_overlapping_mob_per_tick) {
@@ -1161,7 +1168,9 @@ TEST(icosahedron_ricochet_breaks_and_reloads_with_fresh_flight_state) {
     rig.settleEquips();
     const Entity petal = rig.petals(0).front();
     rig.world.get<Health>(petal).current = 1.0;
-    addMob(rig, rig.position(petal));
+    const Entity mob = addMob(rig, rig.position(petal));
+    // Force a lethal bite through its ten points of armor.
+    rig.world.add<ContactDamage>(mob, ContactDamage{11.0});
     CombatSystem combat;
     ricochetCombatTick(rig, combat);
     CHECK(rig.world.has<Dead>(petal));
@@ -6035,4 +6044,134 @@ TEST(a_nearer_crown_of_another_tier_lends_its_own) {
     const PetalInstance& unique = rig.world.get<PetalInstance>(lentTo(rig, other).front());
     CHECK(unique.creditTo == rig.player);
     CHECK(unique.rarity == Rarity::Unique);
+}
+
+TEST(admin_faster_stacked_ring_stays_outside_the_flower_and_lands_hits) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basic", Rarity::Admin);
+    for (int slot = 1; slot < kLoadoutActiveSlots; ++slot) rig.equip(slot, "faster", Rarity::Admin);
+    rig.setFlags(net::InputAttack);
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const double radius = rig.ring().radius;
+    const Entity mob = addMob(rig, rig.position(rig.player) + Vec2{radius * 1.25, 0});
+    rig.world.get<Body>(mob).radius = 35;
+    rig.world.get<Health>(mob) = Health{1e9, 1e9};
+    CombatSystem combat;
+    for (int i = 0; i < 120; ++i) {
+        rig.tick();
+        CHECK(rig.radiusOf(petal) > radius * 0.7);
+        CHECK(rig.radiusOf(petal) < radius * 2.0);
+        ricochetCombatTick(rig, combat);
+    }
+    CHECK(rig.world.get<Health>(mob).current < 1e9);
+}
+
+TEST(admin_powder_speed_is_effective_and_resets_when_unequipped) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "powder", Rarity::Admin);
+    rig.withMovement();
+    rig.setMove(0);
+    rig.tick(90);
+    CHECK(rig.world.get<PlayerModifiers>(rig.player).adminSpeed);
+    CHECK(rig.world.get<Motion>(rig.player).velocity.length() > kPlayerMaxSpeed * 15.0);
+    rig.unequip(0);
+    rig.tick(90);
+    CHECK(!rig.world.get<PlayerModifiers>(rig.player).adminSpeed);
+    CHECK(rig.world.get<Motion>(rig.player).velocity.length() < kPlayerMaxSpeed * 1.1);
+}
+
+TEST(admin_web_has_a_snail_slow_and_larger_longer_lived_field) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "web", Rarity::Admin);
+    rig.settleEquips();
+    rig.settleRing();
+    rig.setFlags(net::InputAttack);
+    rig.tick();
+    Query<GroundEffect, Lifetime> fields{rig.world};
+    CHECK_EQ(fields.count(), std::size_t(1));
+    fields.each([&](Entity, GroundEffect& field, Lifetime& lifetime) {
+        CHECK_NEAR(field.slowFactor, 0.05, 1e-9);
+        CHECK(field.radius > 1000.0);
+        CHECK_NEAR(lifetime.remainingSeconds, 30.0, 1e-9);
+    });
+}
+
+TEST(icosahedron_scaled_armor_is_spawned_and_blunts_real_damage) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron", Rarity::Apex);
+    rig.settleEquips();
+    const Entity petal = rig.petals(0).front();
+    const double armor = 10.0 * petalStatScale(Rarity::Apex);
+    CHECK_NEAR(rig.world.get<Armor>(petal).amount, armor, 1e-9);
+    const double before = rig.world.get<Health>(petal).current;
+    const Entity mob = addMob(rig, rig.position(petal));
+    CombatSystem combat;
+    combat.applyDamage(rig.world, petal, mob, armor + 7.0, rig.now, DamageKind::Recoil);
+    CHECK_NEAR(rig.world.get<Health>(petal).current, before - 7.0, 1e-9);
+}
+
+TEST(icosahedron_second_hit_ignores_distance_and_outlives_the_old_flight_timeout) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 start = rig.position(petal);
+    const Entity first = addMob(rig, start);
+    const Entity second = addMob(rig, start + Vec2{10000, 0});
+    rig.world.add<ContactDamage>(first, ContactDamage{1000000.0});
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.hits, 1);
+    CHECK(rig.world.get<PetalInstance>(petal).ricochet.protectSecondHit);
+    rig.tick(100); // More than the old two-second deadline, still travelling.
+    combat.applyDamage(rig.world, petal, first, 1000000.0, rig.now);
+    CHECK(!rig.world.has<Dead>(petal));
+    CHECK(!rig.world.get<PetalInstance>(petal).ricochet.returning);
+    for (int i = 0; i < 400 && rig.world.get<PetalInstance>(petal).ricochet.hits < 2; ++i) {
+        rig.tick();
+        ricochetCombatTick(rig, combat);
+    }
+    CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.hits, 2);
+    CHECK(rig.world.get<Health>(second).current < 10000.0);
+}
+
+TEST(icosahedron_admin_chain_stops_at_its_rarity_limit_without_rehitting_mobs) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "icosahedron", Rarity::Admin);
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 start = rig.position(petal);
+    std::vector<Entity> mobs;
+    for (int i = 0; i < 40; ++i) {
+        const Entity mob = addMob(rig, start + Vec2{(i % 8) * 18.0, (i / 8) * 18.0});
+        rig.world.get<Health>(mob) = Health{1e9, 1e9};
+        mobs.push_back(mob);
+    }
+    CHECK_EQ(rig.world.get<PetalInstance>(petal).ricochet.maxHits, 32);
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    for (int i = 0; i < 400 && rig.world.get<PetalInstance>(petal).ricochet.hits < 32; ++i) {
+        rig.tick();
+        ricochetCombatTick(rig, combat);
+    }
+    const auto& flight = rig.world.get<PetalInstance>(petal).ricochet;
+    CHECK_EQ(flight.hits, 32);
+    CHECK(flight.returning);
+    int hit = 0;
+    for (const Entity mob : mobs) hit += rig.world.get<Health>(mob).current < 1e9;
+    CHECK_EQ(hit, 32);
+    CHECK(rig.tickUntil([&] { return !rig.world.get<PetalInstance>(petal).ricochet.active; }, 120));
+    CHECK_NEAR(rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis - rig.now, 1250.0, 1e-6);
 }

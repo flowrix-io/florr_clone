@@ -533,15 +533,16 @@ Entity CombatSystem::ricochetTarget(World& world, Entity petal, double nowMillis
     const auto valid = [&](Entity mob) {
         const auto* target = world.tryGet<Transform>(mob);
         const auto* faction = world.tryGet<Faction>(mob);
-        return target && world.has<MobTag>(mob) && target->realm == at->realm &&
+        return target && std::isfinite(target->position.x) && std::isfinite(target->position.y) &&
+               world.has<MobTag>(mob) && target->realm == at->realm &&
                !world.has<Pet>(mob) && (!faction || faction->team != Team::Players) &&
                !flight.visitedMob(mob) &&
-               distanceSq(target->position, owner->position) <= 450.0 * 450.0 &&
+               (flight.hits < 2 || distanceSq(target->position, owner->position) <= 450.0 * 450.0) &&
                canHit(world, mob, petal, nowMillis);
     };
     if (valid(flight.target)) return flight.target;
     Entity best = NULL_ENTITY;
-    double nearest = 180.0 * 180.0;
+    double nearest = flight.hits < 2 ? std::numeric_limits<double>::infinity() : 180.0 * 180.0;
     Query<MobTag, Transform, Body> mobs{world};
     mobs.each([&](Entity mob, MobTag&, Transform& target, Body&) {
         const double gap = distanceSq(target.position, at->position);
@@ -728,7 +729,15 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         // of nothing is still a swing".
         const bool blocked = healingBlocked(world, victim, nowMillis);
         Health& health = world.get<Health>(victim);
-        if (!blocked) health.current -= amount;
+        if (!blocked) {
+            const PetalInstance* petal = world.tryGet<PetalInstance>(source);
+            if (petal != nullptr && petal->rarity == Rarity::Admin) {
+                // Admin Glitch tops up the touched mob instead of healing a
+                // fixed negative-damage amount. It still obeys heal lockouts.
+                amount = -std::max(0.0, health.max - health.current);
+            }
+            health.current -= amount;
+        }
         if (isDirectHit(kind)) {
             health.flashUntilMillis = std::max(health.flashUntilMillis,
                                                nowMillis + kHurtFlashMillis);
