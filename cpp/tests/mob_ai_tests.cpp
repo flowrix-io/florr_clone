@@ -44,38 +44,10 @@ bool contentReady() {
 }
 
 /// A fixture pair in the PROCESS-WIDE registry -- the one the AI reads -- for
-/// as long as this lives, and the shipped content put back when it goes.
-///
-/// For a property no shipped mob the AI can steer carries any more. Every
-/// other test here steers shipped mobs out of that same registry and expects
-/// to find them there, so a fixture must never outlive the test that loaded
-/// it: the shipped content goes back on every way out of the test, an early
-/// return included. Declared before the Sim, so the Sim -- whose AI caches
+/// a property no shipped mob the AI can steer carries any more
+/// (fixture_content.h). Declared before the Sim, so the Sim -- whose AI caches
 /// what it read off the fixture -- is gone first.
-class FixtureContent {
-public:
-    FixtureContent(const std::string& mobs, const std::string& petals) {
-        const std::string dir = testsupport::tempDir("flix_mob_ai_fixture");
-        std::string error;
-        loaded_ = testsupport::writeText(dir + "/mobs.json", test::fixtureMobs(mobs)) &&
-                  testsupport::writeText(dir + "/petals.json", test::fixturePetals(petals)) &&
-                  loadContent(dir, error);
-        if (!loaded_) std::printf("    (the fixture content did not load: %s)\n", error.c_str());
-    }
-    ~FixtureContent() {
-        std::string error;
-        if (!loadContent(testsupport::dataDir(), error)) {
-            std::printf("    (the shipped content did not load back: %s)\n", error.c_str());
-        }
-    }
-    FixtureContent(const FixtureContent&) = delete;
-    FixtureContent& operator=(const FixtureContent&) = delete;
-
-    bool loaded() const { return loaded_; }
-
-private:
-    bool loaded_ = false;
-};
+using test::FixtureContent;
 
 // --- the harness ------------------------------------------------------------
 
@@ -340,7 +312,7 @@ TEST(reversed_mobs_face_away_from_where_they_are_going) {
     // more: the roach this was written against was redrawn facing forwards,
     // and the one reversed mob left, garbage, never moves at all. So the flag
     // goes on a fixture mob built like the roach.
-    FixtureContent fixture(R"({
+    FixtureContent fixture(testsupport::tempDir("flix_mob_ai_fixture"), R"({
         "hopper": {"name": "Hopper", "health": 50, "damage": 20, "size": 2.3, "speed": 1,
                    "cooldown": 2000, "range": 300, "ai_type": "neutral", "groups": ["sewers"],
                    "reversed": true, "color": "#914911", "image": "<svg/>"}

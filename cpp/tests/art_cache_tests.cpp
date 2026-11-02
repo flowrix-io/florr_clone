@@ -73,8 +73,54 @@ TEST(art_cache_is_a_no_op_off_the_web) {
 
 using flix::testsupport::shippedContent;
 
+namespace {
+
+/// A square petal and the mob drawn as it, written here: the yellow it is
+/// painted, the green it is repainted from super up and the outline round it
+/// are the test's, where the shipped square's are the author's to recolour.
+/// At 64 px its 32-unit document is doubled: the stroke runs down x = 4,
+/// 6 px wide, and the middle of the box is all fill.
+constexpr std::uint32_t kSquareFill = 0xFFE869u;
+constexpr std::uint32_t kSquareStroke = 0xCFBC55u;
+constexpr std::uint32_t kSuperSquareFill = 0x8AFF69u;
+const ContentRegistry& squareContent() {
+    static const ContentRegistry registry = [] {
+        ContentRegistry r;
+        std::string error;
+        if (!test::loadFixtureContent(r, testsupport::tempDir("flix_art_cache_square"), R"({
+            "square": {"name":"Square","health":20,"damage":10,"size":1.3333,
+                       "visual_scale":0.8081,"speed":0,"image":"$petal:square"}
+        })",
+                                      R"({
+            "square": {"name":"Square","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,
+                       "rarityFills":{"super":"#8AFF69"},
+                       "image":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\"><rect width=\"28\" height=\"28\" x=\"2\" y=\"2\" fill=\"#ffe869\"/><path d=\"M 2 2 L 2 30 M 2 30 L 30 30 M 30 30 L 30 2 M 30 2 L 2 2 M 2 2 Z\" stroke=\"#cfbc55\" stroke-linecap=\"round\" stroke-width=\"3\"/></svg>"}
+        })",
+                                      error)) {
+            std::printf("    (the square fixture did not load: %s)\n", error.c_str());
+        }
+        return r;
+    }();
+    return registry;
+}
+
+} // namespace
+
 TEST(icosahedron_art_animates_in_the_actual_petal_renderer) {
-    const ContentRegistry& content = shippedContent();
+    // An animated document of the icosahedron's kind -- a body turning on an
+    // animateTransform -- written here: whether the shipped art moves is the
+    // author's to change.
+    ContentRegistry content;
+    std::string error;
+    CHECK(test::loadFixtureContent(content, testsupport::tempDir("flix_art_cache_animated"), R"({
+        "plain": {"name":"Plain","health":1,"damage":1,"size":1}
+    })",
+                                   R"({
+        "icosahedron": {"name":"Icosahedron","damage":19,"health":20,"size":2,"cooldown":2500,
+                        "count":1,
+                        "image":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0 16 16;360 16 16\" dur=\"6s\" repeatCount=\"indefinite\"/><path d=\"M16 2 3 9 16 8Z\" fill=\"#c4b5fd\"/><path d=\"M3 9 8 22 16 8Z\" fill=\"#7c3aed\"/></g></svg>"}
+    })",
+                                   error));
     const auto id = content.petalIndex("icosahedron");
     CHECK(id != kInvalidIndex);
     if (id == kInvalidIndex) return;
@@ -142,18 +188,16 @@ TEST(the_procedural_markers_name_painters_this_build_has) {
 }
 
 TEST(a_super_square_is_repainted_green_with_a_derived_outline) {
-    // petals.json repaints the square from super up (`rarityFills`): one fill
-    // colour named, the outline worked out from it by the rule every gardn
-    // body's outline follows. Below super it is the yellow it always was.
-    const ContentRegistry& content = shippedContent();
+    // A square repainted from super up (`rarityFills`): one fill colour named,
+    // the outline worked out from it by the rule every gardn body's outline
+    // follows. Below super it is the yellow it is drawn in.
+    const ContentRegistry& content = squareContent();
     CHECK(content.loaded());
     const std::uint16_t square = content.petalIndex("square");
     CHECK(square != kInvalidIndex);
     SpriteCache sprites;
     sprites.build(content, testsupport::dataDir());
 
-    // At 64 px the 32-unit document is doubled: the stroke runs down x = 4,
-    // 6 px wide, and the middle of the box is all fill.
     const auto pixelsAt = [&](Rarity rarity) {
         Canvas canvas = Canvas::createVirtual(64, 64);
         sprites.drawPetal(canvas, square, rarity, 32, 32, 64, 0, 0);
@@ -167,22 +211,22 @@ TEST(a_super_square_is_repainted_green_with_a_derived_outline) {
     };
 
     const auto ultra = pixelsAt(Rarity::Ultra);
-    CHECK(ultra.first == 0xFFE869u);
-    CHECK(ultra.second == 0xCFBC55u);
+    CHECK(ultra.first == kSquareFill);
+    CHECK(ultra.second == kSquareStroke);
     for (const Rarity tier : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
         const auto repainted = pixelsAt(tier);
-        CHECK(repainted.first == 0x8AFF69u);
-        CHECK(repainted.second == outlineOf(0x8AFF69u));
+        CHECK(repainted.first == kSuperSquareFill);
+        CHECK(repainted.second == outlineOf(kSuperSquareFill));
     }
     CHECK(outlineOf(0x8AFF69u) == 0x6ECC54u);
 }
 
 TEST(the_square_mob_is_drawn_as_the_square_petal_is_at_every_tier) {
-    // mobs.json draws the square mob as the square petal (`$petal:square`): the
-    // petal's own sprite at the mob's tier, so the same box drawn either way is
-    // the same pixels -- yellow below super, green from there up, in the world
-    // and on a bestiary tile alike.
-    const ContentRegistry& content = shippedContent();
+    // A mob drawn as the square petal (`$petal:square`) is the petal's own
+    // sprite at the mob's tier, so the same box drawn either way is the same
+    // pixels -- yellow below super, green from there up, in the world and on a
+    // bestiary tile alike.
+    const ContentRegistry& content = squareContent();
     const std::uint16_t mob = content.mobIndex("square");
     const std::uint16_t petal = content.petalIndex("square");
     CHECK(mob != kInvalidIndex);
@@ -205,7 +249,8 @@ TEST(the_square_mob_is_drawn_as_the_square_petal_is_at_every_tier) {
         const std::size_t middle = (32u * 64u + 32u) * 4u;
         const std::uint32_t fill = (std::uint32_t{asMob[middle]} << 16) |
                                    (std::uint32_t{asMob[middle + 1]} << 8) | asMob[middle + 2];
-        CHECK(fill == (rarityIndex(tier) >= rarityIndex(Rarity::Super) ? 0x8AFF69u : 0xFFE869u));
+        CHECK(fill == (rarityIndex(tier) >= rarityIndex(Rarity::Super) ? kSuperSquareFill
+                                                                       : kSquareFill));
     }
 
     // The bestiary's picture wears the tier of its cell.
@@ -216,8 +261,8 @@ TEST(the_square_mob_is_drawn_as_the_square_petal_is_at_every_tier) {
         return (std::uint32_t{image[middle]} << 16) | (std::uint32_t{image[middle + 1]} << 8) |
                image[middle + 2];
     };
-    CHECK(tile(Rarity::Mythic) == 0xFFE869u);
-    CHECK(tile(Rarity::Unique) == 0x8AFF69u);
+    CHECK(tile(Rarity::Mythic) == kSquareFill);
+    CHECK(tile(Rarity::Unique) == kSuperSquareFill);
 }
 
 TEST(a_mob_drawn_as_a_petal_that_does_not_exist_is_a_plain_disc) {

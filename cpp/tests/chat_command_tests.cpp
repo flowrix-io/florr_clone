@@ -3476,11 +3476,12 @@ TEST(an_apex_pickup_is_announced_with_the_kill_lines_credit) {
     CHECK(!sawText(client, "has been collected by"));
 
     dropUnder(Rarity::Apex);
-    CHECK(h.stepUntil({&client}, [&] {
-        return sawText(client, "<b style=\"color: #ff00ff;\">An Apex Rose has been collected by "
-                               "<span style=\"color: #00ff00;\">@boss</span> "
-                               "[<span style=\"color: yellow;\">Boss</span>]!</b>");
-    }, 120));
+    // The petal's display name is the author's; the sentence around it is not.
+    const std::string line = "<b style=\"color: #ff00ff;\">An Apex " + content().petal(rose).name +
+                             " has been collected by "
+                             "<span style=\"color: #00ff00;\">@boss</span> "
+                             "[<span style=\"color: yellow;\">Boss</span>]!</b>";
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, line); }, 120));
 }
 
 TEST(a_boss_no_player_killed_is_still_announced) {

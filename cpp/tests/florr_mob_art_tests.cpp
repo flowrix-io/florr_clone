@@ -349,8 +349,17 @@ TEST(a_hornet_wears_its_missile_until_it_fires_it) {
             mobShotOwnerScale(body));
         // Facing +X, so the tail and the muzzle are along -X.
         const Vec2 muzzle{-stingerMuzzleDistance(body, shot), 0.0};
-        const auto stingAt = [&muzzle](const std::vector<std::uint8_t>& frame) {
-            return std::abs(brightnessAt(frame, muzzle) - 0x33) <= 8;
+        // The sting is the ammunition's own artwork, so it is told by that
+        // artwork's colour -- the middle of its document, drawn on its own --
+        // which is petals.json's to repaint.
+        Canvas alone = Canvas::createVirtual(64, 64);
+        shippedSprites().drawPetal(alone, config.projectile.ammoPetalIndex, Rarity::Common, 32, 32,
+                                   64, 0, 0);
+        const std::vector<std::uint8_t> art = alone.getImageData(0, 0, 64, 64);
+        const std::size_t middle = (32u * 64u + 32u) * 4u;
+        const int sting = std::max({art[middle], art[middle + 1], art[middle + 2]});
+        const auto stingAt = [&muzzle, sting](const std::vector<std::uint8_t>& frame) {
+            return std::abs(brightnessAt(frame, muzzle) - sting) <= 8;
         };
         const bool loaded = stingAt(mobFrame(id, 0.0, 0, {}));
         const bool fired = stingAt(mobFrame(id, 0.0, net::StateUnloaded, {}));

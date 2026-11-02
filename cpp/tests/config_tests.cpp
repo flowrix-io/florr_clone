@@ -122,6 +122,21 @@ bool loadSyntheticRaw(ContentRegistry& out, const Synthetic& files, std::string&
     return out.loadFiles(mobs, petals, error);
 }
 
+/// `petals` beside one plain mob, for a case about how a petal's entry is
+/// read: a content pair needs a mob to load at all, and none of these cases
+/// is about it. The shipped petals.json is the author's to rebalance, so a
+/// case about the loader writes the entry it reads rather than borrowing one
+/// whose numbers can change under it.
+bool loadPetals(ContentRegistry& out, const char* petals) {
+    Synthetic files;
+    files.mobs = R"JSON({"plain": {"name": "Plain", "health": 3, "damage": 1, "size": 1}})JSON";
+    files.petals = petals;
+    std::string error;
+    if (loadSynthetic(out, files, error)) return true;
+    std::printf("    (fixture did not load: %s)\n", error.c_str());
+    return false;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -170,8 +185,22 @@ TEST(the_catalogue_is_the_files_own_order_with_the_eggs_appended) {
         CHECK_EQ(r.petal(order[i]).id, written[i]);
     }
     // ...which can only tell the two orders apart while the file is not in
-    // alphabetical order itself.
-    CHECK(!std::is_sorted(written.begin(), written.end()));
+    // alphabetical order itself, and whether it is is the author's business.
+    // A fixture written out of order tells them apart whatever the file does.
+    {
+        ContentRegistry fixture;
+        CHECK(loadPetals(fixture, R"JSON({
+          "zinnia": {"name": "Zinnia", "health": 1, "damage": 1, "size": 1, "cooldown": 1, "count": 1},
+          "aster": {"name": "Aster", "health": 1, "damage": 1, "size": 1, "cooldown": 1, "count": 1}
+        })JSON"));
+        const std::vector<std::uint16_t>& fixtureOrder = fixture.petalDisplayOrder();
+        CHECK(fixtureOrder.size() >= 2u);
+        if (fixtureOrder.size() >= 2u) {
+            CHECK_EQ(fixture.petal(fixtureOrder[0]).id, std::string("zinnia"));
+            CHECK_EQ(fixture.petal(fixtureOrder[1]).id, std::string("aster"));
+        }
+        CHECK(fixture.petalIndex("aster") < fixture.petalIndex("zinnia"));
+    }
 
     // The eggs come last, because that is where the reference appends them:
     // straight after the file's own last key, one per laying mob, in
@@ -188,20 +217,34 @@ TEST(the_catalogue_is_the_files_own_order_with_the_eggs_appended) {
     // A generated egg carries the mob's colour in its art and hatches the mob
     // itself where it has no pet variant: a summoned soldier ant is a soldier
     // ant, and the yellow it wears is the client's (kPetBodyColor), not a
-    // second mob's.
-    const std::uint16_t egg = r.petalIndex("soldier_ant_egg");
-    CHECK(egg != kInvalidIndex);
-    const PetalConfig& p = r.petal(egg);
-    CHECK_EQ(p.name, std::string("Soldier Ant Egg"));
-    CHECK_EQ(p.petMobId, std::string("soldier_ant"));
-    CHECK_EQ(p.petMobIndex, r.mobIndex("soldier_ant"));
-    CHECK(p.image.find(r.mob(r.mobIndex("soldier_ant")).color) != std::string::npos);
-    CHECK(!p.isAdminPetal);
-    // A pet is not something that lays an egg.
-    CHECK_EQ(r.petalIndex("sun_pet_egg"), kInvalidIndex);
+    // second mob's. Every generated one: which eggs petals.json writes by hand
+    // instead is the author's choice.
+    const std::vector<std::string> laying = generatedEggMobs();
+    for (const std::string& mobId : laying) {
+        const std::uint16_t egg = r.petalIndex(mobId + "_egg");
+        const std::uint16_t mob = r.mobIndex(mobId);
+        CHECK(egg != kInvalidIndex);
+        CHECK(mob != kInvalidIndex);
+        if (egg == kInvalidIndex || mob == kInvalidIndex) continue;
+        const PetalConfig& p = r.petal(egg);
+        const std::string pet =
+            r.mobIndex(mobId + "_pet") != kInvalidIndex ? mobId + "_pet" : mobId;
+        CHECK_EQ(p.name, r.mob(mob).name + " Egg");
+        CHECK_EQ(p.petMobId, pet);
+        CHECK_EQ(p.petMobIndex, r.mobIndex(pet));
+        CHECK(p.image.find(r.mob(mob).color) != std::string::npos);
+        CHECK(!p.isAdminPetal);
+        // A pet is not something that lays an egg.
+        if (pet != mobId) {
+            CHECK_EQ(r.petalIndex(pet + "_egg"), kInvalidIndex);
+        }
+    }
 
     // The sun egg hatches a bee wearing the sun's art: every stat a bee's at
-    // every tier, not the stationary giant the egg is named after.
+    // every tier, not the stationary giant the egg is named after. (Only while
+    // the egg is the generated one; a hand-written sun egg hatches what it
+    // says.)
+    if (std::find(laying.begin(), laying.end(), "sun") == laying.end()) return;
     const PetalConfig& sunEgg = r.petal(r.petalIndex("sun_egg"));
     CHECK_EQ(sunEgg.petMobId, std::string("sun_pet"));
     const std::uint16_t bee = r.mobIndex("bee");
@@ -225,7 +268,12 @@ TEST(the_catalogue_is_the_files_own_order_with_the_eggs_appended) {
 }
 
 TEST(light_and_pollen_gain_petals_with_rarity) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "light": {"name": "Light", "health": 5, "damage": 7, "size": 1, "cooldown": 800, "count": 1},
+      "pollen": {"name": "Pollen", "health": 5, "damage": 8, "size": 1, "cooldown": 1000, "count": 1},
+      "plain": {"name": "Plain", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 2}
+    })JSON"));
     const std::uint16_t light = r.petalIndex("light");
     const std::uint16_t pollen = r.petalIndex("pollen");
     CHECK(light != kInvalidIndex);
@@ -239,8 +287,8 @@ TEST(light_and_pollen_gain_petals_with_rarity) {
     CHECK_EQ(r.petalStats(pollen, Rarity::Ultra).count, 5);
     CHECK_EQ(r.petalStats(pollen, Rarity::Apex).count, 7);
     // Everything else stays flat across the ladder.
-    const std::uint16_t basic = r.petalIndex("basic");
-    CHECK_EQ(r.petalStats(basic, Rarity::Apex).count, r.petal(basic).count);
+    const std::uint16_t plain = r.petalIndex("plain");
+    CHECK_EQ(r.petalStats(plain, Rarity::Apex).count, 2);
 }
 
 TEST(every_shipped_entry_parses_into_something_usable) {
@@ -397,37 +445,32 @@ TEST(mob_speed_is_converted_to_units_per_second) {
 }
 
 TEST(petal_stats_scale_across_rarities) {
-    const ContentRegistry& r = shipped().registry;
-    const std::uint16_t basic = r.petalIndex("basic");
-    CHECK(basic != kInvalidIndex);
-
-    // The common figures are the entry's own, read off the file: what is under
-    // test is the ladder they are run up, not the numbers the author chose.
-    const Json& petals = shippedJson("petals.json");
-    const double damage = petals["basic"]["damage"].asDouble();
-    const double health = petals["basic"]["health"].asDouble();
-    const double reload = petals["basic"]["cooldown"].asDouble();
-    CHECK(damage > 0.0);
-    CHECK(health > 0.0);
-    CHECK(reload > 0.0);
+    // What is under test is the ladder the common figures are run up, not the
+    // numbers the author chose, so the entries are written here.
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "plain": {"name": "Plain", "health": 12, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+      "healer": {"name": "Healer", "health": 5, "damage": 5, "size": 0.9, "cooldown": 3500,
+        "count": 1, "burstHeal": 7.5, "burstHealChargeMs": 1500, "defendOnly": true}
+    })JSON"));
+    const std::uint16_t plain = r.petalIndex("plain");
+    CHECK(plain != kInvalidIndex);
     for (int tier = 0; tier < kRarityCount; ++tier) {
         const Rarity rarity = static_cast<Rarity>(tier);
-        const PetalStats s = r.petalStats(basic, rarity);
-        CHECK_NEAR(s.damage, damage * petalStrengthScale(rarity), std::fabs(s.damage) * 1e-9);
-        CHECK_NEAR(s.health, health * petalStrengthScale(rarity), std::fabs(s.health) * 1e-9);
-        CHECK_NEAR(s.reloadMillis, rarity == Rarity::Admin ? reload / 2.0 : reload, 1e-9);
+        const PetalStats s = r.petalStats(plain, rarity);
+        CHECK_NEAR(s.damage, 10.0 * petalStrengthScale(rarity), std::fabs(s.damage) * 1e-9);
+        CHECK_NEAR(s.health, 12.0 * petalStrengthScale(rarity), std::fabs(s.health) * 1e-9);
+        CHECK_NEAR(s.reloadMillis, rarity == Rarity::Admin ? 1250.0 : 2500.0, 1e-9);
         CHECK(s.breakable);
     }
 
     // Healing rides the softer curve, or a maxed loadout is unkillable.
-    const std::uint16_t rose = r.petalIndex("rose");
-    CHECK(rose != kInvalidIndex);
-    const double heal = petals["rose"]["burstHeal"].asDouble();
-    CHECK(heal > 0.0);
-    CHECK_NEAR(r.petalStats(rose, Rarity::Common).heal, heal, 1e-9);
-    CHECK_NEAR(r.petalStats(rose, Rarity::Apex).heal, heal * petalHealScale(Rarity::Apex), 1e-6);
-    CHECK(r.petalStats(rose, Rarity::Apex).heal < heal * petalStatScale(Rarity::Apex));
-    CHECK(r.petal(rose).defendOnly);
+    const std::uint16_t healer = r.petalIndex("healer");
+    CHECK(healer != kInvalidIndex);
+    CHECK_NEAR(r.petalStats(healer, Rarity::Common).heal, 7.5, 1e-9);
+    CHECK_NEAR(r.petalStats(healer, Rarity::Apex).heal, 7.5 * petalHealScale(Rarity::Apex), 1e-6);
+    CHECK(r.petalStats(healer, Rarity::Apex).heal < 7.5 * petalStatScale(Rarity::Apex));
+    CHECK(r.petal(healer).defendOnly);
 }
 
 TEST(a_universal_petal_is_an_apex_one_with_sqrt2_its_health_and_damage) {
@@ -494,10 +537,14 @@ TEST(a_universal_petal_is_an_apex_one_with_sqrt2_its_health_and_damage) {
             CHECK(false);
         }
     }
-    // Spelled out once on the plainest petal: 10 at common is 196830 at apex.
-    const PetalStats basic = r.petalStats(r.petalIndex("basic"), Rarity::Universal);
-    CHECK_NEAR(basic.damage, 196830.0 * root2, 1e-6);
-    CHECK_NEAR(basic.health, 196830.0 * root2, 1e-6);
+    // Spelled out once on a plain petal: 10 at common is 196830 at apex.
+    ContentRegistry fixture;
+    CHECK(loadPetals(fixture, R"JSON({
+      "plain": {"name": "Plain", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
+    const PetalStats plain = fixture.petalStats(fixture.petalIndex("plain"), Rarity::Universal);
+    CHECK_NEAR(plain.damage, 196830.0 * root2, 1e-6);
+    CHECK_NEAR(plain.health, 196830.0 * root2, 1e-6);
 }
 
 TEST(no_mob_is_universal) {
@@ -515,7 +562,16 @@ TEST(no_mob_is_universal) {
 }
 
 TEST(player_modifiers_scale_by_kind) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "clover": {"name": "Clover", "health": 10, "damage": 10, "size": 1, "cooldown": 2500,
+        "count": 1, "playerModifiers": {"luck": 0.08}},
+      "cactus": {"name": "Cactus", "health": 15, "damage": 15, "size": 1, "cooldown": 1000,
+        "count": 1, "playerModifiers": {"maxHealth": 1.1}},
+      "yin_yang": {"name": "Yin Yang", "health": 10, "damage": 10, "size": 1, "cooldown": 1000,
+        "count": 1},
+      "basic": {"name": "Basic", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
 
     // Additive: clover's luck scales straight up, 1x at common to 4x at unique.
     const std::uint16_t clover = r.petalIndex("clover");
@@ -542,7 +598,12 @@ TEST(player_modifiers_scale_by_kind) {
 }
 
 TEST(poo_cuts_mob_aggro_range_on_its_balanced_table_and_extrapolates_to_apex) {
-    const ContentRegistry& r = shipped().registry;
+    // The table was balanced against an authored 0.75, which is written here.
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "poo": {"name": "Poo", "health": 1, "damage": 0, "size": 1, "cooldown": 2500, "count": 1,
+        "playerModifiers": {"aggroRange": 0.75}, "defendOnly": true}
+    })JSON"));
     const std::uint16_t poo = r.petalIndex("poo");
     CHECK(poo != kInvalidIndex);
     if (poo == kInvalidIndex) return;
@@ -558,13 +619,17 @@ TEST(poo_cuts_mob_aggro_range_on_its_balanced_table_and_extrapolates_to_apex) {
 }
 
 TEST(bulb_grows_mob_aggro_range_on_the_same_compounding_curve_poo_cuts_on) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "bulb": {"name": "Bulb", "health": 10, "damage": 8, "size": 1.5, "cooldown": 627, "count": 1,
+        "playerModifiers": {"aggroRange": 1.33}, "defendOnly": true}
+    })JSON"));
     const std::uint16_t bulb = r.petalIndex("bulb");
     CHECK(bulb != kInvalidIndex);
     if (bulb == kInvalidIndex) return;
 
-    // The authored 1.33 reaches the registry unclamped, and every tier
-    // applies it once more.
+    // An authored 1.33 reaches the registry unclamped, and every tier applies
+    // it once more.
     for (int t = 0; t < kLadderRarityCount; ++t) {
         const double scale = r.petalStats(bulb, static_cast<Rarity>(t)).modifiers.aggroRange;
         CHECK_NEAR(scale, std::pow(1.33, t + 1), 1e-9);
@@ -572,21 +637,31 @@ TEST(bulb_grows_mob_aggro_range_on_the_same_compounding_curve_poo_cuts_on) {
 }
 
 TEST(talisman_evasion_steps_three_percent_a_tier_and_the_fly_dodges_nine_in_ten) {
-    const ContentRegistry& r = shipped().registry;
-    const std::uint16_t talisman = r.petalIndex("talisman");
-    const std::uint16_t fly = r.mobIndex("fly");
+    ContentRegistry petals;
+    CHECK(loadPetals(petals, R"JSON({
+      "talisman": {"name": "Talisman", "health": 10, "damage": 10, "size": 1, "cooldown": 2500,
+        "count": 1, "playerModifiers": {"evasion": 0.03}},
+      "plain": {"name": "Plain", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
+    const std::uint16_t talisman = petals.petalIndex("talisman");
     CHECK(talisman != kInvalidIndex);
-    CHECK(fly != kInvalidIndex);
-    if (talisman == kInvalidIndex || fly == kInvalidIndex) return;
+    if (talisman == kInvalidIndex) return;
 
-    // 3% at common, and another 3% for every tier above it: 30% at apex.
+    // 3% authored at common, and another 3% for every tier above it: 30% at
+    // apex.
     for (int t = 0; t < kLadderRarityCount; ++t) {
-        CHECK_NEAR(r.petalStats(talisman, static_cast<Rarity>(t)).modifiers.evasion,
+        CHECK_NEAR(petals.petalStats(talisman, static_cast<Rarity>(t)).modifiers.evasion,
                    0.03 * (t + 1), 1e-12);
     }
     // Read as a modifier, not dropped as an unknown key.
-    CHECK(!warned(r, "unknown key 'evasion'"));
-    CHECK_NEAR(r.petalStats(r.petalIndex("basic"), Rarity::Apex).modifiers.evasion, 0.0, 1e-12);
+    CHECK(!warned(petals, "unknown key 'evasion'"));
+    CHECK_NEAR(petals.petalStats(petals.petalIndex("plain"), Rarity::Apex).modifiers.evasion, 0.0,
+               1e-12);
+
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t fly = r.mobIndex("fly");
+    CHECK(fly != kInvalidIndex);
+    if (fly == kInvalidIndex) return;
 
     // A mob's chance is flat across the tiers.
     CHECK_NEAR(r.mobStats(fly, Rarity::Common).evasion, 0.9, 1e-12);
@@ -595,17 +670,16 @@ TEST(talisman_evasion_steps_three_percent_a_tier_and_the_fly_dodges_nine_in_ten)
 }
 
 TEST(salt_reflects_all_of_a_same_tier_hit_and_climbs_the_ladder_from_there) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "salt": {"name": "Salt", "health": 10, "damage": 10, "size": 1, "cooldown": 2500,
+        "count": 1, "playerModifiers": {"damageReflection": 1}},
+      "basic": {"name": "Basic", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
     const std::uint16_t salt = r.petalIndex("salt");
     CHECK(salt != kInvalidIndex);
     if (salt == kInvalidIndex) return;
 
-    // gardn's Salt body -- 10 health, 10 damage, radius 10, 2.5 s.
-    const PetalConfig& c = r.petal(salt);
-    CHECK_NEAR(c.health, 10.0, 1e-12);
-    CHECK_NEAR(c.damage, 10.0, 1e-12);
-    CHECK_NEAR(c.size, 1.0, 1e-12);
-    CHECK_NEAR(c.cooldownMillis, 2500.0, 1e-12);
     // All of a hit from its own tier, at every tier: the ladder is applied
     // against the attacker at the moment of the hit, not baked in here.
     for (int t = 0; t < kRarityCount; ++t) {
@@ -627,7 +701,15 @@ TEST(salt_reflects_all_of_a_same_tier_hit_and_climbs_the_ladder_from_there) {
 }
 
 TEST(special_petal_geometry_and_timers_follow_rarity_overrides) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "web": {"name": "Web", "health": 10, "damage": 5, "size": 1.2, "cooldown": 3000, "count": 1,
+        "webRadius": 90, "defendOnly": true},
+      "sponge": {"name": "Sponge", "health": 10, "damage": 10, "size": 1, "cooldown": 2000,
+        "count": 1, "spongeDamageDuration": 1000, "defendOnly": true},
+      "lentil": {"name": "Lentil", "health": 10, "damage": 10, "size": 1, "cooldown": 1000,
+        "count": 1, "attractionForce": 2000, "playerModifiers": {"petalAttractionRadius": 20}}
+    })JSON"));
     const std::uint16_t web = r.petalIndex("web");
     CHECK_NEAR(r.petalStats(web, Rarity::Common).webRadius, 90.0, 1e-12);
     CHECK_NEAR(r.petalStats(web, Rarity::Unique).webRadius, 198.0, 1e-12);
@@ -639,6 +721,55 @@ TEST(special_petal_geometry_and_timers_follow_rarity_overrides) {
     const std::uint16_t lentil = r.petalIndex("lentil");
     CHECK_NEAR(r.petalStats(lentil, Rarity::Uncommon).attractionForce, 2889.0, 1e-12);
     CHECK_NEAR(r.petalStats(lentil, Rarity::Apex).modifiers.petalAttractionRadius, 100.0, 1e-12);
+}
+
+TEST(a_kill_heal_rides_the_heal_ladder_and_its_duration_is_flat) {
+    // florr's totem builder: Heal on the heal ladder -- 243 at mythic and
+    // 243 x sqrt(3), its 420.888..., at ultra, on an authored 1 -- and one
+    // Duration at every tier.
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "totem": {"name": "Totem", "health": 10, "damage": 10, "size": 1.3, "cooldown": 2500,
+        "count": 1, "killHeal": 1, "killHealDuration": 10000, "defendOnly": true},
+      "plain": {"name": "Plain", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
+    const std::uint16_t totem = r.petalIndex("totem");
+    CHECK(totem != kInvalidIndex);
+    if (totem == kInvalidIndex) return;
+    CHECK_NEAR(r.petalStats(totem, Rarity::Common).killHealPerSecond, 1.0, 1e-9);
+    CHECK_NEAR(r.petalStats(totem, Rarity::Mythic).killHealPerSecond, 243.0, 1e-9);
+    CHECK_NEAR(r.petalStats(totem, Rarity::Ultra).killHealPerSecond, 243.0 * std::sqrt(3.0), 1e-9);
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        const Rarity tier = static_cast<Rarity>(t);
+        CHECK_NEAR(r.petalStats(totem, tier).killHealPerSecond, petalHealScale(tier), 1e-9);
+        CHECK_NEAR(r.petalStats(totem, tier).killHealDurationMillis, 10000.0, 1e-9);
+    }
+    // A petal that writes none heals nothing for a kill.
+    CHECK_NEAR(r.petalStats(r.petalIndex("plain"), Rarity::Apex).killHealPerSecond, 0.0, 1e-12);
+}
+
+TEST(basil_boosts_healing_by_a_fifth_and_five_percent_more_a_tier) {
+    // florr's Heal Bonus, 20% at common and 5% more a tier: 45% at mythic and
+    // 50% at ultra, the two tiers florr makes it at. A rule of the basil's,
+    // not a number its entry states.
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "basil": {"name": "Basil", "health": 15, "damage": 5, "size": 1.3, "cooldown": 2500,
+        "count": 1, "defendOnly": true, "ignoresMobs": true, "minRarity": "mythic"},
+      "plain": {"name": "Plain", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
+    const std::uint16_t basil = r.petalIndex("basil");
+    CHECK(basil != kInvalidIndex);
+    if (basil == kInvalidIndex) return;
+    CHECK_NEAR(r.petalStats(basil, Rarity::Mythic).healBonus, 0.45, 1e-9);
+    CHECK_NEAR(r.petalStats(basil, Rarity::Ultra).healBonus, 0.5, 1e-9);
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        CHECK_NEAR(r.petalStats(basil, static_cast<Rarity>(t)).healBonus, 0.2 + 0.05 * t, 1e-9);
+    }
+    // Read as a floor, so the world hands one out from mythic up.
+    CHECK(!petalComesAt(r.petal(basil), Rarity::Legendary));
+    CHECK(petalComesAt(r.petal(basil), Rarity::Mythic));
+    CHECK_NEAR(r.petalStats(r.petalIndex("plain"), Rarity::Apex).healBonus, 0.0, 1e-12);
 }
 
 TEST(every_chain_head_links_to_its_own_body) {
@@ -820,9 +951,27 @@ TEST(cross_references_resolve_to_indices) {
     CHECK_EQ(glitchFlower.petalRing.petalIndex, r.petalIndex("glitch"));
     CHECK_EQ(glitchFlower.petalRing.count, 5);
 
-    const PetalConfig& egg = r.petal(r.petalIndex("egg"));
-    CHECK_EQ(egg.petMobIndex, r.mobIndex("bee"));
-    CHECK_EQ(rarityIndex(egg.petMobRarity), rarityIndex(Rarity::Common));
+    // Every petal that hatches something names a mob that resolves: the
+    // written eggs by their petMobType, the generated ones by their mob.
+    int hatching = 0;
+    for (std::uint16_t i = 0; i < r.petalCount(); ++i) {
+        const PetalConfig& p = r.petal(i);
+        if (p.petMobId.empty()) continue;
+        ++hatching;
+        CHECK(p.petMobIndex != kInvalidIndex);
+        CHECK_EQ(p.petMobIndex, r.mobIndex(p.petMobId));
+    }
+    CHECK(hatching > 0);
+
+    // And the pet's tier is the one written, read as a rarity name.
+    ContentRegistry fixture;
+    CHECK(loadPetals(fixture, R"JSON({
+      "egg": {"name": "Egg", "health": 10, "damage": 0, "size": 1, "cooldown": 1000, "count": 1,
+        "petMobType": "plain", "petMobRarity": "rare"}
+    })JSON"));
+    const PetalConfig& egg = fixture.petal(fixture.petalIndex("egg"));
+    CHECK_EQ(egg.petMobIndex, fixture.mobIndex("plain"));
+    CHECK_EQ(rarityIndex(egg.petMobRarity), rarityIndex(Rarity::Rare));
 }
 
 TEST(bee_ai_is_read_from_the_config_not_the_mob_name) {
@@ -854,47 +1003,83 @@ TEST(enums_and_colours_are_parsed_not_stored_as_text) {
     CHECK_EQ(r.mob(r.mobIndex("bee")).colorRgba, 0xEBE834FFu);
     CHECK_EQ(r.mob(r.mobIndex("sun")).lightColorRgba, 0xFFFF00FFu);
 
-    // The bubble petal is genuinely a transparent fill and means it; alpha has
-    // to survive or it draws as an opaque white blob.
-    CHECK_EQ(r.petal(r.petalIndex("bubble")).colorRgba, 0xFFFFFF00u);
+    // The petals are written here, each the way the shipped file writes its
+    // kind: which petal the author gives which flag is the author's to change.
+    ContentRegistry p;
+    CHECK(loadPetals(p, R"JSON({
+      "bubble": {"name": "Bubble", "health": 1, "damage": 0, "size": 1, "cooldown": 2000,
+        "count": 1, "color": "rgba(255, 255, 255, 0)"},
+      "cutter": {"name": "Cutter", "health": null, "damage": 0, "size": 4, "cooldown": 1,
+        "count": 0, "bodyDamage": 10, "equipFlags": "Cutter", "noPhysics": true},
+      "lightning_cutter": {"name": "Lightning Cutter", "health": null, "damage": 1, "size": 4,
+        "cooldown": 1, "count": 0, "bodyDamage": 10, "equipFlags": "Cutter", "noPhysics": true},
+      "third_eye": {"name": "Third Eye", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "ThirdEye", "noPhysics": true},
+      "observer": {"name": "Observer", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "Observer", "noPhysics": true},
+      "antennae": {"name": "Antennae", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "Antennae", "noPhysics": true},
+      "sparkle": {"name": "Sparkle", "health": 10, "damage": 10, "size": 1, "cooldown": 500,
+        "count": 1, "equipFlags": "Test1"},
+      "basic": {"name": "Basic", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+      "disc": {"name": "Disc", "health": null, "damage": 0, "size": 1, "cooldown": 1, "count": 0,
+        "equipFlags": "Disc", "noPhysics": true},
+      "bandage": {"name": "Bandage", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "Bandage", "noPhysics": true},
+      "champion_crown": {"name": "Crown", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "Crown", "noPhysics": true}
+    })JSON"));
 
-    CHECK_EQ(r.petal(r.petalIndex("cutter")).equipFlags, std::uint16_t(EquipCutter));
+    // A transparent fill is meant: alpha has to survive or a bubble draws as
+    // an opaque white blob.
+    CHECK_EQ(p.petal(p.petalIndex("bubble")).colorRgba, 0xFFFFFF00u);
+
+    CHECK_EQ(p.petal(p.petalIndex("cutter")).equipFlags, std::uint16_t(EquipCutter));
     // Both bits, and the second one is DERIVED from the id: petals.json says
     // plain "Cutter" because the TypeScript build's loader, which read the same
     // file, threw on a name its frozen enum lacked. Losing this leaves the cyan
     // blade painted black.
-    CHECK_EQ(r.petal(r.petalIndex("lightning_cutter")).equipFlags,
+    CHECK_EQ(p.petal(p.petalIndex("lightning_cutter")).equipFlags,
              std::uint16_t(EquipCutter | EquipLightningCutter));
-    // The body-damage grant rides the petal damage ladder: 3x a tier, so it
-    // matches what a basic petal of the same rarity hits for.
-    CHECK_NEAR(r.petalStats(r.petalIndex("cutter"), Rarity::Common).bodyDamage, 10.0, 1e-9);
-    CHECK_NEAR(r.petalStats(r.petalIndex("cutter"), Rarity::Unique).bodyDamage, 65610.0, 1e-9);
-    CHECK_EQ(r.petal(r.petalIndex("third_eye")).equipFlags, std::uint16_t(EquipThirdEye));
-    CHECK_EQ(r.petal(r.petalIndex("observer")).equipFlags, std::uint16_t(EquipObserver));
-    CHECK_EQ(r.petal(r.petalIndex("antennae")).equipFlags, std::uint16_t(EquipAntennae));
-    CHECK_EQ(r.petal(r.petalIndex("sparkle")).equipFlags, std::uint16_t(EquipTest1));
-    CHECK_EQ(r.petal(r.petalIndex("basic")).equipFlags, std::uint16_t(EquipNone));
+    // The body-damage grant rides the petal damage ladder: 3x a tier, so an
+    // authored 10 matches what a basic petal of the same rarity hits for.
+    CHECK_NEAR(p.petalStats(p.petalIndex("cutter"), Rarity::Common).bodyDamage, 10.0, 1e-9);
+    CHECK_NEAR(p.petalStats(p.petalIndex("cutter"), Rarity::Unique).bodyDamage, 65610.0, 1e-9);
+    CHECK_EQ(p.petal(p.petalIndex("third_eye")).equipFlags, std::uint16_t(EquipThirdEye));
+    CHECK_EQ(p.petal(p.petalIndex("observer")).equipFlags, std::uint16_t(EquipObserver));
+    CHECK_EQ(p.petal(p.petalIndex("antennae")).equipFlags, std::uint16_t(EquipAntennae));
+    CHECK_EQ(p.petal(p.petalIndex("sparkle")).equipFlags, std::uint16_t(EquipTest1));
+    CHECK_EQ(p.petal(p.petalIndex("basic")).equipFlags, std::uint16_t(EquipNone));
     // Worn as a ring around the flower, and nothing on the ring of petals.
-    CHECK_EQ(r.petal(r.petalIndex("disc")).equipFlags, std::uint16_t(EquipDisc));
+    CHECK_EQ(p.petal(p.petalIndex("disc")).equipFlags, std::uint16_t(EquipDisc));
     // Worn as a wrap round the flower, past the eighth bit.
-    CHECK_EQ(r.petal(r.petalIndex("bandage")).equipFlags, std::uint16_t(EquipBandage));
-    CHECK(r.petal(r.petalIndex("disc")).noPhysics);
+    CHECK_EQ(p.petal(p.petalIndex("bandage")).equipFlags, std::uint16_t(EquipBandage));
+    CHECK(p.petal(p.petalIndex("disc")).noPhysics);
     // Worn on the head, and nothing on the ring: what it lends is the petal.
-    const PetalConfig& crown = r.petal(r.petalIndex(kChampionCrownPetalId));
+    const PetalConfig& crown = p.petal(p.petalIndex(kChampionCrownPetalId));
     CHECK_EQ(crown.equipFlags, std::uint16_t(EquipCrown));
     CHECK(crown.noPhysics);
     CHECK(petalLendsBasic(crown));
     CHECK(petalHasOwnSource(crown));
-    CHECK(r.petalIndex(kCrownLentPetalId) != kInvalidIndex);
 }
 
 // ---------------------------------------------------------------------------
-// The dirty data the shipped files actually contain
+// Dirty data a content file carries
 // ---------------------------------------------------------------------------
+//
+// The petals are the kinds of dirt petals.json has carried, written out here:
+// the author cleans the file up whenever they like, and a case about how the
+// loader copes must not stop testing anything the day an entry is fixed.
 
 TEST(dirty_absurd_visual_offset_is_caught) {
-    const ContentRegistry& r = shipped().registry;
-    for (const char* id : {"third_eye", "antennae", "observer"}) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "third_eye": {"name": "Third Eye", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "visualOffsetY": -1e100, "equipFlags": "ThirdEye", "noPhysics": true},
+      "antennae": {"name": "Antennae", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "visualOffsetY": -1e100, "equipFlags": "Antennae", "noPhysics": true}
+    })JSON"));
+    for (const char* id : {"third_eye", "antennae"}) {
         const PetalConfig& p = r.petal(r.petalIndex(id));
         CHECK(p.hidden);
         CHECK_NEAR(p.visualOffsetY, 0.0, 1e-12);
@@ -904,7 +1089,15 @@ TEST(dirty_absurd_visual_offset_is_caught) {
 }
 
 TEST(dirty_null_damage_and_health_are_caught) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "infinity": {"name": "Infinity", "health": null, "damage": null, "size": 3,
+        "cooldown": 1000, "count": 1},
+      "cutter": {"name": "Cutter", "health": null, "damage": 0, "size": 4, "cooldown": 1,
+        "count": 0, "noPhysics": true},
+      "gas": {"name": "Gas", "damage": 0, "size": 1, "cooldown": 10000, "count": 1},
+      "basic": {"name": "Basic", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
     const PetalConfig& infinity = r.petal(r.petalIndex("infinity"));
     CHECK_NEAR(infinity.damage, 0.0, 1e-12);
     CHECK(std::isfinite(infinity.damage));
@@ -916,12 +1109,17 @@ TEST(dirty_null_damage_and_health_are_caught) {
     CHECK(warned(r, "petal 'infinity': health is null"));
 
     CHECK(!r.petal(r.petalIndex("cutter")).breakable);
+    // No health at all is the same as a null one, at every tier.
     CHECK(!r.petalStats(r.petalIndex("gas"), Rarity::Mythic).breakable);
     CHECK(r.petal(r.petalIndex("basic")).breakable);
 }
 
 TEST(finite_negative_damage_keeps_typescript_semantics) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "glitch": {"name": "Glitch", "health": 128, "damage": -1, "size": 1, "cooldown": 2000,
+        "count": 1}
+    })JSON"));
     const std::uint16_t glitch = r.petalIndex("glitch");
     CHECK_NEAR(r.petal(glitch).damage, -1.0, 1e-12);
     for (int tier = 0; tier < kRarityCount; ++tier) {
@@ -930,10 +1128,19 @@ TEST(finite_negative_damage_keeps_typescript_semantics) {
 }
 
 TEST(dirty_enormous_cooldown_is_caught) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "yggdrasil": {"name": "Yggdrasil", "health": 1, "damage": 0, "size": 1, "cooldown": 2048000,
+        "count": 1},
+      "slow": {"name": "Slow", "health": 1, "damage": 1, "size": 1, "cooldown": 2048000,
+        "count": 1}
+    })JSON"));
     const std::uint16_t yggdrasil = r.petalIndex("yggdrasil");
     // 2048000ms is 34 minutes: a dead slot, not a slow one.
     CHECK(r.petal(yggdrasil).cooldownMillis <= 60000.0);
+    CHECK(r.petal(r.petalIndex("slow")).cooldownMillis <= 60000.0);
+    CHECK_NEAR(r.petalStats(r.petalIndex("slow"), Rarity::Common).reloadMillis,
+               r.petal(r.petalIndex("slow")).cooldownMillis, 1e-9);
     // The derived TypeScript rarity table deliberately overrides the clamped
     // authored value with its 512s / 2^tier sequence.
     CHECK_NEAR(r.petalStats(yggdrasil, Rarity::Common).reloadMillis, 512000.0, 1e-9);
@@ -950,8 +1157,12 @@ TEST(dirty_negative_speed_is_caught) {
 }
 
 TEST(finite_enormous_damage_keeps_typescript_semantics) {
-    const ContentRegistry& r = shipped().registry;
-    CHECK_NEAR(r.petal(r.petalIndex("sparkle")).damage, 9999999999.0, 1e-9);
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "huge": {"name": "Huge", "health": 99999, "damage": 9999999999, "size": 1, "cooldown": 500,
+        "count": 1}
+    })JSON"));
+    CHECK_NEAR(r.petal(r.petalIndex("huge")).damage, 9999999999.0, 1e-9);
 }
 
 TEST(mob_visual_offset_is_read) {
@@ -1011,23 +1222,40 @@ TEST(the_shipped_content_states_the_armor_exceptions) {
     CHECK_NEAR(r.mob(r.mobIndex("golden_leafbug")).armor, 10.0, 1e-12);
     // A leafbug is the armour mob: ten at common, and the ladder on top of it.
     CHECK_NEAR(r.mobStats(r.mobIndex("leafbug"), Rarity::Mythic).armor, 2430.0, 1e-9);
+}
 
-    // Bur is the only petal that strips, and one of its own tier takes 1.5x
-    // what a mob of that tier is wearing.
+TEST(armor_reduction_rides_the_plain_ladder_and_is_nothing_unless_written) {
+    // A bur written at 1.5 takes, at its own tier, 1.5x what a mob of that
+    // tier is wearing.
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "bur": {"name": "Bur", "health": 5, "damage": 5, "size": 1, "cooldown": 2000, "count": 1,
+        "armorReduction": 1.5},
+      "plain": {"name": "Plain", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
     CHECK_NEAR(r.petal(r.petalIndex("bur")).armorReduction, 1.5, 1e-12);
     CHECK_NEAR(r.petalStats(r.petalIndex("bur"), Rarity::Mythic).armorReduction, 364.5, 1e-9);
-    for (const char* id : {"basic", "rose", "stinger", "iris"}) {
-        CHECK_NEAR(r.petal(r.petalIndex(id)).armorReduction, 0.0, 1e-12);
-    }
+    CHECK_NEAR(r.petal(r.petalIndex("plain")).armorReduction, 0.0, 1e-12);
+    CHECK_NEAR(r.petalStats(r.petalIndex("plain"), Rarity::Apex).armorReduction, 0.0, 1e-12);
 }
 
 TEST(a_spread_angle_is_read_as_radians_however_odd_the_number_looks) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "flower": {"name": "Flower", "health": 15, "damage": 5, "size": 1, "cooldown": 50000,
+        "count": 1, "projectile": {"count": 5, "distance": 100, "speed": 200, "spreadAngle": 72}},
+      "missile": {"name": "Missile", "health": 10, "damage": 10, "size": 1, "cooldown": 2000,
+        "count": 1, "projectile": {"count": 1, "distance": 500, "speed": 300, "spreadAngle": 0}},
+      "peas": {"name": "Peas", "health": 10, "damage": 2.5, "size": 1, "cooldown": 1000,
+        "count": 4, "projectile": {"count": 1, "spreadAngle": 1.5708, "speed": 800, "distance": 1000}},
+      "unstated": {"name": "Unstated", "health": 10, "damage": 10, "size": 1, "cooldown": 2000,
+        "count": 1, "projectile": {"count": 3, "distance": 500, "speed": 300}}
+    })JSON"));
     const ProjectileSpec& spec = r.petal(r.petalIndex("flower")).projectile;
     CHECK(spec.present);
     CHECK_EQ(spec.count, 5);
-    // `flower` ships 72, which LOOKS like degrees and is not. The reference
-    // reads the field as radians (`projectileConfig.spreadAngle || 0.2`) and
+    // `flower` once shipped 72, which LOOKS like degrees and is not. The
+    // reference reads the field as radians (`projectileConfig.spreadAngle || 0.2`) and
     // hands it straight to `(i - (count - 1) / 2) * spreadAngle`, so its five
     // shots wrap the circle several times over rather than closing a tidy
     // five-point star. Converting it here would aim the volley at other mobs,
@@ -1036,67 +1264,53 @@ TEST(a_spread_angle_is_read_as_radians_however_odd_the_number_looks) {
     CHECK(!warned(r, "projectile spreadAngle"));
 
     // An unstated spread is the reference's 0.2 default, not a zero that would
-    // stack a whole volley on one bearing.
+    // stack a whole volley on one bearing; an authored 0 is kept at 0.
+    const ProjectileSpec& unstated = r.petal(r.petalIndex("unstated")).projectile;
+    CHECK(unstated.present);
+    CHECK_NEAR(unstated.spreadAngle, 0.2, 1e-9);
     const ProjectileSpec& missile = r.petal(r.petalIndex("missile")).projectile;
     CHECK(missile.present);
-    CHECK_NEAR(missile.spreadAngle, 0.0, 1e-9);   // authored 0, kept at 0
+    CHECK_NEAR(missile.spreadAngle, 0.0, 1e-9);
     CHECK_NEAR(r.petal(r.petalIndex("peas")).projectile.spreadAngle, 1.5708, 1e-9);
 }
 
-TEST(grapes_are_peas_of_the_same_size_that_poison) {
-    // rysteria_gardn's poison peas: the same four-way split at the same size,
-    // trading most of the impact damage for poison.
-    const ContentRegistry& r = shipped().registry;
-    const std::uint16_t grapes = r.petalIndex("grapes");
+TEST(a_magic_form_is_found_by_its_id_and_runs_on_the_mana_ladder) {
+    // Peas' magic form is what a pea drops as for a flower wearing an orb, and
+    // it is found by its id alone: nothing in either entry names the other.
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "peas": {"name": "Peas", "health": 10, "damage": 2.5, "size": 1, "cooldown": 1000,
+        "count": 4, "clumped": true,
+        "projectile": {"count": 1, "spreadAngle": 1.5708, "speed": 800, "distance": 1000}},
+      "magic_peas": {"name": "Blueberries", "health": 10, "damage": 8, "size": 1, "cooldown": 50,
+        "count": 4, "clumped": true, "requiredMana": 1.2, "lightningDamage": true,
+        "projectile": {"count": 1, "spreadAngle": 1.5708, "speed": 800, "distance": 1000}}
+    })JSON"));
+    const std::uint16_t berries = r.petalIndex("magic_peas");
     const std::uint16_t peas = r.petalIndex("peas");
-    const PetalConfig& g = r.petal(grapes);
-    const PetalConfig& p = r.petal(peas);
-    CHECK(g.clumped);
-    CHECK(g.defendOnly);
-    CHECK(g.projectile.present);
-    CHECK_EQ(g.projectile.count, p.projectile.count);
-    CHECK_NEAR(g.projectile.spreadAngle, p.projectile.spreadAngle, 1e-12);
-    for (const Rarity rarity : {Rarity::Common, Rarity::Legendary}) {
-        const PetalStats gs = r.petalStats(grapes, rarity);
-        const PetalStats ps = r.petalStats(peas, rarity);
-        CHECK_EQ(gs.count, ps.count);
-        CHECK_NEAR(gs.radius, ps.radius, 1e-12);
-        CHECK(gs.poisonPerSecond > 0.0);
-        CHECK(gs.poisonDurationMillis > 0.0);
-        CHECK(gs.damage < ps.damage);
+    CHECK_EQ(r.magicFormOf(peas), berries);
+    CHECK_EQ(r.magicSourceOf(berries), peas);
+    CHECK(r.isMagicForm(berries));
+    CHECK(!r.isMagicForm(peas));
+    CHECK(r.petal(berries).lightningDamage);
+    CHECK(!r.petal(peas).lightningDamage);
+    CHECK_NEAR(r.petal(berries).requiredMana, 1.2, 1e-12);
+    CHECK_NEAR(r.petalStats(berries, Rarity::Common).requiredMana, 1.2, 1e-12);
+    // On the one mana ladder, as every other mana figure is.
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        const Rarity tier = static_cast<Rarity>(t);
+        CHECK_NEAR(r.petalStats(berries, tier).requiredMana, 1.2 * petalManaScale(tier), 1e-9);
     }
 }
 
-TEST(blueberries_are_peas_of_the_same_size_that_run_on_mana_and_lightning) {
-    const ContentRegistry& r = shipped().registry;
-    const std::uint16_t berries = r.petalIndex("magic_peas");
-    const std::uint16_t peas = r.petalIndex("peas");
-    const PetalConfig& b = r.petal(berries);
-    CHECK_EQ(b.name, std::string("Blueberries"));
-    // Peas' magic form: what a pea drops as for a flower wearing an orb.
-    CHECK_EQ(r.magicFormOf(peas), berries);
-    CHECK_EQ(r.magicSourceOf(berries), peas);
-    CHECK(b.lightningDamage);
-    CHECK(!r.petal(peas).lightningDamage);
-    CHECK(b.clumped);
-    CHECK(b.defendOnly);
-    CHECK(b.projectile.present);
-    CHECK_NEAR(b.requiredMana, 1.2, 1e-12);
-    const PetalStats bs = r.petalStats(berries, Rarity::Common);
-    const PetalStats ps = r.petalStats(peas, Rarity::Common);
-    CHECK_EQ(bs.count, ps.count);
-    CHECK_NEAR(bs.radius, ps.radius, 1e-12);
-    CHECK_NEAR(bs.reloadMillis, 50.0, 1e-9);
-    CHECK_NEAR(bs.requiredMana, 1.2, 1e-12);
-    // On the one mana ladder, as every other mana figure is.
-    const std::uint16_t missile = r.petalIndex("magic_missile");
-    const double ladder = r.petalStats(missile, Rarity::Rare).requiredMana /
-                          r.petalStats(missile, Rarity::Common).requiredMana;
-    CHECK_NEAR(r.petalStats(berries, Rarity::Rare).requiredMana, 1.2 * ladder, 1e-9);
-}
-
 TEST(poison_without_a_duration_remains_inert_like_typescript) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "gas": {"name": "Gas", "damage": 0, "size": 1, "cooldown": 10000, "count": 1,
+        "poison": 0.002},
+      "iris": {"name": "Iris", "health": 1, "damage": 0, "size": 0.7, "cooldown": 1000,
+        "count": 1, "poison": 0.009, "poisonDuration": 1000}
+    })JSON"));
     const PetalConfig& gas = r.petal(r.petalIndex("gas"));
     CHECK(gas.poisonPerSecond > 0.0);
     CHECK_NEAR(gas.poisonDurationMillis, 0.0, 1e-12);
@@ -1162,11 +1376,16 @@ TEST(a_web_that_catches_nothing_is_not_laid) {
     CHECK(fine.minRarity == Rarity::Common);
 }
 
-TEST(the_shipped_spaceship_summons_up_to_three_glitch_flowers_where_it_lands) {
-    const ContentRegistry& r = shipped().registry;
+TEST(a_shot_names_the_mob_it_summons_and_how_many_where_it_lands) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "spaceship": {"name": "Spaceship", "health": 5, "damage": 15, "size": 1, "cooldown": 5000,
+        "count": 1, "projectile": {"count": 1, "distance": 700, "speed": 350, "spreadAngle": 0,
+          "summonMobType": "plain", "summonMax": 3}}
+    })JSON"));
     const ProjectileSpec& shot = r.petal(r.petalIndex("spaceship")).projectile;
     CHECK(shot.present);
-    CHECK_EQ(shot.summonMobIndex, r.mobIndex("glitch_flower"));
+    CHECK_EQ(shot.summonMobIndex, r.mobIndex("plain"));
     CHECK_EQ(shot.summonMax, 3);
     // Not an egg: nothing is hatched while the petal merely sits on the ring.
     CHECK_EQ(r.petal(r.petalIndex("spaceship")).petMobIndex, kInvalidIndex);
@@ -1206,9 +1425,10 @@ TEST(the_shipped_bumble_bee_drops_pollen_and_out_cruises_a_bee) {
     const std::uint16_t bumble = r.mobIndex("bumble_bee");
     const DropProjectileSpec& drop = r.mob(bumble).dropProjectile;
     CHECK(drop.present);
-    CHECK_EQ(drop.petalIndex, r.petalIndex("bumble_bee_pollen"));
-    // Its own petal, kept out of loot and the shop like every mob's ammunition.
-    CHECK(r.petal(drop.petalIndex).isAdminPetal);
+    CHECK(drop.petalIndex != kInvalidIndex);
+    CHECK_EQ(drop.petalIndex,
+             r.petalIndex(shippedJson("mobs.json")["bumble_bee"]["dropProjectile"]["petalType"]
+                              .asString()));
     CHECK_NEAR(drop.lifetimeMillis, 3000.0, 1e-9);
     CHECK(!r.mob(r.mobIndex("bee")).dropProjectile.present);
     // In flower top speeds, like `speed`; a bee states none.
@@ -1216,10 +1436,16 @@ TEST(the_shipped_bumble_bee_drops_pollen_and_out_cruises_a_bee) {
     CHECK_EQ(r.mobStats(r.mobIndex("bee"), Rarity::Common).cruiseSpeed, 0.0);
 }
 
-/// The user's third eye: nothing below legendary, 40 there, +50 a tier, and a
-/// universal one reads apex's. On the attacking ring only (PetalSystem).
-TEST(the_shipped_third_eye_reaches_40_at_legendary_and_50_more_a_tier) {
-    const ContentRegistry& r = shipped().registry;
+/// The user's third eye: nothing below its floor, the authored reach there,
+/// +50 a tier, and a universal one reads apex's. On the attacking ring only
+/// (PetalSystem).
+TEST(a_third_eye_reaches_its_authored_range_at_its_floor_and_50_more_a_tier) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "third_eye": {"name": "Third Eye", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "ThirdEye", "noPhysics": true, "minRarity": "legendary",
+        "playerModifiers": {"attackRange": 40}}
+    })JSON"));
     const std::uint16_t eye = r.petalIndex("third_eye");
     CHECK(eye != kInvalidIndex);
     if (eye == kInvalidIndex) return;
@@ -1776,7 +2002,11 @@ TEST(the_content_hash_covers_the_staged_maps) {
 }
 
 TEST(a_stinger_clump_splits_its_slots_damage_rather_than_multiplying_it) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "stinger": {"name": "Stinger", "health": 2, "damage": 100, "size": 1, "cooldown": 10000,
+        "count": 1, "clumped": true}
+    })JSON"));
     const std::uint16_t stinger = r.petalIndex("stinger");
     const auto damage = [&](Rarity t) { return r.petalStats(stinger, t).damage; };
     // One stinger to three holds each where it was; three to five spreads the
@@ -1796,20 +2026,43 @@ TEST(only_the_best_copy_counts_names_worn_petals_and_the_moon) {
     // The bar draws every copy but the best as not loaded, so each petal named
     // has to be one with nothing of its own out on the ring: worn, or the moon
     // the ring holds back. One that came to orbit would read as not loaded
-    // while it fought; one misspelt would name nothing at all.
-    const Shipped& s = shipped();
-    CHECK(s.ok);
-    if (!s.ok) return;
+    // while it fought; one misspelt would name nothing at all. The entries are
+    // written here, worn the way such petals are written: whether the shipped
+    // file wears them is the author's to decide.
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "moon": {"name": "Moon", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+      "wax": {"name": "Wax", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+      "disc": {"name": "Disc", "health": null, "damage": 0, "size": 1, "cooldown": 1, "count": 0,
+        "equipFlags": "Disc", "noPhysics": true},
+      "bandage": {"name": "Bandage", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "Bandage", "noPhysics": true},
+      "champion_crown": {"name": "Crown", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "Crown", "noPhysics": true},
+      "cutter": {"name": "Cutter", "health": null, "damage": 0, "size": 4, "cooldown": 1,
+        "count": 0, "bodyDamage": 10, "equipFlags": "Cutter", "noPhysics": true},
+      "lightning_cutter": {"name": "Lightning Cutter", "health": null, "damage": 1, "size": 4,
+        "cooldown": 1, "count": 0, "bodyDamage": 10, "equipFlags": "Cutter", "noPhysics": true},
+      "observer": {"name": "Observer", "health": null, "damage": 0, "size": 1, "cooldown": 1,
+        "count": 0, "equipFlags": "Observer", "noPhysics": true},
+      "basic": {"name": "Basic", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1}
+    })JSON"));
+    CHECK_EQ(std::string(kMoonPetalId), std::string("moon"));
+    CHECK_EQ(std::string(kWaxPetalId), std::string("wax"));
     int named = 0;
-    for (std::uint16_t i = 0; i < s.registry.petalCount(); ++i) {
-        const PetalConfig& config = s.registry.petal(i);
+    for (std::uint16_t i = 0; i < r.petalCount(); ++i) {
+        const PetalConfig& config = r.petal(i);
         if (!petalOnlyBestCopyCounts(config)) continue;
         ++named;
         if (petalAnchorsRing(config)) continue;
         CHECK(config.noPhysics);
-        CHECK_EQ(s.registry.petalStats(i, Rarity::Common).count, 0);
+        CHECK_EQ(r.petalStats(i, Rarity::Common).count, 0);
     }
+    // Every worn one and the moon -- not the wax, whose body orbits like any
+    // other, and not a plain petal.
     CHECK_EQ(named, 7);
+    CHECK(!petalOnlyBestCopyCounts(r.petal(r.petalIndex("wax"))));
+    CHECK(!petalOnlyBestCopyCounts(r.petal(r.petalIndex("basic"))));
 }
 
 TEST(the_best_copy_is_the_highest_tier_and_the_leftmost_of_equals) {
@@ -1850,12 +2103,22 @@ TEST(admin_petals_boost_universal_combat_and_utility_effects) {
         CHECK(!craftsOutOf(Rarity::Admin));
         CHECK_EQ(oracleCraftCost(Rarity::Admin), 0);
     }
-    CHECK_NEAR(r.petalStats(r.petalIndex("lentil"), Rarity::Admin).modifiers.petalAttractionRadius,
+    ContentRegistry fixture;
+    CHECK(loadPetals(fixture, R"JSON({
+      "lentil": {"name": "Lentil", "health": 10, "damage": 10, "size": 1, "cooldown": 1000,
+        "count": 1, "attractionForce": 2000, "playerModifiers": {"petalAttractionRadius": 20}}
+    })JSON"));
+    CHECK_NEAR(fixture.petalStats(fixture.petalIndex("lentil"), Rarity::Admin)
+                   .modifiers.petalAttractionRadius,
                kWorldSize * 0.2, 1e-9);
 }
 
 TEST(icosahedron_has_rarity_scaled_petal_armor) {
-    const ContentRegistry& r = shipped().registry;
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "icosahedron": {"name": "Icosahedron", "health": 20, "damage": 19, "size": 2,
+        "cooldown": 2500, "count": 1, "petalArmor": 10}
+    })JSON"));
     const auto index = r.petalIndex("icosahedron");
     CHECK(index != kInvalidIndex);
     for (int tier = 0; tier < kRarityCount; ++tier) {
@@ -1867,7 +2130,11 @@ TEST(icosahedron_has_rarity_scaled_petal_armor) {
 }
 
 TEST(admin_golden_leaf_stacks_cannot_erase_reload_times) {
-    const auto& registry = shipped().registry;
+    ContentRegistry registry;
+    CHECK(loadPetals(registry, R"JSON({
+      "golden_leaf": {"name": "Golden Leaf", "health": 100, "damage": 1, "size": 1.2,
+        "cooldown": 200, "count": 1}
+    })JSON"));
     const auto leaf = registry.petalIndex("golden_leaf");
     CHECK_NEAR(registry.petalStats(leaf, Rarity::Admin).reloadCut, 0.5, 1e-9);
     CHECK_NEAR(barReloadCut(registry, [&](int) {
@@ -1876,7 +2143,16 @@ TEST(admin_golden_leaf_stacks_cannot_erase_reload_times) {
 }
 
 TEST(admin_secondary_effects_are_stronger_without_changing_ordinary_petals) {
-    const auto& registry = shipped().registry;
+    ContentRegistry registry;
+    CHECK(loadPetals(registry, R"JSON({
+      "pincer": {"name": "Pincer", "health": 5, "damage": 5, "size": 1, "cooldown": 2500,
+        "count": 1, "poison": 0.02, "poisonDuration": 750, "slowFactor": 0.5,
+        "slowDuration": 2000},
+      "bone": {"name": "Bone", "health": 10, "damage": 14, "size": 1, "cooldown": 1500,
+        "count": 1, "petalArmor": 10},
+      "icosahedron": {"name": "Icosahedron", "health": 20, "damage": 19, "size": 2,
+        "cooldown": 2500, "count": 1, "petalArmor": 10}
+    })JSON"));
     const auto pincer = registry.petalIndex("pincer");
     const auto& ordinary = registry.petalStats(pincer, Rarity::Universal);
     const auto& admin = registry.petalStats(pincer, Rarity::Admin);
@@ -1891,7 +2167,11 @@ TEST(admin_secondary_effects_are_stronger_without_changing_ordinary_petals) {
 }
 
 TEST(admin_sparkle_has_two_to_64_health_damage_and_armor) {
-    const auto& registry = shipped().registry;
+    ContentRegistry registry;
+    CHECK(loadPetals(registry, R"JSON({
+      "sparkle": {"name": "Sparkle", "health": 99999, "damage": 9999999999, "size": 1,
+        "cooldown": 500, "count": 1, "equipFlags": "Test1", "isAdminPetal": true}
+    })JSON"));
     const auto sparkle = registry.petalIndex("sparkle");
     CHECK(sparkle != kInvalidIndex);
     const auto& stats = registry.petalStats(sparkle, Rarity::Admin);
