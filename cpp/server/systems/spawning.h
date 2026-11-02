@@ -528,6 +528,20 @@ public:
                     std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                     double nowMillis, Rng& rng);
 
+    /// Turns `mob` into an `into` where it stands: a C++ a yin yang landed on
+    /// becomes a C-- (CombatSystem::conversions). The old body is destroyed,
+    /// not killed, so it pays out nothing; the new one is the same animal
+    /// carried on -- its tier, place, facing and share of health, its damage
+    /// ledger (whoever hit it is still owed its loot, and is who it turns
+    /// on), its band slot and place in the spawn order, a dungeon's claim on
+    /// it -- and is never announced, as the boss it was already was.
+    ///
+    /// NULL_ENTITY, with `mob` left as it was, when it is dead or gone, or is
+    /// more than one body: a chain, a ring of seeds or a nest's brood would be
+    /// left with nothing to answer to.
+    Entity convertMob(World& world, const Terrain& terrain, const ContentRegistry& content,
+                      Entity mob, std::uint16_t into, double nowMillis, Rng& rng);
+
     /// What came of a sacrifice. Anything but Summoned placed nothing and
     /// spent nothing: the petal stays on its flower's bar.
     enum class SacrificeOutcome : std::uint8_t {

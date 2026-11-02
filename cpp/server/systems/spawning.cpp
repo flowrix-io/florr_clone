@@ -551,6 +551,82 @@ Entity SpawnSystem::spawnMob(World& world, const Terrain& terrain, const Content
                       kInvalidIndex);
 }
 
+Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const ContentRegistry& content,
+                               Entity mob, std::uint16_t into, double nowMillis, Rng& rng) {
+    if (into >= content.mobCount() || !world.isAlive(mob) || world.has<Dead>(mob)) {
+        return NULL_ENTITY;
+    }
+    if (world.has<BodySegment>(mob) || world.has<MobPetalRing>(mob) || world.has<Spawner>(mob) ||
+        world.has<NestWaves>(mob)) {
+        return NULL_ENTITY;
+    }
+    const MobType* type = world.tryGet<MobType>(mob);
+    const Transform* transform = world.tryGet<Transform>(mob);
+    const Health* wounds = world.tryGet<Health>(mob);
+    if (type == nullptr || transform == nullptr || wounds == nullptr) return NULL_ENTITY;
+
+    // Copied out first: the create below relocates the rows these live in.
+    const Rarity rarity = type->rarity;
+    const Transform place = *transform;
+    const Health before = *wounds;
+    const Motion* motion = world.tryGet<Motion>(mob);
+    const Vec2 velocity = motion != nullptr ? motion->velocity : Vec2{};
+    const Knockback* knockback = world.tryGet<Knockback>(mob);
+    const Knockback shove = knockback != nullptr ? *knockback : Knockback{};
+    const Afflictions* afflictions = world.tryGet<Afflictions>(mob);
+    const Afflictions ailing = afflictions != nullptr ? *afflictions : Afflictions{};
+    const Bounty* bounty = world.tryGet<Bounty>(mob);
+    const std::vector<Bounty::Share> ledger =
+        bounty != nullptr ? bounty->contributors : std::vector<Bounty::Share>{};
+    const AmbientMob* ambient = world.tryGet<AmbientMob>(mob);
+    const std::optional<AmbientMob> slot =
+        ambient != nullptr ? std::optional<AmbientMob>(*ambient) : std::nullopt;
+    const DungeonDweller* dweller = world.tryGet<DungeonDweller>(mob);
+    const std::optional<DungeonDweller> dungeon =
+        dweller != nullptr ? std::optional<DungeonDweller>(*dweller) : std::nullopt;
+    const bool keepAwake = world.has<KeepAwake>(mob);
+
+    // Past the boss clock: a unique turned is the unique that was already
+    // standing, not a new one asking to be let in.
+    const std::size_t announced = bossSpawns.size();
+    const Entity turned =
+        spawnMobAt(world, terrain, content, into, rarity, place.position, place.realm, nowMillis,
+                   rng, 0, kInvalidIndex, place.angle, false);
+    if (turned == NULL_ENTITY) return NULL_ENTITY;
+    bossSpawns.resize(announced);
+    // Gone in the same breath, so nothing after -- a census, the cull of a
+    // second unique -- ever sees the two side by side.
+    world.destroy(mob);
+    if (isWorldRealm(place.realm)) {
+        --census_.mobs;
+        --census_.spawnedTotal;
+    }
+
+    Health& health = world.get<Health>(turned);
+    health.current = health.max * before.fraction();
+    health.flashUntilMillis = before.flashUntilMillis;
+    health.invulnerableUntilMillis = before.invulnerableUntilMillis;
+    health.hitCooldownUntilMillis = before.hitCooldownUntilMillis;
+    world.get<Motion>(turned).velocity = velocity;
+    world.get<Knockback>(turned) = shove;
+    world.get<Afflictions>(turned) = ailing;
+    world.get<Bounty>(turned).contributors = ledger;
+    // The band's slot passes to the new body, and the census list with it:
+    // a band mob missing from the world is otherwise read as one that
+    // vanished, and its band handed the slot a second time.
+    if (slot) {
+        world.get<AmbientMob>(turned) = *slot;
+        for (CensusMob& tracked : censusMobs_) {
+            if (tracked.entity == mob) tracked.entity = turned;
+        }
+    } else {
+        world.remove<AmbientMob>(turned);
+    }
+    if (dungeon) world.add<DungeonDweller>(turned, *dungeon);
+    if (keepAwake) world.add<KeepAwake>(turned);
+    return turned;
+}
+
 SpawnSystem::Sacrifice SpawnSystem::planSacrifice(World& world, const ContentRegistry& content,
                                                   Rarity rarity, Vec2 at, Realm realm, Rng& rng) {
     bind(world);

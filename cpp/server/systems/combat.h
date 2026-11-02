@@ -193,6 +193,14 @@ struct ShotLanding {
     Vec2 at;
 };
 
+/// A mob a petal turned this tick: a C++ a yin yang landed on, which becomes
+/// a C-- (petalInvertsCpp). Combat only sees the hit; the swap is the
+/// spawner's, made once combat is done (SpawnSystem::convertMob).
+struct MobConversion {
+    Entity mob = NULL_ENTITY;
+    std::uint16_t into = kInvalidIndex;
+};
+
 class CombatSystem {
 public:
     CombatSystem();
@@ -394,6 +402,10 @@ public:
     /// order they landed.
     const std::vector<ShotLanding>& shotLandings() const { return shotLandings_; }
 
+    /// Mobs a petal turned into another during the last run(), each once, in
+    /// the order they were hit.
+    const std::vector<MobConversion>& conversions() const { return conversions_; }
+
     /// Pays `xp` onto `player`'s live PlayerProgress and, when that crosses a
     /// level, applies the level-up at once: the new level's health (full) and
     /// body damage. Every XP the world pays goes through here -- a kill's,
@@ -477,6 +489,10 @@ private:
         /// What this body's hit is multiplied by against a shot or a petal.
         /// A plank's 20; 1 for everything else.
         double shotDamageScale = 1.0;
+        /// A yin yang's: a `convertsFrom` mob it lands on becomes a
+        /// `convertsInto` (MobConversion). kInvalidIndex for every other body.
+        std::uint16_t convertsFrom = kInvalidIndex;
+        std::uint16_t convertsInto = kInvalidIndex;
         /// A mob whose touch throws lightning -- both fireflies. Zero radius
         /// means it does not, which is every other body in the game. Resolved
         /// in the gather beside the glitch flag and for the same reason.
@@ -818,6 +834,7 @@ private:
     std::vector<Entity> mobContactedPlayers_;
     std::vector<DeathRecord> deaths_;
     std::vector<ShotLanding> shotLandings_;
+    std::vector<MobConversion> conversions_;
     /// The segments behind a shared chain's pool owner, gathered before any of
     /// them is touched. A member so a hit on a leech allocates nothing.
     std::vector<Entity> chainScratch_;

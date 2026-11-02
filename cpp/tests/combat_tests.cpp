@@ -212,6 +212,9 @@ struct Fixture {
     std::uint16_t tomato = kInvalidIndex;
     std::uint16_t basil = kInvalidIndex;
     std::uint16_t saucer = kInvalidIndex;
+    std::uint16_t yinYang = kInvalidIndex;
+    std::uint16_t cpp = kInvalidIndex;
+    std::uint16_t cMinus = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -222,7 +225,9 @@ const Fixture& fixture() {
             R"({
               "grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":0.2,"section":[0]},
               "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":0.5,"section":[7]},
-              "bubble":{"name":"Bubble","health":1,"damage":5,"size":1,"speed":0}
+              "bubble":{"name":"Bubble","health":1,"damage":5,"size":1,"speed":0},
+              "c++":{"name":"C++","health":175,"damage":22,"size":1,"speed":0.2},
+              "c--":{"name":"C--","health":175,"damage":22,"size":1,"speed":0.2}
             })",
             R"({
               "frost":{"name":"Frost","damage":1,"health":5,"size":1,"slowFactor":0.5,"slowDuration":1000},
@@ -241,7 +246,8 @@ const Fixture& fixture() {
               "plank":{"name":"Plank","damage":18,"health":15,"size":3},
               "tomato":{"name":"Tomato","damage":5,"health":10,"size":1},
               "basil":{"name":"Basil","damage":5,"health":15,"size":1.3,"defendOnly":true,"ignoresMobs":true},
-              "saucer":{"name":"Saucer","damage":10,"health":5,"size":1,"projectile":{"speed":300,"distance":500,"summonMobType":"grunt","summonMax":3}}
+              "saucer":{"name":"Saucer","damage":10,"health":5,"size":1,"projectile":{"speed":300,"distance":500,"summonMobType":"grunt","summonMax":3}},
+              "yin_yang":{"name":"Yin Yang","damage":10,"health":10,"size":1}
             })",
             f.error);
         f.sting = f.registry.petalIndex("sting");
@@ -264,6 +270,9 @@ const Fixture& fixture() {
         f.tomato = f.registry.petalIndex("tomato");
         f.basil = f.registry.petalIndex("basil");
         f.saucer = f.registry.petalIndex("saucer");
+        f.yinYang = f.registry.petalIndex("yin_yang");
+        f.cpp = f.registry.mobIndex("c++");
+        f.cMinus = f.registry.mobIndex("c--");
         return f;
     }();
     return state;
@@ -2994,6 +3003,49 @@ TEST(only_a_summoning_shot_landing_on_a_mob_is_reported) {
     CHECK(a.health(mob) < 100.0);
     CHECK(a.health(target) < 100.0);
     CHECK(a.combat.shotLandings().empty());
+}
+
+TEST(a_yin_yang_landing_on_a_cpp_turns_it_into_a_cminus) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    CHECK(f.yinYang != kInvalidIndex && f.cpp != kInvalidIndex && f.cMinus != kInvalidIndex);
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const auto mobOf = [&](Vec2 at, std::uint16_t type, double health) {
+        const Entity e = a.mob(at, health);
+        a.world.add<MobType>(e, MobType{type, Rarity::Rare});
+        return e;
+    };
+    const Entity cpp = mobOf({1040, 1000}, f.cpp, 200.0);
+    // Two on the one C++, which is still turned once.
+    equipPetal(a, player, f.yinYang, Rarity::Common, {1025, 1000});
+    equipPetal(a, player, f.yinYang, Rarity::Common, {1030, 1000});
+    // A plain petal on another C++; a yin yang on a C--, which stays one.
+    const Entity untouched = mobOf({3040, 1000}, f.cpp, 200.0);
+    equipPetal(a, player, f.plain, Rarity::Common, {3025, 1000});
+    const Entity cMinus = mobOf({5040, 1000}, f.cMinus, 200.0);
+    equipPetal(a, player, f.yinYang, Rarity::Common, {5025, 1000});
+    // A C++ the yin yang kills leaves a corpse, not a C--.
+    const Entity dying = mobOf({7040, 1000}, f.cpp, 5.0);
+    equipPetal(a, player, f.yinYang, Rarity::Common, {7025, 1000});
+
+    a.step(1000.0, f.registry);
+    CHECK(a.health(cpp) < 200.0);
+    CHECK(a.health(untouched) < 200.0);
+    CHECK(a.health(cMinus) < 200.0);
+    CHECK(a.world.has<Dead>(dying));
+    const std::vector<MobConversion>& turned = a.combat.conversions();
+    CHECK_EQ(turned.size(), std::size_t(1));
+    if (turned.size() != 1) return;
+    CHECK_EQ(turned[0].mob, cpp);
+    CHECK_EQ(turned[0].into, f.cMinus);
+
+    // Read per tick, as the shot landings are.
+    a.world.destroy(cpp);
+    a.step(1100.0, f.registry);
+    CHECK(a.combat.conversions().empty());
 }
 
 

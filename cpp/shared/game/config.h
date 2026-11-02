@@ -1319,6 +1319,13 @@ inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "b
 /// multiplier (PetalSystem::recomputeModifiers, after gardn's Flower.cc).
 inline bool petalCyclesRingSpin(const PetalConfig& config) { return config.id == "yin_yang"; }
 
+/// A yin yang that lands on a C++ turns it into a C-- (user's rule,
+/// 2026-11-01). Combat sees the hit (CombatSystem::conversions); the spawner
+/// makes the swap (SpawnSystem::convertMob).
+inline bool petalInvertsCpp(const PetalConfig& config) { return config.id == "yin_yang"; }
+inline constexpr const char* kCppMobId = "c++";
+inline constexpr const char* kCMinusMobId = "c--";
+
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }
 
