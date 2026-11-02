@@ -3022,10 +3022,13 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 }
                 if (!found) { out("Unknown biome: " + word + ". Biomes: " + names); return; }
             }
+            std::array<bool, kMaxRealms> selectedRealms{};
+            for (const Realm realm : realms) selectedRealms[static_cast<std::size_t>(realm)] = true;
             std::vector<Entity> removed;
             Query<Transform> entities{world_};
             entities.each([&](Entity e, Transform& transform) {
-                if (std::find(realms.begin(), realms.end(), transform.realm) == realms.end() ||
+                const auto realm = static_cast<std::size_t>(transform.realm);
+                if (realm >= selectedRealms.size() || !selectedRealms[realm] ||
                     world_.has<PlayerTag>(e) || world_.has<Pet>(e)) return;
                 bool clear = world_.has<MobTag>(e) || world_.has<NpcTag>(e) ||
                              world_.has<DropTag>(e) || world_.has<ProjectileTag>(e) || world_.has<GroundEffect>(e);

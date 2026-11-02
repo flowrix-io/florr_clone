@@ -2490,15 +2490,10 @@ void GameServer::serviceAdminCursor() {
         const Entity owner = session.entity;
         const auto* input = world_.tryGet<PlayerInput>(owner);
         const auto* origin = world_.tryGet<Transform>(owner);
-        const auto* loadout = world_.tryGet<Loadout>(owner);
-        bool equipped = false;
-        if (loadout) {
-            for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-                const EquippedPetal slot = equippedPetal(content(), *loadout, i);
-                if (!slot.empty() && slot.rarity == Rarity::Admin &&
-                    content().petal(slot.configIndex).id == "cursor") equipped = true;
-            }
-        }
+        // foldModifiers ran this tick: reuse its server-resolved Cursor tier
+        // instead of resolving all ten loadout slots again for every admin.
+        const auto* mods = world_.tryGet<PlayerModifiers>(owner);
+        const bool equipped = mods && mods->controlsPets && mods->petControlRarity == Rarity::Admin;
         if (!equipped || !input || !origin || world_.has<Dead>(owner) ||
             session.controlling != 0 || session.controlledBy != 0) {
             session.cursorDragged = NULL_ENTITY;
@@ -2555,7 +2550,7 @@ void GameServer::serviceAdminCursor() {
             const Entity selected = pick(true);
             if (selected != NULL_ENTITY) {
                 if (session.cursorDragged == selected) session.cursorDragged = NULL_ENTITY;
-                npcs_->suppressRespawn(selected);
+                if (world_.has<NpcTag>(selected)) npcs_->suppressRespawn(selected);
                 // Outside ECS queries and before the new broadphase/loot pass:
                 // an item under the owner cannot be picked up after deletion.
                 world_.destroy(selected); // No death, rewards or new loot.
