@@ -5,6 +5,7 @@
 #include "client/render/darkness.h"
 #include "client/render/world_renderer.h"
 #include "client/world_view.h"
+#include "fixture_content.h"
 #include "render_rig.h"
 #include "shared/game/config.h"
 #include "shared/net/protocol.h"
@@ -36,9 +37,10 @@ RemoteEntity mobOf(const char* id, double radius) {
     return mob;
 }
 
-RemoteEntity petalOf(net::EntityKind kind, const char* id, Rarity rarity, double radius) {
+RemoteEntity petalOf(net::EntityKind kind, const ContentRegistry& content, const char* id,
+                     Rarity rarity, double radius) {
     RemoteEntity petal = entityOf(kind, radius);
-    petal.typeIndex = testsupport::shippedContent().petalIndex(id);
+    petal.typeIndex = content.petalIndex(id);
     petal.rarity = rarity;
     return petal;
 }
@@ -96,22 +98,34 @@ TEST(a_dark_map_lights_what_florr_lights_and_how_far) {
     RemoteEntity pet = mobOf("ladybug", 30);
     pet.spawnFlags |= net::SpawnIsPet;
     CHECK_NEAR(lightReach(pet, &content), 180.0, 1e-9);
+    // The petals are the test's own: which shipped ones glow is petals.json's
+    // `emissive`, and the author's to change.
+    ContentRegistry petals;
+    std::string error;
+    CHECK(test::loadFixtureContent(petals, testsupport::tempDir("flix_darkness_tests"), R"({
+        "plain": {"name": "Plain", "health": 3, "damage": 1, "size": 1}
+    })",
+                                   R"({
+        "bulb": {"name": "Bulb", "damage": 8, "health": 10, "size": 1.5, "cooldown": 627,
+                 "count": 1, "emissive": true},
+        "glow": {"name": "Glow", "damage": 10, "health": 10, "size": 1, "cooldown": 1000,
+                 "count": 1, "emissive": true},
+        "basic": {"name": "Basic", "damage": 10, "health": 10, "size": 1, "cooldown": 2500,
+                  "count": 1}
+    })",
+                                   error));
     // florr: a dropped bulb, 200 and 100 more a rarity, 2000 from Unique up.
-    CHECK_NEAR(lightReach(petalOf(net::EntityKind::Drop, "bulb", Rarity::Common, 10), &content),
-               210.0, 1e-9);
-    CHECK_NEAR(lightReach(petalOf(net::EntityKind::Drop, "bulb", Rarity::Ultra, 10), &content),
-               810.0, 1e-9);
-    CHECK_NEAR(lightReach(petalOf(net::EntityKind::Drop, "bulb", Rarity::Unique, 10), &content),
-               2010.0, 1e-9);
-    CHECK_NEAR(lightReach(petalOf(net::EntityKind::Drop, "basic", Rarity::Ultra, 10), &content),
-               0.0, 1e-9);
+    const auto reach = [&](net::EntityKind kind, const char* id, Rarity rarity) {
+        return lightReach(petalOf(kind, petals, id, rarity, 10), &petals);
+    };
+    CHECK_NEAR(reach(net::EntityKind::Drop, "bulb", Rarity::Common), 210.0, 1e-9);
+    CHECK_NEAR(reach(net::EntityKind::Drop, "bulb", Rarity::Ultra), 810.0, 1e-9);
+    CHECK_NEAR(reach(net::EntityKind::Drop, "bulb", Rarity::Unique), 2010.0, 1e-9);
+    CHECK_NEAR(reach(net::EntityKind::Drop, "basic", Rarity::Ultra), 0.0, 1e-9);
     // Ours: every emissive petal, worn too, and the emissive mobs.
-    CHECK_NEAR(lightReach(petalOf(net::EntityKind::Petal, "bulb", Rarity::Rare, 10), &content),
-               410.0, 1e-9);
-    CHECK_NEAR(lightReach(petalOf(net::EntityKind::Petal, "uranium", Rarity::Epic, 10), &content),
-               510.0, 1e-9);
-    CHECK_NEAR(lightReach(petalOf(net::EntityKind::Petal, "basic", Rarity::Epic, 10), &content),
-               0.0, 1e-9);
+    CHECK_NEAR(reach(net::EntityKind::Petal, "bulb", Rarity::Rare), 410.0, 1e-9);
+    CHECK_NEAR(reach(net::EntityKind::Petal, "glow", Rarity::Epic), 510.0, 1e-9);
+    CHECK_NEAR(reach(net::EntityKind::Petal, "basic", Rarity::Epic), 0.0, 1e-9);
     CHECK_NEAR(lightReach(mobOf("sun", 100), &content), 2100.0, 1e-9);
     RemoteEntity sunPet = mobOf("sun_pet", 20);
     sunPet.spawnFlags |= net::SpawnIsPet;

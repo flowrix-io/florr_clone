@@ -1117,7 +1117,9 @@ TEST(an_account_search_reads_names_counts_and_loadout_words) {
     CHECK(q.terms[0].rarity == Rarity::Mythic);
     CHECK(q.terms[0].compare == account_search::Compare::Greater);
     CHECK_EQ(q.terms[0].value, 10.0);
-    CHECK_EQ(q.terms[0].label, std::string("Mythic Rose"));
+    // The label is the tier's and the petal's display name, whatever the
+    // author calls it.
+    CHECK_EQ(q.terms[0].label, "Mythic " + content.petal(content.petalIndex("rose")).name);
     CHECK_EQ(q.terms[1].petal, std::string("yin_yang"));
     CHECK(q.terms[1].anyRarity);
 
@@ -1333,7 +1335,8 @@ TEST(the_database_editor_finds_accounts_by_what_they_own_and_wear) {
     CHECK(boss.adminDb().listError.empty());
     // Every rarity, and fewest first when the first count is a "<".
     CHECK_EQ(list("rose<40 rose>=1"), std::string("alice bobby"));
-    CHECK_EQ(boss.adminDb().accounts[0].note, std::string("Rose 12, Rose 12"));
+    const std::string rose = content().petal(content().petalIndex("rose")).name;
+    CHECK_EQ(boss.adminDb().accounts[0].note, rose + " 12, " + rose + " 12");
     // Names and counts together.
     CHECK_EQ(list("o rose>20"), std::string("carol bobby"));
     CHECK_EQ(list("loadout:light"), std::string("carol"));

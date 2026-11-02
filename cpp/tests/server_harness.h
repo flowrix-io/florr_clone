@@ -26,6 +26,7 @@
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
+#include "fixture_content.h"   // the defaults a fixture petal is filled in with
 #include "test_data.h"   // dataDir(), and the scratch files every fixture here is written to
 
 namespace flix::testsupport {
@@ -622,8 +623,8 @@ inline std::string denseMapDataDir(const std::string& name) {
 /// from it fails the staging. Every other file is copied byte for byte, and
 /// only what a server reads is copied at all: the content, the drop table, the
 /// manifest, its maps and the tilesets they name -- not the tile art or the
-/// font, which no harness server draws. Returns the directory, or "" when it
-/// could not be staged.
+/// font, which no harness server draws. An empty `mapStem` edits no map and
+/// copies them all. Returns the directory, or "" when it could not be staged.
 inline std::string stageShippedDataDir(const std::string& name, const std::string& mapStem,
                                        const std::function<bool(Json&)>& edit) {
     const std::string dir = tempDir("florr-fixture-" + name + "-" + std::to_string(::getpid()));
@@ -658,10 +659,41 @@ inline std::string stageShippedDataDir(const std::string& name, const std::strin
     }
     // A stem the manifest does not name edits nothing, and a test that
     // thought it had changed the world would be testing the shipped one.
-    if (!edited) return std::string();
+    if (!mapStem.empty() && !edited) return std::string();
     for (const std::string& tileset : tilesets) {
         if (!copyFile(dataDir() + "/" + tileset, dir + "/" + tileset)) return std::string();
     }
+    return dir;
+}
+
+/// Adds `petals` -- a JSON object of entries the test writes -- to the
+/// petals.json of a directory stageDataDir() or stageShippedDataDir() made,
+/// beside the shipped ones, for a test that runs a server with a petal of its
+/// own. What a shipped petal does, and whether it is there at all, is the
+/// author's to change, so a test about a kind of petal brings one rather than
+/// equipping whichever shipped petal is that kind today. Each entry gets the
+/// fixture defaults (fixture_content.h fixturePetals); an id the shipped file
+/// also uses is replaced. False when the file could not be rewritten.
+inline bool addPetals(const std::string& dir, const std::string& petals) {
+    Json merged;
+    Json added;
+    std::string error;
+    if (!Json::parseFile(dir + "/petals.json", merged, error) ||
+        !Json::parse(test::fixturePetals(petals), added, error) || !merged.isObject() ||
+        !added.isObject()) {
+        std::printf("  the fixture petals could not be staged: %s\n", error.c_str());
+        return false;
+    }
+    for (const std::string& id : added.keys()) merged[id] = added[id];
+    return merged.writeFile(dir + "/petals.json");
+}
+
+/// A copy of the staged data directory, every shipped map included, with
+/// `petals` added to its petals.json (addPetals). Returns the directory, or ""
+/// when it could not be staged.
+inline std::string stageDataDirWithPetals(const std::string& name, const std::string& petals) {
+    const std::string dir = stageShippedDataDir(name, std::string(), {});
+    if (dir.empty() || !addPetals(dir, petals)) return std::string();
     return dir;
 }
 

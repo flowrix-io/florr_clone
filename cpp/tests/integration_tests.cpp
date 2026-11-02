@@ -1816,8 +1816,23 @@ TEST(spaceship_shots_bring_at_most_three_glitch_flowers_through_the_real_server_
     // The unit tests drive each half on its own -- combat books the landing,
     // the ring answers it. This fires real shots through the server's tick,
     // from a spaceship in every slot, so the cap is the flower's and not each
-    // slot's.
-    Harness h("spaceship", {}, flix::testsupport::dataDir(), 0);
+    // slot's. The spaceship is the test's own -- a summoning shot capped at
+    // three -- so the cap under test is the one written here, whatever the
+    // shipped spaceship does.
+    const std::string dir = flix::testsupport::stageDataDirWithPetals("spaceship", R"JSON({
+      "test_spaceship": {"name": "Test Spaceship", "damage": 15, "health": 5, "size": 1,
+        "cooldown": 5000, "count": 1,
+        "projectile": {"count": 1, "distance": 700, "speed": 350, "spreadAngle": 0,
+          "seekRange": 1000, "seekCone": 0.7853981633974483,
+          "summonMobType": "glitch_flower", "summonMax": 3}}
+    })JSON");
+    if (dir.empty()) { CHECK(false); return; }
+    // Removed on every way out, and only after the server reading it is gone.
+    struct Cleanup {
+        std::string dir;
+        ~Cleanup() { flix::testsupport::removeDataDir(dir); }
+    } cleanup{dir};
+    Harness h("spaceship", {}, dir, 0);
     if (!h.ready) { CHECK(false); return; }
     NetClient client;
     CHECK(flix::testsupport::loginNew(h, client, "astronaut", "long-enough-password"));
@@ -1835,7 +1850,7 @@ TEST(spaceship_shots_bring_at_most_three_glitch_flowers_through_the_real_server_
     Loadout& loadout = world.get<Loadout>(player);
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
         LoadoutSlot& slot = loadout.slots[static_cast<std::size_t>(i)];
-        slot.configIndex = content().petalIndex("spaceship");
+        slot.configIndex = content().petalIndex("test_spaceship");
         slot.rarity = Rarity::Super;
     }
     net::InputFrame attack;
@@ -1900,8 +1915,19 @@ TEST(spaceship_shots_bring_at_most_three_glitch_flowers_through_the_real_server_
 TEST(a_totem_kill_earns_a_heal_stack_through_the_real_server_loop) {
     // The unit tests hand out stacks themselves. This kills a mob through the
     // server's tick with a totem on the bar, so the kill is the one combat
-    // credits.
-    Harness h("totem", {}, flix::testsupport::dataDir(), 0);
+    // credits. The totem is the test's own: one that heals after a kill.
+    const std::string dir = flix::testsupport::stageDataDirWithPetals("totem", R"JSON({
+      "test_totem": {"name": "Test Totem", "damage": 10, "health": 10, "size": 1.3,
+        "cooldown": 2500, "count": 1, "killHeal": 1, "killHealDuration": 10000,
+        "defendOnly": true, "ignoresMobs": true}
+    })JSON");
+    if (dir.empty()) { CHECK(false); return; }
+    // Removed on every way out, and only after the server reading it is gone.
+    struct Cleanup {
+        std::string dir;
+        ~Cleanup() { flix::testsupport::removeDataDir(dir); }
+    } cleanup{dir};
+    Harness h("totem", {}, dir, 0);
     if (!h.ready) { CHECK(false); return; }
     NetClient client;
     CHECK(flix::testsupport::loginNew(h, client, "shaman", "long-enough-password"));
@@ -1917,7 +1943,7 @@ TEST(a_totem_kill_earns_a_heal_stack_through_the_real_server_loop) {
     world.get<Health>(player).invulnerableUntilMillis = 1e18;
     const Realm realm = world.get<Transform>(player).realm;
     LoadoutSlot& slot = world.get<Loadout>(player).slots[0];
-    slot.configIndex = content().petalIndex("totem");
+    slot.configIndex = content().petalIndex("test_totem");
     slot.rarity = Rarity::Rare;
 
     Entity mob = NULL_ENTITY;

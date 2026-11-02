@@ -17,6 +17,7 @@
 // defects the sanitising tests feed the loader -- must not come through here.
 // Those write their own `xp` and `price` and go to the loader verbatim.
 
+#include <cstdio>
 #include <string>
 
 #include "shared/core/json.h"
@@ -78,6 +79,40 @@ inline bool loadFixtureContent(ContentRegistry& registry, const std::string& dir
     }
     return registry.loadFiles(mobsPath, petalsPath, error);
 }
+
+/// A fixture pair in the PROCESS-WIDE registry -- the one content() answers
+/// from, which the shop, the AI and the client read -- for as long as this
+/// lives, written into `dir` (testsupport::tempDir) and filled in as above,
+/// and the shipped content put back when it goes.
+///
+/// Every other test reads shipped content out of that same registry and
+/// expects to find it there, so a fixture must never outlive the test that
+/// loaded it: the shipped content goes back on every way out of the test, an
+/// early return included. Declare it before anything that caches what it read
+/// off the fixture, so that is gone first.
+class FixtureContent {
+public:
+    FixtureContent(const std::string& dir, const std::string& mobs, const std::string& petals) {
+        std::string error;
+        loaded_ = testsupport::writeText(dir + "/mobs.json", fixtureMobs(mobs)) &&
+                  testsupport::writeText(dir + "/petals.json", fixturePetals(petals)) &&
+                  loadContent(dir, error);
+        if (!loaded_) std::printf("    (the fixture content did not load: %s)\n", error.c_str());
+    }
+    ~FixtureContent() {
+        std::string error;
+        if (!loadContent(testsupport::dataDir(), error)) {
+            std::printf("    (the shipped content did not load back: %s)\n", error.c_str());
+        }
+    }
+    FixtureContent(const FixtureContent&) = delete;
+    FixtureContent& operator=(const FixtureContent&) = delete;
+
+    bool loaded() const { return loaded_; }
+
+private:
+    bool loaded_ = false;
+};
 
 } // namespace test
 } // namespace flix

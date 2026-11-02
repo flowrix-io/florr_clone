@@ -3229,10 +3229,10 @@ TEST(the_three_eggs_drop_florrs_ant_egg_and_the_termite_one_an_amulet) {
     }
 }
 
-TEST(the_queen_ant_drops_florrs_basil_from_mythic_up) {
-    // florr's ant queen table gives basil at 30%, and florr makes basil only
-    // at mythic and ultra -- here mythic and up, so a lower queen's roll
-    // drops nothing rather than a basil florr never made.
+TEST(the_queen_ant_drops_florrs_basil) {
+    // florr's ant queen table gives basil at 30%. What a basil does at each
+    // tier is config_tests' (on a basil of its own), and that a floor holds
+    // on a drop is a_spider_never_drops_a_third_eye_below_legendary's.
     DropTables tables = shippedTables();
     const std::uint16_t basil = shipped().petalIndex("basil");
     const std::uint16_t queen = shipped().mobIndex("queen_ant");
@@ -3246,20 +3246,11 @@ TEST(the_queen_ant_drops_florrs_basil_from_mythic_up) {
         CHECK_NEAR(row.probability, 0.3, 1e-12);
     }
     CHECK(found);
-    const PetalConfig& config = shipped().petal(basil);
-    CHECK(!petalComesAt(config, Rarity::Legendary));
-    CHECK(petalComesAt(config, Rarity::Mythic));
-    // Defend only, and passes through mobs (user's rules).
-    CHECK(config.defendOnly);
-    CHECK(config.ignoresMobs);
-    CHECK_NEAR(shipped().petalStats(basil, Rarity::Mythic).healBonus, 0.45, 1e-9);
-    CHECK_NEAR(shipped().petalStats(basil, Rarity::Ultra).healBonus, 0.5, 1e-9);
 }
 
-TEST(the_tomb_drops_florrs_totem_with_florrs_stats) {
-    // florr's tomb table gives totem at 25% (beside an ankh this game lacks),
-    // and its builder reads damage and health 10 x 3^tier, a 2.5 s reload,
-    // Heal 1/s on the heal ladder and a flat 10 s Duration.
+TEST(the_tomb_drops_florrs_totem) {
+    // florr's tomb table gives totem at 25% (beside an ankh this game lacks).
+    // What a totem does at each tier is config_tests' (on a totem of its own).
     DropTables tables = shippedTables();
     const std::uint16_t totem = shipped().petalIndex("totem");
     const std::uint16_t tomb = shipped().mobIndex("tomb");
@@ -3273,19 +3264,6 @@ TEST(the_tomb_drops_florrs_totem_with_florrs_stats) {
         CHECK_NEAR(row.probability, 0.25, 1e-12);
     }
     CHECK(found);
-    const PetalStats common = shipped().petalStats(totem, Rarity::Common);
-    CHECK_NEAR(common.damage, 10.0, 1e-9);
-    CHECK_NEAR(common.health, 10.0, 1e-9);
-    CHECK_NEAR(common.reloadMillis, 2500.0, 1e-9);
-    CHECK_NEAR(common.killHealPerSecond, 1.0, 1e-9);
-    const PetalStats ultra = shipped().petalStats(totem, Rarity::Ultra);
-    CHECK_NEAR(ultra.damage, 7290.0, 1e-6);
-    CHECK_NEAR(shipped().petalStats(totem, Rarity::Mythic).killHealPerSecond, 243.0, 1e-9);
-    // florr's ultra row is 420.888..., 243 x sqrt(3).
-    CHECK_NEAR(ultra.killHealPerSecond, 243.0 * std::sqrt(3.0), 1e-9);
-    for (const Rarity tier : {Rarity::Common, Rarity::Mythic, Rarity::Apex}) {
-        CHECK_NEAR(shipped().petalStats(totem, tier).killHealDurationMillis, 10000.0, 1e-9);
-    }
 }
 
 TEST(the_merged_view_holds_one_row_per_drop_type) {
@@ -3486,25 +3464,48 @@ TEST(a_kill_above_unusual_grades_exactly_one_of_its_rows) {
 /// roll lands it lower drops none -- not one lifted to legendary -- and one
 /// rare enough to roll legendary drops it there.
 TEST(a_spider_never_drops_a_third_eye_below_legendary) {
+    // On content of its own: a third eye floored at legendary, on a spider's
+    // table as it was balanced. Which shipped petals have a floor, and where,
+    // is the author's to change; that a floor holds is the loot system's.
+    ContentRegistry content;
+    std::string error;
+    CHECK(test::loadFixtureContent(content, testsupport::tempDir("flix_floor_drop_tests"), R"({
+        "spider": {"name":"Spider","health":60,"damage":15,"size":0.8333,"speed":0.95}
+    })",
+                                   R"({
+        "third_eye": {"name":"Third Eye","damage":0,"size":1,"cooldown":1,"count":0,
+                      "noPhysics":true,"minRarity":"legendary"},
+        "faster":    {"name":"Faster","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
+        "web":       {"name":"Web","damage":5,"health":10,"size":1.2,"cooldown":3000,"count":1}
+    })",
+                                   error));
+    const std::string path = testsupport::tempDir("flix_floor_drop_tests") + "/mob_drops.json";
+    CHECK(testsupport::writeText(path, R"({
+        "spider": {"guaranteed": true, "drops": [
+            {"type": "petal", "itemType": "third_eye", "rarity": "common", "probability": 0.05},
+            {"type": "petal", "itemType": "faster", "rarity": "common", "probability": 0.5},
+            {"type": "petal", "itemType": "web", "rarity": "common", "probability": 0.37}]}
+    })"));
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    ShippedLoot loot;
+    LootSystem loot;
+    CHECK(loot.loadTables(content, path, error));
     EventQueue events;
     Rng rng(4242);
 
-    const std::uint16_t spider = shipped().mobIndex("spider");
-    const std::uint16_t thirdEye = shipped().petalIndex("third_eye");
+    const std::uint16_t spider = content.mobIndex("spider");
+    const std::uint16_t thirdEye = content.petalIndex("third_eye");
     CHECK(spider != kInvalidIndex);
     CHECK(thirdEye != kInvalidIndex);
-    CHECK(shipped().petal(thirdEye).minRarity == Rarity::Legendary);
+    CHECK(content.petal(thirdEye).minRarity == Rarity::Legendary);
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
 
     int legendaryOrBetter = 0;
     for (int tier = 0; tier <= rarityIndex(Rarity::Ultra); ++tier) {
         for (int i = 0; i < 200; ++i) {
             makeCorpse(world, spider, clampRarity(tier), kCentre, player, {player});
-            loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+            loot.run(world, grid, content, rng, 0.0, net::kTickSeconds, commands, events);
             commands.flush();
             for (const Entity drop : liveDrops(world)) {
                 const DropItem& item = world.get<DropItem>(drop);
@@ -3808,11 +3809,54 @@ TEST(every_mob_above_common_leaves_one_of_each_of_its_drops) {
 
 namespace {
 
+/// The orb's world, on content of its own: a leafbug that drops a leaf and a
+/// root, the leaf's magic form, and the rose with its orb. Which shipped
+/// petals have a magic form, and what a shipped leafbug drops, are the
+/// author's to change; the conversion is the loot system's.
+const ContentRegistry& orbContent() {
+    static const ContentRegistry registry = [] {
+        ContentRegistry r;
+        std::string error;
+        if (!test::loadFixtureContent(r, testsupport::tempDir("flix_orb_tests"), R"({
+            "leafbug": {"name":"Leafbug","health":10,"damage":1,"size":1,"speed":0.2}
+        })",
+                                      R"({
+            "leaf":      {"name":"Leaf","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
+            "magic_leaf":{"name":"Magic Leaf","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
+            "root":      {"name":"Root","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
+            "rose":      {"name":"Rose","damage":5,"health":5,"size":1,"cooldown":3500,"count":1},
+            "magic_orb": {"name":"Magic Orb","damage":5,"health":5,"size":1,"cooldown":3500,"count":1}
+        })",
+                                      error)) {
+            std::printf("    (the orb fixture did not load: %s)\n", error.c_str());
+        }
+        return r;
+    }();
+    return registry;
+}
+
+/// A LootSystem holding the leafbug's table against orbContent(): a leaf
+/// every time and a root half the time.
+struct OrbLoot : LootSystem {
+    OrbLoot() {
+        const std::string path = testsupport::tempDir("flix_orb_tests") + "/mob_drops.json";
+        std::string error;
+        if (!testsupport::writeText(path, R"({
+                "leafbug": {"guaranteed": true, "drops": [
+                    {"type": "petal", "itemType": "leaf", "rarity": "common", "probability": 1},
+                    {"type": "petal", "itemType": "root", "rarity": "common", "probability": 0.5}]}
+            })") ||
+            !loadTables(orbContent(), path, error)) {
+            std::printf("    (the orb drop table did not load: %s)\n", error.c_str());
+        }
+    }
+};
+
 /// Puts one petal in the flower's first ACTIVE slot.
 void wear(World& world, Entity player, const char* id, Rarity rarity, int slot = 0) {
     Loadout& loadout = world.ensure<Loadout>(player);
     loadout.slots[static_cast<std::size_t>(slot)] =
-        LoadoutSlot{shipped().petalIndex(id), rarity, 0.0, false};
+        LoadoutSlot{orbContent().petalIndex(id), rarity, 0.0, false};
 }
 
 /// Forty uncommon leafbugs, which drop every authored row: a leaf and a root.
@@ -3820,10 +3864,10 @@ void wear(World& world, Entity player, const char* id, Rarity rarity, int slot =
 std::vector<Entity> farmLeafbugs(World& world, LootSystem& loot, CommandBuffer& commands,
                                  SpatialGrid& grid, EventQueue& events, Rng& rng, Entity player) {
     for (int i = 0; i < 40; ++i) {
-        makeCorpse(world, shipped().mobIndex("leafbug"), Rarity::Uncommon, kCentre, player,
+        makeCorpse(world, orbContent().mobIndex("leafbug"), Rarity::Uncommon, kCentre, player,
                    {player});
     }
-    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    loot.run(world, grid, orbContent(), rng, 1000.0, net::kTickSeconds, commands, events);
     commands.flush();
     return liveDrops(world);
 }
@@ -3832,17 +3876,16 @@ std::vector<Entity> farmLeafbugs(World& world, LootSystem& loot, CommandBuffer& 
 
 TEST(the_magic_form_table_is_derived_from_the_petal_ids) {
     // magic_X is the magic form of X, and the orb is the rose's.
-    for (const char* id : {"leaf", "stick", "cactus", "missile", "bubble", "peas"}) {
-        const std::uint16_t base = shipped().petalIndex(id);
-        CHECK_EQ(shipped().magicFormOf(base), shipped().petalIndex(std::string("magic_") + id));
-    }
-    CHECK_EQ(shipped().magicFormOf(shipped().petalIndex("rose")),
-             shipped().petalIndex("magic_orb"));
+    const ContentRegistry& r = orbContent();
+    CHECK(r.petalIndex("magic_leaf") != kInvalidIndex);
+    CHECK(r.petalIndex("magic_orb") != kInvalidIndex);
+    CHECK_EQ(r.magicFormOf(r.petalIndex("leaf")), r.petalIndex("magic_leaf"));
+    CHECK_EQ(r.magicFormOf(r.petalIndex("rose")), r.petalIndex("magic_orb"));
 
     // A petal with no magic counterpart converts into nothing, and a magic
     // petal is a destination rather than a source.
-    CHECK_EQ(shipped().magicFormOf(shipped().petalIndex("basic")), kInvalidIndex);
-    CHECK_EQ(shipped().magicFormOf(shipped().petalIndex("magic_leaf")), kInvalidIndex);
+    CHECK_EQ(r.magicFormOf(r.petalIndex("root")), kInvalidIndex);
+    CHECK_EQ(r.magicFormOf(r.petalIndex("magic_leaf")), kInvalidIndex);
 }
 
 TEST(a_magic_petal_is_never_in_the_random_drop_pool) {
@@ -3852,28 +3895,28 @@ TEST(a_magic_petal_is_never_in_the_random_drop_pool) {
     for (const std::uint16_t index : tables.droppablePetals()) {
         CHECK(!shipped().isMagicForm(index));
     }
-    CHECK(shipped().isMagicForm(shipped().petalIndex("magic_orb")));
-    CHECK(!shipped().isMagicForm(shipped().petalIndex("rose")));
+    CHECK(orbContent().isMagicForm(orbContent().petalIndex("magic_orb")));
+    CHECK(!orbContent().isMagicForm(orbContent().petalIndex("rose")));
 }
 
 TEST(no_random_drop_row_turns_into_a_sacrifice) {
     // No `random` row turns into one (the shop's half is in menu_tests).
-    const std::uint16_t sacrifice = shipped().petalIndex("sacrifice");
-    CHECK(sacrifice != kInvalidIndex);
     const DropTables tables = shippedTables();
-    for (const std::uint16_t index : tables.droppablePetals()) CHECK(index != sacrifice);
+    for (const std::uint16_t index : tables.droppablePetals()) {
+        CHECK(!petalIsSacrifice(shipped().petal(index)));
+    }
 }
 
 TEST(without_an_orb_a_mob_drops_exactly_what_its_table_says) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    ShippedLoot loot;
+    OrbLoot loot;
     EventQueue events;
     Rng rng(41);
 
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
-    const std::uint16_t leaf = shipped().petalIndex("leaf");
+    const std::uint16_t leaf = orbContent().petalIndex("leaf");
     int leaves = 0;
     for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
         if (world.get<DropItem>(drop).configIndex == leaf) ++leaves;
@@ -3885,16 +3928,16 @@ TEST(a_worn_orb_converts_every_drop_that_has_a_magic_form) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    ShippedLoot loot;
+    OrbLoot loot;
     EventQueue events;
     Rng rng(42);
 
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
     wear(world, player, "magic_orb", Rarity::Ultra);
 
-    const std::uint16_t leaf = shipped().petalIndex("leaf");
-    const std::uint16_t magicLeaf = shipped().petalIndex("magic_leaf");
-    const std::uint16_t root = shipped().petalIndex("root");
+    const std::uint16_t leaf = orbContent().petalIndex("leaf");
+    const std::uint16_t magicLeaf = orbContent().petalIndex("magic_leaf");
+    const std::uint16_t root = orbContent().petalIndex("root");
     int magic = 0;
     int roots = 0;
     for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
@@ -3914,15 +3957,15 @@ TEST(a_common_orb_gatekeeps_every_conversion_to_common) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    ShippedLoot loot;
+    OrbLoot loot;
     EventQueue events;
     Rng rng(43);
 
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
     wear(world, player, "magic_orb", Rarity::Common);
 
-    const std::uint16_t magicLeaf = shipped().petalIndex("magic_leaf");
-    const std::uint16_t root = shipped().petalIndex("root");
+    const std::uint16_t magicLeaf = orbContent().petalIndex("magic_leaf");
+    const std::uint16_t root = orbContent().petalIndex("root");
     int aboveCommonRoots = 0;
     for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
         const DropItem& item = world.get<DropItem>(drop);
@@ -3941,14 +3984,14 @@ TEST(a_better_orb_lets_a_better_conversion_through) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    ShippedLoot loot;
+    OrbLoot loot;
     EventQueue events;
     Rng rng(43);
 
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
     wear(world, player, "magic_orb", Rarity::Ultra);
 
-    const std::uint16_t magicLeaf = shipped().petalIndex("magic_leaf");
+    const std::uint16_t magicLeaf = orbContent().petalIndex("magic_leaf");
     int aboveCommon = 0;
     for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
         const DropItem& item = world.get<DropItem>(drop);
@@ -3963,7 +4006,7 @@ TEST(a_stashed_orb_converts_nothing) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    ShippedLoot loot;
+    OrbLoot loot;
     EventQueue events;
     Rng rng(44);
 
@@ -3972,7 +4015,7 @@ TEST(a_stashed_orb_converts_nothing) {
     // modifier and draws no petal.
     wear(world, player, "magic_orb", Rarity::Ultra, kLoadoutActiveSlots);
 
-    const std::uint16_t leaf = shipped().petalIndex("leaf");
+    const std::uint16_t leaf = orbContent().petalIndex("leaf");
     int leaves = 0;
     for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
         if (world.get<DropItem>(drop).configIndex == leaf) ++leaves;
@@ -3984,7 +4027,7 @@ TEST(an_orb_converts_only_its_wearers_drops) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
-    ShippedLoot loot;
+    OrbLoot loot;
     EventQueue events;
     Rng rng(45);
 
@@ -3994,16 +4037,16 @@ TEST(an_orb_converts_only_its_wearers_drops) {
     const Entity plain = makePlayer(world, kCentre + Vec2{-5000, 0});
     wear(world, wearer, "magic_orb", Rarity::Common);
     for (int i = 0; i < 40; ++i) {
-        const Entity corpse = makeCorpse(world, shipped().mobIndex("leafbug"), Rarity::Uncommon,
+        const Entity corpse = makeCorpse(world, orbContent().mobIndex("leafbug"), Rarity::Uncommon,
                                          kCentre, wearer, {wearer, plain});
         world.get<Bounty>(corpse).credit(wearer, 10.0);
     }
-    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    loot.run(world, grid, orbContent(), rng, 1000.0, net::kTickSeconds, commands, events);
     commands.flush();
 
-    const std::uint16_t leaf = shipped().petalIndex("leaf");
-    const std::uint16_t magicLeaf = shipped().petalIndex("magic_leaf");
-    const std::uint16_t root = shipped().petalIndex("root");
+    const std::uint16_t leaf = orbContent().petalIndex("leaf");
+    const std::uint16_t magicLeaf = orbContent().petalIndex("magic_leaf");
+    const std::uint16_t root = orbContent().petalIndex("root");
     int wearerMagic = 0;
     int plainLeaves = 0;
     int sharedRoots = 0;

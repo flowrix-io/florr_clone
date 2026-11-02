@@ -2,6 +2,7 @@
 
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_widgets.h"
+#include "fixture_content.h"
 #include "server_harness.h"
 #include "shared/game/shop.h"
 #include "shared/game/skills.h"
@@ -88,6 +89,39 @@ bool awaitFeed(Harness& h, NetClient& client) {
 bool ensureShippedContent() {
     std::string error;
     return loadContent(dataDir(), error);
+}
+
+/// A small catalogue for the shop's rules about particular petals: plain ones
+/// enough to fill every card of a rotation, and one of each kind the shop
+/// treats specially. Written here rather than read off petals.json, whose
+/// petals the author rebalances, re-floors and hides whenever they like.
+const char* const kShopFixtureMobs = R"JSON({
+  "plain": {"name": "Plain", "health": 3, "damage": 1, "size": 1, "noEggDrop": true}
+})JSON";
+const char* const kShopFixturePetals = R"JSON({
+  "plain_1": {"name": "Plain 1", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_2": {"name": "Plain 2", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_3": {"name": "Plain 3", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_4": {"name": "Plain 4", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_5": {"name": "Plain 5", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_6": {"name": "Plain 6", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_7": {"name": "Plain 7", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_8": {"name": "Plain 8", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_9": {"name": "Plain 9", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_10": {"name": "Plain 10", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_11": {"name": "Plain 11", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "plain_12": {"name": "Plain 12", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "sacrifice": {"name": "Sacrifice", "health": 10, "damage": 10, "size": 1, "cooldown": 2500, "count": 1},
+  "floored": {"name": "Floored", "health": 5, "damage": 15, "size": 1, "cooldown": 5000, "count": 1,
+    "minRarity": "super"},
+  "staff_only": {"name": "Staff Only", "health": 10, "damage": 10, "size": 1, "cooldown": 2500,
+    "count": 1, "isAdminPetal": true}
+})JSON";
+
+/// The catalogue above in the process-wide registry for as long as it lives.
+test::FixtureContent shopFixture() {
+    return test::FixtureContent(testsupport::tempDir("flix_menu_shop_fixture"), kShopFixtureMobs,
+                                kShopFixturePetals);
 }
 
 } // namespace
@@ -427,29 +461,44 @@ TEST(a_bought_talent_survives_a_reconnect) {
 // The shop
 // ---------------------------------------------------------------------------
 
-TEST(the_shop_never_stocks_a_sacrifice) {
+TEST(the_shop_never_stocks_a_sacrifice_or_an_admin_petal) {
     // Hel's alone to hand out: a sacrifice at a tier the market deals in
-    // would be a boss for a handful of stars.
-    CHECK(ensureShippedContent());
-    const std::uint16_t sacrifice = content().petalIndex("sacrifice");
+    // would be a boss for a handful of stars. An admin petal is never for sale
+    // whatever its price says.
+    const test::FixtureContent fixture = shopFixture();
+    CHECK(fixture.loaded());
+    if (!fixture.loaded()) return;
+    const std::uint16_t sacrifice = content().petalIndex(kSacrificePetalId);
+    const std::uint16_t staffOnly = content().petalIndex("staff_only");
     CHECK(sacrifice != kInvalidIndex);
+    CHECK(staffOnly != kInvalidIndex);
     CHECK(!shopSellsPetal(sacrifice));
-    CHECK(shopSellsPetal(content().petalIndex("rose")));
+    CHECK(!shopSellsPetal(staffOnly));
+    CHECK(shopSellsPetal(content().petalIndex("plain_1")));
+    for (std::int64_t rotation = 0; rotation < 500; ++rotation) {
+        for (const ShopOffer& offer : shopOffers(rotation)) {
+            CHECK(offer.petalIndex != sacrifice);
+            CHECK(offer.petalIndex != staffOnly);
+        }
+    }
 }
 
-TEST(the_shop_never_offers_a_spaceship_below_super) {
-    // Its minRarity: it only ever lands on a super or unique card, never on a
-    // mythic or ultra one, and a purchase named below it is not for sale.
-    CHECK(ensureShippedContent());
-    const std::uint16_t spaceship = content().petalIndex("spaceship");
-    CHECK(spaceship != kInvalidIndex);
-    CHECK(shopSellsPetal(spaceship));
-    CHECK(!petalComesAt(content().petal(spaceship), Rarity::Ultra));
-    CHECK(petalComesAt(content().petal(spaceship), Rarity::Super));
+TEST(the_shop_never_offers_a_petal_below_its_floor) {
+    // A minRarity of super: it only ever lands on a super or unique card,
+    // never on a mythic or ultra one, and a purchase named below it is not for
+    // sale.
+    const test::FixtureContent fixture = shopFixture();
+    CHECK(fixture.loaded());
+    if (!fixture.loaded()) return;
+    const std::uint16_t floored = content().petalIndex("floored");
+    CHECK(floored != kInvalidIndex);
+    CHECK(shopSellsPetal(floored));
+    CHECK(!petalComesAt(content().petal(floored), Rarity::Ultra));
+    CHECK(petalComesAt(content().petal(floored), Rarity::Super));
     int offered = 0;
     for (std::int64_t rotation = 0; rotation < 3000; ++rotation) {
         for (const ShopOffer& offer : shopOffers(rotation)) {
-            if (offer.petalIndex != spaceship) continue;
+            if (offer.petalIndex != floored) continue;
             ++offered;
             CHECK(rarityIndex(offer.rarity) >= rarityIndex(Rarity::Super));
         }
@@ -483,19 +532,23 @@ TEST(every_rotation_is_two_mythic_two_ultra_four_super_two_unique) {
 
 TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
     CHECK(ensureShippedContent());
-    const double common = shopPrice("basic", Rarity::Common);
-    const double uncommon = shopPrice("basic", Rarity::Uncommon);
-    CHECK_NEAR(common, 10.0, 1e-9);
-    CHECK_NEAR(uncommon, 35.0, 1e-9);
-    CHECK(shopPrice("basic", Rarity::Legendary) > uncommon);
-    // The price is the petal's own `price` field, run up the ladder.
-    CHECK_NEAR(common, content().petal(content().petalIndex("basic")).price, 1e-9);
-    // Every petal has one: the load would have been refused otherwise, so
-    // there is no longer a default for an unpriced petal to fall through to.
+    // The price is the petal's own `price` field, run up the ladder at 3.5x a
+    // tier -- whatever the author priced it at. Every petal has one: the load
+    // would have been refused otherwise, so there is no longer a default for
+    // an unpriced petal to fall through to.
+    int priced = 0;
     for (std::uint16_t i = 0; i < content().petalCount(); ++i) {
-        CHECK(std::isfinite(content().petal(i).price));
+        const double price = content().petal(i).price;
+        CHECK(std::isfinite(price));
         CHECK(shopPrice(i, Rarity::Common) >= 0.0);
+        CHECK_NEAR(shopPrice(i, Rarity::Common), std::floor(price), 1e-9);
+        CHECK_NEAR(shopPrice(i, Rarity::Uncommon), std::floor(price * 3.5), 1e-9);
+        CHECK_NEAR(shopPrice(content().petal(i).id, Rarity::Rare), shopPrice(i, Rarity::Rare), 1e-9);
+        if (price < 1.0) continue;
+        ++priced;
+        CHECK(shopPrice(i, Rarity::Legendary) > shopPrice(i, Rarity::Uncommon));
     }
+    CHECK(priced > 0);
     // An id no petal answers to is not a petal and has no price at all.
     CHECK_NEAR(shopPrice("a-petal-that-does-not-exist", Rarity::Common), 0.0, 1e-12);
 
@@ -640,33 +693,40 @@ TEST(a_unique_card_sells_the_unique_the_ladder_will_not) {
 TEST(a_magic_petal_is_drawn_at_the_size_of_the_petal_it_is_the_form_of) {
     // A magic petal's artwork IS its ordinary form's document in cyan, down to
     // the viewBox, so its tile has to be measured the same way. Without that
-    // the six of them fell through to the generic 20-unit fallback: a magic
+    // they fell through to the generic 20-unit fallback: a magic
     // leaf half the size of a leaf and lying flat where a leaf lies back, and
     // a magic cactus at half the width of a cactus.
+    //
+    // Every magic petal the shipped file has, whichever those are: the icon
+    // table is built once off the process-wide content, so this cannot swap a
+    // fixture in under it, and which petals have a magic form is the author's
+    // call. (That a magic form is found by its id is config_tests'.)
     std::string error;
     CHECK(loadContent(dataDir(), error));
 
-    for (const char* id : {"leaf", "stick", "cactus", "missile", "bubble", "rose"}) {
-        const std::uint16_t base = content().petalIndex(id);
-        const std::uint16_t magic = content().magicFormOf(base);
-        if (base == kInvalidIndex || magic == kInvalidIndex) { CHECK(false); continue; }
+    for (std::uint16_t magic = 0; magic < content().petalCount(); ++magic) {
+        const std::uint16_t base = content().magicSourceOf(magic);
+        if (base == kInvalidIndex) continue;
+        // Where gardn has no row for the base, each is drawn off its own
+        // visual_scale, so a pair the author scaled apart is free to differ.
+        if (content().petal(magic).visualScale != content().petal(base).visualScale) continue;
 
         // Measured at the BASE petal's own size stat. `size` is not what the
         // inherited measurement is made of -- a gardn row is a fixed drawn
         // width and ignores it -- so the two petals are free to disagree
-        // there, and rose (0.9) and the orb (1.0) do.
+        // there.
         const double sizeStat = content().petal(base).size;
 
         const ui::PetalIconMetric want = ui::petalIconMetric(base, sizeStat);
         const ui::PetalIconMetric got = ui::petalIconMetric(magic, sizeStat);
+        if (std::fabs(got.diameter - want.diameter) > 1e-9 ||
+            std::fabs(got.tilt - want.tilt) > 1e-12) {
+            std::printf("    %s is drawn at %g tilted %g; %s at %g tilted %g\n",
+                        content().petal(magic).id.c_str(), got.diameter, got.tilt,
+                        content().petal(base).id.c_str(), want.diameter, want.tilt);
+        }
         CHECK_NEAR(got.diameter, want.diameter, 1e-9);
         CHECK_NEAR(got.tilt, want.tilt, 1e-12);
-        // And it is a real measurement rather than the fallback that happened
-        // to agree: every one of these six is drawn at something other than
-        // the basic-sized box an unscaled petal gardn does not have would take.
-        const double fallback =
-            ui::petalIconMetric(content().petalIndex("basic"), 1.0).diameter * sizeStat;
-        CHECK(std::fabs(got.diameter - fallback) > 1e-9);
     }
 }
 
@@ -707,16 +767,17 @@ TEST(the_totem_tile_shows_florrs_picture_at_florrs_size) {
     // back -1 (user's choice).
     std::string error;
     CHECK(loadContent(dataDir(), error));
-    SpriteCache sprites;
-    sprites.build(content(), dataDir());
     const std::uint16_t totem = content().petalIndex("totem");
     if (totem == kInvalidIndex) { CHECK(false); return; }
-    const ui::PetalIconMetric icon =
-        ui::petalIconMetric(totem, content().petal(totem).size, &sprites);
+    const ui::PetalIconMetric icon = ui::petalIconMetric(totem, content().petal(totem).size);
     CHECK_NEAR(icon.tilt, -1.0, 1e-12);
-    // What the plate shows is the row's 38.3; the coverage the row states is
-    // the one the sprite cache measures off the shipped document.
-    CHECK_NEAR(icon.diameter * sprites.petalCoverage(totem), 38.3, 0.5);
+    // What the plate shows is the row's 38.3, over the 95.5% of its box the
+    // row says the picture covers. (Whether the shipped document still covers
+    // that much is the art's, and the author's to redraw.) A row is a fixed
+    // drawn width, so the entry's own size does not move it.
+    CHECK_NEAR(icon.diameter * 0.955, 38.3, 1e-9);
+    CHECK_NEAR(ui::petalIconMetric(totem, content().petal(totem).size * 2.0).diameter,
+               icon.diameter, 1e-9);
 }
 
 TEST(a_balance_past_32_bits_reaches_the_client_and_is_debited_exactly) {
@@ -1002,6 +1063,8 @@ TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
 
     const std::uint16_t rose = content().petalIndex("rose");
     if (rose == kInvalidIndex) { CHECK(false); return; }
+    // The petal's display name is the author's; the sentence around it is not.
+    const std::string name = content().petal(rose).name;
 
     NetClient client;
     CHECK(connectClient(h, client));
@@ -1026,7 +1089,7 @@ TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
     // separately coloured inside it -- which is why the handle is not
     // contiguous with the words before it.
     const std::string line = client.chat().back().text;
-    CHECK(line.find("<b style=\"color: #2bffa3;\">A Super Rose has been crafted by ") == 0);
+    CHECK(line.find("<b style=\"color: #2bffa3;\">A Super " + name + " has been crafted by ") == 0);
     CHECK(line.find("<b style=\"color: #00ff00;\">@smith</b>") != std::string::npos);
     CHECK(line.find("<b style=\"color: yellow;\">smith</b>") != std::string::npos);
 
@@ -1035,7 +1098,7 @@ TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
     CHECK_EQ(client.notifications().size(), static_cast<std::size_t>(1));
     const NotificationEntry& notice = client.notifications().front();
     CHECK_EQ(static_cast<int>(notice.kind), static_cast<int>(net::NotificationKind::SuperCraft));
-    CHECK_EQ(notice.message, std::string("A Super Rose has been crafted by @smith [smith]"));
+    CHECK_EQ(notice.message, "A Super " + name + " has been crafted by @smith [smith]");
     CHECK(notice.message.find('<') == std::string::npos);
 }
 

@@ -1329,8 +1329,25 @@ TEST(the_oracle_wait_is_the_accounts_across_a_relog_and_ends_on_the_server_clock
 
 namespace {
 
+/// With petals of its own beside the shipped ones: a trinket the trader takes,
+/// a keepsake marked untradable, and the coin it pays in, marked untradable as
+/// the trade needs it to be. Which shipped petals are tradable is the
+/// author's to change; that the flag is the rule is the trader's.
 std::string traderWorld(const std::string& name) {
-    return npcWorld(name, fixtureNpc(kOracleX, kOracleY, "trader", "common"));
+    const std::string dir = npcWorld(name, fixtureNpc(kOracleX, kOracleY, "trader", "common"));
+    if (dir.empty()) return dir;
+    if (!addPetals(dir, R"JSON({
+        "trinket": {"name": "Trinket", "health": 10, "damage": 10, "size": 1, "cooldown": 2500,
+          "count": 1},
+        "keepsake": {"name": "Keepsake", "health": 10, "damage": 10, "size": 1, "cooldown": 2500,
+          "count": 1, "tradable": false},
+        "coin": {"name": "Coin", "health": 10, "damage": 15, "size": 1, "cooldown": 2500,
+          "count": 1, "tradable": false}
+    })JSON")) {
+        removeDataDir(dir);
+        return std::string();
+    }
+    return dir;
 }
 
 /// Waits for the trader's answer and hands it back with `pending` cleared, as
@@ -1363,7 +1380,7 @@ TEST(the_trader_wait_is_said_in_whole_hours_rounded_down_then_in_minutes) {
     CHECK_EQ(traderCooldownText(1.0), std::string("You'll be able to trade again in 1 minute"));
 }
 
-TEST(the_shipped_trader_stands_in_the_desert_and_takes_all_but_the_marked_petals) {
+TEST(the_shipped_trader_stands_in_the_desert) {
     CHECK(ensureShippedContent());
     const std::uint16_t trader = content().mobIndex("trader");
     CHECK(trader != kInvalidIndex);
@@ -1380,15 +1397,9 @@ TEST(the_shipped_trader_stands_in_the_desert_and_takes_all_but_the_marked_petals
     // standing on it.
     CHECK(config.beeFlight);
     CHECK(content().mobStats(trader, Rarity::Common).speed > 0.0);
-
-    // What it hands back exists and is marked untradable -- or it would take
-    // its own coins back one for one -- and so is the basic petal. A petal
-    // petals.json says nothing about trades.
-    const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
-    CHECK(coin != kInvalidIndex);
-    if (coin != kInvalidIndex) CHECK(!content().petal(coin).tradable);
-    CHECK(!content().petal(content().petalIndex("basic")).tradable);
-    CHECK(content().petal(content().petalIndex("rose")).tradable);
+    // Which petals it takes is each petal's `tradable` flag, and which ones
+    // petals.json marks is the author's: the trade tests below bring their own
+    // (traderWorld).
 
     WorldMaps maps;
     Terrain terrain;
@@ -1433,33 +1444,33 @@ TEST(a_trade_is_one_petal_for_one_coin_of_the_same_tier) {
     const std::string dir = traderWorld("trader-trade");
     Harness h("trader-trade", [](const std::string& path) {
         seedAccount(path, "merchant");
-        seedStack(path, "merchant", "petal_rose", Rarity::Epic, 3);
+        seedStack(path, "merchant", "petal_trinket", Rarity::Epic, 3);
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
-    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t trinket = content().petalIndex("trinket");
     const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
-    if (rose == kInvalidIndex || coin == kInvalidIndex) { CHECK(false); removeDataDir(dir); return; }
+    if (trinket == kInvalidIndex || coin == kInvalidIndex) { CHECK(false); removeDataDir(dir); return; }
 
     NetClient client;
     CHECK(joinAs(h, client, "merchant"));
     h.step(3, {&client});
     CHECK(awaitProfile(h, client, [&](const Profile& p) {
-        return p.stackCount(rose, Rarity::Epic) == 3u;
+        return p.stackCount(trinket, Rarity::Epic) == 3u;
     }));
     CHECK_EQ(client.traderCooldownRemainingMillis(), 0.0);
 
     TradeOutcome outcome;
     standBeside(h, client, "trader");
-    client.requestTrade(rose, Rarity::Epic);
+    client.requestTrade(trinket, Rarity::Epic);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(outcome.success);
-    CHECK_EQ(outcome.petalIndex, rose);
+    CHECK_EQ(outcome.petalIndex, trinket);
     CHECK(outcome.rarity == Rarity::Epic);
     CHECK_EQ(outcome.receivedIndex, coin);
     // One out of the stack, one coin of its tier in -- and the day's wait on
     // the profile that followed, which the oracle's is not part of.
     CHECK(awaitProfile(h, client, [&](const Profile& p) {
-        return p.stackCount(rose, Rarity::Epic) == 2u && p.stackCount(coin, Rarity::Epic) == 1u;
+        return p.stackCount(trinket, Rarity::Epic) == 2u && p.stackCount(coin, Rarity::Epic) == 1u;
     }));
     CHECK_EQ(client.profile().stackCount(coin, Rarity::Common), 0u);
     const double wait = client.traderCooldownRemainingMillis();
@@ -1473,29 +1484,29 @@ TEST(the_trader_refuses_what_it_does_not_take_and_a_refusal_starts_no_wait) {
     const std::string dir = traderWorld("trader-refuse");
     Harness h("trader-refuse", [](const std::string& path) {
         seedAccount(path, "merchant");
-        seedStack(path, "merchant", "petal_basic", Rarity::Common, 3);
+        seedStack(path, "merchant", "petal_keepsake", Rarity::Common, 3);
         seedStack(path, "merchant", "petal_coin", Rarity::Rare, 2);
-        seedStack(path, "merchant", "petal_rose", Rarity::Apex, 1);
-        seedStack(path, "merchant", "petal_rose", Rarity::Universal, 1);
+        seedStack(path, "merchant", "petal_trinket", Rarity::Apex, 1);
+        seedStack(path, "merchant", "petal_trinket", Rarity::Universal, 1);
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
-    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t trinket = content().petalIndex("trinket");
     const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
-    const std::uint16_t basic = content().petalIndex("basic");
+    const std::uint16_t keepsake = content().petalIndex("keepsake");
 
     NetClient client;
     CHECK(joinAs(h, client, "merchant"));
     h.step(3, {&client});
     CHECK(awaitProfile(h, client, [&](const Profile& p) {
-        return p.stackCount(coin, Rarity::Rare) == 2u && p.stackCount(basic, Rarity::Common) > 0u;
+        return p.stackCount(coin, Rarity::Rare) == 2u && p.stackCount(keepsake, Rarity::Common) > 0u;
     }));
-    const std::uint32_t basics = client.profile().stackCount(basic, Rarity::Common);
+    const std::uint32_t keepsakes = client.profile().stackCount(keepsake, Rarity::Common);
 
-    // Marked untradable, both of them: the basic petal, and a coin -- which
+    // Marked untradable, both of them: the keepsake, and a coin -- which
     // would otherwise trade for itself.
     TradeOutcome outcome;
     standBeside(h, client, "trader");
-    client.requestTrade(basic, Rarity::Common);
+    client.requestTrade(keepsake, Rarity::Common);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(!outcome.success);
     CHECK_EQ(outcome.receivedIndex, kNoPetal);
@@ -1505,32 +1516,32 @@ TEST(the_trader_refuses_what_it_does_not_take_and_a_refusal_starts_no_wait) {
     CHECK(!outcome.success);
     // A petal the account does not have, at a tier it does not have.
     standBeside(h, client, "trader");
-    client.requestTrade(rose, Rarity::Epic);
+    client.requestTrade(trinket, Rarity::Epic);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(!outcome.success);
     // A tradable petal at universal: a universal coin would be a universal
     // nobody gave.
     standBeside(h, client, "trader");
-    client.requestTrade(rose, Rarity::Universal);
+    client.requestTrade(trinket, Rarity::Universal);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(!outcome.success);
     CHECK_EQ(outcome.receivedIndex, kNoPetal);
 
     h.step(5, {&client});
-    CHECK_EQ(client.profile().stackCount(rose, Rarity::Universal), 1u);
+    CHECK_EQ(client.profile().stackCount(trinket, Rarity::Universal), 1u);
     CHECK_EQ(client.profile().stackCount(coin, Rarity::Universal), 0u);
-    CHECK_EQ(client.profile().stackCount(basic, Rarity::Common), basics);
+    CHECK_EQ(client.profile().stackCount(keepsake, Rarity::Common), keepsakes);
     CHECK_EQ(client.profile().stackCount(coin, Rarity::Rare), 2u);
     CHECK_EQ(client.traderCooldownRemainingMillis(), 0.0);
 
     // None of that was a trade, so the day has not started -- and the top
     // tier trades like any other.
     standBeside(h, client, "trader");
-    client.requestTrade(rose, Rarity::Apex);
+    client.requestTrade(trinket, Rarity::Apex);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(outcome.success);
     CHECK(awaitProfile(h, client, [&](const Profile& p) {
-        return p.stackCount(rose, Rarity::Apex) == 0u && p.stackCount(coin, Rarity::Apex) == 1u;
+        return p.stackCount(trinket, Rarity::Apex) == 0u && p.stackCount(coin, Rarity::Apex) == 1u;
     }));
     removeDataDir(dir);
 }
@@ -1539,10 +1550,10 @@ TEST(the_trader_serves_only_a_flower_standing_at_it) {
     const std::string dir = traderWorld("trader-far");
     Harness h("trader-far", [](const std::string& path) {
         seedAccount(path, "merchant");
-        seedStack(path, "merchant", "petal_rose", Rarity::Common, 5);
+        seedStack(path, "merchant", "petal_trinket", Rarity::Common, 5);
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
-    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t trinket = content().petalIndex("trinket");
 
     NetClient client;
     CHECK(connectClient(h, client));
@@ -1551,7 +1562,7 @@ TEST(the_trader_serves_only_a_flower_standing_at_it) {
 
     // On the title screen there is no body to be standing anywhere.
     TradeOutcome outcome;
-    client.requestTrade(rose, Rarity::Common);
+    client.requestTrade(trinket, Rarity::Common);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(!outcome.success);
 
@@ -1571,7 +1582,7 @@ TEST(the_trader_serves_only_a_flower_standing_at_it) {
     world.get<Transform>(player).position =
         Vec2{at.x + radius + kNpcServiceReach + kNpcServiceSlack + 40.0, at.y};
     h.step(1, {&client});
-    client.requestTrade(rose, Rarity::Common);
+    client.requestTrade(trinket, Rarity::Common);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(!outcome.success);
     CHECK(outcome.reason.find("far") != std::string::npos);
@@ -1582,7 +1593,7 @@ TEST(the_trader_serves_only_a_flower_standing_at_it) {
     world.get<Transform>(player).position =
         Vec2{at.x + radius + kNpcServiceReach + kNpcServiceSlack - 40.0, at.y};
     h.step(1, {&client});
-    client.requestTrade(rose, Rarity::Common);
+    client.requestTrade(trinket, Rarity::Common);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(outcome.success);
     removeDataDir(dir);
@@ -1592,10 +1603,10 @@ TEST(the_trader_grants_one_trade_a_day_kept_across_a_relog) {
     const std::string dir = traderWorld("trader-wait");
     Harness h("trader-wait", [](const std::string& path) {
         seedAccount(path, "merchant");
-        seedStack(path, "merchant", "petal_rose", Rarity::Common, 5);
+        seedStack(path, "merchant", "petal_trinket", Rarity::Common, 5);
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
-    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t trinket = content().petalIndex("trinket");
     const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
 
     {
@@ -1604,13 +1615,13 @@ TEST(the_trader_grants_one_trade_a_day_kept_across_a_relog) {
         h.step(3, {&client});
         TradeOutcome outcome;
         standBeside(h, client, "trader");
-        client.requestTrade(rose, Rarity::Common);
+        client.requestTrade(trinket, Rarity::Common);
         CHECK(awaitTrade(h, client, outcome));
         CHECK(outcome.success);
 
         // The next is refused in the panel's own words, and costs nothing.
         standBeside(h, client, "trader");
-        client.requestTrade(rose, Rarity::Common);
+        client.requestTrade(trinket, Rarity::Common);
         CHECK(awaitTrade(h, client, outcome));
         CHECK(!outcome.success);
         CHECK_EQ(outcome.reason, std::string("You'll be able to trade again in 23 hours"));
@@ -1623,7 +1634,7 @@ TEST(the_trader_grants_one_trade_a_day_kept_across_a_relog) {
     CHECK(joinAs(h, client, "merchant"));
     h.step(3, {&client});
     CHECK(client.traderCooldownRemainingMillis() > kTraderCooldownMillis - 60000.0);
-    CHECK_EQ(client.profile().stackCount(rose, Rarity::Common), 4u);
+    CHECK_EQ(client.profile().stackCount(trinket, Rarity::Common), 4u);
     CHECK_EQ(client.profile().stackCount(coin, Rarity::Common), 1u);
 
     // Measured on the server's tick clock: half an hour short of the day...
@@ -1631,7 +1642,7 @@ TEST(the_trader_grants_one_trade_a_day_kept_across_a_relog) {
     h.clock += kTraderCooldownMillis - 30.0 * 60000.0;
     h.step(3, {&client});
     standBeside(h, client, "trader");
-    client.requestTrade(rose, Rarity::Common);
+    client.requestTrade(trinket, Rarity::Common);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(!outcome.success);
     CHECK_EQ(outcome.reason, std::string("You'll be able to trade again in 30 minutes"));
@@ -1640,11 +1651,11 @@ TEST(the_trader_grants_one_trade_a_day_kept_across_a_relog) {
     h.clock += 31.0 * 60000.0;
     h.step(3, {&client});
     standBeside(h, client, "trader");
-    client.requestTrade(rose, Rarity::Common);
+    client.requestTrade(trinket, Rarity::Common);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(outcome.success);
     CHECK(awaitProfile(h, client, [&](const Profile& p) {
-        return p.stackCount(rose, Rarity::Common) == 3u && p.stackCount(coin, Rarity::Common) == 2u;
+        return p.stackCount(trinket, Rarity::Common) == 3u && p.stackCount(coin, Rarity::Common) == 2u;
     }));
     removeDataDir(dir);
 }
@@ -2086,6 +2097,8 @@ TEST(a_titan_forge_turns_five_apex_into_one_universal) {
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
     const std::uint16_t rose = content().petalIndex("rose");
+    // The petal's display name is the author's; the sentence around it is not.
+    const std::string forged = "Universal " + content().petal(rose).name + " has been forged by";
 
     NetClient client;
     CHECK(joinAs(h, client, "smith"));
@@ -2107,10 +2120,9 @@ TEST(a_titan_forge_turns_five_apex_into_one_universal) {
     }));
     // Announced, as a rare craft is -- said to be forged, and in the
     // universal grey, as each tier announces in its own colour.
-    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Universal Rose has been forged by"); },
-                      30));
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, forged); }, 30));
     // "The": there is only ever one of each petal at universal.
-    CHECK(sawText(client, "<b style=\"color: #555555;\">The Universal Rose has been forged by"));
+    CHECK(sawText(client, "<b style=\"color: #555555;\">The " + forged));
     removeDataDir(dir);
 }
 
@@ -2258,11 +2270,11 @@ TEST(the_titan_will_not_forge_a_universal_the_forger_already_holds) {
     client.requestTitanForge(rose);
     CHECK(awaitForge(h, {&client}, client, outcome));
     CHECK(!outcome.success);
-    CHECK_EQ(outcome.reason, std::string("You already have the Universal Rose."));
+    CHECK_EQ(outcome.reason, "You already have the Universal " + content().petal(rose).name + ".");
     client.requestTitanForge(basic);
     CHECK(awaitForge(h, {&client}, client, outcome));
     CHECK(!outcome.success);
-    CHECK_EQ(outcome.reason, std::string("You already have the Universal Basic."));
+    CHECK_EQ(outcome.reason, "You already have the Universal " + content().petal(basic).name + ".");
 
     // Nothing was spent, nothing was made, and nobody lost theirs.
     h.step(3, {&client});
@@ -2398,8 +2410,9 @@ TEST(an_admins_universals_are_outside_the_one_of_each_rule) {
     CHECK(awaitForge(h, both, smith, outcome));
     CHECK(outcome.success);
     CHECK_EQ(ask(rose), std::string("smith"));
-    CHECK(h.stepUntil(both, [&] { return sawText(smith, "Universal Rose has been forged by"); },
-                      30));
+    CHECK(h.stepUntil(both, [&] {
+        return sawText(smith, "Universal " + content().petal(rose).name + " has been forged by");
+    }, 30));
     CHECK(awaitProfile(h, boss, [&](const Profile& p) {
         return p.stackCount(rose, Rarity::Universal) == 1u &&
                p.stackCount(rose, Rarity::Apex) == 0u;
@@ -2452,9 +2465,18 @@ TEST(the_titans_ring_orbits_it_as_a_flowers_does_and_kills_mobs_but_spares_flowe
     CHECK(world.get<Npc>(titan).cruises);
     world.get<Npc>(titan).cruises = false;
 
-    // Ten petals out, every one the titan's, universal, on the players' side,
-    // and orbiting forty past its edge -- a flower's rest radius past its own.
-    CHECK(h.stepUntil({&client}, [&] { return petalsOf(world, titan).size() == 10u; }, 200));
+    // Its ring out -- one body for every copy each slot fields at the ring's
+    // tier, so the petals' counts are petals.json's to set -- every one the
+    // titan's, universal, on the players' side, and orbiting forty past its
+    // edge -- a flower's rest radius past its own.
+    const NpcSpec& spec = content().mob(content().mobIndex("titan")).npc;
+    std::size_t bodies = 0;
+    for (std::size_t i = 0; i < spec.petals.size() && i < kLoadoutActiveSlots; ++i) {
+        bodies += static_cast<std::size_t>(
+            std::max(0, content().petalStats(spec.petals[i], spec.petalRarity).count));
+    }
+    CHECK(bodies > 0u);
+    CHECK(h.stepUntil({&client}, [&] { return petalsOf(world, titan).size() == bodies; }, 200));
     // Wearing a ring makes it no flower: it keeps its mob's body, pool and
     // bite at its own tier, where a flower's are set by its level.
     const MobStats stats = content().mobStats(content().mobIndex("titan"), Rarity::Universal);
@@ -2465,7 +2487,7 @@ TEST(the_titans_ring_orbits_it_as_a_flowers_does_and_kills_mobs_but_spares_flowe
     // Two seconds: the ring step's swing out to a ring that wide has died away.
     h.step(60, {&client});
     const std::vector<Entity> ring = petalsOf(world, titan);
-    CHECK_EQ(ring.size(), std::size_t(10));
+    CHECK_EQ(ring.size(), bodies);
     const Vec2 centre = world.get<Transform>(titan).position;
     const double orbit = radius + kPetalOrbitRestGap;
     for (const Entity petal : ring) {
@@ -2505,7 +2527,7 @@ TEST(the_titans_ring_orbits_it_as_a_flowers_does_and_kills_mobs_but_spares_flowe
     h.step(kOneRingTurnTicks, {&client});
     CHECK_NEAR(world.get<Health>(body).current, full, 1e-9);
 
-    // Clearing it takes its ring with it, rather than leaving ten petals
+    // Clearing it takes its ring with it, rather than leaving its petals
     // orbiting nothing; the map's titan is back with a ring of its own.
     client.sendChat("/admin clear_npcs");
     CHECK(h.stepUntil({&client}, [&] {
@@ -2703,7 +2725,7 @@ TEST(the_shipped_assembler_makes_a_sawblade_out_of_a_mimic_and_a_ram) {
         CHECK_EQ(r.outputs.size(), std::size_t(2));
         CHECK_EQ(r.takes(content().petalIndex("battery")), std::int64_t(3));
     }
-    // A pentagon is two squares, and twice a square's damage and health.
+    // A pentagon is two squares. (What each is worth is petals.json's.)
     const int pentagon = recipeMaking(assembler, "pentagon");
     CHECK(pentagon >= 0);
     if (pentagon >= 0) {
@@ -2711,10 +2733,6 @@ TEST(the_shipped_assembler_makes_a_sawblade_out_of_a_mimic_and_a_ram) {
         CHECK_EQ(r.inputs.size(), std::size_t(1));
         CHECK_EQ(r.takes(content().petalIndex("square")), std::int64_t(2));
         CHECK_EQ(r.outputs.size(), std::size_t(1));
-        const PetalConfig& five = content().petal(content().petalIndex("pentagon"));
-        const PetalConfig& four = content().petal(content().petalIndex("square"));
-        CHECK_EQ(five.damage, 2.0 * four.damage);
-        CHECK_EQ(five.health, 2.0 * four.health);
     }
 }
 
