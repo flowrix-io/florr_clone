@@ -2580,6 +2580,19 @@ void GameServer::serviceAdminCursor() {
             session.cursorButtons = 0;
             continue;
         }
+        const bool ownerPriority = adminTier(session) == kOwnerAdminTier;
+        bool heldByOwner = false;
+        for (const auto& other : sessions_) {
+            if (other.first != session.connection && other.second.cursorDragged == owner &&
+                adminTier(other.second) == kOwnerAdminTier) heldByOwner = true;
+        }
+        if (heldByOwner) {
+            session.cursorDragged = NULL_ENTITY;
+            session.cursorBody = owner;
+            session.cursorRealm = origin->realm;
+            session.cursorButtons = input->current.flags;
+            continue;
+        }
         if (session.cursorBody != owner || session.cursorRealm != origin->realm) {
             const bool firstGrab = session.cursorBody == NULL_ENTITY;
             session.cursorDragged = NULL_ENTITY;
@@ -2602,17 +2615,23 @@ void GameServer::serviceAdminCursor() {
         const auto valid = [&](Entity entity) {
             const auto* transform = world_.tryGet<Transform>(entity);
             if (!transform || transform->realm != realm || world_.has<Dead>(entity)) return false;
-            if (world_.has<PlayerTag>(entity)) {
+            const bool player = world_.has<PlayerTag>(entity);
+            if (!player && !world_.has<MobTag>(entity) && !world_.has<NpcTag>(entity)) return false;
+            // Grabs are exclusive. Only an Owner can preempt a lower rank,
+            // for mobs/NPCs as well as players, independent of session order.
+            for (const auto& other : sessions_) {
+                if (other.first != session.connection && other.second.cursorDragged == entity &&
+                    (!ownerPriority || adminTier(other.second) == kOwnerAdminTier)) return false;
+            }
+            if (player) {
                 const auto* account = world_.tryGet<PlayerAccount>(entity);
-                if (!account || account->admin || entity == owner) return false;
+                if (!account || entity == owner || (account->admin && !ownerPriority)) return false;
                 if (Session* target = sessionFor(account->connection)) {
-                    if (!target->playing() || target->entity != entity || effectiveAdmin(*target) ||
-                        target->controlledBy != 0 || target->controlling != 0) return false;
+                    if (!target->playing() || target->entity != entity) return false;
+                    if (effectiveAdmin(*target) &&
+                        (!ownerPriority || adminTier(*target) == kOwnerAdminTier)) return false;
+                    if (!ownerPriority && (target->controlledBy != 0 || target->controlling != 0)) return false;
                 } else if (account->connection != 0) return false;
-                // One admin at a time; do not make two pointers fight over a player.
-                for (const auto& other : sessions_) {
-                    if (other.first != session.connection && other.second.cursorDragged == entity) return false;
-                }
                 return true;
             }
             return world_.has<MobTag>(entity) || world_.has<NpcTag>(entity);
@@ -2642,7 +2661,24 @@ void GameServer::serviceAdminCursor() {
             return selected;
         };
         if (!drag) session.cursorDragged = NULL_ENTITY;
-        else if (!(session.cursorButtons & net::InputAdminDrag)) session.cursorDragged = pick();
+        else if (!(session.cursorButtons & net::InputAdminDrag)) {
+            session.cursorDragged = pick();
+            if (ownerPriority && session.cursorDragged != NULL_ENTITY) {
+                // Apply the takeover only after selection, never while scanning.
+                for (auto& other : sessions_) {
+                    if (other.first == session.connection || other.second.cursorDragged != session.cursorDragged) continue;
+                    other.second.cursorDragged = NULL_ENTITY;
+                    if (const auto* previous = world_.tryGet<PlayerInput>(other.second.entity))
+                        other.second.cursorButtons = previous->current.flags;
+                }
+                if (Session* target = sessionForEntity(session.cursorDragged)) {
+                    endControlOf(*target, "was grabbed by the server owner", false);
+                    target->cursorDragged = NULL_ENTITY;
+                    if (const auto* previous = world_.tryGet<PlayerInput>(target->entity))
+                        target->cursorButtons = previous->current.flags;
+                }
+            }
+        }
         if (session.cursorDragged != NULL_ENTITY) {
             if (!valid(session.cursorDragged)) session.cursorDragged = NULL_ENTITY;
             else {

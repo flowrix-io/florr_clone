@@ -431,3 +431,15 @@ and dropped items are protected. No XP, drops or kill credit are awarded.
 The server checks the Cursor's existing tier and equipment requirements and
 enforces the visible viewport. When starting a drag, a valid player under
 the pointer takes priority over overlapping mobs.
+
+### Owner grabbing priority
+
+The existing Owner rank has superior Admin Cursor grabbing rights. An Owner
+can drag lower-ranked admins and take a mob, NPC or player out of a lower
+admin's grab. The displaced grab is released immediately and cannot resume
+until the lower admin releases and presses again. A grabbed admin's own grab
+and flower control are released too. Other Owners remain protected, including
+from `/admin control`; equal Owners cannot steal each other's grabs.
+
+These rights come from the existing server-held Owner flag, with the usual
+Admin Cursor equipment requirement. No username or new rank grants them.
