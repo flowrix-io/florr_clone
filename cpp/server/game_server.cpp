@@ -4026,8 +4026,11 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     if (!reader.ok() || !session.authenticated()) return;
 
     // The client sends what it wants, never what it costs. A price that came
-    // off the wire is a price the client chose.
-    if (!shopSellsPetal(petalIndex) || !shopSellsRarity(rarity) ||
+    // off the wire is a price the client chose. Off a card the ladder stops at
+    // super; on one, the card's own tier -- unique included -- is checked
+    // against the rotation below.
+    const bool offCard = offerSlot == net::kNoShopOffer;
+    if (!shopSellsPetal(petalIndex) || (offCard && !shopSellsRarity(rarity)) ||
         !petalComesAt(content().petal(petalIndex), rarity)) {
         sendShopResult(connection, net::ShopResultKind::Purchase, false, 0, "That is not for sale.");
         return;
@@ -4050,7 +4053,7 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     // and a slot whose petal and tier do not match the current rotation's is a
     // click on a store that has since changed.
     double price = shopPrice(petalIndex, rarity);
-    if (offerSlot != net::kNoShopOffer) {
+    if (!offCard) {
         const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
         const auto slot = static_cast<std::size_t>(offerSlot);
         if (slot >= offers.size() || offers[slot].petalIndex != petalIndex ||

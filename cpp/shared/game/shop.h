@@ -11,6 +11,7 @@
 // recomputes it and ignores whatever the client claimed.
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -36,9 +37,11 @@ inline double shopPrice(const std::string& petalId, Rarity rarity) {
     return index == kInvalidIndex ? 0.0 : shopPrice(index, rarity);
 }
 
-/// Unique and apex are not for sale at any price: they are the reward for
-/// crafting and for killing things, and a star price would make both pointless.
-/// Universal is only ever given.
+/// What may be bought off the ladder, by naming a petal and a tier rather than
+/// clicking a card: up to super. Unique and apex are the reward for crafting
+/// and for killing things, and a standing star price would make both
+/// pointless. The store's two unique cards an hour (kShopOfferTiers) are the
+/// one way stars buy a unique. Universal is only ever given.
 inline bool shopSellsRarity(Rarity rarity) {
     return rarityIndex(rarity) < rarityIndex(Rarity::Unique);
 }
@@ -85,6 +88,16 @@ inline constexpr std::int64_t kShopRotationSeconds = 3600;
 inline constexpr int kShopOfferCount = 10;
 inline constexpr int kShopOfferColumns = 5;
 
+/// The tier of each card, in the order the grid lays them out: two mythic,
+/// two ultra, four super, two unique. Fixed rather than rolled -- a rotation
+/// changes which petals are offered and which cards are discounted, never how
+/// many of each tier there are. Cheap to dear, so the top row is the cheap
+/// one and the grid reads at a glance instead of as ten prices in no order.
+inline constexpr std::array<Rarity, kShopOfferCount> kShopOfferTiers = {
+    Rarity::Mythic, Rarity::Mythic, Rarity::Ultra, Rarity::Ultra,  Rarity::Super,
+    Rarity::Super,  Rarity::Super,  Rarity::Super, Rarity::Unique, Rarity::Unique,
+};
+
 /// Seconds since the epoch: the one clock the offers hang off.
 inline std::int64_t shopClockNow() {
     return std::chrono::duration_cast<std::chrono::seconds>(
@@ -117,7 +130,7 @@ struct ShopOffer {
     int discountPercent = 0;
 };
 
-/// The ten cards a rotation offers.
+/// The ten cards a rotation offers, one per kShopOfferTiers entry.
 ///
 /// Pure, and deterministic to the star: the same rotation index produces the
 /// same cards on every machine that loaded the same petals.json. That is what
@@ -129,38 +142,27 @@ inline std::vector<ShopOffer> shopOffers(std::int64_t rotation) {
     for (const std::uint16_t index : content().petalDisplayOrder()) {
         if (shopSellsPetal(index)) pool.push_back(index);
     }
-    std::vector<Rarity> tiers;
-    for (int tier = 0; tier < kRarityCount; ++tier) {
-        const Rarity rarity = clampRarity(tier);
-        if (shopSellsRarity(rarity)) tiers.push_back(rarity);
-    }
-    if (pool.empty() || tiers.empty()) return offers;
+    if (pool.empty()) return offers;
 
     Rng rng(static_cast<std::uint64_t>(rotation));
-    const int count = std::min<int>(kShopOfferCount, static_cast<int>(pool.size()));
-    const int half = static_cast<int>(tiers.size()) / 2;
+    std::size_t taken = 0;
+    std::vector<std::size_t> candidates;
 
-    for (int slot = 0; slot < count; ++slot) {
-        // Partial Fisher-Yates, so no petal is offered twice in one rotation.
-        const auto taken = static_cast<std::size_t>(slot);
-        const auto remaining = static_cast<std::uint32_t>(pool.size() - taken);
-        std::swap(pool[taken], pool[taken + rng.below(remaining)]);
-
-        // The top row draws from the cheap half of the ladder and the bottom
-        // row from the dear half, which is what gives the grid a shape a
-        // player can read at a glance instead of ten prices in no order.
-        const bool dear = slot >= kShopOfferColumns && half > 0;
-        const int lowest = dear ? half : 0;
-        const int highest = dear ? static_cast<int>(tiers.size()) - 1 : std::max(0, half - 1);
+    for (const Rarity rarity : kShopOfferTiers) {
+        // Partial Fisher-Yates over the petals not yet offered that come at
+        // this card's tier, so no petal is offered twice in one rotation and
+        // none below its minRarity. A tier nothing is left for has no card.
+        candidates.clear();
+        for (std::size_t i = taken; i < pool.size(); ++i) {
+            if (petalComesAt(content().petal(pool[i]), rarity)) candidates.push_back(i);
+        }
+        if (candidates.empty()) continue;
+        const auto pick = candidates[rng.below(static_cast<std::uint32_t>(candidates.size()))];
+        std::swap(pool[taken], pool[pick]);
 
         ShopOffer offer;
-        offer.petalIndex = pool[taken];
-        offer.rarity = tiers[static_cast<std::size_t>(rng.rangeInt(lowest, highest))];
-        // A petal that only comes from some tier up is offered there at the
-        // least. Lifted after the draw, so the rotation's stream -- and every
-        // other card in it -- is what it was.
-        const Rarity floor = content().petal(offer.petalIndex).minRarity;
-        if (rarityIndex(offer.rarity) < rarityIndex(floor)) offer.rarity = floor;
+        offer.petalIndex = pool[taken++];
+        offer.rarity = rarity;
         offer.discountPercent = rng.chance(0.2) ? 10 * (1 + static_cast<int>(rng.below(3))) : 0;
         offer.price = std::floor(shopPrice(offer.petalIndex, offer.rarity) *
                                  static_cast<double>(100 - offer.discountPercent) / 100.0);
