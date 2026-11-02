@@ -62,6 +62,7 @@ enum class NpcService : std::uint8_t {
     /// `npc.recipes`, rolled when it is put down, as florr's do. Never a
     /// roll for the outcome, and no wait.
     Assembler,
+    Casino,
 };
 
 /// The service a mobs.json `npc.service` string names, or None for text this
@@ -71,6 +72,7 @@ inline NpcService parseNpcService(const std::string& name) {
     if (name == "trader") return NpcService::Trader;
     if (name == "titan") return NpcService::Titan;
     if (name == "assembler") return NpcService::Assembler;
+    if (name == "casino") return NpcService::Casino;
     return NpcService::None;
 }
 

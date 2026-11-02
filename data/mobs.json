@@ -2576,5 +2576,36 @@
         "groups": {
             "computer": 0.0001
         }
+    },
+    "hel_casino": {
+        "name": "Hel Casino",
+        "damage": 10,
+        "health": 150,
+        "size": 1.5,
+        "speed": 0.15,
+        "cooldown": 2000,
+        "xp": {
+            "common": 0,
+            "uncommon": 0,
+            "rare": 0,
+            "epic": 0,
+            "legendary": 0,
+            "mythic": 0,
+            "ultra": 0,
+            "super": 0,
+            "unique": 0
+        },
+        "description": "Hel Casino. Type /casino nearby for rules, chips, coin flips and Plinko.",
+        "color": "#B375E8",
+        "image": "$trader",
+        "ai_type": "passive",
+        "range": 100,
+        "bee_ai": "idle",
+        "npc": {
+            "service": "casino",
+            "still": true
+        },
+        "noEggDrop": true,
+        "neverAmbient": true
     }
 }

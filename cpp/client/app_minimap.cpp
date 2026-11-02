@@ -309,10 +309,8 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
         // sitting on the box's own edge is a dot the browser does not draw,
         // and a tolerance here would paint a clipped one it never shows.
         if (dot.x <= 0 || dot.x >= kMinimapSize || dot.y <= 0 || dot.y >= kMinimapSize) continue;
-        // Green, never gold: gold marks a teleporter that hands the player to
-        // another server, and this build has no such thing to mark. An NPC is
-        // marked in its own mob's colour -- the oracle's flower yellow -- and
-        // a size up, because it is somewhere a player goes on purpose.
+        // Teleporters are green. NPCs use their mob colour, with a larger
+        // gold marker for Hel Casino so players can find the service.
         std::uint32_t color = 0x00FF00u;
         float radius = 3.0f;
         if (npc) {
@@ -320,6 +318,10 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
             if (mob == kInvalidIndex) continue;
             color = static_cast<std::uint32_t>(content().mob(mob).colorRgba >> 8);
             radius = 4.0f;
+            if (content().mob(mob).npc.service == NpcService::Casino) {
+                color = 0xFFD700u;
+                radius = 5.0f;
+            }
         }
         setFill(walls, color);
         walls.fillCircle(static_cast<float>(dot.x), static_cast<float>(dot.y), radius);

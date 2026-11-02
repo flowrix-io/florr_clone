@@ -392,3 +392,15 @@ player is placed on valid ground and protected from damage while held and for
 three seconds after release. Existing longer protection is preserved. Death,
 disconnect, lost permission, unequip, body changes and realm changes release
 the grab. Their keyboard remains their own; this does not grant control of it.
+
+### Hel Casino
+
+Hel has a stationary casino NPC, marked by a gold dot on its minimap. Stand
+beside it and use `/casino` for the rules and balance, `/casino buy <stars>`
+for chips (10 per star), `/casino cashout <chips>` in multiples of 10,
+`/casino flip <chips> <heads|tails>` or `/casino plinko <chips>`.
+Coin flip pays 2x with a 40% chance; Plinko has an 88% expected return.
+Payouts include the stake. Bets are 1–10,000 chips, the account balance cap is
+one billion chips, and there is a persisted one-second account cooldown.
+Arena currency cannot be used. Casino chips and cooldowns persist in the
+existing account database; there are no additional admin ranks or privileges.
