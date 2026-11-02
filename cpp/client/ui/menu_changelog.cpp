@@ -524,8 +524,19 @@ constexpr ChangelogEntry kChangelog[] = {
       }
     },
     {"October 30, 2026",
-     {"New petal: Icosahedron",
-      "Buffed Icosahedron with armor that scales with rarity"}},
+      {
+        "New petal: Icosahedron",
+        "Buffed Icosahedron with armor that scales with rarity"
+      }
+    },
+    {"November 1, 2026",
+      {
+        "New petal: C--",
+        "New petal: Totem",
+        "New mob: C--"
+      }
+    },
+      
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
