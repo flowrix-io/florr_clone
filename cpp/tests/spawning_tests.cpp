@@ -3256,6 +3256,38 @@ TEST(the_queen_ant_drops_florrs_basil_from_mythic_up) {
     CHECK_NEAR(shipped().petalStats(basil, Rarity::Ultra).healBonus, 0.5, 1e-9);
 }
 
+TEST(the_tomb_drops_florrs_totem_with_florrs_stats) {
+    // florr's tomb table gives totem at 25% (beside an ankh this game lacks),
+    // and its builder reads damage and health 10 x 3^tier, a 2.5 s reload,
+    // Heal 1/s on the heal ladder and a flat 10 s Duration.
+    DropTables tables = shippedTables();
+    const std::uint16_t totem = shipped().petalIndex("totem");
+    const std::uint16_t tomb = shipped().mobIndex("tomb");
+    CHECK(totem != kInvalidIndex);
+    CHECK(tomb != kInvalidIndex);
+    if (totem == kInvalidIndex || tomb == kInvalidIndex) return;
+    bool found = false;
+    for (const DropTables::Entry& row : tables.forMob(tomb)) {
+        if (row.petalIndex != totem) continue;
+        found = true;
+        CHECK_NEAR(row.probability, 0.25, 1e-12);
+    }
+    CHECK(found);
+    const PetalStats common = shipped().petalStats(totem, Rarity::Common);
+    CHECK_NEAR(common.damage, 10.0, 1e-9);
+    CHECK_NEAR(common.health, 10.0, 1e-9);
+    CHECK_NEAR(common.reloadMillis, 2500.0, 1e-9);
+    CHECK_NEAR(common.killHealPerSecond, 1.0, 1e-9);
+    const PetalStats ultra = shipped().petalStats(totem, Rarity::Ultra);
+    CHECK_NEAR(ultra.damage, 7290.0, 1e-6);
+    CHECK_NEAR(shipped().petalStats(totem, Rarity::Mythic).killHealPerSecond, 243.0, 1e-9);
+    // florr's ultra row is 420.888..., 243 x sqrt(3).
+    CHECK_NEAR(ultra.killHealPerSecond, 243.0 * std::sqrt(3.0), 1e-9);
+    for (const Rarity tier : {Rarity::Common, Rarity::Mythic, Rarity::Apex}) {
+        CHECK_NEAR(shipped().petalStats(totem, tier).killHealDurationMillis, 10000.0, 1e-9);
+    }
+}
+
 TEST(the_merged_view_holds_one_row_per_drop_type) {
     // What every mob above common drops from: the same table with one row per
     // drop TYPE. A petal written on two lines -- common 0.5 and uncommon 0.1,

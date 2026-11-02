@@ -1605,5 +1605,18 @@
         "maxQuantity": 5
       }
     ]
+  },
+  "tomb": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "totem",
+        "rarity": "common",
+        "probability": 0.25,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
   }
 }

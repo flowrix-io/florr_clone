@@ -1103,6 +1103,9 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // Same reasoning for kills: combat marks the corpse, the account keeps the
     // tally. Runs before the reaper, while MobType is still readable.
     bankKills();
+    // After every death of the tick is in, the dungeons' and the Undead's
+    // included: each mob a flower or its pet killed is a totem stack.
+    petals_->creditKills(world_, *combat_, nowMillis);
 
     // The spawner has no view of the socket list, so it queues the bosses it
     // admitted rather than announcing them.

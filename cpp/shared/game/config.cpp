@@ -1297,6 +1297,8 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.burstHealChargeMillis = ctx.range(src, "burstHealChargeMs", 0.0, 0.0, kMaxDurationMillis);
     p.passiveHeal = ctx.range(src, "passiveHeal", 0.0, 0.0, kMaxBaseStat);
     p.passiveHealDefendOnly = ctx.boolean(src, "passiveHealDefendOnly");
+    p.killHeal = ctx.range(src, "killHeal", 0.0, 0.0, kMaxBaseStat);
+    p.killHealDurationMillis = ctx.range(src, "killHealDuration", 0.0, 0.0, kMaxDurationMillis);
     p.burstShield = ctx.range(src, "burstShield", 0.0, 0.0, kMaxBaseStat);
 
     p.baseMaxMana = ctx.range(src, "baseMaxMana", 0.0, 0.0, kMaxBaseStat);
@@ -1904,6 +1906,10 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     s.heal = c.burstHeal * heal;
     s.healChargeMillis = c.burstHealChargeMillis;
     s.passiveHealPerSecond = c.passiveHeal * heal;
+    // Totem: florr's table is this same heal ladder exactly (243 at mythic,
+    // 420.9 at ultra), and its Duration is one flat figure at every tier.
+    s.killHealPerSecond = c.killHeal * heal;
+    s.killHealDurationMillis = c.killHealDurationMillis;
     // One ladder for the whole resource, doubling per tier -- see
     // petalManaScale. The cost of a spawn is on it too, a few lines down, which
     // is what keeps an all-one-tier magic kit reloading at the rate it
@@ -2079,6 +2085,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.petalArmor *= boost;
         s.heal *= boost;
         s.passiveHealPerSecond *= boost;
+        s.killHealPerSecond *= boost;
         s.maxMana *= boost;
         s.mana *= boost;
         s.passiveManaPerSecond *= boost;
@@ -2096,6 +2103,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.lifesteal *= boost;
         s.poisonDurationMillis *= boost;
         s.noHealDurationMillis *= boost;
+        s.killHealDurationMillis *= boost;
         s.slowDurationMillis *= boost;
         if (s.slowFactor < 1.0) s.slowFactor = std::min(0.05, s.slowFactor);
         s.spongeDamageDurationMillis *= boost;

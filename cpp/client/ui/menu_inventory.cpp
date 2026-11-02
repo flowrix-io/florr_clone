@@ -417,6 +417,26 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(bonus);
     }
 
+    // Totem, florr's two lines in florr's order: how long a kill keeps it
+    // healing, then how much. The heal carries the Healing talent, as florr's
+    // does.
+    if (stats.killHealPerSecond > 0.0) {
+        char span[32];
+        std::snprintf(span, sizeof span, "%g", std::round(stats.killHealDurationMillis / 10.0) / 100.0);
+        TooltipLine duration{"Duration: " + std::string(span) + "s", 12.0};
+        duration.alpha = 0.56;
+        duration.labelColor = kStatDuration;
+        lines.push_back(duration);
+        const double perSecond = stats.killHealPerSecond * skills.effectScale(SkillId::Healing);
+        const bool small = perSecond < 1000.0;
+        TooltipLine heal{"Heal: " + (small ? oneDecimal(perSecond) : abbreviate(perSecond)) + "/s",
+                         12.0};
+        heal.alpha = 0.56;
+        heal.labelColor = kStatHeal;
+        heal.altText = "Heal: " + (small ? oneDecimal(perSecond) : exactNumber(perSecond)) + "/s";
+        lines.push_back(heal);
+    }
+
     // Golden leaf, florr's line: what it takes off the rest of the bar.
     if (stats.reloadCut > 0.0) {
         TooltipLine cut{"Reload: -" + percentNumber(stats.reloadCut) + "%", 12.0};

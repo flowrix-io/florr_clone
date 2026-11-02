@@ -222,6 +222,10 @@ constexpr GardnIcon kGardnIcon[] = {
     // the two shapes sit on a plate at one scale.
     {"pentagon",        30.78,   15,  0,       1, 0.954},   // art fills 95% of its box
     {"c--",              31,   10,  0,       0,     1},
+    // Not gardn's: florr's own totem (~/florr_images/petal_svg/totem.svg),
+    // 38.3 across on florr's radius of 13. florr's tile turns it no further
+    // than its own drawing does, so it lies on its side, head out.
+    {"totem",            38.3,   13,  0,       -1, 0.955},   // art fills 96% of its box
 };
 
 /// What gardn draws basic at, per unit of `size`: the picture a petal on the

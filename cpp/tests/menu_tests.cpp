@@ -701,6 +701,23 @@ TEST(a_petal_gardn_lacks_is_drawn_as_large_as_basic) {
     }
 }
 
+TEST(the_totem_tile_shows_florrs_picture_at_florrs_size) {
+    // florr's totem draws 38.3 across, and its tile adds no tilt. The tile
+    // puts that picture on the plate whatever its padded box is.
+    std::string error;
+    CHECK(loadContent(dataDir(), error));
+    SpriteCache sprites;
+    sprites.build(content(), dataDir());
+    const std::uint16_t totem = content().petalIndex("totem");
+    if (totem == kInvalidIndex) { CHECK(false); return; }
+    const ui::PetalIconMetric icon =
+        ui::petalIconMetric(totem, content().petal(totem).size, &sprites);
+    CHECK_NEAR(icon.tilt, 0.0, 1e-12);
+    // What the plate shows is the row's 38.3; the coverage the row states is
+    // the one the sprite cache measures off the shipped document.
+    CHECK_NEAR(icon.diameter * sprites.petalCoverage(totem), 38.3, 0.5);
+}
+
 TEST(a_balance_past_32_bits_reaches_the_client_and_is_debited_exactly) {
     // The balance is a JS number on the reference and a JSON number in the
     // file; it used to cross the wire as a u32 and sit in an int at both ends,

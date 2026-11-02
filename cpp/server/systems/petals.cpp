@@ -622,6 +622,10 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
             if (ArmorStackState* armor = world.tryGet<ArmorStackState>(player)) {
                 *armor = ArmorStackState{};
             }
+            // So are a totem's stacks: a respawn has killed nothing yet.
+            if (PetalSlotState* state = world.tryGet<PetalSlotState>(player)) {
+                state->killHealStacks.clear();
+            }
             continue;
         }
         // Before the slot pass, because retiring a pet puts the petal that
@@ -1584,6 +1588,12 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             if (!registry.petal(equipped.configIndex).passiveHealDefendOnly || blocking) {
                 aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
             }
+            // Totem, worn like the leaf above and summed like it: a second
+            // totem is a second share of every stack's heal. A kill still
+            // earns one stack, for the longest Duration on the bar.
+            aggregate.modifiers.killHealPerSecond += stats.killHealPerSecond;
+            aggregate.modifiers.killHealDurationMillis = std::max(
+                aggregate.modifiers.killHealDurationMillis, stats.killHealDurationMillis);
             // Summed, not maximised: an orb and a magic flower are two
             // grants of pool, and two orbs are two of them. Mana is the one
             // thing a magic build spends, so stacking the supply is the
@@ -1713,6 +1723,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
         const double petalHealing = aggregate.modifiers.passiveHealPerSecond - 1.0;
         aggregate.modifiers.passiveHealPerSecond =
             1.0 + petalHealing * tree->skills.effectScale(SkillId::Healing);
+        aggregate.modifiers.killHealPerSecond *= tree->skills.effectScale(SkillId::Healing);
         // Reach is added, not multiplied: a flower with no magnet petal has
         // nothing for a factor to scale.
         aggregate.modifiers.magnetism += tree->skills.magnetismBonus();
@@ -1802,7 +1813,16 @@ void PetalSystem::applyPassiveHeal(World& world, Entity player, const Aggregate&
     // Applied here, once per player, rather than per petal: the aggregate has
     // already summed every slot's contribution, and healing again per instance
     // would pay a clump its bonus `count` times.
-    healPlayer(world, player, aggregate.modifiers.passiveHealPerSecond * dt, nowMillis);
+    double perSecond = aggregate.modifiers.passiveHealPerSecond;
+    // A totem heals once per kill still inside its Duration (creditKill).
+    if (PetalSlotState* state = world.tryGet<PetalSlotState>(player)) {
+        std::vector<double>& stacks = state->killHealStacks;
+        stacks.erase(std::remove_if(stacks.begin(), stacks.end(),
+                                    [&](double until) { return until <= nowMillis; }),
+                     stacks.end());
+        perSecond += aggregate.modifiers.killHealPerSecond * static_cast<double>(stacks.size());
+    }
+    healPlayer(world, player, perSecond * dt, nowMillis);
 }
 
 void PetalSystem::updateManaPool(World& world, Entity player, const Aggregate& aggregate,
@@ -3882,6 +3902,27 @@ void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry
     // it, which is the whole point of the petal.
     summonPets(world, registry, player, slot, mobIndex, petRarity, kFlowerPetCount, at, *state,
                strengthBoost(rarity));
+}
+
+void PetalSystem::creditKills(World& world, const CombatSystem& combat, double nowMillis) {
+    for (const CombatSystem::DeathRecord& death : combat.deaths()) {
+        // Struck, so a leech's segments going down with their pool are one
+        // kill and not one per bead, and a nest handed to its top damager is
+        // nobody's. A pet's blow is already its owner's (Dead::killer).
+        if (!death.struck || death.wasPlayer || death.killer == NULL_ENTITY) continue;
+        if (!world.isAlive(death.killer) || !world.has<MobTag>(death.entity)) continue;
+        creditKill(world, death.killer, nowMillis);
+    }
+}
+
+void PetalSystem::creditKill(World& world, Entity killer, double nowMillis) {
+    // Read off the modifiers this tick's petal pass published, so it is the
+    // bar the flower was wearing when it landed the blow.
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(killer);
+    if (modifiers == nullptr || modifiers->killHealDurationMillis <= 0.0) return;
+    PetalSlotState* state = world.tryGet<PetalSlotState>(killer);
+    if (state == nullptr) return;
+    state->killHealStacks.push_back(nowMillis + modifiers->killHealDurationMillis);
 }
 
 void PetalSystem::landShots(World& world, const ContentRegistry& registry,

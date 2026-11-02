@@ -75,6 +75,7 @@ const char* const kPetalsJson = R"JSON({
   "magicleaf":{"name":"Magic Leaf","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveMana":5,"color":"#42E3F5"},
   "leafy":    {"name":"Leafy","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveHeal":1,"color":"#39B54A"},
   "yuccaish": {"name":"Yuccaish","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveHeal":1,"passiveHealDefendOnly":true,"color":"#74B53F"},
+  "totem":    {"name":"Totem","damage":10,"health":10,"size":1.3,"cooldown":2500,"count":1,"killHeal":1,"killHealDuration":10000,"color":"#A88642"},
   "magicmissile":{"name":"Magic Missile","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"requiredMana":30,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#42E3F5"},
   "magic_bubble":{"name":"Magic Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"requiredMana":40,"color":"#42E3F5"},
   "mimic":    {"name":"Mimic","damage":0,"health":0,"size":1,"cooldown":10000,"count":1,"color":"#FFA500"},
@@ -2417,6 +2418,147 @@ TEST(a_leaf_heals_whatever_the_stance) {
         rig.tick();
         CHECK_NEAR(rig.modifiers().passiveHealPerSecond, 1.0 + leaf, 1e-12);
     }
+}
+
+/// What a flower held at half health gains over `ticks`, so no heal is lost
+/// to the cap. Health is looked up again on every use: the ring pass may add
+/// components to the flower, which moves its row.
+double gainOver(Rig& rig, int ticks) {
+    const double half = rig.world.get<Health>(rig.player).max * 0.5;
+    rig.world.get<Health>(rig.player).current = half;
+    rig.tick(ticks);
+    return rig.world.get<Health>(rig.player).current - half;
+}
+
+TEST(a_totem_heals_for_ten_seconds_after_each_kill_and_kills_stack) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "totem", Rarity::Rare);
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().killHealPerSecond, 9.0, 1e-12);
+    CHECK_NEAR(rig.modifiers().killHealDurationMillis, 10000.0, 1e-12);
+
+    // Worn is not enough: with no kill, the flower's own 1/s and no more.
+    CHECK_NEAR(gainOver(rig, 30), 1.0, 1e-9);
+
+    const double first = rig.now;
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    // One stack: the base 1/s plus the rare totem's 9.
+    CHECK_NEAR(gainOver(rig, 30), 10.0, 1e-9);
+    // A second kill six seconds later is a second stack beside the first
+    // (user's rule), not a restart of it...
+    rig.tick(150);
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    CHECK_NEAR(gainOver(rig, 30), 19.0, 1e-9);
+    // ...and each runs out ten seconds after its own kill.
+    rig.tick(120);
+    CHECK(rig.now > first + 10000.0);
+    CHECK_NEAR(gainOver(rig, 30), 10.0, 1e-9);
+    rig.tick(150);
+    CHECK_NEAR(gainOver(rig, 30), 1.0, 1e-9);
+    CHECK(rig.world.get<PetalSlotState>(rig.player).killHealStacks.empty());
+}
+
+TEST(totems_sum_their_heal_per_stack_and_take_the_healing_talent) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "totem", Rarity::Rare);
+    rig.equip(1, "totem", Rarity::Common);
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().killHealPerSecond, 10.0, 1e-12);
+    // One kill is one stack, however many totems are worn.
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    CHECK_EQ(rig.world.get<PetalSlotState>(rig.player).killHealStacks.size(), std::size_t(1));
+    CHECK_NEAR(gainOver(rig, 30), 11.0, 1e-9);
+
+    Rig talented;
+    talented.world.add<PlayerSkillTree>(talented.player);
+    talented.world.get<PlayerSkillTree>(talented.player)
+        .skills.set(SkillId::Healing, rarityIndex(Rarity::Legendary));
+    talented.equip(0, "totem", Rarity::Rare);
+    talented.settleEquips();
+    const double scale = talented.world.get<PlayerSkillTree>(talented.player)
+                             .skills.effectScale(SkillId::Healing);
+    CHECK(scale > 1.0);
+    CHECK_NEAR(talented.modifiers().killHealPerSecond, 9.0 * scale, 1e-9);
+}
+
+TEST(a_totem_stack_is_earned_only_wearing_one_and_dies_with_the_flower) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basic");
+    rig.settleEquips();
+    const auto stacks = [&] {
+        return rig.world.get<PetalSlotState>(rig.player).killHealStacks.size();
+    };
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    CHECK_EQ(stacks(), std::size_t(0));
+    // Put on after the kill: there is no stack for it to pay into.
+    rig.equip(1, "totem", Rarity::Rare);
+    rig.settleEquips();
+    CHECK_NEAR(gainOver(rig, 30), 1.0, 1e-9);
+
+    // Earned, then taken off: the heal goes with the petal.
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    CHECK_EQ(stacks(), std::size_t(1));
+    rig.unequip(1);
+    rig.tick();
+    CHECK_NEAR(gainOver(rig, 30), 1.0, 1e-9);
+
+    // Earned, then the flower dies: a respawn has killed nothing yet.
+    rig.equip(1, "totem", Rarity::Rare);
+    rig.settleEquips();
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    CHECK(stacks() >= std::size_t(2));
+    rig.world.get<Health>(rig.player).current = 0.0;
+    rig.tick();
+    CHECK_EQ(stacks(), std::size_t(0));
+}
+
+TEST(a_totem_stacks_for_its_flowers_and_its_pets_kills_but_not_a_squadmates) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "totem", Rarity::Rare);
+    rig.settleEquips();
+    CombatSystem combat;
+    const auto stacks = [&] {
+        return rig.world.get<PetalSlotState>(rig.player).killHealStacks.size();
+    };
+    // Each kill is its own tick, so creditKills reads only that one death.
+    const auto killWith = [&](Entity source) {
+        combat.beginTick(rig.world, rig.now, net::kTickSeconds, rig.events);
+        const Entity mob = addMob(rig, {1200.0, 1000.0});
+        CHECK(combat.applyDamage(rig.world, mob, source, 1e9, rig.now).killed);
+        rig.system.creditKills(rig.world, combat, rig.now);
+    };
+
+    // A squadmate standing beside it: its kill is its own, and squads are
+    // nothing combat resolves a kill through.
+    const Entity mate = rig.world.create();
+    rig.world.add<PlayerTag>(mate);
+    rig.world.add<Transform>(mate, Transform{{1100.0, 1000.0}, 0.0});
+    rig.world.add<Faction>(mate, Faction{Team::Players, false});
+    killWith(mate);
+    CHECK_EQ(stacks(), std::size_t(0));
+
+    // Its own blow, and its pet's.
+    killWith(rig.player);
+    CHECK_EQ(stacks(), std::size_t(1));
+    const Entity pet = rig.world.create();
+    rig.world.add<MobTag>(pet);
+    rig.world.add<Pet>(pet, Pet{rig.player, 0});
+    rig.world.add<Transform>(pet, Transform{{1100.0, 1000.0}, 0.0});
+    rig.world.add<Faction>(pet, Faction{Team::Players, false});
+    killWith(pet);
+    CHECK_EQ(stacks(), std::size_t(2));
+
+    // A mob felled with no blow -- a dungeon's nest, handed to its top
+    // damager -- is nobody's kill.
+    combat.beginTick(rig.world, rig.now, net::kTickSeconds, rig.events);
+    combat.fell(rig.world, addMob(rig, {1200.0, 1000.0}), rig.player);
+    rig.system.creditKills(rig.world, combat, rig.now);
+    CHECK_EQ(stacks(), std::size_t(2));
 }
 
 TEST(a_sponge_publishes_the_damage_it_is_holding_for_the_bar) {

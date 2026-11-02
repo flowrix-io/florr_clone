@@ -1897,6 +1897,55 @@ TEST(spaceship_shots_bring_at_most_three_glitch_flowers_through_the_real_server_
     CHECK_EQ(most, 3);
 }
 
+TEST(a_totem_kill_earns_a_heal_stack_through_the_real_server_loop) {
+    // The unit tests hand out stacks themselves. This kills a mob through the
+    // server's tick with a totem on the bar, so the kill is the one combat
+    // credits.
+    Harness h("totem", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(flix::testsupport::loginNew(h, client, "shaman", "long-enough-password"));
+    client.joinGame(1280, 720);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity player = NULL_ENTITY;
+    Query<PlayerTag> players{world};
+    players.each([&](Entity e, PlayerTag&) { player = e; });
+    CHECK(player != NULL_ENTITY);
+    if (player == NULL_ENTITY) return;
+    world.get<Health>(player).invulnerableUntilMillis = 1e18;
+    const Realm realm = world.get<Transform>(player).realm;
+    LoadoutSlot& slot = world.get<Loadout>(player).slots[0];
+    slot.configIndex = content().petalIndex("totem");
+    slot.rarity = Rarity::Rare;
+
+    Entity mob = NULL_ENTITY;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<MobTag, Transform> mobs{world};
+        mobs.without<Pet, BodySegment, Intangible, NpcTag, RisesUndead>();
+        mobs.each([&](Entity e, MobTag&, Transform& at) {
+            if (mob == NULL_ENTITY && at.realm == realm) mob = e;
+        });
+        return mob != NULL_ENTITY;
+    }, 400));
+    if (mob == NULL_ENTITY) return;
+    CHECK(world.get<PetalSlotState>(player).killHealStacks.empty());
+
+    // Parked on the flower one hit from death, as the kill-ledger test does.
+    CHECK(h.stepUntil({&client}, [&] {
+        if (!world.get<PetalSlotState>(player).killHealStacks.empty()) return true;
+        if (!world.isAlive(mob) || world.has<Dead>(mob)) return false;
+        world.get<Transform>(mob).position = world.get<Transform>(player).position;
+        world.get<Health>(mob).max = 1.0;
+        world.get<Health>(mob).current = 1.0;
+        world.get<Health>(mob).invulnerableUntilMillis = 0;
+        if (world.has<Armor>(mob)) world.get<Armor>(mob).amount = 0.0;
+        return false;
+    }, 200));
+    CHECK(!world.isAlive(mob) || world.has<Dead>(mob));
+}
+
 TEST(a_yin_yang_turns_a_cpp_into_a_cminus_through_the_real_server_loop) {
     // Combat books the hit and the spawner makes the swap, each tested on its
     // own; this runs a ring of yin yangs into a C++ through the server's tick

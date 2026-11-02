@@ -925,6 +925,11 @@ struct PetalConfig {
     /// defend held and attack not. Yucca's rule. Unlike `defendOnly` it moves
     /// nothing on the ring -- the petal still lunges with the rest of it.
     bool passiveHealDefendOnly = false;
+    /// Healing per second, before rarity, that a kill buys the wearer for
+    /// `killHealDurationMillis` afterwards: the totem's. florr's Heal per
+    /// second is on the heal ladder and its Duration is flat across tiers.
+    double killHeal = 0;
+    double killHealDurationMillis = 0;
     double burstShield = 0;
 
     // --- mana ---------------------------------------------------------------
@@ -1119,6 +1124,11 @@ struct PetalStats {
     double heal = 0;                    ///< burst heal per charge
     double healChargeMillis = 0;
     double passiveHealPerSecond = 0;
+    /// A totem's: what its flower heals per second, this tier, for
+    /// `killHealDurationMillis` after each mob it kills. Zero for every other
+    /// petal.
+    double killHealPerSecond = 0;
+    double killHealDurationMillis = 0;
     /// Mana added to the wearer's pool while this petal is worn, this tier.
     double maxMana = 0;
     double mana = 0;                    ///< burst mana per charge

@@ -395,6 +395,13 @@ public:
         Entity entity = NULL_ENTITY;
         Entity killer = NULL_ENTITY;
         bool wasPlayer = false;
+        /// `killer` landed the blow that did it: through its own body,
+        /// petals, shots or fields, or a pet's (the kill resolves to the
+        /// owner). False for a body that went down WITH another one -- a
+        /// shared chain's segments, a nest under its cleared brood or dungeon
+        /// -- and for anything felled with no blow at all. A totem pays for
+        /// struck kills only.
+        bool struck = false;
     };
     const std::vector<DeathRecord>& deaths() const { return deaths_; }
 
@@ -417,7 +424,10 @@ public:
     /// dweller dies -- exactly as a killing blow would: marked Dead for
     /// `killer`, recorded in deaths() and paid off its ledger (XP now, drops
     /// in the loot pass). No-op on anything already dead.
-    void fell(World& world, Entity victim, Entity killer);
+    ///
+    /// `struck` when the death is a blow's that was put off, as an Undead
+    /// body's is (DeathRecord::struck).
+    void fell(World& world, Entity victim, Entity killer, bool struck = false);
 
 private:
     /// A touching body about to be tested against everything near it. Mob

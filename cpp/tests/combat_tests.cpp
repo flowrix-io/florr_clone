@@ -538,6 +538,12 @@ TEST(emptying_a_leechs_pool_kills_every_body_at_once) {
     // them -- but only the head carries a ledger, so only the head pays.
     CHECK_EQ(a.combat.deaths().size(), chain.size());
     CHECK_EQ(a.combat.deaths()[0].entity, chain[0]);
+    // And only the head's is a kill a blow made: the rest went down with it,
+    // so a totem stacks once for the animal.
+    CHECK(a.combat.deaths()[0].struck);
+    for (std::size_t i = 1; i < a.combat.deaths().size(); ++i) {
+        CHECK(!a.combat.deaths()[i].struck);
+    }
 
     // And the corpse stays a corpse: a hit on any body afterwards is refused
     // rather than killing the animal a second time.
@@ -1211,6 +1217,7 @@ TEST(a_pets_kill_credits_its_owner) {
     CHECK(a.world.has<Dead>(mob));
     // The owner, not the pet: XP has to reach an account.
     CHECK_EQ(a.world.get<Dead>(mob).killer, owner);
+    CHECK(a.combat.deaths().back().struck);
     CHECK_NEAR(a.world.get<PlayerProgress>(owner).totalXp, 80.0, 1e-9);
 }
 

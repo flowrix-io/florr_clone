@@ -597,6 +597,12 @@ struct PlayerModifiers {
     double attackRange = 0.0;
     double cameraZoom = 1.0;
     double passiveHealPerSecond = 0.0;
+    /// Worn totems: what this flower heals per second on top of the above for
+    /// each kill still inside its Duration (PetalSlotState::killHealStacks),
+    /// summed over them and talent-scaled, and that Duration, the longest of
+    /// them. Zero without one.
+    double killHealPerSecond = 0.0;
+    double killHealDurationMillis = 0.0;
     /// The mana pool the worn bar grants, summed over its slots, and what
     /// refills it per second. Published here for the same reason the heal is:
     /// the petal pass is the only thing that knows what is equipped, and the

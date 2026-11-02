@@ -1024,7 +1024,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         const Entity killer = attributedSource(world, source);
         world.add<Dead>(victim, Dead{killer});
         result.killed = true;
-        deaths_.push_back({victim, killer, world.has<PlayerTag>(victim)});
+        deaths_.push_back({victim, killer, world.has<PlayerTag>(victim), true});
         // A player drops nothing: the account keeps the inventory, and the
         // Died message the server sends is the whole of the consequence.
         if (!world.has<PlayerTag>(victim)) awardBounty(world, victim);
@@ -1131,11 +1131,11 @@ void CombatSystem::mirrorSharedChain(World& world, Entity owner, bool fatal, Ent
     }
 }
 
-void CombatSystem::fell(World& world, Entity victim, Entity killer) {
+void CombatSystem::fell(World& world, Entity victim, Entity killer, bool struck) {
     if (!world.isAlive(victim) || world.has<Dead>(victim)) return;
     if (Health* health = world.tryGet<Health>(victim)) health->current = 0.0;
     world.add<Dead>(victim, Dead{killer});
-    deaths_.push_back({victim, killer, world.has<PlayerTag>(victim)});
+    deaths_.push_back({victim, killer, world.has<PlayerTag>(victim), struck});
     if (!world.has<PlayerTag>(victim)) awardBounty(world, victim);
 }
 
@@ -1328,7 +1328,7 @@ void CombatSystem::tickUndead(World& world, double nowMillis) {
         // The death that was put off, to the one who dealt it -- or to
         // nobody, when they have been reaped since.
         const Entity killer = world.isAlive(undead.killer) ? undead.killer : NULL_ENTITY;
-        fell(world, e, killer);
+        fell(world, e, killer, true);
         if (world.has<PlayerTag>(e)) {
             world.ensure<Unrevivable>(e).untilMillis = nowMillis + undead.unrevivableMillis;
         } else {

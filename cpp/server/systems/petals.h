@@ -27,6 +27,7 @@ namespace flix {
 
 class Terrain;
 class EventQueue;
+class CombatSystem;
 struct ShotLanding;
 
 /// How long a root takes to bank one armour stack, and how many it may hold.
@@ -179,6 +180,12 @@ struct PetalSlotState {
     /// recalls it with the petal; this list only orders them, so that a
     /// landing at the cap knows which one to move.
     std::vector<Entity> shotSummons;
+
+    /// When each of this flower's totem stacks runs out, one per mob it
+    /// killed wearing one (PetalSystem::creditKills), oldest first. Each live
+    /// stack heals PlayerModifiers::killHealPerSecond, so kills close together
+    /// stack their heals (user's rule). The flower's death drops them all.
+    std::vector<double> killHealStacks;
 };
 
 /// PetalInstance::slot on a lent petal: past every loadout slot, so the guards
@@ -281,6 +288,17 @@ public:
     /// with no map.
     void landShots(World& world, const ContentRegistry& registry,
                    const std::vector<ShotLanding>& landings, const Terrain* terrain);
+
+    /// Gives a totem stack for every mob that died this tick to a blow of its
+    /// killer's own (DeathRecord::struck) -- its body, petals, shots or pets
+    /// -- and never to a squadmate: nothing resolves a kill onto anyone but
+    /// the one who dealt it.
+    void creditKills(World& world, const CombatSystem& combat, double nowMillis);
+
+    /// `killer` finished a mob: one more totem stack, lasting from now for
+    /// the longest Duration on its bar. No-op for a killer wearing no totem,
+    /// so a stack is only ever earned with one on.
+    void creditKill(World& world, Entity killer, double nowMillis);
 
     /// A yggdrasil raised `revived` off the ground.
     ///
