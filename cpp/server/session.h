@@ -176,6 +176,7 @@ struct Session {
     std::uint32_t lastInputSequence = 0;
     Entity cursorDragged = NULL_ENTITY;
     Entity cursorBody = NULL_ENTITY;
+    Realm cursorRealm = Realm::Overworld;
     std::uint8_t cursorButtons = 0;
 
     /// Whether this body's death has already been announced. A player's corpse

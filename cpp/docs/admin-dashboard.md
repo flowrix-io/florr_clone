@@ -371,7 +371,7 @@ ship together.
 ## Admin Cursor petal
 
 With an Admin-rarity Cursor in an active slot, admins with spawn privileges
-(tiers 1–3 and the owner) can hold left mouse to drag a mob or NPC, regardless
+(tiers 1–3 and the owner) can hold left mouse to drag a mob, NPC or non-admin player, regardless
 of rarity or movement type. Release to drop it. The cursor has no deletion
 or custom right-click action. The server checks permissions, equipment, realm
 and viewport for every drag.
@@ -385,3 +385,10 @@ Players, inventories, pets and boss cooldowns remain. Requires spawn privileges.
 All names are validated before changing anything. `/admin restart list` lists
 valid names. With no biome, the existing whole-server restart is unchanged;
 `status`, `cancel` and timed restarts retain their existing meanings.
+
+Dragging a player cannot select a full or temporary admin, a player under
+another admin's control, or a player already held by another cursor. The
+player is placed on valid ground and protected from damage while held and for
+three seconds after release. Existing longer protection is preserved. Death,
+disconnect, lost permission, unequip, body changes and realm changes release
+the grab. Their keyboard remains their own; this does not grant control of it.

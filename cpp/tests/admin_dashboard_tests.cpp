@@ -20,6 +20,7 @@
 
 #include "client/ui/menus.h"
 #include "server/db.h"
+#include "server/systems/combat.h"
 #include "server_harness.h"
 #include "shared/game/config.h"
 #include "shared/net/admin_dashboard.h"
@@ -1111,4 +1112,116 @@ TEST(admin_cursor_drags_mobs_and_ignores_retired_remove_requests) {
     point(toOracle.length(), std::uint8_t{1 << 3}, toOracle.angle());
     CHECK(world.isAlive(oracle));
     CHECK(world.isAlive(owner));
+}
+
+TEST(admin_cursor_drags_non_admin_players_with_finite_release_protection) {
+    Harness h("cursor-player", [](const std::string& path) {
+        seedUsers(path, {"boss", "visitor", "helper"}, {"boss", "helper"});
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, visitor, helper;
+    const std::vector<NetClient*> all{&boss, &visitor, &helper};
+    CHECK(enterWorld(h, all, {"boss", "visitor", "helper"}, {"Boss", "Visitor", "Helper"}));
+    World& world = h.server.world();
+    Session* owner = GameServerPeer::sessionOf(h.server, "boss");
+    Session* target = GameServerPeer::sessionOf(h.server, "visitor");
+    Session* admin = GameServerPeer::sessionOf(h.server, "helper");
+    if (!owner || !target || !admin) { CHECK(false); return; }
+    const Entity player = target->entity;
+    const Entity adminBody = admin->entity;
+    const Realm realm = world.get<Transform>(owner->entity).realm;
+    const Vec2 origin = openPointWhere(h.server.terrain(), world.get<Transform>(owner->entity).position,
+        [&](Vec2 p) { return !h.server.terrain().blocked(p + Vec2{200, 0}, realm) &&
+                            !h.server.terrain().blocked(p + Vec2{350, 0}, realm) &&
+                            !h.server.terrain().blocked(p + Vec2{450, 0}, realm); });
+    world.get<Transform>(owner->entity).position = origin;
+    world.get<Transform>(player).position = origin + Vec2{200, 0};
+    world.get<Transform>(adminBody).position = origin + Vec2{450, 0};
+    world.get<Loadout>(owner->entity).slots[0] =
+        LoadoutSlot{content().petalIndex("cursor"), Rarity::Admin, 0, false};
+    world.get<Health>(player).invulnerableUntilMillis = 0;
+    world.get<Health>(player).hitCooldownUntilMillis = 0;
+    protect(world, owner->entity);
+    protect(world, adminBody);
+    std::uint32_t sequence = 0;
+    const auto point = [&](Vec2 position, bool held) {
+        const Vec2 offset = position - world.get<Transform>(owner->entity).position;
+        net::InputFrame input;
+        input.sequence = ++sequence;
+        input.aimAngle = offset.angle();
+        input.aimDistance = static_cast<std::uint16_t>(std::round(offset.length()));
+        input.flags = held ? net::InputAdminDrag : 0;
+        boss.sendInput(input);
+        h.step(2, all);
+    };
+    point(world.get<Transform>(adminBody).position, true);
+    CHECK(owner->cursorDragged != adminBody);
+    point(origin, false);
+    point(world.get<Transform>(player).position, true);
+    CHECK_EQ(owner->cursorDragged, player);
+    point(origin + Vec2{350, 0}, true);
+    const Vec2 moved = world.get<Transform>(player).position;
+    CHECK(distance(moved, origin + Vec2{350, 0}) < 3.0);
+    CHECK(!h.server.terrain().blocked(moved, realm));
+    CHECK(world.get<Health>(player).shielded(h.clock));
+
+    const Entity enemy = world.create();
+    world.add<Faction>(enemy, Faction{Team::Hostiles, false});
+    CombatSystem combat;
+    const double health = world.get<Health>(player).current;
+    CHECK(combat.applyDamage(world, player, enemy, 10, h.clock).refused);
+    CHECK_NEAR(world.get<Health>(player).current, health, 0.01);
+    point(moved, false);
+    CHECK_EQ(owner->cursorDragged, NULL_ENTITY);
+    CHECK(world.get<Health>(player).shielded(h.clock));
+    h.step(100, all);
+    CHECK(!world.get<Health>(player).shielded(h.clock));
+    CHECK(!combat.applyDamage(world, player, enemy, 1, h.clock).refused);
+
+    // Promotion ends a grab and protects the player on subsequent attempts.
+    point(world.get<Transform>(player).position, true);
+    CHECK_EQ(owner->cursorDragged, player);
+    target->admin = true;
+    h.step(2, all);
+    CHECK_EQ(owner->cursorDragged, NULL_ENTITY);
+    target->admin = false;
+    point(origin, false);
+    point(world.get<Transform>(player).position, true);
+    CHECK_EQ(owner->cursorDragged, player);
+    world.get<Transform>(player).realm = Realm::Arena;
+    h.step(2, all);
+    CHECK_EQ(owner->cursorDragged, NULL_ENTITY);
+    world.get<Transform>(player).realm = realm;
+    world.get<Transform>(player).position = moved;
+    point(origin, false);
+    point(world.get<Transform>(player).position, true);
+    CHECK_EQ(owner->cursorDragged, player);
+    world.get<Loadout>(owner->entity).slots[0] = LoadoutSlot{};
+    h.step(2, all);
+    CHECK_EQ(owner->cursorDragged, NULL_ENTITY);
+    CHECK(std::isfinite(world.get<Health>(player).invulnerableUntilMillis));
+
+    world.get<Loadout>(owner->entity).slots[0] =
+        LoadoutSlot{content().petalIndex("cursor"), Rarity::Admin, 0, false};
+    point(origin, false);
+    point(world.get<Transform>(player).position, true);
+    CHECK_EQ(owner->cursorDragged, player);
+    world.get<Transform>(owner->entity).realm = Realm::Arena;
+    world.get<Transform>(player).realm = Realm::Arena;
+    h.step(2, all);
+    CHECK_EQ(owner->cursorDragged, NULL_ENTITY); // Even when both change realm.
+    world.get<Transform>(owner->entity).realm = realm;
+    world.get<Transform>(owner->entity).position = origin;
+    world.get<Transform>(player).realm = realm;
+    world.get<Transform>(player).position = moved;
+    point(moved, true);
+    CHECK_EQ(owner->cursorDragged, NULL_ENTITY); // Must release before re-grabbing.
+    point(moved, false);
+    point(moved, true);
+    CHECK_EQ(owner->cursorDragged, player);
+    boss.disconnect();
+    h.step(110, {&visitor, &helper});
+    CHECK(GameServerPeer::sessionOf(h.server, "boss") == nullptr);
+    CHECK(world.isAlive(player));
+    CHECK(world.get<Health>(player).invulnerableUntilMillis < h.clock);
 }

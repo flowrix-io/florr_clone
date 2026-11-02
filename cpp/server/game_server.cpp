@@ -2501,10 +2501,15 @@ void GameServer::serviceAdminCursor() {
             session.cursorButtons = 0;
             continue;
         }
-        if (session.cursorBody != owner) {
+        if (session.cursorBody != owner || session.cursorRealm != origin->realm) {
+            const bool firstGrab = session.cursorBody == NULL_ENTITY;
             session.cursorDragged = NULL_ENTITY;
-            session.cursorButtons = 0;
             session.cursorBody = owner;
+            session.cursorRealm = origin->realm;
+            session.cursorButtons = firstGrab ? 0 : input->current.flags;
+            // A realm/body transition releases the grab. A held button cannot
+            // silently acquire somebody on the other side of a teleporter.
+            if (!firstGrab) continue;
         }
         const auto buttons = input->current.flags;
         const bool drag = (buttons & net::InputAdminDrag) != 0;
@@ -2517,9 +2522,21 @@ void GameServer::serviceAdminCursor() {
         const Realm realm = origin->realm;
         const auto valid = [&](Entity entity) {
             const auto* transform = world_.tryGet<Transform>(entity);
-            return transform && transform->realm == realm && !world_.has<Dead>(entity) &&
-                !world_.has<PlayerTag>(entity) &&
-                (world_.has<MobTag>(entity) || world_.has<NpcTag>(entity));
+            if (!transform || transform->realm != realm || world_.has<Dead>(entity)) return false;
+            if (world_.has<PlayerTag>(entity)) {
+                const auto* account = world_.tryGet<PlayerAccount>(entity);
+                if (!account || account->admin || entity == owner) return false;
+                if (Session* target = sessionFor(account->connection)) {
+                    if (!target->playing() || target->entity != entity || effectiveAdmin(*target) ||
+                        target->controlledBy != 0 || target->controlling != 0) return false;
+                } else if (account->connection != 0) return false;
+                // One admin at a time; do not make two pointers fight over a player.
+                for (const auto& other : sessions_) {
+                    if (other.first != session.connection && other.second.cursorDragged == entity) return false;
+                }
+                return true;
+            }
+            return world_.has<MobTag>(entity) || world_.has<NpcTag>(entity);
         };
         const auto pick = [&]() {
             Entity selected = NULL_ENTITY;
@@ -2546,7 +2563,21 @@ void GameServer::serviceAdminCursor() {
         if (session.cursorDragged != NULL_ENTITY) {
             if (!valid(session.cursorDragged)) session.cursorDragged = NULL_ENTITY;
             else {
-                world_.get<Transform>(session.cursorDragged).position = pointer;
+                Vec2 destination = pointer;
+                if (world_.has<PlayerTag>(session.cursorDragged)) {
+                    const auto* body = world_.tryGet<Body>(session.cursorDragged);
+                    destination = terrain_->resolveCircle(pointer, body ? body->radius : kPlayerBaseRadius, realm);
+                    if (terrain_->outside(destination, realm) || terrain_->blocked(destination, realm))
+                        destination = world_.get<Transform>(session.cursorDragged).position;
+                    if (auto* health = world_.tryGet<Health>(session.cursorDragged)) {
+                        // No infinity and no overwritten god/spawn protection.
+                        // Refreshed while held, then expires three seconds after
+                        // release/disconnect. Refused hits earn no kill credit.
+                        health->invulnerableUntilMillis = std::max(health->invulnerableUntilMillis,
+                                                                   clockMillis_ + 3000.0);
+                    }
+                }
+                world_.get<Transform>(session.cursorDragged).position = destination;
                 if (auto* npc = world_.tryGet<Npc>(session.cursorDragged)) npc->home = pointer;
                 if (auto* motion = world_.tryGet<Motion>(session.cursorDragged)) motion->velocity = Vec2{};
             }
