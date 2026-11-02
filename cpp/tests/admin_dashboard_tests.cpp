@@ -1318,3 +1318,107 @@ TEST(admin_hover_kill_checks_cursor_authority_targets_and_key_edges) {
     CHECK(h.stepUntil(all, [&] { return visitor.dead(); }));
     CHECK_EQ(world.get<PlayerProgress>(admin->entity).totalXp, xp);
 }
+
+TEST(owner_cursor_preempts_lower_grabs_and_can_drag_admins_but_not_owners) {
+    Harness h("owner-cursor-priority", [](const std::string& path) {
+        seedUser(path, "owner", kPassword, true, kOwnerAdminTier);
+        seedUser(path, "peer", kPassword, true, kOwnerAdminTier);
+        seedUser(path, "helper", kPassword, true);
+        seedUser(path, "visitor", kPassword);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient owner, peer, helper, visitor;
+    const std::vector<NetClient*> all{&owner, &peer, &helper, &visitor};
+    CHECK(enterWorld(h, all, {"owner", "peer", "helper", "visitor"}, {"Owner", "Peer", "Helper", "Visitor"}));
+    World& world = h.server.world();
+    Session* boss = GameServerPeer::sessionOf(h.server, "owner");
+    Session* equal = GameServerPeer::sessionOf(h.server, "peer");
+    Session* lower = GameServerPeer::sessionOf(h.server, "helper");
+    Session* target = GameServerPeer::sessionOf(h.server, "visitor");
+    if (!boss || !equal || !lower || !target) { CHECK(false); return; }
+    const Realm realm = world.get<Transform>(boss->entity).realm;
+    const Vec2 base = openPointWhere(h.server.terrain(), world.get<Transform>(boss->entity).position,
+        [&](Vec2 p) { return !h.server.terrain().blocked(p + Vec2{200, 0}, realm) &&
+                            !h.server.terrain().blocked(p + Vec2{300, 0}, realm); });
+    world.get<Transform>(boss->entity).position = base;
+    world.get<Transform>(equal->entity).position = base + Vec2{0, -100};
+    world.get<Transform>(lower->entity).position = base + Vec2{0, 100};
+    world.get<Transform>(target->entity).position = base + Vec2{200, 0};
+    for (Session* session : {boss, equal, lower, target}) protect(world, session->entity);
+    for (Session* session : {boss, equal, lower})
+        world.get<Loadout>(session->entity).slots[0] =
+            LoadoutSlot{content().petalIndex("cursor"), Rarity::Admin, 0, false};
+    std::uint32_t ownerSeq = 0, peerSeq = 0, helperSeq = 0;
+    const auto point = [&](NetClient& client, Session* session, std::uint32_t& sequence, Vec2 at, bool held) {
+        const Vec2 delta = at - world.get<Transform>(session->entity).position;
+        net::InputFrame input;
+        input.sequence = ++sequence;
+        input.aimAngle = delta.angle();
+        input.aimDistance = static_cast<std::uint16_t>(std::round(delta.length()));
+        input.flags = held ? net::InputAdminDrag : 0;
+        client.sendInput(input);
+        h.step(2, all);
+    };
+    Entity mob = world.create();
+    world.add<Transform>(mob, Transform{base + Vec2{300, 0}, 0, realm});
+    world.add<Body>(mob, Body{25, 1000000});
+    world.add<MobTag>(mob);
+    point(helper, lower, helperSeq, base + Vec2{300, 0}, true);
+    CHECK_EQ(lower->cursorDragged, mob);
+    point(owner, boss, ownerSeq, base + Vec2{300, 0}, true);
+    CHECK_EQ(boss->cursorDragged, mob);
+    CHECK_EQ(lower->cursorDragged, NULL_ENTITY);
+    point(peer, equal, peerSeq, base + Vec2{300, 0}, true);
+    CHECK(equal->cursorDragged != mob); // Equal owners cannot steal a grab.
+    point(helper, lower, helperSeq, base, false);
+    point(helper, lower, helperSeq, base + Vec2{300, 0}, true);
+    CHECK(lower->cursorDragged != mob);
+    point(owner, boss, ownerSeq, base, false);
+    h.step(2, all);
+    CHECK_EQ(lower->cursorDragged, NULL_ENTITY); // Must release and press again.
+    point(helper, lower, helperSeq, base, false);
+    point(helper, lower, helperSeq, base + Vec2{300, 0}, true);
+    CHECK_EQ(lower->cursorDragged, mob);
+
+    // Taking an admin also releases whatever they were holding.
+    point(owner, boss, ownerSeq, world.get<Transform>(lower->entity).position, true);
+    CHECK_EQ(boss->cursorDragged, lower->entity);
+    CHECK_EQ(lower->cursorDragged, NULL_ENTITY);
+    point(owner, boss, ownerSeq, base + Vec2{200, 0}, true);
+    CHECK(distance(world.get<Transform>(lower->entity).position, base + Vec2{200, 0}) < 3.0);
+    point(owner, boss, ownerSeq, base, false);
+    point(owner, boss, ownerSeq, world.get<Transform>(equal->entity).position, true);
+    CHECK(boss->cursorDragged != equal->entity);
+    point(owner, boss, ownerSeq, base, false);
+    point(peer, equal, peerSeq, base, false);
+    point(peer, equal, peerSeq, world.get<Transform>(boss->entity).position, true);
+    CHECK(equal->cursorDragged != boss->entity);
+    point(helper, lower, helperSeq, base, false);
+    point(helper, lower, helperSeq, world.get<Transform>(boss->entity).position, true);
+    CHECK(lower->cursorDragged != boss->entity);
+
+    CHECK(say(h, helper, "/admin control owner"));
+    CHECK_EQ(boss->controlledBy, net::ConnectionId(0));
+    CHECK_EQ(lower->controlling, net::ConnectionId(0));
+    CHECK(say(h, peer, "/admin control owner"));
+    CHECK_EQ(boss->controlledBy, net::ConnectionId(0));
+    CHECK_EQ(equal->controlling, net::ConnectionId(0));
+
+    // Owner grabbing breaks a lower admin's existing flower control safely.
+    world.get<Transform>(target->entity).position = base + Vec2{300, 0};
+    CHECK(say(h, helper, "/admin control visitor"));
+    CHECK_EQ(lower->controlling, target->connection);
+    point(owner, boss, ownerSeq, world.get<Transform>(target->entity).position, true);
+    CHECK_EQ(boss->cursorDragged, target->entity);
+    CHECK_EQ(lower->controlling, net::ConnectionId(0));
+    CHECK_EQ(target->controlledBy, net::ConnectionId(0));
+    point(owner, boss, ownerSeq, base, false);
+
+    // The built-in Owner flag, rather than the account name, grants this.
+    point(owner, boss, ownerSeq, base, false);
+    point(owner, boss, ownerSeq, world.get<Transform>(lower->entity).position, true);
+    CHECK_EQ(boss->cursorDragged, lower->entity);
+    boss->adminTier = kTopAdminTier;
+    h.step(2, all);
+    CHECK_EQ(boss->cursorDragged, NULL_ENTITY);
+}

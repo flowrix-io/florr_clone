@@ -356,6 +356,8 @@ std::string GameServer::controlRefusal(const Session& admin, const Session& targ
     if (!admin.admin && target.admin) {
         return target.username + " is a full admin and cannot be controlled.";
     }
+    if (effectiveAdmin(target) && adminTier(target) == kOwnerAdminTier)
+        return target.username + " is a server owner and cannot be controlled.";
     if (bodyDown(world_, admin.entity)) return "Your flower is dead.";
     if (bodyDown(world_, target.entity)) return target.username + "'s flower is dead.";
     if (realmOfBody(world_, admin.entity) != realmOfBody(world_, target.entity)) {
@@ -376,6 +378,8 @@ std::string GameServer::controlLapse(const Session& controller) const {
     if (!controller.admin && target.admin) {
         return "Control ended: " + target.username + " is a full admin.";
     }
+    if (effectiveAdmin(target) && adminTier(target) == kOwnerAdminTier)
+        return "Control ended: " + target.username + " is a server owner.";
     if (!target.playing()) return "Control ended: " + target.username + " left the world.";
     if (!controller.playing()) return "Control ended: you left the world.";
     if (bodyDown(world_, controller.entity)) return "Control ended: your flower died.";
