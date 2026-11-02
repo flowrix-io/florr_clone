@@ -1011,7 +1011,7 @@ TEST(dashboard_requests_are_billed_like_the_console_commands_they_stand_in_for) 
     CHECK(!helper.adminDashboard().players.empty());
 }
 
-TEST(admin_cursor_drags_any_mob_and_removes_drops_and_oracle_without_rewards) {
+TEST(admin_cursor_drags_mobs_and_ignores_retired_remove_requests) {
     Harness h("admin-cursor", [](const std::string& path) {
         seedUsers(path, {"boss", "visitor"}, {"boss"});
     }, dataDir(), 0);
@@ -1085,18 +1085,18 @@ TEST(admin_cursor_drags_any_mob_and_removes_drops_and_oracle_without_rewards) {
     const auto xpBefore = world.get<PlayerProgress>(owner).totalXp;
     // A modified client sending the new flags still cannot edit the world.
     session->admin = false;
-    point(200, net::InputAdminRemove);
+    point(200, std::uint8_t{1 << 3});
     CHECK(world.isAlive(drop));
     session->admin = true;
     point(200, 0);
     world.get<Loadout>(owner).slots[0].rarity = Rarity::Universal;
-    point(200, net::InputAdminRemove);
+    point(200, std::uint8_t{1 << 3});
     CHECK(world.isAlive(drop));
     world.get<Loadout>(owner).slots[0].rarity = Rarity::Admin;
     point(200, 0);
-    point(200, net::InputAdminRemove);
-    CHECK(!world.isAlive(drop));
-    CHECK(world.isAlive(mob)); // Remove is for world items/NPCs, not ordinary mobs.
+    point(200, std::uint8_t{1 << 3});
+    CHECK(world.isAlive(drop));
+    CHECK(world.isAlive(mob)); // Cursor gestures cannot remove entities.
     CHECK_EQ(world.get<PlayerProgress>(owner).totalXp, xpBefore);
     point(0, 0);
 
@@ -1108,7 +1108,7 @@ TEST(admin_cursor_drags_any_mob_and_removes_drops_and_oracle_without_rewards) {
     });
     CHECK(oracle != NULL_ENTITY);
     const Vec2 toOracle = world.get<Transform>(oracle).position - world.get<Transform>(owner).position;
-    point(toOracle.length(), net::InputAdminRemove, toOracle.angle());
-    CHECK(!world.isAlive(oracle));
+    point(toOracle.length(), std::uint8_t{1 << 3}, toOracle.angle());
+    CHECK(world.isAlive(oracle));
     CHECK(world.isAlive(owner));
 }

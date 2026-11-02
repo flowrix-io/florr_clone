@@ -3039,7 +3039,6 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             });
             // No death records: resets never award XP, drops or kill credit.
             for (const Entity e : removed) world_.destroy(e);
-            npcs_->restoreRemovedSites(realms);
             npcs_->placeMissing(world_, *terrain_, content(), clockMillis_);
             out("Restarted biome(s): " + targets + " (" + std::to_string(removed.size()) +
                 " world entities cleared; players, inventories and boss cooldowns preserved).");

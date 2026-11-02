@@ -372,17 +372,15 @@ ship together.
 
 With an Admin-rarity Cursor in an active slot, admins with spawn privileges
 (tiers 1–3 and the owner) can hold left mouse to drag a mob or NPC, regardless
-of rarity or movement type. Release to drop it. Right-click a dropped world
-item or NPC to remove it without kill rewards. Map NPCs removed this way stay
-removed until the server restarts; map files and inventories are not edited.
-The server checks permissions, equipment, realm and viewport for every action.
+of rarity or movement type. Release to drop it. The cursor has no deletion
+or custom right-click action. The server checks permissions, equipment, realm
+and viewport for every drag.
 
 ## Restart selected biomes
 
 `/admin restart garden desert` (or `/admin restart garden,desert`) clears wild
 mobs, NPCs, drops, projectiles and ground effects in those biomes, including
-associated sublevels and prestige maps. Map NPCs return, including those
-removed with Admin Cursor; wild mobs refill through the normal spawn system.
+associated sublevels and prestige maps. Map NPCs return; wild mobs refill through the normal spawn system.
 Players, inventories, pets and boss cooldowns remain. Requires spawn privileges.
 All names are validated before changing anything. `/admin restart list` lists
 valid names. With no biome, the existing whole-server restart is unchanged;

@@ -2508,7 +2508,6 @@ void GameServer::serviceAdminCursor() {
         }
         const auto buttons = input->current.flags;
         const bool drag = (buttons & net::InputAdminDrag) != 0;
-        const bool remove = (buttons & net::InputAdminRemove) != 0;
         const Vec2 requested = Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
         const auto* location = world_.tryGet<PlayerLocation>(owner);
         const Vec2 claim = location ? location->viewport : Vec2{kViewportWidth, kViewportHeight};
@@ -2516,50 +2515,36 @@ void GameServer::serviceAdminCursor() {
         const Vec2 pointer = origin->position + Vec2{clamp(requested.x, -viewport.x * 0.5, viewport.x * 0.5),
                                                      clamp(requested.y, -viewport.y * 0.5, viewport.y * 0.5)};
         const Realm realm = origin->realm;
-        const auto valid = [&](Entity entity, bool deleting) {
+        const auto valid = [&](Entity entity) {
             const auto* transform = world_.tryGet<Transform>(entity);
             return transform && transform->realm == realm && !world_.has<Dead>(entity) &&
                 !world_.has<PlayerTag>(entity) &&
-                (deleting ? (world_.has<DropTag>(entity) || world_.has<NpcTag>(entity))
-                          : (world_.has<MobTag>(entity) || world_.has<NpcTag>(entity)));
+                (world_.has<MobTag>(entity) || world_.has<NpcTag>(entity));
         };
-        const auto pick = [&](bool deleting) {
+        const auto pick = [&]() {
             Entity selected = NULL_ENTITY;
             double best = 1e100;
             Query<Transform> candidates{world_};
             candidates.each([&](Entity e, Transform& transform) {
-                if (!valid(e, deleting)) return;
+                if (!valid(e)) return;
                 const auto* body = world_.tryGet<Body>(e);
                 const double radius = std::max(20.0, body ? body->radius : 20.0);
                 const double d = distanceSq(pointer, transform.position);
-                // Distance to the centre relative to size makes tiny drops
-                // selectable even beside a large NPC.
+                // Pick the closest body relative to its size.
                 const double score = d / (radius * radius);
                 if (score <= 1.0 && (score < best || (score == best && e < selected))) {
                     best = score;
                     selected = e;
-                    if (!deleting) {
-                        const auto* segment = world_.tryGet<BodySegment>(e);
-                        if (segment && valid(segment->chainHead, false)) selected = segment->chainHead;
-                    }
+                    const auto* segment = world_.tryGet<BodySegment>(e);
+                    if (segment && valid(segment->chainHead)) selected = segment->chainHead;
                 }
             });
             return selected;
         };
-        if (remove && !(session.cursorButtons & net::InputAdminRemove)) {
-            const Entity selected = pick(true);
-            if (selected != NULL_ENTITY) {
-                if (session.cursorDragged == selected) session.cursorDragged = NULL_ENTITY;
-                if (world_.has<NpcTag>(selected)) npcs_->suppressRespawn(selected);
-                // Outside ECS queries and before the new broadphase/loot pass:
-                // an item under the owner cannot be picked up after deletion.
-                world_.destroy(selected); // No death, rewards or new loot.
-            }
-        }
-        if (!drag || remove) session.cursorDragged = NULL_ENTITY;
-        else if (!(session.cursorButtons & net::InputAdminDrag)) session.cursorDragged = pick(false);
+        if (!drag) session.cursorDragged = NULL_ENTITY;
+        else if (!(session.cursorButtons & net::InputAdminDrag)) session.cursorDragged = pick();
         if (session.cursorDragged != NULL_ENTITY) {
-            if (!valid(session.cursorDragged, false)) session.cursorDragged = NULL_ENTITY;
+            if (!valid(session.cursorDragged)) session.cursorDragged = NULL_ENTITY;
             else {
                 world_.get<Transform>(session.cursorDragged).position = pointer;
                 if (auto* npc = world_.tryGet<Npc>(session.cursorDragged)) npc->home = pointer;

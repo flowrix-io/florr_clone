@@ -319,7 +319,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
             if (config.id == "glitch") description = "Fully heals touched mobs. Healing lockouts still apply.";
             else if (config.id == "powder") description = "Grants extreme movement speed.";
             else if (config.id == "magic_orb") description = "Grants unlimited mana while equipped. Mana stays full and abilities cost no mana.";
-            else if (config.id == "cursor") description = "Admins: hold left-click to drag any mob. Right-click to remove a dropped item or NPC. Requires spawn privileges.";
+            else if (config.id == "cursor") description = "Admins: hold left-click to drag any mob. Release to let go. Requires spawn privileges.";
             else if (config.id == "faster") description = "Rapidly spins petals in a stable orbit.";
             else if (config.id == "pincer") description = "Slows mobs to 5% movement speed for an extended duration.";
             else if (config.id == "web") description = "Creates a huge, long-lasting web that slows mobs to 5% movement speed.";
