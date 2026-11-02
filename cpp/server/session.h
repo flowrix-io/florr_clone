@@ -178,6 +178,10 @@ struct Session {
     Entity cursorBody = NULL_ENTITY;
     Realm cursorRealm = Realm::Overworld;
     std::uint8_t cursorButtons = 0;
+    bool adminKillHeld = false;
+    Entity adminKillBody = NULL_ENTITY;
+    Realm adminKillRealm = Realm::Overworld;
+    double adminKillReadyAtMillis = 0;
 
     /// Whether this body's death has already been announced. A player's corpse
     /// KEEPS its Dead tag so the client goes on being sent a dead flower, so

@@ -1157,7 +1157,13 @@ TEST(admin_cursor_drags_non_admin_players_with_finite_release_protection) {
     point(world.get<Transform>(adminBody).position, true);
     CHECK(owner->cursorDragged != adminBody);
     point(origin, false);
-    point(world.get<Transform>(player).position, true);
+    // A covering mob is nearer the pointer's centre, but a player wins.
+    const Entity covering = world.create();
+    const Vec2 coveredPointer = world.get<Transform>(player).position + Vec2{10, 0};
+    world.add<Transform>(covering, Transform{coveredPointer, 0, realm});
+    world.add<Body>(covering, Body{200, 1000000});
+    world.add<MobTag>(covering);
+    point(coveredPointer, true);
     CHECK_EQ(owner->cursorDragged, player);
     point(origin + Vec2{350, 0}, true);
     const Vec2 moved = world.get<Transform>(player).position;
@@ -1224,4 +1230,91 @@ TEST(admin_cursor_drags_non_admin_players_with_finite_release_protection) {
     CHECK(GameServerPeer::sessionOf(h.server, "boss") == nullptr);
     CHECK(world.isAlive(player));
     CHECK(world.get<Health>(player).invulnerableUntilMillis < h.clock);
+}
+
+TEST(admin_hover_kill_checks_cursor_authority_targets_and_key_edges) {
+    Harness h("admin-hover-kill", [](const std::string& path) {
+        seedUsers(path, {"boss", "visitor"}, {"boss"});
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, visitor;
+    const std::vector<NetClient*> all{&boss, &visitor};
+    CHECK(enterWorld(h, all, {"boss", "visitor"}, {"Boss", "Visitor"}));
+    World& world = h.server.world();
+    Session* admin = GameServerPeer::sessionOf(h.server, "boss");
+    Session* player = GameServerPeer::sessionOf(h.server, "visitor");
+    CHECK(admin && player);
+    if (!admin || !player) return;
+    protect(world, admin->entity);
+    protect(world, player->entity);
+    const Vec2 origin = world.get<Transform>(admin->entity).position;
+    const Realm realm = world.get<Transform>(admin->entity).realm;
+    const auto makeMob = [&](Vec2 at, Realm where) {
+        Entity e = world.create();
+        world.add<Transform>(e, Transform{at, 0.0, where});
+        world.add<Body>(e, Body{25, 1000000});
+        world.add<MobTag>(e);
+        return e;
+    };
+    const Entity mob = makeMob(origin + Vec2{200, 0}, realm);
+    const Entity second = makeMob(origin + Vec2{200, 0}, realm);
+    const Entity elsewhere = makeMob(origin + Vec2{200, 0}, realm == Realm::Maze ? Realm::Overworld : Realm::Maze);
+    const Entity pet = makeMob(origin + Vec2{300, 0}, realm);
+    world.add<Pet>(pet);
+    const Entity npc = makeMob(origin + Vec2{350, 0}, realm);
+    world.add<NpcTag>(npc);
+    std::uint32_t sequence = 0;
+    const auto point = [&](double distance, std::uint8_t flags) {
+        net::InputFrame input;
+        input.sequence = ++sequence;
+        input.aimDistance = static_cast<std::uint16_t>(distance);
+        input.flags = flags;
+        boss.sendInput(input);
+        h.step(2, all);
+    };
+    const double xp = world.get<PlayerProgress>(admin->entity).totalXp;
+    point(200, net::InputAdminKill); // No Admin Cursor equipped.
+    CHECK(world.isAlive(mob));
+    point(200, 0);
+    world.get<Loadout>(admin->entity).slots[0] = LoadoutSlot{content().petalIndex("cursor"), Rarity::Admin, 0, false};
+    admin->admin = false;
+    point(200, net::InputAdminKill);
+    CHECK(world.isAlive(mob));
+    CHECK(world.isAlive(second));
+    admin->admin = true;
+    point(200, net::InputAdminKill); // Promotion while held is not a new press.
+    CHECK(world.isAlive(mob));
+    point(200, 0);
+    point(200, net::InputAdminKill);
+    CHECK_EQ(int(world.isAlive(mob)) + int(world.isAlive(second)), 1);
+    h.step(30, all);
+    point(200, net::InputAdminKill);
+    CHECK_EQ(int(world.isAlive(mob)) + int(world.isAlive(second)), 1);
+    point(200, 0);
+    point(200, net::InputAdminKill);
+    CHECK(!world.isAlive(mob));
+    CHECK(!world.isAlive(second));
+    CHECK(world.isAlive(elsewhere));
+    for (const double distance : {300.0, 350.0}) {
+        point(distance, 0);
+        h.step(8, all);
+        point(distance, net::InputAdminKill);
+    }
+    CHECK(!world.isAlive(pet));
+    CHECK(world.isAlive(npc));
+    CHECK(world.isAlive(player->entity));
+    world.get<Transform>(player->entity).position = origin + Vec2{400, 0};
+    player->admin = true;
+    point(400, 0);
+    h.step(8, all);
+    point(400, net::InputAdminKill);
+    CHECK(!world.has<Dead>(player->entity));
+    player->admin = false;
+    point(400, 0);
+    h.step(8, all);
+    point(400, net::InputAdminKill);
+    CHECK(world.has<Dead>(player->entity));
+    CHECK_EQ(world.get<Health>(player->entity).current, 0.0);
+    CHECK(h.stepUntil(all, [&] { return visitor.dead(); }));
+    CHECK_EQ(world.get<PlayerProgress>(admin->entity).totalXp, xp);
 }

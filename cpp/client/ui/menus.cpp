@@ -895,7 +895,8 @@ bool MenuSystem::handleKeys(Window& window) {
     // tests them in: that order decides which action a key bound to two of
     // them reaches, and this client has to decide it the same way.
     if (inGame_) {
-        if (boundPressed(settings_.controlKey(ControlAction::ZoomOut))) {
+        if (!(adminSlotShown_ && window.keyDown(Key::Minus) && window.keyDown(Key::Backspace)) &&
+            boundPressed(settings_.controlKey(ControlAction::ZoomOut))) {
             settings_.zoom = clamp(settings_.zoom - kZoomKeyStep, kMinZoom, kMaxZoom);
             return true;
         }

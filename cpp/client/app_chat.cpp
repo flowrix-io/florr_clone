@@ -253,6 +253,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin notify", "Create a notification (shorthand)", true},
     {"/admin clear_notifications", "Clear all notifications", true},
     {"/admin clear_notifs", "Clear notifications (shorthand)", true},
+    {"/admin give_xp", "Give XP: <amount> [username], default yourself", true},
     {"/admin give", "Give petals: /admin give <player> <item> <rarity> [amount], or /admin give all <rarity> <amount> [player] [--exclude <petal> ...]", true},
     {"/admin grant_admin", "Lend a player the admin console until they respawn: /admin grant_admin <player> [tier]", true},
     {"/admin revoke_admin", "Take back a temporary admin grant: /admin revoke_admin <player>", true},

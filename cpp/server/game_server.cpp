@@ -1042,6 +1042,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     markTickPhase("mob ai");
     movement_->runWorldPhase(world_, *terrain_, nowMillis, net::kTickSeconds);
     markTickPhase("mob movement");
+    serviceAdminHoverKill();
     serviceAdminCursor();
     // After the bodies have moved, as gardn places its segments: whatever
     // pushed a bead this tick swings the chain rather than being undone.
@@ -2481,6 +2482,81 @@ void GameServer::leaveWorld(Session& session) {
     revokeTempAdmin(session.connection);
 }
 
+void GameServer::serviceAdminHoverKill() {
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        const Entity owner = session.entity;
+        const auto* input = session.playing() ? world_.tryGet<PlayerInput>(owner) : nullptr;
+        const auto* origin = session.playing() ? world_.tryGet<Transform>(owner) : nullptr;
+        const bool down = input && (input->current.flags & net::InputAdminKill);
+        const bool pressed = down && !session.adminKillHeld;
+        session.adminKillHeld = down;
+        const bool transitioned = session.adminKillBody != NULL_ENTITY &&
+            (session.adminKillBody != owner || !origin || session.adminKillRealm != origin->realm);
+        session.adminKillBody = origin ? owner : NULL_ENTITY;
+        if (origin) session.adminKillRealm = origin->realm;
+        const auto* modifiers = world_.tryGet<PlayerModifiers>(owner);
+        const bool cursor = modifiers && modifiers->controlsPets &&
+            modifiers->petControlRarity == Rarity::Admin;
+        // Reuse the Cursor's existing admin tier and equipment requirements.
+        // A held key, promotion or realm transition cannot repeatedly kill.
+        if (!pressed || transitioned || !origin || !cursor || !adminMay(session, AdminPower::SpawnMobs) ||
+            world_.has<Dead>(owner) || session.controlledBy || session.controlling ||
+            clockMillis_ < session.adminKillReadyAtMillis) continue;
+        session.adminKillReadyAtMillis = clockMillis_ + 250.0;
+        const auto* location = world_.tryGet<PlayerLocation>(owner);
+        const Vec2 claim = location ? location->viewport : Vec2{kViewportWidth, kViewportHeight};
+        const Vec2 viewport = claimableViewport(world_, owner, content(), claim.x, claim.y);
+        const Vec2 requested = Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
+        const Vec2 pointer = origin->position + Vec2{
+            clamp(requested.x, -viewport.x * 0.5, viewport.x * 0.5),
+            clamp(requested.y, -viewport.y * 0.5, viewport.y * 0.5)};
+        const auto valid = [&](Entity entity) {
+            const auto* at = world_.tryGet<Transform>(entity);
+            if (!at || at->realm != origin->realm || entity == owner ||
+                world_.has<NpcTag>(entity) || world_.has<Dead>(entity)) return false;
+            if (world_.has<PlayerTag>(entity)) {
+                const auto* account = world_.tryGet<PlayerAccount>(entity);
+                if (!account || account->admin) return false;
+                if (Session* target = sessionFor(account->connection))
+                    return target->playing() && target->entity == entity && !effectiveAdmin(*target);
+                return account->connection == 0;
+            }
+            return world_.has<MobTag>(entity) || world_.has<Pet>(entity);
+        };
+        Entity selected = NULL_ENTITY;
+        double best = 1.0;
+        Query<Transform, Body> mobs{world_};
+        mobs.each([&](Entity entity, Transform& at, Body& body) {
+            if (!valid(entity)) return;
+            const double radius = std::max(20.0, body.radius);
+            const double score = distanceSq(pointer, at.position) / (radius * radius);
+            if (score > best || (score == best && selected != NULL_ENTITY && entity >= selected)) return;
+            if (const auto* segment = world_.tryGet<BodySegment>(entity)) {
+                if (!valid(segment->chainHead)) return;
+                entity = segment->chainHead;
+            }
+            best = score;
+            selected = entity;
+        });
+        if (selected == NULL_ENTITY) continue;
+        if (!world_.has<Pet>(selected)) {
+            if (const auto* type = world_.tryGet<MobType>(selected)) announceBossDefeat(selected, *type, {});
+        }
+        // Wild mobs/pets are removed without a reward ledger. Players take
+        // the normal corpse/respawn path, with no killer credited.
+        if (world_.has<PlayerTag>(selected)) {
+            if (auto* health = world_.tryGet<Health>(selected)) health->current = 0;
+            world_.add<Dead>(selected);
+        } else commands_.destroy(selected);
+        Query<BodySegment> segments{world_};
+        segments.each([&](Entity entity, BodySegment& segment) {
+            if (segment.chainHead == selected) commands_.destroy(entity);
+        });
+        std::printf("[admin] %s removed hovered target %u\n", session.username.c_str(), unsigned(selected));
+    }
+}
+
 void GameServer::serviceAdminCursor() {
     for (auto& entry : sessions_) {
         Session& session = entry.second;
@@ -2544,6 +2620,7 @@ void GameServer::serviceAdminCursor() {
         const auto pick = [&]() {
             Entity selected = NULL_ENTITY;
             double best = 1e100;
+            bool selectedPlayer = false;
             Query<Transform> candidates{world_};
             candidates.each([&](Entity e, Transform& transform) {
                 if (!valid(e)) return;
@@ -2552,9 +2629,12 @@ void GameServer::serviceAdminCursor() {
                 const double d = distanceSq(pointer, transform.position);
                 // Pick the closest body relative to its size.
                 const double score = d / (radius * radius);
-                if (score <= 1.0 && (score < best || (score == best && e < selected))) {
+                const bool player = world_.has<PlayerTag>(e);
+                if (score <= 1.0 && (selected == NULL_ENTITY || (player && !selectedPlayer) ||
+                    (player == selectedPlayer && (score < best || (score == best && e < selected))))) {
                     best = score;
                     selected = e;
+                    selectedPlayer = player;
                     const auto* segment = world_.tryGet<BodySegment>(e);
                     if (segment && valid(segment->chainHead)) selected = segment->chainHead;
                 }

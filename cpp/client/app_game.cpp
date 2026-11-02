@@ -311,6 +311,8 @@ void App::sendInputFrame(double dt) {
         // These are pointer buttons only; keyboard petal controls do not edit
         // the world. Authority and the worn petal are rechecked by the server.
         if (window_.mouseDown(MouseButton::Left)) input.flags |= net::InputAdminDrag;
+        if (adminCursor && window_.keyDown(Key::Minus) && window_.keyDown(Key::Backspace))
+            input.flags |= net::InputAdminKill;
         if ((!adminCursor && window_.mouseDown(MouseButton::Left)) ||
             boundKeyDown(window_, settings.controlKey(ControlAction::ExtendPetals))) {
             input.flags |= net::InputAttack;

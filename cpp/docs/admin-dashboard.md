@@ -404,3 +404,30 @@ Payouts include the stake. Bets are 1–10,000 chips, the account balance cap is
 one billion chips, and there is a persisted one-second account cooldown.
 Arena currency cannot be used. Casino chips and cooldowns persist in the
 existing account database; there are no additional admin ranks or privileges.
+
+### Giving XP
+
+`/admin give_xp <amount> [username]` (alias `givexp`) adds a signed whole
+amount of XP, defaulting to yourself. Scientific notation is accepted, for
+example `/admin give_xp 1e12 a19kisme`. It follows the existing give permissions:
+tiers 1–2 and Owner may give to anyone; full tier 3–4 admins may give only to
+themselves, and temporary tier 3–4 admins cannot use it.
+
+Online targets receive XP on their current track (maze XP inside the maze);
+offline accounts receive regular XP. Arena runs must end before receiving a
+grant. Both split bodies and the profile update immediately. Negative amounts
+remove XP, stopping at zero; removing another admin's XP follows the existing
+database editor rank rule (only lower-ranked admins may be targeted). Changes are
+logged and persist with the account; invalid or overflowing amounts are refused.
+
+### Hover kill
+
+Equip an **Admin-rarity Cursor**, point at a mob, pet or non-admin player,
+and press **Minus + Backspace** together. The combo is inactive in chat and
+menus, and suppresses zoom-out while held. Each press selects one target
+under the pointer in your current realm; holding does not repeat. Players
+enter their normal death/respawn flow. Other admins, your own flower, NPCs
+and dropped items are protected. No XP, drops or kill credit are awarded.
+The server checks the Cursor's existing tier and equipment requirements and
+enforces the visible viewport. When starting a drag, a valid player under
+the pointer takes priority over overlapping mobs.

@@ -3807,3 +3807,105 @@ TEST(restarting_selected_biomes_is_atomic_and_preserves_players_and_other_biomes
     CHECK(sawText(boss, "No restart scheduled."));
     CHECK_EQ(h.server.exitCode(), 0);
 }
+
+TEST(admin_give_xp_updates_live_and_offline_totals_and_accepts_negative_amounts) {
+    Harness h("cmd-give-xp", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "visitor", "password7");
+        seedUser(path, "absent", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, visitor;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    visitor.joinGame(1000, 800, {}, "Visitor");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return visitor.status() == NetClient::Status::Playing; }));
+    Session* target = GameServerPeer::sessionOf(h.server, "visitor");
+    CHECK(target != nullptr);
+    if (!target) return;
+    World& world = h.server.world();
+    world.get<Health>(target->entity).invulnerableUntilMillis = INFINITY;
+    auto& live = world.get<PlayerProgress>(target->entity);
+    live.totalXp = 1234; // Earned since the last account save.
+    live.level = levelFromTotalXp(1234).level;
+    CHECK(say(h, boss, "/admin give_xp 1000 visitor"));
+    CHECK_EQ(world.get<PlayerProgress>(target->entity).totalXp, 2234.0);
+    CHECK_EQ(world.get<PlayerProgress>(target->entity).level, levelFromTotalXp(2234).level);
+    CHECK_EQ(h.server.database().findProgress(target->userId)->totalXp, 2234.0);
+    CHECK(say(h, boss, "/admin give_xp -500 visitor"));
+    CHECK_EQ(world.get<PlayerProgress>(target->entity).totalXp, 1734.0);
+    CHECK(say(h, boss, "/admin give_xp -1e12 visitor"));
+    CHECK_EQ(world.get<PlayerProgress>(target->entity).totalXp, 0.0);
+    CHECK_EQ(world.get<PlayerProgress>(target->entity).level, 1);
+    CHECK(say(h, boss, "/admin give_xp 1e20 absent"));
+    const std::string absent = h.server.database().findUser("absent")->id;
+    for (const char* amount : {"0", "1.5", "nan", "inf", "1e309", "1", "-1", "5junk"}) {
+        h.step(20, {&boss, &visitor}); // Respect the existing console token bucket.
+        CHECK(say(h, boss, "/admin give_xp " + std::string(amount) + " absent"));
+        CHECK_EQ(h.server.database().findProgress(absent)->totalXp, 1e20);
+    }
+    CHECK(say(h, boss, "/admin give_xp -1e20 absent"));
+    CHECK_EQ(h.server.database().findProgress(absent)->totalXp, 0.0);
+    CHECK(say(h, boss, "/admin give_xp 1e308 absent"));
+    CHECK_EQ(h.server.database().findProgress(absent)->totalXp, 1e308);
+    CHECK(say(h, boss, "/admin give_xp 1e308 absent"));
+    CHECK_EQ(h.server.database().findProgress(absent)->totalXp, 1e308);
+    CHECK(say(h, boss, "/admin give_xp -1e308 absent"));
+    CHECK_EQ(h.server.database().findProgress(absent)->totalXp, 0.0);
+    CHECK(say(h, boss, "/admin give_xp 1000"));
+    const std::string owner = h.server.database().findUser("boss")->id;
+    CHECK_EQ(h.server.database().findProgress(owner)->totalXp, 1000.0);
+    h.server.persistAll();
+    Database saved;
+    std::string error;
+    CHECK(saved.load(h.dbPath, error));
+    CHECK_EQ(saved.findProgress(target->userId)->totalXp, 0.0);
+    CHECK_EQ(saved.findProgress(owner)->totalXp, 1000.0);
+}
+
+TEST(admin_give_xp_uses_existing_give_permissions_and_separate_maze_track) {
+    Harness h("cmd-give-xp-rights", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "lower", "password7", true, 3);
+        seedUser(path, "visitor", "password7");
+        seedUser(path, "owner", "password7", true, kOwnerAdminTier);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient boss, lower, visitor;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, lower, "lower", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    const std::string own = h.server.database().findUser("lower")->id;
+    const std::string other = h.server.database().findUser("visitor")->id;
+    CHECK(say(h, lower, "/admin give_xp 1000"));
+    CHECK_EQ(h.server.database().findProgress(own)->totalXp, 1000.0);
+    CHECK(say(h, lower, "/admin give_xp 1000 visitor"));
+    CHECK_EQ(h.server.database().findProgress(other)->totalXp, 0.0);
+    CHECK(say(h, visitor, "/admin give_xp 1000"));
+    CHECK_EQ(h.server.database().findProgress(other)->totalXp, 0.0);
+    CHECK(say(h, boss, "/admin grant_admin visitor 3"));
+    CHECK(say(h, visitor, "/admin give_xp 1000"));
+    CHECK_EQ(h.server.database().findProgress(other)->totalXp, 0.0);
+    CHECK(say(h, boss, "/admin give_xp 200 owner"));
+    CHECK(say(h, boss, "/admin give_xp -50 owner"));
+    CHECK_EQ(h.server.database().findProgress(h.server.database().findUser("owner")->id)->totalXp, 200.0);
+    CHECK(say(h, boss, "/admin give_xp 200 visitor"));
+    visitor.joinGame(1000, 800, {}, "Visitor");
+    CHECK(h.stepUntil({&boss, &visitor}, [&] { return visitor.status() == NetClient::Status::Playing; }));
+    Session* target = GameServerPeer::sessionOf(h.server, "visitor");
+    CHECK(target != nullptr);
+    if (!target) return;
+    World& world = h.server.world();
+    world.get<Health>(target->entity).invulnerableUntilMillis = INFINITY;
+    target->realm = Realm::Maze;
+    world.get<Transform>(target->entity).realm = Realm::Maze;
+    world.get<PlayerProgress>(target->entity).totalXp = 75;
+    CHECK(say(h, boss, "/admin give_xp 25 visitor"));
+    CHECK_EQ(h.server.database().findProgress(other)->totalXp, 200.0);
+    CHECK_EQ(h.server.database().findProgress(other)->mazeTotalXp, 100.0);
+    CHECK_EQ(world.get<PlayerProgress>(target->entity).totalXp, 100.0);
+    target->arena = std::make_unique<PlayerRecord>();
+    CHECK(say(h, boss, "/admin give_xp 25 visitor"));
+    CHECK_EQ(h.server.database().findProgress(other)->mazeTotalXp, 100.0);
+    target->arena.reset();
+}

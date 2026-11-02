@@ -504,6 +504,7 @@ private:
     /// service and before the reaper, so a death ends control before the
     /// corpse is announced.
     void serviceControl();
+    void serviceAdminHoverKill();
     void serviceAdminCursor();
     /// The body `session`'s snapshot stream is built around: the steered
     /// flower's active half while it controls one, else its own. Reads only.

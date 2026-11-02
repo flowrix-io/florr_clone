@@ -26,7 +26,6 @@
 
 #include "server/game_server.h"
 #include "shared/game/casino.h"
-#include "server/crypto.h"
 
 #include <algorithm>
 #include <array>
@@ -1026,7 +1025,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
                     "(move every bot only), give &lt;username&gt; &lt;itemType&gt; "
-                    "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] [--exclude &lt;petal&gt; ...] (tiers 1-2; tiers 3-4 to themselves only), set_skin &lt;username&gt; "
+                    "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] [--exclude &lt;petal&gt; ...] (tiers 1-2; tiers 3-4 to themselves only), give_xp &lt;amount&gt; [username] (same give permissions), set_skin &lt;username&gt; "
                     "&lt;skin|none&gt;, corrupt &lt;username&gt; [on|off|toggle] "
                     "(corrupted flowers fight players anywhere, not just in PVP), god "
                     "[on|off|toggle] (make yourself invulnerable), control &lt;username&gt; "
@@ -2259,6 +2258,60 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         database_.markDirty();
         out("Set " + target.name + "'s renderFlags to " + std::to_string(flags) +
             (flags == 0 ? " (default flower)" : ""));
+        return;
+    }
+
+    if (verb == "give_xp" || verb == "givexp") {
+        // Reuse the existing give permission, including full lower-tier
+        // admins' self-only exception; no additional rank or privilege.
+        const bool toAnyone = adminMay(session, AdminPower::GivePetals);
+        if (!toAnyone && !session.admin) {
+            out("Temporary admins at this tier cannot give XP.");
+            return;
+        }
+        double amount = 0;
+        if (words.size() < 2 || words.size() > 3 || !parseNumber(words[1], amount) ||
+            amount == 0 || std::floor(amount) != amount) {
+            out("Usage: give_xp <signed whole XP amount> [username] (default: yourself)");
+            return;
+        }
+        Session* target = words.size() == 2 ? &session : sessionForUser(words[2]);
+        const Account* account = target ? database_.findUserById(target->userId)
+                                       : database_.findUser(words[2]);
+        if (!toAnyone && (!account || account->id != session.userId)) {
+            out("Admins at this tier can give XP only to themselves.");
+            return;
+        }
+        if (!account) { out("Player not found."); return; }
+        // Removing progress follows the database editor's existing rank rule.
+        if (amount < 0 && account->id != session.userId && account->admin &&
+            account->adminTier <= adminTier(session)) {
+            out("Only a higher-ranked admin can remove XP from another admin.");
+            return;
+        }
+        if (target && target->arena) {
+            out("XP cannot be granted during an arena run. Leave the arena first.");
+            return;
+        }
+        const bool maze = target && target->playing() && target->realm == Realm::Maze;
+        PlayerRecord& record = database_.progress(account->id);
+        const PlayerProgress* live = target && target->playing()
+            ? world_.tryGet<PlayerProgress>(target->entity) : nullptr;
+        const double before = live ? live->totalXp : maze ? record.mazeTotalXp : record.totalXp;
+        const double after = std::max(0.0, before + amount);
+        if (!std::isfinite(before) || before < 0 || !std::isfinite(after) || after == before) {
+            out("XP grant refused: invalid balance, overflow, or amount too small for this total.");
+            return;
+        }
+        // Bank earned XP first, then use the editor's existing refresh path
+        // to update both split bodies, levels, stats and the online profile.
+        if (target) persistPlayer(*target);
+        (maze ? record.mazeTotalXp : record.totalXp) = after;
+        database_.markDirty();
+        adminDbRefreshLive(account->id);
+        out("Gave " + words[1] + (maze ? " maze XP to " : " XP to ") + account->username +
+            ". Level: " + std::to_string(levelFromTotalXp(after).level) + ".");
+        audit("gave " + words[1] + (maze ? " maze XP to " : " XP to ") + account->username);
         return;
     }
 
