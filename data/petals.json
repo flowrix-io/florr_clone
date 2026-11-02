@@ -1935,6 +1935,8 @@
         "count": 1,
         "killHeal": 1,
         "killHealDuration": 10000,
+        "defendOnly": true,
+        "ignoresMobs": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-20 -10.5 40 21\"><g transform=\"matrix(0 0.133 -0.133 0 19.95 -19.95)\"><path fill=\"#a88642\" stroke=\"#886d35\" stroke-linejoin=\"round\" stroke-width=\"20\" d=\"M151.415 22.141a60 60 0 0 0 0 120 60 60 0 0 0 0-120Z\"/><path fill=\"#a88642\" stroke=\"#886d35\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"18.24\" d=\"M106.955 290.938c0-57.4-23.167-91.012-23.167-148.012 0-45.6 56.227-45.6 56.227-45.6h22.8s56.227.958 56.227 46.558c0 57-23.167 89.653-23.167 147.053h-88.92Z\"/><path fill=\"#a88642\" d=\"M151.415 30.841a51.3 51.3 0 0 0 0 102.6 51.3 51.3 0 0 0 0-102.6Z\"/><path fill=\"#886d35\" d=\"M150 116.5a13.5 13.5 0 0 0 0 27 13.5 13.5 0 0 0 0-27Zm0 45a13.5 13.5 0 0 0 0 27 13.5 13.5 0 0 0 0-27Zm0 45a13.5 13.5 0 0 0 0 27 13.5 13.5 0 0 0 0-27Z\"/><path fill=\"#886d35\" stroke=\"#886d35\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"10.8\" d=\"M135.807 90c-12.53-13.234-22.117-41.9-12.44-60h17.222c-9.69 14.575-9.802 43.307-4.782 60Zm28.386 0c12.53-13.234 22.117-41.9 12.44-60H159.41c9.69 14.575 9.802 43.307 4.782 60Z\"/></g></svg>"
     }
 }

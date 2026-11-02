@@ -2459,6 +2459,31 @@ TEST(a_totem_heals_for_ten_seconds_after_each_kill_and_kills_stack) {
     CHECK(rig.world.get<PetalSlotState>(rig.player).killHealStacks.empty());
 }
 
+TEST(a_totem_prints_its_active_heals_on_the_bar) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "totem", Rarity::Rare);
+    rig.equip(1, "totem", Rarity::Common);
+    rig.equip(2, "basic");
+    rig.settleEquips();
+    // A gauge, so it reads 0 with nothing to heal for rather than vanishing.
+    CHECK_NEAR(rig.slotCounter(0), 0.0, 1e-12);
+    CHECK_NEAR(rig.slotCounter(2), -1.0, 1e-12);
+
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    rig.tick(150);
+    rig.system.creditKill(rig.world, rig.player, rig.now);
+    rig.tick();
+    // The stacks are the flower's, so both totems print the same figure.
+    CHECK_NEAR(rig.slotCounter(0), 2.0, 1e-12);
+    CHECK_NEAR(rig.slotCounter(1), 2.0, 1e-12);
+    // Down to the second kill's once the first has run out, then none.
+    rig.tick(150);
+    CHECK_NEAR(rig.slotCounter(0), 1.0, 1e-12);
+    rig.tick(150);
+    CHECK_NEAR(rig.slotCounter(0), 0.0, 1e-12);
+}
+
 TEST(totems_sum_their_heal_per_stack_and_take_the_healing_talent) {
     if (!contentLoaded()) return;
     Rig rig;

@@ -808,6 +808,13 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         bankedArmorStacks = armor->stacks;
     }
 
+    // And how many kills a totem is still healing for, by the test the heal
+    // itself applies (applyPassiveHeal), so the number and the healing agree.
+    double activeKillHeals = 0.0;
+    for (const double until : state.killHealStacks) {
+        if (until > nowMillis) activeKillHeals += 1.0;
+    }
+
     // The moon does not stack: one slot's comes out, and every other moon on
     // the bar is built holding nothing.
     const int moonSlot = liveMoonSlotOf(registry, loadout);
@@ -1087,12 +1094,12 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // into and the instances this tick's respawns have already put back.
         slotState.healthFraction = slotHealthFraction(world, slotState, stats, count, live);
 
-        // The bar's number for this slot. Three petals have one: a sponge
+        // The bar's number for this slot. Four petals have one: a sponge
         // prints what it absorbed and has yet to pay back, a root how many
-        // armour stacks are in hand, a crown how many of its Basics are out.
-        // The first two are asked of the STATS rather than of the petal's id,
-        // so a petal that grows either behaviour in petals.json grows the
-        // number with it.
+        // armour stacks are in hand, a totem how many kills it is healing for,
+        // a crown how many of its Basics are out. All but the crown are asked
+        // of the STATS rather than of the petal's id, so a petal that grows
+        // one of those behaviours in petals.json grows the number with it.
         //
         // Reported even while the body is broken: a sponge's stored hits go on
         // draining whether or not the sponge survived taking them, and a root
@@ -1101,6 +1108,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // the effect having been cancelled.
         if (stats.spongeDamageDurationMillis > 0.0) slotState.counter = storedSpongeDamage;
         else if (stats.armorPerStack > 0.0) slotState.counter = bankedArmorStacks;
+        else if (stats.killHealPerSecond > 0.0) slotState.counter = activeKillHeals;
         else if (petalLendsBasic(config)) slotState.counter = crownLoansOutOf(player);
         else slotState.counter = -1.0;
     }
