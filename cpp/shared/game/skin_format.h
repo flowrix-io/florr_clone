@@ -31,6 +31,9 @@ inline constexpr int kMaxPolyPoints = 16;
 /// Per author, not per server: the catalog is shared, so one player cannot
 /// fill it.
 inline constexpr int kMaxSkinsPerUser = 64;
+/// Per account. Favourites are only a bookmark list, but they ride every
+/// sign-in's SkinCatalog and sit on the account's row in the file.
+inline constexpr int kMaxFavoriteSkins = 256;
 
 /// Local-space bound. The flower body radius is ~25, so 64 leaves room for a
 /// skin that overhangs it without letting one cover the screen.
@@ -68,7 +71,16 @@ struct CustomSkin {
     /// Unix milliseconds. Double rather than int64 because it round-trips
     /// through the JSON database the TypeScript build wrote.
     double createdAt = 0;
+    /// How many accounts like and dislike it. Wire only, never in the skin's
+    /// JSON: every vote lives on the VOTER's account row, so these are the
+    /// server's tally of those, filled in as the skin is sent.
+    std::uint32_t likes = 0;
+    std::uint32_t dislikes = 0;
 };
+
+/// One account's vote on one skin. On the wire as a u8; in the database as
+/// +1 / -1 under the voter's `skinVotes`, with None stored as no entry.
+enum class SkinVote : std::uint8_t { None, Like, Dislike };
 
 const char* skinShapeTypeName(SkinShapeType);
 bool parseSkinShapeType(const std::string& word, SkinShapeType& out);

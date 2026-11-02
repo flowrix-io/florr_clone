@@ -74,6 +74,8 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::RegisterGuest:       return "registerGuest";
         case net::ClientMessage::SetUsername:         return "setUsername";
         case net::ClientMessage::ProfileCheck:        return "profileCheck";
+        case net::ClientMessage::VoteSkin:            return "voteSkin";
+        case net::ClientMessage::FavoriteSkin:        return "favoriteSkin";
     }
     return "unknown";
 }
@@ -120,6 +122,8 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::SetUsernameResult:   return "setUsernameResult";
         case net::ServerMessage::Teleported:          return "teleported";
         case net::ServerMessage::ProfileDelta:        return "profileDelta";
+        case net::ServerMessage::SkinVotes:           return "skinVotes";
+        case net::ServerMessage::SkinOpinion:         return "skinOpinion";
     }
     return "unknown";
 }
@@ -303,6 +307,8 @@ void NetClient::forgetAccount() {
     skinCatalog_.clear();
     equippedSkinId_.clear();
     skinAdmin_ = false;
+    skinVotes_.clear();
+    favoriteSkins_.clear();
     leaderboard_.clear();
     leaderboardPending_ = false;
     notifications_.clear();
@@ -581,6 +587,22 @@ void NetClient::deleteSkin(const std::string& id) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::DeleteSkin);
     w.str(id);
+    send(w);
+}
+
+void NetClient::voteSkin(const std::string& id, SkinVote vote) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::VoteSkin);
+    w.str(id);
+    w.u8(static_cast<std::uint8_t>(vote));
+    send(w);
+}
+
+void NetClient::favoriteSkin(const std::string& id, bool favorite) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::FavoriteSkin);
+    w.str(id);
+    w.boolean(favorite);
     send(w);
 }
 
@@ -1144,6 +1166,8 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::SkinCatalog:   handleSkinCatalog(reader); break;
         case net::ServerMessage::SkinPublished: handleSkinPublished(reader); break;
         case net::ServerMessage::SkinDeleted:   handleSkinDeleted(reader); break;
+        case net::ServerMessage::SkinVotes:     handleSkinVotes(reader); break;
+        case net::ServerMessage::SkinOpinion:   handleSkinOpinion(reader); break;
         case net::ServerMessage::Notifications: handleNotifications(reader); break;
         case net::ServerMessage::SquadUpdate:   handleSquadUpdate(reader); break;
         case net::ServerMessage::GuildUpdate:   handleGuildUpdate(reader); break;
@@ -1839,6 +1863,15 @@ const CustomSkin* NetClient::findSkin(const std::string& id) const {
     return nullptr;
 }
 
+SkinVote NetClient::skinVote(const std::string& id) const {
+    const auto found = skinVotes_.find(id);
+    return found == skinVotes_.end() ? SkinVote::None : found->second;
+}
+
+bool NetClient::isFavoriteSkin(const std::string& id) const {
+    return favoriteSkins_.count(id) != 0;
+}
+
 void NetClient::handleSkinCatalog(ByteReader& reader) {
     const bool admin = reader.boolean();
     const std::string equipped = reader.str();
@@ -1850,10 +1883,25 @@ void NetClient::handleSkinCatalog(ByteReader& reader) {
         if (!readCustomSkin(reader, skin)) break;
         skins.push_back(std::move(skin));
     }
+    std::unordered_map<std::string, SkinVote> votes;
+    const std::uint16_t voteCount = reader.u16();
+    for (std::uint16_t i = 0; i < voteCount && reader.ok(); ++i) {
+        std::string id = reader.str();
+        const std::uint8_t vote = reader.u8();
+        if (vote == static_cast<std::uint8_t>(SkinVote::Like) ||
+            vote == static_cast<std::uint8_t>(SkinVote::Dislike)) {
+            votes[std::move(id)] = static_cast<SkinVote>(vote);
+        }
+    }
+    std::unordered_set<std::string> favorites;
+    const std::uint16_t favoriteCount = reader.u16();
+    for (std::uint16_t i = 0; i < favoriteCount && reader.ok(); ++i) favorites.insert(reader.str());
     if (!reader.ok()) return;
     skinCatalog_ = std::move(skins);
     skinAdmin_ = admin;
     equippedSkinId_ = equipped;
+    skinVotes_ = std::move(votes);
+    favoriteSkins_ = std::move(favorites);
 }
 
 void NetClient::handleSkinPublished(ByteReader& reader) {
@@ -1877,6 +1925,36 @@ void NetClient::handleSkinDeleted(ByteReader& reader) {
                                       [&](const CustomSkin& s) { return s.id == id; }),
                        skinCatalog_.end());
     if (equippedSkinId_ == id) equippedSkinId_.clear();
+    skinVotes_.erase(id);
+    favoriteSkins_.erase(id);
+}
+
+void NetClient::handleSkinVotes(ByteReader& reader) {
+    const std::string id = reader.str();
+    const std::uint32_t likes = reader.u32();
+    const std::uint32_t dislikes = reader.u32();
+    if (!reader.ok()) return;
+    for (CustomSkin& skin : skinCatalog_) {
+        if (skin.id != id) continue;
+        skin.likes = likes;
+        skin.dislikes = dislikes;
+        return;
+    }
+}
+
+void NetClient::handleSkinOpinion(ByteReader& reader) {
+    const std::string id = reader.str();
+    const std::uint8_t vote = reader.u8();
+    const bool favorite = reader.boolean();
+    if (!reader.ok() || id.empty()) return;
+    if (vote == static_cast<std::uint8_t>(SkinVote::Like) ||
+        vote == static_cast<std::uint8_t>(SkinVote::Dislike)) {
+        skinVotes_[id] = static_cast<SkinVote>(vote);
+    } else {
+        skinVotes_.erase(id);
+    }
+    if (favorite) favoriteSkins_.insert(id);
+    else favoriteSkins_.erase(id);
 }
 
 void NetClient::handleChat(ByteReader& reader) {

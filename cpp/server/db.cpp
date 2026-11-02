@@ -196,6 +196,28 @@ PlayerRecord playerFromJson(const Json& value) {
     record.lastStreakDate = value["lastStreakDate"].asString();
     record.renderFlags = static_cast<std::uint32_t>(value["renderFlags"].asDouble(0));
     record.equippedSkinId = value["equippedSkinId"].asString();
+    // Anything but a +1 or a -1 is no vote: a hand-edited 5 must not count
+    // five times, nor a 0 as an entry that is there and says nothing.
+    if (value["skinVotes"].isObject()) {
+        const Json& votes = value["skinVotes"];
+        for (const std::string& id : votes.keys()) {
+            const double vote = votes[id].asDouble(0);
+            if (id.empty() || (vote != 1 && vote != -1)) continue;
+            record.skinVotes[id] = vote > 0 ? SkinVote::Like : SkinVote::Dislike;
+        }
+    }
+    if (value["favoriteSkins"].isArray()) {
+        for (const Json& id : value["favoriteSkins"].items()) {
+            const std::string text = id.asString();
+            if (text.empty() ||
+                record.favoriteSkins.size() >= static_cast<std::size_t>(kMaxFavoriteSkins) ||
+                std::find(record.favoriteSkins.begin(), record.favoriteSkins.end(), text) !=
+                    record.favoriteSkins.end()) {
+                continue;
+            }
+            record.favoriteSkins.push_back(text);
+        }
+    }
 
     if (value["inventory"].isObject()) record.inventory = value["inventory"];
     convertLegacyConsumables(record.inventory);
@@ -255,7 +277,7 @@ PlayerRecord playerFromJson(const Json& value) {
     }
 
     collectExtras(value, {"totalXP", "stars", "casinoChips", "casinoReadyAt", "dailyStreak", "lastStreakDate", "renderFlags",
-                          "equippedSkinId", "inventory", "mobKills", "loadout",
+                          "equippedSkinId", "skinVotes", "favoriteSkins", "inventory", "mobKills", "loadout",
                           "loadoutInInventory", "loadoutPresets", "skills", "tp", "mazeTotalXP", "mazeSkills", "mazeTp"},
                   record.extra);
     return record;
@@ -320,6 +342,18 @@ Json playerToJson(const PlayerRecord& record) {
     if (record.casinoReadyAt != 0) out["casinoReadyAt"] = record.casinoReadyAt;
     if (record.renderFlags != 0) out["renderFlags"] = static_cast<double>(record.renderFlags);
     if (!record.equippedSkinId.empty()) out["equippedSkinId"] = record.equippedSkinId;
+    if (!record.skinVotes.empty()) {
+        Json votes = Json::object();
+        for (const auto& [id, vote] : record.skinVotes) {
+            votes[id] = vote == SkinVote::Like ? 1 : -1;
+        }
+        out["skinVotes"] = std::move(votes);
+    }
+    if (!record.favoriteSkins.empty()) {
+        Json favorites = Json::array();
+        for (const std::string& id : record.favoriteSkins) favorites.push(Json(id));
+        out["favoriteSkins"] = std::move(favorites);
+    }
     if (record.dailyStreak != 0) out["dailyStreak"] = record.dailyStreak;
     if (!record.lastStreakDate.empty()) out["lastStreakDate"] = record.lastStreakDate;
     appendExtras(record.extra, out);

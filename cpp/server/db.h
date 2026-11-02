@@ -31,6 +31,7 @@
 #include "shared/core/json.h"
 #include "shared/game/rarity.h"
 #include "shared/game/skills.h"
+#include "shared/game/skin_format.h"
 
 namespace flix {
 
@@ -72,6 +73,16 @@ struct PlayerRecord {
     std::string lastStreakDate;
     std::uint32_t renderFlags = 0;
     std::string equippedSkinId;
+    /// This account's votes on other players' skins, by skin id; a skin it
+    /// has not voted on has no entry. On the VOTER's row rather than the
+    /// skin's: the catalogue is one cached blob in the file, and a vote that
+    /// touched it would have the next save re-dump every skin (Database::Table).
+    /// The tallies are derived from these (GameServer::skinTallies_). Stored
+    /// as `skinVotes: {"id": 1 | -1}`, and only when there is one.
+    std::map<std::string, SkinVote> skinVotes;
+    /// Skin ids this account starred, oldest first, at most kMaxFavoriteSkins.
+    /// Stored as `favoriteSkins` only when there is one.
+    std::vector<std::string> favoriteSkins;
 
     /// rarity name -> item type -> count. Left as JSON rather than mirrored
     /// into a typed map: it is genuinely a sparse dictionary over two open

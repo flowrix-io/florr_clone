@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 69;
+inline constexpr std::uint16_t kProtocolVersion = 70;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -229,6 +229,14 @@ enum class ClientMessage : std::uint8_t {
                         ///< server has moved on from and is not judged.
                         ///< Answered with nothing when the two agree.
                         ///< (Version 65; the revision, version 66.)
+    VoteSkin,           ///< str skinId, u8 vote(SkinVote) -- REPLACES this
+                        ///< account's vote on that skin; None takes it back.
+                        ///< Not on a skin of your own, and not from a guest.
+                        ///< Answered with SkinOpinion, and a SkinVotes
+                        ///< broadcast when the tally moved. (Version 70.)
+    FavoriteSkin,       ///< str skinId, u8 favorite -- adds the skin to, or
+                        ///< takes it off, this account's favourites. Answered
+                        ///< with SkinOpinion. (Version 70.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -282,9 +290,13 @@ enum class ServerMessage : std::uint8_t {
                         ///< modal on the card, not a line in the chat, so it
                         ///< cannot travel as a Notice.
     SkinCatalog,        ///< u8 isAdmin, str equippedSkinId, u16 count,
-                        ///< { CustomSkin }*. Sent once per authentication: the
+                        ///< { CustomSkin }*, u16 votes, { str skinId,
+                        ///< u8 vote(SkinVote) }*, u16 favorites, { str skinId }*.
+                        ///< Sent once per authentication: the
                         ///< studio's Browse tab lists it, and it is also what
                         ///< lets a client draw a skin somebody else is wearing.
+                        ///< The two lists after the skins are this account's
+                        ///< own votes and favourites. (Lists: version 70.)
     SkinPublished,      ///< CustomSkin -- broadcast, for the same reason
     SkinDeleted,        ///< str skinId -- broadcast
     Notifications,      ///< u8 more, u16 count,
@@ -438,6 +450,12 @@ enum class ServerMessage : std::uint8_t {
                         ///< Profiles and deltas together, per connection, from
                         ///< 1; ProfileCheck reports the last one applied.
                         ///< (Version 66.)
+    SkinVotes,          ///< str skinId, u32 likes, u32 dislikes -- broadcast
+                        ///< whenever a vote moves a skin's tally, so every
+                        ///< Browse tab shows the same counts. (Version 70.)
+    SkinOpinion,        ///< str skinId, u8 vote(SkinVote), u8 favorite -- this
+                        ///< account's standing on one skin, after a VoteSkin
+                        ///< or FavoriteSkin, refused or not. (Version 70.)
 };
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "server/account_limits.h"
@@ -410,6 +411,8 @@ private:
     void handlePublishSkin(Session&, net::Connection&, ByteReader&);
     void handleEquipSkin(Session&, net::Connection&, ByteReader&);
     void handleDeleteSkin(Session&, net::Connection&, ByteReader&);
+    void handleVoteSkin(Session&, net::Connection&, ByteReader&);
+    void handleFavoriteSkin(Session&, net::Connection&, ByteReader&);
     void handleLeaderboard(const Session&, net::Connection&, ByteReader&);
     void handleNotifications(net::Connection&, ByteReader&);
     void handleUsePetal(Session&, ByteReader&);
@@ -1020,6 +1023,20 @@ private:
     /// anything; publishes are refused on the same test, so after the first
     /// run it only finds work when that test changes.
     void foldLookAlikeSkins();
+    /// How many accounts like and dislike skin `id`, from the votes on every
+    /// account's row. Counted again from scratch only after something other
+    /// than handleVoteSkin rewrote rows (skinTalliesStale_).
+    struct SkinTally {
+        std::uint32_t likes = 0;
+        std::uint32_t dislikes = 0;
+    };
+    SkinTally skinTally(const std::string& id);
+    /// Takes every account's vote on, and favourite of, the skins in `ids`
+    /// off its row -- the skins are gone, and a dead favourite would still
+    /// count against the account's kMaxFavoriteSkins.
+    void forgetSkinOpinions(const std::unordered_set<std::string>& ids);
+    /// SkinOpinion: where this session's account stands on skin `id`.
+    void sendSkinOpinion(const Session&, net::Connection&, const std::string& id);
     /// One prebuilt message to every logged-in connection. A published or
     /// deleted skin changes what EVERY screen must be able to draw, not just
     /// the author's.
@@ -1530,6 +1547,11 @@ private:
         SkinLook look;
     };
     std::unordered_map<std::string, CachedSkinLook> skinLooks_;
+    /// skinTally's counts, by skin id. Kept in step by handleVoteSkin; set
+    /// stale by whatever rewrites account rows wholesale -- the start, the
+    /// guest sweep, the admin editor -- and recounted on the next read.
+    std::unordered_map<std::string, SkinTally> skinTallies_;
+    bool skinTalliesStale_ = true;
 
     NetIdAllocator netIds_;
     Replicator replicator_;

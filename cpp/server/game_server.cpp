@@ -1437,6 +1437,8 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::SetSkin:
         case net::ClientMessage::EquipSkin:
         case net::ClientMessage::DeleteSkin:
+        case net::ClientMessage::VoteSkin:
+        case net::ClientMessage::FavoriteSkin:
         case net::ClientMessage::RequestLeaderboard:
         case net::ClientMessage::RequestNotifications:
         case net::ClientMessage::GuildCreate:
@@ -1512,6 +1514,8 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::PublishSkin:   handlePublishSkin(*session, connection, reader); break;
         case net::ClientMessage::EquipSkin:     handleEquipSkin(*session, connection, reader); break;
         case net::ClientMessage::DeleteSkin:    handleDeleteSkin(*session, connection, reader); break;
+        case net::ClientMessage::VoteSkin:      handleVoteSkin(*session, connection, reader); break;
+        case net::ClientMessage::FavoriteSkin:  handleFavoriteSkin(*session, connection, reader); break;
         case net::ClientMessage::Logout:        handleLogout(*session); break;
         case net::ClientMessage::AdminDb:       handleAdminDb(*session, connection, reader); break;
         case net::ClientMessage::AdminDashboard:
@@ -4429,8 +4433,36 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
     // why. The skins someone online is wearing go first, so every flower in
     // the world still draws; what is left out is only missing from the
     // studio's Browse tab, and a worn skin it lacks draws as the plain flower.
-    constexpr std::size_t kCatalogBudget = net::kMaxFrameBytes - 64 * 1024;
+    //
+    // The account's own votes and favourites close the frame, and are laid
+    // out first so the skins are budgeted around them: a player who voted on
+    // a few thousand skins must not be the one whose sign-in overruns it.
+    // Only skins still in the catalogue -- the client has no card for any
+    // other.
+    ByteWriter tail;
+    {
+        std::vector<std::pair<const std::string*, SkinVote>> votes;
+        for (const auto& [id, vote] : record.skinVotes) {
+            if (votes.size() < 0xFFFF && skins[id].isObject()) votes.emplace_back(&id, vote);
+        }
+        tail.u16(static_cast<std::uint16_t>(votes.size()));
+        for (const auto& [id, vote] : votes) {
+            tail.str(*id);
+            tail.u8(static_cast<std::uint8_t>(vote));
+        }
+        std::vector<const std::string*> favorites;
+        for (const std::string& id : record.favoriteSkins) {
+            if (skins[id].isObject()) favorites.push_back(&id);
+        }
+        tail.u16(static_cast<std::uint16_t>(favorites.size()));
+        for (const std::string* id : favorites) tail.str(*id);
+    }
+    constexpr std::size_t kFrameBudget = net::kMaxFrameBytes - 64 * 1024;
+    const std::size_t catalogBudget = tail.size() < kFrameBudget ? kFrameBudget - tail.size() : 0;
+    // This account's favourites go first too: a starred skin that missed the
+    // frame would vanish from the one list the player keeps on purpose.
     std::unordered_set<std::string> worn{record.equippedSkinId};
+    worn.insert(record.favoriteSkins.begin(), record.favoriteSkins.end());
     for (const auto& entry : sessions_) {
         if (entry.second.userId.empty()) continue;
         if (const PlayerRecord* other = database_.findProgress(entry.second.userId)) {
@@ -4440,11 +4472,14 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
     std::uint16_t count = 0;
     bool full = false;
     const auto add = [&](const std::string& id) {
-        const CustomSkin skin = skinFromJson(skins[id]);
+        CustomSkin skin = skinFromJson(skins[id]);
         if (skin.id.empty() || skin.shapes.empty()) return;
+        const SkinTally tally = skinTally(skin.id);
+        skin.likes = tally.likes;
+        skin.dislikes = tally.dislikes;
         const std::size_t before = w.size();
         writeCustomSkin(w, skin);
-        if (w.size() > kCatalogBudget || count == 0xFFFF) {
+        if (w.size() > catalogBudget || count == 0xFFFF) {
             w.buffer().resize(before);
             full = true;
             return;
@@ -4458,6 +4493,7 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
         if (worn.count(id) == 0) add(id);
     }
     w.patchU16(at, count);
+    w.raw(tail.data(), tail.size());
     connection.send(w);
     // Once per process: past this point it is true of every sign-in.
     static bool reported = false;
@@ -4610,6 +4646,7 @@ void GameServer::handleDeleteSkin(Session& session, net::Connection& connection,
     }
     database_.rawTable("customSkins").erase(id);
     skinLooks_.erase(id);
+    forgetSkinOpinions({id});
     database_.markDirty();
 
     ByteWriter w;
@@ -4679,10 +4716,15 @@ void GameServer::foldLookAlikeSkins() {
     if (foldedInto.empty()) return;
 
     Json& catalog = database_.rawTable("customSkins");
+    std::unordered_set<std::string> gone;
     for (const auto& fold : foldedInto) {
         catalog.erase(fold.first);
         skinLooks_.erase(fold.first);
+        gone.insert(fold.first);
     }
+    // Votes on a copy are not moved to its original: a like was for the copy
+    // somebody saw, and one account can have voted on both.
+    forgetSkinOpinions(gone);
     // Offline accounts too: a row still naming a copy would come back to a
     // skin that no longer exists, which draws as the plain flower.
     int rehomed = 0;
@@ -4698,6 +4740,169 @@ void GameServer::foldLookAlikeSkins() {
     std::printf("[skins] folded %zu look-alike skin(s); %d account(s) moved onto the "
                 "original\n",
                 foldedInto.size(), rehomed);
+}
+
+GameServer::SkinTally GameServer::skinTally(const std::string& id) {
+    if (skinTalliesStale_) {
+        // Read-only, so the const lookups: a recount must not drop every
+        // row's cached text and have the next save re-dump the users table.
+        skinTallies_.clear();
+        const Database& accounts = database_;
+        for (const std::string& userId : accounts.playerIds()) {
+            const PlayerRecord* record = accounts.findProgress(userId);
+            if (record == nullptr) continue;
+            for (const auto& [skinId, vote] : record->skinVotes) {
+                SkinTally& tally = skinTallies_[skinId];
+                if (vote == SkinVote::Like) ++tally.likes;
+                else if (vote == SkinVote::Dislike) ++tally.dislikes;
+            }
+        }
+        skinTalliesStale_ = false;
+    }
+    const auto found = skinTallies_.find(id);
+    return found == skinTallies_.end() ? SkinTally{} : found->second;
+}
+
+void GameServer::forgetSkinOpinions(const std::unordered_set<std::string>& ids) {
+    if (ids.empty()) return;
+    for (const std::string& id : ids) skinTallies_.erase(id);
+    bool changed = false;
+    // Through the const lookup first, and the mutable one only for the rows
+    // that change: progress() drops a row's cached text (Database::Table).
+    const Database& accounts = database_;
+    for (const std::string& userId : accounts.playerIds()) {
+        const PlayerRecord* seen = accounts.findProgress(userId);
+        if (seen == nullptr) continue;
+        bool touches = false;
+        for (const std::string& id : ids) {
+            if (seen->skinVotes.count(id) != 0 ||
+                std::find(seen->favoriteSkins.begin(), seen->favoriteSkins.end(), id) !=
+                    seen->favoriteSkins.end()) {
+                touches = true;
+                break;
+            }
+        }
+        if (!touches) continue;
+        PlayerRecord& record = database_.progress(userId);
+        for (const std::string& id : ids) record.skinVotes.erase(id);
+        record.favoriteSkins.erase(
+            std::remove_if(record.favoriteSkins.begin(), record.favoriteSkins.end(),
+                           [&](const std::string& id) { return ids.count(id) != 0; }),
+            record.favoriteSkins.end());
+        changed = true;
+    }
+    if (changed) database_.markDirty();
+}
+
+void GameServer::sendSkinOpinion(const Session& session, net::Connection& connection,
+                                 const std::string& id) {
+    const PlayerRecord* record = std::as_const(database_).findProgress(session.userId);
+    SkinVote vote = SkinVote::None;
+    bool favorite = false;
+    if (record != nullptr) {
+        if (const auto found = record->skinVotes.find(id); found != record->skinVotes.end()) {
+            vote = found->second;
+        }
+        favorite = std::find(record->favoriteSkins.begin(), record->favoriteSkins.end(), id) !=
+                   record->favoriteSkins.end();
+    }
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinOpinion));
+    w.str(id);
+    w.u8(static_cast<std::uint8_t>(vote));
+    w.boolean(favorite);
+    connection.send(w);
+}
+
+void GameServer::handleVoteSkin(Session& session, net::Connection& connection,
+                                ByteReader& reader) {
+    const std::string id = reader.str();
+    const std::uint8_t raw = reader.u8();
+    if (!reader.ok() || !session.authenticated() || id.empty()) return;
+    if (raw > static_cast<std::uint8_t>(SkinVote::Dislike)) return;
+    const SkinVote vote = static_cast<SkinVote>(raw);
+
+    // Every refusal still answers with the account's standing, so a client
+    // that drew a vote it guessed at is put back to what is stored.
+    const Json& catalog = database_.storedTable("customSkins");
+    if (!catalog[id].isObject()) {
+        sendSkinChat(connection, "That skin no longer exists.");
+        sendSkinOpinion(session, connection, id);
+        return;
+    }
+    // The same two rules as publishing, for the same reason: a vote is a
+    // mark on the shared catalogue. Guests are free to make by the thousand,
+    // and an author's own like would be a vote for themselves.
+    const Account* account = std::as_const(database_).findUserById(session.userId);
+    if (isGuestName(session.username) || (account != nullptr && account->guest)) {
+        sendSkinChat(connection, "Create a (non-guest) account to vote on skins.");
+        sendSkinOpinion(session, connection, id);
+        return;
+    }
+    if (lowerCase(catalog[id]["author"].asString()) == lowerCase(session.username)) {
+        sendSkinChat(connection, "You can't vote on your own skin.");
+        sendSkinOpinion(session, connection, id);
+        return;
+    }
+
+    // Counted (stale or not) BEFORE the row changes, so the step below moves
+    // a tally that does not already include this vote.
+    SkinTally tally = skinTally(id);
+    PlayerRecord& record = database_.progress(session.userId);
+    const auto found = record.skinVotes.find(id);
+    const SkinVote before = found == record.skinVotes.end() ? SkinVote::None : found->second;
+    if (before != vote) {
+        if (before == SkinVote::Like && tally.likes > 0) --tally.likes;
+        if (before == SkinVote::Dislike && tally.dislikes > 0) --tally.dislikes;
+        if (vote == SkinVote::Like) ++tally.likes;
+        if (vote == SkinVote::Dislike) ++tally.dislikes;
+        if (vote == SkinVote::None) record.skinVotes.erase(id);
+        else record.skinVotes[id] = vote;
+        skinTallies_[id] = tally;
+        database_.markDirty();
+    }
+    sendSkinOpinion(session, connection, id);
+    if (before == vote) return;
+
+    // Everyone, as a publish is: every Browse tab shows the same counts.
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinVotes));
+    w.str(id);
+    w.u32(tally.likes);
+    w.u32(tally.dislikes);
+    broadcastToAuthenticated(w);
+}
+
+void GameServer::handleFavoriteSkin(Session& session, net::Connection& connection,
+                                    ByteReader& reader) {
+    const std::string id = reader.str();
+    const bool favorite = reader.boolean();
+    if (!reader.ok() || !session.authenticated() || id.empty()) return;
+
+    // A bookmark, so guests may keep one and an author may star their own.
+    // Taking one OFF needs no skin behind it: that is how a stale star goes.
+    const Json& catalog = database_.storedTable("customSkins");
+    const PlayerRecord* seen = std::as_const(database_).findProgress(session.userId);
+    const bool has = seen != nullptr &&
+                     std::find(seen->favoriteSkins.begin(), seen->favoriteSkins.end(), id) !=
+                         seen->favoriteSkins.end();
+    if (favorite && !has) {
+        if (!catalog[id].isObject()) {
+            sendSkinChat(connection, "That skin no longer exists.");
+        } else if (seen != nullptr &&
+                   seen->favoriteSkins.size() >= static_cast<std::size_t>(kMaxFavoriteSkins)) {
+            sendSkinChat(connection, "You can keep at most " + std::to_string(kMaxFavoriteSkins) +
+                                         " favorites. Unstar one first.");
+        } else {
+            database_.progress(session.userId).favoriteSkins.push_back(id);
+            database_.markDirty();
+        }
+    } else if (!favorite && has) {
+        std::vector<std::string>& list = database_.progress(session.userId).favoriteSkins;
+        list.erase(std::remove(list.begin(), list.end(), id), list.end());
+        database_.markDirty();
+    }
+    sendSkinOpinion(session, connection, id);
 }
 
 void GameServer::handleLeaderboard(const Session& session, net::Connection& connection,

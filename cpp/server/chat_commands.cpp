@@ -1544,6 +1544,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             doomed.push_back(username);
         }
         for (const std::string& username : doomed) database_.eraseUser(username);
+        // A swept account's votes go with its row, so the skins' counts are
+        // recounted from the rows that are left.
+        if (!doomed.empty()) skinTalliesStale_ = true;
         out("Deleted " + std::to_string(doomed.size()) +
             " guest account(s) and their player data.");
         return;

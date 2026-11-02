@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "client/chat_bubbles.h"
@@ -691,6 +692,12 @@ public:
     /// and the server's answer is the persistence, not the confirmation.
     void equipSkin(const std::string& id);
     void deleteSkin(const std::string& id);
+    /// Likes, dislikes or (None) un-votes a published skin. Nothing moves here:
+    /// the counts and this account's vote change when the server answers, so a
+    /// refused vote -- a guest's, an author's own -- never shows as cast.
+    void voteSkin(const std::string& id, SkinVote vote);
+    /// Stars or unstars a published skin, on the same terms as voteSkin.
+    void favoriteSkin(const std::string& id, bool favorite);
     /// `includeAdmins` is the "Show Admins on Leaderboard" switch: without it
     /// the server leaves admin accounts off the board.
     void requestLeaderboard(bool includeAdmins = false);
@@ -852,6 +859,10 @@ public:
     const CustomSkin* findSkin(const std::string& id) const;
     const std::string& equippedSkinId() const { return equippedSkinId_; }
     bool isSkinAdmin() const { return skinAdmin_; }
+    /// This account's vote on skin `id`, and whether it starred it: the
+    /// server's word, from the SkinCatalog and every SkinOpinion since.
+    SkinVote skinVote(const std::string& id) const;
+    bool isFavoriteSkin(const std::string& id) const;
 
     /// Puts a locally generated System line in the transcript. Every notice
     /// the reference makes, its own included, is a chat line and nothing more.
@@ -1064,6 +1075,8 @@ private:
     void handleSkinCatalog(ByteReader&);
     void handleSkinPublished(ByteReader&);
     void handleSkinDeleted(ByteReader&);
+    void handleSkinVotes(ByteReader&);
+    void handleSkinOpinion(ByteReader&);
     void handleAdminDb(ByteReader&);
     /// Starts an AdminDb request with its op and, for the document ops, the
     /// open document's scope and key.
@@ -1120,6 +1133,8 @@ private:
     std::vector<CustomSkin> skinCatalog_;
     std::string equippedSkinId_;
     bool skinAdmin_ = false;
+    std::unordered_map<std::string, SkinVote> skinVotes_;
+    std::unordered_set<std::string> favoriteSkins_;
 
     std::vector<LeaderboardRow> leaderboard_;
     bool leaderboardPending_ = false;

@@ -829,6 +829,9 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
 }
 
 void GameServer::adminDbRefreshLive(const std::string& userId) {
+    // The edit may have rewritten the row's skinVotes, which the skins'
+    // counts are derived from.
+    skinTalliesStale_ = true;
     for (auto& entry : sessions_) {
         Session& other = entry.second;
         if (!other.authenticated() || other.userId != userId) continue;

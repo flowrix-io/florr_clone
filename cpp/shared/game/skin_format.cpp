@@ -221,6 +221,8 @@ void writeCustomSkin(ByteWriter& w, const CustomSkin& skin) {
     w.str(skin.name);
     w.str(skin.author);
     w.f64(skin.createdAt);
+    w.u32(skin.likes);
+    w.u32(skin.dislikes);
     const std::size_t count = std::min(skin.shapes.size(), static_cast<std::size_t>(kMaxSkinShapes));
     w.u8(static_cast<std::uint8_t>(count));
     for (std::size_t i = 0; i < count; ++i) writeSkinShape(w, skin.shapes[i]);
@@ -232,6 +234,8 @@ bool readCustomSkin(ByteReader& r, CustomSkin& out) {
     skin.name = r.str();
     skin.author = r.str();
     skin.createdAt = r.f64();
+    skin.likes = r.u32();
+    skin.dislikes = r.u32();
     const std::uint8_t count = r.u8();
     skin.shapes.reserve(count);
     for (int i = 0; i < count; ++i) {

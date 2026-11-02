@@ -15,12 +15,14 @@
 // header well no other panel has, and a name prompt floated at the middle of
 // the VIEWPORT because the browser build put a real <input> there. None of
 // that survives. What is still local is what is genuinely this panel's: the
-// shape model, the drag handles, the palette and the text-mode parser.
+// shape model, the drag handles, the palette, the custom-colour picker and
+// the text-mode parser.
 //
-// The Browse tab owns none of what it shows. Publishing, equipping and taking
-// a skin down are all requests to the server, which sanitizes, assigns the id
-// and broadcasts -- the catalog this panel lists is NetClient's, the same one
-// the world renderer resolves a wearer's skin through.
+// The Browse tab owns none of what it shows. Publishing, equipping, voting,
+// starring and taking a skin down are all requests to the server, which
+// sanitizes, assigns the id and broadcasts -- the catalog this panel lists is
+// NetClient's, the same one the world renderer resolves a wearer's skin
+// through, and a vote or a star lights up when the server says it landed.
 
 #include <algorithm>
 #include <cmath>
@@ -34,6 +36,7 @@
 #include "client/render/skin_render.h"
 #include "client/ui/draw.h"
 #include "client/ui/menu_theme.h"
+#include "client/ui/menu_widgets.h"
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
@@ -75,6 +78,8 @@ constexpr std::uint32_t kSwatchSlash = 0xD05A5Au;
 constexpr std::uint32_t kHandleControl = 0xFFE763u;
 /// A parse error under the command help.
 constexpr std::uint32_t kErrorText = 0xFFE65Du;
+/// A favourite's star: the curve handles' yellow, so the panel keeps to one.
+constexpr std::uint32_t kStarFill = kHandleControl;
 
 // --- metrics ---------------------------------------------------------------
 //
@@ -126,6 +131,22 @@ constexpr int kPaletteCount = 14;
 constexpr double kSwatchGap = 4.0;
 constexpr double kSwatchMax = 26.0;
 
+/// The custom-colour picker under the swatches: a saturation/value square,
+/// the hue strip beside it, and the colour and its hex code to the right.
+constexpr double kPickerCaption = 22.0;
+constexpr double kPickerSquareW = 150.0;
+constexpr double kPickerSquareMaxH = 120.0;
+/// Below this the square is too short to aim at, and the picker is not drawn.
+constexpr double kPickerSquareMinH = 48.0;
+constexpr double kHueStripW = 18.0;
+constexpr double kHexFieldH = 30.0;
+
+/// The Browse tab's sort row, and the vote row on each card.
+constexpr double kSortWidth = 92.0;
+constexpr double kSortHeight = 24.0;
+constexpr double kVoteRowH = 22.0;
+constexpr double kStarW = 24.0;
+
 double round1(double v) { return std::round(v * 10.0) / 10.0; }
 
 /// `String(round1(v))`: an integral value prints without a decimal point, and
@@ -144,6 +165,122 @@ std::string numberText(double v) {
 
 std::uint32_t hexColor(const std::string& s, std::uint32_t fallback = kInk) {
     return skinHexColor(s, fallback);
+}
+
+/// "#rrggbb", lower case: the one spelling the skin format accepts.
+std::string hexText(std::uint32_t rgb) {
+    char buf[8];
+    std::snprintf(buf, sizeof buf, "#%06x", static_cast<unsigned>(rgb & 0xFFFFFFu));
+    return buf;
+}
+
+/// What the picker's hex box will take: "#3A86FF", "3a86ff", or the "#abc"
+/// shorthand, as "#3a86ff" / "#aabbcc". Anything else is "".
+std::string normalHex(const std::string& typed) {
+    std::string digits = typed;
+    if (!digits.empty() && digits[0] == '#') digits.erase(0, 1);
+    for (char& c : digits) {
+        if (c >= 'A' && c <= 'F') c = static_cast<char>(c - 'A' + 'a');
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return {};
+    }
+    if (digits.size() == 3) digits = {digits[0], digits[0], digits[1], digits[1], digits[2], digits[2]};
+    if (digits.size() != 6) return {};
+    return "#" + digits;
+}
+
+/// Hue in degrees [0, 360), saturation and value in [0, 1].
+std::uint32_t hsvToRgb(double h, double s, double v) {
+    h = std::fmod(h, 360.0);
+    if (h < 0) h += 360.0;
+    const double c = v * s;
+    const double x = c * (1.0 - std::fabs(std::fmod(h / 60.0, 2.0) - 1.0));
+    const double m = v - c;
+    double r = 0, g = 0, b = 0;
+    switch (static_cast<int>(h / 60.0)) {
+        case 0: r = c; g = x; break;
+        case 1: r = x; g = c; break;
+        case 2: g = c; b = x; break;
+        case 3: g = x; b = c; break;
+        case 4: r = x; b = c; break;
+        default: r = c; b = x; break;
+    }
+    const auto byte = [m](double channel) {
+        return static_cast<std::uint32_t>(std::lround(clamp(channel + m, 0.0, 1.0) * 255.0));
+    };
+    return (byte(r) << 16) | (byte(g) << 8) | byte(b);
+}
+
+/// The inverse. A grey has no hue and a black no saturation either, so those
+/// keep the ones given: a picker dragged into a corner and back out must not
+/// lose the colour it was on.
+void rgbToHsv(std::uint32_t rgb, double& h, double& s, double& v) {
+    const double r = ((rgb >> 16) & 0xFF) / 255.0;
+    const double g = ((rgb >> 8) & 0xFF) / 255.0;
+    const double b = (rgb & 0xFF) / 255.0;
+    const double peak = std::max({r, g, b});
+    const double span = peak - std::min({r, g, b});
+    v = peak;
+    if (peak <= 0) return;
+    s = span / peak;
+    if (span <= 0) return;
+    double hue = 0;
+    if (peak == r) hue = std::fmod((g - b) / span, 6.0);
+    else if (peak == g) hue = (b - r) / span + 2.0;
+    else hue = (r - g) / span + 4.0;
+    hue *= 60.0;
+    h = hue < 0 ? hue + 360.0 : hue;
+}
+
+/// The picker's surfaces, as ramps the canvas stretches over their boxes:
+/// it has no gradients, and its bilinear fetch turns a short strip of texels
+/// into a smooth one. The square is the hue's pure colour under a white ramp
+/// (saturation, left to right) and then a black one (value, top to bottom),
+/// which composes to exactly the HSV colour at every point.
+///
+/// Each texel is sampled at its centre, so a fetch at a fraction f of the box
+/// reads f's own value rather than one half a texel off.
+constexpr int kRampTexels = 64;
+constexpr int kHueTexels = 96;
+/// drawImage cache keys, unique to these pixels for the life of the process.
+/// The SVG rasters count up from 1, so a range this high is never theirs.
+constexpr std::uint32_t kSaturationKey = 0x7C5C0001u;
+constexpr std::uint32_t kValueKey = 0x7C5C0002u;
+constexpr std::uint32_t kHueKey = 0x7C5C0003u;
+
+struct PickerRamps {
+    std::vector<std::uint8_t> saturation;   ///< kRampTexels x 1, white -> clear
+    std::vector<std::uint8_t> value;        ///< 1 x kRampTexels, clear -> black
+    std::vector<std::uint8_t> hue;          ///< 1 x kHueTexels, 0 -> 360 degrees
+};
+
+const PickerRamps& pickerRamps() {
+    static const PickerRamps ramps = [] {
+        PickerRamps out;
+        const auto put = [](std::vector<std::uint8_t>& px, std::uint32_t rgb, double alpha) {
+            px.push_back(static_cast<std::uint8_t>((rgb >> 16) & 0xFF));
+            px.push_back(static_cast<std::uint8_t>((rgb >> 8) & 0xFF));
+            px.push_back(static_cast<std::uint8_t>(rgb & 0xFF));
+            px.push_back(static_cast<std::uint8_t>(std::lround(clamp(alpha, 0.0, 1.0) * 255.0)));
+        };
+        for (int i = 0; i < kRampTexels; ++i) {
+            const double f = (i + 0.5) / kRampTexels;
+            put(out.saturation, 0xFFFFFFu, 1.0 - f);
+            put(out.value, 0x000000u, f);
+        }
+        for (int i = 0; i < kHueTexels; ++i) {
+            put(out.hue, hsvToRgb((i + 0.5) / kHueTexels * 360.0, 1.0, 1.0), 1.0);
+        }
+        return out;
+    }();
+    return ramps;
+}
+
+/// A colour that is one of the fourteen swatches.
+bool isPaletteColour(const std::string& colour) {
+    for (const char* swatch : kPalette) {
+        if (colour == swatch) return true;
+    }
+    return false;
 }
 
 std::size_t utf8Length(const std::string& s) {
@@ -303,8 +440,8 @@ std::string serializeShape(const Shape& s) {
 
 enum class Act : std::uint8_t {
     None, Close, Tab, AddShape, SelectShape, MoveShape, DelShape, Step, Fill, Stroke,
-    AddVertex, DelVertex, TextMode, Publish, Reset, Equip, Unequip, Delete,
-    ConfirmDelete, CancelDelete,
+    Picker, PickSquare, PickHue, AddVertex, DelVertex, TextMode, Publish, Reset, Equip,
+    Unequip, Delete, ConfirmDelete, CancelDelete, Sort, Like, Dislike, Favorite,
 };
 
 enum class Field : std::uint8_t { X, Y, R, Rx, Ry, Rot, Sw };
@@ -371,17 +508,25 @@ Layout layoutOf(Rect panel) {
     return out;
 }
 
-/// The Browse tab has no footer: its cards run to the card's own bottom pad.
+/// The Browse tab has no footer: under its sort row, its cards run to the
+/// card's own bottom pad.
 Rect browseBody(const Layout& l) {
-    const double top = l.tabs.bottom() + 30.0;
+    const double top = l.tabs.bottom() + 12.0 + kSortHeight + 10.0;
     return {l.body.x, top, l.body.w, std::max(0.0, l.panel.bottom() - kPad - top)};
 }
 
 /// Everything the studio keeps between frames.
 struct Studio {
     enum class Tab : std::uint8_t { Create, Browse };
+    /// The Browse tab's order. Favorites is a filter as well as an order: the
+    /// starred skins only, newest first.
+    enum class Sort : std::uint8_t { Newest, Top, Favorites };
+    /// Which of the selected shape's two colours the custom picker edits.
+    enum class PickerTarget : std::uint8_t { None, Fill, Stroke };
+    enum class PickerDrag : std::uint8_t { None, Square, Hue };
 
     Tab tab = Tab::Create;
+    Sort sort = Sort::Newest;
     std::vector<Shape> shapes = starterSkinShapes();
     int selected = 0;
     std::string skinName;
@@ -447,6 +592,24 @@ struct Studio {
     std::string confirmId;
     std::string confirmName;
 
+    /// The custom-colour picker. Open under the swatches for one colour of
+    /// whichever shape is selected, and kept open as the selection moves.
+    PickerTarget picker = PickerTarget::None;
+    PickerDrag pickerDrag = PickerDrag::None;
+    /// The picker's own colour. HSV rather than the shape's hex, because the
+    /// hex forgets the hue of a grey and the saturation of a black.
+    double pickH = 0, pickS = 0, pickV = 1;
+    /// The colour the picker last showed or wrote. The shape's colour moving
+    /// off it -- a swatch, another shape, the text editor -- re-seeds the HSV.
+    std::string pickerSeen;
+    /// The hex box. It shows the shape's colour except while it has the
+    /// caret, when it is the player's half-typed code.
+    std::string hexDraft;
+    TextFieldState hexField;
+    /// The picker's boxes as last drawn, for the input that runs before the
+    /// next paint. Empty while the picker is not on screen.
+    Rect pickerSquare, pickerHue, pickerHex;
+
     Shape* selectedShape() {
         if (selected < 0 || static_cast<std::size_t>(selected) >= shapes.size()) return nullptr;
         return &shapes[static_cast<std::size_t>(selected)];
@@ -483,9 +646,12 @@ struct Studio {
     void drawTabs(Canvas&, Vec2 mouse);
     void drawPreview(Canvas&);
     void drawShapeList(Canvas&, Rect);
-    void drawProps(Canvas&, Rect);
+    void drawProps(Canvas&, Rect, double timeSeconds);
     double drawPalette(Canvas&, Rect, const char* caption, const std::string& current,
                        bool isFill);
+    void drawPicker(Canvas&, Rect, const std::string& current, double timeSeconds);
+    void drawSortRow(Canvas&);
+    void drawVoteRow(Canvas&, Rect, const CustomSkin&);
     void stepper(Canvas&, Rect, const char* caption, Field, double value, double step);
     void drawTextEditor(Canvas&, Rect, double timeSeconds);
     void drawCommandHelp(Canvas&, Rect);
@@ -499,12 +665,24 @@ struct Studio {
     void actionChip(Canvas&, Rect, const std::string& label, const Action&,
                     std::uint32_t fill = kRowFill, double textSize = kCaptionSize);
     void iconBtn(Canvas&, Rect, int kind, const Action&);
+    /// A pill on a card's vote row: `glyph` 0 like, 1 dislike, 2 star.
+    void votePill(Canvas&, Rect, int glyph, const std::string& count, bool active,
+                  const Action&);
 
     // input
     bool handleInput(MenuContext&);
     bool dispatch(MenuContext&, const Action&);
     void step(Field, double delta);
     void applyDrag(Vec2 mouse);
+    /// The selected shape's colour that the picker edits, or null.
+    std::string* pickerColour();
+    /// Re-seeds the picker from the shape's colour when that moved under it.
+    void syncPicker();
+    /// Writes `hex` into the shape as the picker's colour; `seed` takes the
+    /// HSV from it too, which a typed code does and a drag must not.
+    void applyPicked(const std::string& hex, bool seed);
+    void dragPicker(Vec2 mouse);
+    void closePicker();
     void enterTextMode();
     void applyTextBuffer();
     std::string parseShapes(const std::string& text, std::vector<Shape>& out) const;
@@ -597,6 +775,56 @@ void Studio::iconBtn(Canvas& canvas, Rect r, int kind, const Action& action) {
     addRegion(r, action);
 }
 
+void Studio::votePill(Canvas& canvas, Rect r, int glyph, const std::string& count, bool active,
+                      const Action& action) {
+    const bool hovered = hovering && hover == action;
+    // A cast vote wears the colour of what it says. A star says it with its
+    // own fill, so its pill keeps the row's.
+    std::uint32_t fill = kRowFill;
+    if (active && glyph == 0) fill = kAccent;
+    if (active && glyph == 1) fill = kDangerFill;
+    inlaid(canvas, r, hovered ? lighten(fill, 0.15) : fill, kWell, 2.0, 4.0);
+
+    const double cy = r.y + r.h / 2;
+    const double gx = count.empty() ? r.x + r.w / 2 : r.x + 11.0;
+    canvas.save();
+    canvas.setLineJoin("round");
+    canvas.beginPath();
+    if (glyph == 2) {
+        for (int i = 0; i < 10; ++i) {
+            const double a = -kPi / 2 + i * kPi / 5;
+            const double radius = i % 2 == 0 ? 6.5 : 2.7;
+            const auto px = static_cast<float>(gx + std::cos(a) * radius);
+            const auto py = static_cast<float>(cy + 0.5 + std::sin(a) * radius);
+            if (i == 0) canvas.moveTo(px, py);
+            else canvas.lineTo(px, py);
+        }
+    } else {
+        // A like points up and a dislike down: drawn, as the shape rows'
+        // arrows are, because the bundled face has no glyph for either.
+        const double tip = glyph == 0 ? -4.0 : 4.0;
+        canvas.moveTo(static_cast<float>(gx), static_cast<float>(cy + tip));
+        canvas.lineTo(static_cast<float>(gx + 5.0), static_cast<float>(cy - tip * 0.85));
+        canvas.lineTo(static_cast<float>(gx - 5.0), static_cast<float>(cy - tip * 0.85));
+    }
+    canvas.closePath();
+    if (glyph != 2 || active) {
+        setFill(canvas, glyph == 2 ? kStarFill : kPaper);
+        canvas.fill();
+    }
+    setStroke(canvas, glyph == 2 && !active ? kPaper : kInk);
+    canvas.setLineWidth(glyph == 2 ? 1.4f : 1.2f);
+    canvas.stroke();
+    canvas.restore();
+
+    if (!count.empty()) {
+        // The pill is the control, so its count is not page text to select.
+        TextCaptureScope off(false);
+        ui::text(canvas, count, gx + 9.0, cy, label(kCaptionSize));
+    }
+    addRegion(r, action);
+}
+
 /// A captioned number: the caption over a [-][value][+] row.
 void Studio::stepper(Canvas& canvas, Rect r, const char* caption, Field field, double value,
                      double stepBy) {
@@ -628,12 +856,40 @@ double Studio::drawPalette(Canvas& canvas, Rect r, const char* caption,
                            const std::string& current, bool isFill) {
     ui::text(canvas, caption, r.x, r.y + 7.0, label(kCaptionSize));
     // The first cell is "none": no fill / no outline, which is a real choice.
-    const int cells = kPaletteCount + 1;
+    // The last opens the custom-colour picker.
+    const int cells = kPaletteCount + 2;
     const double size = std::min(kSwatchMax, (r.w - (cells - 1) * kSwatchGap) / cells);
     const double sy = r.y + 18.0;
     for (int i = 0; i < cells; ++i) {
-        const std::string colour = i == 0 ? std::string() : std::string(kPalette[i - 1]);
         const Rect cell{r.x + i * (size + kSwatchGap), sy, size, size};
+        if (i == cells - 1) {
+            // The shape's own colour when no swatch is it, and the spectrum
+            // otherwise -- so a colour from the picker still shows which cell
+            // it came from, and the ring says so as a swatch's would.
+            const bool custom = !current.empty() && !isPaletteColour(current);
+            const bool open = picker == (isFill ? PickerTarget::Fill : PickerTarget::Stroke);
+            canvas.save();
+            clipRound(canvas, cell, 3.0);
+            if (custom) {
+                setFill(canvas, hexColor(current));
+                canvas.fillRect(static_cast<float>(cell.x), static_cast<float>(cell.y),
+                                static_cast<float>(cell.w), static_cast<float>(cell.h));
+            } else {
+                const PickerRamps& ramps = pickerRamps();
+                canvas.drawImage(ramps.hue.data(), 1, kHueTexels, static_cast<float>(cell.x),
+                                 static_cast<float>(cell.y), static_cast<float>(cell.w),
+                                 static_cast<float>(cell.h), 1.0f, kHueKey);
+            }
+            canvas.restore();
+            strokeRound(canvas, {cell.x + 1, cell.y + 1, cell.w - 2, cell.h - 2}, 3.0,
+                        custom ? kAccentPurple : open ? kPaper : kInk, custom || open ? 2.5 : 1.0);
+            Action pick;
+            pick.k = Act::Picker;
+            pick.i = isFill ? 0 : 1;
+            addRegion(cell, pick);
+            continue;
+        }
+        const std::string colour = i == 0 ? std::string() : std::string(kPalette[i - 1]);
         const bool isCurrent = current == colour;
 
         if (colour.empty()) {
@@ -832,7 +1088,7 @@ void Studio::drawShapeList(Canvas& canvas, Rect view) {
               shapeScroll.contentHeight, shapeScroll.offset, kAccentPurple, kScrollbarWidth);
 }
 
-void Studio::drawProps(Canvas& canvas, Rect r) {
+void Studio::drawProps(Canvas& canvas, Rect r, double timeSeconds) {
     ui::text(canvas, "Selected shape", r.x, r.y + 7.0, label(kSectionSize));
     const Shape* s = selectedShape();
     if (!s) {
@@ -897,7 +1153,98 @@ void Studio::drawProps(Canvas& canvas, Rect r) {
     if (s->t != ShapeType::Line) {
         cy = drawPalette(canvas, {r.x, cy, r.w, 0}, "Fill", s->fill, true);
     }
-    drawPalette(canvas, {r.x, cy, r.w, 0}, "Outline", s->stroke, false);
+    cy = drawPalette(canvas, {r.x, cy, r.w, 0}, "Outline", s->stroke, false);
+
+    syncPicker();
+    if (const std::string* colour = pickerColour()) {
+        drawPicker(canvas, {r.x, cy - 4.0, r.w, r.bottom() - (cy - 4.0)}, *colour, timeSeconds);
+    }
+}
+
+void Studio::drawPicker(Canvas& canvas, Rect r, const std::string& current,
+                        double timeSeconds) {
+    const double squareH = std::min(kPickerSquareMaxH, r.h - kPickerCaption - 4.0);
+    if (squareH < kPickerSquareMinH) return;
+
+    ui::text(canvas, picker == PickerTarget::Fill ? "Custom fill" : "Custom outline", r.x,
+             r.y + 7.0, label(kCaptionSize));
+    Action close;
+    close.k = Act::Picker;
+    close.dir = 1;
+    actionChip(canvas, {r.right() - 56.0, r.y - 2.0, 56.0, 18.0}, "Close", close);
+
+    const double top = r.y + kPickerCaption;
+    const Rect square{r.x, top, kPickerSquareW, squareH};
+    const Rect hue{square.right() + 8.0, top, kHueStripW, squareH};
+    pickerSquare = square;
+    pickerHue = hue;
+
+    const PickerRamps& ramps = pickerRamps();
+    const auto image = [&](const std::vector<std::uint8_t>& px, int w, int h, Rect box,
+                           std::uint32_t key) {
+        canvas.drawImage(px.data(), w, h, static_cast<float>(box.x), static_cast<float>(box.y),
+                         static_cast<float>(box.w), static_cast<float>(box.h), 1.0f, key);
+    };
+    canvas.save();
+    setFill(canvas, hsvToRgb(pickH, 1.0, 1.0));
+    canvas.fillRect(static_cast<float>(square.x), static_cast<float>(square.y),
+                    static_cast<float>(square.w), static_cast<float>(square.h));
+    image(ramps.saturation, kRampTexels, 1, square, kSaturationKey);
+    image(ramps.value, 1, kRampTexels, square, kValueKey);
+    image(ramps.hue, 1, kHueTexels, hue, kHueKey);
+    setStroke(canvas, kInk);
+    canvas.setLineWidth(1.0f);
+    for (const Rect& box : {square, hue}) {
+        canvas.strokeRect(static_cast<float>(box.x - 0.5), static_cast<float>(box.y - 0.5),
+                          static_cast<float>(box.w + 1.0), static_cast<float>(box.h + 1.0));
+    }
+
+    // Where the colour is: a ring on the square, a bar across the strip.
+    const double mx = square.x + pickS * square.w;
+    const double my = square.y + (1.0 - pickV) * square.h;
+    canvas.beginPath();
+    canvas.arc(static_cast<float>(mx), static_cast<float>(my), 5.0f, 0.0f,
+               static_cast<float>(kPi * 2));
+    canvas.setLineWidth(3.0f);
+    canvas.stroke();
+    setStroke(canvas, kPaper);
+    canvas.setLineWidth(1.5f);
+    canvas.stroke();
+    canvas.restore();
+    const double hy = hue.y + pickH / 360.0 * hue.h;
+    const Rect bar{hue.x - 3.0, hy - 2.5, hue.w + 6.0, 5.0};
+    fillRound(canvas, bar, 2.0, kPaper);
+    strokeRound(canvas, bar, 2.0, kInk, 1.0);
+
+    Action pickSquare;
+    pickSquare.k = Act::PickSquare;
+    addRegion(square, pickSquare);
+    // A few pixels either side: the strip is narrow enough to miss.
+    Action pickHue;
+    pickHue.k = Act::PickHue;
+    addRegion({hue.x - 4.0, hue.y, hue.w + 8.0, hue.h}, pickHue);
+
+    // The colour itself, then its code.
+    const double cx = hue.right() + 14.0;
+    const Rect chip{cx, top, r.right() - cx, 26.0};
+    if (current.empty()) {
+        fillRound(canvas, chip, 3.0, kSwatchNone);
+        ui::text(canvas, picker == PickerTarget::Fill ? "No fill" : "No outline",
+                 chip.x + chip.w / 2, chip.y + chip.h / 2, label(kCaptionSize, Align::Centre));
+    } else {
+        fillRound(canvas, chip, 3.0, hexColor(current));
+    }
+    strokeRound(canvas, {chip.x + 0.5, chip.y + 0.5, chip.w - 1, chip.h - 1}, 3.0, kInk, 1.0);
+
+    const Rect field{cx, chip.bottom() + 8.0, chip.w, kHexFieldH};
+    pickerHex = field;
+    inputField(canvas, field, hexDraft, "#rrggbb", hexField.focused, timeSeconds, &hexField);
+    double lineY = field.bottom() + 12.0;
+    for (const char* line : {"Drag in the square and the", "strip, or type a hex code."}) {
+        if (lineY > square.bottom()) break;
+        ui::text(canvas, line, cx, lineY, label(kCaptionSize));
+        lineY += 14.0;
+    }
 }
 
 void Studio::drawTextEditor(Canvas& canvas, Rect r, double timeSeconds) {
@@ -1004,9 +1351,42 @@ void Studio::drawFooter(Canvas& canvas, double timeSeconds) {
                  kAccent);
 }
 
+void Studio::drawSortRow(Canvas& canvas) {
+    static const char* const kLabels[] = {"Newest", "Top rated", "Favorites"};
+    const double y = layout.tabs.bottom() + 12.0;
+    for (int i = 0; i < 3; ++i) {
+        Action pick;
+        pick.k = Act::Sort;
+        pick.i = i;
+        actionChip(canvas, {layout.body.x + i * (kSortWidth + kTabGap), y, kSortWidth, kSortHeight},
+                   kLabels[i], pick, static_cast<int>(sort) == i ? kAccentPurple : kNeutralFill,
+                   kBodySize);
+    }
+    ui::text(canvas, "Equip one and everyone sees it.",
+             layout.body.x + 3 * (kSortWidth + kTabGap) + 8.0, y + kSortHeight * 0.5,
+             label(kBodySize));
+}
+
+void Studio::drawVoteRow(Canvas& canvas, Rect r, const CustomSkin& skin) {
+    const SkinVote mine = net ? net->skinVote(skin.id) : SkinVote::None;
+    const bool starred = net && net->isFavoriteSkin(skin.id);
+    const double pillW = (r.w - kStarW - 8.0) / 2;
+    Action like;
+    like.k = Act::Like;
+    like.id = skin.id;
+    votePill(canvas, {r.x, r.y, pillW, r.h}, 0, abbreviate(skin.likes), mine == SkinVote::Like,
+             like);
+    Action dislike = like;
+    dislike.k = Act::Dislike;
+    votePill(canvas, {r.x + pillW + 4.0, r.y, pillW, r.h}, 1, abbreviate(skin.dislikes),
+             mine == SkinVote::Dislike, dislike);
+    Action star = like;
+    star.k = Act::Favorite;
+    votePill(canvas, {r.right() - kStarW, r.y, kStarW, r.h}, 2, {}, starred, star);
+}
+
 void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
-    ui::text(canvas, "Published skins \xe2\x80\x94 equip one and everyone sees it.",
-             layout.body.x, layout.tabs.bottom() + 16.0, label(kBodySize));
+    drawSortRow(canvas);
 
     const Rect view = browseBody(layout);
     const std::vector<CustomSkin>& skins = catalog();
@@ -1022,15 +1402,35 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
     // bottom edge, so the buttons painted on top of the artwork.
     constexpr int cols = 4;
     constexpr double kGap = 10.0;
-    constexpr double kCardH = 180.0;
+    constexpr double kCardH = 212.0;
     const double cardW = (view.w - (cols - 1) * kGap - kScrollbarWidth - 4.0) / cols;
     const double preview = cardW - 30.0;
 
     std::vector<const CustomSkin*> sorted;
     sorted.reserve(skins.size());
-    for (const CustomSkin& skin : skins) sorted.push_back(&skin);
+    for (const CustomSkin& skin : skins) {
+        if (sort == Sort::Favorites && !(net && net->isFavoriteSkin(skin.id))) continue;
+        sorted.push_back(&skin);
+    }
+    if (sorted.empty()) {
+        ui::text(canvas, "No favorites yet. Press the star on a skin to keep it here.", view.x,
+                 view.y + 24.0, label(kBodySize));
+        return;
+    }
+    // Top rated is the net score, then the plainer favourite of two that tie
+    // on it (more likes), then the newer -- so a fresh skin nobody has voted
+    // on yet still sorts the way the Newest tab would put it.
+    const bool byScore = sort == Sort::Top;
     std::stable_sort(sorted.begin(), sorted.end(),
-                     [](const CustomSkin* a, const CustomSkin* b) {
+                     [byScore](const CustomSkin* a, const CustomSkin* b) {
+                         if (byScore) {
+                             const auto score = [](const CustomSkin* s) {
+                                 return static_cast<std::int64_t>(s->likes) -
+                                        static_cast<std::int64_t>(s->dislikes);
+                             };
+                             if (score(a) != score(b)) return score(a) > score(b);
+                             if (a->likes != b->likes) return a->likes > b->likes;
+                         }
                          return a->createdAt > b->createdAt;
                      });
 
@@ -1069,6 +1469,8 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
                  label(kBodySize, Align::Centre));
         ui::text(canvas, "by " + clipChars(skin.author, 14), card.x + cardW * 0.5,
                  board.bottom() + 30.0, label(kCaptionSize, Align::Centre));
+        drawVoteRow(canvas, {card.x + 8.0, card.bottom() - 38.0 - kVoteRowH, cardW - 16.0, kVoteRowH},
+                    skin);
 
         const bool canDelete = isAdmin() || lowerCase(skin.author) == me;
 
@@ -1132,6 +1534,8 @@ void Studio::draw(MenuContext& ctx) {
     Canvas& canvas = ctx.canvas;
     const Vec2 mouse = ctx.mouse();
     regions.clear();
+    // Set again if the picker is drawn this frame.
+    pickerSquare = pickerHue = pickerHex = Rect{};
 
     const Rect panel = layout.panel;
     regionClip = panel;
@@ -1178,7 +1582,7 @@ void Studio::draw(MenuContext& ctx) {
             const double afterChips = by + 2 * 26.0 + 6.0;
             drawShapeList(canvas, {layout.left.x, afterChips, layout.left.w,
                                    layout.body.bottom() - afterChips});
-            drawProps(canvas, layout.right);
+            drawProps(canvas, layout.right, ctx.timeSeconds);
         }
         drawFooter(canvas, ctx.timeSeconds);
     } else {
@@ -1227,6 +1631,59 @@ void Studio::applyDrag(Vec2 mouse) {
             break;
         }
     }
+}
+
+std::string* Studio::pickerColour() {
+    Shape* s = selectedShape();
+    if (s == nullptr) return nullptr;
+    switch (picker) {
+        case PickerTarget::Fill: return s->t == ShapeType::Line ? nullptr : &s->fill;
+        case PickerTarget::Stroke: return &s->stroke;
+        case PickerTarget::None: break;
+    }
+    return nullptr;
+}
+
+void Studio::syncPicker() {
+    const std::string* colour = pickerColour();
+    if (colour == nullptr) return;
+    if (!colour->empty() && *colour != pickerSeen) rgbToHsv(hexColor(*colour), pickH, pickS, pickV);
+    pickerSeen = *colour;
+    if (!hexField.focused) hexDraft = *colour;
+}
+
+void Studio::applyPicked(const std::string& hex, bool seed) {
+    std::string* colour = pickerColour();
+    if (colour == nullptr) return;
+    *colour = hex;
+    // As picking an outline swatch does: a colour with no width draws nothing.
+    if (picker == PickerTarget::Stroke) {
+        if (Shape* s = selectedShape(); s->sw <= 0) s->sw = 2;
+    }
+    if (seed) rgbToHsv(hexColor(hex), pickH, pickS, pickV);
+    pickerSeen = hex;
+    if (!hexField.focused) hexDraft = hex;
+}
+
+void Studio::dragPicker(Vec2 mouse) {
+    // Clamped rather than dropped: a drag that runs off the square keeps
+    // tracking its edge, as the board's handles do.
+    if (pickerDrag == PickerDrag::Square && pickerSquare.w > 0 && pickerSquare.h > 0) {
+        pickS = clamp((mouse.x - pickerSquare.x) / pickerSquare.w, 0.0, 1.0);
+        pickV = 1.0 - clamp((mouse.y - pickerSquare.y) / pickerSquare.h, 0.0, 1.0);
+    } else if (pickerDrag == PickerDrag::Hue && pickerHue.h > 0) {
+        pickH = clamp((mouse.y - pickerHue.y) / pickerHue.h, 0.0, 1.0) * 360.0;
+    } else {
+        return;
+    }
+    applyPicked(hexText(hsvToRgb(pickH, pickS, pickV)), false);
+}
+
+void Studio::closePicker() {
+    picker = PickerTarget::None;
+    pickerDrag = PickerDrag::None;
+    hexField.blur();
+    pickerSeen.clear();
 }
 
 void Studio::enterTextMode() {
@@ -1445,6 +1902,24 @@ bool Studio::dispatch(MenuContext& ctx, const Action& a) {
                 if (!a.color.empty() && s->sw <= 0) s->sw = 2;
             }
             break;
+        case Act::Picker: {
+            // The custom cell toggles its own picker and switches from the
+            // other one; the picker's Close button only closes.
+            const PickerTarget want = a.i == 0 ? PickerTarget::Fill : PickerTarget::Stroke;
+            if (a.dir == 1 || picker == want) {
+                closePicker();
+            } else {
+                closePicker();
+                picker = want;
+            }
+            break;
+        }
+        case Act::PickSquare:
+        case Act::PickHue:
+            pickerDrag = a.k == Act::PickSquare ? PickerDrag::Square : PickerDrag::Hue;
+            hexField.blur();
+            dragPicker(ctx.mouse());
+            break;
         case Act::AddVertex: {
             Shape* s = selectedShape();
             if (s && s->t == ShapeType::Polygon &&
@@ -1512,6 +1987,28 @@ bool Studio::dispatch(MenuContext& ctx, const Action& a) {
         case Act::CancelDelete:
             confirming = false;
             break;
+        case Act::Sort:
+            sort = static_cast<Sort>(a.i);
+            browseScroll.offset = 0;
+            break;
+        case Act::Like:
+        case Act::Dislike: {
+            // The server refuses an author's vote on their own skin as well;
+            // saying so here saves the round trip, as Publish's check does.
+            const CustomSkin* skin = ctx.net.findSkin(a.id);
+            if (skin == nullptr) break;
+            if (lowerCase(skin->author) == lowerCase(ctx.net.profile().username)) {
+                ctx.net.addLocalChat("Skins", "You can't vote on your own skin.");
+                break;
+            }
+            // Pressing the vote already cast takes it back.
+            const SkinVote pressed = a.k == Act::Like ? SkinVote::Like : SkinVote::Dislike;
+            ctx.net.voteSkin(a.id, ctx.net.skinVote(a.id) == pressed ? SkinVote::None : pressed);
+            break;
+        }
+        case Act::Favorite:
+            ctx.net.favoriteSkin(a.id, !ctx.net.isFavoriteSkin(a.id));
+            break;
         case Act::None:
             break;
     }
@@ -1524,9 +2021,14 @@ bool Studio::handleInput(MenuContext& ctx) {
 
     // The name box and the text editor take the keyboard while they have the
     // caret, the way the DOM controls they replace do.
+    // The hex box only while the picker that holds it is on screen: a
+    // picker closed some other way -- another shape, another tab -- must not
+    // leave the keyboard with it.
+    if (tab != Tab::Create || textMode || pickerHex.w <= 0) hexField.blur();
     const bool naming = tab == Tab::Create && !textMode && nameField.focused;
     const bool editing = tab == Tab::Create && textMode;
-    if (naming || editing) ctx.wantsText = true;
+    const bool hexing = hexField.focused;
+    if (naming || editing || hexing) ctx.wantsText = true;
 
     if (naming) {
         TextEditOptions typing;
@@ -1552,6 +2054,25 @@ bool Studio::handleInput(MenuContext& ctx) {
                                 editorFirstLine(editor), kEditorLineHeight, kInputTextSize,
                                 ctx.timeSeconds);
         if (ctx.window.keyPressed(Key::Escape)) textMode = false;
+    } else if (hexing) {
+        TextEditOptions typing;
+        typing.maxBytes = 7;
+        typing.asciiOnly = true;
+        // Live, as the square is: every keystroke that completes a code
+        // repaints the shape, and a half-typed one leaves it as it was.
+        if (editText(ctx.window, hexDraft, hexField, ctx.timeSeconds, typing)) {
+            const std::string hex = normalHex(hexDraft);
+            if (!hex.empty()) applyPicked(hex, true);
+        }
+        // Either way the box shows the shape's colour again once it lets go.
+        if (ctx.window.keyPressed(Key::Enter) || ctx.window.keyPressed(Key::Escape)) {
+            hexField.blur();
+        }
+    }
+    if (pickerHex.w > 0) {
+        trackTextMouse(ctx.window, hexField, pickerHex,
+                       inputFieldRun(pickerHex, hexDraft, hexField), hexDraft, ctx.timeSeconds);
+        if (insideInclusive(pickerHex, mouse)) ctx.window.setCursorShape(CursorShape::Text);
     }
     if (tab == Tab::Create && !textMode) {
         // The name box takes its own press; the region list below would only
@@ -1575,6 +2096,10 @@ bool Studio::handleInput(MenuContext& ctx) {
     if (dragging) {
         if (ctx.window.mouseDown(MouseButton::Left)) applyDrag(mouse);
         else dragging = false;
+    }
+    if (pickerDrag != PickerDrag::None) {
+        if (ctx.window.mouseDown(MouseButton::Left)) dragPicker(mouse);
+        else pickerDrag = PickerDrag::None;
     }
 
     // Hover tracks the last completed render's regions, which is where the
@@ -1631,8 +2156,10 @@ void SkinsPanel::reset() {
     // throw away the skin being drawn.
     Studio& state = studio();
     state.nameField.blur();
+    state.hexField.blur();
     state.textField.dragging = false;
     state.dragging = false;
+    state.pickerDrag = Studio::PickerDrag::None;
     state.confirming = false;
     state.regions.clear();
     state.hovering = false;
