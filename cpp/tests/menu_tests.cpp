@@ -1385,3 +1385,9 @@ TEST(number_abbreviations_cover_every_thousand_tier_through_10_to_57) {
     CHECK(ui::abbreviate(1e60).find('e') != std::string::npos);
     CHECK(ui::withSeparators(1e57).size() > 60);
 }
+
+TEST(two_to_64_displays_without_signed_integer_overflow) {
+    CHECK_EQ(ui::abbreviate(0x1p64), std::string("18.4Qi"));
+    CHECK_EQ(ui::formatWhole(0x1p64), std::string("18446744073709551616"));
+    CHECK_EQ(ui::withSeparators(0x1p64), std::string("18,446,744,073,709,551,616"));
+}

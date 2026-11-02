@@ -6368,20 +6368,20 @@ TEST(icosahedron_admin_chain_stops_at_its_rarity_limit_without_rehitting_mobs) {
     CHECK_NEAR(rig.world.get<PetalInstance>(petal).ricochet.readyAtMillis - rig.now, 1250.0, 1e-6);
 }
 
-TEST(admin_sparkle_int_limit_stats_spawn_without_combat_overflow) {
+TEST(admin_sparkle_two_to_64_stats_spawn_without_combat_overflow) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "sparkle", Rarity::Admin);
     rig.settleEquips();
     const Entity petal = rig.petals(0).front();
-    constexpr double limit = 2147483647.0;
+    constexpr double limit = 0x1p64;
     CHECK_NEAR(rig.world.get<Health>(petal).max, limit, 0.01);
     CHECK_NEAR(rig.world.get<Armor>(petal).amount, limit, 0.01);
     CHECK_NEAR(rig.world.get<ContactDamage>(petal).amount, limit, 0.01);
     const Entity mob = addMob(rig, rig.position(petal));
     CombatSystem combat;
-    combat.applyDamage(rig.world, petal, mob, limit + 7.0, rig.now, DamageKind::Recoil);
-    CHECK_NEAR(rig.world.get<Health>(petal).current, limit - 7.0, 0.01);
+    combat.applyDamage(rig.world, petal, mob, limit * 1.25, rig.now, DamageKind::Recoil);
+    CHECK_NEAR(rig.world.get<Health>(petal).current, limit * 0.75, 0.01);
     combat.applyDamage(rig.world, mob, petal, limit, rig.now);
     CHECK(std::isfinite(rig.world.get<Health>(mob).current));
     CHECK(rig.world.get<Health>(mob).current <= 0);
