@@ -179,6 +179,7 @@ struct Session {
     Realm cursorRealm = Realm::Overworld;
     std::uint8_t cursorButtons = 0;
     bool adminKillHeld = false;
+    bool adminTeleportHeld = false;
     Entity adminKillBody = NULL_ENTITY;
     Realm adminKillRealm = Realm::Overworld;
     double adminKillReadyAtMillis = 0;

@@ -1,4 +1,7 @@
 #include "test.h"
+#include "client/render/world_renderer.h"
+#include "client/world_view.h"
+#include "render_rig.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -1029,4 +1032,25 @@ TEST(the_shipped_map_collides_with_authored_shapes_everywhere) {
     }
     CHECK(shaped > 20);
     CHECK(sawPartialTile);
+}
+
+TEST(map_edges_continue_ground_instead_of_black_void) {
+    WorldMaps maps;
+    Terrain terrain;
+    std::string error;
+    CHECK(maps.load(testsupport::dataDir(), &terrain, error));
+    WorldRenderer renderer;
+    renderer.setWorldMaps(&maps);
+    WorldView view;
+    view.setRealm(Realm::Overworld);
+    const Camera camera = testsupport::frameCamera(256, {0, 0});
+    Canvas canvas = Canvas::createVirtual(256, 256);
+    renderer.draw(canvas, view, camera, {0, 0}, 0);
+    const auto pixels = canvas.getImageData(0, 0, 256, 256);
+    CHECK(pixels.size() >= 4);
+    if (pixels.size() < 4) return;
+    CHECK_EQ(pixels[0], std::uint8_t(0x1E));
+    CHECK_EQ(pixels[1], std::uint8_t(0xA7));
+    CHECK_EQ(pixels[2], std::uint8_t(0x61));
+    CHECK_EQ(pixels[3], std::uint8_t(255));
 }

@@ -371,6 +371,7 @@ private:
     /// Nothing local acts on it: the flower's drawn position is the server's,
     /// eased (see client/interpolation.h). Producing one of these is the only
     /// thing the client does with a movement key.
+    bool adminCursorEquipped() const;
     void sendInputFrame(double dt);
 
     /// Whether a text field is taking this frame's keystrokes -- the chat

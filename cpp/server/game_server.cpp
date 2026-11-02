@@ -983,6 +983,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // reach movement until the tick after it was equipped.
     petals_->foldModifiers(world_, content());
 
+    serviceAdminPhase();
     movement_->runPlayerPhase(world_, *terrain_, nowMillis, dt);
     markTickPhase("players");
     petals_->run(world_, content(), nowMillis, dt, commands_, terrain_.get(), &events_);
@@ -1042,7 +1043,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     markTickPhase("mob ai");
     movement_->runWorldPhase(world_, *terrain_, nowMillis, net::kTickSeconds);
     markTickPhase("mob movement");
-    serviceAdminHoverKill();
+    serviceAdminCursorActions();
     serviceAdminCursor();
     // After the bodies have moved, as gardn places its segments: whatever
     // pushed a bead this tick swings the chain rather than being undone.
@@ -2486,15 +2487,56 @@ void GameServer::leaveWorld(Session& session) {
     revokeTempAdmin(session.connection);
 }
 
-void GameServer::serviceAdminHoverKill() {
+void GameServer::setAdminPhase(Session& session, bool enabled) {
+    for (Entity entity : bodiesOf(session)) {
+        auto* input = world_.tryGet<PlayerInput>(entity);
+        auto* at = world_.tryGet<Transform>(entity);
+        if (!input || !at) continue;
+        const auto* body = world_.tryGet<Body>(entity);
+        const double radius = body ? body->radius : kPlayerBaseRadius;
+        if (enabled) {
+            if (!input->adminPhase || input->phaseSafeRealm != at->realm) {
+                input->phaseSafePosition = terrain_->resolveCircle(at->position, radius, at->realm);
+                input->phaseSafeRealm = at->realm;
+            } else if (!terrain_->outside(at->position, at->realm) &&
+                       !terrain_->blocked(at->position, at->realm)) {
+                input->phaseSafePosition = at->position;
+            }
+            input->adminPhase = true;
+        } else if (input->adminPhase) {
+            Vec2 safe = terrain_->resolveCircle(at->position, radius, at->realm);
+            if ((!std::isfinite(safe.x) || !std::isfinite(safe.y) ||
+                 terrain_->outside(safe, at->realm) || terrain_->blocked(safe, at->realm)) &&
+                input->phaseSafeRealm == at->realm)
+                safe = terrain_->resolveCircle(input->phaseSafePosition, radius, at->realm);
+            input->adminPhase = false;
+            if (distanceSq(safe, at->position) > 1e-6) teleportEntity(entity, safe);
+        }
+    }
+}
+
+void GameServer::serviceAdminPhase() {
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        const auto* input = world_.tryGet<PlayerInput>(session.entity);
+        const bool enabled = session.playing() && effectiveAdmin(session) && input &&
+            input->adminPhase && !world_.has<Dead>(session.entity);
+        setAdminPhase(session, enabled);
+    }
+}
+
+void GameServer::serviceAdminCursorActions() {
     for (auto& entry : sessions_) {
         Session& session = entry.second;
         const Entity owner = session.entity;
         const auto* input = session.playing() ? world_.tryGet<PlayerInput>(owner) : nullptr;
         const auto* origin = session.playing() ? world_.tryGet<Transform>(owner) : nullptr;
         const bool down = input && (input->current.flags & net::InputAdminKill);
-        const bool pressed = down && !session.adminKillHeld;
+        const bool pressedKill = down && !session.adminKillHeld;
+        const bool teleportDown = input && (input->current.flags & net::InputAdminTeleport);
+        const bool pressedTeleport = teleportDown && !session.adminTeleportHeld;
         session.adminKillHeld = down;
+        session.adminTeleportHeld = teleportDown;
         const bool transitioned = session.adminKillBody != NULL_ENTITY &&
             (session.adminKillBody != owner || !origin || session.adminKillRealm != origin->realm);
         session.adminKillBody = origin ? owner : NULL_ENTITY;
@@ -2504,7 +2546,8 @@ void GameServer::serviceAdminHoverKill() {
             modifiers->petControlRarity == Rarity::Admin;
         // Reuse the Cursor's existing admin tier and equipment requirements.
         // A held key, promotion or realm transition cannot repeatedly kill.
-        if (!pressed || transitioned || !origin || !cursor || !adminMay(session, AdminPower::SpawnMobs) ||
+        if ((!pressedKill && !pressedTeleport) || transitioned || !origin || !cursor ||
+            !adminMay(session, AdminPower::SpawnMobs) ||
             world_.has<Dead>(owner) || session.controlledBy || session.controlling ||
             clockMillis_ < session.adminKillReadyAtMillis) continue;
         session.adminKillReadyAtMillis = clockMillis_ + 250.0;
@@ -2515,6 +2558,24 @@ void GameServer::serviceAdminHoverKill() {
         const Vec2 pointer = origin->position + Vec2{
             clamp(requested.x, -viewport.x * 0.5, viewport.x * 0.5),
             clamp(requested.y, -viewport.y * 0.5, viewport.y * 0.5)};
+        if (pressedTeleport) {
+            const auto* body = world_.tryGet<Body>(owner);
+            const double radius = body ? body->radius : kPlayerBaseRadius;
+            const Vec2 destination = input->adminPhase
+                ? terrain_->clampInside(pointer, radius, origin->realm)
+                : terrain_->resolveCircle(pointer, radius, origin->realm);
+            if (!std::isfinite(destination.x) || !std::isfinite(destination.y) ||
+                terrain_->outside(destination, origin->realm) ||
+                (!input->adminPhase && terrain_->blocked(destination, origin->realm))) continue;
+            // Release an existing drag and latch its held button so arriving
+            // cannot silently grab another target at the translated pointer.
+            session.cursorDragged = NULL_ENTITY;
+            session.cursorBody = owner;
+            session.cursorRealm = origin->realm;
+            session.cursorButtons = input->current.flags;
+            teleportEntity(owner, destination);
+            continue;
+        }
         const auto valid = [&](Entity entity) {
             const auto* at = world_.tryGet<Transform>(entity);
             if (!at || at->realm != origin->realm || entity == owner ||
@@ -2689,9 +2750,9 @@ void GameServer::serviceAdminCursor() {
                 Vec2 destination = pointer;
                 if (world_.has<PlayerTag>(session.cursorDragged)) {
                     const auto* body = world_.tryGet<Body>(session.cursorDragged);
-                    destination = terrain_->resolveCircle(pointer, body ? body->radius : kPlayerBaseRadius, realm);
-                    if (terrain_->outside(destination, realm) || terrain_->blocked(destination, realm))
-                        destination = world_.get<Transform>(session.cursorDragged).position;
+                    // Dragged players may cross walls, but never map bounds.
+                    // Normal collision rescues a release inside solid terrain.
+                    destination = terrain_->clampInside(pointer, body ? body->radius : kPlayerBaseRadius, realm);
                     if (auto* health = world_.tryGet<Health>(session.cursorDragged)) {
                         // No infinity and no overwritten god/spawn protection.
                         // Refreshed while held, then expires three seconds after

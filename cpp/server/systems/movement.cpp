@@ -138,7 +138,7 @@ Vec2 velocityAfterStep(Vec2 attempted, const StepOutcome& out, double dt, double
 /// all by being given a share of 1.
 void softLooseContact(const Terrain& terrain, Realm realm, Vec2& slab, double slabRadius,
                       double slabShare, Vec2& other, double otherWallRadius, bool otherMoves,
-                      Vec2 out, double push) {
+                      Vec2 out, double push, bool otherCollidesTerrain = true) {
     if (!(push > 0.0)) return;
     const Vec2 before = slab;
     stepCollide(terrain, realm, slab, out * (-push * slabShare), slabRadius, 1.0, true, true);
@@ -147,7 +147,8 @@ void softLooseContact(const Terrain& terrain, Realm realm, Vec2& slab, double sl
     const double taken = std::max(0.0, moved.x * out.x + moved.y * out.y);
     const double rest = push - taken;
     if (rest > 0.0) {
-        stepCollide(terrain, realm, other, out * rest, otherWallRadius, 1.0, true, true);
+        stepCollide(terrain, realm, other, out * rest, otherWallRadius, 1.0,
+                    otherCollidesTerrain, otherCollidesTerrain);
     }
 }
 
@@ -477,12 +478,12 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         // projectile take the resolver's word for it. A player arrives here
         // from a contact knockback that already overlapped wall geometry
         // often enough that without it, diagonal seams are passable.
-        stepCollide(terrain, transform.realm, transform.position, velocity, body.radius, dt, true,
-                    true);
+        stepCollide(terrain, transform.realm, transform.position, velocity, body.radius, dt,
+                    !input.adminPhase, !input.adminPhase);
         // Loose petals before NPCs: a wax gives way and an NPC does not, so an
         // NPC is the last word on where the flower may stand, as a wall is.
-        if (!looseDiscs_.empty()) shoveLooseBodies(terrain, transform, body);
-        if (!npcDiscs_.empty()) pushOutOfNpcs(terrain, transform, body.radius);
+        if (!looseDiscs_.empty()) shoveLooseBodies(terrain, transform, body, input.adminPhase);
+        if (!npcDiscs_.empty()) pushOutOfNpcs(terrain, transform, body.radius, input.adminPhase);
         // TypeScript's stepPlayerMovement returns the friction-integrated
         // velocity unchanged when wall resolution alters the position. Keeping
         // the attempted velocity is observable on the following tick (the
@@ -494,7 +495,7 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
 }
 
 void MovementSystem::shoveLooseBodies(const Terrain& terrain, Transform& transform,
-                                      const Body& body) {
+                                      const Body& body, bool phase) {
     const double radius = sanitizeCollisionRadius(body.radius);
     const double mass = bodyMass(&body);
     for (LooseDisc& disc : looseDiscs_) {
@@ -510,7 +511,7 @@ void MovementSystem::shoveLooseBodies(const Terrain& terrain, Transform& transfo
         // The slab's share of the push is the flower's mass over both.
         softLooseContact(terrain, transform.realm, disc.position, disc.radius,
                          mass / (mass + disc.mass), transform.position, radius, true, out,
-                         loosePetalContactPush(reach - gap));
+                         loosePetalContactPush(reach - gap), !phase);
     }
 }
 
@@ -598,7 +599,7 @@ void MovementSystem::collideLooseBodies(World& world, const Terrain& terrain) {
 }
 
 void MovementSystem::pushOutOfNpcs(const Terrain& terrain, Transform& transform,
-                                   double radius) const {
+                                   double radius, bool phase) const {
     bool moved = false;
     for (const NpcDisc& npc : npcDiscs_) {
         if (npc.realm != transform.realm) continue;
@@ -616,7 +617,9 @@ void MovementSystem::pushOutOfNpcs(const Terrain& terrain, Transform& transform,
     }
     // A wall still wins: an NPC parked against one must not be able to shove
     // a flower into it.
-    if (moved) transform.position = terrain.resolveCircle(transform.position, radius, transform.realm);
+    if (moved) transform.position = phase
+        ? terrain.clampInside(transform.position, radius, transform.realm)
+        : terrain.resolveCircle(transform.position, radius, transform.realm);
 }
 
 void MovementSystem::stepTeleporters(World& world, double nowMillis, double dt) {

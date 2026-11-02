@@ -495,6 +495,10 @@ struct PetalRing {
 
 struct PlayerInput {
     net::InputFrame current;
+    // Server-only state. Not read from InputFrame or replicated to clients.
+    bool adminPhase = false;
+    Vec2 phaseSafePosition;
+    Realm phaseSafeRealm = Realm::Overworld;
 };
 
 /// Account-scoped identity. Cold: read on join, on save, and when someone

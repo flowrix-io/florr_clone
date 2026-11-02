@@ -1437,8 +1437,11 @@ void bounceOffMob(World& world, const Terrain* terrain, Entity player, Entity mo
         } else {
             const Vec2 before = transform->position;
             const Body* body = world.tryGet<Body>(player);
+            const PlayerInput* input = world.tryGet<PlayerInput>(player);
+            const bool collideTerrain = !(input && input->adminPhase);
             stepCollide(*terrain, transform->realm, transform->position, direction * share,
-                        body != nullptr ? body->radius : kPlayerBaseRadius, 1.0, true, true);
+                        body != nullptr ? body->radius : kPlayerBaseRadius, 1.0,
+                        collideTerrain, collideTerrain);
             const Vec2 moved = transform->position - before;
             const double refused =
                 share - std::max(0.0, moved.x * direction.x + moved.y * direction.y);

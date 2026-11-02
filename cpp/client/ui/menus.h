@@ -147,6 +147,17 @@ const ControlMeta& controlMeta(ControlAction action);
 bool boundKeyDown(const Window& window, Key key);
 bool boundKeyPressed(const Window& window, Key key);
 
+enum class AdminCursorChord { None, Kill, Teleport };
+inline AdminCursorChord adminCursorChord(bool enabled, bool minus, bool backspace,
+                                         bool shift, bool equals, bool ctrl) {
+    if (!enabled || ctrl) return AdminCursorChord::None;
+    if (shift && equals) return AdminCursorChord::Teleport;
+    if (minus && backspace) return AdminCursorChord::Kill;
+    return AdminCursorChord::None;
+}
+AdminCursorChord adminCursorChord(const Window&, bool enabled);
+
+
 /// The loadout the bar draws: ten primary slots, ten secondary slots under
 /// them, and a trash slot at the end of the second row.
 ///
@@ -1505,7 +1516,7 @@ class MenuSystem {
 public:
     /// Handles the menu hotkeys, Escape among them. Returns true when the key
     /// was consumed, so the game does not also act on it.
-    bool handleKeys(Window&);
+    bool handleKeys(Window&, bool adminCursorEnabled = false);
 
     /// True while the client is in a game, which is the only time the exit
     /// button is offered -- and the only time the changelog and Discord

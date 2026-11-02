@@ -1370,3 +1370,24 @@ TEST(a_flowers_first_tick_on_a_map_pulls_no_other_flower) {
     CHECK(distance(f.positionOf(refused), refusedAt) < 1e-9);
     CHECK(distance(f.positionOf(walker), walkerAt) < 1e-9);
 }
+
+TEST(admin_phase_walks_through_wall_geometry_but_keeps_map_bounds) {
+    Fixture fx;
+    fx.wallColumn(10);
+    const Entity phased = fx.spawnPlayer({kWallWest - 50, 2000});
+    const Entity normal = fx.spawnPlayer({kWallWest - 50, 2500});
+    for (Entity entity : {phased, normal}) {
+        auto& input = fx.world.get<PlayerInput>(entity);
+        input.current.moveAngle = 0;
+        input.current.moveStrength = 1;
+    }
+    fx.world.get<PlayerInput>(phased).adminPhase = true;
+    fx.step(150);
+    CHECK(fx.positionOf(phased).x > kWallEast);
+    CHECK(fx.positionOf(normal).x < kWallWest);
+    fx.world.get<Transform>(phased).position = {kPlayerBaseRadius, 2000};
+    fx.world.get<PlayerInput>(phased).current.moveAngle = kPi;
+    fx.step(60);
+    CHECK(fx.positionOf(phased).x >= kPlayerBaseRadius - 1e-6);
+    CHECK(!fx.terrain.outside(fx.positionOf(phased), Realm::Overworld));
+}

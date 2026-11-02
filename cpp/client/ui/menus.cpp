@@ -583,6 +583,11 @@ Key pairedKey(Key key) {
 
 } // namespace
 
+AdminCursorChord adminCursorChord(const Window& window, bool enabled) {
+    return adminCursorChord(enabled, window.keyDown(Key::Minus), window.keyDown(Key::Backspace),
+                            window.shiftHeld(), window.keyDown(Key::Equals), window.ctrlHeld());
+}
+
 bool boundKeyDown(const Window& window, Key key) {
     if (key == Key::Unknown) return false;
     const Key other = pairedKey(key);
@@ -839,7 +844,7 @@ void MenuSystem::close() {
     drag_.clear();
 }
 
-bool MenuSystem::handleKeys(Window& window) {
+bool MenuSystem::handleKeys(Window& window, bool adminCursorEnabled) {
     // A settings row waiting for a key must swallow every key: binding the
     // inventory to G should not also open the bestiary on the way past.
     if (settings_panel_.capturingKey()) return true;
@@ -849,6 +854,8 @@ bool MenuSystem::handleKeys(Window& window) {
     // selection, and Cmd+A opens the bestiary. Not the modifier ROW being
     // rebound -- capturingKey above has already claimed the keyboard for that.
     if (window.ctrlHeld()) return false;
+    // Claim the complete admin chord before any zoom, menu or loadout binding.
+    if (inGame_ && adminCursorChord(window, adminCursorEnabled) != AdminCursorChord::None) return true;
 
     // Escape gets no special case: it is the settings panel's hotkey and is
     // read from kMenus with the rest of them below, so it toggles that panel
@@ -895,8 +902,7 @@ bool MenuSystem::handleKeys(Window& window) {
     // tests them in: that order decides which action a key bound to two of
     // them reaches, and this client has to decide it the same way.
     if (inGame_) {
-        if (!(adminSlotShown_ && window.keyDown(Key::Minus) && window.keyDown(Key::Backspace)) &&
-            boundPressed(settings_.controlKey(ControlAction::ZoomOut))) {
+        if (boundPressed(settings_.controlKey(ControlAction::ZoomOut))) {
             settings_.zoom = clamp(settings_.zoom - kZoomKeyStep, kMinZoom, kMaxZoom);
             return true;
         }

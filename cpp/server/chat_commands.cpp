@@ -1028,7 +1028,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] [--exclude &lt;petal&gt; ...] (tiers 1-2; tiers 3-4 to themselves only), give_xp &lt;amount&gt; [username] (same give permissions), set_skin &lt;username&gt; "
                     "&lt;skin|none&gt;, corrupt &lt;username&gt; [on|off|toggle] "
                     "(corrupted flowers fight players anywhere, not just in PVP), god "
-                    "[on|off|toggle] (make yourself invulnerable), control &lt;username&gt; "
+                    "[on|off|toggle] (make yourself invulnerable), phase [on|off|toggle] (pass through walls), control &lt;username&gt; "
                     "(steer another player's flower with your own controls), release (give "
                     "it back), announce &lt;message&gt; (a banner for every player; full "
                     "admins only), gui (open the admin dashboard), grant_admin "
@@ -2182,6 +2182,24 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                                ? static_cast<std::uint64_t>(target.session->connection)
                                : static_cast<std::uint64_t>(target.entity)) +
             ")");
+        return;
+    }
+
+    if (verb == "phase") {
+        const std::string mode = words.size() == 2 ? lowerCase(words[1]) : "toggle";
+        if (words.size() > 2 || (mode != "on" && mode != "off" && mode != "toggle")) {
+            out("Usage: phase [on|off|toggle]");
+            return;
+        }
+        const auto* input = session.playing() ? world_.tryGet<PlayerInput>(session.entity) : nullptr;
+        if (!input || world_.has<Dead>(session.entity)) {
+            out("Join the world with a living flower before using phase.");
+            return;
+        }
+        const bool enabled = mode == "toggle" ? !input->adminPhase : mode == "on";
+        setAdminPhase(session, enabled);
+        out(enabled ? "Phase enabled: you can pass through walls. Use /admin phase to turn it off."
+                    : "Phase disabled: normal wall collision restored.");
         return;
     }
 

@@ -353,7 +353,7 @@ private:
     /// Puts a flower back outside every NPC body it has walked into. NPCs are
     /// solid to flowers, and they do not give way: the flower is moved, the
     /// NPC stays on its mark.
-    void pushOutOfNpcs(const Terrain& terrain, Transform& transform, double radius) const;
+    void pushOutOfNpcs(const Terrain& terrain, Transform& transform, double radius, bool phase = false) const;
     /// Rebuilds npcDiscs_. NPCs do not move between the two movement phases
     /// of one tick, but either phase may be the first to run in a test.
     void collectNpcDiscs();
@@ -364,7 +364,7 @@ private:
     /// this tick (softLooseContact in movement.cpp), the petal giving way by
     /// the flower's mass over both and no further than the walls let it, and
     /// the flower by the rest. Soft like a mob, not flush like an NPC.
-    void shoveLooseBodies(const Terrain& terrain, Transform& transform, const Body& body);
+    void shoveLooseBodies(const Terrain& terrain, Transform& transform, const Body& body, bool phase = false);
     /// The loose petals against everything the world phase moved, just as
     /// softly: mobs (by mass, a stationary one never giving way), NPCs (which
     /// never do), and each other (by mass). Runs after separation, so it sees

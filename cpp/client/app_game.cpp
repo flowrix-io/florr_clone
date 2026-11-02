@@ -166,6 +166,16 @@ void drawDeathFlower(Canvas& canvas, const WorldRenderer& renderer, const Sprite
 
 } // namespace
 
+bool App::adminCursorEquipped() const {
+    if (!net_.isSkinAdmin()) return false;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const EquippedPetal slot = net_.profile().equipped(content(), i);
+        if (!slot.empty() && slot.rarity == Rarity::Admin &&
+            content().petal(slot.configIndex).id == "cursor") return true;
+    }
+    return false;
+}
+
 void App::sendInputFrame(double dt) {
     net::InputFrame input;
     input.sequence = ++inputSequence_;
@@ -289,14 +299,8 @@ void App::sendInputFrame(double dt) {
     lastAimAngle_ = input.aimAngle;
     lastAimDistance_ = input.aimDistance;
 
-    bool adminCursor = false;
-    if (net_.isSkinAdmin()) {
-        for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-            const EquippedPetal slot = net_.profile().equipped(content(), i);
-            if (!slot.empty() && slot.rarity == Rarity::Admin &&
-                content().petal(slot.configIndex).id == "cursor") adminCursor = true;
-        }
-    }
+    const bool adminCursor = adminCursorEquipped();
+    const AdminCursorChord adminChord = adminCursorChord(window_, adminCursor);
     const Vec2 pointer{window_.mouseX(), window_.mouseY()};
     // A press that landed on a line of chat is a text selection, not a swing.
     // Checked against the PREVIOUS frame's runs because this pass runs before
@@ -308,17 +312,20 @@ void App::sendInputFrame(double dt) {
                            selectable.overTextLastFrame(pointer));
     if (!chatOpen_ && !menuOpen && !textDrag && !menus_.capturesMouse(pointer) &&
         !tutorial_.capturesMouse(pointer)) {
-        // These are pointer buttons only; keyboard petal controls do not edit
-        // the world. Authority and the worn petal are rechecked by the server.
+        // Pointer actions and explicit admin chords are rechecked against
+        // server-held authority and the worn petal.
         if (window_.mouseDown(MouseButton::Left)) input.flags |= net::InputAdminDrag;
-        if (adminCursor && window_.keyDown(Key::Minus) && window_.keyDown(Key::Backspace))
-            input.flags |= net::InputAdminKill;
+        if (adminChord != AdminCursorChord::None) input.moveStrength = 0;
+        if (adminChord == AdminCursorChord::Kill) input.flags |= net::InputAdminKill;
+        if (adminChord == AdminCursorChord::Teleport) input.flags |= net::InputAdminTeleport;
         if ((!adminCursor && window_.mouseDown(MouseButton::Left)) ||
-            boundKeyDown(window_, settings.controlKey(ControlAction::ExtendPetals))) {
+            (adminChord == AdminCursorChord::None &&
+             boundKeyDown(window_, settings.controlKey(ControlAction::ExtendPetals)))) {
             input.flags |= net::InputAttack;
         }
         if (window_.mouseDown(MouseButton::Right) ||
-            boundKeyDown(window_, settings.controlKey(ControlAction::RetractPetals))) {
+            (adminChord == AdminCursorChord::None &&
+             boundKeyDown(window_, settings.controlKey(ControlAction::RetractPetals)))) {
             input.flags |= net::InputDefend;
         }
     }
@@ -344,7 +351,7 @@ void App::updatePlaying(double dt) {
         // not also a chat key. Escape is one of theirs now -- it opens the
         // settings panel and no longer leaves the game, which is the red exit
         // button in the top strip's job alone.
-        const bool consumed = menus_.handleKeys(window_);
+        const bool consumed = menus_.handleKeys(window_, adminCursorEquipped());
         if (!consumed) {
             if (boundKeyPressed(window_, menus_.settings().controlKey(ControlAction::Chat)) ||
                 pressedChatBox()) {

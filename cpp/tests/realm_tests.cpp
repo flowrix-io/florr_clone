@@ -781,11 +781,10 @@ TEST(each_realm_draws_its_own_ground) {
     CHECK(edgeLit < openLit);          // some of the frame is wall
     CHECK(edgeLit > openLit * 0.85);   // and most of it is still corridor
 
-    // Outside the maze square there is no ground at all: the frame stays the
-    // black it was cleared to.
-    const double outsideDark =
-        renderDark(Realm::Maze, {maze.worldSize() + 50000.0, maze.worldSize() + 50000.0}, 16);
-    CHECK(outsideDark > 0.99);
+    // The floor colour continues beyond the maze edge instead of a black void.
+    const double outsideLit = renderBrightness(Realm::Maze,
+        {maze.worldSize() + 50000.0, maze.worldSize() + 50000.0});
+    CHECK_NEAR(outsideLit, corridorLit, 0.01);
 
     // The arena: the ring's floor is grey, and beyond the ring is the near
     // black void. The centre is all floor, and a point far outside is not.

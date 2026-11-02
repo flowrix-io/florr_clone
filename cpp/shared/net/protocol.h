@@ -564,6 +564,7 @@ enum InputFlags : std::uint8_t {
     InputAdminDrag = 1 << 2,
     // Bit 3 was an admin remove request; retired and ignored.
     InputAdminKill = 1 << 4,
+    InputAdminTeleport = 1 << 5,
 };
 
 /// One tick of intent from a client.

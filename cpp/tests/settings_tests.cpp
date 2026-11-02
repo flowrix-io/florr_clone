@@ -341,3 +341,13 @@ TEST(an_unticked_admin_tab_stays_unticked) {
 
     std::remove(path.c_str());
 }
+
+TEST(admin_cursor_chords_claim_complete_combos_without_plain_zoom_keys) {
+    CHECK(adminCursorChord(true, true, true, false, false, false) == AdminCursorChord::Kill);
+    CHECK(adminCursorChord(true, false, false, true, true, false) == AdminCursorChord::Teleport);
+    CHECK(adminCursorChord(true, true, true, true, true, false) == AdminCursorChord::Teleport);
+    CHECK(adminCursorChord(true, true, false, false, false, false) == AdminCursorChord::None);
+    CHECK(adminCursorChord(true, false, false, false, true, false) == AdminCursorChord::None);
+    CHECK(adminCursorChord(false, true, true, true, true, false) == AdminCursorChord::None);
+    CHECK(adminCursorChord(true, true, true, true, true, true) == AdminCursorChord::None);
+}

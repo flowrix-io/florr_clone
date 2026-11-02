@@ -1377,6 +1377,18 @@ void traceMazeCorner(Canvas& canvas, const Camera& camera, double x0, double y0,
 
 /// The reference's arena palette (src/graphics/pvp-arena.ts): gardn's "???"
 /// zone, a plain grey floor with a faint dark grid, in a darker void.
+std::uint32_t mapEdgeGround(const MapData* map) {
+    if (!map) return 0x000000u;
+    constexpr std::array<const char*, 9> ids{{
+        "garden", "desert", "hel", "ocean", "ant_hell", "jungle", "sewers", "computer", "unknown"
+    }};
+    for (std::size_t i = 0; i < ids.size(); ++i)
+        if (map->biome() == ids[i]) return kBiomes[i].ground;
+    for (const auto& element : map->elements())
+        if (element.kind == MapElementKind::PlayerSpawn) return element.color;
+    return 0xA8784Fu;
+}
+
 constexpr std::uint32_t kArenaFloor = 0x777777u;
 constexpr std::uint32_t kArenaVoid = 0x1A1A1Au;
 constexpr double kArenaGridCell = 50.0;
@@ -1384,8 +1396,9 @@ constexpr double kArenaGridCell = 50.0;
 } // namespace
 
 void WorldRenderer::drawMaze(Canvas& canvas, const Camera& camera) const {
-    // Beyond the maze's square there is nothing: the black the frame clears to.
-    ui::setFill(canvas, 0x000000u);
+    // Continue the floor beyond the visible boundary instead of a black void.
+    const int edgeSection = kMazeBiomeSections[static_cast<std::size_t>(activeMaze().biome())];
+    ui::setFill(canvas, biomeOf(edgeSection).ground);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
 
@@ -1719,9 +1732,10 @@ constexpr int kChunkBakeCellsPerFrame = 1024;
 } // namespace
 
 void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm realm) const {
-    // Everything outside the map is pure black: the browser build clears its
-    // frame to it and simply skips any cell that is not there.
-    ui::setFill(canvas, 0x000000u);
+    // Cameras near an edge can see beyond the authored tile rectangle.
+    // Continue this realm's ground colour there; collision bounds stay fixed.
+    const MapData* map = mapFor(realm);
+    ui::setFill(canvas, mapEdgeGround(map));
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
 
@@ -1731,7 +1745,6 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     // like whatever the author painted there, and blocks because of which
     // LAYER it was painted on, and the two are allowed to have nothing to do
     // with each other. Nothing in here reads a Tile.
-    const MapData* map = mapFor(realm);
     if (map == nullptr || map->layers().empty()) return;
 
     const int cols = map->width();
@@ -1759,7 +1772,7 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     // The reader guarantees width*height cells on every layer, and the cell
     // loop indexes on that rather than going through the bounds-checked
     // cellAt() per tile per layer. Checked once here so a malformed map draws
-    // a black realm instead of reading off the end of a layer.
+    // an empty realm instead of reading off the end of a layer.
     const std::size_t cellCount = static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows);
     for (const TiledLayer& layer : map->layers()) {
         if (layer.cells.size() != cellCount) return;

@@ -1422,3 +1422,125 @@ TEST(owner_cursor_preempts_lower_grabs_and_can_drag_admins_but_not_owners) {
     h.step(2, all);
     CHECK_EQ(boss->cursorDragged, NULL_ENTITY);
 }
+
+namespace {
+std::string cursorWallWorld(const std::string& name) {
+    return stageDataDir(name, {{"meadow", fixtureMap(12, 12,
+        fixtureDoor("meadow", "Meadow", 4*kTileSize, 4*kTileSize, kTileSize, kTileSize, true),
+        {}, {}, [](int x, int y) { return x == 0 || y == 0 || x == 11 || y == 11 || x == 6; })}});
+}
+}
+
+TEST(admin_phase_toggle_and_cursor_teleport_validate_equipment_authority_and_edges) {
+    const std::string dir = cursorWallWorld("cursor-teleport");
+    Harness h("cursor-teleport", [](const std::string& path) {
+        seedUsers(path, {"boss", "visitor"}, {"boss"});
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    NetClient boss, visitor;
+    const std::vector<NetClient*> all{&boss, &visitor};
+    CHECK(enterWorld(h, all, {"boss", "visitor"}, {"Boss", "Visitor"}));
+    Session* session = GameServerPeer::sessionOf(h.server, "boss");
+    if (!session) { CHECK(false); removeDataDir(dir); return; }
+    World& world = h.server.world();
+    const Entity flower = session->entity;
+    protect(world, flower);
+    const Vec2 start{5.5*kTileSize, 5.5*kTileSize};
+    const Vec2 through{7.25*kTileSize, 5.5*kTileSize};
+    const Vec2 wall{6.5*kTileSize, 5.5*kTileSize};
+    world.get<Transform>(flower).position = start;
+    std::uint32_t sequence = 0;
+    const auto point = [&](Vec2 at, std::uint8_t flags) {
+        const Vec2 delta = at - world.get<Transform>(flower).position;
+        net::InputFrame frame;
+        frame.sequence = ++sequence;
+        frame.aimDistance = static_cast<std::uint16_t>(std::round(delta.length()));
+        frame.aimAngle = delta.angle();
+        frame.flags = flags;
+        boss.sendInput(frame);
+        h.step(2, all);
+    };
+    point(through, net::InputAdminTeleport);
+    CHECK(distance(world.get<Transform>(flower).position, start) < 1);
+    point(start, 0);
+    world.get<Loadout>(flower).slots[0] = LoadoutSlot{content().petalIndex("cursor"), Rarity::Admin, 0, false};
+    session->admin = false;
+    point(through, net::InputAdminTeleport);
+    CHECK(distance(world.get<Transform>(flower).position, start) < 1);
+    session->admin = true;
+    point(through, net::InputAdminTeleport); // A held key cannot activate on promotion.
+    CHECK(distance(world.get<Transform>(flower).position, start) < 1);
+    point(start, 0);
+    point(through, net::InputAdminTeleport);
+    CHECK(distance(world.get<Transform>(flower).position, through) < 2);
+    h.step(30, all);
+    CHECK(distance(world.get<Transform>(flower).position, through) < 2);
+    point(through, 0);
+    point(wall, net::InputAdminTeleport);
+    CHECK(!h.server.terrain().blocked(world.get<Transform>(flower).position, session->realm));
+    CHECK(say(h, boss, "/admin phase"));
+    CHECK(world.get<PlayerInput>(flower).adminPhase);
+    world.get<Transform>(flower).position = wall;
+    h.step(2, all);
+    CHECK(h.server.terrain().blocked(world.get<Transform>(flower).position, session->realm));
+    CHECK(say(h, boss, "/admin phase"));
+    CHECK(!world.get<PlayerInput>(flower).adminPhase);
+    CHECK(!h.server.terrain().blocked(world.get<Transform>(flower).position, session->realm));
+    CHECK(say(h, boss, "/admin phase on"));
+    world.get<Transform>(flower).position = wall;
+    session->admin = false;
+    h.step(2, all);
+    CHECK(!world.get<PlayerInput>(flower).adminPhase);
+    CHECK(!h.server.terrain().blocked(world.get<Transform>(flower).position, session->realm));
+    CHECK(say(h, visitor, "/admin phase"));
+    Session* ordinary = GameServerPeer::sessionOf(h.server, "visitor");
+    CHECK(ordinary && !world.get<PlayerInput>(ordinary->entity).adminPhase);
+    removeDataDir(dir);
+}
+
+TEST(admin_cursor_can_drag_players_through_walls_and_release_on_open_ground) {
+    const std::string dir = cursorWallWorld("cursor-wall-drag");
+    Harness h("cursor-wall-drag", [](const std::string& path) {
+        seedUsers(path, {"boss", "visitor"}, {"boss"});
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    NetClient boss, visitor;
+    const std::vector<NetClient*> all{&boss, &visitor};
+    CHECK(enterWorld(h, all, {"boss", "visitor"}, {"Boss", "Visitor"}));
+    Session* admin = GameServerPeer::sessionOf(h.server, "boss");
+    Session* target = GameServerPeer::sessionOf(h.server, "visitor");
+    if (!admin || !target) { CHECK(false); removeDataDir(dir); return; }
+    World& world = h.server.world();
+    const Vec2 start{5.5*kTileSize, 5.5*kTileSize};
+    const Vec2 wall{6.5*kTileSize, 5.5*kTileSize};
+    const Vec2 beyond{7.25*kTileSize, 5.5*kTileSize};
+    world.get<Transform>(admin->entity).position = start;
+    world.get<Transform>(target->entity).position = {5.75*kTileSize, start.y};
+    protect(world, admin->entity);
+    protect(world, target->entity);
+    world.get<Loadout>(admin->entity).slots[0] = LoadoutSlot{content().petalIndex("cursor"), Rarity::Admin, 0, false};
+    std::uint32_t sequence = 0;
+    const auto point = [&](Vec2 at, bool drag) {
+        const Vec2 delta = at - world.get<Transform>(admin->entity).position;
+        net::InputFrame frame;
+        frame.sequence = ++sequence;
+        frame.aimAngle = delta.angle();
+        frame.aimDistance = static_cast<std::uint16_t>(std::round(delta.length()));
+        frame.flags = drag ? net::InputAdminDrag : 0;
+        boss.sendInput(frame);
+        h.step(2, all);
+    };
+    point(world.get<Transform>(target->entity).position, true);
+    CHECK_EQ(admin->cursorDragged, target->entity);
+    point(wall, true);
+    CHECK(distance(world.get<Transform>(target->entity).position, wall) < 2);
+    CHECK(h.server.terrain().blocked(world.get<Transform>(target->entity).position, target->realm));
+    point(beyond, true);
+    CHECK(distance(world.get<Transform>(target->entity).position, beyond) < 2);
+    point(wall, true);
+    point(wall, false);
+    CHECK_EQ(admin->cursorDragged, NULL_ENTITY);
+    CHECK(!h.server.terrain().blocked(world.get<Transform>(target->entity).position, target->realm));
+    CHECK(!world.get<PlayerInput>(target->entity).adminPhase);
+    removeDataDir(dir);
+}

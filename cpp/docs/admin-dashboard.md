@@ -395,7 +395,8 @@ the grab. Their keyboard remains their own; this does not grant control of it.
 
 ### Hel Casino
 
-Hel has a stationary casino NPC, marked by a gold dot on its minimap. Stand
+Hel's casino NPC is currently removed from the map upstream while it is polished.
+When placed, it is stationary and marked by a gold dot on the minimap. Stand
 beside it and use `/casino` for the rules and balance, `/casino buy <stars>`
 for chips (10 per star), `/casino cashout <chips>` in multiples of 10,
 `/casino flip <chips> <heads|tails>` or `/casino plinko <chips>`.
@@ -443,3 +444,21 @@ from `/admin control`; equal Owners cannot steal each other's grabs.
 
 These rights come from the existing server-held Owner flag, with the usual
 Admin Cursor equipment requirement. No username or new rank grants them.
+
+### Cursor teleport and phase
+
+With an Admin-rarity Cursor equipped, **Shift + =** teleports your active
+flower to the pointer in its current realm. Each press teleports once; holding
+cannot repeat. The existing admin tier/equipment checks apply on the server.
+Teleporting releases your own grab. Terrain resolves the destination onto
+open ground unless you enabled phase. Both Cursor chords claim their keys
+before zoom/menu bindings; plain Minus and Equals still zoom normally, and
+Ctrl/Cmd shortcuts and text entry do not activate Cursor actions.
+
+`/admin phase [on|off|toggle]` toggles passing through walls for your current
+flower and both splitter halves. Normal combat still applies. Phase ends
+on respawn or loss of admin access, and turning it off resolves you out of
+solid terrain. Map bounds remain enforced. Cursor dragging can carry players
+through walls too; release restores normal collision without enabling phase
+on the target. The map background extends beyond its visible edge instead
+of rendering a black void.
