@@ -1065,6 +1065,11 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // A summoning shot -- the spaceship's -- is only SEEN landing by combat;
     // the summon is the ring's, made once combat has stopped walking the world.
     petals_->landShots(world_, content(), combat_->shotLandings(), terrain_.get());
+    // So is a C++ a yin yang landed on; the C-- it becomes is the spawner's.
+    for (const MobConversion& conversion : combat_->conversions()) {
+        spawning_->convertMob(world_, *terrain_, content(), conversion.mob, conversion.into,
+                              nowMillis, rng_);
+    }
     markTickPhase("combat");
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,
                    net::kTickSeconds, commands_);

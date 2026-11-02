@@ -1823,6 +1823,7 @@ void CombatSystem::beginTick(World& world, double nowMillis, double dt, EventQue
     events_ = &events;
     deaths_.clear();
     shotLandings_.clear();
+    conversions_.clear();
     ++tick_;
 
     // Standing damage first, so a mob that was already dying from poison is
@@ -2329,6 +2330,10 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
             source.damage *= tomatoGrowth(nowMillis - petal.spawnedAtMillis);
         }
         if (petalShredsShots(config)) source.shotDamageScale = kPlankShotDamageScale;
+        if (petalInvertsCpp(config)) {
+            source.convertsFrom = content.mobIndex(kCppMobId);
+            source.convertsInto = content.mobIndex(kCMinusMobId);
+        }
         // The flower's damage bonus is a property of the flower, not of the
         // petal entity, so it is read here rather than baked in at spawn --
         // swapping a damage petal in must affect the ring on the same tick.
@@ -2597,6 +2602,22 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 // cannot counter the one thing it exists to counter. `landed`
                 // covers that -- a swing of nothing is still a swing.
                 applyArmorShred(world, victim, source.armorReduction, nowMillis);
+            }
+
+            // A yin yang turns a C++ it lands on into a C--. Queued, never
+            // done here: the swap destroys this victim and creates another
+            // while this loop is still walking the broadphase's answer. Not
+            // a pet, whose owner and slot the spawner knows nothing of; not
+            // a killing blow, which leaves a corpse and its loot instead.
+            if (landed && !hit.killed && source.convertsFrom != kInvalidIndex &&
+                source.convertsInto != kInvalidIndex && !world.has<Pet>(victim)) {
+                const MobType* type = world.tryGet<MobType>(victim);
+                const bool queued =
+                    std::any_of(conversions_.begin(), conversions_.end(),
+                                [&](const MobConversion& c) { return c.mob == victim; });
+                if (type != nullptr && type->configIndex == source.convertsFrom && !queued) {
+                    conversions_.push_back({victim, source.convertsInto});
+                }
             }
 
             // Fang: the flower drinks a fraction of what the hit actually took

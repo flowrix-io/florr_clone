@@ -6,6 +6,7 @@
 #include "server/game_server.h"
 #include "server/systems/mob_ai.h"
 #include "server/systems/petals.h"
+#include "server/systems/spawning.h"
 #include "server_harness.h"
 #include "shared/game/config.h"
 
@@ -1894,6 +1895,87 @@ TEST(spaceship_shots_bring_at_most_three_glitch_flowers_through_the_real_server_
         return world.isAlive(oldest) && !now.empty() && now.back() == oldest;
     }, 1500));
     CHECK_EQ(most, 3);
+}
+
+TEST(a_yin_yang_turns_a_cpp_into_a_cminus_through_the_real_server_loop) {
+    // Combat books the hit and the spawner makes the swap, each tested on its
+    // own; this runs a ring of yin yangs into a C++ through the server's tick
+    // and asks the client what it now sees.
+    Harness h("yin-yang", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(flix::testsupport::loginNew(h, client, "taijitu", "long-enough-password"));
+    client.joinGame(1280, 720);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity player = NULL_ENTITY;
+    Query<PlayerTag> players{world};
+    players.each([&](Entity e, PlayerTag&) { player = e; });
+    CHECK(player != NULL_ENTITY);
+    if (player == NULL_ENTITY) return;
+    world.get<Health>(player).invulnerableUntilMillis = 1e18;
+    const Realm realm = world.get<Transform>(player).realm;
+    Loadout& loadout = world.get<Loadout>(player);
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        LoadoutSlot& slot = loadout.slots[static_cast<std::size_t>(i)];
+        slot.configIndex = content().petalIndex("yin_yang");
+        slot.rarity = Rarity::Common;
+    }
+
+    // A C++ comes out of the computer group, one roll in a hundred, so a
+    // spawner-made mob is made one: the component set it arrives with is the
+    // spawner's, the type is the only thing set here.
+    const std::uint16_t cpp = content().mobIndex("c++");
+    const std::uint16_t cMinus = content().mobIndex("c--");
+    CHECK(cpp != kInvalidIndex && cMinus != kInvalidIndex);
+    Entity mob = NULL_ENTITY;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<MobTag, Transform, AmbientMob> mobs{world};
+        mobs.without<Pet, BodySegment, Intangible, MobPetalRing, Spawner, NestWaves>();
+        mobs.each([&](Entity e, MobTag&, Transform& transform, AmbientMob&) {
+            if (mob == NULL_ENTITY && transform.realm == realm) mob = e;
+        });
+        return mob != NULL_ENTITY;
+    }, 400));
+    if (mob == NULL_ENTITY) return;
+    world.get<MobType>(mob).configIndex = cpp;
+    world.get<Replicated>(mob).typeIndex = cpp;
+    // Too tough to die, so the ring's hits turn it rather than kill it.
+    world.get<Health>(mob) = Health{1e15, 1e15, 0.0, 0.0};
+    const std::uint32_t cppNetId = world.get<NetId>(mob).value;
+
+    Vec2 last;
+    CHECK(h.stepUntil({&client}, [&] {
+        if (!world.isAlive(mob)) return true;
+        last = world.get<Transform>(player).position + Vec2{70.0, 0.0};
+        world.get<Transform>(mob).position = last;
+        if (Motion* motion = world.tryGet<Motion>(mob)) motion->velocity = {0, 0};
+        return false;
+    }, 600));
+    CHECK(!world.isAlive(mob));
+
+    // A C-- stands where the C++ was, owing the flower that hit it.
+    Entity turned = NULL_ENTITY;
+    Query<MobTag, MobType, Transform> mobs{world};
+    mobs.each([&](Entity e, MobTag&, MobType& type, Transform& transform) {
+        if (type.configIndex == cMinus && distance(transform.position, last) < 100.0) turned = e;
+    });
+    CHECK(turned != NULL_ENTITY);
+    if (turned == NULL_ENTITY) return;
+    CHECK(!world.has<Dead>(turned));
+    CHECK(world.get<Bounty>(turned).contributors.size() == 1);
+    // The ring is still on it, and the client has a second to see it yet.
+    world.get<Health>(turned) = Health{1e15, 1e15, 0.0, 0.0};
+
+    // And the client sees the swap: the C++ gone, a C-- in its place.
+    const std::uint32_t turnedNetId = world.get<NetId>(turned).value;
+    CHECK(h.stepUntil({&client}, [&] {
+        const auto& seen = client.view().entities();
+        const auto now = seen.find(turnedNetId);
+        return seen.find(cppNetId) == seen.end() && now != seen.end() &&
+               now->second.typeIndex == cMinus;
+    }, 30));
 }
 
 TEST(inventory_packet_flood_shares_a_budget_across_opcodes_and_recovers) {

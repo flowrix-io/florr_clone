@@ -1292,6 +1292,66 @@ TEST(an_operators_killall_refills_the_screen_it_cleared_within_a_second) {
     CHECK(refilledTotal >= awakeTotal * 3 / 4);
 }
 
+TEST(a_mob_turned_into_another_is_the_same_animal_in_the_same_bands_slot) {
+    // What a yin yang does to a C++ (SpawnSystem::convertMob). A band names
+    // no C++ -- it comes out of the computer group -- so a band's bee stands
+    // in for one: what is pinned is the swap, whatever the two mobs are.
+    const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{kCentre};
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+    const auto population = [&] { return sim.mobCount() + static_cast<int>(sim.latent().size()); };
+    const int stocked = population();
+
+    Entity bee = NULL_ENTITY;
+    Query<MobTag, AmbientMob> mobs{sim.world};
+    mobs.each([&](Entity e, MobTag&, AmbientMob& ambient) {
+        if (bee == NULL_ENTITY && ambient.zone != kInvalidIndex) bee = e;
+    });
+    CHECK(bee != NULL_ENTITY);
+    if (bee == NULL_ENTITY) return;
+    const Entity flower = makePlayer(sim.world, kCentre);
+    sim.world.get<Bounty>(bee).credit(flower, 42.0);
+    Health& wounds = sim.world.get<Health>(bee);
+    wounds.current = wounds.max * 0.25;
+    const Rarity tier = sim.world.get<MobType>(bee).rarity;
+    const Vec2 at = sim.world.get<Transform>(bee).position;
+    const AmbientMob slot = sim.world.get<AmbientMob>(bee);
+
+    const std::uint16_t cMinus = shipped().mobIndex("c--");
+    CHECK(cMinus != kInvalidIndex);
+    const Entity turned =
+        sim.spawner.convertMob(sim.world, sim.terrain, shipped(), bee, cMinus, sim.now, sim.rng);
+    CHECK(turned != NULL_ENTITY);
+    if (turned == NULL_ENTITY) return;
+    CHECK(!sim.world.isAlive(bee));
+    CHECK_EQ(sim.world.get<MobType>(turned).configIndex, cMinus);
+    CHECK(sim.world.get<MobType>(turned).rarity == tier);
+    CHECK_NEAR(distance(sim.world.get<Transform>(turned).position, at), 0.0, 1e-9);
+    CHECK_NEAR(sim.world.get<Health>(turned).fraction(), 0.25, 1e-9);
+    const std::vector<Bounty::Share>& ledger = sim.world.get<Bounty>(turned).contributors;
+    CHECK_EQ(ledger.size(), std::size_t(1));
+    if (ledger.size() == 1) {
+        CHECK_EQ(ledger[0].player, flower);
+        CHECK_NEAR(ledger[0].damage, 42.0, 1e-9);
+    }
+    CHECK_EQ(sim.world.get<AmbientMob>(turned).zone, slot.zone);
+    CHECK_EQ(sim.world.get<AmbientMob>(turned).spawnOrder, slot.spawnOrder);
+
+    // The band does not read the bee as one that vanished and refill it: the
+    // C-- holds its slot.
+    for (int i = 0; i < net::kTicksPerSecond; ++i) sim.tick(players);
+    CHECK_EQ(population(), stocked);
+
+    // Nothing to turn once it is gone.
+    CHECK_EQ(sim.spawner.convertMob(sim.world, sim.terrain, shipped(), bee, cMinus, sim.now,
+                                    sim.rng),
+             NULL_ENTITY);
+}
+
 TEST(no_part_of_a_waking_animal_lands_in_a_flowers_lap) {
     // The lap test has to measure what actually appears. Not the nominal
     // radius -- the size roll comes after the test -- and not the head alone:
