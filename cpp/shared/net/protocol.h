@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 71;
+inline constexpr std::uint16_t kProtocolVersion = 72;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -241,16 +241,15 @@ enum class ClientMessage : std::uint8_t {
 enum class ServerMessage : std::uint8_t {
     Welcome = 1,        ///< u16 protocolVersion, u8 accepted, str reason
     AuthResult,         ///< u8 status(AuthStatus), str token, str username, str reason
-    Profile,            ///< u32 revision (see ProfileDelta), str username,
-                        ///< u8 accountFlags (AccountFlags), then
-                        ///< the full account state: xp, level, stars, inventory, loadout,
-                        ///< the talent tree and the mob-kill ledger,
-                        ///< then u32 milliseconds until the account may craft
-                        ///< at an oracle again (0 when it may now), u32 the
-                        ///< same until it may trade at a trader, and last
-                        ///< u8 count, { u8 preset, u8 slotCount,
-                        ///< { u16 itemType, u8 rarity }* }* -- the saved
-                        ///< loadouts (loadoutPresetName), only those that exist
+    Profile,            ///< The whole account: u32 revision (see
+                        ///< ProfileDelta), f64 xp, u16 level, f64 stars, every
+                        ///< ProfileSection in bit order, then u16 stacks,
+                        ///< { u16 itemType, u8 rarity, u32 count }*, and the
+                        ///< mob-kill ledger, u16 kills, { u16 mobIndex, u8
+                        ///< rarity, u32 count }*. REPLACES whatever the client
+                        ///< held. Sent at sign-in and as the repair for a
+                        ///< client that drifted; any other change goes as a
+                        ///< ProfileDelta. (Layout, version 72.)
     JoinAccepted,       ///< u32 selfNetId, f32 x, f32 y, u32 tick, i64 mazeDay,
                         ///< MapGrid (see below). `mazeDay` is the maze the
                         ///< server is playing, so the client builds the same
@@ -434,21 +433,23 @@ enum class ServerMessage : std::uint8_t {
                         ///< to another map also gets, so the frame the iris
                         ///< closes over is still the one from before it.
                         ///< (Version 62.)
-    ProfileDelta,       ///< What kills and pickups changed since the last
-                        ///< Profile or delta, instead of the whole account
-                        ///< again: u32 revision, f64 xp, u16 level, f64 stars
-                        ///< (the Profile's own header fields), u16 groups,
+    ProfileDelta,       ///< What changed since the last Profile or delta,
+                        ///< instead of the whole account again: u32 revision,
+                        ///< f64 xp, u16 level, f64 stars (the Profile's own
+                        ///< header fields), u8 sections (ProfileSection bits),
+                        ///< those sections in bit order, then u16 groups,
                         ///< { u16 itemType, u8 rarity, u8 n, { u32 count }*n }*,
                         ///< u16 kills, { u16 mobIndex, u8 rarity, u32 count }*.
-                        ///< A group REPLACES every stack the client holds of
-                        ///< that petal and rarity with the n listed, which is
-                        ///< what the whole Profile would carry for it now --
-                        ///< n = 0 when none is left. A kill cell is the
-                        ///< ledger's new count. Applied, it leaves the client
-                        ///< exactly where that Profile would. `revision` counts
-                        ///< Profiles and deltas together, per connection, from
-                        ///< 1; ProfileCheck reports the last one applied.
-                        ///< (Version 66.)
+                        ///< A section REPLACES the client's copy of it; one
+                        ///< left out is unchanged. A group REPLACES every stack
+                        ///< the client holds of that petal and rarity with the
+                        ///< n listed, which is what the whole Profile would
+                        ///< carry for it now -- n = 0 when none is left. A kill
+                        ///< cell is the ledger's new count. Applied, it leaves
+                        ///< the client exactly where that Profile would.
+                        ///< `revision` counts Profiles and deltas together, per
+                        ///< connection, from 1; ProfileCheck reports the last
+                        ///< one applied. (Version 66; sections, version 72.)
     SkinVotes,          ///< str skinId, u32 likes, u32 dislikes -- broadcast
                         ///< whenever a vote moves a skin's tally, so every
                         ///< Browse tab shows the same counts. (Version 70.)
@@ -509,6 +510,24 @@ enum AccountFlags : std::uint8_t {
     /// server keeps to itself -- so the session token is the only way into the
     /// account, and ChangePassword does not ask for the current one.
     kAccountNoPassword = 1u << 1,
+};
+
+/// The small parts of a Profile, which a ProfileDelta carries only when they
+/// changed. A Profile carries all of them, in this order. (Version 72.)
+enum ProfileSection : std::uint8_t {
+    /// str username, u8 accountFlags (AccountFlags).
+    kProfileIdentity = 1u << 0,
+    /// The bar: u8 slotCount, { u16 itemType, u8 rarity }*.
+    kProfileBar = 1u << 1,
+    /// The talent tree, bought branches only: u16 count, { u8 skill, u8 tier }*.
+    kProfileSkills = 1u << 2,
+    /// u32 milliseconds until the account may craft at an oracle again (0
+    /// when it may now), u32 the same until it may trade at a trader.
+    kProfileWaits = 1u << 3,
+    /// The saved loadouts (loadoutPresetName), only those that exist: u8
+    /// count, { u8 preset, u8 slotCount, { u16 itemType, u8 rarity }* }*.
+    kProfilePresets = 1u << 4,
+    kProfileAllSections = 0x1F,
 };
 
 /// Which shop action a ShopResult answers.

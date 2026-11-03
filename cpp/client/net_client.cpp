@@ -1303,16 +1303,82 @@ void NetClient::handleAuthResult(ByteReader& reader) {
     }
 }
 
+namespace {
+
+/// One ProfileSection off the wire into `profile`, which it replaces there.
+/// Shared by the Profile, which carries every section, and the ProfileDelta,
+/// which carries the ones that changed.
+void readProfileSection(ByteReader& reader, std::uint8_t section, Profile& profile) {
+    switch (section) {
+        case net::kProfileIdentity: {
+            profile.username = reader.str();
+            const std::uint8_t accountFlags = reader.u8();
+            profile.guest = (accountFlags & net::kAccountGuest) != 0;
+            profile.hasPassword = (accountFlags & net::kAccountNoPassword) == 0;
+            break;
+        }
+        case net::kProfileBar: {
+            const std::uint8_t slotCount = reader.u8();
+            profile.loadout.clear();
+            profile.loadout.reserve(slotCount);
+            for (std::uint8_t i = 0; i < slotCount; ++i) {
+                Profile::Slot slot;
+                slot.petalIndex = reader.u16();
+                slot.rarity = clampRarity(reader.u8());
+                profile.loadout.push_back(slot);
+            }
+            break;
+        }
+        case net::kProfileSkills: {
+            profile.skills = SkillSet{};
+            const std::uint16_t skillCount = reader.u16();
+            for (std::uint16_t i = 0; i < skillCount; ++i) {
+                const std::uint8_t id = reader.u8();
+                const std::uint8_t tier = reader.u8();
+                if (id < kSkillCount && tier < kLadderRarityCount) {
+                    profile.skills.set(static_cast<SkillId>(id), tier);
+                }
+            }
+            break;
+        }
+        case net::kProfileWaits:
+            profile.oracleCooldownMillis = reader.u32();
+            profile.traderCooldownMillis = reader.u32();
+            break;
+        case net::kProfilePresets: {
+            for (std::vector<Profile::Slot>& preset : profile.presets) preset.clear();
+            const std::uint8_t presetCount = reader.u8();
+            for (std::uint8_t i = 0; i < presetCount; ++i) {
+                const std::uint8_t preset = reader.u8();
+                const std::uint8_t presetSlots = reader.u8();
+                std::vector<Profile::Slot> slots;
+                slots.reserve(presetSlots);
+                for (std::uint8_t s = 0; s < presetSlots; ++s) {
+                    Profile::Slot slot;
+                    slot.petalIndex = reader.u16();
+                    slot.rarity = clampRarity(reader.u8());
+                    slots.push_back(slot);
+                }
+                if (preset < kLoadoutPresetCount) profile.presets[preset] = std::move(slots);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+} // namespace
+
 void NetClient::handleProfile(ByteReader& reader) {
     Profile next;
     next.revision = reader.u32();
-    next.username = reader.str();
-    const std::uint8_t accountFlags = reader.u8();
-    next.guest = (accountFlags & net::kAccountGuest) != 0;
-    next.hasPassword = (accountFlags & net::kAccountNoPassword) == 0;
     next.totalXp = reader.f64();
     next.level = reader.u16();
     next.stars = reader.f64();
+    for (std::uint8_t section = 1; section & net::kProfileAllSections; section <<= 1) {
+        readProfileSection(reader, section, next);
+    }
 
     const std::uint16_t stackCount = reader.u16();
     next.inventory.reserve(stackCount);
@@ -1324,24 +1390,6 @@ void NetClient::handleProfile(ByteReader& reader) {
         next.inventory.push_back(stack);
     }
 
-    const std::uint8_t slotCount = reader.u8();
-    next.loadout.reserve(slotCount);
-    for (std::uint8_t i = 0; i < slotCount; ++i) {
-        Profile::Slot slot;
-        slot.petalIndex = reader.u16();
-        slot.rarity = clampRarity(reader.u8());
-        next.loadout.push_back(slot);
-    }
-
-    const std::uint16_t skillCount = reader.u16();
-    for (std::uint16_t i = 0; i < skillCount; ++i) {
-        const std::uint8_t id = reader.u8();
-        const std::uint8_t tier = reader.u8();
-        if (id < kSkillCount && tier < kLadderRarityCount) {
-            next.skills.set(static_cast<SkillId>(id), tier);
-        }
-    }
-
     next.mobKills.assign(content().mobCount() * kRarityCount, 0);
     const std::uint16_t killEntries = reader.u16();
     for (std::uint16_t i = 0; i < killEntries; ++i) {
@@ -1350,23 +1398,6 @@ void NetClient::handleProfile(ByteReader& reader) {
         const std::uint32_t count = reader.u32();
         const std::size_t at = static_cast<std::size_t>(mobIndex) * kRarityCount + rarityIndex(rarity);
         if (at < next.mobKills.size()) next.mobKills[at] = count;
-    }
-    next.oracleCooldownMillis = reader.u32();
-    next.traderCooldownMillis = reader.u32();
-
-    const std::uint8_t presetCount = reader.u8();
-    for (std::uint8_t i = 0; i < presetCount; ++i) {
-        const std::uint8_t preset = reader.u8();
-        const std::uint8_t presetSlots = reader.u8();
-        std::vector<Profile::Slot> slots;
-        slots.reserve(presetSlots);
-        for (std::uint8_t s = 0; s < presetSlots; ++s) {
-            Profile::Slot slot;
-            slot.petalIndex = reader.u16();
-            slot.rarity = clampRarity(reader.u8());
-            slots.push_back(slot);
-        }
-        if (preset < kLoadoutPresetCount) next.presets[preset] = std::move(slots);
     }
 
     // Replace wholesale only once the whole message decoded. A partially
@@ -1382,6 +1413,13 @@ void NetClient::handleProfileDelta(ByteReader& reader) {
     const double totalXp = reader.f64();
     const int level = reader.u16();
     const double stars = reader.f64();
+    // The sections it carries, read into a scratch profile and copied over
+    // only once the whole message has decoded.
+    const std::uint8_t sections = reader.u8();
+    Profile head;
+    for (std::uint8_t section = 1; section & net::kProfileAllSections; section <<= 1) {
+        if (sections & section) readProfileSection(reader, section, head);
+    }
 
     struct Group {
         std::uint16_t petalIndex;
@@ -1413,6 +1451,21 @@ void NetClient::handleProfileDelta(ByteReader& reader) {
     profile_.totalXp = totalXp;
     profile_.level = level;
     profile_.stars = stars;
+    if (sections & net::kProfileIdentity) {
+        profile_.username = std::move(head.username);
+        profile_.guest = head.guest;
+        profile_.hasPassword = head.hasPassword;
+    }
+    if (sections & net::kProfileBar) profile_.loadout = std::move(head.loadout);
+    if (sections & net::kProfileSkills) profile_.skills = head.skills;
+    if (sections & net::kProfileWaits) {
+        profile_.oracleCooldownMillis = head.oracleCooldownMillis;
+        profile_.traderCooldownMillis = head.traderCooldownMillis;
+        oracleReadyAtMillis_ = renderClockMillis() + static_cast<double>(profile_.oracleCooldownMillis);
+        traderReadyAtMillis_ = renderClockMillis() + static_cast<double>(profile_.traderCooldownMillis);
+    }
+    if (sections & net::kProfilePresets) profile_.presets = std::move(head.presets);
+
     std::vector<Profile::Stack>& bag = profile_.inventory;
     for (const Group& group : groups) {
         // The group's stacks become exactly the ones listed. Overwritten in

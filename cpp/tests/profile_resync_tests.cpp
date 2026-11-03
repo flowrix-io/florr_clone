@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <functional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "client/net_client.h"
@@ -469,4 +470,116 @@ TEST(a_delta_restates_every_stack_a_legacy_bag_keeps_for_one_petal) {
     for (const std::uint32_t count : held()) total += count;
     CHECK_EQ(total, 6u);
     CHECK(!checkBroughtProfile(h, client));
+}
+
+namespace {
+
+/// Everything a Profile tells the client, compared the way the client uses
+/// it: the bag in any order, the rest as it stands.
+bool sameAccount(const Profile& a, const Profile& b) {
+    const auto bag = [](const Profile& p) {
+        std::vector<std::tuple<std::uint16_t, int, std::uint32_t>> stacks;
+        for (const Profile::Stack& s : p.inventory) {
+            stacks.emplace_back(s.petalIndex, rarityIndex(s.rarity), s.count);
+        }
+        std::sort(stacks.begin(), stacks.end());
+        return stacks;
+    };
+    const auto sameSlots = [](const std::vector<Profile::Slot>& x, const std::vector<Profile::Slot>& y) {
+        return std::equal(x.begin(), x.end(), y.begin(), y.end(),
+                          [](const Profile::Slot& l, const Profile::Slot& r) {
+                              return l.petalIndex == r.petalIndex && l.rarity == r.rarity;
+                          });
+    };
+    if (a.username != b.username || a.guest != b.guest || a.hasPassword != b.hasPassword) return false;
+    if (a.totalXp != b.totalXp || a.level != b.level || a.stars != b.stars) return false;
+    if (bag(a) != bag(b) || !sameSlots(a.loadout, b.loadout)) return false;
+    if (a.skills.tier != b.skills.tier || a.mobKills != b.mobKills) return false;
+    for (std::size_t i = 0; i < a.presets.size(); ++i) {
+        if (!sameSlots(a.presets[i], b.presets[i])) return false;
+    }
+    return true;
+}
+
+} // namespace
+
+TEST(account_changes_are_told_as_deltas_that_leave_the_client_holding_the_profile) {
+    // Every equip, swap, preset and talent used to answer with the whole
+    // Profile -- the bag and the kill ledger again, 8 to 14 KB for a veteran
+    // -- so a player sorting their bar spent more on Profiles than on
+    // snapshots. Each now answers with what it changed, and the client that
+    // applies them all holds exactly what the whole Profile then says.
+    Harness h("resync-actions", [](const std::string& path) {
+        seedTinkerer(path, [](PlayerRecord& record) {
+            // A veteran's bag and ledger, so the whole Profile is big. The
+            // server has not loaded its content yet, so this reads its own.
+            const ContentRegistry& shipped = shippedContent();
+            for (std::size_t i = 0; i < shipped.petalCount(); ++i) {
+                const std::string key = "petal_" + shipped.petal(static_cast<std::uint16_t>(i)).id;
+                record.addItem(Rarity::Common, key, 3);
+                record.addItem(Rarity::Rare, key, 2);
+            }
+            for (std::size_t i = 0; i < shipped.mobCount(); ++i) {
+                record.recordKill(shipped.mob(static_cast<std::uint16_t>(i)).id, Rarity::Common);
+            }
+            record.addItem(Rarity::Legendary, "petal_light", 1);
+            record.loadout[0] = petal("basic", Rarity::Common);
+        });
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    const std::uint16_t light = content().petalIndex("light");
+    if (light == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(login(h, client));
+    h.step(kSettleTicks, {&client});
+    const std::uint32_t whole = takeIncoming(client, "profile");
+    CHECK(whole > 1000u);
+
+    // Each answer is a delta, and a small one.
+    const auto answeredByDelta = [&](const std::function<bool(const Profile&)>& done) {
+        if (!awaitProfile(h, client, done)) return false;
+        h.step(kPromptTicks, {&client});
+        std::uint32_t in = 0, out = 0;
+        std::vector<NetClient::WireEvent> top;
+        client.takeWireStats(in, out, top, 64);
+        std::uint32_t full = 0, delta = 0;
+        for (const NetClient::WireEvent& event : top) {
+            if (!event.incoming) continue;
+            if (std::string(event.name) == "profile") full += event.bytes;
+            if (std::string(event.name) == "profileDelta") delta += event.bytes;
+        }
+        return full == 0 && delta > 0 && delta < whole / 4;
+    };
+
+    // The last legendary light onto the bar: its stack leaves the bag.
+    client.setLoadoutSlot(1, light, Rarity::Legendary);
+    CHECK(answeredByDelta([&](const Profile& p) {
+        return p.loadout[1].petalIndex == light && p.stackCount(light, Rarity::Legendary) == 0u;
+    }));
+    client.swapLoadoutSlots(0, 1);
+    CHECK(answeredByDelta([&](const Profile& p) { return p.loadout[0].petalIndex == light; }));
+    client.swapLoadoutRows();
+    CHECK(answeredByDelta([&](const Profile& p) { return p.loadout[10].petalIndex == light; }));
+    client.saveLoadoutPreset(3);
+    CHECK(answeredByDelta([&](const Profile& p) { return p.presets[3].size() > 10; }));
+    client.requestUpgradeSkill(SkillId::Damage, 0);
+    CHECK(answeredByDelta([&](const Profile& p) { return p.skills.level(SkillId::Damage) == 0; }));
+    // And off the bar again: a stack new to the bag.
+    client.setLoadoutSlot(10, kNoPetal, Rarity::Common);
+    CHECK(answeredByDelta([&](const Profile& p) {
+        return p.loadout[10].empty() && p.stackCount(light, Rarity::Legendary) == 1u;
+    }));
+    CHECK(!checkBroughtProfile(h, client));
+
+    // A refusal brings the whole Profile, whatever the client holds; it has to
+    // be what the deltas had already built.
+    const Profile told = client.profile();
+    setHeldCount(client, light, Rarity::Mythic, 3);
+    client.setLoadoutSlot(2, light, Rarity::Mythic);
+    CHECK(h.stepUntil({&client}, [&] { return client.profile().stackCount(light, Rarity::Mythic) == 0u; },
+                      kPromptTicks));
+    CHECK(takeIncoming(client, "profile") > 0u);
+    CHECK(client.profile().revision > told.revision);
+    CHECK(sameAccount(client.profile(), told));
 }

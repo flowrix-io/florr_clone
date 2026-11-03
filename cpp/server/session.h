@@ -135,6 +135,24 @@ struct Session {
     /// when a kill earned no ledger cell this client is shown.
     bool profileDue = false;
 
+    /// What this connection's client was last told, so GameServer::sendProfile
+    /// can send what changed since instead of the whole account. The bag and
+    /// the ledger as sorted (petal or mob, rarity) cells -- the bag's in walk
+    /// order within a cell, the ledger's one per cell, the count the client
+    /// keeps -- and each small section as the bytes it was written as. Not
+    /// `known` until a whole Profile has gone on this connection.
+    struct ProfileShadow {
+        struct Cell {
+            std::uint32_t key = 0;   ///< index << 8 | rarity
+            std::uint32_t count = 0;
+        };
+        bool known = false;
+        std::vector<Cell> stacks;
+        std::vector<Cell> kills;
+        std::vector<std::byte> identity, bar, skills, presets;
+    };
+    ProfileShadow profileShadow;
+
     /// The spawn point this connection asked to start at, from JoinGame.
     ///
     /// One of WorldMaps::spawnChoices()' ids -- a player spawn rectangle on

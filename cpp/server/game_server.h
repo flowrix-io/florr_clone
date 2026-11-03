@@ -867,7 +867,19 @@ private:
     /// session, empty on a refusal.
     void sendChangePasswordResult(net::Connection&, bool ok, const std::string& token,
                                   const std::string& reason);
+    /// Brings the client up to date after the account changed: a ProfileDelta
+    /// of what changed since it was last told (Session::profileShadow), or the
+    /// whole Profile when that would be no larger or nothing has been told.
     void sendProfile(Session&, net::Connection&);
+    /// The whole Profile, whatever the client was told before: the sign-in's,
+    /// and the repair for a client that holds something it was never sent.
+    void sendFullProfile(Session&, net::Connection&);
+    /// Everything a Profile says about the session's account right now, in
+    /// the pieces sendProfile diffs and writeFullProfile writes.
+    struct ProfileParts;
+    void gatherProfile(Session&, ProfileParts&);
+    /// The Profile of `parts`, which it remembers as what the client holds.
+    void writeFullProfile(Session&, net::Connection&, ProfileParts&);
     /// A ProfileDelta to every session a kill or a pickup marked profileDue
     /// since the last snapshot. Called on snapshot ticks only.
     void sendDueProfiles();

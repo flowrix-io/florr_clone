@@ -198,6 +198,87 @@ void forEachProfileKill(const PlayerRecord& record, Visit&& visit) {
     }
 }
 
+using ShadowCell = Session::ProfileShadow::Cell;
+
+/// A bag or ledger cell's key in a ProfileShadow: sorting by it sorts by
+/// petal or mob, then rarity.
+std::uint32_t profileCellKey(std::uint16_t index, Rarity rarity) {
+    return static_cast<std::uint32_t>(index) << 8 | static_cast<std::uint8_t>(rarity);
+}
+
+/// By key, keeping the walk's order inside one: a legacy record's two names
+/// for one petal are two stacks, in the order the Profile wrote them.
+void sortProfileCells(std::vector<ShadowCell>& cells) {
+    std::stable_sort(cells.begin(), cells.end(),
+                     [](const ShadowCell& a, const ShadowCell& b) { return a.key < b.key; });
+}
+
+/// The ledger as the client keeps it: one count a cell, the later of two
+/// entries that land on one.
+void keepLastPerCell(std::vector<ShadowCell>& cells) {
+    sortProfileCells(cells);
+    std::size_t kept = 0;
+    for (std::size_t i = 0; i < cells.size(); ++i) {
+        if (i + 1 < cells.size() && cells[i + 1].key == cells[i].key) continue;
+        cells[kept++] = cells[i];
+    }
+    cells.resize(kept);
+}
+
+/// `visit(key, first, last)` for every key whose run of counts in `next`
+/// differs from its run in `prev`, both sorted by sortProfileCells. The run
+/// `[first, last)` is the key's in `next`, empty when it is gone.
+template <typename Visit>
+void forEachChangedRun(const std::vector<ShadowCell>& prev, const std::vector<ShadowCell>& next,
+                       Visit&& visit) {
+    std::size_t i = 0;
+    std::size_t j = 0;
+    while (i < prev.size() || j < next.size()) {
+        const std::uint32_t key = i == prev.size()   ? next[j].key
+                                  : j == next.size() ? prev[i].key
+                                                     : std::min(prev[i].key, next[j].key);
+        std::size_t iEnd = i;
+        while (iEnd < prev.size() && prev[iEnd].key == key) ++iEnd;
+        std::size_t jEnd = j;
+        while (jEnd < next.size() && next[jEnd].key == key) ++jEnd;
+        const bool same = iEnd - i == jEnd - j &&
+                          std::equal(prev.begin() + static_cast<std::ptrdiff_t>(i),
+                                     prev.begin() + static_cast<std::ptrdiff_t>(iEnd),
+                                     next.begin() + static_cast<std::ptrdiff_t>(j),
+                                     [](const ShadowCell& a, const ShadowCell& b) {
+                                         return a.count == b.count;
+                                     });
+        if (!same) visit(key, next.data() + j, next.data() + jEnd);
+        i = iEnd;
+        j = jEnd;
+    }
+}
+
+/// Puts `counts` where `key`'s run in `cells` was: what a delta group or kill
+/// cell just told the client.
+void replaceProfileRun(std::vector<ShadowCell>& cells, std::uint32_t key,
+                       const std::vector<std::uint32_t>& counts) {
+    auto first = std::lower_bound(cells.begin(), cells.end(), key,
+                                  [](const ShadowCell& c, std::uint32_t k) { return c.key < k; });
+    auto last = first;
+    while (last != cells.end() && last->key == key) ++last;
+    auto at = cells.erase(first, last);
+    for (const std::uint32_t count : counts) at = cells.insert(at, ShadowCell{key, count}) + 1;
+}
+
+/// u16 count, { u16 index, u8 rarity, u32 count }*: the Profile's bag and its
+/// ledger.
+void writeProfileCells(ByteWriter& w, const std::vector<ShadowCell>& cells) {
+    w.u16(static_cast<std::uint16_t>(cells.size()));
+    for (const ShadowCell& cell : cells) {
+        w.u16(static_cast<std::uint16_t>(cell.key >> 8));
+        w.u8(static_cast<std::uint8_t>(cell.key & 0xFF));
+        w.u32(cell.count);
+    }
+}
+
+void appendBytes(ByteWriter& w, const ByteWriter& part) { w.raw(part.data(), part.size()); }
+
 /// Lists `cell` among `due` once.
 void noteDue(std::vector<Session::ProfileCell>& due, std::uint16_t index, Rarity rarity) {
     const Session::ProfileCell cell{index, rarity};
@@ -1720,7 +1801,7 @@ void GameServer::beginNewAccount(Session& session, net::Connection& connection,
     session.stage = SessionStage::Authenticated;
     sendAuthResult(connection, net::AuthStatus::Ok, session.token, session.username, "");
     sendDailyStreak(session, connection);
-    sendProfile(session, connection);
+    sendFullProfile(session, connection);
     sendSkinCatalog(session, connection);
     sendGuildState(session, connection);
     sendChatHistory(connection);
@@ -1773,7 +1854,7 @@ void GameServer::handleLogin(Session& session, net::Connection& connection, Byte
     session.stage = SessionStage::Authenticated;
     sendAuthResult(connection, net::AuthStatus::Ok, session.token, account->username, "");
     sendDailyStreak(session, connection);
-    sendProfile(session, connection);
+    sendFullProfile(session, connection);
     sendSkinCatalog(session, connection);
     sendGuildState(session, connection);
     sendChatHistory(connection);
@@ -1818,7 +1899,7 @@ void GameServer::handleResume(Session& session, net::Connection& connection, Byt
     session.adminTier = account != nullptr ? account->adminTier : kTopAdminTier;
     sendAuthResult(connection, net::AuthStatus::Ok, token, username, "");
     sendDailyStreak(session, connection);
-    sendProfile(session, connection);
+    sendFullProfile(session, connection);
     sendSkinCatalog(session, connection);
     sendGuildState(session, connection);
     sendChatHistory(connection);
@@ -2112,92 +2193,77 @@ void GameServer::signOut(Session& session) {
     session.admin = false;
     session.adminTier = kTopAdminTier;
     session.displayName.clear();
+    // The client forgets the account with it, so the next Profile is whole.
+    session.profileShadow = Session::ProfileShadow{};
     // Last: despawnPlayer() puts the stage back to Authenticated, and this is
     // what the socket actually is now.
     session.stage = SessionStage::Anonymous;
 }
 
-void GameServer::sendProfile(Session& session, net::Connection& connection) {
+struct GameServer::ProfileParts {
+    double xp = 0;
+    std::uint16_t level = 1;
+    double stars = 0;
+    /// Each ProfileSection as the bytes it goes on the wire as.
+    ByteWriter identity, bar, skills, waits, presets;
+    /// The bag and the ledger in the order the walks give them.
+    std::vector<ShadowCell> stacks, kills;
+};
+
+void GameServer::gatherProfile(Session& session, ProfileParts& parts) {
     // The bag and ring the body is playing with (the arena run's, in the
     // ring), and the progression track it is on (the maze's, in the maze) --
     // so the panels show what the flower actually has and the talent menu
     // spends the points the body actually earned.
     const PlayerRecord& record = liveRecord(session);
     const bool onMazeTrack = session.playing() && session.realm == Realm::Maze;
-    const double trackXp = onMazeTrack ? record.mazeTotalXp : record.totalXp;
+    parts.xp = onMazeTrack ? record.mazeTotalXp : record.totalXp;
+    parts.level = static_cast<std::uint16_t>(levelFromTotalXp(parts.xp).level);
+    parts.stars = std::max(0.0, record.stars);
     const SkillSet& skills = onMazeTrack ? record.mazeSkills : record.skills;
 
-    ByteWriter w;
-    w.u8(static_cast<std::uint8_t>(net::ServerMessage::Profile));
-    w.u32(++session.profileRevision);
-    w.str(session.username);
     std::uint8_t accountFlags = 0;
     if (const Account* account = std::as_const(database_).findUserById(session.userId)) {
         if (account->guest) accountFlags |= net::kAccountGuest;
         if (!account->passwordChosen) accountFlags |= net::kAccountNoPassword;
     }
-    w.u8(accountFlags);
-    w.f64(trackXp);
-    w.u16(static_cast<std::uint16_t>(levelFromTotalXp(trackXp).level));
-    w.f64(std::max(0.0, record.stars));
-
-    const std::size_t stackCountAt = w.reserveU16();
-    std::uint16_t stackCount = 0;
-    forEachProfileStack(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
-        w.u16(index);
-        w.u8(static_cast<std::uint8_t>(rarity));
-        w.u32(count);
-        ++stackCount;
-    });
-    w.patchU16(stackCountAt, stackCount);
+    parts.identity.str(session.username);
+    parts.identity.u8(accountFlags);
 
     // The ring the flower is actually wearing, which in the maze is the
     // account's shifted down a tier: a bar advertising the rarity the account
     // owns while the body swings one below it is a bar that lies.
     const Realm realm = session.playing() ? session.realm : Realm::Overworld;
-    w.u8(static_cast<std::uint8_t>(kLoadoutSlots));
+    parts.bar.u8(static_cast<std::uint8_t>(kLoadoutSlots));
     for (std::size_t i = 0; i < kLoadoutSlots; ++i) {
         const WornSlot worn = wornSlot(record, i, realm);
-        w.u16(worn.petalIndex);
-        w.u8(static_cast<std::uint8_t>(worn.rarity));
+        parts.bar.u16(worn.petalIndex);
+        parts.bar.u8(static_cast<std::uint8_t>(worn.rarity));
     }
 
     // The talent tree. Only branches that have been bought are sent; the
     // balance is derived on both sides from the level, so it is not on the
     // wire at all and cannot arrive disagreeing with the tiers beside it.
-    const std::size_t skillCountAt = w.reserveU16();
+    const std::size_t skillCountAt = parts.skills.reserveU16();
     std::uint16_t skillCount = 0;
     for (int i = 0; i < kSkillCount; ++i) {
         const int tier = skills.tier[static_cast<std::size_t>(i)];
         if (tier < 0) continue;
-        w.u8(static_cast<std::uint8_t>(i));
-        w.u8(static_cast<std::uint8_t>(tier));
+        parts.skills.u8(static_cast<std::uint8_t>(i));
+        parts.skills.u8(static_cast<std::uint8_t>(tier));
         ++skillCount;
     }
-    w.patchU16(skillCountAt, skillCount);
-
-    // The mob-kill ledger, for the gallery. Mob ids this build does not know
-    // are skipped for the wire and left in the record, exactly as the
-    // inventory is: a gallery cell is worth less than an account's history.
-    const std::size_t killCountAt = w.reserveU16();
-    std::uint16_t killCount = 0;
-    forEachProfileKill(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
-        w.u16(index);
-        w.u8(static_cast<std::uint8_t>(rarity));
-        w.u32(count);
-        ++killCount;
-    });
-    w.patchU16(killCountAt, killCount);
+    parts.skills.patchU16(skillCountAt, skillCount);
 
     // How long until the account may use an oracle again, as a DURATION: the
     // client's clock is not the server's, so a deadline would arrive already
     // wrong by whatever the two disagree by.
     const double wait = oracleWaitMillis(session.userId);
-    w.u32(static_cast<std::uint32_t>(clamp<double>(std::ceil(wait), 0.0, 4294967295.0)));
+    parts.waits.u32(static_cast<std::uint32_t>(clamp<double>(std::ceil(wait), 0.0, 4294967295.0)));
     // And until it may trade again, the same way. A day is 86.4 million
     // milliseconds, well inside the u32.
     const double tradeWait = traderWaitMillis(session.userId);
-    w.u32(static_cast<std::uint32_t>(clamp<double>(std::ceil(tradeWait), 0.0, 4294967295.0)));
+    parts.waits.u32(static_cast<std::uint32_t>(clamp<double>(std::ceil(tradeWait), 0.0, 4294967295.0)));
 
     // The saved loadouts, for the row the bar shows while K or L is held --
     // only the ones that exist. The ACCOUNT's, even from inside an arena run:
@@ -2210,20 +2276,152 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
             if (preset >= 0) presets.emplace_back(preset, &slots);
         }
     }
-    w.u8(static_cast<std::uint8_t>(presets.size()));
+    parts.presets.u8(static_cast<std::uint8_t>(presets.size()));
     for (const auto& [preset, slots] : presets) {
-        w.u8(static_cast<std::uint8_t>(preset));
+        parts.presets.u8(static_cast<std::uint8_t>(preset));
         const std::size_t count = std::min<std::size_t>(slots->size(), kLoadoutSlots);
-        w.u8(static_cast<std::uint8_t>(count));
+        parts.presets.u8(static_cast<std::uint8_t>(count));
         for (std::size_t i = 0; i < count; ++i) {
             const std::optional<StoredItem>& item = (*slots)[i];
             const std::uint16_t index = item ? content().petalIndex(item->petalType) : kNoPetal;
-            w.u16(index == kInvalidIndex ? kNoPetal : index);
-            w.u8(static_cast<std::uint8_t>(item ? item->rarity : Rarity::Common));
+            parts.presets.u16(index == kInvalidIndex ? kNoPetal : index);
+            parts.presets.u8(static_cast<std::uint8_t>(item ? item->rarity : Rarity::Common));
         }
     }
 
+    forEachProfileStack(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
+        parts.stacks.push_back({profileCellKey(index, rarity), count});
+    });
+    // The mob-kill ledger, for the gallery. Mob ids this build does not know
+    // are skipped for the wire and left in the record, exactly as the
+    // inventory is: a gallery cell is worth less than an account's history.
+    forEachProfileKill(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
+        parts.kills.push_back({profileCellKey(index, rarity), count});
+    });
+}
+
+void GameServer::sendProfile(Session& session, net::Connection& connection) {
+    // A Profile is the whole account -- 8 KB at the 90th percentile of the
+    // live database, 14 KB at the top, nearly all of it the bag and the kill
+    // ledger -- and every equip, swap, craft, absorb, trade and talent used to
+    // send one. Dragging petals around the bar was most of a busy player's
+    // traffic. What changed since the client was last told is a few cells.
+    Session::ProfileShadow& shadow = session.profileShadow;
+    if (!shadow.known) {
+        sendFullProfile(session, connection);
+        return;
+    }
+    ProfileParts parts;
+    gatherProfile(session, parts);
+    std::vector<ShadowCell> stacks = parts.stacks;
+    std::vector<ShadowCell> kills = parts.kills;
+    sortProfileCells(stacks);
+    keepLastPerCell(kills);
+
+    ByteWriter changes;
+    const std::size_t groupCountAt = changes.reserveU16();
+    std::size_t groups = 0;
+    forEachChangedRun(shadow.stacks, stacks,
+                      [&](std::uint32_t key, const ShadowCell* first, const ShadowCell* last) {
+        changes.u16(static_cast<std::uint16_t>(key >> 8));
+        changes.u8(static_cast<std::uint8_t>(key & 0xFF));
+        // Two names for one petal in one tier is a legacy record's oddity,
+        // and 255 of them is not a record at all.
+        const auto n = std::min<std::ptrdiff_t>(last - first, 0xFF);
+        changes.u8(static_cast<std::uint8_t>(n));
+        for (std::ptrdiff_t i = 0; i < n; ++i) changes.u32(first[i].count);
+        ++groups;
+    });
+    const std::size_t killCountAt = changes.reserveU16();
+    std::size_t cells = 0;
+    forEachChangedRun(shadow.kills, kills,
+                      [&](std::uint32_t key, const ShadowCell* first, const ShadowCell* last) {
+        changes.u16(static_cast<std::uint16_t>(key >> 8));
+        changes.u8(static_cast<std::uint8_t>(key & 0xFF));
+        // Gone from the ledger is a cell the Profile would leave at zero.
+        changes.u32(first != last ? first->count : 0);
+        ++cells;
+    });
+    // A new arena run's kit, or an admin's edit to half the bag, can change
+    // more than the whole Profile would cost to send.
+    const std::size_t wholeBytes = 4 + 7 * (parts.stacks.size() + parts.kills.size());
+    if (changes.size() >= wholeBytes || groups > 0xFFFF || cells > 0xFFFF) {
+        writeFullProfile(session, connection, parts);
+        return;
+    }
+    changes.patchU16(groupCountAt, static_cast<std::uint16_t>(groups));
+    changes.patchU16(killCountAt, static_cast<std::uint16_t>(cells));
+
+    // The waits are durations, different every time, and nine bytes; every
+    // other section goes only when it is not what the client already holds.
+    const auto differs = [](const ByteWriter& now, const std::vector<std::byte>& told) {
+        return now.buffer() != told;
+    };
+    std::uint8_t sections = net::kProfileWaits;
+    if (differs(parts.identity, shadow.identity)) sections |= net::kProfileIdentity;
+    if (differs(parts.bar, shadow.bar)) sections |= net::kProfileBar;
+    if (differs(parts.skills, shadow.skills)) sections |= net::kProfileSkills;
+    if (differs(parts.presets, shadow.presets)) sections |= net::kProfilePresets;
+
+    ByteWriter w(32 + changes.size());
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::ProfileDelta));
+    w.u32(++session.profileRevision);
+    w.f64(parts.xp);
+    w.u16(parts.level);
+    w.f64(parts.stars);
+    w.u8(sections);
+    if (sections & net::kProfileIdentity) appendBytes(w, parts.identity);
+    if (sections & net::kProfileBar) appendBytes(w, parts.bar);
+    if (sections & net::kProfileSkills) appendBytes(w, parts.skills);
+    appendBytes(w, parts.waits);
+    if (sections & net::kProfilePresets) appendBytes(w, parts.presets);
+    appendBytes(w, changes);
     connection.send(w);
+
+    shadow.stacks = std::move(stacks);
+    shadow.kills = std::move(kills);
+    shadow.identity = std::move(parts.identity.buffer());
+    shadow.bar = std::move(parts.bar.buffer());
+    shadow.skills = std::move(parts.skills.buffer());
+    shadow.presets = std::move(parts.presets.buffer());
+    clearProfileDue(session);
+}
+
+void GameServer::sendFullProfile(Session& session, net::Connection& connection) {
+    ProfileParts parts;
+    gatherProfile(session, parts);
+    writeFullProfile(session, connection, parts);
+}
+
+void GameServer::writeFullProfile(Session& session, net::Connection& connection,
+                                  ProfileParts& parts) {
+    ByteWriter w(64 + parts.identity.size() + parts.presets.size() +
+                 7 * (parts.stacks.size() + parts.kills.size()));
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::Profile));
+    w.u32(++session.profileRevision);
+    w.f64(parts.xp);
+    w.u16(parts.level);
+    w.f64(parts.stars);
+    appendBytes(w, parts.identity);
+    appendBytes(w, parts.bar);
+    appendBytes(w, parts.skills);
+    appendBytes(w, parts.waits);
+    appendBytes(w, parts.presets);
+    writeProfileCells(w, parts.stacks);
+    writeProfileCells(w, parts.kills);
+    connection.send(w);
+
+    // A Profile replaces whatever the client held, so this is now all of it.
+    Session::ProfileShadow& shadow = session.profileShadow;
+    shadow.known = true;
+    shadow.stacks = std::move(parts.stacks);
+    sortProfileCells(shadow.stacks);
+    shadow.kills = std::move(parts.kills);
+    keepLastPerCell(shadow.kills);
+    shadow.identity = std::move(parts.identity.buffer());
+    shadow.bar = std::move(parts.bar.buffer());
+    shadow.skills = std::move(parts.skills.buffer());
+    shadow.presets = std::move(parts.presets.buffer());
     clearProfileDue(session);
 }
 
@@ -2248,7 +2446,12 @@ void GameServer::sendProfileDelta(Session& session, net::Connection& connection)
     w.f64(trackXp);
     w.u16(static_cast<std::uint16_t>(levelFromTotalXp(trackXp).level));
     w.f64(std::max(0.0, record.stars));
+    // None of the small sections: a kill or a pickup moves none of them.
+    w.u8(0);
 
+    // And what the client is told goes into the shadow, cell by cell, so the
+    // next sendProfile diffs against what the client really holds.
+    Session::ProfileShadow& shadow = session.profileShadow;
     w.u16(static_cast<std::uint16_t>(session.stacksDue.size()));
     std::vector<std::uint32_t> counts;
     for (const Session::ProfileCell& group : session.stacksDue) {
@@ -2263,6 +2466,10 @@ void GameServer::sendProfileDelta(Session& session, net::Connection& connection)
         const std::size_t n = std::min<std::size_t>(counts.size(), 0xFF);
         w.u8(static_cast<std::uint8_t>(n));
         for (std::size_t i = 0; i < n; ++i) w.u32(counts[i]);
+        counts.resize(n);
+        if (shadow.known) {
+            replaceProfileRun(shadow.stacks, profileCellKey(group.index, group.rarity), counts);
+        }
     }
 
     w.u16(static_cast<std::uint16_t>(session.killsDue.size()));
@@ -2276,6 +2483,10 @@ void GameServer::sendProfileDelta(Session& session, net::Connection& connection)
         w.u16(cell.index);
         w.u8(static_cast<std::uint8_t>(cell.rarity));
         w.u32(last);
+        if (shadow.known) {
+            counts.assign(last != 0 ? 1 : 0, last);
+            replaceProfileRun(shadow.kills, profileCellKey(cell.index, cell.rarity), counts);
+        }
     }
 
     connection.send(w);
@@ -2304,7 +2515,9 @@ void GameServer::sendDueProfiles() {
 }
 
 void GameServer::resyncProfile(Session& session, net::Connection& connection) {
-    sendProfile(session, connection);
+    // Whole: the client is showing something it was never sent, so what it
+    // holds is not the shadow and a diff against that would repair nothing.
+    sendFullProfile(session, connection);
 }
 
 void GameServer::sendDailyStreak(Session& session, net::Connection& connection) {
@@ -3123,7 +3336,7 @@ void GameServer::handleProfileCheck(Session& session, net::Connection& connectio
     // next snapshot. Either way the next check, two seconds on, is judged.
     if (revision != session.profileRevision || session.profileDue) return;
     if (claimed == profileDigest(session)) return;
-    sendProfile(session, connection);
+    sendFullProfile(session, connection);
 }
 
 void GameServer::handleSwapLoadout(Session& session, ByteReader& reader) {
