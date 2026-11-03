@@ -683,6 +683,11 @@ public:
     /// and assigns the id, so nothing here is authoritative -- the studio runs
     /// the same check first only so a rejection is instant.
     void publishSkin(const std::string& name, const std::vector<SkinShape>& shapes);
+    /// Replaces the name and shapes of a skin this account published, on the
+    /// same terms: the catalog's copy changes when the server's SkinPublished
+    /// for that id comes back, and not before.
+    void editSkin(const std::string& id, const std::string& name,
+                  const std::vector<SkinShape>& shapes);
     /// Wears a published skin, or takes the current one off when `id` is empty.
     /// The local field moves immediately: the reference equips optimistically
     /// and the server's answer is the persistence, not the confirmation.

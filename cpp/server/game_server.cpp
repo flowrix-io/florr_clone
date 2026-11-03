@@ -1534,8 +1534,9 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::GuildInviteToSquad:
             if (!spend(session->requestAllowance)) return;
             break;
-        // PublishSkin is billed too, but by its handler, which says so: a
-        // player retrying a refused design should hear why nothing happened.
+        // PublishSkin and EditSkin are billed too, but by their handler, which
+        // says so: a player retrying a refused design should hear why nothing
+        // happened.
         default: break;
     }
 
@@ -1593,6 +1594,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
             handleGuildInviteToSquad(*session, connection, reader);
             break;
         case net::ClientMessage::PublishSkin:   handlePublishSkin(*session, connection, reader); break;
+        case net::ClientMessage::EditSkin:      handleEditSkin(*session, connection, reader); break;
         case net::ClientMessage::EquipSkin:     handleEquipSkin(*session, connection, reader); break;
         case net::ClientMessage::DeleteSkin:    handleDeleteSkin(*session, connection, reader); break;
         case net::ClientMessage::VoteSkin:      handleVoteSkin(*session, connection, reader); break;
@@ -4649,6 +4651,21 @@ std::vector<CustomSkin> catalogByAge(const Json& table) {
     return skins;
 }
 
+/// PublishSkin's and EditSkin's `u8 shapeCount, { SkinShape }*`. Every shape
+/// is read, so the reader stays in step, and at most kMaxSkinShapes are kept.
+std::vector<SkinShape> readSkinShapes(ByteReader& reader) {
+    const std::uint8_t shapeCount = reader.u8();
+    std::vector<SkinShape> shapes;
+    shapes.reserve(std::min<std::size_t>(shapeCount, kMaxSkinShapes));
+    for (int i = 0; i < shapeCount; ++i) {
+        SkinShape shape;
+        if (readSkinShape(reader, shape) && shapes.size() < static_cast<std::size_t>(kMaxSkinShapes)) {
+            shapes.push_back(std::move(shape));
+        }
+    }
+    return shapes;
+}
+
 std::string base36(std::uint64_t value) {
     static const char* digits = "0123456789abcdefghijklmnopqrstuvwxyz";
     if (value == 0) return "0";
@@ -4794,15 +4811,7 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
 void GameServer::handlePublishSkin(Session& session, net::Connection& connection,
                                    ByteReader& reader) {
     const std::string name = reader.str();
-    const std::uint8_t shapeCount = reader.u8();
-    std::vector<SkinShape> shapes;
-    shapes.reserve(std::min<std::size_t>(shapeCount, kMaxSkinShapes));
-    for (int i = 0; i < shapeCount; ++i) {
-        SkinShape shape;
-        if (readSkinShape(reader, shape) && shapes.size() < static_cast<std::size_t>(kMaxSkinShapes)) {
-            shapes.push_back(std::move(shape));
-        }
-    }
+    const std::vector<SkinShape> shapes = readSkinShapes(reader);
     if (!reader.ok() || !session.authenticated()) return;
 
     // Three clicks' worth of the request budget: every attempt, refused or
@@ -4845,20 +4854,9 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
     // Last, because it is the one check that costs anything: the cheap
     // refusals above never sample a thing.
     SkinLook look = sampleSkinLook(check.shapes);
-    if (skinsLookAlike(look, starterLook())) {
-        sendSkinChat(connection, "That's the starter flower. Change it a bit more before "
-                                 "publishing.");
-        return;
-    }
-    if (const std::optional<CustomSkin> original = findLookAlikeSkin(look)) {
-        if (lowerCase(original->author) == me) {
-            sendSkinChat(connection, "That looks just like your \"" + original->name +
-                                         "\". Change it a bit more, or delete that one first.");
-        } else {
-            sendSkinChat(connection, "That looks just like \"" + original->name + "\" by " +
-                                         original->author +
-                                         ". Change it a bit more before publishing.");
-        }
+    if (const std::string refusal = skinLookRefusal(look, me, {}, "publishing");
+        !refusal.empty()) {
+        sendSkinChat(connection, refusal);
         return;
     }
 
@@ -4882,6 +4880,94 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
     // the player wearing it.
     broadcastToAuthenticated(w);
     sendSkinChat(connection, "Published \"" + skin.name + "\". It's now in the Browse tab.");
+}
+
+void GameServer::handleEditSkin(Session& session, net::Connection& connection,
+                                ByteReader& reader) {
+    const std::string id = reader.str();
+    const std::string name = reader.str();
+    const std::vector<SkinShape> shapes = readSkinShapes(reader);
+    if (!reader.ok() || !session.authenticated()) return;
+
+    // Billed as a publish is: an edit that lands is sampled, compared with
+    // the catalogue and broadcast exactly as one is.
+    if (!spend(session.requestAllowance, 3.0)) {
+        sendSkinChat(connection, "You are saving too quickly. Wait a few seconds.");
+        return;
+    }
+    // storedTable until the write, for the reason handlePublishSkin gives.
+    const Json& stored = database_.storedTable("customSkins");
+    if (!stored[id].isObject()) {
+        sendSkinChat(connection, "That skin no longer exists.");
+        return;
+    }
+    CustomSkin skin = skinFromJson(stored[id]);
+    // The author only. An admin may take anyone's skin down, but not redraw
+    // it and leave the author's name on it. Case-blind, as every author
+    // match is.
+    const std::string me = lowerCase(session.username);
+    if (lowerCase(skin.author) != me) {
+        sendSkinChat(connection, "You can only edit your own skins.");
+        return;
+    }
+    const SkinCheck check = sanitizeSkin(name, shapes);
+    if (!check.ok()) {
+        sendSkinChat(connection, check.error);
+        return;
+    }
+
+    // A rename keeps the picture, which is in the catalogue already, so only
+    // new shapes are sampled -- and compared with every skin but this one.
+    const bool reshaped = skinShapesHash(check.shapes) != skinShapesHash(skin.shapes);
+    if (!reshaped && check.name == skin.name) {
+        sendSkinChat(connection, "\"" + skin.name + "\" has no changes to save.");
+        return;
+    }
+    std::optional<SkinLook> look;
+    if (reshaped) {
+        look = sampleSkinLook(check.shapes);
+        if (const std::string refusal = skinLookRefusal(*look, me, id, "saving");
+            !refusal.empty()) {
+            sendSkinChat(connection, refusal);
+            return;
+        }
+    }
+
+    // Id, author and createdAt stay -- the age is what decides which of two
+    // look-alikes is the original -- and so do the votes and stars, which
+    // are on the voters' rows. editedAt only ever moves forward: it is what
+    // a client's baked picture of the old shapes is keyed on.
+    skin.name = check.name;
+    skin.shapes = check.shapes;
+    skin.editedAt = std::max(static_cast<double>(database_.nowMillis()), skin.editedAt + 1.0);
+    database_.rawTable("customSkins")[id] = skinToJson(skin);
+    database_.markDirty();
+    if (look) skinLooks_[id] = CachedSkinLook{skinShapesHash(skin.shapes), std::move(*look)};
+
+    // The client replaces its whole copy, tally included.
+    const SkinTally tally = skinTally(id);
+    skin.likes = tally.likes;
+    skin.dislikes = tally.dislikes;
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinPublished));
+    writeCustomSkin(w, skin);
+    broadcastToAuthenticated(w);
+    sendSkinChat(connection, "Saved \"" + skin.name + "\".");
+}
+
+std::string GameServer::skinLookRefusal(const SkinLook& look, const std::string& me,
+                                        const std::string& exceptId, const char* verb) {
+    if (skinsLookAlike(look, starterLook())) {
+        return std::string("That's the starter flower. Change it a bit more before ") + verb + ".";
+    }
+    const std::optional<CustomSkin> original = findLookAlikeSkin(look, exceptId);
+    if (!original) return {};
+    if (lowerCase(original->author) == me) {
+        return "That looks just like your \"" + original->name +
+               "\". Change it a bit more, or delete that one first.";
+    }
+    return "That looks just like \"" + original->name + "\" by " + original->author +
+           ". Change it a bit more before " + verb + ".";
 }
 
 void GameServer::handleEquipSkin(Session& session, net::Connection& connection,
@@ -4950,7 +5036,8 @@ const SkinLook& GameServer::catalogSkinLook(const CustomSkin& skin) {
     return found->second.look;
 }
 
-std::optional<CustomSkin> GameServer::findLookAlikeSkin(const SkinLook& look) {
+std::optional<CustomSkin> GameServer::findLookAlikeSkin(const SkinLook& look,
+                                                        const std::string& exceptId) {
     const Json& table = database_.storedTable("customSkins");
     // Forget the looks of skins that are gone, whoever took them down -- the
     // admin editor erases rows without coming through here.
@@ -4958,6 +5045,7 @@ std::optional<CustomSkin> GameServer::findLookAlikeSkin(const SkinLook& look) {
         it = table.isObject() && table.contains(it->first) ? std::next(it) : skinLooks_.erase(it);
     }
     for (CustomSkin& skin : catalogByAge(table)) {
+        if (skin.id == exceptId) continue;
         if (skinsLookAlike(look, catalogSkinLook(skin))) return std::move(skin);
     }
     return std::nullopt;

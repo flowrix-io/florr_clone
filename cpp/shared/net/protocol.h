@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 72;
+inline constexpr std::uint16_t kProtocolVersion = 73;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -236,6 +236,11 @@ enum class ClientMessage : std::uint8_t {
     FavoriteSkin,       ///< str skinId, u8 favorite -- adds the skin to, or
                         ///< takes it off, this account's favourites. Answered
                         ///< with SkinOpinion. (Version 70.)
+    EditSkin,           ///< str skinId, str name, u8 shapeCount, { SkinShape }*
+                        ///< -- replaces the name and shapes of a skin of your
+                        ///< own, keeping its id, votes, stars and wearers.
+                        ///< Checked as PublishSkin is; answered with a
+                        ///< SkinPublished broadcast of the same id. (Version 73.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -295,7 +300,9 @@ enum class ServerMessage : std::uint8_t {
                         ///< lets a client draw a skin somebody else is wearing.
                         ///< The two lists after the skins are this account's
                         ///< own votes and favourites. (Lists: version 70.)
-    SkinPublished,      ///< CustomSkin -- broadcast, for the same reason
+    SkinPublished,      ///< CustomSkin -- broadcast, for the same reason. An id
+                        ///< the client already has is an edit, and replaces
+                        ///< its copy. (CustomSkin's editedAt: version 73.)
     SkinDeleted,        ///< str skinId -- broadcast
     Notifications,      ///< u8 more, u16 count,
                         ///< { str id, u8 kind(NotificationKind), str message,

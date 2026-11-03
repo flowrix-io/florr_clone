@@ -75,6 +75,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::ProfileCheck:        return "profileCheck";
         case net::ClientMessage::VoteSkin:            return "voteSkin";
         case net::ClientMessage::FavoriteSkin:        return "favoriteSkin";
+        case net::ClientMessage::EditSkin:            return "editSkin";
     }
     return "unknown";
 }
@@ -556,6 +557,18 @@ void NetClient::requestRedeemCode(const std::string& code) {
 void NetClient::publishSkin(const std::string& name, const std::vector<SkinShape>& shapes) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::PublishSkin);
+    w.str(name);
+    const std::size_t count = std::min(shapes.size(), static_cast<std::size_t>(kMaxSkinShapes));
+    w.u8(static_cast<std::uint8_t>(count));
+    for (std::size_t i = 0; i < count; ++i) writeSkinShape(w, shapes[i]);
+    send(w);
+}
+
+void NetClient::editSkin(const std::string& id, const std::string& name,
+                         const std::vector<SkinShape>& shapes) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::EditSkin);
+    w.str(id);
     w.str(name);
     const std::size_t count = std::min(shapes.size(), static_cast<std::size_t>(kMaxSkinShapes));
     w.u8(static_cast<std::uint8_t>(count));

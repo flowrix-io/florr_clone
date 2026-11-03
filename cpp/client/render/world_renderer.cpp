@@ -2808,10 +2808,12 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         const double reach = kFlowerArtRadius * 4.0;
         // Keyed on the skin's address AND its id, because the catalog can be
         // replaced wholesale and a fresh allocation is free to land on an
-        // address a retired skin used to have.
+        // address a retired skin used to have -- and on when it was last
+        // edited, because an edit keeps both and changes the picture.
         std::uint64_t variant = 1469598103934665603ull;
         for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
         variant = variant * 1099511628211ull + skin->shapes.size();
+        variant = variant * 1099511628211ull + static_cast<std::uint64_t>(skin->editedAt);
         if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
                                [&](Canvas& bitmap) {
                                    bitmap.translate(static_cast<float>(reach),

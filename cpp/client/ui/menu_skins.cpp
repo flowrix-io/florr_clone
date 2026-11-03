@@ -15,11 +15,13 @@
 // shape model, the drag handles, the palette, the custom-colour picker and
 // the text-mode parser.
 //
-// The Browse tab owns none of what it shows. Publishing, equipping, voting,
-// starring and taking a skin down are all requests to the server, which
-// sanitizes, assigns the id and broadcasts -- the catalog this panel lists is
-// NetClient's, the same one the world renderer resolves a wearer's skin
-// through, and a vote or a star lights up when the server says it landed.
+// The Browse tab owns none of what it shows. Publishing, editing, equipping,
+// voting, starring and taking a skin down are all requests to the server,
+// which sanitizes, assigns the id and broadcasts -- the catalog this panel
+// lists is NetClient's, the same one the world renderer resolves a wearer's
+// skin through, and a vote or a star lights up when the server says it landed.
+// Copying a card's code is the one thing it does on its own: the code is the
+// Text editor's, so a copied skin pastes straight back into it.
 
 #include <algorithm>
 #include <cmath>
@@ -143,6 +145,11 @@ constexpr double kSortWidth = 92.0;
 constexpr double kSortHeight = 24.0;
 constexpr double kVoteRowH = 22.0;
 constexpr double kStarW = 24.0;
+/// A card's Copy code / Edit row, between the votes and Equip.
+constexpr double kToolRowH = 22.0;
+constexpr double kEditW = 44.0;
+/// How long a card's Copy code button says it copied.
+constexpr double kCopiedSeconds = 1.5;
 
 double round1(double v) { return std::round(v * 10.0) / 10.0; }
 
@@ -433,12 +440,23 @@ std::string serializeShape(const Shape& s) {
     return out;
 }
 
+/// A whole skin as the Text editor's code: one command line per shape.
+std::string skinCode(const std::vector<Shape>& shapes) {
+    std::string out;
+    for (std::size_t i = 0; i < shapes.size(); ++i) {
+        if (i) out += "\n";
+        out += serializeShape(shapes[i]);
+    }
+    return out;
+}
+
 // --- actions ---------------------------------------------------------------
 
 enum class Act : std::uint8_t {
     None, Close, Tab, AddShape, SelectShape, MoveShape, DelShape, Step, Fill, Stroke,
     Picker, PickSquare, PickHue, AddVertex, DelVertex, TextMode, Publish, Reset, Equip,
-    Unequip, Delete, ConfirmDelete, CancelDelete, Sort, Like, Dislike, Favorite,
+    Unequip, Delete, ConfirmDelete, CancelDelete, Sort, Like, Dislike, Favorite, CopyCode,
+    Edit, StopEdit,
 };
 
 enum class Field : std::uint8_t { X, Y, R, Rx, Ry, Rot, Sw };
@@ -528,6 +546,18 @@ struct Studio {
     int selected = 0;
     std::string skinName;
 
+    /// The published skin of the player's own that the Create tab is editing,
+    /// "" while it makes a new one. Publish saves over that skin instead.
+    std::string editingId;
+    /// The new-skin draft set aside while editing, put back by Stop editing.
+    std::vector<Shape> draftShapes;
+    std::string draftName;
+
+    /// The card whose code was copied last, and when, so its button can say
+    /// it worked: a clipboard gives no sign of its own.
+    std::string copiedId;
+    double copiedAt = -1.0;
+
     /// The published catalog, borrowed from NetClient rather than copied.
     ///
     /// The reference keeps its own array and refills it from applyCatalog /
@@ -612,14 +642,7 @@ struct Studio {
         return &shapes[static_cast<std::size_t>(selected)];
     }
 
-    std::string serializeShapes() const {
-        std::string out;
-        for (std::size_t i = 0; i < shapes.size(); ++i) {
-            if (i) out += "\n";
-            out += serializeShape(shapes[i]);
-        }
-        return out;
-    }
+    std::string serializeShapes() const { return skinCode(shapes); }
 
     /// The board shows +-40 local units.
     double previewScale() const { return (layout.preview.w / 2) / 40.0; }
@@ -653,7 +676,7 @@ struct Studio {
     void drawTextEditor(Canvas&, Rect, double timeSeconds);
     void drawCommandHelp(Canvas&, Rect);
     void drawFooter(Canvas&, double timeSeconds);
-    void drawBrowse(Canvas&, const std::string& me);
+    void drawBrowse(Canvas&, const std::string& me, double timeSeconds);
     void drawConfirm(Canvas&, Vec2 mouse);
     /// A button that registers its own hit region, so the input pass that runs
     /// before the next paint knows what was under the cursor.
@@ -682,6 +705,13 @@ struct Studio {
     void closePicker();
     void enterTextMode();
     void applyTextBuffer();
+    /// Loads one of the player's published skins into the Create tab.
+    void beginEdit(const CustomSkin&);
+    /// Back to making a new skin, with the draft beginEdit set aside.
+    void stopEdit();
+    /// Puts a freshly loaded board in front of the player: first shape
+    /// selected, no picker, the list and the Text editor showing it.
+    void boardLoaded();
     std::string parseShapes(const std::string& text, std::vector<Shape>& out) const;
 };
 
@@ -921,14 +951,15 @@ double Studio::drawPalette(Canvas& canvas, Rect r, const char* caption,
 
 void Studio::drawTabs(Canvas& canvas, Vec2 mouse) {
     const Rect row = layout.tabs;
-    static const char* const kLabels[] = {"Create", "Browse"};
+    // The first tab says which it is doing: a new skin, or one of yours.
+    const char* const labels[] = {editingId.empty() ? "Create" : "Editing", "Browse"};
     for (int i = 0; i < 2; ++i) {
         const Rect r{row.x + i * (kTabWidth + kTabGap), row.y, kTabWidth, row.h};
         const bool active = static_cast<int>(tab) == i;
         Action pick;
         pick.k = Act::Tab;
         pick.i = i;
-        ui::button(canvas, r, kLabels[i], !active && r.contains(mouse), false,
+        ui::button(canvas, r, labels[i], !active && r.contains(mouse), false,
                    buttonStyle(active ? kAccentPurple : kNeutralFill, kBodySize));
         addRegion(r, pick);
     }
@@ -1338,14 +1369,18 @@ void Studio::drawFooter(Canvas& canvas, double timeSeconds) {
     const Rect field = footerNameField(r);
     inputField(canvas, field, skinName, "Skin name", nameField.focused, timeSeconds, &nameField);
 
+    // Editing, the two become the way out of the edit and the save over the
+    // skin being edited. Reset has no place there: the way back to the skin
+    // as published is to stop and press its Edit again.
+    const bool editing = !editingId.empty();
     Action reset;
-    reset.k = Act::Reset;
-    actionButton(canvas, {r.right() - kPublishW - kResetW - 8.0, r.y, kResetW, r.h}, "Reset",
-                 reset, kNeutralFill);
+    reset.k = editing ? Act::StopEdit : Act::Reset;
+    actionButton(canvas, {r.right() - kPublishW - kResetW - 8.0, r.y, kResetW, r.h},
+                 editing ? "Stop editing" : "Reset", reset, kNeutralFill);
     Action publish;
     publish.k = Act::Publish;
-    actionButton(canvas, {r.right() - kPublishW, r.y, kPublishW, r.h}, "Publish", publish,
-                 kAccent);
+    actionButton(canvas, {r.right() - kPublishW, r.y, kPublishW, r.h},
+                 editing ? "Save changes" : "Publish", publish, kAccent);
 }
 
 void Studio::drawSortRow(Canvas& canvas) {
@@ -1382,7 +1417,7 @@ void Studio::drawVoteRow(Canvas& canvas, Rect r, const CustomSkin& skin) {
     votePill(canvas, {r.right() - kStarW, r.y, kStarW, r.h}, 2, {}, starred, star);
 }
 
-void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
+void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSeconds) {
     drawSortRow(canvas);
 
     const Rect view = browseBody(layout);
@@ -1399,7 +1434,7 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
     // bottom edge, so the buttons painted on top of the artwork.
     constexpr int cols = 4;
     constexpr double kGap = 10.0;
-    constexpr double kCardH = 212.0;
+    constexpr double kCardH = 240.0;
     const double cardW = (view.w - (cols - 1) * kGap - kScrollbarWidth - 4.0) / cols;
     const double preview = cardW - 30.0;
 
@@ -1466,16 +1501,37 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
                  label(kBodySize, Align::Centre));
         ui::text(canvas, "by " + clipChars(skin.author, 14), card.x + cardW * 0.5,
                  board.bottom() + 30.0, label(kCaptionSize, Align::Centre));
-        drawVoteRow(canvas, {card.x + 8.0, card.bottom() - 38.0 - kVoteRowH, cardW - 16.0, kVoteRowH},
+        const double actionsY = card.bottom() - 32.0;
+        const double toolsY = actionsY - 6.0 - kToolRowH;
+        drawVoteRow(canvas, {card.x + 8.0, toolsY - 6.0 - kVoteRowH, cardW - 16.0, kVoteRowH},
                     skin);
 
-        const bool canDelete = isAdmin() || lowerCase(skin.author) == me;
+        const bool mine = lowerCase(skin.author) == me;
+        const bool canDelete = isAdmin() || mine;
+
+        // Copy code on every card; Edit only on the player's own, and not on
+        // an admin's view of anyone else's -- a takedown is theirs to make,
+        // a redraw under somebody else's name is not.
+        const double copyW = cardW - 16.0 - (mine ? kEditW + 4.0 : 0.0);
+        Action copy;
+        copy.k = Act::CopyCode;
+        copy.id = skin.id;
+        const bool copied = copiedId == skin.id && timeSeconds - copiedAt < kCopiedSeconds;
+        actionChip(canvas, {card.x + 8.0, toolsY, copyW, kToolRowH},
+                   copied ? "Copied!" : "Copy code", copy, copied ? kAccent : kRowFill);
+        if (mine) {
+            Action edit;
+            edit.k = Act::Edit;
+            edit.id = skin.id;
+            const bool editingThis = editingId == skin.id;
+            actionChip(canvas, {card.x + 8.0 + copyW + 4.0, toolsY, kEditW, kToolRowH}, "Edit",
+                       edit, editingThis ? kAccentPurple : kRowFill);
+        }
 
         // A takedown is a glyph beside the Equip button, not a second labelled
         // one: at this card width two labelled buttons side by side left
         // neither of them legible, and a cross laid over the card's corner
         // covered the artwork it belongs to.
-        const double actionsY = card.bottom() - 32.0;
         const double equipW = cardW - 16.0 - (canDelete ? 28.0 : 0.0);
         Action equip;
         equip.k = Act::Equip;
@@ -1583,7 +1639,7 @@ void Studio::draw(MenuContext& ctx) {
         }
         drawFooter(canvas, ctx.timeSeconds);
     } else {
-        drawBrowse(canvas, lowerCase(ctx.net.profile().username));
+        drawBrowse(canvas, lowerCase(ctx.net.profile().username), ctx.timeSeconds);
     }
 
     if (confirming) drawConfirm(canvas, mouse);
@@ -1700,6 +1756,41 @@ void Studio::applyTextBuffer() {
     shapes = parsed;
     if (selected >= static_cast<int>(shapes.size())) selected = static_cast<int>(shapes.size()) - 1;
     if (selected < 0) selected = 0;
+}
+
+void Studio::boardLoaded() {
+    selected = 0;
+    closePicker();
+    dragging = false;
+    textError.clear();
+    shapeScroll.offset = 0;
+    if (textMode) enterTextMode();
+}
+
+void Studio::beginEdit(const CustomSkin& skin) {
+    tab = Tab::Create;
+    // Pressing Edit on the skin already open goes back to it as it was left,
+    // unsaved changes and all.
+    if (editingId == skin.id) return;
+    // Only the new-skin draft is set aside. Moving from one edit to another
+    // drops the first edit's unsaved changes, as stopping it would.
+    if (editingId.empty()) {
+        draftShapes = shapes;
+        draftName = skinName;
+    }
+    editingId = skin.id;
+    shapes = skin.shapes;
+    skinName = skin.name;
+    boardLoaded();
+}
+
+void Studio::stopEdit() {
+    editingId.clear();
+    shapes = std::move(draftShapes);
+    skinName = std::move(draftName);
+    draftShapes.clear();
+    draftName.clear();
+    boardLoaded();
 }
 
 std::string Studio::parseShapes(const std::string& source, std::vector<Shape>& out) const {
@@ -1954,7 +2045,11 @@ bool Studio::dispatch(MenuContext& ctx, const Action& a) {
                 ctx.net.addLocalChat("Skins", check.error);
                 break;
             }
-            ctx.net.publishSkin(skinName, shapes);
+            // The edit stays open after a save, as the board does after a
+            // publish: the server answers in the chat, and the next change
+            // saves over the same skin again.
+            if (!editingId.empty()) ctx.net.editSkin(editingId, skinName, shapes);
+            else ctx.net.publishSkin(skinName, shapes);
             break;
         }
         case Act::Reset:
@@ -2005,6 +2100,21 @@ bool Studio::dispatch(MenuContext& ctx, const Action& a) {
         }
         case Act::Favorite:
             ctx.net.favoriteSkin(a.id, !ctx.net.isFavoriteSkin(a.id));
+            break;
+        case Act::CopyCode:
+            if (const CustomSkin* skin = ctx.net.findSkin(a.id)) {
+                ctx.window.setClipboardText(skinCode(skin->shapes));
+                copiedId = a.id;
+                copiedAt = ctx.timeSeconds;
+            }
+            break;
+        case Act::Edit:
+            // Only a card of the player's own carries the button; the server
+            // checks the author again on save.
+            if (const CustomSkin* skin = ctx.net.findSkin(a.id)) beginEdit(*skin);
+            break;
+        case Act::StopEdit:
+            stopEdit();
             break;
         case Act::None:
             break;
@@ -2170,6 +2280,16 @@ bool SkinsPanel::render(MenuContext& ctx) {
     // leave it pointed at a dead one.
     state.net = &ctx.net;
     state.window = &ctx.window;
+    // The skin being edited was taken down -- here, by an admin, or with the
+    // account it belonged to signed out. What is on the board stays, as a new
+    // skin: nothing is left to save it over.
+    if (!state.editingId.empty() && ctx.net.findSkin(state.editingId) == nullptr) {
+        state.editingId.clear();
+        state.draftShapes.clear();
+        state.draftName.clear();
+        ctx.net.addLocalChat("Skins", "The skin you were editing is gone. Publish makes what "
+                                      "you have a new skin.");
+    }
     // From the shared anchor, so the card, its hit regions and the box
     // MenuSystem captures the mouse in are one rect.
     state.layout = layoutOf(ctx.bounds);

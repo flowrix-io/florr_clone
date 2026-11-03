@@ -408,6 +408,7 @@ private:
     void handleBuyPetal(Session&, net::Connection&, ByteReader&);
     void handleRedeemCode(Session&, net::Connection&, ByteReader&);
     void handlePublishSkin(Session&, net::Connection&, ByteReader&);
+    void handleEditSkin(Session&, net::Connection&, ByteReader&);
     void handleEquipSkin(Session&, net::Connection&, ByteReader&);
     void handleDeleteSkin(Session&, net::Connection&, ByteReader&);
     void handleVoteSkin(Session&, net::Connection&, ByteReader&);
@@ -1027,8 +1028,15 @@ private:
     /// catalog row in place, so the id alone does not say the picture is the
     /// one that was sampled.
     const SkinLook& catalogSkinLook(const CustomSkin&);
-    /// The oldest published skin that `look` passes for, if there is one.
-    std::optional<CustomSkin> findLookAlikeSkin(const SkinLook& look);
+    /// The oldest published skin that `look` passes for, if there is one,
+    /// leaving out `exceptId` -- an edit is not a copy of the skin it edits.
+    std::optional<CustomSkin> findLookAlikeSkin(const SkinLook& look,
+                                                const std::string& exceptId = {});
+    /// Why `look` may not go into the catalogue as `me`'s, or "" when it may:
+    /// it is the starter flower, or it passes for a skin already there other
+    /// than `exceptId`. `verb` ends the sentence ("publishing", "saving").
+    std::string skinLookRefusal(const SkinLook& look, const std::string& me,
+                                const std::string& exceptId, const char* verb);
     /// Folds every published skin that looks like an older one, or like the
     /// studio's starter flower, into it: the copy leaves the catalog and every
     /// account wearing it is put in the original instead (in the plain flower,

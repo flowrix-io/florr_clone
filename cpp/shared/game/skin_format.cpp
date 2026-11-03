@@ -221,6 +221,7 @@ void writeCustomSkin(ByteWriter& w, const CustomSkin& skin) {
     w.str(skin.name);
     w.str(skin.author);
     w.f64(skin.createdAt);
+    w.f64(skin.editedAt);
     w.u32(skin.likes);
     w.u32(skin.dislikes);
     const std::size_t count = std::min(skin.shapes.size(), static_cast<std::size_t>(kMaxSkinShapes));
@@ -234,6 +235,7 @@ bool readCustomSkin(ByteReader& r, CustomSkin& out) {
     skin.name = r.str();
     skin.author = r.str();
     skin.createdAt = r.f64();
+    skin.editedAt = r.f64();
     skin.likes = r.u32();
     skin.dislikes = r.u32();
     const std::uint8_t count = r.u8();
@@ -298,6 +300,7 @@ Json skinToJson(const CustomSkin& skin) {
     }
     out["shapes"] = std::move(shapes);
     out["createdAt"] = skin.createdAt;
+    putIf(out, "editedAt", skin.editedAt, skin.editedAt > 0);
     return out;
 }
 
@@ -308,6 +311,7 @@ CustomSkin skinFromJson(const Json& value) {
     skin.name = value["name"].asString();
     skin.author = value["author"].asString();
     skin.createdAt = value["createdAt"].asDouble(0.0);
+    skin.editedAt = value["editedAt"].asDouble(0.0);
 
     const Json& shapes = value["shapes"];
     if (!shapes.isArray()) return skin;

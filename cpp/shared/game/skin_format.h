@@ -71,6 +71,10 @@ struct CustomSkin {
     /// Unix milliseconds. Double rather than int64 because it round-trips
     /// through the JSON database the TypeScript build wrote.
     double createdAt = 0;
+    /// Unix milliseconds of the author's last edit, 0 for a skin never edited.
+    /// An edit keeps the id, so this is what tells a picture baked from the
+    /// old shapes that it is stale. Stored only when set.
+    double editedAt = 0;
     /// How many accounts like and dislike it. Wire only, never in the skin's
     /// JSON: every vote lives on the VOTER's account row, so these are the
     /// server's tally of those, filled in as the skin is sent.
