@@ -218,6 +218,41 @@ TEST(resolve_circle_pushes_a_body_back_inside_the_world) {
     CHECK(!t.blocked(far, Realm::Overworld));
 }
 
+TEST(the_camera_stops_at_the_map_edge_and_centres_a_map_narrower_than_the_view) {
+    // 40 tiles wide, wider than a default screen; 4 tall, shorter than one.
+    Terrain t;
+    t.setTiles(std::vector<std::uint8_t>(40 * 4, static_cast<std::uint8_t>(Tile::Open)), 40, 4);
+    const Vec2 extent = t.realmExtent(Realm::Overworld);
+    const Vec2 view{kViewportWidth, kViewportHeight};
+    CHECK(extent.x > view.x);
+    CHECK(extent.y < view.y);
+    const double half = view.x * 0.5;
+
+    // Away from an edge the camera is on the flower.
+    CHECK_NEAR(t.viewCentre({5000.0, 100.0}, view, Realm::Overworld).x, 5000.0, 1e-9);
+    // Near one it stops with the screen's edge on the map's.
+    CHECK_NEAR(t.viewCentre({100.0, 100.0}, view, Realm::Overworld).x, half, 1e-9);
+    CHECK_NEAR(t.viewCentre({extent.x - 30.0, 100.0}, view, Realm::Overworld).x,
+               extent.x - half, 1e-9);
+    // The short axis is centred wherever the flower stands on it, the void
+    // split evenly above and below.
+    CHECK_NEAR(t.viewCentre({5000.0, 100.0}, view, Realm::Overworld).y, extent.y * 0.5, 1e-9);
+    CHECK_NEAR(t.viewCentre({5000.0, extent.y - 1.0}, view, Realm::Overworld).y,
+               extent.y * 0.5, 1e-9);
+    // Nonsense in, the middle of the map out.
+    const Vec2 lost = t.viewCentre({kQuietNan, kInfinity}, view, Realm::Overworld);
+    CHECK_NEAR(lost.x, extent.x * 0.5, 1e-9);
+    CHECK_NEAR(lost.y, extent.y * 0.5, 1e-9);
+    // A NaN view shows the whole map rather than poisoning the camera.
+    CHECK_NEAR(t.viewCentre({100.0, 100.0}, {kQuietNan, kQuietNan}, Realm::Overworld).x,
+               extent.x * 0.5, 1e-9);
+
+    // The arena stops at its square, not at the ring.
+    const Vec2 ring = t.viewCentre(kArenaCentre + Vec2{kArenaRadius - 20.0, 0.0}, view, Realm::Arena);
+    CHECK_NEAR(ring.x, kArenaWorldSize - half, 1e-9);
+    CHECK_NEAR(ring.y, kArenaCentre.y, 1e-9);
+}
+
 TEST(resolve_circle_survives_nonsense_input) {
     const Terrain& t = sharedMap();
     const Vec2 cases[] = {

@@ -482,6 +482,15 @@ void App::markPhaseOps(OpPhase phase) {
 #endif
 }
 
+void App::pinCamera(Vec2 focus) {
+    // Outside the map is black and nothing can go there, so the camera never
+    // shows it unless the map is smaller than the view. The server centres
+    // its replication box with the same rule, from the viewport this client
+    // reports, so everything on the shifted screen is still streamed.
+    const Rect view = camera_.visibleWorld();
+    camera_.snapTo(net_.terrain().viewCentre(focus, {view.w, view.h}, net_.view().realm()));
+}
+
 void App::frame(double dt) {
     // Every ease this frame steps by the smoothed frame period, not by `dt`:
     // see client/ease.h. Advanced first so nothing eases on last frame's.
@@ -657,7 +666,7 @@ void App::frame(double dt) {
         Vec2 arrival;
         if (net_.takeRealmChange(arrival)) {
             net_.view().snapAll();
-            camera_.snapTo(arrival);
+            pinCamera(arrival);
         }
     }
 
@@ -780,10 +789,12 @@ void App::frame(double dt) {
         // here, and only while there is a world for them to float over --
         // leaving the game clears them outright.
         net_.ageChatBubbles(dt);
-        // Pinned, not eased: the reference keeps the flower exactly on the
-        // screen centre, which is what the cursor-relative control law reads.
-        // The EASE is on the flower itself, earlier in this same frame -- see
-        // the interpolate() call above.
+        // Pinned, not eased: the camera follows the flower exactly, frame for
+        // frame. The EASE is on the flower itself, earlier in this same frame
+        // -- see the interpolate() call above. Near a map edge the camera
+        // stops at the edge and the flower walks off the screen centre; the
+        // cursor law measures from the flower's drawn position in the world,
+        // not from the centre, so steering is unchanged.
         //
         // Until a snapshot has placed the body -- the frames right after a
         // join or a realm change -- the view's self is a zeroed default, and
@@ -791,7 +802,7 @@ void App::frame(double dt) {
         // The arrival the server sent is the honest position for those frames.
         const Vec2 selfDrawn =
             net_.selfPlaced() ? net_.view().selfDrawnPosition() : net_.arrival();
-        camera_.snapTo(selfDrawn);
+        pinCamera(selfDrawn);
         prepareDarkness(selfDrawn);
         renderer_.draw(canvas, net_.view(), camera_, selfDrawn, timeSeconds_);
         // A dark map's dark, over the world only, like the wash below.

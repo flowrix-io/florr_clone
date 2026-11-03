@@ -23,10 +23,12 @@
 //
 //  * The camera is pinned to the flower, never eased toward it. src/game.ts's
 //    updateCamera writes the camera straight from the flower's *drawn*
-//    position each frame, so the flower sits exactly on the screen centre.
-//    That is load-bearing: the mouse control law reads the cursor's offset
-//    from the screen centre and treats it as the offset from the flower, so a
-//    lagging camera would skew steering, not just drift the flower off centre.
+//    position each frame, so the flower sits on the screen centre -- except
+//    near a map edge, where the camera stops so it never shows what is
+//    outside the map (App::pinCamera, Terrain::viewCentre) and the flower
+//    walks off the centre toward the edge. The mouse control law measures
+//    the cursor from the flower's drawn position in the world, not from the
+//    screen centre, so that offset does not skew steering.
 
 #include "shared/core/types.h"
 
@@ -34,9 +36,9 @@ namespace flix {
 
 class Camera {
 public:
-    /// Centres the camera on `target`. The only way the camera moves: it is
-    /// called every frame with the flower's drawn position, and again on
-    /// respawn and teleport.
+    /// Centres the camera on `target`. The only way the camera moves: the
+    /// game calls it through App::pinCamera every frame with the flower's
+    /// drawn position held inside the map, and again on join and realm change.
     void snapTo(Vec2 target) { centre_ = target; }
 
     /// The visible extent in DESIGN units -- Window::width()/height(), never

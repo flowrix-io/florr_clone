@@ -274,6 +274,10 @@ private:
     /// The dark itself, multiplied over the world: florr's second stage.
     /// Under the death wash and the vignette.
     void drawDarkness(Canvas&);
+    /// Centres the camera on `focus` (the flower), held inside the map:
+    /// Terrain::viewCentre for this frame's view and realm. Every camera move
+    /// goes through here.
+    void pinCamera(Vec2 focus);
     /// How dark that vignette should be this frame, 0 to 1, before easing.
     double lowHealthTarget() const;
     /// The screen-top health bars a super, unique or apex mob in view gets,

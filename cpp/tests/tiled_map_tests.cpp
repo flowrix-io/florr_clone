@@ -1034,7 +1034,7 @@ TEST(the_shipped_map_collides_with_authored_shapes_everywhere) {
     CHECK(sawPartialTile);
 }
 
-TEST(map_edges_continue_ground_instead_of_black_void) {
+TEST(outside_the_map_is_black) {
     WorldMaps maps;
     Terrain terrain;
     std::string error;
@@ -1049,8 +1049,10 @@ TEST(map_edges_continue_ground_instead_of_black_void) {
     const auto pixels = canvas.getImageData(0, 0, 256, 256);
     CHECK(pixels.size() >= 4);
     if (pixels.size() < 4) return;
-    CHECK_EQ(pixels[0], std::uint8_t(0x1E));
-    CHECK_EQ(pixels[1], std::uint8_t(0xA7));
-    CHECK_EQ(pixels[2], std::uint8_t(0x61));
+    // The top-left pixel is past the map's corner: the camera is centred on
+    // it, so a quarter of the frame lies outside the map.
+    CHECK_EQ(pixels[0], std::uint8_t(0));
+    CHECK_EQ(pixels[1], std::uint8_t(0));
+    CHECK_EQ(pixels[2], std::uint8_t(0));
     CHECK_EQ(pixels[3], std::uint8_t(255));
 }

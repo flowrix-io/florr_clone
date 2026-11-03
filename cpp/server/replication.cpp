@@ -5,6 +5,7 @@
 
 #include "server/systems/petals.h"
 #include "shared/game/constants.h"
+#include "shared/game/terrain.h"
 
 namespace flix {
 
@@ -212,7 +213,6 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     const Transform* viewerTransform = world.tryGet<Transform>(viewer);
     if (!viewerTransform) return;
 
-    const Vec2 centre = viewerTransform->position;
     // The viewer sees its own realm and nothing else. Every realm's
     // coordinates start at (0, 0), so a position alone says nothing about
     // whether an entity is anywhere near this client -- it has to be in the
@@ -224,6 +224,13 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     } else if (const PlayerLocation* location = world.tryGet<PlayerLocation>(viewer)) {
         viewport = location->viewport;
     }
+    // Where the client's camera is, not where its flower is: the camera stops
+    // at the map's edge, and a wide camera-petal view parked there reaches
+    // a whole screen past the flower into the map -- further than the margin
+    // below covers.
+    const Vec2 centre = frame.terrain != nullptr
+                            ? frame.terrain->viewCentre(viewerTransform->position, viewport, realm)
+                            : viewerTransform->position;
     // A RECTANGLE, per axis, sized off the window the client says it is
     // drawing: the reference builds the same box every frame from the viewport
     // reported by the latest input packet, so a resize or a zoom widens what is

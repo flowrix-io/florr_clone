@@ -333,7 +333,7 @@ void App::enterGame() {
     net_.view().snapAll();
     // The join's spawn point: the first snapshot has not placed the body
     // yet, and the view's own self position is still zero.
-    camera_.snapTo(net_.selfPlaced() ? net_.view().selfDrawnPosition() : net_.arrival());
+    pinCamera(net_.selfPlaced() ? net_.view().selfDrawnPosition() : net_.arrival());
     // What it photographs is the loading screen, the last frame drawn, and it
     // holds that up until the body arrives -- see wipeReadyToReveal().
     beginSceneWipe(true);

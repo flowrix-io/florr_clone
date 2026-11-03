@@ -6,6 +6,7 @@
 #include "server/replication.h"
 #include "server/systems/petals.h"
 #include "shared/game/components.h"
+#include "shared/game/terrain.h"
 
 #include <cmath>
 #include <string>
@@ -28,6 +29,8 @@ struct Fixture {
     Entity viewer = NULL_ENTITY;
     /// The viewer's squadmates (Replicator::Frame::alwaysVisible), if any.
     std::vector<Entity> squad;
+    /// The realms' bounds (Replicator::Frame::terrain), if the test sets one.
+    const Terrain* terrain = nullptr;
 
     Fixture() { viewer = addPlayer("bob", {1000, 1000}); }
 
@@ -72,6 +75,7 @@ struct Fixture {
         frame.nowMillis = nowMillis;
         frame.events = &events;
         frame.alwaysVisible = squad.empty() ? nullptr : &squad;
+        frame.terrain = terrain;
         replicator.build(world, viewer, view, frame, out);
 
         ByteReader reader(out.data(), out.size());
@@ -408,6 +412,32 @@ TEST(a_camera_petals_view_is_streamed_edge_to_edge_and_only_a_screen_past_it) {
         f.tick(client, static_cast<std::uint32_t>(2 + i), 1040.0 + 40.0 * i);
         CHECK_NEAR(client.entities().at(netIdOf(f.world, corner)).targetPosition.x, moved.x, 0.05);
     }
+}
+
+TEST(a_flower_at_the_map_edge_is_streamed_the_screen_its_camera_stops_on) {
+    // Near an edge the camera stops and the screen reaches past the flower
+    // into the map, by up to a whole drawn width. Past a default screen that
+    // is more than the margin covers, so the box has to follow the camera,
+    // not the flower.
+    Fixture f;
+    Terrain terrain;
+    const Vec2 drawn{kViewportWidth * 10.0, kViewportHeight * 10.0};
+    CHECK(terrain.realmExtent(Realm::Overworld).x > drawn.x);
+    CHECK(terrain.realmExtent(Realm::Overworld).y > drawn.y);
+    f.world.get<PlayerLocation>(f.viewer).viewport = drawn;
+    // The flower stands near the top-left corner, so the camera stops with the
+    // screen spanning (0, 0) to `drawn`, and this mob is in its far corner.
+    const Entity farCorner = f.addMob(drawn - Vec2{50.0, 50.0});
+    WorldView client;
+
+    // Centred on the flower, the box misses it...
+    f.tick(client, 1, 1000);
+    CHECK(client.entities().count(netIdOf(f.world, farCorner)) == 0);
+
+    // ...centred where the camera sits, it is on screen and streamed.
+    f.terrain = &terrain;
+    f.tick(client, 2, 1040);
+    CHECK(client.entities().count(netIdOf(f.world, farCorner)) == 1);
 }
 
 TEST(a_big_mob_half_on_screen_is_current_every_snapshot) {

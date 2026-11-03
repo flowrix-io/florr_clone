@@ -302,10 +302,10 @@ bool zoneInView(const Rect& bounds, Realm realm,
         // viewport test alone would wake a second map because somebody was
         // standing at the same numbers in the first.
         if (viewer.realm != realm) continue;
-        if (bounds.left() < viewer.position.x + viewer.half.x + margin &&
-            bounds.right() > viewer.position.x - viewer.half.x - margin &&
-            bounds.top() < viewer.position.y + viewer.half.y + margin &&
-            bounds.bottom() > viewer.position.y - viewer.half.y - margin) {
+        if (bounds.left() < viewer.centre.x + viewer.half.x + margin &&
+            bounds.right() > viewer.centre.x - viewer.half.x - margin &&
+            bounds.top() < viewer.centre.y + viewer.half.y + margin &&
+            bounds.bottom() > viewer.centre.y - viewer.half.y - margin) {
             return true;
         }
     }
@@ -1078,7 +1078,7 @@ void SpawnSystem::run(World& world, const Terrain& terrain, const ContentRegistr
     bind(world);
     rebuildZones(content);
     scatterBossClocks(nowMillis);
-    gatherViewers(world, players);
+    gatherViewers(world, terrain, players);
 
     expireEscorts(dt, commands);
     runNests(world, terrain, content, rng, nowMillis);
@@ -1125,7 +1125,8 @@ void SpawnSystem::run(World& world, const Terrain& terrain, const ContentRegistr
     // rather than by any band, and none of them is ever latent.
 }
 
-void SpawnSystem::gatherViewers(World& world, const std::vector<RealmPoint>& players) {
+void SpawnSystem::gatherViewers(World& world, const Terrain& terrain,
+                                const std::vector<RealmPoint>& players) {
     // Every flower on an authored map, with the two facts a coordinate cannot
     // carry. A client that reported nothing keeps the default box, exactly as
     // the reference's `player.viewportWidth || VIEWPORT_WIDTH` does.
@@ -1139,10 +1140,12 @@ void SpawnSystem::gatherViewers(World& world, const std::vector<RealmPoint>& pla
         Viewer viewer;
         viewer.position = transform.position;
         viewer.realm = transform.realm;
+        Vec2 viewport{kViewportWidth, kViewportHeight};
         if (const PlayerLocation* location = world.tryGet<PlayerLocation>(e)) {
-            viewer.half = {location->viewport.x * 0.5 + kViewportBuffer,
-                           location->viewport.y * 0.5 + kViewportBuffer};
+            viewport = location->viewport;
+            viewer.half = {viewport.x * 0.5 + kViewportBuffer, viewport.y * 0.5 + kViewportBuffer};
         }
+        viewer.centre = terrain.viewCentre(transform.position, viewport, transform.realm);
         if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(e)) {
             viewer.luck = modifiers->luck;
         }
@@ -1166,6 +1169,7 @@ void SpawnSystem::gatherViewers(World& world, const std::vector<RealmPoint>& pla
         const Vec2 position = player.position;
         Viewer viewer;
         viewer.position = position;
+        viewer.centre = position;
         // The realm is the caller's fact about the point, not something the
         // pairing below discovers: a coordinate on a second map's door and
         // the same numbers in the overworld are two different places, and a
@@ -1177,6 +1181,7 @@ void SpawnSystem::gatherViewers(World& world, const std::vector<RealmPoint>& pla
             const double distSq = distanceSq(candidate.position, position);
             if (distSq > nearestDistSq) continue;
             nearestDistSq = distSq;
+            viewer.centre = candidate.centre;
             viewer.half = candidate.half;
             viewer.luck = candidate.luck;
             viewer.radius = candidate.radius;
@@ -1368,7 +1373,7 @@ bool SpawnSystem::seenBy(const std::vector<Viewer>& viewers, Realm realm, Vec2 p
                          double margin) const {
     for (const Viewer& viewer : viewers) {
         if (viewer.realm != realm) continue;
-        const Vec2 offset = position - viewer.position;
+        const Vec2 offset = position - viewer.centre;
         if (std::abs(offset.x) <= viewer.half.x + margin &&
             std::abs(offset.y) <= viewer.half.y + margin) {
             return true;

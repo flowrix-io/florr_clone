@@ -1269,6 +1269,7 @@ void GameServer::replicate(double nowMillis) {
     frame.snapshotIndex = ++snapshotIndex_;
     frame.nowMillis = nowMillis;
     frame.events = &events_;
+    frame.terrain = terrain_.get();
 
     // Reused across recipients rather than allocated per session: it is at
     // most three entities and almost always none.
@@ -2550,10 +2551,14 @@ void GameServer::serviceAdminCursorActions() {
         const auto* location = world_.tryGet<PlayerLocation>(owner);
         const Vec2 claim = location ? location->viewport : Vec2{kViewportWidth, kViewportHeight};
         const Vec2 viewport = claimableViewport(world_, owner, content(), claim.x, claim.y);
-        const Vec2 requested = Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
-        const Vec2 pointer = origin->position + Vec2{
-            clamp(requested.x, -viewport.x * 0.5, viewport.x * 0.5),
-            clamp(requested.y, -viewport.y * 0.5, viewport.y * 0.5)};
+        // Held to the screen, which sits where the camera does: off the
+        // flower near a map edge (Terrain::viewCentre).
+        const Vec2 screen = terrain_->viewCentre(origin->position, viewport, origin->realm);
+        const Vec2 requested = origin->position +
+            Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
+        const Vec2 pointer{
+            clamp(requested.x, screen.x - viewport.x * 0.5, screen.x + viewport.x * 0.5),
+            clamp(requested.y, screen.y - viewport.y * 0.5, screen.y + viewport.y * 0.5)};
         if (pressedTeleport) {
             const auto* body = world_.tryGet<Body>(owner);
             const double radius = body ? body->radius : kPlayerBaseRadius;
@@ -2666,12 +2671,15 @@ void GameServer::serviceAdminCursor() {
         }
         const auto buttons = input->current.flags;
         const bool drag = (buttons & net::InputAdminDrag) != 0;
-        const Vec2 requested = Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
         const auto* location = world_.tryGet<PlayerLocation>(owner);
         const Vec2 claim = location ? location->viewport : Vec2{kViewportWidth, kViewportHeight};
         const Vec2 viewport = claimableViewport(world_, owner, content(), claim.x, claim.y);
-        const Vec2 pointer = origin->position + Vec2{clamp(requested.x, -viewport.x * 0.5, viewport.x * 0.5),
-                                                     clamp(requested.y, -viewport.y * 0.5, viewport.y * 0.5)};
+        const Vec2 screen = terrain_->viewCentre(origin->position, viewport, origin->realm);
+        const Vec2 requested = origin->position +
+            Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
+        const Vec2 pointer{
+            clamp(requested.x, screen.x - viewport.x * 0.5, screen.x + viewport.x * 0.5),
+            clamp(requested.y, screen.y - viewport.y * 0.5, screen.y + viewport.y * 0.5)};
         const Realm realm = origin->realm;
         const auto valid = [&](Entity entity) {
             const auto* transform = world_.tryGet<Transform>(entity);
@@ -3019,14 +3027,15 @@ void GameServer::sendLocalChat(const Session& speaker, const std::string& text,
             const Transform* at = world_.tryGet<Transform>(viewpointOf(listener));
             if (at == nullptr || at->realm != from->realm) continue;
             // The listener's own screen, as the client reported it, centred
-            // on the body it is watching from -- the box replication streams
-            // and the speech bubble is drawn inside.
+            // where its camera sits over the body it is watching from -- the
+            // box replication streams and the speech bubble is drawn inside.
             Vec2 viewport{kViewportWidth, kViewportHeight};
             if (const PlayerLocation* location = world_.tryGet<PlayerLocation>(listener.entity)) {
                 viewport = location->viewport;
             }
-            const double dx = std::abs(from->position.x - at->position.x);
-            const double dy = std::abs(from->position.y - at->position.y);
+            const Vec2 screen = terrain_->viewCentre(at->position, viewport, at->realm);
+            const double dx = std::abs(from->position.x - screen.x);
+            const double dy = std::abs(from->position.y - screen.y);
             if (dx > viewport.x * 0.5 + margin || dy > viewport.y * 0.5 + margin) continue;
         }
         if (net::Connection* peer = listener_.find(listener.connection)) peer->send(w);

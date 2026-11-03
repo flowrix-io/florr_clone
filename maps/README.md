@@ -867,7 +867,8 @@ reading shapes in that space would silently rescale every shape in the game the
 first time a bigger tile arrived. The tileset's own size is used only for a
 spritesheet tileset, whose tiles have no image of their own. A file the tileset names
 but the directory lacks is one warning in the client, not a failure — the cell
-simply does not draw. Outside the map is black void.
+simply does not draw. Outside the map is black void, and the camera stops at the
+map's edge, so the void shows only around a map smaller than the screen.
 
 The nine `ground/*.svg` are **no longer map data**: a map's own bottom layer is
 its ground now. They are still staged because the title screen paints its

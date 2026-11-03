@@ -498,6 +498,14 @@ public:
     /// (src/server/playerState.ts:1989) is the arena case.
     Vec2 clampInside(Vec2 p, double radius, Realm realm) const;
 
+    /// Where a camera following `focus` with a `view`-sized window (world
+    /// units) is centred: held inside the realm's rectangle so it never looks
+    /// past the edge, and centred on any axis the realm is narrower than the
+    /// view. The client's camera and every server box built around what a
+    /// player sees (replication, spawn sight, a cursor's pointer) use this one
+    /// rule, so near an edge they all cover the screen the client draws.
+    Vec2 viewCentre(Vec2 focus, Vec2 view, Realm realm) const;
+
     /// True when a point has left its realm's playable area altogether. What
     /// the loot system asks about a drop the resolver could not save.
     bool outside(Vec2 p, Realm realm) const;

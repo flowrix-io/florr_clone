@@ -460,5 +460,4 @@ flower and both splitter halves. Normal combat still applies. Phase ends
 on respawn or loss of admin access, and turning it off resolves you out of
 solid terrain. Map bounds remain enforced. Cursor dragging can carry players
 through walls too; release restores normal collision without enabling phase
-on the target. The map background extends beyond its visible edge instead
-of rendering a black void.
+on the target.
