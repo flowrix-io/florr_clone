@@ -427,7 +427,7 @@ void App::pollNetwork() {
             autoLogin_ = AutoLogin::Done;
             focusedField_ = -1;
             saveSession();
-            // A sign-in from the Account panel in the middle of a run: the
+            // A sign-in that lands while a run is on screen: the
             // server has already taken the body out (leaveWorld) and the
             // client has dropped its world (NetClient::handleAuthResult), so
             // the screen follows them home the way a Continue would.

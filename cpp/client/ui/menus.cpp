@@ -1155,9 +1155,9 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
     for (int i = 0; i < kStripSlotCount; ++i) {
         const StripSlot& slot = strip()[static_cast<std::size_t>(i)];
         if (slot.action == StripAction::Exit) visible[static_cast<std::size_t>(i)] = inGame_;
-        // What changed and where to talk about it are read before a run, not
-        // during one: both belong to the title screen only.
-        else if (slot.action == StripAction::Discord || slot.menu == MenuId::Changelog)
+        // The inbox, the account and where to talk about the game are seen to
+        // between runs, not during one: all three belong to the title screen.
+        else if (slot.action == StripAction::Discord || slot.menu == MenuId::Notifications)
             visible[static_cast<std::size_t>(i)] = !inGame_;
         else if (slot.menu == MenuId::Debug)
             visible[static_cast<std::size_t>(i)] = settings_.showDebugButton;
@@ -1166,7 +1166,7 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         else if (slot.menu == MenuId::AdminDashboard)
             visible[static_cast<std::size_t>(i)] = adminSlotShown_;
         else if (slot.menu == MenuId::Account)
-            visible[static_cast<std::size_t>(i)] = accountSlotShown_;
+            visible[static_cast<std::size_t>(i)] = accountSlotShown_ && !inGame_;
         else visible[static_cast<std::size_t>(i)] = true;
     }
 

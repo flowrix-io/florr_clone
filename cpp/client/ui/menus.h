@@ -87,8 +87,8 @@ enum class MenuId : std::uint8_t {
     /// switch; on no strip button, and its key is unbound and not rebindable.
     Assets,
     /// The account: its name -- which a guest may pick, once -- its password,
-    /// signing in to another account, and Log Out. On the top row; its key is
-    /// unbound and not rebindable.
+    /// signing in to another account, and Log Out. On the title screen's top
+    /// row only; its key is unbound and not rebindable.
     Account,
     Count,
 };
@@ -1519,8 +1519,8 @@ public:
     bool handleKeys(Window&, bool adminCursorEnabled = false);
 
     /// True while the client is in a game, which is the only time the exit
-    /// button is offered -- and the only time the changelog and Discord
-    /// buttons are not.
+    /// button is offered -- and the only time the notifications, account and
+    /// Discord buttons are not.
     ///
     /// The screen owns the loadout bar's slide: the browser builds a fresh
     /// `CanvasLoadoutBar` per screen, so crossing between them replays the
@@ -1529,9 +1529,9 @@ public:
         if (inGame == inGame_) return;
         inGame_ = inGame;
         loadoutSlide_ = 0.0;
-        // Its button is gone in game, so a changelog still open from the title
-        // screen would be a card with nothing on screen that opened it.
-        if (inGame_ && open_ == MenuId::Changelog) close();
+        // Their buttons are gone in game, so one of these still open from the
+        // title screen would be a card with nothing on screen that opened it.
+        if (inGame_ && (open_ == MenuId::Notifications || open_ == MenuId::Account)) close();
     }
     /// Set when the exit button was clicked. The app reads and clears it --
     /// leaving a game is the app's business, not a menu's.
@@ -1771,8 +1771,8 @@ private:
     /// no account, so renderStripOnly() takes the button down -- the Debug
     /// button's arrangement, with the server's flag where its setting is.
     bool adminSlotShown_ = false;
-    /// Whether the Account button is on the strip: only while there is an
-    /// account to show. The login screen paints the strip and no panels.
+    /// Whether there is an account for the Account button to show. The login
+    /// screen paints the strip and no panels; the button is also off in game.
     bool accountSlotShown_ = false;
     /// The Release chip as last painted, for capturesMouse(). Empty while no
     /// control is running.
