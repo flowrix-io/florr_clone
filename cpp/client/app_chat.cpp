@@ -717,8 +717,6 @@ constexpr NamedFlag kEquipFlagNames[] = {
     {"Disc", EquipDisc},         {"Bandage", EquipBandage},
 };
 constexpr NamedFlag kRenderFlagNames[] = {
-    {"Pumpkin", PlayerRenderPumpkin},
-    {"Robot", PlayerRenderRobot},
     {"Glitch", PlayerRenderGlitch},
 };
 

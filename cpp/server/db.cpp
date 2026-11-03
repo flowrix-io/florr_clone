@@ -17,6 +17,7 @@
 #include "shared/core/civil_date.h"
 #include "shared/core/text.h"
 #include "shared/game/constants.h"
+#include "shared/game/player_flags.h"
 
 namespace flix {
 namespace {
@@ -194,7 +195,8 @@ PlayerRecord playerFromJson(const Json& value) {
     record.casinoReadyAt = value["casinoReadyAt"].asDouble(0);
     record.dailyStreak = value["dailyStreak"].asInt(0);
     record.lastStreakDate = value["lastStreakDate"].asString();
-    record.renderFlags = static_cast<std::uint32_t>(value["renderFlags"].asDouble(0));
+    record.renderFlags = static_cast<std::uint32_t>(value["renderFlags"].asDouble(0)) &
+                         ~kRetiredRenderFlags;
     record.equippedSkinId = value["equippedSkinId"].asString();
     // Anything but a +1 or a -1 is no vote: a hand-edited 5 must not count
     // five times, nor a 0 as an entry that is there and says nothing.

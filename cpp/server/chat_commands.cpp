@@ -52,6 +52,7 @@
 #include "shared/game/prestige.h"
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
+#include "shared/game/player_flags.h"
 #include "shared/game/terrain.h"
 
 namespace flix {
@@ -154,16 +155,20 @@ std::string rarityList() {
     return out;
 }
 
-/// The three cosmetic bits, in the reference's own enum order. `set_skin`
-/// takes a name from this list, "none", or a raw bitmask, and its usage line
-/// is built from it exactly as the reference builds its own.
-constexpr std::array<const char*, 3> kSkinNames = {"Pumpkin", "Robot", "Glitch"};
+/// The named cosmetic bits. `set_skin` takes a name from this list, "none",
+/// or a raw bitmask, and its usage line is built from it exactly as the
+/// reference builds its own.
+struct SkinName {
+    const char* name;
+    std::uint32_t bit;
+};
+constexpr std::array<SkinName, 1> kSkinNames = {{{"Glitch", PlayerRenderGlitch}}};
 
 std::string skinNameList(const char* separator) {
     std::string out;
     for (std::size_t i = 0; i < kSkinNames.size(); ++i) {
         if (i > 0) out += separator;
-        out += kSkinNames[i];
+        out += kSkinNames[i].name;
     }
     return out;
 }
@@ -2255,8 +2260,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         if (wanted == "none") {
             flags = 0;
         } else {
-            for (std::size_t i = 0; i < kSkinNames.size(); ++i) {
-                if (wanted == lowerCase(kSkinNames[i])) flags = 1 << static_cast<int>(i);
+            for (const SkinName& skin : kSkinNames) {
+                if (wanted == lowerCase(skin.name)) flags = static_cast<int>(skin.bit);
             }
         }
         if (flags < 0 && (!parseInteger(words[2], flags) || flags < 0)) {

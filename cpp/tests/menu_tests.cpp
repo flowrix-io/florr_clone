@@ -19,7 +19,7 @@ using flix::testsupport::onlyPlayer;
 using flix::testsupport::seedStack;
 
 // What the menus can actually do to an account: spend talent points, buy a
-// petal, wear a skin, and read the board. Every one of these is a request the
+// petal, and read the board. Every one of these is a request the
 // client sends and a Profile it must get back, so they are tested over a real
 // socket rather than against the handlers directly.
 
@@ -1169,34 +1169,8 @@ TEST(a_mythic_kill_is_worth_stars_and_a_common_one_is_not) {
 }
 
 // ---------------------------------------------------------------------------
-// Skins, the kill ledger and the board
+// The kill ledger and the board
 // ---------------------------------------------------------------------------
-
-TEST(a_skin_is_stored_and_an_unknown_one_is_ignored) {
-    Harness h("skins");
-    if (!h.ready) { CHECK(false); return; }
-
-    NetClient client;
-    CHECK(loginNew(h, client, "skinner", "password7"));
-    CHECK_EQ(client.profile().renderFlags, 0u);
-
-    client.requestSkin(PlayerRenderPumpkin);
-    CHECK(awaitProfile(h, client, [](const Profile& p) {
-        return p.renderFlags == PlayerRenderPumpkin;
-    }));
-
-    // Two bits at once, and the transient glitch bit, are both refused: a skin
-    // is a choice of one, and glitch is an effect rather than a cosmetic.
-    client.requestSkin(PlayerRenderPumpkin | PlayerRenderRobot);
-    h.step(20, {&client});
-    CHECK_EQ(client.profile().renderFlags, static_cast<std::uint32_t>(PlayerRenderPumpkin));
-    client.requestSkin(PlayerRenderGlitch);
-    h.step(20, {&client});
-    CHECK_EQ(client.profile().renderFlags, static_cast<std::uint32_t>(PlayerRenderPumpkin));
-
-    client.requestSkin(PlayerRenderNone);
-    CHECK(awaitProfile(h, client, [](const Profile& p) { return p.renderFlags == 0u; }));
-}
 
 TEST(the_kill_ledger_reaches_the_gallery) {
     Harness h("kills", [](const std::string& path) {

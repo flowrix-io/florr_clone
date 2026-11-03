@@ -68,9 +68,6 @@ struct Profile {
         });
     }
 
-    /// The cosmetic bit currently worn, or PlayerRenderNone.
-    std::uint32_t renderFlags = 0;
-
     SkillSet skills;
 
     /// Milliseconds the account still had to wait for its next oracle craft
@@ -682,7 +679,6 @@ public:
     /// session token, because the change revokes the one this client holds.
     /// Which account it is is the session's to say, so no name goes with it.
     void requestChangePassword(const std::string& current, const std::string& next);
-    void requestSkin(std::uint32_t renderFlags);
     /// Offers an authored skin to the shared catalog. The server re-sanitizes
     /// and assigns the id, so nothing here is authoritative -- the studio runs
     /// the same check first only so a rejection is instant.

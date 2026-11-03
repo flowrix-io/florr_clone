@@ -47,9 +47,11 @@ enum EquipFlag : std::uint16_t {
 
 enum PlayerRenderFlag : std::uint32_t {
     PlayerRenderNone    = 0,
-    PlayerRenderPumpkin = 1 << 0,
-    PlayerRenderRobot   = 1 << 1,
     PlayerRenderGlitch  = 1 << 2,
 };
+
+/// Bits 0 and 1 were the Pumpkin and Robot skins, removed 2026-11-02. The
+/// database loader strips them from accounts saved while they existed.
+inline constexpr std::uint32_t kRetiredRenderFlags = (1u << 0) | (1u << 1);
 
 } // namespace flix

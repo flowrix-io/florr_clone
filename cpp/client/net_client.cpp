@@ -43,7 +43,6 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::UpgradeSkill:        return "upgradeSkill";
         case net::ClientMessage::ResetSkills:         return "resetSkills";
         case net::ClientMessage::BuyPetal:            return "buyPetal";
-        case net::ClientMessage::SetSkin:             return "setSkin";
         case net::ClientMessage::RequestLeaderboard:  return "leaderboard";
         case net::ClientMessage::RedeemCode:          return "redeemCode";
         case net::ClientMessage::PublishSkin:         return "publishSkin";
@@ -554,13 +553,6 @@ void NetClient::requestRedeemCode(const std::string& code) {
     send(w);
 }
 
-void NetClient::requestSkin(std::uint32_t renderFlags) {
-    ByteWriter w;
-    beginMessage(w, net::ClientMessage::SetSkin);
-    w.u32(renderFlags);
-    send(w);
-}
-
 void NetClient::publishSkin(const std::string& name, const std::vector<SkinShape>& shapes) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::PublishSkin);
@@ -576,7 +568,6 @@ void NetClient::equipSkin(const std::string& id) {
     // equippedId the moment the button is clicked, and the studio's tick is
     // what the player sees change.
     equippedSkinId_ = id;
-    if (!id.empty()) profile_.renderFlags = PlayerRenderNone;
     ByteWriter w;
     beginMessage(w, net::ClientMessage::EquipSkin);
     w.str(id);
@@ -1341,8 +1332,6 @@ void NetClient::handleProfile(ByteReader& reader) {
         slot.rarity = clampRarity(reader.u8());
         next.loadout.push_back(slot);
     }
-
-    next.renderFlags = reader.u32();
 
     const std::uint16_t skillCount = reader.u16();
     for (std::uint16_t i = 0; i < skillCount; ++i) {

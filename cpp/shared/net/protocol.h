@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 70;
+inline constexpr std::uint16_t kProtocolVersion = 71;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -89,7 +89,6 @@ enum class ClientMessage : std::uint8_t {
                         ///< rotation was clicked, or kNoShopOffer for a
                         ///< full-price catalogue purchase; it is a claim about
                         ///< the card, never about the price.
-    SetSkin,            ///< u32 renderFlags
     RequestLeaderboard, ///< bool includeAdmins -- the TypeScript client's
                         ///< `?includeAdmins=true`, and sent as that was, from
                         ///< the "Show Admins on Leaderboard" switch, for anyone.
@@ -245,7 +244,7 @@ enum class ServerMessage : std::uint8_t {
     Profile,            ///< u32 revision (see ProfileDelta), str username,
                         ///< u8 accountFlags (AccountFlags), then
                         ///< the full account state: xp, level, stars, inventory, loadout,
-                        ///< skins, the talent tree and the mob-kill ledger,
+                        ///< the talent tree and the mob-kill ledger,
                         ///< then u32 milliseconds until the account may craft
                         ///< at an oracle again (0 when it may now), u32 the
                         ///< same until it may trade at a trader, and last

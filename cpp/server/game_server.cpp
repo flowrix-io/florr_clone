@@ -1435,7 +1435,6 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::JoinGame:
         case net::ClientMessage::LeaveGame:
         case net::ClientMessage::Respawn:
-        case net::ClientMessage::SetSkin:
         case net::ClientMessage::EquipSkin:
         case net::ClientMessage::DeleteSkin:
         case net::ClientMessage::VoteSkin:
@@ -1496,7 +1495,6 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::ResetSkills:   handleResetSkills(*session, connection); break;
         case net::ClientMessage::BuyPetal:      handleBuyPetal(*session, connection, reader); break;
         case net::ClientMessage::RedeemCode:    handleRedeemCode(*session, connection, reader); break;
-        case net::ClientMessage::SetSkin:       handleSetSkin(*session, connection, reader); break;
         case net::ClientMessage::RequestLeaderboard:
             handleLeaderboard(*session, connection, reader);
             break;
@@ -2162,8 +2160,6 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
         w.u16(worn.petalIndex);
         w.u8(static_cast<std::uint8_t>(worn.rarity));
     }
-
-    w.u32(record.renderFlags);
 
     // The talent tree. Only branches that have been bought are sent; the
     // balance is derived on both sides from the level, so it is not on the
@@ -4365,34 +4361,6 @@ void GameServer::handleRedeemCode(Session& session, net::Connection& connection,
                                     " \xE2\xAD\x90 Stars");
 }
 
-void GameServer::handleSetSkin(Session& session, net::Connection& connection, ByteReader& reader) {
-    const std::uint32_t requested = reader.u32();
-    if (!reader.ok() || !session.authenticated()) return;
-
-    // Exactly one cosmetic bit, or none. Glitch is deliberately absent: it is
-    // a transient effect PlayerVisuals ORs in, not something to wear.
-    constexpr std::uint32_t kWearable[] = {PlayerRenderPumpkin, PlayerRenderRobot};
-    std::uint32_t flags = PlayerRenderNone;
-    for (const std::uint32_t bit : kWearable) {
-        if (requested == bit) { flags = bit; break; }
-    }
-    if (requested != PlayerRenderNone && flags == PlayerRenderNone) return;
-
-    PlayerRecord& record = database_.progress(session.userId);
-    record.renderFlags = flags;
-    // The mirror of handleEquipSkin's rule. A custom skin WINS over a built-in
-    // when the client draws the body, so leaving one on here would make
-    // picking a built-in look like it did nothing at all.
-    if (flags != PlayerRenderNone) record.equippedSkinId.clear();
-    database_.markDirty();
-    if (session.playing() && world_.isAlive(session.entity)) {
-        PlayerVisuals& visuals = world_.ensure<PlayerVisuals>(session.entity);
-        visuals.renderFlags = flags;
-        visuals.equippedSkinId = record.equippedSkinId;
-    }
-    sendProfile(session, connection);
-}
-
 // --- user-created skins ----------------------------------------------------
 //
 // The catalog is one shared, public list: anything published renders on every
@@ -4708,15 +4676,11 @@ void GameServer::handleEquipSkin(Session& session, net::Connection& connection,
 
     PlayerRecord& record = database_.progress(session.userId);
     record.equippedSkinId = id;
-    // A custom skin replaces any built-in cosmetic so the two cannot fight
-    // over the same body.
-    if (!id.empty()) record.renderFlags = PlayerRenderNone;
     database_.markDirty();
     if (session.playing() && world_.isAlive(session.entity)) {
         // Onto the live body too, or the change waits for the next respawn:
         // the snapshot reads the component, never the account row.
         PlayerVisuals& visuals = world_.ensure<PlayerVisuals>(session.entity);
-        visuals.renderFlags = record.renderFlags;
         visuals.equippedSkinId = id;
     }
 }

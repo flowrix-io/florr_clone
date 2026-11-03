@@ -2192,8 +2192,8 @@ void WorldRenderer::drawGlitched(Canvas& canvas, Vec2 screen, double radius, std
     // Glitch is a post-process, not a replacement skin: the SAME body is drawn
     // into a transparent buffer and recomposed as horizontally displaced
     // bands, each one blitted straight out of the buffer. That is what keeps
-    // it composable with the Pumpkin and Robot skins, and what lets the glitch
-    // flower tear its petal ring along with its face.
+    // it composable with custom skins, and what lets the glitch flower tear
+    // its petal ring along with its face.
     const std::uint32_t bucket = glitchBucket(timeSeconds);
     const auto drawPlain = [&] {
         canvas.save();
@@ -2796,9 +2796,7 @@ const CustomSkin* WorldRenderer::wornSkin(const RemoteEntity& entity) const {
 
 void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
                                    double timeSeconds) const {
-    // A user-created skin outranks a built-in one, as it does in
-    // player-drawing.ts: the server keeps the two mutually exclusive, and this
-    // is the tie-break if an old account row ever carries both.
+    // A user-created skin is drawn in place of the default flower.
     if (const CustomSkin* skin = wornSkin(entity)) {
         // kFlowerArtRadius, not the flower's grown radius: the caller has
         // already scaled into the artwork's own radius-25 space, which is the
@@ -2839,21 +2837,7 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         }
         return;
     }
-    // Registration order in player-skins.ts is Pumpkin, then Robot. Preserve
-    // that deterministic priority when a saved account somehow has both bits.
-    if (entity.renderFlags & PlayerRenderPumpkin) {
-        drawPumpkin(canvas, entity);
-        if (wrappedInBandage(entity.faceFlags, entity.equipFlags)) {
-            drawUndeadWrap(canvas, timeSeconds);
-        }
-    } else if (entity.renderFlags & PlayerRenderRobot) {
-        drawRobot(canvas, entity);
-        if (wrappedInBandage(entity.faceFlags, entity.equipFlags)) {
-            drawUndeadWrap(canvas, timeSeconds);
-        }
-    } else {
-        drawDefaultFlower(canvas, entity, timeSeconds);
-    }
+    drawDefaultFlower(canvas, entity, timeSeconds);
 }
 
 void WorldRenderer::drawDefaultFlower(Canvas& canvas, const RemoteEntity& entity,
@@ -3036,78 +3020,6 @@ void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint16
     // florr wraps the bandage on after the third eye and before the crown.
     if (wrappedInBandage(faceFlags, equipFlags)) drawUndeadWrap(canvas, timeSeconds);
     if (equipFlags & EquipCrown) drawWornCrown(canvas);
-}
-
-void WorldRenderer::drawPumpkin(Canvas& canvas, const RemoteEntity& entity) const {
-    canvas.save();
-    // Stem
-    ui::setFill(canvas, 0x5A7D34u); ui::setStroke(canvas, 0x3F5A24u);
-    canvas.setLineWidth(2.0f); canvas.setLineJoin("round");
-    canvas.beginPath();
-    canvas.moveTo(-3, -23); canvas.lineTo(3, -23); canvas.lineTo(2, -31); canvas.lineTo(-2, -31);
-    canvas.closePath(); canvas.fill(); canvas.stroke();
-
-    ui::setFill(canvas, 0xA8490Du);
-    canvas.beginPath(); canvas.arc(0, 0, 26, 0, static_cast<float>(kTau)); canvas.fill();
-    ui::setFill(canvas, 0xE8731Fu);
-    canvas.beginPath(); canvas.ellipse(0, 0, 24, 23, 0, 0, static_cast<float>(kTau)); canvas.fill();
-    ui::setStroke(canvas, 0xC25A12u); canvas.setLineWidth(1.5f);
-    for (const float x : {-11.0f, 11.0f}) {
-        canvas.beginPath(); canvas.ellipse(x, 0, 6.5f, 22, 0, 0, static_cast<float>(kTau)); canvas.stroke();
-    }
-
-    const double eyeX = clamp(entity.eyeX, -2.0, 2.0) * 0.7;
-    const double eyeY = clamp(entity.eyeY, -2.0, 2.0) * 0.5;
-    ui::setFill(canvas, 0x3A1A02u);
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(-12 + eyeX), static_cast<float>(-1 + eyeY));
-    canvas.lineTo(static_cast<float>(-3 + eyeX), static_cast<float>(-1 + eyeY));
-    canvas.lineTo(static_cast<float>(-7.5 + eyeX), static_cast<float>(-9 + eyeY)); canvas.closePath();
-    canvas.moveTo(static_cast<float>(12 + eyeX), static_cast<float>(-1 + eyeY));
-    canvas.lineTo(static_cast<float>(3 + eyeX), static_cast<float>(-1 + eyeY));
-    canvas.lineTo(static_cast<float>(7.5 + eyeX), static_cast<float>(-9 + eyeY)); canvas.closePath();
-    canvas.fill();
-    canvas.beginPath();
-    canvas.moveTo(-13, 6); canvas.lineTo(-9, 12); canvas.lineTo(-4.5f, 6); canvas.lineTo(0, 13);
-    canvas.lineTo(4.5f, 6); canvas.lineTo(9, 12); canvas.lineTo(13, 6); canvas.lineTo(9, 9);
-    canvas.lineTo(-9, 9); canvas.closePath(); canvas.fill();
-    canvas.restore();
-}
-
-void WorldRenderer::drawRobot(Canvas& canvas, const RemoteEntity& entity) const {
-    canvas.save();
-    ui::setStroke(canvas, 0x7B8794u); canvas.setLineWidth(2.0f); canvas.setLineCap("round");
-    canvas.beginPath(); canvas.moveTo(0, -21); canvas.lineTo(0, -31); canvas.stroke();
-    ui::setFill(canvas, 0xD01C1Du); canvas.beginPath(); canvas.arc(0, -33, 3, 0, static_cast<float>(kTau)); canvas.fill();
-
-    ui::setFill(canvas, 0x4B5563u); canvas.beginPath(); canvas.roundRect(-25, -22, 50, 44, 9); canvas.fill();
-    ui::setFill(canvas, 0x9AA6B2u); canvas.beginPath(); canvas.roundRect(-22, -19, 44, 38, 7); canvas.fill();
-    ui::setFill(canvas, 0x6B7280u);
-    for (const Vec2 bolt : {Vec2{-17, -14}, Vec2{17, -14}, Vec2{-17, 15}, Vec2{17, 15}}) {
-        canvas.beginPath(); canvas.arc(static_cast<float>(bolt.x), static_cast<float>(bolt.y), 1.8f, 0, static_cast<float>(kTau)); canvas.fill();
-    }
-    ui::setFill(canvas, 0x10141Au); canvas.beginPath(); canvas.roundRect(-17, -8, 34, 13, 5); canvas.fill();
-
-    const double eyeX = clamp(entity.eyeX, -2.5, 2.5);
-    const double eyeY = clamp(entity.eyeY, -1.5, 1.5);
-    // The default flower colour is the TypeScript robot visor tint.
-    ui::setFill(canvas, 0xFFE763u);
-    canvas.setShadow(Color{255, 231, 99}, 6.0f);
-    for (const float x : {-8.0f, 8.0f}) {
-        canvas.beginPath();
-        canvas.arc(static_cast<float>(x + eyeX), static_cast<float>(-1.5 + eyeY), 2.6f, 0, static_cast<float>(kTau));
-        canvas.fill();
-    }
-    canvas.setShadow(Color{0, 0, 0, 0}, 0);
-
-    ui::setStroke(canvas, 0x3A4250u); canvas.setLineWidth(1.2f);
-    for (const float y : {10.0f, 14.0f}) {
-        canvas.beginPath(); canvas.moveTo(-10, y); canvas.lineTo(10, y); canvas.stroke();
-    }
-    for (int x = -10; x <= 10; x += 5) {
-        canvas.beginPath(); canvas.moveTo(static_cast<float>(x), 9); canvas.lineTo(static_cast<float>(x), 15); canvas.stroke();
-    }
-    canvas.restore();
 }
 
 void WorldRenderer::drawHitbox(Canvas& canvas, const RemoteEntity& entity, const Camera& camera,

@@ -401,8 +401,6 @@ private:
     void drawEntity(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawFlower(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawDefaultFlower(Canvas&, const RemoteEntity&, double timeSeconds) const;
-    void drawPumpkin(Canvas&, const RemoteEntity&) const;
-    void drawRobot(Canvas&, const RemoteEntity&) const;
     void drawHitbox(Canvas&, const RemoteEntity&, const Camera&, Vec2 at) const;
     void drawEffects(Canvas&, const Camera&) const;
     void drawLightning(Canvas&, const Camera&) const;

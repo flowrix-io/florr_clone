@@ -293,8 +293,8 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
         static_cast<std::uint8_t>(FaceDandelioned | FaceSquareEyes | FaceHasCorruption),
         static_cast<std::uint16_t>(EquipCutter | EquipThirdEye | EquipObserver |
                                   EquipAntennae | EquipTest1),
-        static_cast<std::uint32_t>(PlayerRenderPumpkin | PlayerRenderRobot),
-        "",     // no custom skin: this case is about the built-in flag bits
+        PlayerRenderNone,
+        "",     // no custom skin: this case is about the render flag bits
         true,   // glitched
     });
     Afflictions poisoned;
@@ -317,16 +317,13 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
     CHECK_EQ(first.equipFlags, static_cast<std::uint16_t>(EquipCutter | EquipThirdEye |
                                                           EquipObserver | EquipAntennae |
                                                           EquipTest1));
-    CHECK_EQ(first.renderFlags, static_cast<std::uint32_t>(PlayerRenderPumpkin |
-                                                            PlayerRenderRobot |
-                                                            PlayerRenderGlitch));
+    CHECK_EQ(first.renderFlags, static_cast<std::uint32_t>(PlayerRenderGlitch));
 
     // Visual updates use their own snapshot field: movement and health can
     // remain unchanged while the renderer receives a new face/skin state.
     PlayerVisuals& visuals = f.world.get<PlayerVisuals>(f.viewer);
     visuals.faceFlags = FaceNone;
     visuals.equipFlags = EquipNone;
-    visuals.renderFlags = PlayerRenderRobot;
     visuals.glitched = false;
     f.world.get<Afflictions>(f.viewer).poisonUntilMillis = 0;
     f.world.get<PlayerInput>(f.viewer).current.flags = net::InputAttack;
@@ -338,7 +335,7 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
     CHECK((second.faceFlags & (FacePoisoned | FaceDeadEyes | FaceDandelioned |
                                FaceSquareEyes | FaceHasCorruption)) == 0);
     CHECK_EQ(second.equipFlags, std::uint16_t(EquipNone));
-    CHECK_EQ(second.renderFlags, std::uint32_t(PlayerRenderRobot));
+    CHECK_EQ(second.renderFlags, std::uint32_t(PlayerRenderNone));
 }
 
 TEST(equipped_custom_skin_id_reaches_the_client) {

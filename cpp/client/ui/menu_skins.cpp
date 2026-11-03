@@ -1,10 +1,7 @@
 // The Skin Studio: a two-tab authoring surface for data-driven player skins.
 //
 // Not a picker. The player assembles a skin out of drawing primitives, names
-// it and publishes it; the Browse tab lists what everyone else published. The
-// built-in renderFlags cosmetics are deliberately unreachable from here -- the
-// server's set_skin command is the only way to those, exactly as in the
-// reference client, which has no in-client picker for them at all.
+// it and publishes it; the Browse tab lists what everyone else published.
 //
 // This is an OVERLAY PANEL and is built from the same pieces as the other
 // eleven: panelCard for the frame, panelHeading and panelClose for the
