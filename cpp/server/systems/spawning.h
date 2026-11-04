@@ -770,6 +770,9 @@ private:
         /// Index into bossClocks_: the biome of the map this band is drawn on.
         /// kInvalidIndex on a prestige twin, which keeps no clock.
         std::uint16_t biome = kInvalidIndex;
+        /// The name of that biome, which a twin has as well: it keeps no
+        /// clock, but it is still the place it is (MobConfig::replacesIn).
+        std::string biomeName;
         /// Drawn on a prestige twin (shared/game/prestige.h): every roll
         /// comes out a tier higher, never past super, and is never upgraded.
         bool prestige = false;
@@ -804,6 +807,10 @@ private:
                     CommandBuffer& commands);
     void runNests(World& world, const Terrain& terrain, const ContentRegistry& content,
                   Rng& rng, double nowMillis);
+    /// What a mob's wands do (MobWandRing): each squad rolled afresh once the
+    /// last of it is gone, and whatever a caster leaves behind sent after it.
+    void runWandRings(World& world, const Terrain& terrain, const ContentRegistry& content,
+                      Rng& rng, double nowMillis, CommandBuffer& commands);
     void expireEscorts(double dt, CommandBuffer& commands);
 
     /// Tops every spawn band up to the population its own area buys, wherever
@@ -1019,6 +1026,8 @@ private:
     /// to sleep with their head or nest.
     std::optional<Query<MobTag, AmbientMob>> dependents_;
     std::optional<Query<Transform, MobType, Spawner>> spawners_;
+    std::optional<Query<Transform, MobType, MobAi, MobWandRing>> wandRings_;
+    std::optional<Query<WandSummon>> wandSummons_;
     std::optional<Query<Transform, MobType, NestWaves>> waveNests_;
     std::optional<Query<Transform, Body, MobType, AmbushNest>> ambushNests_;
     /// The flowers an ambush can be sprung by: standing, not lying there.

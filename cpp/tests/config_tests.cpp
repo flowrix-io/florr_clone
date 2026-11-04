@@ -1516,7 +1516,11 @@ TEST(the_shipped_square_stands_in_for_one_mob_in_100000_and_one_super_in_10000) 
         const double expected = i >= rarityIndex(Rarity::Super) ? 1.0 / 10000.0 : 1.0 / 100000.0;
         CHECK_NEAR(mob.replaceChance[static_cast<std::size_t>(i)], expected, 1e-15);
     }
-    CHECK(r.standInMobs() == std::vector<std::uint16_t>{square});
+    const std::vector<std::uint16_t>& standIns = r.standInMobs();
+    CHECK(std::find(standIns.begin(), standIns.end(), square) != standIns.end());
+    // Anywhere: it names no biome.
+    CHECK(mob.replaceBiomes.empty());
+    CHECK(mob.replacesIn("anywhere at all"));
     // The stand-in rule is the only way one reaches the map: in no group, so no
     // band's group roll produces it, and no egg, which would put it in the shop.
     CHECK(mob.groups.empty());
@@ -1561,6 +1565,108 @@ TEST(a_replace_chance_carries_up_to_the_next_tier_that_names_one) {
 
     CHECK(!r.mob(r.mobIndex("plain")).replacesMobs());
     CHECK(r.standInMobs() == std::vector<std::uint16_t>{r.mobIndex("late")});
+}
+
+TEST(the_shipped_magician_stands_in_for_one_super_in_twenty_in_its_three_biomes) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t magician = r.mobIndex("magician");
+    CHECK(magician != kInvalidIndex);
+    if (magician == kInvalidIndex) return;
+    const MobConfig& mob = r.mob(magician);
+    for (int i = 0; i < kLadderRarityCount; ++i) {
+        const double expected = i >= rarityIndex(Rarity::Super) ? 0.05 : 0.0;
+        CHECK_EQ(mob.replaceChance[static_cast<std::size_t>(i)], expected);
+    }
+    CHECK(mob.minRarity == Rarity::Super);
+    CHECK(mob.replacesIn("desert"));
+    CHECK(mob.replacesIn("ant_hell"));
+    CHECK(mob.replacesIn("computer"));
+    CHECK(!mob.replacesIn("garden"));
+    // This rule is the only way one reaches the map, and no egg of it would
+    // hatch anything but another caster.
+    CHECK(mob.groups.empty());
+    CHECK(mob.noEggDrop);
+    const std::vector<std::uint16_t>& pool = r.randomPetMobs();
+    CHECK(std::find(pool.begin(), pool.end(), magician) == pool.end());
+
+    // Five wands round a purple flower with a player's eyes.
+    CHECK(mob.petalRing.present);
+    CHECK_EQ(mob.petalRing.petalId, std::string("magic_wand"));
+    CHECK_EQ(mob.petalRing.count, 5);
+    CHECK(mob.petalRing.spins);
+    CHECK(!mob.petalRing.shootOnHit);
+    CHECK(mob.petalRing.flowerFace);
+    CHECK(!mob.petalRing.squareEyes);
+    const std::uint32_t body = mob.petalRing.faceColor;
+    const std::uint32_t red = body >> 16, green = (body >> 8) & 0xFFu, blue = body & 0xFFu;
+    CHECK(green < red && red < blue);
+
+    // It drops a divider and a magic wand, and nothing else.
+    Json drops;
+    std::string error;
+    CHECK(Json::parseFile(testsupport::dataFile("mob_drops.json"), drops, error));
+    std::vector<std::string> items;
+    for (const Json& row : drops["magician"]["drops"].items()) {
+        items.push_back(row["itemType"].asString());
+    }
+    CHECK(items == (std::vector<std::string>{"divider", "magic_wand"}));
+}
+
+TEST(a_replace_biomes_list_says_where_a_stand_in_may_replace) {
+    ContentRegistry r;
+    std::string error;
+    Synthetic files;
+    files.mobs = R"JSON({
+      "plain": {"name": "Plain", "health": 3, "damage": 1, "size": 1},
+      "local": {"name": "Local", "health": 3, "damage": 1, "size": 1,
+        "replace_chance": {"common": 0.5}, "replace_biomes": ["desert", 7, "computer"]},
+      "odd": {"name": "Odd", "health": 3, "damage": 1, "size": 1,
+        "replace_chance": {"common": 0.5}, "replace_biomes": "desert"}
+    })JSON";
+    files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+        "cooldown": 1, "count": 1}})JSON";
+    CHECK(loadSynthetic(r, files, error));
+
+    const MobConfig& local = r.mob(r.mobIndex("local"));
+    CHECK(local.replacesIn("desert"));
+    CHECK(local.replacesIn("computer"));
+    CHECK(!local.replacesIn("garden"));
+    CHECK(warned(r, "replace_biomes holds a"));
+
+    // What is not a list is dropped and said, which leaves the mob replacing
+    // everywhere rather than quietly nowhere.
+    const MobConfig& odd = r.mob(r.mobIndex("odd"));
+    CHECK(odd.replaceBiomes.empty());
+    CHECK(odd.replacesIn("garden"));
+    CHECK(warned(r, "replace_biomes is"));
+}
+
+TEST(a_rings_face_defaults_to_the_glitch_flowers_and_can_name_its_own) {
+    ContentRegistry r;
+    std::string error;
+    Synthetic files;
+    files.mobs = R"JSON({
+      "plain": {"name": "Plain", "health": 3, "damage": 1, "size": 1,
+        "petal_ring": {"petalType": "p", "count": 2, "face": true}},
+      "own": {"name": "Own", "health": 3, "damage": 1, "size": 1,
+        "petal_ring": {"petalType": "p", "count": 2, "face": true,
+          "faceColor": "#12ab34", "squareEyes": false}},
+      "bad": {"name": "Bad", "health": 3, "damage": 1, "size": 1,
+        "petal_ring": {"petalType": "p", "count": 2, "face": true, "faceColor": "puce"}}
+    })JSON";
+    files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+        "cooldown": 1, "count": 1}})JSON";
+    CHECK(loadSynthetic(r, files, error));
+
+    const PetalRingSpec& plain = r.mob(r.mobIndex("plain")).petalRing;
+    CHECK_EQ(plain.faceColor, 0xFFE763u);
+    CHECK(plain.squareEyes);
+    const PetalRingSpec& own = r.mob(r.mobIndex("own")).petalRing;
+    CHECK_EQ(own.faceColor, 0x12AB34u);
+    CHECK(!own.squareEyes);
+    // A colour that is not one says so, and is the loader's white.
+    CHECK_EQ(r.mob(r.mobIndex("bad")).petalRing.faceColor, 0xFFFFFFu);
+    CHECK(warned(r, "faceColor 'puce' is not a colour"));
 }
 
 TEST(a_drop_with_nothing_to_drop_is_not_dropped) {

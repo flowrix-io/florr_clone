@@ -1962,7 +1962,7 @@
         "health": null,
         "size": 1,
         "cooldown": 1500,
-        "price": 30,
+        "price": 80,
         "description": "Divides mobs into two unless Apex rarity, which divides into four",
         "color": "#000000",
         "count": 1,

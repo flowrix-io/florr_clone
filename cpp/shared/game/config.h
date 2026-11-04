@@ -327,6 +327,11 @@ struct PetalRingSpec {
     /// artwork whenever one existed would change the one mob this branch was
     /// written for.
     bool flowerFace = false;
+    /// That face's body, as 0xRRGGBB, and the eyes it wears. Both default to
+    /// what the glitch flower has always drawn, so a ring that says neither
+    /// draws exactly as it did before either was a knob.
+    std::uint32_t faceColor = 0xFFE763u;
+    bool squareEyes = true;
 
     /// The ring is AMMUNITION: a hit knocks one petal off and fires it at
     /// whoever landed the hit. A ring without this is pure decoration, which
@@ -476,6 +481,14 @@ struct MobGroupMember {
 
 /// One entry of mobs.json, at its base (common) tier. Rarity is applied by
 /// mobStats(); nothing here is pre-scaled.
+/// A summon's body against the wild animal's at the same tier: sized on the
+/// old, smaller mob ladder (kPetSizeScale) rather than the wild one, then on
+/// the reference's pet ramp -- the same size at common, a third of it by unique.
+inline double petBodyScale(Rarity rarity) {
+    const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(rarity))));
+    return kPetSizeScale[tier] / kMobSizeScale[tier] * mobSizeRamp(rarity, kPetSizeScaleAtUnique);
+}
+
 struct MobConfig {
     std::string id;             ///< the JSON key, e.g. "soldier_ant"
     std::string name;
@@ -541,12 +554,20 @@ struct MobConfig {
     /// rarityFills, `{"common": 0.00001, "super": 0.0001}`: the highest entry
     /// at or below the rolled tier wins, and a tier below every entry is never
     /// replaced. Resolved to one figure per rung at load; zero for a mob that
-    /// replaces nothing, which is every mob but the square. It is the ONLY way
-    /// such a mob reaches a band, so one of these usually names no `groups`.
+    /// replaces nothing, which is most of them. It is the ONLY way such a mob
+    /// reaches a band, so one of these usually names no `groups`.
     std::array<double, kLadderRarityCount> replaceChance{};
     bool replacesMobs() const {
         return std::any_of(replaceChance.begin(), replaceChance.end(),
                            [](double chance) { return chance > 0.0; });
+    }
+    /// The biomes `replaceChance` holds in (`replace_biomes`), by the name a
+    /// map files itself under; empty is everywhere, which is the square. A
+    /// prestige twin stands in its plain map's biome.
+    std::vector<std::string> replaceBiomes;
+    bool replacesIn(const std::string& biome) const {
+        return replaceBiomes.empty() ||
+               std::find(replaceBiomes.begin(), replaceBiomes.end(), biome) != replaceBiomes.end();
     }
 
     bool hideRotation = false;   ///< draw upright regardless of heading
@@ -1013,6 +1034,12 @@ struct PetalConfig {
     double petManaCost = 0;
     /// Whether this petal summons anything, by name or by roll.
     bool hatchesPets() const { return petMobRandom || petMobIndex != kInvalidIndex; }
+    /// What a rolled petal's next summon comes to, before its tier's multiples.
+    int rollPetCount(Rng& rng) const {
+        const int least = std::max(0, petCount);
+        const int most = std::max(least, petCountMax);
+        return least + static_cast<int>(rng.below(static_cast<std::uint32_t>(most - least + 1)));
+    }
 
     double slowFactor = 1.0;    ///< multiplies the victim's speed; 1 = none
     double slowDurationMillis = 0;
@@ -1513,6 +1540,10 @@ public:
     /// Whether one will fight is left to the summon to ask, because that moves
     /// with the tier -- a bee is passive at common and neutral from rare up.
     const std::vector<std::uint16_t>& randomPetMobs() const { return randomPetMobs_; }
+    /// randomPetMobs() cut to the ones that fight at `rarity`. A passive pet
+    /// will not, and it would hold a squad that is only rolled again once it
+    /// has died.
+    std::vector<std::uint16_t> randomPetFighters(Rarity rarity) const;
 
     /// FNV-1a folded over the raw bytes of every content file both sides
     /// read, in a fixed order: mobs.json, petals.json, then (from load())

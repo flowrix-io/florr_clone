@@ -691,6 +691,372 @@ TEST(a_stand_in_takes_the_place_of_band_rolls_at_the_chance_its_tier_states) {
     }
 }
 
+TEST(a_stand_in_keeps_to_the_biomes_it_names) {
+    // The magician's rule on invented figures: the same roll that always comes
+    // out the stand-in inside its biomes never does outside them. The fixture
+    // world files itself under its own id, "banded".
+    const auto supersIn = [](const char* biomes) {
+        ContentRegistry content;
+        std::string error;
+        CHECK(test::loadFixtureContent(content, testsupport::tempDir("flix_stand_in_biomes"),
+                                       std::string(R"({
+            "pillar": {"name":"Pillar","health":10,"damage":1,"size":1,"speed":0.2,
+                       "min_rarity":"super"},
+            "local":  {"name":"Local","health":10,"damage":1,"size":1,"speed":0,
+                       "replace_chance":{"super":1},"replace_biomes":)") + biomes + "}\n}",
+                                       R"({
+            "basic": {"name":"Basic","damage":5,"health":5,"size":1,"cooldown":1000,"count":1}
+        })",
+                                       error));
+        WorldMaps maps;
+        const Rect small{kCentre.x - 1000.0, kCentre.y - 1000.0, 2000.0, 2000.0};
+        makeBandedWorld(maps, {small}, "pillar 100%");
+        Sim sim;
+        sim.spawner.worldMaps = &maps;
+        for (int i = 0; i < 40; ++i) {
+            sim.spawner.run(sim.world, sim.terrain, content, {}, sim.rng, sim.now,
+                            net::kTickSeconds, sim.commands);
+            sim.commands.flush();
+            sim.now += net::kTickMillis;
+        }
+        int locals = 0;
+        int pillars = 0;
+        const std::uint16_t local = content.mobIndex("local");
+        Query<MobTag, MobType> live{sim.world};
+        live.each([&](Entity, MobTag&, MobType& type) {
+            if (type.configIndex == local) ++locals;
+            else ++pillars;
+        });
+        return std::pair<int, int>{locals, pillars};
+    };
+
+    const std::pair<int, int> inside = supersIn(R"(["garden", "banded"])");
+    CHECK(inside.first > 0);
+    CHECK_EQ(inside.second, 0);
+    const std::pair<int, int> outside = supersIn(R"(["garden"])");
+    CHECK_EQ(outside.first, 0);
+    CHECK(outside.second > 0);
+}
+
+namespace {
+
+/// A caster and what its wands can hatch, written here: the rule under test
+/// is the ring's, whatever the shipped magician and magic wand say.
+const ContentRegistry& wandContent() {
+    static const ContentRegistry registry = [] {
+        ContentRegistry r;
+        std::string error;
+        if (!test::loadFixtureContent(r, testsupport::tempDir("flix_wand_ring"), R"({
+            "caster":  {"name":"Caster","health":400,"damage":30,"size":0.6667,"speed":0.48,
+                        "ai_type":"hostile","range":700,"noEggDrop":true,
+                        "petal_ring":{"petalType":"wand","count":5}},
+            "dressed": {"name":"Dressed","health":400,"damage":30,"size":0.6667,"speed":0.48,
+                        "ai_type":"hostile","range":700,"noEggDrop":true,
+                        "petal_ring":{"petalType":"plain","count":5}},
+            "fighter": {"name":"Fighter","health":50,"damage":5,"size":1,"speed":0.5,
+                        "ai_type":"hostile","range":100},
+            "guard":   {"name":"Guard","health":50,"damage":5,"size":1,"speed":0.5,
+                        "ai_type":"neutral","range":100},
+            "idler":   {"name":"Idler","health":50,"damage":5,"size":1,"speed":0.5,
+                        "ai_type":"passive","range":100}
+        })",
+                                      R"({
+            "wand":  {"name":"Wand","damage":0,"size":1,"cooldown":1500,"count":1,
+                      "petMobRandom":true,"petCount":1,"petCountMax":3},
+            "plain": {"name":"Plain","damage":5,"health":5,"size":1,"cooldown":1000,"count":1}
+        })",
+                                      error)) {
+            std::printf("    (the wand fixture did not load: %s)\n", error.c_str());
+        }
+        return r;
+    }();
+    return registry;
+}
+
+/// The same caster, whose wands can only hatch a centipede.
+const ContentRegistry& chainWandContent() {
+    static const ContentRegistry registry = [] {
+        ContentRegistry r;
+        std::string error;
+        if (!test::loadFixtureContent(r, testsupport::tempDir("flix_chain_wand_ring"), R"({
+            "caster":              {"name":"Caster","health":400,"damage":30,"size":0.6667,
+                                    "speed":0.48,"ai_type":"hostile","range":700,"noEggDrop":true,
+                                    "petal_ring":{"petalType":"wand","count":5}},
+            "evil_centipede":      {"name":"Evil","health":25,"damage":10,"size":1,"speed":1,
+                                    "ai_type":"hostile","range":500,"centipede_ai":true},
+            "evil_centipede_body": {"name":"Evil","health":25,"damage":10,"size":1,"speed":1,
+                                    "ai_type":"hostile","centipede_ai":true,"noEggDrop":true}
+        })",
+                                      R"({
+            "wand": {"name":"Wand","damage":0,"size":1,"cooldown":1500,"count":1,
+                     "petMobRandom":true,"petCount":1,"petCountMax":3}
+        })",
+                                      error)) {
+            std::printf("    (the chain wand fixture did not load: %s)\n", error.c_str());
+        }
+        return r;
+    }();
+    return registry;
+}
+
+/// A caster at super with a flower to look at, and the spawner driven against
+/// the rig's own content. MobAiSystem is not running here: the caster has a
+/// target when the test says it does.
+struct WandRig {
+    const ContentRegistry& content;
+    Sim sim;
+    Entity caster = NULL_ENTITY;
+    Entity flower = NULL_ENTITY;
+    double reload = 0.0;
+
+    explicit WandRig(const ContentRegistry& loaded, const char* id = "caster") : content(loaded) {
+        caster = sim.spawner.spawnMob(sim.world, sim.terrain, content, content.mobIndex(id),
+                                      Rarity::Super, kCentre, Realm::Overworld, 0.0, sim.rng);
+        flower = makePlayer(sim.world, kCentre + Vec2{300.0, 0.0});
+        reload = content.petalStats(content.mob(content.mobIndex(id)).petalRing.petalIndex,
+                                    Rarity::Super)
+                     .reloadMillis;
+    }
+    void tick(int ticks = 1) {
+        for (int i = 0; i < ticks; ++i) {
+            sim.spawner.run(sim.world, sim.terrain, content, Sim::overworld({kCentre}), sim.rng,
+                            sim.now, net::kTickSeconds, sim.commands);
+            sim.commands.flush();
+            sim.now += net::kTickMillis;
+        }
+    }
+    /// Enough ticks for every wand to have come round once.
+    void lap() { tick(static_cast<int>(std::ceil(reload / net::kTickMillis)) + 2); }
+    void aim() { sim.world.get<MobAi>(caster).target = flower; }
+    const std::vector<std::vector<Entity>>& squads() {
+        return sim.world.get<MobWandRing>(caster).squads;
+    }
+    std::vector<Entity> summons() {
+        std::vector<Entity> out;
+        Query<WandSummon> all{sim.world};
+        all.each([&](Entity e, WandSummon&) { out.push_back(e); });
+        return out;
+    }
+};
+
+} // namespace
+
+TEST(a_wand_is_raised_only_at_somebody) {
+    // A boss stays awake with nobody near, and a squad standing in an empty
+    // field would only be replaced for ever by the next.
+    WandRig rig(wandContent());
+    CHECK_EQ(rig.squads().size(), std::size_t(5));
+    rig.lap();
+    rig.lap();
+    CHECK(rig.summons().empty());
+
+    rig.aim();
+    rig.tick();
+    CHECK(!rig.summons().empty());
+    // And with the target gone, nothing more comes out.
+    rig.sim.world.get<MobAi>(rig.caster).target = NULL_ENTITY;
+    const std::size_t out = rig.summons().size();
+    rig.lap();
+    CHECK_EQ(rig.summons().size(), out);
+}
+
+TEST(each_wand_rolls_a_squad_of_its_own_one_wand_at_a_time) {
+    WandRig rig(wandContent());
+    rig.aim();
+    const auto rolled = [&] {
+        std::size_t count = 0;
+        for (const std::vector<Entity>& squad : rig.squads()) count += squad.empty() ? 0 : 1;
+        return count;
+    };
+
+    // The first on the tick the caster has somebody, and not all five with it.
+    rig.tick();
+    CHECK_EQ(rolled(), std::size_t(1));
+    // The next a fifth of the reload later, so each comes round on the reload.
+    const int slice = static_cast<int>(rig.reload / 5.0 / net::kTickMillis);
+    rig.tick(slice - 1);
+    CHECK_EQ(rolled(), std::size_t(1));
+    rig.tick(2);
+    CHECK_EQ(rolled(), std::size_t(2));
+    rig.lap();
+    CHECK_EQ(rolled(), std::size_t(5));
+
+    const std::uint16_t fighter = rig.content.mobIndex("fighter");
+    const std::uint16_t guard = rig.content.mobIndex("guard");
+    World& world = rig.sim.world;
+    std::size_t counted = 0;
+    for (const std::vector<Entity>& squad : rig.squads()) {
+        // The wand's own count, as a flower's wand rolls it.
+        CHECK(squad.size() >= 1 && squad.size() <= 3);
+        counted += squad.size();
+        for (const Entity pet : squad) {
+            // Only what fights: never the passive mob, never another caster.
+            const MobType& type = world.get<MobType>(pet);
+            CHECK(type.configIndex == fighter || type.configIndex == guard);
+            // Held to ultra, as a nest's minion is: never a boss of its own.
+            CHECK(type.rarity == Rarity::Ultra);
+            // Nothing to farm, and leashed to what conjured it.
+            CHECK(!world.has<Bounty>(pet));
+            CHECK_EQ(world.get<WandSummon>(pet).caster, rig.caster);
+            CHECK_EQ(world.get<HoleTether>(pet).hole, rig.caster);
+            // On the caster's target from the start, whatever it is in the
+            // wild, and seeing as far as the caster sees.
+            const MobAi& mind = world.get<MobAi>(pet);
+            CHECK(mind.kind == AiKind::Hostile);
+            CHECK_EQ(mind.target, rig.flower);
+            CHECK(mind.aggroRange >= world.get<MobAi>(rig.caster).aggroRange);
+            // Out of the caster's middle.
+            CHECK(distance(world.get<Transform>(pet).position, kCentre) < 2.0);
+            // A pet's body and health at that tier, not a wild ultra's, and
+            // the bite both ladders agree on.
+            const MobConfig& config = rig.content.mob(type.configIndex);
+            const MobStats wild = rig.content.mobStats(type.configIndex, Rarity::Ultra);
+            const double ladder = petalStatScale(Rarity::Ultra);
+            CHECK_NEAR(world.get<Body>(pet).radius, wild.radius * petBodyScale(Rarity::Ultra), 1e-9);
+            CHECK(world.get<Body>(pet).radius < wild.radius);
+            CHECK_NEAR(world.get<Body>(pet).mass, wild.mass, 1e-9);
+            CHECK_NEAR(world.get<MobType>(pet).sizeJitter, petBodyScale(Rarity::Ultra), 1e-9);
+            CHECK_NEAR(world.get<Health>(pet).max, config.health * ladder, 1e-9);
+            CHECK_NEAR(world.get<Health>(pet).current, config.health * ladder, 1e-9);
+            CHECK(world.get<Health>(pet).max < wild.health);
+            CHECK_NEAR(world.get<ContactDamage>(pet).amount, wild.damage, 1e-6);
+        }
+    }
+    CHECK_EQ(rig.summons().size(), counted);
+}
+
+TEST(a_wand_rolls_again_only_once_the_last_of_its_squad_is_gone) {
+    WandRig rig(wandContent());
+    rig.aim();
+    rig.lap();
+    World& world = rig.sim.world;
+    const std::vector<std::vector<Entity>> first = rig.squads();
+
+    // Standing squads stay exactly as they are, lap after lap.
+    rig.lap();
+    rig.lap();
+    CHECK(rig.squads() == first);
+
+    // A corpse is gone as far as the wand is concerned, and the rest of the
+    // squad still holds it.
+    const std::size_t wand = 2;
+    for (std::size_t i = 1; i < first[wand].size(); ++i) world.add<Dead>(first[wand][i]);
+    rig.lap();
+    CHECK(rig.squads()[wand] == std::vector<Entity>{first[wand][0]});
+
+    // The last of it goes: this wand rolls within a lap, and no other does.
+    world.destroy(first[wand][0]);
+    rig.lap();
+    CHECK(!rig.squads()[wand].empty());
+    for (const Entity pet : rig.squads()[wand]) {
+        CHECK(std::find(first[wand].begin(), first[wand].end(), pet) == first[wand].end());
+    }
+    for (std::size_t w = 0; w < first.size(); ++w) {
+        if (w != wand) CHECK(rig.squads()[w] == first[w]);
+    }
+}
+
+TEST(what_a_wand_conjured_goes_the_way_its_caster_went) {
+    // Killed: the lot pop with it.
+    {
+        WandRig rig(wandContent());
+        rig.aim();
+        rig.lap();
+        const std::vector<Entity> out = rig.summons();
+        CHECK(!out.empty());
+        rig.sim.world.add<Dead>(rig.caster);
+        rig.tick();
+        for (const Entity pet : out) CHECK(rig.sim.world.has<Dead>(pet));
+    }
+    // Despawned: destroyed with no chance to run anything, and they follow
+    // without a corpse between them.
+    {
+        WandRig rig(wandContent());
+        rig.aim();
+        rig.lap();
+        const std::vector<Entity> out = rig.summons();
+        CHECK(!out.empty());
+        rig.sim.world.destroy(rig.caster);
+        rig.tick();
+        for (const Entity pet : out) CHECK(!rig.sim.world.isAlive(pet));
+    }
+}
+
+TEST(a_centipede_out_of_a_wand_pays_for_no_part_of_itself) {
+    WandRig rig(chainWandContent());
+    rig.aim();
+    rig.lap();
+    World& world = rig.sim.world;
+    const std::uint16_t head = rig.content.mobIndex("evil_centipede");
+    for (const std::vector<Entity>& squad : rig.squads()) {
+        CHECK(!squad.empty());
+        // Every bead is the squad's, or a wand would roll again with a body
+        // still crawling, and each is free of the bounty it was born with.
+        CHECK_EQ(squad.size() % (static_cast<std::size_t>(kCentipedeSegmentCount) + 1),
+                 std::size_t(0));
+        for (const Entity bead : squad) {
+            CHECK(world.has<BodySegment>(bead));
+            CHECK(!world.has<Bounty>(bead));
+            CHECK_EQ(world.get<WandSummon>(bead).caster, rig.caster);
+        }
+        CHECK_EQ(world.get<MobType>(squad.front()).configIndex, head);
+        // Closed up on the head at the pet's size, not strung out at the wild
+        // animal's.
+        for (const Entity bead : squad) {
+            const BodySegment& link = world.get<BodySegment>(bead);
+            if (link.head) continue;
+            const double reach = link.spacing;
+            CHECK(reach > 0.0);
+            CHECK_NEAR(distance(world.get<Transform>(bead).position,
+                                world.get<Transform>(link.ahead).position),
+                       reach, 1e-6);
+            const double beadRadius =
+                rig.content.mobStats(world.get<MobType>(bead).configIndex, Rarity::Ultra).radius;
+            const double leaderRadius = link.segmentIndex == 1
+                                            ? rig.content.mobStats(head, Rarity::Ultra).radius
+                                            : beadRadius;
+            CHECK_NEAR(reach,
+                       rig.content.mob(head).segmentSpacing(leaderRadius, beadRadius) *
+                           petBodyScale(Rarity::Ultra),
+                       1e-9);
+        }
+    }
+    // And every bead goes with the caster, though only the heads are leashed.
+    const std::vector<Entity> out = rig.summons();
+    world.destroy(rig.caster);
+    rig.tick();
+    for (const Entity bead : out) CHECK(!world.isAlive(bead));
+}
+
+TEST(neither_a_caster_nor_its_summons_can_be_divided_or_turned) {
+    // A summon turned or divided would come out carrying the bounty it was
+    // stripped of, and a caster's squads are not a thing a piece could inherit.
+    WandRig rig(wandContent());
+    rig.aim();
+    rig.tick();
+    const std::vector<Entity> out = rig.summons();
+    CHECK(!out.empty());
+    if (out.empty()) return;
+    World& world = rig.sim.world;
+    const std::uint16_t into = rig.content.mobIndex("fighter");
+    for (const Entity mob : {rig.caster, out.front()}) {
+        CHECK_EQ(rig.sim.spawner.convertMob(world, rig.sim.terrain, rig.content, mob, into,
+                                            rig.sim.now, rig.sim.rng),
+                 NULL_ENTITY);
+        CHECK(!rig.sim.spawner.divideMob(world, rig.sim.terrain, rig.content, mob, 2, rig.sim.now,
+                                         rig.sim.rng));
+    }
+}
+
+TEST(a_ring_of_petals_that_hatch_nothing_summons_nothing) {
+    // The glitch flower's kind of ring: drawn, and that is all.
+    WandRig rig(wandContent(), "dressed");
+    CHECK(!rig.sim.world.has<MobWandRing>(rig.caster));
+    rig.aim();
+    rig.lap();
+    CHECK(rig.summons().empty());
+}
+
 TEST(the_pyramid_beetles_stand_undead_on_a_line_through_their_super_figure) {
     // User, 2026-10-21: "It should stay undead for 30 seconds at super, and
     // linear scaling for rarities" -- the mummy beetle first, then "Also do

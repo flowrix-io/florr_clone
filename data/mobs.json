@@ -2607,5 +2607,48 @@
         },
         "noEggDrop": true,
         "neverAmbient": true
+    },
+    "magician": {
+        "name": "Magician",
+        "health": 400,
+        "damage": 30,
+        "size": 0.6667,
+        "visual_scale": 1,
+        "speed": 0.48,
+        "cooldown": 2000,
+        "xp": {
+            "common": 2,
+            "uncommon": 5,
+            "rare": 16,
+            "epic": 110,
+            "legendary": 1500,
+            "mythic": 22000,
+            "ultra": 330000,
+            "super": 2700000,
+            "unique": 15000000
+        },
+        "description": "Five wands, and every one of them works.",
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-58 -58 116 116\" xmlns=\"http://www.w3.org/2000/svg\">\n  <g>\n    <animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; 360\" dur=\"4s\" repeatCount=\"indefinite\" />\n    <g transform=\"rotate(0)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n    <g transform=\"rotate(72)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n    <g transform=\"rotate(144)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n    <g transform=\"rotate(216)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n    <g transform=\"rotate(288)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n  </g>\n\n  <circle cx=\"0\" cy=\"0\" r=\"26.5\" fill=\"#7c3eb3\" />\n  <circle cx=\"0\" cy=\"0\" r=\"23.5\" fill=\"#9b4de0\" />\n\n  <g fill=\"#000000\">\n    <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n    <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n  </g>\n  <g fill=\"#ffffff\">\n    <circle cx=\"-7\" cy=\"-4.8\" r=\"3\" />\n    <circle cx=\"7\" cy=\"-4.8\" r=\"3\" />\n  </g>\n  <path d=\"M -6 10 Q 0 14.5 6 10\" fill=\"none\" stroke=\"#222222\" stroke-width=\"1.5\" stroke-linecap=\"round\" />\n</svg>",
+        "ai_type": "hostile",
+        "range": 700,
+        "color": "#9b4de0",
+        "hideRotation": true,
+        "min_rarity": "super",
+        "noEggDrop": true,
+        "replace_chance": {
+            "super": 0.05
+        },
+        "replace_biomes": [
+            "desert",
+            "ant_hell",
+            "computer"
+        ],
+        "petal_ring": {
+            "petalType": "magic_wand",
+            "count": 5,
+            "face": true,
+            "faceColor": "#9b4de0",
+            "squareEyes": false
+        }
     }
 }

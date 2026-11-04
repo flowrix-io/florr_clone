@@ -9,6 +9,7 @@
 #include "shared/core/types.h"
 #include "shared/game/config.h"
 #include "shared/net/protocol.h"
+#include "fixture_content.h"
 #include "render_rig.h"
 #include "test_data.h"
 
@@ -607,4 +608,82 @@ TEST(a_moon_is_one_picture_magnified_to_its_radius) {
     CHECK(crater > 50);
     // The disc is ~2900 pixels; the two may differ only along edges.
     CHECK(differingPixels(common, apex) < 60);
+}
+
+TEST(a_ring_mobs_face_and_petals_are_the_ones_its_config_names) {
+    // Through WorldRenderer, on a fixture of the test's own: a face named by the
+    // ring, drawn by the painter a player's flower is drawn by, and its petals
+    // going round outside it.
+    CHECK(testsupport::fontsReady());
+    ContentRegistry content;
+    std::string error;
+    CHECK(test::loadFixtureContent(content, testsupport::tempDir("flix_ring_face"), R"({
+        "gold":   {"name":"Gold","health":10,"damage":1,"size":1,"speed":0.2,"hideRotation":true,
+                   "petal_ring":{"petalType":"stick","count":5,"face":true}},
+        "purple": {"name":"Purple","health":10,"damage":1,"size":1,"speed":0.2,"hideRotation":true,
+                   "petal_ring":{"petalType":"stick","count":5,"face":true,
+                                 "faceColor":"#9b4de0","squareEyes":false}}
+    })",
+                                   R"({
+        "stick": {"name":"Stick","damage":0,"size":1,"cooldown":1000,"count":1,
+                  "image":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\"><rect width=\"32\" height=\"32\" fill=\"#00ff00\"/></svg>"}
+    })",
+                                   error));
+    SpriteCache sprites;
+    sprites.build(content, testsupport::dataDir());
+
+    constexpr int kSize = 400;
+    constexpr double kRadius = 50.0;
+    const Vec2 at{1000.0, 1000.0};
+    // Art space is radius 25 about the middle of the frame, doubled here.
+    const auto pixel = [&](const std::vector<std::uint8_t>& rgba, double artX, double artY) {
+        const int x = kSize / 2 + static_cast<int>(artX * kRadius / 25.0);
+        const int y = kSize / 2 + static_cast<int>(artY * kRadius / 25.0);
+        const std::size_t i = (static_cast<std::size_t>(y) * kSize + x) * 4;
+        return (static_cast<std::uint32_t>(rgba[i]) << 16) |
+               (static_cast<std::uint32_t>(rgba[i + 1]) << 8) | rgba[i + 2];
+    };
+    const auto draw = [&](const char* id) {
+        RemoteEntity mob;
+        mob.netId = 7;
+        mob.kind = net::EntityKind::Mob;
+        mob.typeIndex = content.mobIndex(id);
+        mob.rarity = Rarity::Common;
+        mob.position = mob.targetPosition = at;
+        mob.needsSnap = false;
+        mob.radius = kRadius;
+        WorldView view;
+        view.setRealm(Realm::Overworld);
+        view.seedForTest(mob);
+        WorldRenderer renderer;
+        renderer.setContent(&content);
+        renderer.setSprites(&sprites);
+        renderer.update(0.030);
+        Canvas canvas = Canvas::createVirtual(kSize, kSize);
+        renderer.draw(canvas, view, testsupport::frameCamera(kSize, at), at, 0.0);
+        return canvas.getImageData(0, 0, kSize, kSize);
+    };
+
+    // Below the mouth is body, and above the middle of the left eye's own column
+    // is where a square eye reaches and a round one does not.
+    const std::vector<std::uint8_t> gold = draw("gold");
+    CHECK_EQ(pixel(gold, -16.0, 8.0), 0xFFE763u);
+    CHECK_EQ(pixel(gold, -9.5, -10.5), 0x000000u);
+    const std::vector<std::uint8_t> purple = draw("purple");
+    CHECK_EQ(pixel(purple, -16.0, 8.0), 0x9B4DE0u);
+    CHECK_EQ(pixel(purple, -9.5, -10.5), 0x9B4DE0u);
+
+    // All five petals, and none of them on the flower.
+    int petals = 0;
+    for (int y = 0; y < kSize; ++y) {
+        for (int x = 0; x < kSize; ++x) {
+            const std::size_t i = (static_cast<std::size_t>(y) * kSize + x) * 4;
+            if (purple[i] > 8 || purple[i + 1] < 247 || purple[i + 2] > 8) continue;
+            ++petals;
+            const double dx = x - kSize / 2 + 0.5;
+            const double dy = y - kSize / 2 + 0.5;
+            CHECK(std::sqrt(dx * dx + dy * dy) > kRadius);
+        }
+    }
+    CHECK(petals > 500);
 }

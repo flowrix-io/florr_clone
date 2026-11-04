@@ -421,6 +421,11 @@ PetalRingSpec parsePetalRing(Ctx& ctx, const Json& owner,
     spec.spins = ctx.boolean(node, "spin", true);
     spec.followRotation = ctx.boolean(node, "follow", false);
     spec.flowerFace = ctx.boolean(node, "face");
+    if (node.contains("faceColor")) {
+        std::string raw;
+        spec.faceColor = readColor(ctx, node, "faceColor", raw) >> 8;
+    }
+    spec.squareEyes = ctx.boolean(node, "squareEyes", true);
     spec.shootOnHit = ctx.boolean(node, "shootOnHit");
     spec.shotSpeed = ctx.range(node, "shotSpeed", 0.0, 0.0, kMaxSpeedUnits);
     spec.shotDistance = ctx.range(node, "shotDistance", 0.0, 0.0, kWorldSize);
@@ -857,6 +862,22 @@ std::array<double, kLadderRarityCount> parseReplaceChance(Ctx& ctx, const Json& 
     return chance;
 }
 
+/// `"replace_biomes": ["desert", "computer"]` -- see MobConfig::replaceBiomes.
+std::vector<std::string> parseReplaceBiomes(Ctx& ctx, const Json& src) {
+    std::vector<std::string> biomes;
+    if (!src.contains("replace_biomes")) return biomes;
+    const Json& node = src["replace_biomes"];
+    if (!node.isArray()) {
+        ctx.warn(std::string("replace_biomes is ") + typeName(node) + "; ignored");
+        return biomes;
+    }
+    for (const Json& entry : node.items()) {
+        if (entry.isString()) biomes.push_back(entry.asString());
+        else ctx.warn(std::string("replace_biomes holds a ") + typeName(entry) + "; ignored");
+    }
+    return biomes;
+}
+
 /// The `npc` block: `{ "service": "oracle" }` for the oracle, `{ "service":
 /// "trader" }` for the trader, `{ "team": "hostile" }` for the target dummy,
 /// and `{ "service": "assembler", "recipes": [...] }` for an assembler.
@@ -1034,6 +1055,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.spawnWeight = ctx.range(src, "spawn_weight", 1.0, 0.0, 1000.0);
     m.minRarity = ctx.rarity(src, "min_rarity");
     m.replaceChance = parseReplaceChance(ctx, src);
+    m.replaceBiomes = parseReplaceBiomes(ctx, src);
     if (src.contains("section")) {
         ctx.warn("still declares `section`, which the 3x3 grid used to index; "
                  "spawning is by named `groups` now and the field is ignored");
@@ -1791,6 +1813,14 @@ std::uint16_t ContentRegistry::mobIndex(const std::string& id) const {
 std::uint16_t ContentRegistry::petalIndex(const std::string& id) const {
     auto it = petalIds_.find(id);
     return it == petalIds_.end() ? kInvalidIndex : it->second;
+}
+
+std::vector<std::uint16_t> ContentRegistry::randomPetFighters(Rarity rarity) const {
+    std::vector<std::uint16_t> fighters;
+    for (const std::uint16_t mob : randomPetMobs_) {
+        if (mobStats(mob, rarity).ai != AiKind::Passive) fighters.push_back(mob);
+    }
+    return fighters;
 }
 
 MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {

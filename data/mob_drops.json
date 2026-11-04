@@ -1618,5 +1618,26 @@
         "maxQuantity": 1
       }
     ]
+  },
+  "magician": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "divider",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "magic_wand",
+        "rarity": "common",
+        "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
   }
 }

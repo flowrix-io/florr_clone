@@ -43,15 +43,15 @@ bool alwaysAwake(const ContentRegistry& content, const MobType& type, bool prest
 }
 
 /// What a band's roll of `type` at `rarity` comes out as once the stand-ins --
-/// the mobs with a `replace_chance`, which is to say the square -- have had
-/// their chance to take its place. One draw however many stand-ins there are,
-/// and none at all when the content has none, so a roster without a square
-/// rolls exactly the stream it always did.
+/// the mobs with a `replace_chance`: the square, and in its biomes the magician
+/// -- have had their chance to take its place. One draw however many stand-ins
+/// there are, and none at all when the content has none, so a roster without a
+/// square rolls exactly the stream it always did.
 ///
 /// A permanent fixture is never replaced: the DPS row is furniture, and a
 /// square standing in a dummy's plot would be one for good.
 std::uint16_t rollStandIn(const ContentRegistry& content, std::uint16_t type, Rarity rarity,
-                          Rng& rng) {
+                          const std::string& biome, Rng& rng) {
     const std::vector<std::uint16_t>& standIns = content.standInMobs();
     if (standIns.empty() || content.mob(type).neverAmbient) return type;
     const std::size_t tier = static_cast<std::size_t>(ladderIndex(rarity));
@@ -59,10 +59,37 @@ std::uint16_t rollStandIn(const ContentRegistry& content, std::uint16_t type, Ra
     for (const std::uint16_t standIn : standIns) {
         // Never below a stand-in's own floor, the rule every other spawn obeys.
         if (rarityIndex(rarity) < rarityIndex(content.mob(standIn).minRarity)) continue;
+        if (!content.mob(standIn).replacesIn(biome)) continue;
         roll -= content.mob(standIn).replaceChance[tier];
         if (roll < 0.0) return standIn;
     }
     return type;
+}
+
+/// Makes one wild body a wand's pet: the body and health a flower's wand would
+/// have hatched at this tier (PetalSystem::hatchPetBody), not a wild animal's,
+/// and no Bounty. The wild ladder makes each tier a wall worth climbing for its
+/// loot, and a squad that pays nothing and is replaced for free is not one.
+/// Damage is 3x a tier on both ladders, and mass stays the tier's, as a pet's
+/// does. `head` is where its chain's head stands; the beads close up on it.
+void tameWandSummon(World& world, const ContentRegistry& content, Entity body, Entity caster,
+                    Vec2 head) {
+    MobType& type = world.get<MobType>(body);
+    const MobConfig& config = content.mob(type.configIndex);
+    const double shrink = petBodyScale(type.rarity);
+    const double ladder = petalStatScale(type.rarity);
+    type.sizeJitter *= shrink;
+    world.get<Body>(body).radius *= shrink;
+    Transform& transform = world.get<Transform>(body);
+    transform.position = head + (transform.position - head) * shrink;
+    const double health = config.health * ladder * config.petHealthScale;
+    world.get<Health>(body) = Health{health, health, 0.0, 0.0};
+    if (ContactDamage* contact = world.tryGet<ContactDamage>(body)) {
+        contact->amount = config.damage * ladder * config.petDamageScale;
+    }
+    if (BodySegment* link = world.tryGet<BodySegment>(body)) link->spacing *= shrink;
+    world.remove<Bounty>(body);
+    world.add<WandSummon>(body, WandSummon{caster});
 }
 
 /// The per-spawn size multiplier on the mob's nominal size: the `random_size`
@@ -361,6 +388,10 @@ void SpawnSystem::bind(World& world) {
     dependents_->without<Dead>();
     spawners_.emplace(world);
     spawners_->without<Dead>();
+    wandRings_.emplace(world);
+    wandRings_->without<Dead>();
+    wandSummons_.emplace(world);
+    wandSummons_->without<Dead>();
     waveNests_.emplace(world);
     waveNests_->without<Dead>();
     allMobs_.emplace(world);
@@ -557,7 +588,7 @@ Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const Conte
         return NULL_ENTITY;
     }
     if (world.has<BodySegment>(mob) || world.has<MobPetalRing>(mob) || world.has<Spawner>(mob) ||
-        world.has<NestWaves>(mob)) {
+        world.has<NestWaves>(mob) || world.has<MobWandRing>(mob) || world.has<WandSummon>(mob)) {
         return NULL_ENTITY;
     }
     const MobType* type = world.tryGet<MobType>(mob);
@@ -635,7 +666,8 @@ bool SpawnSystem::divideMob(World& world, const Terrain& terrain, const ContentR
     }
     if (world.has<BodySegment>(mob) || world.has<MobPetalRing>(mob) || world.has<Spawner>(mob) ||
         world.has<NestWaves>(mob) || world.has<AmbushNest>(mob) ||
-        world.has<DungeonEntrance>(mob)) {
+        world.has<DungeonEntrance>(mob) || world.has<MobWandRing>(mob) ||
+        world.has<WandSummon>(mob)) {
         return false;
     }
     const MobType* type = world.tryGet<MobType>(mob);
@@ -1015,6 +1047,15 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
         }
         // Armed, with nothing out: the brood waits for a flower (runNests).
         if (config.ambush.present) world.add<AmbushNest>(e);
+        // Its wands are what they are on a flower's loadout, and the ring is
+        // still only drawn. A ring of ammunition is real bodies and is the
+        // other thing entirely.
+        if (config.petalRing.present && !config.petalRing.shootOnHit &&
+            content.petal(config.petalRing.petalIndex).hatchesPets()) {
+            MobWandRing wands;
+            wands.squads.resize(static_cast<std::size_t>(config.petalRing.count));
+            world.add<MobWandRing>(e, std::move(wands));
+        }
         // Unclaimed: the dungeon is built the first time a flower walks in
         // (DungeonSystem).
         if (config.dungeon.present) world.add<DungeonEntrance>(e);
@@ -1205,6 +1246,7 @@ void SpawnSystem::run(World& world, const Terrain& terrain, const ContentRegistr
 
     expireEscorts(dt, commands);
     runNests(world, terrain, content, rng, nowMillis);
+    runWandRings(world, terrain, content, rng, nowMillis, commands);
 
     // EVERY tick, unlike everything else here, because a corpse does not wait:
     // combat marks a mob dead earlier in this very tick and the runtime reaps
@@ -1505,6 +1547,91 @@ bool SpawnSystem::seenBy(const std::vector<Viewer>& viewers, Realm realm, Vec2 p
     return false;
 }
 
+void SpawnSystem::runWandRings(World& world, const Terrain& terrain,
+                               const ContentRegistry& content, Rng& rng, double nowMillis,
+                               CommandBuffer& commands) {
+    // Found from the summon's side, as a dandelion's orphaned seeds are: a
+    // caster that despawned is destroyed with no chance to run anything. It
+    // goes the way its caster went, so a kill pops the lot and a mob being
+    // recycled takes them along without a word.
+    wandSummons_->collect(scratchChildren_);
+    for (const Entity summon : scratchChildren_) {
+        const Entity caster = world.get<WandSummon>(summon).caster;
+        if (!world.isAlive(caster)) commands.destroy(summon);
+        else if (world.has<Dead>(caster)) world.add<Dead>(summon);
+    }
+
+    // Snapshotted, and every pointer below read afresh after a spawn, for the
+    // reason runNests gives.
+    wandRings_->collect(scratchChildren_);
+    for (const Entity caster : scratchChildren_) {
+        MobWandRing* ring = world.tryGet<MobWandRing>(caster);
+        const Transform* transform = world.tryGet<Transform>(caster);
+        const MobType* type = world.tryGet<MobType>(caster);
+        const MobAi* brain = world.tryGet<MobAi>(caster);
+        if (ring == nullptr || transform == nullptr || type == nullptr || brain == nullptr ||
+            ring->squads.empty()) {
+            continue;
+        }
+        for (std::vector<Entity>& squad : ring->squads) {
+            std::size_t kept = 0;
+            for (const Entity pet : squad) {
+                if (world.isAlive(pet) && !world.has<Dead>(pet)) squad[kept++] = pet;
+            }
+            squad.resize(kept);
+        }
+
+        // A wand is raised at somebody. A boss stays awake with nobody near,
+        // and a squad out in an empty field would only stand there until the
+        // no-band rule took it, for the next one to replace.
+        if (brain->target == NULL_ENTITY || nowMillis < ring->nextRollMillis) continue;
+        const std::uint16_t wandIndex = content.mob(type->configIndex).petalRing.petalIndex;
+        const double reload = content.petalStats(wandIndex, type->rarity).reloadMillis;
+        ring->nextRollMillis = nowMillis + reload / static_cast<double>(ring->squads.size());
+        const std::size_t wand = ring->nextWand;
+        ring->nextWand = (wand + 1) % ring->squads.size();
+        if (!ring->squads[wand].empty()) continue;
+
+        const std::vector<std::uint16_t> fighters =
+            content.randomPetFighters(minionRarity(type->rarity));
+        if (fighters.empty()) continue;
+
+        const Rarity rarity = type->rarity;
+        const Vec2 anchor = transform->position;
+        const Realm realm = transform->realm;
+        const Entity target = brain->target;
+        const double sight = brain->aggroRange;
+        const auto choices = static_cast<std::uint32_t>(fighters.size());
+        const int count = content.petal(wandIndex).rollPetCount(rng);
+        std::vector<Entity> squad;
+        for (int i = 0; i < count; ++i) {
+            // kMaxNestDepth: what comes out brings nothing with it. A queen out
+            // of a wand lays no soldiers of her own, and those would pay.
+            const Entity pet = spawnEscort(world, terrain, content, fighters[rng.below(choices)],
+                                           rarity, escortSpawnPoint(anchor, rng), realm, caster,
+                                           nowMillis, rng, kMaxNestDepth);
+            if (pet == NULL_ENTITY) break;
+            // Fights for the caster whatever it is in the wild, as a flower's
+            // pet does: a neutral one would otherwise stand by until it was hit.
+            if (MobAi* mind = world.tryGet<MobAi>(pet)) {
+                if (mind->kind == AiKind::Neutral) mind->kind = AiKind::Hostile;
+                mind->aggroRange = std::max(mind->aggroRange, sight);
+                mind->target = target;
+            }
+            // The whole animal. A centipede's every segment carries a bounty of
+            // its own, and each would pay out for a body nothing else does.
+            const Vec2 head = world.get<Transform>(pet).position;
+            for (Entity body = pet; body != NULL_ENTITY;) {
+                tameWandSummon(world, content, body, caster, head);
+                squad.push_back(body);
+                const BodySegment* link = world.tryGet<BodySegment>(body);
+                body = link != nullptr ? link->behind : NULL_ENTITY;
+            }
+        }
+        if (MobWandRing* again = world.tryGet<MobWandRing>(caster)) again->squads[wand] = squad;
+    }
+}
+
 void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRegistry& content,
                            Rng& rng, double nowMillis) {
     // Both loops snapshot their nests first: spawning an escort creates
@@ -1747,6 +1874,7 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             zone.realm = map.realm();
             zone.singular = element.singular;
             zone.prestige = map.prestige();
+            zone.biomeName = map.biome();
 
             // The rows are resolved to indices ONCE, here, rather than on every
             // spawn: a group name is a hash probe and a busy band rolls several
@@ -2211,11 +2339,12 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // slot goes back to the band and is rolled afresh.
     if (zone.prestige && barredFromPrestige(rarity)) return false;
 
-    // Once in a long while the band does not grow what it rolled: a square
-    // stands there instead, one spawn in 100,000 and one super in 10,000.
-    // At the tier the band rolled, and before the boss upgrade below, so a
-    // super square can come out the biome's unique like any other super.
-    type = rollStandIn(content, type, rarity, rng);
+    // Once in a while the band does not grow what it rolled: a square stands
+    // there instead, one spawn in 100,000 and one super in 10,000, or in its
+    // own biomes a magician, one super in twenty. At the tier the band rolled,
+    // and before the boss upgrade below, so a super square can come out the
+    // biome's unique like any other super.
+    type = rollStandIn(content, type, rarity, zone.biomeName, rng);
 
     // A super may come out a unique or an apex instead, if its biome's clock
     // for that tier has run down. After the type roll, which is safe because a

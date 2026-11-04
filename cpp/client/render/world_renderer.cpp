@@ -474,11 +474,10 @@ constexpr double kMobDpsDrop = kMobTierDrop + 1.4 * kMobTierSize;
 constexpr const char* kPetLabel = "Summon";
 
 
-/// Flower-shaped mobs. Neither colour is read off mob stats: the loader
-/// overwrites every mob's colour with its rarity colour, and the whole point
-/// of these two is that they look like flowers.
+/// A flower-shaped mob. Not read off mob stats: the loader overwrites every
+/// mob's colour with its rarity colour, and the whole point of this one is that
+/// it looks like a flower. A ring's face names its own (PetalRingSpec).
 constexpr std::uint32_t kDiggerBodyColor = 0x999999u;
-constexpr std::uint32_t kPetalRingBodyColor = 0xFFE763u;
 /// A petal's `visual_scale`, as everything that paints one has to read it: art
 /// only, and a zero (or an absent field) means "unscaled" rather than
 /// "invisible", exactly as MobConfig::visualScale is treated.
@@ -3302,8 +3301,8 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
         canvas.save();
         canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
         const Vec2 eye = mobEye(mob);
-        drawFace(canvas, FaceSquareEyes, EquipNone, eye.x, eye.y, 14.5, timeSeconds,
-                 kPetalRingBodyColor);
+        drawFace(canvas, config.petalRing.squareEyes ? FaceSquareEyes : 0, EquipNone, eye.x, eye.y,
+                 14.5, timeSeconds, config.petalRing.faceColor);
         canvas.restore();
     } else {
         // At the origin: the caller has already translated to where the mob is.

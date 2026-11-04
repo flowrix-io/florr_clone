@@ -94,6 +94,31 @@ TEST(prestige_is_one_root_node_costing_225) {
 // The twin maps
 // ---------------------------------------------------------------------------
 
+TEST(every_biome_a_stand_in_names_is_a_real_map_and_its_twin_stands_in_it_too) {
+    // A name that matched nothing would simply never replace anything, in
+    // silence. A twin keeps its plain map's biome, so it is the same place to
+    // a stand-in: a tier harder, and just as likely to grow one.
+    WorldMaps maps;
+    std::string error;
+    CHECK(maps.load(dataDir(), nullptr, error));
+    const ContentRegistry& content = shippedContent();
+    int named = 0;
+    for (std::size_t i = 0; i < content.mobCount(); ++i) {
+        for (const std::string& biome : content.mob(static_cast<std::uint16_t>(i)).replaceBiomes) {
+            ++named;
+            bool plain = false;
+            bool twin = false;
+            for (const MapData& map : maps.maps()) {
+                if (map.biome() != biome) continue;
+                (map.prestige() ? twin : plain) = true;
+            }
+            CHECK(plain);
+            CHECK(twin);
+        }
+    }
+    CHECK(named > 0);
+}
+
 TEST(every_shipped_biome_has_an_prestige_twin_after_every_plain_realm) {
     WorldMaps maps;
     std::string error;

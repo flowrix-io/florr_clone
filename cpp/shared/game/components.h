@@ -1095,6 +1095,28 @@ struct Npc {
     std::uint8_t recipe = 0;
 };
 
+/// A mob whose ring is made of petals that hatch pets (PetalConfig::
+/// hatchesPets): the magician's wands. The ring is still decoration, painted by
+/// the client on its own clock. This is the summoning half, one squad per wand:
+/// as on a flower's loadout, a wand rolls a squad and rolls again only once the
+/// last of that squad is gone.
+struct MobWandRing {
+    std::vector<std::vector<Entity>> squads;
+    /// The wand whose turn it is, and when. One clock over the whole ring, so
+    /// each wand still comes round on its petal's reload but the five do not
+    /// all go off on the tick the mob notices somebody.
+    std::size_t nextWand = 0;
+    double nextRollMillis = 0;
+};
+
+/// Something a MobWandRing conjured, on every body of the animal: a wild mob
+/// hostile to flowers, with a pet's body and health. It carries no Bounty, so it
+/// pays nothing however often its caster replaces it, and it goes with its
+/// caster, the way that caster went.
+struct WandSummon {
+    Entity caster = NULL_ENTITY;
+};
+
 /// A nest that periodically produces escorts, up to a live cap.
 struct Spawner {
     std::uint16_t childConfigIndex = 0;
@@ -1628,6 +1650,8 @@ FLIX_COMPONENT(flix::Pet);
 FLIX_COMPONENT(flix::PetBrood);
 FLIX_COMPONENT(flix::BodySegment);
 FLIX_COMPONENT(flix::Spawner);
+FLIX_COMPONENT(flix::MobWandRing);
+FLIX_COMPONENT(flix::WandSummon);
 FLIX_COMPONENT(flix::MobPetalRing);
 FLIX_COMPONENT(flix::MobRingPetal);
 FLIX_COMPONENT(flix::PetalInstance);

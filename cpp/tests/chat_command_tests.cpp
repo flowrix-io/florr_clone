@@ -10,6 +10,7 @@
 
 #include <utime.h>
 
+#include <algorithm>
 #include <cmath>
 #include <ctime>
 #include <string>
@@ -435,6 +436,106 @@ TEST(spawn_places_a_mob_and_killall_clears_it) {
     h.step(2, {&client});
     CHECK_EQ(liveMobs(), 0);
     CHECK(sawText(client, "pets left intact"));
+}
+
+TEST(a_magician_casts_its_wands_and_pays_only_for_itself_through_the_real_server_loop) {
+    // The shipped mob, with its wand and drops as the test's own petals: the
+    // ring is under test here, whatever the shipped wand's numbers come to.
+    const std::string dir = stageDataDirWithPetals("magician", R"JSON({
+      "magic_wand": {"name": "Test Wand", "damage": 0, "size": 1, "cooldown": 1500, "count": 1,
+        "petMobRandom": true, "petCount": 1, "petCountMax": 3, "ignoresMobs": true},
+      "divider": {"name": "Test Divider", "damage": 0, "size": 1, "cooldown": 1500, "count": 1}
+    })JSON");
+    if (dir.empty()) { CHECK(false); return; }
+    struct Cleanup {
+        std::string dir;
+        ~Cleanup() { removeDataDir(dir); }
+    } cleanup{dir};
+
+    Harness h("cmd-magician", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    World& world = h.server.world();
+    Entity player = NULL_ENTITY;
+    Query<PlayerTag> players{world};
+    players.each([&](Entity e, PlayerTag&) { player = e; });
+    CHECK(player != NULL_ENTITY);
+    if (player == NULL_ENTITY) return;
+    world.get<Health>(player).invulnerableUntilMillis = 1e18;
+
+    CHECK(say(h, client, "/admin spawn magician super 1"));
+    const std::uint16_t magicianType = content().mobIndex("magician");
+    Entity magician = NULL_ENTITY;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<MobTag, MobType> mobs{world};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (type.configIndex == magicianType) magician = e;
+        });
+        return magician != NULL_ENTITY;
+    }, 60));
+    if (magician == NULL_ENTITY) return;
+
+    // It finds the flower on its own, and every wand comes round.
+    CHECK(h.stepUntil({&client}, [&] {
+        const MobWandRing* ring = world.tryGet<MobWandRing>(magician);
+        if (ring == nullptr) return false;
+        for (const std::vector<Entity>& squad : ring->squads) {
+            if (squad.empty()) return false;
+        }
+        return true;
+    }, 200));
+    std::vector<Entity> summons;
+    Query<WandSummon> conjured{world};
+    conjured.each([&](Entity e, WandSummon& summon) {
+        CHECK_EQ(summon.caster, magician);
+        summons.push_back(e);
+    });
+    CHECK(summons.size() >= 5);
+    for (const Entity pet : summons) {
+        CHECK(!world.has<Bounty>(pet));
+        CHECK(rarityIndex(world.get<MobType>(pet).rarity) <= rarityIndex(Rarity::Ultra));
+        CHECK(world.get<Faction>(pet).team == Team::Hostiles);
+    }
+
+    // Who the client can see, a summon being a mob like any other to it.
+    CHECK(h.stepUntil({&client}, [&] {
+        const auto& seen = client.view().entities();
+        return seen.count(world.get<NetId>(magician).value) != 0 &&
+               seen.count(world.get<NetId>(summons.front()).value) != 0;
+    }, 60));
+
+    const auto dropsOnGround = [&] {
+        std::vector<std::string> ids;
+        Query<DropTag, DropItem> drops{world};
+        drops.each([&](Entity, DropTag&, DropItem& item) {
+            const std::string& id = content().petal(item.configIndex).id;
+            if (id == "magic_wand" || id == "divider") ids.push_back(id);
+        });
+        std::sort(ids.begin(), ids.end());
+        return ids;
+    };
+
+    // A summon the flower kills leaves nothing on the ground.
+    world.add<Dead>(summons.front(), Dead{player});
+    h.step(5, {&client});
+    CHECK(dropsOnGround().empty());
+
+    // The magician itself pays out one of each, and takes the rest with it.
+    Health& health = world.get<Health>(magician);
+    world.get<Bounty>(magician).credit(player, health.max);
+    health.current = 0.0;
+    world.add<Dead>(magician, Dead{player});
+    h.step(5, {&client});
+    CHECK(dropsOnGround() == (std::vector<std::string>{"divider", "magic_wand"}));
+    for (const Entity pet : summons) {
+        CHECK(!world.isAlive(pet) || world.has<Dead>(pet));
+    }
 }
 
 TEST(a_boss_from_the_console_is_announced_to_the_whole_server) {

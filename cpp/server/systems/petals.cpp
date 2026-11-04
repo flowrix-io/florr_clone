@@ -487,13 +487,6 @@ bool isTimedPet(World& world, Entity pet) {
     return tag != nullptr && tag->expiresAtMillis > 0.0;
 }
 
-/// What a rolled petal's next summon comes to, before its tier's multiples.
-int rollPetCount(const PetalConfig& config, Rng& rng) {
-    const int least = std::max(0, config.petCount);
-    const int most = std::max(least, config.petCountMax);
-    return least + static_cast<int>(rng.below(static_cast<std::uint32_t>(most - least + 1)));
-}
-
 /// Puts `amount` back, up to the pool's ceiling. Silently does nothing on a
 /// flower with no pool -- an orb worn without anything granting one restores
 /// mana into a bar that cannot hold it.
@@ -3548,7 +3541,7 @@ void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, En
         const Transform* owner = world.tryGet<Transform>(player);
         if (owner == nullptr) return;
         summonRandomPets(world, registry, player, slot, petRarity,
-                         rollPetCount(config, rng_) * multiple, owner->position, state,
+                         config.rollPetCount(rng_) * multiple, owner->position, state,
                          strengthBoost(rarity));
         return;
     }
@@ -3652,7 +3645,7 @@ void PetalSystem::summonTimedPets(World& world, const ContentRegistry& registry,
     // The same apex rule as a squad: the unique trio, for the one payment.
     const bool apex = ladderRarity(rarity) == Rarity::Apex;
     const Rarity petRarity = apex ? Rarity::Unique : rarity;
-    const int rolled = config.petMobRandom ? rollPetCount(config, rng_) : std::max(0, config.petCount);
+    const int rolled = config.petMobRandom ? config.rollPetCount(rng_) : std::max(0, config.petCount);
     const int count = rolled * (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1);
     // At the cap the summon would land nothing, so it is not paid for either.
     if (count <= 0 || countOwnedPets(world, state) >= kMaxPetEntitiesPerPlayer) return;
@@ -3792,13 +3785,9 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
 
     const MobConfig& config = registry.mob(mobIndex);
     const MobStats mob = registry.mobStats(mobIndex, rarity);
-    // Smaller than the wild animal: sized on the old, smaller mob ladder
-    // (kPetSizeScale) rather than the wild one, then on the reference's pet
-    // ramp -- the same size at common, a third of it by unique. Mass stays
-    // the tier's, exactly as a wild mob's does whatever body it rolled.
-    const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(rarity))));
-    const double petSizeScale = kPetSizeScale[tier] / kMobSizeScale[tier] *
-                                mobSizeRamp(rarity, kPetSizeScaleAtUnique);
+    // Smaller than the wild animal. Mass stays the tier's, exactly as a wild
+    // mob's does whatever body it rolled.
+    const double petSizeScale = petBodyScale(rarity);
     const Transform* ownerAt = world.tryGet<Transform>(player);
     const Realm realm = ownerAt != nullptr ? ownerAt->realm : Realm::Overworld;
     // A centipede or a leech arrives whole, as a wild one does: the head and
@@ -3870,12 +3859,7 @@ void PetalSystem::summonRandomPets(World& world, const ContentRegistry& registry
                                    std::uint8_t slot, Rarity rarity, int count, Vec2 at,
                                    PetalSlotState& state, double strength,
                                    double expiresAtMillis) {
-    // A passive pet will not fight for its owner, and it would hold a squad
-    // that is only rolled again once it has died.
-    std::vector<std::uint16_t> fighters;
-    for (const std::uint16_t mob : registry.randomPetMobs()) {
-        if (registry.mobStats(mob, rarity).ai != AiKind::Passive) fighters.push_back(mob);
-    }
+    const std::vector<std::uint16_t> fighters = registry.randomPetFighters(rarity);
     if (fighters.empty()) return;
     const auto choices = static_cast<std::uint32_t>(fighters.size());
     for (int i = 0; i < count; ++i) {
