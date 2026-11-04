@@ -399,13 +399,13 @@ bool flyThrownPetal(PetalInstance& instance, Transform& transform, Vec2 flower, 
 
 bool hasTimedAction(const PetalConfig& config, const PetalStats& stats) {
     return config.projectile.present || stats.heal > 0.0 || stats.shield > 0.0 ||
-           config.radiation.present || config.petMobIndex != kInvalidIndex ||
+           config.radiation.present || config.hatchesPets() ||
            behaviourOf(config.id).intervalMillis > 0.0;
 }
 
 bool hasNonProjectileAction(const PetalConfig& config, const PetalStats& stats) {
     return stats.heal > 0.0 || stats.shield > 0.0 || config.radiation.present ||
-           config.petMobIndex != kInvalidIndex || behaviourOf(config.id).intervalMillis > 0.0;
+           config.hatchesPets() || behaviourOf(config.id).intervalMillis > 0.0;
 }
 
 /// The gap between two of a petal's actions. A petal may declare more than one
@@ -418,7 +418,7 @@ double actionIntervalMillis(const PetalConfig& config, const PetalStats& stats, 
         interval = std::max(interval, stats.healChargeMillis);
     }
     if (config.radiation.present) interval = std::max(interval, config.radiation.intervalMillis * (rarity == Rarity::Admin ? 0.5 : 1.0));
-    if (config.petMobIndex != kInvalidIndex) interval = std::max(interval, stats.reloadMillis);
+    if (config.hatchesPets()) interval = std::max(interval, stats.reloadMillis);
     interval = std::max(interval, behaviourOf(config.id).intervalMillis * (rarity == Rarity::Admin ? 0.5 : 1.0));
     return std::max(interval, net::kTickMillis);
 }
@@ -485,6 +485,13 @@ bool canAffordMana(World& world, Entity player, double cost) {
 bool isTimedPet(World& world, Entity pet) {
     const Pet* tag = world.tryGet<Pet>(pet);
     return tag != nullptr && tag->expiresAtMillis > 0.0;
+}
+
+/// What a rolled petal's next summon comes to, before its tier's multiples.
+int rollPetCount(const PetalConfig& config, Rng& rng) {
+    const int least = std::max(0, config.petCount);
+    const int most = std::max(least, config.petCountMax);
+    return least + static_cast<int>(rng.below(static_cast<std::uint32_t>(most - least + 1)));
 }
 
 /// Puts `amount` back, up to the pool's ceiling. Silently does nothing on a
@@ -2553,7 +2560,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                     : pulse * config.radiation.selfPoisonScale;
             }
         }
-        if (config.petMobIndex != kInvalidIndex) {
+        if (config.hatchesPets()) {
             // Looked up here rather than carried down the loop: raising a
             // corpse moves a flower between archetypes, and the player's
             // columns move with it.
@@ -3486,7 +3493,8 @@ void PetalSystem::reloadEggForPet(World& world, const ContentRegistry& registry,
     LoadoutSlot& slot = loadout.slots[index];
     if (slot.empty() || slot.broken) return;
     const EquippedPetal equipped = equippedPetal(registry, loadout, i);
-    if (registry.petal(equipped.configIndex).petMobIndex != mobIndex) return;
+    const PetalConfig& egg = registry.petal(equipped.configIndex);
+    if (!egg.petMobRandom && egg.petMobIndex != mobIndex) return;
 
     const PetalStats stats = equippedPetalStats(registry, equipped);
     const double reload = reloadMillisFor(stats, reloadScale);
@@ -3519,7 +3527,25 @@ void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, En
     // an egg above common was worth nothing.
     const bool apex = ladderRarity(rarity) == Rarity::Apex;
     const Rarity petRarity = apex ? Rarity::Unique : rarity;
-    const int wanted = std::max(0, config.petCount) * (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1);
+    const int multiple = (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1);
+
+    if (config.petMobRandom) {
+        // Held until the last of it is gone. A squad of one mob can be topped
+        // back up to what it was; a roll has nothing to top up to, and
+        // re-rolling on every loss would swap survivors out from under a fight.
+        // A queen's soldiers are timed and do not hold it.
+        for (const Entity pet : slotState.pets) {
+            if (!isTimedPet(world, pet)) return;
+        }
+        const Transform* owner = world.tryGet<Transform>(player);
+        if (owner == nullptr) return;
+        summonRandomPets(world, registry, player, slot, petRarity,
+                         rollPetCount(config, rng_) * multiple, owner->position, state,
+                         strengthBoost(rarity));
+        return;
+    }
+
+    const int wanted = std::max(0, config.petCount) * multiple;
     if (wanted <= 0) return;
 
     // Counted per SLOT: eggs of one type stack, so a second stick hatches a
@@ -3618,13 +3644,19 @@ void PetalSystem::summonTimedPets(World& world, const ContentRegistry& registry,
     // The same apex rule as a squad: the unique trio, for the one payment.
     const bool apex = ladderRarity(rarity) == Rarity::Apex;
     const Rarity petRarity = apex ? Rarity::Unique : rarity;
-    const int count = std::max(0, config.petCount) * (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1);
+    const int rolled = config.petMobRandom ? rollPetCount(config, rng_) : std::max(0, config.petCount);
+    const int count = rolled * (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1);
     // At the cap the summon would land nothing, so it is not paid for either.
     if (count <= 0 || countOwnedPets(world, state) >= kMaxPetEntitiesPerPlayer) return;
     if (!spendMana(world, player, stats.petManaCost)) return;
-    summonPets(world, registry, player, slot, config.petMobIndex, petRarity, count,
-               ownerTransform->position, state, strengthBoost(rarity),
-               nowMillis + config.petLifetimeMillis * adminReachScale(rarity));
+    const double expiresAtMillis = nowMillis + config.petLifetimeMillis * adminReachScale(rarity);
+    if (config.petMobRandom) {
+        summonRandomPets(world, registry, player, slot, petRarity, count, ownerTransform->position,
+                         state, strengthBoost(rarity), expiresAtMillis);
+    } else {
+        summonPets(world, registry, player, slot, config.petMobIndex, petRarity, count,
+                   ownerTransform->position, state, strengthBoost(rarity), expiresAtMillis);
+    }
 }
 
 void PetalSystem::expireTimedPets(World& world, Entity player, double nowMillis) {
@@ -3823,6 +3855,24 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
             ++owned;
             ahead = segment;
         }
+    }
+}
+
+void PetalSystem::summonRandomPets(World& world, const ContentRegistry& registry, Entity player,
+                                   std::uint8_t slot, Rarity rarity, int count, Vec2 at,
+                                   PetalSlotState& state, double strength,
+                                   double expiresAtMillis) {
+    // A passive pet will not fight for its owner, and it would hold a squad
+    // that is only rolled again once it has died.
+    std::vector<std::uint16_t> fighters;
+    for (const std::uint16_t mob : registry.randomPetMobs()) {
+        if (registry.mobStats(mob, rarity).ai != AiKind::Passive) fighters.push_back(mob);
+    }
+    if (fighters.empty()) return;
+    const auto choices = static_cast<std::uint32_t>(fighters.size());
+    for (int i = 0; i < count; ++i) {
+        summonPets(world, registry, player, slot, fighters[rng_.below(choices)], rarity, 1, at,
+                   state, strength, expiresAtMillis);
     }
 }
 

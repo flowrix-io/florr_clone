@@ -995,6 +995,13 @@ struct PetalConfig {
     /// spawn path in the reference read this either.
     Rarity petMobRarity = Rarity::Common;
     int petCount = 1;
+    /// A ROLLED summon: instead of naming a mob, each summon draws `petCount`
+    /// to `petCountMax` pets, every one its own mob out of
+    /// ContentRegistry::randomPetMobs(). Without a lifetime it is a squad as
+    /// an egg's is, but one rolled whole, and rolled afresh only once the last
+    /// of it is gone. The magic wand.
+    bool petMobRandom = false;
+    int petCountMax = 0;
     /// A TIMED summon: non-zero, each action hatches `petCount` fresh pets that
     /// last this long, on top of any still out, instead of keeping one squad
     /// topped up. Uncounted against the squad cap a plain egg has -- what
@@ -1004,6 +1011,8 @@ struct PetalConfig {
     /// as requiredMana. A summon that cannot be paid for is skipped until the
     /// next action; the petal itself still goes on the ring for free.
     double petManaCost = 0;
+    /// Whether this petal summons anything, by name or by roll.
+    bool hatchesPets() const { return petMobRandom || petMobIndex != kInvalidIndex; }
 
     double slowFactor = 1.0;    ///< multiplies the victim's speed; 1 = none
     double slowDurationMillis = 0;
@@ -1481,6 +1490,12 @@ public:
     /// stays stable, which is a different order and the wrong one to paint.
     const std::vector<std::uint16_t>& petalDisplayOrder() const { return petalOrder_; }
 
+    /// What a rolled summon (PetalConfig::petMobRandom) draws from, in the mob
+    /// file's order: every mob whose egg can drop, as that egg hatches it.
+    /// Whether one will fight is left to the summon to ask, because that moves
+    /// with the tier -- a bee is passive at common and neutral from rare up.
+    const std::vector<std::uint16_t>& randomPetMobs() const { return randomPetMobs_; }
+
     /// FNV-1a folded over the raw bytes of every content file both sides
     /// read, in a fixed order: mobs.json, petals.json, then (from load())
     /// mob_drops.json and the maps. Compared in the connect handshake.
@@ -1553,6 +1568,7 @@ private:
     std::unordered_map<std::string, std::uint16_t> mobIds_;
     std::unordered_map<std::string, std::uint16_t> petalIds_;
     std::vector<std::uint16_t> petalOrder_;
+    std::vector<std::uint16_t> randomPetMobs_;
     /// Petal index -> its magic form, or kInvalidIndex. See magicFormOf().
     std::vector<std::uint16_t> magicForm_;
     /// The reverse: a magic petal -> the ordinary one it is the form of.

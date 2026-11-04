@@ -572,8 +572,9 @@ private:
                       std::uint8_t slot, const PetalConfig& config, Rarity rarity,
                       PetalSlotState& state);
     /// One action of a TIMED summoner (PetalConfig::petLifetimeMillis): pays
-    /// `stats.petManaCost` and hatches `petCount` more, however many it already
-    /// has out. Nothing is hatched, and nothing paid, when the pool is short.
+    /// `stats.petManaCost` and hatches `petCount` more -- or a roll, on a
+    /// rolled petal -- however many it already has out. Nothing is hatched,
+    /// and nothing paid, when the pool is short.
     void summonTimedPets(World& world, const ContentRegistry& registry, Entity player,
                          std::uint8_t slot, const PetalConfig& config, const PetalStats& stats,
                          Rarity rarity, PetalSlotState& state, double nowMillis);
@@ -597,6 +598,11 @@ private:
     void summonPets(World& world, const ContentRegistry& registry, Entity player,
                     std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, int count, Vec2 at,
                     PetalSlotState& state, double strength, double expiresAtMillis = 0.0);
+    /// `count` summons as summonPets lays them, each its own draw from the
+    /// mobs that fight at `rarity`. See PetalConfig::petMobRandom.
+    void summonRandomPets(World& world, const ContentRegistry& registry, Entity player,
+                          std::uint8_t slot, Rarity rarity, int count, Vec2 at,
+                          PetalSlotState& state, double strength, double expiresAtMillis = 0.0);
     /// One summoned body, every component a pet carries, at an already
     /// chosen spot and size -- and, if its config has one, its ammunition
     /// ring. summonPets lays chains and broods on top.

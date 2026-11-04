@@ -974,6 +974,50 @@ TEST(cross_references_resolve_to_indices) {
     CHECK_EQ(rarityIndex(egg.petMobRarity), rarityIndex(Rarity::Rare));
 }
 
+TEST(a_rolled_summon_reads_its_count_as_a_range) {
+    ContentRegistry fixture;
+    CHECK(loadPetals(fixture, R"JSON({
+      "wand":   {"name": "Wand", "health": 10, "damage": 0, "size": 1, "cooldown": 1000,
+        "count": 1, "petMobRandom": true, "petCount": 1, "petCountMax": 3},
+      "skewed": {"name": "Skewed", "health": 10, "damage": 0, "size": 1, "cooldown": 1000,
+        "count": 1, "petMobRandom": true, "petCount": 4, "petCountMax": 2},
+      "plain_petal": {"name": "Plain", "health": 10, "damage": 0, "size": 1, "cooldown": 1000,
+        "count": 1}
+    })JSON"));
+    const PetalConfig& wand = fixture.petal(fixture.petalIndex("wand"));
+    CHECK(wand.hatchesPets());
+    CHECK_EQ(wand.petMobIndex, kInvalidIndex);
+    CHECK_EQ(wand.petCount, 1);
+    CHECK_EQ(wand.petCountMax, 3);
+    // A top below the bottom is no range at all.
+    CHECK_EQ(fixture.petal(fixture.petalIndex("skewed")).petCountMax, 4);
+    CHECK(!fixture.petal(fixture.petalIndex("plain_petal")).hatchesPets());
+    // An egg names its mob, and hatches pets without rolling anything.
+    const PetalConfig& egg = fixture.petal(fixture.petalIndex("plain_egg"));
+    CHECK(egg.hatchesPets());
+    CHECK(!egg.petMobRandom);
+}
+
+TEST(a_rolled_summon_draws_every_mob_whose_egg_can_drop) {
+    const ContentRegistry& r = shipped().registry;
+    const std::vector<std::uint16_t>& pool = r.randomPetMobs();
+    CHECK(!pool.empty());
+    for (std::size_t i = 0; i < r.mobCount(); ++i) {
+        const MobConfig& mob = r.mob(static_cast<std::uint16_t>(i));
+        const std::uint16_t egg = r.petalIndex(mob.id + "_egg");
+        // A pet variant lays no egg, and is drawn only as the one its mob's
+        // egg hatches.
+        if (egg == kInvalidIndex) continue;
+        const bool drawn =
+            std::find(pool.begin(), pool.end(), r.petal(egg).petMobIndex) != pool.end();
+        CHECK(drawn == !mob.noEggDrop);
+    }
+    for (const std::uint16_t index : pool) {
+        CHECK(!r.mob(index).chainBody);
+        CHECK(!r.mob(index).npc.present);
+    }
+}
+
 TEST(bee_ai_is_read_from_the_config_not_the_mob_name) {
     const ContentRegistry& r = shipped().registry;
     // "always": the cruise off a target, and the same weave on the chase.

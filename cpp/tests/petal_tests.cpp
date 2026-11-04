@@ -57,6 +57,8 @@ const char* const kPetalsJson = R"JSON({
   "brinier":  {"name":"Brinier","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"damageReflection":0.4},"color":"#FFFFFF"},
   "summoner": {"name":"Summoner","damage":1,"health":4,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petMobRarity":"common","petCount":2,"color":"#AA00AA"},
   "stormcaller":{"name":"Stormcaller","damage":1,"health":10,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petCount":1,"petLifetimeMs":20000,"petManaCost":20,"color":"#42E3F5"},
+  "wand":     {"name":"Wand","damage":0,"health":null,"size":1,"cooldown":1000,"count":1,"petMobRandom":true,"petCount":1,"petCountMax":3,"ignoresMobs":true,"color":"#FF00FF"},
+  "stormwand":{"name":"Stormwand","damage":0,"health":null,"size":1,"cooldown":1000,"count":1,"petMobRandom":true,"petCount":1,"petCountMax":3,"petLifetimeMs":20000,"petManaCost":20,"color":"#FF00FF"},
   "toxic":    {"name":"Toxic","damage":2,"health":5,"size":1,"cooldown":1000,"count":1,"poison":0.05,"poisonDuration":3000,"color":"#00AA00"},
   "blade":    {"name":"Blade","damage":0,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#111111"},
   "sparkblade":{"name":"Spark Blade","damage":1,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#00FFFF"},
@@ -103,6 +105,7 @@ const char* const kMobsJson = R"JSON({
   "puffball": {"name":"Puffball","health":10,"damage":1,"size":1,"speed":0,"range":300,"cooldown":500,"color":"#FFFFFF","section":[0],"ai_type":"passive","petal_ring":{"petalType":"pearl","count":4,"spin":false,"shootOnHit":true}},
   "centipede": {"name":"Centipede","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#88AA00","section":[0],"ai_type":"passive"},
   "centipede_body": {"name":"Centipede Body","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#88AA00","section":[0],"ai_type":"passive"},
+  "unegged": {"name":"Unegged","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#333333","section":[0],"ai_type":"hostile","noEggDrop":true},
   "matriarch": {"name":"Matriarch","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#AA00AA","section":[0],"ai_type":"hostile","periodic_spawn":{"mobType":"critter","intervalMs":1000,"lifetimeMs":5000,"maxAlive":3,"spawnRarityOffset":-1}}
 })JSON";
 
@@ -4031,6 +4034,119 @@ TEST(a_squad_of_the_same_mob_neither_counts_nor_recalls_timed_summons) {
     rig.tick();
     CHECK_EQ(rig.petCount(), timedPetCount(rig.world));
     CHECK(timedPetCount(rig.world) >= 3);
+}
+
+/// What a rolled petal has out, leaving out what a summoned queen has brought.
+std::vector<Entity> rolledSquad(Rig& rig) {
+    std::vector<Entity> squad;
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        if (!(rig.world.get<Pet>(pet).expiresAtMillis > 0.0)) squad.push_back(pet);
+    }
+    return squad;
+}
+
+TEST(a_rolled_summon_hatches_one_to_three_fighters_of_their_own_mobs) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wand");
+    int smallest = 64;
+    int largest = 0;
+    std::vector<std::uint16_t> seen;
+    for (int roll = 0; roll < 60; ++roll) {
+        CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }));
+        const std::vector<Entity> squad = rolledSquad(rig);
+        smallest = std::min(smallest, static_cast<int>(squad.size()));
+        largest = std::max(largest, static_cast<int>(squad.size()));
+        for (const Entity pet : squad) {
+            CHECK(rig.world.get<Pet>(pet).owner == rig.player);
+            CHECK_EQ(int(rig.world.get<Pet>(pet).slot), 0);
+            CHECK(rig.world.get<Faction>(pet).team == Team::Players);
+            const std::uint16_t mob = rig.world.get<MobType>(pet).configIndex;
+            // Nothing that would stand there, and nothing with no egg to drop.
+            CHECK(fixture().registry.mobStats(mob, Rarity::Common).ai != AiKind::Passive);
+            CHECK(fixture().registry.mob(mob).id != "unegged");
+            seen.push_back(mob);
+            rig.world.destroy(pet);
+        }
+    }
+    CHECK_EQ(smallest, 1);
+    CHECK_EQ(largest, 3);
+    std::sort(seen.begin(), seen.end());
+    seen.erase(std::unique(seen.begin(), seen.end()), seen.end());
+    CHECK(seen.size() > 1);
+}
+
+TEST(a_rolled_squad_is_held_until_the_last_of_it_is_gone) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wand");
+    // Rolled over until a squad of more than one comes up.
+    std::vector<Entity> squad;
+    for (int roll = 0; roll < 60 && squad.size() < 2; ++roll) {
+        CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }));
+        squad = rolledSquad(rig);
+        if (squad.size() < 2) rig.world.destroy(squad.front());
+    }
+    CHECK(squad.size() >= 2);
+
+    const Entity survivor = squad.front();
+    for (std::size_t i = 1; i < squad.size(); ++i) rig.world.destroy(squad[i]);
+    // Three reloads go by and nothing is topped up or swapped out.
+    rig.tick(90);
+    CHECK_EQ(rolledSquad(rig).size(), std::size_t(1));
+    CHECK(rolledSquad(rig).front() == survivor);
+
+    rig.world.destroy(survivor);
+    CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }, 40));
+}
+
+TEST(a_rolled_squad_goes_when_its_petal_comes_off) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wand");
+    CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }));
+    rig.unequip(0);
+    rig.tick();
+    CHECK_EQ(rig.petCount(), std::size_t(0));
+    Query<Dead> dead{rig.world};
+    CHECK_EQ(dead.count(), std::size_t(0));
+}
+
+TEST(a_rolled_pet_that_gets_lost_charges_its_petal_and_is_rolled_again) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wand");
+    CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }));
+    // Whatever was rolled, it is this wand's to answer for.
+    for (const Entity pet : rolledSquad(rig)) {
+        rig.world.get<Transform>(pet).position =
+            rig.position(rig.player) + Vec2{kPetRecallDistance * 2.0, 0.0};
+    }
+    rig.tick();
+    CHECK(rolledSquad(rig).empty());
+    CHECK(rig.slot(0).broken);
+    CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }));
+    CHECK(!rig.slot(0).broken);
+}
+
+TEST(a_timed_rolled_summon_stacks_a_roll_per_reload_and_pays_for_each) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    // 100 mana and nothing refilling it: five rolls' worth, and no sixth.
+    rig.equip(0, "vessel");
+    rig.equip(1, "stormwand");
+    rig.settleEquips();
+    const auto rollsPaid = [&] {
+        return static_cast<int>(std::lround((100.0 - rig.world.get<ManaPool>(rig.player).current) / 20.0));
+    };
+    CHECK(rig.tickUntil([&] { return timedPetCount(rig.world) > 0; }));
+    CHECK_EQ(rollsPaid(), 1);
+    const std::size_t first = rig.petCount();
+    CHECK(first >= 1 && first <= 3);
+    CHECK(rig.tickUntil([&] { return rollsPaid() == 2; }, 40));
+    CHECK(rig.petCount() > first);
+    CHECK(rig.petCount() <= 6);
 }
 
 TEST(eggs_of_one_type_stack_a_squad_each) {

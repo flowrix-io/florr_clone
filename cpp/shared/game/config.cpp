@@ -1341,6 +1341,8 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.petMobIndex = ctx.link(mobIds, p.petMobId, "petMobType");
     p.petMobRarity = ctx.rarity(src, "petMobRarity");
     p.petCount = ctx.integer(src, "petCount", 1, 1, 64);
+    p.petMobRandom = ctx.boolean(src, "petMobRandom");
+    p.petCountMax = ctx.integer(src, "petCountMax", p.petCount, p.petCount, 64);
     p.petLifetimeMillis = ctx.range(src, "petLifetimeMs", 0.0, 0.0, kMaxDurationMillis);
     p.petManaCost = ctx.range(src, "petManaCost", 0.0, 0.0, kMaxBaseStat);
 
@@ -1670,6 +1672,17 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     for (const std::string& key : petalKeys.source) petalOrder.push_back(petalIds[key]);
     for (const std::string& mobId : eggMobIds) petalOrder.push_back(petalIds[mobId + "_egg"]);
 
+    // The same mobs the drop tables hand an egg out for (DropTables), hatched
+    // the way that egg hatches them: the sun's is its pet variant.
+    std::vector<std::uint16_t> randomPetMobs;
+    for (const std::string& mobId : mobKeys.source) {
+        if (endsWith(mobId, "_pet") || mobs[mobIds[mobId]].noEggDrop) continue;
+        const auto egg = petalIds.find(mobId + "_egg");
+        if (egg == petalIds.end()) continue;
+        const std::uint16_t hatches = petals[egg->second].petMobIndex;
+        if (hatches != kInvalidIndex) randomPetMobs.push_back(hatches);
+    }
+
     // A mandatory field nobody supplied is not something to load around: the
     // whole load is refused and the registry keeps what it already had. A
     // handful of the complaints go into the message and the rest are counted,
@@ -1699,6 +1712,7 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     mobIds_ = std::move(mobIds);
     petalIds_ = std::move(petalIds);
     petalOrder_ = std::move(petalOrder);
+    randomPetMobs_ = std::move(randomPetMobs);
 
     standIns_.clear();
     for (std::size_t i = 0; i < mobs_.size(); ++i) {

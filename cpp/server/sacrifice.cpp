@@ -322,7 +322,7 @@ void GameServer::sweepSacrificeStars(const std::vector<Entity>& rituals, double 
     Query<PetalInstance, Transform> petals{world_};
     petals.without<Dead>();
     petals.each([&](Entity, PetalInstance& instance, Transform& at) {
-        if (content().petal(instance.configIndex).petMobIndex == kInvalidIndex) return;
+        if (!content().petal(instance.configIndex).hatchesPets()) return;
         if (inStar(at)) eggs.push_back({instance.owner, instance.slot});
     });
     for (const Egg& egg : eggs) {
