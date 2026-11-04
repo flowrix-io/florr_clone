@@ -1153,6 +1153,16 @@ void GameServer::runSystems(double nowMillis, double dt) {
         spawning_->convertMob(world_, *terrain_, content(), conversion.mob, conversion.into,
                               nowMillis, rng_);
     }
+    // And a mob a divider landed on. The petal breaks only if the mob came
+    // apart, and then whatever else it touched this tick stays whole.
+    for (const MobDivision& division : combat_->divisions()) {
+        if (!world_.isAlive(division.petal)) continue;
+        if (spawning_->divideMob(world_, *terrain_, content(), division.mob, division.pieces,
+                                 nowMillis, rng_)) {
+            petals_->breakSlot(world_, content(), division.owner, division.slot, nowMillis,
+                               events_);
+        }
+    }
     markTickPhase("combat");
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,
                    net::kTickSeconds, commands_);

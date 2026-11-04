@@ -4614,6 +4614,41 @@ TEST(buying_or_resetting_duplicator_rebuilds_the_slots_it_resizes) {
 /// A petal leaving the field -- broken, swapped out, or its flower down -- is
 /// cued as Killed where it was, so every client in view plays its death
 /// animation there, as gardn's does for every petal its server deletes.
+TEST(a_slot_broken_from_outside_a_tick_still_plays_the_petals_death) {
+    // A divider breaks on what combat saw, after run() has let go of its event
+    // queue, and a petal that goes without a cue just blinks out.
+    if (!contentLoaded()) return;
+    Rig rig;
+    std::uint32_t counter = 0;
+    rig.system.allocateNetId = [&counter] { return ++counter; };
+    rig.equip(0, "basic");
+    rig.settleEquips();
+    const Entity petal = rig.petals(0).front();
+    const std::uint32_t id = rig.world.get<NetId>(petal).value;
+    const Vec2 at = rig.position(petal);
+    const std::uint16_t type = rig.world.get<PetalInstance>(petal).configIndex;
+    const Rarity tier = rig.world.get<PetalInstance>(petal).rarity;
+    rig.events.clear();
+
+    CHECK(rig.system.breakSlot(rig.world, content(), rig.player, 0, rig.now, rig.events));
+    CHECK(!rig.world.isAlive(petal));
+    CHECK(rig.slot(0).broken);
+    CHECK_NEAR(rig.slot(0).reloadReadyAtMillis,
+               rig.now + content().petalStats(type, tier).reloadMillis, 1e-6);
+    bool cued = false;
+    for (const WireEvent& e : rig.events.events()) {
+        if (e.kind != net::EventKind::Killed || e.netId != id) continue;
+        cued = true;
+        CHECK_NEAR((e.position - at).length(), 0.0, 1e-9);
+    }
+    CHECK(cued);
+
+    // Broken already: nothing left to break, and no second cue.
+    rig.events.clear();
+    CHECK(!rig.system.breakSlot(rig.world, content(), rig.player, 0, rig.now, rig.events));
+    CHECK(rig.events.events().empty());
+}
+
 TEST(a_petal_leaving_the_field_is_cued_as_killed_where_it_was) {
     if (!contentLoaded()) return;
     Rig rig;

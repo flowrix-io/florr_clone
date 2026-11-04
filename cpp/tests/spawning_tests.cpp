@@ -1352,6 +1352,251 @@ TEST(a_mob_turned_into_another_is_the_same_animal_in_the_same_bands_slot) {
              NULL_ENTITY);
 }
 
+namespace {
+
+/// Every piece of a divided mob standing in `world`.
+std::vector<Entity> dividedPieces(World& world) {
+    std::vector<Entity> pieces;
+    Query<MobTag, DividedMob> all{world};
+    all.each([&](Entity e, MobTag&, DividedMob&) { pieces.push_back(e); });
+    return pieces;
+}
+
+} // namespace
+
+TEST(a_divided_mob_comes_apart_into_pieces_holding_a_share_each) {
+    // What a divider does to a mob (SpawnSystem::divideMob).
+    const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{kCentre};
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+    const auto population = [&] { return sim.mobCount() + static_cast<int>(sim.latent().size()); };
+    const int stocked = population();
+
+    Entity bee = NULL_ENTITY;
+    Query<MobTag, AmbientMob> mobs{sim.world};
+    mobs.each([&](Entity e, MobTag&, AmbientMob& ambient) {
+        if (bee == NULL_ENTITY && ambient.zone != kInvalidIndex) bee = e;
+    });
+    CHECK(bee != NULL_ENTITY);
+    if (bee == NULL_ENTITY) return;
+    const Entity flower = makePlayer(sim.world, kCentre);
+    sim.world.get<Bounty>(bee).credit(flower, 40.0);
+    Health& wounds = sim.world.get<Health>(bee);
+    wounds.current = wounds.max * 0.5;
+    const Health before = wounds;
+    const MobType type = sim.world.get<MobType>(bee);
+    const Body body = sim.world.get<Body>(bee);
+    const double xp = sim.world.get<Bounty>(bee).xp;
+    const double bite = sim.world.get<ContactDamage>(bee).amount;
+    const Vec2 at = sim.world.get<Transform>(bee).position;
+    const AmbientMob slot = sim.world.get<AmbientMob>(bee);
+    Afflictions& afflictions = sim.world.get<Afflictions>(bee);
+    afflictions.poisonPerSecond = 8.0;
+    afflictions.poisonStacks.push_back(PoisonStack{flower, 8.0, sim.now + 5000.0});
+
+    CHECK(sim.spawner.divideMob(sim.world, sim.terrain, shipped(), bee, 2, sim.now, sim.rng));
+    // The bee that was hit is one of the two.
+    CHECK(sim.world.isAlive(bee));
+    const std::vector<Entity> pieces = dividedPieces(sim.world);
+    CHECK_EQ(pieces.size(), std::size_t(2));
+    if (pieces.size() != 2) return;
+    for (const Entity piece : pieces) {
+        CHECK_EQ(sim.world.get<DividedMob>(piece).pieces, 2);
+        CHECK_EQ(sim.world.get<MobType>(piece).configIndex, type.configIndex);
+        CHECK(sim.world.get<MobType>(piece).rarity == type.rarity);
+        const Health& health = sim.world.get<Health>(piece);
+        CHECK_NEAR(health.max, before.max * 0.5, 1e-9);
+        CHECK_NEAR(health.current, before.current * 0.5, 1e-9);
+        // Half the size, not half the area.
+        const double radius = sim.world.get<Body>(piece).radius;
+        CHECK_NEAR(radius, body.radius * 0.5, 1e-9);
+        CHECK_NEAR(sim.world.get<Body>(piece).mass,
+                   body.mass * bodyMassForRadius(radius) / bodyMassForRadius(body.radius), 1e-9);
+        CHECK_NEAR(sim.world.get<MobType>(piece).sizeJitter, type.sizeJitter * 0.5, 1e-9);
+        CHECK_NEAR(sim.world.get<ContactDamage>(piece).amount, bite * 0.5, 1e-9);
+        const Bounty& pay = sim.world.get<Bounty>(piece);
+        CHECK_NEAR(pay.xp, xp * 0.5, 1e-9);
+        CHECK_EQ(pay.contributors.size(), std::size_t(1));
+        if (pay.contributors.size() == 1) {
+            CHECK_EQ(pay.contributors[0].player, flower);
+            CHECK_NEAR(pay.contributors[0].damage, 20.0, 1e-9);
+        }
+        const Afflictions& ailing = sim.world.get<Afflictions>(piece);
+        CHECK_NEAR(ailing.poisonPerSecond, 4.0, 1e-9);
+        CHECK_EQ(ailing.poisonStacks.size(), std::size_t(1));
+        if (ailing.poisonStacks.size() == 1) {
+            CHECK_NEAR(ailing.poisonStacks[0].perSecond, 4.0, 1e-9);
+        }
+    }
+    // Either side of where it stood, far enough that they just touch.
+    const Vec2 one = sim.world.get<Transform>(pieces[0]).position;
+    const Vec2 two = sim.world.get<Transform>(pieces[1]).position;
+    CHECK_NEAR(distance(one, two), body.radius, 1e-6);
+    CHECK_NEAR(distance((one + two) * 0.5, at), 0.0, 1e-6);
+
+    // The slot stays with the bee that holds it, and the piece holds none.
+    const Entity piece = pieces[0] == bee ? pieces[1] : pieces[0];
+    CHECK_EQ(sim.world.get<AmbientMob>(bee).zone, slot.zone);
+    CHECK_EQ(sim.world.get<AmbientMob>(bee).spawnOrder, slot.spawnOrder);
+    CHECK_EQ(sim.world.get<AmbientMob>(piece).zone, std::uint16_t(kInvalidIndex));
+
+    // A mob divides once, either of them.
+    CHECK(!sim.spawner.divideMob(sim.world, sim.terrain, shipped(), bee, 2, sim.now, sim.rng));
+    CHECK(!sim.spawner.divideMob(sim.world, sim.terrain, shipped(), piece, 2, sim.now, sim.rng));
+    CHECK_EQ(dividedPieces(sim.world).size(), std::size_t(2));
+
+    // The band does not read either of them as a gap to fill.
+    for (int i = 0; i < net::kTicksPerSecond; ++i) sim.tick(players);
+    CHECK_EQ(population(), stocked + 1);
+
+    // Everyone gone: the bee sleeps back into the record it held, which wakes
+    // whole, and the piece, which holds no slot, is gone for good.
+    const std::vector<Vec2> elsewhere{kCentre + Vec2{15000.0, 15000.0}};
+    const int grace = static_cast<int>(kMobDespawnDelayMillis / net::kTickMillis) + 40;
+    for (int i = 0; i < grace; ++i) sim.tick(elsewhere);
+    CHECK(!sim.world.isAlive(bee));
+    CHECK(!sim.world.isAlive(piece));
+    CHECK_EQ(population(), stocked);
+}
+
+TEST(a_mob_divided_four_ways_holds_a_quarter_each_and_stands_in_a_ring) {
+    // A rock as well as a bee: no shove moves a rock, and two bodies on one
+    // exact spot have no direction for separation to push them along.
+    for (const char* id : {"bee", "rock"}) {
+        Sim sim;
+        const std::uint16_t type = shipped().mobIndex(id);
+        const Entity mob = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
+                                                Rarity::Rare, kCentre, Realm::Overworld, 0.0,
+                                                sim.rng);
+        const Health before = sim.world.get<Health>(mob);
+        const double radius = sim.world.get<Body>(mob).radius;
+        CHECK(sim.spawner.divideMob(sim.world, sim.terrain, shipped(), mob, 4, 0.0, sim.rng));
+        const std::vector<Entity> pieces = dividedPieces(sim.world);
+        CHECK_EQ(pieces.size(), std::size_t(4));
+        if (pieces.size() != 4) return;
+        std::vector<Vec2> places;
+        for (const Entity piece : pieces) {
+            CHECK_EQ(sim.world.get<DividedMob>(piece).pieces, 4);
+            CHECK_NEAR(sim.world.get<Health>(piece).max, before.max * 0.25, 1e-9);
+            CHECK_NEAR(sim.world.get<Body>(piece).radius, radius * 0.25, 1e-9);
+            places.push_back(sim.world.get<Transform>(piece).position);
+        }
+        // No two on top of each other: the closest are just touching.
+        double closest = 1e18;
+        for (std::size_t i = 0; i < places.size(); ++i) {
+            for (std::size_t j = i + 1; j < places.size(); ++j) {
+                closest = std::min(closest, distance(places[i], places[j]));
+            }
+        }
+        CHECK_NEAR(closest, radius * 0.5, 1e-6);
+    }
+}
+
+TEST(what_cannot_come_apart_stays_whole_when_divided) {
+    Sim sim;
+    const auto spawn = [&](std::uint16_t type, Rarity rarity) {
+        return sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type, rarity, kCentre,
+                                    Realm::Overworld, 0.0, sim.rng);
+    };
+    const auto refused = [&](Entity mob) {
+        CHECK(mob != NULL_ENTITY);
+        if (mob == NULL_ENTITY) return;
+        const double max = sim.world.get<Health>(mob).max;
+        const int mobs = sim.mobCount();
+        CHECK(!sim.spawner.divideMob(sim.world, sim.terrain, shipped(), mob, 2, 0.0, sim.rng));
+        CHECK(!sim.world.has<DividedMob>(mob));
+        CHECK_NEAR(sim.world.get<Health>(mob).max, max, 1e-9);
+        CHECK_EQ(sim.mobCount(), mobs);
+    };
+
+    const std::uint16_t bee = shipped().mobIndex("bee");
+    // A biome holds one of each, and would cull the rest.
+    refused(spawn(bee, Rarity::Unique));
+    refused(spawn(bee, Rarity::Apex));
+    // A pet is its owner's; a nest, a chain and a mob that leaves something
+    // behind are more than one body.
+    const Entity pet = spawn(bee, Rarity::Common);
+    sim.world.add<Pet>(pet);
+    refused(pet);
+    refused(spawn(shipped().mobIndex("fire_ant_hole"), Rarity::Epic));
+    refused(spawn(shipped().mobIndex("tomb"), Rarity::Epic));
+    for (std::size_t i = 0; i < shipped().mobCount(); ++i) {
+        const MobConfig& config = shipped().mob(static_cast<std::uint16_t>(i));
+        if (config.segmentCount > 0 && config.segmentBodyIndex != kInvalidIndex) {
+            refused(spawn(static_cast<std::uint16_t>(i), Rarity::Common));
+            break;
+        }
+    }
+
+    // Nothing to divide once it is dead or gone.
+    const Entity corpse = spawn(bee, Rarity::Common);
+    sim.world.add<Dead>(corpse, Dead{NULL_ENTITY});
+    CHECK(!sim.spawner.divideMob(sim.world, sim.terrain, shipped(), corpse, 2, 0.0, sim.rng));
+    const Entity gone = spawn(bee, Rarity::Common);
+    sim.world.destroy(gone);
+    CHECK(!sim.spawner.divideMob(sim.world, sim.terrain, shipped(), gone, 2, 0.0, sim.rng));
+
+    // At the cap there is no room for a second one.
+    const Entity crowded = spawn(bee, Rarity::Common);
+    const int cap = sim.spawner.mobCap;
+    sim.spawner.mobCap = sim.spawner.census().mobs;
+    refused(crowded);
+    sim.spawner.mobCap = cap;
+
+    // A super is below that line: it comes apart, and was announced once.
+    const Entity super = spawn(bee, Rarity::Super);
+    const std::size_t announced = sim.spawner.bossSpawns.size();
+    CHECK(sim.spawner.divideMob(sim.world, sim.terrain, shipped(), super, 2, 0.0, sim.rng));
+    CHECK_EQ(sim.spawner.bossSpawns.size(), announced);
+}
+
+TEST(a_piece_of_a_divided_mob_has_its_share_of_every_drop_rate) {
+    World world;
+    SpatialGrid grid;
+    CommandBuffer commands{world};
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(4242);
+    const std::uint16_t bee = shipped().mobIndex("bee");
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    // What each of 600 kills left.
+    const auto left = [&](int pieces) {
+        std::vector<int> kills;
+        for (int i = 0; i < 600; ++i) {
+            const Entity corpse = makeCorpse(world, bee, Rarity::Rare, kCentre, player, {player});
+            if (pieces > 0) world.add<DividedMob>(corpse, DividedMob{pieces});
+            loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+            commands.flush();
+            const std::vector<Entity> drops = liveDrops(world);
+            kills.push_back(static_cast<int>(drops.size()));
+            for (const Entity drop : drops) world.destroy(drop);
+        }
+        return kills;
+    };
+    const auto total = [](const std::vector<int>& kills) {
+        int sum = 0;
+        for (const int n : kills) sum += n;
+        return sum;
+    };
+    const std::vector<int> whole = left(0);
+    const int full = total(whole);
+    CHECK(full > 0);
+    CHECK_NEAR(total(left(2)) / static_cast<double>(full), 0.5, 0.1);
+    CHECK_NEAR(total(left(4)) / static_cast<double>(full), 0.25, 0.05);
+
+    // Item by item, not all or nothing: a mob that leaves several things leaves
+    // some of them as a piece, and that takes a mob leaving more than one.
+    const int most = *std::max_element(whole.begin(), whole.end());
+    CHECK(most >= 2);
+    const std::vector<int> halves = left(2);
+    CHECK(std::any_of(halves.begin(), halves.end(),
+                      [&](int n) { return n > 0 && n < most; }));
+}
+
 TEST(no_part_of_a_waking_animal_lands_in_a_flowers_lap) {
     // The lap test has to measure what actually appears. Not the nominal
     // radius -- the size roll comes after the test -- and not the head alone:

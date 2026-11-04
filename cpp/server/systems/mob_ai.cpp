@@ -216,6 +216,11 @@ void spawnShot(World& world, const VolleyShot& shot) {
     projectile.owner = shot.owner;
     projectile.creditTo = shot.creditTo;
     projectile.damage = shot.damage;
+    // A divided mob's piece fires its share of the shot, as it bites for its
+    // share of the bite.
+    if (const DividedMob* divided = world.tryGet<DividedMob>(shot.owner)) {
+        projectile.damage /= divided->pieces;
+    }
     projectile.remainingDistance = shot.distance;
     projectile.petalConfigIndex = shot.petalIndex;
     projectile.rarity = shot.rarity;

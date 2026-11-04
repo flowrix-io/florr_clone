@@ -270,6 +270,13 @@ public:
     bool spendSlot(World& world, const ContentRegistry& registry, Entity player,
                    std::uint8_t slot, double nowMillis, bool recallSummons = true);
 
+    /// Breaks the petal in `slot` from outside run(), as being worn down would:
+    /// it plays its death on the way out, on `events` since run()'s queue is
+    /// gone by then, its summons stay, and the slot reloads. For a petal that
+    /// breaks by what it did, however much health it has: a divider.
+    bool breakSlot(World& world, const ContentRegistry& registry, Entity player,
+                   std::uint8_t slot, double nowMillis, EventQueue& events);
+
     /// Put the petal that hatched `pet` back on its reload, as a summon
     /// retired for getting lost does. For whoever ends a pet from outside
     /// the ring -- the sacrifice's star. No-op on anything that is not a pet

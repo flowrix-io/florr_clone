@@ -2053,6 +2053,236 @@ TEST(a_yin_yang_turns_a_cpp_into_a_cminus_through_the_real_server_loop) {
     }, 30));
 }
 
+TEST(a_divider_splits_a_mob_through_the_real_server_loop) {
+    // Combat books the hit and the spawner makes the pieces, each tested on
+    // their own; this runs a ring of dividers into a mob through the server's
+    // tick and asks the client what it now sees. A petal of the test's own, so
+    // the rule under test is the one keyed on the id, whatever the shipped
+    // divider's numbers are.
+    const std::string dir = flix::testsupport::stageDataDirWithPetals("divider", R"JSON({
+      "divider": {"name": "Test Divider", "damage": 0, "health": null, "size": 1,
+        "cooldown": 1500, "count": 1}
+    })JSON");
+    if (dir.empty()) { CHECK(false); return; }
+    struct Cleanup {
+        std::string dir;
+        ~Cleanup() { flix::testsupport::removeDataDir(dir); }
+    } cleanup{dir};
+
+    const auto run = [&](const char* user, Rarity tier, int expected) {
+        Harness h("divider", {}, dir, 0);
+        if (!h.ready) { CHECK(false); return; }
+        NetClient client;
+        CHECK(flix::testsupport::loginNew(h, client, user, "long-enough-password"));
+        client.joinGame(1280, 720);
+        CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+        World& world = h.server.world();
+        Entity player = NULL_ENTITY;
+        Query<PlayerTag> players{world};
+        players.each([&](Entity e, PlayerTag&) { player = e; });
+        CHECK(player != NULL_ENTITY);
+        if (player == NULL_ENTITY) return;
+        world.get<Health>(player).invulnerableUntilMillis = 1e18;
+        const Realm realm = world.get<Transform>(player).realm;
+        Loadout& loadout = world.get<Loadout>(player);
+        for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+            LoadoutSlot& slot = loadout.slots[static_cast<std::size_t>(i)];
+            slot.configIndex = content().petalIndex("divider");
+            slot.rarity = tier;
+        }
+
+        Entity mob = NULL_ENTITY;
+        CHECK(h.stepUntil({&client}, [&] {
+            Query<MobTag, MobType, Transform, AmbientMob> mobs{world};
+            mobs.without<Pet, BodySegment, Intangible, MobPetalRing, Spawner, NestWaves>();
+            mobs.each([&](Entity e, MobTag&, MobType& type, Transform& transform, AmbientMob&) {
+                if (mob == NULL_ENTITY && transform.realm == realm &&
+                    rarityIndex(type.rarity) < rarityIndex(Rarity::Unique) &&
+                    dividerReaches(tier, type.rarity)) {
+                    mob = e;
+                }
+            });
+            return mob != NULL_ENTITY;
+        }, 400));
+        if (mob == NULL_ENTITY) return;
+        // A figure nothing else has, which picks its pieces out of the world.
+        const double toughness = 1e15;
+        world.get<Health>(mob) = Health{toughness, toughness, 0.0, 0.0};
+        const double radius = world.get<Body>(mob).radius;
+
+        // Held against the flower until the ring reaches it. Nothing but the
+        // divider's hit comes of it: the petal has no damage to swing with.
+        std::array<std::uint32_t, kLoadoutActiveSlots> petalIds{};
+        std::vector<std::uint32_t> cues;
+        const auto noteCues = [&] {
+            for (const ViewEvent& e : client.view().events()) {
+                if (e.kind == net::EventKind::Killed) cues.push_back(e.netId);
+            }
+        };
+        CHECK(h.stepUntil({&client}, [&] {
+            noteCues();
+            if (world.has<DividedMob>(mob)) return true;
+            for (const Entity petal : loadout.spawned) {
+                const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+                const NetId* id = world.tryGet<NetId>(petal);
+                if (instance != nullptr && id != nullptr && instance->slot < petalIds.size()) {
+                    petalIds[instance->slot] = id->value;
+                }
+            }
+            world.get<Transform>(mob).position = world.get<Transform>(player).position + Vec2{70.0, 0.0};
+            if (Motion* motion = world.tryGet<Motion>(mob)) motion->velocity = {0, 0};
+            return false;
+        }, 900));
+        CHECK(world.isAlive(mob));
+        if (!world.isAlive(mob) || !world.has<DividedMob>(mob)) return;
+
+        // The petal that did it broke; the slot is out for its reload.
+        int spent = -1;
+        for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+            if (loadout.slots[static_cast<std::size_t>(i)].broken) spent = i;
+        }
+        CHECK(spent >= 0);
+        if (spent < 0) return;
+        // And the client is told, so it plays the petal's death.
+        const std::uint32_t brokenId = petalIds[static_cast<std::size_t>(spent)];
+        CHECK(h.stepUntil({&client}, [&] {
+            noteCues();
+            return std::find(cues.begin(), cues.end(), brokenId) != cues.end();
+        }, 30));
+
+        const auto piecesOfIt = [&] {
+            std::vector<Entity> pieces;
+            Query<MobTag, DividedMob, Health> all{world};
+            all.each([&](Entity e, MobTag&, DividedMob&, Health& health) {
+                if (health.max == toughness / expected) pieces.push_back(e);
+            });
+            return pieces;
+        };
+        const std::vector<Entity> pieces = piecesOfIt();
+        CHECK_EQ(pieces.size(), static_cast<std::size_t>(expected));
+        const double shrunk = radius / expected;
+        for (const Entity piece : pieces) CHECK_NEAR(world.get<Body>(piece).radius, shrunk, 1e-9);
+
+        // Standing clear of each other with the ring still on them: a petal
+        // landing on a piece must not leave them stacked.
+        const Vec2 flower = world.get<Transform>(player).position;
+        std::vector<Vec2> holds;
+        const auto stood = [&] {
+            for (std::size_t i = 0; i < pieces.size(); ++i) {
+                for (std::size_t j = i + 1; j < pieces.size(); ++j) {
+                    if (distance(world.get<Transform>(pieces[i]).position,
+                                 world.get<Transform>(pieces[j]).position) < shrunk) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
+        CHECK(stood());
+        h.step(10, {&client});
+        CHECK(stood());
+        for (const Entity piece : pieces) {
+            holds.push_back(world.get<Transform>(piece).position - flower);
+        }
+
+        // And the client sees every one of them, at the size it now is.
+        CHECK(h.stepUntil({&client}, [&] {
+            const auto& seen = client.view().entities();
+            for (const Entity piece : pieces) {
+                if (!world.isAlive(piece) || !world.has<NetId>(piece)) return false;
+                const auto it = seen.find(world.get<NetId>(piece).value);
+                if (it == seen.end() || std::fabs(it->second.radius - shrunk) > 1.0) return false;
+            }
+            return true;
+        }, 60));
+
+        // The slot comes back after its reload, and the pieces stay as they
+        // are with the whole ring still on them.
+        CHECK(h.stepUntil({&client}, [&] {
+            for (std::size_t i = 0; i < pieces.size(); ++i) {
+                if (!world.isAlive(pieces[i])) continue;
+                world.get<Transform>(pieces[i]).position =
+                    world.get<Transform>(player).position + holds[i];
+            }
+            return spent >= 0 && !loadout.slots[static_cast<std::size_t>(spent)].broken;
+        }, 200));
+        CHECK_EQ(piecesOfIt().size(), static_cast<std::size_t>(expected));
+    };
+    run("halver", Rarity::Rare, 2);
+    run("quarterer", Rarity::Apex, 4);
+}
+
+TEST(a_divider_leaves_a_mob_above_its_own_rarity_whole) {
+    const std::string dir = flix::testsupport::stageDataDirWithPetals("divider-cap", R"JSON({
+      "divider": {"name": "Test Divider", "damage": 0, "health": null, "size": 1,
+        "cooldown": 1500, "count": 1}
+    })JSON");
+    if (dir.empty()) { CHECK(false); return; }
+    struct Cleanup {
+        std::string dir;
+        ~Cleanup() { flix::testsupport::removeDataDir(dir); }
+    } cleanup{dir};
+    Harness h("divider-cap", {}, dir, 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(flix::testsupport::loginNew(h, client, "undersized", "long-enough-password"));
+    client.joinGame(1280, 720);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity player = NULL_ENTITY;
+    Query<PlayerTag> players{world};
+    players.each([&](Entity e, PlayerTag&) { player = e; });
+    CHECK(player != NULL_ENTITY);
+    if (player == NULL_ENTITY) return;
+    world.get<Health>(player).invulnerableUntilMillis = 1e18;
+    const Realm realm = world.get<Transform>(player).realm;
+    Loadout& loadout = world.get<Loadout>(player);
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        LoadoutSlot& slot = loadout.slots[static_cast<std::size_t>(i)];
+        slot.configIndex = content().petalIndex("divider");
+        slot.rarity = Rarity::Common;
+    }
+
+    Entity mob = NULL_ENTITY;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<MobTag, Transform, AmbientMob> mobs{world};
+        mobs.without<Pet, BodySegment, Intangible, MobPetalRing, Spawner, NestWaves, AmbushNest,
+                     DungeonEntrance>();
+        mobs.each([&](Entity e, MobTag&, Transform& transform, AmbientMob&) {
+            if (mob == NULL_ENTITY && transform.realm == realm) mob = e;
+        });
+        return mob != NULL_ENTITY;
+    }, 400));
+    if (mob == NULL_ENTITY) return;
+    world.get<MobType>(mob).rarity = Rarity::Uncommon;
+    const double max = world.get<Health>(mob).max;
+    const auto hold = [&] {
+        world.get<Transform>(mob).position =
+            world.get<Transform>(player).position + Vec2{70.0, 0.0};
+        if (Motion* motion = world.tryGet<Motion>(mob)) motion->velocity = {0, 0};
+    };
+
+    // Long past the equip reload, the ring on it the whole time.
+    for (int i = 0; i < 4 * net::kTicksPerSecond; ++i) {
+        h.step(1, {&client});
+        hold();
+    }
+    CHECK(world.isAlive(mob));
+    if (!world.isAlive(mob)) return;
+    CHECK(!world.has<DividedMob>(mob));
+    CHECK_NEAR(world.get<Health>(mob).max, max, 1e-9);
+
+    // The same ring on the same mob, now within its reach: it was only ever
+    // the tier that stood in the way.
+    world.get<MobType>(mob).rarity = Rarity::Common;
+    CHECK(h.stepUntil({&client}, [&] {
+        hold();
+        return world.has<DividedMob>(mob);
+    }, 300));
+}
+
 TEST(inventory_packet_flood_shares_a_budget_across_opcodes_and_recovers) {
     Harness h("inventory-flood");
     if (!h.ready) { CHECK(false); return; }

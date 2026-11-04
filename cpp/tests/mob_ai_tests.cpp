@@ -1860,6 +1860,27 @@ TEST(a_hornets_missile_inherits_the_hornets_size) {
     CHECK(sim.world.has<HitCooldowns>(shot));
 }
 
+TEST(a_divided_mobs_piece_fires_its_share_of_the_shot) {
+    CHECK(contentReady());
+    Sim whole;
+    whole.spawnMob("hornet", kOrigin);
+    whole.spawnPlayer(kOrigin + Vec2{200, 0});
+    const Entity full = fireAndCatch(whole);
+
+    Sim divided;
+    const Entity piece = divided.spawnMob("hornet", kOrigin);
+    divided.world.add<DividedMob>(piece, DividedMob{4});
+    divided.spawnPlayer(kOrigin + Vec2{200, 0});
+    const Entity share = fireAndCatch(divided);
+
+    CHECK(full != NULL_ENTITY);
+    CHECK(share != NULL_ENTITY);
+    if (full == NULL_ENTITY || share == NULL_ENTITY) return;
+    CHECK(whole.world.get<Projectile>(full).damage > 0.0);
+    CHECK_NEAR(divided.world.get<Projectile>(share).damage,
+               whole.world.get<Projectile>(full).damage * 0.25, 1e-9);
+}
+
 TEST(a_stinger_shooter_comes_round_before_it_fires) {
     CHECK(contentReady());
     Sim sim;

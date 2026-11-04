@@ -547,6 +547,21 @@ public:
     Entity convertMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                       Entity mob, std::uint16_t into, double nowMillis, Rng& rng);
 
+    /// Splits `mob` into `pieces` mobs where it stands: what a divider does
+    /// (CombatSystem::divisions). Every piece is the same mob at the same tier,
+    /// holding its share of the whole (DividedMob), standing clear of the
+    /// others. The mob that was hit is one of them, so its band slot and net id
+    /// carry on; the rest hold no slot, and are never announced, as the boss it
+    /// was already was.
+    ///
+    /// False, with `mob` left as it was, for a mob that is dead or gone, a pet
+    /// or a piece already, more than one body (a chain, a ring of seeds, a
+    /// nest), a fixture, a unique or an apex (a biome holds one of each, and
+    /// cullExtraTopBosses would take the extras and their health with them), or
+    /// when the pieces would pass mobCap.
+    bool divideMob(World& world, const Terrain& terrain, const ContentRegistry& content, Entity mob,
+                   int pieces, double nowMillis, Rng& rng);
+
     /// What came of a sacrifice. Anything but Summoned placed nothing and
     /// spent nothing: the petal stays on its flower's bar.
     enum class SacrificeOutcome : std::uint8_t {

@@ -627,6 +627,129 @@ Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const Conte
     return turned;
 }
 
+bool SpawnSystem::divideMob(World& world, const Terrain& terrain, const ContentRegistry& content,
+                            Entity mob, int pieces, double nowMillis, Rng& rng) {
+    if (pieces < 2 || !world.isAlive(mob) || !world.has<MobTag>(mob) || world.has<Dead>(mob) ||
+        world.has<Undead>(mob) || world.has<Pet>(mob) || world.has<DividedMob>(mob)) {
+        return false;
+    }
+    if (world.has<BodySegment>(mob) || world.has<MobPetalRing>(mob) || world.has<Spawner>(mob) ||
+        world.has<NestWaves>(mob) || world.has<AmbushNest>(mob) ||
+        world.has<DungeonEntrance>(mob)) {
+        return false;
+    }
+    const MobType* type = world.tryGet<MobType>(mob);
+    const Transform* transform = world.tryGet<Transform>(mob);
+    const Body* body = world.tryGet<Body>(mob);
+    const Health* wounds = world.tryGet<Health>(mob);
+    const Bounty* bounty = world.tryGet<Bounty>(mob);
+    if (type == nullptr || transform == nullptr || body == nullptr || wounds == nullptr ||
+        bounty == nullptr || type->configIndex >= content.mobCount()) {
+        return false;
+    }
+    if (type->rarity == Rarity::Unique || type->rarity == Rarity::Apex) return false;
+    // What a death leaves behind would be left once per piece.
+    const MobConfig& config = content.mob(type->configIndex);
+    if (config.neverAmbient || harmlessOnContact(config) || config.deathSpawn.present ||
+        !config.initialSpawns.empty()) {
+        return false;
+    }
+    if (isWorldRealm(transform->realm) && census_.mobs + pieces - 1 > mobCap) return false;
+
+    // Copied out first: the creates below relocate the rows these live in.
+    const std::uint16_t mobIndex = type->configIndex;
+    const Rarity rarity = type->rarity;
+    const double sizeJitter = type->sizeJitter;
+    const Transform place = *transform;
+    const Body whole = *body;
+    const Health before = *wounds;
+    const double xp = bounty->xp;
+    std::vector<Bounty::Share> ledger = bounty->contributors;
+    const Motion* motion = world.tryGet<Motion>(mob);
+    const Vec2 velocity = motion != nullptr ? motion->velocity : Vec2{};
+    const MobAi* ai = world.tryGet<MobAi>(mob);
+    const std::optional<MobAi> mind = ai != nullptr ? std::optional<MobAi>(*ai) : std::nullopt;
+    const Afflictions* afflictions = world.tryGet<Afflictions>(mob);
+    Afflictions ailing = afflictions != nullptr ? *afflictions : Afflictions{};
+    const ContactDamage* contact = world.tryGet<ContactDamage>(mob);
+    const double bite = contact != nullptr ? contact->amount : 0.0;
+    const HoleTether* holeTether = world.tryGet<HoleTether>(mob);
+    const std::optional<HoleTether> tether =
+        holeTether != nullptr ? std::optional<HoleTether>(*holeTether) : std::nullopt;
+    const DungeonDweller* dweller = world.tryGet<DungeonDweller>(mob);
+    const std::optional<DungeonDweller> dungeon =
+        dweller != nullptr ? std::optional<DungeonDweller>(*dweller) : std::nullopt;
+    const Lifetime* timer = world.tryGet<Lifetime>(mob);
+    const std::optional<Lifetime> lifetime =
+        timer != nullptr ? std::optional<Lifetime>(*timer) : std::nullopt;
+    const bool keepAwake = world.has<KeepAwake>(mob);
+
+    std::vector<Entity> bodies{mob};
+    for (int i = 1; i < pieces; ++i) {
+        // kMaxNestDepth: no clock and no announcement, as the boss it already
+        // was, and it brings nothing with it. kInvalidIndex: no band holds a
+        // slot for a piece, so unseen it goes for good rather than to sleep.
+        const Entity piece =
+            spawnMobAt(world, terrain, content, mobIndex, rarity, place.position, place.realm,
+                       nowMillis, rng, kMaxNestDepth, kInvalidIndex, place.angle, false);
+        if (piece != NULL_ENTITY) bodies.push_back(piece);
+    }
+    if (bodies.size() < 2) return false;
+
+    const double share = 1.0 / static_cast<double>(bodies.size());
+    const double radius = whole.radius * share;
+    const double mass = whole.mass * bodyMassForRadius(radius) / bodyMassForRadius(whole.radius);
+    for (Bounty::Share& entry : ledger) entry.damage *= share;
+    ailing.poisonPerSecond *= share;
+    for (PoisonStack& stack : ailing.poisonStacks) stack.perSecond *= share;
+
+    // Out to a ring whose neighbours just touch. Placed here rather than
+    // shoved: the next petal to land replaces a shove, a rock takes none, and
+    // two bodies on one exact spot have no direction for separation to push
+    // them along, so they would stand stacked for good. Stepped, so a wall
+    // stops a piece short rather than letting it out on the far side.
+    const double spread = radius / std::sin(kPi * share);
+    const double bearing = rng.angle();
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        const Entity e = bodies[i];
+        Health& health = world.get<Health>(e);
+        health = before;
+        health.max = before.max * share;
+        health.current = before.current * share;
+        world.get<Body>(e) = Body{radius, mass};
+        world.get<MobType>(e).sizeJitter = sizeJitter * share;
+        Bounty& pay = world.get<Bounty>(e);
+        pay.xp = xp * share;
+        pay.contributors = ledger;
+        if (Motion* moving = world.tryGet<Motion>(e)) moving->velocity = velocity;
+        if (Afflictions* ailment = world.tryGet<Afflictions>(e)) *ailment = ailing;
+        if (ContactDamage* touch = world.tryGet<ContactDamage>(e)) touch->amount = bite * share;
+        Vec2 at = place.position;
+        stepCollide(terrain, place.realm, at,
+                    Vec2::fromAngle(bearing + kTau * static_cast<double>(i) * share, spread),
+                    kMobWallRadius, 1.0, true, true);
+        world.get<Transform>(e).position = at;
+        world.add<DividedMob>(e, DividedMob{static_cast<int>(bodies.size())});
+    }
+
+    // What the first body already has, the rest are handed.
+    for (std::size_t i = 1; i < bodies.size(); ++i) {
+        const Entity piece = bodies[i];
+        if (mind) world.get<MobAi>(piece) = *mind;
+        if (lifetime) world.add<Lifetime>(piece, *lifetime);
+        if (dungeon) world.add<DungeonDweller>(piece, *dungeon);
+        if (keepAwake) world.add<KeepAwake>(piece);
+        if (tether) {
+            world.add<HoleTether>(piece, *tether);
+            // A nest falls with the last of its brood, this piece included.
+            if (AmbushNest* nest = world.tryGet<AmbushNest>(tether->hole)) {
+                nest->brood.push_back(piece);
+            }
+        }
+    }
+    return true;
+}
+
 SpawnSystem::Sacrifice SpawnSystem::planSacrifice(World& world, const ContentRegistry& content,
                                                   Rarity rarity, Vec2 at, Realm realm, Rng& rng) {
     bind(world);

@@ -201,6 +201,17 @@ struct MobConversion {
     std::uint16_t into = kInvalidIndex;
 };
 
+/// A mob a divider landed on this tick (petalDividesMobs). Combat only sees the
+/// hit; the pieces are the spawner's, made once combat is done
+/// (SpawnSystem::divideMob), and the slot named here breaks only if they are.
+struct MobDivision {
+    Entity mob = NULL_ENTITY;
+    int pieces = 0;
+    Entity petal = NULL_ENTITY;
+    Entity owner = NULL_ENTITY;
+    std::uint8_t slot = 0;
+};
+
 class CombatSystem {
 public:
     CombatSystem();
@@ -413,6 +424,11 @@ public:
     /// the order they were hit.
     const std::vector<MobConversion>& conversions() const { return conversions_; }
 
+    /// Mobs a divider landed on during the last run(), once per petal and mob,
+    /// in the order they were hit. More than one may name the same petal or the
+    /// same mob: which of them comes to anything is the spawner's to say.
+    const std::vector<MobDivision>& divisions() const { return divisions_; }
+
     /// Pays `xp` onto `player`'s live PlayerProgress and, when that crosses a
     /// level, applies the level-up at once: the new level's health (full) and
     /// body damage. Every XP the world pays goes through here -- a kill's,
@@ -503,6 +519,9 @@ private:
         /// `convertsInto` (MobConversion). kInvalidIndex for every other body.
         std::uint16_t convertsFrom = kInvalidIndex;
         std::uint16_t convertsInto = kInvalidIndex;
+        /// A divider's: how many pieces a mob it lands on comes apart into
+        /// (MobDivision). Zero for every other body.
+        int dividesInto = 0;
         /// A mob whose touch throws lightning -- both fireflies. Zero radius
         /// means it does not, which is every other body in the game. Resolved
         /// in the gather beside the glitch flag and for the same reason.
@@ -845,6 +864,7 @@ private:
     std::vector<DeathRecord> deaths_;
     std::vector<ShotLanding> shotLandings_;
     std::vector<MobConversion> conversions_;
+    std::vector<MobDivision> divisions_;
     /// The segments behind a shared chain's pool owner, gathered before any of
     /// them is touched. A member so a hit on a leech allocates nothing.
     std::vector<Entity> chainScratch_;

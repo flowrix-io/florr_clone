@@ -1345,6 +1345,24 @@ inline bool petalInvertsCpp(const PetalConfig& config) { return config.id == "yi
 inline constexpr const char* kCppMobId = "c++";
 inline constexpr const char* kCMinusMobId = "c--";
 
+/// A divider that lands on a mob splits it. Combat sees the hit
+/// (CombatSystem::divisions); the spawner makes the pieces
+/// (SpawnSystem::divideMob), and the petal breaks only if it made them.
+inline bool petalDividesMobs(const PetalConfig& config) { return config.id == "divider"; }
+
+/// How many pieces a divider of this tier makes: "into two unless Apex rarity,
+/// which divides into four". The tier is the PETAL'S, and the tiers above apex
+/// divide as apex does.
+inline int dividerPieces(Rarity tier) {
+    return rarityIndex(tier) >= rarityIndex(Rarity::Apex) ? 4 : 2;
+}
+
+/// A divider divides mobs up to its own tier (user's rule, 2026-11-03). On
+/// anything above, its hit is a shove like any other and the petal stays out.
+inline bool dividerReaches(Rarity petalTier, Rarity mobTier) {
+    return rarityIndex(mobTier) <= rarityIndex(petalTier);
+}
+
 /// A compass's needle points at something interesting.
 inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }
 

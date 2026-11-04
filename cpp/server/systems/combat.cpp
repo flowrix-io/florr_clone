@@ -1827,6 +1827,7 @@ void CombatSystem::beginTick(World& world, double nowMillis, double dt, EventQue
     deaths_.clear();
     shotLandings_.clear();
     conversions_.clear();
+    divisions_.clear();
     ++tick_;
 
     // Standing damage first, so a mob that was already dying from poison is
@@ -2303,7 +2304,7 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
         const bool inert = stats.damage <= 0.0 && stats.critDamage <= 0.0 &&
                            stats.poisonPerSecond <= 0.0 && stats.slowFactor >= 1.0 &&
                            stats.knockback <= 0.0 && stats.armorReduction <= 0.0 &&
-                           stats.noHealDurationMillis <= 0.0;
+                           stats.noHealDurationMillis <= 0.0 && !petalDividesMobs(config);
         if (inert) return;
 
         MeleeSource source;
@@ -2337,6 +2338,7 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
             source.convertsFrom = content.mobIndex(kCppMobId);
             source.convertsInto = content.mobIndex(kCMinusMobId);
         }
+        if (petalDividesMobs(config)) source.dividesInto = dividerPieces(petal.rarity);
         // The flower's damage bonus is a property of the flower, not of the
         // petal entity, so it is read here rather than baked in at spawn --
         // swapping a damage petal in must affect the ring on the same tick.
@@ -2620,6 +2622,20 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                                 [&](const MobConversion& c) { return c.mob == victim; });
                 if (type != nullptr && type->configIndex == source.convertsFrom && !queued) {
                     conversions_.push_back({victim, source.convertsInto});
+                }
+            }
+
+            // A divider splits what it lands on, up to its own tier: queued for
+            // the same reason, and a miss divides nothing. The spawner refuses
+            // whatever cannot come apart, and the petal breaks only on what does.
+            if (landed && !hit.killed && source.dividesInto > 0 && world.has<MobTag>(victim) &&
+                !world.has<Pet>(victim) && !world.has<DividedMob>(victim)) {
+                const MobType* type = world.tryGet<MobType>(victim);
+                const auto* petal = world.tryGet<PetalInstance>(source.attacker);
+                if (type != nullptr && petal != nullptr &&
+                    dividerReaches(source.rarity, type->rarity)) {
+                    divisions_.push_back(
+                        {victim, source.dividesInto, source.attacker, source.owner, petal->slot});
                 }
             }
 

@@ -600,6 +600,13 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         const Entity credit = world.has<PlayerTag>(killer) ? killer : ranked_.front().player;
         if (!world.has<PlayerTag>(credit)) continue;
 
+        // A piece of a divided mob has that share of every drop rate the mob
+        // has, so killing every piece pays what killing it whole does on
+        // average, and a divider is no way to multiply loot. A figure, because
+        // the drops below relocate the row a pointer would be into.
+        const DividedMob* divided = world.tryGet<DividedMob>(corpse);
+        const double dropShare = divided != nullptr ? 1.0 / divided->pieces : 1.0;
+
         // A worn magic orb rewrites what this mob leaves behind: everything
         // with a magic form drops as that form instead, and nothing gets past
         // the ORB'S OWN TIER. A common orb turns every leaf this mob would
@@ -654,6 +661,7 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
                                                       rng)
                                     : chaffDropRarity(mobRarity);
             for (int i = 0; i < copies; ++i) {
+                if (dropShare < 1.0 && !rng.chance(dropShare)) continue;
                 Rarity rarity = graded ? finishDropRarity(base, mobRarity, rng) : base;
                 // The Random sentinel resolves per COPY, not per row.
                 std::uint16_t petalIndex = entry->kind == DropTables::Kind::RandomPetal

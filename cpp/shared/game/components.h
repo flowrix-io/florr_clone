@@ -947,6 +947,15 @@ struct ColonyMember {};
 /// and a nest standing in the overworld while its dungeon is occupied.
 struct KeepAwake {};
 
+/// One piece of a mob a divider split (SpawnSystem::divideMob), and how many
+/// pieces it came apart into. Each is worth that share of the whole: its
+/// health, size, bite, XP and ledger were cut when it was made, its shots are
+/// cut as they leave (spawnShot), and each of its drops comes up one time in
+/// `pieces` (LootSystem::awardDeaths). A mob divides once: a piece stays a piece.
+struct DividedMob {
+    int pieces = 1;
+};
+
 /// A mob summoned by a player, which fights for them and does not drop loot.
 struct Pet {
     Entity owner = NULL_ENTITY;
@@ -1614,6 +1623,7 @@ FLIX_COMPONENT(flix::DungeonEntrance);
 FLIX_COMPONENT(flix::DungeonDweller);
 FLIX_COMPONENT(flix::ColonyMember);
 FLIX_COMPONENT(flix::KeepAwake);
+FLIX_COMPONENT(flix::DividedMob);
 FLIX_COMPONENT(flix::Pet);
 FLIX_COMPONENT(flix::PetBrood);
 FLIX_COMPONENT(flix::BodySegment);

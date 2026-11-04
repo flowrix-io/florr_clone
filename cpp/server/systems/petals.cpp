@@ -1489,6 +1489,14 @@ bool PetalSystem::spendSlot(World& world, const ContentRegistry& registry, Entit
     return true;
 }
 
+bool PetalSystem::breakSlot(World& world, const ContentRegistry& registry, Entity player,
+                            std::uint8_t slot, double nowMillis, EventQueue& events) {
+    events_ = &events;
+    const bool broke = spendSlot(world, registry, player, slot, nowMillis, false);
+    events_ = nullptr;
+    return broke;
+}
+
 void PetalSystem::recallPets(World& world, PetalSlotState::Slot& state) {
     // Destroyed, not marked Dead: a recalled summon has not been killed, so it
     // must not raise a death event, award XP or drop anything.

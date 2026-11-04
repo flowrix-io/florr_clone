@@ -213,6 +213,7 @@ struct Fixture {
     std::uint16_t basil = kInvalidIndex;
     std::uint16_t saucer = kInvalidIndex;
     std::uint16_t yinYang = kInvalidIndex;
+    std::uint16_t divider = kInvalidIndex;
     std::uint16_t cpp = kInvalidIndex;
     std::uint16_t cMinus = kInvalidIndex;
 };
@@ -247,7 +248,8 @@ const Fixture& fixture() {
               "tomato":{"name":"Tomato","damage":5,"health":10,"size":1},
               "basil":{"name":"Basil","damage":5,"health":15,"size":1.3,"defendOnly":true,"ignoresMobs":true},
               "saucer":{"name":"Saucer","damage":10,"health":5,"size":1,"projectile":{"speed":300,"distance":500,"summonMobType":"grunt","summonMax":3}},
-              "yin_yang":{"name":"Yin Yang","damage":10,"health":10,"size":1}
+              "yin_yang":{"name":"Yin Yang","damage":10,"health":10,"size":1},
+              "divider":{"name":"Divider","damage":0,"health":null,"size":1}
             })",
             f.error);
         f.sting = f.registry.petalIndex("sting");
@@ -271,6 +273,7 @@ const Fixture& fixture() {
         f.basil = f.registry.petalIndex("basil");
         f.saucer = f.registry.petalIndex("saucer");
         f.yinYang = f.registry.petalIndex("yin_yang");
+        f.divider = f.registry.petalIndex("divider");
         f.cpp = f.registry.mobIndex("c++");
         f.cMinus = f.registry.mobIndex("c--");
         return f;
@@ -3053,6 +3056,81 @@ TEST(a_yin_yang_landing_on_a_cpp_turns_it_into_a_cminus) {
     a.world.destroy(cpp);
     a.step(1100.0, f.registry);
     CHECK(a.combat.conversions().empty());
+}
+
+TEST(a_divider_landing_on_a_mob_books_it_by_the_petals_tier) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    CHECK(f.divider != kInvalidIndex);
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const auto mobOf = [&](Vec2 at) {
+        const Entity e = a.mob(at, 200.0);
+        a.world.add<MobType>(e, MobType{f.grunt, Rarity::Rare});
+        return e;
+    };
+    // Into two, whatever the tier below apex; into four at apex and above.
+    const Entity pair = mobOf({1040, 1000});
+    const Entity pairPetal = equipPetal(a, player, f.divider, Rarity::Super, {1025, 1000});
+    const Entity quad = mobOf({3040, 1000});
+    equipPetal(a, player, f.divider, Rarity::Apex, {3025, 1000});
+    const Entity higher = mobOf({5040, 1000});
+    equipPetal(a, player, f.divider, Rarity::Universal, {5025, 1000});
+
+    // Another petal divides nothing. Nor does a miss, and neither a piece of a
+    // divided mob nor a pet comes apart.
+    mobOf({7040, 1000});
+    equipPetal(a, player, f.plain, Rarity::Apex, {7025, 1000});
+    const Entity dodger = mobOf({9040, 1000});
+    a.world.add<Evasion>(dodger, Evasion{1.0});
+    equipPetal(a, player, f.divider, Rarity::Super, {9025, 1000});
+    const Entity piece = mobOf({11040, 1000});
+    a.world.add<DividedMob>(piece, DividedMob{2});
+    equipPetal(a, player, f.divider, Rarity::Super, {11025, 1000});
+    const Entity pet = mobOf({13040, 1000});
+    a.world.add<Pet>(pet);
+    equipPetal(a, player, f.divider, Rarity::Super, {13025, 1000});
+
+    // Up to its own tier: the mob's own tier is in reach and the one above is
+    // not. Every mob here is rare.
+    const Entity level = mobOf({15040, 1000});
+    equipPetal(a, player, f.divider, Rarity::Rare, {15025, 1000});
+    const Entity above = mobOf({17040, 1000});
+    equipPetal(a, player, f.divider, Rarity::Uncommon, {17025, 1000});
+
+    a.step(1000.0, f.registry);
+    const std::vector<MobDivision>& divisions = a.combat.divisions();
+    CHECK_EQ(divisions.size(), std::size_t(4));
+    if (divisions.size() != 4) return;
+    const auto piecesFor = [&](Entity mob) {
+        for (const MobDivision& division : divisions) {
+            if (division.mob == mob) return division.pieces;
+        }
+        return 0;
+    };
+    CHECK_EQ(piecesFor(pair), 2);
+    CHECK_EQ(piecesFor(quad), 4);
+    CHECK_EQ(piecesFor(higher), 4);
+    CHECK_EQ(piecesFor(level), 2);
+    CHECK_EQ(piecesFor(above), 0);
+    // What the server needs to spend the slot that did it.
+    for (const MobDivision& division : divisions) {
+        if (division.mob != pair) continue;
+        CHECK_EQ(division.petal, pairPetal);
+        CHECK_EQ(division.owner, player);
+    }
+    // A swing of nothing still shoved it, as any petal does.
+    CHECK_NEAR(a.health(pair), 200.0, 1e-9);
+
+    // Read per tick, as the conversions are.
+    a.world.destroy(pair);
+    a.world.destroy(quad);
+    a.world.destroy(higher);
+    a.world.destroy(level);
+    a.step(1100.0, f.registry);
+    CHECK(a.combat.divisions().empty());
 }
 
 
