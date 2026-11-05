@@ -40,16 +40,118 @@ static const Font* uiFont(unsigned char family);
 // setDesynchronized). A context's options are fixed by the element's FIRST
 // getContext, which is why changing it means a fresh element, not a fresh
 // context.
+//
+// Every surface reports its own contextlost (see c2d_loss_check). The handler
+// is one function, so a second Canvas on the element -- which is every resize
+// -- does not add it twice.
 EM_JS(int, c2d_create, (const char* element, int width, int height, int virtualCanvas, int desynchronized), {
   Module.cppCanvasContexts ||= [];
+  Module.cppCanvasLoss ||= {seen: false, note: () => { Module.cppCanvasLoss.seen = true; }, waited: 0, checkedAt: 0, probe: null, probedAt: 0, probeBroken: false};
   let surface, options;
   if (virtualCanvas) surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
   else { const id = UTF8ToString(element); surface = document.getElementById(id) || Object.assign(document.createElement('canvas'), {id}); if (!surface.parentNode) document.body.appendChild(surface); options = {alpha: false, desynchronized: !!desynchronized}; }
   surface.width = width; surface.height = height;
-  Module.cppCanvasContexts.push({surface, ctx: surface.getContext('2d', options)});
+  surface.addEventListener('contextlost', Module.cppCanvasLoss.note);
+  const entry = {surface, ctx: surface.getContext('2d', options), main: !virtualCanvas};
+  if (entry.main) Module.cppCanvasMain = entry;
+  Module.cppCanvasContexts.push(entry);
   return Module.cppCanvasContexts.length - 1;
 });
-EM_JS(void, c2d_destroy, (int id), { if (Module.cppCanvasContexts) Module.cppCanvasContexts[id] = null; });
+EM_JS(void, c2d_destroy, (int id), {
+  const C = Module.cppCanvasContexts, entry = C && C[id];
+  if (!entry) return;
+  // Not the element's: it outlives this Canvas, and the Canvas replacing this
+  // one has just added the same handler.
+  if (!entry.main) entry.surface.removeEventListener('contextlost', Module.cppCanvasLoss.note);
+  C[id] = null;
+});
+// Where the page's canvases stand after a GPU process has died under them, for
+// canvasCheckContexts: 0 fine, 1 lost, 2 lost for too long, 3 ready to rebuild.
+//
+// There are three ways to find out, because no one of them covers everybody.
+// The contextlost event is per surface, and Chrome and Firefox send it to each
+// one. isContextLost() on the window's canvas is what says when it is back --
+// the offscreen ones can take seconds longer to come back, and they are
+// replaced rather than waited for. And Safari has neither: its canvases are
+// emptied with nothing said, so anything but Blink also keeps a surface of its
+// own with a known pixel on it and looks every couple of seconds, which comes
+// to the first frame after the tab was hidden. It is large enough to count as
+// accelerated (WebKit's line has been about 257x256) because a small one might
+// not be emptied with the rest. Blink does not need it, and would respond to
+// the repeated read-backs by taking the surface off the GPU, which defeats it.
+//
+// The pixel is read back as soon as it is painted, because a browser scrambling
+// read-backs against fingerprinting would otherwise look like a wipe for ever.
+// After that only the alpha is asked about: noise moves the colours, and an
+// emptied surface is the one thing that is transparent.
+//
+// Time waiting counts in frames shown, capped per frame: a phone unlocked after
+// an hour has not been waiting for an hour, and the browser's own restore,
+// which has not had its timers run either, is due any moment.
+EM_JS(int, c2d_loss_check, (int useProbe), {
+  const L = Module.cppCanvasLoss;
+  if (!L) return 0;
+  const now = performance.now(), main = Module.cppCanvasMain, x = main && main.ctx;
+  const step = Math.min(now - L.checkedAt, 100);
+  L.checkedAt = now;
+  const mainLost = !!(x && x.isContextLost && x.isContextLost());
+  if (mainLost) L.seen = true;
+  if (!L.seen && useProbe && !L.probeBroken && now - L.probedAt >= 2000) {
+    L.probedAt = now;
+    try {
+      if (!L.probe) {
+        const side = 300;
+        const surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(side, side) : Object.assign(document.createElement('canvas'), {width: side, height: side});
+        const p = surface.getContext('2d');
+        p.fillStyle = '#ff00ff';
+        p.fillRect(0, 0, side, side);
+        const d = p.getImageData(0, 0, 1, 1).data;
+        if (d[0] > 200 && d[1] < 55 && d[2] > 200 && d[3] > 200) L.probe = p;
+        else L.probeBroken = true;
+      } else if (L.probe.getImageData(0, 0, 1, 1).data[3] < 128) {
+        L.seen = true;
+      }
+    } catch (e) {
+      L.probeBroken = true;
+    }
+  }
+  if (!L.seen) { L.waited = 0; return 0; }
+  if (!mainLost) return 3;
+  L.waited += step;
+  return L.waited >= 4000 ? 2 : 1;
+});
+// Puts every surface back in the state its Canvas will assume: empty, with the
+// context's default state.
+//
+// An offscreen surface is replaced rather than waited for. Some of them come
+// back seconds after the window's canvas does, one Chrome has not noticed yet
+// may not report anything until it is next used, and a Safari one never says.
+// A new one is good now. The window's element cannot be replaced that lightly
+// (Window::Impl::replaceElement), and does not need to be: assigning its width
+// is the one reset every browser has.
+//
+// Returns how many surfaces were replaced.
+EM_JS(int, c2d_recover, (), {
+  const L = Module.cppCanvasLoss;
+  L.seen = false;
+  L.waited = 0;
+  L.probe = null;
+  L.probedAt = 0;
+  if (Module.cppCanvasImages) Module.cppCanvasImages.clear();
+  let replaced = 0;
+  for (const entry of Module.cppCanvasContexts) {
+    if (!entry) continue;
+    const old = entry.surface, width = old.width, height = old.height;
+    if (entry.main) { old.width = width; continue; }
+    old.removeEventListener('contextlost', L.note);
+    const surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), {width, height});
+    surface.addEventListener('contextlost', L.note);
+    entry.surface = surface;
+    entry.ctx = surface.getContext('2d');
+    ++replaced;
+  }
+  return replaced;
+});
 EM_JS(void, c2d_present, (int id, const char* target), {
   const item = Module.cppCanvasContexts[id], name = UTF8ToString(target);
   let canvas = document.getElementById(name);
@@ -78,12 +180,21 @@ EM_JS(void, c2d_intern, (int id, const char* text), {
   (Module.cppCanvasStrings || (Module.cppCanvasStrings = [""]))[id] = UTF8ToString(text);
 });
 EM_JS(void, c2d_intern_reset, (), { Module.cppCanvasStrings = [""]; });
+// A call that throws is skipped on its own, and the calls after it still run.
+// An exception let out of here would cross the wasm frames and end the
+// requestAnimationFrame callback before it schedules the next one, which is the
+// whole game frozen for good over one picture; and stopping at it would leave
+// the page short of state changes that `applied_` says it has. A canvas whose
+// context could not be made at all -- what a page over Safari's canvas memory
+// limit gets from getContext -- draws nothing.
 EM_JS(void, c2d_flush, (int id, const int* ops, int count, const char* text, const float* paths), {
   const x = Module.cppCanvasContexts[id].ctx, S = Module.cppCanvasStrings || [""];
+  if (!x) return;
   // Read here, not hoisted: ALLOW_MEMORY_GROWTH detaches the views on a grow.
   const F = HEAPF32, I = HEAP32;
   for (let n = 0, p = ops >> 2; n < count; n++, p += 10) {
     const s = S[I[p+9]];
+    try {
     switch(I[p]) {
       case 0:x.save();break; case 1:x.restore();break; case 2: x.reset ? x.reset() : (x.setTransform(1,0,0,1,0,0),x.clearRect(0,0,x.canvas.width,x.canvas.height));break;
       case 3:x.scale(F[p+1],F[p+2]);break; case 4:x.rotate(F[p+1]);break; case 5:x.translate(F[p+1],F[p+2]);break; case 6:x.transform(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6]);break; case 7:x.setTransform(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6]);break; case 8:x.resetTransform();break;
@@ -120,9 +231,12 @@ EM_JS(void, c2d_flush, (int id, const int* ops, int count, const char* text, con
       // keeps it animating (see cppRemoteAnimate).
       case 54:{const R=Module.cppRemoteImages,e=R&&R.get(I[p+9]);if(e){e.drawnAt=performance.now();if(e.parked)e.resume();const im=e.frame||(e.state===1?e.img:null);if(im)x.drawImage(im,F[p+1],F[p+2],F[p+3],F[p+4]);}break;}
     }
+    } catch (e) {
+      if (!Module.cppCanvasThrew) { Module.cppCanvasThrew = true; console.warn('[canvas] a drawing call threw and was skipped (reported once):', e); }
+    }
   }
 });
-EM_JS(void, c2d_dash, (int id, const float* data, int length), { Module.cppCanvasContexts[id].ctx.setLineDash(Array.from(HEAPF32.subarray(data>>2,(data>>2)+length))); });
+EM_JS(void, c2d_dash, (int id, const float* data, int length), { const x=Module.cppCanvasContexts[id].ctx; if (x) x.setLineDash(Array.from(HEAPF32.subarray(data>>2,(data>>2)+length))); });
 EM_JS(void, c2d_path_drop, (int key), { if (Module.cppCanvasPaths) Module.cppCanvasPaths.delete(key); });
 // Whether the page runs on Blink -- Chrome, Edge, Opera, Brave -- whose canvas
 // has the full-turn arc bug segmentNeed() works around.
@@ -141,10 +255,10 @@ EM_JS(int, c2d_blink, (), {
   return ua.includes('Chrome/') || ua.includes('Chromium/') ? 1 : 0;
 });
 EM_JS(void, c2d_warn, (const char* text), { console.warn(UTF8ToString(text)); });
-EM_JS(int, c2d_hit, (int id,double a,double b,int stroke,const char* rule), { const x=Module.cppCanvasContexts[id].ctx; return stroke ? x.isPointInStroke(a,b) : x.isPointInPath(a,b,UTF8ToString(rule)); });
-EM_JS(double, c2d_measure, (int id,const char* text), { return Module.cppCanvasContexts[id].ctx.measureText(UTF8ToString(text)).width; });
-EM_JS(int, c2d_get_pixels, (int id,int x,int y,int w,int h,std::uint8_t* out), { const d=Module.cppCanvasContexts[id].ctx.getImageData(x,y,w,h).data; HEAPU8.set(d,out); return d.length; });
-EM_JS(void, c2d_put_pixels, (int id,const std::uint8_t* data,int sw,int sh,int dx,int dy), { const d=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+sw*sh*4)),sw,sh); Module.cppCanvasContexts[id].ctx.putImageData(d,dx,dy); });
+EM_JS(int, c2d_hit, (int id,double a,double b,int stroke,const char* rule), { const x=Module.cppCanvasContexts[id].ctx; if (!x) return 0; return stroke ? x.isPointInStroke(a,b) : x.isPointInPath(a,b,UTF8ToString(rule)); });
+EM_JS(double, c2d_measure, (int id,const char* text), { const x=Module.cppCanvasContexts[id].ctx; return x ? x.measureText(UTF8ToString(text)).width : 0; });
+EM_JS(int, c2d_get_pixels, (int id,int x,int y,int w,int h,std::uint8_t* out), { const c=Module.cppCanvasContexts[id].ctx; if (!c) return 0; const d=c.getImageData(x,y,w,h).data; HEAPU8.set(d,out); return d.length; });
+EM_JS(void, c2d_put_pixels, (int id,const std::uint8_t* data,int sw,int sh,int dx,int dy), { const c=Module.cppCanvasContexts[id].ctx; if (!c) return; const d=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+sw*sh*4)),sw,sh); c.putImageData(d,dx,dy); });
 EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,double dx,double dy,double dw,double dh,double alpha), {
   // putImageData ignores the transform, so the pixels go to a scratch surface
   // first and reach the destination through drawImage, which does not.
@@ -160,7 +274,10 @@ EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,do
   if (scratch === undefined) {
     const pixels=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+iw*ih*4)),iw,ih);
     scratch = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(iw,ih) : document.createElement('canvas');
-    scratch.width=iw; scratch.height=ih; scratch.getContext('2d').putImageData(pixels,0,0);
+    scratch.width=iw; scratch.height=ih;
+    const scratchContext=scratch.getContext('2d');
+    if (!scratchContext) return;
+    scratchContext.putImageData(pixels,0,0);
     if (key) {
       // Bounded, oldest-first: a Map iterates in insertion order, and a client
       // that draws thousands of distinct bitmaps must not grow the page's
@@ -170,8 +287,12 @@ EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,do
       cache.set(key, scratch);
     }
   }
-  const ctx=Module.cppCanvasContexts[id].ctx, was=ctx.globalAlpha;
-  ctx.globalAlpha=was*alpha; ctx.drawImage(scratch,dx,dy,dw,dh); ctx.globalAlpha=was;
+  const ctx=Module.cppCanvasContexts[id].ctx;
+  if (!ctx) return;
+  const was=ctx.globalAlpha;
+  ctx.globalAlpha=was*alpha;
+  try { ctx.drawImage(scratch,dx,dy,dw,dh); } catch (e) {}
+  ctx.globalAlpha=was;
 });
 // Remote images live on the page as <img> elements, named by a handle.
 //
@@ -308,6 +429,37 @@ CanvasFrameStats canvasTakeFrameStats() {
   gFrameStats = CanvasFrameStats{};
   for (int& count : gOpTypeCounts) count = 0;
   return taken;
+}
+
+namespace {
+/// Every Canvas alive, by its context: what a lost context has to reach. Never
+/// destroyed, so a Canvas outliving this at exit has something to leave.
+std::unordered_map<int, Canvas*>& liveCanvases() {
+  static auto* live = new std::unordered_map<int, Canvas*>();
+  return *live;
+}
+} // namespace
+
+CanvasContexts canvasCheckContexts() {
+  static const int useProbe = c2d_blink() ? 0 : 1;
+  switch (c2d_loss_check(useProbe)) {
+    case 1: return CanvasContexts::Lost;
+    case 2: return CanvasContexts::LostTooLong;
+    case 3: return CanvasContexts::Recoverable;
+    default: return CanvasContexts::Fine;
+  }
+}
+
+void canvasRecoverContexts() {
+  // Whatever is still buffered was drawn for the surfaces being thrown away,
+  // and names its strings and contexts as they stand now.
+  canvasFlushOps();
+  const int replaced = c2d_recover();
+  for (auto& [context, canvas] : liveCanvases()) canvas->forgetPageState();
+  // Anything but zero is a holder missing from the owner's list of what to drop.
+  const std::string note = "[canvas] the GPU lost this page's canvases: bakes dropped, " +
+                           std::to_string(replaced) + " kept surface(s) replaced";
+  c2d_warn(note.c_str());
 }
 
 void canvasFlushOps() {
@@ -1136,6 +1288,7 @@ const unsigned char kFont[95][5] = {
 Canvas::Canvas(int w,int h,std::string id,bool desynchronized) : width_(std::max(1,w)),height_(std::max(1,h)),elementId_(std::move(id)),logicalWidth_(width_),logicalHeight_(height_) {
 #ifdef __EMSCRIPTEN__
   contextId_=c2d_create(elementId_.c_str(),width_,height_,0,desynchronized?1:0);
+  liveCanvases()[contextId_]=this;
 #else
   (void)desynchronized;
   pixels_.assign(static_cast<size_t>(width_)*height_,Color{255,255,255});
@@ -1144,6 +1297,7 @@ Canvas::Canvas(int w,int h,std::string id,bool desynchronized) : width_(std::max
 Canvas::Canvas(int w,int h,bool virtualCanvas) : width_(std::max(1,w)),height_(std::max(1,h)),virtual_(virtualCanvas),logicalWidth_(width_),logicalHeight_(height_) {
 #ifdef __EMSCRIPTEN__
   contextId_=c2d_create("",width_,height_,1,0);
+  liveCanvases()[contextId_]=this;
 #else
   pixels_.assign(static_cast<size_t>(width_)*height_,Color{0,0,0,0});
 #endif
@@ -1161,6 +1315,7 @@ Canvas::Canvas(Canvas&& other) noexcept
       lineWidth_(other.lineWidth_), currentPath_(std::move(other.currentPath_)), tint_(other.tint_) {
   other.contextId_ = -1;
 #ifdef __EMSCRIPTEN__
+  if (contextId_ >= 0) liveCanvases()[contextId_] = this;
   web_ = std::move(other.web_); webStack_ = std::move(other.webStack_);
   applied_ = std::move(other.applied_); appliedStack_ = std::move(other.appliedStack_);
   dirty_ = other.dirty_; other.dirty_ = 0;
@@ -1176,13 +1331,14 @@ Canvas& Canvas::operator=(Canvas&& other) noexcept {
 #ifdef __EMSCRIPTEN__
   // Buffered calls name their context by index, so anything still owed to the
   // one being dropped has to happen before it is.
-  if (contextId_ >= 0) { canvasFlushOps(); c2d_destroy(contextId_); }
+  if (contextId_ >= 0) { canvasFlushOps(); c2d_destroy(contextId_); liveCanvases().erase(contextId_); }
 #endif
   width_=other.width_; height_=other.height_; contextId_=other.contextId_; virtual_=other.virtual_;
   elementId_=std::move(other.elementId_); fill_=other.fill_; stroke_=other.stroke_; lineWidth_=other.lineWidth_;
   currentPath_=std::move(other.currentPath_); other.contextId_=-1; tint_=other.tint_;
   logicalWidth_=other.logicalWidth_; logicalHeight_=other.logicalHeight_;
 #ifdef __EMSCRIPTEN__
+  if (contextId_ >= 0) liveCanvases()[contextId_] = this;
   web_=std::move(other.web_); webStack_=std::move(other.webStack_);
   applied_=std::move(other.applied_); appliedStack_=std::move(other.appliedStack_);
   dirty_=other.dirty_; other.dirty_=0;
@@ -1196,7 +1352,7 @@ Canvas& Canvas::operator=(Canvas&& other) noexcept {
 }
 Canvas::~Canvas() {
 #ifdef __EMSCRIPTEN__
-  if (contextId_ >= 0) { canvasFlushOps(); c2d_destroy(contextId_); }
+  if (contextId_ >= 0) { canvasFlushOps(); c2d_destroy(contextId_); liveCanvases().erase(contextId_); }
 #endif
 }
 void Canvas::present(const std::string& id) {
@@ -1373,6 +1529,19 @@ void Canvas::realSave() {
   webStack_.back().real = true;
   appliedStack_.push_back(applied_);
   OP(0,0,0,0,0,0,0,0,0,"");
+}
+// The page holds the context's defaults again, and nothing else: no save, no
+// clip and no path. `web_` is the program's and stays. A save frame that had a
+// real browser save has nothing to restore any more, so it must not emit one.
+void Canvas::forgetPageState() {
+  applied_ = WebState{};
+  appliedStack_.clear();
+  for (WebFrame& frame : webStack_) frame.real = false;
+  dirty_ = kAllStateBits;
+  frameKnown_ = false;
+  currentPath_ = Path2D{}; pathMode_ = PathMode::Empty;
+  pagePathDirty_ = false; pagePathSegments_ = 0; pathHasSubpath_ = false;
+  pageSeamMoved_ = false; pathUniform_ = true;
 }
 
 namespace {

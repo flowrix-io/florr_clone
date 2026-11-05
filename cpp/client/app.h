@@ -803,6 +803,12 @@ private:
     /// hold up. Taken before anything has painted this frame, it is the last
     /// frame whole. Null when the window has no pixels yet.
     std::unique_ptr<Canvas> snapshotWindow();
+#ifdef __EMSCRIPTEN__
+    /// Drops every picture kept on a canvas, for when the page has lost them
+    /// (canvasCheckContexts). What holds one on to a Canvas between frames goes
+    /// here, or it comes back blank after a GPU crash and stays that way.
+    void dropCanvasCaches();
+#endif
 
     // -- teleport iris -------------------------------------------------------
     /// The wipe a teleport plays, as the reference's iris-transition.ts did:

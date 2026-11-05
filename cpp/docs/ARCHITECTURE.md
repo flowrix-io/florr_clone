@@ -641,6 +641,15 @@ against it, and the two builds consume that list differently:
   an opt-in build (`npm run build:skia`), not what `npm run build` ships. See
   the library's README for what it does differently.
 
+A GPU process dying under the page empties every canvas, and a phone's OS does
+that to a backgrounded browser as a matter of course. So anything kept on a
+`Canvas` between frames -- the terrain chunks, the art cache, the text atlas, the
+minimap -- has to be given up in `App::dropCanvasCaches()`, along with anything
+measured by reading one back. Forgetting one is not a crash: it is that picture
+blank until the page is reloaded. The console line each recovery prints counts
+the surfaces that outlived the drop, and it should say 0. The Skia build reloads
+the page instead.
+
 A mobs.json or petals.json entry's `image` is one of two things:
 
 * **An inline SVG document**, compiled once by `SvgDocument::fromString()` into

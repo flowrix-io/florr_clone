@@ -354,6 +354,11 @@ public:
         terrainCache_ = on;
         if (!on) terrainChunks_ = TerrainChunks{};
     }
+    /// Forgets every picture it keeps on a canvas -- the terrain chunks and the
+    /// glitch surfaces -- and they are made again as they are next drawn. For
+    /// when the page has lost their pixels: see App::dropCanvasCaches.
+    void dropCanvasCaches();
+
     /// Chunks the terrain cache holds, and the bytes their bitmaps occupy.
     void terrainCacheStats(std::size_t& chunks, std::size_t& bytes) const;
 

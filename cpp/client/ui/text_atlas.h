@@ -53,6 +53,10 @@ bool paintRunFromAtlas(Canvas& canvas, const std::string& s, double penX, double
 /// is drawn; it is also what advances the atlas's clock.
 void prepareTextAtlas();
 
+/// Forgets every run and the surface they were on, for when the page has lost
+/// the surface's pixels (canvasCheckContexts). Runs bake again as they are drawn.
+void resetTextAtlas();
+
 /// What the debug panel's Profiling tab shows of the atlas.
 struct TextAtlasStats {
     std::size_t runs = 0;       // baked and held

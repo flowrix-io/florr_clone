@@ -134,6 +134,11 @@ public:
 
     const std::unordered_map<std::uint32_t, Light>& lights() const { return lights_; }
 
+#ifdef __EMSCRIPTEN__
+    /// Gives up the surface it paints into; see App::dropCanvasCaches.
+    void dropCanvasCaches() { layer_.reset(); }
+#endif
+
 private:
     std::unordered_map<std::uint32_t, Light> lights_;
 #ifdef __EMSCRIPTEN__

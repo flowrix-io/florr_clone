@@ -145,6 +145,14 @@ public:
 
     const std::vector<std::string>& warnings() const { return warnings_; }
 
+    /// Forgets what it has measured by reading a probe back: during a lost
+    /// canvas context the answer can be an empty picture, and it is kept for
+    /// good. See App::dropCanvasCaches.
+    void forgetMeasurements() {
+        mobPictureBounds_.assign(mobPictureBounds_.size(), PictureBounds{});
+        petalCoverage_.assign(petalCoverage_.size(), 0.0);
+    }
+
 private:
     struct Sprite {
         std::shared_ptr<SvgDocument> document;

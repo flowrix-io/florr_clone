@@ -34,6 +34,14 @@ this file used to carry — is gone.
   included, is kept in wasm. Input comes from DOM events. Images the page
   fetches by URL (`canvasRequestRemoteImage`, for pictures posted in chat)
   exist only here and in the Skia backend.
+  A GPU process dying under the page empties every canvas, so the program has
+  to ask: `canvasCheckContexts()` once a frame, and at `Recoverable` it drops
+  whatever it has baked onto a `Canvas` and calls `canvasRecoverContexts()`,
+  which replaces the offscreen surfaces and brings the mirror of the drawing
+  state back in line. Chrome and Firefox say when it happens; Safari does not,
+  so anywhere but Blink a canvas with a known pixel on it is read back every
+  couple of seconds. An element the browser never gives back is swapped for a
+  fresh one by `Window`.
 - **Skia** (emscripten, built with `CPP_CANVAS_SKIA`; the CMake option
   `FLIX_RENDERER=skia`) replaces the Canvas2D one for the same browser build
   and draws with Skia's GPU renderer, Ganesh, linked from a prebuilt static

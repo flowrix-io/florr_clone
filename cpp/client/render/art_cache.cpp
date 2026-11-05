@@ -258,6 +258,11 @@ void artCacheStats(std::size_t& entries, std::size_t& bytes) {
     bytes = cache().bytes;
 }
 
+void resetArtCache() {
+    cache().entries.clear();
+    cache().bytes = 0;
+}
+
 #else
 
 bool drawCachedArt(Canvas&, const SvgDocument&, double, double, double, double) { return false; }
@@ -268,6 +273,8 @@ bool drawCachedPicture(Canvas&, const void*, std::uint64_t, double, double, doub
 }
 
 void artCacheStats(std::size_t& entries, std::size_t& bytes) { entries = 0; bytes = 0; }
+
+void resetArtCache() {}
 
 #endif   // __EMSCRIPTEN__
 

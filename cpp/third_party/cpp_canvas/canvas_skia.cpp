@@ -1207,6 +1207,11 @@ void Canvas::present(const std::string& id) {
   canvasFlushOps();
 }
 
+// A lost context reloads the page (skia_gl_create), so there is never anything
+// left here to recover.
+CanvasContexts canvasCheckContexts() { return CanvasContexts::Fine; }
+void canvasRecoverContexts() {}
+
 void canvasFlushOps() {
   Gpu& g = gpu();
   const double started = emscripten_get_now();

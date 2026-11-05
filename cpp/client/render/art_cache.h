@@ -69,9 +69,14 @@ bool drawCachedPicture(Canvas& canvas, const void* owner, std::uint64_t variant,
 
 /// Bitmaps held and the bytes they occupy, for the stats readout and the tests.
 ///
-/// There is no call to empty the cache. A display-scale change does not need
-/// one: entries are keyed by the pixel size they were baked at, so the old
-/// sizes simply stop being asked for and age out through the byte budget.
+/// A display-scale change does not need the cache emptied: entries are keyed by
+/// the pixel size they were baked at, so the old sizes simply stop being asked
+/// for and age out through the byte budget.
 void artCacheStats(std::size_t& entries, std::size_t& bytes);
+
+/// Forgets every bitmap, for when the page has lost their pixels
+/// (canvasCheckContexts). The one thing that does need the cache emptied: what
+/// is lost looks the same as what is there, under the same key.
+void resetArtCache();
 
 } // namespace flix

@@ -72,6 +72,38 @@ CanvasFrameStats canvasTakeFrameStats();
 /// canvas is copied to the WebGL drawing buffer and the GPU work submitted.
 void canvasFlushOps();
 
+/// A GPU process can die under a running page: a driver fault, or a phone's OS
+/// reclaiming it while the game is in the background. Every accelerated canvas
+/// loses its pixels and its state with it, and the browser's "restored" gives
+/// back an empty one. Nothing about that reaches a Canvas on its own, so a
+/// picture baked onto one would go on being copied from a blank surface.
+///
+/// So once a frame, before anything is drawn, the owner of the frame asks where
+/// things stand. Drawing goes on regardless -- while lost it reaches nothing --
+/// and at Recoverable it drops every picture it keeps on a canvas, because none
+/// of them are there any more, and then calls canvasRecoverContexts().
+///
+/// Anything that bakes onto a Canvas and keeps it belongs on that list, which
+/// on the game's side is App::dropCanvasCaches(). So does anything measured by
+/// reading one back, which a loss can have answered with zeros.
+enum class CanvasContexts {
+    Fine,
+    Lost,         ///< Gone, and the window's canvas cannot be drawn on yet.
+    LostTooLong,  ///< The browser is not giving the window's canvas back: it
+                  ///< needs a new element, which is Window's to do.
+    Recoverable,  ///< Gone, and the page can draw again.
+};
+CanvasContexts canvasCheckContexts();
+
+/// After a loss: every Canvas still alive is empty and in the context's default
+/// state on the page. What the program set on it -- save stack included, though
+/// a clip inside one is gone -- is as it was, and comes across as it is needed.
+/// Its current path is not, so this is for between frames.
+///
+/// On the Skia backend a lost context reloads the page instead (canvas_skia.cpp)
+/// and these never have anything to do.
+void canvasRecoverContexts();
+
 /// Images the PAGE fetches by URL -- a picture posted in chat.
 ///
 /// Browser-only, and drawn without ever entering the wasm heap: decoding a
@@ -455,6 +487,9 @@ private:
     mutable unsigned dirty_ = 0;
     void sync(unsigned fields) const;
     void realSave();
+    // The page's context has gone back to its defaults underneath this.
+    void forgetPageState();
+    friend void canvasRecoverContexts();
 
     // The transform is not one of the fields sync() brings across; see
     // CanvasPageFrame above the class.

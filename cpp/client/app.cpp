@@ -599,6 +599,13 @@ void App::frame(double dt) {
     window_.setDesynchronized(menus_.settings().desynchronizedCanvas);
 
 #ifdef __EMSCRIPTEN__
+    // A GPU process that died took the pixels of every canvas with it, and the
+    // bakes below would otherwise go on being copied from blank surfaces. Here,
+    // before the frame's canvas is taken and anything is baked for it.
+    if (canvasCheckContexts() == CanvasContexts::Recoverable) {
+        dropCanvasCaches();
+        canvasRecoverContexts();
+    }
     // Before anything is drawn: the text atlas may only be drawn into while
     // nothing this frame has read from it yet. See text_atlas.h.
     ui::prepareTextAtlas();
@@ -1252,6 +1259,25 @@ void App::showSessionReplaced() {
 // ---------------------------------------------------------------------------
 // Scene wipe
 // ---------------------------------------------------------------------------
+
+#ifdef __EMSCRIPTEN__
+void App::dropCanvasCaches() {
+    ui::resetTextAtlas();
+    resetArtCache();
+    sprites_.forgetMeasurements();
+    renderer_.dropCanvasCaches();
+    menus_.dropCanvasCaches();
+    darkMap_.dropCanvasCaches();
+    vignetteBitmap_.reset();
+    minimapStatic_.reset();
+    minimapStaticGlow_.reset();
+    mazeMinimapStatic_.reset();
+    // A wipe or an iris under way carries on, over black: they both take a
+    // missing still as that.
+    wipe_.snapshot.reset();
+    teleportIris_.snapshot.reset();
+}
+#endif
 
 std::unique_ptr<Canvas> App::snapshotWindow() {
     Canvas& canvas = window_.canvas();

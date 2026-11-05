@@ -1787,6 +1787,18 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     });
 }
 
+void WorldRenderer::dropCanvasCaches() {
+    terrainChunks_ = TerrainChunks{};
+#ifdef __EMSCRIPTEN__
+    glitchAtlas_ = GlitchAtlas{};
+    glitchCells_.clear();
+    glitchShelfX_ = glitchShelfY_ = glitchShelfRow_ = glitchShelfWidth_ = 0;
+#else
+    glitchBody_.reset();
+    glitchSide_ = 0;
+#endif
+}
+
 bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, const MapData& map,
                                       const std::vector<const SvgDocument*>& art, int x0,
                                       int y0, int x1, int y1) const {

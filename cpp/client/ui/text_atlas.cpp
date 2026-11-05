@@ -396,6 +396,15 @@ void prepareTextAtlas() {
     }
 }
 
+void resetTextAtlas() {
+    Atlas& a = atlas();
+    a.canvas.reset();
+    clear(a);
+    a.misses.clear();
+    a.waiting.clear();
+    a.bakedLastFrame = 0;
+}
+
 TextAtlasStats textAtlasStats() {
     const Atlas& a = atlas();
     TextAtlasStats stats;

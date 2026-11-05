@@ -717,10 +717,16 @@ struct Window::Impl {
     // changed `desynchronized` takes effect on the next page load instead.
     const bool swapElement = false;
 #else
+    // The other reason for a fresh element: a GPU process lost the context and
+    // the browser has not given it back. A browser only tries for so long, and
+    // a context whose tries were all spent with the GPU still down would stay
+    // lost for good with nothing else to shift it.
+    const bool wantFreshElement = elementDesynchronized != desynchronized ||
+                                  canvasCheckContexts() == CanvasContexts::LostTooLong;
     // A finger still down holds off the swap: its touchmove and touchend go
     // to the element it landed on, and a detached one passes them to nobody.
-    const bool swapElement = canvas && elementDesynchronized != desynchronized &&
-                             touches.empty() && pendingTouches.empty();
+    const bool swapElement =
+        canvas && wantFreshElement && touches.empty() && pendingTouches.empty();
 #endif
     if (swapElement) replaceElement();
     if (wantPixelW != pixelWidth || wantPixelH != pixelHeight || !canvas || swapElement) {

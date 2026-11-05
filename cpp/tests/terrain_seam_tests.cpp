@@ -186,6 +186,33 @@ TEST(terrain_chunks_are_given_back_in_a_realm_without_a_map) {
     CHECK(bytes == 0);
 }
 
+TEST(terrain_chunks_bake_the_same_picture_again_after_a_gpu_crash_drops_them) {
+    // A GPU process dying empties every canvas, so App::dropCanvasCaches hands
+    // back all the chunks and they are made again. What comes back has to be
+    // the picture that was there, on the same grid: the world going on from
+    // where it was, not from a chunk cache with holes in it.
+    TerrainScene scene;
+    CHECK(scene.load());
+    scene.renderer.setTerrainCache(true);
+    const Vec2 walls{22272.3, 13440.7};
+    std::vector<std::uint8_t> before;
+    for (int i = 0; i < kFramesToBakeAll; ++i) before = scene.frame(walls, 1.0);
+    std::size_t chunks = 0, bytes = 0;
+    scene.renderer.terrainCacheStats(chunks, bytes);
+    CHECK(chunks > 0);
+
+    scene.renderer.dropCanvasCaches();
+    scene.renderer.terrainCacheStats(chunks, bytes);
+    CHECK(chunks == 0);
+    CHECK(bytes == 0);
+
+    std::vector<std::uint8_t> after;
+    for (int i = 0; i < kFramesToBakeAll; ++i) after = scene.frame(walls, 1.0);
+    scene.renderer.terrainCacheStats(chunks, bytes);
+    CHECK(chunks > 0);
+    CHECK(differingPixels(before, after, 0) == 0);
+}
+
 TEST(map_tiles_leave_no_seam_when_antennae_zoom_the_camera_far_out) {
     // High-tier antennae take the camera to 0.1, where the 1.5-unit overlap
     // every tile is drawn with is a fifth of a device pixel. Two neighbouring

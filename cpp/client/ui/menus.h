@@ -1653,6 +1653,10 @@ public:
     /// lends the panel a pointer rather than the menus gathering a copy.
     void setProfiling(const ProfilingStats* stats) { profiling_ = stats; }
 
+    /// Gives up the surface the loadout bar is laid out on; see
+    /// App::dropCanvasCaches.
+    void dropCanvasCaches() { loadoutLayer_.reset(); }
+
     /// See AssetsPanel::setPaths.
     void setFilePaths(const std::string& dataDirectory, const std::string& settingsFile) {
         AssetsPanel::setPaths(dataDirectory, settingsFile);
