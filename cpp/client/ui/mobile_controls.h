@@ -1,5 +1,5 @@
 #pragma once
-// The touch HUD: a virtual stick for movement and aim, and the two buttons
+// The touch HUD: a virtual stick for movement and aim, and the three buttons
 // that stand in for the keys a phone does not have.
 //
 // A port of the browser build's src/graphics/mobile-controls.ts, control for
@@ -17,6 +17,9 @@
 // Added: aim. The reference aims at the mouse even on a phone, where "the
 // mouse" is wherever the last tap happened to land. Here a deflected stick
 // aims as well as moves, which is the only thing a thumb can say.
+//
+// Added too: the row swap button, the R key's stand-in. Attack and Retract are
+// held, and read as state; this one acts once per press, as the key does.
 
 #include <cstdint>
 #include <vector>
@@ -38,7 +41,7 @@ inline constexpr double kTouchScale = 2.4;
 
 class MobileControls {
 public:
-    /// Anchors the three controls for a viewport of this size.
+    /// Anchors the controls for a viewport of this size.
     ///
     /// `loadoutBarHeight` is what the loadout bar occupies from the bottom
     /// edge: the bar is centred and reaches nearly to the edge on its own, so
@@ -75,9 +78,15 @@ public:
     Vec2 stickCentre() const { return stickCentre_; }
     Vec2 attackCentre() const { return attackCentre_; }
     Vec2 retractCentre() const { return retractCentre_; }
+    Vec2 rowSwapCentre() const { return rowSwapCentre_; }
 
     bool attackPressed() const { return attack_.held; }
     bool retractPressed() const { return retract_.held; }
+    bool rowSwapPressed() const { return rowSwap_.held; }
+
+    /// Whether a finger has landed on the row swap button since the last call.
+    /// Spent by asking, so one press is one swap however long the finger stays.
+    bool takeRowSwap();
 
     void draw(Canvas&) const;
 
@@ -96,8 +105,8 @@ private:
     /// corner of the first frame it is asked about.
     bool placed_ = false;
     /// Everything shrinks by this together, and it is 1 on any viewport wide
-    /// enough to lay the three controls out side by side -- which is every
-    /// landscape one. See layout().
+    /// enough to lay the controls out side by side -- which is every landscape
+    /// one. See layout().
     double scale_ = 1.0;
     /// Where the finger holding the stick is, relative to the stick's centre,
     /// clamped to the base. The knob is drawn at it and the direction is read
@@ -106,12 +115,16 @@ private:
     Vec2 stickCentre_{0, 0};
     Vec2 attackCentre_{0, 0};
     Vec2 retractCentre_{0, 0};
+    Vec2 rowSwapCentre_{0, 0};
 
-    // Three fingers can be down at once, and only their ids tell the streams
+    // Four fingers can be down at once, and only their ids tell the streams
     // apart -- a position cannot, once two of them are moving.
     Contact stick_;
     Contact attack_;
     Contact retract_;
+    Contact rowSwap_;
+    /// A press takeRowSwap has not answered for yet.
+    bool rowSwapQueued_ = false;
 
     void moveKnob(double x, double y);
 };

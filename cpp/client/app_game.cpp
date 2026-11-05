@@ -342,6 +342,11 @@ void App::sendInputFrame(double dt) {
 }
 
 void App::updatePlaying(double dt) {
+    // Outside the chat branch below for the reason the other on-screen buttons
+    // are outside sendInputFrame's guard: a finger on a button is not a
+    // keystroke being typed into the chat line.
+    if (mobile_.takeRowSwap()) menus_.requestLoadoutRowSwap();
+
     // Chat swallows the keyboard while open, or typing would also drive the
     // flower and trip every hotkey.
     if (chatOpen_ && !menus_.wantsText()) {

@@ -9,7 +9,7 @@ using namespace flix;
 using namespace flix::ui;
 
 // The touch HUD: which finger owns which control, what the stick reports, and
-// where the three of them land.
+// where they all land.
 //
 // None of this needs a window. The controls take a stream of contacts and a
 // viewport and answer in world terms -- which is the whole reason they are a
@@ -35,7 +35,7 @@ TouchEvent ended(std::int64_t id, double x, double y) {
     return {TouchPhase::Ended, TouchPoint{id, static_cast<float>(x), static_cast<float>(y)}};
 }
 
-/// A laid-out set of controls, plus where each of the three of them is. The
+/// A laid-out set of controls, plus where each of them is. The
 /// centres are not published -- nothing outside the class needs them -- so
 /// they are found the way a finger does, by asking what answers.
 struct Fixture {
@@ -197,6 +197,54 @@ TEST(reset_drops_every_contact) {
     CHECK(!f.controls.retractPressed());
 }
 
+TEST(the_row_swap_button_stands_to_the_left_of_retract) {
+    Fixture f;
+    const Vec2 retract = f.controls.retractCentre();
+    const Vec2 rowSwap = f.controls.rowSwapCentre();
+    CHECK(rowSwap.x < retract.x);
+    CHECK(rowSwap.x > f.controls.stickCentre().x);
+    CHECK_NEAR(rowSwap.y, retract.y, 1e-9);
+}
+
+TEST(one_press_of_the_row_swap_button_is_one_swap) {
+    // It stands in for a key's press, not for a key being held: a thumb that
+    // stays down must not go on swapping the rows back and forth.
+    Fixture f;
+    const Vec2 at = f.controls.rowSwapCentre();
+    CHECK(!f.controls.takeRowSwap());
+
+    f.feed({began(1, at.x, at.y)});
+    CHECK(f.controls.rowSwapPressed());
+    CHECK(!f.controls.attackPressed());
+    CHECK(!f.controls.retractPressed());
+    CHECK(f.controls.takeRowSwap());
+    CHECK(!f.controls.takeRowSwap());
+
+    // Drifting, and another finger landing on the held button, press nothing.
+    f.feed({moved(1, at.x + 200.0, at.y), began(2, at.x, at.y)});
+    CHECK(f.controls.rowSwapPressed());
+    CHECK(!f.controls.takeRowSwap());
+
+    // Only the finger that took it lets go of it, and the next press counts.
+    f.feed({ended(2, at.x, at.y)});
+    CHECK(f.controls.rowSwapPressed());
+    f.feed({ended(1, at.x + 200.0, at.y)});
+    CHECK(!f.controls.rowSwapPressed());
+    CHECK(!f.controls.takeRowSwap());
+    f.feed({began(3, at.x, at.y)});
+    CHECK(f.controls.takeRowSwap());
+}
+
+TEST(reset_drops_a_row_swap_nothing_has_acted_on) {
+    // A press from the frame a panel opened must not swap the rows behind it.
+    Fixture f;
+    const Vec2 at = f.controls.rowSwapCentre();
+    f.feed({began(1, at.x, at.y)});
+    f.controls.reset();
+    CHECK(!f.controls.rowSwapPressed());
+    CHECK(!f.controls.takeRowSwap());
+}
+
 TEST(the_controls_sit_clear_of_the_hud_they_share_the_bottom_of_the_screen_with) {
     // The three things already anchored to the bottom of a game: the loadout
     // bar across the middle, the icon column at x <= 73, and the chat column
@@ -222,7 +270,9 @@ TEST(every_point_the_controls_answer_for_belongs_to_exactly_one_of_them) {
     //
     // Stated behaviourally rather than as a distance, because the radii are
     // the class's own business: press every point the controls claim, and
-    // exactly one of them has to answer.
+    // exactly one of them has to answer. One finger alone can only ever take
+    // one control, so a second lands on the same point while the first holds
+    // it: a control that also covered the point would take that finger.
     for (const int width : {kPhoneWidth, 720, 499}) {
         MobileControls controls;
         controls.layout(width, width == kPhoneWidth ? kPhoneHeight : 1080,
@@ -236,11 +286,12 @@ TEST(every_point_the_controls_answer_for_belongs_to_exactly_one_of_them) {
                 // Dragged well off the point after landing, so a contact the
                 // stick took reads as deflected however close to its centre it
                 // arrived. A button ignores the move and stays held.
-                controls.update({began(1, x, y), moved(1, x + 4000.0, y)});
+                controls.update({began(1, x, y), moved(1, x + 4000.0, y), began(2, x, y)});
                 MobileControls::Stick stick;
                 const int answered = (controls.stick(stick) ? 1 : 0) +
                                      (controls.attackPressed() ? 1 : 0) +
-                                     (controls.retractPressed() ? 1 : 0);
+                                     (controls.retractPressed() ? 1 : 0) +
+                                     (controls.rowSwapPressed() ? 1 : 0);
                 CHECK(answered == 1);
             }
         }

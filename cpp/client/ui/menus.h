@@ -1518,6 +1518,10 @@ public:
     /// was consumed, so the game does not also act on it.
     bool handleKeys(Window&, bool adminCursorEnabled = false);
 
+    /// What the row swap key records, for the touch button that stands in for
+    /// it on a phone. Applied by drawLoadoutBar, as the key's press is.
+    void requestLoadoutRowSwap() { pendingRowSwap_ = true; }
+
     /// True while the client is in a game, which is the only time the exit
     /// button is offered -- and the only time the notifications, account and
     /// Discord buttons are not.

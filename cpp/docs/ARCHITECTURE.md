@@ -89,7 +89,7 @@ cpp/
     render/       world_renderer, sprites, mob_art (painted mobs),
                   skin_render, art_cache
     ui/           menus and panels, text, markup (chat lines),
-                  mobile_controls (the touch stick and its two buttons),
+                  mobile_controls (the touch stick and its three buttons),
                   menu_assets asset_files (the asset browser)
     web/          shell.html (the page), persist (browser storage),
                   reload (stale builds), boot (boot scripts), favicon.ico
@@ -575,11 +575,11 @@ track a finger while another holds a button. `Window::setTouchClaimHandler` is
 asked the instant a contact lands, and a claimed one is kept out of the mirror
 entirely — otherwise dragging the stick would drag the pointer across the HUD
 underneath. `client/ui/mobile_controls.*` is what claims them: a virtual stick
-that moves and aims, and Attack/Retract standing in for the two keys. It is a
-port of the TypeScript client's `src/graphics/mobile-controls.ts` (in history
+that moves and aims, and Attack, Retract and the yellow row swap standing in
+for their keys. It is a port of the TypeScript client's `src/graphics/mobile-controls.ts` (in history
 at `d47055a7`), with every size multiplied by the design units a CSS pixel is
 worth on a phone (see the file's header) and shrunk further on a viewport too
-narrow to lay the three out side by side.
+narrow to lay them out side by side.
 
 They come up on a coarse pointer, or once the window has seen a touch, without
 being asked, and the Settings panel's **Request Mobile** row is what overrules
