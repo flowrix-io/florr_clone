@@ -840,6 +840,7 @@ private:
     /// game: there is nothing on the title screen a thumb cannot already reach
     /// through the mirrored pointer (see Window's touch section).
     ui::MobileControls mobile_;
+    ui::TouchCursor adminTouch_;
     /// What the display said about its pointer when the window opened. Asked
     /// once: it is a media query, and the answer does not change under a
     /// running page in any way that matters.

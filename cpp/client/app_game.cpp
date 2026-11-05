@@ -279,7 +279,11 @@ void App::sendInputFrame(double dt) {
     const auto aimDistance = [](double distance) {
         return static_cast<std::uint16_t>(std::clamp(std::round(distance), 0.0, 65535.0));
     };
-    if (stickPushed) {
+    if (touchControls && adminCursorEquipped() && adminTouch_.hasPointer()) {
+        const Vec2 at = camera_.screenToWorld(adminTouch_.position()) - net_.view().selfDrawnPosition();
+        input.aimAngle = at.angle();
+        input.aimDistance = aimDistance(at.length());
+    } else if (stickPushed) {
         input.aimAngle = stick.direction.angle();
         input.aimDistance = aimDistance(stick.magnitude * kFullSpeedCursorDistance);
     }
@@ -334,8 +338,14 @@ void App::sendInputFrame(double dt) {
     // a press that landed on a panel, on a line of chat, or on the tutorial
     // card -- can be true of a finger the stick's own hit test claimed.
     if (touchControls) {
-        if (mobile_.attackPressed()) input.flags |= net::InputAttack;
-        if (mobile_.retractPressed()) input.flags |= net::InputDefend;
+        if (adminCursor) {
+            if (adminTouch_.held()) input.flags |= net::InputAdminDrag;
+            if (adminTouch_.hasPointer() && mobile_.attackPressed()) input.flags |= net::InputAdminKill;
+            if (adminTouch_.hasPointer() && mobile_.retractPressed()) input.flags |= net::InputAdminTeleport;
+        } else {
+            if (mobile_.attackPressed()) input.flags |= net::InputAttack;
+            if (mobile_.retractPressed()) input.flags |= net::InputDefend;
+        }
     }
 
     net_.sendInput(input);

@@ -46,7 +46,10 @@ inline constexpr int kMaxRealms = 64;
 
 /// How many world MAPS can be staged: every realm that is not the arena or the
 /// maze.
-inline constexpr int kMaxWorldMaps = kMaxRealms - 2;
+inline constexpr int kMaxWorldMaps = kMaxRealms - 3;
+// Last realm is reserved for admin-hosted games, never a manifest slot.
+inline constexpr Realm kAdminArenaRealm = static_cast<Realm>(kMaxRealms - 1);
+inline constexpr const char* kAdminArenaSpawnChoice = "admin_arena";
 
 /// A byte off the wire or out of a file, made safe.
 inline constexpr Realm realmFromByte(std::uint8_t value) {

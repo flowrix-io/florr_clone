@@ -1056,3 +1056,30 @@ TEST(outside_the_map_is_black) {
     CHECK_EQ(pixels[2], std::uint8_t(0));
     CHECK_EQ(pixels[3], std::uint8_t(255));
 }
+
+TEST(hosted_arena_renderer_uses_live_grid_and_floor_theme) {
+    Terrain terrain;
+    std::vector<std::uint8_t> cells(64,std::uint8_t(Tile::Open));
+    cells[3*8+3]=std::uint8_t(Tile::Solid);
+    CHECK(terrain.setTiles(cells,8,8,kAdminArenaRealm));
+    WorldRenderer renderer; renderer.setTerrain(&terrain);
+    WorldView view; view.setRealm(kAdminArenaRealm);
+    const auto sample=[&](Vec2 at){
+        Canvas canvas=Canvas::createVirtual(128,128);
+        const Camera camera=testsupport::frameCamera(128,at);
+        renderer.draw(canvas,view,camera,at,0);
+        return canvas.getImageData(64,64,1,1);
+    };
+    const auto wall=sample({3.5*kTileSize,3.5*kTileSize});
+    const auto floor=sample({2.5*kTileSize,2.5*kTileSize});
+    CHECK(wall.size()==4 && floor.size()==4);
+    if(wall.size()==4 && floor.size()==4){
+        CHECK_EQ(wall[0],std::uint8_t(0x55));
+        CHECK_EQ(floor[0],std::uint8_t(0x8F));
+        CHECK_EQ(floor[1],std::uint8_t(0x06));
+    }
+    terrain.adminArenaFloor=0;
+    const auto garden=sample({2.5*kTileSize,2.5*kTileSize});
+    CHECK(garden.size()==4);
+    if(garden.size()==4) CHECK_EQ(garden[1],std::uint8_t(0xA7));
+}

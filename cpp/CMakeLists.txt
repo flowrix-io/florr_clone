@@ -232,6 +232,7 @@ add_library(flix_server STATIC
   server/admin_db_key.cpp
   server/bot_ai.cpp
   server/auto_update.cpp
+  server/admin_arena.cpp
   server/chat_commands.cpp
   server/chat_moderation.cpp
   server/replication.cpp

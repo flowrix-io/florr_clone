@@ -1,4 +1,5 @@
 #include "shared/game/terrain.h"
+#include "shared/game/admin_arena.h"
 
 #include <algorithm>
 #include <array>
@@ -409,6 +410,7 @@ void writeMapGrid(ByteWriter& out, const Terrain& terrain, Realm realm) {
     out.u16(static_cast<std::uint16_t>(terrain.tileRows(realm)));
     out.u32(static_cast<std::uint32_t>(packed.size()));
     out.raw(packed.data(), packed.size());
+    if (realm == kAdminArenaRealm) { out.u8(terrain.adminArenaFloor); out.u8(terrain.adminArenaWall); }
 }
 
 bool readMapGrid(ByteReader& in, Terrain& terrain, Realm& realmOut, std::string& errorOut) {
@@ -459,6 +461,15 @@ bool readMapGrid(ByteReader& in, Terrain& terrain, Realm& realmOut, std::string&
     if (!terrain.setTiles(tiles, cols, rows, realm)) {
         errorOut = "the map grid could not be installed";
         return false;
+    }
+    if (realm == kAdminArenaRealm) {
+        const auto floor = in.u8(), wall = in.u8();
+        if (!in.ok() || floor >= kAdminArenaThemes.size() || wall >= kAdminArenaThemes.size()) {
+            errorOut = "invalid hosted arena theme";
+            return false;
+        }
+        terrain.adminArenaFloor = floor;
+        terrain.adminArenaWall = wall;
     }
     realmOut = realm;
     return true;

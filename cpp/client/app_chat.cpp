@@ -253,6 +253,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin notify", "Create a notification (shorthand)", true},
     {"/admin clear_notifications", "Clear all notifications", true},
     {"/admin clear_notifs", "Clear notifications (shorthand)", true},
+    {"/admin arena", "Host games: bring/return/map/empty/build/wall/floor/pvp", true},
     {"/admin phase", "Toggle walking through walls: [on|off|toggle]", true},
     {"/admin give_xp", "Give XP: <amount> [username], default yourself", true},
     {"/admin give", "Give petals: /admin give <player> <item> <rarity> [amount], or /admin give all <rarity> <amount> [player] [--exclude <petal> ...]", true},

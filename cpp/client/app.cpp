@@ -196,6 +196,7 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
         SpawnChoice{kArenaSpawnChoice, "PVP Arena", 0xDC3C3Cu, Realm::Arena, -1, {}, {}});
     spawnChoices_.push_back(
         SpawnChoice{kMazeSpawnChoice, "Maze", 0x573D80u, Realm::Maze, -1, {}, {}});
+    spawnChoices_.push_back(SpawnChoice{kAdminArenaSpawnChoice, "Admin Arena", 0xFFB020u, kAdminArenaRealm, -1, {}, "admin_arena"});
     for (const SpawnChoice& choice : worldMaps_.spawnChoices()) spawnChoices_.push_back(choice);
 
     // The backdrop's petals are drawn from every petal a player could actually
@@ -260,7 +261,11 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // instant a finger lands rather than on the frame that follows -- see the
     // touch section of Window's header for why the answer cannot wait.
     window_.setTouchClaimHandler([this](const TouchPoint& point) {
-        return touchControlsVisible() && mobile_.hits(point.x, point.y);
+        if (!touchControlsVisible()) return false;
+        if (mobile_.hits(point.x, point.y)) return true;
+        const Vec2 at{point.x, point.y};
+        return adminCursorEquipped() && !chatOpen_ && (menus_.open() == MenuId::None) &&
+            !menus_.capturesMouse(at) && !tutorial_.capturesMouse(at);
     });
 
     if (config.autoMenu != MenuId::None) menus_.toggle(config.autoMenu);
@@ -627,6 +632,12 @@ void App::frame(double dt) {
     // all -- a button left held would still be firing on the next game.
     if (touchControlsVisible()) mobile_.update(window_.touchEvents());
     else mobile_.reset();
+    mobile_.setAdminCursor(adminCursorEquipped());
+    if (touchControlsVisible() && adminCursorEquipped() && !chatOpen_ && (menus_.open() == MenuId::None)) {
+        adminTouch_.update(window_.touchEvents(), [this](Vec2 at) {
+            return !mobile_.hits(at.x, at.y) && !menus_.capturesMouse(at) && !tutorial_.capturesMouse(at);
+        });
+    } else adminTouch_.reset();
 
     // Before any screen sees this frame's click. The browser's tutorial box is
     // a DOM element over the canvas: it takes the press first and the game
@@ -665,6 +676,9 @@ void App::frame(double dt) {
         // Snapped exactly as the join does, then the stream takes over.
         Vec2 arrival;
         if (net_.takeRealmChange(arrival)) {
+            // A hosted arena can change tiles without changing realm or size.
+            minimapStatic_.reset();
+            minimapStaticGlow_.reset();
             net_.view().snapAll();
             pinCamera(arrival);
         }

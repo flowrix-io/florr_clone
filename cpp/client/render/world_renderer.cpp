@@ -21,6 +21,7 @@
 #include "shared/game/constants.h"
 #include "shared/game/map_elements.h"
 #include "shared/game/terrain.h"
+#include "shared/game/admin_arena.h"
 
 namespace flix {
 
@@ -1720,6 +1721,30 @@ constexpr int kChunkBakeCellsPerFrame = 1024;
 } // namespace
 
 void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm realm) const {
+    if (realm == kAdminArenaRealm && terrain_) {
+        const auto& floor = kAdminArenaThemes[std::min<std::size_t>(terrain_->adminArenaFloor, kAdminArenaThemes.size()-1)];
+        const auto& wall = kAdminArenaThemes[std::min<std::size_t>(terrain_->adminArenaWall, kAdminArenaThemes.size()-1)];
+        ui::setFill(canvas, floor.color);
+        canvas.fillRect(0, 0, camera.viewportWidth(), camera.viewportHeight());
+        const Rect visible = camera.visibleWorld(kTileOverlap);
+        const int x0 = std::max(0, int(std::floor(visible.left()/kTileSize)));
+        const int y0 = std::max(0, int(std::floor(visible.top()/kTileSize)));
+        const int x1 = std::min(terrain_->tileCols(realm)-1, int(std::floor(visible.right()/kTileSize)));
+        const int y1 = std::min(terrain_->tileRows(realm)-1, int(std::floor(visible.bottom()/kTileSize)));
+        const auto* floorArt = sprites_ ? sprites_->tileArt(floor.floor) : nullptr;
+        const auto* wallArt = sprites_ ? sprites_->tileArt(wall.wall) : nullptr;
+        const float side = float((kTileSize+2*kTileOverlap)*camera.zoom());
+        for (int y=y0;y<=y1;++y) for(int x=x0;x<=x1;++x) {
+            const bool solid = terrain_->atTile(x,y,realm) == Tile::Solid;
+            const auto* art = solid ? wallArt : floorArt;
+            const Vec2 at = camera.worldToScreen({x*kTileSize-kTileOverlap,y*kTileSize-kTileOverlap});
+            if (art) {
+                if (!drawCachedArt(canvas,*art,at.x,at.y,side,side)) art->renderFitted(canvas,at.x,at.y,side,side,0);
+            } else if (solid) { ui::setFill(canvas,0x555555u); canvas.fillRect(at.x,at.y,side,side); }
+        }
+        return;
+    }
+
     // Everything outside the map is pure black, which says nobody can go
     // there. The camera stops at the map's edge (App::pinCamera), so the
     // black shows only around a map smaller than the view.
@@ -4283,7 +4308,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     }
 #endif
 
-    if (realm_ == Realm::Maze || realm_ == Realm::Arena) {
+    if (realm_ == Realm::Maze || realm_ == Realm::Arena || realm_ == kAdminArenaRealm) {
         // Neither has a map for the chunk cache to hold, and the one it holds
         // is a realm the player has left: tens of megabytes of bitmaps.
         if (!terrainChunks_.chunks.empty()) terrainChunks_ = TerrainChunks{};

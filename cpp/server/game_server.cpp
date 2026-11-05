@@ -600,6 +600,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     }
     // The broadphase was built before the maps were: its layers are sized to
     // the default world until it is told what shape each realm really is.
+    initHostedArena();
     grid_.sizeToRealms(*terrain_);
 
     movement_ = std::make_unique<MovementSystem>();
@@ -2204,6 +2205,9 @@ void GameServer::signOut(Session& session) {
     session.username.clear();
     session.admin = false;
     session.adminTier = kTopAdminTier;
+    session.adminArenaAdmitted = false;
+    session.adminArenaHasReturn = false;
+    session.adminArenaReturnChoice.clear();
     session.displayName.clear();
     // The client forgets the account with it, so the next Profile is whole.
     session.profileShadow = Session::ProfileShadow{};
@@ -2618,7 +2622,13 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     // ground. A choice no staged map defines is dropped here, once, with a
     // notice -- rather than silently every time they die.
     session.spawnChoice.clear();
-    if (where == kArenaSpawnChoice || where == kMazeSpawnChoice) {
+    if (where == kAdminArenaSpawnChoice) {
+        if (!effectiveAdmin(session)) {
+            sendNotice(connection, net::NoticeSeverity::Bad, "Only admins may select the hosted arena. A host can bring you in.");
+            return;
+        }
+        session.spawnChoice = where;
+    } else if (where == kArenaSpawnChoice || where == kMazeSpawnChoice) {
         // The two destinations that are not on any map at all: each is a realm
         // of its own (realm.h), generated rather than authored, so there is no
         // spawn rectangle to look up.
@@ -2648,7 +2658,7 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     // arena and the maze have no twin, so the flag means nothing there and is
     // dropped rather than refused: the picker hides both while it is set.
     session.prestige = false;
-    if (wantsPrestige && session.spawnChoice != kArenaSpawnChoice &&
+    if (wantsPrestige && session.spawnChoice != kAdminArenaSpawnChoice && session.spawnChoice != kArenaSpawnChoice &&
         session.spawnChoice != kMazeSpawnChoice) {
         if (database_.progress(session.userId).skills.prestigeUnlocked()) {
             session.prestige = true;
@@ -2691,6 +2701,8 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
 void GameServer::handleLeave(Session& session, net::Connection& connection) {
     if (!session.playing()) return;
     leaveWorld(session);
+    session.adminArenaAdmitted = false;
+    session.adminArenaHasReturn = false;
     sendProfile(session, connection);
 }
 
@@ -2707,6 +2719,8 @@ void GameServer::leaveWorld(Session& session) {
     // first would move their view back onto a flower that is about to go.
     despawnPlayer(session, true);
     revokeTempAdmin(session.connection);
+    session.adminArenaAdmitted = false;
+    session.adminArenaHasReturn = false;
 }
 
 void GameServer::setAdminPhase(Session& session, bool enabled) {
@@ -6721,7 +6735,9 @@ Entity GameServer::spawnPlayer(Session& session) {
     // stops a fresh flower materialising inside a swarm.
     const Realm realm = spawnRealmFor(session);
     Vec2 spawn;
-    if (realm == Realm::Arena) {
+    if (realm == kAdminArenaRealm) {
+        spawn = terrain_->findOpenSpawn(rng_, terrain_->spawnPoint(realm), kTileSize, realm);
+    } else if (realm == Realm::Arena) {
         spawn = kArenaSpawn;
     } else if (realm == Realm::Maze) {
         // Inside the entrance room, jittered so a party does not stack on one
@@ -6789,7 +6805,7 @@ Entity GameServer::createPlayerBody(Session& session, Realm realm, Vec2 spawn) {
     world_.add<Knockback>(entity);
     // In the ring players are hostile to each other; everywhere else they are
     // not. Petals and pets copy this Faction, so the whole kit follows.
-    world_.add<Faction>(entity, Faction{Team::Players, realm == Realm::Arena});
+    world_.add<Faction>(entity, Faction{Team::Players, realm == Realm::Arena || (realm == kAdminArenaRealm && hostedArenaPvp_)});
     if (realm == Realm::Arena) world_.add<ArenaScore>(entity);
     world_.add<PlayerInput>(entity);
     world_.add<PlayerLocation>(entity);
@@ -7091,6 +7107,7 @@ std::string GameServer::biomeOfRealm(Realm realm) const {
     // The two generated realms answer with the picker ids they are asked for
     // by name, so a ring party and a maze party are each one biome rather
     // than sharing the nameless bucket every unstaged realm would fall into.
+    if (realm == kAdminArenaRealm) return kAdminArenaSpawnChoice;
     if (realm == Realm::Arena) return kArenaSpawnChoice;
     if (realm == Realm::Maze) return kMazeSpawnChoice;
     const MapData* map = worldMaps_.forRealm(realm);
@@ -7108,6 +7125,7 @@ std::string GameServer::biomeLabel(const std::string& biome) const {
     for (const SpawnChoice& choice : worldMaps_.spawnChoices()) {
         if (biomeOfRealm(choice.realm) == biome) return choice.label;
     }
+    if (biome == kAdminArenaSpawnChoice) return "Admin Arena";
     if (biome == kArenaSpawnChoice) return "PVP Arena";
     if (biome == kMazeSpawnChoice) return "Maze";
     return biome;
@@ -7129,6 +7147,8 @@ const SpawnChoice* GameServer::chosenDoor(const Session& session) const {
 }
 
 Realm GameServer::spawnRealmFor(const Session& session) const {
+    if (session.spawnChoice == kAdminArenaSpawnChoice && (effectiveAdmin(session) || session.adminArenaAdmitted))
+        return kAdminArenaRealm;
     if (session.spawnChoice == kArenaSpawnChoice) return Realm::Arena;
     if (session.spawnChoice == kMazeSpawnChoice) return Realm::Maze;
     // A spawn point carries the map it is on, so choosing one is how a player

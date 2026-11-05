@@ -510,6 +510,13 @@ private:
     void setAdminPhase(Session&, bool enabled);
     void serviceAdminPhase();
     void serviceAdminCursorActions();
+    bool hostedArenaPvp_ = false;
+    void initHostedArena();
+    void saveHostedArena();
+    void refreshHostedArena(bool reset);
+    void runHostedArenaCommand(Session&, net::Connection&, const std::string&);
+    bool transferHostedArena(Session&, bool entering);
+
     void serviceAdminCursor();
     /// The body `session`'s snapshot stream is built around: the steered
     /// flower's active half while it controls one, else its own. Reads only.

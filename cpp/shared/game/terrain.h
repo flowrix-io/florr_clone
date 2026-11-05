@@ -287,6 +287,9 @@ struct CollisionShapeSet {
 
 class Terrain {
 public:
+    std::uint8_t adminArenaFloor = 1;
+    std::uint8_t adminArenaWall = 0;
+
     /// Segments the reference's sight test cuts the ray into. Every call site
     /// there goes through the four-argument form, so it is always this.
     static constexpr int kLineOfSightSamples = 20;

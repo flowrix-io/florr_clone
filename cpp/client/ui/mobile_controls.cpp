@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "client/ui/draw.h"
+#include "client/ui/text.h"
 
 namespace flix::ui {
 
@@ -263,6 +264,13 @@ void MobileControls::draw(Canvas& canvas) const {
     canvas.setLineWidth(static_cast<float>(kGlyphWidth * scale_));
     setStroke(canvas, kPaper, 0.9);
 
+    if (adminCursor_) {
+        TextStyle style;
+        style.align = Align::Centre;
+        style.size = 24 * scale_;
+        text(canvas, "KILL", attackCentre_.x, attackCentre_.y, style);
+        text(canvas, "TP", retractCentre_.x, retractCentre_.y, style);
+    } else {
     // Attack: eight spokes flying outward, which is petals extending.
     const double burst = kAttackRadius * scale_ * 0.5;
     canvas.beginPath();
@@ -287,6 +295,8 @@ void MobileControls::draw(Canvas& canvas) const {
                       static_cast<float>(retractCentre_.y + chevron * 0.6));
     }
     canvas.stroke();
+
+    }
 
     // Row swap: an arrow up beside an arrow down, the two rows trading places.
     const double arrow = kRowSwapRadius * scale_ * 0.5;

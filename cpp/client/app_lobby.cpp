@@ -558,6 +558,7 @@ std::vector<App::PickerTab> App::pickerTabs() const {
     PickerTab maze{kMazeSpawnChoice, "Maze", 0x573D80u, {}};
     for (std::size_t i = 0; i < spawnChoices_.size(); ++i) {
         const SpawnChoice& choice = spawnChoices_[i];
+        if (choice.id == kAdminArenaSpawnChoice && !net_.isSkinAdmin()) continue;
         if (choice.id == "default") {
             tabs.front().color = choice.color;
             tabs.front().choices.push_back(i);

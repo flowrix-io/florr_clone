@@ -322,3 +322,23 @@ TEST(an_unchosen_touch_setting_is_the_devices_to_answer) {
     settings.requestMobile = true;
     CHECK(settings.touchControlsWanted(false));
 }
+
+TEST(admin_touch_cursor_tracks_world_finger_independently_of_controls) {
+    TouchCursor cursor;
+    const auto world = [](Vec2 at) { return at.x > 500; };
+    cursor.update({began(1,100,100), began(2,800,300)}, world);
+    CHECK(cursor.held());
+    CHECK_NEAR(cursor.position().x,800,0.001);
+    cursor.update({moved(1,700,600), began(3,900,600), moved(2,850,350), ended(1,700,600)},world);
+    CHECK(cursor.held());
+    CHECK_NEAR(cursor.position().x,850,0.001);
+    CHECK_NEAR(cursor.position().y,350,0.001);
+    cursor.update({ended(2,860,360)},world);
+    CHECK(!cursor.held());
+    CHECK(cursor.hasPointer());
+    CHECK_NEAR(cursor.position().x,860,0.001);
+    cursor.reset();
+    cursor.update({moved(3,1000,600)},world);
+    CHECK(!cursor.held());
+    CHECK(!cursor.hasPointer());
+}
