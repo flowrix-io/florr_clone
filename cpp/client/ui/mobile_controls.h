@@ -22,6 +22,7 @@
 // held, and read as state; this one acts once per press, as the key does.
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "canvas.h"
@@ -38,6 +39,29 @@ namespace flix::ui {
 /// should cover a phone's thumb has to be this much larger here than the
 /// number the reference writes for the same control.
 inline constexpr double kTouchScale = 2.4;
+
+// A world finger stays independent of joystick/button fingers on iPad.
+class TouchCursor {
+public:
+    void update(const std::vector<TouchEvent>& events, const std::function<bool(Vec2)>& accepts) {
+        for (const auto& e : events) {
+            if (e.phase == TouchPhase::Began && !held_ && accepts({e.point.x, e.point.y})) {
+                id_ = e.point.id; held_ = true; pointed_ = true; position_ = {e.point.x, e.point.y};
+            } else if (held_ && e.point.id == id_) {
+                position_ = {e.point.x, e.point.y};
+                if (e.phase == TouchPhase::Ended) held_ = false;
+            }
+        }
+    }
+    void reset() { held_ = false; pointed_ = false; }
+    bool held() const { return held_; }
+    bool hasPointer() const { return pointed_; }
+    Vec2 position() const { return position_; }
+private:
+    std::int64_t id_ = 0;
+    bool held_ = false, pointed_ = false;
+    Vec2 position_;
+};
 
 class MobileControls {
 public:
@@ -88,6 +112,7 @@ public:
     /// Spent by asking, so one press is one swap however long the finger stays.
     bool takeRowSwap();
 
+    void setAdminCursor(bool enabled) { adminCursor_ = enabled; }
     void draw(Canvas&) const;
 
 private:
@@ -104,6 +129,7 @@ private:
     /// at the origin, and would otherwise claim every touch in the top-left
     /// corner of the first frame it is asked about.
     bool placed_ = false;
+    bool adminCursor_ = false;
     /// Everything shrinks by this together, and it is 1 on any viewport wide
     /// enough to lay the controls out side by side -- which is every landscape
     /// one. See layout().

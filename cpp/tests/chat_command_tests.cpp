@@ -4010,3 +4010,135 @@ TEST(admin_give_xp_uses_existing_give_permissions_and_separate_maze_track) {
     CHECK_EQ(h.server.database().findProgress(other)->mazeTotalXp, 100.0);
     target->arena.reset();
 }
+
+TEST(hosted_arena_admin_entry_invitation_return_and_inventory_preservation) {
+    Harness h("hosted-arena-access", [](const std::string& path) {
+        seedUser(path,"boss","password7",true);
+        seedUser(path,"visitor","password7");
+        seedStack(path,"visitor","petal_rose",Rarity::Rare,7);
+    },dataDir(),0);
+    if(!h.ready){CHECK(false);return;}
+    NetClient boss,visitor;
+    const std::vector<NetClient*> all{&boss,&visitor};
+    CHECK(loginAs(h,boss,"boss","password7"));
+    CHECK(loginAs(h,visitor,"visitor","password7"));
+    visitor.joinGame(1000,800,kAdminArenaSpawnChoice,"Visitor");
+    h.step(10,all);
+    CHECK(visitor.status()!=NetClient::Status::Playing);
+    boss.joinGame(1000,800,kAdminArenaSpawnChoice,"Boss");
+    visitor.joinGame(1000,800,{},"Visitor");
+    CHECK(h.stepUntil(all,[&]{return boss.status()==NetClient::Status::Playing && visitor.status()==NetClient::Status::Playing;}));
+    Session* host=GameServerPeer::sessionOf(h.server,"boss");
+    Session* guest=GameServerPeer::sessionOf(h.server,"visitor");
+    if(!host||!guest){CHECK(false);return;}
+    CHECK(host->realm==kAdminArenaRealm);
+    CHECK(guest->realm!=kAdminArenaRealm);
+    CHECK_EQ(h.server.terrain().tileCols(kAdminArenaRealm),64);
+    CHECK_EQ(h.server.terrain().adminArenaFloor,std::uint8_t(1));
+    CHECK_EQ(h.server.terrain().adminArenaWall,std::uint8_t(0));
+    const Realm oldRealm=guest->realm;
+    const auto oldBag=h.server.database().findProgress(guest->userId)->inventory.dump();
+    CHECK(say(h,boss,"/admin arena bring all"));
+    CHECK(h.stepUntil(all,[&]{return visitor.view().realm()==kAdminArenaRealm;}));
+    CHECK(guest->adminArenaAdmitted);
+    CHECK(guest->realm==kAdminArenaRealm);
+    int ambient = 0;
+    Query<MobTag,Transform> mobs{h.server.world()};
+    mobs.each([&](Entity, MobTag&, Transform& at){ if(at.realm==kAdminArenaRealm) ++ambient; });
+    CHECK_EQ(ambient,0);
+    h.server.world().get<Health>(guest->entity).current=0;
+    h.server.world().add<Dead>(guest->entity);
+    h.step(2,all);
+    visitor.requestRespawn();
+    CHECK(h.stepUntil(all,[&]{return !h.server.world().has<Dead>(guest->entity); }));
+    CHECK(guest->realm==kAdminArenaRealm);
+    CHECK(!h.server.world().get<Faction>(guest->entity).friendlyFireEnabled);
+    CHECK(say(h,boss,"/admin arena pvp on"));
+    CHECK(h.server.world().get<Faction>(guest->entity).friendlyFireEnabled);
+    // Already-equipped petals must follow a PvP toggle in both directions.
+    auto checkKit = [&](bool enabled) {
+        Query<PetalInstance,Faction> kit{h.server.world()};
+        kit.each([&](Entity, PetalInstance& petal, Faction& side) {
+            if (petal.owner == guest->entity) CHECK_EQ(side.friendlyFireEnabled,enabled);
+        });
+    };
+    checkKit(true);
+    CHECK(say(h,boss,"/admin arena pvp off"));
+    checkKit(false);
+    CHECK(say(h,boss,"/admin arena pvp on"));
+    checkKit(true);
+    CHECK(say(h,visitor,"/admin arena empty 8"));
+    CHECK_EQ(h.server.terrain().tileCols(kAdminArenaRealm),64);
+    // Even a dead guest can be returned; respawning follows the restored choice.
+    h.server.world().get<Health>(guest->entity).current=0;
+    h.server.world().add<Dead>(guest->entity);
+    h.step(2,all);
+    CHECK(say(h,boss,"/admin arena return all"));
+    CHECK(guest->realm==oldRealm);
+    CHECK(!guest->adminArenaAdmitted);
+    checkKit(false);
+    CHECK(!h.server.world().get<Faction>(guest->entity).friendlyFireEnabled);
+    CHECK_EQ(h.server.database().findProgress(guest->userId)->inventory.dump(),oldBag);
+}
+
+TEST(hosted_arena_build_validation_themes_and_restart_persistence) {
+    Harness h("hosted-arena-build",[](const std::string& path){seedUser(path,"boss","password7",true);},dataDir(),0);
+    if(!h.ready){CHECK(false);return;}
+    NetClient boss;
+    CHECK(loginAs(h,boss,"boss","password7"));
+    CHECK(say(h,boss,"/admin arena empty 12"));
+    CHECK_EQ(h.server.terrain().tileCols(kAdminArenaRealm),12);
+    CHECK(h.server.terrain().atTile(0,5,kAdminArenaRealm)==Tile::Solid);
+    CHECK(say(h,boss,"/admin arena build 2 2 3 2 wall"));
+    CHECK(h.server.terrain().atTile(2,2,kAdminArenaRealm)==Tile::Solid);
+    CHECK(h.server.terrain().atTile(5,2,kAdminArenaRealm)==Tile::Open);
+    CHECK(say(h,boss,"/admin arena build 1 1 10 10 wall"));
+    CHECK(h.server.terrain().atTile(5,2,kAdminArenaRealm)==Tile::Open);
+    CHECK(say(h,boss,"/admin arena empty 99999999999999999999"));
+    CHECK_EQ(h.server.terrain().tileCols(kAdminArenaRealm),12);
+    CHECK(say(h,boss,"/admin arena wall desert"));
+    CHECK(say(h,boss,"/admin arena floor garden"));
+    CHECK_EQ(h.server.terrain().adminArenaWall,std::uint8_t(2));
+    CHECK_EQ(h.server.terrain().adminArenaFloor,std::uint8_t(0));
+    h.server.persistAll();
+    Database db;
+    std::string error;
+    CHECK(db.load(h.dbPath,error));
+    const Json configuration=db.storedTable("adminArena");
+    Harness restarted("hosted-arena-restored",[&](const std::string& path){
+        seedUser(path,"boss","password7",true);
+        Database fresh; std::string e; CHECK(fresh.load(path,e));
+        fresh.rawTable("adminArena")=configuration; fresh.markDirty(); CHECK(fresh.save());
+    },dataDir(),0);
+    CHECK(restarted.ready);
+    if(restarted.ready){
+        CHECK_EQ(restarted.server.terrain().tileCols(kAdminArenaRealm),12);
+        CHECK(restarted.server.terrain().atTile(2,2,kAdminArenaRealm)==Tile::Solid);
+        CHECK_EQ(restarted.server.terrain().adminArenaWall,std::uint8_t(2));
+        CHECK_EQ(restarted.server.terrain().adminArenaFloor,std::uint8_t(0));
+    }
+}
+
+TEST(hosted_arena_transfers_keep_maze_progress_separate) {
+    Harness h("hosted-arena-maze",[](const std::string& path){
+        seedUser(path,"boss","password7",true); seedUser(path,"visitor","password7");
+        Database db; std::string e; CHECK(db.load(path,e));
+        auto& record=db.progress(db.findUser("visitor")->id);
+        record.totalXp=5678; record.mazeTotalXp=1234; db.markDirty(); CHECK(db.save());
+    },dataDir(),0);
+    if(!h.ready){CHECK(false);return;}
+    NetClient boss,visitor;
+    CHECK(loginAs(h,boss,"boss","password7")); CHECK(loginAs(h,visitor,"visitor","password7"));
+    visitor.joinGame(1000,800,kMazeSpawnChoice,"Visitor");
+    CHECK(h.stepUntil({&boss,&visitor},[&]{return visitor.status()==NetClient::Status::Playing;}));
+    Session* guest=GameServerPeer::sessionOf(h.server,"visitor");
+    if(!guest){CHECK(false);return;}
+    CHECK(say(h,boss,"/admin arena bring visitor"));
+    CHECK(guest->realm==kAdminArenaRealm);
+    CHECK_EQ(h.server.world().get<PlayerProgress>(guest->entity).totalXp,5678.0);
+    CHECK(say(h,boss,"/admin arena return visitor"));
+    CHECK(guest->realm==Realm::Maze);
+    CHECK_EQ(h.server.world().get<PlayerProgress>(guest->entity).totalXp,1234.0);
+    CHECK_EQ(h.server.database().findProgress(guest->userId)->totalXp,5678.0);
+    CHECK_EQ(h.server.database().findProgress(guest->userId)->mazeTotalXp,1234.0);
+}

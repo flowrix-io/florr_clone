@@ -1025,7 +1025,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "[x] [y] [amount] [stack|unstack] (tiers 1-3), spawn_npc &lt;mobType&gt; "
                     "[rarity] [players|hostile|neutral] (any mob, as an NPC where you stand; "
                     "tiers 1-3), "
-                    "clear_npcs, killall (kill all wild "
+                    "arena (hosted games: bring/return/map/empty/build/wall/floor/pvp), clear_npcs, killall (kill all wild "
                     "mobs), teleport "
                     "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
@@ -1379,6 +1379,12 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     // and the panel cannot disagree about who may steer whom. The panel
     // announces through this verb itself, so its refusals land in chat the way
     // every console answer does.
+
+    if (verb == "arena") {
+        if (lacks(AdminPower::SpawnMobs)) return;
+        runHostedArenaCommand(session, connection, rest);
+        return;
+    }
 
     if (verb == "control") {
         if (words.size() != 2) {

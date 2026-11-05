@@ -196,6 +196,11 @@ struct Session {
     Entity cursorBody = NULL_ENTITY;
     Realm cursorRealm = Realm::Overworld;
     std::uint8_t cursorButtons = 0;
+    bool adminArenaAdmitted = false;
+    bool adminArenaHasReturn = false;
+    Realm adminArenaReturnRealm = Realm::Overworld;
+    Vec2 adminArenaReturnPosition;
+    std::string adminArenaReturnChoice;
     bool adminKillHeld = false;
     bool adminTeleportHeld = false;
     Entity adminKillBody = NULL_ENTITY;

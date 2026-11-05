@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 73;
+inline constexpr std::uint16_t kProtocolVersion = 74;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -483,7 +483,8 @@ enum class ServerMessage : std::uint8_t {
 // sheared diagonally. The encoding is there because a raw grid of a large map
 // is a quarter of a megabyte -- far past the socket's backpressure ceiling.
 //
-// COLLISION ONLY. What a cell looks like is not on this wire at all: the
+// Hosted arena (realm 63) appends u8 floorTheme, u8 wallTheme after bytes[].
+// Other realms carry COLLISION ONLY. What a cell looks like is not on this wire: the
 // artwork is the map file's own tile layers, which the client reads out of the
 // staged data directory for itself (shared/game/tiled_map.h), and this grid is
 // the authoritative open/solid view the server collides with -- derived on

@@ -2305,3 +2305,20 @@ TEST(the_shipped_bridge_is_a_walkable_channel_and_the_river_still_blocks) {
     });
     CHECK_EQ(solidsOnTheDeck, 0);
 }
+
+TEST(hosted_arena_grid_transmits_theme_and_rejects_invalid_theme_bytes) {
+    Terrain source;
+    std::vector<std::uint8_t> cells(64,std::uint8_t(Tile::Open));
+    CHECK(source.setTiles(cells,8,8,kAdminArenaRealm));
+    source.adminArenaFloor=2; source.adminArenaWall=1;
+    ByteWriter out; writeMapGrid(out,source,kAdminArenaRealm);
+    ByteReader reader(out.data(),out.size());
+    Terrain received; Realm realm; std::string error;
+    CHECK(readMapGrid(reader,received,realm,error));
+    CHECK(realm==kAdminArenaRealm);
+    CHECK_EQ(received.adminArenaFloor,std::uint8_t(2));
+    CHECK_EQ(received.adminArenaWall,std::uint8_t(1));
+    auto broken=out.buffer(); broken.back()=std::byte{255};
+    ByteReader bad(broken.data(),broken.size());
+    CHECK(!readMapGrid(bad,received,realm,error));
+}

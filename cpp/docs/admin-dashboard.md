@@ -461,3 +461,33 @@ on respawn or loss of admin access, and turning it off resolves you out of
 solid terrain. Map bounds remain enforced. Cursor dragging can carry players
 through walls too; release restores normal collision without enabling phase
 on the target.
+
+### Admin-hosted arena and iPad Cursor
+
+Admin Arena appears in the normal biome picker only for admins. The server
+also refuses forged direct joins from non-admin accounts. Hosts can invite
+active players with `/admin arena bring all` or `/admin arena bring <username>`.
+`/admin arena return all` (or a username) returns guests to their previous realm.
+Guests retain their normal inventory and XP; this is separate from the public
+PvP arena and its scratch inventory. Invited guests can respawn inside the game,
+but leaving removes their invitation. Hosts can spawn game mobs normally.
+
+The default is Hel's layout and floor with garden walls, without ambient mobs
+or copied map NPCs. Configuration and custom tiles survive server restarts:
+
+- `/admin arena map <map-id>` copies a staged layout such as hel or garden.
+- `/admin arena empty <width> [height]` creates an empty grid with boundary walls.
+- `/admin arena wall <theme>` and `/admin arena floor <theme>` change appearance.
+- Themes: garden, hel, desert, computer, jungle.
+- `/admin arena build <x> <y> <width> <height> wall|open` paints an interior rectangle.
+- Sizes and coordinates are in 256-unit tiles; dimensions are bounded to 4–128.
+- `/admin arena pvp on|off` controls player fighting; default is off.
+- `/admin arena status` or `help` lists settings and commands.
+
+Only full admins with the existing spawning permission may host/configure games.
+A map reset removes unowned arena objects; editing rescues players from new walls.
+
+On iPad, with an Admin Cursor equipped, hold and move a finger on the world to
+grab. The joystick stays independent, even with several fingers down. The red
+button becomes KILL and the blue button TP, acting on the last world touch.
+Opening a menu, dying, or unequipping the Cursor clears the world-touch state.
