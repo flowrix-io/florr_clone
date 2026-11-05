@@ -11,6 +11,7 @@
 // GameServer, real NetClients and the real protocol.
 
 #include "test.h"
+#include "render_rig.h"
 
 #include <cmath>
 #include <cstdio>
@@ -1543,4 +1544,35 @@ TEST(admin_cursor_can_drag_players_through_walls_and_release_on_open_ground) {
     CHECK(!h.server.terrain().blocked(world.get<Transform>(target->entity).position, target->realm));
     CHECK(!world.get<PlayerInput>(target->entity).adminPhase);
     removeDataDir(dir);
+}
+
+TEST(hosted_arena_editor_renders_live_server_grid) {
+    using namespace flix::testsupport;
+    Harness h("arena-gui-preview",[](const std::string& path){seedUser(path,"boss","password7",true);},dataDir(),0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h,client,"boss","password7"));
+    client.setWorldMaps(&h.server.worldMaps());
+    client.joinGame(1000,800,kAdminArenaSpawnChoice,"Boss");
+    CHECK(h.stepUntil({&client},[&]{return client.status()==NetClient::Status::Playing;}));
+    CHECK(say(h,client,"/admin arena empty 16"));
+    CHECK(h.stepUntil({&client},[&]{return client.terrain().tileCols(kAdminArenaRealm)==16;}));
+    CHECK(fontsReady());
+    Canvas canvas=Canvas::createVirtual(760,560);
+    Window window;
+    SpriteCache sprites;
+    WorldRenderer renderer;
+    ClientSettings settings;
+    DragState drag;
+    AdminDashboardPanel panel;
+    panel.reset(); panel.showArena();
+    MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};
+    ctx.bounds={0,0,760,560};
+    CHECK(panel.render(ctx));
+    const auto pixels=canvas.getImageData(0,0,760,560);
+    const auto color=[&](int x,int y) { const auto at=(y*760+x)*4; return (int(pixels[at])<<16)|(int(pixels[at+1])<<8)|int(pixels[at+2]); };
+    CHECK_EQ(color(20,120),0xB5B1CD);
+    CHECK_EQ(color(48,145),0x285A46);
+    if (const char* path=std::getenv("FLIX_ARENA_GUI_PREVIEW")) canvas.savePPM(path);
+    panel.reset();
 }

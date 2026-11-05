@@ -253,6 +253,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin notify", "Create a notification (shorthand)", true},
     {"/admin clear_notifications", "Clear all notifications", true},
     {"/admin clear_notifs", "Clear notifications (shorthand)", true},
+    {"/admin arena gui", "Open the visual arena editor", true},
     {"/admin arena", "Host games: bring/return/map/empty/build/wall/floor/pvp", true},
     {"/admin phase", "Toggle walking through walls: [on|off|toggle]", true},
     {"/admin give_xp", "Give XP: <amount> [username], default yourself", true},
@@ -1022,6 +1023,10 @@ bool App::handleClientCommand(const std::string& message) {
     if (typedEnd != std::string::npos && message.compare(0, typedEnd + 1, "/admin gui") == 0 &&
         net_.isSkinAdmin()) {
         menus_.toggle(MenuId::AdminDashboard);
+        return true;
+    }
+    if (typedEnd != std::string::npos && message.compare(0, typedEnd + 1, "/admin arena gui") == 0 && net_.isSkinAdmin()) {
+        menus_.openAdminArena();
         return true;
     }
     if (message == "/guild-menu" || message == "/guild menu") {

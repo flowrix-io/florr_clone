@@ -801,6 +801,7 @@ public:
     /// instead -- see installLocalCollision(). The pointer is borrowed and
     /// must outlive the connection; App owns the one this client uses.
     void setWorldMaps(const WorldMaps* maps) { worldMaps_ = maps; }
+    const WorldMaps* worldMaps() const { return worldMaps_; }
 
     /// True once after the body was moved to another realm -- through a
     /// teleporter, which leads to another map. Consumed by the App, which

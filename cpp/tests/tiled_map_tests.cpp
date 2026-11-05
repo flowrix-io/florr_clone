@@ -1,4 +1,5 @@
 #include "test.h"
+#include "client/ui/admin_arena_editor.h"
 #include "client/render/world_renderer.h"
 #include "client/world_view.h"
 #include "render_rig.h"
@@ -1082,4 +1083,19 @@ TEST(hosted_arena_renderer_uses_live_grid_and_floor_theme) {
     const auto garden=sample({2.5*kTileSize,2.5*kTileSize});
     CHECK(garden.size()==4);
     if(garden.size()==4) CHECK_EQ(garden[1],std::uint8_t(0xA7));
+}
+
+TEST(arena_editor_drag_is_direction_independent_and_protects_border) {
+    const auto forward = ui::arenaPaintRect({2,3},{7,8},12,10);
+    const auto reverse = ui::arenaPaintRect({7,8},{2,3},12,10);
+    CHECK(forward.has_value()); CHECK(reverse.has_value());
+    CHECK_EQ(forward->x,reverse->x); CHECK_EQ(forward->y,reverse->y);
+    CHECK_EQ(forward->width,6); CHECK_EQ(forward->height,6);
+    CHECK_EQ(forward->width,reverse->width); CHECK_EQ(forward->height,reverse->height);
+    const auto escaped = ui::arenaPaintRect({3,4},{1e30,-1e30},12,10);
+    CHECK_EQ(escaped->x,3); CHECK_EQ(escaped->y,1);
+    CHECK_EQ(escaped->width,8); CHECK_EQ(escaped->height,4);
+    const auto tap = ui::arenaPaintRect({3,4},{3,4},12,10);
+    CHECK_EQ(tap->width,1); CHECK_EQ(tap->height,1);
+    CHECK(!ui::arenaPaintRect({1,1},{2,2},0,0));
 }

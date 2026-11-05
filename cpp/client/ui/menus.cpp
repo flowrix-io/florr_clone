@@ -2894,3 +2894,10 @@ double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry
 }
 
 } // namespace flix
+
+namespace flix {
+void MenuSystem::openAdminArena() {
+    if (open_ != MenuId::AdminDashboard) toggle(MenuId::AdminDashboard);
+    adminDashboard_.showArena();
+}
+}

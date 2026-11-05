@@ -491,3 +491,12 @@ On iPad, with an Admin Cursor equipped, hold and move a finger on the world to
 grab. The joystick stays independent, even with several fingers down. The red
 button becomes KILL and the blue button TP, acting on the last world touch.
 Opening a menu, dying, or unequipping the Cursor clears the world-touch state.
+
+Open **Admin > Arena** (or `/admin arena gui`) to edit the hosted map visually. Select Admin Arena in
+biomes first to receive the live preview. Choose Wall or Erase, then drag a
+rectangle on the preview and release to apply it. Pan moves a zoomed preview;
+plus/minus zoom in/out. Boundary walls remain protected. Layout and Create Empty
+buttons replace the current map. Width and height accept 4–128 tiles. Theme
+arrows, PvP buttons, Bring Everyone and Return Everyone need no typed commands.
+Edits go through the same server permissions, validation and persistence as
+host commands. The preview updates after the server accepts each edit.

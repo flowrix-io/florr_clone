@@ -1502,6 +1502,7 @@ public:
 class AdminDashboardPanel {
 public:
     bool render(MenuContext&);
+    void showArena();
     void reset();
     static double preferredWidth();
     static double preferredHeight();
@@ -1583,6 +1584,7 @@ public:
     void renderStripOnly(Canvas&, Window&, double timeSeconds);
 
     void toggle(MenuId);
+    void openAdminArena();
     void close();
     MenuId open() const { return open_; }
     bool anyOpen() const { return open_ != MenuId::None; }

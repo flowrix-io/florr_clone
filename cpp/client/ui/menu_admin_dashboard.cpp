@@ -6,7 +6,7 @@
 // panel, and by itself the moment the server stops calling this account an
 // admin (MenuSystem::renderOpenPanel). The server checks every request again.
 //
-// Four tabs:
+// Five tabs:
 //
 //  * Players: the flowers in the world, a page at a time, searched by account
 //    or nameplate, in account order. Picking one shows its bag -- the
@@ -30,12 +30,16 @@
 //    server enforces (net::kMaxAnnouncementBytes). A temporary grant may type
 //    one; the server refuses it, and the refusal is in chat.
 //
+//  * Arena: the live hosted grid, rectangle painting, layout and theme
+//    selection, and host controls. All edits reuse server-checked commands.
+//
 // Control and Release are the binary requests, answered on this panel's own
 // status line. A successful Control closes the card -- the admin has asked to
 // play somebody's flower and needs the world in front of them -- and while it
 // runs the strip carries a Release chip (MenuSystem::drawReleaseChip).
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -45,6 +49,10 @@
 #include "client/ui/text_input.h"
 #include "shared/core/text.h"
 #include "shared/game/config.h"
+#include "shared/game/admin_arena.h"
+#include "shared/game/map_elements.h"
+#include "shared/game/terrain.h"
+#include "client/ui/admin_arena_editor.h"
 
 namespace flix {
 
@@ -118,9 +126,9 @@ constexpr ChipStyle kOnChip{0x9897D2u, 0x48477Au};
 constexpr ChipStyle kGoChip{0x4CAF50u, 0x2E7D32u};
 constexpr ChipStyle kDangerChip{0xC0504Du, 0x8E3A38u};
 
-enum class Tab : std::uint8_t { Players, Spawn, Give, Announce };
-constexpr int kTabCount = 4;
-constexpr const char* kTabLabels[kTabCount] = {"Players", "Spawn", "Give", "Announce"};
+enum class Tab : std::uint8_t { Players, Spawn, Give, Announce, Arena };
+constexpr int kTabCount = 5;
+constexpr const char* kTabLabels[kTabCount] = {"Players", "Spawn", "Give", "Announce", "Arena"};
 
 /// What a click landed on.
 enum class Act : std::uint8_t {
@@ -190,6 +198,17 @@ struct State {
 
     ItemForm spawn;
     ItemForm give;
+
+    struct ArenaEditor {
+        int layout = 0;
+        std::string width = "32", height = "32";
+        TextFieldState widthField, heightField;
+        int tool = 0; // wall, open, pan
+        double zoom = 1;
+        Vec2 pan{}, anchor{}, end{}, panStart{}, mouseStart{};
+        bool dragging = false;
+        int cols = 0, rows = 0;
+    } arena;
 
     std::string announcement;
     TextFieldState announcementField;
@@ -339,6 +358,11 @@ void AdminDashboardPanel::reset() {
     state() = State{};
 }
 
+void AdminDashboardPanel::showArena() {
+    state().tab = Tab::Arena;
+    state().arena.dragging = false;
+}
+
 bool AdminDashboardPanel::render(MenuContext& ctx) {
     Canvas& canvas = ctx.canvas;
     const Rect panel = ctx.bounds;
@@ -360,6 +384,8 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
     // the admin's, not the connection's.
     if (s.generation != d.generation) {
         s.generation = d.generation;
+        s.arena.dragging = false;
+        s.arena.widthField.blur(); s.arena.heightField.blur();
         s.requested = false;
         s.selected = 0;
         s.selectedUsername.clear();
@@ -741,6 +767,140 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
         }
     }
 
+    bool arenaGesture = false;
+    // -- hosted arena: live map editor, using the same server-checked actions --
+    if (s.tab == Tab::Arena) {
+        auto& edit = s.arena;
+        arenaGesture = edit.dragging;
+        const auto order = [&](const std::string& action) {
+            net.sendChat("/admin arena " + action);
+            setStatus(s, "Sent to host. Server replies appear in chat.", true);
+        };
+        const auto button = [&](Rect r, const std::string& title, bool selected = false) {
+            chip(canvas,r,title,r.contains(mouse),selected ? kOnChip : kChip);
+            return !arenaGesture && ctx.clicked(r);
+        };
+        const auto& terrain = net.terrain();
+        const bool active = net.status() == NetClient::Status::Playing && net.view().realm() == kAdminArenaRealm;
+        const int cols = active ? terrain.tileCols(kAdminArenaRealm) : 0;
+        const int rows = active ? terrain.tileRows(kAdminArenaRealm) : 0;
+        if (edit.cols != cols || edit.rows != rows) {
+            edit.cols = cols; edit.rows = rows; edit.pan = {}; edit.dragging = false;
+        }
+        const double mapWidth = std::min(body.w * 0.47, body.h - 65.0);
+        const Rect mapView{body.x,body.y+23,mapWidth,mapWidth};
+        const double controlsX = body.x + mapWidth + 16;
+        const double controlsW = body.right() - controlsX;
+        text(canvas, active ? std::to_string(cols)+" x "+std::to_string(rows)+" tiles - drag to paint" : "Live arena preview", body.x,body.y+9,label(kTextSize));
+        fillRound(canvas,mapView,4,kInk,0.7);
+        if (active && cols > 0 && rows > 0) {
+            const double cell = std::min(mapView.w/cols,mapView.h/rows)*edit.zoom;
+            // Keep zoomed maps reachable without allowing the whole grid to vanish.
+            const double excessX = std::max(0.0,cols*cell-mapView.w)*0.5;
+            const double excessY = std::max(0.0,rows*cell-mapView.h)*0.5;
+            edit.pan.x = std::clamp(edit.pan.x,-excessX,excessX);
+            edit.pan.y = std::clamp(edit.pan.y,-excessY,excessY);
+            const Vec2 origin{mapView.x+(mapView.w-cols*cell)*0.5+edit.pan.x,
+                              mapView.y+(mapView.h-rows*cell)*0.5+edit.pan.y};
+            const auto tileAt = [&](Vec2 p) { return Vec2{std::floor((p.x-origin.x)/cell),std::floor((p.y-origin.y)/cell)}; };
+            if (ctx.pressed() && mapView.contains(mouse)) {
+                const Vec2 tile = tileAt(mouse);
+                if (edit.tool == 2 || (tile.x>=1 && tile.y>=1 && tile.x<cols-1 && tile.y<rows-1)) {
+                    edit.dragging = true; arenaGesture = true; edit.anchor = edit.end = tile;
+                    edit.mouseStart = mouse; edit.panStart = edit.pan;
+                }
+            }
+            if (edit.dragging) {
+                if (edit.tool == 2) edit.pan = edit.panStart + mouse - edit.mouseStart;
+                else edit.end = tileAt(mouse);
+            }
+            canvas.save(); canvas.beginPath(); canvas.rect(mapView.x,mapView.y,mapView.w,mapView.h); canvas.clip();
+            for (int y=0;y<rows;++y) for (int x=0;x<cols;++x) {
+                const Rect tile{origin.x+x*cell,origin.y+y*cell,cell,cell};
+                if (tile.right()<mapView.x || tile.x>mapView.right() || tile.bottom()<mapView.y || tile.y>mapView.bottom()) continue;
+                setFill(canvas,terrain.atTile(x,y,kAdminArenaRealm)==Tile::Solid ? 0xB5B1CDu : 0x285A46u);
+                const double gap = cell >= 6 ? 0.7 : 0;
+                canvas.fillRect(tile.x,tile.y,cell-gap,cell-gap);
+            }
+            if (edit.dragging && edit.tool != 2) {
+                if (const auto paint = arenaPaintRect(edit.anchor,edit.end,cols,rows)) {
+                    setFill(canvas,edit.tool==0 ? 0xF6BE55u : 0x79DF9Fu);
+                    canvas.setGlobalAlpha(canvas.globalAlpha()*0.6f);
+                    canvas.fillRect(origin.x+paint->x*cell,origin.y+paint->y*cell,paint->width*cell,paint->height*cell);
+                }
+            }
+            canvas.restore();
+            if (edit.dragging && ctx.released()) {
+                if (edit.tool != 2) {
+                    if (const auto paint = arenaPaintRect(edit.anchor,edit.end,cols,rows))
+                        order("build "+std::to_string(paint->x)+" "+std::to_string(paint->y)+" "+std::to_string(paint->width)+" "+std::to_string(paint->height)+(edit.tool==0 ? " wall" : " open"));
+                }
+                edit.dragging = false;
+            } else if (edit.dragging && !ctx.window.mouseDown(MouseButton::Left)) edit.dragging = false;
+        } else {
+            edit.dragging = false;
+            text(canvas,"Select Admin Arena in the biome picker",mapView.x+10,mapView.y+mapView.h*0.45,label(kRowDetailSize));
+            text(canvas,"then open Admin > Arena to edit.",mapView.x+10,mapView.y+mapView.h*0.45+22,label(kRowDetailSize));
+        }
+        const double toolY = mapView.bottom()+8;
+        const double tw = (mapView.w-24)/5;
+        const char* tools[]{"Wall","Erase","Pan"};
+        for(int i=0;i<3;++i) if(button({mapView.x+i*(tw+6),toolY,tw,32},tools[i],edit.tool==i)) { edit.tool=i; edit.dragging=false; }
+        if(button({mapView.x+3*(tw+6),toolY,tw,32},"-")) { edit.zoom=std::max(1.0,edit.zoom/2); edit.dragging=false; }
+        if(button({mapView.x+4*(tw+6),toolY,tw,32},"+")) { edit.zoom=std::min(8.0,edit.zoom*2); edit.dragging=false; }
+
+        std::vector<std::string> layouts;
+        if(const auto* maps=net.worldMaps()) for(const auto& map:maps->maps())
+            if(map.width()>=4 && map.height()>=4 && map.width()<=kAdminArenaMaxSize && map.height()<=kAdminArenaMaxSize) layouts.push_back(map.id());
+        double y=body.y;
+        text(canvas,"Load a layout (replaces arena)",controlsX,y+9,label(kTextSize));
+        y+=24;
+        if(!layouts.empty()) {
+            edit.layout=std::clamp(edit.layout,0,int(layouts.size())-1);
+            if(button({controlsX,y,32,32},"<")) edit.layout=(edit.layout+int(layouts.size())-1)%layouts.size();
+            if(button({controlsX+controlsW-118,y,32,32},">")) edit.layout=(edit.layout+1)%layouts.size();
+            text(canvas,ellipsize(layouts[edit.layout],kTextSize,controlsW-166),controlsX+42,y+16,label(kTextSize));
+            if(button({controlsX+controlsW-80,y,80,32},"Load")) order("map "+layouts[edit.layout]);
+        }
+        y+=47;
+        text(canvas,"Empty map size (4-128 tiles)",controlsX,y,label(kTextSize)); y+=12;
+        const Rect widthRect{controlsX,y,64,32}, heightRect{controlsX+87,y,64,32};
+        inputField(canvas,widthRect,edit.width,"Width",edit.widthField.focused,now,&edit.widthField);
+        text(canvas,"x",controlsX+74,y+16,label(kTextSize));
+        inputField(canvas,heightRect,edit.height,"Height",edit.heightField.focused,now,&edit.heightField);
+        for (int i=0;i<2;++i) {
+            auto& field=i==0 ? edit.widthField : edit.heightField;
+            auto& value=i==0 ? edit.width : edit.height;
+            const Rect r=i==0 ? widthRect : heightRect;
+            trackTextMouse(ctx.window,field,r,inputFieldRun(r,value,field),value,now);
+            if(field.focused) {
+                ctx.wantsText=true;
+                TextEditOptions digits; digits.maxBytes=3; digits.asciiOnly=true;
+                editText(ctx.window,value,field,now,digits);
+            }
+        }
+        if(button({controlsX+controlsW-110,y,110,32},"Create empty")) {
+            const auto valid=[](const std::string& v) { return !v.empty() && v.size()<=3 && v.find_first_not_of("0123456789")==std::string::npos && std::stoi(v)>=4 && std::stoi(v)<=128; };
+            if(valid(edit.width) && valid(edit.height)) order("empty "+edit.width+" "+edit.height);
+            else setStatus(s,"Width and height must be 4-128 tiles.",false);
+        }
+        y+=50;
+        for(int i=0;i<2;++i) {
+            const bool wall=i==0;
+            const auto index=std::min<std::size_t>(wall ? terrain.adminArenaWall : terrain.adminArenaFloor,kAdminArenaThemes.size()-1);
+            text(canvas,wall ? "Walls" : "Floor",controlsX,y+16,label(kTextSize));
+            if(button({controlsX+62,y,32,32},"<") && active) order(std::string(wall ? "wall " : "floor ")+kAdminArenaThemes[(index+kAdminArenaThemes.size()-1)%kAdminArenaThemes.size()].name);
+            text(canvas,active ? kAdminArenaThemes[index].name : "Join to preview",controlsX+104,y+16,label(kTextSize));
+            if(button({controlsX+controlsW-32,y,32,32},">") && active) order(std::string(wall ? "wall " : "floor ")+kAdminArenaThemes[(index+1)%kAdminArenaThemes.size()].name);
+            y+=44;
+        }
+        if(button({controlsX,y,(controlsW-8)/2,34},"Enable PvP")) order("pvp on");
+        if(button({controlsX+(controlsW+8)/2,y,(controlsW-8)/2,34},"Disable PvP")) order("pvp off");
+        y+=46;
+        if(button({controlsX,y,(controlsW-8)/2,34},"Bring everyone")) order("bring all");
+        if(button({controlsX+(controlsW+8)/2,y,(controlsW-8)/2,34},"Return everyone")) order("return all");
+    }
+
     // -- the Announce tab --------------------------------------------------------
 
     if (s.tab == Tab::Announce) {
@@ -775,7 +935,7 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
 
     {
         const double fy = footerTop + kFooterHeight * 0.5 - 3.0;
-        const std::string hint = "Enter submits, Esc leaves a field";
+        const std::string hint = s.tab == Tab::Arena ? "Drag a rectangle; release to apply" : "Enter submits, Esc leaves a field";
         const double hintW = measure(hint, kRowDetailSize);
         text(canvas, hint, panel.right() - kPad, fy, label(kRowDetailSize, kDetailInk, Align::Right));
         if (!s.status.empty()) {
@@ -890,7 +1050,7 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
 
     // -- clicks --------------------------------------------------------------
 
-    if (!ctx.released()) return true;
+    if (!ctx.released() || arenaGesture) return true;
     for (auto it = regions.rbegin(); it != regions.rend(); ++it) {
         const Hit& region = *it;
         if (!region.rect.contains(mouse)) continue;
@@ -907,6 +1067,8 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
                 s.give.searchField.blur();
                 s.give.amountField.blur();
                 s.announcementField.blur();
+                s.arena.widthField.blur(); s.arena.heightField.blur();
+                s.arena.dragging = false;
                 break;
             case Act::PickPlayer:
                 if (region.index >= 0 && region.index < static_cast<int>(d.players.size())) {
