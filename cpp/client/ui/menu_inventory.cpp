@@ -349,7 +349,6 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     hp.alpha = 0.56;
     hp.labelColor = kStatHealth;
     hp.altText = "HP: " + exactNumber(health);
-    lines.push_back(hp);
 
     const std::string damageLabel = "Damage: ";
     TooltipLine hit{damageLabel + abbreviate(damage), 12.0};
@@ -378,7 +377,18 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         hit.altText = hit.text;
         hit.labelColor = kStatHealth;
     }
-    lines.push_back(hit);
+    if (!petalWardsHits(config)) {
+        lines.push_back(hp);
+        lines.push_back(hit);
+    } else {
+        // A nazar has neither a health pool nor a hit: florr's card shows its
+        // charges in their place. An admin petal holds three times as many.
+        const int held = kNazarCharges * (rarity == Rarity::Admin ? 3 : 1);
+        TooltipLine charges{"Charges: " + std::to_string(held), 12.0, kPaper, hp.gapBefore};
+        charges.alpha = 0.56;
+        charges.labelColor = kStatGeneric;
+        lines.push_back(charges);
+    }
 
     // Relic. The whole petal is this one number.
     if (petalSharesFlowerDamage(config)) {

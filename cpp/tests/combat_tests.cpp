@@ -3822,6 +3822,104 @@ Entity wearCotton(Arena& a, Entity flower, double health, std::uint8_t slot = 0)
 
 } // namespace
 
+// ---------------------------------------------------------------------------
+// Nazar: a hit on the flower pays a charge and lands at 2%
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A nazar on `flower`'s ring, as the petal system spawns one: no health pool,
+/// a handful of charges.
+Entity wearNazar(Arena& a, Entity flower, std::uint8_t charges = kNazarCharges) {
+    if (!a.world.has<Loadout>(flower)) a.world.add<Loadout>(flower);
+    const Entity e = a.world.create();
+    a.world.add<PetalTag>(e);
+    PetalInstance instance;
+    instance.owner = flower;
+    instance.wardsOwnerHits = true;
+    instance.charges = charges;
+    a.world.add<PetalInstance>(e, instance);
+    a.world.add<Transform>(e, Transform{a.world.get<Transform>(flower).position, 0.0});
+    a.world.add<Faction>(e, Faction{Team::Players, false});
+    a.world.get<Loadout>(flower).spawned.push_back(e);
+    return e;
+}
+
+int chargesOn(Arena& a, Entity nazar) { return a.world.get<PetalInstance>(nazar).charges; }
+
+} // namespace
+
+TEST(a_nazar_lands_a_hit_at_two_percent_for_one_charge_until_it_has_none) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    const Entity nazar = wearNazar(a, player);
+
+    double expected = 100.0;
+    for (int spent = 1; spent <= kNazarCharges; ++spent) {
+        const DamageResult hit =
+            a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0 * spent);
+        CHECK(!hit.refused);
+        expected -= 10.0 * kNazarHitScale;
+        CHECK_NEAR(a.health(player), expected, 1e-9);
+        CHECK_EQ(chargesOn(a, nazar), kNazarCharges - spent);
+    }
+
+    // Flat, it wards nothing, and the hit lands whole.
+    a.combat.applyDamage(a.world, player, mob, 10.0, 9000.0);
+    CHECK_NEAR(a.health(player), expected - 10.0, 1e-9);
+    CHECK_EQ(chargesOn(a, nazar), 0);
+}
+
+TEST(a_nazars_cut_lightens_what_the_shield_and_the_cotton_behind_it_catch) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    wearNazar(a, player);
+    a.world.add<ShieldState>(player);
+    a.world.get<ShieldState>(player).amount = 50.0;
+
+    a.combat.applyDamage(a.world, player, mob, 100.0, 1000.0);
+    CHECK_NEAR(a.world.get<ShieldState>(player).amount, 50.0 - 100.0 * kNazarHitScale, 1e-9);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+}
+
+TEST(a_second_nazar_is_more_charges_and_not_a_deeper_cut) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    const Entity first = wearNazar(a, player, 1);
+    const Entity second = wearNazar(a, player);
+
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+    CHECK_NEAR(a.health(player), 100.0 - 10.0 * kNazarHitScale, 1e-9);
+    CHECK_EQ(chargesOn(a, first), 0);
+    CHECK_EQ(chargesOn(a, second), kNazarCharges);
+
+    // The first is flat, so the second answers the next hit.
+    a.combat.applyDamage(a.world, player, mob, 10.0, 2000.0);
+    CHECK_NEAR(a.health(player), 100.0 - 20.0 * kNazarHitScale, 1e-9);
+    CHECK_EQ(chargesOn(a, second), kNazarCharges - 1);
+}
+
+TEST(a_nazar_pays_nothing_for_a_drip_or_for_a_hit_that_never_lands) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    const Entity nazar = wearNazar(a, player);
+
+    // A drip lands whole and costs no charge.
+    a.combat.applyDamage(a.world, player, mob, 1.0, 1000.0, DamageKind::Poison);
+    CHECK_NEAR(a.health(player), 99.0, 1e-9);
+    CHECK_EQ(chargesOn(a, nazar), kNazarCharges);
+
+    // Armour that stops the hit outright leaves nothing to ward.
+    a.world.add<Armor>(player, Armor{50.0});
+    a.combat.applyDamage(a.world, player, mob, 10.0, 2000.0);
+    CHECK_NEAR(a.health(player), 99.0, 1e-9);
+    CHECK_EQ(chargesOn(a, nazar), kNazarCharges);
+}
+
 TEST(a_cotton_takes_a_hit_in_its_flowers_place_and_the_overflow_passes) {
     Arena a;
     const Entity player = a.player({1000, 1000});

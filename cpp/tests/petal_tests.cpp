@@ -65,6 +65,7 @@ const char* const kPetalsJson = R"JSON({
   "gazer":    {"name":"Gazer","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"equipFlags":"ThirdEye","noPhysics":true,"color":"#000000"},
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
+  "nazar":    {"name":"Nazar","damage":0,"health":null,"size":1,"cooldown":60000,"count":1,"defendOnly":true,"color":"#1213BD"},
   "capacitor":{"name":"Capacitor","damage":0,"health":null,"size":1.25,"cooldown":2500,"count":1,"color":"#000000"},
   "wing":     {"name":"Wing","damage":15,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "pearl":    {"name":"Pearl","damage":20,"health":50,"size":1.25,"cooldown":4000,"count":1,"color":"#FFFFFF"},
@@ -1468,6 +1469,48 @@ TEST(a_battery_reloads_once_its_third_charge_is_gone) {
     // And it is a working one.
     ramMob(rig);
     CHECK(rig.tickUntil([&] { return countStrikes(rig) > spent; }, 60));
+}
+
+// The nazar. Spent by combat, retired here, and shaped like a battery: the
+// helpers above read its instance as well as one.
+
+TEST(a_nazar_arrives_with_its_charges_and_its_last_one_sends_it_to_reload) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "nazar", Rarity::Ultra);
+    rig.settleEquips();
+    CHECK_EQ(batteryCharges(rig), int(kNazarCharges));
+
+    const Vec2 at = rig.world.get<Transform>(rig.player).position;
+    const Entity mob = addMob(rig, {at.x + 5000.0, at.y});
+    CombatSystem combat;
+    for (int spent = 1; spent < kNazarCharges; ++spent) {
+        combat.applyDamage(rig.world, rig.player, mob, 1.0, rig.now);
+        rig.tick(10);
+        CHECK_EQ(batteryCharges(rig), kNazarCharges - spent);
+        CHECK(!rig.slot(0).broken);
+    }
+
+    // The last charge takes it off the ring, on the slot's own cooldown.
+    combat.applyDamage(rig.world, rig.player, mob, 1.0, rig.now);
+    CHECK(rig.tickUntil([&] { return liveBattery(rig) == NULL_ENTITY; }, 5));
+    CHECK(rig.slot(0).broken);
+
+    // And the reload hands back a full one.
+    CHECK(rig.tickUntil([&] { return !rig.slot(0).broken && liveBattery(rig) != NULL_ENTITY; }));
+    CHECK_EQ(batteryCharges(rig), int(kNazarCharges));
+}
+
+TEST(a_nazars_reload_loses_thirty_percent_a_tier_up_to_florrs_ceiling) {
+    if (!contentLoaded()) return;
+    const ContentRegistry& registry = fixture().registry;
+    const std::uint16_t nazar = registry.petalIndex("nazar");
+    const auto reload = [&](Rarity tier) { return registry.petalStats(nazar, tier).reloadMillis; };
+    const double common = reload(Rarity::Common);
+    CHECK_NEAR(reload(Rarity::Epic), common * 0.343, 1e-6);
+    CHECK_NEAR(reload(Rarity::Ultra), common * 0.117649, 1e-6);
+    // florr's curve stops at tier 8.
+    CHECK_NEAR(reload(Rarity::Apex), reload(Rarity::Unique), 1e-6);
 }
 
 /// What the last strike left on the field. A strike's damage is not a number

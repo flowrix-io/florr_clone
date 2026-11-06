@@ -439,6 +439,12 @@ private:
     void strikeBatteries(World& world, const ContentRegistry& registry, Entity player,
                          double nowMillis);
 
+    /// Takes a nazar whose last charge combat just spent off the ring and puts
+    /// its slot on cooldown. Here rather than at the hit, because the damage
+    /// path has no registry and the reload is the petal system's to stamp.
+    void retireSpentNazars(World& world, const ContentRegistry& registry, Entity player,
+                           double nowMillis);
+
     /// The capacitor's discharge: the same strike again, armed by the PETAL
     /// leaving a mob it has been touching and worth the contact time it
     /// banked. Its own pass rather than a behaviour because the thing that
@@ -682,6 +688,7 @@ private:
     /// first one fires: a discharge creates entities and can put its slot on
     /// the reload, and neither is legal while the loadout's own list is walked.
     std::vector<Entity> batteryList_;
+    std::vector<Entity> spentNazars_;
     /// The player's live capacitors, snapshotted for the same reason.
     std::vector<Entity> capacitorList_;
     /// One player's live petals bucketed by slot, rebuilt per player. Members

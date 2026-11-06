@@ -765,6 +765,10 @@ private:
     DamageResult shareHit(World& world, std::vector<Entity> group, Entity victim, Entity source,
                           double amount, double nowMillis, DamageKind kind, bool& guard);
 
+    /// Spends one charge off the first nazar on `flower`'s ring that has any.
+    /// False when none does, and the hit lands whole.
+    bool spendWardCharge(World& world, Entity flower);
+
     /// Cotton: land `amount` of any damage aimed at `flower` -- the last step
     /// before its health bar, behind the shield and the sponge -- on the
     /// flower's live cottons first, each taking up to what it has left, and return the

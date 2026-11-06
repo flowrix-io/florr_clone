@@ -287,6 +287,7 @@ MobArt mobArtFor(const std::string& image) {
         {"fire_ant_egg", MobArt::FireAntEgg},
         {"beetle_mummy", MobArt::BeetleMummy},
         {"beetle_pharaoh", MobArt::BeetlePharaoh},
+        {"beetle_nazar", MobArt::BeetleNazar},
         {"tomb", MobArt::Tomb},
     };
     for (const auto& [marker, art] : kFlorr) {
@@ -2818,6 +2819,66 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 disc(0xCFC295u, attr.radius);
                 disc(0xFFF0B8u, attr.radius * 0.8);
             }
+            break;
+        }
+
+        case MobArt::BeetleNazar: {
+            // florr's nazar beetle, drawn for a radius of 40: the beetle's
+            // mandibles closing on the claw beat, a rounder shell in the nazar
+            // petal's blue inside a 7-wide ring of 0.9 of it, and the petal's
+            // eye -- its three inner discs, turned its icon's one radian --
+            // over the whole back at 2.5x the petal's size.
+            static const Path2D mandibles[] = {
+                svgPathData("M -10 15 Q 15 30 35 15 Q 15 20 -10 5 Z"),
+                svgPathData("M -10 -15 Q 15 -30 35 -15 Q 15 -20 -10 -5 Z"),
+            };
+            static const Path2D shell = svgPathData("M0-39Q39-39 39 0 39 39 0 39-39 39-39 0-39-39 0-39Z");
+            static const Path2D sclera = svgPathData(
+                "M29.994 18c0 3.314-1.092 6.559-3.264 8.73s-5.417 2.798-8.73 2.798-6.089-1.096-8.261-3."
+                "267S6.312 21.314 6.312 18s.9-6.445 3.071-8.617S14.686 5.608 18 5.608s6.203 1.846 8.375"
+                " 4.017 3.619 5.061 3.619 8.375z");
+            static const Path2D iris = svgPathData(
+                "M25.871 18c0 4.418-3.453 8.112-7.871 8.112S10.261 22.418 10.261 18s3.321-7.785 7.739-7"
+                ".785 7.871 3.367 7.871 7.785z");
+            static const Path2D pupil = svgPathData(
+                "M23.075 17.825c0 2.665-2.235 4.908-4.9 4.908s-4.732-2.243-4.732-4.908 2.067-4.835 4.73"
+                "2-4.835 4.9 2.17 4.9 4.835z");
+
+            canvas.save();
+            const double s = attr.radius / 40.0;
+            canvas.scale(static_cast<float>(s), static_cast<float>(s));
+
+            const double close = 0.2 * clawBeat(attr);
+            ui::setFill(canvas, 0x333333u);
+            ui::setStroke(canvas, 0x333333u);
+            roundStrokes(canvas, 7.0);
+            for (int i = 0; i < 2; ++i) {
+                canvas.save();
+                canvas.translate(35.0f, 0.0f);
+                canvas.rotate(static_cast<float>(i == 0 ? -close : close));
+                canvas.fill(mandibles[i]);
+                canvas.stroke(mandibles[i]);
+                canvas.restore();
+            }
+
+            const std::uint32_t base = bodyColor(attr, 0x1213BDu);
+            ui::setFill(canvas, base);
+            canvas.fill(shell);
+            ui::setStroke(canvas, shadeOf(base, 0.9));
+            canvas.stroke(shell);
+
+            canvas.scale(2.5f, 2.5f);
+            canvas.rotate(1.0f);
+            canvas.scale(5.0f / 6.0f, 5.0f / 6.0f);
+            canvas.translate(-18.0f, -18.0f);
+            ui::setFill(canvas, 0xFFFFFFu);
+            canvas.fill(sclera);
+            ui::setFill(canvas, 0x88C9F9u);
+            canvas.fill(iris);
+            ui::setFill(canvas, 0x292F33u);
+            canvas.fill(pupil);
+
+            canvas.restore();
             break;
         }
 

@@ -1361,6 +1361,18 @@ double mobUndeadMillis(const MobConfig& config, Rarity rarity);
 /// gives it no body on the ring.
 inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "bandage"; }
 
+/// A nazar takes most of a hit off its flower and pays a charge for it --
+/// florr's "When the flower receives damage, reduces it by 98% and consumes a
+/// charge". Out on the ring, unlike the worn family above: florr gives it a
+/// reload, and the last charge is what sends it there. It has no health pool
+/// and no damage (florr's tooltip hides both rows, slot 42), so charges are
+/// the only thing that ever retires one.
+inline bool petalWardsHits(const PetalConfig& config) { return config.id == "nazar"; }
+/// florr's Petal/Attribute/Charges, flat at every tier.
+inline constexpr std::uint8_t kNazarCharges = 3;
+/// What a warded hit still costs: florr's 98% off.
+inline constexpr double kNazarHitScale = 0.02;
+
 /// A yin yang turns its flower's ring by how many of them are worn, not by a
 /// multiplier (PetalSystem::recomputeModifiers, after gardn's Flower.cc).
 inline bool petalCyclesRingSpin(const PetalConfig& config) { return config.id == "yin_yang"; }

@@ -1935,6 +1935,10 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         // two different rules to the player wearing both.
         s.reloadMillis *= std::pow(0.85, rarityIndex(tier));
         s.reloadMillis = std::max(50.0, s.reloadMillis);
+    } else if (petalWardsHits(c)) {
+        // florr's slot 14: 60 s x 0.7^tier, its web build stopping the curve
+        // at tier 8.
+        s.reloadMillis *= std::pow(0.7, std::min(rarityIndex(tier), 8));
     }
     // The petal damage ladder, not the gentler passive-modifier curve: what a
     // cutter grants IS damage, so it keeps pace with petal damage and with the

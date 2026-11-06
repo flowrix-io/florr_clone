@@ -44,6 +44,7 @@ const char* const kFlorrMarkers[] = {
     "bush", "roach", "moth", "firefly", "firefly_magic", "dummy",
     "termite_baby", "termite_worker", "termite_soldier", "termite_overmind", "termite_mound",
     "termite_egg", "ant_egg", "fire_ant_egg", "beetle_mummy", "beetle_pharaoh", "tomb",
+    "beetle_nazar",
 };
 
 constexpr int kSide = 96;

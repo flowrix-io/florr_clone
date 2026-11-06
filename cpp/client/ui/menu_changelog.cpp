@@ -542,6 +542,13 @@ constexpr ChangelogEntry kChangelog[] = {
         "New petal: Divider",
         "New mob: Magician"
       }
+    },
+    {"November 5, 2026",
+      {
+        "New mob: Nazar Beetle",
+        "New petal: Nazar",
+        "Reverted camera changes"
+      }
     }
       
 };

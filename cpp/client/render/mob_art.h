@@ -96,6 +96,8 @@ enum class MobArt : std::uint8_t {
     /// florr's pyramid: the mummy beetle, the pharaoh beetle (the same beetle
     /// in a headdress) and the tomb.
     BeetleMummy, BeetlePharaoh, Tomb,
+    /// florr's nazar beetle: a blue shell with the nazar petal's eye on it.
+    BeetleNazar,
 };
 
 /// How fast a walk cycle runs, in radians of phase per second.

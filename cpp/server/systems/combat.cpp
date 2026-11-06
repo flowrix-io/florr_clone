@@ -796,6 +796,16 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         }
     }
 
+    // A nazar, after everything that can take a hit down to nothing, so it
+    // never pays a charge for a blow that was never going to land. Before the
+    // shield, so what it spares is spared from every pool behind it.
+    //
+    // Direct only, for the reason armour is: three charges would be gone in a
+    // tenth of a second to a sliver of poison drip.
+    if (directPlayerHit && amount > 0.0 && spendWardCharge(world, victim)) {
+        amount *= kNazarHitScale;
+    }
+
     // A shield is extra HP laid over the flower's own: it takes the damage
     // first and runs down as it does, and only what it could not hold reaches
     // the bar. EVERY kind drains it, drips included -- a flat per-hit
@@ -1753,6 +1763,21 @@ bool CombatSystem::rollDodge(World& world, Entity victim, double nowMillis) {
             std::max(health.hitCooldownUntilMillis, nowMillis + kPostHitInvulnerabilityMillis);
     }
     return true;
+}
+
+bool CombatSystem::spendWardCharge(World& world, Entity flower) {
+    const Loadout* loadout = world.tryGet<Loadout>(flower);
+    if (loadout == nullptr) return false;
+    // One nazar answers per hit, in ring order: a second is more charges, not
+    // a deeper cut. A flat one is the petal system's to retire next tick.
+    for (const Entity petal : loadout->spawned) {
+        PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+        if (instance == nullptr || !instance->wardsOwnerHits || instance->charges == 0) continue;
+        if (world.has<Dead>(petal)) continue;
+        --instance->charges;
+        return true;
+    }
+    return false;
 }
 
 double CombatSystem::soakIntoCotton(World& world, Entity flower, Entity source, double amount,

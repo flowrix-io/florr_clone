@@ -1260,6 +1260,10 @@ struct PetalInstance {
     bool soaksOwnerDamage = false;
     /// The same, for LIGHTNING aimed at the flower and nothing else. Rubber's.
     bool soaksOwnerLightning = false;
+    /// A hit on this petal's FLOWER spends one of `charges` to land at
+    /// kNazarHitScale. A nazar's, set at spawn for the reason soaksOwnerDamage
+    /// is.
+    bool wardsOwnerHits = false;
     /// PetalConfig::ignoresMobs, set at spawn for the same reason: canDamage,
     /// which refuses every pair of this petal and a mob's doing, has no
     /// registry to ask.
@@ -1278,8 +1282,9 @@ struct PetalInstance {
     bool collisionFired = false;
 
     /// Shots left on a petal that is spent by BEING USED rather than by being
-    /// killed: the battery's three discharges. Zero on every other petal, and
-    /// zero for the one tick a spent battery spends waiting to be reaped.
+    /// killed: the battery's three discharges, a nazar's three warded hits.
+    /// Zero on every other petal, and zero for the one tick a spent one spends
+    /// waiting to be reaped.
     ///
     /// Per instance rather than per slot because the charges belong to the
     /// petal that is carrying them: the count comes back full with the petal a

@@ -407,6 +407,27 @@
       }
     ]
   },
+  "nazar_beetle": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "beetle_egg",
+        "rarity": "common",
+        "probability": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "nazar",
+        "rarity": "common",
+        "probability": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
   "hel_beetle": {
     "guaranteed": true,
     "drops": [

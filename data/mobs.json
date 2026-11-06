@@ -612,6 +612,38 @@
             "desert"
         ]
     },
+    "nazar_beetle": {
+        "name": "Nazar Beetle",
+        "health": 100,
+        "damage": 30,
+        "size": 1.3333,
+        "visual_scale": 0.9617,
+        "visualOffsetX": -0.0069,
+        "speed": 0.52,
+        "chase_speed": 0.95,
+        "cooldown": 2000,
+        "xp": {
+            "common": 1,
+            "uncommon": 3,
+            "rare": 30,
+            "epic": 270,
+            "legendary": 1400,
+            "mythic": 32000,
+            "ultra": 150000,
+            "super": 1200000,
+            "unique": 6800000
+        },
+        "description": "This one has a different pattern... what does that mean?",
+        "color": "#1213BD",
+        "image": "$beetle_nazar",
+        "ai_type": "hostile",
+        "gardn_ai": true,
+        "range": 300,
+        "groups": {
+            "desert": 0.05
+        },
+        "noEggDrop": true
+    },
     "hel_beetle": {
         "name": "Hel Beetle",
         "health": 150,

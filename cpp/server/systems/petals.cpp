@@ -178,10 +178,11 @@ PetalBehaviour behaviourOf(const std::string& id) {
     return {};
 }
 
-/// How many discharges a petal arrives holding. Only the battery has any, and
-/// it is asked by id, as the lightning cutter is, rather than given a
-/// petals.json key: one petal's quirk is not worth a schema field.
+/// How many charges a petal arrives holding. Only the battery and the nazar
+/// have any, and they are asked by id, as the lightning cutter is, rather than
+/// given a petals.json key: one petal's quirk is not worth a schema field.
 std::uint8_t chargesFor(const PetalConfig& config) {
+    if (petalWardsHits(config)) return kNazarCharges;
     return config.id == "battery" ? kBatteryCharges : 0;
 }
 
@@ -651,6 +652,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         // tick's placement rather than being flown to an orbit point it is
         // about to be reaped from.
         strikeBatteries(world, registry, player, nowMillis);
+        retireSpentNazars(world, registry, player, nowMillis);
     }
 
     // Not left dangling between ticks, for the reason CombatSystem states: the
@@ -1394,6 +1396,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
         (rarity == Rarity::Admin ? 3 : 1));
     instance.soaksOwnerDamage = soaksOwnerDamage(config);
     instance.soaksOwnerLightning = petalSoaksLightning(config);
+    instance.wardsOwnerHits = petalWardsHits(config);
     instance.ignoresMobs = config.ignoresMobs;
     instance.ricochet.enabled = config.id == "icosahedron";
     instance.ricochet.maxHits = static_cast<std::uint8_t>(icosahedronMaxHits(rarity));
@@ -3244,6 +3247,30 @@ void PetalSystem::strikeBatteries(World& world, const ContentRegistry& registry,
         // and takes the by-hand path: off the ring now, back on the slot's own
         // cooldown, holding three again.
         if (flat) spendPetal(world, registry, player, petal, slotId, subIndex, stats, nowMillis);
+    }
+}
+
+void PetalSystem::retireSpentNazars(World& world, const ContentRegistry& registry, Entity player,
+                                    double nowMillis) {
+    const Loadout* loadout = world.tryGet<Loadout>(player);
+    if (loadout == nullptr) return;
+
+    // Gathered before the first is spent: spending adds Dead, which relocates
+    // rows while the ring's list would still be walked.
+    spentNazars_.clear();
+    for (const Entity petal : loadout->spawned) {
+        const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+        if (instance == nullptr || !instance->wardsOwnerHits || instance->charges != 0) continue;
+        if (!world.has<Dead>(petal)) spentNazars_.push_back(petal);
+    }
+    for (const Entity petal : spentNazars_) {
+        const PetalInstance& instance = world.get<PetalInstance>(petal);
+        const PetalStats stats = registry.petalStats(instance.configIndex, instance.rarity);
+        const std::uint8_t slotId = instance.slot;
+        const std::uint8_t subIndex = instance.subIndex;
+        // No health pool, so spendPetal's by-hand path: off the ring now, back
+        // on the slot's own cooldown, holding three again.
+        spendPetal(world, registry, player, petal, slotId, subIndex, stats, nowMillis);
     }
 }
 
