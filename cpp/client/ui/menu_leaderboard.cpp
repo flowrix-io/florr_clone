@@ -11,6 +11,8 @@
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
+#include "client/ui/menu_widgets.h"
+#include "shared/game/collection.h"
 
 namespace flix {
 
@@ -20,7 +22,7 @@ namespace {
 
 /// The card is a fixed 500x500 pinned under the top icon row, and every metric
 /// here is measured off it rather than off the window.
-constexpr double kHeaderHeight = 50.0;   ///< chrome above the scrolling body
+constexpr double kHeaderHeight = 128.0;   ///< chrome above the scrolling body
 constexpr double kRowHeight = 40.0;
 constexpr double kColumnHeader = 30.0;
 constexpr double kScrollbarWidth = 10.0;
@@ -44,18 +46,6 @@ std::uint32_t rankColor(int rank) {
         case 3: return 0xCD7F32u;
         default: return 0xFFFFFFu;
     }
-}
-
-/// The board's own number format: tenths of a K or an M, and nothing above.
-/// `abbreviate` is nearly this but erases a trailing ".0" and has B and T
-/// tiers, so the same total would read differently here than it did in the
-/// browser.
-std::string formatXp(double xp) {
-    char buffer[32];
-    if (xp >= 1e6) std::snprintf(buffer, sizeof buffer, "%.1fM", xp / 1e6);
-    else if (xp >= 1e3) std::snprintf(buffer, sizeof buffer, "%.1fK", xp / 1e3);
-    else std::snprintf(buffer, sizeof buffer, "%.0f", xp);
-    return buffer;
 }
 
 /// Trimmed by character count, not by pixel width, as the browser's board
@@ -85,6 +75,8 @@ double LeaderboardPanel::preferredWidth() { return 500.0; }
 void LeaderboardPanel::reset() {
     scroll_ = {};
     requested_ = false;
+    showScores_ = false;
+    scoreOrder_.clear();
     barDrag() = {};
 }
 
@@ -93,11 +85,21 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     const Rect panel = ctx.bounds;
     const Vec2 mouse = ctx.mouse();
 
+    ctx.settings.leaderboardMetric=std::clamp(ctx.settings.leaderboardMetric,0,2);
+    for(int i=0;i<3;++i) {
+        const Rect tab{panel.x+12+i*(panel.w-24)/3,panel.y+51,(panel.w-30)/3,30};
+        if(ctx.clicked(tab)&&ctx.settings.leaderboardMetric!=i){ctx.settings.leaderboardMetric=i;requested_=false;showScores_=false;scroll_={};}
+    }
+    const auto metric=static_cast<net::LeaderboardMetric>(ctx.settings.leaderboardMetric);
+    const bool collection=metric==net::LeaderboardMetric::Collection;
+    const Rect scoresButton{panel.right()-116,panel.y+88,102,27};
+    if(collection&&ctx.clicked(scoresButton)){showScores_=!showScores_;scroll_={};}
+    const bool catalog=collection&&showScores_;
     // Asked for on the way in rather than every frame: the server walks its
     // whole account table to answer, and the board does not move that fast.
     if (!requested_) {
         requested_ = true;
-        ctx.net.requestLeaderboard(ctx.settings.showAdminsOnLeaderboard);
+        ctx.net.requestLeaderboard(ctx.settings.showAdminsOnLeaderboard,metric);
     }
 
     const std::vector<LeaderboardRow>& rows = ctx.net.leaderboard();
@@ -113,7 +115,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
     // An empty board still reserves a row's worth of height, which is what
     // keeps its one line of prose from being the only thing that can scroll.
-    scroll_.contentHeight = rows.empty() && !pending
+    scroll_.contentHeight = catalog ? kColumnHeader+ctx.net.collectionRanks().size()*kRowHeight : rows.empty() && !pending
                                 ? kRowHeight
                                 : kColumnHeader + static_cast<double>(rows.size()) * kRowHeight;
     // Clamped against the viewport ui::scrollbar measures, not against the
@@ -140,7 +142,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
         if (closeRect.contains(mouse)) {
             closing = true;
         } else if (refreshRect.contains(mouse)) {
-            ctx.net.requestLeaderboard(ctx.settings.showAdminsOnLeaderboard);
+            ctx.net.requestLeaderboard(ctx.settings.showAdminsOnLeaderboard,metric);
         } else if (scrollable && bar.contains(mouse)) {
             drag.active = true;
             drag.anchorY = mouse.y;
@@ -161,6 +163,12 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     panelCard(canvas, panel, kLeaderboardSkin);
 
     panelHeading(canvas, panel, "Leaderboard");
+    const char* labels[]{"Highest XP","Highest Stars","Rarest Petals"};
+    for(int i=0;i<3;++i){const Rect tab{panel.x+12+i*(panel.w-24)/3,panel.y+51,(panel.w-30)/3,30};chip(canvas,tab,labels[i],ctx.settings.leaderboardMetric==i,ChipStyle{kLeaderboardSkin.accent,kLeaderboardSkin.border});}
+    TextStyle hint;hint.size=11;hint.baseline=Baseline::Middle;
+    text(canvas,collection?"Base (1-100) x 5^tier x copies; Admin = 0":metric==net::LeaderboardMetric::Stars?"Current star balances across all accounts":"Lifetime XP across all accounts",panel.x+14,panel.y+101,hint);
+    if(collection)pillButton(canvas,scoresButton,catalog?"Rankings":"Petal scores",kLeaderboardSkin.border);
+
 
     // The count of every account the server holds, beside the title. It comes
     // with the board rather than being derived from it: the board is the top
@@ -190,7 +198,14 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
     double y = view.y - scroll_.offset;
 
-    if (rows.empty()) {
+    if(catalog) {
+        const auto& scores=ctx.net.collectionRanks();
+        if(scoreOrder_.size()!=scores.size()){scoreOrder_.clear();for(std::uint16_t i=0;i<scores.size();++i)scoreOrder_.push_back(i);
+        std::sort(scoreOrder_.begin(),scoreOrder_.end(),[&](auto a,auto b){return scores[a]!=scores[b]?scores[a]>scores[b]:content().petal(a).name<content().petal(b).name;});}
+        TextStyle cell;cell.size=14;cell.baseline=Baseline::Middle;
+        text(canvas,"Petal / acquisition difficulty",panel.x+15,y+15,cell);y+=kColumnHeader;
+        for(const auto index:scoreOrder_){const double middle=y+kRowHeight/2;y+=kRowHeight;if(middle<view.y||middle>view.bottom())continue;cell.align=Align::Left;text(canvas,displayName(content().petal(index).name),panel.x+20,middle,cell);cell.align=Align::Right;text(canvas,std::to_string(scores[index])+" / 100",panel.right()-30,middle,cell);}
+    } else if (rows.empty()) {
         TextStyle empty;
         empty.size = 14.0;
         empty.align = Align::Centre;
@@ -212,7 +227,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
         textAtAlpha(canvas, "Player", nameX, y + 8.0, header, 0.8);
         textAtAlpha(canvas, "Level", levelX, y + 8.0, header, 0.8);
         header.align = Align::Right;
-        textAtAlpha(canvas, "XP", xpX, y + 8.0, header, 0.8);
+        textAtAlpha(canvas, metric==net::LeaderboardMetric::Xp?"XP":metric==net::LeaderboardMetric::Stars?"Stars":"Score", xpX, y + 8.0, header, 0.8);
         y += kColumnHeader;
 
         for (std::size_t i = 0; i < rows.size(); ++i) {
@@ -244,7 +259,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
             cell.align = Align::Right;
             cell.size = 13.0;
-            textAtAlpha(canvas, formatXp(rows[i].totalXp), xpX, middle, cell, 0.8);
+            textAtAlpha(canvas, abbreviate(rows[i].value), xpX, middle, cell, 0.8);
         }
     }
     canvas.restore();

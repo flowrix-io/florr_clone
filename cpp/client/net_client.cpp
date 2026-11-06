@@ -311,6 +311,8 @@ void NetClient::forgetAccount() {
     skinVotes_.clear();
     favoriteSkins_.clear();
     leaderboard_.clear();
+    collectionRanks_.clear();
+    leaderboardMetric_=net::LeaderboardMetric::Xp;
     leaderboardPending_ = false;
     notifications_.clear();
     notificationsPending_ = false;
@@ -616,11 +618,14 @@ void NetClient::favoriteSkin(const std::string& id, bool favorite) {
     send(w);
 }
 
-void NetClient::requestLeaderboard(bool includeAdmins) {
+void NetClient::requestLeaderboard(bool includeAdmins,net::LeaderboardMetric metric) {
+    leaderboardMetric_=metric;
+    leaderboard_.clear();
     leaderboardPending_ = true;
     ByteWriter w;
     beginMessage(w, net::ClientMessage::RequestLeaderboard);
     w.boolean(includeAdmins);
+    w.u8(static_cast<std::uint8_t>(metric));
     send(w);
 }
 
@@ -1647,6 +1652,7 @@ void NetClient::handleSetUsernameResult(ByteReader& reader) {
 
 void NetClient::handleLeaderboard(ByteReader& reader) {
     std::vector<LeaderboardRow> rows;
+    const auto metric=static_cast<net::LeaderboardMetric>(reader.u8());
     const std::uint8_t count = reader.u8();
     const std::uint32_t total = reader.u32();
     const std::uint32_t dau = reader.u32();
@@ -1656,9 +1662,16 @@ void NetClient::handleLeaderboard(ByteReader& reader) {
         row.name = reader.str();
         row.level = reader.u16();
         row.totalXp = reader.f64();
+        row.value = reader.f64();
         rows.push_back(std::move(row));
     }
-    if (!reader.ok()) return;
+    std::vector<int> scores;
+    const auto scoreCount=reader.u16();
+    if(scoreCount>content().petalCount())return;
+    if(scoreCount)scores.resize(content().petalCount());
+    for(std::uint16_t i=0;i<scoreCount;++i){const auto index=reader.u16();const int score=reader.u8();if(index>=scores.size()||score<1||score>100)return;scores[index]=score;}
+    if (!reader.ok() || metric!=leaderboardMetric_) return;
+    if(scoreCount)collectionRanks_=std::move(scores);
     leaderboard_ = std::move(rows);
     totalAccounts_ = total;
     dailyActiveUsers_ = dau;

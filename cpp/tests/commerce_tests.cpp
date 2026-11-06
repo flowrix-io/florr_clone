@@ -6,6 +6,7 @@
 #include "client/ui/casino_animation.h"
 #include "client/ui/menus.h"
 #include "shared/game/economy.h"
+#include "shared/game/collection.h"
 #include <cmath>
 using namespace flix;
 using namespace flix::testsupport;
@@ -171,4 +172,38 @@ TEST(casino_amount_abbreviations_are_bounded_and_exact) {
     int amount=0;
     for(const auto& sample:std::vector<std::pair<std::string,int>>{{"19k",19000},{"2.5K",2500},{"0.001k",1},{"19000",19000},{"17",17}}){CHECK(parseCasinoAmount(sample.first,amount));CHECK_EQ(amount,sample.second);}
     for(const std::string sample:{"0","-1","+1","1.5","19.001k","20k","9999999999999999k","NaN","inf","1e3","1kk",".5k","1.k","1.0001k","1k garbage"})CHECK(!parseCasinoAmount(sample,amount));
+}
+TEST(collection_leaderboard_modes_count_each_copy_equipment_and_escrow) {
+    Harness h("collection-board",[](const std::string& path){
+        seedWallet(path,"xp_leader",10);seedWallet(path,"richest",90000);seedWallet(path,"collector",100);seedWallet(path,"staff",1e8,true);
+        seedStack(path,"collector","petal_rose",Rarity::Ultra,10);
+        Database db;std::string error;CHECK(db.load(path,error));db.progress(db.findUser("xp_leader")->id).totalXp=1e8;db.markDirty();CHECK(db.save());
+    },dataDir(),0);CHECK(h.ready);if(!h.ready)return;NetClient client;CHECK(loginAs(h,client,"collector","password7"));
+    const auto board=[&](net::LeaderboardMetric metric){client.requestLeaderboard(false,metric);CHECK(h.stepUntil({&client},[&]{return !client.leaderboardPending();}));CHECK_EQ(client.leaderboard().size(),std::size_t(3));};
+    board(net::LeaderboardMetric::Xp);CHECK_EQ(client.leaderboard()[0].name,"xp_leader");
+    board(net::LeaderboardMetric::Stars);CHECK_EQ(client.leaderboard()[0].name,"richest");
+    board(net::LeaderboardMetric::Collection);CHECK_EQ(client.leaderboard()[0].name,"collector");const double before=client.leaderboard()[0].value;
+    CHECK_EQ(client.collectionRanks().size(),content().petalCount());for(int score:client.collectionRanks())CHECK(score>=1&&score<=100);
+    auto& record=wallet(h,"collector");record.addItem(Rarity::Ultra,"petal_rose",-1);StoredItem worn;worn.petalType="rose";worn.rarity=Rarity::Ultra;record.loadout.push_back(worn);
+    board(net::LeaderboardMetric::Collection);CHECK_EQ(client.leaderboard()[0].value,before);
+    CHECK(request(h,client,"market","post",posting("rose",6,3,729)));
+    board(net::LeaderboardMetric::Collection);CHECK_EQ(client.leaderboard()[0].value,before);
+    record.addItem(Rarity::Admin,"petal_rose",1000000);record.loadoutPresets["K1"]=record.loadout;
+    board(net::LeaderboardMetric::Collection);CHECK_EQ(client.leaderboard()[0].value,before);
+    record.addItem(Rarity::Ultra,"petal_rose",1);board(net::LeaderboardMetric::Collection);
+    CHECK_EQ(client.leaderboard()[0].value-before,client.collectionRanks()[content().petalIndex("rose")]*kCollectionMultipliers[6]);
+    CHECK(fontsReady());Canvas canvas=Canvas::createVirtual(540,560);Window window;SpriteCache sprites;WorldRenderer renderer;ClientSettings settings;settings.leaderboardMetric=2;DragState drag;MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};ctx.bounds={10,10,500,500};LeaderboardPanel panel;panel.render(ctx);h.step(4,{&client});panel.render(ctx);canvas.savePPM("/tmp/flowrix-collection-board.ppm");
+}
+TEST(commerce_market_sorting_and_rarity_ranges_are_server_side) {
+    Harness h("market-sort",[](const std::string& path){
+        seedWallet(path,"seller",100);seedWallet(path,"viewer",100);Database db;std::string error;CHECK(db.load(path,error));const auto owner=db.findUser("seller")->id;
+        const auto row=[&](const char* id,int rarity,int price,bool orders){Json r=Json::object();r["id"]=id;r["owner"]=owner;r["item"]="basic";r["rarity"]=rarity;r["price"]=price;r["quantity"]=1;r["orders"]=orders;db.rawTable("petalMarket")[id]=r;};
+        row("order_common",0,10000,true);row("order_rare",2,1000,true);row("listing_common",0,5,false);row("listing_rare",2,100,false);row("listing_mythic",5,243,false);row("listing_ultra",6,729,false);db.markDirty();CHECK(db.save());
+    },dataDir(),0);CHECK(h.ready);if(!h.ready)return;NetClient client;CHECK(loginAs(h,client,"viewer","password7"));Json q=Json::object();q["orders"]=true;
+    CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.commerce("market")["rows"][0]["id"].asString(),"order_common");
+    q["orders"]=false;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.commerce("market")["rows"][0]["id"].asString(),"listing_common");
+    q["sort"]=1e200;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.commerce("market")["rows"][0]["id"].asString(),"listing_common");
+    q["sort"]=1;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.commerce("market")["rows"][0]["id"].asString(),"listing_ultra");
+    for(const auto& range:std::vector<std::pair<std::string,int>>{{"Rare-",2},{"Ultra+",1},{"Mythic",1}}){q["rarityFilter"]=range.first;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.commerce("market")["total"].asInt(),range.second);}
+    q["rarityFilter"]="admin+";CHECK(request(h,client,"market","browse",q));CHECK(!client.commerce("market")["ok"].asBool());
 }

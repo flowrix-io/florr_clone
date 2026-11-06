@@ -351,3 +351,11 @@ TEST(admin_cursor_chords_claim_complete_combos_without_plain_zoom_keys) {
     CHECK(adminCursorChord(false, true, true, true, true, false) == AdminCursorChord::None);
     CHECK(adminCursorChord(true, true, true, true, true, true) == AdminCursorChord::None);
 }
+
+TEST(market_sort_rarity_filter_and_leaderboard_choice_survive_settings_reload) {
+    const std::string path=tempPath("market-sort.cfg");ClientSettings settings;
+    CHECK_EQ(settings.marketListingSort,0);CHECK_EQ(settings.marketOrderSort,0);
+    settings.marketListingSort=1;settings.marketOrderSort=2;settings.marketRarityFilter="Ultra+";settings.leaderboardMetric=2;CHECK(settings.save(path));
+    ClientSettings loaded;CHECK(loaded.load(path));CHECK_EQ(loaded.marketListingSort,1);CHECK_EQ(loaded.marketOrderSort,2);CHECK_EQ(loaded.marketRarityFilter,"Ultra+");CHECK_EQ(loaded.leaderboardMetric,2);
+    std::remove(path.c_str());
+}

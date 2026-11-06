@@ -546,3 +546,35 @@ The casino panel animates a spinning coin and a sixteen-row Plinko board.
 The server supplies every bounce and settles the payout once; animation never
 submits or changes a result. Auto Plinko stops on error or leaving the panel.
 Stars-to-chips, cashout and bet amounts have separate fields, all capped at 19k.
+
+### Collection leaderboard and remembered market preferences
+
+The leaderboard has Highest XP, Highest Stars, and Rarest Petals tabs. Staff
+remain hidden unless Show Admins on Leaderboard is enabled. The chosen tab,
+listing/order sort, and rarity filter persist in the existing client settings
+(browser localStorage, or the native settings file).
+
+Every petal receives a base acquisition difficulty index from 1 to 100.
+The index uses the easiest authored drop source, its mob spawn/replacement
+weight and minimum rarity, the row's drop probability and quantity, and the
+petal's minimum rarity. Conversion-only magic forms add 12 to their source's
+index; otherwise unavailable/special petals default to 100. Basic is 1.
+This is a comparative index, not a promise of a literal overall drop rate;
+map populations, player routes, and crafting luck vary.
+
+Collection score is the sum of `base * rarity multiplier * copies`. Every
+copy counts equally. Multipliers from Common through Universal are
+1, 5, 25, 125, 625, 3125, 15625, 78125, 390625, 1953125, 9765625.
+Admin rarity and administrator-only petal types earn zero points. Counts
+include permanent inventory, equipped slots, and escrowed sale listings;
+saved loadout presets and temporary event gear add no extra ownership.
+The Petal scores button displays the full base-score catalog.
+
+Price is the default market sort: cheapest listings first and highest
+per-petal star offers first for orders. Thus an order for Common at 10,000
+stars outranks Rare at 1,000. Listing sort can switch to Rarest for price
+(collection points per star) or Rarity (highest tier first, cheapest first
+within a tier). Orders also offer Rarity sorting. All ordering and filtering
+happen on the server before pagination. Type `Mythic` for an exact tier,
+`Ultra+` for that tier and above, or `Rare-` for that tier and below, then
+Refresh. Separate listing/order sort preferences are remembered.

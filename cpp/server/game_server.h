@@ -1606,6 +1606,7 @@ private:
     /// The nests a flower walks into, and the private copies they lead to.
     std::unique_ptr<DungeonSystem> dungeons_;
     std::unique_ptr<LootSystem> loot_;
+    std::vector<int> collectionRanks_;
     /// The friendly NPCs the maps place, and who each one is looking at.
     std::unique_ptr<NpcSystem> npcs_;
     /// When each account may next buy from an oracle, on clockMillis_, keyed

@@ -206,6 +206,8 @@ public:
         return tables_.load(content, path, errorOut);
     }
 
+    const DropTables& dropTables() const { return tables_; }
+
     void run(World& world, const SpatialGrid& grid, const ContentRegistry& content, Rng& rng,
              double nowMillis, double dt, CommandBuffer& commands, EventQueue& events);
 

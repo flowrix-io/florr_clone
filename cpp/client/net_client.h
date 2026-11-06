@@ -108,6 +108,7 @@ struct LeaderboardRow {
     std::string name;
     int level = 1;
     double totalXp = 0;
+    double value = 0;
 };
 
 /// One entry of the global notification feed.
@@ -703,7 +704,7 @@ public:
     void favoriteSkin(const std::string& id, bool favorite);
     /// `includeAdmins` is the "Show Admins on Leaderboard" switch: without it
     /// the server leaves admin accounts off the board.
-    void requestLeaderboard(bool includeAdmins = false);
+    void requestLeaderboard(bool includeAdmins = false, net::LeaderboardMetric metric = net::LeaderboardMetric::Xp);
     /// Asks for one page of the global notification feed, newest first.
     /// `beforeMillis` of 0 asks for the newest page; anything else pages back
     /// past the oldest entry already held, as the browser's `?before=` does.
@@ -915,6 +916,7 @@ public:
     const std::vector<LeaderboardRow>& leaderboard() const { return leaderboard_; }
     /// True between asking for the board and the answer arriving.
     bool leaderboardPending() const { return leaderboardPending_; }
+    const std::vector<int>& collectionRanks() const { return collectionRanks_; }
     /// How many accounts the server holds, and how many of them authenticated
     /// in the last day. The second is 0 for a non-admin, which is how the
     /// browser's payload leaves the field out.
@@ -1143,6 +1145,8 @@ private:
 
     std::vector<LeaderboardRow> leaderboard_;
     bool leaderboardPending_ = false;
+    net::LeaderboardMetric leaderboardMetric_ = net::LeaderboardMetric::Xp;
+    std::vector<int> collectionRanks_;
     std::uint32_t totalAccounts_ = 0;
     std::uint32_t dailyActiveUsers_ = 0;
 

@@ -1,5 +1,6 @@
 #include "server/game_server.h"
 #include "shared/game/economy.h"
+#include "server/collection_ranks.h"
 
 #include "shared/core/process_stats.h"
 
@@ -536,6 +537,7 @@ std::string GameServer::adminDbKey() const {
 }
 
 bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
+    collectionRanks_.clear();
     config_ = config;
     // The configured bot population, if the caller named one. Same field
     // `/admin set_bot_count` writes, so the two cannot disagree.
@@ -5339,12 +5341,23 @@ void GameServer::handleFavoriteSkin(Session& session, net::Connection& connectio
 void GameServer::handleLeaderboard(const Session& session, net::Connection& connection,
                                    ByteReader& reader) {
     const bool includeAdmins = reader.boolean();
-    if (!reader.ok()) return;
+    const auto metric=static_cast<net::LeaderboardMetric>(reader.u8());
+    if (!reader.ok() || metric>net::LeaderboardMetric::Collection) return;
+    if(metric==net::LeaderboardMetric::Collection && collectionRanks_.empty())collectionRanks_=collectionBaseRanks(content(),loot_->dropTables());
+    std::unordered_map<std::string,std::pair<double,double>> liveValues;
+    for(const auto& [id,live]:sessions_)if(!live.arena&&!live.eventKit&&!live.controlling&&!live.controlledBy)
+        if(const auto* progress=world_.tryGet<PlayerProgress>(live.entity))liveValues[live.userId]={live.realm==Realm::Maze?-1:progress->totalXp,progress->stars};
+    std::unordered_map<std::string,double> escrowScores;
+    if(metric==net::LeaderboardMetric::Collection) {
+        const auto& market=database_.storedTable("petalMarket");
+        for(const auto& id:market.keys()){const auto& entry=market[id];if(entry["orders"].asBool())continue;const int r=entry["rarity"].asInt(-1);if(r<0||r>=kLadderRarityCount)continue;escrowScores[entry["owner"].asString()]+=collectionUnitScore(content(),collectionRanks_,content().petalIndex(entry["item"].asString()),Rarity(r))*PlayerRecord::stackCount(entry["quantity"]);}
+    }
     // Ranked over ACCOUNTS, not over the players currently online: the board is
     // a record of progress, and a top player who logged off has not lost it.
     struct Row {
         const std::string* name;
         double totalXp;
+        double value;
     };
     std::vector<Row> rows;
     rows.reserve(database_.userCount());
@@ -5362,7 +5375,10 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
         // and XP, which the board shows for everyone else anyway.
         if (account->admin && !includeAdmins) continue;
         const PlayerRecord* record = accounts.findProgress(account->id);
-        rows.push_back({&account->username, record ? record->totalXp : 0.0});
+        double xp=record?record->totalXp:0,stars=record?record->stars:0;
+        if(const auto live=liveValues.find(account->id);live!=liveValues.end()){if(live->second.first>=0)xp=live->second.first;stars=live->second.second;}
+        const double value=metric==net::LeaderboardMetric::Xp?xp:metric==net::LeaderboardMetric::Stars?stars:(record?collectionRecordScore(content(),collectionRanks_,*record):0)+escrowScores[account->id];
+        rows.push_back({&account->username,std::isfinite(xp)&&xp>=0?xp:0,std::isfinite(value)&&value>=0?value:0});
     }
 
     // The browser client asks for limit=50 and the panel scrolls all fifty;
@@ -5370,7 +5386,7 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
     constexpr std::size_t kRows = 50;
     const std::size_t shown = std::min(kRows, rows.size());
     std::partial_sort(rows.begin(), rows.begin() + static_cast<long>(shown), rows.end(),
-                      [](const Row& a, const Row& b) { return a.totalXp > b.totalXp; });
+                      [](const Row& a, const Row& b) { return a.value!=b.value?a.value>b.value:*a.name<*b.name; });
 
     // The count beside the title is over every account, not over the 50 rows
     // sent. The active-today figure rides along only for an admin, which is
@@ -5388,6 +5404,7 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
 
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::Leaderboard));
+    w.u8(static_cast<std::uint8_t>(metric));
     w.u8(static_cast<std::uint8_t>(shown));
     w.u32(static_cast<std::uint32_t>(database_.userCount()));
     w.u32(activeToday);
@@ -5395,7 +5412,11 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
         w.str(*rows[i].name);
         w.u16(static_cast<std::uint16_t>(levelFromTotalXp(rows[i].totalXp).level));
         w.f64(rows[i].totalXp);
+        w.f64(rows[i].value);
     }
+    const bool scores=metric==net::LeaderboardMetric::Collection;
+    w.u16(scores?static_cast<std::uint16_t>(collectionRanks_.size()):0);
+    if(scores)for(std::uint16_t i=0;i<collectionRanks_.size();++i){w.u16(i);w.u8(static_cast<std::uint8_t>(collectionRanks_[i]));}
     connection.send(w);
 }
 

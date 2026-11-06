@@ -1,4 +1,5 @@
 #include "server/game_server.h"
+#include "server/collection_ranks.h"
 #include "server/systems/npcs.h"
 #include "server/text.h"
 #include "shared/game/economy.h"
@@ -104,6 +105,8 @@ void GameServer::handleCommerce(Session& s,net::Connection& peer,ByteReader& rea
 void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
     const auto action=q["action"].asString(); const bool orders=q["orders"].asBool();
     const auto fail=[&](const std::string& text){sendCommerce(s,peer,"market",false,text);};
+    int minimum=0,maximum=kLadderRarityCount-1;
+    if(!collectionRarityFilter(q["rarityFilter"].asString(),minimum,maximum)){fail("Rarity filter: Mythic, Ultra+, Rare-, or All.");return;}
     persistPlayer(s);
     auto& account=database_.progress(s.userId);
     if(!validBalance(account.stars)){fail("Invalid star balance. Ask an admin to review it.");return;}
@@ -155,10 +158,25 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
     }
     Json page=Json::object(),rows=Json::array();int offset=0,total=0;integer(q["offset"],0,2000,offset);
     const auto filter=lowerCase(q["filter"].asString());
+    int sorting=0;integer(q["sort"],0,2,sorting);
+    if(sorting==1&&!orders&&collectionRanks_.empty())collectionRanks_=collectionBaseRanks(content(),loot_->dropTables());
+    std::vector<Json> sorted;
     const auto& entries=database_.storedTable(tableName);
     for(const auto& id:entries.keys()) {
         const auto& row=entries[id];if(row["orders"].asBool()!=orders)continue;
         if(!filter.empty()&&row["item"].asString().find(filter)==std::string::npos)continue;
+        const int rarity=row["rarity"].asInt(-1);if(rarity<minimum||rarity>maximum||!validMoney(row["price"].asDouble(-1))||row["price"].asDouble()<1)continue;
+        sorted.push_back(row);
+    }
+    std::sort(sorted.begin(),sorted.end(),[&](const Json& a,const Json& b){
+        const double ap=a["price"].asDouble(),bp=b["price"].asDouble();const int ar=a["rarity"].asInt(),br=b["rarity"].asInt();
+        if(sorting==2 && ar!=br)return ar>br;
+        if(sorting==1&&!orders){const double av=collectionUnitScore(content(),collectionRanks_,content().petalIndex(a["item"].asString()),Rarity(ar))/ap,bv=collectionUnitScore(content(),collectionRanks_,content().petalIndex(b["item"].asString()),Rarity(br))/bp;if(av!=bv)return av>bv;}
+        if(ap!=bp)return orders?ap>bp:ap<bp;
+        if(ar!=br)return ar>br;
+        return a["id"].asString()<b["id"].asString();
+    });
+    for(const auto& row:sorted) {
         if(total++<offset||rows.size()>=7)continue;
         Json view=row;view.erase("owner");view["mine"]=row["owner"].asString()==s.userId;
         const auto* owner=database_.findUserById(row["owner"].asString());view["seller"]=owner?owner->username:"Unknown";rows.push(view);

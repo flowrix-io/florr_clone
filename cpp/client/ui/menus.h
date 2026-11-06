@@ -275,6 +275,9 @@ struct ClientSettings {
     /// otherwise leaves off. Off by default; the TypeScript client kept the
     /// same flag in `localStorage.showAdminsOnLeaderboard`.
     bool showAdminsOnLeaderboard = false;
+    int leaderboardMetric = 0;
+    int marketListingSort = 0,marketOrderSort = 0;
+    std::string marketRarityFilter;
     /// How many changelog releases the player had already seen the last time
     /// they opened the panel. The TypeScript client kept the same number in
     /// `localStorage.lastSeenChangelogCount`. The strip's changelog button
@@ -1308,6 +1311,8 @@ public:
 private:
     ui::Scroller scroll_;
     bool requested_ = false;
+    bool showScores_ = false;
+    std::vector<std::uint16_t> scoreOrder_;
 };
 
 /// Display switches, camera zoom and the menu keys.

@@ -20,9 +20,10 @@ namespace flix::net {
 
 /// Identifies one connected client for the lifetime of its socket.
 using ConnectionId = std::uint32_t;
+enum class LeaderboardMetric : std::uint8_t { Xp, Stars, Collection };
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 76;
+inline constexpr std::uint16_t kProtocolVersion = 77;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -89,7 +90,7 @@ enum class ClientMessage : std::uint8_t {
                         ///< rotation was clicked, or kNoShopOffer for a
                         ///< full-price catalogue purchase; it is a claim about
                         ///< the card, never about the price.
-    RequestLeaderboard, ///< bool includeAdmins -- the TypeScript client's
+    RequestLeaderboard, ///< bool includeAdmins, u8 LeaderboardMetric -- the TypeScript client's
                         ///< `?includeAdmins=true`, and sent as that was, from
                         ///< the "Show Admins on Leaderboard" switch, for anyone.
     RedeemCode,         ///< str code -- a star code, checked server-side
@@ -273,8 +274,9 @@ enum class ServerMessage : std::uint8_t {
                         ///< `petalsReturned` the sub-batch tail (0-4) handed
                         ///< back, which is what the ring's surviving slots
                         ///< are drawn from.
-    Leaderboard,        ///< u8 count, u32 totalAccounts, u32 dailyActiveUsers,
-                        ///< { str name, u16 level, f64 totalXp }*.
+    Leaderboard,        ///< u8 metric, u8 count, u32 totalAccounts, u32 dailyActiveUsers,
+                        ///< { str name, u16 level, f64 totalXp, f64 value }*,
+                        ///< u16 scoresCount, { u16 petalIndex, u8 baseScore }*.
                         ///< `dailyActiveUsers` is 0 for a non-admin, where the
                         ///< TypeScript server's payload left the field out.
     Pong,               ///< u64 clientTimeMillis, u64 serverTimeMillis

@@ -1,5 +1,6 @@
 #include "client/ui/menus.h"
 #include "client/ui/commerce_ui.h"
+#include "shared/game/collection.h"
 #include "client/ui/text_select.h"
 #include "client/ease.h"
 
@@ -695,6 +696,10 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "stats") showStats = number != 0;
         else if (key == "debugButton") showDebugButton = number != 0;
         else if (key == "adminsOnBoard") showAdminsOnLeaderboard = number != 0;
+        else if (key == "leaderboardMetric") leaderboardMetric=std::clamp(number,0,2);
+        else if (key == "marketListingSort") marketListingSort=std::clamp(number,0,2);
+        else if (key == "marketOrderSort") marketOrderSort=std::clamp(number,0,2);
+        else if (key == "marketRarityFilter") {int low,high;if(value=="-")marketRarityFilter.clear();else if(collectionRarityFilter(value,low,high))marketRarityFilter=value;}
         else if (key == "changelogSeen") changelogSeen = number;
         else if (key == "zoom") zoom = clamp(std::atof(value.c_str()), kMinZoom, kMaxZoom);
         else if (key == "interp") interpolation = clamp(std::atof(value.c_str()), 0.05, 0.5);
@@ -749,6 +754,10 @@ bool ClientSettings::save(const std::string& path) const {
          << "stats " << (showStats ? 1 : 0) << '\n'
          << "debugButton " << (showDebugButton ? 1 : 0) << '\n'
          << "adminsOnBoard " << (showAdminsOnLeaderboard ? 1 : 0) << '\n'
+         << "leaderboardMetric " << leaderboardMetric << '\n'
+         << "marketListingSort " << marketListingSort << '\n'
+         << "marketOrderSort " << marketOrderSort << '\n'
+         << "marketRarityFilter " << (marketRarityFilter.empty()?"-":marketRarityFilter) << '\n'
          << "changelogSeen " << changelogSeen << '\n'
          << "zoom " << zoom << '\n'
          << "interp " << interpolation << '\n'

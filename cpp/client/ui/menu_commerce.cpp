@@ -5,6 +5,8 @@
 #include "client/ui/text_input.h"
 #include "client/ui/menu_theme.h"
 #include "shared/game/economy.h"
+#include "shared/game/collection.h"
+#include <cctype>
 #include <cmath>
 #include <iomanip>
 #include <sstream>
@@ -18,7 +20,7 @@ struct Forms {
     bool eventLoaded=false;
     Field eventName{"event_name"},kitItem{"basic"},kitAmount{"1"},kitSlot{"1"};
     Field item{"basic"},quantity{"1"},price{"1"},filter{},bet{"10"},code{},reward{"100"},uses{"1"};
-    Field exchange{"10"},cashout{"10"};
+    Field exchange{"10"},cashout{"10"},rarityFilter{};
     CasinoAnimation animation;
     bool autoPlinko=false;double lastCasinoFrame=-100,shownStars=0,shownChips=0;
 } forms;
@@ -115,14 +117,18 @@ bool renderCasino(MenuContext& ctx) {
 }
 void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     account(ctx);
-    const auto browse=[&](const char* action="browse",Json q=Json::object()) {q["orders"]=orders;q["offset"]=forms.offset;q["filter"]=forms.filter.text;send(ctx,"market",action,q);};
-    if(!forms.marketLoaded||forms.orders!=orders){forms.marketLoaded=true;forms.orders=orders;forms.offset=0;browse();}
+    int& sorting=orders?ctx.settings.marketOrderSort:ctx.settings.marketListingSort;
+    const auto browse=[&](const char* action="browse",Json q=Json::object()) {q["orders"]=orders;q["offset"]=forms.offset;q["filter"]=forms.filter.text;q["rarityFilter"]=forms.rarityFilter.text;q["sort"]=sorting;int low,high;std::string saved=forms.rarityFilter.text;saved.erase(std::remove_if(saved.begin(),saved.end(),[](unsigned char c){return std::isspace(c);}),saved.end());if(collectionRarityFilter(saved,low,high))ctx.settings.marketRarityFilter=saved;send(ctx,"market",action,q);};
+    if(!forms.marketLoaded||forms.orders!=orders){forms.marketLoaded=true;forms.orders=orders;forms.offset=0;forms.rarityFilter.text=ctx.settings.marketRarityFilter;browse();}
     const auto& reply=ctx.net.commerce("market");
     text(ctx.canvas,orders?"Fund requests; other players supply petals.":"Player petal listings. Seller receives 80%; tax 20%.",p.x,p.y+10,style());
     field(ctx,forms.filter,{p.x,p.y+25,220,30},"Filter by petal ID");
     if(button(ctx,{p.x+230,p.y+25,90,30},"Refresh")){forms.offset=0;browse();}
     if(button(ctx,{p.right()-150,p.y+25,66,30},"<")){forms.offset=std::max(0,forms.offset-7);browse();}
     if(button(ctx,{p.right()-76,p.y+25,66,30},">")){if(forms.offset+7<reply["total"].asDouble())forms.offset+=7;browse();}
+    field(ctx,forms.rarityFilter,{p.x+330,p.y+25,130,30},"All / Ultra+ / Rare-",16);
+    const char* sortLabel=sorting==0?"Price":sorting==1?(orders?"Highest offer":"Rarest for price"):"Rarity";
+    if(button(ctx,{p.x+470,p.y+25,std::max(90.0,p.w-630),30},sortLabel)){sorting=orders?(sorting==0?2:0):(sorting+1)%3;forms.offset=0;browse();}
     double y=p.y+66;
     const auto& rows=reply["rows"];
     if(rows.isArray())for(const auto& row:rows.items()) {
