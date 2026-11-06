@@ -1,4 +1,5 @@
 #include "server/game_server.h"
+#include "shared/game/signature_skin.h"
 
 #include "shared/core/process_stats.h"
 
@@ -4736,6 +4737,18 @@ void GameServer::broadcastDebugStats() {
 }
 
 void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) {
+    // Username matching is cosmetic-only. Use the existing JSON skin shape
+    // schema and packet layout so old databases and clients remain readable.
+    if(lowerCase(session.username)=="a19kisme" && !database_.storedTable("customSkins")[kSignatureSkinId].isObject()) {
+        CustomSkin signature=makeSignatureSkin();
+        signature.createdAt=static_cast<double>(database_.nowMillis());
+        database_.rawTable("customSkins")[signature.id]=skinToJson(signature);
+        auto& owner=database_.progress(session.userId);
+        if(owner.equippedSkinId.empty())owner.equippedSkinId=signature.id;
+        database_.markDirty();
+        ByteWriter published;published.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinPublished));
+        writeCustomSkin(published,signature);broadcastToAuthenticated(published);
+    }
     // storedTable, not rawTable: this only reads, and rawTable drops the
     // table's cached text (Database::Table). Sent on every sign-in, that made
     // the next save re-dump every custom skin -- the 370 ms `persist` ticks.

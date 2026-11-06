@@ -13,6 +13,7 @@
 #include "client/ease.h"
 #include "client/render/art_cache.h"
 #include "client/render/skin_render.h"
+#include "shared/game/signature_skin.h"
 #include "client/ui/draw.h"
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_widgets.h"
@@ -2855,7 +2856,9 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
         variant = variant * 1099511628211ull + skin->shapes.size();
         variant = variant * 1099511628211ull + static_cast<std::uint64_t>(skin->editedAt);
-        if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
+        if (hasSignatureAnimation(*skin)) {
+            renderAnimatedSkin(canvas,*skin,kFlowerArtRadius,timeSeconds);
+        } else if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
                                [&](Canvas& bitmap) {
                                    bitmap.translate(static_cast<float>(reach),
                                                     static_cast<float>(reach));

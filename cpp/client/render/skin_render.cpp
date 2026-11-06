@@ -1,6 +1,8 @@
 #include "client/render/skin_render.h"
 
 #include <cstdlib>
+#include <cmath>
+#include "shared/game/signature_skin.h"
 
 #include "client/ui/draw.h"
 #include "shared/core/types.h"
@@ -84,3 +86,42 @@ void renderSkinShapes(Canvas& canvas, const std::vector<SkinShape>& shapes, doub
 }
 
 } // namespace flix
+
+namespace flix {
+void renderAnimatedSkin(Canvas& c,const CustomSkin& skin,double radius,double time) {
+    if(!hasSignatureAnimation(skin)){renderSkinShapes(c,skin.shapes,radius);return;}
+    if(!std::isfinite(time))time=0;
+    c.save();c.scale(float(radius/25),float(radius/25));
+    c.beginPath();c.arc(0,0,36,0,float(kTau));c.clip();
+    const auto disc=[&](double x,double y,double r,std::uint32_t color,double alpha=1) {
+        c.beginPath();c.arc(float(x),float(y),float(r),0,float(kTau));ui::setFill(c,color,alpha);c.fill();
+    };
+    // A soft halo around a dark core; no images or per-frame allocations.
+    disc(0,0,29,0x684ABAu,.08);disc(0,0,26,0x78D9FFu,.10);disc(0,0,24.5,0x100E26u);
+    c.setLineJoin("round");c.setLineCap("round");
+    for(int ring=0;ring<12;++ring) {
+        c.save();const bool violet=ring%2;
+        c.rotate(float(time*(.13+ring*.018)*(violet?-1:1)));
+        const double pulse=1+.035*std::sin(time*2-ring*.45);c.scale(float(pulse),float(pulse));
+        c.beginPath();
+        for(int edge=0;edge<6;++edge){const auto& line=skin.shapes[ring*6+edge];c.moveTo(float(line.x),float(line.y));c.lineTo(float(line.x2),float(line.y2));}
+        const auto color=violet?0xB99AFFu:0x78E9FFu;
+        const double width=skin.shapes[ring*6].sw*(1+.15*std::sin(time*2-ring*.4));
+        ui::setStroke(c,color,.12);c.setLineWidth(float(width+3));c.stroke();
+        ui::setStroke(c,color,.92);c.setLineWidth(float(std::max(.5,width*.75)));c.stroke();
+        c.restore();
+    }
+    for(int arc=0;arc<3;++arc) {
+        const double angle=time*.45+arc*kTau/3;
+        c.beginPath();c.arc(0,0,float(27+.5*std::sin(time*2)),float(angle),float(angle+.8));
+        ui::setStroke(c,arc%2?0xB99AFFu:0x78E9FFu,.65);c.setLineWidth(1.1f);c.stroke();
+    }
+    for(int spark=0;spark<6;++spark) {
+        const double angle=-time*.6+spark*kTau/6,r=29+std::sin(time*2+spark)*1.2;
+        const double x=std::cos(angle)*r,y=std::sin(angle)*r;const auto color=spark%2?0xB99AFFu:0x78E9FFu;
+        disc(x,y,3.2,color,.10);disc(x,y,1.2,color,.95);disc(x,y,.5,0xFFFFFFu);
+    }
+    disc(0,0,3+.6*std::sin(time*3),0xA38BFFu,.35);disc(0,0,1.1,0xE6FFFFu);
+    c.restore();
+}
+}
