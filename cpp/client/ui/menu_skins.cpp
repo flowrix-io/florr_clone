@@ -33,6 +33,7 @@
 
 #include "client/net_client.h"
 #include "client/render/skin_render.h"
+#include "shared/game/signature_skin.h"
 #include "client/ui/draw.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menu_widgets.h"
@@ -1545,9 +1546,13 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
         Action equip;
         equip.k = Act::Equip;
         equip.id = skin.id;
-        actionButton(canvas, {card.x + 8.0, actionsY, equipW, 24.0},
-                     equipped ? "Equipped" : "Equip", equip,
-                     equipped ? kAccent : kAccentPurple, kBodySize);
+        const Rect equipRect{card.x+8.0,actionsY,equipW,24.0};
+        if(canEquipSignatureSkin(skin.id,me)) {
+            actionButton(canvas,equipRect,equipped?"Equipped":"Equip",equip,
+                         equipped?kAccent:kAccentPurple,kBodySize);
+        } else {
+            ui::button(canvas,equipRect,"Exclusive",false,true,buttonStyle(kNeutralFill,kBodySize));
+        }
         if (canDelete) {
             Action del;
             del.k = Act::Delete;

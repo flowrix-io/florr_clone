@@ -253,3 +253,23 @@ TEST(signature_skin_animates_in_the_world_and_has_a_static_legacy_fallback) {
     Canvas fallback=Canvas::createVirtual(160,160);fallback.translate(80,80);renderSkinShapes(fallback,skin.shapes,50);
     const auto pixels=fallback.getImageData(0,0,160,160);CHECK(std::any_of(pixels.begin(),pixels.end(),[](auto v){return v!=0;}));
 }
+
+TEST(signature_skin_is_owner_only_even_for_modified_clients_and_stale_saved_equips) {
+    using namespace flix::testsupport;
+    Harness h("signature-exclusive",[](const std::string& path){
+        seedUser(path,"a19kisme","hunter2!");seedUser(path,"watcher","hunter2!",true);
+        Database db;std::string error;CHECK(db.load(path,error));auto skin=makeSignatureSkin();skin.createdAt=1234;
+        db.rawTable("customSkins")[skin.id]=skinToJson(skin);
+        db.progress(db.findUser("watcher")->id).equippedSkinId=skin.id;
+        db.markDirty();CHECK(db.save());
+    },dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    const auto& db=h.server.database();const auto watcherId=db.findUser("watcher")->id;
+    CHECK(db.findProgress(watcherId)->equippedSkinId.empty());
+    NetClient owner,watcher;CHECK(loginAs(h,watcher,"watcher","hunter2!"));CHECK(loginAs(h,owner,"a19kisme","hunter2!"));
+    CHECK(watcher.findSkin(kSignatureSkinId)); // Everyone still receives the artwork.
+    const auto before=watcher.chat().size();watcher.equipSkin(kSignatureSkinId);
+    CHECK(h.stepUntil({&owner,&watcher},[&]{return watcher.chat().size()>before;}));
+    CHECK(db.findProgress(watcherId)->equippedSkinId.empty());CHECK(watcher.equippedSkinId().empty());
+    owner.equipSkin(kSignatureSkinId);CHECK(h.stepUntil({&owner},[&]{return db.findProgress(db.findUser("a19kisme")->id)->equippedSkinId==kSignatureSkinId;}));
+    CHECK(canEquipSignatureSkin(kSignatureSkinId,"A19KIsMe"));CHECK(!canEquipSignatureSkin(kSignatureSkinId,"watcher"));CHECK(canEquipSignatureSkin("ordinary_skin","watcher"));
+}

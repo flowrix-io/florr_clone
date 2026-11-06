@@ -3,8 +3,14 @@
 // Its id selects a client painter; it grants no account privileges.
 #include "shared/game/skin_format.h"
 #include <algorithm>
+#include <cctype>
 namespace flix {
 inline constexpr const char* kSignatureSkinId="signature_a19kisme";
+inline bool canEquipSignatureSkin(const std::string& id,std::string username) {
+    if(id!=kSignatureSkinId)return true;
+    for(char& c:username)c=char(std::tolower(static_cast<unsigned char>(c)));
+    return username=="a19kisme";
+}
 inline CustomSkin makeSignatureSkin() {
     static const int rings[12][12]={
       {25,0,13,22,-13,22,-25,0,-13,-22,13,-22},
