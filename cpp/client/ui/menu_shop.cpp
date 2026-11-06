@@ -33,6 +33,7 @@
 #include "client/ui/menu_icons.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
+#include "client/ui/commerce_ui.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "shared/game/config.h"
@@ -639,10 +640,10 @@ bool ShopPanel::render(MenuContext& ctx) {
     setFill(canvas, kWindowRim);
     canvas.fillRect(static_cast<float>(panel.x), static_cast<float>(panel.y + kStripTop),
                     static_cast<float>(panel.w), static_cast<float>(kStripHeight));
-    static constexpr std::array<const char*, 3> kTabLabels{"Shop", "Challenge", "Bonus"};
-    const double tabsWidth = 3.0 * kTabWidth + 2.0 * kTabGap;
-    std::array<Rect, 3> tabRects{};
-    for (int i = 0; i < 3; ++i) {
+    static constexpr std::array<const char*, 5> kTabLabels{"Shop", "Challenge", "Bonus", "Market", "Orders"};
+    const double tabsWidth = 5.0 * kTabWidth + 4.0 * kTabGap;
+    std::array<Rect, 5> tabRects{};
+    for (int i = 0; i < 5; ++i) {
         const Rect rect{panel.x + (panel.w - tabsWidth) * 0.5 + i * (kTabWidth + kTabGap),
                         panel.y + kStripTop + 10.0, kTabWidth, kTabHeight};
         tabRects[static_cast<std::size_t>(i)] = rect;
@@ -659,7 +660,9 @@ bool ShopPanel::render(MenuContext& ctx) {
     // The balance is the one number all three tabs are about, so it is the
     // window's footer rather than the store's.
     {
-        const std::string balance = withSeparators(stars);
+        const double rounded=std::round(stars*10)/10;
+        const int tenth=int(std::round((rounded-std::floor(rounded))*10));
+        const std::string balance = withSeparators(std::floor(rounded))+(tenth?"."+std::to_string(tenth):"");
         const double width = kBalanceInset + kBalanceStar + measure(balance, kBalanceSize) +
                              textPad(kBalanceSize) + kBalanceInset;
         const Rect plate{panel.right() - kWindowPad - width,
@@ -782,6 +785,8 @@ bool ShopPanel::render(MenuContext& ctx) {
                         usable ? std::nullopt : std::optional<std::uint32_t>(kButtonIdleRim));
         text(canvas, "Redeem", redeemButton.x + redeemButton.w * 0.5,
              redeemButton.y + redeemButton.h * 0.5, shopText(kTabSize));
+    } else if(tab_ == Tab::Market || tab_ == Tab::Orders) {
+        if(!modalUp && live) renderMarket(ctx,{panel.x+13,panel.y+kHeaderTop,panel.w-26,kFooterTop-kHeaderTop-8},tab_==Tab::Orders);
     } else {
         text(canvas, "Earn Stars by Defeating Mythic+ Mobs", panel.x + panel.w * 0.5,
              panel.y + kHeadingMiddle, shopText(kOffersHeadingSize));
@@ -984,7 +989,7 @@ bool ShopPanel::render(MenuContext& ctx) {
 
     if (clicked(closeRect)) return false;
 
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 5; ++i) {
         if (!clicked(tabRects[static_cast<std::size_t>(i)])) continue;
         // Leaving the code field behind clears its focus, or the shop would go
         // on eating keystrokes from a tab with no field on it.

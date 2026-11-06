@@ -67,6 +67,9 @@ struct CustomSkin {
     std::string id;
     std::string name;
     std::string author;
+    double price = 0;
+    bool owned = false; // per-recipient catalogue field; never trusted from clients
+    std::uint8_t animation = 0; // server-authored signature animation
     std::vector<SkinShape> shapes;
     /// Unix milliseconds. Double rather than int64 because it round-trips
     /// through the JSON database the TypeScript build wrote.

@@ -42,6 +42,7 @@
 #include "client/ui/text_select.h"
 #include "shared/core/text.h"
 #include "shared/game/skin_format.h"
+#include "shared/game/economy.h"
 #include "shared/game/skin_likeness.h"
 
 namespace flix {
@@ -356,7 +357,7 @@ ButtonStyle buttonStyle(std::uint32_t fill, double textSize = kBodySize) {
 constexpr double kPublishW = 106.0;
 constexpr double kResetW = 84.0;
 Rect footerNameField(Rect footer) {
-    return {footer.x, footer.y, std::max(120.0, footer.w - kPublishW - kResetW - 24.0), footer.h};
+    return {footer.x, footer.y, std::max(120.0, footer.w - kPublishW - kResetW - 122.0), footer.h};
 }
 
 // --- the skin data model ---------------------------------------------------
@@ -545,6 +546,8 @@ struct Studio {
     std::vector<Shape> shapes = starterSkinShapes();
     int selected = 0;
     std::string skinName;
+    std::string skinPrice = "0";
+    TextFieldState priceField;
 
     /// The published skin of the player's own that the Create tab is editing,
     /// "" while it makes a new one. Publish saves over that skin instead.
@@ -1369,6 +1372,9 @@ void Studio::drawFooter(Canvas& canvas, double timeSeconds) {
     const Rect field = footerNameField(r);
     inputField(canvas, field, skinName, "Skin name", nameField.focused, timeSeconds, &nameField);
 
+    const Rect priceRect{field.right()+8,r.y,88,r.h};
+    inputField(canvas,priceRect,skinPrice,"0 = free",priceField.focused,timeSeconds,&priceField);
+    ui::text(canvas,"Stars (0 free, min 5)",priceRect.x,r.y-10,label(10));
     // Editing, the two become the way out of the edit and the save over the
     // skin being edited. Reset has no place there: the way back to the skin
     // as published is to stop and press its Edit again.
@@ -1380,7 +1386,7 @@ void Studio::drawFooter(Canvas& canvas, double timeSeconds) {
     Action publish;
     publish.k = Act::Publish;
     actionButton(canvas, {r.right() - kPublishW, r.y, kPublishW, r.h},
-                 editing ? "Save changes" : "Publish", publish, kAccent);
+                 editing ? "Save changes" : "Publish 100", publish, kAccent);
 }
 
 void Studio::drawSortRow(Canvas& canvas) {
@@ -1494,7 +1500,7 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
         clipRound(canvas, {board.x + 2, board.y + 2, board.w - 4, board.h - 4}, 3.0);
         canvas.translate(static_cast<float>(board.x + board.w / 2),
                          static_cast<float>(board.y + board.h / 2));
-        renderSkinShapes(canvas, skin.shapes, board.w * 0.36);
+        renderAnimatedSkin(canvas, skin, board.w * 0.36, timeSeconds);
         canvas.restore();
 
         ui::text(canvas, clipChars(skin.name, 14), card.x + cardW * 0.5, board.bottom() + 14.0,
@@ -1537,7 +1543,7 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
         equip.k = Act::Equip;
         equip.id = skin.id;
         actionButton(canvas, {card.x + 8.0, actionsY, equipW, 24.0},
-                     equipped ? "Equipped" : "Equip", equip,
+                     equipped ? "Equipped" : (!mine && !skin.owned && skin.price>0 ? "Buy "+std::to_string(static_cast<long long>(skin.price))+" stars" : "Equip"), equip,
                      equipped ? kAccent : kAccentPurple, kBodySize);
         if (canDelete) {
             Action del;
@@ -1781,6 +1787,7 @@ void Studio::beginEdit(const CustomSkin& skin) {
     editingId = skin.id;
     shapes = skin.shapes;
     skinName = skin.name;
+    skinPrice = std::to_string(static_cast<long long>(skin.price));
     boardLoaded();
 }
 
@@ -1788,6 +1795,7 @@ void Studio::stopEdit() {
     editingId.clear();
     shapes = std::move(draftShapes);
     skinName = std::move(draftName);
+    skinPrice = "0";
     draftShapes.clear();
     draftName.clear();
     boardLoaded();
@@ -2048,8 +2056,11 @@ bool Studio::dispatch(MenuContext& ctx, const Action& a) {
             // The edit stays open after a save, as the board does after a
             // publish: the server answers in the chat, and the next change
             // saves over the same skin again.
-            if (!editingId.empty()) ctx.net.editSkin(editingId, skinName, shapes);
-            else ctx.net.publishSkin(skinName, shapes);
+            double price=-1;
+            try{std::size_t used=0;price=std::stod(skinPrice,&used);if(used!=skinPrice.size())price=-1;}catch(...){}
+            if(!validSkinPrice(price)){ctx.net.addLocalChat("Skins","Price must be 0 (free) or at least 5 whole stars.");break;}
+            if (!editingId.empty()) ctx.net.editSkin(editingId, skinName, shapes,price);
+            else ctx.net.publishSkin(skinName, shapes,price);
             break;
         }
         case Act::Reset:
@@ -2059,7 +2070,9 @@ bool Studio::dispatch(MenuContext& ctx, const Action& a) {
             if (textMode) enterTextMode();
             break;
         case Act::Equip:
-            ctx.net.equipSkin(a.id);
+            if(const auto* skin=ctx.net.findSkin(a.id);skin && skin->price>0 && !skin->owned && lowerCase(skin->author)!=lowerCase(ctx.net.profile().username)) {
+                Json request=Json::object();request["kind"]="skin";request["action"]="buy";request["id"]=a.id;request["price"]=skin->price;ctx.net.requestCommerce(request);
+            } else ctx.net.equipSkin(a.id);
             break;
         case Act::Unequip:
             ctx.net.equipSkin("");
@@ -2132,10 +2145,10 @@ bool Studio::handleInput(MenuContext& ctx) {
     // picker closed some other way -- another shape, another tab -- must not
     // leave the keyboard with it.
     if (tab != Tab::Create || textMode || pickerHex.w <= 0) hexField.blur();
-    const bool naming = tab == Tab::Create && !textMode && nameField.focused;
-    const bool editing = tab == Tab::Create && textMode;
+    const bool naming = tab == Tab::Create && nameField.focused;
+    const bool editing = tab == Tab::Create && textMode && !nameField.focused && !priceField.focused;
     const bool hexing = hexField.focused;
-    if (naming || editing || hexing) ctx.wantsText = true;
+    if (naming || editing || hexing || priceField.focused) ctx.wantsText = true;
 
     if (naming) {
         TextEditOptions typing;
@@ -2181,13 +2194,18 @@ bool Studio::handleInput(MenuContext& ctx) {
                        inputFieldRun(pickerHex, hexDraft, hexField), hexDraft, ctx.timeSeconds);
         if (insideInclusive(pickerHex, mouse)) ctx.window.setCursorShape(CursorShape::Text);
     }
-    if (tab == Tab::Create && !textMode) {
+    if(tab!=Tab::Create)priceField.blur();
+    if (tab == Tab::Create) {
         // The name box takes its own press; the region list below would only
         // ever put the caret at one end of it.
         const Rect field = footerNameField(layout.footer);
         trackTextMouse(ctx.window, nameField, field,
                        inputFieldRun(field, skinName, nameField), skinName, ctx.timeSeconds);
         if (insideInclusive(field, mouse)) ctx.window.setCursorShape(CursorShape::Text);
+        const Rect priceRect{field.right()+8,field.y,88,field.h};
+        trackTextMouse(ctx.window,priceField,priceRect,inputFieldRun(priceRect,skinPrice,priceField),skinPrice,ctx.timeSeconds);
+        if(priceField.focused){ctx.wantsText=true;TextEditOptions digits;digits.maxBytes=9;digits.asciiOnly=true;editText(ctx.window,skinPrice,priceField,ctx.timeSeconds,digits);}
+
     }
 
     // Only inside the panel, and raw: one notch is the browser's 100px of

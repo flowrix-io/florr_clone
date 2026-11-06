@@ -237,7 +237,9 @@ using flix::testsupport::sawText;
 bool registerAs(Harness& h, NetClient& client, const char* name) {
     if (!connectClient(h, client)) return false;
     client.requestRegister(name, "hunter2!");
-    return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
+    if(!h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }))return false;
+    const_cast<Database&>(h.server.database()).progress(h.server.database().findUser(name)->id).stars=10000;
+    const_cast<Database&>(h.server.database()).markDirty();return true;
 }
 
 /// Publishes and steps until the server has answered in the Skins channel.

@@ -1,6 +1,8 @@
 #include "client/render/skin_render.h"
 
 #include <cstdlib>
+#include <cmath>
+#include <algorithm>
 
 #include "client/ui/draw.h"
 #include "shared/core/types.h"
@@ -84,3 +86,29 @@ void renderSkinShapes(Canvas& canvas, const std::vector<SkinShape>& shapes, doub
 }
 
 } // namespace flix
+
+namespace flix {
+void renderAnimatedSkin(Canvas& canvas,const CustomSkin& skin,double radius,double time) {
+    if(!skin.animation){renderSkinShapes(canvas,skin.shapes,radius);return;}
+    canvas.save();
+    const double scale=radius/25.0;
+    canvas.scale(float(scale),float(scale));
+    ui::setFill(canvas,0x14102Bu);canvas.beginPath();canvas.arc(0,0,24,0,float(kTau));canvas.fill();
+    for(std::size_t first=0;first<skin.shapes.size();first+=6) {
+        canvas.save();
+        const double ring=double(first/6);
+        canvas.rotate(float(time*(0.13+ring*0.018)*(int(ring)%2 ? -1:1)));
+        const double pulse=1+0.035*std::sin(time*2-ring*0.45);
+        canvas.scale(float(pulse),float(pulse));
+        std::vector<SkinShape> shapes(skin.shapes.begin()+first,skin.shapes.begin()+std::min(first+6,skin.shapes.size()));
+        for(auto& shape:shapes) {
+            shape.stroke=int(ring)%2 ? "#a88cff" : "#77eaff";
+            shape.sw*=1+0.2*std::sin(time*2-ring*0.4);
+        }
+        renderSkinShapes(canvas,shapes,25);
+        canvas.restore();
+    }
+    ui::setFill(canvas,0xE6FFFFu);canvas.beginPath();canvas.arc(0,0,float(1.4+0.3*std::sin(time*3)),0,float(kTau));canvas.fill();
+    canvas.restore();
+}
+}

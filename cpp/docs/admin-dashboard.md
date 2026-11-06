@@ -500,3 +500,37 @@ buttons replace the current map. Width and height accept 4–128 tiles. Theme
 arrows, PvP buttons, Bring Everyone and Return Everyone need no typed commands.
 Edits go through the same server permissions, validation and persistence as
 host commands. The preview updates after the server accepts each edit.
+
+### Events, casino, creator skins and the market
+
+- Database access is `/admin db <key> [username]`. The key is
+  `admin_db_key.txt` beside the live database on the server. Full tier 1–2
+  admin access is also required; a temporary grant does not unlock it. The
+  dashboard's Database button explains where the key is.
+- Give accepts a typed account username. Spawn accepts optional tile X/Y
+  coordinates (tile centres, 256 world units per tile).
+- Arena's Open Builder expands the map workspace. Brush, Box, Erase and Pan
+  work with touch; brush size is 1–16 tiles. Borders stay protected. The
+  Events tab saves named map/theme/PvP/kit presets and restores them later.
+- Event kits can copy the host's inventory/loadout or start empty, accept
+  custom stacks and specific loadout slots, and can be switched off. Kits
+  require tier 1–2 admin access. They are temporary: normal inventories,
+  stars and XP stay saved, and event gear/earnings are discarded on exit.
+- Star Codes lists active codes, supports custom names, reward amounts and
+  maximum uses (0 unlimited), and can delete codes. Full tier 1–2 admins only.
+- Hel Casino is placed on Hel with its gold minimap dot. Open Craft beside
+  the NPC to buy chips, cash out, flip coins or play Plinko. Conversions are
+  untaxed at 1 star = 10 chips. Odds and payout rules are shown in the panel.
+- Shop contains Market and Orders; `/shop` and `/order` open those tabs.
+  Listings escrow unequipped petals; orders escrow stars. Partial fills are
+  supported. Cancellation refunds the remaining escrow without tax. The
+  seller receives exactly 80%, including fractional star proceeds; 20% is
+  removed. Minimum unit price is `3^rarityIndex` stars (Common 1, Uncommon 3,
+  Rare 9, through Apex 19683). Admin and revocable Universal petals are excluded.
+- Publishing a new skin costs 100 stars. Its creator chooses free (0) or a
+  whole-star price of at least 5. Paid skins require a purchase before equip;
+  creators receive 80% of sales. Editing an existing skin does not charge a
+  second publishing fee, and previous buyers retain ownership.
+- `a19kisme` receives the animated Hex Singularity cosmetic based on the
+  supplied nested hexagons. The username is used only for this cosmetic;
+  it grants no administrator privileges.

@@ -1,6 +1,7 @@
 #include "server/game_server.h"
 #include "server/text.h"
 #include "shared/game/admin_arena.h"
+#include "shared/game/config.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -69,6 +70,7 @@ void GameServer::initHostedArena() {
     terrain_->adminArenaFloor = floor < 0 ? 1 : floor;
     terrain_->adminArenaWall = wall < 0 ? 0 : wall;
     hostedArenaPvp_ = saved["pvp"].asBool(false);
+    hostedArenaKit_ = saved["kit"];
 }
 void GameServer::saveHostedArena() {
     Json record = Json::object();
@@ -77,6 +79,7 @@ void GameServer::saveHostedArena() {
     record["floor"] = kAdminArenaThemes[terrain_->adminArenaFloor].name;
     record["wall"] = kAdminArenaThemes[terrain_->adminArenaWall].name;
     record["pvp"] = hostedArenaPvp_;
+    record["kit"] = hostedArenaKit_;
     Json cells = Json::array();
     for (std::size_t i = 0; i < terrain_->tileCount(kAdminArenaRealm); ++i)
         cells.push(int(terrain_->tiles(kAdminArenaRealm)[i]));
@@ -131,6 +134,7 @@ bool GameServer::transferHostedArena(Session& player, bool entering) {
         ? player.adminArenaReturnPosition : terrain_->spawnPoint(destination);
     point = terrain_->findOpenSpawn(rng_, point, entering ? kTileSize : 0.0, destination);
     player.adminArenaAdmitted = entering;
+    if(entering)applyHostedKit(player);else endHostedKit(player);
     player.spawnChoice = entering ? kAdminArenaSpawnChoice : player.adminArenaHasReturn
         ? player.adminArenaReturnChoice : std::string();
     if (!entering) player.adminArenaHasReturn = false;
@@ -226,3 +230,96 @@ void GameServer::runHostedArenaCommand(Session& admin, net::Connection& connecti
     out("Invalid arena command. Use /admin arena help.");
 }
 } // namespace flix
+
+namespace flix {
+void GameServer::clearHostedGear(Session& s) {
+    std::vector<Entity> gear;Query<Transform> owned{world_};
+    owned.each([&](Entity e,Transform&){
+        Entity owner=NULL_ENTITY;
+        if(const auto* p=world_.tryGet<PetalInstance>(e))owner=p->owner;
+        else if(const auto* pet=world_.tryGet<Pet>(e))owner=pet->owner;
+        else if(const auto* shot=world_.tryGet<Projectile>(e))owner=shot->creditTo!=NULL_ENTITY?shot->creditTo:shot->owner;
+        else if(const auto* field=world_.tryGet<GroundEffect>(e))owner=field->owner;
+        if(owner==s.entity || (s.splitOther!=NULL_ENTITY&&owner==s.splitOther))gear.push_back(e);
+    });for(Entity e:gear)destroyBody(e);
+}
+void GameServer::endHostedKit(Session& s) {
+    if(!s.eventKit)return;
+    clearHostedGear(s);
+    s.eventKit.reset();
+    const auto& record=database_.progress(s.userId);
+    for(Entity e:bodiesOf(s))if(auto* progress=world_.tryGet<PlayerProgress>(e)){progress->totalXp=s.realm==Realm::Maze?record.mazeTotalXp:record.totalXp;progress->level=levelFromTotalXp(progress->totalXp).level;}
+    applyAccountToSession(s);
+}
+void GameServer::applyHostedKit(Session& s) {
+    if(hostedArenaKit_.isObject() && !s.eventKit)clearHostedGear(s);
+    endHostedKit(s);
+    if(!hostedArenaKit_.isObject()) {
+        if(auto* progress=world_.tryGet<PlayerProgress>(s.entity)){const auto& saved=database_.progress(s.userId);progress->totalXp=s.realm==Realm::Maze?saved.mazeTotalXp:saved.totalXp;progress->level=levelFromTotalXp(progress->totalXp).level;}
+        return;
+    }
+    auto kit=std::make_unique<PlayerRecord>(database_.progress(s.userId));
+    const auto stored=parsePlayerRecord(hostedArenaKit_);
+    kit->inventory=stored.inventory;kit->loadout=stored.loadout;kit->stars=0;
+    s.eventKit=std::move(kit);
+    if(auto* progress=world_.tryGet<PlayerProgress>(s.entity)){progress->totalXp=s.eventKit->totalXp;progress->level=levelFromTotalXp(progress->totalXp).level;}
+}
+void GameServer::runEventSetup(Session& host,net::Connection& peer,const Json& q) {
+    const auto kind=q["kind"].asString(),action=q["action"].asString();
+    const auto fail=[&](const std::string& msg){sendCommerce(host,peer,kind,false,msg);};
+    if(!host.admin||!adminMay(host,AdminPower::SpawnMobs)){fail("Full admin hosting permission required.");return;}
+    std::string message="Event presets and temporary kits";
+    if(kind=="arena" && action=="stroke") {
+        const auto& points=q["points"];const double size=q["size"].asDouble();
+        if(!points.isArray()||points.size()>64||size<1||size>16||std::floor(size)!=size){fail("Invalid brush stroke.");return;}
+        const int cols=terrain_->tileCols(kAdminArenaRealm),rows=terrain_->tileRows(kAdminArenaRealm);
+        std::vector<std::uint8_t> cells(terrain_->tiles(kAdminArenaRealm),terrain_->tiles(kAdminArenaRealm)+terrain_->tileCount(kAdminArenaRealm));
+        for(const auto& point:points.items()) {
+            if(!point.isArray()||point.size()!=2){fail("Invalid brush point.");return;}
+            const double x=point[0].asDouble(-1),y=point[1].asDouble(-1);
+            if(x<1||y<1||x>=cols-1||y>=rows-1||std::floor(x)!=x||std::floor(y)!=y){fail("Brush point outside map.");return;}
+            for(int row=int(y);row<std::min(rows-1,int(y+size));++row)for(int col=int(x);col<std::min(cols-1,int(x+size));++col)cells[row*cols+col]=std::uint8_t(q["erase"].asBool()?Tile::Open:Tile::Solid);
+        }
+        if(std::find(cells.begin(),cells.end(),std::uint8_t(Tile::Open))==cells.end()){fail("At least one open tile must remain.");return;}
+        terrain_->setTiles(cells,cols,rows,kAdminArenaRealm);refreshHostedArena(false);sendCommerce(host,peer,kind,true,"Brush applied.");return;
+    }
+    const auto name=q["name"].asString();
+    const bool validName=!name.empty() && name.size()<=32 && name.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")==std::string::npos;
+    if(action=="save"||action=="load"||action=="delete") {
+        if(!validName){fail("Event name: 1-32 letters, digits, _ or -.");return;}
+        if(action=="save") {
+            const auto& events=database_.storedTable("adminEvents");
+            if(events.size()>=50&&!events.contains(name)){fail("Maximum 50 saved events.");return;}
+            saveHostedArena();database_.rawTable("adminEvents")[name]=database_.storedTable("adminArena");message="Saved event "+name;
+        } else if(action=="delete") {database_.rawTable("adminEvents").erase(name);message="Deleted event "+name;}
+        else {
+            const auto event=database_.storedTable("adminEvents")[name];
+            if(!event.isObject()){fail("Event not found.");return;}
+            if(event["kit"].isObject()&&!adminMay(host,AdminPower::GivePetals)){fail("This event's kit requires tier 1-2 admin access.");return;}
+            database_.rawTable("adminArena")=event;initHostedArena();refreshHostedArena(true);message="Loaded event "+name;
+        }
+        database_.markDirty();
+    }
+    const bool kitAction=action=="capture"||action=="clear"||action=="off"||action=="add"||action=="slot";
+    if(kitAction) {
+        if(!adminMay(host,AdminPower::GivePetals)){fail("Temporary kits require tier 1-2 admin access.");return;}
+        PlayerRecord kit=hostedArenaKit_.isObject()?parsePlayerRecord(hostedArenaKit_):PlayerRecord{};
+        if(action=="capture") {kit=liveRecord(host);kit.stars=0;}
+        else if(action=="clear")kit=PlayerRecord{};
+        else if(action=="add"||action=="slot") {
+            const auto item=q["item"].asString();const auto type=content().petalIndex(item);const double r=q["rarity"].asDouble(-1),n=q["amount"].asDouble(-1);
+            if(type==kInvalidIndex||r<0||r>=kRarityCount||std::floor(r)!=r||n<1||n>1000000||std::floor(n)!=n){fail("Invalid kit item, rarity or amount.");return;}
+            if(action=="add")kit.addItem(Rarity(int(r)),"petal_"+item,int(n));
+            else {
+                const double slot=q["slot"].asDouble(-1);if(slot<0||slot>=kLoadoutSlots||std::floor(slot)!=slot){fail("Invalid kit slot.");return;}
+                kit.loadout.resize(kLoadoutSlots);StoredItem stored;stored.petalType=item;stored.rarity=Rarity(int(r));kit.loadout[int(slot)]=stored;
+            }
+        }
+        hostedArenaKit_=action=="off"?Json{}:playerRecordJson(kit);saveHostedArena();message="Temporary event kit updated. Normal inventories stay saved.";
+    }
+    if(kitAction||action=="load")for(auto& [id,s]:sessions_)if(s.playing()&&s.realm==kAdminArenaRealm){persistPlayer(s);applyHostedKit(s);applyAccountToSession(s);if(auto* c=listener_.find(id))sendProfile(s,*c);}
+    Json data=Json::object(),events=Json::array();for(const auto& key:database_.storedTable("adminEvents").keys())events.push(key);
+    data["events"]=events;data["kitEnabled"]=hostedArenaKit_.isObject();data["kit"]=hostedArenaKit_;
+    sendCommerce(host,peer,"event",true,message,data);
+}
+}

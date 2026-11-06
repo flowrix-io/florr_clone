@@ -305,6 +305,7 @@ void NetClient::forgetAccount() {
     whisperPartner_.clear();
     dailyStreak_ = DailyStreak{};
     skinCatalog_.clear();
+    commerce_ = Json::object();
     equippedSkinId_.clear();
     skinAdmin_ = false;
     skinVotes_.clear();
@@ -554,10 +555,11 @@ void NetClient::requestRedeemCode(const std::string& code) {
     send(w);
 }
 
-void NetClient::publishSkin(const std::string& name, const std::vector<SkinShape>& shapes) {
+void NetClient::publishSkin(const std::string& name, const std::vector<SkinShape>& shapes, double price) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::PublishSkin);
     w.str(name);
+    w.f64(price);
     const std::size_t count = std::min(shapes.size(), static_cast<std::size_t>(kMaxSkinShapes));
     w.u8(static_cast<std::uint8_t>(count));
     for (std::size_t i = 0; i < count; ++i) writeSkinShape(w, shapes[i]);
@@ -565,11 +567,12 @@ void NetClient::publishSkin(const std::string& name, const std::vector<SkinShape
 }
 
 void NetClient::editSkin(const std::string& id, const std::string& name,
-                         const std::vector<SkinShape>& shapes) {
+                         const std::vector<SkinShape>& shapes, double price) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::EditSkin);
     w.str(id);
     w.str(name);
+    w.f64(price);
     const std::size_t count = std::min(shapes.size(), static_cast<std::size_t>(kMaxSkinShapes));
     w.u8(static_cast<std::uint8_t>(count));
     for (std::size_t i = 0; i < count; ++i) writeSkinShape(w, shapes[i]);
@@ -577,6 +580,9 @@ void NetClient::editSkin(const std::string& id, const std::string& name,
 }
 
 void NetClient::equipSkin(const std::string& id) {
+    if(const auto* skin=findSkin(id);skin && skin->price>0 && !skin->owned && skin->author!=profile_.username)return;
+    for(auto& skin:skinCatalog_)if(skin.id==id)skin.owned=true;
+
     // Moved before the send, not after the reply: the reference sets its own
     // equippedId the moment the button is clicked, and the studio's tick is
     // what the player sees change.
@@ -1166,6 +1172,11 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
             break;
         case net::ServerMessage::Kick:         handleKick(reader); break;
         case net::ServerMessage::DailyStreak:  handleDailyStreak(reader); break;
+        case net::ServerMessage::Commerce: {
+            const Json result = Json::parseOrNull(reader.str());
+            if(reader.ok() && result.isObject()) commerce_[result["kind"].asString()] = result;
+            break;
+        }
         case net::ServerMessage::ShopResult:   handleShopResult(reader); break;
         case net::ServerMessage::SkinCatalog:   handleSkinCatalog(reader); break;
         case net::ServerMessage::SkinPublished: handleSkinPublished(reader); break;
@@ -1962,6 +1973,7 @@ void NetClient::handleSkinCatalog(ByteReader& reader) {
 void NetClient::handleSkinPublished(ByteReader& reader) {
     CustomSkin skin;
     if (!readCustomSkin(reader, skin)) return;
+    if(const auto* previous=findSkin(skin.id))skin.owned=skin.owned||previous->owned;
     // Replace in place when it is already known: a republished id is an edit,
     // and appending it would leave the Browse tab showing the skin twice.
     for (CustomSkin& known : skinCatalog_) {
@@ -2213,3 +2225,9 @@ void NetClient::handleDailyStreak(ByteReader& reader) {
 }
 
 } // namespace flix
+
+namespace flix {
+void NetClient::requestCommerce(const Json& request) {
+    ByteWriter w; beginMessage(w,net::ClientMessage::Commerce); w.str(request.dump()); send(w);
+}
+}

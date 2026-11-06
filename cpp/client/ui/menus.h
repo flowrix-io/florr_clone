@@ -1262,6 +1262,7 @@ private:
 /// menu_shop.cpp), seated under the top icon row and sliding in from the left.
 class ShopPanel {
 public:
+    void showMarket(bool orders) { tab_ = orders ? Tab::Orders : Tab::Market; }
     bool render(MenuContext&);
     void reset();
     static double preferredWidth();
@@ -1278,7 +1279,7 @@ public:
     }
 
 private:
-    enum class Tab : std::uint8_t { Offers, Challenges, Bonus };
+    enum class Tab : std::uint8_t { Offers, Challenges, Bonus, Market, Orders };
     Tab tab_ = Tab::Offers;
     double open_ = 1.0;
     bool closing_ = false;
@@ -1503,6 +1504,7 @@ class AdminDashboardPanel {
 public:
     bool render(MenuContext&);
     void showArena();
+    static bool expanded();
     void reset();
     static double preferredWidth();
     static double preferredHeight();
@@ -1585,6 +1587,7 @@ public:
 
     void toggle(MenuId);
     void openAdminArena();
+    void openMarket(bool orders);
     void close();
     MenuId open() const { return open_; }
     bool anyOpen() const { return open_ != MenuId::None; }

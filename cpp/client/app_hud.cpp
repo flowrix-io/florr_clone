@@ -269,7 +269,7 @@ void App::drawHud(Canvas& canvas, double time) {
         TextStyle style;
         style.align = Align::Centre;
         style.size = 16;
-        text(canvas, "Hel Casino: open chat and type /casino", window_.width() * 0.5, 190, style);
+        text(canvas, "Hel Casino: open Craft to play", window_.width() * 0.5, 190, style);
         break;
     }
     // ALT swaps every abbreviated number on this surface for its exact value,
@@ -482,7 +482,7 @@ NearbyNpc App::nearbyNpc(Vec2 self) const {
         const RemoteEntity& entity = entry.second;
         if (entity.kind != net::EntityKind::Npc) continue;
         const NpcService service = content().mob(entity.typeIndex).npc.service;
-        if (service == NpcService::None || service == NpcService::Casino) continue;
+        if (service == NpcService::None) continue;
         const double gap = distance(self, entity.position) - entity.radius;
         if (gap > nearestGap) continue;
         nearest = {service, entity.typeIndex, entity.rarity, entity.npcRecipe};

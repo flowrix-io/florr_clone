@@ -1727,10 +1727,10 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
         ui::setFill(canvas, floor.color);
         canvas.fillRect(0, 0, camera.viewportWidth(), camera.viewportHeight());
         const Rect visible = camera.visibleWorld(kTileOverlap);
-        const int x0 = std::max(0, int(std::floor(visible.left()/kTileSize)));
-        const int y0 = std::max(0, int(std::floor(visible.top()/kTileSize)));
-        const int x1 = std::min(terrain_->tileCols(realm)-1, int(std::floor(visible.right()/kTileSize)));
-        const int y1 = std::min(terrain_->tileRows(realm)-1, int(std::floor(visible.bottom()/kTileSize)));
+        const int x0 = int(std::floor(visible.left()/kTileSize));
+        const int y0 = int(std::floor(visible.top()/kTileSize));
+        const int x1 = int(std::floor(visible.right()/kTileSize));
+        const int y1 = int(std::floor(visible.bottom()/kTileSize));
         const auto* floorArt = sprites_ ? sprites_->tileArt(floor.floor) : nullptr;
         const auto* wallArt = sprites_ ? sprites_->tileArt(wall.wall) : nullptr;
         const float side = float((kTileSize+2*kTileOverlap)*camera.zoom());
@@ -1742,16 +1742,38 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
                 if (!drawCachedArt(canvas,*art,at.x,at.y,side,side)) art->renderFitted(canvas,at.x,at.y,side,side,0);
             } else if (solid) { ui::setFill(canvas,0x555555u); canvas.fillRect(at.x,at.y,side,side); }
         }
+        ui::setStroke(canvas,0x414141u);canvas.setLineWidth(float(4*camera.zoom()));
+        canvas.beginPath();
+        for(int y=y0;y<=y1;++y)for(int x=x0;x<=x1;++x)if(terrain_->atTile(x,y,realm)==Tile::Solid) {
+            const auto line=[&](int dx,int dy,double ax,double ay,double bx,double by){if(terrain_->atTile(x+dx,y+dy,realm)==Tile::Open){const auto a=camera.worldToScreen({ax,ay}),b=camera.worldToScreen({bx,by});canvas.moveTo(a.x,a.y);canvas.lineTo(b.x,b.y);}};
+            const double a=x*kTileSize,b=y*kTileSize;
+            line(-1,0,a,b,a,b+kTileSize);line(1,0,a+kTileSize,b,a+kTileSize,b+kTileSize);
+            line(0,-1,a,b,a+kTileSize,b);line(0,1,a,b+kTileSize,a+kTileSize,b+kTileSize);
+        }
+        canvas.stroke();
         return;
     }
 
-    // Everything outside the map is pure black, which says nobody can go
-    // there. The camera stops at the map's edge (App::pinCamera), so the
-    // black shows only around a map smaller than the view.
+    // The physical boundary is solid. Repeat its blocks beyond authored
+    // bounds so zooming out never exposes a void beside an invisible wall.
     ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
 
+    if(terrain_ && worldMaps_ && sprites_) if(const auto* map=worldMaps_->forRealm(realm)) {
+        int theme=adminArenaTheme(map->biome());if(theme<0)theme=0;
+        if(const auto* art=sprites_->tileArt(kAdminArenaThemes[theme].wall)) {
+            const Rect visible=camera.visibleWorld(kTileOverlap);
+            const int cols=terrain_->tileCols(realm),rows=terrain_->tileRows(realm);
+            const float side=float((kTileSize+2*kTileOverlap)*camera.zoom());
+            for(int y=int(std::floor(visible.top()/kTileSize));y<=int(std::floor(visible.bottom()/kTileSize));++y)
+                for(int x=int(std::floor(visible.left()/kTileSize));x<=int(std::floor(visible.right()/kTileSize));++x) {
+                    if(x>=0&&y>=0&&x<cols&&y<rows)continue;
+                    const auto at=camera.worldToScreen({x*kTileSize-kTileOverlap,y*kTileSize-kTileOverlap});
+                    if(!drawCachedArt(canvas,*art,at.x,at.y,side,side))art->renderFitted(canvas,at.x,at.y,side,side,0);
+                }
+        }
+    }
     // The PICTURE of a realm is its map file's tile layers, read off disk by
     // every client. The collision grid that arrives over the wire is the
     // server's answer to a different question and is never drawn: a cell looks
@@ -2850,7 +2872,9 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
         variant = variant * 1099511628211ull + skin->shapes.size();
         variant = variant * 1099511628211ull + static_cast<std::uint64_t>(skin->editedAt);
-        if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
+        if (skin->animation) {
+            renderAnimatedSkin(canvas,*skin,kFlowerArtRadius,timeSeconds);
+        } else if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
                                [&](Canvas& bitmap) {
                                    bitmap.translate(static_cast<float>(reach),
                                                     static_cast<float>(reach));

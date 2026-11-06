@@ -53,6 +53,7 @@
 #include "shared/game/map_elements.h"
 #include "shared/game/terrain.h"
 #include "client/ui/admin_arena_editor.h"
+#include "client/ui/commerce_ui.h"
 
 namespace flix {
 
@@ -126,9 +127,9 @@ constexpr ChipStyle kOnChip{0x9897D2u, 0x48477Au};
 constexpr ChipStyle kGoChip{0x4CAF50u, 0x2E7D32u};
 constexpr ChipStyle kDangerChip{0xC0504Du, 0x8E3A38u};
 
-enum class Tab : std::uint8_t { Players, Spawn, Give, Announce, Arena };
-constexpr int kTabCount = 5;
-constexpr const char* kTabLabels[kTabCount] = {"Players", "Spawn", "Give", "Announce", "Arena"};
+enum class Tab : std::uint8_t { Players, Spawn, Give, Announce, Arena, Codes, Events };
+constexpr int kTabCount = 7;
+constexpr const char* kTabLabels[kTabCount] = {"Players", "Spawn", "Give", "Announce", "Arena", "Star Codes", "Events"};
 
 /// What a click landed on.
 enum class Act : std::uint8_t {
@@ -176,6 +177,7 @@ struct ItemForm {
 /// open it on this machine.
 struct State {
     Tab tab = Tab::Players;
+    bool builderFull = false;
     bool requested = false;
     /// The AdminDashboardState::generation the pick and the list request
     /// below were made under. When the client's moves -- the socket dropped,
@@ -193,6 +195,8 @@ struct State {
     /// server names a row; the account name is what Give types.
     net::ConnectionId selected = 0;
     std::string selectedUsername;
+    TextFieldState recipientField,spawnXField,spawnYField,arenaTargetField;
+    std::string spawnX,spawnY,arenaTarget;
     std::string selectedName;
     Scroller bag;
 
@@ -203,7 +207,9 @@ struct State {
         int layout = 0;
         std::string width = "32", height = "32";
         TextFieldState widthField, heightField;
-        int tool = 0; // wall, open, pan
+        int tool = 0; // brush, box, erase, pan
+        int brushSize = 1;
+        std::vector<Vec2> stroke;
         double zoom = 1;
         Vec2 pan{}, anchor{}, end{}, panStart{}, mouseStart{};
         bool dragging = false;
@@ -348,6 +354,7 @@ std::string controlHint(const NetClient& net, const net::AdminDashboardPlayer& r
 
 } // namespace
 
+bool AdminDashboardPanel::expanded() { return state().builderFull && state().tab==Tab::Arena; }
 double AdminDashboardPanel::preferredWidth() { return kWidth; }
 double AdminDashboardPanel::preferredHeight() { return kHeight; }
 
@@ -356,6 +363,7 @@ void AdminDashboardPanel::reset() {
     // are this opening's, and the next account to open the card on this
     // machine must not find the last one's still in it.
     state() = State{};
+    resetCommerceUi();
 }
 
 void AdminDashboardPanel::showArena() {
@@ -438,6 +446,13 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
     text(canvas, "every request is checked by the server", panel.x + 96.0, panel.y + 25.0,
          label(kSubtitleSize, kDetailInk));
 
+    if(s.tab==Tab::Arena) {
+        const Rect full{panel.right()-250,panel.y+8,112,30};
+        chip(canvas,full,s.builderFull?"Panel view":"Open builder",full.contains(mouse),kChip);
+        if(ctx.clicked(full)){s.builderFull=!s.builderFull;s.arena.dragging=false;}
+    }
+    const Rect db{panel.right()-132,panel.y+8,88,30};chip(canvas,db,"Database",db.contains(mouse),kChip);
+    if(ctx.clicked(db))net.sendChat("/admin db");
     const Rect closeRect = closeButtonRect(panel);
     panelClose(canvas, closeRect, closeRect.contains(mouse));
     addRegion(closeRect, Act::Close);
@@ -463,6 +478,13 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
     Rect amountRect{};
     Rect announcementRect{};
 
+    const auto editField=[&](Rect r,std::string& value,TextFieldState& field,const std::string& placeholder) {
+        inputField(canvas,r,value,placeholder,field.focused,now,&field);
+        trackTextMouse(ctx.window,field,r,inputFieldRun(r,value,field),value,now);
+        if(field.focused){ctx.wantsText=true;TextEditOptions options;options.maxBytes=32;options.asciiOnly=true;editText(ctx.window,value,field,now,options);}
+    };
+    if(s.tab==Tab::Codes)renderStarCodes(ctx,body);
+    if(s.tab==Tab::Events)renderEventSetup(ctx,body);
     // -- the Players tab -------------------------------------------------------
 
     if (s.tab == Tab::Players) {
@@ -750,13 +772,21 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
                    &form.amountField);
         ry += kFieldHeight + 18.0;
 
+        if(mobs) {
+            text(canvas,"Tile X / Y (blank = on you)",right.x+12,ry+10,label(kRowDetailSize));ry+=24;
+            editField({right.x+12,ry,120,30},s.spawnX,s.spawnXField,"Tile X");
+            editField({right.x+142,ry,120,30},s.spawnY,s.spawnYField,"Tile Y");ry+=42;
+        } else {
+            text(canvas,"Recipient username",right.x+12,ry+10,label(kRowDetailSize));ry+=24;
+            editField({right.x+12,ry,right.w-24,30},s.selectedUsername,s.recipientField,"Type any account username");ry+=42;
+        }
         const bool ready = !form.picked.empty() && validAmount(form.amount) &&
                            (mobs || !s.selectedUsername.empty());
         ChipStyle go = kGoChip;
         go.enabled = ready;
         go.textSize = kSubmitTextSize;
         const Rect action{right.x + 12.0, ry, kSubmitWidth, kChipHeight + kSubmitExtra};
-        chip(canvas, action, mobs ? "Spawn at your flower" : "Give",
+        chip(canvas, action, mobs ? "Spawn" : "Give",
              ready && action.contains(mouse), go);
         if (ready) addRegion(action, mobs ? Act::Spawn : Act::Give);
         if (!validAmount(form.amount)) {
@@ -787,7 +817,7 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
         if (edit.cols != cols || edit.rows != rows) {
             edit.cols = cols; edit.rows = rows; edit.pan = {}; edit.dragging = false;
         }
-        const double mapWidth = std::min(body.w * 0.47, body.h - 65.0);
+        const double mapWidth = std::min(s.builderFull ? body.w-360 : body.w*0.47, body.h-65.0);
         const Rect mapView{body.x,body.y+23,mapWidth,mapWidth};
         const double controlsX = body.x + mapWidth + 16;
         const double controlsW = body.right() - controlsX;
@@ -805,14 +835,24 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
             const auto tileAt = [&](Vec2 p) { return Vec2{std::floor((p.x-origin.x)/cell),std::floor((p.y-origin.y)/cell)}; };
             if (ctx.pressed() && mapView.contains(mouse)) {
                 const Vec2 tile = tileAt(mouse);
-                if (edit.tool == 2 || (tile.x>=1 && tile.y>=1 && tile.x<cols-1 && tile.y<rows-1)) {
-                    edit.dragging = true; arenaGesture = true; edit.anchor = edit.end = tile;
+                if (edit.tool == 3 || (tile.x>=1 && tile.y>=1 && tile.x<cols-1 && tile.y<rows-1)) {
+                    edit.dragging = true; arenaGesture = true; edit.anchor = edit.end = tile; edit.stroke.clear();
                     edit.mouseStart = mouse; edit.panStart = edit.pan;
                 }
             }
             if (edit.dragging) {
-                if (edit.tool == 2) edit.pan = edit.panStart + mouse - edit.mouseStart;
-                else edit.end = tileAt(mouse);
+                if (edit.tool == 3) edit.pan = edit.panStart + mouse - edit.mouseStart;
+                else {
+                    const Vec2 next=tileAt(mouse);
+                    if(edit.tool!=1) {
+                        const int steps=std::max(1,int(std::max(std::abs(next.x-edit.end.x),std::abs(next.y-edit.end.y))));
+                        for(int i=0;i<=steps && edit.stroke.size()<512;++i) {
+                            Vec2 tile{std::floor(edit.end.x+(next.x-edit.end.x)*i/steps),std::floor(edit.end.y+(next.y-edit.end.y)*i/steps)};
+                            if(tile.x>=1&&tile.y>=1&&tile.x<cols-1&&tile.y<rows-1 && (edit.stroke.empty() || edit.stroke.back().x!=tile.x || edit.stroke.back().y!=tile.y))edit.stroke.push_back(tile);
+                        }
+                    }
+                    edit.end=next;
+                }
             }
             canvas.save(); canvas.beginPath(); canvas.rect(mapView.x,mapView.y,mapView.w,mapView.h); canvas.clip();
             for (int y=0;y<rows;++y) for (int x=0;x<cols;++x) {
@@ -822,18 +862,26 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
                 const double gap = cell >= 6 ? 0.7 : 0;
                 canvas.fillRect(tile.x,tile.y,cell-gap,cell-gap);
             }
-            if (edit.dragging && edit.tool != 2) {
-                if (const auto paint = arenaPaintRect(edit.anchor,edit.end,cols,rows)) {
-                    setFill(canvas,edit.tool==0 ? 0xF6BE55u : 0x79DF9Fu);
-                    canvas.setGlobalAlpha(canvas.globalAlpha()*0.6f);
-                    canvas.fillRect(origin.x+paint->x*cell,origin.y+paint->y*cell,paint->width*cell,paint->height*cell);
-                }
+            if (edit.dragging && edit.tool != 3) {
+                setFill(canvas,edit.tool==2 ? 0x79DF9Fu : 0xF6BE55u);
+                canvas.setGlobalAlpha(canvas.globalAlpha()*0.6f);
+                if(edit.tool==1) {
+                    if (const auto paint = arenaPaintRect(edit.anchor,edit.end,cols,rows))
+                        canvas.fillRect(origin.x+paint->x*cell,origin.y+paint->y*cell,paint->width*cell,paint->height*cell);
+                } else for(const auto& tile:edit.stroke)
+                    canvas.fillRect(origin.x+tile.x*cell,origin.y+tile.y*cell,std::min(double(edit.brushSize),cols-1-tile.x)*cell,std::min(double(edit.brushSize),rows-1-tile.y)*cell);
             }
             canvas.restore();
             if (edit.dragging && ctx.released()) {
-                if (edit.tool != 2) {
-                    if (const auto paint = arenaPaintRect(edit.anchor,edit.end,cols,rows))
-                        order("build "+std::to_string(paint->x)+" "+std::to_string(paint->y)+" "+std::to_string(paint->width)+" "+std::to_string(paint->height)+(edit.tool==0 ? " wall" : " open"));
+                if (edit.tool != 3) {
+                    if(edit.tool==1) {
+                        if (const auto paint = arenaPaintRect(edit.anchor,edit.end,cols,rows))
+                            order("build "+std::to_string(paint->x)+" "+std::to_string(paint->y)+" "+std::to_string(paint->width)+" "+std::to_string(paint->height)+" wall");
+                    } else for(std::size_t start=0;start<edit.stroke.size();start+=64) {
+                        Json q=Json::object(),points=Json::array();
+                        for(std::size_t i=start;i<std::min(start+64,edit.stroke.size());++i){Json point=Json::array();point.push(int(edit.stroke[i].x));point.push(int(edit.stroke[i].y));points.push(point);}
+                        q["kind"]="arena";q["action"]="stroke";q["points"]=points;q["size"]=edit.brushSize;q["erase"]=edit.tool==2;net.requestCommerce(q);
+                    }
                 }
                 edit.dragging = false;
             } else if (edit.dragging && !ctx.window.mouseDown(MouseButton::Left)) edit.dragging = false;
@@ -843,11 +891,11 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
             text(canvas,"then open Admin > Arena to edit.",mapView.x+10,mapView.y+mapView.h*0.45+22,label(kRowDetailSize));
         }
         const double toolY = mapView.bottom()+8;
-        const double tw = (mapView.w-24)/5;
-        const char* tools[]{"Wall","Erase","Pan"};
-        for(int i=0;i<3;++i) if(button({mapView.x+i*(tw+6),toolY,tw,32},tools[i],edit.tool==i)) { edit.tool=i; edit.dragging=false; }
-        if(button({mapView.x+3*(tw+6),toolY,tw,32},"-")) { edit.zoom=std::max(1.0,edit.zoom/2); edit.dragging=false; }
-        if(button({mapView.x+4*(tw+6),toolY,tw,32},"+")) { edit.zoom=std::min(8.0,edit.zoom*2); edit.dragging=false; }
+        const double tw = (mapView.w-30)/6;
+        const char* tools[]{"Brush","Box","Erase","Pan"};
+        for(int i=0;i<4;++i) if(button({mapView.x+i*(tw+6),toolY,tw,32},tools[i],edit.tool==i)) { edit.tool=i; edit.dragging=false; }
+        if(button({mapView.x+4*(tw+6),toolY,tw,32},"-")) { edit.zoom=std::max(1.0,edit.zoom/2); edit.dragging=false; }
+        if(button({mapView.x+5*(tw+6),toolY,tw,32},"+")) { edit.zoom=std::min(8.0,edit.zoom*2); edit.dragging=false; }
 
         std::vector<std::string> layouts;
         if(const auto* maps=net.worldMaps()) for(const auto& map:maps->maps())
@@ -899,6 +947,11 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
         y+=46;
         if(button({controlsX,y,(controlsW-8)/2,34},"Bring everyone")) order("bring all");
         if(button({controlsX+(controlsW+8)/2,y,(controlsW-8)/2,34},"Return everyone")) order("return all");
+        y+=46;
+        text(canvas,"Brush size: "+std::to_string(edit.brushSize),controlsX,y+16,label(kTextSize));
+        if(button({controlsX+140,y,36,32},"-"))edit.brushSize=std::max(1,edit.brushSize-1);
+        if(button({controlsX+184,y,36,32},"+"))edit.brushSize=std::min(16,edit.brushSize+1);
+        if(button({controlsX+230,y,controlsW-230,32},"Status"))order("status");
     }
 
     // -- the Announce tab --------------------------------------------------------
@@ -931,6 +984,17 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
         if (ready) addRegion(action, Act::Announce);
     }
 
+    if(s.tab==Tab::Arena) {
+        const double mapWidth=std::min(s.builderFull ? body.w-360 : body.w*0.47,body.h-65.0);
+        const double x=body.x+mapWidth+16,w=body.right()-x;
+        editField({x,body.bottom()-70,w-160,30},s.arenaTarget,s.arenaTargetField,"Player username");
+        const Rect bring{body.right()-150,body.bottom()-70,70,30},back{body.right()-74,body.bottom()-70,74,30};
+        chip(canvas,bring,"Bring",bring.contains(mouse),kChip);chip(canvas,back,"Return",back.contains(mouse),kChip);
+        if(!s.arenaTarget.empty() && s.arenaTarget.find_first_of(" \t\r\n")==std::string::npos) {
+            if(ctx.clicked(bring))net.sendChat("/admin arena bring "+s.arenaTarget);
+            if(ctx.clicked(back))net.sendChat("/admin arena return "+s.arenaTarget);
+        }
+    }
     // -- the footer: how the last request went -------------------------------
 
     {
@@ -948,8 +1012,16 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
 
     const auto sendSpawn = [&] {
         ItemForm& form = s.spawn;
+        std::string coordinates;
+        if(!s.spawnX.empty() || !s.spawnY.empty()) {
+            try {
+                std::size_t a=0,b=0;const double x=std::stod(s.spawnX,&a),y=std::stod(s.spawnY,&b);
+                if(a!=s.spawnX.size()||b!=s.spawnY.size()||!std::isfinite(x)||!std::isfinite(y)||x<0||y<0||x>128||y>128)throw 0;
+                coordinates=std::to_string((x+0.5)*kTileSize)+" "+std::to_string((y+0.5)*kTileSize)+" ";
+            }catch(...){setStatus(s,"Enter valid tile X and Y coordinates.",false);return;}
+        }
         const std::string rarity = rarityName(static_cast<Rarity>(form.rarity));
-        net.sendChat("/admin spawn " + form.picked + " " + rarity + " " + form.amount);
+        net.sendChat("/admin spawn " + form.picked + " " + rarity + " " + coordinates + form.amount);
         setStatus(s, "Asked the server to spawn " + form.amount + " " + rarity + " " +
                          catalogueName(true, form.picked) + ". Its answer is in chat.",
                   true);

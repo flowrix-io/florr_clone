@@ -28,6 +28,7 @@ std::uint32_t skinHexColor(const std::string& text, std::uint32_t fallback);
 /// -- so `radius` is what scales an authored skin onto whatever circle it is
 /// being shown in. Everything is clipped to a disc of 100 authored units so
 /// no skin can paint past its own flower.
+void renderAnimatedSkin(Canvas&, const CustomSkin&, double radius, double time);
 void renderSkinShapes(Canvas& canvas, const std::vector<SkinShape>& shapes, double radius);
 
 } // namespace flix

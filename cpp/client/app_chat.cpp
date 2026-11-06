@@ -253,6 +253,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin notify", "Create a notification (shorthand)", true},
     {"/admin clear_notifications", "Clear all notifications", true},
     {"/admin clear_notifs", "Clear notifications (shorthand)", true},
+    {"/admin gui", "Open the admin dashboard", true},
     {"/admin arena gui", "Open the visual arena editor", true},
     {"/admin arena", "Host games: bring/return/map/empty/build/wall/floor/pvp", true},
     {"/admin phase", "Toggle walking through walls: [on|off|toggle]", true},
@@ -1029,6 +1030,7 @@ bool App::handleClientCommand(const std::string& message) {
         menus_.openAdminArena();
         return true;
     }
+    if(message=="/shop" || message=="/order") {menus_.openMarket(message=="/order");return true;}
     if (message == "/guild-menu" || message == "/guild menu") {
         // The reference refuses this outside a running game because its panel
         // lives on the game object. This client's panel is a lobby menu too,

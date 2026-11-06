@@ -220,6 +220,7 @@ void writeCustomSkin(ByteWriter& w, const CustomSkin& skin) {
     w.str(skin.id);
     w.str(skin.name);
     w.str(skin.author);
+    w.f64(skin.price); w.boolean(skin.owned); w.u8(skin.animation);
     w.f64(skin.createdAt);
     w.f64(skin.editedAt);
     w.u32(skin.likes);
@@ -234,6 +235,7 @@ bool readCustomSkin(ByteReader& r, CustomSkin& out) {
     skin.id = r.str();
     skin.name = r.str();
     skin.author = r.str();
+    skin.price = r.f64(); skin.owned = r.boolean(); skin.animation = r.u8();
     skin.createdAt = r.f64();
     skin.editedAt = r.f64();
     skin.likes = r.u32();
@@ -269,6 +271,8 @@ Json skinToJson(const CustomSkin& skin) {
     out["id"] = skin.id;
     out["name"] = skin.name;
     out["author"] = skin.author;
+    out["price"] = skin.price;
+    if(skin.animation) out["animation"] = int(skin.animation);
     Json shapes = Json::array();
     for (const SkinShape& s : skin.shapes) {
         Json j = Json::object();
@@ -310,6 +314,8 @@ CustomSkin skinFromJson(const Json& value) {
     skin.id = value["id"].asString();
     skin.name = value["name"].asString();
     skin.author = value["author"].asString();
+    skin.price = value["price"].asDouble();
+    skin.animation = value["animation"].asDouble()==1 ? 1 : 0;
     skin.createdAt = value["createdAt"].asDouble(0.0);
     skin.editedAt = value["editedAt"].asDouble(0.0);
 

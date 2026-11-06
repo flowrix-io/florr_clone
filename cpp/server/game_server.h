@@ -407,6 +407,12 @@ private:
     void handleResetSkills(Session&, net::Connection&);
     void handleBuyPetal(Session&, net::Connection&, ByteReader&);
     void handleRedeemCode(Session&, net::Connection&, ByteReader&);
+    void handleCommerce(Session&, net::Connection&, ByteReader&);
+    void runCasino(Session&, net::Connection&, const std::string&);
+    void runMarket(Session&, net::Connection&, const Json&);
+    void sendCommerce(Session&, net::Connection&, const std::string&, bool, const std::string&, const Json& = Json::object());
+    void syncCommerceAccount(const std::string&);
+    void installSignatureSkin();
     void handlePublishSkin(Session&, net::Connection&, ByteReader&);
     void handleEditSkin(Session&, net::Connection&, ByteReader&);
     void handleEquipSkin(Session&, net::Connection&, ByteReader&);
@@ -511,6 +517,11 @@ private:
     void serviceAdminPhase();
     void serviceAdminCursorActions();
     bool hostedArenaPvp_ = false;
+    Json hostedArenaKit_;
+    void applyHostedKit(Session&);
+    void endHostedKit(Session&);
+    void clearHostedGear(Session&);
+    void runEventSetup(Session&, net::Connection&, const Json&);
     void initHostedArena();
     void saveHostedArena();
     void refreshHostedArena(bool reset);

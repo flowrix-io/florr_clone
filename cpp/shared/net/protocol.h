@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 74;
+inline constexpr std::uint16_t kProtocolVersion = 75;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -93,7 +93,7 @@ enum class ClientMessage : std::uint8_t {
                         ///< `?includeAdmins=true`, and sent as that was, from
                         ///< the "Show Admins on Leaderboard" switch, for anyone.
     RedeemCode,         ///< str code -- a star code, checked server-side
-    PublishSkin,        ///< str name, u8 shapeCount, { SkinShape }*  (skin_format.h)
+    PublishSkin,        ///< str name, f64 price, u8 shapeCount, { SkinShape }*  (skin_format.h)
     EquipSkin,          ///< str skinId -- empty takes the current skin off
     DeleteSkin,         ///< str skinId -- own skin, or anyone's for an admin
     RequestNotifications, ///< u16 limit, f64 beforeMillis (0 asks for the newest
@@ -236,11 +236,12 @@ enum class ClientMessage : std::uint8_t {
     FavoriteSkin,       ///< str skinId, u8 favorite -- adds the skin to, or
                         ///< takes it off, this account's favourites. Answered
                         ///< with SkinOpinion. (Version 70.)
-    EditSkin,           ///< str skinId, str name, u8 shapeCount, { SkinShape }*
+    EditSkin,           ///< str skinId, str name, f64 price, u8 shapeCount, { SkinShape }*
                         ///< -- replaces the name and shapes of a skin of your
                         ///< own, keeping its id, votes, stars and wearers.
                         ///< Checked as PublishSkin is; answered with a
                         ///< SkinPublished broadcast of the same id. (Version 73.)
+    Commerce,          ///< str JSON: market, casino and skin purchase requests.
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -463,6 +464,8 @@ enum class ServerMessage : std::uint8_t {
     SkinOpinion,        ///< str skinId, u8 vote(SkinVote), u8 favorite -- this
                         ///< account's standing on one skin, after a VoteSkin
                         ///< or FavoriteSkin, refused or not. (Version 70.)
+    Commerce,          ///< str JSON: bounded commerce page/result.
+
 };
 
 // ---------------------------------------------------------------------------

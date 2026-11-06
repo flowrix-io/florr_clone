@@ -130,6 +130,8 @@ bool joinAs(Harness& h, NetClient& client, const char* name) {
     if (!h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; })) {
         return false;
     }
+    const_cast<Database&>(h.server.database()).progress(h.server.database().findUser(name)->id).stars=10000;
+    const_cast<Database&>(h.server.database()).markDirty();
     client.joinGame(1280, 720);
     if (!h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; })) {
         return false;

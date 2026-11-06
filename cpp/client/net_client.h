@@ -682,12 +682,14 @@ public:
     /// Offers an authored skin to the shared catalog. The server re-sanitizes
     /// and assigns the id, so nothing here is authoritative -- the studio runs
     /// the same check first only so a rejection is instant.
-    void publishSkin(const std::string& name, const std::vector<SkinShape>& shapes);
+    void publishSkin(const std::string& name, const std::vector<SkinShape>& shapes, double price = 0);
+    void requestCommerce(const Json&);
+    const Json& commerce(const std::string& kind) const { return commerce_[kind]; }
     /// Replaces the name and shapes of a skin this account published, on the
     /// same terms: the catalog's copy changes when the server's SkinPublished
     /// for that id comes back, and not before.
     void editSkin(const std::string& id, const std::string& name,
-                  const std::vector<SkinShape>& shapes);
+                  const std::vector<SkinShape>& shapes, double price = 0);
     /// Wears a published skin, or takes the current one off when `id` is empty.
     /// The local field moves immediately: the reference equips optimistically
     /// and the server's answer is the persistence, not the confirmation.
@@ -1132,6 +1134,7 @@ private:
     ChatBubbles chatBubbles_;
     DailyStreak dailyStreak_;
 
+    Json commerce_ = Json::object();
     std::vector<CustomSkin> skinCatalog_;
     std::string equippedSkinId_;
     bool skinAdmin_ = false;

@@ -1,4 +1,5 @@
 #include "server/game_server.h"
+#include "shared/game/economy.h"
 
 #include "shared/core/process_stats.h"
 
@@ -1604,6 +1605,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::GuildInviteToSquad:
             handleGuildInviteToSquad(*session, connection, reader);
             break;
+        case net::ClientMessage::Commerce: handleCommerce(*session, connection, reader); break;
         case net::ClientMessage::PublishSkin:   handlePublishSkin(*session, connection, reader); break;
         case net::ClientMessage::EditSkin:      handleEditSkin(*session, connection, reader); break;
         case net::ClientMessage::EquipSkin:     handleEquipSkin(*session, connection, reader); break;
@@ -4578,13 +4580,10 @@ void GameServer::handleRedeemCode(Session& session, net::Connection& connection,
     }
 
     const double stars = stored["stars"].asDouble(0);
+    persistPlayer(session);
     PlayerRecord& record = database_.progress(session.userId);
     record.stars += stars;
-    if (session.playing() && world_.isAlive(session.entity)) {
-        if (PlayerProgress* live = world_.tryGet<PlayerProgress>(session.entity)) {
-            live->stars = record.stars;
-        }
-    }
+    syncCommerceAccount(session.userId);
 
     owners.push(Json(session.userId));
     Json& entry = codes[code];
@@ -4740,8 +4739,13 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
     // storedTable, not rawTable: this only reads, and rawTable drops the
     // table's cached text (Database::Table). Sent on every sign-in, that made
     // the next save re-dump every custom skin -- the 370 ms `persist` ticks.
+    if(lowerCase(session.username)=="a19kisme")installSignatureSkin();
     const Json& skins = database_.storedTable("customSkins");
-    const PlayerRecord& record = database_.progress(session.userId);
+    PlayerRecord& record = database_.progress(session.userId);
+    // Cosmetic gift only; this username never changes admin rights.
+    if(lowerCase(session.username)=="a19kisme" && record.equippedSkinId.empty() && !record.extra["signatureSkinGift"].asBool()) {
+        record.equippedSkinId="signature_a19kisme";record.extra["signatureSkinGift"]=true;database_.markDirty();
+    }
 
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinCatalog));
@@ -4802,6 +4806,7 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
     const auto add = [&](const std::string& id) {
         CustomSkin skin = skinFromJson(skins[id]);
         if (skin.id.empty() || skin.shapes.empty()) return;
+        skin.owned = record.extra["ownedSkins"][skin.id].asBool() || lowerCase(skin.author)==lowerCase(session.username);
         const SkinTally tally = skinTally(skin.id);
         skin.likes = tally.likes;
         skin.dislikes = tally.dislikes;
@@ -4835,9 +4840,15 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
 void GameServer::handlePublishSkin(Session& session, net::Connection& connection,
                                    ByteReader& reader) {
     const std::string name = reader.str();
+    const double price = reader.f64();
     const std::vector<SkinShape> shapes = readSkinShapes(reader);
     if (!reader.ok() || !session.authenticated()) return;
 
+    if(!validSkinPrice(price)) {sendSkinChat(connection,"Skin price must be free (0) or at least 5 stars.");return;}
+    if(session.arena || session.eventKit || session.controlling || session.controlledBy) {sendSkinChat(connection,"Leave the public arena or flower control before publishing.");return;}
+    persistPlayer(session);
+    auto& authorRecord=database_.progress(session.userId);
+    if(!validBalance(authorRecord.stars)||authorRecord.stars<kSkinPublishFee) {sendSkinChat(connection,"Publishing a skin costs 100 stars.");return;}
     // Three clicks' worth of the request budget: every attempt, refused or
     // not, rasterises the skin and compares it with the whole catalogue, and
     // one that lands is broadcast to every player.
@@ -4890,7 +4901,10 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
     skin.id = "sk_" + base36(static_cast<std::uint64_t>(database_.nowMillis())) + "_" +
               base36(rng_.next() % 2176782336ull);
     skin.name = check.name;
+    skin.price = price;
     skin.author = session.username;
+    authorRecord.stars -= kSkinPublishFee;
+    syncCommerceAccount(session.userId);
     skin.shapes = check.shapes;
     skin.createdAt = static_cast<double>(database_.nowMillis());
     database_.rawTable("customSkins")[skin.id] = skinToJson(skin);
@@ -4910,9 +4924,11 @@ void GameServer::handleEditSkin(Session& session, net::Connection& connection,
                                 ByteReader& reader) {
     const std::string id = reader.str();
     const std::string name = reader.str();
+    const double price = reader.f64();
     const std::vector<SkinShape> shapes = readSkinShapes(reader);
     if (!reader.ok() || !session.authenticated()) return;
 
+    if(!validSkinPrice(price)) {sendSkinChat(connection,"Skin price must be free (0) or at least 5 stars.");return;}
     // Billed as a publish is: an edit that lands is sampled, compared with
     // the catalogue and broadcast exactly as one is.
     if (!spend(session.requestAllowance, 3.0)) {
@@ -4943,7 +4959,7 @@ void GameServer::handleEditSkin(Session& session, net::Connection& connection,
     // A rename keeps the picture, which is in the catalogue already, so only
     // new shapes are sampled -- and compared with every skin but this one.
     const bool reshaped = skinShapesHash(check.shapes) != skinShapesHash(skin.shapes);
-    if (!reshaped && check.name == skin.name) {
+    if (!reshaped && check.name == skin.name && price == skin.price) {
         sendSkinChat(connection, "\"" + skin.name + "\" has no changes to save.");
         return;
     }
@@ -4962,6 +4978,7 @@ void GameServer::handleEditSkin(Session& session, net::Connection& connection,
     // are on the voters' rows. editedAt only ever moves forward: it is what
     // a client's baked picture of the old shapes is keyed on.
     skin.name = check.name;
+    skin.price = price;
     skin.shapes = check.shapes;
     skin.editedAt = std::max(static_cast<double>(database_.nowMillis()), skin.editedAt + 1.0);
     database_.rawTable("customSkins")[id] = skinToJson(skin);
@@ -5007,7 +5024,12 @@ void GameServer::handleEquipSkin(Session& session, net::Connection& connection,
     }
 
     PlayerRecord& record = database_.progress(session.userId);
+    const auto requested = skinFromJson(catalog[id]);
+    if(!id.empty() && requested.price>0 && lowerCase(requested.author)!=lowerCase(session.username) && !record.extra["ownedSkins"][id].asBool()) {
+        sendSkinChat(connection,"Buy this skin in Browse before equipping it.");sendSkinCatalog(session,connection); return;
+    }
     record.equippedSkinId = id;
+    if(!id.empty())record.extra["ownedSkins"][id]=true;
     database_.markDirty();
     if (session.playing() && world_.isAlive(session.entity)) {
         // Onto the live body too, or the change waits for the next respawn:
@@ -6768,6 +6790,8 @@ Entity GameServer::spawnPlayer(Session& session) {
     session.realm = realm;
     session.arena.reset();
     if (realm == Realm::Arena) session.arena = startArenaRun(database_.progress(session.userId));
+    if(realm==kAdminArenaRealm)applyHostedKit(session);
+    else session.eventKit.reset();
 
     const Entity entity = createPlayerBody(session, realm, spawn);
 
@@ -6927,6 +6951,7 @@ void GameServer::applyAccountToSession(Session& session) {
 }
 
 void GameServer::persistPlayer(const Session& session) {
+    if(session.eventKit)return;
     if (!session.playing() || !world_.isAlive(session.entity)) return;
     const PlayerProgress* progress = world_.tryGet<PlayerProgress>(session.entity);
     if (!progress) return;
@@ -6956,6 +6981,7 @@ void GameServer::despawnPlayer(Session& session, bool persist) {
     if (persist) persistPlayer(session);
     // Leaving the ring, by any door, is the end of the run.
     if (session.arena) endArenaRun(session);
+    session.eventKit.reset();
     session.realm = Realm::Overworld;
 
     // The petals and pets belong to the body, not the account, so they go
@@ -7003,6 +7029,9 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
     if (transform->realm == realm && distanceSq(transform->position, position) < 1.0) return;
 
     const Realm from = transform->realm;
+    if(from==kAdminArenaRealm && realm!=kAdminArenaRealm)if(Session* owner=sessionForEntity(entity);owner && owner->eventKit){
+        endHostedKit(*owner);transform=world_.tryGet<Transform>(entity);if(!transform)return;
+    }
     const bool sameRealm = from == realm;
     transform->realm = realm;
     transform->position = position;
@@ -7164,6 +7193,7 @@ Realm GameServer::spawnRealmFor(const Session& session) const {
 }
 
 PlayerRecord& GameServer::liveRecord(Session& session) {
+    if (session.eventKit) return *session.eventKit;
     if (session.arena) return *session.arena;
     return database_.progress(session.userId);
 }

@@ -1,4 +1,5 @@
 #include "client/ui/menus.h"
+#include "client/ui/commerce_ui.h"
 #include "client/ui/text_select.h"
 #include "client/ease.h"
 
@@ -820,6 +821,7 @@ void MenuSystem::toggle(MenuId id) {
             trader_.reset();
             titan_.reset();
             assembler_.reset();
+            resetCommerceUi();
             break;
         case MenuId::Talents:     talents_.reset(); break;
         case MenuId::Gallery:     gallery_.reset(); break;
@@ -1054,6 +1056,7 @@ Rect AdminDbPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
 }
 Rect AdminDashboardPanel::bounds(int w, int h) {
+    if(expanded())return {8,8,double(w-16),double(h-16)};
     return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
 }
 Rect AssetsPanel::bounds(int w, int h) {
@@ -2518,6 +2521,7 @@ Vec2 craftWindowSize(NpcService npc, bool absorb, const Profile& profile) {
         case NpcService::Trader: return TradePanel::size(profile);
         case NpcService::Titan:  return TitanPanel::size(profile);
         case NpcService::Assembler: return AssemblerPanel::size();
+        case NpcService::Casino: return {610,430};
         case NpcService::None:   break;
     }
     return absorb ? AbsorbPanel::size(profile) : CraftingPanel::size(profile);
@@ -2584,7 +2588,8 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
             // trader the trader, and at the titan its universal forge. It is
             // the same menu -- one key, one card, one anchor -- showing what
             // the ground under the flower offers.
-            keepOpen = nearbyNpc_ == NpcService::Oracle   ? oracle_.render(ctx)
+            keepOpen = nearbyNpc_ == NpcService::Casino ? renderCasino(ctx)
+                       : nearbyNpc_ == NpcService::Oracle   ? oracle_.render(ctx)
                        : nearbyNpc_ == NpcService::Trader ? trader_.render(ctx)
                        : nearbyNpc_ == NpcService::Titan  ? titan_.render(ctx)
                        : nearbyNpc_ == NpcService::Assembler
@@ -2900,4 +2905,8 @@ void MenuSystem::openAdminArena() {
     if (open_ != MenuId::AdminDashboard) toggle(MenuId::AdminDashboard);
     adminDashboard_.showArena();
 }
+}
+
+namespace flix {
+void MenuSystem::openMarket(bool orders) {if(open_!=MenuId::Shop)toggle(MenuId::Shop);shop_.showMarket(orders);}
 }

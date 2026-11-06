@@ -2595,7 +2595,7 @@
             "super": 0,
             "unique": 0
         },
-        "description": "Hel Casino. Type /casino nearby for rules, chips, coin flips and Plinko.",
+        "description": "Hel Casino. Open Craft nearby to exchange stars and chips, flip coins or play Plinko.",
         "color": "#B375E8",
         "image": "$trader",
         "ai_type": "passive",

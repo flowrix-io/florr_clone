@@ -233,6 +233,8 @@ add_library(flix_server STATIC
   server/bot_ai.cpp
   server/auto_update.cpp
   server/admin_arena.cpp
+  server/commerce.cpp
+  server/casino.cpp
   server/chat_commands.cpp
   server/chat_moderation.cpp
   server/replication.cpp
@@ -299,6 +301,7 @@ add_library(flix_client STATIC
   client/ui/code_editor.cpp
   client/ui/menu_talents.cpp
   client/ui/menu_shop.cpp
+  client/ui/menu_commerce.cpp
   client/ui/menu_skins.cpp
   client/ui/menu_leaderboard.cpp
   client/ui/menu_notifications.cpp
