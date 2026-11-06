@@ -831,6 +831,12 @@ TEST(the_announce_gate_its_byte_cap_and_its_chat_budget) {
     h.step(10, all);
     CHECK(player.adminAnnouncement().text != "Doors open, you shit");
 
+    // Nor can one be spelled backwards past that check: drawn "shit".
+    CHECK(say(h, boss, "/admin announce \xE2\x80\xAE" "tihs", all));
+    CHECK(sawText(boss, "Announcement not sent: it contains invisible characters"));
+    h.step(10, all);
+    CHECK(player.adminAnnouncement().text.find("tihs") == std::string::npos);
+
     // Billed as a line said to everyone: a burst runs dry.
     const int beforeBurst = adminLines(player);
     for (int i = 0; i < 6; ++i) boss.sendChat("/admin announce burst " + std::to_string(i));

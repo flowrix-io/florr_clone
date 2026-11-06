@@ -1184,7 +1184,10 @@ letters, punctuation and spelled-out letters. Each listed word says whether it
 may sit inside a word, must start one, or must be the whole word, which is what
 keeps "class", "assassin" and "Scunthorpe" clean; the lists are at the top of
 `chat_moderation.cpp`, and a refused line is logged with the word that
-matched.
+matched. A line (or announcement) that draws a control making a browser reorder
+Latin letters — U+202B, U+202E, U+2067 or U+2068, typed or as a character
+reference — is refused outright, because the word check reads stored order and
+`\u202Ekcuf` draws a word it never sees.
 
 ## The asset browser and boot scripts
 

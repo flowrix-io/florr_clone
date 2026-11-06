@@ -67,4 +67,11 @@ bool chatLineDrawsNothing(const std::string& line);
 /// can be dressed as a System line or an admin's announcement.
 bool chatLineBreaksRows(const std::string& line);
 
+/// Whether `line` draws a control that makes a browser put its letters in
+/// another order than they are stored in: U+202E turns "kcuf" into "fuck", and
+/// U+202B, U+2067 and U+2068 do the same with a U+200F between the letters.
+/// Every other check here reads stored order, so such a line is not judged but
+/// refused. The native client ignores these controls; the web client does not.
+bool chatLineReversesText(const std::string& line);
+
 } // namespace flix

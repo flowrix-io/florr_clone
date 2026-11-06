@@ -8,6 +8,7 @@ using flix::blockedWordIn;
 using flix::chatLineBreaksRows;
 using flix::chatLineDrawsNothing;
 using flix::chatLineFloods;
+using flix::chatLineReversesText;
 using flix::chatRepeatKey;
 
 // Chat moderation judges a line on what a reader will see, so most of these
@@ -157,6 +158,37 @@ TEST(a_line_that_would_start_a_row_of_its_own_breaks_rows) {
     CHECK(!chatLineBreaksRows("<b>bold</b> and <span style=\"color:red\">red</span>"));
     CHECK(!chatLineBreaksRows("type &lt;br&gt; for a break"));
     CHECK(!chatLineBreaksRows("a br b"));
+}
+
+TEST(a_control_that_reorders_the_letters_is_found_however_it_is_written) {
+    // The four a browser reverses Latin letters under: RLO, RLE, RLI, FSI.
+    CHECK(chatLineReversesText("\xE2\x80\xAE" "kcuf"));
+    CHECK(chatLineReversesText("\xE2\x80\xAB" "ck\xE2\x80\x8F" "fu"));
+    CHECK(chatLineReversesText("\xE2\x81\xA7" "ck\xE2\x80\x8F" "fu\xE2\x81\xA9"));
+    CHECK(chatLineReversesText("\xE2\x81\xA8\xE2\x80\x8F" "ck\xE2\x80\x8F" "fu\xE2\x81\xA9"));
+    // Anywhere in the line, whatever it is dressed in, in every spelling.
+    CHECK(chatLineReversesText("fu\xE2\x80\xAE" "kc"));
+    CHECK(chatLineReversesText("<b>\xE2\x80\xAE" "kcuf</b>"));
+    CHECK(chatLineReversesText("&#x202E;kcuf"));
+    CHECK(chatLineReversesText("&#8238;kcuf"));
+    // Drawn by a web client only, inside a link; by a native one only, after
+    // what it reads as a dropped link.
+    CHECK(chatLineReversesText("<a href=\"https://florr.io/\">\xE2\x80\xAE" "kcuf</a>"));
+    CHECK(chatLineReversesText("<a><x></a>\xE2\x80\xAE" "kcuf</x>"));
+
+    // Nothing drawn: a dropped tag's content, an attribute, an escaped reference.
+    CHECK(!chatLineReversesText("<x>\xE2\x80\xAE</x>hi"));
+    CHECK(!chatLineReversesText("<span title=\"&#x202E;\">hi</span>"));
+    CHECK(!chatLineReversesText("&amp;#x202E;"));
+    // These do not reorder Latin letters: typed Hebrew and Arabic, a bare
+    // right-to-left mark, the left-to-right controls, and a stray terminator.
+    CHECK(!chatLineReversesText("hello there"));
+    CHECK(!chatLineReversesText("\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D"));
+    CHECK(!chatLineReversesText("\xD8\xB3\xD9\x84\xD8\xA7\xD9\x85"));
+    CHECK(!chatLineReversesText("ok\xE2\x80\x8F"));
+    CHECK(!chatLineReversesText("\xE2\x80\xAA" "ok\xE2\x80\xAC"));
+    CHECK(!chatLineReversesText("\xE2\x80\xAD" "ok"));
+    CHECK(!chatLineReversesText("\xE2\x81\xA6" "ok\xE2\x81\xA9"));
 }
 
 TEST(chunked_filter_evasion_preserves_ordinary_word_boundaries) {

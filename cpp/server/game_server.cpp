@@ -3198,6 +3198,14 @@ bool GameServer::screenChatLine(Session& session, net::Connection& speaker,
         return false;
     }
 
+    // Before the word check, which reads letters in stored order: a browser
+    // draws "\u202Ekcuf" as a word that check never sees.
+    if (chatLineReversesText(text)) {
+        sendSystem(speaker, "<span style=\"color: #ff8866;\">Your message was not sent: it "
+                            "contains invisible characters that reverse text.</span>");
+        return false;
+    }
+
     // Refused, not starred: nothing of it reaches anyone. The word goes in
     // the log, which is how an admin tells a false match from a real one;
     // the speaker is not shown it.

@@ -1444,6 +1444,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("Announcement not sent: it contains a word that is not allowed in chat.");
             return;
         }
+        if (chatLineReversesText(said)) {
+            out("Announcement not sent: it contains invisible characters that reverse text.");
+            return;
+        }
         // Billed as a line said to other players, which is what it is, the
         // way a whisper is: the command budget alone would let one admin
         // bury everyone in banners.

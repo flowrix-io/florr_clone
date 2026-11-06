@@ -187,6 +187,14 @@ constexpr Range kHidden[] = {
     {0x1D173, 0x1D17A}, {0xE0000, 0xE0FFF},
 };
 
+/// The controls that make a browser draw Latin letters out of the order they
+/// are stored in: RLE, RLO, RLI and FSI. Nothing else can -- with none of these
+/// open a Latin letter stays at an even bidi level, and those never swap, so a
+/// bare U+200F, a left-to-right control and typed Hebrew or Arabic are all fine.
+constexpr Range kReversing[] = {
+    {0x202B, 0x202B}, {0x202E, 0x202E}, {0x2067, 0x2068},
+};
+
 /// Characters that draw as blank space.
 constexpr Range kGaps[] = {
     {0x0020, 0x0020}, {0x00A0, 0x00A0}, {0x1680, 0x1680}, {0x2000, 0x200A},
@@ -625,6 +633,24 @@ bool chatLineBreaksRows(const std::string& line) {
         options.links = links;
         for (const MarkupSpan& span : parseMarkup(line, options)) {
             if (span.lineBreak) return true;
+        }
+    }
+    return false;
+}
+
+bool chatLineReversesText(const std::string& line) {
+    // Off the parsed text, not the line's bytes: "&#x202E;" is the same
+    // control. Both readings, as the content of a dropped tag differs by them.
+    for (const bool links : {false, true}) {
+        MarkupOptions options;
+        options.links = links;
+        for (const MarkupSpan& span : parseMarkup(line, options)) {
+            for (std::size_t at = 0; at < span.text.size();) {
+                std::size_t length = 1;
+                const std::uint32_t codePoint = decodeAt(span.text, at, length);
+                at += length;
+                if (within(codePoint, kReversing)) return true;
+            }
         }
     }
     return false;

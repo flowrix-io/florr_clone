@@ -2832,6 +2832,41 @@ TEST(a_line_with_a_blocked_word_reaches_nobody_and_the_speaker_is_told) {
     CHECK(lineReading(bob, "good game") != nullptr);
 }
 
+TEST(a_line_that_a_browser_would_draw_reversed_reaches_nobody_and_the_speaker_is_told) {
+    Harness h("cmd-reversed", [](const std::string& path) {
+        seedUser(path, "alice", "password7");
+        seedUser(path, "bob", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    NetClient bob;
+    CHECK(loginAs(h, alice, "alice", "password7"));
+    CHECK(loginAs(h, bob, "bob", "password7"));
+
+    // U+202E: stored "kcuf", which the word check passes, and drawn "fuck".
+    const std::size_t bobBefore = bob.chat().size();
+    CHECK(say(h, alice, "\xE2\x80\xAE" "kcuf"));
+    h.step(10, {&alice, &bob});
+    CHECK(sawText(alice, "Your message was not sent: it contains invisible characters"));
+    CHECK_EQ(bob.chat().size(), bobBefore);
+
+    // Spelled as a character reference, which no byte scan of the line sees.
+    CHECK(say(h, alice, "&#x202E;kcuf you"));
+    h.step(10, {&alice, &bob});
+    CHECK_EQ(bob.chat().size(), bobBefore);
+
+    // A whisper takes the command path, and is refused the same way.
+    CHECK(say(h, alice, "/w bob \xE2\x80\xAE" "reggin"));
+    h.step(10, {&alice, &bob});
+    CHECK_EQ(bob.chat().size(), bobBefore);
+
+    // Right-to-left writing as it is typed is not a control that opens a
+    // direction, so it still gets through: Hebrew, then a right-to-left mark.
+    alice.sendChat("\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D\xE2\x80\x8F");
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return bob.chat().size() > bobBefore; }, 120));
+}
+
 TEST(spam_is_refused_on_every_channel) {
     Harness h("cmd-spam", [](const std::string& path) {
         seedUser(path, "alice", "password7");
