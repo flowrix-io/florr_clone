@@ -1412,20 +1412,6 @@ Vec2 Terrain::clampInside(Vec2 p, double radius, Realm realm) const {
     return {clamp(p.x, marginX, extent.x - marginX), clamp(p.y, marginY, extent.y - marginY)};
 }
 
-Vec2 Terrain::viewCentre(Vec2 focus, Vec2 view, Realm realm) const {
-    // The realm's rectangle, the arena's included: its ring sits in a square
-    // of void, and the camera stops at the square, not at the ring.
-    const Vec2 extent = realmExtent(realm);
-    const auto axis = [](double at, double span, double length) {
-        // `!(span < length)` also catches a NaN span: a view as wide as the
-        // map, or wider, shows all of it with the void split evenly.
-        if (!std::isfinite(at) || !(span < length)) return length * 0.5;
-        const double half = std::max(0.0, span * 0.5);
-        return clamp(at, half, length - half);
-    };
-    return {axis(focus.x, view.x, extent.x), axis(focus.y, view.y, extent.y)};
-}
-
 bool Terrain::outside(Vec2 p, Realm realm) const {
     if (realm == Realm::Arena) return !insideArena(p);
     const Vec2 extent = realmExtent(realm);

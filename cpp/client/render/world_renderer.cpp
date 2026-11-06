@@ -1385,8 +1385,7 @@ constexpr double kArenaGridCell = 50.0;
 
 void WorldRenderer::drawMaze(Canvas& canvas, const Camera& camera) const {
     // Beyond the maze's square there is nothing: the black the frame clears
-    // to, which says nobody can go there. The camera stops at the square, so
-    // it shows only when the maze is smaller than the view.
+    // to, which says nobody can go there.
     ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
@@ -1724,8 +1723,15 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     if (realm == kAdminArenaRealm && terrain_) {
         const auto& floor = kAdminArenaThemes[std::min<std::size_t>(terrain_->adminArenaFloor, kAdminArenaThemes.size()-1)];
         const auto& wall = kAdminArenaThemes[std::min<std::size_t>(terrain_->adminArenaWall, kAdminArenaThemes.size()-1)];
-        ui::setFill(canvas, floor.color);
+        // Black outside, like any other map. The floor colour goes on the
+        // map's own rectangle, under tiles whose art has not loaded.
+        ui::setFill(canvas, 0x000000u);
         canvas.fillRect(0, 0, camera.viewportWidth(), camera.viewportHeight());
+        const Vec2 corner = camera.worldToScreen({0.0, 0.0});
+        ui::setFill(canvas, floor.color);
+        canvas.fillRect(corner.x, corner.y,
+                        float(terrain_->tileCols(realm)*kTileSize*camera.zoom()),
+                        float(terrain_->tileRows(realm)*kTileSize*camera.zoom()));
         const Rect visible = camera.visibleWorld(kTileOverlap);
         const int x0 = std::max(0, int(std::floor(visible.left()/kTileSize)));
         const int y0 = std::max(0, int(std::floor(visible.top()/kTileSize)));
@@ -1746,8 +1752,8 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     }
 
     // Everything outside the map is pure black, which says nobody can go
-    // there. The camera stops at the map's edge (App::pinCamera), so the
-    // black shows only around a map smaller than the view.
+    // there. The camera stays on the flower, so a flower near an edge shows it.
+    const MapData* map = mapFor(realm);
     ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
@@ -1758,7 +1764,6 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     // like whatever the author painted there, and blocks because of which
     // LAYER it was painted on, and the two are allowed to have nothing to do
     // with each other. Nothing in here reads a Tile.
-    const MapData* map = mapFor(realm);
     if (map == nullptr || map->layers().empty()) return;
 
     const int cols = map->width();

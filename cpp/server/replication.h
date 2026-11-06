@@ -27,7 +27,6 @@
 
 namespace flix {
 
-class Terrain;
 
 /// Allocates the ids entities are known by on the wire.
 ///
@@ -292,11 +291,6 @@ public:
         /// box the admin's own client reported -- the steered player's claim is
         /// their own screen's, and it keeps culling their own stream.
         std::optional<Vec2> viewport;
-        /// The realms' bounds, for centring the box where the client's camera
-        /// sits (Terrain::viewCentre): near a map edge the camera stops and
-        /// the flower walks off the screen centre. Null centres the box on the
-        /// flower.
-        const Terrain* terrain = nullptr;
     };
 
     /// Appends a complete Snapshot payload (message id included) to `out`.

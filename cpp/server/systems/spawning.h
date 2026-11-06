@@ -417,11 +417,6 @@ public:
     /// 1920x1080 flower it assumes.
     struct Viewer {
         Vec2 position;
-        /// Where this flower's camera sits (Terrain::viewCentre), which is
-        /// what `half` is measured from. The flower itself, except near a map
-        /// edge, where the camera stops and the screen reaches past the flower
-        /// into the map.
-        Vec2 centre;
         /// The realm this flower is standing in. Two maps' coordinates overlap
         /// numerically, and a viewer filed under the wrong one would wake a
         /// second map because somebody was standing at the same numbers in the
@@ -794,7 +789,7 @@ private:
     /// it. The list stays the caller's -- it decides WHO the population is
     /// kept awake for -- and this only fills in what a bare coordinate cannot
     /// say.
-    void gatherViewers(World& world, const Terrain& terrain, const std::vector<RealmPoint>& players);
+    void gatherViewers(World& world, const std::vector<RealmPoint>& players);
 
     /// Counts what is alive, refreshes every mob's "last seen by somebody"
     /// stamp, and puts the ones nobody has been near for the grace period back

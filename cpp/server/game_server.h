@@ -1035,12 +1035,13 @@ private:
     /// catalog row in place, so the id alone does not say the picture is the
     /// one that was sampled.
     const SkinLook& catalogSkinLook(const CustomSkin&);
-    /// The oldest published skin that `look` passes for, if there is one,
-    /// leaving out `exceptId` -- an edit is not a copy of the skin it edits.
-    std::optional<CustomSkin> findLookAlikeSkin(const SkinLook& look,
-                                                const std::string& exceptId = {});
+    /// The oldest published skin that `look` is similar to (skinsLookSimilar),
+    /// if there is one, leaving out `exceptId` -- an edit is not a copy of the
+    /// skin it edits.
+    std::optional<CustomSkin> findSimilarSkin(const SkinLook& look,
+                                              const std::string& exceptId = {});
     /// Why `look` may not go into the catalogue as `me`'s, or "" when it may:
-    /// it is the starter flower, or it passes for a skin already there other
+    /// it is the starter flower, or it is similar to a skin already there other
     /// than `exceptId`. `verb` ends the sentence ("publishing", "saving").
     std::string skinLookRefusal(const SkinLook& look, const std::string& me,
                                 const std::string& exceptId, const char* verb);
@@ -1048,8 +1049,9 @@ private:
     /// studio's starter flower, into it: the copy leaves the catalog and every
     /// account wearing it is put in the original instead (in the plain flower,
     /// for the starter). Run once at start, before anybody can be wearing
-    /// anything; publishes are refused on the same test, so after the first
-    /// run it only finds work when that test changes.
+    /// anything. It erases rows, so it takes the narrow test (skinsLookAlike),
+    /// never the wider one publishes are refused on: a similar skin somebody
+    /// already has stays. Widening this test deletes skins on the next restart.
     void foldLookAlikeSkins();
     /// How many accounts like and dislike skin `id`, from the votes on every
     /// account's row. Counted again from scratch only after something other

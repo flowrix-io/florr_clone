@@ -1,5 +1,6 @@
 #include "test.h"
 #include "client/ui/admin_arena_editor.h"
+#include "client/render/sprites.h"
 #include "client/render/world_renderer.h"
 #include "client/world_view.h"
 #include "render_rig.h"
@@ -10,6 +11,8 @@
 #include <vector>
 
 #include "shared/core/json.h"
+#include "shared/game/admin_arena.h"
+#include "shared/game/config.h"
 #include "shared/game/constants.h"
 #include "shared/game/map_elements.h"
 #include "shared/game/terrain.h"
@@ -1039,23 +1042,54 @@ TEST(outside_the_map_is_black) {
     WorldMaps maps;
     Terrain terrain;
     std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
     CHECK(maps.load(testsupport::dataDir(), &terrain, error));
+    SpriteCache sprites;
+    sprites.build(content(), testsupport::dataDir());
     WorldRenderer renderer;
+    renderer.setSprites(&sprites);
     renderer.setWorldMaps(&maps);
     WorldView view;
     view.setRealm(Realm::Overworld);
+    // The camera sits on the map's corner, so the frame's top-left quarter is
+    // past the edge and its bottom-right quarter is on the map.
     const Camera camera = testsupport::frameCamera(256, {0, 0});
     Canvas canvas = Canvas::createVirtual(256, 256);
     renderer.draw(canvas, view, camera, {0, 0}, 0);
     const auto pixels = canvas.getImageData(0, 0, 256, 256);
-    CHECK(pixels.size() >= 4);
-    if (pixels.size() < 4) return;
-    // The top-left pixel is past the map's corner: the camera is centred on
-    // it, so a quarter of the frame lies outside the map.
+    CHECK(pixels.size() == 256u * 256u * 4u);
+    if (pixels.size() != 256u * 256u * 4u) return;
     CHECK_EQ(pixels[0], std::uint8_t(0));
     CHECK_EQ(pixels[1], std::uint8_t(0));
     CHECK_EQ(pixels[2], std::uint8_t(0));
     CHECK_EQ(pixels[3], std::uint8_t(255));
+    const std::size_t last = pixels.size() - 4;
+    CHECK(pixels[last] + pixels[last + 1] + pixels[last + 2] > 0);
+}
+
+TEST(outside_the_admin_arena_is_black_and_its_floor_stops_at_the_edge) {
+    Terrain terrain;
+    CHECK(terrain.setTiles(std::vector<std::uint8_t>(16 * 16, static_cast<std::uint8_t>(Tile::Open)),
+                           16, 16, kAdminArenaRealm));
+    WorldRenderer renderer;
+    renderer.setTerrain(&terrain);
+    WorldView view;
+    view.setRealm(kAdminArenaRealm);
+    const Camera camera = testsupport::frameCamera(256, {0, 0});
+    Canvas canvas = Canvas::createVirtual(256, 256);
+    renderer.draw(canvas, view, camera, {0, 0}, 0);
+    const auto pixels = canvas.getImageData(0, 0, 256, 256);
+    CHECK(pixels.size() == 256u * 256u * 4u);
+    if (pixels.size() != 256u * 256u * 4u) return;
+    CHECK_EQ(pixels[0], std::uint8_t(0));
+    CHECK_EQ(pixels[1], std::uint8_t(0));
+    CHECK_EQ(pixels[2], std::uint8_t(0));
+    // No sprites here, so the map shows its floor colour.
+    const std::uint32_t floor = kAdminArenaThemes[terrain.adminArenaFloor].color;
+    const std::size_t last = pixels.size() - 4;
+    CHECK_EQ(pixels[last], static_cast<std::uint8_t>(floor >> 16));
+    CHECK_EQ(pixels[last + 1], static_cast<std::uint8_t>(floor >> 8));
+    CHECK_EQ(pixels[last + 2], static_cast<std::uint8_t>(floor));
 }
 
 TEST(hosted_arena_renderer_uses_live_grid_and_floor_theme) {

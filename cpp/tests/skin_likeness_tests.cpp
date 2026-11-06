@@ -66,6 +66,66 @@ std::vector<SkinShape> starterWithMouth() {
     return shapes;
 }
 
+bool similar(const std::vector<SkinShape>& a, const std::vector<SkinShape>& b) {
+    return skinsLookSimilar(sampleSkinLook(a), sampleSkinLook(b));
+}
+
+/// The whole picture moved. A curve's end and control points are absolute.
+std::vector<SkinShape> movedBy(std::vector<SkinShape> shapes, double dx, double dy) {
+    for (SkinShape& s : shapes) {
+        s.x += dx;
+        s.y += dy;
+        s.x2 += dx;
+        s.y2 += dy;
+        s.cx1 += dx;
+        s.cy1 += dy;
+        s.cx2 += dx;
+        s.cy2 += dy;
+    }
+    return shapes;
+}
+
+/// The whole picture resized about the flower's centre.
+std::vector<SkinShape> resizedBy(std::vector<SkinShape> shapes, double factor) {
+    for (SkinShape& s : shapes) {
+        for (double* v : {&s.x, &s.y, &s.r, &s.rx, &s.ry, &s.x2, &s.y2, &s.cx1, &s.cy1, &s.cx2,
+                          &s.cy2, &s.sw}) {
+            *v *= factor;
+        }
+    }
+    return shapes;
+}
+
+/// A face with enough on it that a small addition is small next to it.
+std::vector<SkinShape> blushingFace() {
+    std::vector<SkinShape> shapes = starterWithMouth();
+    shapes.push_back(circle(-14, 6, 4, "#ff66aa"));
+    shapes.push_back(circle(14, 6, 4, "#ff66aa"));
+    return shapes;
+}
+
+/// The starter's body with its eyes screwed shut in two chevrons: no eye left
+/// where the starter has one, and about as little ink as a face can have.
+std::vector<SkinShape> squintingFace() {
+    std::vector<SkinShape> shapes = {starterSkinShapes()[0]};
+    const auto stroke = [&](double x, double y, double x2, double y2) {
+        SkinShape line;
+        line.t = SkinShapeType::Line;
+        line.x = x;
+        line.y = y;
+        line.x2 = x2;
+        line.y2 = y2;
+        line.stroke = "#111111";
+        line.sw = 2;
+        shapes.push_back(line);
+    };
+    stroke(-14, -9, -6, -5);
+    stroke(-6, -5, -14, -1);
+    stroke(14, -9, 6, -5);
+    stroke(6, -5, 14, -1);
+    return shapes;
+}
+
 } // namespace
 
 TEST(a_skin_looks_like_itself) {
@@ -125,6 +185,73 @@ TEST(a_change_anybody_would_see_is_a_new_skin) {
     std::vector<SkinShape> moved = starterSkinShapes();
     for (SkinShape& s : moved) s.x += 12.0;
     CHECK(!alike(starterSkinShapes(), moved));
+}
+
+TEST(a_look_counts_the_detail_on_the_body_and_not_the_body) {
+    // The starter's detail is its two eyes: the body is its commonest colour
+    // and the outline is its rim.
+    const SkinLook starter = sampleSkinLook(starterSkinShapes());
+    CHECK(starter.detail > 20 && starter.detail < 50);
+    CHECK(starter.painted > 400);
+    CHECK_NEAR(starter.centreX, kSkinLookGrid * 0.5 - 0.5, 0.5);
+    CHECK_NEAR(starter.centreY, kSkinLookGrid * 0.5 - 0.5, 0.5);
+    // A plain disc has nothing on it.
+    CHECK_EQ(sampleSkinLook({circle(0, 0, 25, "#123456")}).detail, 0);
+    // And a skin that paints nothing is measured without dividing by nothing.
+    CHECK_EQ(sampleSkinLook({circle(0, 0, 0.5, "#123456")}).painted, 0);
+}
+
+TEST(a_copy_moved_or_resized_is_similar_but_not_alike) {
+    for (const Vec2 by : {Vec2{12, 0}, Vec2{-20, 15}, Vec2{0, 30}}) {
+        const std::vector<SkinShape> moved = movedBy(blushingFace(), by.x, by.y);
+        CHECK(!alike(blushingFace(), moved));
+        CHECK(similar(blushingFace(), moved));
+    }
+    for (const double factor : {0.85, 1.1, 1.2}) {
+        CHECK(similar(blushingFace(), resizedBy(blushingFace(), factor)));
+    }
+    // The narrow test forgives a small resize, but not this one.
+    CHECK(!alike(blushingFace(), resizedBy(blushingFace(), 1.2)));
+    // Both at once.
+    CHECK(similar(blushingFace(), movedBy(resizedBy(blushingFace(), 1.15), 18, -10)));
+    // Half as wide again is a different size on the hitbox, so a different
+    // thing to wear.
+    CHECK(!similar(blushingFace(), resizedBy(blushingFace(), 1.5)));
+}
+
+TEST(a_little_added_to_a_detailed_skin_is_similar) {
+    std::vector<SkinShape> withNose = blushingFace();
+    withNose.push_back(circle(0, 3, 5, "#ff3333"));
+    CHECK(!alike(blushingFace(), withNose));
+    CHECK(similar(blushingFace(), withNose));
+    // Order does not matter: which of the two is the original is the server's
+    // question, not this test's.
+    CHECK(similar(withNose, blushingFace()));
+}
+
+TEST(a_different_design_on_the_same_body_is_not_similar) {
+    // Every eye replaced, with as little ink as the starter's own.
+    CHECK(!similar(starterSkinShapes(), squintingFace()));
+    // Most of what is drawn on it.
+    CHECK(!similar(starterWithMouth(), squintingFace()));
+
+    // A recolour differs everywhere.
+    std::vector<SkinShape> red = blushingFace();
+    red[0].fill = "#d01c1d";
+    CHECK(!similar(blushingFace(), red));
+
+    // Nothing to measure against, so the floor decides: a dot on a plain disc
+    // past the allowance is a change.
+    CHECK(!similar({circle(0, 0, 25, "#123456")},
+                   {circle(0, 0, 25, "#123456"), circle(0, 0, 5, "#ffffff")}));
+}
+
+TEST(the_starter_is_refused_lined_up_but_on_the_narrow_allowance) {
+    const SkinLook starter = sampleSkinLook(starterSkinShapes());
+    CHECK(skinsLookAlikeLinedUp(starter, sampleSkinLook(movedBy(starterSkinShapes(), 20, 12))));
+    CHECK(skinsLookAlikeLinedUp(starter, sampleSkinLook(resizedBy(starterSkinShapes(), 1.15))));
+    // A smile is what everybody draws first, and it is a skin.
+    CHECK(!skinsLookAlikeLinedUp(starter, sampleSkinLook(starterWithMouth())));
 }
 
 TEST(the_sampler_rotates_shapes_the_way_the_painter_does) {
@@ -296,6 +423,84 @@ TEST(publishing_a_look_alike_is_refused_and_names_the_original) {
     h.step(10, {&first, &second});
     CHECK_EQ(first.skinCatalog().size(), static_cast<std::size_t>(2));
     CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), static_cast<std::size_t>(2));
+}
+
+TEST(a_skin_similar_to_one_in_the_catalog_is_refused) {
+    Harness h("skin-dedupe-similar", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient author;
+    NetClient other;
+    CHECK(registerAs(h, author, "author"));
+    CHECK(registerAs(h, other, "other"));
+
+    CHECK(publish(h, author, "blush", blushingFace()));
+    CHECK(sawText(author, "Published \"blush\""));
+
+    // Yours, tweaked and clicked again.
+    CHECK(publish(h, author, "blush 2", movedBy(blushingFace(), 10, 0)));
+    CHECK(sawText(author, "looks just like your \"blush\""));
+    h.step(200, {&author, &other});
+    CHECK(publish(h, author, "blush 3", resizedBy(blushingFace(), 1.1)));
+    h.step(200, {&author, &other});
+    std::vector<SkinShape> withNose = blushingFace();
+    withNose.push_back(circle(0, 3, 5, "#ff3333"));
+    CHECK(publish(h, author, "blush 4", withNose));
+    // Somebody else's, the same.
+    CHECK(publish(h, other, "my blush", withNose));
+    CHECK(sawText(other, "looks just like \"blush\" by author"));
+    h.step(200, {&author, &other});
+
+    // The starter, moved, is still the starter, and a smile on it is a skin.
+    CHECK(publish(h, other, "flower", movedBy(starterSkinShapes(), 15, 15)));
+    CHECK(sawText(other, "That's the starter flower"));
+    h.step(200, {&author, &other});
+    CHECK(publish(h, other, "squint", squintingFace()));
+    CHECK(sawText(other, "Published \"squint\""));
+
+    h.step(10, {&author, &other});
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), static_cast<std::size_t>(2));
+}
+
+TEST(a_similar_skin_already_in_the_catalog_survives_a_restart) {
+    // The fold erases rows, so it must stay on the narrow test: skins published
+    // before the wider one are not the start-up pass's to delete.
+    Harness h("skin-dedupe-keeps-similar", [&](const std::string& path) {
+        Database db;
+        std::string error;
+        db.load(path, error);
+        Json& catalog = db.rawTable("customSkins");
+        catalog["sk_a"] = skinToJson(storedSkin("sk_a", "original", "artist", 100, blushingFace()));
+        catalog["sk_b"] = skinToJson(
+            storedSkin("sk_b", "moved", "other", 200, movedBy(blushingFace(), 12, 0)));
+        db.markDirty();
+        db.save();
+    }, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    const Json& catalog = h.server.database().storedTable("customSkins");
+    CHECK(catalog.contains("sk_a"));
+    CHECK(catalog.contains("sk_b"));
+}
+
+TEST(clicking_publish_over_and_over_posts_one_skin) {
+    Harness h("skin-dedupe-clicks", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient author;
+    CHECK(registerAs(h, author, "clicker"));
+
+    // Faster than any answer can come back: every click is on the wire before
+    // the first is handled, so nothing on the client can have stopped them.
+    for (int i = 0; i < 6; ++i) author.publishSkin("smiley", starterWithMouth());
+    h.step(40, {&author});
+    CHECK_EQ(author.skinCatalog().size(), static_cast<std::size_t>(1));
+
+    // And again once the request budget has refilled and the answer is in.
+    h.step(400, {&author});
+    CHECK(publish(h, author, "smiley", starterWithMouth()));
+    CHECK(sawText(author, "looks just like your \"smiley\""));
+    h.step(10, {&author});
+    CHECK_EQ(author.skinCatalog().size(), static_cast<std::size_t>(1));
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), static_cast<std::size_t>(1));
 }
 
 TEST(a_catalog_full_of_copies_is_folded_into_its_originals_at_start) {
