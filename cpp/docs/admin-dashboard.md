@@ -395,13 +395,14 @@ the grab. Their keyboard remains their own; this does not grant control of it.
 
 ### Hel Casino
 
-Hel's casino NPC is currently removed from the map upstream while it is polished.
-When placed, it is stationary and marked by a gold dot on the minimap. Stand
+Hel's casino NPC is placed in Hel, stationary and marked by a gold dot on the minimap. Stand
 beside it and use `/casino` for the rules and balance, `/casino buy <stars>`
-for chips (10 per star), `/casino cashout <chips>` in multiples of 10,
+for chips (1 per star), `/casino cashout <chips>` for any whole-chip amount,
 `/casino flip <chips> <heads|tails>` or `/casino plinko <chips>`.
-Coin flip pays 2x with a 40% chance; Plinko has an 88% expected return.
-Payouts include the stake. Bets are 1–10,000 chips, the account balance cap is
+Coin flip pays 2x with a 40% chance. Plinko follows 16 fair bounces into 17
+buckets: 500 / 20 / 5 / 3 / 2 / 0 / 1 / 1 / 1 / 1 / 1 / 0 / 2 / 3 / 5 / 20 / 500.
+Its expected return is 99.5575%.
+Payouts include the stake. Amounts are 1–19,000 chips (accepting `19k`, `2.5k`, etc.), the account balance cap is
 one billion chips, and there is a persisted one-second account cooldown.
 Arena currency cannot be used. Casino chips and cooldowns persist in the
 existing account database; there are no additional admin ranks or privileges.
@@ -520,7 +521,7 @@ host commands. The preview updates after the server accepts each edit.
   maximum uses (0 unlimited), and can delete codes. Full tier 1–2 admins only.
 - Hel Casino is placed on Hel with its gold minimap dot. Open Craft beside
   the NPC to buy chips, cash out, flip coins or play Plinko. Conversions are
-  untaxed at 1 star = 10 chips. Odds and payout rules are shown in the panel.
+  untaxed at 1 star = 1 chip. Odds and payout rules are shown in the panel.
 - Shop contains Market and Orders; `/shop` and `/order` open those tabs.
   Listings escrow unequipped petals; orders escrow stars. Partial fills are
   supported. Cancellation refunds the remaining escrow without tax. The
@@ -540,3 +541,8 @@ once every three hours, enforced by a persisted server timestamp. New skins
 start the timer on publication; legacy skins may make their first price
 change immediately. Artwork/name edits with the same price remain available
 and do not reset the timer.
+
+The casino panel animates a spinning coin and a sixteen-row Plinko board.
+The server supplies every bounce and settles the payout once; animation never
+submits or changes a result. Auto Plinko stops on error or leaving the panel.
+Stars-to-chips, cashout and bet amounts have separate fields, all capped at 19k.

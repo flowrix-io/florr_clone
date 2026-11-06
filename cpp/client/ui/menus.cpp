@@ -796,6 +796,7 @@ bool ClientSettings::save(const std::string& path) const {
 // ---------------------------------------------------------------------------
 
 void MenuSystem::toggle(MenuId id) {
+    stopCasinoAuto();
     // Opening a second menu closes the first. They share an anchor, so two at
     // once would be one menu with another hidden behind it.
     const bool opening = open_ != id;
@@ -842,6 +843,7 @@ void MenuSystem::toggle(MenuId id) {
 }
 
 void MenuSystem::close() {
+    stopCasinoAuto();
     open_ = MenuId::None;
     drag_.clear();
 }
@@ -2521,7 +2523,7 @@ Vec2 craftWindowSize(NpcService npc, bool absorb, const Profile& profile) {
         case NpcService::Trader: return TradePanel::size(profile);
         case NpcService::Titan:  return TitanPanel::size(profile);
         case NpcService::Assembler: return AssemblerPanel::size();
-        case NpcService::Casino: return {610,430};
+        case NpcService::Casino: return {610,510};
         case NpcService::None:   break;
     }
     return absorb ? AbsorbPanel::size(profile) : CraftingPanel::size(profile);

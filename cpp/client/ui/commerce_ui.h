@@ -7,4 +7,5 @@ void renderMarket(MenuContext&,Rect,bool orders);
 void renderStarCodes(MenuContext&,Rect);
 void renderEventSetup(MenuContext&,Rect);
 void resetCommerceUi();
+void stopCasinoAuto();
 }

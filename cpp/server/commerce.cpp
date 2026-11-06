@@ -44,14 +44,15 @@ void GameServer::handleCommerce(Session& s,net::Connection& peer,ByteReader& rea
         if(action=="status"){sendCommerce(s,peer,kind,true,"Choose an exchange or a game above. Stand beside Hel to play.");return;}
         std::string arg=action;
         if(action!="status") {
-            int amount=0; if(!integer(q["amount"],1,kCasinoMaxBet,amount)) {sendCommerce(s,peer,kind,false,"Amount must be 1-10000.");return;}
+            int amount=0; const bool validAmount=q["amount"].isString()?parseCasinoAmount(q["amount"].asString(),amount):integer(q["amount"],1,kCasinoMaxBet,amount);
+            if(!validAmount) {sendCommerce(s,peer,kind,false,"Amount must be 1-19000 chips (e.g. 2.5k or 19k).");return;}
             arg+=" "+std::to_string(amount);
             if(action=="flip") {
                 const auto side=q["side"].asString(); if(side!="heads"&&side!="tails")return;
                 arg+=" "+side;
             }
         }
-        runCasino(s,peer,arg);return;
+        runCasino(s,peer,arg,false);return;
     }
     if(kind=="codes") {
         if(!s.admin || !adminMay(s,AdminPower::GivePetals)) {sendCommerce(s,peer,kind,false,"Full tier 1-2 admin access required.");return;}

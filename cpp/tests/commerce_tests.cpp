@@ -3,6 +3,7 @@
 #include "render_rig.h"
 #include "client/render/skin_render.h"
 #include "client/ui/commerce_ui.h"
+#include "client/ui/casino_animation.h"
 #include "client/ui/menus.h"
 #include "shared/game/economy.h"
 #include <cmath>
@@ -98,7 +99,7 @@ TEST(commerce_panels_and_repeating_arena_walls_render_locally) {
     CHECK(fontsReady());SpriteCache sprites;sprites.build(content(),dataDir());WorldRenderer renderer;renderer.setSprites(&sprites);renderer.setWorldMaps(&h.server.worldMaps());renderer.setTerrain(&client.terrain());
     Window window;ClientSettings settings;DragState drag;
     for(int panel=0;panel<4;++panel) {
-        Canvas canvas=Canvas::createVirtual(760,560);canvas.setFillStyle("#5c5b9c");canvas.fillRect(0,0,760,560);MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};ctx.bounds={0,0,610,430};
+        Canvas canvas=Canvas::createVirtual(760,560);canvas.setFillStyle("#5c5b9c");canvas.fillRect(0,0,760,560);MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};ctx.bounds={0,0,610,panel==0?560.0:430.0};
         for(int frame=0;frame<2;++frame){
             if(panel==0)renderCasino(ctx);else if(panel==1)renderMarket(ctx,{12,20,736,500},false);else if(panel==2)renderStarCodes(ctx,{12,20,736,500});else renderEventSetup(ctx,{12,20,736,500});
             h.step(8,{&client});
@@ -146,4 +147,28 @@ TEST(commerce_legacy_skins_stay_free_and_price_cooldown_is_persistent_and_author
     edit(artist,"Too early",10);CHECK_EQ(db.storedTable("customSkins")["legacy_skin"]["price"].asDouble(),5.0);
     ++now;edit(artist,"Ready",10);CHECK_EQ(db.storedTable("customSkins")["legacy_skin"]["price"].asDouble(),10.0);
     CHECK_EQ(wallet(h,"artist").stars,balance);
+}
+
+TEST(casino_animation_follows_server_path_rejects_stale_results_and_times_out) {
+    CasinoAnimation a;Json reply=Json::object();reply["ok"]=true;reply["revision"]=3;reply["game"]="plinko";reply["path"]=0xF0F0;reply["slot"]=8;reply["multiplier"]=1;reply["message"]="Landed";
+    a.begin("plinko",3,10);a.update(reply,10.2);CHECK(a.pending);
+    reply["revision"]=4;a.update(reply,10.3);CHECK(a.settled);CHECK_EQ(a.path,0xF0F0);CHECK_EQ(a.slot,8);CHECK(a.busy(11));CHECK(!a.busy(15));
+    a.update(reply,20);CHECK_EQ(a.startedAt,10.3); // Same response cannot restart the animation.
+    a.begin("plinko",3,20);reply["slot"]=7;a.update(reply,20.1);CHECK(!a.settled);CHECK(!a.pending);CHECK(!a.message.empty());
+    a.begin("flip",4,30);a.update(reply,38);CHECK(!a.pending);CHECK(!a.settled);
+    a.begin("flip",4,40);reply["revision"]=5;reply["ok"]=false;reply["message"]="Not enough chips";a.update(reply,40.1);CHECK(!a.busy(40.1));CHECK_EQ(a.message,"Not enough chips");
+    CHECK(fontsReady());
+    for(const std::string game:{"flip","plinko"}) {
+        reply["revision"]=6;reply["ok"]=true;reply["game"]=game;reply["side"]="tails";reply["slot"]=8;
+        a.begin(game,5,50);a.update(reply,50);
+        Canvas first=Canvas::createVirtual(610,270),last=Canvas::createVirtual(610,270);
+        renderCasinoAnimation(first,{24,20,562,225},a,50.8);renderCasinoAnimation(last,{24,20,562,225},a,55);
+        CHECK(differingPixels(first.getImageData(0,0,610,270),last.getImageData(0,0,610,270))>50);
+        last.savePPM("/tmp/flowrix-"+game+"-animation.ppm");
+    }
+}
+TEST(casino_amount_abbreviations_are_bounded_and_exact) {
+    int amount=0;
+    for(const auto& sample:std::vector<std::pair<std::string,int>>{{"19k",19000},{"2.5K",2500},{"0.001k",1},{"19000",19000},{"17",17}}){CHECK(parseCasinoAmount(sample.first,amount));CHECK_EQ(amount,sample.second);}
+    for(const std::string sample:{"0","-1","+1","1.5","19.001k","20k","9999999999999999k","NaN","inf","1e3","1kk",".5k","1.k","1.0001k","1k garbage"})CHECK(!parseCasinoAmount(sample,amount));
 }

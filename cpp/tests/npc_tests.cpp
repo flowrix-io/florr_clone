@@ -3263,16 +3263,16 @@ TEST(the_assembler_painter_draws_florrs_machine_and_turns_its_gears) {
 
 TEST(casino_plinko_exact_odds_and_balance_validation) {
     int winning = 0, payout = 0;
-    for (int roll = 0; roll < 100; ++roll) {
+    for (int roll = 0; roll < 65536; ++roll) {
         const int slot = plinkoSlot(roll);
-        CHECK(slot >= 0 && slot < 7);
+        CHECK(slot >= 0 && slot < 17);
         winning += kPlinkoPayouts[slot] > 0;
         payout += kPlinkoPayouts[slot];
     }
-    CHECK_EQ(winning, 40);
-    CHECK_EQ(payout, 88);
+    CHECK_EQ(winning, 56800);
+    CHECK_EQ(payout, 65246);
     CHECK_EQ(plinkoSlot(-1), -1);
-    CHECK_EQ(plinkoSlot(100), -1);
+    CHECK_EQ(plinkoSlot(65536), -1);
     CHECK(!casinoBalanceValid(-1));
     CHECK(!casinoBalanceValid(1.5));
     CHECK(!casinoBalanceValid(INFINITY));
@@ -3339,11 +3339,11 @@ TEST(casino_purchase_requires_npc_and_persists_with_cooldown) {
         session->arena.reset();
     }
     say("/casino buy 5");
-    CHECK_EQ(record().casinoChips, 50.0);
+    CHECK_EQ(record().casinoChips, 5.0);
     CHECK_EQ(record().stars, startingStars - 5);
     CHECK_EQ(world.get<PlayerProgress>(player).stars, startingStars - 5);
     say("/casino buy 5");
-    CHECK_EQ(record().casinoChips, 50.0);
+    CHECK_EQ(record().casinoChips, 5.0);
     h.server.persistAll();
     Database saved;
     std::string error;
@@ -3351,7 +3351,7 @@ TEST(casino_purchase_requires_npc_and_persists_with_cooldown) {
     const PlayerRecord* loaded = saved.findProgress(saved.findUser("gambler")->id);
     CHECK(loaded != nullptr);
     if (loaded) {
-        CHECK_EQ(loaded->casinoChips, 50.0);
+        CHECK_EQ(loaded->casinoChips, 5.0);
         CHECK_EQ(loaded->stars, startingStars - 5);
         CHECK_EQ(loaded->casinoReadyAt, record().casinoReadyAt);
     }
@@ -3387,10 +3387,11 @@ TEST(casino_wagers_and_cashout_conserve_account_balances) {
         if (record) {
             if (command.find("cashout") != std::string::npos) {
                 CHECK_EQ(record->casinoChips, 80.0);
-                CHECK_EQ(record->stars, startingStars + 2);
+                CHECK_EQ(record->stars, startingStars + 20);
             } else {
                 CHECK(record->casinoChips == 90 || record->casinoChips == 110 ||
-                      (command.find("plinko") != std::string::npos && record->casinoChips == 130));
+                      (command.find("plinko") != std::string::npos &&
+                       (record->casinoChips == 100 || record->casinoChips == 120 || record->casinoChips == 140 || record->casinoChips == 290 || record->casinoChips == 5090)));
                 CHECK_EQ(record->stars, startingStars);
             }
         }
@@ -3459,6 +3460,27 @@ TEST(casino_map_marker_matches_stationary_npc_site_when_placed) {
             CHECK_NEAR(transform->position.x, kOracleX, 1e-6);
             CHECK_NEAR(transform->position.y, kOracleY, 1e-6);
         }
+    }
+    removeDataDir(dir);
+}
+
+TEST(casino_gui_uses_server_path_one_to_one_exchange_and_custom_cashout) {
+    const std::string dir=npcWorld("casino-gui",fixtureNpc(kOracleX,kOracleY,"hel_casino","common"));
+    Harness h("casino-gui",[](const std::string& path){
+        seedAccount(path,"gambler");Database db;std::string error;CHECK(db.load(path,error));auto& r=db.progress(db.findUser("gambler")->id);r.stars=30000;r.casinoChips=30000;db.markDirty();CHECK(db.save());
+    },dir,0);CHECK(h.ready);if(!h.ready){removeDataDir(dir);return;}
+    NetClient client;CHECK(joinAs(h,client,"gambler"));standBeside(h,client,"hel_casino");
+    auto& db=const_cast<Database&>(h.server.database());static std::int64_t now;now=db.nowMillis();db.setClock([]{return now;});
+    auto& r=db.progress(db.findUser("gambler")->id);const double stars=r.stars;
+    const auto request=[&](const char* action,const char* amount){now+=1100;h.step(90,{&client});const double before=client.commerce("casino")["revision"].asDouble();Json q=Json::object();q["kind"]="casino";q["action"]=action;q["amount"]=amount;q["side"]="heads";q["path"]=0;q["slot"]=0;q["payout"]=999999999;client.requestCommerce(q);CHECK(h.stepUntil({&client},[&]{return client.commerce("casino")["revision"].asDouble()>before;}));return client.commerce("casino");};
+    CHECK(request("buy","19k")["ok"].asBool());CHECK_EQ(r.stars,stars-19000);CHECK_EQ(r.casinoChips,49000.0);
+    CHECK(request("cashout","1.5k")["ok"].asBool());CHECK_EQ(r.stars,stars-17500);CHECK_EQ(r.casinoChips,47500.0);
+    CHECK(!request("cashout","19.001k")["ok"].asBool());CHECK_EQ(r.casinoChips,47500.0);
+    for(const char* game:{"flip","plinko"}) {
+        const double before=r.casinoChips;const Json reply=request(game,"19k");CHECK(reply["ok"].asBool());CHECK_EQ(reply["game"].asString(),std::string(game));
+        const int multiplier=reply["multiplier"].asInt(-1);CHECK_EQ(r.casinoChips,before+19000*(multiplier-1));CHECK_EQ(reply["payout"].asDouble(),19000.0*multiplier);
+        if(std::string(game)=="plinko"){const int slot=plinkoSlot(reply["path"].asInt(-1));CHECK(slot>=0&&slot<17);if(slot>=0&&slot<17){CHECK_EQ(reply["slot"].asInt(),slot);CHECK_EQ(multiplier,kPlinkoPayouts[slot]);}}
+        else CHECK(reply["side"].asString()=="heads"||reply["side"].asString()=="tails");
     }
     removeDataDir(dir);
 }

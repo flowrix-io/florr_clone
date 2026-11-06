@@ -408,7 +408,7 @@ private:
     void handleBuyPetal(Session&, net::Connection&, ByteReader&);
     void handleRedeemCode(Session&, net::Connection&, ByteReader&);
     void handleCommerce(Session&, net::Connection&, ByteReader&);
-    void runCasino(Session&, net::Connection&, const std::string&);
+    void runCasino(Session&, net::Connection&, const std::string&, bool announce = true);
     void runMarket(Session&, net::Connection&, const Json&);
     void sendCommerce(Session&, net::Connection&, const std::string&, bool, const std::string&, const Json& = Json::object());
     void syncCommerceAccount(const std::string&);

@@ -1,5 +1,6 @@
 #include "client/ui/menus.h"
 #include "client/ui/commerce_ui.h"
+#include "client/ui/casino_animation.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/menu_theme.h"
@@ -17,7 +18,9 @@ struct Forms {
     bool eventLoaded=false;
     Field eventName{"event_name"},kitItem{"basic"},kitAmount{"1"},kitSlot{"1"};
     Field item{"basic"},quantity{"1"},price{"1"},filter{},bet{"10"},code{},reward{"100"},uses{"1"};
-    double animation=-100;
+    Field exchange{"10"},cashout{"10"};
+    CasinoAnimation animation;
+    bool autoPlinko=false;double lastCasinoFrame=-100,shownStars=0,shownChips=0;
 } forms;
 void account(MenuContext& ctx) {if(forms.account!=ctx.net.profile().username){forms=Forms{};forms.account=ctx.net.profile().username;}}
 TextStyle style(double size=13,std::uint32_t color=0xFFFFFFu) {TextStyle t;t.size=size;t.fill=color;t.baseline=Baseline::Middle;return t;}
@@ -33,24 +36,82 @@ void send(MenuContext& ctx,const char* kind,const char* action,Json q=Json::obje
 void result(MenuContext& ctx,const char* kind,Rect r) {const auto& reply=ctx.net.commerce(kind);text(ctx.canvas,ellipsize(reply["message"].asString(),12,r.w),r.x,r.y+r.h/2,style(12,reply["ok"].asBool(true)?0xF1E8FFu:0xFFAAAAu));}
 }
 void resetCommerceUi(){forms=Forms{};}
+void stopCasinoAuto(){forms.autoPlinko=false;}
+void renderCasinoAnimation(Canvas& c,Rect board,const CasinoAnimation& a,double now) {
+    fillRound(c,board,8,0x353456u);
+    const double progress=a.progress(now);
+    const auto circle=[&](double x,double y,double radius,std::uint32_t fill) {
+        c.beginPath();c.arc(float(x),float(y),float(radius),0,float(kPi*2));setFill(c,fill);c.fill();
+    };
+    if(a.game=="flip") {
+        const double eased=1-std::pow(1-progress,3);
+        const double angle=eased*(12*kPi+(a.side=="tails"?kPi:0));
+        const double cx=board.x+board.w/2,cy=board.y+board.h/2-std::sin(progress*kPi)*35;
+        const double rx=std::max(3.0,46*std::abs(std::cos(angle)));
+        c.beginPath();c.ellipse(float(cx),float(cy),float(rx),46,0,0,float(kPi*2));setFill(c,0xAF771Fu);c.fill();
+        c.beginPath();c.ellipse(float(cx),float(cy-3),float(rx*.9),40,0,0,float(kPi*2));setFill(c,0xFFDA62u);c.fill();
+        if(rx>16) {auto t=style(26,0x72501Bu);t.align=Align::Centre;const bool heads=progress>=1?a.side=="heads":std::cos(angle)>=0;text(c,heads?"H":"T",cx,cy-2,t);}
+        auto t=style(13);t.align=Align::Centre;text(c,a.pending?"Waiting for server...":progress<1?"Flipping...":a.side=="heads"?"HEADS":"TAILS",cx,board.bottom()-17,t);
+        return;
+    }
+    const double step=(board.w-38)/17,dy=(board.h-48)/16,cx=board.x+board.w/2,top=board.y+12;
+    for(int row=0;row<kPlinkoRows;++row)for(int peg=0;peg<=row;++peg)
+        circle(cx+(peg-row*.5)*step,top+row*dy,2.2,0xD9D8EDu);
+    for(int slot=0;slot<17;++slot) {
+        const double x=cx+(slot-8)*step;
+        const bool landed=a.settled && progress>=1 && slot==a.slot;
+        const int payout=kPlinkoPayouts[slot];
+        fillRound(c,{x-step*.47,board.bottom()-29,step*.94,24},3,landed?0xFFE477u:payout==0?0xAA465Fu:payout>1?0x7160B2u:0x505077u);
+        auto t=style(payout>=100?8:10,landed?0x39324Fu:0xFFFFFFu);t.align=Align::Centre;text(c,std::to_string(payout)+"x",x,board.bottom()-17,t);
+    }
+    if(a.settled) {
+        const double hops=std::min(16.0,progress*17);
+        const int row=std::min(15,int(hops));const double local=hops-row;
+        int rights=0;for(int i=0;i<row;++i)rights+=(a.path>>i)&1;
+        const int direction=((a.path>>row)&1)?1:-1;
+        const double x=cx+(rights-row*.5+direction*.5*local)*step;
+        const double y=top-6+(row+local)*dy-std::sin(local*kPi)*dy*.65+std::max(0.0,progress*17-16)*25;
+        // A rotating poker chip, with a white rim and red centre.
+        circle(x,y,6,0xF3F0FFu);circle(x,y,4.1,0xDC5472u);
+        c.save();c.translate(float(x),float(y));c.rotate(float(now*5));setFill(c,0xFFFFFFu);c.fillRect(-1,-4,2,8);c.restore();
+    } else {
+        circle(cx,top-6,5,0xFFE477u);
+    }
+}
 bool renderCasino(MenuContext& ctx) {
     account(ctx);if(!forms.casinoLoaded){forms.casinoLoaded=true;send(ctx,"casino","status");}
+    if(ctx.timeSeconds-forms.lastCasinoFrame>.5)forms.autoPlinko=false;
+    forms.lastCasinoFrame=ctx.timeSeconds;
     const Rect p=ctx.bounds;panelCard(ctx.canvas,p,kAdminDashboardSkin);panelHeading(ctx.canvas,p,"Hel Casino");
-    const auto close=closeButtonRect(p);panelClose(ctx.canvas,close,close.contains(ctx.mouse()));if(ctx.clicked(close))return false;
+    const auto close=closeButtonRect(p);panelClose(ctx.canvas,close,close.contains(ctx.mouse()));if(ctx.clicked(close)){forms.autoPlinko=false;return false;}
     const auto& reply=ctx.net.commerce("casino");
-    text(ctx.canvas,"Stars: "+money(reply["stars"].asDouble(ctx.net.profile().stars))+"     Chips: "+money(reply["chips"].asDouble()),p.x+24,p.y+70,style(18,0xFFE477u));
-    text(ctx.canvas,"1 star = 10 chips. No conversion tax.",p.x+24,p.y+104,style());
-    text(ctx.canvas,"Amount",p.x+24,p.y+142,style());field(ctx,forms.bet,{p.x+104,p.y+125,105,34},"Amount",5);
-    const auto action=[&](const char* verb,const char* side="") {Json q=Json::object();q["amount"]=number(forms.bet.text);q["side"]=side;send(ctx,"casino",verb,q);forms.animation=ctx.timeSeconds;};
-    if(button(ctx,{p.x+24,p.y+177,260,36},"Stars to chips"))action("buy");
-    if(button(ctx,{p.x+300,p.y+177,280,36},"Chips to stars"))action("cashout");
-    if(button(ctx,{p.x+24,p.y+233,170,40},"Bet Heads"))action("flip","heads");
-    if(button(ctx,{p.x+214,p.y+233,170,40},"Bet Tails"))action("flip","tails");
-    if(button(ctx,{p.x+404,p.y+233,176,40},"Play Plinko"))action("plinko");
-    text(ctx.canvas,"Flip: 40% win, 2x total payout. Plinko: 88% expected return.",p.x+24,p.y+303,style(12));
-    text(ctx.canvas,"Plinko: 4x / 2x / 2x / 0x / 2x / 2x / 4x. Bets 1-10000 chips.",p.x+24,p.y+327,style(12));
-    text(ctx.canvas,"Cash out multiples of 10 chips. One action per second.",p.x+24,p.y+350,style(12));
-    result(ctx,"casino",{p.x+24,p.y+373,p.w-48,30});return true;
+    forms.animation.update(reply,ctx.timeSeconds);
+    const bool busy=forms.animation.busy(ctx.timeSeconds);
+    if(!busy){forms.shownStars=reply["stars"].asDouble(ctx.net.profile().stars);forms.shownChips=reply["chips"].asDouble();}
+    if(!forms.animation.pending&&!forms.animation.settled&&!forms.animation.message.empty())forms.autoPlinko=false;
+    text(ctx.canvas,"Stars: "+money(forms.shownStars)+"     Chips: "+money(forms.shownChips),p.x+24,p.y+70,style(18,0xFFE477u));
+    text(ctx.canvas,"1 star = 1 chip. No tax. Amounts up to 19k (e.g. 2.5k).",p.x+24,p.y+98,style(12));
+    field(ctx,forms.exchange,{p.x+24,p.y+117,88,30},"Stars",8);
+    field(ctx,forms.cashout,{p.x+300,p.y+117,88,30},"Chips",8);
+    const auto action=[&](const char* verb,const std::string& amount,const char* side="") {
+        Json q=Json::object();q["amount"]=amount;q["side"]=side;send(ctx,"casino",verb,q);
+        if(std::string(verb)=="flip"||std::string(verb)=="plinko")forms.animation.begin(verb,reply["revision"].asDouble(),ctx.timeSeconds);
+        else {forms.animation=CasinoAnimation{};forms.autoPlinko=false;}
+    };
+    const auto control=[&](Rect r,const std::string& label) {if(!busy)return button(ctx,r,label);chip(ctx.canvas,r,label,false,ChipStyle{0x44435Fu,0x35344Fu});return false;};
+    if(control({p.x+122,p.y+117,160,30},"Stars to chips"))action("buy",forms.exchange.text);
+    if(control({p.x+398,p.y+117,182,30},"Cash out chips"))action("cashout",forms.cashout.text);
+    text(ctx.canvas,"Bet",p.x+24,p.y+166,style());field(ctx,forms.bet,{p.x+24,p.y+181,150,30},"1-19k",8);
+    if(button(ctx,{p.x+24,p.y+341,150,30},forms.autoPlinko?"Stop Auto":"Auto Plinko"))forms.autoPlinko=!forms.autoPlinko;
+    if(control({p.x+24,p.y+221,150,32},"Bet Heads")){forms.autoPlinko=false;action("flip",forms.bet.text,"heads");}
+    if(control({p.x+24,p.y+261,150,32},"Bet Tails")){forms.autoPlinko=false;action("flip",forms.bet.text,"tails");}
+    if(control({p.x+24,p.y+301,150,32},"Drop Chip"))action("plinko",forms.bet.text);
+    if(forms.autoPlinko&&!forms.animation.busy(ctx.timeSeconds)&&(!forms.animation.settled||ctx.timeSeconds-forms.animation.startedAt>forms.animation.duration()+.4))action("plinko",forms.bet.text);
+    renderCasinoAnimation(ctx.canvas,{p.x+194,p.y+161,p.w-218,std::max(160.0,p.h-221)},forms.animation,ctx.timeSeconds);
+    text(ctx.canvas,"Plinko: 16 fair bounces, 17 slots. 500x edge jackpot. Return: 99.56%.",p.x+24,p.bottom()-45,style(11));
+    text(ctx.canvas,"Flip: 40% win, 2x payout. Whole chips only. One action per second.",p.x+24,p.bottom()-28,style(11));
+    const std::string message=busy?(forms.animation.pending?"Waiting for the server...":"Playing..."):!forms.animation.message.empty()?forms.animation.message:reply["message"].asString();
+    text(ctx.canvas,ellipsize(message,12,p.w-48),p.x+24,p.bottom()-11,style(12));return true;
 }
 void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     account(ctx);
