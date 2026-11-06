@@ -1385,8 +1385,7 @@ constexpr double kArenaGridCell = 50.0;
 
 void WorldRenderer::drawMaze(Canvas& canvas, const Camera& camera) const {
     // Beyond the maze's square there is nothing: the black the frame clears
-    // to, which says nobody can go there. The camera stops at the square, so
-    // it shows only when the maze is smaller than the view.
+    // to, which says nobody can go there.
     ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
@@ -1756,6 +1755,7 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
 
     // The physical boundary is solid. Repeat its blocks beyond authored
     // bounds so zooming out never exposes a void beside an invisible wall.
+    const MapData* map = mapFor(realm);
     ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
@@ -1780,7 +1780,6 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     // like whatever the author painted there, and blocks because of which
     // LAYER it was painted on, and the two are allowed to have nothing to do
     // with each other. Nothing in here reads a Tile.
-    const MapData* map = mapFor(realm);
     if (map == nullptr || map->layers().empty()) return;
 
     const int cols = map->width();

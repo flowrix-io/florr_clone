@@ -151,6 +151,9 @@ constexpr double kToolRowH = 22.0;
 constexpr double kEditW = 44.0;
 /// How long a card's Copy code button says it copied.
 constexpr double kCopiedSeconds = 1.5;
+/// How long a second click on Publish with nothing changed is only that: a
+/// double click, which would answer "Published" with a refusal of itself.
+constexpr double kPublishRepeatSeconds = 1.5;
 
 double round1(double v) { return std::round(v * 10.0) / 10.0; }
 
@@ -555,6 +558,12 @@ struct Studio {
     /// The new-skin draft set aside while editing, put back by Stop editing.
     std::vector<Shape> draftShapes;
     std::string draftName;
+
+    /// What Publish sent last and when, to swallow a double click on it. The
+    /// server is what stops a second copy: this only spares the reply.
+    std::uint64_t sentShapes = 0;
+    std::string sentName;
+    double sentAt = -kPublishRepeatSeconds;
 
     /// The card whose code was copied last, and when, so its button can say
     /// it worked: a clipboard gives no sign of its own.
@@ -2053,6 +2062,14 @@ bool Studio::dispatch(MenuContext& ctx, const Action& a) {
                 ctx.net.addLocalChat("Skins", check.error);
                 break;
             }
+            const std::uint64_t board = skinShapesHash(check.shapes);
+            if (board == sentShapes && skinName == sentName &&
+                ctx.timeSeconds - sentAt < kPublishRepeatSeconds) {
+                break;
+            }
+            sentShapes = board;
+            sentName = skinName;
+            sentAt = ctx.timeSeconds;
             // The edit stays open after a save, as the board does after a
             // publish: the server answers in the chat, and the next change
             // saves over the same skin again.

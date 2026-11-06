@@ -8,6 +8,13 @@
 // refuses a publish that looks like something already there -- or like the
 // starter -- and folds the copies an older catalog holds into their originals.
 //
+// Those are two different strengths of "the same", on purpose. Folding erases
+// rows at start-up, so it takes the narrow test (skinsLookAlike): a copy, give
+// or take a hair. Refusing a publish costs the author one more edit, so it takes
+// the wide one (skinsLookSimilar), which also catches a copy moved, resized or
+// with a little added. Widening the fold's test would delete skins players
+// already have the next time the server restarts.
+//
 // "Looks like" is judged on the picture, never the shape list. Two lists can
 // differ everywhere -- reordered, a shape hidden under another, a colour one
 // step off -- and paint the same flower, while two lists one number apart can
@@ -41,6 +48,18 @@ inline constexpr int kSkinLookColourSlack = 24;
 /// the starter, is 10: a change.
 inline constexpr int kSkinLookAlikeCells = 9;
 
+/// skinsLookSimilar's allowance: how many cells may differ, as a share of the
+/// detail (SkinLook::detail) on the less detailed of the two. Measured over every
+/// pair in a 96-skin catalog and checked by eye: the pairs that are one design
+/// came out at 19%, 43% and 50% -- a face added to a pattern, a copy traced again
+/// a size up, a flower moved off centre -- and the closest two different designs
+/// (a third eye and a mouth on the starter) at 82%.
+inline constexpr double kSkinSimilarDetailShare = 0.5;
+/// How far skinsLookSimilar will resize one picture onto the other, as a ratio
+/// of widths. Past this the two are different sizes on the flower's hitbox,
+/// which is a different thing to wear.
+inline constexpr double kSkinSimilarMaxRescale = 1.25;
+
 /// What one skin paints, cropped to the cells it paints at all.
 struct SkinLook {
     /// The crop, in grid cells. `w == 0` for a skin too small to cover a
@@ -49,6 +68,13 @@ struct SkinLook {
     /// Row-major, `w * h`: 0 where nothing is painted, else 0x01rrggbb, so
     /// black is still a colour.
     std::vector<std::uint32_t> cells;
+    /// How many cells are painted, and the middle of them in grid cells.
+    int painted = 0;
+    double centreX = 0, centreY = 0;
+    /// How many painted cells are what is drawn ON the skin: not its most
+    /// common colour (the body), and not within two cells of the unpainted
+    /// outside (its rim). The starter's is its two eyes.
+    int detail = 0;
 
     /// Any cell of the grid; outside the crop is unpainted.
     std::uint32_t at(int x, int y) const {
@@ -71,6 +97,23 @@ int skinLookDifference(const SkinLook& a, const SkinLook& b, int stopAfter = 1 <
 inline bool skinsLookAlike(const SkinLook& a, const SkinLook& b) {
     return skinLookDifference(a, b, kSkinLookAlikeCells) <= kSkinLookAlikeCells;
 }
+
+/// skinsLookAlike, or would be once the two pictures are lined up: the same
+/// middle, and the same size up to kSkinSimilarMaxRescale. What the starter
+/// flower is refused on -- moving it does not make it a new skin, but adding a
+/// smile to it does, since it is what every player starts drawing from.
+bool skinsLookAlikeLinedUp(const SkinLook& a, const SkinLook& b);
+
+/// True when `a` and `b` are the same kind of skin to somebody browsing for one:
+/// lined up as above, no more than kSkinSimilarDetailShare of what is drawn on
+/// them differs. What a publish or an edit is refused on.
+///
+/// Measured against the detail and not the whole picture because the body says
+/// nothing. Counted in cells, a near-identical copy (27) scored worse than a new
+/// face on the plain flower (20), so no cell count separates them; as a share
+/// of the detail they are 43% and 91%. A recolour differs everywhere and stays
+/// a different skin.
+bool skinsLookSimilar(const SkinLook& a, const SkinLook& b);
 
 /// A hash of every field `shapes` carries, so a cached look can tell that the
 /// skin it was sampled from has since been edited under the same id.

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_map>
 #include <utility>
 
 #include "shared/core/types.h"
@@ -22,6 +23,9 @@ constexpr double kClipRadius = 100.0;
 /// Segments a curve is flattened into. Finer than a cell along any curve a
 /// skin's coordinate limits allow.
 constexpr int kCurveSegments = 16;
+/// How deep a skin's rim is, in cells: the studio's default outline (3 units)
+/// and a little more.
+constexpr int kRimCells = 2;
 
 double cellCentre(int i) { return kGridOrigin + (i + 0.5) * kSkinLookCell; }
 
@@ -159,10 +163,53 @@ public:
             const auto row = cells_.begin() + static_cast<long>(y) * kSkinLookGrid;
             look.cells.insert(look.cells.end(), row + minX, row + maxX + 1);
         }
+        measure(look);
         return look;
     }
 
 private:
+    /// Fills in what skinsLookSimilar reads, so a cached look need not recount.
+    static void measure(SkinLook& look) {
+        std::unordered_map<std::uint32_t, int> counts;
+        double sumX = 0, sumY = 0;
+        for (int y = 0; y < look.h; ++y) {
+            for (int x = 0; x < look.w; ++x) {
+                const std::uint32_t colour = look.cells[static_cast<std::size_t>(y) * look.w + x];
+                if (colour == 0) continue;
+                ++look.painted;
+                ++counts[colour];
+                sumX += look.x0 + x;
+                sumY += look.y0 + y;
+            }
+        }
+        look.centreX = sumX / look.painted;
+        look.centreY = sumY / look.painted;
+
+        // The lowest colour on a tie, so the answer never depends on the map's
+        // iteration order.
+        std::uint32_t body = 0;
+        int most = 0;
+        for (const auto& [colour, count] : counts) {
+            if (count > most || (count == most && colour < body)) {
+                body = colour;
+                most = count;
+            }
+        }
+        for (int y = look.y0; y < look.y0 + look.h; ++y) {
+            for (int x = look.x0; x < look.x0 + look.w; ++x) {
+                const std::uint32_t colour = look.at(x, y);
+                if (colour == 0 || colour == body) continue;
+                bool rim = false;
+                for (int dy = -kRimCells; dy <= kRimCells && !rim; ++dy) {
+                    for (int dx = -kRimCells; dx <= kRimCells && !rim; ++dx) {
+                        rim = look.at(x + dx, y + dy) == 0;
+                    }
+                }
+                if (!rim) ++look.detail;
+            }
+        }
+    }
+
     std::vector<std::uint32_t> cells_;
 };
 
@@ -310,6 +357,49 @@ bool foundNear(const SkinLook& look, std::uint32_t colour, int x, int y) {
     return false;
 }
 
+/// `look` resized by `scale` about its middle and moved so that middle lands on
+/// `like`'s. Nearest-cell, which is fine here: the comparison it is for forgives
+/// a cell of movement anyway.
+SkinLook fittedOnto(const SkinLook& look, const SkinLook& like, double scale) {
+    const auto toGrid = [&](int at, double from, double to) {
+        return static_cast<int>(std::lround((at - from) * scale + to));
+    };
+    const int left = std::max(0, toGrid(look.x0, look.centreX, like.centreX) - 1);
+    const int top = std::max(0, toGrid(look.y0, look.centreY, like.centreY) - 1);
+    const int right = std::min(kSkinLookGrid - 1,
+                               toGrid(look.x0 + look.w - 1, look.centreX, like.centreX) + 1);
+    const int bottom = std::min(kSkinLookGrid - 1,
+                                toGrid(look.y0 + look.h - 1, look.centreY, like.centreY) + 1);
+    SkinLook out;
+    if (right < left || bottom < top) return out;
+    out.x0 = left;
+    out.y0 = top;
+    out.w = right - left + 1;
+    out.h = bottom - top + 1;
+    out.cells.reserve(static_cast<std::size_t>(out.w) * out.h);
+    for (int y = top; y <= bottom; ++y) {
+        const int fromY = static_cast<int>(std::lround((y - like.centreY) / scale + look.centreY));
+        for (int x = left; x <= right; ++x) {
+            const int fromX = static_cast<int>(std::lround((x - like.centreX) / scale + look.centreX));
+            out.cells.push_back(look.at(fromX, fromY));
+        }
+    }
+    return out;
+}
+
+/// True when no more than `allowed` cells differ, as drawn or with the pictures
+/// lined up. The smaller is fitted onto the larger whichever way round they were
+/// passed, and their areas give the ratio, which a stray speck barely moves.
+bool differsByAtMostLinedUp(const SkinLook& a, const SkinLook& b, int allowed) {
+    if (skinLookDifference(a, b, allowed) <= allowed) return true;
+    if (a.painted == 0 || b.painted == 0) return false;
+    const SkinLook& large = a.painted >= b.painted ? a : b;
+    const SkinLook& small = a.painted >= b.painted ? b : a;
+    const double scale = std::sqrt(static_cast<double>(large.painted) / small.painted);
+    if (scale > kSkinSimilarMaxRescale) return false;
+    return skinLookDifference(large, fittedOnto(small, large, scale), allowed) <= allowed;
+}
+
 void hashBytes(std::uint64_t& h, const void* data, std::size_t size) {
     const auto* bytes = static_cast<const unsigned char*>(data);
     for (std::size_t i = 0; i < size; ++i) h = (h ^ bytes[i]) * 1099511628211ull;
@@ -358,6 +448,16 @@ int skinLookDifference(const SkinLook& a, const SkinLook& b, int stopAfter) {
         }
     }
     return differing;
+}
+
+bool skinsLookAlikeLinedUp(const SkinLook& a, const SkinLook& b) {
+    return differsByAtMostLinedUp(a, b, kSkinLookAlikeCells);
+}
+
+bool skinsLookSimilar(const SkinLook& a, const SkinLook& b) {
+    const int detailShare =
+        static_cast<int>(kSkinSimilarDetailShare * std::min(a.detail, b.detail));
+    return differsByAtMostLinedUp(a, b, std::max(kSkinLookAlikeCells, detailShare));
 }
 
 std::uint64_t skinShapesHash(const std::vector<SkinShape>& shapes) {

@@ -40,11 +40,9 @@ bool aggroRaised(const PlayerModifiers& mods) {
 /// Held to the screen the owner claims (PlayerLocation, which the server has
 /// already clamped), not to the pet's own view box: a zoomed-out player can
 /// point past that box, and the pointer is wherever they can see. The claim is
-/// also what keeps a client from naming a point across the map. The screen is
-/// where the owner's camera sits (Terrain::viewCentre), which near a map edge
-/// is not centred on the owner.
-bool petPointer(World& world, const Terrain& terrain, Entity owner, Rarity petRarity,
-                Vec2 ownerPosition, Realm ownerRealm, Vec2& pointer) {
+/// also what keeps a client from naming a point across the map.
+bool petPointer(World& world, Entity owner, Rarity petRarity, Vec2 ownerPosition,
+                Vec2& pointer) {
     const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(owner);
     if (mods == nullptr || !mods->controlsPets || !(petRarity < mods->petControlRarity)) {
         return false;
@@ -52,14 +50,10 @@ bool petPointer(World& world, const Terrain& terrain, Entity owner, Rarity petRa
     const PlayerInput* input = world.tryGet<PlayerInput>(owner);
     if (input == nullptr) return false;
     const PlayerLocation* location = world.tryGet<PlayerLocation>(owner);
-    const Vec2 viewport =
-        location != nullptr ? location->viewport : Vec2{kViewportWidth, kViewportHeight};
-    const Vec2 half = viewport * 0.5;
-    const Vec2 centre = terrain.viewCentre(ownerPosition, viewport, ownerRealm);
-    const Vec2 aimed =
-        ownerPosition + Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
-    pointer = {clamp(aimed.x, centre.x - half.x, centre.x + half.x),
-               clamp(aimed.y, centre.y - half.y, centre.y + half.y)};
+    const Vec2 half = (location != nullptr ? location->viewport
+                                           : Vec2{kViewportWidth, kViewportHeight}) * 0.5;
+    const Vec2 offset = Vec2::fromAngle(input->current.aimAngle, input->current.aimDistance);
+    pointer = ownerPosition + Vec2{clamp(offset.x, -half.x, half.x), clamp(offset.y, -half.y, half.y)};
     return true;
 }
 
@@ -2134,8 +2128,7 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
     // what it is walked into, as any pet does on contact; a shooter still
     // fires at what is in reach of where it stands, as an ownerless one does.
     Vec2 pointer;
-    if (petPointer(world, terrain, owner, type.rarity, ownerPosition, ownerTransform->realm,
-                   pointer)) {
+    if (petPointer(world, owner, type.rarity, ownerPosition, pointer)) {
         ai.petReturning = false;
         ai.crabPhase = CrabPhase::None;
         ai.target = NULL_ENTITY;
