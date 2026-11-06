@@ -4907,7 +4907,9 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
     syncCommerceAccount(session.userId);
     skin.shapes = check.shapes;
     skin.createdAt = static_cast<double>(database_.nowMillis());
-    database_.rawTable("customSkins")[skin.id] = skinToJson(skin);
+    Json published = skinToJson(skin);
+    published["priceChangedAt"] = skin.createdAt;
+    database_.rawTable("customSkins")[skin.id] = std::move(published);
     database_.markDirty();
     skinLooks_[skin.id] = CachedSkinLook{skinShapesHash(skin.shapes), std::move(look)};
 
@@ -4950,6 +4952,16 @@ void GameServer::handleEditSkin(Session& session, net::Connection& connection,
         sendSkinChat(connection, "You can only edit your own skins.");
         return;
     }
+    const bool priceChanged = price != skin.price;
+    const double lastPriceChange = stored[id]["priceChangedAt"].asDouble(0);
+    const double now = static_cast<double>(database_.nowMillis());
+    // The client never supplies this timestamp. Missing legacy timestamps
+    // permit the first change; renames/art edits cannot reset the cooldown.
+    if(priceChanged && lastPriceChange > 0 && now < lastPriceChange + kSkinPriceCooldownMillis) {
+        const double minutes = std::ceil((lastPriceChange + kSkinPriceCooldownMillis - now)/60000.0);
+        sendSkinChat(connection,"This skin's price can change once every 3 hours. Try again in " + std::to_string(static_cast<long long>(std::min(minutes,180.0))) + " minutes.");
+        return;
+    }
     const SkinCheck check = sanitizeSkin(name, shapes);
     if (!check.ok()) {
         sendSkinChat(connection, check.error);
@@ -4981,7 +4993,9 @@ void GameServer::handleEditSkin(Session& session, net::Connection& connection,
     skin.price = price;
     skin.shapes = check.shapes;
     skin.editedAt = std::max(static_cast<double>(database_.nowMillis()), skin.editedAt + 1.0);
-    database_.rawTable("customSkins")[id] = skinToJson(skin);
+    Json updated = skinToJson(skin);
+    if(priceChanged || lastPriceChange > 0) updated["priceChangedAt"] = priceChanged ? now : lastPriceChange;
+    database_.rawTable("customSkins")[id] = std::move(updated);
     database_.markDirty();
     if (look) skinLooks_[id] = CachedSkinLook{skinShapesHash(skin.shapes), std::move(*look)};
 

@@ -52,6 +52,9 @@ TEST(commerce_skin_fee_paid_ownership_and_price_change_checks) {
     q["price"]=5;CHECK(request(h,buyer,"skin","buy",q));CHECK_EQ(wallet(h,"buyer").stars,buyerStart-5);CHECK_EQ(wallet(h,"artist").stars,start-96);
     CHECK(wallet(h,"buyer").extra["ownedSkins"][id].asBool());buyer.equipSkin(id);h.step(8,{&artist,&buyer});CHECK_EQ(wallet(h,"buyer").equippedSkinId,id);
     q["kind"]="skin";q["action"]="buy";buyer.requestCommerce(q);h.step(8,{&buyer});CHECK_EQ(wallet(h,"buyer").stars,buyerStart-5);
+    auto& clockDb=const_cast<Database&>(h.server.database());
+    static std::int64_t later;later=clockDb.nowMillis()+static_cast<std::int64_t>(kSkinPriceCooldownMillis);
+    clockDb.setClock([]{return later;});
     artist.editSkin(id,"Now free",{shape},0);CHECK(h.stepUntil({&artist,&buyer},[&]{return buyer.findSkin(id)&&buyer.findSkin(id)->price==0;}));
     CHECK(buyer.findSkin(id)->owned);
 
@@ -118,4 +121,29 @@ TEST(commerce_panels_and_repeating_arena_walls_render_locally) {
             ++casinoCount;CHECK(distanceSq(h.server.terrain().resolveCircle(at.position,body.radius,at.realm),at.position)<1);
         }
     });CHECK_EQ(casinoCount,1);
+}
+
+TEST(commerce_legacy_skins_stay_free_and_price_cooldown_is_persistent_and_author_only) {
+    SkinShape shape;shape.t=SkinShapeType::Rect;shape.rx=18;shape.ry=11;shape.fill="#32aa77";
+    Harness h("skin-price-cooldown",[&](const std::string& path){
+        seedWallet(path,"artist",100);seedWallet(path,"visitor",50);
+        Database db;std::string error;CHECK(db.load(path,error));
+        CustomSkin legacy;legacy.id="legacy_skin";legacy.name="Legacy";legacy.author="artist";legacy.shapes={shape};legacy.createdAt=1000;
+        Json saved=skinToJson(legacy);saved.erase("price");db.rawTable("customSkins")[legacy.id]=saved;db.markDirty();CHECK(db.save());
+    },dataDir(),0);
+    CHECK(h.ready);if(!h.ready)return;NetClient artist,visitor;CHECK(loginAs(h,artist,"artist","password7"));CHECK(loginAs(h,visitor,"visitor","password7"));
+    auto& db=const_cast<Database&>(h.server.database());static std::int64_t now;now=db.nowMillis();db.setClock([]{return now;});
+    CHECK_EQ(artist.findSkin("legacy_skin")->price,0.0);
+    const double balance=wallet(h,"artist").stars;
+    const auto edit=[&](NetClient& who,const char* name,double price){h.step(120,{&artist,&visitor});const auto count=who.chat().size();who.editSkin("legacy_skin",name,{shape},price);CHECK(h.stepUntil({&artist,&visitor},[&]{return who.chat().size()>count;}));};
+    edit(visitor,"Stolen",5);CHECK_EQ(db.storedTable("customSkins")["legacy_skin"]["price"].asDouble(),0.0);
+    edit(artist,"Legacy",5);CHECK_EQ(db.storedTable("customSkins")["legacy_skin"]["price"].asDouble(),5.0);
+    const double changedAt=db.storedTable("customSkins")["legacy_skin"]["priceChangedAt"].asDouble();CHECK_EQ(changedAt,double(now));
+    edit(artist,"Renamed",5);CHECK_EQ(db.storedTable("customSkins")["legacy_skin"]["priceChangedAt"].asDouble(),changedAt);
+    edit(artist,"Blocked",10);CHECK_EQ(db.storedTable("customSkins")["legacy_skin"]["price"].asDouble(),5.0);
+    CHECK(db.save());Database reopened;std::string error;CHECK(reopened.load(h.dbPath,error));CHECK_EQ(reopened.storedTable("customSkins")["legacy_skin"]["priceChangedAt"].asDouble(),changedAt);
+    now+=static_cast<std::int64_t>(kSkinPriceCooldownMillis)-1;
+    edit(artist,"Too early",10);CHECK_EQ(db.storedTable("customSkins")["legacy_skin"]["price"].asDouble(),5.0);
+    ++now;edit(artist,"Ready",10);CHECK_EQ(db.storedTable("customSkins")["legacy_skin"]["price"].asDouble(),10.0);
+    CHECK_EQ(wallet(h,"artist").stars,balance);
 }

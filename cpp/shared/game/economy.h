@@ -4,6 +4,7 @@
 namespace flix {
 inline constexpr double kEconomyMax = 1000000000000.0;
 inline constexpr double kSkinPublishFee = 100;
+inline constexpr double kSkinPriceCooldownMillis = 3.0 * 60 * 60 * 1000;
 inline bool validMoney(double v) { return std::isfinite(v) && v>=0 && v<=kEconomyMax && std::floor(v)==v; }
 inline bool validBalance(double v) { return std::isfinite(v) && v>=0 && v<=kEconomyMax; }
 // Stars use f64 balances; preserve fractional proceeds on one-star trades.

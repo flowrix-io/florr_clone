@@ -534,3 +534,9 @@ host commands. The preview updates after the server accepts each edit.
 - `a19kisme` receives the animated Hex Singularity cosmetic based on the
   supplied nested hexagons. The username is used only for this cosmetic;
   it grants no administrator privileges.
+
+Existing skins without a saved price remain free. A skin's price may change
+once every three hours, enforced by a persisted server timestamp. New skins
+start the timer on publication; legacy skins may make their first price
+change immediately. Artwork/name edits with the same price remain available
+and do not reset the timer.
