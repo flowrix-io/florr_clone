@@ -1,9 +1,10 @@
 {
     "mr_bee": {
         "name": "Mr. Bee",
+        "min_rarity": "apex",
         "damage": 0,
         "health": 35,
-        "size": 0.8333,
+        "size": 0.075,
         "visual_scale": 0.8,
         "speed": 0.06,
         "cooldown": 2000,
@@ -27,8 +28,7 @@
         "npc": {
             "service": "market"
         },
-        "noEggDrop": true,
-        "neverAmbient": true
+        "noEggDrop": true
     },
     "bee": {
         "name": "Bee",

@@ -62,6 +62,9 @@ TEST(market_mr_bee_is_an_apex_spawn_npc_and_gifts_single_public_copies) {
     npcs.each([&](Entity e,NpcTag&,Npc& npc,Transform& at){if(npc.configIndex==content().mobIndex("mr_bee")){host=e;home=npc.home;CHECK_EQ(npc.rarity,Rarity::Apex);CHECK_EQ(npc.service,NpcService::Market);CHECK(npc.cruises);npc.nextMarketGiftMillis=0;}});
     CHECK(host!=NULL_ENTITY);if(host==NULL_ENTITY)return;
     CHECK(!world.has<MobTag>(host));
+    CHECK(!content().mobStats(content().mobIndex("mr_bee"),Rarity::Apex).ambient);
+    CHECK(content().mob(content().mobIndex("mr_bee")).noEggDrop);
+    CHECK(world.get<Body>(host).radius>50);CHECK(world.get<Body>(host).radius<120);
     Query<PlayerTag,Transform> players{world};players.each([&](Entity,PlayerTag&,Transform& at){at.position=home+Vec2{900,0};});
     h.step(35,{&client});int drops=0;
     Query<DropTag,DropItem> items{world};items.each([&](Entity,DropTag&,DropItem& item){++drops;CHECK(item.singleCopy);CHECK(item.humansOnly);CHECK(item.eligible.empty());CHECK(rarityIndex(item.rarity)<=rarityIndex(Rarity::Ultra));});
