@@ -307,6 +307,7 @@ void NetClient::forgetAccount() {
     dailyStreak_ = DailyStreak{};
     skinCatalog_.clear();
     adminTools_ = Json::object();
+    marketRequested_=false;marketOrders_=false;
     pollCreatorRequested_ = false;pollDeadlineMillis_ = 0;
     equippedSkinId_.clear();
     skinAdmin_ = false;
@@ -1175,6 +1176,7 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
             if (reader.ok() && result.isObject()) {
                 const auto kind=result["kind"].asString();adminTools_[kind]=result;
                 if(kind=="poll")pollDeadlineMillis_=renderClockMillis()+std::max(0.0,result["remainingMillis"].asDouble());
+                if(kind=="market_open"){marketRequested_=true;marketOrders_=result["orders"].asBool();}
                 if(kind=="poll_creator" && result["open"].asBool())pollCreatorRequested_=true;
             }
             break;

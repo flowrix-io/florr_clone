@@ -1076,6 +1076,7 @@ struct Npc {
     /// still, and only while no flower is inside kNpcWatchRange -- with one
     /// there, it looks at the nearest. One that cruises looks where it goes.
     double nextGlanceMillis = 0;
+    double nextMarketGiftMillis = 0;
     /// Whether it cruises about its home the way a bee does, and on what
     /// thrust and under what ceiling (units a second): its mob's `bee_ai`,
     /// `speed` and `cruiseSpeed`, resolved at spawn through beeCruiseDrive().

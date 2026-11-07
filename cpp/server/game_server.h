@@ -419,6 +419,10 @@ private:
     void broadcastPollState(const std::string& voter = {});
     void runPollRequest(Session&, net::Connection&, const Json&);
     void expirePoll();
+    void runMarket(Session&,net::Connection&,const Json&);
+    void syncCommerceAccount(const std::string&);
+    std::vector<int> collectionRanks_;
+    double nextMarketGiftCheckMillis_=0;
     void handleAdminTools(Session&, net::Connection&, ByteReader&);
     void sendAdminTools(Session&, net::Connection&, const std::string&, bool, const std::string&, const Json& = Json::object());
     void handlePublishSkin(Session&, net::Connection&, ByteReader&);

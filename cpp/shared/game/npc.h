@@ -63,6 +63,7 @@ enum class NpcService : std::uint8_t {
     /// roll for the outcome, and no wait.
     Assembler,
     Casino,
+    Market,
 };
 
 /// The service a mobs.json `npc.service` string names, or None for text this
@@ -72,6 +73,7 @@ inline NpcService parseNpcService(const std::string& name) {
     if (name == "trader") return NpcService::Trader;
     if (name == "titan") return NpcService::Titan;
     if (name == "assembler") return NpcService::Assembler;
+    if (name == "market") return NpcService::Market;
     if (name == "casino") return NpcService::Casino;
     return NpcService::None;
 }

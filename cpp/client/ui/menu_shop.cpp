@@ -33,6 +33,7 @@
 #include "client/ui/menu_icons.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
+#include "client/ui/market_ui.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "shared/game/config.h"
@@ -541,6 +542,7 @@ double ShopPanel::preferredWidth() { return kWindowWidth; }
 double ShopPanel::preferredHeight() { return kWindowHeight; }
 
 void ShopPanel::reset() {
+    refreshMarketUi();
     // Whatever was typed into the code field is kept for the panel's whole
     // lifetime; closing it drops only the focus and any open dialog.
     ShopState& state = stateFor(this);
@@ -639,10 +641,10 @@ bool ShopPanel::render(MenuContext& ctx) {
     setFill(canvas, kWindowRim);
     canvas.fillRect(static_cast<float>(panel.x), static_cast<float>(panel.y + kStripTop),
                     static_cast<float>(panel.w), static_cast<float>(kStripHeight));
-    static constexpr std::array<const char*, 3> kTabLabels{"Shop", "Challenge", "Bonus"};
-    const double tabsWidth = 3.0 * kTabWidth + 2.0 * kTabGap;
-    std::array<Rect, 3> tabRects{};
-    for (int i = 0; i < 3; ++i) {
+    static constexpr std::array<const char*, 5> kTabLabels{"Shop", "Challenge", "Bonus", "Market", "Orders"};
+    const double tabsWidth = 5.0 * kTabWidth + 4.0 * kTabGap;
+    std::array<Rect, 5> tabRects{};
+    for (int i = 0; i < 5; ++i) {
         const Rect rect{panel.x + (panel.w - tabsWidth) * 0.5 + i * (kTabWidth + kTabGap),
                         panel.y + kStripTop + 10.0, kTabWidth, kTabHeight};
         tabRects[static_cast<std::size_t>(i)] = rect;
@@ -658,7 +660,7 @@ bool ShopPanel::render(MenuContext& ctx) {
     // --- the footer, on every tab -------------------------------------------
     // The balance is the one number all three tabs are about, so it is the
     // window's footer rather than the store's.
-    {
+    if(tab_!=Tab::Market&&tab_!=Tab::Orders){
         const std::string balance = withSeparators(stars);
         const double width = kBalanceInset + kBalanceStar + measure(balance, kBalanceSize) +
                              textPad(kBalanceSize) + kBalanceInset;
@@ -686,7 +688,11 @@ bool ShopPanel::render(MenuContext& ctx) {
     Rect codeField{};
     Rect redeemButton{};
 
-    if (tab_ == Tab::Offers) {
+    if (tab_ == Tab::Market || tab_ == Tab::Orders) {
+        MenuContext market=ctx; market.pointerBlocked=ctx.pointerBlocked||modalUp||open_<.9||closing_;
+        renderMarket(market,{panel.x+13,panel.y+kStripTop+kStripHeight+8,panel.w-26,panel.h-kStripTop-kStripHeight-25},tab_==Tab::Orders);
+        ctx.wantsText=ctx.wantsText||market.wantsText;
+    } else if (tab_ == Tab::Offers) {
         const std::int64_t rotation = shopRotation(shopClockNow());
         if (state.offersRotation != rotation) {
             state.offersRotation = rotation;
@@ -984,7 +990,7 @@ bool ShopPanel::render(MenuContext& ctx) {
 
     if (clicked(closeRect)) return false;
 
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 5; ++i) {
         if (!clicked(tabRects[static_cast<std::size_t>(i)])) continue;
         // Leaving the code field behind clears its focus, or the shop would go
         // on eating keystrokes from a tab with no field on it.

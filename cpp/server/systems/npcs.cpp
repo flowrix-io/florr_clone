@@ -163,6 +163,7 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     npc.service = config.npc.service;
     npc.home = position;
     npc.nextGlanceMillis = nowMillis;
+    if(npc.service==NpcService::Market)npc.nextMarketGiftMillis=nowMillis+180000+rng_.unit()*180000;
     // Flies like its mob does when its mob flies like a bee, starting off on
     // a heading and a weave of its own.
     npc.still = still;
@@ -198,6 +199,16 @@ void NpcSystem::placeMissing(World& world, const Terrain& terrain, const Content
     }
 }
 
+std::vector<RealmPoint> NpcSystem::marketGiftSites(World& world,double nowMillis) {
+    bind(world);std::vector<RealmPoint> gifts;
+    npcs_->each([&](Entity,NpcTag&,Npc& npc,Transform& at){
+        if(npc.service!=NpcService::Market||nowMillis<npc.nextMarketGiftMillis)return;
+        npc.nextMarketGiftMillis=nowMillis+180000+rng_.unit()*180000;
+        gifts.push_back({at.position,at.realm});
+    });
+    return gifts;
+}
+
 void NpcSystem::run(World& world, const Terrain& terrain, const ContentRegistry& content,
                     const std::vector<RealmPoint>& players, double nowMillis) {
     bind(world);
@@ -231,6 +242,10 @@ void NpcSystem::run(World& world, const Terrain& terrain, const ContentRegistry&
             // one sliding along a wall looks along the wall -- and nowhere
             // else, flowers or no flowers. Held on the last bearing through a
             // tick that went nowhere, rather than snapping to east.
+            // The market host never leaves the spawn neighborhood, even after
+            // a long outward cruise. Terrain collision is still applied above.
+            if(npc.service==NpcService::Market && distanceSq(transform.position,npc.home)>kNpcLeashRadius*kNpcLeashRadius)
+                transform.position=from;
             const Vec2 step = transform.position - from;
             if (step.lengthSq() > 1e-12) transform.angle = step.angle();
             return;

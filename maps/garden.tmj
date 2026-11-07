@@ -779,7 +779,30 @@
          "draworder":"topdown",
          "id":15,
          "name":"npcs",
-         "objects":[],
+         "objects":[{
+    "id": 70,
+    "name": "Mr. Bee market",
+    "point": true,
+    "x": 11605.333333333416,
+    "y": 30890.666666666657,
+    "width": 0,
+    "height": 0,
+    "rotation": 0,
+    "type": "",
+    "visible": true,
+    "properties": [
+        {
+            "name": "npc",
+            "type": "string",
+            "value": "mr_bee"
+        },
+        {
+            "name": "rarity",
+            "type": "string",
+            "value": "apex"
+        }
+    ]
+}],
          "opacity":1,
          "type":"objectgroup",
          "visible":true,
@@ -6250,7 +6273,7 @@
          "y":0
         }],
  "nextlayerid":17,
- "nextobjectid":70,
+ "nextobjectid":71,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",

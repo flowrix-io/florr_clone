@@ -310,7 +310,7 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
         // and a tolerance here would paint a clipped one it never shows.
         if (dot.x <= 0 || dot.x >= kMinimapSize || dot.y <= 0 || dot.y >= kMinimapSize) continue;
         // Teleporters are green. NPCs use their mob colour, with a larger
-        // gold marker for Hel Casino so players can find the service.
+        // gold marker for market hosts and Hel so players can find the service.
         std::uint32_t color = 0x00FF00u;
         float radius = 3.0f;
         if (npc) {
@@ -318,7 +318,7 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
             if (mob == kInvalidIndex) continue;
             color = static_cast<std::uint32_t>(content().mob(mob).colorRgba >> 8);
             radius = 4.0f;
-            if (content().mob(mob).npc.service == NpcService::Casino) {
+            if (content().mob(mob).npc.service == NpcService::Market || element.npcId == "hel_casino") {
                 color = 0xFFD700u;
                 radius = 5.0f;
             }

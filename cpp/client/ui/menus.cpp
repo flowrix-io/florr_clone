@@ -1,5 +1,7 @@
 #include "client/ui/menus.h"
 #include "client/ui/poll_ui.h"
+#include "client/ui/market_ui.h"
+#include "shared/game/collection.h"
 #include "client/ui/text_select.h"
 #include "client/ease.h"
 
@@ -694,6 +696,9 @@ bool ClientSettings::load(const std::string& path) {
             }
         }
         else if (key == "stats") showStats = number != 0;
+        else if (key == "marketRarity") {int low,high;if(collectionRarityFilter(value,low,high))marketRarityFilter=value;}
+        else if (key == "marketListings") marketListingSort=std::clamp(int(number),0,2);
+        else if (key == "marketOrders") marketOrderSort=std::clamp(int(number),0,2);
         else if (key == "debugButton") showDebugButton = number != 0;
         else if (key == "adminsOnBoard") showAdminsOnLeaderboard = number != 0;
         else if (key == "changelogSeen") changelogSeen = number;
@@ -748,6 +753,9 @@ bool ClientSettings::save(const std::string& path) const {
          << "chat " << (showChat ? 1 : 0) << '\n'
          << "chatTabs " << static_cast<int>(chatChannels) << '\n'
          << "stats " << (showStats ? 1 : 0) << '\n'
+         << "marketRarity " << (marketRarityFilter.empty()?"All":marketRarityFilter) << '\n'
+         << "marketListings " << marketListingSort << '\n'
+         << "marketOrders " << marketOrderSort << '\n'
          << "debugButton " << (showDebugButton ? 1 : 0) << '\n'
          << "adminsOnBoard " << (showAdminsOnLeaderboard ? 1 : 0) << '\n'
          << "changelogSeen " << changelogSeen << '\n'
@@ -797,6 +805,7 @@ bool ClientSettings::save(const std::string& path) const {
 // ---------------------------------------------------------------------------
 
 void MenuSystem::toggle(MenuId id) {
+    if(id==MenuId::Crafting&&nearbyNpc_==NpcService::Market){shop_.openMarket();id=MenuId::Shop;}
     // Opening a second menu closes the first. They share an anchor, so two at
     // once would be one menu with another hidden behind it.
     const bool opening = open_ != id;
@@ -1265,6 +1274,8 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Titan) {
             face = kTitanSkin.fill;
             rim = kTitanSkin.border;
+        } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Market) {
+            face = 0xFFCA50u; rim = 0xB58D30u;
         } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Assembler) {
             face = kAssemblerSkin.fill;
             rim = kAssemblerSkin.border;
@@ -2526,6 +2537,8 @@ Vec2 craftWindowSize(NpcService npc, bool absorb, const Profile& profile) {
         case NpcService::Trader: return TradePanel::size(profile);
         case NpcService::Titan:  return TitanPanel::size(profile);
         case NpcService::Assembler: return AssemblerPanel::size();
+        case NpcService::Market: return {746,541};
+        case NpcService::Casino:
         case NpcService::None:   break;
     }
     return absorb ? AbsorbPanel::size(profile) : CraftingPanel::size(profile);
@@ -2662,6 +2675,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     wantsText_ = false;
     panelRect_ = Rect{};
     pollRect_ = pollOverlayBounds(net,canvas.width(),canvas.height());
+    if(net.takeMarketRequest()){shop_.openMarket(net.marketOrdersRequested());if(open_!=MenuId::Shop)toggle(MenuId::Shop);}
     if(net.takePollCreatorRequest() && open_!=MenuId::PollCreator)toggle(MenuId::PollCreator);
     // Taken back every frame and claimed again by whatever still holds the
     // keyboard this frame: a closed editor must not keep Ctrl+S from the
