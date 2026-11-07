@@ -410,8 +410,8 @@ private:
     /// void beyond its square left black. The maze has no map file and so no
     /// artwork of its own -- terrain.h's kBiomes is its whole palette.
     void drawMaze(Canvas&, const Camera&) const;
-    /// The arena realm: a grey gridded floor inside the ring, dark void
-    /// outside it, and the red boundary the server clamps bodies to.
+    /// The arena realm: a grey gridded floor, carried on past the ring under
+    /// flooooio's border, black beyond that.
     void drawArena(Canvas&, const Camera&) const;
     /// The waves realm: the biome's tile on a disc, black outside it.
     void drawWaves(Canvas&, const Camera&, double timeSeconds) const;

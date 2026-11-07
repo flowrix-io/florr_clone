@@ -1382,10 +1382,10 @@ void traceMazeCorner(Canvas& canvas, const Camera& camera, double x0, double y0,
                static_cast<float>(a0 + kPi * 0.5), false);
 }
 
-/// The reference's arena palette (src/graphics/pvp-arena.ts): gardn's "???"
-/// zone, a plain grey floor with a faint dark grid, in a darker void.
+/// The reference's arena floor (src/graphics/pvp-arena.ts): gardn's "???"
+/// zone, a plain grey with a faint dark grid. Its darker void and red ring gave
+/// way to flooooio's border (2026-11-07, user), as the waves' disc has.
 constexpr std::uint32_t kArenaFloor = 0x777777u;
-constexpr std::uint32_t kArenaVoid = 0x1A1A1Au;
 constexpr double kArenaGridCell = 50.0;
 
 } // namespace
@@ -1455,22 +1455,56 @@ void WorldRenderer::drawMaze(Canvas& canvas, const Camera& camera) const {
     canvas.restore();
 }
 
-void WorldRenderer::drawArena(Canvas& canvas, const Camera& camera) const {
-    const double zoom = camera.zoom();
-    const Vec2 centre = camera.worldToScreen(kArenaCentre);
-    const float radius = static_cast<float>(kArenaRadius * zoom);
+namespace {
 
-    // Dark void everywhere; the floor below paints over it inside the ring.
-    ui::setFill(canvas, kArenaVoid);
+/// How far flooooio's ground reaches from a disc's centre, on each axis: it
+/// lays radius/80 tiles of 300 across, centred on the disc (TileRenderer.zig
+/// renderGameTileset), which carries the floor on 0.875 radii past the edge.
+/// Past that the canvas is cleared, which is black here.
+double discGroundReach(double radius) { return radius / 80.0 * 300.0 * 0.5; }
+
+/// The square that ground covers, on the screen.
+Rect discGroundOnScreen(const Camera& camera, Vec2 centre, double radius) {
+    const double reach = discGroundReach(radius);
+    const Vec2 a = camera.worldToScreen({centre.x - reach, centre.y - reach});
+    const Vec2 b = camera.worldToScreen({centre.x + reach, centre.y + reach});
+    return {a.x, a.y, b.x - a.x, b.y - a.y};
+}
+
+/// flooooio's border (TileRenderer.zig renderBoundaryCircle): everything from
+/// half a unit past the edge out goes under black at 15%. flooooio strokes a
+/// ring five screens wide for it; a screen with a hole in it is the same
+/// picture without a stroke that size.
+void shadeOutsideDisc(Canvas& canvas, const Camera& camera, Vec2 centreWorld, double radius) {
+    const Vec2 centre = camera.worldToScreen(centreWorld);
+    const auto r = static_cast<float>((radius + 0.5) * camera.zoom());
+    canvas.save();
+    ui::setFill(canvas, 0x000000u, 0.15);
+    canvas.beginPath();
+    canvas.rect(0.0f, 0.0f, static_cast<float>(camera.viewportWidth()),
+                static_cast<float>(camera.viewportHeight()));
+    canvas.moveTo(static_cast<float>(centre.x) + r, static_cast<float>(centre.y));
+    canvas.arc(static_cast<float>(centre.x), static_cast<float>(centre.y), r, 0.0f,
+               static_cast<float>(kTau), false);
+    canvas.fill("evenodd");
+    canvas.restore();
+}
+
+} // namespace
+
+void WorldRenderer::drawArena(Canvas& canvas, const Camera& camera) const {
+    // The floor carries on past the ring, under flooooio's border, as the
+    // waves' disc does; black beyond the ground.
+    ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
 
+    const Rect ground = discGroundOnScreen(camera, kArenaCentre, kArenaRadius);
     canvas.save();
     canvas.beginPath();
-    canvas.arc(static_cast<float>(centre.x), static_cast<float>(centre.y), radius, 0.0f,
-               static_cast<float>(kTau), false);
+    canvas.rect(static_cast<float>(ground.x), static_cast<float>(ground.y),
+                static_cast<float>(ground.w), static_cast<float>(ground.h));
     canvas.clip();
-
     ui::setFill(canvas, kArenaFloor);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
@@ -1478,10 +1512,10 @@ void WorldRenderer::drawArena(Canvas& canvas, const Camera& camera) const {
     // The grid is aligned to the arena's centre so its lines hold still as
     // the camera moves. One screen pixel wide at every zoom, as the browser
     // draws it (lineWidth 1 / zoomLevel inside the world transform).
+    const double reach = discGroundReach(kArenaRadius);
     const Rect visible = camera.visibleWorld(0);
-    const Rect arena{kArenaCentre.x - kArenaRadius, kArenaCentre.y - kArenaRadius,
-                     kArenaRadius * 2.0, kArenaRadius * 2.0};
-    const Rect span = intersection(visible, arena);
+    const Rect floor{kArenaCentre.x - reach, kArenaCentre.y - reach, reach * 2.0, reach * 2.0};
+    const Rect span = intersection(visible, floor);
     if (span.w > 0 && span.h > 0) {
         ui::setStroke(canvas, 0x000000u, 0.18);
         canvas.setLineWidth(1.0f);
@@ -1506,17 +1540,7 @@ void WorldRenderer::drawArena(Canvas& canvas, const Camera& camera) const {
     }
     canvas.restore();
 
-    // The boundary: a hard red ring -- bodies are clamped to it -- with a
-    // paler line just inside.
-    canvas.save();
-    ui::setStroke(canvas, 0xFF3C3Cu, 0.65);
-    canvas.setLineWidth(static_cast<float>(12.0 * zoom));
-    canvas.strokeCircle(static_cast<float>(centre.x), static_cast<float>(centre.y), radius);
-    ui::setStroke(canvas, 0xFFC8C8u, 0.4);
-    canvas.setLineWidth(static_cast<float>(4.0 * zoom));
-    canvas.strokeCircle(static_cast<float>(centre.x), static_cast<float>(centre.y),
-                        static_cast<float>((kArenaRadius - 8.0) * zoom));
-    canvas.restore();
+    shadeOutsideDisc(canvas, camera, kArenaCentre, kArenaRadius);
 }
 
 namespace {
@@ -1768,8 +1792,9 @@ void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* a
 }
 
 void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera, double timeSeconds) const {
-    // flooooio paves the disc with the biome's first tile at 300 units, squared
-    // up on the disc. Outside the map is pure black, as it is on every map here.
+    // flooooio paves its disc with the biome's tile at 300 units, the ground
+    // carrying on 0.875 radii past the edge under its border, and black
+    // beyond that.
     constexpr double kWaveTileSize = 300.0;
     const WaveBiomeInfo& biome = waveBiomeInfo(waveBiome_);
     const double dt = std::clamp(timeSeconds - waveRadiusAt_, 0.0, 0.25);
@@ -1780,44 +1805,50 @@ void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera, double timeS
         waveRadiusDrawn_ += (waveRadius_ - waveRadiusDrawn_) * (1.0 - std::exp(-dt * 3.0));
     }
     const double radius = waveRadiusDrawn_;
-    const Vec2 centre = camera.worldToScreen(kWavesCentre);
     const auto width = static_cast<float>(camera.viewportWidth());
     const auto height = static_cast<float>(camera.viewportHeight());
     ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, width, height);
 
+    const Rect ground = discGroundOnScreen(camera, kWavesCentre, radius);
     canvas.save();
     canvas.beginPath();
-    canvas.arc(static_cast<float>(centre.x), static_cast<float>(centre.y),
-               static_cast<float>(radius * camera.zoom()), 0.0f, static_cast<float>(kTau),
-               false);
+    canvas.rect(static_cast<float>(ground.x), static_cast<float>(ground.y),
+                static_cast<float>(ground.w), static_cast<float>(ground.h));
     canvas.clip();
     ui::setFill(canvas, biome.gaugeColor);
     canvas.fillRect(0, 0, width, height);
 
     const SvgDocument* art = sprites_ != nullptr ? sprites_->tileArt(biome.tile) : nullptr;
     if (art != nullptr) {
-        const Rect visible = camera.visibleWorld(kTileOverlap);
-        // Squared up on the centre, so the pattern holds still as the edge grows.
-        const double originX = kWavesCentre.x - kWavesMaxRadius;
-        const double originY = kWavesCentre.y - kWavesMaxRadius;
-        const int count = static_cast<int>(std::ceil(kWavesMaxRadius * 2.0 / kWaveTileSize));
-        const int x0 = std::max(0, static_cast<int>(std::floor((visible.left() - originX) / kWaveTileSize)));
-        const int y0 = std::max(0, static_cast<int>(std::floor((visible.top() - originY) / kWaveTileSize)));
-        const int x1 = std::min(count - 1, static_cast<int>(std::floor((visible.right() - originX) / kWaveTileSize)));
-        const int y1 = std::min(count - 1, static_cast<int>(std::floor((visible.bottom() - originY) / kWaveTileSize)));
-        const auto side = static_cast<float>((kWaveTileSize + 2.0 * kTileOverlap) * camera.zoom());
-        for (int y = y0; y <= y1; ++y) {
-            for (int x = x0; x <= x1; ++x) {
-                const Vec2 at = camera.worldToScreen({originX + x * kWaveTileSize - kTileOverlap,
-                                                      originY + y * kWaveTileSize - kTileOverlap});
-                if (!drawCachedArt(canvas, *art, at.x, at.y, side, side)) {
-                    art->renderFitted(canvas, at.x, at.y, side, side, 0);
+        // Squared up on the largest disc, so the pattern holds still as the
+        // ground grows under it.
+        const double reach = discGroundReach(radius);
+        const Rect visible = intersection(camera.visibleWorld(kTileOverlap),
+                                          Rect{kWavesCentre.x - reach, kWavesCentre.y - reach,
+                                               reach * 2.0, reach * 2.0});
+        const double originX = kWavesCentre.x - kWavesMaxRadius * 2.0;
+        const double originY = kWavesCentre.y - kWavesMaxRadius * 2.0;
+        if (visible.w > 0 && visible.h > 0) {
+            const int x0 = static_cast<int>(std::floor((visible.left() - originX) / kWaveTileSize));
+            const int y0 = static_cast<int>(std::floor((visible.top() - originY) / kWaveTileSize));
+            const int x1 = static_cast<int>(std::floor((visible.right() - originX) / kWaveTileSize));
+            const int y1 = static_cast<int>(std::floor((visible.bottom() - originY) / kWaveTileSize));
+            const auto side = static_cast<float>((kWaveTileSize + 2.0 * kTileOverlap) * camera.zoom());
+            for (int y = y0; y <= y1; ++y) {
+                for (int x = x0; x <= x1; ++x) {
+                    const Vec2 at = camera.worldToScreen({originX + x * kWaveTileSize - kTileOverlap,
+                                                          originY + y * kWaveTileSize - kTileOverlap});
+                    if (!drawCachedArt(canvas, *art, at.x, at.y, side, side)) {
+                        art->renderFitted(canvas, at.x, at.y, side, side, 0);
+                    }
                 }
             }
         }
     }
     canvas.restore();
+
+    shadeOutsideDisc(canvas, camera, kWavesCentre, radius);
 }
 
 void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm realm) const {

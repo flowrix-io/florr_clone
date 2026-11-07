@@ -956,12 +956,43 @@ TEST(the_waves_disc_is_paved_in_its_biome_and_black_outside) {
     CHECK(floor.size() == 4);
     if (floor.size() != 4) return;
     CHECK_EQ(floor[0], static_cast<std::uint8_t>(waveBiomeInfo(WaveBiome::Desert).gaugeColor >> 16));
+    // Past the edge the ground carries on under flooooio's border, black at
+    // 15% over it...
     const Vec2 beyond{kWavesCentre.x + kWavesStartRadius + 200.0, kWavesCentre.y};
     const auto outside = sample(WaveBiome::Desert, beyond);
-    CHECK_EQ(outside[0] + outside[1] + outside[2], 0);
-    // A grown disc is floor out there.
+    for (int c = 0; c < 3; ++c) CHECK(std::abs(outside[c] - floor[c] * 0.85) <= 2.0);
+    // ...as far as flooooio's ground reaches, 0.875 radii out, and is black past it.
+    const auto past = sample(WaveBiome::Desert, {kWavesCentre.x + kWavesStartRadius * 1.95, kWavesCentre.y});
+    CHECK_EQ(past[0] + past[1] + past[2], 0);
+    // A grown disc is floor, unshaded, out there.
     const auto grown = sample(WaveBiome::Desert, beyond, 3000.0);
     CHECK_EQ(grown[0], floor[0]);
+}
+
+TEST(the_pvp_ring_has_the_waves_border) {
+    const int size = 64;
+    const auto sample = [&](Vec2 at) {
+        WorldRenderer renderer;
+        WorldView view;
+        view.setRealm(Realm::Arena);
+        Canvas canvas = Canvas::createVirtual(size, size);
+        renderer.draw(canvas, view, frameCamera(size, at), at, 0);
+        return canvas.getImageData(size / 2, size / 2, 1, 1);
+    };
+    // Off the grid lines, so the floor reads as its plain grey.
+    const Vec2 inside{kArenaCentre.x + 25.0, kArenaCentre.y + 25.0};
+    const Vec2 outside{kArenaCentre.x + 25.0, kArenaCentre.y + kArenaRadius + 225.0};
+    const auto floor = sample(inside);
+    const auto shaded = sample(outside);
+    const auto past = sample({kArenaCentre.x + 25.0, kArenaCentre.y + kArenaRadius * 1.95});
+    CHECK(floor.size() == 4 && shaded.size() == 4 && past.size() == 4);
+    if (floor.size() != 4 || shaded.size() != 4 || past.size() != 4) return;
+    CHECK_EQ(floor[0], std::uint8_t(0x77));
+    for (int c = 0; c < 3; ++c) CHECK(std::abs(shaded[c] - floor[c] * 0.85) <= 2.0);
+    CHECK_EQ(past[0] + past[1] + past[2], 0);
+    // No red ring left at the edge.
+    const auto edge = sample({kArenaCentre.x + 25.0, kArenaCentre.y + kArenaRadius});
+    CHECK(edge.size() == 4 && std::abs(int(edge[0]) - int(edge[1])) <= 2);
 }
 
 TEST(a_dead_flower_on_the_disc_leaves_no_corpse) {
