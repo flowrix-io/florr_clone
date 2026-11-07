@@ -1,11 +1,13 @@
 #include "server/chat_moderation.h"
 
+#include "server/text.h"
 #include "shared/core/text.h"
 #include "shared/game/markup.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <initializer_list>
+#include <iterator>
 #include <utility>
 #include <cstring>
 #include <vector>
@@ -102,6 +104,32 @@ constexpr Listed kAllowed[] = {
     {"retardant", Fit::Inside},     // flame retardant
     {"retardation", Fit::Inside},
 };
+
+/// Two ordinary words that spell a listed one when the space between them is
+/// read through, which is how "fu ck" is caught. Nobody means anything by
+/// these, and "Red Skin" is the obvious name for a red skin.
+struct InnocentPair {
+    const char* first;
+    const char* second;
+};
+constexpr InnocentPair kInnocentPairs[] = {
+    {"go", "ok"},       // gook
+    {"pen", "is"},      // penis
+    {"red", "skin"},    // redskin
+};
+
+/// What leads into a whole-word listed one in a name, which has no space to
+/// end a word with: "bigdick", "kissmyass". The whole name has to be these
+/// and the listed word, so "Amyass" is safe. "the" is not one: "therapist".
+constexpr const char* kNameLeadIns[] = {
+    "big", "eat", "fat", "hairy", "hot", "huge", "kiss", "lick", "my", "nice", "sexy", "suck",
+    "ur", "wet", "your",
+};
+
+/// Listed words not read backwards from plain letters, each for what it
+/// reverses into: the exclamation "drat" and the names Esra, Nemes and Huggin.
+/// Written in stand-ins they still are: nobody's name is "n3m3s".
+constexpr const char* kNotReversed[] = {"tard", "arse", "semen", "nigguh"};
 
 // ---------------------------------------------------------------------------
 // Reading a character
@@ -373,6 +401,10 @@ struct Word {
     bool through = false;
     bool spaced = false;
     std::vector<bool> pieceStarts;
+    /// Read across spaces: how many chunks it was made of, and where the
+    /// first one ends.
+    std::size_t chunks = 0;
+    std::size_t firstChunkEnd = 0;
 };
 
 /// The words a reader can make out of `drawn`, three ways over:
@@ -442,11 +474,16 @@ std::vector<Word> wordsIn(const std::vector<Drawn>& drawn) {
         joined.through = true;
         joined.spaced = true;
         bool gap = false;
+        bool chunkOpen = false;
         for (std::size_t i = start; i < drawn.size() && joined.cells.size() < 32; ++i) {
             if (drawn[i].kind == Kind::Letter) {
                 joined.pieceStarts.push_back(joined.cells.empty());
                 joined.cells.push_back(drawn[i].cell);
+                if (!chunkOpen) ++joined.chunks;
+                chunkOpen = true;
             } else if (drawn[i].kind != Kind::Hidden) {
+                if (joined.chunks == 1 && chunkOpen) joined.firstChunkEnd = joined.cells.size();
+                chunkOpen = false;
                 if (gap && !joined.cells.empty()) words.push_back(joined);
                 gap = gap || drawn[i].kind == Kind::Gap;
             }
@@ -525,9 +562,22 @@ bool findListed(const Word& read, const Listed& listed, Found&& found) {
     return false;
 }
 
+/// Whether `word`, read across a space, is exactly one of kInnocentPairs.
+bool isInnocentPair(const Word& word) {
+    if (!word.spaced || word.chunks != 2) return false;
+    for (const InnocentPair& pair : kInnocentPairs) {
+        if (matchEnd(word.cells, 0, pair.first) == word.firstChunkEnd &&
+            matchEnd(word.cells, word.firstChunkEnd, pair.second) == word.cells.size()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// The first listed word `source` draws, read with or without <a>, or null.
 const char* findBlocked(const std::string& source, bool links) {
     for (const Word& word : wordsIn(drawnCharacters(source, links))) {
+        if (isInnocentPair(word)) continue;
         std::vector<std::pair<std::size_t, std::size_t>> allowed;
         for (const Listed& listed : kAllowed) {
             findListed(word, listed, [&](std::size_t from, std::size_t to) {
@@ -547,9 +597,14 @@ const char* findBlocked(const std::string& source, bool links) {
         if(word.cells.size()<4)continue;
         Word reversed;
         reversed.cells.assign(word.cells.rbegin(),word.cells.rend());
+        const bool plain=std::none_of(word.cells.begin(),word.cells.end(),[](const Cell& cell) {
+            return cell.standIn;
+        });
         for(const Listed& listed:kBlocked) {
-            // Reversing "tard" would also ban the ordinary exclamation "drat".
-            if(std::strlen(listed.word)<4 || std::strcmp(listed.word,"tard")==0)continue;
+            if(std::strlen(listed.word)<4)continue;
+            if(plain&&std::any_of(std::begin(kNotReversed),std::end(kNotReversed),[&](const char* name) {
+                return std::strcmp(listed.word,name)==0;
+            }))continue;
             const Listed whole{listed.word,Fit::Whole};
             if(findListed(reversed,whole,[](std::size_t,std::size_t){return true;}))return listed.word;
         }
@@ -613,6 +668,71 @@ std::string blockedWordIn(const std::string& line) {
     for (const bool links : {true, false}) {
         if (const char* word = findBlocked(line, links)) return word;
         if (const char* word = findBlockedChinese(line, links)) return word;
+    }
+    return {};
+}
+
+// ---------------------------------------------------------------------------
+// Names
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// `name` with a space where its capitals and digits show a new word starting:
+/// "KissMyAss" is "Kiss My Ass", "xXDickXx" is "x X Dick Xx", "BIGAss" is
+/// "BIG Ass". A digit stays with the letters before it, where the word check
+/// knows it may mean nothing ("dick4u" is "dick4 u"). If it started the next
+/// word instead, "Gl4ss" would be "Gl 4ss", and "4ss" reads as "ass".
+std::string splitAtWordStarts(const std::string& name) {
+    const auto lower = [](char c) { return c >= 'a' && c <= 'z'; };
+    const auto upper = [](char c) { return c >= 'A' && c <= 'Z'; };
+    const auto digit = [](char c) { return c >= '0' && c <= '9'; };
+    std::string split;
+    for (std::size_t i = 0; i < name.size(); ++i) {
+        const char c = name[i];
+        if (i > 0) {
+            const char before = name[i - 1];
+            const char after = i + 1 < name.size() ? name[i + 1] : '\0';
+            if ((lower(before) && upper(c)) || (upper(before) && upper(c) && lower(after)) ||
+                (digit(before) && (lower(c) || upper(c)))) {
+                split += ' ';
+            }
+        }
+        split += c;
+    }
+    return split;
+}
+
+/// Whether `word` from `at` on is one or more lead-ins and then `listed`, and
+/// nothing more.
+bool leadsInto(const std::vector<Cell>& word, std::size_t at, const char* listed, bool ledIn) {
+    if (ledIn) {
+        const std::size_t to = matchEnd(word, at, listed);
+        if (to != kNoMatch && endsWord(word, to)) return true;
+    }
+    for (const char* leadIn : kNameLeadIns) {
+        const std::size_t to = matchEnd(word, at, leadIn);
+        if (to != kNoMatch && to < word.size() && leadsInto(word, to, listed, true)) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+std::string blockedWordInName(const std::string& name) {
+    const std::string drawn = escapedMarkup(name);
+    std::string word = blockedWordIn(drawn);
+    if (word.empty()) word = blockedWordIn(escapedMarkup(splitAtWordStarts(name)));
+    if (!word.empty()) return word;
+    for (const Word& read : wordsIn(drawnCharacters(drawn, true))) {
+        if (read.through) continue;
+        std::size_t from = 0;
+        while (from < read.cells.size() && read.cells[from].standIn) ++from;
+        for (const Listed& listed : kBlocked) {
+            if (listed.fit == Fit::Whole && leadsInto(read.cells, from, listed.word, false)) {
+                return listed.word;
+            }
+        }
     }
     return {};
 }

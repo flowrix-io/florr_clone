@@ -45,6 +45,16 @@ namespace flix {
 /// server's log; a speaker is never shown it.
 std::string blockedWordIn(const std::string& line);
 
+/// The same check for a name a player chose -- a username, a nameplate, a
+/// skin's name -- as `blockedWordIn` says it. A name differs from a chat line
+/// twice over. It is plain text wherever it is drawn, so "<x>fuck</x>" is not
+/// a tag but what it says. And it has no spaces to end a word with, so the
+/// words listed as whole ones are also read where its capitals and digits
+/// start a new word ("BigAss", "xXDickXx", "dick4u") and after a lead-in like
+/// "big" or "my" ("bigdick", "kissmyass"). Run together with anything else, a
+/// whole word still passes ("pussylover"): that is the price of "Hitchcock".
+std::string blockedWordInName(const std::string& name);
+
 /// What a line draws, folded for "is this the same line again": lower-cased,
 /// spaces, punctuation and invisible characters gone, pictures kept by
 /// address. "Hi!!", "hi" and "<b>HI</b>" are one line; a line with nothing
