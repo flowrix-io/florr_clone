@@ -292,10 +292,12 @@ ClusterShape clusterShape(const SpriteCache* sprites, std::uint16_t petalIndex, 
         // and lying flat where a leaf lies back.
         //
         // A second pass, because the row a magic petal wants may belong to a
-        // petal the first pass had not reached yet.
+        // petal the first pass had not reached yet. A glitch petal is the same
+        // picture again, in green.
         for (std::uint16_t i = 0; i < content().petalCount(); ++i) {
             if (out[i] != nullptr) continue;
-            const std::uint16_t base = content().magicSourceOf(i);
+            std::uint16_t base = content().magicSourceOf(i);
+            if (base == kInvalidIndex) base = content().glitchSourceOf(i);
             if (base != kInvalidIndex && base < out.size()) out[i] = out[base];
         }
         return out;

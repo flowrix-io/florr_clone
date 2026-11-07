@@ -225,8 +225,9 @@ void DropTables::resolve(const ContentRegistry& content) {
         if (petalHasOwnSource(petal)) continue;
         // A magic petal is CONVERTED into, never dropped. Leaving it in the
         // pool would put an apex magic leaf in front of a flower wearing a
-        // common orb, straight past the gate the orb exists to be.
-        if (content.isMagicForm(index)) continue;
+        // common orb, straight past the gate the orb exists to be. A glitch
+        // petal likewise.
+        if (content.isMagicForm(index) || content.isGlitchForm(index)) continue;
         if (petal.id.size() > 4 && petal.id.compare(petal.id.size() - 4, 4, "_egg") == 0) {
             const std::uint16_t layer = content.mobIndex(petal.id.substr(0, petal.id.size() - 4));
             if (layer != kInvalidIndex && content.mob(layer).noEggDrop) continue;
@@ -319,30 +320,44 @@ bool LootSystem::mayPickUp(const DropItem& drop, Entity player, net::ConnectionI
 }
 
 // ---------------------------------------------------------------------------
-// The magic orb's conversion
+// The magic and glitch orbs' conversion
 // ---------------------------------------------------------------------------
 
 namespace {
 
-/// The best magic orb on a flower's ACTIVE bar, or kRarityCount for none.
+/// The best orb of each kind on a flower's ACTIVE bar.
 ///
 /// Active slots only, for the reason every other worn bonus reads only those:
 /// a stashed orb is not a worn one. The BEST of several rather than the first,
 /// because two orbs are one conversion, at the better tier.
-int wornOrbTier(const World& world, const ContentRegistry& content, Entity player,
-                std::uint16_t orbIndex) {
-    if (orbIndex == kInvalidIndex) return kRarityCount;
+LootSystem::WornOrbs wornOrbs(const World& world, const ContentRegistry& content, Entity player,
+                              std::uint16_t magicOrb, std::uint16_t glitchOrb) {
+    LootSystem::WornOrbs best;
     const Loadout* loadout = world.tryGet<Loadout>(player);
-    if (loadout == nullptr) return kRarityCount;
-    int best = kRarityCount;
+    if (loadout == nullptr) return best;
+    const auto raise = [](int& held, int tier) {
+        if (held == kRarityCount || tier > held) held = tier;
+    };
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
         // Resolved: a mimic beside an orb is an orb at the mimic's tier.
         const EquippedPetal slot = equippedPetal(content, *loadout, i);
-        if (slot.empty() || slot.configIndex != orbIndex) continue;
-        const int tier = rarityIndex(slot.rarity);
-        if (best == kRarityCount || tier > best) best = tier;
+        if (slot.empty()) continue;
+        if (slot.configIndex == magicOrb) raise(best.magic, rarityIndex(slot.rarity));
+        if (slot.configIndex == glitchOrb) raise(best.glitch, rarityIndex(slot.rarity));
     }
     return best;
+}
+
+/// What one flower's copy of a drop becomes. `magic` and `glitch` are the
+/// petal's forms, kInvalidIndex for one it does not have. A flower wearing both
+/// orbs, on a petal with both forms, gets the better orb's; a tie is glitch.
+LootSystem::OrbForm orbFormFor(const LootSystem::WornOrbs& worn, std::uint16_t petal,
+                               std::uint16_t magic, std::uint16_t glitch) {
+    const bool useMagic = magic != kInvalidIndex && worn.magic != kRarityCount;
+    const bool useGlitch = glitch != kInvalidIndex && worn.glitch != kRarityCount;
+    if (useGlitch && (!useMagic || worn.glitch >= worn.magic)) return {glitch, worn.glitch};
+    if (useMagic) return {magic, worn.magic};
+    return {petal, kRarityCount};
 }
 
 } // namespace
@@ -533,6 +548,7 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
     // Once for the tick, not once per corpse: the conversion below asks for it
     // on every drop of every kill.
     const std::uint16_t magicOrb = content.petalIndex("magic_orb");
+    const std::uint16_t glitchOrb = content.petalIndex("glitch_orb");
     corpses_->collect(corpseList_);
     for (const Entity corpse : corpseList_) {
         const MobType* type = world.tryGet<MobType>(corpse);
@@ -612,21 +628,25 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         // the ORB'S OWN TIER. A common orb turns every leaf this mob would
         // have dropped into a common magic leaf and nothing else -- no
         // ordinary leaf, and no magic leaf above common -- so the way to farm
-        // better magic petals is to carry a better orb.
+        // better magic petals is to carry a better orb. A worn glitch orb does
+        // exactly the same with glitch forms.
         //
         // Read off EACH eligible flower, and applied to that flower's copy
         // alone: an orb is a bonus its wearer carries, not a rule for the whole
-        // kill. So a petal with a magic form splits into one drop per orb tier
-        // among the eligible -- the flowers with no orb share the ordinary one
-        // -- each reserved for its own group, which replication already hides
-        // from everybody else. kRarityCount is "no orb worn", which is almost
-        // every flower in the game, and then nothing splits.
+        // kill. So a petal with a form splits into one drop per distinct
+        // outcome among the eligible -- the flowers it does not convert for
+        // share the ordinary one -- each reserved for its own group, which
+        // replication already hides from everybody else. kRarityCount is "no
+        // orb worn", which is almost every flower in the game, and then nothing
+        // splits.
         eligibleOrbs_.clear();
-        bool anyOrb = false;
+        bool anyMagicOrb = false;
+        bool anyGlitchOrb = false;
         for (const Entity claimant : eligible_) {
-            const int tier = wornOrbTier(world, content, claimant, magicOrb);
-            eligibleOrbs_.push_back(tier);
-            anyOrb = anyOrb || tier != kRarityCount;
+            const WornOrbs worn = wornOrbs(world, content, claimant, magicOrb, glitchOrb);
+            eligibleOrbs_.push_back(worn);
+            anyMagicOrb = anyMagicOrb || worn.magic != kRarityCount;
+            anyGlitchOrb = anyGlitchOrb || worn.glitch != kRarityCount;
         }
 
         selected_.clear();
@@ -672,42 +692,45 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
                 // turn a common spider's third eye into a legendary one.
                 if (!petalComesAt(content.petal(petalIndex), rarity)) continue;
                 const std::uint16_t magic =
-                    anyOrb ? content.magicFormOf(petalIndex) : kInvalidIndex;
+                    anyMagicOrb ? content.magicFormOf(petalIndex) : kInvalidIndex;
+                const std::uint16_t glitch =
+                    anyGlitchOrb ? content.glitchFormOf(petalIndex) : kInvalidIndex;
                 const Vec2 scatter{rng.range(-50.0, 50.0), rng.range(-50.0, 50.0)};
                 // Unresolved on purpose, as in the reference: the per-tick pass
                 // is what pushes a drop out of the geometry it landed in. Noted
                 // so the sweep below tests the scattered position, as the
                 // reference's same-step pickup does.
-                if (magic == kInvalidIndex) {
+                if (magic == kInvalidIndex && glitch == kInvalidIndex) {
                     const Entity dropped =
                         spawnDrop(world, petalIndex, rarity, at + scatter, realm, eligible_);
                     if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
                     continue;
                 }
+                eligibleForms_.clear();
+                for (const WornOrbs& worn : eligibleOrbs_) {
+                    eligibleForms_.push_back(orbFormFor(worn, petalIndex, magic, glitch));
+                }
                 for (std::size_t first = 0; first < eligible_.size(); ++first) {
-                    const int tier = eligibleOrbs_[first];
-                    // One drop per tier, placed when its first member comes up.
-                    if (std::find(eligibleOrbs_.begin(),
-                                  eligibleOrbs_.begin() + static_cast<std::ptrdiff_t>(first),
-                                  tier) != eligibleOrbs_.begin() +
+                    const OrbForm form = eligibleForms_[first];
+                    // One drop per outcome, placed when its first member comes up.
+                    if (std::find(eligibleForms_.begin(),
+                                  eligibleForms_.begin() + static_cast<std::ptrdiff_t>(first),
+                                  form) != eligibleForms_.begin() +
                                                static_cast<std::ptrdiff_t>(first)) {
                         continue;
                     }
                     orbGroup_.clear();
                     for (std::size_t j = first; j < eligible_.size(); ++j) {
-                        if (eligibleOrbs_[j] == tier) orbGroup_.push_back(eligible_[j]);
+                        if (eligibleForms_[j] == form) orbGroup_.push_back(eligible_[j]);
                     }
-                    std::uint16_t groupPetal = petalIndex;
                     Rarity groupRarity = rarity;
-                    if (tier != kRarityCount) {
-                        groupPetal = magic;
-                        // The gate. Applied AFTER the ordinary roll rather than
-                        // instead of it, so a low orb does not also flatten the
-                        // odds -- it caps what those odds can produce.
-                        if (rarityIndex(groupRarity) > tier) groupRarity = clampRarity(tier);
-                    }
+                    // The gate. Applied AFTER the ordinary roll rather than
+                    // instead of it, so a low orb does not also flatten the
+                    // odds -- it caps what those odds can produce. No orb is a
+                    // cap of kRarityCount, above every tier.
+                    if (rarityIndex(groupRarity) > form.cap) groupRarity = clampRarity(form.cap);
                     const Entity dropped =
-                        spawnDrop(world, groupPetal, groupRarity, at + scatter, realm, orbGroup_);
+                        spawnDrop(world, form.petal, groupRarity, at + scatter, realm, orbGroup_);
                     if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
                 }
             }

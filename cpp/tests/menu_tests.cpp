@@ -700,12 +700,14 @@ TEST(a_magic_petal_is_drawn_at_the_size_of_the_petal_it_is_the_form_of) {
     // Every magic petal the shipped file has, whichever those are: the icon
     // table is built once off the process-wide content, so this cannot swap a
     // fixture in under it, and which petals have a magic form is the author's
-    // call. (That a magic form is found by its id is config_tests'.)
+    // call. (That a magic form is found by its id is config_tests'.) Glitch
+    // forms are held to the same rule.
     std::string error;
     CHECK(loadContent(dataDir(), error));
 
     for (std::uint16_t magic = 0; magic < content().petalCount(); ++magic) {
-        const std::uint16_t base = content().magicSourceOf(magic);
+        std::uint16_t base = content().magicSourceOf(magic);
+        if (base == kInvalidIndex) base = content().glitchSourceOf(magic);
         if (base == kInvalidIndex) continue;
         // Where gardn has no row for the base, each is drawn off its own
         // visual_scale, so a pair the author scaled apart is free to differ.

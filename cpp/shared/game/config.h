@@ -1609,6 +1609,23 @@ public:
         return index < magicSource_.size() ? magicSource_[index] : kInvalidIndex;
     }
 
+    /// The glitch orb's half of the same table: `glitch_X` is the glitch form
+    /// of `X`, and `glitch_orb` is what a rose becomes. Adding a `glitch_X` to
+    /// petals.json is all it takes to make X convert.
+    std::uint16_t glitchFormOf(std::uint16_t index) const {
+        return index < glitchForm_.size() ? glitchForm_[index] : kInvalidIndex;
+    }
+
+    /// Whether this petal is some other petal's glitch form. As isMagicForm().
+    bool isGlitchForm(std::uint16_t index) const {
+        return index < glitchSource_.size() && glitchSource_[index] != kInvalidIndex;
+    }
+
+    /// The ordinary petal this one is the glitch form OF, or kInvalidIndex.
+    std::uint16_t glitchSourceOf(std::uint16_t index) const {
+        return index < glitchSource_.size() ? glitchSource_[index] : kInvalidIndex;
+    }
+
     /// Every mob with a `replace_chance` (MobConfig::replaceChance), in index
     /// order: what a band's roll may come out as instead of what it rolled.
     /// Listed once here so the spawner never walks the whole roster per spawn.
@@ -1634,6 +1651,9 @@ private:
     std::vector<std::uint16_t> magicForm_;
     /// The reverse: a magic petal -> the ordinary one it is the form of.
     std::vector<std::uint16_t> magicSource_;
+    /// As magicForm_ and magicSource_, for the glitch orb. See glitchFormOf().
+    std::vector<std::uint16_t> glitchForm_;
+    std::vector<std::uint16_t> glitchSource_;
     /// See standInMobs().
     std::vector<std::uint16_t> standIns_;
     /// Petal index -> petalStats() at every tier. See there.

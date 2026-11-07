@@ -4429,14 +4429,21 @@ const ContentRegistry& orbContent() {
         ContentRegistry r;
         std::string error;
         if (!test::loadFixtureContent(r, testsupport::tempDir("flix_orb_tests"), R"({
-            "leafbug": {"name":"Leafbug","health":10,"damage":1,"size":1,"speed":0.2}
+            "leafbug": {"name":"Leafbug","health":10,"damage":1,"size":1,"speed":0.2},
+            "glitch":  {"name":"Glitch","health":10,"damage":1,"size":1,"speed":0.2}
         })",
                                       R"({
+            "egg":       {"name":"Egg","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
             "leaf":      {"name":"Leaf","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
             "magic_leaf":{"name":"Magic Leaf","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
             "root":      {"name":"Root","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
             "rose":      {"name":"Rose","damage":5,"health":5,"size":1,"cooldown":3500,"count":1},
-            "magic_orb": {"name":"Magic Orb","damage":5,"health":5,"size":1,"cooldown":3500,"count":1}
+            "magic_orb": {"name":"Magic Orb","damage":5,"health":5,"size":1,"cooldown":3500,"count":1},
+            "glitch_orb": {"name":"Glitch Orb","damage":5,"health":5,"size":1,"cooldown":3500,"count":1},
+            "glitch_leaf": {"name":"Glitch Leaf","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
+            "thorn":     {"name":"Thorn","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
+            "glitch_thorn": {"name":"Glitch Thorn","damage":10,"health":10,"size":1,"cooldown":1000,"count":1},
+            "glitch":    {"name":"Glitch","damage":10,"health":10,"size":1,"cooldown":1000,"count":1}
         })",
                                       error)) {
             std::printf("    (the orb fixture did not load: %s)\n", error.c_str());
@@ -4683,6 +4690,244 @@ TEST(an_orb_converts_only_its_wearers_drops) {
     CHECK_EQ(wearerMagic, 40);
     CHECK_EQ(plainLeaves, 40);
     CHECK(sharedRoots > 0);
+}
+
+namespace {
+
+const char* const kGlitchDrops = R"({
+    "leafbug": {"guaranteed": true, "drops": [
+        {"type": "petal", "itemType": "leaf", "rarity": "common", "probability": 1},
+        {"type": "petal", "itemType": "root", "rarity": "common", "probability": 1},
+        {"type": "petal", "itemType": "thorn", "rarity": "common", "probability": 1}]}
+})";
+
+/// A leafbug for the glitch orb: a leaf (a magic and a glitch form), a root
+/// (neither) and a thorn (a glitch form only), all three every kill.
+struct GlitchLoot : LootSystem {
+    GlitchLoot() {
+        const std::string path = testsupport::tempDir("flix_orb_tests") + "/glitch_drops.json";
+        std::string error;
+        if (!testsupport::writeText(path, kGlitchDrops) ||
+            !loadTables(orbContent(), path, error)) {
+            std::printf("    (the glitch drop table did not load: %s)\n", error.c_str());
+        }
+    }
+};
+
+/// How many of each petal `drops` holds, and the highest tier of each.
+struct DropTally {
+    std::map<std::string, int> count;
+    std::map<std::string, int> best;
+    int of(const char* id) const {
+        const auto found = count.find(id);
+        return found == count.end() ? 0 : found->second;
+    }
+    int bestOf(const char* id) const {
+        const auto found = best.find(id);
+        return found == best.end() ? -1 : found->second;
+    }
+};
+
+DropTally tally(World& world, const std::vector<Entity>& drops) {
+    DropTally out;
+    for (const Entity drop : drops) {
+        const DropItem& item = world.get<DropItem>(drop);
+        const std::string& id = orbContent().petal(item.configIndex).id;
+        ++out.count[id];
+        const auto found = out.best.find(id);
+        const int tier = rarityIndex(item.rarity);
+        if (found == out.best.end() || tier > found->second) out.best[id] = tier;
+    }
+    return out;
+}
+
+} // namespace
+
+TEST(the_glitch_form_table_is_derived_from_the_petal_ids) {
+    // glitch_X is the glitch form of X, and the glitch orb is the rose's.
+    const ContentRegistry& r = orbContent();
+    CHECK_EQ(r.glitchFormOf(r.petalIndex("leaf")), r.petalIndex("glitch_leaf"));
+    CHECK_EQ(r.glitchSourceOf(r.petalIndex("glitch_leaf")), r.petalIndex("leaf"));
+    CHECK_EQ(r.glitchFormOf(r.petalIndex("rose")), r.petalIndex("glitch_orb"));
+    CHECK(r.isGlitchForm(r.petalIndex("glitch_orb")));
+    CHECK(!r.isGlitchForm(r.petalIndex("rose")));
+
+    // No counterpart, nothing to convert into; a form is not itself a source.
+    CHECK_EQ(r.glitchFormOf(r.petalIndex("root")), kInvalidIndex);
+    CHECK_EQ(r.glitchFormOf(r.petalIndex("glitch_leaf")), kInvalidIndex);
+    // The petal called just `glitch` is a petal, not a form of anything.
+    CHECK(!r.isGlitchForm(r.petalIndex("glitch")));
+    // And the egg generated for the mob called `glitch` only looks like one.
+    CHECK(r.petalIndex("glitch_egg") != kInvalidIndex);
+    CHECK(!r.isGlitchForm(r.petalIndex("glitch_egg")));
+    CHECK_EQ(r.glitchFormOf(r.petalIndex("egg")), kInvalidIndex);
+
+    // The magic table does not pick the glitch forms up, nor the reverse.
+    CHECK_EQ(r.magicFormOf(r.petalIndex("thorn")), kInvalidIndex);
+    CHECK_EQ(r.magicFormOf(r.petalIndex("leaf")), r.petalIndex("magic_leaf"));
+    CHECK_EQ(r.glitchSourceOf(r.petalIndex("magic_leaf")), kInvalidIndex);
+}
+
+TEST(a_glitch_petal_is_never_in_the_random_drop_pool) {
+    const std::string path = testsupport::tempDir("flix_orb_tests") + "/glitch_pool.json";
+    std::string error;
+    CHECK(testsupport::writeText(path, kGlitchDrops));
+    DropTables tables;
+    CHECK(tables.load(orbContent(), path, error));
+    const std::vector<std::uint16_t>& pool = tables.droppablePetals();
+    const auto inPool = [&](const char* id) {
+        return std::find(pool.begin(), pool.end(), orbContent().petalIndex(id)) != pool.end();
+    };
+    CHECK(inPool("leaf"));
+    CHECK(inPool("glitch"));
+    CHECK(inPool("glitch_egg"));
+    CHECK(!inPool("glitch_leaf"));
+    CHECK(!inPool("glitch_orb"));
+}
+
+TEST(a_worn_glitch_orb_converts_every_drop_that_has_a_glitch_form) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    GlitchLoot loot;
+    EventQueue events;
+    Rng rng(46);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    wear(world, player, "glitch_orb", Rarity::Ultra);
+
+    const DropTally drops =
+        tally(world, farmLeafbugs(world, loot, commands, grid, events, rng, player));
+    CHECK_EQ(drops.of("glitch_leaf"), 40);
+    CHECK_EQ(drops.of("glitch_thorn"), 40);
+    CHECK_EQ(drops.of("leaf"), 0);
+    CHECK_EQ(drops.of("thorn"), 0);
+    CHECK_EQ(drops.of("magic_leaf"), 0);
+    // A table, not a blanket.
+    CHECK_EQ(drops.of("root"), 40);
+}
+
+TEST(a_common_glitch_orb_gatekeeps_every_conversion_to_common) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    GlitchLoot loot;
+    EventQueue events;
+    Rng rng(47);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    wear(world, player, "glitch_orb", Rarity::Common);
+
+    const DropTally drops =
+        tally(world, farmLeafbugs(world, loot, commands, grid, events, rng, player));
+    CHECK_EQ(drops.of("glitch_leaf"), 40);
+    CHECK_EQ(drops.bestOf("glitch_leaf"), rarityIndex(Rarity::Common));
+    CHECK_EQ(drops.bestOf("glitch_thorn"), rarityIndex(Rarity::Common));
+    // The cap is the orb's: an unconverted petal still rolls its upgrades.
+    CHECK(drops.bestOf("root") > rarityIndex(Rarity::Common));
+}
+
+TEST(a_stashed_glitch_orb_converts_nothing) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    GlitchLoot loot;
+    EventQueue events;
+    Rng rng(48);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    wear(world, player, "glitch_orb", Rarity::Ultra, kLoadoutActiveSlots);
+
+    const DropTally drops =
+        tally(world, farmLeafbugs(world, loot, commands, grid, events, rng, player));
+    CHECK_EQ(drops.of("leaf"), 40);
+    CHECK_EQ(drops.of("thorn"), 40);
+    CHECK_EQ(drops.of("glitch_leaf"), 0);
+    CHECK_EQ(drops.of("glitch_thorn"), 0);
+}
+
+TEST(each_flower_gets_its_own_orbs_form_of_a_shared_kill) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    GlitchLoot loot;
+    EventQueue events;
+    Rng rng(49);
+
+    const Entity glitched = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity magical = makePlayer(world, kCentre + Vec2{-5000, 0});
+    const Entity plain = makePlayer(world, kCentre + Vec2{0, 5000});
+    wear(world, glitched, "glitch_orb", Rarity::Ultra);
+    wear(world, magical, "magic_orb", Rarity::Ultra);
+    for (int i = 0; i < 40; ++i) {
+        const Entity corpse = makeCorpse(world, orbContent().mobIndex("leafbug"), Rarity::Uncommon,
+                                         kCentre, glitched, {glitched, magical, plain});
+        world.get<Bounty>(corpse).credit(glitched, 10.0);
+    }
+    loot.run(world, grid, orbContent(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    const std::vector<Entity> left = liveDrops(world);
+    const DropTally drops = tally(world, left);
+    CHECK_EQ(drops.of("glitch_leaf"), 40);
+    CHECK_EQ(drops.of("magic_leaf"), 40);
+    CHECK_EQ(drops.of("leaf"), 40);
+    CHECK_EQ(drops.of("glitch_thorn"), 40);
+    // The thorn has no magic form, so the magic orb's wearer and the plain
+    // flower come out the same and share ONE ordinary thorn.
+    CHECK_EQ(drops.of("thorn"), 40);
+    // Nothing to convert: one root for all three, not a split.
+    CHECK_EQ(drops.of("root"), 40);
+
+    for (const Entity drop : left) {
+        const DropItem& item = world.get<DropItem>(drop);
+        const std::string& id = orbContent().petal(item.configIndex).id;
+        const bool forGlitched = claimed(item.eligible, glitched, 0);
+        const bool forMagical = claimed(item.eligible, magical, 0);
+        const bool forPlain = claimed(item.eligible, plain, 0);
+        if (id == "glitch_leaf" || id == "glitch_thorn") {
+            CHECK(forGlitched && !forMagical && !forPlain);
+        } else if (id == "magic_leaf") {
+            CHECK(!forGlitched && forMagical && !forPlain);
+        } else if (id == "leaf") {
+            CHECK(!forGlitched && !forMagical && forPlain);
+        } else if (id == "thorn") {
+            CHECK(!forGlitched && forMagical && forPlain);
+        } else if (id == "root") {
+            CHECK(forGlitched && forMagical && forPlain);
+        }
+    }
+}
+
+TEST(wearing_both_orbs_the_better_one_decides_and_a_tie_is_glitch) {
+    const auto farm = [](Rarity magicTier, Rarity glitchTier, std::uint64_t seed) {
+        World world;
+        CommandBuffer commands{world};
+        SpatialGrid grid;
+        GlitchLoot loot;
+        EventQueue events;
+        Rng rng(seed);
+        const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+        wear(world, player, "magic_orb", magicTier, 0);
+        wear(world, player, "glitch_orb", glitchTier, 1);
+        return tally(world, farmLeafbugs(world, loot, commands, grid, events, rng, player));
+    };
+
+    const DropTally magicBetter = farm(Rarity::Ultra, Rarity::Common, 50);
+    CHECK_EQ(magicBetter.of("magic_leaf"), 40);
+    CHECK_EQ(magicBetter.of("glitch_leaf"), 0);
+    // The thorn has only a glitch form: the weaker orb still converts it, at
+    // its own tier.
+    CHECK_EQ(magicBetter.of("glitch_thorn"), 40);
+    CHECK_EQ(magicBetter.bestOf("glitch_thorn"), rarityIndex(Rarity::Common));
+
+    const DropTally glitchBetter = farm(Rarity::Common, Rarity::Ultra, 51);
+    CHECK_EQ(glitchBetter.of("glitch_leaf"), 40);
+    CHECK_EQ(glitchBetter.of("magic_leaf"), 0);
+
+    const DropTally tied = farm(Rarity::Rare, Rarity::Rare, 52);
+    CHECK_EQ(tied.of("glitch_leaf"), 40);
+    CHECK_EQ(tied.of("magic_leaf"), 0);
 }
 
 TEST(a_non_contributor_can_never_take_an_eligible_players_drop) {

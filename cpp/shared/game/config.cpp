@@ -1741,24 +1741,30 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
         if (mobs_[i].replacesMobs()) standIns_.push_back(static_cast<std::uint16_t>(i));
     }
 
-    // The magic conversion table, built once here rather than looked up per
+    // The orb conversion tables, built once here rather than looked up per
     // drop: a mob dying is a hot path and this is a straight index.
-    magicForm_.assign(petals_.size(), kInvalidIndex);
-    magicSource_.assign(petals_.size(), kInvalidIndex);
-    {
-        const std::string prefix = "magic_";
+    const auto buildForms = [this](const std::string& prefix, std::vector<std::uint16_t>& form,
+                                   std::vector<std::uint16_t>& source) {
+        form.assign(petals_.size(), kInvalidIndex);
+        source.assign(petals_.size(), kInvalidIndex);
+        const std::string orb = prefix + "orb";
         for (std::size_t i = 0; i < petals_.size(); ++i) {
             const std::string& id = petals_[i].id;
             if (id.compare(0, prefix.size(), prefix) != 0) continue;
             // See ContentRegistry::magicFormOf for why the orb is the one
             // pairing that is spelled out instead of derived.
-            const std::string base = id == "magic_orb" ? "rose" : id.substr(prefix.size());
+            const std::string base = id == orb ? "rose" : id.substr(prefix.size());
+            // `glitch_egg` is the generated egg of the mob called glitch, not a
+            // form of the petal called egg.
+            if (base == "egg") continue;
             const auto found = petalIds_.find(base);
             if (found == petalIds_.end()) continue;
-            magicForm_[found->second] = static_cast<std::uint16_t>(i);
-            magicSource_[i] = found->second;
+            form[found->second] = static_cast<std::uint16_t>(i);
+            source[i] = found->second;
         }
-    }
+    };
+    buildForms("magic_", magicForm_, magicSource_);
+    buildForms("glitch_", glitchForm_, glitchSource_);
     // Likewise every petal's stats at every tier: see petalStats().
     petalStats_.resize(petals_.size());
     for (std::size_t i = 0; i < petals_.size(); ++i) {
