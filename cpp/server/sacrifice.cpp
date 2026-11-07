@@ -340,6 +340,11 @@ void GameServer::serviceSacrificeRituals(double nowMillis) {
     for (const Entity e : list) {
         SacrificeRitual& ritual = world_.get<SacrificeRitual>(e);
         if (ritual.mob == NULL_ENTITY) {
+            if (world_.get<Transform>(e).realm == kAdminArenaRealm &&
+                hostedArenaRules_["noSummons"].asBool()) {
+                commands_.destroy(e);
+                continue;
+            }
             if (nowMillis < ritual.summonAtMillis) continue;
             // The pentagram is complete: the mob comes out at its centre.
             const Transform at = world_.get<Transform>(e);

@@ -303,7 +303,8 @@ void GameServer::rebuildHostedRules() {
     for (std::size_t i=0;i<content().petalCount();++i) {
         const auto& petal=content().petal(i);
         const bool healing=petal.burstHeal>0 || petal.passiveHeal>0 || petal.killHeal>0 || petal.lifesteal>0 || petalBoostsHealing(petal) || petal.id=="yggdrasil";
-        const bool summon=petal.id.size()>=4 && petal.id.compare(petal.id.size()-4,4,"_egg")==0;
+        const bool summon=petal.hatchesPets() || petal.projectile.summonMobIndex!=kInvalidIndex ||
+                          petal.id==kSacrificePetalId;
         bool banned=(hostedArenaRules_["noHealing"].asBool()&&healing) ||
                     (hostedArenaRules_["noProjectiles"].asBool()&&petal.projectile.present) ||
                     (hostedArenaRules_["noSummons"].asBool()&&summon) ||

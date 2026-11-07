@@ -575,3 +575,7 @@ restored petal goes into the temporary bag instead. Event stars start at the
 account balance and survive kit edits; event rewards remain temporary. Talent
 resets and purchases affect the event copy only, and leaving restores the saved
 talent tree and star balance.
+
+The no-summons rule checks actual hatching and summoning behavior, including Egg,
+named eggs, Stick/Magic Stick, Spaceship shots, and Sacrifice. Applying the rule
+also removes existing player pets and summoning shots.
