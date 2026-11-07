@@ -91,6 +91,27 @@
       }
     ]
   },
+  "worker_fire_ant": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "corn",
+        "rarity": "common",
+        "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "yucca",
+        "rarity": "common",
+        "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
   "baby_ant": {
     "guaranteed": true,
     "drops": [
@@ -105,6 +126,35 @@
       {
         "type": "petal",
         "itemType": "leaf",
+        "rarity": "common",
+        "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "rice",
+        "rarity": "common",
+        "probability": 0.23,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "baby_fire_ant": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "light",
+        "rarity": "common",
+        "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "yucca",
         "rarity": "common",
         "probability": 0.4,
         "minQuantity": 1,
@@ -1624,6 +1674,14 @@
         "probability": 1.0,
         "minQuantity": 5,
         "maxQuantity": 5
+      },
+      {
+        "type": "petal",
+        "itemType": "glitch_orb",
+        "rarity": "common",
+        "probability": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
