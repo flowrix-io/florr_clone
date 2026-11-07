@@ -5,6 +5,7 @@
 #include <string>
 
 using flix::blockedWordIn;
+using flix::blockedWordInName;
 using flix::chatLineBreaksRows;
 using flix::chatLineDrawsNothing;
 using flix::chatLineFloods;
@@ -92,8 +93,75 @@ TEST(real_words_that_contain_a_listed_one_are_not_blocked) {
         // "ass" letter for letter.
         "I have 455 coins",
         "100% at 1.5x, +1, c++",
+        // Two real words that only spell a listed one with the space read through.
+        "a red skin",
+        "the pen is mine",
+        "go ok",
+        // Real names that only spell a listed one backwards.
+        "Esra",
+        "Nemes",
+        "Huggin",
+        "drat",
     };
     for (const char* line : kInnocent) CHECK_EQ(blockedWordIn(line), std::string());
+}
+
+TEST(a_real_name_is_let_through_backwards_only_in_plain_letters) {
+    CHECK(blocked("3sra"));
+    CHECK(blocked("n3m3s"));
+    CHECK(blocked("Hugg1n"));
+}
+
+TEST(only_the_exact_innocent_pair_gets_past_the_read_across_spaces) {
+    // The same letters cut anywhere else are spelled round the filter.
+    CHECK(blocked("re dskin"));
+    CHECK(blocked("pe nis"));
+    CHECK(blocked("g ook"));
+    CHECK(blocked("p e n i s"));
+    // And a pair is not a licence for the word itself.
+    CHECK(blocked("redskin"));
+    CHECK(blocked("penis"));
+    CHECK(blocked("gook"));
+}
+
+TEST(a_name_is_read_for_words_run_together) {
+    const char* const kRefused[] = {
+        // Everything a chat line is refused for.
+        "fuck", "Fuck123", "shit_lord", "a55hole", "f_u_c_k", "Kcuf", "Big Ass", "fu ck",
+        // Capitals and digits showing where a word starts.
+        "BigAss", "MyDick", "xXDickXx", "KissMyAss", "PussyLover", "BIGAss", "dick4u", "Dick4U",
+        "Bob2ass",
+        // No capitals to go by: a lead-in and the word, and nothing else.
+        "bigass", "BIGASS", "mydick", "bigdick", "kissmyass", "suckmydick", "hotwetpussy",
+        "b1gd1ck", "bigdiiick", "69bigdick", "bigdick69",
+    };
+    for (const char* name : kRefused) CHECK(!blockedWordInName(name).empty());
+}
+
+TEST(a_name_is_plain_text_so_markup_hides_nothing_in_it) {
+    // A client would drop this tag and its content from a chat line, and a
+    // nameplate draws every letter of it.
+    CHECK(!blocked("<x>fuck</x>"));
+    CHECK_EQ(blockedWordInName("<x>fuck</x>"), std::string("fuck"));
+    // And it draws these literally, so they are not the word they would decode to.
+    CHECK(blockedWordInName("f&#117;ck").empty());
+}
+
+TEST(a_name_with_a_real_word_in_it_is_not_refused) {
+    const char* const kInnocent[] = {
+        "Rose", "Petalwise", "Player_1", "a19kisme", "Unnamed", "x_Rose_x",
+        "Cassandra", "Hitchcock", "Hancock", "Dickens", "Riddick", "Peacock", "Assassin", "Titan",
+        "Basement", "Scunthorpe", "Shitake", "Therapist",
+        // A capital or a lead-in in front of a word that merely ends the same.
+        "ClassAct", "TheGrass", "BigBass", "MyClass", "HotDog", "Amyass",
+        // A digit for a letter, which must not leave "ass" standing alone.
+        "Gl4ss", "M4ss", "P4ss", "Cl4ss", "Mass5", "Player455",
+        // What a skin is most likely to be called.
+        "Red Skin", "Blue Skin", "Glass Skin", "Sun Flower", "Night Sky", "Bass Guy",
+        // The names the server gives a guest, the digits of which spell things.
+        "User12345678", "User45500000", "User80085000",
+    };
+    for (const char* name : kInnocent) CHECK_EQ(blockedWordInName(name), std::string());
 }
 
 TEST(a_repeat_is_the_same_drawn_line_whatever_its_dress) {
