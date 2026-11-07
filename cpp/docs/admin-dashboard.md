@@ -537,3 +537,7 @@ Shift+Tab (or click its label), then press Enter to broadcast an announcement.
 This sends the existing `/admin announce` command, with the same server-side
 permissions, moderation and rate limit. Other accounts skip Admin when cycling;
 its transcript checkbox still shows or hides received announcements.
+
+Player chat has a server-enforced 500 ms minimum interval shared by Global,
+Local, Squad, Guild, whispers and admin announcements. Rejected cooldown attempts
+do not extend it; existing flood and repeat limits still apply.

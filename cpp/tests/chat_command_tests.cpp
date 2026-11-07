@@ -2900,6 +2900,7 @@ TEST(spam_is_refused_on_every_channel) {
     h.step(10, all);
     CHECK_EQ(heard(bob, "ANYONE want to trade??"), 0);
 
+    h.step(16, all); // Separate accepted messages by the shared chat cooldown.
     // Whispering it to somebody new is not saying it again.
     CHECK(say(h, alice, "/w bob anyone want to trade?", 120));
     h.step(10, all);
@@ -2927,7 +2928,7 @@ TEST(spam_is_refused_on_every_channel) {
     for (const ChatLine& line : carol.chat()) {
         if (line.channel == net::ChatChannel::Guild && line.author == "carol") ++guildLines;
     }
-    CHECK_EQ(guildLines, 4);
+    CHECK_EQ(guildLines, 1);
     CHECK(sawText(carol, "You are sending messages too quickly."));
 }
 
@@ -3017,6 +3018,7 @@ TEST(a_local_line_reaches_only_the_players_who_can_see_the_speaker) {
 
     // Global still reaches everyone, near, far and on the title screen.
     const std::size_t carolGlobal = carol.chat().size();
+    h.step(16, {&alice, &bob, &carol, &dave});
     alice.sendChat("hello everyone");
     CHECK(h.stepUntil({&alice, &bob, &carol, &dave},
                       [&] { return carol.chat().size() > carolGlobal; }, 120));
@@ -4180,4 +4182,16 @@ TEST(hosted_arena_transfers_keep_maze_progress_separate) {
     CHECK_EQ(h.server.world().get<PlayerProgress>(guest->entity).totalXp,1234.0);
     CHECK_EQ(h.server.database().findProgress(guest->userId)->totalXp,5678.0);
     CHECK_EQ(h.server.database().findProgress(guest->userId)->mazeTotalXp,1234.0);
+}
+
+TEST(chat_cooldown_is_shared_by_global_whispers_and_admin_announcements) {
+    Harness h("chat-shared-cooldown",[](const std::string& path){seedUser(path,"alice","password7",true);seedUser(path,"bob","password7");},dataDir(),0);
+    CHECK(h.ready);if(!h.ready)return;NetClient alice,bob;
+    CHECK(loginAs(h,alice,"alice","password7"));CHECK(loginAs(h,bob,"bob","password7"));
+    alice.sendChat("first message");CHECK(h.stepUntil({&alice,&bob},[&]{return sawText(bob,"first message");}));
+    alice.sendChat("/w bob second message");alice.sendChat("/admin announce third message");
+    h.step(4,{&alice,&bob});CHECK(!sawText(bob,"second message"));CHECK(!sawText(bob,"third message"));
+    CHECK(sawText(alice,"Wait 0.5 seconds between messages."));
+    h.step(16,{&alice,&bob});alice.sendChat("/w bob after cooldown");
+    CHECK(h.stepUntil({&alice,&bob},[&]{return sawText(bob,"after cooldown");}));
 }

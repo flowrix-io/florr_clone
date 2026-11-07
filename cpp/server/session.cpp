@@ -59,6 +59,12 @@ void refillAllowances(Session& session, double nowMillis) {
         kMaxCommandAllowance, session.commandAllowance + elapsed * kCommandRefillPerSecond);
 }
 
+bool claimChatCooldown(Session& session, double nowMillis) {
+    if (nowMillis < session.nextChatMillis) return false;
+    session.nextChatMillis = nowMillis + kChatCooldownMillis;
+    return true;
+}
+
 bool spend(double& allowance, double cost) {
     if (allowance < cost) return false;
     allowance -= cost;

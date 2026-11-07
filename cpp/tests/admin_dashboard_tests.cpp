@@ -819,6 +819,7 @@ TEST(the_announce_gate_its_byte_cap_and_its_chat_budget) {
     const std::size_t cap = net::kMaxAnnouncementBytes;
     CHECK(say(h, boss, "/admin announce " + std::string(cap + 1, 'x'), all));
     CHECK(sawText(boss, "Announcements can contain up to " + std::to_string(cap) + " bytes."));
+    h.step(16, all); // A new broadcast must respect the talk cooldown.
     boss.sendChat("/admin announce " + std::string(cap, 'y'));
     CHECK(h.stepUntil(all, [&] { return player.adminAnnouncement().text == std::string(cap, 'y'); }));
     CHECK(say(h, boss, "/admin announce", all));

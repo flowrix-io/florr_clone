@@ -514,6 +514,7 @@ TEST(chat_images_from_unlisted_hosts_never_reach_the_other_player) {
     // A line that was nothing but a blocked picture is not sent at all.
     const std::size_t before = bob.chat().size();
     alice.sendChat("<img src=\"https://evil.example/c.png\">");
+    h.step(16, {&alice, &bob}); // Respect the cooldown after the last delivered line.
     alice.sendChat("after");
     CHECK(h.stepUntil({&alice, &bob}, [&] { return sawText(bob, "after"); }));
     CHECK_EQ(bob.chat().size(), before + 1);

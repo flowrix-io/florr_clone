@@ -1456,6 +1456,11 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                        "You are sending messages too quickly.");
             return;
         }
+        if (!claimChatCooldown(session, clockMillis_)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "You are sending messages too quickly. Wait 0.5 seconds between messages.");
+            return;
+        }
         // The echo above reaches the sender alone, so the log is the one
         // record of who said what to everyone.
         std::printf("[admin] %s announced: %s\n", session.username.c_str(), rest.c_str());

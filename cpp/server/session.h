@@ -223,6 +223,7 @@ struct Session {
 
     double loginAttemptsAllowed = 5;
     double chatAllowance = 4;
+    double nextChatMillis = 0; // Shared by every player-chat channel and announcements.
     /// Slash commands, budgeted separately from chat. A command's output goes
     /// back to its sender, so the flood the chat budget is guarding against is
     /// not the one a command can cause -- see session.cpp.
@@ -265,6 +266,9 @@ void refillAllowances(Session& session, double nowMillis);
 /// Takes one unit from `allowance` if available. Returns false when the client
 /// has exceeded its budget, in which case the caller drops the message.
 bool spend(double& allowance, double cost = 1.0);
+
+inline constexpr double kChatCooldownMillis = 500.0;
+bool claimChatCooldown(Session&, double nowMillis);
 
 /// Strips control characters and clamps a typed flower name to the browser
 /// build's twenty characters. An empty or all-blank name becomes "Unnamed",
