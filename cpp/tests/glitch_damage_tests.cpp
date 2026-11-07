@@ -27,7 +27,7 @@ namespace {
 
 constexpr double kPetalDamage = 100.0;
 constexpr double kWeakHit = 50.0;     // -50%
-constexpr double kStrongHit = 130.0;  // +30%
+constexpr double kStrongHit = 176.25;  // +76.25%
 
 /// Hand-written, never the shipped tables. `plain` and `glitch_plain` are one
 /// petal and its form. `bolt` is there to show a form outranks the cyan of the
@@ -148,8 +148,10 @@ struct Tally {
     int strong = 0;
     int regular = 0;
     int other = 0;
+    double sum = 0;
 
     void add(double amount) {
+        sum += amount;
         if (std::fabs(amount - kWeakHit) < 1e-6) ++weak;
         else if (std::fabs(amount - kStrongHit) < 1e-6) ++strong;
         else if (std::fabs(amount - kPetalDamage) < 1e-6) ++regular;
@@ -158,10 +160,10 @@ struct Tally {
     int total() const { return weak + strong + regular + other; }
 };
 
-/// Each share within 3 points of its target. The stream is seeded, so a run is
-/// the same every time; the band is wide enough to survive a change of seed
-/// (it is more than 4 sigma at this many hits) and narrow enough to catch a
-/// percentage being wrong.
+/// Each share within 3 points of its target and the average within 4 of 118%.
+/// The stream is seeded, so a run is the same every time; the bands are wide
+/// enough to survive a change of seed (more than 4 sigma at this many hits) and
+/// narrow enough to catch a percentage being wrong.
 void checkShares(const Tally& tally) {
     CHECK_EQ(tally.other, 0);
     const double total = tally.total();
@@ -169,6 +171,7 @@ void checkShares(const Tally& tally) {
     CHECK_NEAR(tally.weak / total, 0.25, 0.03);
     CHECK_NEAR(tally.strong / total, 0.40, 0.03);
     CHECK_NEAR(tally.regular / total, 0.35, 0.03);
+    CHECK_NEAR(tally.sum / total, 118.0, 4.0);
 }
 
 constexpr int kFrameSize = 400;
@@ -220,10 +223,19 @@ Ink renderNumber(std::uint8_t flags) {
 TEST(a_glitch_roll_is_25_percent_weak_then_40_percent_strong_then_regular) {
     CHECK_NEAR(glitchDamageScale(0.0), 0.5, 1e-12);
     CHECK_NEAR(glitchDamageScale(0.249), 0.5, 1e-12);
-    CHECK_NEAR(glitchDamageScale(0.251), 1.3, 1e-12);
-    CHECK_NEAR(glitchDamageScale(0.649), 1.3, 1e-12);
+    CHECK_NEAR(glitchDamageScale(0.251), 1.7625, 1e-12);
+    CHECK_NEAR(glitchDamageScale(0.649), 1.7625, 1e-12);
     CHECK_NEAR(glitchDamageScale(0.651), 1.0, 1e-12);
     CHECK_NEAR(glitchDamageScale(0.999), 1.0, 1e-12);
+}
+
+TEST(a_glitch_hit_averages_118_percent_of_the_petals_damage) {
+    // Over evenly spaced rolls, so this is the table's own average and owes
+    // nothing to the seed.
+    constexpr int kRolls = 1000000;
+    double sum = 0.0;
+    for (int i = 0; i < kRolls; ++i) sum += glitchDamageScale((i + 0.5) / kRolls);
+    CHECK_NEAR(sum / kRolls, 1.18, 1e-4);
 }
 
 TEST(a_glitch_petals_hits_are_green_and_come_at_the_three_rolled_amounts) {

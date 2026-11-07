@@ -176,11 +176,13 @@ inline constexpr bool armorBlunts(DamageKind kind) {
 }
 
 /// A glitch petal's hit is unreliable: a quarter land at half damage, 40% land
-/// at +30%, and the remaining 35% land at the petal's ordinary damage.
+/// at +76.25%, and the remaining 35% land at the petal's ordinary damage. That
+/// averages 118% of it (0.25 * 0.5 + 0.40 * 1.7625 + 0.35 = 1.18), which is the
+/// figure to keep when tuning any of these.
 inline constexpr double kGlitchWeakChance = 0.25;
 inline constexpr double kGlitchWeakScale = 0.5;
 inline constexpr double kGlitchStrongChance = 0.40;
-inline constexpr double kGlitchStrongScale = 1.3;
+inline constexpr double kGlitchStrongScale = 1.7625;
 
 /// What a glitch hit's damage is multiplied by, for a roll in [0, 1).
 inline constexpr double glitchDamageScale(double roll) {
