@@ -559,3 +559,5 @@ The **Teams** tab offers Free for all, Me vs Everyone, Admins vs Players, and fo
 Hosted PvP toggles and live map updates preserve the current world view without a black teleport transition. Cursor teleport also skips that transition. The Arena editor's **Update** button broadcasts the current map and saves it to disk; brush edits continue to apply automatically.
 
 **No teams (normal)** clears all saved team assignments and restores normal combat rules while preserving the current PvP on/off setting. Free for all remains a separate option that enables PvP.
+
+Debug → Polls keeps completed results for the current server run. Newest / Newer / Older browse the history while the newest active poll keeps live counts. History is admin-only, stores totals rather than voter lists, survives reconnecting, and is deliberately absent from the database: restarting the server clears it.

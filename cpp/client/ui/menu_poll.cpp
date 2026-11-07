@@ -101,18 +101,59 @@ void renderPollOverlay(MenuContext& ctx) {
     text(ctx.canvas,overlay.pending?"Recording your vote...":"Vote to dismiss. Otherwise this closes when the timer ends.",p.x+16,p.bottom()-16,style(12,0xD6CFECu));
 }
 void renderPollResults(MenuContext& ctx,Rect p) {
-    const auto& poll=ctx.net.adminTools("poll");double y=p.y+22;
-    const auto line=[&](const std::string& value,double size=13){text(ctx.canvas,ellipsize(value,size,p.w-30),p.x+15,y,style(size));y+=24;};
-    if(!poll["canViewResults"].asBool()){line("Full admin access required.");return;}
-    if(poll["id"].asString().empty()){line("No poll has been created this session.");line("Use /admin createpoll to open the creator.");return;}
-    line(poll["active"].asBool()?"Live poll":"Final results",16);
-    for(const auto& question:lines(poll["question"].asString(),p.w-30,13))line(question);
-    line("Votes: "+std::to_string(poll["total"].asInt())+" | "+(poll["active"].asBool()?std::to_string(int(std::ceil(ctx.net.pollRemainingSeconds())))+"s remaining":"Time limit reached"));
-    const auto& options=poll["options"];const auto& counts=poll["counts"];
-    for(std::size_t i=0;i<options.size() && i<counts.size();++i) {
-        line(options[i].asString()+" : "+std::to_string(counts[i].asInt()));
-        const double share=poll["total"].asDouble()>0?counts[i].asDouble()/poll["total"].asDouble():0;
-        fillRound(ctx.canvas,{p.x+15,y-6,p.w-30,8},3,0x35344Fu);fillRound(ctx.canvas,{p.x+15,y-6,(p.w-30)*share,8},3,0x9B89D9u);y+=18;
+    struct HistoryView {std::string account,selected;double generation=-1,replyRevision=0,pendingAt=0,scroll=0;int offset=0;bool pending=false;};
+    static HistoryView state;
+    const auto& live=ctx.net.adminTools("poll");const auto& reply=ctx.net.adminTools("poll_history");
+    if(!live["canViewResults"].asBool()){
+        state=HistoryView{};text(ctx.canvas,"Full admin access required.",p.x+15,p.y+22,style());return;
     }
+    const double generation=live["historyRevision"].asDouble();
+    if(state.account!=ctx.net.profile().username||generation<state.generation){state=HistoryView{};state.account=ctx.net.profile().username;}
+    if(reply["revision"].asDouble()!=state.replyRevision){
+        state.replyRevision=reply["revision"].asDouble();state.pending=false;
+        if(reply["ok"].asBool()){
+            const auto id=reply["poll"]["id"].asString();if(id!=state.selected)state.scroll=0;
+            state.offset=reply["offset"].asInt();state.selected=id;
+        }
+    }
+    if(state.pending&&ctx.timeSeconds-state.pendingAt>2)state.pending=false;
+    const auto browse=[&](int offset,bool preserve){Json q=Json::object();q["offset"]=offset;if(preserve&&!state.selected.empty())q["id"]=state.selected;request(ctx.net,"history",q);state.pending=true;state.pendingAt=ctx.timeSeconds;};
+    if(!state.pending&&(state.generation!=generation||!reply["revision"].isNumber())){
+        browse(state.offset,state.offset>0);state.generation=generation;
+    }
+    text(ctx.canvas,"Poll history",p.x+15,p.y+22,style(16));
+    const int total=reply["total"].asInt();
+    if(click(ctx,{p.right()-235,p.y+8,70,28},"Newest")&&!state.pending&&state.offset>0)browse(0,false);
+    if(click(ctx,{p.right()-158,p.y+8,70,28},"Newer")&&!state.pending&&state.offset>0)browse(state.offset-1,false);
+    if(click(ctx,{p.right()-81,p.y+8,66,28},"Older")&&!state.pending&&state.offset+1<total)browse(state.offset+1,false);
+    if(total==0){
+        text(ctx.canvas,state.pending?"Loading history...":"No polls since this server started.",p.x+15,p.y+65,style(13));
+        text(ctx.canvas,"Use /admin createpoll to create one.",p.x+15,p.y+91,style(13));return;
+    }
+    const auto& saved=reply["poll"];
+    const auto& poll=saved["id"].asString()==live["id"].asString()?live:saved;
+    text(ctx.canvas,"Poll "+std::to_string(total-state.offset)+" of "+std::to_string(total)+" | "+(poll["active"].asBool()?"Live":"Final")+" | "+poll["author"].asString(),p.x+15,p.y+57,style(13));
+    const Rect view{p.x+15,p.y+78,p.w-30,std::max(30.0,p.h-125)};
+    double height=24+lines(poll["question"].asString(),view.w,13).size()*22;
+    for(const auto& option:poll["options"].items())height+=lines(option.asString(),view.w-45,13).size()*20+32;
+    const double maximum=std::max(0.0,height-view.h);
+    if(ctx.over(view))state.scroll=clamp(state.scroll-ctx.wheel()*45,0.0,maximum);
+    if(click(ctx,{p.right()-70,p.bottom()-38,24,24},"^"))state.scroll=std::max(0.0,state.scroll-70);
+    if(click(ctx,{p.right()-40,p.bottom()-38,24,24},"v"))state.scroll=std::min(maximum,state.scroll+70);
+    state.scroll=clamp(state.scroll,0.0,maximum);
+    ctx.canvas.save();ctx.canvas.beginPath();ctx.canvas.rect(view.x,view.y,view.w,view.h);ctx.canvas.clip();
+    double y=view.y-state.scroll;
+    const auto line=[&](const std::string& value,double step=22){text(ctx.canvas,value,view.x,y+10,style(13));y+=step;};
+    for(const auto& question:lines(poll["question"].asString(),view.w,13))line(question);
+    line("Votes: "+std::to_string(poll["total"].asInt())+(poll["active"].asBool()?" | "+std::to_string(int(std::ceil(ctx.net.pollRemainingSeconds())))+"s remaining":""));
+    const auto& options=poll["options"];const auto& counts=poll["counts"];
+    for(std::size_t i=0;i<options.size()&&i<counts.size();++i){
+        for(const auto& label:lines(options[i].asString(),view.w-45,13))line(label,20);
+        text(ctx.canvas,std::to_string(counts[i].asInt()),view.right()-34,y-10,style(13));
+        const double share=poll["total"].asDouble()>0?counts[i].asDouble()/poll["total"].asDouble():0;
+        fillRound(ctx.canvas,{view.x,y+2,view.w,8},3,0x35344Fu);fillRound(ctx.canvas,{view.x,y+2,view.w*share,8},3,0x9B89D9u);y+=32;
+    }
+    ctx.canvas.restore();
+    text(ctx.canvas,"History clears on server restart.",p.x+15,p.bottom()-23,style(12));
 }
 }

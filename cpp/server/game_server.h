@@ -415,6 +415,9 @@ private:
         double endsAtMillis = 0;
         bool active = false;
     } poll_;
+    std::vector<Json> pollHistory_; // Completed summaries only; deliberately not persisted.
+    std::uint64_t pollHistoryRevision_ = 0;
+    Json pollSummary(const HostedPoll&) const;
     void sendPollState(Session&, net::Connection&, const std::string& message = {});
     void broadcastPollState(const std::string& voter = {});
     void runPollRequest(Session&, net::Connection&, const Json&);

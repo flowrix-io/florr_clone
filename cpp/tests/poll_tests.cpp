@@ -1,4 +1,5 @@
 #include "test.h"
+#include <fstream>
 #include "server_harness.h"
 #include "render_rig.h"
 #include "client/ui/menus.h"
@@ -7,7 +8,7 @@ using namespace flix;
 using namespace flix::testsupport;
 namespace {
 bool pollRequest(Harness& h,NetClient& c,const char* action,Json q=Json::object()) {
-    const char* kind=std::string(action)=="create"?"poll_creator":"poll";
+    const char* kind=std::string(action)=="create"?"poll_creator":std::string(action)=="history"?"poll_history":"poll";
     const double revision=c.adminTools(kind)["revision"].asDouble();q["kind"]="poll";q["action"]=action;c.requestAdminTools(q);
     return h.stepUntil({&c},[&]{return c.adminTools(kind)["revision"].asDouble()>revision;});
 }
@@ -51,5 +52,24 @@ TEST(poll_overlay_creator_and_admin_results_render_locally) {
     Canvas form=Canvas::createVirtual(760,600);MenuContext formCtx{form,window,boss,sprites,renderer,settings,drag};formCtx.bounds=PollCreatorPanel::bounds(760,600);creator.reset();CHECK(creator.render(formCtx));form.savePPM("/tmp/flowrix-poll-creator.ppm");
     CHECK(pollRequest(h,boss,"create",draft(60)));const auto bounds=pollOverlayBounds(boss,760,600);CHECK(bounds.w>0);CHECK(bounds.y<100);
     Canvas banner=Canvas::createVirtual(760,600);MenuContext ctx{banner,window,boss,sprites,renderer,settings,drag};ctx.bounds=bounds;renderPollOverlay(ctx);banner.savePPM("/tmp/flowrix-poll-banner.ppm");
+    CHECK(pollRequest(h,boss,"history"));
     Canvas results=Canvas::createVirtual(420,500);MenuContext resultsCtx{results,window,boss,sprites,renderer,settings,drag};renderPollResults(resultsCtx,{0,0,420,500});results.savePPM("/tmp/flowrix-poll-results.ppm");
+}
+
+TEST(poll_history_preserves_completed_counts_and_browses_newest_first){
+    Harness h("poll-history",[](const std::string& p){seedUser(p,"boss","password7",true);seedUser(p,"visitor","password7");},dataDir(),0);CHECK(h.ready);if(!h.ready)return;NetClient boss,visitor;CHECK(loginAs(h,boss,"boss","password7"));CHECK(loginAs(h,visitor,"visitor","password7"));
+    auto q=draft();q["question"]="First biome?";CHECK(pollRequest(h,boss,"create",q));CHECK(h.stepUntil({&visitor},[&]{return visitor.pollVisible();}));const auto first=visitor.adminTools("poll")["id"];
+    Json vote=Json::object();vote["id"]=first;vote["choice"]=1;CHECK(pollRequest(h,visitor,"vote",vote));h.step(310,{&boss,&visitor});
+    q["question"]="Second biome?";CHECK(pollRequest(h,boss,"create",q));h.step(310,{&boss,&visitor});
+    q["question"]="Third biome?";CHECK(pollRequest(h,boss,"create",q));CHECK(pollRequest(h,boss,"history"));CHECK_EQ(boss.adminTools("poll_history")["total"].asInt(),3);CHECK_EQ(boss.adminTools("poll_history")["poll"]["question"].asString(),"Third biome?");CHECK(boss.adminTools("poll_history")["poll"]["active"].asBool());
+    Json page=Json::object();page["offset"]=1;CHECK(pollRequest(h,boss,"history",page));CHECK_EQ(boss.adminTools("poll_history")["poll"]["question"].asString(),"Second biome?");CHECK(!boss.adminTools("poll_history")["poll"]["active"].asBool());
+    page["offset"]=2;CHECK(pollRequest(h,boss,"history",page));const auto& row=boss.adminTools("poll_history")["poll"];CHECK_EQ(row["id"].asString(),first.asString());CHECK_EQ(row["total"].asInt(),1);CHECK_EQ(row["counts"][1].asInt(),1);CHECK(!row.contains("votes"));
+    h.step(310,{&boss,&visitor});q["question"]="Fourth biome?";CHECK(pollRequest(h,boss,"create",q));page["id"]=first;CHECK(pollRequest(h,boss,"history",page));CHECK_EQ(boss.adminTools("poll_history")["offset"].asInt(),3);CHECK_EQ(boss.adminTools("poll_history")["poll"]["total"].asInt(),1);
+    CHECK(pollRequest(h,visitor,"history"));CHECK(!visitor.adminTools("poll_history")["ok"].asBool());CHECK(!visitor.adminTools("poll_history").contains("poll"));
+    page=Json::object();page["offset"]=-1;CHECK(pollRequest(h,boss,"history",page));CHECK(!boss.adminTools("poll_history")["ok"].asBool());page["offset"]=1e200;CHECK(pollRequest(h,boss,"history",page));CHECK(!boss.adminTools("poll_history")["ok"].asBool());
+}
+TEST(poll_history_survives_admin_reconnect_but_clears_on_server_restart){
+    Harness original("poll-history-old",[](const std::string& p){seedUser(p,"boss","password7",true);},dataDir(),0);CHECK(original.ready);if(!original.ready)return;NetClient boss;CHECK(loginAs(original,boss,"boss","password7"));CHECK(pollRequest(original,boss,"create",draft()));original.step(310,{&boss});CHECK(pollRequest(original,boss,"history"));CHECK_EQ(boss.adminTools("poll_history")["total"].asInt(),1);
+    boss.disconnect();original.step(3,{});NetClient again;CHECK(loginAs(original,again,"boss","password7"));CHECK(pollRequest(original,again,"history"));CHECK_EQ(again.adminTools("poll_history")["total"].asInt(),1);original.server.persistAll();const auto path=original.dbPath;
+    Harness restarted("poll-history-new",[&](const std::string& destination){std::ifstream source(path,std::ios::binary);std::ofstream target(destination,std::ios::binary);target<<source.rdbuf();CHECK(bool(target));},dataDir(),0);CHECK(restarted.ready);if(!restarted.ready)return;NetClient fresh;CHECK(loginAs(restarted,fresh,"boss","password7"));CHECK(pollRequest(restarted,fresh,"history"));CHECK_EQ(fresh.adminTools("poll_history")["total"].asInt(),0);CHECK(!fresh.adminTools("poll_history").contains("poll"));CHECK(!fresh.pollVisible());
 }
