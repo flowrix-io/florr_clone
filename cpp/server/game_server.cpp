@@ -1251,7 +1251,9 @@ void GameServer::announceBossSpawns() {
 
         for (auto& entry : sessions_) {
             Session& session = entry.second;
-            if (!session.playing()) continue;
+            // Everyone signed in, flower or not: the title screen draws the same
+            // chat box the game does, and a boss's defeat already reaches it.
+            if (!session.authenticated()) continue;
             net::Connection* connection = listener_.find(session.connection);
             if (connection == nullptr) continue;
             // Personalised: a player standing in the boss's own section is told
@@ -1260,7 +1262,8 @@ void GameServer::announceBossSpawns() {
             // what makes bosses -- so the boss's OWN realm has to match before
             // its position means anything: two maps are two coordinate spaces,
             // and (9000, 9000) on one is not near (9000, 9000) on the other.
-            const Transform* transform = world_.tryGet<Transform>(session.entity);
+            const Transform* transform =
+                session.playing() ? world_.tryGet<Transform>(session.entity) : nullptr;
             const bool here = transform != nullptr && transform->realm == boss.realm &&
                               transform->realm == Realm::Overworld &&
                               sectionAt(transform->position) == section;
