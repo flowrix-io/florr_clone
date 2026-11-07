@@ -26,8 +26,22 @@ constexpr int kCurveSegments = 16;
 /// How deep a skin's rim is, in cells: the studio's default outline (3 units)
 /// and a little more.
 constexpr int kRimCells = 2;
+/// How much of what a skin paints must lie inside its rim for it to have a body
+/// at all. Over a 96-skin catalog the floating line art came out at 12% or less
+/// and everything with a body at 32% or more.
+constexpr double kBodyShare = 0.25;
 
 double cellCentre(int i) { return kGridOrigin + (i + 0.5) * kSkinLookCell; }
+
+/// True when a painted cell is in `look`'s rim: within kRimCells of the outside.
+bool inRim(const SkinLook& look, int x, int y) {
+    for (int dy = -kRimCells; dy <= kRimCells; ++dy) {
+        for (int dx = -kRimCells; dx <= kRimCells; ++dx) {
+            if (look.at(x + dx, y + dy) == 0) return true;
+        }
+    }
+    return false;
+}
 
 /// The first and last cells whose centres lie in [lo, hi], clamped to the
 /// grid. first > last when none do.
@@ -195,19 +209,16 @@ private:
                 most = count;
             }
         }
+        int inside = 0;
         for (int y = look.y0; y < look.y0 + look.h; ++y) {
             for (int x = look.x0; x < look.x0 + look.w; ++x) {
                 const std::uint32_t colour = look.at(x, y);
-                if (colour == 0 || colour == body) continue;
-                bool rim = false;
-                for (int dy = -kRimCells; dy <= kRimCells && !rim; ++dy) {
-                    for (int dx = -kRimCells; dx <= kRimCells && !rim; ++dx) {
-                        rim = look.at(x + dx, y + dy) == 0;
-                    }
-                }
-                if (!rim) ++look.detail;
+                if (colour == 0 || inRim(look, x, y)) continue;
+                ++inside;
+                if (colour != body) ++look.detail;
             }
         }
+        look.hasBody = inside >= look.painted * kBodyShare;
     }
 
     std::vector<std::uint32_t> cells_;
@@ -335,26 +346,85 @@ void sampleShape(Raster& raster, const SkinShape& shape) {
     }
 }
 
-bool sameColour(std::uint32_t a, std::uint32_t b) {
+bool sameColour(std::uint32_t a, std::uint32_t b, int slack) {
     if (a == b) return true;
     if (a == 0 || b == 0) return false;
     for (int shift = 0; shift <= 16; shift += 8) {
         const int ca = static_cast<int>((a >> shift) & 0xFF), cb = static_cast<int>((b >> shift) & 0xFF);
-        if (std::abs(ca - cb) > kSkinLookColourSlack) return false;
+        if (std::abs(ca - cb) > slack) return false;
     }
     return true;
 }
 
 /// True when `look` has `colour` -- or nothing, for an unpainted cell --
 /// within kSkinLookNudgeCells of (x, y).
-bool foundNear(const SkinLook& look, std::uint32_t colour, int x, int y) {
-    if (sameColour(colour, look.at(x, y))) return true;
+bool foundNear(const SkinLook& look, std::uint32_t colour, int x, int y, int slack) {
+    if (sameColour(colour, look.at(x, y), slack)) return true;
     for (int dy = -kSkinLookNudgeCells; dy <= kSkinLookNudgeCells; ++dy) {
         for (int dx = -kSkinLookNudgeCells; dx <= kSkinLookNudgeCells; ++dx) {
-            if (sameColour(colour, look.at(x + dx, y + dy))) return true;
+            if (sameColour(colour, look.at(x + dx, y + dy), slack)) return true;
         }
     }
     return false;
+}
+
+/// True when `look` paints anything within kSkinLookNudgeCells of (x, y).
+bool paintedNear(const SkinLook& look, int x, int y) {
+    for (int dy = -kSkinLookNudgeCells; dy <= kSkinLookNudgeCells; ++dy) {
+        for (int dx = -kSkinLookNudgeCells; dx <= kSkinLookNudgeCells; ++dx) {
+            if (look.at(x + dx, y + dy) != 0) return true;
+        }
+    }
+    return false;
+}
+
+/// True when two skins that disagree at (x, y) disagree only about their rims:
+/// both paint the cell and it is rim on both, or one paints it right beside what
+/// the other paints. Rim on one only does not count: an ear drawn over the other
+/// skin's rim is the middle of something new.
+bool onlyRimsDiffer(const SkinLook& a, const SkinLook& b, int x, int y) {
+    const bool paintedA = a.at(x, y) != 0, paintedB = b.at(x, y) != 0;
+    if (paintedA && paintedB) return inRim(a, x, y) && inRim(b, x, y);
+    return paintedNear(paintedA ? b : a, x, y);
+}
+
+int countDifferences(const SkinLook& a, const SkinLook& b, int stopAfter, int colourSlack,
+                     bool forgiveRims) {
+    if (a.w == 0 && b.w == 0) return 0;
+    // Outside both crops both are unpainted, which matches itself, so only
+    // the union of the two can hold a difference.
+    int minX = kSkinLookGrid, minY = kSkinLookGrid, maxX = -1, maxY = -1;
+    for (const SkinLook* look : {&a, &b}) {
+        if (look->w == 0) continue;
+        minX = std::min(minX, look->x0);
+        minY = std::min(minY, look->y0);
+        maxX = std::max(maxX, look->x0 + look->w - 1);
+        maxY = std::max(maxY, look->y0 + look->h - 1);
+    }
+    int differing = 0;
+    for (int y = minY; y <= maxY; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            const std::uint32_t ca = a.at(x, y), cb = b.at(x, y);
+            if (ca == cb) continue;
+            if (foundNear(b, ca, x, y, colourSlack) && foundNear(a, cb, x, y, colourSlack)) continue;
+            if (forgiveRims && onlyRimsDiffer(a, b, x, y)) continue;
+            // Two different skins usually part company within a row or two of
+            // the first face feature, so this rarely scans far.
+            if (++differing > stopAfter) return differing;
+        }
+    }
+    return differing;
+}
+
+/// The difference the wide tests hold against their allowance: over the cells
+/// SkinLook::detail counts, so the two measure one thing. A rim's colour is
+/// forgiven. Counted, a new rim cost 60 to 80 cells however little was on the skin,
+/// which took a copy with one circle under it past the allowance of most of a
+/// catalog. Its shape is not, past the nudge: ears or a crown are all rim, and they
+/// are a new skin. Line art with no body is nothing but rim, so it is compared in
+/// full.
+int innerDifference(const SkinLook& a, const SkinLook& b, int stopAfter) {
+    return countDifferences(a, b, stopAfter, kSkinSimilarColourSlack, a.hasBody && b.hasBody);
 }
 
 /// `look` resized by `scale` about its middle and moved so that middle lands on
@@ -371,6 +441,7 @@ SkinLook fittedOnto(const SkinLook& look, const SkinLook& like, double scale) {
     const int bottom = std::min(kSkinLookGrid - 1,
                                 toGrid(look.y0 + look.h - 1, look.centreY, like.centreY) + 1);
     SkinLook out;
+    out.hasBody = look.hasBody;
     if (right < left || bottom < top) return out;
     out.x0 = left;
     out.y0 = top;
@@ -391,13 +462,13 @@ SkinLook fittedOnto(const SkinLook& look, const SkinLook& like, double scale) {
 /// lined up. The smaller is fitted onto the larger whichever way round they were
 /// passed, and their areas give the ratio, which a stray speck barely moves.
 bool differsByAtMostLinedUp(const SkinLook& a, const SkinLook& b, int allowed) {
-    if (skinLookDifference(a, b, allowed) <= allowed) return true;
+    if (innerDifference(a, b, allowed) <= allowed) return true;
     if (a.painted == 0 || b.painted == 0) return false;
     const SkinLook& large = a.painted >= b.painted ? a : b;
     const SkinLook& small = a.painted >= b.painted ? b : a;
     const double scale = std::sqrt(static_cast<double>(large.painted) / small.painted);
     if (scale > kSkinSimilarMaxRescale) return false;
-    return skinLookDifference(large, fittedOnto(small, large, scale), allowed) <= allowed;
+    return innerDifference(large, fittedOnto(small, large, scale), allowed) <= allowed;
 }
 
 void hashBytes(std::uint64_t& h, const void* data, std::size_t size) {
@@ -425,29 +496,7 @@ SkinLook sampleSkinLook(const std::vector<SkinShape>& shapes) {
 }
 
 int skinLookDifference(const SkinLook& a, const SkinLook& b, int stopAfter) {
-    if (a.w == 0 && b.w == 0) return 0;
-    // Outside both crops both are unpainted, which matches itself, so only
-    // the union of the two can hold a difference.
-    int minX = kSkinLookGrid, minY = kSkinLookGrid, maxX = -1, maxY = -1;
-    for (const SkinLook* look : {&a, &b}) {
-        if (look->w == 0) continue;
-        minX = std::min(minX, look->x0);
-        minY = std::min(minY, look->y0);
-        maxX = std::max(maxX, look->x0 + look->w - 1);
-        maxY = std::max(maxY, look->y0 + look->h - 1);
-    }
-    int differing = 0;
-    for (int y = minY; y <= maxY; ++y) {
-        for (int x = minX; x <= maxX; ++x) {
-            const std::uint32_t ca = a.at(x, y), cb = b.at(x, y);
-            if (ca == cb) continue;
-            if (foundNear(b, ca, x, y) && foundNear(a, cb, x, y)) continue;
-            // Two different skins usually part company within a row or two of
-            // the first face feature, so this rarely scans far.
-            if (++differing > stopAfter) return differing;
-        }
-    }
-    return differing;
+    return countDifferences(a, b, stopAfter, kSkinLookColourSlack, false);
 }
 
 bool skinsLookAlikeLinedUp(const SkinLook& a, const SkinLook& b) {

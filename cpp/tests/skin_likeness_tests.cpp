@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -123,6 +124,127 @@ std::vector<SkinShape> squintingFace() {
     stroke(-6, -5, -14, -1);
     stroke(14, -9, 6, -5);
     stroke(6, -5, 14, -1);
+    return shapes;
+}
+
+SkinShape ellipse(double x, double y, double rx, double ry, const char* fill) {
+    SkinShape s;
+    s.t = SkinShapeType::Ellipse;
+    s.x = x;
+    s.y = y;
+    s.rx = rx;
+    s.ry = ry;
+    s.fill = fill;
+    return s;
+}
+
+SkinShape stroke(double x, double y, double x2, double y2, double width, const char* colour) {
+    SkinShape s;
+    s.t = SkinShapeType::Line;
+    s.x = x;
+    s.y = y;
+    s.x2 = x2;
+    s.y2 = y2;
+    s.stroke = colour;
+    s.sw = width;
+    return s;
+}
+
+SkinShape polygon(double y, std::vector<double> points, const char* fill) {
+    SkinShape s;
+    s.t = SkinShapeType::Polygon;
+    s.y = y;
+    s.points = std::move(points);
+    s.fill = fill;
+    return s;
+}
+
+/// A catalog skin drawn the way players draw a detailed one: layered shades on a
+/// base circle one size up, whose edge is all that is left of it.
+std::vector<SkinShape> grinningFace() {
+    std::vector<SkinShape> shapes = {
+        circle(0, 0, 26, "#d9a000"),    circle(-1, -1, 24.5, "#f2b900"),
+        circle(-2, -2, 21, "#ffcc0a"),  circle(-5, -6, 13, "#ffd83a"),
+        circle(-8, -10, 6, "#ffe56e"),
+    };
+    for (const double x : {-5.5, 5.5}) shapes.push_back(ellipse(x, -10.5, 4.6, 7.2, "#e3a015"));
+    for (const double x : {-5.5, 5.5}) shapes.push_back(ellipse(x, -10.5, 3.4, 5.8, "#9a4a1a"));
+    for (const double x : {-5.5, 5.5}) shapes.push_back(ellipse(x, -10.5, 2, 4.3, "#1a1a1a"));
+    shapes.push_back(polygon(0, {-21, -12, -17, -7, -12, -1, -6, 1.5, 0, 2.5, 6, 1.5, 12, -1, 17, -7,
+                                 21, -12, 18, -4, 15, 5, 9, 11, 0, 15, -9, 11, -15, 5, -18, -4},
+                             "#1a1a1a"));
+    shapes.push_back(polygon(0, {-15, -4, -9, 0, 0, 2.5, 9, 0, 15, -4, 13, 3, 8, 9, 0, 12.5, -8, 9,
+                                 -13, 3},
+                             "#ffffff"));
+    SkinShape lip;
+    lip.t = SkinShapeType::Curve;
+    lip.x = -14;
+    lip.y = -1;
+    lip.x2 = 14;
+    lip.y2 = -1;
+    lip.cx1 = -8;
+    lip.cy1 = 8;
+    lip.cx2 = 8;
+    lip.cy2 = 8;
+    lip.stroke = "#1a1a1a";
+    lip.sw = 1.5;
+    shapes.push_back(lip);
+    shapes.push_back(stroke(0, 2.5, 0, 6, 1.2, "#1a1a1a"));
+    for (const double x : {-5.0, 5.0}) shapes.push_back(stroke(x, 2, x, 5.3, 1.2, "#1a1a1a"));
+    for (const double x : {-10.0, 10.0}) shapes.push_back(stroke(x, -1, x, 3, 1.2, "#1a1a1a"));
+    for (const double x : {-2.5, 2.5}) shapes.push_back(stroke(x, 5.8, x, 12.3, 1.2, "#1a1a1a"));
+    for (const double x : {-7.5, 7.5}) shapes.push_back(stroke(x, 4.5, x, 9.2, 1.2, "#1a1a1a"));
+    for (const double x : {-12.0, 12.0}) shapes.push_back(stroke(x, 1.5, x, 4.5, 1.2, "#1a1a1a"));
+    return shapes;
+}
+
+/// The reported copy of it, as it was pasted: the base circle shoved a hair and
+/// painted black, and the last few lines drawn twice.
+std::vector<SkinShape> grinningFaceCopy() {
+    std::vector<SkinShape> shapes = grinningFace();
+    shapes[0].x = -0.8;
+    shapes[0].y = -0.6;
+    shapes[0].fill = "#000000";
+    for (const double x : {-7.5, 7.5}) shapes.push_back(stroke(x, 4.5, x, 9.2, 1.2, "#1a1a1a"));
+    for (const double x : {-12.0, 12.0}) shapes.push_back(stroke(x, 1.5, x, 4.5, 1.2, "#1a1a1a"));
+    return shapes;
+}
+
+/// Under everything, so only its edge shows.
+std::vector<SkinShape> withRimUnder(std::vector<SkinShape> shapes, double r) {
+    shapes.insert(shapes.begin(), circle(0, 0, r, "#000000"));
+    return shapes;
+}
+
+/// Every colour on the skin `steps` off, on every channel.
+std::vector<SkinShape> shadedBy(std::vector<SkinShape> shapes, int steps) {
+    const auto shade = [&](std::string& colour) {
+        if (colour.empty()) return;
+        const int value = static_cast<int>(std::strtol(colour.c_str() + 1, nullptr, 16));
+        int out = 0;
+        for (const int shift : {16, 8, 0}) {
+            const int channel = (value >> shift) & 0xFF;
+            out |= (channel + steps <= 255 ? channel + steps : channel - steps) << shift;
+        }
+        char text[8];
+        std::snprintf(text, sizeof text, "#%06x", out);
+        colour = text;
+    };
+    for (SkinShape& s : shapes) {
+        shade(s.fill);
+        shade(s.stroke);
+    }
+    return shapes;
+}
+
+std::vector<SkinShape> withEars(std::vector<SkinShape> shapes) {
+    shapes.push_back(circle(-18, -18, 7, "#aa5500"));
+    shapes.push_back(circle(18, -18, 7, "#aa5500"));
+    return shapes;
+}
+
+std::vector<SkinShape> withCrown(std::vector<SkinShape> shapes) {
+    shapes.push_back(polygon(-25, {-12, 2, -14, -10, -6, -3, 0, -12, 6, -3, 14, -10, 12, 2}, "#ffd700"));
     return shapes;
 }
 
@@ -244,6 +366,71 @@ TEST(a_different_design_on_the_same_body_is_not_similar) {
     // past the allowance is a change.
     CHECK(!similar({circle(0, 0, 25, "#123456")},
                    {circle(0, 0, 25, "#123456"), circle(0, 0, 5, "#ffffff")}));
+}
+
+TEST(a_skin_copied_with_a_new_rim_is_similar) {
+    CHECK(similar(grinningFace(), grinningFaceCopy()));
+    // The rim costs the same however little is on the skin, so the skins it
+    // really let through are the plain ones. The detailed one above has allowance
+    // to spare; these have less than a rim's worth.
+    const std::vector<SkinShape> plain = blushingFace();
+    CHECK(sampleSkinLook(plain).detail < 80);
+    std::vector<SkinShape> outlined = plain;
+    outlined[0].stroke = "#000000";
+    CHECK(similar(plain, outlined));
+    outlined[0].stroke = "#ff00ff";
+    CHECK(similar(plain, outlined));
+    CHECK(similar(plain, withRimUnder(plain, 27)));
+    CHECK(similar(plain, withRimUnder(plain, 28)));
+    // Order does not matter.
+    CHECK(similar(withRimUnder(plain, 28), plain));
+    // And a rim on the starter is still the starter.
+    const SkinLook starter = sampleSkinLook(starterSkinShapes());
+    std::vector<SkinShape> blackRim = starterSkinShapes();
+    blackRim[0].stroke = "#000000";
+    CHECK(skinsLookAlikeLinedUp(starter, sampleSkinLook(blackRim)));
+    CHECK(skinsLookAlikeLinedUp(starter, sampleSkinLook(withRimUnder(starterSkinShapes(), 28))));
+}
+
+TEST(a_skin_copied_a_few_shades_off_is_similar_and_a_recolour_is_not) {
+    for (const int steps : {25, 40, 48}) {
+        CHECK(similar(blushingFace(), shadedBy(blushingFace(), steps)));
+        CHECK(similar(grinningFace(), shadedBy(grinningFace(), steps)));
+    }
+    // Outright different colours stay different skins.
+    CHECK(!similar(blushingFace(), shadedBy(blushingFace(), 80)));
+    std::vector<SkinShape> orange = blushingFace();
+    orange[0].fill = "#ff9900";
+    CHECK(!similar(blushingFace(), orange));
+    // The narrow test is not the wide one: a shade this far is not a copy to fold.
+    CHECK(!alike(blushingFace(), shadedBy(blushingFace(), 25)));
+}
+
+TEST(a_new_outline_shape_is_a_new_skin) {
+    // Ears and crowns are nothing but rim, and they are what somebody means by a
+    // new skin even with the same face under them.
+    const SkinLook starter = sampleSkinLook(starterSkinShapes());
+    CHECK(!skinsLookAlikeLinedUp(starter, sampleSkinLook(withEars(starterSkinShapes()))));
+    CHECK(!skinsLookAlikeLinedUp(starter, sampleSkinLook(withCrown(starterSkinShapes()))));
+    CHECK(!similar(starterSkinShapes(), withEars(starterSkinShapes())));
+    CHECK(!similar(starterSkinShapes(), withCrown(starterSkinShapes())));
+    CHECK(!similar(withEars(starterSkinShapes()), withCrown(starterSkinShapes())));
+}
+
+TEST(line_art_skins_have_no_rim_to_forgive) {
+    // Floating lines are all edge, with no body for a rim to go round. Drawn again
+    // in another colour they are a recolour like any other, not a new outline.
+    const auto face = [](const char* colour) {
+        return std::vector<SkinShape>{stroke(-16, -14, -8, -14, 2, colour),
+                                      stroke(8, -14, 16, -14, 2, colour),
+                                      stroke(-14, 6, 0, 12, 2, colour),
+                                      stroke(0, 12, 14, 6, 2, colour)};
+    };
+    CHECK(!sampleSkinLook(face("#111111")).hasBody);
+    CHECK(sampleSkinLook(starterSkinShapes()).hasBody);
+    CHECK(!similar(face("#111111"), face("#d01c1d")));
+    // A shade off is still the same lines.
+    CHECK(similar(face("#111111"), face("#303030")));
 }
 
 TEST(the_starter_is_refused_lined_up_but_on_the_narrow_allowance) {
@@ -461,6 +648,48 @@ TEST(a_skin_similar_to_one_in_the_catalog_is_refused) {
     CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), static_cast<std::size_t>(2));
 }
 
+TEST(a_copy_with_a_new_rim_is_refused_when_published_or_saved_over_another_skin) {
+    Harness h("skin-dedupe-rim", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient author;
+    NetClient copier;
+    CHECK(registerAs(h, author, "author"));
+    CHECK(registerAs(h, copier, "copier"));
+
+    CHECK(publish(h, author, "grin", grinningFace()));
+    CHECK(sawText(author, "Published \"grin\""));
+    h.step(200, {&author, &copier});
+    CHECK(publish(h, author, "blush", blushingFace()));
+    CHECK(sawText(author, "Published \"blush\""));
+    h.step(200, {&author, &copier});
+
+    CHECK(publish(h, copier, "my grin", grinningFaceCopy()));
+    CHECK(sawText(copier, "looks just like \"grin\" by author"));
+    h.step(200, {&author, &copier});
+    CHECK(publish(h, copier, "my blush", withRimUnder(blushingFace(), 28)));
+    CHECK(sawText(copier, "looks just like \"blush\" by author"));
+    h.step(200, {&author, &copier});
+    CHECK(publish(h, copier, "flower", withRimUnder(starterSkinShapes(), 28)));
+    CHECK(sawText(copier, "That's the starter flower"));
+    h.step(200, {&author, &copier});
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), static_cast<std::size_t>(2));
+
+    // A different design on the way in, and an edit can't turn it into the copy.
+    CHECK(publish(h, copier, "squint", squintingFace()));
+    CHECK(sawText(copier, "Published \"squint\""));
+    CHECK(h.stepUntil({&author, &copier}, [&] { return copier.skinCatalog().size() == 3; }));
+    std::string squintId;
+    for (const CustomSkin& skin : copier.skinCatalog()) {
+        if (skin.name == "squint") squintId = skin.id;
+    }
+    CHECK(!squintId.empty());
+    h.step(200, {&author, &copier});
+    const std::size_t before = copier.chat().size();
+    copier.editSkin(squintId, "squint", grinningFaceCopy());
+    CHECK(h.stepUntil({&copier}, [&] { return copier.chat().size() > before; }));
+    CHECK(sawText(copier, "Change it a bit more before saving"));
+}
+
 TEST(a_similar_skin_already_in_the_catalog_survives_a_restart) {
     // The fold erases rows, so it must stay on the narrow test: skins published
     // before the wider one are not the start-up pass's to delete.
@@ -472,6 +701,10 @@ TEST(a_similar_skin_already_in_the_catalog_survives_a_restart) {
         catalog["sk_a"] = skinToJson(storedSkin("sk_a", "original", "artist", 100, blushingFace()));
         catalog["sk_b"] = skinToJson(
             storedSkin("sk_b", "moved", "other", 200, movedBy(blushingFace(), 12, 0)));
+        catalog["sk_c"] = skinToJson(
+            storedSkin("sk_c", "new rim", "other", 300, withRimUnder(blushingFace(), 28)));
+        catalog["sk_d"] = skinToJson(
+            storedSkin("sk_d", "shaded", "other", 400, shadedBy(blushingFace(), 30)));
         db.markDirty();
         db.save();
     }, flix::testsupport::dataDir(), 0);
@@ -480,6 +713,8 @@ TEST(a_similar_skin_already_in_the_catalog_survives_a_restart) {
     const Json& catalog = h.server.database().storedTable("customSkins");
     CHECK(catalog.contains("sk_a"));
     CHECK(catalog.contains("sk_b"));
+    CHECK(catalog.contains("sk_c"));
+    CHECK(catalog.contains("sk_d"));
 }
 
 TEST(clicking_publish_over_and_over_posts_one_skin) {

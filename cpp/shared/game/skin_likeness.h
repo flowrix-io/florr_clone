@@ -11,8 +11,8 @@
 // Those are two different strengths of "the same", on purpose. Folding erases
 // rows at start-up, so it takes the narrow test (skinsLookAlike): a copy, give
 // or take a hair. Refusing a publish costs the author one more edit, so it takes
-// the wide one (skinsLookSimilar), which also catches a copy moved, resized or
-// with a little added. Widening the fold's test would delete skins players
+// the wide one (skinsLookSimilar), which also catches a copy moved, resized,
+// shaded, re-outlined or with a little added. Widening the fold's test would delete skins players
 // already have the next time the server restarts.
 //
 // "Looks like" is judged on the picture, never the shape list. Two lists can
@@ -55,6 +55,10 @@ inline constexpr int kSkinLookAlikeCells = 9;
 /// a size up, a flower moved off centre -- and the closest two different designs
 /// (a third eye and a mouth on the starter) at 82%.
 inline constexpr double kSkinSimilarDetailShare = 0.5;
+/// The wide tests' colour slack, per channel. A copy with every colour one step
+/// past kSkinLookColourSlack paints what looks like the same skin. Over that
+/// catalog 48 joins no two skins that 24 kept apart; a real recolour is further off.
+inline constexpr int kSkinSimilarColourSlack = 48;
 /// How far skinsLookSimilar will resize one picture onto the other, as a ratio
 /// of widths. Past this the two are different sizes on the flower's hitbox,
 /// which is a different thing to wear.
@@ -75,6 +79,9 @@ struct SkinLook {
     /// common colour (the body), and not within two cells of the unpainted
     /// outside (its rim). The starter's is its two eyes.
     int detail = 0;
+    /// False for a skin that is all edge, floating lines with nothing behind
+    /// them: a rim only means something around a body.
+    bool hasBody = false;
 
     /// Any cell of the grid; outside the crop is unpainted.
     std::uint32_t at(int x, int y) const {
@@ -98,10 +105,11 @@ inline bool skinsLookAlike(const SkinLook& a, const SkinLook& b) {
     return skinLookDifference(a, b, kSkinLookAlikeCells) <= kSkinLookAlikeCells;
 }
 
-/// skinsLookAlike, or would be once the two pictures are lined up: the same
-/// middle, and the same size up to kSkinSimilarMaxRescale. What the starter
-/// flower is refused on -- moving it does not make it a new skin, but adding a
-/// smile to it does, since it is what every player starts drawing from.
+/// skinsLookAlike's allowance, once the two pictures are lined up (the same
+/// middle, and the same size up to kSkinSimilarMaxRescale) and judged as
+/// skinsLookSimilar judges them. What the starter flower is refused on -- moving
+/// it or redoing its rim does not make it a new skin, but adding a smile to it
+/// does, since it is what every player starts drawing from.
 bool skinsLookAlikeLinedUp(const SkinLook& a, const SkinLook& b);
 
 /// True when `a` and `b` are the same kind of skin to somebody browsing for one:
@@ -111,8 +119,9 @@ bool skinsLookAlikeLinedUp(const SkinLook& a, const SkinLook& b);
 /// Measured against the detail and not the whole picture because the body says
 /// nothing. Counted in cells, a near-identical copy (27) scored worse than a new
 /// face on the plain flower (20), so no cell count separates them; as a share
-/// of the detail they are 43% and 91%. A recolour differs everywhere and stays
-/// a different skin.
+/// of the detail they are 43% and 91%. The rim is left out of the difference as
+/// it is left out of the detail: a copy with a new outline is a copy. A recolour
+/// past kSkinSimilarColourSlack differs everywhere and stays a different skin.
 bool skinsLookSimilar(const SkinLook& a, const SkinLook& b);
 
 /// A hash of every field `shapes` carries, so a cached look can tell that the
