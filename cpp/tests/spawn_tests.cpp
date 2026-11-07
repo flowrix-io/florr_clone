@@ -16,6 +16,7 @@ using flix::testsupport::loginNew;
 // its account (onlyPlayer skips the bots), not as the last PlayerTag a query
 // happens to visit.
 using flix::testsupport::onlyPlayer;
+using flix::testsupport::sawTextSince;
 using flix::testsupport::seedUser;
 
 // Where a player appears.
@@ -488,6 +489,34 @@ TEST(a_player_joins_on_the_beginner_ground) {
     CHECK(!onDangerousGround(overworld(h), at));
     CHECK(!h.server.terrain().blocked(at, Realm::Overworld));
     CHECK(h.server.world().get<Transform>(body).realm == Realm::Overworld);
+}
+
+TEST(a_blocked_nameplate_is_refused_back_to_the_lobby_and_a_clean_one_joins) {
+    Harness h("spawn-nameplate");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "namer", "password7"));
+
+    const auto refused = [&](const std::string& name) {
+        const std::uint64_t mark = client.chatSequence();
+        client.joinGame(1280, 720, {}, name);
+        return client.joinPending() &&
+               h.stepUntil({&client}, [&] { return !client.joinPending(); }) &&
+               client.status() != NetClient::Status::Playing &&
+               sawTextSince(client, mark, "That name is not allowed");
+    };
+    CHECK(refused("BigDick"));
+    CHECK(refused("hot pussy"));
+    // Judged as it would be drawn, after the cut at twenty bytes: whole this is
+    // a bird, and cut it is not.
+    CHECK(refused(std::string(15, 'x') + " cockatoo"));
+    // A web client draws this backwards, as a word the check never reads.
+    CHECK(refused("\xE2\x80\xAE" "kcuf"));
+
+    client.joinGame(1280, 720, {}, "Rose");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+    CHECK(bodyNamed(h.server.world(), "Rose") != NULL_ENTITY);
 }
 
 TEST(a_join_is_pending_until_answered_and_never_outlives_its_connection) {

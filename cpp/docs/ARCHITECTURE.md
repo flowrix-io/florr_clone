@@ -1189,6 +1189,19 @@ Latin letters — U+202B, U+202E, U+2067 or U+2068, typed or as a character
 reference — is refused outright, because the word check reads stored order and
 `\u202Ekcuf` draws a word it never sees.
 
+**Names** go through the same word list. A new username (`Database::validUsername`,
+so registering and a guest's rename), a nameplate (`handleJoin`, which also refuses
+those reversing controls) and a skin's name, on publish and on edit, are each
+refused with a sentence that does not repeat the word, and the log has the word
+under `[names]`. `blockedWordInName` differs from the chat check in two ways. A name is
+plain text wherever it is drawn, so it is read without parsing markup. And it has no
+spaces to end a word with, so whole-word entries are also read where capitals and
+digits start a new word (`BigAss`, `dick4u`) and after a lead-in (`bigdick`,
+`kissmyass`). Only new names are judged: an account already holding a blocked name
+still signs in, and a published skin keeps its name until its author next saves it,
+when the name has to pass. The spam checks are not applied to names, and guild
+names and descriptions are not moderated.
+
 ## The asset browser and boot scripts
 
 The debug panel (Settings > Enable Debug Menu, then J or the bug button) has an

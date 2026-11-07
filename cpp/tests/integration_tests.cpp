@@ -111,10 +111,11 @@ TEST(a_refused_registration_says_which_rule_it_broke) {
     CHECK_EQ(answer("_under", "password7"), usernameInvalid);
     CHECK_EQ(answer("7seven", "password7"), usernameInvalid);
     CHECK_EQ(answer("seventeen_letters", "password7"), usernameInvalid);
+    CHECK_EQ(answer("BigDick", "password7"), usernameInvalid);
     CHECK_EQ(answer("hasty", "seven77"), passwordInvalid);
     CHECK_EQ(answer("verbose", std::string(73, 'x')), passwordInvalid);
-    for (const char* refused : {"my-name", "_under", "7seven", "seventeen_letters", "hasty",
-                                "verbose"}) {
+    for (const char* refused : {"my-name", "_under", "7seven", "seventeen_letters", "BigDick",
+                                "hasty", "verbose"}) {
         CHECK(h.server.database().findUser(refused) == nullptr);
     }
 

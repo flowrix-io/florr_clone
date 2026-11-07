@@ -2643,8 +2643,22 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     if (session.playing()) return;
 
     // The nameplate, not the account. Kept on the session so a respawn keeps
-    // the name the player typed rather than reverting to their login.
-    session.displayName = sanitizePlayerName(name);
+    // the name the player typed rather than reverting to their login. Judged
+    // as it will be drawn, so after sanitising, and refused as a chat line is.
+    // A Bad notice is what takes the client's loading screen back down to the
+    // lobby, where the player can change the name.
+    const std::string nameplate = sanitizePlayerName(name);
+    std::string refusedFor = blockedWordInName(nameplate);
+    if (refusedFor.empty() && chatLineReversesText(escapedMarkup(nameplate))) {
+        refusedFor = "reverses text";
+    }
+    if (!refusedFor.empty()) {
+        std::printf("[names] refused the nameplate \"%s\" from %s (\"%s\")\n", nameplate.c_str(),
+                    session.username.c_str(), refusedFor.c_str());
+        sendNotice(connection, net::NoticeSeverity::Bad, "That name is not allowed. Pick another.");
+        return;
+    }
+    session.displayName = nameplate;
 
     // Remembered on the session so a respawn returns to the spawn point the
     // player chose, rather than quietly sending them back to the beginner
@@ -4890,6 +4904,22 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
     }
 }
 
+namespace {
+
+/// Whether a skin's sanitised name may go in the catalogue, where every player
+/// reads it. If not, the author is told and the log says why, as for a chat line.
+bool skinNameAllowed(const Session& session, net::Connection& connection,
+                     const std::string& name) {
+    const std::string word = blockedWordInName(name);
+    if (word.empty()) return true;
+    std::printf("[names] refused the skin name \"%s\" from %s (\"%s\")\n", name.c_str(),
+                session.username.c_str(), word.c_str());
+    sendSkinChat(connection, "That skin name is not allowed. Pick another.");
+    return false;
+}
+
+} // namespace
+
 void GameServer::handlePublishSkin(Session& session, net::Connection& connection,
                                    ByteReader& reader) {
     const std::string name = reader.str();
@@ -4912,6 +4942,7 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
         sendSkinChat(connection, check.error);
         return;
     }
+    if (!skinNameAllowed(session, connection, check.name)) return;
 
     // Read through storedTable, and the mutable table taken only for the
     // write at the end: rawTable drops the catalogue's cached text, and every
@@ -4997,6 +5028,7 @@ void GameServer::handleEditSkin(Session& session, net::Connection& connection,
         sendSkinChat(connection, check.error);
         return;
     }
+    if (!skinNameAllowed(session, connection, check.name)) return;
 
     // A rename keeps the picture, which is in the catalogue already, so only
     // new shapes are sampled -- and compared with every skin but this one.

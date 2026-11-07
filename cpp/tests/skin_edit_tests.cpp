@@ -170,6 +170,36 @@ TEST(only_the_author_may_edit_and_an_edit_is_checked_as_a_publish_is) {
     CHECK_EQ(storedRow(h, "sk_red")["name"].asString(), std::string("ruby"));
 }
 
+TEST(a_skin_name_with_a_blocked_word_is_neither_published_nor_saved) {
+    Harness h("skin-name-blocked", seedCatalog, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient artist;
+    CHECK(loginAs(h, artist, "artist", "hunter2!"));
+
+    const auto publish = [&](const char* name, const char* fill) {
+        h.step(static_cast<int>(3 * net::kTicksPerSecond), {&artist});
+        const std::uint64_t mark = artist.chatSequence();
+        artist.publishSkin(name, disc(fill));
+        return h.stepUntil({&artist}, [&] { return artist.chatSequence() != mark; }) &&
+               sawTextSince(artist, mark, "skin name is not allowed");
+    };
+    CHECK(publish("BigDick", "#2bd14f"));
+    // Judged as it would be shown: the sanitiser takes these marks out.
+    CHECK(publish("f!u@c#k", "#2bd14f"));
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), std::size_t(2));
+
+    // An edit is a post too.
+    std::uint64_t mark = artist.chatSequence();
+    CHECK(edit(h, artist, "sk_red", "BigDick", disc("#d01c1d")));
+    CHECK(sawTextSince(artist, mark, "skin name is not allowed"));
+    CHECK_EQ(storedRow(h, "sk_red")["name"].asString(), std::string("sk_red"));
+
+    // The obvious name for a red skin is not the slur it runs together into.
+    CHECK(!publish("Red Skin", "#2bd14f"));
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), std::size_t(3));
+}
+
 TEST(a_skin_round_trips_its_edit_time_and_an_unedited_one_stores_none) {
     CustomSkin skin = stored("sk_a", "artist", "#d01c1d", 100);
     CHECK(!skinToJson(skin).contains("editedAt"));

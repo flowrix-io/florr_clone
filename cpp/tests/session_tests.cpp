@@ -21,6 +21,10 @@ TEST(usernames_accept_reasonable_names_and_reject_the_rest) {
     CHECK(!Database::validUsername("abcdefghijklmnopq", reason));
     CHECK(!Database::validUsername("", reason));
 
+    // Chat's word check, with the word kept from the player as a chat line's is.
+    CHECK(!Database::validUsername("BigDick", reason));
+    CHECK_EQ(reason, std::string("That username is not allowed. Pick another."));
+
     // Must start with a letter, so a name cannot mimic a system line.
     CHECK(!Database::validUsername("1bob", reason));
     CHECK(!Database::validUsername("_bob", reason));

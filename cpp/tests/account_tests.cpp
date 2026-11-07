@@ -8,6 +8,8 @@
 #include "test.h"
 
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include "client/net_client.h"
@@ -390,6 +392,46 @@ TEST(a_guest_refused_a_taken_name_is_still_a_guest) {
     client.requestSetUsername("Vacant");
     CHECK(h.stepUntil({&client}, [&] { return client.usernameOutcome().pending; }));
     CHECK(client.usernameOutcome().ok);
+}
+
+TEST(a_guest_refused_a_blocked_name_is_still_a_guest) {
+    Harness h("rename-blocked", {}, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(joinAsGuest(h, client));
+    client.requestSetUsername("Bigdick");
+    CHECK(h.stepUntil({&client}, [&] { return client.usernameOutcome().pending; }));
+    CHECK(!client.usernameOutcome().ok);
+    CHECK_EQ(client.usernameOutcome().message,
+             std::string("That username is not allowed. Pick another."));
+    CHECK(h.server.database().findUser("Bigdick") == nullptr);
+    client.usernameOutcome().pending = false;
+
+    client.requestSetUsername("Vacant");
+    CHECK(h.stepUntil({&client}, [&] { return client.usernameOutcome().pending; }));
+    CHECK(client.usernameOutcome().ok);
+}
+
+TEST(an_account_named_before_the_filter_still_signs_in) {
+    // No way in through the door any more, so the file is what says this one
+    // was made back when it was open.
+    Harness h("legacy-name", [](const std::string& path) {
+        seedUser(path, "oldtimer", "password7");
+        std::ifstream in(path);
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        in.close();
+        for (std::size_t at = text.find("oldtimer"); at != std::string::npos;
+             at = text.find("oldtimer", at)) {
+            text.replace(at, 8, "bigdick");
+        }
+        std::ofstream(path) << text;
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "bigdick", "password7"));
+    CHECK_EQ(client.profile().username, std::string("bigdick"));
 }
 
 TEST(a_guest_sets_a_password_without_a_current_one_and_can_then_log_in) {

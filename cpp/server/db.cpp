@@ -1,5 +1,7 @@
 #include "server/db.h"
 
+#include "server/chat_moderation.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cerrno>
@@ -1128,6 +1130,16 @@ bool Database::validUsername(const std::string& username, std::string& reasonOut
     const char first = username[0];
     if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z'))) {
         reasonOut = "Username must start with a letter.";
+        return false;
+    }
+    // Refused, as a chat line with the word in it is, and likewise logged
+    // with the word, which is how an admin tells a false match from a real
+    // one; the player is not shown it. Only asked of a new name: an account
+    // that already holds one signs in without coming through here.
+    if (const std::string word = blockedWordInName(username); !word.empty()) {
+        std::printf("[names] refused the username \"%s\" (\"%s\")\n", username.c_str(),
+                    word.c_str());
+        reasonOut = "That username is not allowed. Pick another.";
         return false;
     }
     return true;
