@@ -63,6 +63,7 @@ void renderEventRules(MenuContext& ctx,Rect p) {
         if(!rules["activeSlots"].isNumber())rules["activeSlots"]=int(kLoadoutActiveSlots);
         if(!rules["bannedPetals"].isArray())rules["bannedPetals"]=Json::array();
         if(!rules["bannedRarities"].isArray())rules["bannedRarities"]=Json::array();
+        if(!rules["petalBans"].isArray())rules["petalBans"]=Json::array();
         const auto apply=[&]{Json q=Json::object();q["rules"]=rules;sendEvent("rules",q);};
         text(ctx.canvas,"Event rules: server enforced, autosaved, included in named presets",p.x,p.y+12,style(14));
         if(button(ctx,{p.x,p.y+40,210,30},rules["lockLoadout"].asBool()?"Loadout: LOCKED":"Loadout: editable")){rules["lockLoadout"]=!rules["lockLoadout"].asBool();apply();}
