@@ -875,7 +875,7 @@ private:
     /// (client/interpolation.h, 600 units), which every teleport worth the
     /// name exceeds, and eases across a shorter one. Its client is told it was
     /// teleported, for the iris (sendTeleported).
-    void teleportEntity(Entity, Vec2);
+    void teleportEntity(Entity, Vec2, bool playTransition = true);
 
     /// Drops a temporary admin grant, if this connection holds one. A grant is
     /// lent for one life, as the reference lends it, and to a person rather
@@ -1125,7 +1125,7 @@ private:
     /// Tells a client which map its body is standing on now: the arrival
     /// point and the realm's whole tile grid. Resets the server-side view so
     /// everything in reach is restated from first sight.
-    void sendRealmChange(Session&, Vec2 position);
+    void sendRealmChange(Session&, Vec2, bool preserveView = false);
     /// Tells the client steering `entity` that it was just teleported
     /// (ServerMessage::Teleported), which is what plays the iris over the
     /// jump. Nothing for a bot, or for the parked half of a split: the client

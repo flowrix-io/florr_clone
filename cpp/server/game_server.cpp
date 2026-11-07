@@ -2852,7 +2852,7 @@ void GameServer::serviceAdminCursorActions() {
             session.cursorBody = owner;
             session.cursorRealm = origin->realm;
             session.cursorButtons = input->current.flags;
-            teleportEntity(owner, destination);
+            teleportEntity(owner, destination, false);
             continue;
         }
         const auto valid = [&](Entity entity) {
@@ -7188,12 +7188,12 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
     enforceSquadBiome(squadIdOf(*session));
 }
 
-void GameServer::sendRealmChange(Session& session, Vec2 position) {
-    views_[session.connection].reset();
+void GameServer::sendRealmChange(Session& session, Vec2 position, bool preserveView) {
+    if(!preserveView)views_[session.connection].reset();
     net::Connection* connection = listener_.find(session.connection);
     if (connection == nullptr) return;
     ByteWriter w;
-    w.u8(static_cast<std::uint8_t>(net::ServerMessage::RealmChange));
+    w.u8(static_cast<std::uint8_t>(preserveView ? net::ServerMessage::ArenaMapUpdate : net::ServerMessage::RealmChange));
     w.position(position);
     writeMapGrid(w, *terrain_, session.realm);
     connection->send(w);

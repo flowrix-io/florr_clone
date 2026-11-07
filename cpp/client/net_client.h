@@ -1037,7 +1037,7 @@ private:
     void handleProfile(ByteReader&);
     void handleProfileDelta(ByteReader&);
     void handleJoinAccepted(ByteReader&);
-    void handleRealmChange(ByteReader&);
+    void handleRealmChange(ByteReader&, bool preserveView = false);
     void handleMazeInfo(ByteReader&);
     void handleChat(ByteReader&);
     /// The conversation already in progress when this account signed in, put

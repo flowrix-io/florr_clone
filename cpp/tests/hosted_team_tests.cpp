@@ -71,3 +71,14 @@ TEST(hosted_personal_gear_allows_saved_loadouts_without_mutating_real_inventory)
     CHECK(event(h,host,"clear")); // Custom event kits still cannot overwrite saved presets.
     alice.saveLoadoutPreset(2);h.step(8,{&alice});CHECK(real.loadoutPresets.find(loadoutPresetName(2))==real.loadoutPresets.end());
 }
+
+TEST(hosted_pvp_and_map_updates_keep_the_world_visible_without_a_teleport_iris){
+    Harness h("hosted-no-flash",seed,dataDir(),0);CHECK(h.ready);if(!h.ready)return;NetClient host,alice,bob;CHECK(join(h,host,alice,bob));
+    CHECK(h.stepUntil({&host,&alice,&bob},[&]{return host.view().entities().count(host.view().self().netId)>0;}));
+    Vec2 arrival;while(host.takeRealmChange(arrival)){}host.takeTeleported();const auto self=host.view().self().netId;
+    CHECK(say(h,host,"/admin arena pvp on"));CHECK(!host.takeTeleported());CHECK(!host.takeRealmChange(arrival));CHECK(host.view().entities().count(self)>0);
+    CHECK(say(h,host,"/admin arena pvp off"));CHECK(!host.takeTeleported());CHECK(!host.takeRealmChange(arrival));CHECK(host.view().entities().count(self)>0);
+    Json q=Json::object();q["kind"]="arena";q["action"]="update";const auto previous=host.adminTools("arena").dump();host.requestAdminTools(q);
+    CHECK(h.stepUntil({&host},[&]{return host.adminTools("arena").dump()!=previous;}));CHECK(host.adminTools("arena")["ok"].asBool());CHECK(!host.takeTeleported());CHECK(host.view().entities().count(self)>0);CHECK(host.takeRealmChange(arrival));
+    CHECK(say(h,host,"/admin arena wall desert"));CHECK(!host.takeTeleported());CHECK(host.view().entities().count(self)>0);
+}

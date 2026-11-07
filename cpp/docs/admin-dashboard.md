@@ -555,3 +555,5 @@ In Admin → Events, use **Petal bans** to search display names, select one rari
 The **Teams** tab offers Free for all, Me vs Everyone, Admins vs Players, and four manually assigned sides (Blue, Red, Green, Yellow). Me vs Everyone puts the acting host alone on Blue and every other participant on Red, including later entrants. Team modes enable PvP; allies cannot damage each other or their owned pets/projectiles. Teams and manual account assignments are autosaved and included in named event presets.
 
 **Use personal gear** permits saving/loading normal presets against the temporary copy of personal gear. Bans, active-slot limits and loadout locks still apply. Custom host-provided kits and public arena runs cannot overwrite saved presets.
+
+Hosted PvP toggles and live map updates preserve the current world view without a black teleport transition. Cursor teleport also skips that transition. The Arena editor's **Update** button broadcasts the current map and saves it to disk; brush edits continue to apply automatically.

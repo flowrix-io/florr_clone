@@ -473,7 +473,7 @@ bool GameServer::resolveCommandTarget(const std::string& identifier, CommandTarg
     return false;
 }
 
-void GameServer::teleportEntity(Entity entity, Vec2 position) {
+void GameServer::teleportEntity(Entity entity, Vec2 position, bool playTransition) {
     if (!world_.isAlive(entity)) return;
     if (Transform* transform = world_.tryGet<Transform>(entity)) transform->position = position;
     // Velocity and knockback are properties of where the body WAS going. A
@@ -486,7 +486,7 @@ void GameServer::teleportEntity(Entity entity, Vec2 position) {
     // worth the name exceeds. One under that distance is close enough that
     // easing to it looks better than snapping. It does hear that it was
     // teleported, as the reference's playerTeleported told it, for the iris.
-    sendTeleported(entity);
+    if(playTransition)sendTeleported(entity);
 }
 
 // ---------------------------------------------------------------------------

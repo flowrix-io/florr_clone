@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 81;
+inline constexpr std::uint16_t kProtocolVersion = 82;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -465,6 +465,7 @@ enum class ServerMessage : std::uint8_t {
                         ///< account's standing on one skin, after a VoteSkin
                         ///< or FavoriteSkin, refused or not. (Version 70.)
     AdminTools, ///< str JSON: bounded admin tools reply.
+    ArenaMapUpdate, ///< Same payload as RealmChange; update hosted tiles while preserving entities.
 };
 
 // ---------------------------------------------------------------------------
