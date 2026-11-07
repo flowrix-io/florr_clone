@@ -151,3 +151,33 @@ TEST(hosted_rarity_unban_restores_multiple_stacks_and_banned_pickups_once){
     rules["bannedRarities"]=Json::array();CHECK(event(h,host,"rules",q));CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),5);CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_basic"),3);
     alice.requestResetSkills();h.step(10,{&alice});CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),5);CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_basic"),3);
 }
+
+TEST(hosted_no_summons_blocks_every_hatcher_and_shot_summoner_and_removes_live_pets){
+    Harness h("hosted-no-summons",seed,dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient host,alice,bob;CHECK(join(h,host,alice,bob));CHECK(event(h,host,"clear"));
+    auto* a=GameServerPeer::sessionOf(h.server,"alice");CHECK(a&&a->eventKit);if(!a||!a->eventKit)return;
+    std::vector<std::string> summoners;
+    for(std::size_t i=0;i<content().petalCount();++i){
+        const auto& p=content().petal(i);
+        if(p.hatchesPets()||p.projectile.summonMobIndex!=kInvalidIndex||p.id==kSacrificePetalId){
+            summoners.push_back(p.id);a->eventKit->addItem(Rarity::Rare,"petal_"+p.id,2);
+        }
+    }
+    CHECK(std::find(summoners.begin(),summoners.end(),"egg")!=summoners.end());
+    CHECK(std::find(summoners.begin(),summoners.end(),"stick")!=summoners.end());
+    CHECK(std::find(summoners.begin(),summoners.end(),"spaceship")!=summoners.end());
+    a->eventKit->loadout.resize(kLoadoutSlots);
+    for(std::size_t i=0;i<std::min(summoners.size(),std::size_t(kLoadoutSlots));++i){StoredItem item;item.petalType=summoners[i];item.rarity=Rarity::Rare;a->eventKit->loadout[i]=item;}
+    World& world=h.server.world();const Entity pet=world.create();world.add<Pet>(pet,Pet{a->entity});world.add<Transform>(pet,world.get<Transform>(a->entity));
+    Json q=Json::object();q["rules"]=host.adminTools("event")["rules"];q["rules"]["maxRarity"]=kRarityCount-1;q["rules"]["activeSlots"]=int(kLoadoutActiveSlots);q["rules"]["noSummons"]=true;
+    CHECK(event(h,host,"rules",q));CHECK(host.adminTools("event")["ok"].asBool());CHECK(!world.isAlive(pet));
+    for(const auto& id:summoners)CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_"+id),0);
+    for(const auto& slot:a->eventKit->loadout)CHECK(!slot);
+    const Entity ritual=world.create();SacrificeRitual pending;pending.summonAtMillis=1e12;
+    world.add<SacrificeRitual>(ritual,pending);world.add<Transform>(ritual,world.get<Transform>(a->entity));
+    alice.loadLoadoutPreset(0);h.step(60,{&alice});CHECK(!world.isAlive(ritual));
+    Query<Pet> pets{world};pets.each([&](Entity,Pet& p){CHECK(p.owner!=a->entity);});
+    q["rules"]["noSummons"]=false;CHECK(event(h,host,"rules",q));
+    for(const auto& id:summoners)CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_"+id),2);
+    for(std::size_t i=0;i<std::min(summoners.size(),std::size_t(kLoadoutSlots));++i)CHECK(a->eventKit->loadout[i]);
+}
