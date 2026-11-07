@@ -16,7 +16,6 @@ TEST(chat_images_listed_hosts_and_their_subdomains_pass) {
     CHECK(chatImageUrlAllowed("https://tenor.com/view/x.gif"));
     CHECK(chatImageUrlAllowed("https://i.imgur.com/abc.png"));
     CHECK(chatImageUrlAllowed("https://media.giphy.com/media/x/giphy.gif"));
-    CHECK(chatImageUrlAllowed("https://cdn.discordapp.com/attachments/1/2/a.png?ex=1&is=2"));
     CHECK(chatImageUrlAllowed("HTTPS://MEDIA.TENOR.COM/a.gif"));
     CHECK(chatImageUrlAllowed("https://media.tenor.com:443/a.gif"));
     CHECK(chatImageUrlAllowed("https://i.imgur.com"));
@@ -28,6 +27,8 @@ TEST(chat_images_other_hosts_are_refused) {
     CHECK(!chatImageUrlAllowed("https://tenor.com.evil.example/a.gif"));
     CHECK(!chatImageUrlAllowed("https://192.168.1.1/a.png"));
     CHECK(!chatImageUrlAllowed("https://localhost/a.png"));
+    CHECK(!chatImageUrlAllowed("https://cdn.discordapp.com/attachments/1/2/a.png?ex=1&is=2"));
+    CHECK(!chatImageUrlAllowed("https://media.discordapp.net/attachments/1/2/a.png"));
 }
 
 TEST(chat_images_only_https) {
