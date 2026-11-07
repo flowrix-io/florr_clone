@@ -8,6 +8,7 @@
 #include "server/loot_eligibility.h"
 #include "server/systems/movement.h"
 #include "shared/game/npc.h"
+#include "shared/game/admin_arena.h"
 
 namespace flix {
 
@@ -507,6 +508,11 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
     // actually share and because combat has no business knowing what a
     // splitter is. A bot's connection is 0 and two bots are still enemies.
     if (oneConnection(world, sourcePlayer, victimPlayer)) return false;
+    if(sourcePlayer!=NULL_ENTITY&&victimPlayer!=NULL_ENTITY){
+        const auto* a=world.tryGet<Faction>(sourcePlayer);const auto* b=world.tryGet<Faction>(victimPlayer);
+        const auto* at=world.tryGet<Transform>(sourcePlayer);const auto* bt=world.tryGet<Transform>(victimPlayer);
+        if(a&&b&&at&&bt&&at->realm==kAdminArenaRealm&&bt->realm==kAdminArenaRealm&&a->hostedTeam>0&&a->hostedTeam==b->hostedTeam)return false;
+    }
     // A petal that ignores mobs (basil) and anything a mob does pass through
     // each other, either way round. Here rather than in each pass so a body,
     // a ring seat, a shot, a field and a shock are all one rule.

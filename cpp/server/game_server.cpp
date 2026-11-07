@@ -3453,9 +3453,9 @@ void GameServer::handleSaveLoadoutPreset(Session& session, net::Connection& conn
     const std::uint8_t preset = reader.u8();
     if (!reader.ok() || !session.authenticated()) return;
     if (preset >= kLoadoutPresetCount) return;
-    // An arena run wears a scratch ring out of a scratch bag, and that is not
-    // a loadout worth keeping on the account.
-    if (session.arena || session.eventKit) {
+    // Custom event kits and public arena kits cannot overwrite account presets.
+    // Personal-gear events may save references to their own worn petals.
+    if (session.arena || (session.eventKit && hostedArenaKit_.isObject())) {
         sendNotice(connection, net::NoticeSeverity::Warning,
                    "Saved loadouts can't be used in the arena.");
         return;
@@ -3465,8 +3465,9 @@ void GameServer::handleSaveLoadoutPreset(Session& session, net::Connection& conn
     // ring -- what the player will have back outside -- is what gets saved.
     PlayerRecord& record = database_.progress(session.userId);
     std::vector<std::optional<StoredItem>> saved(kLoadoutSlots);
-    for (std::size_t i = 0; i < saved.size() && i < record.loadout.size(); ++i) {
-        const std::optional<StoredItem>& worn = record.loadout[i];
+    for (std::size_t i = 0; i < saved.size() && i < (session.eventKit ? session.eventKit->loadout.size() : record.loadout.size()); ++i) {
+        const auto& source = session.eventKit ? *session.eventKit : record;
+        const std::optional<StoredItem>& worn = source.loadout[i];
         if (worn && !worn->petalType.empty()) saved[i] = presetItem(worn->petalType, worn->rarity);
     }
     const std::string name = loadoutPresetName(preset);
@@ -3482,26 +3483,28 @@ void GameServer::handleLoadLoadoutPreset(Session& session, net::Connection& conn
     const std::uint8_t preset = reader.u8();
     if (!reader.ok() || !session.authenticated()) return;
     if (preset >= kLoadoutPresetCount) return;
-    // Loaded against the run's bag, a preset of the account's petals would
-    // find none of them and strip the starter ring bare.
-    if (session.arena || session.eventKit) {
+    // Personal-gear events load presets against their temporary copy, then
+    // enforce current bans. Custom and public arena kits stay isolated.
+    if (session.arena || (session.eventKit && hostedArenaKit_.isObject())) {
         sendNotice(connection, net::NoticeSeverity::Warning,
                    "Saved loadouts can't be used in the arena.");
         return;
     }
     if (loadoutLockedInMaze(session)) return;
 
-    PlayerRecord& record = database_.progress(session.userId);
+    PlayerRecord& permanent = database_.progress(session.userId);
+    PlayerRecord& record = session.eventKit ? *session.eventKit : permanent;
     const std::string name = loadoutPresetName(preset);
     // A preset never saved is an empty loadout, and loads as one: every petal
     // goes back into the bag. Copied either way -- equipPreset rewrites the
     // record the preset lives in.
-    const auto saved = record.loadoutPresets.find(name);
+    const auto saved = permanent.loadoutPresets.find(name);
     const std::vector<std::optional<StoredItem>> slots =
-        saved != record.loadoutPresets.end() ? saved->second
+        saved != permanent.loadoutPresets.end() ? saved->second
                                              : std::vector<std::optional<StoredItem>>(kLoadoutSlots);
     const PresetLoad result = equipPreset(record, slots);
-    database_.markDirty();
+    if(session.eventKit){clearHostedGear(session);enforceHostedRules(session);}
+    else database_.markDirty();
 
     if (session.playing()) applyAccountToSession(session);
     sendProfile(session, connection);
@@ -6868,6 +6871,7 @@ Entity GameServer::createPlayerBody(Session& session, Realm realm, Vec2 spawn) {
     // In the ring players are hostile to each other; everywhere else they are
     // not. Petals and pets copy this Faction, so the whole kit follows.
     world_.add<Faction>(entity, Faction{Team::Players, realm == Realm::Arena || (realm == kAdminArenaRealm && hostedArenaPvp_)});
+    if(realm==kAdminArenaRealm)world_.get<Faction>(entity).hostedTeam=hostedTeamFor(session);
     if (realm == Realm::Arena) world_.add<ArenaScore>(entity);
     world_.add<PlayerInput>(entity);
     world_.add<PlayerLocation>(entity);

@@ -547,3 +547,11 @@ do not extend it; existing flood and repeat limits still apply.
 `/admin createpoll` opens a standalone creator for full admins. Choose 2–6 answers and a 10–3600 second duration. The top-center banner stays until the account votes or time expires; reconnecting cannot grant another vote. Results are in Debug → Polls, visible only to full admins.
 
 Gambling commands have been removed. Legacy chip fields remain readable so existing databases load without losing stored data. Hel remains an NPC.
+
+### Petal bans, teams and personal loadouts
+
+In Admin → Events, use **Petal bans** to search display names, select one rarity or All rarities, and add/remove restrictions. Existing ID bans remain supported. Rules apply immediately to temporary event bags and both loadout rows; normal owned inventory is preserved.
+
+The **Teams** tab offers Free for all, Me vs Everyone, Admins vs Players, and four manually assigned sides (Blue, Red, Green, Yellow). Me vs Everyone puts the acting host alone on Blue and every other participant on Red, including later entrants. Team modes enable PvP; allies cannot damage each other or their owned pets/projectiles. Teams and manual account assignments are autosaved and included in named event presets.
+
+**Use personal gear** permits saving/loading normal presets against the temporary copy of personal gear. Bans, active-slot limits and loadout locks still apply. Custom host-provided kits and public arena runs cannot overwrite saved presets.

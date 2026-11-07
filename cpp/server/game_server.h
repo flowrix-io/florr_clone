@@ -525,6 +525,9 @@ private:
     void serviceAdminPhase();
     void serviceAdminCursorActions();
     bool hostedArenaPvp_ = false;
+    Json hostedArenaTeams_ = Json::object();
+    int hostedTeamFor(const Session&) const;
+    void applyHostedTeam(Session&);
     Json hostedArenaKit_;
     Json hostedArenaRules_ = Json::object();
     void applyHostedKit(Session&);

@@ -3,6 +3,9 @@
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/menu_theme.h"
+#include "shared/game/hosted_teams.h"
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iomanip>
 #include <sstream>
@@ -12,7 +15,9 @@ namespace {
 struct Field {std::string text;TextFieldState state;};
 struct Forms {
     std::string account;
-    bool codesLoaded=false,eventLoaded=false,rulesView=false;
+    bool codesLoaded=false,eventLoaded=false;
+    int eventView=0,banRarity=-1,banOffset=0,teamOffset=0;
+    std::string banId,banSelectedName;
     int codeOffset=0,eventIndex=0,kitRarity=0;
     Field eventName{"event_name"},kitItem{"basic"},kitAmount{"1"},kitSlot{"1"};
     Field code{},reward{"100"},uses{"1"},bannedIds{};
@@ -22,8 +27,8 @@ TextStyle style(double size=13,std::uint32_t color=0xFFFFFFu) {TextStyle t;t.siz
 std::string money(double v) {std::ostringstream s;s<<std::fixed<<std::setprecision(std::floor(v)==v?0:1)<<v;return s.str();}
 void field(MenuContext& ctx,Field& f,Rect r,const std::string& placeholder,std::size_t max=32) {
     inputField(ctx.canvas,r,f.text,placeholder,f.state.focused,ctx.timeSeconds,&f.state);
-    trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);
-    if(f.state.focused){ctx.wantsText=true;TextEditOptions options;options.maxBytes=max;options.asciiOnly=true;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}
+    if(!ctx.pointerBlocked)trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);
+    if(f.state.focused){ctx.wantsText=true;TextEditOptions options;options.maxBytes=max;options.asciiOnly=false;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}
 }
 bool button(MenuContext& ctx,Rect r,const std::string& label) {chip(ctx.canvas,r,label,r.contains(ctx.mouse()),ChipStyle{0x7473B0u,0x48477Au});return ctx.clicked(r);}
 int number(const std::string& s) {if(s.empty()||s.size()>9||s.find_first_not_of("0123456789")!=std::string::npos)return -1;try{return std::stoi(s);}catch(...){return -1;}}
@@ -83,27 +88,77 @@ void renderEventRules(MenuContext& ctx,Rect p) {
                 if(!banned)selected.push(r);rules["bannedRarities"]=selected;apply();
             }
         }
-        field(ctx,forms.bannedIds,{p.x,p.y+274,p.w-214,30},"Petal IDs, comma or space separated",1024);
-        if(button(ctx,{p.right()-204,p.y+274,94,30},"Ban IDs" )||button(ctx,{p.right()-104,p.y+274,94,30},"Unban IDs")) {
-            const bool unban=ctx.mouse().x>=p.right()-104;
-            std::string input=forms.bannedIds.text;for(char& c:input)if(c==',')c=' ';
-            std::istringstream stream(input);std::string id;Json ids=rules["bannedPetals"];
-            while(stream>>id){Json next=Json::array();bool found=false;for(const auto& v:ids.items()){if(v.asString()==id){found=true;if(unban)continue;}next.push(v);}if(!found&&!unban)next.push(id);ids=next;}
-            rules["bannedPetals"]=ids;apply();
-        }
-        std::string banned="Banned IDs: ";for(const auto& id:rules["bannedPetals"].items())banned+=id.asString()+" ";
-        text(ctx.canvas,ellipsize(banned,12,p.w),p.x,p.y+326,style(12));
-        text(ctx.canvas,"Bans affect temporary bags and both loadout rows. Normal items stay saved.",p.x,p.y+350,style(12));
-        text(ctx.canvas,"Changes take effect immediately for everyone in the hosted arena.",p.x,p.y+374,style(12));
+        text(ctx.canvas,"Use Petal bans to restrict a named petal at one rarity or every rarity.",p.x,p.y+304,style(12));
+        text(ctx.canvas,"Changes affect temporary bags and both loadout rows immediately.",p.x,p.y+330,style(12));
         result(ctx,"event",{p.x,p.bottom()-28,p.w,24});
+}
+void renderPetalBans(MenuContext& ctx,Rect p) {
+    account(ctx);const auto& rules=ctx.net.adminTools("event")["rules"];
+    text(ctx.canvas,"Choose a petal by name, then one rarity or all rarities.",p.x,p.y+12,style(14));
+    field(ctx,forms.bannedIds,{p.x,p.y+34,p.w-250,32},"Search petal name",128);
+    if(forms.bannedIds.text!=forms.banSelectedName)forms.banId.clear();
+    if(button(ctx,{p.right()-240,p.y+34,28,32},"<"))forms.banRarity=forms.banRarity<0?kRarityCount-1:forms.banRarity-1;
+    text(ctx.canvas,forms.banRarity<0?"All rarities":rarityLabel(Rarity(forms.banRarity)),p.right()-204,p.y+50,style());
+    if(button(ctx,{p.right()-32,p.y+34,28,32},">"))forms.banRarity=forms.banRarity+1>=kRarityCount?-1:forms.banRarity+1;
+    const auto lower=[](std::string value){for(char& c:value)c=char(std::tolower(static_cast<unsigned char>(c)));return value;};
+    const auto search=lower(forms.bannedIds.text);int found=0;
+    if(!search.empty())for(std::uint16_t i=0;i<content().petalCount()&&found<4;++i){
+        const auto& petal=content().petal(i);if(lower(petal.name).find(search)==std::string::npos&&lower(petal.id).find(search)==std::string::npos)continue;
+        if(button(ctx,{p.x,p.y+76+found*27,p.w,25},petal.name)){forms.bannedIds.text=petal.name;forms.banSelectedName=petal.name;forms.banId=petal.id;}
+        ++found;
+    }
+    const auto update=[&](const std::string& id,int rarity,bool remove){Json q=Json::object();q["item"]=id;q["rarity"]=rarity;q["remove"]=remove;send(ctx,"event","petal_ban",q);};
+    if(button(ctx,{p.x,p.y+190,150,30},"Ban petal"))update(forms.banId.empty()?forms.bannedIds.text:forms.banId,forms.banRarity,false);
+    if(button(ctx,{p.x+160,p.y+190,150,30},"Unban petal"))update(forms.banId.empty()?forms.bannedIds.text:forms.banId,forms.banRarity,true);
+    std::vector<Json> bans;
+    for(const auto& id:rules["bannedPetals"].items()){Json ban=Json::object();ban["id"]=id;ban["rarity"]=-1;bans.push_back(ban);}
+    for(const auto& ban:rules["petalBans"].items())bans.push_back(ban);
+    const int page=std::max(1,int((p.h-302)/28));forms.banOffset=std::clamp(forms.banOffset,0,std::max(0,int(bans.size())-1));
+    text(ctx.canvas,"Banned petals: "+std::to_string(bans.size()),p.x,p.y+245,style());
+    if(button(ctx,{p.right()-82,p.y+230,36,26},"<"))forms.banOffset=std::max(0,forms.banOffset-page);
+    if(button(ctx,{p.right()-40,p.y+230,36,26},">"))if(forms.banOffset+page<int(bans.size()))forms.banOffset+=page;
+    for(int j=forms.banOffset;j<int(bans.size())&&j<forms.banOffset+page;++j){
+        const auto& ban=bans[j];const auto index=content().petalIndex(ban["id"].asString());if(index==kInvalidIndex)continue;
+        const int r=ban["rarity"].asInt(-1);const double y=p.y+264+(j-forms.banOffset)*28;
+        text(ctx.canvas,ellipsize(content().petal(index).name+" / "+(r<0?std::string("All rarities"):std::string(rarityLabel(Rarity(r)))),13,p.w-100),p.x,y+13,style());
+        if(button(ctx,{p.right()-90,y,86,25},"Remove"))update(ban["id"].asString(),r,true);
+    }
+    result(ctx,"event",{p.x,p.bottom()-26,p.w,24});
+}
+void renderEventTeams(MenuContext& ctx,Rect p) {
+    account(ctx);const auto& reply=ctx.net.adminTools("event");
+    const auto sendTeam=[&](const char* action,Json q=Json::object()){q["offset"]=forms.teamOffset;send(ctx,"event",action,q);};
+    text(ctx.canvas,"Arena teams: teammates cannot damage each other, pets or projectiles.",p.x,p.y+12,style(14));
+    const char* labels[]{"Free for all","Me vs Everyone","Admins vs Players","Manual teams"};const char* modes[]{"ffa","solo","admins","manual"};
+    for(int i=0;i<4;++i)if(button(ctx,{p.x+i*p.w/4,p.y+36,p.w/4-6,32},labels[i])){Json q=Json::object();q["mode"]=modes[i];sendTeam("team_mode",q);}
+    const auto mode=reply["teams"]["mode"].asString("ffa");std::string label="Free for all";for(int i=0;i<4;++i)if(mode==modes[i])label=labels[i];
+    text(ctx.canvas,"Current: "+label+" | Team presets enable PvP",p.x,p.y+91,style());
+    const int page=std::clamp(int((p.h-235)/38),1,6);
+    if(button(ctx,{p.right()-200,p.y+76,100,28},"Refresh"))sendTeam("list");
+    if(button(ctx,{p.right()-90,p.y+76,38,28},"<")){forms.teamOffset=std::max(0,forms.teamOffset-page);sendTeam("list");}
+    if(button(ctx,{p.right()-44,p.y+76,38,28},">")){if(forms.teamOffset+page<reply["playerCount"].asInt())forms.teamOffset+=page;sendTeam("list");}
+    text(ctx.canvas,"Arena participants: "+std::to_string(reply["playerCount"].asInt()),p.x,p.y+124,style());
+    int row=0;for(const auto& player:reply["players"].items()){
+        if(row>=page)break;
+        const double y=p.y+146+row*38;const int team=std::clamp(player["team"].asInt(),0,4);
+        text(ctx.canvas,ellipsize(player["name"].asString()+" / "+kHostedTeamNames[team],13,p.w-330),p.x,y+16,style());
+        for(int n=1;n<=4;++n)if(button(ctx,{p.right()-320+(n-1)*80,y,74,30},kHostedTeamNames[n])){Json q=Json::object();q["player"]=player["id"];q["team"]=n;sendTeam("team_assign",q);}
+        ++row;
+    }
+    text(ctx.canvas,"Me vs Everyone puts only you on Blue; current and future guests join Red.",p.x,p.bottom()-62,style(12));
+    text(ctx.canvas,"Manual assignments survive respawning, reconnecting and saved events.",p.x,p.bottom()-42,style(12));
+    result(ctx,"event",{p.x,p.bottom()-26,p.w,24});
 }
 void renderEventSetup(MenuContext& ctx,Rect p) {
     account(ctx);const auto sendEvent=[&](const char* action,Json q=Json::object()){send(ctx,"event",action,q);};
     if(!forms.eventLoaded){forms.eventLoaded=true;sendEvent("list");}
     const auto& reply=ctx.net.adminTools("event");const auto& events=reply["events"];
-    if(button(ctx,{p.right()-168,p.y+72,158,28},forms.rulesView?"Inventory / presets":"Event restrictions"))forms.rulesView=!forms.rulesView;
-    if(button(ctx,{p.x+330,p.y+72,110,28},"Refresh"))sendEvent("list");
-    if(forms.rulesView){renderEventRules(ctx,p);return;}
+    const char* tabs[]{"Inventory / presets","General rules","Petal bans","Teams"};
+    for(int i=0;i<4;++i)if(button(ctx,{p.x+i*p.w/4,p.y,p.w/4-6,30},tabs[i]))forms.eventView=i;
+    p.y+=40;p.h-=40;
+    if(forms.eventView==1){renderEventRules(ctx,p);return;}
+    if(forms.eventView==2){renderPetalBans(ctx,p);return;}
+    if(forms.eventView==3){renderEventTeams(ctx,p);return;}
     text(ctx.canvas,"Saved events include the map, themes, PvP setting and temporary kit.",p.x,p.y+10,style());
     field(ctx,forms.eventName,{p.x,p.y+30,230,32},"Event name");
     for(int i=0;i<3;++i){const char* labels[]{"Save event","Load event","Delete event"};const char* actions[]{"save","load","delete"};if(button(ctx,{p.x+240+i*140,p.y+30,130,32},labels[i])){Json q=Json::object();q["name"]=forms.eventName.text;sendEvent(actions[i],q);}}
@@ -131,14 +186,14 @@ void renderEventSetup(MenuContext& ctx,Rect p) {
     text(ctx.canvas,"Configured loadout",p.x,p.y+270,style(12));
     const auto& slots=reply["kit"]["loadout"];
     if(slots.isArray())for(std::size_t i=0;i<slots.size()&&i<20;++i) {
-        const double x=p.x+(i%10)*(p.w/10),y=p.y+285+(i/10)*40;
+        const double x=p.x+(i%10)*(p.w/10),y=p.y+(p.h<430?274:285)+(i/10)*(p.h<430?18:40);
         const std::string item=slots[i]["petalType"].asString();
         text(ctx.canvas,std::to_string(i+1)+": "+(item.empty()?"-":item.substr(0,7)),x,y+14,style(10));
     }
     double bagCount=reply["kit"]["inventory"][rarityName(Rarity(forms.kitRarity))]["petal_"+forms.kitItem.text].asDouble();
     if(reply["kit"]["loadoutInInventory"].asBool())for(const auto& slot:slots.items())
         if(slot["petalType"].asString()==forms.kitItem.text && slot["rarity"].asString()==rarityName(Rarity(forms.kitRarity)))bagCount=std::max(0.0,bagCount-1);
-    text(ctx.canvas,"Bag: "+money(bagCount)+" x "+rarityLabel(Rarity(forms.kitRarity))+" "+forms.kitItem.text,p.x,p.bottom()-70,style(12));
+    if(p.h>=430)text(ctx.canvas,"Bag: "+money(bagCount)+" x "+rarityLabel(Rarity(forms.kitRarity))+" "+forms.kitItem.text,p.x,p.bottom()-70,style(12));
     text(ctx.canvas,"Event gear and event earnings are discarded on exit. Normal gear stays saved.",p.x,p.bottom()-46,style(12));
     result(ctx,"event",{p.x,p.bottom()-28,p.w,24});
 }
