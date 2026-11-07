@@ -2032,7 +2032,8 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // verbatim with the TypeScript build, which read its overrides from
     // TypeScript; they have stayed in code since.
     s.count = c.count;
-    if (c.id == "light" || c.id == "pollen" || c.id == "stinger") {
+    const bool lightCount = c.id == "light" || c.id == "glitch_light";
+    if (lightCount || c.id == "pollen" || c.id == "stinger") {
         static constexpr std::array<int, kLadderRarityCount> kLightCount = {
             1, 2, 2, 3, 3, 5, 5, 5, 5, 5,
         };
@@ -2043,7 +2044,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
             1, 1, 1, 1, 1, 3, 5, 5, 5, 7,
         };
         const auto t = static_cast<std::size_t>(rarityIndex(tier));
-        s.count = c.id == "light" ? kLightCount[t] : c.id == "pollen" ? kPollenCount[t] : kStingerCount[t];
+        s.count = lightCount ? kLightCount[t] : c.id == "pollen" ? kPollenCount[t] : kStingerCount[t];
     }
     // A stinger clump SPLITS its slot's damage rather than multiplying it: the
     // slot as a whole stays on the plain 3x ladder, shared evenly among however
