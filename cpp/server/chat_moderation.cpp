@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <utility>
+#include <cstring>
 #include <vector>
 
 namespace flix {
@@ -55,6 +56,17 @@ constexpr Listed kBlocked[] = {
     {"blowjob", Fit::Inside},   {"handjob", Fit::Inside},  {"milf", Fit::Whole},
     {"rape", Fit::Whole},       {"raped", Fit::Whole},     {"raping", Fit::Whole},
     {"rapist", Fit::Whole},
+    {"semen", Fit::Whole},      {"sperm", Fit::Whole},     {"ejaculate", Fit::Start},
+    {"ejaculation", Fit::Whole},{"masturbat", Fit::Start}, {"orgasm", Fit::Start},
+    {"penis", Fit::Whole},      {"vagina", Fit::Whole},    {"testicle", Fit::Whole},
+    {"scrotum", Fit::Whole},    {"clitoris", Fit::Whole},  {"clit", Fit::Whole},
+    {"fap", Fit::Whole},        {"hentai", Fit::Whole},    {"pornography", Fit::Whole},
+    {"cumming", Fit::Whole},    {"cummed", Fit::Whole},    {"cumdump", Fit::Start},
+    {"cumbucket", Fit::Whole},  {"cumslut", Fit::Whole},   {"deepthroat", Fit::Start},
+    {"rimjob", Fit::Whole},     {"gangbang", Fit::Start},  {"bukkake", Fit::Whole},
+    {"buttplug", Fit::Whole},   {"buttfuck", Fit::Inside}, {"dickface", Fit::Whole},
+    {"dickwad", Fit::Whole},    {"dickbag", Fit::Whole},   {"cocksuck", Fit::Start},
+    {"shithead", Fit::Whole},   {"shitface", Fit::Start},  {"dipshit", Fit::Whole},
     // Slurs.
     {"nigger", Fit::Inside},    {"nigga", Fit::Inside},    {"faggot", Fit::Inside},
     {"fagot", Fit::Whole},      {"fag", Fit::Whole},       {"dyke", Fit::Whole},
@@ -66,7 +78,15 @@ constexpr Listed kBlocked[] = {
     {"nignog", Fit::Inside},    {"negroid", Fit::Whole},
     {"zipperhead", Fit::Inside}, {"porchmonkey", Fit::Inside},
     {"shemale", Fit::Whole},    {"mongoloid", Fit::Whole},
+    {"niglette", Fit::Inside},  {"niglets", Fit::Inside},  {"nigg", Fit::Whole},
+    {"nig", Fit::Whole},        {"niggah", Fit::Whole},    {"nigguh", Fit::Whole},
+    {"fagg", Fit::Whole},       {"faggit", Fit::Whole},    {"faggy", Fit::Whole},
+    {"faggotry", Fit::Whole},   {"retarded", Fit::Whole},  {"tard", Fit::Whole},
+    {"libtard", Fit::Whole},    {"cuck", Fit::Whole},      {"cuckold", Fit::Whole},
+    {"chinky", Fit::Whole},     {"chinaman", Fit::Whole},  {"darkie", Fit::Whole},
+    {"darky", Fit::Whole},      {"redskin", Fit::Whole},   {"sandnigger", Fit::Whole},
     // Harassment.
+    {"killurself", Fit::Whole}, {"killyourselfirl", Fit::Whole},
     {"kys", Fit::Whole},        {"killyourself", Fit::Inside},
 };
 
@@ -161,7 +181,7 @@ struct StandIn {
 };
 constexpr StandIn kStandIns[] = {
     {'0', "o"}, {'1', "il"}, {'3', "e"}, {'4', "a"}, {'5', "s"}, {'7', "t"}, {'8', "b"},
-    {'9', "g"}, {'@', "a"},  {'$', "s"}, {'!', "i"}, {'|', "il"},
+    {'2', "zs"}, {'6', "gb"}, {'9', "g"}, {'+', "t"}, {'@', "a"},  {'$', "s"}, {'!', "i"}, {'|', "il"},
     {0x00A1, "i"},  // ¡
     {0x20AC, "e"},  // €
 };
@@ -184,6 +204,7 @@ constexpr Range kHidden[] = {
     {0x115F, 0x1160}, {0x17B4, 0x17B5}, {0x180B, 0x180F}, {0x1AB0, 0x1AFF},
     {0x1DC0, 0x1DFF}, {0x200B, 0x200F}, {0x202A, 0x202E}, {0x2060, 0x206F},
     {0x20D0, 0x20FF}, {0xFE00, 0xFE0F}, {0xFE20, 0xFE2F}, {0xFEFF, 0xFEFF},
+    {0xFFF9, 0xFFFB},
     {0x1D173, 0x1D17A}, {0xE0000, 0xE0FFF},
 };
 
@@ -318,6 +339,20 @@ std::vector<Drawn> drawnCharacters(const std::string& source, bool links) {
             continue;
         }
         for (std::size_t at = 0; at < span.text.size();) {
+            struct Glyph { const char* text; const char* reads; };
+            static constexpr Glyph glyphs[] = {
+                {"|-|","h"}, {"|_|","u"}, {"|<","k"}, {"|{","k"},
+                {"|)","d"}, {"|3","b"}, {"|2","r"}, {"/\\","a"}, {"\\/","uv"},
+            };
+            bool glyph=false;
+            for(const auto& g:glyphs) {
+                const auto size=std::strlen(g.text);
+                if(span.text.compare(at,size,g.text)!=0)continue;
+                Cell cell;cell.standIn=true;
+                for(const char* c=g.reads;*c;++c)cell.letters|=letter(*c);
+                drawn.push_back({Kind::Letter,cell});at+=size;glyph=true;break;
+            }
+            if(glyph)continue;
             std::size_t length = 1;
             const std::uint32_t codePoint = decodeAt(span.text, at, length);
             Drawn character{Kind::Mark, {}};
@@ -509,6 +544,65 @@ const char* findBlocked(const std::string& source, bool links) {
             });
             if (found) return listed.word;
         }
+        if(word.cells.size()<4)continue;
+        Word reversed;
+        reversed.cells.assign(word.cells.rbegin(),word.cells.rend());
+        for(const Listed& listed:kBlocked) {
+            // Reversing "tard" would also ban the ordinary exclamation "drat".
+            if(std::strlen(listed.word)<4 || std::strcmp(listed.word,"tard")==0)continue;
+            const Listed whole{listed.word,Fit::Whole};
+            if(findListed(reversed,whole,[](std::size_t,std::size_t){return true;}))return listed.word;
+        }
+    }
+    return nullptr;
+}
+
+const char* findBlockedChinese(const std::string& source,bool links) {
+    static constexpr const char* phrases[]={
+        "傻逼","傻比","傻屄","煞笔","煞筆","操你妈","操你媽","肏你妈","肏你媽",
+        "草你妈","草你媽","艹你妈","艹你媽","你妈逼","你媽逼","你妈的","你媽的",
+        "他妈的","他媽的","去你妈","去你媽","狗日的","王八蛋","婊子","贱人","賤人",
+        "鸡巴","雞巴","鸡吧","雞吧","龟头","龜頭","精液","阴茎","陰莖",
+        "阴道","陰道","淫荡","淫蕩","肛交","口交","性交","肉棒",
+    };
+    MarkupOptions options;options.links=links;
+    std::vector<std::uint32_t> text;
+    bool hasHan=false;
+    for(const auto& span:parseMarkup(source,options)) {
+        if(span.lineBreak||!span.image.empty()){text.push_back(0xFFFD);continue;}
+        for(std::size_t at=0;at<span.text.size();) {
+            std::size_t length=1;const auto cp=decodeAt(span.text,at,length);at+=length;
+            if(within(cp,kHidden))continue;
+            hasHan=hasHan || (cp>=0x3400 && cp<=0x9FFF);
+            Cell cell;const Kind kind=read(cp,cell);
+            if(within(cp,kGaps)|| (kind==Kind::Mark && (cp<0x80 ||
+                (cp>=0x2000&&cp<=0x206F)||(cp>=0x3000&&cp<=0x303F)||
+                (cp>=0xFF01&&cp<=0xFF65))))text.push_back(0);
+            else text.push_back(cp);
+        }
+    }
+    if(!hasHan)return nullptr;
+    // Patterns are decoded once, instead of allocating/decoding for every line.
+    static const auto patterns=[] {
+        std::vector<std::vector<std::uint32_t>> result;
+        for(const char* phrase:phrases) {
+            std::vector<std::uint32_t> pattern;const std::string value=phrase;
+            for(std::size_t at=0;at<value.size();){std::size_t size=1;pattern.push_back(decodeAt(value,at,size));at+=size;}
+            result.push_back(std::move(pattern));
+        }
+        return result;
+    }();
+    for(std::size_t i=0;i<text.size();++i)for(std::size_t p=0;p<patterns.size();++p) {
+        const auto& pattern=patterns[p];if(text[i]!=pattern.front())continue;
+        const auto matches=[&]() {
+            std::size_t at=i;
+            for(std::size_t c=0;c<pattern.size();++c) {
+                int skipped=0;while(at<text.size()&&text[at]==0&&skipped++<3)++at;
+                if(at>=text.size()||text[at++]!=pattern[c])return false;
+            }
+            return true;
+        };
+        if(matches())return phrases[p];
     }
     return nullptr;
 }
@@ -518,6 +612,7 @@ const char* findBlocked(const std::string& source, bool links) {
 std::string blockedWordIn(const std::string& line) {
     for (const bool links : {true, false}) {
         if (const char* word = findBlocked(line, links)) return word;
+        if (const char* word = findBlockedChinese(line, links)) return word;
     }
     return {};
 }

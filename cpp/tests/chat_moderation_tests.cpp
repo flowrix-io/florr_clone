@@ -211,3 +211,40 @@ TEST(additional_slurs_are_blocked_including_disguised_and_chunked_forms) {
     for (const char* line : {"Nigeria", "Niger", "night light", "zipper", "monkey", "Mongolia"})
         CHECK(!blocked(line));
 }
+
+TEST(expanded_chat_filter_covers_sexual_language_slurs_and_harassment) {
+    for(const char* line:{"semen","s3m3n","s e m e n","se.men","SPERM","masturbating",
+        "orgasms","cumdumpster","deepthroat","niglet","n1g13t","niggah","faggit",
+        "kill ur self","dickwad","shithead","hentai","penis","vaginas"})CHECK(blocked(line));
+    for(const char* line:{"basement","semenov","semenova","semester","assessment","Nigel",
+        "Nigeria","Niger","grapes","peninsula","classical music"}) {
+        CHECK_EQ(blockedWordIn(line),std::string());
+    }
+}
+TEST(chat_filter_ignores_hidden_unicode_and_recognizes_backwards_and_glyph_leet) {
+    for(const char* line:{u8"s\u200Ce\u200Cm\u200Ce\u200Cn",u8"n\u034Fig\u2060let",
+        u8"s\U000E0100emen","s&#x200c;emen","s<b>3</b>m3n","kcuf","tihs","n3m3s",
+        u8"\u202Ekcuf",u8"\u2067kcuf\u2069","fu|<", "b!+ch","5h!+"}) {
+        CHECK(blocked(line)||chatLineReversesText(line));
+    }
+    for(const char* line:{"desserts","parts","level","100% at 1.5x, +1, c++","I have 455 coins",
+        "a scaffold","kernel","skeleton","hello 200c","drat","drats"})CHECK(!blocked(line));
+}
+TEST(chinese_chat_filter_handles_traditional_simplified_and_obfuscation) {
+    for(const char* line:{u8"你是傻逼",u8"傻 比",u8"傻\u200C逼",u8"操你妈",u8"操你媽",
+        "&#31934;&#28082;",u8"精液",u8"陰莖",u8"他<b>媽</b>的",u8"鸡.巴",u8"王八蛋",u8"婊子"})CHECK(blocked(line));
+    for(const char* line:{u8"你好大家一起玩",u8"这是妈妈的花",u8"去操场玩",u8"干净的地图",
+        u8"中文聊天没问题",u8"游戏角色和技能",u8"鸡蛋炒饭",u8"乌龟和小鸟",u8"我在学习中文"})CHECK(!blocked(line));
+}
+
+TEST(chat_filter_applies_obfuscation_rules_across_the_expanded_dictionary) {
+    for(const char* raw:{"fuck","shit","bitch","niglet","nigger","faggot","semen","sperm",
+        "orgasm","dildo","blowjob","hentai","masturbation","dickwad","shithead","cumslut","retard","kys"}) {
+        const std::string word=raw;
+        for(const char* separator:{u8"\u200C",u8"\u2060",u8"\uFEFF","."," "}) {
+            std::string dressed;
+            for(char c:word){if(!dressed.empty())dressed+=separator;dressed+=c;}
+            CHECK(blocked(dressed));
+        }
+    }
+}

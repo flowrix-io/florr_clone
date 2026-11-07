@@ -26,7 +26,10 @@
 //    "poorness" holds no "porn", and "as" is never "ass";
 //  * punctuation and invisible characters inside a word: "f.u.c.k",
 //    "fu-ck", a zero-width space;
-//  * a word spelled out a letter at a time: "f u c k".
+//  * a word spelled out a letter at a time: "f u c k";
+//  * whole backwards tokens and multi-glyph leet substitutions;
+//  * explicit Chinese phrases, simplified/traditional, with hidden characters
+//    and short separator runs removed. Ordinary Chinese remains allowed.
 //
 // Each listed word says how much of a word it must be, which is what keeps
 // "class", "assassin", "Scunthorpe", "grape" and "therapist" out of it; the

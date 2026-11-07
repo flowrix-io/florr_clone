@@ -1440,12 +1440,12 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         // not a line in a stream, so the spam checks have nothing to say
         // about it -- and the rate limit below still bounds a burst.
         const std::string said = escapedMarkup(rest);
-        if (!blockedWordIn(said).empty()) {
-            out("Announcement not sent: it contains a word that is not allowed in chat.");
-            return;
-        }
         if (chatLineReversesText(said)) {
             out("Announcement not sent: it contains invisible characters that reverse text.");
+            return;
+        }
+        if (!blockedWordIn(said).empty()) {
+            out("Announcement not sent: it contains a word that is not allowed in chat.");
             return;
         }
         // Billed as a line said to other players, which is what it is, the

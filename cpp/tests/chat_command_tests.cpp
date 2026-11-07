@@ -2826,6 +2826,10 @@ TEST(a_line_with_a_blocked_word_reaches_nobody_and_the_speaker_is_told) {
     CHECK_EQ(bob.chat().size(), bobBefore);
     CHECK(!sawText(alice, "f.u.c.k"));
 
+    for(const char* message:{u8"s\u200Cemen",u8"傻\u200C逼","n1g13t","kcuf"}) {
+        CHECK(say(h,alice,message));h.step(4,{&alice,&bob});CHECK_EQ(bob.chat().size(),bobBefore);
+        CHECK(say(h,alice,std::string("/w bob ")+message));h.step(4,{&alice,&bob});CHECK_EQ(bob.chat().size(),bobBefore);
+    }
     // And a clean line still gets through.
     alice.sendChat("good game");
     CHECK(h.stepUntil({&alice, &bob}, [&] { return bob.chat().size() > bobBefore; }, 120));
