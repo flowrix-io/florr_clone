@@ -483,7 +483,7 @@ void App::drawWaveHud(Canvas& canvas, double time) {
     text(canvas, waveBiomeInfo(wave.biome).label, middle, y + biomeStyle.size * 0.5, biomeStyle);
     y += biomeStyle.size + 4.0 * kWaveUi;
 
-    // The server reports five times a second and the bar moves two pixels a
+    // The server reports five times a second and the bar moves a few pixels a
     // second, so this is only to slide it down when a new wave resets it.
     const double dt = std::clamp(time - waveGaugeAt_, 0.0, 0.25);
     waveGaugeAt_ = time;
@@ -514,12 +514,11 @@ void App::drawWaveHud(Canvas& canvas, double time) {
     canvas.moveTo(static_cast<float>(left), static_cast<float>(lineY));
     canvas.lineTo(static_cast<float>(left + gaugeWidth), static_cast<float>(lineY));
     canvas.stroke();
-    if (wave.length > 0.0) {
-        if (waveGaugeTimer_ > 0.0) {
-            bar(waveGaugeTimer_ / wave.length, 0.75, waveBiomeInfo(wave.biome).gaugeColor);
-        }
-        if (waveGaugeRed_ > 0.0) bar(waveGaugeRed_ / wave.length, 0.6, 0xE32933u);
+    const double length = waveLength(wave.wave);
+    if (waveGaugeTimer_ > 0.0) {
+        bar(waveGaugeTimer_ / length, 0.75, waveBiomeInfo(wave.biome).gaugeColor);
     }
+    if (waveGaugeRed_ > 0.0) bar(waveGaugeRed_ / length, 0.6, 0xE32933u);
     canvas.restore();
     TextStyle gaugeStyle;
     gaugeStyle.size = gaugeHeight * 0.65;

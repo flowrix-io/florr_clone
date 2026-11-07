@@ -1891,7 +1891,6 @@ void NetClient::handleWaveState(ByteReader& reader) {
     wave.wave = reader.u16();
     wave.timer = reader.f32();
     wave.redTimer = reader.f32();
-    wave.length = reader.f32();
     const std::uint16_t groups = reader.u16();
     if (!reader.ok() || phase > static_cast<std::uint8_t>(WavePhase::Ended) ||
         biome >= static_cast<std::uint8_t>(WaveBiome::Count)) {

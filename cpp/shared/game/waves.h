@@ -3,11 +3,15 @@
 // (~/flooooio/Sources/server/internal/wave: wave_mob_spawner.go, wave_pool.go).
 //
 // A party fights on a disc. Each wave spends a budget of points on mobs drawn
-// from the biome's table, at a rarity that climbs with the wave number. When
-// the wave's clock runs out and more than four mobs are left, a red clock runs
-// the same length with no more spawning; either way the next wave then starts
-// and everyone who died gets up beside somebody still standing. Nobody standing
-// is game over.
+// from the biome's table, at a rarity that climbs with the wave number. A wave
+// lasts 60 seconds, longer from wave 11, and ends at once when its budget is
+// spent and two mobs or fewer are left. When the clock runs out and more than
+// four are left, a red clock runs the same length with no more spawning. Either way the next wave
+// then starts and everyone who died gets up beside somebody still standing.
+// Nobody standing is game over.
+//
+// Where this differs from flooooio, by request (2026-11-07): its clock runs at
+// 0.48 of real time, and it has no early end.
 //
 // This file is the rules, with no server in them: GameServer (server/waves.cpp)
 // owns the rift, the flowers and the mobs.
@@ -50,22 +54,23 @@ inline const WaveBiomeInfo& waveBiomeInfo(WaveBiome biome) {
 /// standing; the rift has closed and the last flowers are on GAME OVER.
 enum class WavePhase : std::uint8_t { Idle = 0, Open, Playing, Ended };
 
-/// flooooio steps its wave data at 30 Hz (DataUpdatePerSec), and every number
-/// below is per one of those steps. Note the clock's step: 0.016 a step is 0.48
-/// a real second, so a 60 "second" wave takes 125 real seconds. That is
-/// flooooio's pacing as it plays, and it is kept.
+/// flooooio steps its wave data at 30 Hz (DataUpdatePerSec), and the spawner's
+/// numbers are per one of those steps.
 inline constexpr double kWaveStepsPerSecond = 30.0;
 inline constexpr double kWaveStepMillis = 1000.0 / kWaveStepsPerSecond;
-inline constexpr double kWaveClockPerStep = 0.016;
 /// A wave ends in the red only with more than this many mobs still up.
 inline constexpr int kWaveRedMobCount = 4;
+/// A wave with all its mobs out and this few left is over, whatever its clock
+/// says.
+inline constexpr int kWaveClearedMobCount = 2;
 /// No spawn closer than this to a living flower (plus its radius), nor this
 /// close to the disc's edge.
 inline constexpr double kWaveSpawnSafety = 300.0;
 /// Where a flower that died gets up: within this of a living one.
 inline constexpr double kWaveReviveDistance = 200.0;
 
-/// The length of a wave on the wave clock: CalculateWaveLength.
+/// How long a wave is, and its red clock if it needs one, in real seconds:
+/// CalculateWaveLength, 60 up to wave 10 and growing slowly after.
 double waveLength(int wave);
 
 /// The rarity a mob of this wave rolls: pickRandomRarity, then mobSpawnEndAfter
@@ -89,6 +94,9 @@ public:
     std::optional<WaveMob> step(WaveBiome biome, int wave, Rng& rng);
 
     int points() const { return points_; }
+    /// Every mob of this wave has been handed out. Until then, an empty disc only
+    /// means the wave has barely started.
+    bool finished() const { return points_ == 0 && queue_.empty(); }
     bool special() const { return group_ >= 0; }
 
 private:

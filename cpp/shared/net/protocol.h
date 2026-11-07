@@ -471,7 +471,7 @@ enum class ServerMessage : std::uint8_t {
                     ///< hears when it opens or closes; a join restates it.
                     ///< (Version 83.)
     WaveState,      ///< u8 phase(WavePhase), u8 biome(WaveBiome), u16 wave,
-                    ///< f32 timer, f32 redTimer, f32 waveLength, u16 groups,
+                    ///< f32 timer, f32 redTimer, u16 groups,
                     ///< { u16 mobIndex, u8 rarity, u16 count }*. Five times a
                     ///< second to the flowers in the waves realm, and once as
                     ///< one arrives. (Version 83.)

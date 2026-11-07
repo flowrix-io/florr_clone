@@ -472,13 +472,16 @@ also shows as a black dot on that map's minimap.
 
 Stand on it for a second, as on any teleporter, and you are on a disc of radius
 1500 in a realm of its own. The first flower through starts wave 1. The rules
-are flooooio's (`shared/game/waves.h`): each wave spends 10 points per wave
-number on the biome's mobs, at a rarity that climbs with the wave; from wave 15,
-15% of waves are special, one mob family in a swarm. When the wave's clock runs
-out with more than 4 mobs up, a red clock runs the same length with no more
-spawns. Then the next wave starts. Whoever died watches the nearest thing still
-up, and gets up beside a survivor at the next wave. Nobody standing is GAME OVER,
-which closes the rift. Mobs pay XP and drop petals as they do anywhere else.
+are flooooio's, with the timing changes noted in `shared/game/waves.h`: each
+wave spends 10 points per wave number on the biome's mobs, at a rarity that
+climbs with the wave; from wave 15, 15% of waves are special, one mob family in
+a swarm. A wave lasts 60 seconds up to wave 10 and grows slowly after (67 at
+wave 30, 77 at wave 100). It ends at once when all its mobs have spawned and 2
+or fewer are left. When the clock runs out with more than 4 mobs up, a red clock
+runs as long again with no more spawns. Then the next wave starts. Whoever died
+watches the nearest thing still up, and gets up beside a survivor at the next
+wave. Nobody standing is GAME OVER, which closes the rift. Mobs pay XP and drop
+petals as they do anywhere else.
 
 Leaving with the Exit button goes to the title screen, as anywhere. The rift
 stays open until GAME OVER or `/admin stop_waves`, which closes it, clears the

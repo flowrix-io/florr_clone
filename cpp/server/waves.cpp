@@ -305,9 +305,19 @@ void GameServer::spawnWaveMob(const WaveMob& mob, double nowMillis) {
         if (spawning_->spawnMob(world_, *terrain_, content(), index, mob.rarity, spot, kWavesRealm,
                                 nowMillis, rng_) != NULL_ENTITY) {
             ++waves_.mobs;
+            waves_.spawnedSinceSurvey = true;
         }
         return;
     }
+}
+
+void GameServer::startNextWave(double nowMillis) {
+    reviveWaveFlowers(nowMillis);
+    waves_.red = false;
+    waves_.redTimer = 0.0;
+    waves_.timer = 0.0;
+    waves_.wave = std::min(waves_.wave + 1, 65535);
+    waves_.spawner.next(waves_.biome, waves_.wave, rng_);
 }
 
 void GameServer::stepWaveClock(double nowMillis) {
@@ -316,22 +326,25 @@ void GameServer::stepWaveClock(double nowMillis) {
             spawnWaveMob(*mob, nowMillis);
         }
     }
+    // The count is only trusted once it has seen the last spawn: spawning adds
+    // one to it, and a centipede is ten bodies.
+    if (waves_.spawner.finished() && !waves_.spawnedSinceSurvey &&
+        waves_.mobs <= kWaveClearedMobCount) {
+        startNextWave(nowMillis);
+        return;
+    }
+    const double step = 1.0 / kWaveStepsPerSecond;
     const double length = waveLength(waves_.wave);
     if (waves_.timer < length) {
-        waves_.timer = std::min(length, waves_.timer + kWaveClockPerStep);
+        waves_.timer = std::min(length, waves_.timer + step);
         return;
     }
     if (waves_.redTimer < length && waves_.mobs > kWaveRedMobCount) {
         waves_.red = true;
-        waves_.redTimer = std::min(length, waves_.redTimer + kWaveClockPerStep);
+        waves_.redTimer = std::min(length, waves_.redTimer + step);
         return;
     }
-    reviveWaveFlowers(nowMillis);
-    waves_.red = false;
-    waves_.redTimer = 0.0;
-    waves_.timer = 0.0;
-    waves_.wave = std::min(waves_.wave + 1, 65535);
-    waves_.spawner.next(waves_.biome, waves_.wave, rng_);
+    startNextWave(nowMillis);
 }
 
 void GameServer::spectateWaves(double nowMillis) {
@@ -396,6 +409,7 @@ void GameServer::surveyWaves(double nowMillis) {
         if (count < 65535) ++count;
     });
     waves_.mobs = mobs;
+    waves_.spawnedSinceSurvey = false;
     waves_.groups.clear();
     for (const auto& group : groups) {
         if (waves_.groups.size() >= kWaveMaxIconGroups) break;
@@ -525,7 +539,6 @@ void GameServer::sendWaveState(Session& session) {
     w.u16(static_cast<std::uint16_t>(waves_.wave));
     w.f32(static_cast<float>(waves_.timer));
     w.f32(static_cast<float>(waves_.redTimer));
-    w.f32(static_cast<float>(waveLength(waves_.wave)));
     w.u16(static_cast<std::uint16_t>(waves_.groups.size()));
     for (const WaveRun::Group& group : waves_.groups) {
         w.u16(group.mobIndex);

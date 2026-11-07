@@ -554,6 +554,7 @@ private:
     void standUpWaveFlower(Session&, double nowMillis);
     void reviveWaveFlowers(double nowMillis);
     void spawnWaveMob(const WaveMob&, double nowMillis);
+    void startNextWave(double nowMillis);
     void stepWaveClock(double nowMillis);
     void spectateWaves(double nowMillis);
     void surveyWaves(double nowMillis);
@@ -582,6 +583,7 @@ private:
         double nextSurveyMillis = 0.0;
         /// Every body on the disc at the last survey, plus what has spawned since.
         int mobs = 0;
+        bool spawnedSinceSurvey = false;
         std::vector<Group> groups;
         bool riftOpen = false;
         Realm riftRealm = Realm::Overworld;

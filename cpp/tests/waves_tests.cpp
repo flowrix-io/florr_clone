@@ -65,6 +65,20 @@ int mobsOnTheDisc(World& world) {
     return mobs;
 }
 
+/// Kills every mob on the disc but the first `keep` of them.
+void killMobsLeaving(Harness& h, int keep) {
+    World& world = h.server.world();
+    std::vector<Entity> mobs;
+    Query<MobTag, Transform> query{world};
+    query.without<Dead>();
+    query.each([&](Entity e, MobTag&, Transform& at) {
+        if (at.realm == kWavesRealm) mobs.push_back(e);
+    });
+    for (std::size_t i = static_cast<std::size_t>(keep); i < mobs.size(); ++i) {
+        world.add<Dead>(mobs[i], Dead{NULL_ENTITY});
+    }
+}
+
 bool heardRiftLine(const NetClient& client) {
     for (const auto& line : client.chat()) {
         if (line.text.find("A Mysterious rift has opened!") != std::string::npos) return true;
@@ -76,11 +90,16 @@ bool heardRiftLine(const NetClient& client) {
 
 // -- the rules --------------------------------------------------------------
 
-TEST(a_wave_is_a_minute_on_its_clock_until_its_number_makes_it_longer) {
+TEST(a_wave_is_a_minute_until_wave_ten_then_keeps_growing) {
     CHECK_EQ(waveLength(1), 60.0);
     CHECK_EQ(waveLength(10), 60.0);
-    CHECK(waveLength(30) > 60.0);
-    CHECK(waveLength(100) > waveLength(30));
+    double previous = waveLength(10);
+    for (int wave = 11; wave <= 500; ++wave) {
+        CHECK(waveLength(wave) > previous);
+        previous = waveLength(wave);
+    }
+    CHECK(std::abs(waveLength(30) - 67.3) < 0.1);
+    CHECK(std::abs(waveLength(100) - 77.5) < 0.1);
 }
 
 TEST(a_wave_spends_ten_points_a_wave_on_mobs_the_game_has) {
@@ -306,7 +325,6 @@ TEST(standing_on_the_rift_takes_a_flower_to_the_disc_and_starts_the_first_wave) 
     CHECK_EQ(alice.wave().wave, 1);
     CHECK(alice.wave().phase == WavePhase::Playing);
     CHECK(alice.wave().biome == WaveBiome::Garden);
-    CHECK_EQ(alice.wave().length, 60.0);
     const Vec2 arrived = h.server.world().get<Transform>(body).position;
     CHECK(distance(arrived, kWavesCentre) <= kWavesRadius);
     // The rift stays for whoever else is on the way.
@@ -341,8 +359,7 @@ TEST(a_wave_goes_red_over_a_crowd_then_ends_whatever_is_left) {
     auto& run = GameServerPeer::waves(h.server);
     CHECK(h.stepUntil({&boss}, [&] { return run.mobs > kWaveRedMobCount; }, 600));
 
-    const double length = waveLength(run.wave);
-    run.timer = length;
+    run.timer = waveLength(run.wave);
     h.step(10, {&boss});
     CHECK(run.red);
     CHECK_EQ(run.wave, 10);
@@ -353,7 +370,7 @@ TEST(a_wave_goes_red_over_a_crowd_then_ends_whatever_is_left) {
     CHECK_EQ(run.spawner.points(), points);
     CHECK(h.stepUntil({&boss}, [&] { return boss.wave().redTimer > 0.0; }));
 
-    run.redTimer = length;
+    run.redTimer = waveLength(run.wave);
     CHECK(h.stepUntil({&boss}, [&] { return run.wave == 11; }, 20));
     CHECK(!run.red);
     CHECK_EQ(run.redTimer, 0.0);
@@ -361,8 +378,32 @@ TEST(a_wave_goes_red_over_a_crowd_then_ends_whatever_is_left) {
     CHECK_EQ(run.spawner.points() > 0, true);
 }
 
-TEST(a_wave_ends_on_time_when_the_disc_is_clear) {
-    Harness h("waves-clear", seedWaves, dataDir(), 0);
+TEST(a_wave_lasts_its_length_in_real_seconds) {
+    // Wave 30, where the length has grown past the minute.
+    Harness h("waves-real-time", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves garden 30"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    const double length = waveLength(30);
+    CHECK(length > 60.0);
+    const double started = h.clock;
+    const int budget = static_cast<int>((length + 10.0) * 1000.0 / net::kTickMillis);
+    CHECK(h.stepUntil({&boss}, [&] { return run.timer >= length; }, budget));
+    CHECK(std::abs((h.clock - started) / 1000.0 - length) < 0.5);
+    // Still wave 30, and the crowd it left puts it on the red clock.
+    h.step(10, {&boss});
+    CHECK_EQ(run.wave, 30);
+    CHECK(run.red);
+}
+
+TEST(a_wave_does_not_end_early_while_it_still_has_mobs_to_come) {
+    Harness h("waves-not-early", seedWaves, dataDir(), 0);
     CHECK(h.ready);
     if (!h.ready) return;
     NetClient boss;
@@ -370,12 +411,123 @@ TEST(a_wave_ends_on_time_when_the_disc_is_clear) {
     CHECK(say(h, boss, "/admin start_waves"));
     CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
     CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
     auto& run = GameServerPeer::waves(h.server);
-    // No mob is up yet to outlast the clock.
-    run.mobs = 0;
+    // The disc starts empty, which must not read as cleared.
+    CHECK(!run.spawner.finished());
+    bool stayed = true;
+    CHECK(h.stepUntil({&boss}, [&] {
+        stayed = stayed && run.wave == 1;
+        return run.spawner.finished() && !run.spawnedSinceSurvey;
+    }, 600));
+    CHECK(stayed);
+    CHECK_EQ(run.wave, 1);
+    CHECK(run.mobs > kWaveClearedMobCount);
+}
+
+TEST(clearing_a_wave_starts_the_next_at_once_and_gets_the_dead_up) {
+    Harness h("waves-cleared", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss, alice;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(playing(h, alice, "alice"));
+    std::vector<NetClient*> all{&boss, &alice};
+    CHECK(say(h, boss, "/admin start_waves"));
+    CHECK(h.stepUntil(all, [&] { return boss.rift().open && alice.rift().open; }));
+    CHECK(throughTheRift(h, all, boss, "boss"));
+    CHECK(throughTheRift(h, all, alice, "alice"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    CHECK(h.stepUntil(all, [&] { return run.spawner.finished() && !run.spawnedSinceSurvey; }, 600));
+    kill(h, "alice");
+    CHECK(h.stepUntil(all, [&] { return alice.dead(); }));
+    CHECK_EQ(run.wave, 1);
+
+    killMobsLeaving(h, 0);
+    // A survey's worth of ticks, a fifth of a second, and no more.
+    CHECK(h.stepUntil(all, [&] { return run.wave == 2; },
+                      static_cast<int>(400.0 / net::kTickMillis) + 2));
+    CHECK(run.timer < 1.0);
+    CHECK(!run.red);
+    CHECK(h.stepUntil(all, [&] { return !alice.dead(); }, 30));
+}
+
+TEST(two_mobs_left_ends_a_wave_and_three_do_not) {
+    Harness h("waves-two-left", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    CHECK(h.stepUntil({&boss}, [&] { return run.spawner.finished() && !run.spawnedSinceSurvey; }, 600));
+
+    // Across the disc from the flower, so nothing wears the three down by contact.
+    killMobsLeaving(h, 3);
+    const Vec2 flower = h.server.world().get<Transform>(bodyOf(h, "boss")).position;
+    const Vec2 far = kWavesCentre + (kWavesCentre - flower);
+    {
+        Query<MobTag, Transform> mobs{h.server.world()};
+        mobs.without<Dead>();
+        mobs.each([&](Entity, MobTag&, Transform& at) {
+            if (at.realm == kWavesRealm) at.position = far;
+        });
+    }
+    h.step(static_cast<int>(1000.0 / net::kTickMillis), {&boss});
+    CHECK_EQ(run.mobs, 3);
+    CHECK_EQ(run.wave, 1);
+
+    killMobsLeaving(h, 2);
+    h.step(1, {&boss});
+    CHECK(h.stepUntil({&boss}, [&] { return run.wave == 2; },
+                      static_cast<int>(400.0 / net::kTickMillis) + 2));
+}
+
+TEST(a_handful_left_at_the_bell_goes_straight_to_the_next_wave) {
+    Harness h("waves-handful", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    CHECK(h.stepUntil({&boss}, [&] { return run.spawner.finished() && !run.spawnedSinceSurvey; }, 600));
+    killMobsLeaving(h, kWaveRedMobCount);
+    CHECK(h.stepUntil({&boss}, [&] { return run.mobs == kWaveRedMobCount; }, 30));
+    CHECK_EQ(run.wave, 1);
     run.timer = waveLength(run.wave);
     CHECK(h.stepUntil({&boss}, [&] { return run.wave == 2; }, 20));
     CHECK(!run.red);
+}
+
+TEST(the_early_end_waits_for_a_count_that_has_seen_the_last_spawn) {
+    Harness h("waves-fresh-count", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    // A last spawn just placed, the survey that would count its bodies not yet
+    // run: a low number here means nothing.
+    run.spawner = WaveSpawner{};
+    run.mobs = 1;
+    run.spawnedSinceSurvey = true;
+    run.nextSurveyMillis = 1e15;
+    h.step(10, {&boss});
+    CHECK_EQ(run.wave, 1);
+    run.spawnedSinceSurvey = false;
+    CHECK(h.stepUntil({&boss}, [&] { return run.wave == 2; }, 10));
 }
 
 TEST(the_dead_watch_until_the_next_wave_gets_them_up_beside_a_survivor) {
