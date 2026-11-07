@@ -578,11 +578,15 @@ private:
         double redTimer = 0.0;
         bool red = false;
         WaveSpawner spawner;
+        /// The spawner's output for one step, kept to save the allocation.
+        std::vector<WaveMob> due;
         double stepCarryMillis = 0.0;
         double lastTickMillis = -1.0;
         double nextSurveyMillis = 0.0;
         /// Every body on the disc at the last survey, plus what has spawned since.
         int mobs = 0;
+        /// What those bodies cover, the same way.
+        double bodyArea = 0.0;
         bool spawnedSinceSurvey = false;
         std::vector<Group> groups;
         bool riftOpen = false;

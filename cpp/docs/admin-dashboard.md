@@ -470,23 +470,30 @@ tells every player "A Mysterious rift has opened!". It only opens on a map, not
 in the PVP arena, the maze or a hosted game, and one is open at a time. The rift
 also shows as a black dot on that map's minimap.
 
-Stand on it for a second, as on any teleporter, and you are on a disc of radius
-1500 in a realm of its own. The first flower through starts wave 1. The rules
-are flooooio's, with the timing changes noted in `shared/game/waves.h`: each
-wave spends 10 points per wave number on the biome's mobs, at a rarity that
-climbs with the wave; from wave 15, 15% of waves are special, one mob family in
-a swarm. A wave lasts 60 seconds up to wave 10 and grows slowly after (67 at
-wave 30, 77 at wave 100). It ends at once when all its mobs have spawned and 2
-or fewer are left. When the clock runs out with more than 4 mobs up, a red clock
-runs as long again with no more spawns. Then the next wave starts. Whoever died
-watches the nearest thing still up, and gets up beside a survivor at the next
-wave. Nobody standing is GAME OVER, which closes the rift. Mobs pay XP and drop
-petals as they do anywhere else.
+Stand on it for a second, as on any teleporter, and you are on a disc in a realm
+of its own. The disc starts at radius 1500 and grows by 50 each wave, up to 8000
+(from wave 131); a game started at a later wave starts at that wave's size. The
+first flower through starts wave 1. The rules are flooooio's, with the changes
+noted in `shared/game/waves.h`: each wave spends 10 points per wave number on
+the biome's mobs, at a rarity that climbs with the wave up to super (ultras from
+about wave 55, supers from about 75, nothing else past 90); from wave 15, 15% of
+waves are special, one mob family in a swarm. A wave lasts 60 seconds up to wave
+10 and grows slowly after (67 at wave 30, 77 at wave 100), and its mobs come
+fast enough to all be out by half of that. The disc holds at most 1500 mobs, and
+at most 8 discs' worth of mob bodies; past that the rest of the wave waits until
+there is room. A wave ends at once when all its mobs have spawned and 2 or fewer
+are left. When the clock runs out with more than 4 mobs up, a red clock runs as
+long again with no more spawns. Then the next wave starts. Whoever died watches
+the nearest thing still up, and gets up beside a survivor at the next wave. When
+nobody is left standing the game is over: the rift closes, the disc is cleared
+and everyone is put back where they went in, standing. Mobs pay XP and drop
+petals as they do anywhere else; the supers on the disc are not announced and
+get no boss bar.
 
 Leaving with the Exit button goes to the title screen, as anywhere. The rift
-stays open until GAME OVER or `/admin stop_waves`, which closes it, clears the
-disc and puts every flower back where it stepped in, standing. If everyone walks
-out, the rift stays and the game starts over for the next flower through.
+stays open until the game is over or `/admin stop_waves`, which closes it the
+same way. If everyone walks out, the rift stays and the game starts over for the
+next flower through.
 
 ### Admin-hosted arena and iPad Cursor
 

@@ -1025,6 +1025,7 @@ public:
         int wave = 0;
         double timer = 0.0;
         double redTimer = 0.0;
+        double radius = kWavesStartRadius;
         std::vector<Group> groups;
     };
     const WaveView& wave() const { return wave_; }

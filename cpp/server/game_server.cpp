@@ -4355,7 +4355,7 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     // Nor does a prestige biome's super, whose spawn was never announced
     // either: there it is the bands' everyday stock (shared/game/prestige.h).
     if (const Transform* at = world_.tryGet<Transform>(mob)) {
-        if (worldMaps_.isPrestige(at->realm)) return;
+        if (worldMaps_.isPrestige(at->realm) || at->realm == kWavesRealm) return;
     }
     // The head's death is the animal's. A centipede's beads each carry their
     // own ledger and die one by one, and a line per bead would be ten more

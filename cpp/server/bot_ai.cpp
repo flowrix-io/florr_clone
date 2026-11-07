@@ -1481,8 +1481,10 @@ void GameServer::noteBossSighting(Entity boss, double nowMillis) {
 void GameServer::rebuildBotBossIndex(double nowMillis) {
     botBosses_.clear();
     Query<MobTag, MobType, Transform> mobs{world_};
-    mobs.each([&](Entity e, MobTag&, MobType& type, Transform&) {
+    mobs.each([&](Entity e, MobTag&, MobType& type, Transform& at) {
         if (!isBotBossTier(type.rarity)) return;
+        // A wave's super is stock, on a disc no bot can reach.
+        if (at.realm == kWavesRealm) return;
         if (world_.has<Dead>(e) || world_.has<Pet>(e)) return;
         if (excludedMobType(type.configIndex)) return;
         botBosses_.push_back(e);

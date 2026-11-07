@@ -883,6 +883,7 @@ inline Entity onlyPlayer(World& world) {
 struct GameServerPeer {
     /// The one game of waves.
     static auto& waves(GameServer& server) { return server.waves_; }
+    static SpawnSystem& spawning(GameServer& server) { return *server.spawning_; }
     /// Runs this wave's clock out, the red one too: the next step starts the
     /// next wave whatever is left on the disc.
     static void endThisWave(GameServer& server) {

@@ -25,9 +25,6 @@ constexpr double kRiftRadius = kTeleporterArtRadius;
 // command would be through it a second later.
 constexpr double kRiftOffset = 450.0;
 constexpr double kRiftOffsetJitter = 100.0;
-// flooooio has no limit, and an unattended run of special waves would pile mobs
-// on without end. A special wave's whole bonus fits under it.
-constexpr int kWaveMaxMobs = 1500;
 constexpr double kWaveSurveyMillis = 200.0;
 // player_dead_camera.go: how long a dead flower waits between targets.
 constexpr double kWaveSpectateSwitchMillis = 500.0;
@@ -79,10 +76,6 @@ void GameServer::runStartWavesCommand(Session& admin, net::Connection& connectio
     const Vec2 ahead{at.position.x + std::cos(at.angle) * kRiftOffset,
                      at.position.y + std::sin(at.angle) * kRiftOffset};
     const Vec2 riftAt = terrain_->findOpenSpawn(rng_, ahead, kRiftOffsetJitter, realm);
-
-    // What is left of a finished game goes first: its flowers are looking at
-    // GAME OVER, and the next game must not start with them on the disc.
-    if (waves_.phase == WavePhase::Ended) closeWaves();
 
     waves_ = WaveRun{};
     waves_.phase = WavePhase::Open;
@@ -197,11 +190,12 @@ void GameServer::enterWaves(Session& session, double nowMillis) {
         waves_.red = false;
         waves_.stepCarryMillis = 0.0;
         waves_.spawner.next(waves_.biome, waves_.wave, rng_);
+        terrain_->wavesRadius = waveRadius(waves_.wave);
     }
 
     // Wave_pool Start: anywhere from halfway out to the edge.
     const double angle = rng_.unit() * kTau;
-    const double reach = (0.5 * rng_.unit() + 0.5) * kWavesRadius;
+    const double reach = (0.5 * rng_.unit() + 0.5) * terrain_->wavesRadius;
     const Vec2 arrival =
         terrain_->clampInside({kWavesCentre.x + std::cos(angle) * reach,
                                kWavesCentre.y + std::sin(angle) * reach},
@@ -274,11 +268,12 @@ void GameServer::reviveWaveFlowers(double nowMillis) {
 }
 
 void GameServer::spawnWaveMob(const WaveMob& mob, double nowMillis) {
-    if (waves_.mobs >= kWaveMaxMobs) return;
     const std::uint16_t index = content().mobIndex(mob.id);
     if (index == kInvalidIndex) return;
     // GetRandomSafeCoordinate: a point clear of every living flower, and no mob
-    // at all when a hundred tries find none.
+    // at all when a hundred tries find none. Clear of the mob's own body too,
+    // which flooooio's mythics were small enough to leave out and a super is not.
+    const double reach = content().mobStats(index, mob.rarity).radius;
     constexpr int kAttempts = 100;
     std::vector<std::pair<Vec2, double>> flowers;
     for (const auto& entry : sessions_) {
@@ -294,17 +289,18 @@ void GameServer::spawnWaveMob(const WaveMob& mob, double nowMillis) {
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
         // Uniform in distance, not area, so they crowd towards the middle.
         const double heading = rng_.unit() * kTau;
-        const double out = rng_.unit() * (kWavesRadius - kWaveSpawnSafety);
+        const double out = rng_.unit() * std::max(0.0, terrain_->wavesRadius - kWaveSpawnSafety);
         const Vec2 spot{kWavesCentre.x + std::cos(heading) * out,
                         kWavesCentre.y + std::sin(heading) * out};
         const bool clear = std::none_of(flowers.begin(), flowers.end(), [&](const auto& flower) {
-            const double gap = kWaveSpawnSafety + flower.second;
+            const double gap = kWaveSpawnSafety + flower.second + reach;
             return distanceSq(spot, flower.first) < gap * gap;
         });
         if (!clear) continue;
         if (spawning_->spawnMob(world_, *terrain_, content(), index, mob.rarity, spot, kWavesRealm,
                                 nowMillis, rng_) != NULL_ENTITY) {
             ++waves_.mobs;
+            waves_.bodyArea += kPi * reach * reach;
             waves_.spawnedSinceSurvey = true;
         }
         return;
@@ -318,13 +314,18 @@ void GameServer::startNextWave(double nowMillis) {
     waves_.timer = 0.0;
     waves_.wave = std::min(waves_.wave + 1, 65535);
     waves_.spawner.next(waves_.biome, waves_.wave, rng_);
+    // Out from the middle, so whatever stood at the old edge stands where it
+    // was; the client eases its own edge out after it.
+    terrain_->wavesRadius = waveRadius(waves_.wave);
 }
 
 void GameServer::stepWaveClock(double nowMillis) {
-    if (!waves_.red) {
-        if (const auto mob = waves_.spawner.step(waves_.biome, waves_.wave, rng_)) {
-            spawnWaveMob(*mob, nowMillis);
-        }
+    // A full disc holds the spawner where it is rather than dropping what it
+    // would have placed: the wave's mobs are owed, and come once there is room.
+    const bool full = waves_.bodyArea >= kWaveMaxBodyArea || waves_.mobs >= kWaveMaxMobs;
+    if (!waves_.red && !full) {
+        waves_.spawner.step(waves_.biome, waves_.wave, rng_, waves_.due);
+        for (const WaveMob& mob : waves_.due) spawnWaveMob(mob, nowMillis);
     }
     // The count is only trusted once it has seen the last spawn: spawning adds
     // one to it, and a centipede is ten bodies.
@@ -397,18 +398,21 @@ void GameServer::surveyWaves(double nowMillis) {
     (void)nowMillis;
     // What is left on the disc: the red clock's question, and the HUD's icons.
     int mobs = 0;
+    double area = 0.0;
     std::map<std::pair<std::uint16_t, std::uint8_t>, std::uint16_t> groups;
-    Query<MobTag, Transform, MobType> enemies{world_};
+    Query<MobTag, Transform, MobType, Body> enemies{world_};
     enemies.without<Dead, Pet>();
-    enemies.each([&](Entity, MobTag&, Transform& at, MobType& type) {
+    enemies.each([&](Entity, MobTag&, Transform& at, MobType& type, Body& body) {
         if (at.realm != kWavesRealm) return;
         ++mobs;
+        area += kPi * body.radius * body.radius;
         // A chain is one animal on the HUD, and its head stands for it.
         if (content().mob(type.configIndex).chainBody) return;
         auto& count = groups[{type.configIndex, static_cast<std::uint8_t>(type.rarity)}];
         if (count < 65535) ++count;
     });
     waves_.mobs = mobs;
+    waves_.bodyArea = area;
     waves_.spawnedSinceSurvey = false;
     waves_.groups.clear();
     for (const auto& group : groups) {
@@ -437,18 +441,28 @@ void GameServer::surveyWaves(double nowMillis) {
             waves_.timer = 0.0;
             waves_.redTimer = 0.0;
             waves_.red = false;
-        } else if (waves_.phase == WavePhase::Ended) {
-            clearWaveRealm();
-            waves_ = WaveRun{};
         }
         return;
     }
     if (waves_.phase == WavePhase::Playing && standing == 0) {
-        waves_.phase = WavePhase::Ended;
-        waves_.riftOpen = false;
-        stopChargingRift();
-        std::printf("[waves] game over at wave %d\n", waves_.wave);
-        broadcastRiftState();
+        // Nobody standing: the game is over and the room closes, everyone back
+        // where they went in. The disc is cleared and the rift goes with it.
+        const int reached = waves_.wave;
+        std::vector<net::ConnectionId> players;
+        for (const auto& entry : sessions_) {
+            if (entry.second.playing() && entry.second.realm == kWavesRealm) {
+                players.push_back(entry.first);
+            }
+        }
+        std::printf("[waves] game over at wave %d\n", reached);
+        closeWaves();
+        for (const net::ConnectionId id : players) {
+            if (net::Connection* connection = listener_.find(id)) {
+                sendSystem(*connection, "Game over! You reached wave " + std::to_string(reached) +
+                                            ". The rift has closed.");
+            }
+        }
+        return;
     }
     for (auto& entry : sessions_) {
         if (entry.second.playing() && entry.second.realm == kWavesRealm) {
@@ -505,6 +519,7 @@ void GameServer::closeWaves() {
     clearWaveRealm();
     stopChargingRift();
     waves_ = WaveRun{};
+    terrain_->wavesRadius = kWavesStartRadius;
     broadcastRiftState();
 }
 
@@ -539,6 +554,7 @@ void GameServer::sendWaveState(Session& session) {
     w.u16(static_cast<std::uint16_t>(waves_.wave));
     w.f32(static_cast<float>(waves_.timer));
     w.f32(static_cast<float>(waves_.redTimer));
+    w.f32(static_cast<float>(terrain_->wavesRadius));
     w.u16(static_cast<std::uint16_t>(waves_.groups.size()));
     for (const WaveRun::Group& group : waves_.groups) {
         w.u16(group.mobIndex);

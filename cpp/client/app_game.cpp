@@ -99,13 +99,6 @@ constexpr double kDeathParkClearance = 16.0;
 /// which every size in the wave HUD below is written against.
 constexpr double kWaveUi = 1080.0 / 650.0;
 
-/// GAME OVER's Continue, under the words, the pair centred on the screen.
-Rect waveContinueBox(double width, double height) {
-    const double w = 88.0 * kWaveUi;
-    const double h = 24.0 * kWaveUi;
-    return {width * 0.5 - w * 0.5, height * 0.5 + 15.0 * kWaveUi, w, h};
-}
-
 /// `slide` is the container's animation: 1 is home and 0 parks the whole card
 /// above the screen, which is the reference's animate hook --
 /// `translate(0, (animation - 1) * height * 0.6)` -- with one change: 60% of a
@@ -426,20 +419,8 @@ void App::updateDead(double dt) {
         // under the dimmed world still says "Press Enter to chat...".
         chatOpen_ = true;
     }
+    if (!deathCardVisible_) return;
     const bool inWaves = net_.view().realm() == kWavesRealm;
-    if (!deathCardVisible_) {
-        // GAME OVER's own button, once the card is out of its way.
-        if (!inWaves || net_.wave().phase != WavePhase::Ended ||
-            !window_.mousePressed(MouseButton::Left)) {
-            return;
-        }
-        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
-        if (!menus_.pollCapturesMouse(mouse) &&
-            hit(waveContinueBox(window_.width(), window_.height()), mouse)) {
-            leaveToTitle();
-        }
-        return;
-    }
 
     // The reference acts on the press, not the release, so the card is gone by
     // the time the button comes back up and a pressed state is never seen.
@@ -571,25 +552,9 @@ void App::drawWaveHud(Canvas& canvas, double time) {
         x += columnStep;
     }
 
-    // A dead flower's two lines, once the card has been dismissed.
+    // A dead flower's line, once the card has been dismissed. Nobody standing
+    // closes the game, so a dead flower here always has a next wave coming.
     if (!net_.dead() || deathCardVisible_) return;
-    if (wave.phase == WavePhase::Ended) {
-        setFill(canvas, kInk, 0.3);
-        canvas.fillRect(0, 0, static_cast<float>(width), static_cast<float>(height));
-        const Rect box = waveContinueBox(width, height);
-        TextStyle over;
-        over.size = 34.0 * kWaveUi;
-        over.align = Align::Centre;
-        over.fill = 0xF0666Bu;
-        text(canvas, "GAME OVER", middle, box.y - 20.0 * kWaveUi - over.size * 0.5, over);
-        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
-        ButtonStyle style;
-        style.fill = 0xC62327u;
-        style.textSize = 17.0 * kWaveUi;
-        button(canvas, box, "Continue", hit(box, mouse),
-               hit(box, mouse) && window_.mouseDown(MouseButton::Left), style);
-        return;
-    }
     TextStyle waiting;
     waiting.size = 10.0 * kWaveUi;
     waiting.align = Align::Centre;

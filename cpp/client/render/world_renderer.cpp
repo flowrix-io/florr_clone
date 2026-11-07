@@ -1767,11 +1767,19 @@ void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* a
 }
 }
 
-void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera) const {
+void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera, double timeSeconds) const {
     // flooooio paves the disc with the biome's first tile at 300 units, squared
     // up on the disc. Outside the map is pure black, as it is on every map here.
     constexpr double kWaveTileSize = 300.0;
     const WaveBiomeInfo& biome = waveBiomeInfo(waveBiome_);
+    const double dt = std::clamp(timeSeconds - waveRadiusAt_, 0.0, 0.25);
+    waveRadiusAt_ = timeSeconds;
+    if (waveRadiusDrawn_ < 0.0 || waveRadius_ < waveRadiusDrawn_) {
+        waveRadiusDrawn_ = waveRadius_;
+    } else {
+        waveRadiusDrawn_ += (waveRadius_ - waveRadiusDrawn_) * (1.0 - std::exp(-dt * 3.0));
+    }
+    const double radius = waveRadiusDrawn_;
     const Vec2 centre = camera.worldToScreen(kWavesCentre);
     const auto width = static_cast<float>(camera.viewportWidth());
     const auto height = static_cast<float>(camera.viewportHeight());
@@ -1781,7 +1789,7 @@ void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera) const {
     canvas.save();
     canvas.beginPath();
     canvas.arc(static_cast<float>(centre.x), static_cast<float>(centre.y),
-               static_cast<float>(kWavesRadius * camera.zoom()), 0.0f, static_cast<float>(kTau),
+               static_cast<float>(radius * camera.zoom()), 0.0f, static_cast<float>(kTau),
                false);
     canvas.clip();
     ui::setFill(canvas, biome.gaugeColor);
@@ -1790,9 +1798,10 @@ void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera) const {
     const SvgDocument* art = sprites_ != nullptr ? sprites_->tileArt(biome.tile) : nullptr;
     if (art != nullptr) {
         const Rect visible = camera.visibleWorld(kTileOverlap);
-        const double originX = kWavesCentre.x - kWavesRadius;
-        const double originY = kWavesCentre.y - kWavesRadius;
-        const int count = static_cast<int>(std::ceil(kWavesRadius * 2.0 / kWaveTileSize));
+        // Squared up on the centre, so the pattern holds still as the edge grows.
+        const double originX = kWavesCentre.x - kWavesMaxRadius;
+        const double originY = kWavesCentre.y - kWavesMaxRadius;
+        const int count = static_cast<int>(std::ceil(kWavesMaxRadius * 2.0 / kWaveTileSize));
         const int x0 = std::max(0, static_cast<int>(std::floor((visible.left() - originX) / kWaveTileSize)));
         const int y0 = std::max(0, static_cast<int>(std::floor((visible.top() - originY) / kWaveTileSize)));
         const int x1 = std::min(count - 1, static_cast<int>(std::floor((visible.right() - originX) / kWaveTileSize)));
@@ -4539,7 +4548,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     } else if (realm_ == Realm::Arena) {
         drawArena(canvas, camera);
     } else if (realm_ == kWavesRealm) {
-        drawWaves(canvas, camera);
+        drawWaves(canvas, camera, timeSeconds);
     } else {
         drawTerrain(canvas, camera, realm_);
         drawMapElements(canvas, camera, realm_, timeSeconds);

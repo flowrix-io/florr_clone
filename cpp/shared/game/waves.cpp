@@ -65,8 +65,11 @@ const std::array<std::vector<Group>, 3>& specialGroups() {
     return table;
 }
 
-// relativeRarity, which florr's own wave chances are, Common through Ultra.
-constexpr std::array<double, 7> kRelativeRarity{28710.94, 4921.88, 656.25, 52.5, 1.0, 0.1, 0.001};
+// relativeRarity, which florr's own wave chances are, Common through Ultra, and
+// a super a hundredth of an ultra, as an ultra is of a mythic. flooooio has no
+// super; that weight is ours.
+constexpr std::array<double, 8> kRelativeRarity{28710.94, 4921.88, 656.25, 52.5,
+                                                1.0,      0.1,     0.001,  0.00001};
 // mobSpawnEndAfter: past this wave a rarity no longer spawns, and whatever rolled
 // it is lifted one step. Mythic never ends.
 constexpr std::array<int, 5> kRarityEndsAfter{20, 30, 40, 50, 60};
@@ -110,13 +113,24 @@ int rollAmount(Rng& rng) {
 }
 
 // flatTopGaussian with its constants: a special wave ramps up to 26 mobs a spawn.
+constexpr double kSwarmAmplitude = 25.0;
 double swarmAmount(double x) {
-    constexpr double kAmplitude = 25.0, kMean = 20.0, kWidth = 25.0, kDeviation = 1.0;
+    constexpr double kAmplitude = kSwarmAmplitude, kMean = 20.0, kWidth = 25.0, kDeviation = 1.0;
     const double distance = x - kMean;
     const double half = kWidth / 2.0;
     if (distance > 0.0 || distance >= -half) return 1.0 + kAmplitude;
     const double over = -distance - half;
     return 1.0 + kAmplitude * std::exp(-(over * over) / (2.0 * kDeviation * kDeviation));
+}
+
+// What one ordinary spawn averages.
+double meanAmount() {
+    double total = 0.0, weighted = 0.0;
+    for (std::size_t i = 0; i < kAmountWeights.size(); ++i) {
+        total += kAmountWeights[i];
+        weighted += kAmountWeights[i] * static_cast<double>(i + 1);
+    }
+    return weighted / total;
 }
 
 const char* pickMob(WaveBiome biome, int wave, const Group* group, Rng& rng) {
@@ -165,6 +179,11 @@ double waveLength(int wave) {
     return std::max(18.9287 * std::pow(static_cast<double>(std::max(wave, 0)), 0.2) + 30.0, 60.0);
 }
 
+double waveRadius(int wave) {
+    const double grown = kWavesStartRadius + kWaveRadiusGrowth * (std::max(wave, 1) - 1);
+    return std::min(grown, kWavesMaxRadius);
+}
+
 Rarity rollWaveRarity(int wave, Rng& rng) {
     double total = 0.0;
     for (const double weight : kRelativeRarity) total += weight;
@@ -179,8 +198,7 @@ Rarity rollWaveRarity(int wave, Rng& rng) {
             break;
         }
     }
-    // An ultra rolled is a mythic spawned.
-    rolled = std::min(rolled, static_cast<int>(Rarity::Mythic));
+    rolled = std::min(rolled, static_cast<int>(kWaveTopRarity));
     // Lowest first, so a rarity lifted into one that has ended too keeps rising.
     // flooooio walks a Go map here, in a random order each time, which stops
     // short of that some of the time; the table says what it means to do.
@@ -200,19 +218,29 @@ void WaveSpawner::next(WaveBiome biome, int wave, Rng& rng, int forcedGroup) {
         group_ = static_cast<int>(rng.below(static_cast<std::uint32_t>(groups.size())));
     }
     points_ = wave * kPointsPerWave + (group_ >= 0 ? kSpecialWavePoints : 0);
+
+    // flooooio spawns at one pace, so past wave 20 or so a wave's clock ran out
+    // before its budget did. Each spawn here is made bigger instead, by as much
+    // as it takes to have the lot out within kWaveSpawnWindow of the wave, and
+    // the queue is drained fast enough to keep up.
+    const double perSpawn = group_ >= 0 ? 1.0 + kSwarmAmplitude : meanAmount();
+    const double spawns = waveLength(wave) * kWaveSpawnWindow * kWaveStepsPerSecond / kSpawnDelaySteps;
+    pace_ = std::max(1.0, static_cast<double>(points_) / (perSpawn * spawns));
+    perStep_ = std::max(1, static_cast<int>(std::ceil(perSpawn * pace_ / kSpawnDelaySteps)));
 }
 
-std::optional<WaveMob> WaveSpawner::step(WaveBiome biome, int wave, Rng& rng) {
+void WaveSpawner::step(WaveBiome biome, int wave, Rng& rng, std::vector<WaveMob>& out) {
+    out.clear();
     ++totalTime_;
     if (points_ > 0 && totalTime_ % kSpawnDelaySteps == 0) {
         const auto& groups =
             specialGroups()[std::min<std::size_t>(static_cast<std::size_t>(biome), 2)];
         const Group* group = group_ >= 0 ? &groups[static_cast<std::size_t>(group_)] : nullptr;
-        const int amount =
+        const double base =
             group == nullptr
-                ? rollAmount(rng)
-                : static_cast<int>(std::lround(swarmAmount(
-                      static_cast<double>(totalTime_) / static_cast<double>(kSpawnDelaySteps))));
+                ? static_cast<double>(rollAmount(rng))
+                : swarmAmount(static_cast<double>(totalTime_) / static_cast<double>(kSpawnDelaySteps));
+        const int amount = std::max(1, static_cast<int>(std::lround(base * pace_)));
         for (int i = 0; i < amount; ++i) {
             const char* id = pickMob(biome, wave, group, rng);
             // Nothing eligible, which only a wave below every rule can mean.
@@ -223,13 +251,14 @@ std::optional<WaveMob> WaveSpawner::step(WaveBiome biome, int wave, Rng& rng) {
             if (points_ == 0) break;
         }
     }
-    if (queue_.empty()) return std::nullopt;
-    const WaveMob mob = queue_.front();
-    queue_.pop_front();
-    if (isChain(mob.id)) {
-        for (int i = 0; i < kChainBodies && !queue_.empty(); ++i) queue_.pop_front();
+    for (int i = 0; i < perStep_ && !queue_.empty(); ++i) {
+        const WaveMob mob = queue_.front();
+        queue_.pop_front();
+        if (isChain(mob.id)) {
+            for (int eaten = 0; eaten < kChainBodies && !queue_.empty(); ++eaten) queue_.pop_front();
+        }
+        out.push_back(mob);
     }
-    return mob;
 }
 
 } // namespace flix

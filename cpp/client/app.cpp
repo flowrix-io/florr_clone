@@ -817,6 +817,7 @@ void App::frame(double dt) {
         renderer_.setRift(net_.rift().open, net_.rift().realm, net_.rift().position,
                           net_.rift().radius);
         renderer_.setWaveBiome(net_.wave().biome);
+        renderer_.setWaveRadius(net_.wave().radius);
         renderer_.draw(canvas, net_.view(), camera_, selfDrawn, timeSeconds_);
         // A dark map's dark, over the world only, like the wash below.
         drawDarkness(canvas);

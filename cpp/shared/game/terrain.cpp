@@ -1359,8 +1359,10 @@ Vec2 Terrain::resolveCircle(Vec2 position, double radius, Realm realm) const {
 
 bool Terrain::blocked(Vec2 p, Realm realm) const {
     if (realm == Realm::Maze) return activeMaze().blocksPoint(p);
-    if (isDiscRealm(realm)) return distanceSq(p, realmDisc(realm).centre) >
-                                   realmDisc(realm).radius * realmDisc(realm).radius;
+    if (isDiscRealm(realm)) {
+        const RealmDisc ring = disc(realm);
+        return distanceSq(p, ring.centre) > ring.radius * ring.radius;
+    }
     bool water = false;
     return blockingLayerAt(p, realm, water) >= 0;
 }
@@ -1398,14 +1400,14 @@ Vec2 Terrain::clampInside(Vec2 p, double radius, Realm realm) const {
         // Radially, onto the ring's inside face: the reference's PVP clamp
         // (src/server/playerState.ts:1989-1996) with the body's own radius
         // where it wrote PLAYER_SIZE / 2.
-        const RealmDisc disc = realmDisc(realm);
-        const double maxR = std::max(0.0, disc.radius - radius);
-        const Vec2 offset = p - disc.centre;
+        const RealmDisc ring = disc(realm);
+        const double maxR = std::max(0.0, ring.radius - radius);
+        const Vec2 offset = p - ring.centre;
         const double distSq = offset.lengthSq();
-        if (!std::isfinite(distSq)) return disc.centre;
+        if (!std::isfinite(distSq)) return ring.centre;
         if (distSq <= maxR * maxR) return p;
         const double dist = std::sqrt(distSq);
-        return disc.centre + offset * (maxR / dist);
+        return ring.centre + offset * (maxR / dist);
     }
     // Per axis, because a map need not be square: clamping both axes against
     // the longer one would let a body walk off the short end of a corridor
@@ -1544,7 +1546,7 @@ Vec2 Terrain::findOpenSpawn(Rng& rng, Vec2 around, double radius, Realm realm) c
         if (!std::isfinite(around.x) || !std::isfinite(around.y)) {
             around = realm == Realm::Arena ? kArenaSpawn : kWavesCentre;
         }
-        radius = std::isfinite(radius) ? clamp(radius, 0.0, realmDisc(realm).radius) : 0.0;
+        radius = std::isfinite(radius) ? clamp(radius, 0.0, disc(realm).radius) : 0.0;
         return clampInside(around + rng.insideCircle(radius), kPlayerBaseRadius, realm);
     }
     if (realm == Realm::Maze) {

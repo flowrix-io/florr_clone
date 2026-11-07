@@ -124,13 +124,16 @@ inline constexpr bool insideArena(Vec2 p) {
 // The waves disc
 // ---------------------------------------------------------------------------
 //
-// flooooio's wave map is a disc of radius 1500 (wave_room.go MapRadius). Same
-// margin of void as the arena, for the same reason.
+// flooooio's wave map is a disc of radius 1500 (wave_room.go MapRadius), and
+// here it grows with each wave (waveRadius in shared/game/waves.h), so how big
+// it is now is Terrain::wavesRadius. The space is laid out for the largest it
+// can get, with the same margin of void as the arena: growing moves nothing.
 
-inline constexpr double kWavesRadius = 1500.0;
+inline constexpr double kWavesStartRadius = 1500.0;
+inline constexpr double kWavesMaxRadius = 8000.0;
 inline constexpr double kWavesMargin = 500.0;
-inline constexpr Vec2 kWavesCentre{kWavesRadius + kWavesMargin, kWavesRadius + kWavesMargin};
-inline constexpr double kWavesWorldSize = 2.0 * (kWavesRadius + kWavesMargin);
+inline constexpr Vec2 kWavesCentre{kWavesMaxRadius + kWavesMargin, kWavesMaxRadius + kWavesMargin};
+inline constexpr double kWavesWorldSize = 2.0 * (kWavesMaxRadius + kWavesMargin);
 
 /// A realm whose whole terrain is one disc of open floor.
 struct RealmDisc {
@@ -139,10 +142,6 @@ struct RealmDisc {
 };
 inline constexpr bool isDiscRealm(Realm realm) {
     return realm == Realm::Arena || realm == kWavesRealm;
-}
-inline constexpr RealmDisc realmDisc(Realm realm) {
-    return realm == kWavesRealm ? RealmDisc{kWavesCentre, kWavesRadius}
-                                : RealmDisc{kArenaCentre, kArenaRadius};
 }
 
 /// The reference's PVP rules that are numbers: a flat 100 max health for

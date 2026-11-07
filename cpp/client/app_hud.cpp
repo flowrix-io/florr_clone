@@ -502,6 +502,8 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     // In a prestige biome a super is ordinary stock, not a boss
     // (shared/game/prestige.h), and keeps only the bar under its body.
     const bool prestige = worldMaps_.isPrestige(net_.view().realm());
+    // The waves raise supers by the dozen from wave 80; none of them is a boss.
+    if (net_.view().realm() == kWavesRealm) return 0.0;
     std::vector<const RemoteEntity*> bosses;
     const Rect view = camera_.visibleWorld();
     for (const auto& entry : net_.view().entities()) {

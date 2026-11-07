@@ -182,8 +182,9 @@ public:
         rift_.position = position;
         rift_.radius = radius;
     }
-    /// Which biome the waves disc is paved with.
+    /// Which biome the waves disc is paved with, and how far it reaches.
     void setWaveBiome(WaveBiome biome) { waveBiome_ = biome; }
+    void setWaveRadius(double radius) { waveRadius_ = radius; }
     void setSprites(const SpriteCache* sprites) { sprites_ = sprites; }
 
     /// Turns this frame's server events into effects. Drains `view.events()`.
@@ -413,7 +414,7 @@ private:
     /// outside it, and the red boundary the server clamps bodies to.
     void drawArena(Canvas&, const Camera&) const;
     /// The waves realm: the biome's tile on a disc, black outside it.
-    void drawWaves(Canvas&, const Camera&) const;
+    void drawWaves(Canvas&, const Camera&, double timeSeconds) const;
     /// Teleporters, off the realm's own map.
     void drawMapElements(Canvas&, const Camera&, Realm realm, double timeSeconds) const;
     /// florr's warp: one pad at a world position. `opening` runs 0 to 1 as a
@@ -792,6 +793,12 @@ private:
     /// When this client first drew the rift now open; negative when none is.
     mutable double riftOpenedAtSeconds_ = -1.0;
     WaveBiome waveBiome_ = WaveBiome::Garden;
+    double waveRadius_ = kWavesStartRadius;
+    /// The edge as drawn: it eases out after the server's when the disc grows
+    /// (flooooio lerps its MapRadius the same way), and snaps when it shrinks,
+    /// which only a new game does.
+    mutable double waveRadiusDrawn_ = -1.0;
+    mutable double waveRadiusAt_ = 0.0;
 
     mutable SectionTiming timing_;
     mutable SectionOps ops_;

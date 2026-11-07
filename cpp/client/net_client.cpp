@@ -1,6 +1,7 @@
 #include "client/net_client.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <iterator>
 
@@ -1891,8 +1892,9 @@ void NetClient::handleWaveState(ByteReader& reader) {
     wave.wave = reader.u16();
     wave.timer = reader.f32();
     wave.redTimer = reader.f32();
+    wave.radius = reader.f32();
     const std::uint16_t groups = reader.u16();
-    if (!reader.ok() || phase > static_cast<std::uint8_t>(WavePhase::Ended) ||
+    if (!reader.ok() || phase > static_cast<std::uint8_t>(WavePhase::Playing) ||
         biome >= static_cast<std::uint8_t>(WaveBiome::Count)) {
         return;
     }
@@ -1907,6 +1909,12 @@ void NetClient::handleWaveState(ByteReader& reader) {
         if (!reader.ok() || rarity >= kRarityCount || group.mobIndex >= content().mobCount()) return;
         group.rarity = static_cast<Rarity>(rarity);
         wave.groups.push_back(group);
+    }
+    // The client's own copy of the disc, which is what its collision and
+    // placement questions about this realm are answered from.
+    if (std::isfinite(wave.radius) && wave.radius > 0.0) {
+        wave.radius = std::min<double>(wave.radius, kWavesMaxRadius);
+        terrain_.wavesRadius = wave.radius;
     }
     wave_ = std::move(wave);
 }

@@ -8,6 +8,7 @@
 
 #include "client/render/world_renderer.h"
 #include "client/ui/text.h"
+#include "server/systems/spawning.h"
 #include "render_rig.h"
 #include "server_harness.h"
 #include "shared/game/spatial.h"
@@ -102,7 +103,19 @@ TEST(a_wave_is_a_minute_until_wave_ten_then_keeps_growing) {
     CHECK(std::abs(waveLength(100) - 77.5) < 0.1);
 }
 
+TEST(the_disc_grows_fifty_a_wave_from_flooooios_size_to_its_most) {
+    CHECK_EQ(waveRadius(1), kWavesStartRadius);
+    CHECK_EQ(waveRadius(1), 1500.0);
+    CHECK_EQ(waveRadius(2), 1550.0);
+    CHECK_EQ(waveRadius(10), 1950.0);
+    for (int wave = 2; wave <= 131; ++wave) CHECK(waveRadius(wave) > waveRadius(wave - 1));
+    CHECK_EQ(waveRadius(131), kWavesMaxRadius);
+    CHECK_EQ(waveRadius(65535), kWavesMaxRadius);
+    CHECK_EQ(waveRadius(0), kWavesStartRadius);
+}
+
 TEST(a_wave_spends_ten_points_a_wave_on_mobs_the_game_has) {
+    std::vector<WaveMob> due;
     for (std::size_t biome = 0; biome < kWaveBiomes.size(); ++biome) {
         Rng rng(7 + biome);
         WaveSpawner spawner;
@@ -111,12 +124,13 @@ TEST(a_wave_spends_ten_points_a_wave_on_mobs_the_game_has) {
         CHECK(!spawner.special());
         int mobs = 0;
         for (int step = 0; step < 30 * 120; ++step) {
-            if (const auto mob = spawner.step(static_cast<WaveBiome>(biome), 10, rng)) {
+            spawner.step(static_cast<WaveBiome>(biome), 10, rng, due);
+            for (const WaveMob& mob : due) {
                 ++mobs;
-                CHECK(shippedContent().mobIndex(mob->id) != kInvalidIndex);
+                CHECK(shippedContent().mobIndex(mob.id) != kInvalidIndex);
             }
         }
-        CHECK_EQ(spawner.points(), 0);
+        CHECK(spawner.finished());
         CHECK(mobs > 0);
         CHECK(mobs <= 100);
     }
@@ -127,8 +141,10 @@ TEST(the_first_wave_holds_only_what_spawns_from_wave_one) {
     WaveSpawner spawner;
     spawner.next(WaveBiome::Garden, 1, rng);
     std::set<std::string> seen;
+    std::vector<WaveMob> due;
     for (int step = 0; step < 30 * 60; ++step) {
-        if (const auto mob = spawner.step(WaveBiome::Garden, 1, rng)) seen.insert(mob->id);
+        spawner.step(WaveBiome::Garden, 1, rng, due);
+        for (const WaveMob& mob : due) seen.insert(mob.id);
     }
     CHECK(!seen.empty());
     for (const std::string& id : seen) CHECK(id == "bee" || id == "baby_ant");
@@ -141,13 +157,64 @@ TEST(a_special_wave_swarms_with_one_family_on_a_bonus_budget) {
     CHECK(spawner.special());
     CHECK_EQ(spawner.points(), 1200);
     int mobs = 0;
-    for (int step = 0; step < 30 * 120; ++step) {
-        if (const auto mob = spawner.step(WaveBiome::Garden, 20, rng)) {
+    int steps = 0;
+    std::vector<WaveMob> due;
+    while (!spawner.finished() && steps < 30 * 120) {
+        spawner.step(WaveBiome::Garden, 20, rng, due);
+        ++steps;
+        for (const WaveMob& mob : due) {
             ++mobs;
-            CHECK_EQ(std::string(mob->id), std::string("hornet"));
+            CHECK_EQ(std::string(mob.id), std::string("hornet"));
         }
     }
     CHECK_EQ(mobs, 1200);
+    // Out before the wave's clock is, swarm and all.
+    CHECK(steps < waveLength(20) * kWaveStepsPerSecond);
+}
+
+TEST(a_high_wave_spawns_faster_so_its_mobs_are_out_well_before_its_clock) {
+    std::vector<WaveMob> due;
+    double lastPace = 0.0;
+    for (const int wave : {1, 5, 20, 40, 80, 150, 400}) {
+        Rng rng(29 + static_cast<std::uint64_t>(wave));
+        WaveSpawner spawner;
+        do {
+            spawner.next(WaveBiome::Garden, wave, rng);
+        } while (spawner.special());
+        CHECK(spawner.pace() >= lastPace);
+        lastPace = spawner.pace();
+        const double length = waveLength(wave) * kWaveStepsPerSecond;
+        int steps = 0;
+        while (!spawner.finished() && steps < static_cast<int>(length)) {
+            spawner.step(WaveBiome::Garden, wave, rng, due);
+            ++steps;
+        }
+        CHECK(spawner.finished());
+        CHECK(steps < length * 0.75);
+    }
+    // The low waves keep flooooio's own pace.
+    Rng rng(31);
+    WaveSpawner low;
+    low.next(WaveBiome::Garden, 5, rng);
+    CHECK_EQ(low.pace(), 1.0);
+    CHECK(lastPace > 10.0);
+}
+
+TEST(a_special_wave_at_a_high_wave_is_out_before_its_clock_too) {
+    std::vector<WaveMob> due;
+    for (const int wave : {15, 60, 200}) {
+        Rng rng(37 + static_cast<std::uint64_t>(wave));
+        WaveSpawner spawner;
+        spawner.next(WaveBiome::Ocean, wave, rng, 0);   // the bubbles
+        const double length = waveLength(wave) * kWaveStepsPerSecond;
+        int steps = 0;
+        while (!spawner.finished() && steps < static_cast<int>(length)) {
+            spawner.step(WaveBiome::Ocean, wave, rng, due);
+            ++steps;
+        }
+        CHECK(spawner.finished());
+        CHECK(steps < length * 0.75);
+    }
 }
 
 TEST(special_waves_start_at_fifteen) {
@@ -164,7 +231,7 @@ TEST(special_waves_start_at_fifteen) {
     CHECK(from > 200 && from < 400);   // 15% of 2000
 }
 
-TEST(rarity_climbs_with_the_wave_and_stops_at_mythic) {
+TEST(rarity_climbs_with_the_wave_up_to_super) {
     Rng rng(19);
     const auto mean = [&rng](int wave) {
         double total = 0.0;
@@ -174,10 +241,23 @@ TEST(rarity_climbs_with_the_wave_and_stops_at_mythic) {
     CHECK(mean(1) < 0.5);
     CHECK(mean(10) > mean(1));
     CHECK(mean(30) > mean(10));
-    // Past wave 60 only mythic is left. A wave far past what a double can raise
-    // 1.3 to must land there too rather than on a NaN.
-    for (const int wave : {61, 500, 65535}) {
-        for (int i = 0; i < 200; ++i) CHECK(rollWaveRarity(wave, rng) == Rarity::Mythic);
+    CHECK(mean(80) > mean(60));
+    const auto share = [&rng](int wave, Rarity rarity) {
+        int hits = 0;
+        for (int i = 0; i < 400; ++i) hits += rollWaveRarity(wave, rng) == rarity;
+        return hits / 400.0;
+    };
+    // Past wave 60 nothing below mythic is left; ultras then supers take over.
+    for (int i = 0; i < 400; ++i) {
+        const Rarity rolled = rollWaveRarity(61, rng);
+        CHECK(rarityIndex(rolled) >= rarityIndex(Rarity::Mythic));
+        CHECK(rarityIndex(rolled) <= rarityIndex(Rarity::Super));
+    }
+    CHECK(share(70, Rarity::Ultra) > 0.5);
+    CHECK(share(95, Rarity::Super) > 0.95);
+    // And never past super, even where a double cannot raise 1.3 that far.
+    for (const int wave : {120, 500, 65535}) {
+        for (int i = 0; i < 200; ++i) CHECK(rollWaveRarity(wave, rng) == Rarity::Super);
     }
 }
 
@@ -186,20 +266,30 @@ TEST(the_waves_realm_is_a_disc_of_open_floor) {
     CHECK(kWavesRealm != kAdminArenaRealm);
     Terrain terrain;
     CHECK(!terrain.blocked(kWavesCentre, kWavesRealm));
-    CHECK(terrain.blocked({kWavesCentre.x + kWavesRadius + 1.0, kWavesCentre.y}, kWavesRealm));
-    const Vec2 out{kWavesCentre.x + kWavesRadius * 2.0, kWavesCentre.y};
+    CHECK(terrain.blocked({kWavesCentre.x + kWavesStartRadius + 1.0, kWavesCentre.y}, kWavesRealm));
+    const Vec2 out{kWavesCentre.x + kWavesStartRadius * 2.0, kWavesCentre.y};
     const Vec2 kept = terrain.clampInside(out, 25.0, kWavesRealm);
-    CHECK(std::abs(distance(kept, kWavesCentre) - (kWavesRadius - 25.0)) < 1e-6);
+    CHECK(std::abs(distance(kept, kWavesCentre) - (kWavesStartRadius - 25.0)) < 1e-6);
     const auto pushed = terrain.resolveWall(out, 25.0, kWavesRealm);
     CHECK(pushed.collided);
-    CHECK(distance(pushed.position, kWavesCentre) <= kWavesRadius);
+    CHECK(distance(pushed.position, kWavesCentre) <= kWavesStartRadius);
     CHECK(!terrain.segmentBlocked(kWavesCentre, {kWavesCentre.x + 1000.0, kWavesCentre.y}, kWavesRealm));
     Rng rng(23);
     for (int i = 0; i < 50; ++i) {
-        CHECK(distance(terrain.findOpenSpawn(rng, kWavesCentre, kWavesRadius, kWavesRealm),
-                       kWavesCentre) <= kWavesRadius);
+        CHECK(distance(terrain.findOpenSpawn(rng, kWavesCentre, kWavesStartRadius * 3.0, kWavesRealm),
+                       kWavesCentre) <= kWavesStartRadius);
     }
     CHECK_EQ(terrain.realmExtent(kWavesRealm).x, kWavesWorldSize);
+
+    // Grown, the same questions answer for the bigger disc, in the same space.
+    terrain.wavesRadius = 3000.0;
+    CHECK(!terrain.blocked({kWavesCentre.x + 2000.0, kWavesCentre.y}, kWavesRealm));
+    CHECK(terrain.blocked({kWavesCentre.x + 3001.0, kWavesCentre.y}, kWavesRealm));
+    CHECK(std::abs(distance(terrain.clampInside(out, 25.0, kWavesRealm), kWavesCentre) - 2975.0) < 1e-6);
+    CHECK_EQ(terrain.realmExtent(kWavesRealm).x, kWavesWorldSize);
+    terrain.wavesRadius = kWavesMaxRadius;
+    CHECK(!terrain.blocked({kWavesCentre.x, kWavesCentre.y - kWavesMaxRadius + 1.0}, kWavesRealm));
+    CHECK(kWavesCentre.y - kWavesMaxRadius > 0.0);
 }
 
 TEST(a_mob_stays_inside_the_disc_grid_as_well) {
@@ -326,7 +416,7 @@ TEST(standing_on_the_rift_takes_a_flower_to_the_disc_and_starts_the_first_wave) 
     CHECK(alice.wave().phase == WavePhase::Playing);
     CHECK(alice.wave().biome == WaveBiome::Garden);
     const Vec2 arrived = h.server.world().get<Transform>(body).position;
-    CHECK(distance(arrived, kWavesCentre) <= kWavesRadius);
+    CHECK(distance(arrived, kWavesCentre) <= h.server.terrain().wavesRadius);
     // The rift stays for whoever else is on the way.
     CHECK(boss.rift().open);
     // Nobody else is taken along.
@@ -339,11 +429,52 @@ TEST(standing_on_the_rift_takes_a_flower_to_the_disc_and_starts_the_first_wave) 
         Query<MobTag, Transform> mobs{h.server.world()};
         mobs.each([&](Entity, MobTag&, Transform& mob) {
             if (mob.realm != kWavesRealm) return;
-            CHECK(distance(mob.position, kWavesCentre) <= kWavesRadius);
+            CHECK(distance(mob.position, kWavesCentre) <= h.server.terrain().wavesRadius);
             CHECK(distance(mob.position, arrived) >= kWaveSpawnSafety);
         });
     }
     CHECK(h.stepUntil({&boss, &alice}, [&] { return !alice.wave().groups.empty(); }, 100));
+}
+
+TEST(the_disc_grows_each_wave_and_a_new_game_starts_small) {
+    Harness h("waves-grow", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves garden 20"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    const Terrain& terrain = h.server.terrain();
+    // From the start, at the starting wave's size.
+    CHECK_EQ(terrain.wavesRadius, waveRadius(20));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.wave().known && boss.wave().radius == waveRadius(20); }));
+    CHECK_EQ(boss.terrain().wavesRadius, waveRadius(20));
+
+    // A flower standing at the old edge is where it was after the disc grows.
+    const Entity body = bodyOf(h, "boss");
+    World& world = h.server.world();
+    const Vec2 edge{kWavesCentre.x + waveRadius(20) - 30.0, kWavesCentre.y};
+    world.get<Transform>(body).position = edge;
+    GameServerPeer::endThisWave(h.server);
+    CHECK(h.stepUntil({&boss}, [&] { return run.wave == 21; }, 20));
+    CHECK_EQ(terrain.wavesRadius, waveRadius(21));
+    CHECK(distance(world.get<Transform>(body).position, edge) < 50.0);
+    CHECK(h.stepUntil({&boss}, [&] { return boss.wave().radius == waveRadius(21); }));
+    // And it can walk out into the new ground.
+    CHECK(!terrain.blocked({kWavesCentre.x + waveRadius(21) - 10.0, kWavesCentre.y}, kWavesRealm));
+
+    // The next game starts at its own starting size again.
+    CHECK(say(h, boss, "/admin stop_waves"));
+    CHECK_EQ(terrain.wavesRadius, kWavesStartRadius);
+    CHECK(h.stepUntil({&boss}, [&] { return boss.view().realm() != kWavesRealm; }));
+    CHECK(say(h, boss, "/admin start_waves garden 3"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    CHECK_EQ(terrain.wavesRadius, waveRadius(3));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.wave().radius == waveRadius(3); }));
 }
 
 TEST(a_wave_goes_red_over_a_crowd_then_ends_whatever_is_left) {
@@ -575,7 +706,7 @@ TEST(the_dead_watch_until_the_next_wave_gets_them_up_beside_a_survivor) {
     CHECK(h.stepUntil({&boss, &alice}, [&] { return alice.dead(); }));
 }
 
-TEST(nobody_standing_is_game_over_and_the_rift_closes) {
+TEST(nobody_standing_closes_the_room_and_brings_everyone_back) {
     Harness h("waves-over", seedWaves, dataDir(), 0);
     CHECK(h.ready);
     if (!h.ready) return;
@@ -586,58 +717,39 @@ TEST(nobody_standing_is_game_over_and_the_rift_closes) {
     std::vector<NetClient*> all{&boss, &alice, &bob};
     CHECK(say(h, boss, "/admin start_waves"));
     CHECK(h.stepUntil(all, [&] { return boss.rift().open && alice.rift().open; }));
+    const Realm home = alice.rift().realm;
+    const Vec2 rift = alice.rift().position;
     CHECK(throughTheRift(h, all, boss, "boss"));
     CHECK(throughTheRift(h, all, alice, "alice"));
+    auto& run = GameServerPeer::waves(h.server);
+    CHECK(h.stepUntil(all, [&] { return mobsOnTheDisc(h.server.world()) > 0; }, 200));
+
+    // One down is not the end.
+    kill(h, "alice");
+    CHECK(h.stepUntil(all, [&] { return alice.dead(); }));
+    h.step(10, all);
+    CHECK(run.phase == WavePhase::Playing);
+
     kill(h, "boss");
-    kill(h, "alice");
-    auto& run = GameServerPeer::waves(h.server);
-    CHECK(h.stepUntil(all, [&] { return run.phase == WavePhase::Ended; }, 60));
+    CHECK(h.stepUntil(all, [&] { return run.phase == WavePhase::Idle; }, 30));
     CHECK(h.stepUntil(all, [&] { return !bob.rift().open && !boss.rift().open; }));
-    CHECK(h.stepUntil(all, [&] { return alice.wave().phase == WavePhase::Ended; }));
-    // Nobody gets up on a clock that has stopped.
-    const int reached = run.wave;
-    GameServerPeer::endThisWave(h.server);
-    h.step(30, all);
-    CHECK_EQ(run.wave, reached);
-    CHECK(alice.dead());
-
-    // Leaving is GAME OVER's Continue. The last one out clears the disc.
-    boss.leaveGame();
-    h.step(20, all);
-    CHECK(run.phase == WavePhase::Ended);
-    alice.leaveGame();
-    CHECK(h.stepUntil(all, [&] { return run.phase == WavePhase::Idle; }, 60));
+    CHECK(h.stepUntil(all, [&] {
+        return alice.view().realm() == home && boss.view().realm() == home && !alice.dead() &&
+               !boss.dead();
+    }));
+    World& world = h.server.world();
+    CHECK(distance(world.get<Transform>(bodyOf(h, "alice")).position, rift) < kTileSize * 2.0);
+    CHECK(!world.has<Dead>(bodyOf(h, "boss")));
+    bool told = false;
+    for (const auto& line : alice.chat()) {
+        if (line.text.find("You reached wave 1") != std::string::npos) told = true;
+    }
+    CHECK(told);
     h.step(5, all);
-    CHECK_EQ(mobsOnTheDisc(h.server.world()), 0);
+    CHECK_EQ(mobsOnTheDisc(world), 0);
     // Which leaves the server free to open another.
-    boss.joinGame(1000, 800);
-    CHECK(h.stepUntil(all, [&] { return boss.status() == NetClient::Status::Playing; }));
     CHECK(say(h, boss, "/admin start_waves"));
     CHECK(run.phase == WavePhase::Open);
-}
-
-TEST(a_new_rift_clears_what_is_left_of_a_finished_game) {
-    Harness h("waves-restart", seedWaves, dataDir(), 0);
-    CHECK(h.ready);
-    if (!h.ready) return;
-    NetClient boss, alice;
-    CHECK(playing(h, boss, "boss"));
-    CHECK(playing(h, alice, "alice"));
-    std::vector<NetClient*> all{&boss, &alice};
-    CHECK(say(h, boss, "/admin start_waves"));
-    CHECK(h.stepUntil(all, [&] { return alice.rift().open; }));
-    CHECK(throughTheRift(h, all, alice, "alice"));
-    kill(h, "alice");
-    auto& run = GameServerPeer::waves(h.server);
-    CHECK(h.stepUntil(all, [&] { return run.phase == WavePhase::Ended; }, 60));
-
-    // alice is sitting on GAME OVER and never presses Continue.
-    CHECK(say(h, boss, "/admin start_waves"));
-    CHECK(run.phase == WavePhase::Open);
-    CHECK(h.stepUntil(all, [&] { return alice.view().realm() != kWavesRealm; }));
-    CHECK(h.stepUntil(all, [&] { return !alice.dead(); }));
-    h.step(5, all);
-    CHECK_EQ(mobsOnTheDisc(h.server.world()), 0);
 }
 
 TEST(everyone_walking_out_leaves_the_rift_open_for_the_next_arrival) {
@@ -662,7 +774,9 @@ TEST(everyone_walking_out_leaves_the_rift_open_for_the_next_arrival) {
     CHECK(boss.rift().open);
     CHECK_EQ(run.wave, 5);
     // Nothing queued in the abandoned game comes through into the next one.
-    CHECK(!run.spawner.step(run.biome, run.wave, h.probeRng).has_value());
+    std::vector<WaveMob> due;
+    run.spawner.step(run.biome, run.wave, h.probeRng, due);
+    CHECK(due.empty());
 }
 
 TEST(stop_waves_brings_everyone_back_where_they_went_in) {
@@ -700,6 +814,83 @@ TEST(stop_waves_brings_everyone_back_where_they_went_in) {
     CHECK(!world.has<Dead>(bodyOf(h, "bob")));
     h.step(5, all);
     CHECK_EQ(mobsOnTheDisc(world), 0);
+}
+
+TEST(a_full_disc_holds_the_rest_of_the_wave_until_there_is_room) {
+    Harness h("waves-full", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves garden 95"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    // Supers fill it in seconds, long before the wave's 950 points are spent.
+    CHECK(h.stepUntil({&boss}, [&] { return run.bodyArea >= kWaveMaxBodyArea; },
+                      static_cast<int>(20000.0 / net::kTickMillis)));
+    h.step(static_cast<int>(5000.0 / net::kTickMillis), {&boss});
+    CHECK(!run.spawner.finished());
+    const int owed = run.spawner.points();
+    CHECK(owed > 0);
+    // Over by no more than the step that filled it.
+    CHECK(run.bodyArea < kWaveMaxBodyArea * 1.5);
+    CHECK(run.mobs < 300);
+
+    // Make room and the rest comes, not dropped while it waited.
+    killMobsLeaving(h, 0);
+    CHECK(h.stepUntil({&boss}, [&] { return run.spawner.points() < owed; },
+                      static_cast<int>(3000.0 / net::kTickMillis)));
+}
+
+TEST(a_super_on_the_disc_is_stock_not_a_boss) {
+    Harness h("waves-supers", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    World& world = h.server.world();
+    SpawnSystem& spawner = GameServerPeer::spawning(h.server);
+    const std::uint16_t hornet = content().mobIndex("hornet");
+    CHECK(hornet != kInvalidIndex);
+    if (hornet == kInvalidIndex) return;
+    const auto defeats = [&] {
+        int lines = 0;
+        for (const auto& line : boss.chat()) {
+            if (line.text.find("has been defeated") != std::string::npos) ++lines;
+        }
+        return lines;
+    };
+
+    spawner.bossSpawns.clear();
+    const Entity onDisc = spawner.spawnMob(world, h.server.terrain(), content(), hornet,
+                                           Rarity::Super, kWavesCentre, kWavesRealm, h.clock,
+                                           h.probeRng);
+    CHECK(onDisc != NULL_ENTITY);
+    CHECK(spawner.bossSpawns.empty());
+    // The same mob on a map is announced, which is what makes the line above mean
+    // something.
+    const Transform at = world.get<Transform>(bodyOf(h, "boss"));
+    const Entity onMap = spawner.spawnMob(world, h.server.terrain(), content(), hornet,
+                                          Rarity::Super, at.position + Vec2{900.0, 0.0},
+                                          at.realm, h.clock, h.probeRng);
+    CHECK(onMap != NULL_ENTITY);
+    CHECK(!spawner.bossSpawns.empty());
+
+    const int before = defeats();
+    // Through combat's own death pass, which is where kill lines come from: an
+    // overwhelming poison, as chat_command_tests kills a super.
+    const auto poison = [&](Entity e) {
+        if (!world.has<Afflictions>(e)) world.add<Afflictions>(e, Afflictions{});
+        world.get<Afflictions>(e).poisonStacks.push_back({NULL_ENTITY, 1e12, 1e18});
+    };
+    poison(onDisc);
+    CHECK(h.stepUntil({&boss}, [&] { return !world.isAlive(onDisc); }, 120));
+    h.step(10, {&boss});
+    CHECK_EQ(defeats(), before);
+    poison(onMap);
+    CHECK(h.stepUntil({&boss}, [&] { return defeats() > before; }, 120));
 }
 
 // -- the screen -------------------------------------------------------------
@@ -750,9 +941,10 @@ TEST(a_black_portal_grows_cracks_and_a_white_one_has_none) {
 
 TEST(the_waves_disc_is_paved_in_its_biome_and_black_outside) {
     const int size = 256;
-    const auto sample = [&](WaveBiome biome, Vec2 at) {
+    const auto sample = [&](WaveBiome biome, Vec2 at, double radius = kWavesStartRadius) {
         WorldRenderer renderer;
         renderer.setWaveBiome(biome);
+        renderer.setWaveRadius(radius);
         WorldView view;
         view.setRealm(kWavesRealm);
         Canvas canvas = Canvas::createVirtual(size, size);
@@ -764,8 +956,12 @@ TEST(the_waves_disc_is_paved_in_its_biome_and_black_outside) {
     CHECK(floor.size() == 4);
     if (floor.size() != 4) return;
     CHECK_EQ(floor[0], static_cast<std::uint8_t>(waveBiomeInfo(WaveBiome::Desert).gaugeColor >> 16));
-    const auto outside = sample(WaveBiome::Desert, {kWavesCentre.x + kWavesRadius + 200.0, kWavesCentre.y});
+    const Vec2 beyond{kWavesCentre.x + kWavesStartRadius + 200.0, kWavesCentre.y};
+    const auto outside = sample(WaveBiome::Desert, beyond);
     CHECK_EQ(outside[0] + outside[1] + outside[2], 0);
+    // A grown disc is floor out there.
+    const auto grown = sample(WaveBiome::Desert, beyond, 3000.0);
+    CHECK_EQ(grown[0], floor[0]);
 }
 
 TEST(a_dead_flower_on_the_disc_leaves_no_corpse) {
