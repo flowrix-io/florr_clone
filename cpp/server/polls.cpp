@@ -6,6 +6,15 @@
 #include <cmath>
 #include <unordered_set>
 namespace flix {
+Json GameServer::pollSummary(const HostedPoll& poll) const {
+    Json row=Json::object(),options=Json::array(),counts=Json::array();
+    for(const auto& option:poll.options)options.push(option);
+    for(int count:poll.counts)counts.push(count);
+    row["id"]=poll.id;row["question"]=poll.question;row["author"]=poll.author;
+    row["options"]=options;row["counts"]=counts;row["total"]=double(poll.votes.size());
+    row["active"]=poll.active&&clockMillis_<poll.endsAtMillis;
+    return row;
+}
 void GameServer::sendPollState(Session& s,net::Connection& peer,const std::string& message) {
     Json data=Json::object(),options=Json::array();
     for(const auto& option:poll_.options)options.push(option);
@@ -16,6 +25,7 @@ void GameServer::sendPollState(Session& s,net::Connection& peer,const std::strin
     if(s.admin) {
         Json counts=Json::array();for(int count:poll_.counts)counts.push(count);
         data["counts"]=counts;data["total"]=double(poll_.votes.size());data["canViewResults"]=true;
+        data["historyCount"]=double(pollHistory_.size()+(poll_.active?1:0));data["historyRevision"]=double(pollHistoryRevision_);
     }
     sendAdminTools(s,peer,"poll",true,message,data);
 }
@@ -24,10 +34,27 @@ void GameServer::broadcastPollState(const std::string& voter) {
         if(auto* peer=listener_.find(id))sendPollState(s,*peer);
 }
 void GameServer::expirePoll() {
-    if(poll_.active && clockMillis_>=poll_.endsAtMillis) {poll_.active=false;broadcastPollState();}
+    if(poll_.active && clockMillis_>=poll_.endsAtMillis) {
+        poll_.active=false;pollHistory_.push_back(pollSummary(poll_));++pollHistoryRevision_;broadcastPollState();
+    }
 }
 void GameServer::runPollRequest(Session& s,net::Connection& peer,const Json& q) {
     expirePoll();const auto action=q["action"].asString();
+    if(action=="history"){
+        if(!s.admin){sendAdminTools(s,peer,"poll_history",false,"Full admin access required.");return;}
+        const double requested=q["offset"].asDouble(0);
+        if(!std::isfinite(requested)||requested<0||requested>2147483647.0||std::floor(requested)!=requested){sendAdminTools(s,peer,"poll_history",false,"Invalid history page.");return;}
+        const std::size_t total=pollHistory_.size()+(poll_.active?1:0);
+        std::size_t offset=total?std::min(std::size_t(requested),total-1):0;
+        const auto selected=q["id"].asString();
+        if(!selected.empty()){
+            if(poll_.active&&selected==poll_.id)offset=0;
+            else for(std::size_t i=0;i<pollHistory_.size();++i)if(pollHistory_[i]["id"].asString()==selected){offset=(poll_.active?1:0)+pollHistory_.size()-1-i;break;}
+        }
+        Json data=Json::object();data["total"]=double(total);data["offset"]=double(offset);data["canViewResults"]=true;
+        if(total)data["poll"]=poll_.active&&offset==0?pollSummary(poll_):pollHistory_[pollHistory_.size()-1-(offset-(poll_.active?1:0))];
+        sendAdminTools(s,peer,"poll_history",true,"",data);return;
+    }
     if(action=="status"){sendPollState(s,peer);return;}
     if(action=="vote") {
         const double choice=q["choice"].asDouble(-1);
@@ -55,7 +82,7 @@ void GameServer::runPollRequest(Session& s,net::Connection& peer,const Json& q) 
     }
     HostedPoll next;next.id=std::to_string(database_.nowMillis())+"_"+std::to_string(rng_.next());
     next.question=question;next.author=s.username;next.options=std::move(options);next.counts.resize(next.options.size());
-    next.endsAtMillis=clockMillis_+seconds*1000;next.active=true;poll_=std::move(next);
+    next.endsAtMillis=clockMillis_+seconds*1000;next.active=true;poll_=std::move(next);++pollHistoryRevision_;
     Json result=Json::object();result["created"]=true;
     sendAdminTools(s,peer,"poll_creator",true,"Poll created. Results are in Debug > Polls.",result);
     broadcastPollState();
