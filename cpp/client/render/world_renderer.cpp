@@ -1808,11 +1808,6 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
 
-    if(map) {
-        int theme=adminArenaTheme(map->biome());if(theme<0)theme=0;
-        const auto* art=sprites_?sprites_->tileArt(kAdminArenaThemes[theme].wall):nullptr;
-        drawBoundaryBlocks(canvas,camera,art,map->width(),map->height());
-    }
     // The PICTURE of a realm is its map file's tile layers, read off disk by
     // every client. The collision grid that arrives over the wire is the
     // server's answer to a different question and is never drawn: a cell looks
