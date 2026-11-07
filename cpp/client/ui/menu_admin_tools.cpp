@@ -129,10 +129,10 @@ void renderEventTeams(MenuContext& ctx,Rect p) {
     account(ctx);const auto& reply=ctx.net.adminTools("event");
     const auto sendTeam=[&](const char* action,Json q=Json::object()){q["offset"]=forms.teamOffset;send(ctx,"event",action,q);};
     text(ctx.canvas,"Arena teams: teammates cannot damage each other, pets or projectiles.",p.x,p.y+12,style(14));
-    const char* labels[]{"Free for all","Me vs Everyone","Admins vs Players","Manual teams"};const char* modes[]{"ffa","solo","admins","manual"};
-    for(int i=0;i<4;++i)if(button(ctx,{p.x+i*p.w/4,p.y+36,p.w/4-6,32},labels[i])){Json q=Json::object();q["mode"]=modes[i];sendTeam("team_mode",q);}
-    const auto mode=reply["teams"]["mode"].asString("ffa");std::string label="Free for all";for(int i=0;i<4;++i)if(mode==modes[i])label=labels[i];
-    text(ctx.canvas,"Current: "+label+" | Team presets enable PvP",p.x,p.y+91,style());
+    const char* labels[]{"No teams (normal)","Free for all","Me vs Everyone","Admins vs Players","Manual teams"};const char* modes[]{"none","ffa","solo","admins","manual"};
+    for(int i=0;i<5;++i)if(button(ctx,{p.x+i*p.w/5,p.y+36,p.w/5-6,32},labels[i])){Json q=Json::object();q["mode"]=modes[i];sendTeam("team_mode",q);}
+    const auto mode=reply["teams"]["mode"].asString("none");std::string label="No teams (normal)";for(int i=0;i<5;++i)if(mode==modes[i])label=labels[i];
+    text(ctx.canvas,"Current: "+label,p.x,p.y+91,style());
     const int page=std::clamp(int((p.h-235)/38),1,6);
     if(button(ctx,{p.right()-200,p.y+76,100,28},"Refresh"))sendTeam("list");
     if(button(ctx,{p.right()-90,p.y+76,38,28},"<")){forms.teamOffset=std::max(0,forms.teamOffset-page);sendTeam("list");}

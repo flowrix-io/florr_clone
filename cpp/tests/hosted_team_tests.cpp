@@ -82,3 +82,13 @@ TEST(hosted_pvp_and_map_updates_keep_the_world_visible_without_a_teleport_iris){
     CHECK(h.stepUntil({&host},[&]{return host.adminTools("arena").dump()!=previous;}));CHECK(host.adminTools("arena")["ok"].asBool());CHECK(!host.takeTeleported());CHECK(host.view().entities().count(self)>0);CHECK(host.takeRealmChange(arrival));
     CHECK(say(h,host,"/admin arena wall desert"));CHECK(!host.takeTeleported());CHECK(host.view().entities().count(self)>0);
 }
+
+TEST(hosted_no_teams_clears_assignments_and_preserves_both_pvp_settings){
+    Harness h("hosted-no-teams",seed,dataDir(),0);CHECK(h.ready);if(!h.ready)return;NetClient host,alice,bob;CHECK(join(h,host,alice,bob));
+    auto* a=GameServerPeer::sessionOf(h.server,"alice");auto* b=GameServerPeer::sessionOf(h.server,"bob");CHECK(a&&b);if(!a||!b)return;World& world=h.server.world();
+    Json q=Json::object();q["mode"]="solo";CHECK(event(h,host,"team_mode",q));q["player"]=a->userId;q["team"]=3;CHECK(event(h,host,"team_assign",q));
+    CHECK(say(h,host,"/admin arena pvp off"));q["mode"]="none";CHECK(event(h,host,"team_mode",q));
+    CHECK(host.adminTools("event")["ok"].asBool());CHECK_EQ(world.get<Faction>(a->entity).hostedTeam,0);CHECK_EQ(world.get<Faction>(b->entity).hostedTeam,0);CHECK(!world.get<Faction>(a->entity).friendlyFireEnabled);CHECK(!CombatSystem::canDamage(world,a->entity,b->entity));CHECK_EQ(host.adminTools("event")["teams"]["assignments"].size(),std::size_t(0));
+    CHECK(event(h,host,"save_current"));Database reopened;std::string error;CHECK(reopened.load(h.dbPath,error));CHECK_EQ(reopened.storedTable("adminArena")["teams"]["mode"].asString(),"none");CHECK(!reopened.storedTable("adminArena")["pvp"].asBool());
+    q["mode"]="solo";CHECK(event(h,host,"team_mode",q));q["mode"]="none";CHECK(event(h,host,"team_mode",q));CHECK_EQ(world.get<Faction>(a->entity).hostedTeam,0);CHECK(world.get<Faction>(a->entity).friendlyFireEnabled);CHECK(CombatSystem::canDamage(world,a->entity,b->entity));
+}
