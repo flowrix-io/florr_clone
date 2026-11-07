@@ -562,3 +562,5 @@ The **Teams** tab offers Free for all, Me vs Everyone, Admins vs Players, and fo
 **Use personal gear** permits saving/loading normal presets against the temporary copy of personal gear. Bans, active-slot limits and loadout locks still apply. Custom host-provided kits and public arena runs cannot overwrite saved presets.
 
 Hosted PvP toggles and live map updates preserve the current world view without a black teleport transition. Cursor teleport also skips that transition. The Arena editor's **Update** button broadcasts the current map and saves it to disk; brush edits continue to apply automatically.
+
+**No teams (normal)** clears all saved team assignments and restores normal combat rules while preserving the current PvP on/off setting. Free for all remains a separate option that enables PvP.
