@@ -23,6 +23,7 @@
 // answered by the server.
 
 #include "client/app.h"
+#include "client/chat_channels.h"
 
 #include <algorithm>
 #include <cctype>
@@ -109,23 +110,10 @@ constexpr double kChatCodeAlpha = 0.45;
 constexpr double kChatCodePad = 2.0;
 constexpr double kChatCodeRadius = 3.0;
 
-/// The channel tabs, in strip order -- the order chatChannels' bits and
-/// App::chatSendTab_ count in. Local is first because it is where a line goes
-/// unless the player picks otherwise. Admin is last, and is the one tab that
-/// only filters: it files every admin's announcements, and nothing typed in
-/// the box is ever sent to it (see chatTabSendable).
-enum ChatTab : int {
-    kTabLocal, kTabGlobal, kTabSquad, kTabGuild, kTabWhisper, kTabAdmin, kChatTabCount
-};
+// Admin is visible as a transcript filter for everyone and sendable only to
+// full admins. Enter uses the existing server-validated announce command.
 static_assert((1u << kTabAdmin) == kChatAdminChannel &&
-                  (1u << kChatTabCount) - 1u == kChatChannelsAll,
-              "ClientSettings::chatChannels names the tabs' bits in this order");
-
-/// Whether Enter can send to a tab. The Admin tab cannot: an announcement
-/// raises a banner on every screen on the server, so it is made on purpose --
-/// the dashboard's Announce tab, or `/admin announce` -- and never by a player
-/// who pressed Tab once too often and kept typing.
-constexpr bool chatTabSendable(int tab) { return tab != kTabAdmin; }
+                  (1u << kChatTabCount) - 1u == kChatChannelsAll);
 
 struct ChatTabStyle {
     const char* label;
@@ -165,18 +153,6 @@ ui::InputPrefix chatPrefix(int tab, const std::string& whisperPartner) {
         return {"[To " + whisperPartner + "]", style.colour};
     }
     return {std::string("[") + style.label + "]", style.colour};
-}
-
-/// What Enter puts in front of a line on each tab, before the server sees it.
-/// Global is a line with no slash at all, which the server says to everyone.
-std::string chatChannelCommand(int tab, const std::string& whisperPartner) {
-    switch (tab) {
-        case kTabLocal: return "/l ";
-        case kTabSquad: return "/s ";
-        case kTabGuild: return "/g ";
-        case kTabWhisper: return "/w " + whisperPartner + " ";
-        default: return {};
-    }
 }
 
 /// The bare words that switch the channel Enter sends to, in strip order.
@@ -829,6 +805,7 @@ bool App::scrollChat() {
 }
 
 void App::editChatLine() {
+    if (!chatTabSendable(chatSendTab_, net_.isSkinAdmin())) chatSendTab_ = kTabLocal;
     const std::string before = chatDraft_;
     ui::TextEditOptions typing;
     // What the channel puts in front of the line counts against the server's
@@ -865,7 +842,7 @@ void App::editChatLine() {
                 // Back to the newest line: an offset into the old selection
                 // of lines points at nothing in the new one.
                 chatScroll_ = 0;
-            } else if (chatTabSendable(tab)) {
+            } else if (chatTabSendable(tab, net_.isSkinAdmin())) {
                 chatSendTab_ = tab;
             }
             break;
@@ -877,7 +854,7 @@ void App::editChatLine() {
     const auto stepChannel = [&](int step) {
         do {
             chatSendTab_ = (chatSendTab_ + step + kChatTabCount) % kChatTabCount;
-        } while (!chatTabSendable(chatSendTab_));
+        } while (!chatTabSendable(chatSendTab_, net_.isSkinAdmin()));
     };
     // Against the box the last frame painted: input runs before the draw, and
     // the field does not move between the two.
@@ -962,6 +939,12 @@ void App::editChatLine() {
 }
 
 void App::sendChatLine(const std::string& line) {
+    if (line.empty()) return;
+    if (!chatTabSendable(chatSendTab_, net_.isSkinAdmin())) {
+        chatSendTab_ = kTabLocal;
+        net_.addSystemMessage("Only full admins can send announcements. Switched to Local.");
+        return;
+    }
     if (handleClientCommand(line)) return;
     // "/global hi" says one line to everyone without leaving the channel, as
     // "/local hi" does on Local -- that one the server answers itself. Global

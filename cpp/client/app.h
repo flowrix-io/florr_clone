@@ -687,9 +687,8 @@ private:
     /// while the strip is not up.
     std::array<Rect, 6> chatTabs_{};
     std::array<Rect, 6> chatTabChecks_{};
-    /// The tab Enter sends to, in strip order: Local, Global, Squad, Guild or
-    /// Whisper. Never the sixth tab, Admin, which only filters: an
-    /// announcement is made on purpose, from the dashboard or the console.
+    /// The tab Enter sends to: Local, Global, Squad, Guild, Whisper, or Admin.
+    /// Admin sends through /admin announce and requires a full admin account.
     int chatSendTab_ = 0;
 
     // -- death ---------------------------------------------------------------

@@ -531,3 +531,13 @@ saved gear, XP and stars. Crafting, trades, forging, purchases, talents, saved-l
 presets and casino exchanges are unavailable during these events; star redemption
 still credits the permanent wallet. New kit/preset data uses the existing inventory
 representation, including its loadout-in-inventory marker.
+
+Full admins can also select **Admin** while cycling chat channels with Tab or
+Shift+Tab (or click its label), then press Enter to broadcast an announcement.
+This sends the existing `/admin announce` command, with the same server-side
+permissions, moderation and rate limit. Other accounts skip Admin when cycling;
+its transcript checkbox still shows or hides received announcements.
+
+Player chat has a server-enforced 500 ms minimum interval shared by Global,
+Local, Squad, Guild, whispers and admin announcements. Rejected cooldown attempts
+do not extend it; existing flood and repeat limits still apply.

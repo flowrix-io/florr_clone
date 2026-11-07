@@ -146,3 +146,12 @@ TEST(inventory_allowance_refills_without_banking_or_spending_movement) {
     refillAllowances(session, 3601100);
     CHECK_NEAR(session.inventoryAllowance, 20.0, 1e-9);
 }
+
+TEST(chat_cooldown_requires_half_a_second_without_extending_on_rejected_attempts) {
+    Session session;
+    CHECK(claimChatCooldown(session,1000));
+    CHECK(!claimChatCooldown(session,1000));CHECK(!claimChatCooldown(session,1499));
+    CHECK_EQ(session.nextChatMillis,1500.0);
+    CHECK(claimChatCooldown(session,1500));CHECK(!claimChatCooldown(session,1999));
+    CHECK(claimChatCooldown(session,2000));
+}

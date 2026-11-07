@@ -3266,6 +3266,11 @@ bool GameServer::screenChatLine(Session& session, net::Connection& speaker,
                             "said that a moment ago.</span>");
         return false;
     }
+    if (!claimChatCooldown(session, clockMillis_)) {
+        sendNotice(speaker, net::NoticeSeverity::Warning,
+                   "You are sending messages too quickly. Wait 0.5 seconds between messages.");
+        return false;
+    }
     recent.push_back({key, clockMillis_});
     return true;
 }
