@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 79;
+inline constexpr std::uint16_t kProtocolVersion = 80;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -959,6 +959,9 @@ enum DamageEventFlags : std::uint8_t {
     /// killing blow is sent only to that wearer, for the tile: nothing of the
     /// petal is left in the world to flash.
     DamageFlashOnly = 1 << 5,
+    /// A glitch petal's hit or shot, which the client paints green. The amount
+    /// beside it is already the rolled one (see glitchDamageScale). Version 80.
+    DamageGlitch = 1 << 6,
 };
 
 /// One-off things that happened this tick, for effects the client can play

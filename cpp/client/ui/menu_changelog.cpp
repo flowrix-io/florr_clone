@@ -555,6 +555,7 @@ constexpr ChangelogEntry kChangelog[] = {
         "New petal: Glitch Orb",
         "New mob: Glitch Missile",
         "New mob: Glitch Lightning",
+        "New petal: Glitch Light",
       }
     },
       

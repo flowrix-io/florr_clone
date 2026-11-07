@@ -13,6 +13,7 @@
 #include "test.h"
 #include "shared/game/casino.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -3378,5 +3379,65 @@ TEST(casino_map_marker_matches_stationary_npc_site_when_placed) {
             CHECK_NEAR(transform->position.y, kOracleY, 1e-6);
         }
     }
+    removeDataDir(dir);
+}
+
+TEST(a_glitch_petal_on_a_dummy_reaches_the_client_green_at_its_rolled_amounts) {
+    // The whole road: a real server, a real socket and what the client read back
+    // off it. Whichever glitch form ships, so this names no petal.
+    std::string form;
+    for (std::uint16_t i = 0; i < content().petalCount(); ++i) {
+        if (content().isGlitchForm(i) && content().petalStats(i, Rarity::Common).damage > 0.0) {
+            form = content().petal(i).id;
+            break;
+        }
+    }
+    if (form.empty()) return;
+
+    const double dummyX = kTileSize * 8.0;
+    const double y = kTileSize * 8.0;
+    const std::string dir =
+        npcWorld("npc-glitch-number", fixtureNpc(dummyX, y, "target_dummy", "common"));
+    Harness h("npc-glitch-number", [&](const std::string& path) {
+        seedAccount(path, "hitter");
+        seedWorn(path, "hitter", 0, form.c_str(), Rarity::Common);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+
+    NetClient client;
+    CHECK(joinAs(h, client, "hitter"));
+    h.step(3, {&client});
+    World& world = h.server.world();
+    const Entity dummy = npcWearing(world, "target_dummy");
+    const Entity player = onlyPlayer(world);
+    if (dummy == NULL_ENTITY || player == NULL_ENTITY) {
+        CHECK(false);
+        removeDataDir(dir);
+        return;
+    }
+    const std::uint32_t dummyId = world.get<NetId>(dummy).value;
+
+    CHECK(awaitRing(h, {&client}, world, player));
+    client.view().events().clear();
+    for (int i = 0; i < kOneRingTurnTicks * 10; ++i) {
+        world.get<Transform>(player).position = ringOnly(world, dummy, player);
+        world.get<Health>(player).current = world.get<Health>(player).max;
+        h.step(1, {&client});
+    }
+
+    int green = 0;
+    int otherColour = 0;
+    std::vector<double> amounts;
+    for (const ViewEvent& event : client.view().events()) {
+        if (event.kind != net::EventKind::Damage || event.netId != dummyId) continue;
+        if ((event.flag & net::DamageGlitch) != 0) ++green; else ++otherColour;
+        if (std::find(amounts.begin(), amounts.end(), event.amount) == amounts.end()) {
+            amounts.push_back(event.amount);
+        }
+    }
+    CHECK(green > 3);
+    CHECK_EQ(otherColour, 0);
+    // A fixed amount would mean the roll never made it to the wire.
+    CHECK(amounts.size() > 1);
     removeDataDir(dir);
 }

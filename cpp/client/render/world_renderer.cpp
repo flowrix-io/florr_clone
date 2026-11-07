@@ -394,6 +394,8 @@ constexpr double kPoisonNumberOffsetX = 14.0;
 /// the victim's post-hit window, so nothing else can land on the same body in
 /// the same tick for it to stack on.
 constexpr std::uint32_t kLightningTextColor = ui::kStatLightning;
+/// A glitch petal's hit (net::DamageGlitch).
+constexpr std::uint32_t kGlitchTextColor = ui::kStatGlitch;
 
 /// Which floating number a hit belongs to.
 ///
@@ -401,12 +403,13 @@ constexpr std::uint32_t kLightningTextColor = ui::kStatLightning;
 /// throttle. Sharing one bucket would let a poison tick land inside a petal
 /// hit's window and repaint the whole total purple -- or a strike's cyan repaint
 /// the ring damage that arrived beside it -- and the reverse.
-enum class NumberChannel : std::uint8_t { Hit = 0, Poison = 1, Lightning = 2 };
+enum class NumberChannel : std::uint8_t { Hit = 0, Poison = 1, Lightning = 2, Glitch = 3 };
 
 std::uint32_t numberColor(NumberChannel channel) {
     switch (channel) {
         case NumberChannel::Poison: return kPoisonTextColor;
         case NumberChannel::Lightning: return kLightningTextColor;
+        case NumberChannel::Glitch: return kGlitchTextColor;
         case NumberChannel::Hit: break;
     }
     return kDamageTextColor;
@@ -425,6 +428,7 @@ NumberChannel channelOf(std::uint8_t flags) {
     // and reading the byte in a fixed order beats leaving the answer to
     // whichever bit a future flag happens to occupy.
     if ((flags & net::DamagePoison) != 0) return NumberChannel::Poison;
+    if ((flags & net::DamageGlitch) != 0) return NumberChannel::Glitch;
     if ((flags & net::DamageLightning) != 0) return NumberChannel::Lightning;
     return NumberChannel::Hit;
 }
@@ -908,10 +912,11 @@ void WorldRenderer::ingestEvents(WorldView& view) {
             case net::EventKind::Killed: {
                 // Whatever was still accumulating dies with the target, so
                 // flush it rather than losing the killing blow's number. EVERY
-                // bucket: a mob can die with a petal hit, a poison tick and a
-                // strike all still pending.
+                // bucket: a mob can die with a petal hit, a poison tick, a
+                // strike and a glitch hit all still pending.
                 for (const NumberChannel channel :
-                     {NumberChannel::Hit, NumberChannel::Poison, NumberChannel::Lightning}) {
+                     {NumberChannel::Hit, NumberChannel::Poison, NumberChannel::Lightning,
+                      NumberChannel::Glitch}) {
                     const std::uint64_t key = numberKey(event.netId, channel);
                     const auto pending = damagePending_.find(key);
                     if (pending != damagePending_.end()) {
