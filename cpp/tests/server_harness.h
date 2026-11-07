@@ -23,6 +23,7 @@
 #include "server/db.h"
 #include "server/game_server.h"
 #include "server/systems/loot.h"
+#include "shared/game/waves.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
@@ -880,6 +881,15 @@ inline Entity onlyPlayer(World& world) {
 /// Defined here and nowhere else, so every test file that includes this one
 /// shares the one definition.
 struct GameServerPeer {
+    /// The one game of waves.
+    static auto& waves(GameServer& server) { return server.waves_; }
+    /// Runs this wave's clock out, the red one too: the next step starts the
+    /// next wave whatever is left on the disc.
+    static void endThisWave(GameServer& server) {
+        server.waves_.timer = waveLength(server.waves_.wave);
+        server.waves_.redTimer = server.waves_.timer;
+    }
+
     /// Sets when Hel's next sacrifice appears, on the server's clock -- zero
     /// is "on the next tick that simulates". The sacrifice on the ground, if any.
     static void windSacrificeClock(GameServer& server, double readyMillis) {

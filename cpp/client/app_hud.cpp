@@ -356,6 +356,7 @@ void App::drawHud(Canvas& canvas, double time) {
     // Under the boss bars, which share the top of the screen with it and are
     // what the player is fighting.
     drawAdminAnnouncement(canvas, bossBarsBottom);
+    drawWaveHud(canvas, time);
 
     // Over the HUD and under everything the menu system paints. A panel is the
     // one thing that takes the controls away, and it takes them away entirely

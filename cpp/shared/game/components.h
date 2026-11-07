@@ -693,6 +693,9 @@ struct TeleporterState {
     /// it lands on stays inert until it has stepped off; landing on no pad at
     /// all clears this on the next tick.
     bool arriving = false;
+    /// Charging an open rift (GameServer::stepRiftPortal), which is no element
+    /// of any map and so has no `pad` index to hold.
+    bool chargingRift = false;
 };
 
 /// Per-(player, victim) throttle for the raindrop petal's aura.

@@ -25,6 +25,7 @@
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_style.h"
 #include "shared/game/constants.h"
+#include "shared/game/waves.h"
 
 namespace flix {
 
@@ -93,6 +94,17 @@ constexpr double kDeathCardBelow = kDeathCloseY + kDeathCloseHeight * 0.5 + kDea
 /// being painted at a slide of 0.01, still 1% short of parked, and that 1%
 /// must not bring Close's rim back onto the screen.
 constexpr double kDeathParkClearance = 16.0;
+
+/// flooooio's scale for its 1300x650 layout at this game's 1920x1080 design size,
+/// which every size in the wave HUD below is written against.
+constexpr double kWaveUi = 1080.0 / 650.0;
+
+/// GAME OVER's Continue, under the words, the pair centred on the screen.
+Rect waveContinueBox(double width, double height) {
+    const double w = 88.0 * kWaveUi;
+    const double h = 24.0 * kWaveUi;
+    return {width * 0.5 - w * 0.5, height * 0.5 + 15.0 * kWaveUi, w, h};
+}
 
 /// `slide` is the container's animation: 1 is home and 0 parks the whole card
 /// above the screen, which is the reference's animate hook --
@@ -414,7 +426,20 @@ void App::updateDead(double dt) {
         // under the dimmed world still says "Press Enter to chat...".
         chatOpen_ = true;
     }
-    if (!deathCardVisible_) return;
+    const bool inWaves = net_.view().realm() == kWavesRealm;
+    if (!deathCardVisible_) {
+        // GAME OVER's own button, once the card is out of its way.
+        if (!inWaves || net_.wave().phase != WavePhase::Ended ||
+            !window_.mousePressed(MouseButton::Left)) {
+            return;
+        }
+        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+        if (!menus_.pollCapturesMouse(mouse) &&
+            hit(waveContinueBox(window_.width(), window_.height()), mouse)) {
+            leaveToTitle();
+        }
+        return;
+    }
 
     // The reference acts on the press, not the release, so the card is gone by
     // the time the button comes back up and a pressed state is never seen.
@@ -427,7 +452,10 @@ void App::updateDead(double dt) {
     // painted, and during the slide-in that is on its way down the screen.
     const DeathCard card = deathCardLayout(window_.width(), window_.height(), deathCardSlide_);
     if (hit(card.continueBox, mouse)) {
-        leaveToTitle();
+        // In the waves there is nothing to continue to yet: the flower gets up
+        // next wave, and until then the card is only in the way of watching.
+        if (inWaves) deathCardVisible_ = false;
+        else leaveToTitle();
         return;
     }
     // Close takes the card away -- it slides back up the way it came -- and
@@ -439,6 +467,145 @@ void App::updateDead(double dt) {
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
+
+void App::drawWaveHud(Canvas& canvas, double time) {
+    const NetClient::WaveView& wave = net_.wave();
+    if (net_.view().realm() != kWavesRealm || !wave.known) return;
+    const double width = canvas.width();
+    const double height = canvas.height();
+    const double middle = width * 0.5;
+
+    // The biome over the gauge: UIGame's waveInformationContainer.
+    double y = 30.0 * kWaveUi;
+    TextStyle biomeStyle;
+    biomeStyle.size = 16.0 * kWaveUi;
+    biomeStyle.align = Align::Centre;
+    text(canvas, waveBiomeInfo(wave.biome).label, middle, y + biomeStyle.size * 0.5, biomeStyle);
+    y += biomeStyle.size + 4.0 * kWaveUi;
+
+    // The server reports five times a second and the bar moves two pixels a
+    // second, so this is only to slide it down when a new wave resets it.
+    const double dt = std::clamp(time - waveGaugeAt_, 0.0, 0.25);
+    waveGaugeAt_ = time;
+    const double ease = 1.0 - std::exp(-dt * 6.0);
+    waveGaugeTimer_ += (wave.timer - waveGaugeTimer_) * ease;
+    waveGaugeRed_ += (wave.redTimer - waveGaugeRed_) * ease;
+
+    const double gaugeWidth = 140.0 * kWaveUi;
+    const double gaugeHeight = 12.0 * kWaveUi;
+    const double left = middle - gaugeWidth * 0.5;
+    const double lineY = y + gaugeHeight * 0.5;
+    const auto bar = [&](double fraction, double thickness, std::uint32_t colour) {
+        const double value = std::clamp(fraction, 0.0, 1.0);
+        canvas.setLineWidth(static_cast<float>(
+            std::min(gaugeHeight * thickness, value * gaugeHeight * 50.0)));
+        setStroke(canvas, colour);
+        canvas.beginPath();
+        canvas.moveTo(static_cast<float>(left), static_cast<float>(lineY));
+        canvas.lineTo(static_cast<float>(left + gaugeWidth * value), static_cast<float>(lineY));
+        canvas.stroke();
+    };
+    canvas.save();
+    canvas.setGlobalAlpha(0.9f);
+    canvas.setLineCap("round");
+    canvas.setLineWidth(static_cast<float>(gaugeHeight));
+    setStroke(canvas, kInk);
+    canvas.beginPath();
+    canvas.moveTo(static_cast<float>(left), static_cast<float>(lineY));
+    canvas.lineTo(static_cast<float>(left + gaugeWidth), static_cast<float>(lineY));
+    canvas.stroke();
+    if (wave.length > 0.0) {
+        if (waveGaugeTimer_ > 0.0) {
+            bar(waveGaugeTimer_ / wave.length, 0.75, waveBiomeInfo(wave.biome).gaugeColor);
+        }
+        if (waveGaugeRed_ > 0.0) bar(waveGaugeRed_ / wave.length, 0.6, 0xE32933u);
+    }
+    canvas.restore();
+    TextStyle gaugeStyle;
+    gaugeStyle.size = gaugeHeight * 0.65;
+    gaugeStyle.align = Align::Centre;
+    text(canvas, "Wave " + std::to_string(wave.wave), middle, lineY, gaugeStyle);
+    y += gaugeHeight + 8.0 * kWaveUi;
+
+    // The mobs still up, one column per kind and rarest at the bottom:
+    // UIGameWaveMobIcons, counted by the server, where flooooio's counts only
+    // what its client has seen.
+    std::vector<std::vector<const NetClient::WaveView::Group*>> columns;
+    for (const NetClient::WaveView::Group& group : wave.groups) {
+        if (columns.empty() || columns.back().front()->mobIndex != group.mobIndex) {
+            columns.emplace_back();
+        }
+        columns.back().push_back(&group);
+    }
+    const double icon = 30.0 * kWaveUi;
+    const double columnStep = (30.0 + 10.0 + 1.0) * kWaveUi;
+    const double rowStep = (30.0 + 6.0) * kWaveUi;
+    double x = middle - (static_cast<double>(columns.size()) * columnStep - (columnStep - icon)) * 0.5;
+    for (const auto& column : columns) {
+        double top = y;
+        for (const NetClient::WaveView::Group* group : column) {
+            setFill(canvas, rarityColor(group->rarity));
+            canvas.beginPath();
+            canvas.roundRect(static_cast<float>(x), static_cast<float>(top),
+                             static_cast<float>(icon), static_cast<float>(icon),
+                             static_cast<float>(2.5 * kWaveUi));
+            canvas.fill();
+            setStroke(canvas, shade(rarityColor(group->rarity), kItemTilePlateShade));
+            canvas.setLineWidth(static_cast<float>(2.0 * kWaveUi));
+            canvas.stroke();
+            const double radius = content().mobStats(group->mobIndex, Rarity::Common).radius;
+            sprites_.drawMobPicture(canvas, group->mobIndex, group->rarity, x + icon * 0.5,
+                                    top + icon * 0.5, icon * 0.85, icon * 0.7, time, radius);
+            if (group->count > 1) {
+                canvas.save();
+                canvas.translate(static_cast<float>(x + icon - 8.0 * kWaveUi),
+                                 static_cast<float>(top + 7.0 * kWaveUi));
+                canvas.rotate(static_cast<float>(20.0 * kPi / 180.0));
+                TextStyle amount;
+                amount.size = 8.0 * kWaveUi;
+                amount.align = Align::Centre;
+                text(canvas, "x" + std::to_string(group->count), 0.0, 0.0, amount);
+                canvas.restore();
+            }
+            top += rowStep;
+        }
+        x += columnStep;
+    }
+
+    // A dead flower's two lines, once the card has been dismissed.
+    if (!net_.dead() || deathCardVisible_) return;
+    if (wave.phase == WavePhase::Ended) {
+        setFill(canvas, kInk, 0.3);
+        canvas.fillRect(0, 0, static_cast<float>(width), static_cast<float>(height));
+        const Rect box = waveContinueBox(width, height);
+        TextStyle over;
+        over.size = 34.0 * kWaveUi;
+        over.align = Align::Centre;
+        over.fill = 0xF0666Bu;
+        text(canvas, "GAME OVER", middle, box.y - 20.0 * kWaveUi - over.size * 0.5, over);
+        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+        ButtonStyle style;
+        style.fill = 0xC62327u;
+        style.textSize = 17.0 * kWaveUi;
+        button(canvas, box, "Continue", hit(box, mouse),
+               hit(box, mouse) && window_.mouseDown(MouseButton::Left), style);
+        return;
+    }
+    TextStyle waiting;
+    waiting.size = 10.0 * kWaveUi;
+    waiting.align = Align::Centre;
+    const std::string line = "You will respawn next wave";
+    const double pillWidth = textWidth(canvas, line, waiting.size) + 12.0 * kWaveUi;
+    const double pillHeight = 16.0 * kWaveUi;
+    const double pillY = height * 0.5 + 50.0 * kWaveUi;
+    setFill(canvas, kInk, 0.35);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(middle - pillWidth * 0.5),
+                     static_cast<float>(pillY - pillHeight * 0.5), static_cast<float>(pillWidth),
+                     static_cast<float>(pillHeight), static_cast<float>(3.0 * kWaveUi));
+    canvas.fill();
+    text(canvas, line, middle, pillY, waiting);
+}
 
 void App::drawDeathCard(Canvas& canvas, double time) {
     // No scrim of its own. The death dim is a wash over the WORLD alone,

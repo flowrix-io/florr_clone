@@ -31,6 +31,7 @@
 #include "shared/game/skin_likeness.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
+#include "shared/game/waves.h"
 #include "shared/net/admin_db.h"
 #include "shared/net/transport.h"
 
@@ -541,6 +542,52 @@ private:
     void saveHostedArena();
     void refreshHostedArena(bool reset);
     void runHostedArenaCommand(Session&, net::Connection&, const std::string&);
+
+    // The wave survival mode (server/waves.cpp, shared/game/waves.h).
+    void runStartWavesCommand(Session&, net::Connection&, const std::vector<std::string>& args);
+    void runStopWavesCommand(Session&, net::Connection&);
+    void stepWaves(double nowMillis);
+    void stepRiftPortal(double nowMillis, double dt);
+    void stopChargingRift();
+    void enterWaves(Session&, double nowMillis);
+    void leaveWaves(Session&, double nowMillis);
+    void standUpWaveFlower(Session&, double nowMillis);
+    void reviveWaveFlowers(double nowMillis);
+    void spawnWaveMob(const WaveMob&, double nowMillis);
+    void stepWaveClock(double nowMillis);
+    void spectateWaves(double nowMillis);
+    void surveyWaves(double nowMillis);
+    void clearWaveRealm();
+    void closeWaves();
+    void sendRiftState(net::Connection&);
+    void broadcastRiftState();
+    void sendWaveState(Session&);
+    /// The one game of waves and its rift.
+    struct WaveRun {
+        struct Group {
+            std::uint16_t mobIndex = 0;
+            std::uint8_t rarity = 0;
+            std::uint16_t count = 0;
+        };
+        WavePhase phase = WavePhase::Idle;
+        WaveBiome biome = WaveBiome::Garden;
+        int startWave = 1;
+        int wave = 1;
+        double timer = 0.0;
+        double redTimer = 0.0;
+        bool red = false;
+        WaveSpawner spawner;
+        double stepCarryMillis = 0.0;
+        double lastTickMillis = -1.0;
+        double nextSurveyMillis = 0.0;
+        /// Every body on the disc at the last survey, plus what has spawned since.
+        int mobs = 0;
+        std::vector<Group> groups;
+        bool riftOpen = false;
+        Realm riftRealm = Realm::Overworld;
+        Vec2 riftPosition;
+    };
+    WaveRun waves_;
     bool transferHostedArena(Session&, bool entering);
 
     void serviceAdminCursor();

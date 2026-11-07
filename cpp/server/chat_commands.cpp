@@ -909,7 +909,9 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "[x] [y] [amount] [stack|unstack] (tiers 1-3), spawn_npc &lt;mobType&gt; "
                     "[rarity] [players|hostile|neutral] (any mob, as an NPC where you stand; "
                     "tiers 1-3), "
-                    "arena (hosted games: bring/return/map/empty/build/wall/floor/pvp), clear_npcs, killall (kill all wild "
+                    "arena (hosted games: bring/return/map/empty/build/wall/floor/pvp), "
+                    "start_waves [garden|desert|ocean] [starting wave] (open a rift to the wave "
+                    "survival mode; tiers 1-3), stop_waves (close it and bring everyone back), clear_npcs, killall (kill all wild "
                     "mobs), teleport "
                     "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
@@ -1267,6 +1269,18 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     if (verb == "arena") {
         if (lacks(AdminPower::SpawnMobs)) return;
         runHostedArenaCommand(session, connection, rest);
+        return;
+    }
+
+    if (verb == "start_waves") {
+        if (lacks(AdminPower::SpawnMobs)) return;
+        runStartWavesCommand(session, connection,
+                             std::vector<std::string>(words.begin() + 1, words.end()));
+        return;
+    }
+    if (verb == "stop_waves") {
+        if (lacks(AdminPower::SpawnMobs)) return;
+        runStopWavesCommand(session, connection);
         return;
     }
 

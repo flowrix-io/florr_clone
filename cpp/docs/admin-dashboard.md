@@ -462,6 +462,29 @@ solid terrain. Map bounds remain enforced. Cursor dragging can carry players
 through walls too; release restores normal collision without enabling phase
 on the target.
 
+### Wave survival: `/admin start_waves`
+
+`/admin start_waves [garden|desert|ocean] [starting wave]` (default garden, wave
+1; tiers 1-3, as spawning is) opens a black portal 450 units in front of you and
+tells every player "A Mysterious rift has opened!". It only opens on a map, not
+in the PVP arena, the maze or a hosted game, and one is open at a time. The rift
+also shows as a black dot on that map's minimap.
+
+Stand on it for a second, as on any teleporter, and you are on a disc of radius
+1500 in a realm of its own. The first flower through starts wave 1. The rules
+are flooooio's (`shared/game/waves.h`): each wave spends 10 points per wave
+number on the biome's mobs, at a rarity that climbs with the wave; from wave 15,
+15% of waves are special, one mob family in a swarm. When the wave's clock runs
+out with more than 4 mobs up, a red clock runs the same length with no more
+spawns. Then the next wave starts. Whoever died watches the nearest thing still
+up, and gets up beside a survivor at the next wave. Nobody standing is GAME OVER,
+which closes the rift. Mobs pay XP and drop petals as they do anywhere else.
+
+Leaving with the Exit button goes to the title screen, as anywhere. The rift
+stays open until GAME OVER or `/admin stop_waves`, which closes it, clears the
+disc and puts every flower back where it stepped in, standing. If everyone walks
+out, the rift stays and the game starts over for the next flower through.
+
 ### Admin-hosted arena and iPad Cursor
 
 Admin Arena appears in the normal biome picker only for admins. The server

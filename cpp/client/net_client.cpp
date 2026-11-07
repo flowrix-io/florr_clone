@@ -109,6 +109,8 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::MazeInfo:            return "mazeInfo";
         case net::ServerMessage::RealmChange:         return "realmChange";
         case net::ServerMessage::ArenaMapUpdate:      return "arenaMapUpdate";
+        case net::ServerMessage::RiftState:           return "riftState";
+        case net::ServerMessage::WaveState:           return "waveState";
         case net::ServerMessage::ChangePasswordResult: return "changePasswordResult";
         case net::ServerMessage::OracleResult:        return "oracleResult";
         case net::ServerMessage::SessionReplaced:     return "sessionReplaced";
@@ -158,6 +160,7 @@ void NetClient::disconnect() {
     status_ = Status::Offline;
     view_.clear();
     chatBubbles_.clear();
+    wave_ = WaveView{};
     dead_ = false;
     revived = false;
     // An explicit disconnect is a decision, not an accident: nothing redials
@@ -1193,6 +1196,8 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::MazeInfo:      handleMazeInfo(reader); break;
         case net::ServerMessage::RealmChange:   handleRealmChange(reader); break;
         case net::ServerMessage::ArenaMapUpdate: handleRealmChange(reader,true); break;
+        case net::ServerMessage::RiftState:     handleRiftState(reader); break;
+        case net::ServerMessage::WaveState:     handleWaveState(reader); break;
         case net::ServerMessage::Teleported:    teleported_ = true; break;
         case net::ServerMessage::ChangePasswordResult: handleChangePasswordResult(reader); break;
         case net::ServerMessage::SetUsernameResult: handleSetUsernameResult(reader); break;
@@ -1867,6 +1872,44 @@ void NetClient::handleRealmChange(ByteReader& reader, bool preserveView) {
     // between the two there would otherwise be nothing to look at.
     realmArrival_ = arrival;
     realmChanged_ = true;
+}
+
+void NetClient::handleRiftState(ByteReader& reader) {
+    RiftView rift;
+    rift.open = reader.u8() != 0;
+    rift.realm = realmFromByte(reader.u8());
+    rift.position = reader.position();
+    rift.radius = reader.f32();
+    if (reader.ok()) rift_ = rift;
+}
+
+void NetClient::handleWaveState(ByteReader& reader) {
+    WaveView wave;
+    wave.known = true;
+    const std::uint8_t phase = reader.u8();
+    const std::uint8_t biome = reader.u8();
+    wave.wave = reader.u16();
+    wave.timer = reader.f32();
+    wave.redTimer = reader.f32();
+    wave.length = reader.f32();
+    const std::uint16_t groups = reader.u16();
+    if (!reader.ok() || phase > static_cast<std::uint8_t>(WavePhase::Ended) ||
+        biome >= static_cast<std::uint8_t>(WaveBiome::Count)) {
+        return;
+    }
+    wave.phase = static_cast<WavePhase>(phase);
+    wave.biome = static_cast<WaveBiome>(biome);
+    wave.groups.reserve(groups);
+    for (std::uint16_t i = 0; i < groups; ++i) {
+        WaveView::Group group;
+        group.mobIndex = reader.u16();
+        const std::uint8_t rarity = reader.u8();
+        group.count = reader.u16();
+        if (!reader.ok() || rarity >= kRarityCount || group.mobIndex >= content().mobCount()) return;
+        group.rarity = static_cast<Rarity>(rarity);
+        wave.groups.push_back(group);
+    }
+    wave_ = std::move(wave);
 }
 
 void NetClient::handleMazeInfo(ByteReader& reader) {

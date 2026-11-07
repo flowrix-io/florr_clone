@@ -1217,6 +1217,8 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // admitted rather than announcing them.
     announceBossSpawns();
     markTickPhase("banking");
+    stepWaves(nowMillis);
+    markTickPhase("waves");
 }
 
 void GameServer::announceBossSpawns() {
@@ -2735,6 +2737,7 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     // ceiling; it is the same grid collision runs on and cannot drift from it.
     writeMapGrid(w, *terrain_, world_.get<Transform>(entity).realm);
     connection.send(w);
+    sendRiftState(connection);
     // The client's profile is the account's, and a body in the ring plays on
     // the arena kit instead; the maze body is on its own track. Restated here
     // so the panels show what the flower actually has from the first frame.
@@ -7216,6 +7219,7 @@ std::string GameServer::biomeOfRealm(Realm realm) const {
     if (realm == kAdminArenaRealm) return kAdminArenaSpawnChoice;
     if (realm == Realm::Arena) return kArenaSpawnChoice;
     if (realm == Realm::Maze) return kMazeSpawnChoice;
+    if (realm == kWavesRealm) return kWavesBiomeId;
     const MapData* map = worldMaps_.forRealm(realm);
     if (map == nullptr) return std::string();
     // A twin is a biome of its own: nobody in the garden can see a flower in
@@ -7234,6 +7238,7 @@ std::string GameServer::biomeLabel(const std::string& biome) const {
     if (biome == kAdminArenaSpawnChoice) return "Admin Arena";
     if (biome == kArenaSpawnChoice) return "PVP Arena";
     if (biome == kMazeSpawnChoice) return "Maze";
+    if (biome == kWavesBiomeId) return "Waves";
     return biome;
 }
 

@@ -21,6 +21,7 @@
 #include "client/render/darkness.h"
 #include "client/render/sprites.h"
 #include "client/world_view.h"
+#include "shared/game/waves.h"
 #include "shared/core/types.h"
 #include "shared/game/constants.h"
 #include "shared/game/skin_format.h"
@@ -173,6 +174,16 @@ public:
     /// florr's first dark stage. Held, not copied -- the caller keeps the
     /// vector alive across draw().
     void setLightClip(const std::vector<LightDisc>* discs) { lightClip_ = discs; }
+    /// The open rift, if any, drawn on the map it is on: a black portal on no
+    /// map's element list, because a server opened it at run time.
+    void setRift(bool open, Realm realm, Vec2 position, double radius) {
+        rift_.open = open;
+        rift_.realm = realm;
+        rift_.position = position;
+        rift_.radius = radius;
+    }
+    /// Which biome the waves disc is paved with.
+    void setWaveBiome(WaveBiome biome) { waveBiome_ = biome; }
     void setSprites(const SpriteCache* sprites) { sprites_ = sprites; }
 
     /// Turns this frame's server events into effects. Drains `view.events()`.
@@ -401,8 +412,16 @@ private:
     /// The arena realm: a grey gridded floor inside the ring, dark void
     /// outside it, and the red boundary the server clamps bodies to.
     void drawArena(Canvas&, const Camera&) const;
+    /// The waves realm: the biome's tile on a disc, black outside it.
+    void drawWaves(Canvas&, const Camera&) const;
     /// Teleporters, off the realm's own map.
     void drawMapElements(Canvas&, const Camera&, Realm realm, double timeSeconds) const;
+    /// florr's warp: one pad at a world position. `opening` runs 0 to 1 as a
+    /// black portal's cracks grow out, and is 1 for anything already there.
+    void drawPortal(Canvas&, const Camera&, Vec2 centre, double worldRadius, std::uint32_t color,
+                    std::uint32_t pad, double timeSeconds, double opening) const;
+    /// The open rift, if this view is on its map.
+    void drawRift(Canvas&, const Camera&, double timeSeconds) const;
     void drawEntity(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawFlower(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawDefaultFlower(Canvas&, const RemoteEntity&, double timeSeconds) const;
@@ -762,6 +781,17 @@ private:
     /// Which realm the view being drawn is in; decides what goes under the
     /// entities. Taken from the WorldView on each draw.
     mutable Realm realm_ = Realm::Overworld;
+
+    struct Rift {
+        bool open = false;
+        Realm realm = Realm::Overworld;
+        Vec2 position;
+        double radius = 0.0;
+    };
+    Rift rift_;
+    /// When this client first drew the rift now open; negative when none is.
+    mutable double riftOpenedAtSeconds_ = -1.0;
+    WaveBiome waveBiome_ = WaveBiome::Garden;
 
     mutable SectionTiming timing_;
     mutable SectionOps ops_;

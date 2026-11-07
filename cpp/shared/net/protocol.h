@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 82;
+inline constexpr std::uint16_t kProtocolVersion = 83;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -466,6 +466,15 @@ enum class ServerMessage : std::uint8_t {
                         ///< or FavoriteSkin, refused or not. (Version 70.)
     AdminTools, ///< str JSON: bounded admin tools reply.
     ArenaMapUpdate, ///< Same payload as RealmChange; update hosted tiles while preserving entities.
+    RiftState,      ///< u8 open, u8 realm, f32 x, f32 y, f32 radius. The black
+                    ///< portal /admin start_waves opens. Every signed-in client
+                    ///< hears when it opens or closes; a join restates it.
+                    ///< (Version 83.)
+    WaveState,      ///< u8 phase(WavePhase), u8 biome(WaveBiome), u16 wave,
+                    ///< f32 timer, f32 redTimer, f32 waveLength, u16 groups,
+                    ///< { u16 mobIndex, u8 rarity, u16 count }*. Five times a
+                    ///< second to the flowers in the waves realm, and once as
+                    ///< one arrives. (Version 83.)
 };
 
 // ---------------------------------------------------------------------------
