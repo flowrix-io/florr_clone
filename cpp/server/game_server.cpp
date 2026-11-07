@@ -1577,9 +1577,8 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
             case net::ClientMessage::Craft: case net::ClientMessage::OracleCraft:
             case net::ClientMessage::Trade: case net::ClientMessage::TitanForge:
             case net::ClientMessage::Assemble: case net::ClientMessage::Absorb:
-            case net::ClientMessage::BuyPetal: case net::ClientMessage::UpgradeSkill:
-            case net::ClientMessage::ResetSkills:
-                sendNotice(connection,net::NoticeSeverity::Warning,"Economy and talent changes are disabled during hosted events.");return;
+            case net::ClientMessage::BuyPetal:
+                sendNotice(connection,net::NoticeSeverity::Warning,"Economy changes are disabled during hosted events.");return;
             default:break;
         }
     }
@@ -4419,8 +4418,8 @@ void GameServer::handleUpgradeSkill(Session& session, net::Connection& connectio
     if (rawSkill >= kSkillCount) return;
 
     const SkillId id = static_cast<SkillId>(rawSkill);
-    PlayerRecord& record = database_.progress(session.userId);
-    if (session.playing() && (session.realm == Realm::Arena || session.eventKit)) {
+    PlayerRecord& record = liveRecord(session);
+    if (session.playing() && session.realm == Realm::Arena) {
         sendNotice(connection, net::NoticeSeverity::Warning, "Talents are disabled in the arena.");
         return;
     }
@@ -4459,15 +4458,15 @@ void GameServer::handleUpgradeSkill(Session& session, net::Connection& connectio
     }
 
     skills.set(id, tier);
-    database_.markDirty();
+    if (!session.eventKit) database_.markDirty();
     if (session.playing() && world_.isAlive(session.entity)) applyAccountToSession(session);
     sendProfile(session, connection);
 }
 
 void GameServer::handleResetSkills(Session& session, net::Connection& connection) {
     if (!session.authenticated()) return;
-    PlayerRecord& record = database_.progress(session.userId);
-    if (session.playing() && (session.realm == Realm::Arena || session.eventKit)) {
+    PlayerRecord& record = liveRecord(session);
+    if (session.playing() && session.realm == Realm::Arena) {
         sendNotice(connection, net::NoticeSeverity::Warning, "Talents are disabled in the arena.");
         return;
     }
@@ -4479,29 +4478,31 @@ void GameServer::handleResetSkills(Session& session, net::Connection& connection
         // in a prestige biome without it: one there -- either half of a split
         // -- is taken out of the world and its client sent back to the title
         // screen, whose next join starts in the ordinary biome.
-        session.prestige = false;
-        bool inPrestige = false;
-        if (session.playing()) {
-            for (const Entity body : bodiesOf(session)) {
-                if (body == NULL_ENTITY || !world_.isAlive(body)) continue;
-                const Transform* at = world_.tryGet<Transform>(body);
-                if (at != nullptr && worldMaps_.isPrestige(at->realm)) inPrestige = true;
+        if (!session.eventKit) {
+            session.prestige = false;
+            bool inPrestige = false;
+            if (session.playing()) {
+                for (const Entity body : bodiesOf(session)) {
+                    if (body == NULL_ENTITY || !world_.isAlive(body)) continue;
+                    const Transform* at = world_.tryGet<Transform>(body);
+                    if (at != nullptr && worldMaps_.isPrestige(at->realm)) inPrestige = true;
+                }
+            }
+            if (inPrestige) {
+                leaveWorld(session);
+                ByteWriter w;
+                w.u8(static_cast<std::uint8_t>(net::ServerMessage::LeftWorld));
+                connection.send(w);
+                database_.markDirty();
+                sendProfile(session, connection);
+                sendNotice(connection, net::NoticeSeverity::Info,
+                           "Talents reset; every point refunded. Without Prestige you are back "
+                           "on the title screen.");
+                return;
             }
         }
-        if (inPrestige) {
-            leaveWorld(session);
-            ByteWriter w;
-            w.u8(static_cast<std::uint8_t>(net::ServerMessage::LeftWorld));
-            connection.send(w);
-            database_.markDirty();
-            sendProfile(session, connection);
-            sendNotice(connection, net::NoticeSeverity::Info,
-                       "Talents reset; every point refunded. Without Prestige you are back "
-                       "on the title screen.");
-            return;
-        }
     }
-    database_.markDirty();
+    if (!session.eventKit) database_.markDirty();
     if (session.playing() && world_.isAlive(session.entity)) applyAccountToSession(session);
     sendProfile(session, connection);
     sendNotice(connection, net::NoticeSeverity::Info, "Talents reset; every point refunded.");
@@ -6869,7 +6870,7 @@ Entity GameServer::spawnPlayer(Session& session) {
     session.arena.reset();
     if (realm == Realm::Arena) session.arena = startArenaRun(database_.progress(session.userId));
     if (realm == kAdminArenaRealm) applyHostedKit(session);
-    else session.eventKit.reset();
+    else { session.eventKit.reset(); session.eventRestricted.reset(); }
 
     const Entity entity = createPlayerBody(session, realm, spawn);
 
@@ -7062,6 +7063,7 @@ void GameServer::despawnPlayer(Session& session, bool persist) {
     // Leaving the ring, by any door, is the end of the run.
     if (session.arena) endArenaRun(session);
     session.eventKit.reset();
+    session.eventRestricted.reset();
     session.realm = Realm::Overworld;
 
     // The petals and pets belong to the body, not the account, so they go

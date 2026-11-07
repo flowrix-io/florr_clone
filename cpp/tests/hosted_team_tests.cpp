@@ -47,6 +47,21 @@ TEST(hosted_petal_name_bans_apply_only_to_selected_rarity_and_preserve_real_bags
     q["rarity"]=-1;CHECK(event(h,host,"petal_ban",q));CHECK_EQ(a->eventKit->itemCount(Rarity::Epic,"petal_rose"),0);
     q["rarity"]=999;CHECK(event(h,host,"petal_ban",q));CHECK(!host.adminTools("event")["ok"].asBool());q["rarity"]=-1;q["item"]="does not exist";CHECK(event(h,host,"petal_ban",q));CHECK(!host.adminTools("event")["ok"].asBool());
     q["item"]="Rose";q["remove"]=true;CHECK(event(h,host,"petal_ban",q));CHECK_EQ(host.adminTools("event")["rules"]["petalBans"].size(),std::size_t(1));
+    CHECK_EQ(a->eventKit->itemCount(Rarity::Epic,"petal_rose"),3);
+    CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),0);CHECK(!a->eventKit->loadout[0]);
+    q["rarity"]=int(Rarity::Rare);CHECK(event(h,host,"petal_ban",q));
+    CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),3);CHECK(a->eventKit->loadout[0]);
+    if(a->eventKit->loadout[0])CHECK_EQ(a->eventKit->loadout[0]->petalType,"rose");
+    // Repeated rule enforcement must never duplicate restored gear.
+    q["remove"]=false;CHECK(event(h,host,"petal_ban",q));q["remove"]=true;CHECK(event(h,host,"petal_ban",q));
+    CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),3);CHECK(a->eventKit->loadout[0]);
+    CHECK(h.stepUntil({&alice},[&]{
+        if(alice.profile().loadout.empty()||alice.profile().loadout[0].empty())return false;
+        for(const auto& stack:alice.profile().inventory)
+            if(stack.petalIndex==content().petalIndex("rose")&&stack.rarity==Rarity::Rare&&stack.count==3)return true;
+        return false;
+    }));
+    CHECK_EQ(h.server.database().findProgress(user->id)->inventory.dump(),normal);
 }
 TEST(hosted_team_and_petal_name_panels_render_locally){
     Harness h("hosted-team-ui",seed,dataDir(),0);CHECK(h.ready);if(!h.ready)return;NetClient host,alice,bob;CHECK(join(h,host,alice,bob));Json q=Json::object();q["mode"]="solo";CHECK(event(h,host,"team_mode",q));CHECK(fontsReady());
@@ -91,4 +106,48 @@ TEST(hosted_no_teams_clears_assignments_and_preserves_both_pvp_settings){
     CHECK(host.adminTools("event")["ok"].asBool());CHECK_EQ(world.get<Faction>(a->entity).hostedTeam,0);CHECK_EQ(world.get<Faction>(b->entity).hostedTeam,0);CHECK(!world.get<Faction>(a->entity).friendlyFireEnabled);CHECK(!CombatSystem::canDamage(world,a->entity,b->entity));CHECK_EQ(host.adminTools("event")["teams"]["assignments"].size(),std::size_t(0));
     CHECK(event(h,host,"save_current"));Database reopened;std::string error;CHECK(reopened.load(h.dbPath,error));CHECK_EQ(reopened.storedTable("adminArena")["teams"]["mode"].asString(),"none");CHECK(!reopened.storedTable("adminArena")["pvp"].asBool());
     q["mode"]="solo";CHECK(event(h,host,"team_mode",q));q["mode"]="none";CHECK(event(h,host,"team_mode",q));CHECK_EQ(world.get<Faction>(a->entity).hostedTeam,0);CHECK(world.get<Faction>(a->entity).friendlyFireEnabled);CHECK(CombatSystem::canDamage(world,a->entity,b->entity));
+}
+
+TEST(hosted_slot_limits_restore_gear_without_overwriting_replacements){
+    Harness h("hosted-slot-restore",seed,dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient host,alice,bob;CHECK(join(h,host,alice,bob));
+    Json q=Json::object();q["item"]="rose";q["rarity"]=int(Rarity::Rare);q["amount"]=3;
+    CHECK(event(h,host,"clear"));CHECK(event(h,host,"add",q));q["slot"]=1;CHECK(event(h,host,"slot",q));
+    auto* a=GameServerPeer::sessionOf(h.server,"alice");CHECK(a&&a->eventKit);if(!a||!a->eventKit)return;
+    q=Json::object();q["rules"]=host.adminTools("event")["rules"];q["rules"]["maxRarity"]=kRarityCount-1;q["rules"]["bannedPetals"]=Json::array();q["rules"]["bannedRarities"]=Json::array();q["rules"]["activeSlots"]=1;CHECK(event(h,host,"rules",q));CHECK(host.adminTools("event")["ok"].asBool());CHECK(!a->eventKit->loadout[1]);
+    q["rules"]["activeSlots"]=int(kLoadoutActiveSlots);CHECK(event(h,host,"rules",q));CHECK(a->eventKit->loadout[1]);CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),3);
+    q=Json::object();q["item"]="rose";q["rarity"]=int(Rarity::Rare);CHECK(event(h,host,"petal_ban",q));
+    StoredItem replacement;replacement.petalType="basic";replacement.rarity=Rarity::Common;a->eventKit->loadout[1]=replacement;
+    q["remove"]=true;CHECK(event(h,host,"petal_ban",q));CHECK_EQ(a->eventKit->loadout[1]->petalType,"basic");CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),4);
+}
+TEST(hosted_stars_and_talents_are_consistent_and_do_not_change_real_account){
+    Harness h("hosted-stars-talents",[](const std::string& path){
+        seed(path);Database db;std::string error;CHECK(db.load(path,error));
+        auto& r=db.progress(db.findUser("alice")->id);r.stars=1234;r.totalXp=1e9;r.skills.set(SkillId::Damage,0);db.markDirty();CHECK(db.save());
+    },dataDir(),0);CHECK(h.ready);if(!h.ready)return;NetClient host,alice,bob;CHECK(join(h,host,alice,bob));
+    auto* a=GameServerPeer::sessionOf(h.server,"alice");CHECK(a&&a->eventKit);if(!a||!a->eventKit)return;
+    const double balance=h.server.database().findProgress(a->userId)->stars;
+    CHECK(h.stepUntil({&alice},[&]{return alice.profile().stars==balance;}));CHECK_EQ(h.server.world().get<PlayerProgress>(a->entity).stars,balance);
+    alice.requestResetSkills();CHECK(h.stepUntil({&alice},[&]{return alice.profile().skills.level(SkillId::Damage)==-1;}));
+    CHECK_EQ(a->eventKit->skills.level(SkillId::Damage),-1);CHECK_EQ(h.server.world().get<PlayerSkillTree>(a->entity).skills.level(SkillId::Damage),-1);
+    alice.requestUpgradeSkill(SkillId::Damage,0);CHECK(h.stepUntil({&alice},[&]{return alice.profile().skills.level(SkillId::Damage)==0;}));
+    a->eventKit->stars=1240;h.server.world().get<PlayerProgress>(a->entity).stars=1240;
+    CHECK(event(h,host,"clear"));CHECK_EQ(a->eventKit->stars,1240);CHECK_EQ(h.server.world().get<PlayerProgress>(a->entity).stars,1240);
+    alice.requestResetSkills();CHECK(h.stepUntil({&alice},[&]{return alice.profile().skills.level(SkillId::Damage)==-1;}));
+    const auto& permanent=*h.server.database().findProgress(a->userId);CHECK_EQ(permanent.stars,balance);CHECK_EQ(permanent.skills.level(SkillId::Damage),0);
+    CHECK(say(h,host,"/admin arena return alice"));CHECK(h.stepUntil({&alice},[&]{return alice.profile().stars==balance&&alice.profile().skills.level(SkillId::Damage)==0;}));
+    CHECK(!a->eventRestricted);CHECK_EQ(h.server.world().get<PlayerProgress>(a->entity).stars,balance);
+}
+
+TEST(hosted_rarity_unban_restores_multiple_stacks_and_banned_pickups_once){
+    Harness h("hosted-rarity-restore",seed,dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient host,alice,bob;CHECK(join(h,host,alice,bob));CHECK(event(h,host,"clear"));
+    Json q=Json::object();q["rarity"]=int(Rarity::Rare);q["amount"]=3;q["item"]="rose";CHECK(event(h,host,"add",q));q["item"]="basic";CHECK(event(h,host,"add",q));
+    auto* a=GameServerPeer::sessionOf(h.server,"alice");CHECK(a&&a->eventKit);if(!a||!a->eventKit)return;
+    q=Json::object();auto& rules=q["rules"];rules=Json::object();rules["maxRarity"]=kRarityCount-1;rules["activeSlots"]=int(kLoadoutActiveSlots);rules["bannedPetals"]=Json::array();rules["bannedRarities"]=Json::array();rules["bannedRarities"].push(int(Rarity::Rare));
+    CHECK(event(h,host,"rules",q));CHECK(host.adminTools("event")["ok"].asBool());CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),0);CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_basic"),0);
+    a->eventKit->addItem(Rarity::Rare,"petal_rose",2); // A pickup while restricted.
+    alice.requestResetSkills();h.step(10,{&alice});CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),0);
+    rules["bannedRarities"]=Json::array();CHECK(event(h,host,"rules",q));CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),5);CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_basic"),3);
+    alice.requestResetSkills();h.step(10,{&alice});CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_rose"),5);CHECK_EQ(a->eventKit->itemCount(Rarity::Rare,"petal_basic"),3);
 }

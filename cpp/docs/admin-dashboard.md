@@ -527,8 +527,8 @@ changing a kit resets participants to that kit. Joining or respawning gives a fr
 copy. Host edits never remove petals from permanent inventories.
 
 Hosted participants always use temporary gear and rewards. Leaving restores their
-saved gear, XP and stars. Crafting, trades, forging, purchases, talents, saved-loadout
-presets and casino exchanges are unavailable during these events; star redemption
+saved gear, XP and stars. Crafting, trades, forging, purchases and casino
+exchanges are unavailable during these events; star redemption
 still credits the permanent wallet. New kit/preset data uses the existing inventory
 representation, including its loadout-in-inventory marker.
 
@@ -566,3 +566,12 @@ Hosted PvP toggles and live map updates preserve the current world view without 
 **No teams (normal)** clears all saved team assignments and restores normal combat rules while preserving the current PvP on/off setting. Free for all remains a separate option that enables PvP.
 
 Debug → Polls keeps completed results for the current server run. Newest / Newer / Older browse the history while the newest active poll keeps live counts. History is admin-only, stores totals rather than voter lists, survives reconnecting, and is deliberately absent from the database: restarting the server clears it.
+
+
+Event restrictions temporarily hold banned inventory and equipped petals. Removing
+all applicable restrictions restores them immediately without rejoining; reopening
+active slots restores their gear too. If a slot now has a different petal, its
+restored petal goes into the temporary bag instead. Event stars start at the
+account balance and survive kit edits; event rewards remain temporary. Talent
+resets and purchases affect the event copy only, and leaving restores the saved
+talent tree and star balance.
