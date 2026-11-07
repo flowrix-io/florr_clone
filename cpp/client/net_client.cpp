@@ -108,6 +108,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::DebugStats:          return "debugStats";
         case net::ServerMessage::MazeInfo:            return "mazeInfo";
         case net::ServerMessage::RealmChange:         return "realmChange";
+        case net::ServerMessage::ArenaMapUpdate:      return "arenaMapUpdate";
         case net::ServerMessage::ChangePasswordResult: return "changePasswordResult";
         case net::ServerMessage::OracleResult:        return "oracleResult";
         case net::ServerMessage::SessionReplaced:     return "sessionReplaced";
@@ -1193,6 +1194,7 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::DebugStats:    handleDebugStats(reader); break;
         case net::ServerMessage::MazeInfo:      handleMazeInfo(reader); break;
         case net::ServerMessage::RealmChange:   handleRealmChange(reader); break;
+        case net::ServerMessage::ArenaMapUpdate: handleRealmChange(reader,true); break;
         case net::ServerMessage::Teleported:    teleported_ = true; break;
         case net::ServerMessage::ChangePasswordResult: handleChangePasswordResult(reader); break;
         case net::ServerMessage::SetUsernameResult: handleSetUsernameResult(reader); break;
@@ -1840,7 +1842,7 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     realmArrival_ = spawn;
 }
 
-void NetClient::handleRealmChange(ByteReader& reader) {
+void NetClient::handleRealmChange(ByteReader& reader, bool preserveView) {
     const Vec2 arrival = reader.position();
     Realm realm = Realm::Overworld;
     std::string mapError;
@@ -1859,8 +1861,7 @@ void NetClient::handleRealmChange(ByteReader& reader) {
     installLocalCollision(realm);
     // The view holds entities in the realm it was streaming; every one of them
     // is in another coordinate space now and none of them will be restated.
-    view_.clear();
-    chatBubbles_.clear();
+    if(!preserveView || view_.realm()!=realm){view_.clear();chatBubbles_.clear();}
     view_.setRealm(realm);
     // The camera must not ease across two worlds. The App snaps it to the
     // arrival on the frame it sees the realm change, which is what this flag

@@ -1479,8 +1479,10 @@ TEST(admin_phase_toggle_and_cursor_teleport_validate_equipment_authority_and_edg
     point(through, net::InputAdminTeleport); // A held key cannot activate on promotion.
     CHECK(distance(world.get<Transform>(flower).position, start) < 1);
     point(start, 0);
+    boss.takeTeleported();
     point(through, net::InputAdminTeleport);
     CHECK(distance(world.get<Transform>(flower).position, through) < 2);
+    CHECK(!boss.takeTeleported());
     h.step(30, all);
     CHECK(distance(world.get<Transform>(flower).position, through) < 2);
     point(through, 0);

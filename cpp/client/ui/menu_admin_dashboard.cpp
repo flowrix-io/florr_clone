@@ -951,7 +951,11 @@ bool AdminDashboardPanel::render(MenuContext& ctx) {
         text(canvas,"Brush size: "+std::to_string(edit.brushSize),controlsX,y+16,label(kTextSize));
         if(button({controlsX+140,y,36,32},"-"))edit.brushSize=std::max(1,edit.brushSize-1);
         if(button({controlsX+184,y,36,32},"+"))edit.brushSize=std::min(16,edit.brushSize+1);
-        if(button({controlsX+230,y,controlsW-230,32},"Save now")) {
+        y+=40;
+        if(button({controlsX,y,(controlsW-8)/2,32},"Update")){
+            Json q=Json::object();q["kind"]="arena";q["action"]="update";net.requestAdminTools(q);setStatus(s,"Updating the live map and saving it.",true);
+        }
+        if(button({controlsX+(controlsW+8)/2,y,(controlsW-8)/2,32},"Save now")) {
             Json q=Json::object();q["kind"]="event";q["action"]="save_current";net.requestAdminTools(q);setStatus(s,"Asked the server to save the arena to disk.",true);
         }
     }

@@ -111,12 +111,12 @@ void GameServer::refreshHostedArena(bool reset) {
         for (Entity e : bodiesOf(player)) {
             if (auto* at = world_.tryGet<Transform>(e)) {
                 const auto* body = world_.tryGet<Body>(e);
-                teleportEntity(e, terrain_->resolveCircle(at->position, body ? body->radius : kPlayerBaseRadius, kAdminArenaRealm));
+                teleportEntity(e, terrain_->resolveCircle(at->position, body ? body->radius : kPlayerBaseRadius, kAdminArenaRealm), false);
             }
             syncKitPvp(world_, e, hostedArenaPvp_);
         }
         applyHostedTeam(player);
-        sendRealmChange(player, world_.get<Transform>(player.entity).position);
+        sendRealmChange(player, world_.get<Transform>(player.entity).position, true);
     }
     saveHostedArena();
 }
@@ -218,7 +218,10 @@ void GameServer::runHostedArenaCommand(Session& admin, net::Connection& connecti
         refreshHostedArena(false); out("Hosted arena theme updated."); return;
     }
     if (w[0] == "pvp" && w.size() == 2 && (w[1] == "on" || w[1] == "off")) {
-        hostedArenaPvp_ = w[1] == "on"; refreshHostedArena(false); out("Hosted arena PvP " + w[1] + "."); return;
+        hostedArenaPvp_ = w[1] == "on";
+        for(auto& [id,s]:sessions_)if(s.playing()&&s.realm==kAdminArenaRealm)
+            for(Entity e:bodiesOf(s))syncKitPvp(world_,e,hostedArenaPvp_);
+        saveHostedArena();out("Hosted arena PvP " + w[1] + ".");return;
     }
     if (w[0] == "build" && w.size() == 6) {
         int x=0,y=0,width=0,height=0;
@@ -338,7 +341,12 @@ void GameServer::runEventSetup(Session& host,net::Connection& peer,const Json& q
     if(!host.admin||!adminMay(host,AdminPower::SpawnMobs)){fail("Full admin hosting permission required.");return;}
     if(kind!="event" && kind!="arena"){fail("Invalid tool.");return;}
     std::string message="Event presets and temporary kits";
-    if(kind=="arena"&&action!="stroke"){fail("Unknown arena action.");return;}
+    if(kind=="arena"&&action!="stroke"&&action!="update"){fail("Unknown arena action.");return;}
+    if(kind=="arena"&&action=="update"){
+        refreshHostedArena(false);
+        if(!database_.save()){fail("Map updated but could not be saved to disk.");return;}
+        sendAdminTools(host,peer,"arena",true,"Map updated for everyone and saved.");return;
+    }
     if(action=="rules") {
         if(!adminMay(host,AdminPower::GivePetals)){fail("Event restrictions require tier 1-2 access.");return;}
         const Json rules=q["rules"];
