@@ -1,6 +1,6 @@
 #pragma once
 // Which pictures a chat line may show: only ones served by a well-known image
-// host -- Tenor, Giphy, Imgur, Discord's CDN and the like.
+// host -- Tenor, Giphy, Imgur and the like.
 //
 // A chat <img> makes every reader's browser fetch the URL, so an arbitrary one
 // is both a way to put anything at all on everyone's screen and a way to log

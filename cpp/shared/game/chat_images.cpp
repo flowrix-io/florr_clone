@@ -16,8 +16,6 @@ constexpr const char* kImageHosts[] = {
     "tenor.com",            // media.tenor.com, c.tenor.com
     "giphy.com",            // media.giphy.com, i.giphy.com
     "imgur.com",            // i.imgur.com
-    "discordapp.com",       // cdn.discordapp.com
-    "discordapp.net",       // media.discordapp.net
     "redd.it",              // i.redd.it, preview.redd.it
     "redditmedia.com",
     "githubusercontent.com",
@@ -125,7 +123,7 @@ bool chatImageUrlAllowed(const std::string& url) {
 }
 
 std::string chatImageHostSummary() {
-    return "tenor.com, giphy.com, imgur.com, discordapp.com, ...";
+    return "tenor.com, giphy.com, imgur.com, ...";
 }
 
 ChatImageFilter filterChatImages(const std::string& text) {
