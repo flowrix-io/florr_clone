@@ -493,10 +493,41 @@ button becomes KILL and the blue button TP, acting on the last world touch.
 Opening a menu, dying, or unequipping the Cursor clears the world-touch state.
 
 Open **Admin > Arena** (or `/admin arena gui`) to edit the hosted map visually. Select Admin Arena in
-biomes first to receive the live preview. Choose Wall or Erase, then drag a
-rectangle on the preview and release to apply it. Pan moves a zoomed preview;
+biomes first to receive the live preview. Choose Brush or Erase to paint, or
+Box to drag a rectangle, then release to apply. Pan moves a zoomed preview;
 plus/minus zoom in/out. Boundary walls remain protected. Layout and Create Empty
 buttons replace the current map. Width and height accept 4–128 tiles. Theme
 arrows, PvP buttons, Bring Everyone and Return Everyone need no typed commands.
 Edits go through the same server permissions, validation and persistence as
 host commands. The preview updates after the server accepts each edit.
+
+
+The advanced panel adds **Star Codes** and **Events**. Star Codes lists active
+codes and creates named codes with a star reward and use limit (0 is unlimited),
+using the existing full tier 1–2 give permission. Give accepts a typed account
+username; Spawn accepts optional tile X/Y coordinates. Database opens the existing
+key-protected database editor.
+
+Arena's **Open builder** expands the editor. Brush/Erase support sizes 1–16;
+Box paints a rectangle; Pan and +/- navigate. A released brush gesture is one
+bounded, atomic server edit (up to 512 cells), and accepted edits are saved in
+the server configuration. Closing the browser does not undo them. **Save now**
+also flushes the database to disk. Named Events preserve map tiles, themes, PvP,
+kit and restrictions, and survive restarts. Boundary artwork repeats outside
+the map; collision still stops players at the map boundary.
+
+Events can capture a bag/loadout, create an empty kit, add/remove stacks and
+set/clear any of the 20 slots. **Use personal gear** switches to temporary copies
+of each player's own gear. Event restrictions can lock loadout edits, limit active
+slots or maximum rarity, ban exact rarities, ban multiple petal IDs, and exclude
+healing/revival/lifesteal, projectile petals, egg summons or Admin gear. The server
+applies these to bags and both loadout rows, including modified-client requests.
+Restrictions and kit changes require full tier 1–2 access. Rules apply immediately;
+changing a kit resets participants to that kit. Joining or respawning gives a fresh
+copy. Host edits never remove petals from permanent inventories.
+
+Hosted participants always use temporary gear and rewards. Leaving restores their
+saved gear, XP and stars. Crafting, trades, forging, purchases, talents, saved-loadout
+presets and casino exchanges are unavailable during these events; star redemption
+still credits the permanent wallet. New kit/preset data uses the existing inventory
+representation, including its loadout-in-inventory marker.

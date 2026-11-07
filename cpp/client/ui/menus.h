@@ -1503,6 +1503,7 @@ class AdminDashboardPanel {
 public:
     bool render(MenuContext&);
     void showArena();
+    static bool expanded();
     void reset();
     static double preferredWidth();
     static double preferredHeight();

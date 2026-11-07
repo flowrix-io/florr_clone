@@ -183,6 +183,8 @@ struct Session {
     /// the run's loot reaches the real account when the run ends
     /// (src/server/playerManager.ts:99-158). Null outside the ring.
     std::unique_ptr<PlayerRecord> arena;
+    std::uint32_t adminToolsRevision = 0;
+    std::unique_ptr<PlayerRecord> eventKit; // Never persisted or refunded.
 
     /// The flower's name, typed on the title screen and sent with JoinGame.
     /// Separate from `username`: the account is who you are, this is what the

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 74;
+inline constexpr std::uint16_t kProtocolVersion = 78;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -241,6 +241,7 @@ enum class ClientMessage : std::uint8_t {
                         ///< own, keeping its id, votes, stars and wearers.
                         ///< Checked as PublishSkin is; answered with a
                         ///< SkinPublished broadcast of the same id. (Version 73.)
+    AdminTools, ///< str JSON: permission-checked arena/events/codes requests.
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -457,12 +458,13 @@ enum class ServerMessage : std::uint8_t {
                         ///< `revision` counts Profiles and deltas together, per
                         ///< connection, from 1; ProfileCheck reports the last
                         ///< one applied. (Version 66; sections, version 72.)
-    SkinVotes,          ///< str skinId, u32 likes, u32 dislikes -- broadcast
+    SkinVotes,          ///< str skinId, f64 likes, f64 dislikes -- broadcast
                         ///< whenever a vote moves a skin's tally, so every
                         ///< Browse tab shows the same counts. (Version 70.)
     SkinOpinion,        ///< str skinId, u8 vote(SkinVote), u8 favorite -- this
                         ///< account's standing on one skin, after a VoteSkin
                         ///< or FavoriteSkin, refused or not. (Version 70.)
+    AdminTools, ///< str JSON: bounded admin tools reply.
 };
 
 // ---------------------------------------------------------------------------

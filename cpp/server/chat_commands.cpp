@@ -506,7 +506,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         if (!session.authenticated()) return true;
         // Casino chips belong to the permanent account. An arena stash must
         // never be convertible to permanent stars through an admin-spawned NPC.
-        if (session.arena) { out("The casino is unavailable during an arena run."); return true; }
+        if (session.arena || session.eventKit) { out("The casino is unavailable during an arena run."); return true; }
         PlayerRecord& record = database_.progress(session.userId);
         const auto words = splitWords(argument);
         const auto status = [&] {
@@ -2325,7 +2325,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("Only a higher-ranked admin can remove XP from another admin.");
             return;
         }
-        if (target && target->arena) {
+        if (target && (target->arena || target->eventKit)) {
             out("XP cannot be granted during an arena run. Leave the arena first.");
             return;
         }
