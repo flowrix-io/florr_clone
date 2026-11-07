@@ -440,6 +440,9 @@ void inputField(Canvas& canvas, Rect r, const std::string& value, const std::str
     // the unfocused ones are the point: raising the on-screen keyboard is the
     // job of the touch that FOCUSES a field. See ui::TextFieldRegions.
     TextFieldRegions::instance().record(r);
+    // And the one holding the caret, which the keyboard must not cover. See
+    // ui::keyboardLift.
+    if (focused) TextFieldRegions::instance().recordFocused(r);
 
     // The plate, and the type that goes on it.
     TextStyle style;

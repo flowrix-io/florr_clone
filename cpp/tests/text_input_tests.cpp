@@ -672,3 +672,58 @@ TEST(utf8_steps_clamp_at_both_ends) {
     CHECK_EQ(utf8Prev(s, 3), std::size_t{1});
     CHECK_EQ(utf8Next(s, 1), std::size_t{3});
 }
+
+// --- the on-screen keyboard's lift --------------------------------------------
+//
+// A phone or tablet lays its keyboard over the bottom of the page, and the
+// client slides its frame up just far enough to keep the focused field above
+// it (App::frame, ui::keyboardLift).
+
+TEST(a_field_the_keyboard_does_not_reach_is_not_lifted) {
+    using flix::ui::keyboardLift;
+    const flix::Rect field{100, 200, 400, 40};
+    // No keyboard at all.
+    CHECK_NEAR(keyboardLift(field, 1080, 0, 16), 0.0, 1e-9);
+    // A keyboard whose top is well below the field.
+    CHECK_NEAR(keyboardLift(field, 1080, 500, 16), 0.0, 1e-9);
+}
+
+TEST(a_covered_field_is_lifted_to_just_above_the_keyboard) {
+    using flix::ui::keyboardLift;
+    // The chat line on an iPad in landscape: 30 units off the bottom, with
+    // half the screen under the keyboard.
+    const flix::Rect chat{20, 1010, 600, 40};
+    const double lift = keyboardLift(chat, 1080, 540, 16);
+    // Its bottom ends 16 above the keyboard's top, 540 up from the bottom.
+    CHECK_NEAR(chat.bottom() - lift, 1080 - 540 - 16, 1e-9);
+}
+
+TEST(the_lift_never_outruns_the_keyboard_or_the_top_of_the_screen) {
+    using flix::ui::keyboardLift;
+    // A field at the very bottom with a margin bigger than any gap: the lift
+    // stops at the keyboard's height, never opening air between the two.
+    CHECK_NEAR(keyboardLift(flix::Rect{0, 1070, 100, 10}, 1080, 300, 500), 300.0, 1e-9);
+    // A tall field the keyboard leaves no room for keeps its top on screen.
+    CHECK_NEAR(keyboardLift(flix::Rect{0, 100, 100, 900}, 1080, 600, 16), 100.0, 1e-9);
+}
+
+TEST(the_focused_field_is_remembered_for_the_frame_that_follows) {
+    using flix::ui::TextFieldRegions;
+    TextFieldRegions& regions = TextFieldRegions::instance();
+    regions.beginFrame();
+    regions.beginFrame();
+    flix::Rect out;
+    CHECK(!regions.lastFocused(out));
+
+    regions.record({0, 0, 10, 10});
+    regions.recordFocused({0, 100, 50, 20});
+    // The lower of two wins: it is the one the keyboard reaches first.
+    regions.recordFocused({0, 300, 50, 20});
+    regions.recordFocused({0, 200, 50, 20});
+    regions.beginFrame();
+    CHECK(regions.lastFocused(out));
+    CHECK_NEAR(out.y, 300.0, 1e-9);
+    // A frame with nothing focused forgets it.
+    regions.beginFrame();
+    CHECK(!regions.lastFocused(out));
+}

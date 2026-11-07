@@ -91,8 +91,20 @@ void circle(Canvas& canvas, Vec2 centre, double radius) {
 
 } // namespace
 
-void MobileControls::layout(int viewWidth, int viewHeight, double loadoutBarHeight) {
+void MobileControls::layout(int viewWidth, int viewHeight, double loadoutBarHeight,
+                            double unitsPerPoint) {
     placed_ = true;
+
+    // The screen's points against the phone's the constants above are written
+    // for: 1 on an 800-point phone, about 0.6 on an iPad, a little over 0.4
+    // on the 12.9" iPad Pro. Every control comes out at the reference's size
+    // in CSS pixels -- the size a thumb is -- instead of at a phone's share of
+    // the screen. A small phone's own conversion is above the ceiling (a
+    // 667-point iPhone works out at 2.9) and stays at it: the clearances below
+    // were tuned against 2.4, and a phone held sideways has the room it has.
+    // The big ones (844 and 932 points across) come out a little under it --
+    // at the reference's size, as a tablet does.
+    const double touch = std::clamp(unitsPerPoint, kMinTouchScale, kTouchScale) / kTouchScale;
 
     // Everything shrinks together on a viewport too narrow to lay them all
     // out side by side -- a phone held upright, where the loadout bar does not
@@ -110,11 +122,17 @@ void MobileControls::layout(int viewWidth, int viewHeight, double loadoutBarHeig
     constexpr double kScaled = 2 * kStickHitRadius + kAttackMargin + 2 * kAttackRadius +
                                kRetractGap + 2 * kRetractRadius + kRowSwapGap +
                                kRowSwapRadius + kRowSwapRadius * kButtonHitSlack;
-    scale_ = std::clamp((viewWidth - kFixed) / kScaled, 0.0, 1.0);
+    const double narrow = std::clamp((viewWidth - kFixed) / (kScaled * touch), 0.0, 1.0);
+    scale_ = touch * narrow;
 
+    // The lift is not part of the control: it is clearance over the chat
+    // column, whose height is the HUD's and does not shrink with the
+    // controls, so only the narrow-viewport shrink applies to it. Scaled by
+    // `touch` as well, a tablet's smaller stick would have dropped its
+    // answering ring onto the transcript.
     const double bottom = viewHeight - loadoutBarHeight - kBottomGap * scale_;
     stickCentre_ = {kStickCentreX * scale_,
-                    bottom - (kStickRadius + kStickLift) * scale_};
+                    bottom - kStickRadius * scale_ - kStickLift * narrow};
     attackCentre_ = {viewWidth - (kAttackMargin + kAttackRadius) * scale_,
                      bottom - kAttackRadius * scale_};
     retractCentre_ = {attackCentre_.x - (kAttackRadius + kRetractGap + kRetractRadius) * scale_,
@@ -185,6 +203,23 @@ void MobileControls::update(const std::vector<TouchEvent>& events) {
                 break;
         }
     }
+}
+
+void MobileControls::releaseLost(const std::vector<TouchPoint>& live) {
+    const auto down = [&](const Contact& contact) {
+        if (!contact.held) return true;
+        for (const TouchPoint& point : live) {
+            if (point.id == contact.id) return true;
+        }
+        return false;
+    };
+    if (!down(stick_)) {
+        stick_.held = false;
+        knob_ = {0, 0};
+    }
+    if (!down(attack_)) attack_.held = false;
+    if (!down(retract_)) retract_.held = false;
+    if (!down(rowSwap_)) rowSwap_.held = false;
 }
 
 void MobileControls::reset() {

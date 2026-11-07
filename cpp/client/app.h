@@ -723,6 +723,9 @@ private:
     /// The low-health vignette's strength, eased toward lowHealthTarget() so a
     /// single hit or heal fades it rather than switching it.
     double lowHealthVignette_ = 0.0;
+    /// How far the frame is slid up to keep the focused text field clear of
+    /// the on-screen keyboard, in design units, eased. See frame().
+    double keyboardLift_ = 0.0;
     /// Its falloff, one alpha byte per pixel, baked once per surface size --
     /// the shape never changes, only how strongly it is laid on. Native lays
     /// it straight onto the device pixels (Canvas::darkenDevice); the browser

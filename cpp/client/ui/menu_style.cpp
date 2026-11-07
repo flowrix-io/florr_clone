@@ -148,6 +148,18 @@ Rect closeButtonRect(Rect panel) {
             kCloseSize};
 }
 
+Rect closeButtonHit(Rect panel, const Window& window) {
+    const Rect button = closeButtonRect(panel);
+    if (!window.pointerIsTouch()) return button;
+    // Past the button towards the header's other controls by half the gap to
+    // the nearest of them, so a finger between the two still picks the nearer.
+    // Not past its bottom: the button already overhangs the 40-unit headers
+    // of the scrolling cards, and below it are their lists and scrollbars.
+    constexpr double kSlack = 8.0;
+    const double left = button.x - kSlack;
+    return {left, panel.y, panel.right() - left, button.bottom() - panel.y};
+}
+
 void closeCross(Canvas& canvas, Rect r, double arm, double width, bool roundCap) {
     const double cx = r.x + r.w * 0.5;
     const double cy = r.y + r.h * 0.5;
