@@ -74,7 +74,7 @@ inline constexpr std::uint32_t kSelectionPlate = 0x1E3A63u;
 /// whose `<Petal|Mob>/Attribute/<stat>` strings also say which stat takes
 /// which colour. `generic` names the stats that are about nothing in
 /// particular (Evasion, Reload, Spawn Cost). The floating damage numbers are
-/// painted in the damage, poison and lightning ones.
+/// painted in the damage, poison and lightning ones, and in kStatGlitch.
 inline constexpr std::uint32_t kStatGeneric    = 0xFFE763u;
 inline constexpr std::uint32_t kStatHealth     = 0x66FF66u;
 inline constexpr std::uint32_t kStatDamage     = 0xFF6666u;
@@ -88,6 +88,9 @@ inline constexpr std::uint32_t kStatDanger     = 0xFF3333u;
 inline constexpr std::uint32_t kStatReflection = 0x999999u;
 inline constexpr std::uint32_t kStatPsionic    = 0xC7A138u;
 inline constexpr std::uint32_t kStatUndead     = 0x83B05Du;
+/// Not one of florr's: a glitch petal's damage number, in those petals' own
+/// #00ff00, which is further from health's green than a shade of it would be.
+inline constexpr std::uint32_t kStatGlitch     = 0x00FF00u;
 
 /// Menus and the title screen sit on this; the world has its own biome ground.
 inline constexpr std::uint32_t kBackdrop   = 0x00D885u;

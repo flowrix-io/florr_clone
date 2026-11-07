@@ -115,6 +115,8 @@ struct Faction {
     Team team = Team::Hostiles;
     /// In PvP, players are hostile to each other; elsewhere they are not.
     bool friendlyFireEnabled = false;
+    // Hosted-event side only; independent of the mob/player faction.
+    std::uint8_t hostedTeam = 0;
 };
 
 struct Health {

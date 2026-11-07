@@ -291,6 +291,25 @@ TEST(light_and_pollen_gain_petals_with_rarity) {
     CHECK_EQ(r.petalStats(plain, Rarity::Apex).count, 2);
 }
 
+TEST(a_glitch_light_gains_petals_with_rarity_as_a_light_does) {
+    ContentRegistry r;
+    CHECK(loadPetals(r, R"JSON({
+      "light": {"name": "Light", "health": 5, "damage": 7, "size": 1, "cooldown": 800, "count": 1},
+      "glitch_light": {"name": "Glitch Light", "health": 5, "damage": 7, "size": 1, "cooldown": 800, "count": 1}
+    })JSON"));
+    const std::uint16_t light = r.petalIndex("light");
+    const std::uint16_t glitch = r.petalIndex("glitch_light");
+    CHECK(light != kInvalidIndex);
+    CHECK(glitch != kInvalidIndex);
+    CHECK_EQ(r.glitchFormOf(light), glitch);
+    for (int t = 0; t < kRarityCount; ++t) {
+        const Rarity tier = static_cast<Rarity>(t);
+        CHECK_EQ(r.petalStats(glitch, tier).count, r.petalStats(light, tier).count);
+    }
+    // Not two petals that merely agree on a flat count.
+    CHECK(r.petalStats(glitch, Rarity::Mythic).count > r.petalStats(glitch, Rarity::Common).count);
+}
+
 TEST(every_shipped_entry_parses_into_something_usable) {
     const ContentRegistry& r = shipped().registry;
     for (std::uint16_t i = 0; i < r.mobCount(); ++i) {

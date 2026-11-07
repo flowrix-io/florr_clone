@@ -427,13 +427,12 @@ struct CreditLine {
     double advance;  ///< how far the cursor moves afterwards
 };
 
-constexpr std::array<CreditLine, 16> kCredits = {{
+constexpr std::array<CreditLine, 15> kCredits = {{
     {"Flowrix.pro", 18.0, kPaper, true, 10.0, 30.0},
     {"Developers", 14.0, kGoldHeading, false, 10.0, 24.0},
     {"• sussybite8888", 12.0, kPaper, false, 8.0, 20.0},
-    {"• Cookery", 12.0, kPaper, false, 8.0, 20.0},
-    {"• Codelinkd203", 12.0, kPaper, false, 8.0, 20.0},
-    {"• NachoFrenchFry", 12.0, kPaper, false, 8.0, 20.0},
+    {"• cookery", 12.0, kPaper, false, 8.0, 20.0},
+    {"• 19kisme", 12.0, kPaper, false, 8.0, 20.0},
     {"• Arras Guard YT", 12.0, kPaper, false, 8.0, 20.0},
     {"Inspired By", 14.0, kGoldHeading, false, 10.0, 24.0},
     {"• florr.io by M28", 12.0, kPaper, false, 8.0, 28.0},

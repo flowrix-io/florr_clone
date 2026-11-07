@@ -171,6 +171,23 @@ private:
 
 class LootSystem {
 public:
+    /// The tier of the best orb of each kind a flower wears, kRarityCount for
+    /// none.
+    struct WornOrbs {
+        int magic = kRarityCount;
+        int glitch = kRarityCount;
+    };
+
+    /// What one flower's copy of a drop becomes: the petal, and the highest
+    /// tier it may come out at (kRarityCount for no cap).
+    struct OrbForm {
+        std::uint16_t petal = kNoPetal;
+        int cap = kRarityCount;
+        bool operator==(const OrbForm& other) const {
+            return petal == other.petal && cap == other.cap;
+        }
+    };
+
     /// One petal that changed hands this tick. Applying it to the account is
     /// the runtime's job -- this system owns the world, not the database.
     struct Pickup {
@@ -292,9 +309,11 @@ private:
     std::vector<Entity> corpseList_;
     std::vector<Bounty::Share> ranked_;
     std::vector<Entity> eligible_;
-    /// eligible_[i]'s worn orb tier, kRarityCount for none.
-    std::vector<int> eligibleOrbs_;
-    /// The eligible flowers sharing one orb tier: one split drop's claimants.
+    /// eligible_[i]'s worn orbs.
+    std::vector<WornOrbs> eligibleOrbs_;
+    /// What eligible_[i]'s copy of the drop in hand becomes.
+    std::vector<OrbForm> eligibleForms_;
+    /// The eligible flowers sharing one outcome: one split drop's claimants.
     std::vector<Entity> orbGroup_;
     std::vector<const DropTables::Entry*> selected_;
 };

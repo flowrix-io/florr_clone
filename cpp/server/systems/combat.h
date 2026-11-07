@@ -155,12 +155,17 @@ enum class DamageKind : std::uint8_t {
     /// soaks it, and above all nothing reflects it -- two salted duellists
     /// would otherwise bounce one blow between them until it rounded to zero.
     Reflect = 5,
+    /// A glitch petal's hit or shot. Like Lightning, a landed hit in every
+    /// respect the simulation can see, whose floating number is green. The
+    /// amount is rolled before it gets here (rollGlitchDamage).
+    Glitch = 6,
 };
 
 /// Whether this kind is a landed hit rather than a drip. Everything in
 /// applyDamage that used to ask `kind == Direct` asks this.
 inline constexpr bool isDirectHit(DamageKind kind) {
-    return kind == DamageKind::Direct || kind == DamageKind::Lightning;
+    return kind == DamageKind::Direct || kind == DamageKind::Lightning ||
+           kind == DamageKind::Glitch;
 }
 
 /// Whether the victim's Armor comes off this kind. Every landed hit, and the
@@ -168,6 +173,22 @@ inline constexpr bool isDirectHit(DamageKind kind) {
 /// each sliver would be immunity rather than a tax.
 inline constexpr bool armorBlunts(DamageKind kind) {
     return isDirectHit(kind) || kind == DamageKind::Recoil;
+}
+
+/// A glitch petal's hit is unreliable: a quarter land at half damage, 40% land
+/// at +76.25%, and the remaining 35% land at the petal's ordinary damage. That
+/// averages 118% of it (0.25 * 0.5 + 0.40 * 1.7625 + 0.35 = 1.18), which is the
+/// figure to keep when tuning any of these.
+inline constexpr double kGlitchWeakChance = 0.25;
+inline constexpr double kGlitchWeakScale = 0.5;
+inline constexpr double kGlitchStrongChance = 0.40;
+inline constexpr double kGlitchStrongScale = 1.7625;
+
+/// What a glitch hit's damage is multiplied by, for a roll in [0, 1).
+inline constexpr double glitchDamageScale(double roll) {
+    if (roll < kGlitchWeakChance) return kGlitchWeakScale;
+    if (roll < kGlitchWeakChance + kGlitchStrongChance) return kGlitchStrongScale;
+    return 1.0;
 }
 
 struct DamageResult {
@@ -756,6 +777,11 @@ private:
     /// Behind applyDamage, and asked directly only for a swing of zero, which
     /// applyDamage refuses before it would roll.
     bool rollDodge(World& world, Entity victim, double nowMillis);
+    /// `amount` after a glitch petal's roll (glitchDamageScale). Rolled once per
+    /// swing by whoever makes the swing, never inside applyDamage: a colony or a
+    /// relic squad re-enters applyDamage once per share, and each share rolling
+    /// for itself would break one hit into different amounts.
+    double rollGlitchDamage(double amount);
 
     /// The colony's and the relic's split: `amount` shared evenly over `group`
     /// plus `victim`, each share going back through applyDamage as that body's
@@ -885,11 +911,11 @@ private:
     /// before the first of them is struck.
     std::vector<Entity> cottonScratch_;
 
-    /// Evasion's rolls, and nothing else. Combat's own stream for the reason
-    /// the bots have theirs: drawing from the world's would move every spawn
-    /// and drop roll the moment a talisman was worn. It is only drawn from
-    /// when the victim has a chance to dodge, so a fight with no evasion in
-    /// it rolls nothing.
+    /// Evasion's and glitch petals' rolls, and nothing else. Combat's own
+    /// stream for the reason the bots have theirs: drawing from the world's
+    /// would move every spawn and drop roll the moment a talisman was worn. It
+    /// is only drawn from when a victim has a chance to dodge or a glitch petal
+    /// swings, so a fight with neither in it rolls nothing.
     Rng rng_;
 
     std::uint64_t tick_ = 0;

@@ -8,6 +8,7 @@
 #include "server/loot_eligibility.h"
 #include "server/systems/movement.h"
 #include "shared/game/npc.h"
+#include "shared/game/admin_arena.h"
 
 namespace flix {
 
@@ -161,6 +162,14 @@ Rarity hitRarity(const World& world, Entity source) {
         if (const MobType* type = world.tryGet<MobType>(seed->mob)) return type->rarity;
     }
     return rarityOf(world, source);
+}
+
+/// How a hit from this petal, or from a shot it fired, is reported. A glitch
+/// form is green whatever else it copied from the petal it is a form of.
+DamageKind petalHitKind(const ContentRegistry& content, std::uint16_t petalIndex) {
+    if (petalIndex == kNoPetal) return DamageKind::Direct;
+    if (content.isGlitchForm(petalIndex)) return DamageKind::Glitch;
+    return content.petal(petalIndex).lightningDamage ? DamageKind::Lightning : DamageKind::Direct;
 }
 
 /// Whether a projectile should test against this entity at all. Drops and
@@ -499,6 +508,11 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
     // actually share and because combat has no business knowing what a
     // splitter is. A bot's connection is 0 and two bots are still enemies.
     if (oneConnection(world, sourcePlayer, victimPlayer)) return false;
+    if(sourcePlayer!=NULL_ENTITY&&victimPlayer!=NULL_ENTITY){
+        const auto* a=world.tryGet<Faction>(sourcePlayer);const auto* b=world.tryGet<Faction>(victimPlayer);
+        const auto* at=world.tryGet<Transform>(sourcePlayer);const auto* bt=world.tryGet<Transform>(victimPlayer);
+        if(a&&b&&at&&bt&&at->realm==kAdminArenaRealm&&bt->realm==kAdminArenaRealm&&a->hostedTeam>0&&a->hostedTeam==b->hostedTeam)return false;
+    }
     // A petal that ignores mobs (basil) and anything a mob does pass through
     // each other, either way round. Here rather than in each pass so a body,
     // a ring seat, a shot, a field and a shock are all one rule.
@@ -962,6 +976,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
             // touch alike -- so the cyan is decided once, where the number is
             // reported, rather than at each of the three triggers.
             if (kind == DamageKind::Lightning) flags |= net::DamageLightning;
+            if (kind == DamageKind::Glitch) flags |= net::DamageGlitch;
             // Whose hit it was, for the one viewer it belongs to (see
             // net::DamageByViewer). Resolved now, while the source still
             // exists: a petal that breaks on this very swing is gone by the
@@ -1747,6 +1762,11 @@ Entity CombatSystem::reflectionTarget(const World& world, Entity source) {
     return actor;
 }
 
+double CombatSystem::rollGlitchDamage(double amount) {
+    // A swing of nothing has nothing to scale, so it draws nothing.
+    return amount > 0.0 ? amount * glitchDamageScale(rng_.unit()) : amount;
+}
+
 bool CombatSystem::rollDodge(World& world, Entity victim, double nowMillis) {
     const double evasion = evasionOf(world, victim);
     // Nothing is drawn for a victim that cannot dodge, so the stream only
@@ -2352,7 +2372,7 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
         source.rarity = petal.rarity;
         source.isPetal = true;
         source.isLoose = loose;
-        if (config.lightningDamage) source.hitKind = DamageKind::Lightning;
+        source.hitKind = petalHitKind(content, petal.configIndex);
         // A tomato hits harder the longer it has been out; a reload starts it
         // over, since the reload is a new petal.
         if (petalGrowsOverTime(config)) {
@@ -2586,6 +2606,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // ring or a hostile NPC is every collision there is. A petal, a
             // shot, a field or a shock goes past it whole.
             if (mobTouchesPlayer) swing *= collisionDamageTakenScale(world, victim);
+            if (source.hitKind == DamageKind::Glitch) swing = rollGlitchDamage(swing);
             DamageResult hit =
                 applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);
             // A swing of NOTHING is still a swing. canHit() has already vouched
@@ -2919,7 +2940,8 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     world.ensure<HitCooldowns>(source.attacker).arm(victim, nowMillis + interval);
 
     // A claw opens on a fresh duellist exactly as it opens on a fresh mob.
-    const double swing = swingDamage(world, source.damage, source.critDamage, victim);
+    double swing = swingDamage(world, source.damage, source.critDamage, victim);
+    if (source.hitKind == DamageKind::Glitch) swing = rollGlitchDamage(swing);
     const DamageResult hit =
         applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);
     // And a fang drinks from one: what the victim's bar lost, never what a
@@ -2990,11 +3012,9 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         const bool infecting = projectile->glitchInfecting;
         const Entity owner = projectile->owner;
         const std::uint8_t slot = projectile->slot;
-        // A blueberry's shot lands as lightning, exactly as its body does.
-        const DamageKind hitKind =
-            petalIndex != kNoPetal && content.petal(petalIndex).lightningDamage
-                ? DamageKind::Lightning
-                : DamageKind::Direct;
+        // A blueberry's shot lands as lightning and a glitch petal's as a
+        // glitch hit, exactly as their bodies do.
+        const DamageKind hitKind = petalHitKind(content, petalIndex);
 
         // Centred on the segment, so the pad the broadphase already spends on
         // the tick's travel covers the whole of it rather than only the end.
@@ -3097,8 +3117,10 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             const bool victimIsShot = world.has<Projectile>(impact.victim);
             const bool victimIsMob = world.has<MobTag>(impact.victim);
 
+            const double swing =
+                hitKind == DamageKind::Glitch ? rollGlitchDamage(damage) : damage;
             DamageResult hit =
-                applyDamage(world, impact.victim, shot.entity, damage, nowMillis, hitKind);
+                applyDamage(world, impact.victim, shot.entity, swing, nowMillis, hitKind);
             // A shot of zero is refused before applyDamage rolls evasion, and
             // its riders below land regardless -- so it is rolled here, as a
             // zero-damage petal's swing is in resolveMelee.

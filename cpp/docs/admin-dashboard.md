@@ -553,3 +553,10 @@ Gambling commands have been removed. Legacy chip fields remain readable so exist
 The separate `market` branch includes the free-skin web update plus the petal marketplace. `/shop` opens listings; `/order` opens funded orders. Both are also Shop tabs. Common minimum price is 1 star, multiplied by 3 per rarity. Sellers receive 80%; cancellations return remaining escrow without tax. Listings reserve unequipped petals immediately, and orders reserve stars. Filters accept exact rarities, `Ultra+` and `Rare-`; sort/filter preferences are saved locally.
 
 Apex Mr. Bee is a friendly NPC at Garden spawn. Use the Craft button/key nearby to open the market. He wanders within 260 world units of his home, appears as a gold minimap dot, and shares an Ultra Bee loot roll every 3–6 minutes. Each dropped item is public and has one human collector in total. Gambling and paid skins are absent. This branch is not merged into `web`.
+### Petal bans, teams and personal loadouts
+
+In Admin → Events, use **Petal bans** to search display names, select one rarity or All rarities, and add/remove restrictions. Existing ID bans remain supported. Rules apply immediately to temporary event bags and both loadout rows; normal owned inventory is preserved.
+
+The **Teams** tab offers Free for all, Me vs Everyone, Admins vs Players, and four manually assigned sides (Blue, Red, Green, Yellow). Me vs Everyone puts the acting host alone on Blue and every other participant on Red, including later entrants. Team modes enable PvP; allies cannot damage each other or their owned pets/projectiles. Teams and manual account assignments are autosaved and included in named event presets.
+
+**Use personal gear** permits saving/loading normal presets against the temporary copy of personal gear. Bans, active-slot limits and loadout locks still apply. Custom host-provided kits and public arena runs cannot overwrite saved presets.

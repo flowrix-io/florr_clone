@@ -2,6 +2,7 @@
 #include "server/text.h"
 #include "shared/game/admin_arena.h"
 #include "shared/game/config.h"
+#include "shared/game/hosted_teams.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -70,6 +71,7 @@ void GameServer::initHostedArena() {
     terrain_->adminArenaFloor = floor < 0 ? 1 : floor;
     terrain_->adminArenaWall = wall < 0 ? 0 : wall;
     hostedArenaPvp_ = saved["pvp"].asBool(false);
+    hostedArenaTeams_=saved["teams"].isObject()?saved["teams"]:Json::object();
     hostedArenaKit_ = saved["kit"];
     hostedArenaRules_ = saved["rules"].isObject() ? saved["rules"] : Json::object();
     rebuildHostedRules();
@@ -81,6 +83,7 @@ void GameServer::saveHostedArena() {
     record["floor"] = kAdminArenaThemes[terrain_->adminArenaFloor].name;
     record["wall"] = kAdminArenaThemes[terrain_->adminArenaWall].name;
     record["pvp"] = hostedArenaPvp_;
+    record["teams"]=hostedArenaTeams_;
     record["kit"] = hostedArenaKit_;
     record["rules"] = hostedArenaRules_;
     Json cells = Json::array();
@@ -112,6 +115,7 @@ void GameServer::refreshHostedArena(bool reset) {
             }
             syncKitPvp(world_, e, hostedArenaPvp_);
         }
+        applyHostedTeam(player);
         sendRealmChange(player, world_.get<Transform>(player.entity).position);
     }
     saveHostedArena();
@@ -148,6 +152,7 @@ bool GameServer::transferHostedArena(Session& player, bool entering) {
     progress.totalXp = destination == Realm::Maze ? account.mazeTotalXp : account.totalXp;
     progress.level = levelFromTotalXp(progress.totalXp).level;
     applyAccountToSession(player);
+    applyHostedTeam(player);
     syncKitPvp(world_, player.entity, destination == Realm::Arena ||
         (destination == kAdminArenaRealm && hostedArenaPvp_));
     if (auto* peer = listener_.find(player.connection)) {
@@ -246,7 +251,21 @@ void GameServer::clearHostedGear(Session& s) {
         if(owner!=NULL_ENTITY && (owner==s.entity || (s.splitOther!=NULL_ENTITY&&owner==s.splitOther)))gear.push_back(e);
     });for(Entity e:gear)destroyBody(e);
 }
+int GameServer::hostedTeamFor(const Session& s) const {
+    const auto mode=hostedArenaTeams_["mode"].asString();
+    if(mode=="solo")return s.userId==hostedArenaTeams_["leader"].asString()?1:2;
+    if(mode=="admins")return effectiveAdmin(s)?1:2;
+    if(mode=="manual")return std::clamp(hostedArenaTeams_["assignments"][s.userId].asInt(2),1,4);
+    return 0;
+}
+void GameServer::applyHostedTeam(Session& s) {
+    for(Entity e:bodiesOf(s))if(auto* side=world_.tryGet<Faction>(e)){
+        const auto* at=world_.tryGet<Transform>(e);
+        side->hostedTeam=at&&at->realm==kAdminArenaRealm?hostedTeamFor(s):0;
+    }
+}
 void GameServer::endHostedKit(Session& s) {
+    for(Entity e:bodiesOf(s))if(auto* side=world_.tryGet<Faction>(e))side->hostedTeam=0;
     if(!s.eventKit)return;
     clearHostedGear(s);
     s.eventKit.reset();
@@ -268,6 +287,7 @@ void GameServer::applyHostedKit(Session& s) {
     if(auto* progress=world_.tryGet<PlayerProgress>(s.entity)){
         progress->totalXp=s.eventKit->totalXp;progress->level=levelFromTotalXp(progress->totalXp).level;
     }
+    applyHostedTeam(s);
 }
 void GameServer::rebuildHostedRules() {
     hostedArenaAllowed_.assign(content().petalCount(),0);
@@ -285,6 +305,8 @@ void GameServer::rebuildHostedRules() {
         for(int rarity=0;rarity<=maximum;++rarity) {
             if(rarity==int(Rarity::Admin)&&hostedArenaRules_["noAdmin"].asBool())continue;
             bool blocked=false;for(const auto& r:hostedArenaRules_["bannedRarities"].items())if(r.asInt(-1)==rarity)blocked=true;
+            for(const auto& ban:hostedArenaRules_["petalBans"].items())
+                if(ban["id"].asString()==petal.id&&(ban["rarity"].asInt(-1)==-1||ban["rarity"].asInt(-1)==rarity))blocked=true;
             if(!blocked)hostedArenaAllowed_[i]|=1u<<rarity;
         }
     }
@@ -316,6 +338,7 @@ void GameServer::runEventSetup(Session& host,net::Connection& peer,const Json& q
     if(!host.admin||!adminMay(host,AdminPower::SpawnMobs)){fail("Full admin hosting permission required.");return;}
     if(kind!="event" && kind!="arena"){fail("Invalid tool.");return;}
     std::string message="Event presets and temporary kits";
+    if(kind=="arena"&&action!="stroke"){fail("Unknown arena action.");return;}
     if(action=="rules") {
         if(!adminMay(host,AdminPower::GivePetals)){fail("Event restrictions require tier 1-2 access.");return;}
         const Json rules=q["rules"];
@@ -326,8 +349,64 @@ void GameServer::runEventSetup(Session& host,net::Connection& peer,const Json& q
            !rules["bannedRarities"].isArray()||rules["bannedRarities"].size()>kRarityCount){fail("Invalid event rules.");return;}
         for(const auto& id:rules["bannedPetals"].items())if(content().petalIndex(id.asString())==kInvalidIndex){fail("Unknown banned petal.");return;}
         for(const auto& r:rules["bannedRarities"].items()){const double n=r.asDouble(-1);if(!std::isfinite(n)||n<0||n>=kRarityCount||std::floor(n)!=n){fail("Invalid banned rarity.");return;}}
+        if(rules.contains("petalBans")){
+            if(!rules["petalBans"].isArray()||rules["petalBans"].size()>256){fail("Invalid petal bans.");return;}
+            for(const auto& ban:rules["petalBans"].items()){
+                const double r=ban["rarity"].asDouble(-2);
+                if(content().petalIndex(ban["id"].asString())==kInvalidIndex||!std::isfinite(r)||r< -1||r>=kRarityCount||std::floor(r)!=r){fail("Invalid petal ban.");return;}
+            }
+        }
         hostedArenaRules_=rules;rebuildHostedRules();saveHostedArena();
         message="Rules applied and autosaved. Restricted gear is removed from temporary bags only.";
+    }
+    if(action=="petal_ban") {
+        if(!adminMay(host,AdminPower::GivePetals)){fail("Event restrictions require tier 1-2 access.");return;}
+        const auto name=trimmed(q["item"].asString());const double r=q["rarity"].asDouble(-2);
+        if(name.empty()||name.size()>128||!std::isfinite(r)||r< -1||r>=kRarityCount||std::floor(r)!=r){fail("Choose a petal name and a rarity (or all rarities).");return;}
+        auto index=content().petalIndex(name);
+        if(index==kInvalidIndex){
+            for(std::uint16_t i=0;i<content().petalCount();++i)if(lowerCase(content().petal(i).name)==lowerCase(name)){
+                if(index!=kInvalidIndex){fail("Ambiguous petal name; select a search result.");return;}index=i;
+            }
+        }
+        if(index==kInvalidIndex){fail("Petal name not found.");return;}
+        const auto& petal=content().petal(index);Json bans=Json::array();
+        for(const auto& ban:hostedArenaRules_["petalBans"].items())
+            if(ban["id"].asString()!=petal.id||ban["rarity"].asInt(-2)!=int(r))bans.push(ban);
+        if(!q["remove"].asBool()){
+            if(bans.size()>=256){fail("Maximum 256 petal bans.");return;}
+            Json ban=Json::object();ban["id"]=petal.id;ban["rarity"]=int(r);bans.push(ban);
+        }else if(r== -1){
+            Json legacy=Json::array();for(const auto& id:hostedArenaRules_["bannedPetals"].items())if(id.asString()!=petal.id)legacy.push(id);
+            hostedArenaRules_["bannedPetals"]=legacy;
+        }
+        hostedArenaRules_["petalBans"]=bans;rebuildHostedRules();saveHostedArena();
+        message=std::string(q["remove"].asBool()?"Unbanned ":"Banned ")+petal.name+" / "+(r== -1?"all rarities":rarityLabel(Rarity(int(r))));
+    }
+    if(action=="team_mode"||action=="team_assign"){
+        const auto mode=q["mode"].asString();
+        if(action=="team_mode"){
+            if(mode!="ffa"&&mode!="solo"&&mode!="admins"&&mode!="manual"){fail("Unknown team mode.");return;}
+            hostedArenaTeams_["mode"]=mode;
+            if(mode=="solo")hostedArenaTeams_["leader"]=host.userId;
+        }else{
+            const double n=q["team"].asDouble(-1);const auto id=q["player"].asString();
+            bool present=false;for(const auto& [cid,s]:sessions_)if(s.authenticated()&&s.userId==id&&s.realm==kAdminArenaRealm)present=true;
+            if(!present||!std::isfinite(n)||n<1||n>4||std::floor(n)!=n){fail("Select an arena participant and team.");return;}
+            // Freeze automatic sides before a manual adjustment, so one edit
+            // never silently moves everybody else's team.
+            if(hostedArenaTeams_["mode"].asString()!="manual"){
+                Json assignments=Json::object();for(const auto& [cid,s]:sessions_)if(s.authenticated()&&s.realm==kAdminArenaRealm)assignments[s.userId]=hostedTeamFor(s)?hostedTeamFor(s):2;
+                hostedArenaTeams_["assignments"]=assignments;
+            }
+            hostedArenaTeams_["mode"]="manual";hostedArenaTeams_["assignments"][id]=int(n);
+        }
+        hostedArenaPvp_=true;
+        for(auto& [cid,s]:sessions_)if(s.playing()&&s.realm==kAdminArenaRealm){
+            applyHostedTeam(s);for(Entity e:bodiesOf(s))syncKitPvp(world_,e,true);
+            if(auto* c=listener_.find(cid))sendSystem(*c,hostedTeamFor(s)?"Arena team: "+std::string(kHostedTeamNames[hostedTeamFor(s)])+". Teammates cannot damage one another.":"Arena: free for all.");
+        }
+        saveHostedArena();message="Teams applied and autosaved. PvP enabled.";
     }
     if(action=="save_current"){saveHostedArena();if(!database_.save()){fail("Could not save arena to disk.");return;}message="Arena saved to disk.";}
 
@@ -391,9 +470,13 @@ void GameServer::runEventSetup(Session& host,net::Connection& peer,const Json& q
         }
         saveHostedArena();message="Temporary event kit updated. Normal inventories stay saved.";
     }
-    if(kitAction||action=="load"||action=="rules")for(auto& [id,s]:sessions_)if(s.playing()&&s.realm==kAdminArenaRealm){persistPlayer(s);if(action=="rules"){clearHostedGear(s);enforceHostedRules(s);}else applyHostedKit(s);applyAccountToSession(s);if(auto* c=listener_.find(id))sendProfile(s,*c);}
+    if(kitAction||action=="load"||action=="rules"||action=="petal_ban")for(auto& [id,s]:sessions_)if(s.playing()&&s.realm==kAdminArenaRealm){persistPlayer(s);if(action=="rules"||action=="petal_ban"){clearHostedGear(s);enforceHostedRules(s);}else applyHostedKit(s);applyAccountToSession(s);if(auto* c=listener_.find(id))sendProfile(s,*c);}
     Json data=Json::object(),events=Json::array();for(const auto& key:database_.storedTable("adminEvents").keys())events.push(key);
-    data["rules"]=hostedArenaRules_;
+    data["rules"]=hostedArenaRules_;data["teams"]=hostedArenaTeams_;
+    std::vector<Json> roster;for(const auto& [cid,s]:sessions_)if(s.authenticated()&&s.realm==kAdminArenaRealm){Json row=Json::object();row["id"]=s.userId;row["name"]=s.username;row["team"]=hostedTeamFor(s);roster.push_back(row);}
+    std::sort(roster.begin(),roster.end(),[](const Json& a,const Json& b){return a["name"].asString()<b["name"].asString();});
+    int offset=std::clamp(q["offset"].asInt(),0,int(roster.size()));Json players=Json::array();for(int i=offset;i<int(roster.size())&&i<offset+6;++i)players.push(roster[i]);
+    data["players"]=players;data["playerCount"]=int(roster.size());data["offset"]=offset;
     data["events"]=events;data["kitEnabled"]=hostedArenaKit_.isObject();data["kit"]=hostedArenaKit_;
     sendAdminTools(host,peer,"event",true,message,data);
 }

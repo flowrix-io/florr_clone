@@ -549,7 +549,15 @@ constexpr ChangelogEntry kChangelog[] = {
         "New petal: Nazar",
         "Reverted camera changes"
       }
-    }
+    },
+    {"November 6, 2026",
+      {
+        "New petal: Glitch Orb",
+        "New mob: Glitch Missile",
+        "New mob: Glitch Lightning",
+        "New petal: Glitch Light",
+      }
+    },
       
 };
 
