@@ -1038,7 +1038,7 @@ TEST(the_shipped_map_collides_with_authored_shapes_everywhere) {
     CHECK(sawPartialTile);
 }
 
-TEST(outside_the_map_is_black) {
+TEST(outside_the_map_repeats_solid_blocks) {
     WorldMaps maps;
     Terrain terrain;
     std::string error;
@@ -1059,15 +1059,13 @@ TEST(outside_the_map_is_black) {
     const auto pixels = canvas.getImageData(0, 0, 256, 256);
     CHECK(pixels.size() == 256u * 256u * 4u);
     if (pixels.size() != 256u * 256u * 4u) return;
-    CHECK_EQ(pixels[0], std::uint8_t(0));
-    CHECK_EQ(pixels[1], std::uint8_t(0));
-    CHECK_EQ(pixels[2], std::uint8_t(0));
+    CHECK(pixels[0] > 60 && pixels[1] > 60 && pixels[2] > 60);
     CHECK_EQ(pixels[3], std::uint8_t(255));
     const std::size_t last = pixels.size() - 4;
     CHECK(pixels[last] + pixels[last + 1] + pixels[last + 2] > 0);
 }
 
-TEST(outside_the_admin_arena_is_black_and_its_floor_stops_at_the_edge) {
+TEST(outside_the_admin_arena_repeats_walls_and_its_floor_stops_at_the_edge) {
     Terrain terrain;
     CHECK(terrain.setTiles(std::vector<std::uint8_t>(16 * 16, static_cast<std::uint8_t>(Tile::Open)),
                            16, 16, kAdminArenaRealm));
@@ -1081,9 +1079,7 @@ TEST(outside_the_admin_arena_is_black_and_its_floor_stops_at_the_edge) {
     const auto pixels = canvas.getImageData(0, 0, 256, 256);
     CHECK(pixels.size() == 256u * 256u * 4u);
     if (pixels.size() != 256u * 256u * 4u) return;
-    CHECK_EQ(pixels[0], std::uint8_t(0));
-    CHECK_EQ(pixels[1], std::uint8_t(0));
-    CHECK_EQ(pixels[2], std::uint8_t(0));
+    CHECK(pixels[0] > 60 && pixels[1] > 60 && pixels[2] > 60);
     // No sprites here, so the map shows its floor colour.
     const std::uint32_t floor = kAdminArenaThemes[terrain.adminArenaFloor].color;
     const std::size_t last = pixels.size() - 4;

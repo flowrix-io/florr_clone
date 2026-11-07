@@ -1054,6 +1054,7 @@ Rect AdminDbPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
 }
 Rect AdminDashboardPanel::bounds(int w, int h) {
+    if (expanded()) return {8,8,double(w-16),double(h-16)};
     return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
 }
 Rect AssetsPanel::bounds(int w, int h) {

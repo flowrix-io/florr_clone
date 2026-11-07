@@ -1,3 +1,4 @@
+#include <sstream>
 // The Skin Studio: a two-tab authoring surface for data-driven player skins.
 //
 // Not a picker. The player assembles a skin out of drawing primitives, names
@@ -1420,7 +1421,11 @@ void Studio::drawVoteRow(Canvas& canvas, Rect r, const CustomSkin& skin) {
              like);
     Action dislike = like;
     dislike.k = Act::Dislike;
-    votePill(canvas, {r.x + pillW + 4.0, r.y, pillW, r.h}, 1, abbreviate(skin.dislikes),
+    std::string dislikes = abbreviate(skin.dislikes);
+    if (skin.dislikes < 1000 && std::floor(skin.dislikes) != skin.dislikes) {
+        std::ostringstream score; score << skin.dislikes; dislikes = score.str();
+    }
+    votePill(canvas, {r.x + pillW + 4.0, r.y, pillW, r.h}, 1, dislikes,
              mine == SkinVote::Dislike, dislike);
     Action star = like;
     star.k = Act::Favorite;

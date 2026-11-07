@@ -3095,7 +3095,7 @@ bool PetalSystem::revivePlayerNear(World& world, Entity reviver, Realm realm, Ve
         if (!playerIsDown(world, other)) continue;
         // A flower its bandage carried through Undead stays down a while.
         if (const Unrevivable* lock = world.tryGet<Unrevivable>(other)) {
-            if (lock->active(nowMillis)) continue;
+            if (rarity != Rarity::Admin && lock->active(nowMillis)) continue;
         }
         const Transform* transform = world.tryGet<Transform>(other);
         if (transform == nullptr) continue;
@@ -3114,6 +3114,7 @@ bool PetalSystem::revivePlayerNear(World& world, Entity reviver, Realm realm, Ve
             nowMillis + kRespawnInvulnerabilitySeconds * 1000.0;
         // Written before the tag comes off: removing a component moves the
         // flower to another archetype and `health` goes with it.
+        if (rarity == Rarity::Admin && world.has<Unrevivable>(other)) world.remove<Unrevivable>(other);
         if (world.has<Dead>(other)) world.remove<Dead>(other);
         if (onPlayerRevived) onPlayerRevived(other, reviver);
         // One corpse per petal. The reference breaks out of its scan here, so a

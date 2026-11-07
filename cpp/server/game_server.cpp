@@ -1280,6 +1280,7 @@ void GameServer::bankPickups() {
         // Into the bag the body is playing with: an arena pickup is the run's,
         // not the account's, until the run ends.
         giveToInventory(liveRecord(*session), pickup.petalIndex, pickup.rarity, 1);
+        if (session->eventKit) enforceHostedRules(*session);
         database_.markDirty();
 
         // Owed, not sent: see sendDueProfiles.
@@ -1515,6 +1516,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
     // alternate message types to evade a per-handler limit. Excess requests
     // have no side effects and produce no reply to amplify the flood.
     switch (id) {
+        case net::ClientMessage::AdminTools:
         case net::ClientMessage::SetLoadout:
         case net::ClientMessage::SwapLoadout:
         case net::ClientMessage::SwapLoadoutRows:
@@ -1559,6 +1561,18 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         // says so: a player retrying a refused design should hear why nothing
         // happened.
         default: break;
+    }
+
+    if (session->eventKit) {
+        switch(id) {
+            case net::ClientMessage::Craft: case net::ClientMessage::OracleCraft:
+            case net::ClientMessage::Trade: case net::ClientMessage::TitanForge:
+            case net::ClientMessage::Assemble: case net::ClientMessage::Absorb:
+            case net::ClientMessage::BuyPetal: case net::ClientMessage::UpgradeSkill:
+            case net::ClientMessage::ResetSkills:
+                sendNotice(connection,net::NoticeSeverity::Warning,"Economy and talent changes are disabled during hosted events.");return;
+            default:break;
+        }
     }
 
     switch (id) {
@@ -1614,6 +1628,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::GuildInviteToSquad:
             handleGuildInviteToSquad(*session, connection, reader);
             break;
+        case net::ClientMessage::AdminTools: handleAdminTools(*session, connection, reader); break;
         case net::ClientMessage::PublishSkin:   handlePublishSkin(*session, connection, reader); break;
         case net::ClientMessage::EditSkin:      handleEditSkin(*session, connection, reader); break;
         case net::ClientMessage::EquipSkin:     handleEquipSkin(*session, connection, reader); break;
@@ -3394,6 +3409,10 @@ void GameServer::handleSwapLoadout(Session& session, ByteReader& reader) {
 }
 
 bool GameServer::loadoutLockedInMaze(Session& session) {
+    if(session.eventKit && hostedArenaRules_["lockLoadout"].asBool()) {
+        if(auto* peer=listener_.find(session.connection))sendNotice(*peer,net::NoticeSeverity::Warning,"The host locked event loadouts.");
+        return true;
+    }
     if (!session.playing() || session.realm != Realm::Maze) return false;
     // The maze body plays a DERIVED ring -- the account's, one rarity down --
     // and the reference locks the loadout for the run rather than let an edit
@@ -3427,7 +3446,7 @@ void GameServer::handleSaveLoadoutPreset(Session& session, net::Connection& conn
     if (preset >= kLoadoutPresetCount) return;
     // An arena run wears a scratch ring out of a scratch bag, and that is not
     // a loadout worth keeping on the account.
-    if (session.arena) {
+    if (session.arena || session.eventKit) {
         sendNotice(connection, net::NoticeSeverity::Warning,
                    "Saved loadouts can't be used in the arena.");
         return;
@@ -3456,7 +3475,7 @@ void GameServer::handleLoadLoadoutPreset(Session& session, net::Connection& conn
     if (preset >= kLoadoutPresetCount) return;
     // Loaded against the run's bag, a preset of the account's petals would
     // find none of them and strip the starter ring bare.
-    if (session.arena) {
+    if (session.arena || session.eventKit) {
         sendNotice(connection, net::NoticeSeverity::Warning,
                    "Saved loadouts can't be used in the arena.");
         return;
@@ -4268,7 +4287,7 @@ void GameServer::bankKills() {
             }
             paidAccounts.push_back(session->connection);
 
-            PlayerRecord& record = database_.progress(session->userId);
+            PlayerRecord& record = session->eventKit ? *session->eventKit : database_.progress(session->userId);
             record.recordKill(mobId, type->rarity);
 
             // Stars are the mythic-and-above bounty. Awarded on the live entity
@@ -4370,7 +4389,7 @@ void GameServer::handleUpgradeSkill(Session& session, net::Connection& connectio
 
     const SkillId id = static_cast<SkillId>(rawSkill);
     PlayerRecord& record = database_.progress(session.userId);
-    if (session.playing() && session.realm == Realm::Arena) {
+    if (session.playing() && (session.realm == Realm::Arena || session.eventKit)) {
         sendNotice(connection, net::NoticeSeverity::Warning, "Talents are disabled in the arena.");
         return;
     }
@@ -4417,7 +4436,7 @@ void GameServer::handleUpgradeSkill(Session& session, net::Connection& connectio
 void GameServer::handleResetSkills(Session& session, net::Connection& connection) {
     if (!session.authenticated()) return;
     PlayerRecord& record = database_.progress(session.userId);
-    if (session.playing() && session.realm == Realm::Arena) {
+    if (session.playing() && (session.realm == Realm::Arena || session.eventKit)) {
         sendNotice(connection, net::NoticeSeverity::Warning, "Talents are disabled in the arena.");
         return;
     }
@@ -4477,7 +4496,7 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     // buy, but a flower in the arena is playing out of the run's own bag --
     // so the petal would be bought, charged for, and invisible until the run
     // ended. Refused for the same reason talents are.
-    if (session.playing() && session.realm == Realm::Arena) {
+    if (session.playing() && (session.realm == Realm::Arena || session.eventKit)) {
         sendShopResult(connection, net::ShopResultKind::Purchase, false,
                        database_.progress(session.userId).stars,
                        "The shop is closed in the arena.");
@@ -4590,7 +4609,7 @@ void GameServer::handleRedeemCode(Session& session, net::Connection& connection,
     const double stars = stored["stars"].asDouble(0);
     PlayerRecord& record = database_.progress(session.userId);
     record.stars += stars;
-    if (session.playing() && world_.isAlive(session.entity)) {
+    if (!session.eventKit && session.playing() && world_.isAlive(session.entity)) {
         if (PlayerProgress* live = world_.tryGet<PlayerProgress>(session.entity)) {
             live->stars = record.stars;
         }
@@ -5179,8 +5198,8 @@ GameServer::SkinTally GameServer::skinTally(const std::string& id) {
             if (record == nullptr) continue;
             for (const auto& [skinId, vote] : record->skinVotes) {
                 SkinTally& tally = skinTallies_[skinId];
-                if (vote == SkinVote::Like) ++tally.likes;
-                else if (vote == SkinVote::Dislike) ++tally.dislikes;
+                if (vote == SkinVote::Like) tally.likes += skinId == kSignatureSkinId ? 2.0 : 1.0;
+                else if (vote == SkinVote::Dislike) tally.dislikes += skinId == kSignatureSkinId ? 0.5 : 1.0;
             }
         }
         skinTalliesStale_ = false;
@@ -5278,10 +5297,10 @@ void GameServer::handleVoteSkin(Session& session, net::Connection& connection,
     const auto found = record.skinVotes.find(id);
     const SkinVote before = found == record.skinVotes.end() ? SkinVote::None : found->second;
     if (before != vote) {
-        if (before == SkinVote::Like && tally.likes > 0) --tally.likes;
-        if (before == SkinVote::Dislike && tally.dislikes > 0) --tally.dislikes;
-        if (vote == SkinVote::Like) ++tally.likes;
-        if (vote == SkinVote::Dislike) ++tally.dislikes;
+        if (before == SkinVote::Like && tally.likes > 0) tally.likes -= id == kSignatureSkinId ? 2.0 : 1.0;
+        if (before == SkinVote::Dislike && tally.dislikes > 0) tally.dislikes -= id == kSignatureSkinId ? 0.5 : 1.0;
+        if (vote == SkinVote::Like) tally.likes += id == kSignatureSkinId ? 2.0 : 1.0;
+        if (vote == SkinVote::Dislike) tally.dislikes += id == kSignatureSkinId ? 0.5 : 1.0;
         if (vote == SkinVote::None) record.skinVotes.erase(id);
         else record.skinVotes[id] = vote;
         skinTallies_[id] = tally;
@@ -5294,8 +5313,8 @@ void GameServer::handleVoteSkin(Session& session, net::Connection& connection,
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinVotes));
     w.str(id);
-    w.u32(tally.likes);
-    w.u32(tally.dislikes);
+    w.f64(tally.likes);
+    w.f64(tally.dislikes);
     broadcastToAuthenticated(w);
 }
 
@@ -6799,6 +6818,8 @@ Entity GameServer::spawnPlayer(Session& session) {
     session.realm = realm;
     session.arena.reset();
     if (realm == Realm::Arena) session.arena = startArenaRun(database_.progress(session.userId));
+    if (realm == kAdminArenaRealm) applyHostedKit(session);
+    else session.eventKit.reset();
 
     const Entity entity = createPlayerBody(session, realm, spawn);
 
@@ -6951,6 +6972,7 @@ void GameServer::applyAccountToEntity(const PlayerRecord& record, Entity entity)
 }
 
 void GameServer::applyAccountToSession(Session& session) {
+    enforceHostedRules(session);
     const PlayerRecord& record = liveRecord(session);
     for (const Entity body : bodiesOf(session)) {
         if (body != NULL_ENTITY && world_.isAlive(body)) applyAccountToEntity(record, body);
@@ -6958,6 +6980,7 @@ void GameServer::applyAccountToSession(Session& session) {
 }
 
 void GameServer::persistPlayer(const Session& session) {
+    if (session.eventKit) return;
     if (!session.playing() || !world_.isAlive(session.entity)) return;
     const PlayerProgress* progress = world_.tryGet<PlayerProgress>(session.entity);
     if (!progress) return;
@@ -6987,6 +7010,7 @@ void GameServer::despawnPlayer(Session& session, bool persist) {
     if (persist) persistPlayer(session);
     // Leaving the ring, by any door, is the end of the run.
     if (session.arena) endArenaRun(session);
+    session.eventKit.reset();
     session.realm = Realm::Overworld;
 
     // The petals and pets belong to the body, not the account, so they go
@@ -7034,6 +7058,11 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
     if (transform->realm == realm && distanceSq(transform->position, position) < 1.0) return;
 
     const Realm from = transform->realm;
+    if (from == kAdminArenaRealm && realm != kAdminArenaRealm) {
+        if (Session* owner = sessionForEntity(entity); owner && owner->eventKit) {
+            endHostedKit(*owner); transform = world_.tryGet<Transform>(entity); if (!transform) return;
+        }
+    }
     const bool sameRealm = from == realm;
     transform->realm = realm;
     transform->position = position;
@@ -7195,6 +7224,7 @@ Realm GameServer::spawnRealmFor(const Session& session) const {
 }
 
 PlayerRecord& GameServer::liveRecord(Session& session) {
+    if (session.eventKit) return *session.eventKit;
     if (session.arena) return *session.arena;
     return database_.progress(session.userId);
 }

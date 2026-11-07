@@ -97,6 +97,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::Kick:                return "kick";
         case net::ServerMessage::DailyStreak:         return "dailyStreak";
         case net::ServerMessage::ShopResult:          return "shopResult";
+        case net::ServerMessage::AdminTools: return "adminTools";
         case net::ServerMessage::SkinCatalog:         return "skinCatalog";
         case net::ServerMessage::SkinPublished:       return "skinPublished";
         case net::ServerMessage::SkinDeleted:         return "skinDeleted";
@@ -305,6 +306,7 @@ void NetClient::forgetAccount() {
     whisperPartner_.clear();
     dailyStreak_ = DailyStreak{};
     skinCatalog_.clear();
+    adminTools_ = Json::object();
     equippedSkinId_.clear();
     skinAdmin_ = false;
     skinVotes_.clear();
@@ -1167,6 +1169,11 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::Kick:         handleKick(reader); break;
         case net::ServerMessage::DailyStreak:  handleDailyStreak(reader); break;
         case net::ServerMessage::ShopResult:   handleShopResult(reader); break;
+        case net::ServerMessage::AdminTools: {
+            const Json result = Json::parseOrNull(reader.str());
+            if (reader.ok() && result.isObject()) adminTools_[result["kind"].asString()] = result;
+            break;
+        }
         case net::ServerMessage::SkinCatalog:   handleSkinCatalog(reader); break;
         case net::ServerMessage::SkinPublished: handleSkinPublished(reader); break;
         case net::ServerMessage::SkinDeleted:   handleSkinDeleted(reader); break;
@@ -1986,8 +1993,8 @@ void NetClient::handleSkinDeleted(ByteReader& reader) {
 
 void NetClient::handleSkinVotes(ByteReader& reader) {
     const std::string id = reader.str();
-    const std::uint32_t likes = reader.u32();
-    const std::uint32_t dislikes = reader.u32();
+    const double likes = reader.f64();
+    const double dislikes = reader.f64();
     if (!reader.ok()) return;
     for (CustomSkin& skin : skinCatalog_) {
         if (skin.id != id) continue;
@@ -2213,3 +2220,5 @@ void NetClient::handleDailyStreak(ByteReader& reader) {
 }
 
 } // namespace flix
+
+namespace flix { void NetClient::requestAdminTools(const Json& q) { ByteWriter w; beginMessage(w,net::ClientMessage::AdminTools); w.str(q.dump()); send(w); } }

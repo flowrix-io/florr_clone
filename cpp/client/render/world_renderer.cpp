@@ -1720,26 +1720,61 @@ constexpr int kChunkBakeCellsPerFrame = 1024;
 
 } // namespace
 
+namespace {
+// Outside tiles repeat in small cached patches on the web. The patch stays
+// near 512 logical pixels, so antennae zoom does not issue one blit per tiny
+// block. Native rendering keeps the direct SVG path, like the terrain cache.
+void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* art,int cols,int rows) {
+    if(cols<=0||rows<=0)return;
+    const Rect view=camera.visibleWorld(kTileOverlap);
+    const double width=cols*kTileSize,height=rows*kTileSize;
+    const int cells=std::clamp(int(512/(kTileSize*camera.zoom())),1,16);
+    const double worldSide=cells*kTileSize,side=worldSide*camera.zoom();
+    static const int fallbackIdentity=0;
+    const void* owner=art?static_cast<const void*>(art):&fallbackIdentity;
+    const auto patch=[&](Canvas& c) {
+        const float step=float(side/cells),overlap=float(kTileOverlap*camera.zoom());
+        for(int y=0;y<cells;++y)for(int x=0;x<cells;++x) {
+            if(art)art->renderFitted(c,x*step-overlap,y*step-overlap,step+2*overlap,step+2*overlap,0);
+            else {ui::setFill(c,0x555555u);c.fillRect(x*step,y*step,step,step);}
+        }
+    };
+    const auto strip=[&](double left,double top,double right,double bottom) {
+        left=std::max(left,view.left());top=std::max(top,view.top());
+        right=std::min(right,view.right());bottom=std::min(bottom,view.bottom());
+        if(left>=right||top>=bottom)return;
+        const Vec2 a=camera.worldToScreen({left,top}),b=camera.worldToScreen({right,bottom});
+        canvas.save();canvas.beginPath();canvas.rect(a.x,a.y,b.x-a.x,b.y-a.y);canvas.clip();
+        for(int y=int(std::floor(top/worldSide));y<int(std::ceil(bottom/worldSide));++y)
+            for(int x=int(std::floor(left/worldSide));x<int(std::ceil(right/worldSide));++x) {
+                const Vec2 at=camera.worldToScreen({x*worldSide,y*worldSide});
+                if(!drawCachedPicture(canvas,owner,0xB10C0000u+cells,at.x,at.y,side,side,patch)) {
+                    canvas.save();canvas.translate(at.x,at.y);patch(canvas);canvas.restore();
+                }
+            }
+        canvas.restore();
+    };
+    strip(view.left(),view.top(),view.right(),0);
+    strip(view.left(),height,view.right(),view.bottom());
+    strip(view.left(),0,0,height);
+    strip(width,0,view.right(),height);
+}
+}
+
 void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm realm) const {
     if (realm == kAdminArenaRealm && terrain_) {
         const auto& floor = kAdminArenaThemes[std::min<std::size_t>(terrain_->adminArenaFloor, kAdminArenaThemes.size()-1)];
         const auto& wall = kAdminArenaThemes[std::min<std::size_t>(terrain_->adminArenaWall, kAdminArenaThemes.size()-1)];
-        // Black outside, like any other map. The floor colour goes on the
-        // map's own rectangle, under tiles whose art has not loaded.
-        ui::setFill(canvas, 0x000000u);
-        canvas.fillRect(0, 0, camera.viewportWidth(), camera.viewportHeight());
-        const Vec2 corner = camera.worldToScreen({0.0, 0.0});
         ui::setFill(canvas, floor.color);
-        canvas.fillRect(corner.x, corner.y,
-                        float(terrain_->tileCols(realm)*kTileSize*camera.zoom()),
-                        float(terrain_->tileRows(realm)*kTileSize*camera.zoom()));
+        canvas.fillRect(0, 0, camera.viewportWidth(), camera.viewportHeight());
         const Rect visible = camera.visibleWorld(kTileOverlap);
-        const int x0 = std::max(0, int(std::floor(visible.left()/kTileSize)));
-        const int y0 = std::max(0, int(std::floor(visible.top()/kTileSize)));
-        const int x1 = std::min(terrain_->tileCols(realm)-1, int(std::floor(visible.right()/kTileSize)));
-        const int y1 = std::min(terrain_->tileRows(realm)-1, int(std::floor(visible.bottom()/kTileSize)));
+        const int x0 = std::max(0,int(std::floor(visible.left()/kTileSize)));
+        const int y0 = std::max(0,int(std::floor(visible.top()/kTileSize)));
+        const int x1 = std::min(terrain_->tileCols(realm)-1,int(std::floor(visible.right()/kTileSize)));
+        const int y1 = std::min(terrain_->tileRows(realm)-1,int(std::floor(visible.bottom()/kTileSize)));
         const auto* floorArt = sprites_ ? sprites_->tileArt(floor.floor) : nullptr;
         const auto* wallArt = sprites_ ? sprites_->tileArt(wall.wall) : nullptr;
+        drawBoundaryBlocks(canvas,camera,wallArt,terrain_->tileCols(realm),terrain_->tileRows(realm));
         const float side = float((kTileSize+2*kTileOverlap)*camera.zoom());
         for (int y=y0;y<=y1;++y) for(int x=x0;x<=x1;++x) {
             const bool solid = terrain_->atTile(x,y,realm) == Tile::Solid;
@@ -1749,16 +1784,30 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
                 if (!drawCachedArt(canvas,*art,at.x,at.y,side,side)) art->renderFitted(canvas,at.x,at.y,side,side,0);
             } else if (solid) { ui::setFill(canvas,0x555555u); canvas.fillRect(at.x,at.y,side,side); }
         }
+        ui::setStroke(canvas,0x414141u);canvas.setLineWidth(float(4*camera.zoom()));
+        canvas.beginPath();
+        for(int y=y0;y<=y1;++y)for(int x=x0;x<=x1;++x)if(terrain_->atTile(x,y,realm)==Tile::Solid) {
+            const auto line=[&](int dx,int dy,double ax,double ay,double bx,double by){if(terrain_->atTile(x+dx,y+dy,realm)==Tile::Open){const auto a=camera.worldToScreen({ax,ay}),b=camera.worldToScreen({bx,by});canvas.moveTo(a.x,a.y);canvas.lineTo(b.x,b.y);}};
+            const double a=x*kTileSize,b=y*kTileSize;
+            line(-1,0,a,b,a,b+kTileSize);line(1,0,a+kTileSize,b,a+kTileSize,b+kTileSize);
+            line(0,-1,a,b,a+kTileSize,b);line(0,1,a,b+kTileSize,a+kTileSize,b+kTileSize);
+        }
+        canvas.stroke();
         return;
     }
 
-    // Everything outside the map is pure black, which says nobody can go
-    // there. The camera stays on the flower, so a flower near an edge shows it.
+    // The physical boundary is solid. Repeat its blocks beyond authored
+    // bounds so zooming out never exposes a void beside an invisible wall.
     const MapData* map = mapFor(realm);
     ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
 
+    if(map) {
+        int theme=adminArenaTheme(map->biome());if(theme<0)theme=0;
+        const auto* art=sprites_?sprites_->tileArt(kAdminArenaThemes[theme].wall):nullptr;
+        drawBoundaryBlocks(canvas,camera,art,map->width(),map->height());
+    }
     // The PICTURE of a realm is its map file's tile layers, read off disk by
     // every client. The collision grid that arrives over the wire is the
     // server's answer to a different question and is never drawn: a cell looks

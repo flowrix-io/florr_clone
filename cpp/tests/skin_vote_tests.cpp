@@ -11,6 +11,7 @@
 #include "server/db.h"
 #include "server_harness.h"
 #include "shared/game/skin_format.h"
+#include "shared/game/signature_skin.h"
 
 #include <string>
 #include <vector>
@@ -264,4 +265,21 @@ TEST(a_stored_vote_is_a_like_or_a_dislike_and_nothing_else) {
     const Json empty = playerRecordJson(PlayerRecord{});
     CHECK(!empty.contains("skinVotes"));
     CHECK(!empty.contains("favoriteSkins"));
+}
+
+TEST(signature_skin_votes_are_weighted_and_reversible_without_weighting_ordinary_skins) {
+    Harness h("signature-vote-weights",[](const std::string& path){
+        Database db;std::string error;CHECK(db.load(path,error));seedCatalog(db);db.createUser("a19kisme","hunter2!");
+        db.rawTable("customSkins")[kSignatureSkinId]=skinToJson(makeSignatureSkin());
+        db.createUser("fan","hunter2!");
+        db.progress(db.findUser("fan")->id).skinVotes[kSignatureSkinId]=SkinVote::Dislike;db.markDirty();CHECK(db.save());
+    },flix::testsupport::dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient fan,owner;CHECK(loginAs(h,fan,"fan","hunter2!"));CHECK(loginAs(h,owner,"a19kisme","hunter2!"));
+    CHECK(h.stepUntil({&fan,&owner},[&]{return fan.findSkin(kSignatureSkinId)!=nullptr;}));
+    CHECK_EQ(fan.findSkin(kSignatureSkinId)->dislikes,0.5);
+    fan.voteSkin(kSignatureSkinId,SkinVote::Like);CHECK(h.stepUntil({&fan,&owner},[&]{return owner.findSkin(kSignatureSkinId)->likes==2;}));CHECK_EQ(owner.findSkin(kSignatureSkinId)->dislikes,0.0);
+    fan.voteSkin(kSignatureSkinId,SkinVote::Like);h.step(8,{&fan,&owner});CHECK_EQ(owner.findSkin(kSignatureSkinId)->likes,2.0);
+    fan.voteSkin(kSignatureSkinId,SkinVote::Dislike);CHECK(h.stepUntil({&fan,&owner},[&]{return owner.findSkin(kSignatureSkinId)->dislikes==0.5;}));CHECK_EQ(owner.findSkin(kSignatureSkinId)->likes,0.0);
+    fan.voteSkin(kSignatureSkinId,SkinVote::None);CHECK(h.stepUntil({&fan,&owner},[&]{return owner.findSkin(kSignatureSkinId)->dislikes==0;}));
+    fan.voteSkin("sk_red",SkinVote::Like);CHECK(h.stepUntil({&fan},[&]{return fan.findSkin("sk_red")->likes==1;}));
 }

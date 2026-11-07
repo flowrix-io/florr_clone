@@ -682,6 +682,8 @@ public:
     /// Offers an authored skin to the shared catalog. The server re-sanitizes
     /// and assigns the id, so nothing here is authoritative -- the studio runs
     /// the same check first only so a rejection is instant.
+    void requestAdminTools(const Json&);
+    const Json& adminTools(const std::string& kind) const { return adminTools_[kind]; }
     void publishSkin(const std::string& name, const std::vector<SkinShape>& shapes);
     /// Replaces the name and shapes of a skin this account published, on the
     /// same terms: the catalog's copy changes when the server's SkinPublished
@@ -1132,6 +1134,7 @@ private:
     ChatBubbles chatBubbles_;
     DailyStreak dailyStreak_;
 
+    Json adminTools_ = Json::object();
     std::vector<CustomSkin> skinCatalog_;
     std::string equippedSkinId_;
     bool skinAdmin_ = false;

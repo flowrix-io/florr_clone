@@ -407,6 +407,8 @@ private:
     void handleResetSkills(Session&, net::Connection&);
     void handleBuyPetal(Session&, net::Connection&, ByteReader&);
     void handleRedeemCode(Session&, net::Connection&, ByteReader&);
+    void handleAdminTools(Session&, net::Connection&, ByteReader&);
+    void sendAdminTools(Session&, net::Connection&, const std::string&, bool, const std::string&, const Json& = Json::object());
     void handlePublishSkin(Session&, net::Connection&, ByteReader&);
     void handleEditSkin(Session&, net::Connection&, ByteReader&);
     void handleEquipSkin(Session&, net::Connection&, ByteReader&);
@@ -511,6 +513,15 @@ private:
     void serviceAdminPhase();
     void serviceAdminCursorActions();
     bool hostedArenaPvp_ = false;
+    Json hostedArenaKit_;
+    Json hostedArenaRules_ = Json::object();
+    void applyHostedKit(Session&);
+    void endHostedKit(Session&);
+    void clearHostedGear(Session&);
+    void enforceHostedRules(Session&);
+    void rebuildHostedRules();
+    std::vector<std::uint32_t> hostedArenaAllowed_;
+    void runEventSetup(Session&, net::Connection&, const Json&);
     void initHostedArena();
     void saveHostedArena();
     void refreshHostedArena(bool reset);
@@ -1057,8 +1068,8 @@ private:
     /// account's row. Counted again from scratch only after something other
     /// than handleVoteSkin rewrote rows (skinTalliesStale_).
     struct SkinTally {
-        std::uint32_t likes = 0;
-        std::uint32_t dislikes = 0;
+        double likes = 0;
+        double dislikes = 0;
     };
     SkinTally skinTally(const std::string& id);
     /// Takes every account's vote on, and favourite of, the skins in `ids`

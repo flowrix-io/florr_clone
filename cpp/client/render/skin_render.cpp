@@ -92,10 +92,19 @@ void renderAnimatedSkin(Canvas& c,const CustomSkin& skin,double radius,double ti
     if(!hasSignatureAnimation(skin)){renderSkinShapes(c,skin.shapes,radius);return;}
     if(!std::isfinite(time))time=0;
     c.save();c.scale(float(radius/25),float(radius/25));
-    c.beginPath();c.arc(0,0,36,0,float(kTau));c.clip();
+    c.beginPath();c.arc(0,0,48,0,float(kTau));c.clip();
     const auto disc=[&](double x,double y,double r,std::uint32_t color,double alpha=1) {
         c.beginPath();c.arc(float(x),float(y),float(r),0,float(kTau));ui::setFill(c,color,alpha);c.fill();
     };
+    // A bounded analytic particle aura: no entity updates, random generator or allocations.
+    for (int particle=0;particle<24;++particle) {
+        const double life=std::fmod(time*.27+particle*.61803398875,1.0);
+        const double angle=particle*2.39996323+time*(particle%2?.18:-.18);
+        const double r=26+life*19,fade=std::sin(life*kPi);
+        const double x=std::cos(angle)*r,y=std::sin(angle)*r;
+        const auto color=particle%2?0xB99AFFu:0x78E9FFu;
+        disc(x,y,2.8*fade,color,.12*fade);disc(x,y,.9*fade,color,.8*fade);
+    }
     // A soft halo around a dark core; no images or per-frame allocations.
     disc(0,0,29,0x684ABAu,.08);disc(0,0,26,0x78D9FFu,.10);disc(0,0,24.5,0x100E26u);
     c.setLineJoin("round");c.setLineCap("round");
