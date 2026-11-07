@@ -32,6 +32,8 @@ void renderSkinShapes(Canvas& canvas, const std::vector<SkinShape>& shapes, doub
 
 /// Animated presentation for the server-issued Hex Singularity cosmetic.
 /// Other skins use the ordinary, unchanged shape painter.
+void renderSignatureAura(Canvas&, double radius, double timeSeconds);
+
 void renderAnimatedSkin(Canvas&, const CustomSkin&, double radius, double timeSeconds);
 
 } // namespace flix

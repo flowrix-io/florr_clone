@@ -1,4 +1,5 @@
 #include "client/ui/menus.h"
+#include "client/ui/poll_ui.h"
 #include "client/ui/text_select.h"
 #include "client/ease.h"
 
@@ -79,6 +80,7 @@ const std::array<MenuMeta, kMenuCount> kMenus = {{
     {"Admin", Key::Unknown},
     {"Assets", Key::Unknown},
     {"Account", Key::Unknown},
+    {"Create Poll", Key::Unknown},
 }};
 
 /// Every rebindable action, indexed by ControlAction, in the browser's
@@ -835,6 +837,7 @@ void MenuSystem::toggle(MenuId id) {
         case MenuId::AdminDashboard: adminDashboard_.reset(); break;
         case MenuId::Assets:      assets_.reset(); break;
         case MenuId::Account:     account_.reset(); break;
+        case MenuId::PollCreator: pollCreator_.reset(); break;
         default: break;
     }
 }
@@ -1081,6 +1084,7 @@ Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
         case MenuId::AdminDashboard: return AdminDashboardPanel::bounds(viewWidth, viewHeight);
         case MenuId::Assets:        return AssetsPanel::bounds(viewWidth, viewHeight);
         case MenuId::Account:       return AccountPanel::bounds(viewWidth, viewHeight);
+        case MenuId::PollCreator:   return PollCreatorPanel::bounds(viewWidth, viewHeight);
         default:                    return listPanel(380.0, viewWidth, viewHeight);
     }
 }
@@ -2269,11 +2273,13 @@ bool DebugPanel::render(MenuContext& ctx) {
 
     // Two tabs, the same shape the skin studio's are: a button row where the
     // active one is filled and the others are not.
-    constexpr double kTabW = 96.0;
+    const double kTabW = ctx.net.isSkinAdmin()?85.0:96.0;
     constexpr double kTabH = 26.0;
     const Rect tabRow{panel.x + kPad, panel.y + kHeader + kPad - 4.0, panel.w - kPad * 2, kTabH};
-    static const char* const kTabLabels[] = {"Graphs", "Profiling"};
-    for (int i = 0; i < 2; ++i) {
+    static const char* const kTabLabels[] = {"Graphs", "Profiling", "Polls"};
+    const int tabCount=ctx.net.isSkinAdmin()?3:2;
+    if(!ctx.net.isSkinAdmin() && tab_==Tab::Polls)tab_=Tab::Graphs;
+    for (int i = 0; i < tabCount; ++i) {
         const Rect r{tabRow.x + i * (kTabW + 5.0), tabRow.y, kTabW, kTabH};
         const bool active = static_cast<int>(tab_) == i;
         ButtonStyle style;
@@ -2285,7 +2291,7 @@ bool DebugPanel::render(MenuContext& ctx) {
     // Not a third tab: the asset browser needs a card several times this one's
     // width, so the button hands over to it, and its own back button returns.
     {
-        const Rect r{tabRow.x + 2 * (kTabW + 5.0), tabRow.y, kTabW, kTabH};
+        const Rect r{tabRow.x + tabCount * (kTabW + 5.0), tabRow.y, kTabW, kTabH};
         ButtonStyle style;
         style.fill = 0x3E8E7Eu;
         style.textSize = 13.0;
@@ -2294,6 +2300,7 @@ bool DebugPanel::render(MenuContext& ctx) {
     }
 
     const Rect body{panel.x, tabRow.bottom(), panel.w, panel.bottom() - tabRow.bottom()};
+    if(tab_==Tab::Polls){renderPollResults(ctx,body);return !ctx.clicked(closeRect);}
     if (tab_ == Tab::Profiling) {
         drawProfilingTab(ctx, body);
         return !ctx.clicked(closeRect);
@@ -2549,6 +2556,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     if (drawn_ == MenuId::None) return;
     MenuContext ctx{canvas,    window,      net, sprites,    renderer, settings_,
                     drag_,     timeSeconds, dt,  panelRect_, false};
+    ctx.pointerBlocked = pollRect_.contains({window.mouseX(),window.mouseY()});
     ctx.adminGrantOffered = adminGrantOffered_;
     ctx.profiling = profiling_;
     // As the strip last laid it out, which on the title screen is the frame
@@ -2570,7 +2578,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     // The same for the database editor and the account's admin standing: a
     // flag taken away while the card is up takes the card with it, rather
     // than leaving a panel whose every request the server now ignores.
-    if ((drawn_ == MenuId::AdminDb || drawn_ == MenuId::AdminDashboard) && !net.isSkinAdmin()) {
+    if ((drawn_ == MenuId::AdminDb || drawn_ == MenuId::AdminDashboard || drawn_ == MenuId::PollCreator) && !net.isSkinAdmin()) {
         close();
         return;
     }
@@ -2610,6 +2618,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
         case MenuId::AdminDashboard: keepOpen = adminDashboard_.render(ctx); break;
         case MenuId::Assets:      keepOpen = assets_.render(ctx); break;
         case MenuId::Account:     keepOpen = account_.render(ctx); break;
+        case MenuId::PollCreator: keepOpen = pollCreator_.render(ctx); break;
         default: break;
     }
     // Latched before the closing-card check below: the Log Out button closes
@@ -2652,6 +2661,8 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
                         const OverlayFn& overStripUnderBar) {
     wantsText_ = false;
     panelRect_ = Rect{};
+    pollRect_ = pollOverlayBounds(net,canvas.width(),canvas.height());
+    if(net.takePollCreatorRequest() && open_!=MenuId::PollCreator)toggle(MenuId::PollCreator);
     // Taken back every frame and claimed again by whatever still holds the
     // keyboard this frame: a closed editor must not keep Ctrl+S from the
     // browser. See Window::setClaimedShortcuts.
@@ -2801,6 +2812,8 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // on nothing.
     updateLoadoutInput(window, net, timeSeconds);
     drawDragged(canvas, window, sprites, timeSeconds);
+    MenuContext pollCtx{canvas,window,net,sprites,renderer,settings_,drag_,timeSeconds,dt,pollRect_};
+    renderPollOverlay(pollCtx);
 }
 
 void MenuSystem::drawReleaseChip(Canvas& canvas, Window& window, NetClient& net) {
@@ -2834,6 +2847,7 @@ void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeco
     // over, or a card nobody is painting would still be swallowing clicks.
     wantsText_ = false;
     panelRect_ = Rect{};
+    pollRect_ = Rect{};
     window.setClaimedShortcuts({});
     loadoutHovered_ = -1;
     loadoutGrabbable_.fill(false);
@@ -2860,6 +2874,7 @@ double MenuSystem::stripBottom() const {
 }
 
 bool MenuSystem::capturesMouse(Vec2 mouse) const {
+    if (pollRect_.w>0 && pollRect_.contains(mouse)) return true;
     if (panelRect_.w > 0 && panelRect_.contains(mouse)) return true;
     if (releaseRect_.w > 0 && releaseRect_.contains(mouse)) return true;
     // The bar takes the click for one thing only: lifting a petal out of a

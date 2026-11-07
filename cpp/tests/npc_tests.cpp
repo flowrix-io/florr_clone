@@ -3282,84 +3282,8 @@ TEST(casino_plinko_exact_odds_and_balance_validation) {
     CHECK_EQ(parseNpcService("casino"), NpcService::Casino);
 }
 
-TEST(casino_purchase_requires_npc_and_persists_with_cooldown) {
-    const std::string dir = npcWorld("casino-purchase", fixtureNpc(kOracleX, kOracleY, "hel_casino", "common"));
-    Harness h("casino-purchase", [](const std::string& path) {
-        seedAccount(path, "gambler");
-        Database db;
-        std::string error;
-        CHECK(db.load(path, error));
-        db.progress(db.findUser("gambler")->id).stars = 20;
-        db.markDirty();
-        CHECK(db.save());
-    }, dir, 0);
-    CHECK(h.ready);
-    if (!h.ready) { removeDataDir(dir); return; }
-    NetClient client;
-    CHECK(joinAs(h, client, "gambler"));
-    const auto say = [&](const std::string& line) {
-        const auto before = client.chat().size();
-        client.sendChat(line);
-        CHECK(h.stepUntil({&client}, [&] { return client.chat().size() > before; }, 120));
-    };
-    const auto record = [&]() -> const PlayerRecord& {
-        return *h.server.database().findProgress(h.server.database().findUser("gambler")->id);
-    };
-    const double startingStars = record().stars; // Includes the normal login streak reward.
-    World& world = h.server.world();
-    const Entity player = onlyPlayer(world);
-    CHECK(player != NULL_ENTITY);
-    world.get<Transform>(player).position = {kTileSize * 20, kTileSize * 20};
-    h.step(1, {&client});
-    say("/casino buy 5");
-    CHECK_EQ(record().casinoChips, 0.0);
-    standBeside(h, client, "hel_casino");
-    say("/casino buy -5");
-    say("/casino buy 5x");
-    CHECK_EQ(record().stars, startingStars);
-    auto& mutableRecord = const_cast<Database&>(h.server.database()).progress(h.server.database().findUser("gambler")->id);
-    for (const double invalid : {-1.0, 1.5, kCasinoMaxBalance + 1}) {
-        mutableRecord.casinoChips = invalid;
-        say("/casino buy 5");
-        CHECK_EQ(record().casinoChips, invalid);
-        CHECK_EQ(record().stars, startingStars);
-    }
-    mutableRecord.casinoChips = kCasinoMaxBalance;
-    say("/casino buy 5");
-    CHECK_EQ(record().casinoChips, kCasinoMaxBalance);
-    CHECK_EQ(record().stars, startingStars);
-    mutableRecord.casinoChips = 0;
-    Session* session = GameServerPeer::sessionOf(h.server, "gambler");
-    CHECK(session != nullptr);
-    if (session) {
-        session->arena = std::make_unique<PlayerRecord>(mutableRecord);
-        say("/casino buy 5");
-        CHECK_EQ(record().casinoChips, 0.0);
-        CHECK_EQ(record().stars, startingStars);
-        session->arena.reset();
-    }
-    say("/casino buy 5");
-    CHECK_EQ(record().casinoChips, 50.0);
-    CHECK_EQ(record().stars, startingStars - 5);
-    CHECK_EQ(world.get<PlayerProgress>(player).stars, startingStars - 5);
-    say("/casino buy 5");
-    CHECK_EQ(record().casinoChips, 50.0);
-    h.server.persistAll();
-    Database saved;
-    std::string error;
-    CHECK(saved.load(h.dbPath, error));
-    const PlayerRecord* loaded = saved.findProgress(saved.findUser("gambler")->id);
-    CHECK(loaded != nullptr);
-    if (loaded) {
-        CHECK_EQ(loaded->casinoChips, 50.0);
-        CHECK_EQ(loaded->stars, startingStars - 5);
-        CHECK_EQ(loaded->casinoReadyAt, record().casinoReadyAt);
-    }
-    removeDataDir(dir);
-}
-
-TEST(casino_wagers_and_cashout_conserve_account_balances) {
-    for (const std::string command : {"/casino flip 10 heads", "/casino plinko 10", "/casino cashout 20"}) {
+TEST(casino_removed_commands_cannot_change_account_balances) {
+    for (const std::string command : {"/casino buy 5", "/casino flip 10 heads", "/casino plinko 10", "/casino cashout 20"}) {
         const std::string dir = npcWorld("casino-wager", fixtureNpc(kOracleX, kOracleY, "hel_casino", "common"));
         Harness h("casino-wager", [](const std::string& path) {
             seedAccount(path, "gambler");
@@ -3385,14 +3309,8 @@ TEST(casino_wagers_and_cashout_conserve_account_balances) {
         const auto* record = h.server.database().findProgress(h.server.database().findUser("gambler")->id);
         CHECK(record != nullptr);
         if (record) {
-            if (command.find("cashout") != std::string::npos) {
-                CHECK_EQ(record->casinoChips, 80.0);
-                CHECK_EQ(record->stars, startingStars + 2);
-            } else {
-                CHECK(record->casinoChips == 90 || record->casinoChips == 110 ||
-                      (command.find("plinko") != std::string::npos && record->casinoChips == 130));
-                CHECK_EQ(record->stars, startingStars);
-            }
+            CHECK_EQ(record->casinoChips, 100.0);
+            CHECK_EQ(record->stars, startingStars);
         }
         removeDataDir(dir);
     }

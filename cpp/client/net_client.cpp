@@ -307,6 +307,7 @@ void NetClient::forgetAccount() {
     dailyStreak_ = DailyStreak{};
     skinCatalog_.clear();
     adminTools_ = Json::object();
+    pollCreatorRequested_ = false;pollDeadlineMillis_ = 0;
     equippedSkinId_.clear();
     skinAdmin_ = false;
     skinVotes_.clear();
@@ -1171,7 +1172,11 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::ShopResult:   handleShopResult(reader); break;
         case net::ServerMessage::AdminTools: {
             const Json result = Json::parseOrNull(reader.str());
-            if (reader.ok() && result.isObject()) adminTools_[result["kind"].asString()] = result;
+            if (reader.ok() && result.isObject()) {
+                const auto kind=result["kind"].asString();adminTools_[kind]=result;
+                if(kind=="poll")pollDeadlineMillis_=renderClockMillis()+std::max(0.0,result["remainingMillis"].asDouble());
+                if(kind=="poll_creator" && result["open"].asBool())pollCreatorRequested_=true;
+            }
             break;
         }
         case net::ServerMessage::SkinCatalog:   handleSkinCatalog(reader); break;
@@ -2222,3 +2227,5 @@ void NetClient::handleDailyStreak(ByteReader& reader) {
 } // namespace flix
 
 namespace flix { void NetClient::requestAdminTools(const Json& q) { ByteWriter w; beginMessage(w,net::ClientMessage::AdminTools); w.str(q.dump()); send(w); } }
+
+namespace flix { double NetClient::pollRemainingSeconds() const { return std::max(0.0,(pollDeadlineMillis_-renderClockMillis())/1000.0); } }

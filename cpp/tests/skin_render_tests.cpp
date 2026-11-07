@@ -250,6 +250,9 @@ TEST(signature_skin_animates_in_the_world_and_has_a_static_legacy_fallback) {
     Canvas preview=Canvas::createVirtual(480,160);preview.setFillStyle("#25243b");preview.fillRect(0,0,480,160);
     for(int frame=0;frame<3;++frame){preview.save();preview.translate(float(80+160*frame),80);renderAnimatedSkin(preview,skin,47,frame*.8);preview.restore();}
     preview.savePPM("/tmp/flowrix-signature-preview.ppm");
+    Canvas aura=Canvas::createVirtual(800,440);aura.setFillStyle("#181c2c");aura.fillRect(0,0,800,440);
+    for(int frame=0;frame<2;++frame){aura.save();aura.translate(float(200+400*frame),220);renderSignatureAura(aura,34,frame*4.);renderAnimatedSkin(aura,skin,34,frame*4.);aura.restore();}
+    aura.savePPM("/tmp/flowrix-signature-aura.ppm");
     Canvas fallback=Canvas::createVirtual(160,160);fallback.translate(80,80);renderSkinShapes(fallback,skin.shapes,50);
     const auto pixels=fallback.getImageData(0,0,160,160);CHECK(std::any_of(pixels.begin(),pixels.end(),[](auto v){return v!=0;}));
 }

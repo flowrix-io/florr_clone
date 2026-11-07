@@ -683,6 +683,9 @@ public:
     /// and assigns the id, so nothing here is authoritative -- the studio runs
     /// the same check first only so a rejection is instant.
     void requestAdminTools(const Json&);
+    double pollRemainingSeconds() const;
+    bool pollVisible() const { return adminTools("poll")["active"].asBool() && !adminTools("poll")["voted"].asBool() && pollRemainingSeconds()>0; }
+    bool takePollCreatorRequest() { const bool result=pollCreatorRequested_;pollCreatorRequested_=false;return result; }
     const Json& adminTools(const std::string& kind) const { return adminTools_[kind]; }
     void publishSkin(const std::string& name, const std::vector<SkinShape>& shapes);
     /// Replaces the name and shapes of a skin this account published, on the
@@ -1134,6 +1137,8 @@ private:
     ChatBubbles chatBubbles_;
     DailyStreak dailyStreak_;
 
+    bool pollCreatorRequested_ = false;
+    double pollDeadlineMillis_ = 0;
     Json adminTools_ = Json::object();
     std::vector<CustomSkin> skinCatalog_;
     std::string equippedSkinId_;

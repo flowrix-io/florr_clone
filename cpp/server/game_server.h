@@ -407,6 +407,18 @@ private:
     void handleResetSkills(Session&, net::Connection&);
     void handleBuyPetal(Session&, net::Connection&, ByteReader&);
     void handleRedeemCode(Session&, net::Connection&, ByteReader&);
+    struct HostedPoll {
+        std::string id, question, author;
+        std::vector<std::string> options;
+        std::vector<int> counts;
+        std::unordered_map<std::string,int> votes;
+        double endsAtMillis = 0;
+        bool active = false;
+    } poll_;
+    void sendPollState(Session&, net::Connection&, const std::string& message = {});
+    void broadcastPollState(const std::string& voter = {});
+    void runPollRequest(Session&, net::Connection&, const Json&);
+    void expirePoll();
     void handleAdminTools(Session&, net::Connection&, ByteReader&);
     void sendAdminTools(Session&, net::Connection&, const std::string&, bool, const std::string&, const Json& = Json::object());
     void handlePublishSkin(Session&, net::Connection&, ByteReader&);

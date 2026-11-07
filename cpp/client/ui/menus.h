@@ -90,6 +90,7 @@ enum class MenuId : std::uint8_t {
     /// signing in to another account, and Log Out. On the title screen's top
     /// row only; its key is unbound and not rebindable.
     Account,
+    PollCreator, // Standalone, opened only by /admin createpoll.
     Count,
 };
 
@@ -443,14 +444,15 @@ struct MenuContext {
     /// system's business, so the panel only names the one it wants.
     MenuId openMenu = MenuId::None;
 
+    bool pointerBlocked = false;
     Vec2 mouse() const { return {window.mouseX(), window.mouseY()}; }
     bool over(Rect r) const { return r.contains(mouse()); }
-    bool pressed() const { return window.mousePressed(MouseButton::Left); }
-    bool released() const { return window.mouseReleased(MouseButton::Left); }
+    bool pressed() const { return !pointerBlocked && window.mousePressed(MouseButton::Left); }
+    bool released() const { return !pointerBlocked && window.mouseReleased(MouseButton::Left); }
     /// A click that both began and ended inside `r`. Press-and-release is what
     /// separates a click from the end of a drag that happens to land here.
     bool clicked(Rect r) const { return released() && over(r); }
-    float wheel() const { return window.wheelDelta(); }
+    float wheel() const { return pointerBlocked ? 0 : window.wheelDelta(); }
 };
 
 // ---------------------------------------------------------------------------
@@ -1397,11 +1399,18 @@ private:
 
 /// Frame time and memory graphs, client and server. Reachable only while the
 /// settings switch that puts the bug button in the strip is on.
+class PollCreatorPanel {
+public:
+    bool render(MenuContext&);
+    void reset();
+    static Rect bounds(int w,int h);
+};
+
 class DebugPanel {
 public:
     /// Which half of the panel is showing. Graphs are the history of a few
     /// whole-system numbers; Profiling is this frame's drawing broken down.
-    enum class Tab { Graphs, Profiling };
+    enum class Tab { Graphs, Profiling, Polls };
 
     bool render(MenuContext&);
     void reset();
@@ -1593,6 +1602,7 @@ public:
     /// True when the cursor is over menu furniture, so the game must not treat
     /// the click as aiming or the wheel as a zoom.
     bool capturesMouse(Vec2 mouse) const;
+    bool pollCapturesMouse(Vec2 mouse) const { return pollRect_.w>0 && pollRect_.contains(mouse); }
 
     /// How far in from the left edge something hung under the top icon row
     /// has to start to clear the bottom column: that column's width as last
@@ -1940,6 +1950,8 @@ private:
     AccountPanel account_;
     NotificationsPanel notifications_;
     GuildPanel guild_;
+    PollCreatorPanel pollCreator_;
+    Rect pollRect_;
     DebugPanel debug_;
     AdminDbPanel adminDb_;
     AdminDashboardPanel adminDashboard_;

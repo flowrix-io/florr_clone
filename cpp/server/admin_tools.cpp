@@ -17,6 +17,7 @@ void GameServer::handleAdminTools(Session& s,net::Connection& peer,ByteReader& r
     const auto raw=reader.str();if(!reader.ok()||!s.authenticated()||raw.size()>16384)return;
     const Json q=Json::parseOrNull(raw);if(!q.isObject())return;
     const auto kind=q["kind"].asString(),action=q["action"].asString();
+    if(kind=="poll"){runPollRequest(s,peer,q);return;}
     if(kind=="event"||kind=="arena"){runEventSetup(s,peer,q);return;}
     if(kind=="codes") {
         if(!s.admin || !adminMay(s,AdminPower::GivePetals)) {sendAdminTools(s,peer,kind,false,"Full tier 1-2 admin access required.");return;}

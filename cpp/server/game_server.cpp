@@ -928,6 +928,7 @@ std::string GameServer::describeTickPhases(double tookMillis) const {
 void GameServer::tick(double nowMillis) {
     ++tick_;
     clockMillis_ = nowMillis;
+    expirePoll();
     tickPhaseCount_ = 0;
     if (!bossClocksRestored_) restoreBossClocks(nowMillis);
     tickStartedMillis_ = monotonicMillis();
@@ -4771,6 +4772,7 @@ void GameServer::broadcastDebugStats() {
 }
 
 void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) {
+    sendPollState(session, connection);
     auto& current=database_.progress(session.userId);
     if(!canEquipSignatureSkin(current.equippedSkinId,session.username)) {
         current.equippedSkinId.clear();database_.markDirty();

@@ -2610,7 +2610,7 @@
         }
     },
     "hel_casino": {
-        "name": "Hel Casino",
+        "name": "Hel",
         "damage": 10,
         "health": 150,
         "size": 1.5,
@@ -2627,14 +2627,14 @@
             "super": 0,
             "unique": 0
         },
-        "description": "Hel Casino. Type /casino nearby for rules, chips, coin flips and Plinko.",
+        "description": "Hel, a visitor from the underworld.",
         "color": "#B375E8",
         "image": "$trader",
         "ai_type": "passive",
         "range": 100,
         "bee_ai": "idle",
         "npc": {
-            "service": "casino",
+            "service": "none",
             "still": true
         },
         "noEggDrop": true,

@@ -422,7 +422,7 @@ void App::updateDead(double dt) {
 
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
     // The tutorial box is painted over the death card and swallows the click.
-    if (tutorial_.capturesMouse(mouse)) return;
+    if (tutorial_.capturesMouse(mouse) || menus_.pollCapturesMouse(mouse)) return;
     // The ANIMATED boxes, not the resting ones: a button is only where it is
     // painted, and during the slide-in that is on its way down the screen.
     const DeathCard card = deathCardLayout(window_.width(), window_.height(), deathCardSlide_);

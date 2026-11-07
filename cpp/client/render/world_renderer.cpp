@@ -2418,6 +2418,11 @@ void WorldRenderer::drawFlower(Canvas& canvas, const RemoteEntity& entity, const
     if (radius <= 0.5) return;
     const double scale = radius / kFlowerArtRadius;
 
+    if (const auto* skin = wornSkin(entity); skin && hasSignatureAnimation(*skin)) {
+        canvas.save(); canvas.translate(float(screen.x),float(screen.y));
+        renderSignatureAura(canvas,radius,timeSeconds); canvas.restore();
+    }
+
     const auto paintBody = [&](Canvas& target) {
         // Charging a pad: the body turns, face and all. Inside the glitch's
         // buffer as much as outside it, as the reference applied the spin
@@ -4494,7 +4499,12 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             if (entity.kind == net::EntityKind::Mob) mobShadows_.erase(entity.netId);
             return;
         }
-        if (!onScreen(at, entity.radius)) return;
+        double visibleRadius = entity.radius;
+        if (entity.kind == net::EntityKind::Player) {
+            if (const auto* skin = wornSkin(entity); skin && hasSignatureAnimation(*skin))
+                visibleRadius = std::max(visibleRadius,kFlowerArtRadius*playerSizeMultiplier(entity)*6);
+        }
+        if (!onScreen(at, visibleRadius)) return;
 
         if (entity.kind == net::EntityKind::Drop) ++timing_.itemCount;
         drawEntity(canvas, entity, camera, at, timeSeconds);

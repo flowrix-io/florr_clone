@@ -88,6 +88,76 @@ void renderSkinShapes(Canvas& canvas, const std::vector<SkinShape>& shapes, doub
 } // namespace flix
 
 namespace flix {
+// World-only cosmetic: fixed sample counts, analytic motion, no particle entities.
+void renderSignatureAura(Canvas& c, double radius, double time) {
+    if (!std::isfinite(time) || !std::isfinite(radius) || radius <= 0) return;
+    c.save(); c.scale(float(radius/25),float(radius/25));
+    c.setLineCap("round"); c.setLineJoin("round");
+    const auto dot = [&](double x,double y,double r,unsigned color,double alpha) {
+        c.beginPath(); c.arc(float(x),float(y),float(r),0,float(kTau));
+        ui::setFill(c,color,alpha); c.fill();
+    };
+    // Translucent, interwoven aurora veils with hairline filaments.
+    for (int ribbon=0;ribbon<6;++ribbon) {
+        const unsigned color=ribbon%2?0xAD8AFF:0x78E9FF;
+        for (int side=0;side<2;++side) {
+            c.beginPath();
+            for(int j=0;j<=96;++j) {
+                const double a=j*kTau/96;
+                const double r=65+ribbon*9+9*std::sin(a*3+time*.18+ribbon)+
+                    5*std::sin(a*5-time*.12+ribbon*.7)+side*5;
+                const double x=std::cos(a+time*.035)*r;
+                const double y=std::sin(a+time*.035)*r*.76;
+                if(j==0)c.moveTo(float(x),float(y));else c.lineTo(float(x),float(y));
+            }
+            c.closePath();ui::setStroke(c,color,side?.20:.07);
+            c.setLineWidth(side?.55f:7.f);c.stroke();
+        }
+    }
+    // Two counter-turning celestial seals, fine ticks and individual runes.
+    for(int ring=0;ring<2;++ring) {
+        c.save();c.translate(0,24);c.scale(1,.56f);c.rotate(float(time*(ring?-.035:.025)));
+        const double r=ring?116:92;
+        c.beginPath();c.arc(0,0,float(r),0,float(kTau));
+        ui::setStroke(c,ring?0xB99AFF:0x8CEEFF,.28);c.setLineWidth(.65f);c.stroke();
+        c.beginPath();
+        for(int j=0;j<72;++j) {
+            const double a=j*kTau/72,co=std::cos(a),si=std::sin(a);
+            c.moveTo(float(co*(r-2)),float(si*(r-2)));
+            c.lineTo(float(co*(r+(j%3?2:6))),float(si*(r+(j%3?2:6))));
+            if(j%3==0) {
+                c.moveTo(float(co*(r-9)-si*2),float(si*(r-9)+co*2));
+                c.lineTo(float(co*(r-5)),float(si*(r-5)));
+                c.lineTo(float(co*(r-9)+si*2),float(si*(r-9)-co*2));
+            }
+        }
+        c.stroke();c.restore();
+    }
+    // Faceted satellites follow curved, fading constellation trails.
+    for(int shard=0;shard<8;++shard) {
+        const double a=shard*kTau/8+time*.065,r=83+12*std::sin(shard*1.7);
+        const unsigned color=shard%2?0xC6A3FF:0xA0F4FF;
+        for(int tail=12;tail>=0;--tail) {
+            const double angle=a-tail*.025,x=std::cos(angle)*r,y=std::sin(angle)*r*.8;
+            dot(x,y,tail? .65:3.5,color,tail?.35*(1-tail/13.):.12);
+        }
+        const double x=std::cos(a)*r,y=std::sin(a)*r*.8;
+        c.beginPath();c.moveTo(float(x),float(y-5));c.lineTo(float(x+2),float(y));
+        c.lineTo(float(x),float(y+5));c.lineTo(float(x-2),float(y));c.closePath();
+        ui::setStroke(c,color,.65);c.setLineWidth(.7f);c.stroke();
+    }
+    // Slow, curling dust; soft halos instead of flashing beams.
+    for(int i=0;i<72;++i) {
+        const double life=std::fmod(time*.065+i*.61803398875,1.);
+        const double a=i*2.39996323+life*.8+time*.018;
+        const double r=35+life*95,fade=std::sin(life*kPi);
+        const double x=std::cos(a)*r,y=std::sin(a)*r*.8-12*life;
+        const unsigned color=i%3?0x9DEAFF:0xD3B1FF;
+        dot(x,y,2.5,color,.07*fade);dot(x,y,.6,color,.7*fade);
+    }
+    c.restore();
+}
+
 void renderAnimatedSkin(Canvas& c,const CustomSkin& skin,double radius,double time) {
     if(!hasSignatureAnimation(skin)){renderSkinShapes(c,skin.shapes,radius);return;}
     if(!std::isfinite(time))time=0;
