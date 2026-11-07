@@ -326,11 +326,13 @@ TEST(a_summon_is_announced_as_summoned_and_somewhere_outside_its_biome) {
 
     NetClient alice;
     NetClient bob;
+    NetClient carol;
     CHECK(loginNew(h, alice, "alice", "hunter2!"));
     CHECK(loginNew(h, bob, "bob", "hunter2!"));
+    CHECK(loginNew(h, carol, "carol", "hunter2!"));
     alice.joinGame(1280, 720, {}, "alice");
     bob.joinGame(1280, 720, kMazeSpawnChoice, "bob");
-    CHECK(h.stepUntil({&alice, &bob}, [&] {
+    CHECK(h.stepUntil({&alice, &bob, &carol}, [&] {
         return alice.status() == NetClient::Status::Playing &&
                bob.status() == NetClient::Status::Playing;
     }));
@@ -344,7 +346,8 @@ TEST(a_summon_is_announced_as_summoned_and_somewhere_outside_its_biome) {
     world.get<Transform>(body).position = at;
 
     kill(world, body);
-    CHECK(h.stepUntil({&alice, &bob}, [&] { return apexMobsNear(world, at, 400.0) == 1; }));
+    CHECK(h.stepUntil({&alice, &bob, &carol},
+                      [&] { return apexMobsNear(world, at, 400.0) == 1; }));
     const std::vector<Entity> rituals = ritualsIn(world);
     if (rituals.size() != 1) { CHECK(false); return; }
     const Entity mob = world.get<SacrificeRitual>(rituals.front()).mob;
@@ -352,15 +355,18 @@ TEST(a_summon_is_announced_as_summoned_and_somewhere_outside_its_biome) {
     const std::string named =
         "A Apex " + content().mob(world.get<MobType>(mob).configIndex).name;
 
-    // Alice fell in the summon's biome; bob is in the maze.
-    CHECK(h.stepUntil({&alice, &bob}, [&] {
+    // Alice fell in the summon's biome; bob is in the maze; carol is still on
+    // the title screen.
+    CHECK(h.stepUntil({&alice, &bob, &carol}, [&] {
         return sawText(alice, named + " has been summoned!") &&
-               sawText(bob, named + " has been summoned somewhere!");
+               sawText(bob, named + " has been summoned somewhere!") &&
+               sawText(carol, named + " has been summoned somewhere!");
     }));
     // ...and not also as an ordinary boss spawn.
-    h.step(5, {&alice, &bob});
+    h.step(5, {&alice, &bob, &carol});
     CHECK(!sawText(alice, named + " has spawned"));
     CHECK(!sawText(bob, named + " has spawned"));
+    CHECK(!sawText(carol, named + " has spawned"));
 }
 
 TEST(the_console_lays_hels_sacrifice_now) {

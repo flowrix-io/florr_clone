@@ -255,14 +255,15 @@ void GameServer::announceSacrificeSummon(Entity mob, Realm realm) {
     std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(type.rarity));
     const std::string biome = biomeOfRealm(realm);
     // Worded per recipient, as a boss spawn is: a player in the summon's own
-    // biome is told it was summoned, everyone else that it was summoned
-    // "somewhere".
+    // biome is told it was summoned, everyone else -- the title screen included
+    // -- that it was summoned "somewhere".
     for (auto& entry : sessions_) {
         Session& session = entry.second;
-        if (!session.playing()) continue;
+        if (!session.authenticated()) continue;
         net::Connection* connection = listener_.find(session.connection);
         if (connection == nullptr) continue;
-        const bool here = !biome.empty() && biomeOfEntity(session.entity) == biome;
+        const bool here =
+            session.playing() && !biome.empty() && biomeOfEntity(session.entity) == biome;
         sendChatTo(*connection, net::ChatChannel::System, "",
                    std::string("<b style=\"color: ") + colorAttribute + ";\">A " +
                        rarityLabel(type.rarity) + " " + name + " has been summoned" +

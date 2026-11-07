@@ -569,6 +569,30 @@ TEST(a_boss_from_the_console_is_announced_to_the_whole_server) {
     CHECK(!sawText(client, "Ultra bee has spawned"));
 }
 
+TEST(a_boss_is_announced_to_a_player_still_on_the_title_screen) {
+    // The title screen draws the same chat box the game does, so signing in is
+    // what puts a player in the audience, not joining. With no flower there is
+    // no section to be standing in, so the line can only say "somewhere".
+    Harness h("cmd-boss-announce-title", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "idle", "password8");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient idle;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, idle, "idle", "password8"));
+    boss.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&boss, &idle},
+                      [&] { return boss.status() == NetClient::Status::Playing; }, 200));
+
+    boss.sendChat("/admin spawn bee super 1");
+    CHECK(h.stepUntil({&boss, &idle},
+                      [&] { return sawText(idle, "A Super Bee has spawned somewhere!"); }, 120));
+    CHECK(idle.status() == NetClient::Status::LoggedIn);
+}
+
 TEST(the_console_cannot_spawn_a_unique_while_its_biome_clock_cools_down) {
     // A server that has just started has every boss clock cooling down (they
     // are dealt out over one cooldown, none ready at boot), so a unique or an
