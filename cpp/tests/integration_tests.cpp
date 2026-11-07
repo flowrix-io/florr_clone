@@ -537,6 +537,7 @@ TEST(a_new_session_opens_on_the_conversation_already_in_progress) {
     CHECK(connectClient(h, carol));
     carol.requestRegister("carol", "password3");
     CHECK(h.stepUntil({&alice, &carol}, [&] { return !carol.chat().empty(); }));
+    h.step(16, {&alice, &carol}); // Separate delivered chat lines by the server cooldown.
     alice.sendChat("said after");
     CHECK(h.stepUntil({&alice, &carol}, [&] { return carol.chat().size() >= 2; }));
 
