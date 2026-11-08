@@ -53,7 +53,8 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
     expireMarketListings();
     const bool standing=s.playing()&&world_.isAlive(s.entity)&&!world_.has<Dead>(s.entity);
     const auto* body=standing?world_.tryGet<Transform>(s.entity):nullptr;
-    if(!body||npcs_->findService(world_,NpcService::Market,body->position,body->realm,kNpcServiceReach+kNpcServiceSlack)==NULL_ENTITY){
+    if(body&&npcs_->findService(world_,NpcService::Market,body->position,body->realm,kNpcServiceReach+kNpcServiceSlack)!=NULL_ENTITY)s.marketAccess=true;
+    if(!body||!s.marketAccess){
         sendAdminTools(s,peer,"market",false,"Visit Mr. Bee near Garden spawn to use the marketplace.");return;
     }
     const auto action=q["action"].asString();

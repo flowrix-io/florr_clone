@@ -6807,6 +6807,7 @@ void GameServer::onPlayerRevived(Entity revived, Entity reviver) {
 }
 
 Entity GameServer::spawnPlayer(Session& session) {
+    session.marketAccess=false;
     // Never on top of a body the session still holds. Both callers arrive
     // with none -- handleJoin refuses a session that is playing, and a respawn
     // takes the corpse off first -- so one still attached here is a body some
@@ -7053,6 +7054,7 @@ void GameServer::persistPlayer(const Session& session) {
 }
 
 void GameServer::despawnPlayer(Session& session, bool persist) {
+    session.marketAccess=false;
     if (session.entity == NULL_ENTITY) return;
     // Control needs a flower at both ends, so the body going is the end of
     // any this session is part of: whoever was steering it is put back on

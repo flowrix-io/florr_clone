@@ -14,7 +14,7 @@ namespace flix {
 using namespace ui;
 namespace {
 struct Field {std::string text;TextFieldState state;};
-struct Forms {std::string account;bool marketLoaded=false,orders=false;int rarity=0,offset=0;double nextRefresh=0;Json query=Json::object(),pendingQuery=Json::object();std::string pendingAction,pendingTitle,validation;std::vector<std::string> pendingLines;MarketFeedback feedback;Field filter{},rarityFilter{},item{"basic"},quantity{"1"},price{"1"};} forms;
+struct Forms {std::string account;bool marketLoaded=false,orders=false;int rarity=0,offset=0;double nextRefresh=0;Json query=Json::object(),pendingQuery=Json::object(),page=Json::object();std::string pendingAction,pendingTitle,validation;std::vector<std::string> pendingLines;MarketFeedback feedback;Field filter{},rarityFilter{},item{"basic"},quantity{"1"},price{"1"};} forms;
 void account(MenuContext& ctx){if(forms.account!=ctx.net.profile().username){forms=Forms{};forms.account=ctx.net.profile().username;}}
 TextStyle style(double size=13,unsigned color=0xFFFFFF){TextStyle t;t.size=size;t.fill=color;t.baseline=Baseline::Middle;return t;}
 void field(MenuContext& ctx,Field& f,Rect r,const std::string& placeholder,std::size_t max=32){inputField(ctx.canvas,r,f.text,placeholder,f.state.focused,ctx.timeSeconds,&f.state);if(!ctx.pointerBlocked)trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);if(f.state.focused){ctx.wantsText=true;if(!forms.pendingAction.empty())return;TextEditOptions options;options.maxBytes=max;options.asciiOnly=true;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}}
@@ -91,6 +91,8 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     else if(ctx.timeSeconds>=forms.nextRefresh){send(ctx,"market","browse",forms.query);forms.nextRefresh=ctx.timeSeconds+1;}
     const auto& reply=ctx.net.adminTools("market");
     forms.feedback.update(reply,ctx.timeSeconds);
+    if(reply["ok"].asBool()&&reply["rows"].isArray())forms.page=reply;
+    const auto& page=forms.page;
     const bool pickerOpen=forms.item.state.focused;
     const auto choices=pickerOpen?marketPetalSuggestions(forms.item.text):std::vector<std::uint16_t>{};
     const double pickerHeight=26*std::max(std::size_t(1),choices.size());
@@ -101,8 +103,8 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
         for(const auto& key:forms.query.keys())if(!q.contains(key))q[key]=forms.query[key];
         forms.pendingAction=action;forms.pendingQuery=std::move(q);forms.pendingTitle=title;forms.pendingLines=std::move(lines);forms.validation.clear();
     };
-    const int total=std::max(0,reply["total"].asInt());
-    const int offset=std::max(0,reply["offset"].asInt());
+    const int total=std::max(0,page["total"].asInt());
+    const int offset=std::max(0,page["offset"].asInt());
     const int pages=std::max(1,(total+4)/5);
     const std::string pager="Page "+std::to_string(std::min(pages,offset/5+1))+" / "+std::to_string(pages)+" ("+std::to_string(total)+" results)";
     const double pagerWidth=measure(pager,12);
@@ -117,8 +119,8 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     const char* sortLabel=sorting==0?"Price":sorting==1?(orders?"Best offer":"Best value"):"Rarity";
     if(button(controls,{p.x+470,p.y+25,std::max(90.0,p.w-630),30},sortLabel)){sorting=(sorting+1)%3;forms.offset=0;browse();}
     double y=p.y+66;
-    const auto& rows=reply["rows"];
-    if(rows.isArray()&&reply["orders"].asBool()==orders)for(const auto& row:rows.items()) {
+    const auto& rows=page["rows"];
+    if(rows.isArray()&&page["orders"].asBool()==orders)for(const auto& row:rows.items()) {
         const auto rarity=Rarity(std::clamp(row["rarity"].asInt(),0,kLadderRarityCount-1));
         const auto index=content().petalIndex(row["item"].asString());
         const auto name=index==kInvalidIndex?row["item"].asString():content().petal(index).name;

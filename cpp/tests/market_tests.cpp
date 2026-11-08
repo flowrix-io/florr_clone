@@ -252,13 +252,21 @@ TEST(market_confirmation_displays_exact_costs_and_waits_for_explicit_confirmatio
     canvas.savePPM("/tmp/flowrix-market-confirmation.ppm");
 }
 
-TEST(market_remote_requests_cannot_bypass_mr_bee_proximity) {
+TEST(market_requires_mr_bee_to_open_but_keeps_access_after_walking_away) {
     Harness h("market-proximity",[](const std::string& path){seedWallet(path,"seller",200);seedStack(path,"seller","petal_basic",Rarity::Common,3);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
     NetClient client;CHECK(loginAs(h,client,"seller","password7"));Json q=posting("basic",0,1,1);q["kind"]="market";q["action"]="post";
     client.requestAdminTools(q);CHECK(h.stepUntil({&client},[&]{return !client.adminTools("market").isNull();}));CHECK(!client.adminTools("market")["ok"].asBool());CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),3);
     CHECK(request(h,client,"market","browse"));CHECK(client.adminTools("market")["ok"].asBool());
     auto* s=GameServerPeer::sessionOf(h.server,"seller");CHECK(s);if(!s)return;h.server.world().get<Transform>(s->entity).position={100000,100000};
-    const double revision=client.adminTools("market")["revision"].asDouble();client.requestAdminTools(q);CHECK(h.stepUntil({&client},[&]{return client.adminTools("market")["revision"].asDouble()>revision;}));CHECK(!client.adminTools("market")["ok"].asBool());CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),3);
+    const double revision=client.adminTools("market")["revision"].asDouble();client.requestAdminTools(q);CHECK(h.stepUntil({&client},[&]{return client.adminTools("market")["revision"].asDouble()>revision;}));CHECK(client.adminTools("market")["ok"].asBool());CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),2);
+    q["action"]="browse";const double next=client.adminTools("market")["revision"].asDouble();client.requestAdminTools(q);
+    CHECK(h.stepUntil({&client},[&]{return client.adminTools("market")["revision"].asDouble()>next;}));CHECK(client.adminTools("market")["ok"].asBool());CHECK_EQ(client.adminTools("market")["total"].asInt(),1);
+    // A fresh life cannot spoof the server-held visit grant.
+    client.leaveGame();CHECK(h.stepUntil({&client},[&]{return !s->playing();}));CHECK(!s->marketAccess);
+    client.joinGame(1280,720);CHECK(h.stepUntil({&client},[&]{return s->playing();}));
+    h.server.world().get<Transform>(s->entity).position={100000,100000};
+    q["marketAccess"]=true;const double denied=client.adminTools("market")["revision"].asDouble();client.requestAdminTools(q);
+    CHECK(h.stepUntil({&client},[&]{return client.adminTools("market")["revision"].asDouble()>denied;}));CHECK(!client.adminTools("market")["ok"].asBool());
 }
 
 TEST(market_expiry_returns_petals_even_when_every_player_is_offline) {
@@ -283,4 +291,19 @@ TEST(market_mr_bee_has_unique_showman_art_without_changing_normal_bees) {
     const auto render=[&](MobArt art,double time,const char* path){Canvas canvas=Canvas::createVirtual(480,360);canvas.translate(215,180);MobArtAttributes attr;attr.radius=75;attr.clockMs=time;paintMobArt(canvas,art,attr);canvas.savePPM(path);return canvas.getImageData(0,0,480,360);};
     const auto host=render(MobArt::MrBee,0,"/tmp/flowrix-mr-bee-showman.ppm"),bee=render(MobArt::Bee,0,"/tmp/flowrix-normal-bee.ppm");
     CHECK(differingPixels(host,bee)>2000);CHECK(differingPixels(host,render(MobArt::MrBee,120,"/tmp/flowrix-mr-bee-showman-wings.ppm"))>100);
+}
+
+TEST(market_failed_transactions_do_not_erase_the_visible_page) {
+    Harness h("market-page-error",[](const std::string& path){seedWallet(path,"seller",200);seedStack(path,"seller","petal_basic",Rarity::Common,3);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient client;CHECK(loginAs(h,client,"seller","password7"));CHECK(request(h,client,"market","post",posting("basic",0,3,1)));CHECK(fontsReady());
+    SpriteCache sprites;WorldRenderer renderer;Window window;ClientSettings settings;DragState drag;ShopPanel shop;shop.openMarket();shop.setSlide(1,false);
+    Canvas before=Canvas::createVirtual(900,680);MenuContext ctx{before,window,client,sprites,renderer,settings,drag};ctx.bounds=ShopPanel::bounds(900,680);shop.render(ctx);
+    const auto expected=before.getImageData(23,243,720,33);
+    Json bad=posting("basic",0,1,1);CHECK(request(h,client,"market","post",bad));CHECK(!client.adminTools("market")["ok"].asBool());
+    Canvas after=Canvas::createVirtual(900,680);MenuContext failed{after,window,client,sprites,renderer,settings,drag};failed.bounds=ctx.bounds;failed.timeSeconds=.5;shop.render(failed);
+    CHECK_EQ(differingPixels(expected,after.getImageData(23,243,720,33)),0);
+    // A successful empty response still clears stale listings.
+    Json filter=Json::object();filter["filter"]="nothing_matches_this";CHECK(request(h,client,"market","browse",filter));
+    Canvas empty=Canvas::createVirtual(900,680);MenuContext cleared{empty,window,client,sprites,renderer,settings,drag};cleared.bounds=ctx.bounds;cleared.timeSeconds=.6;shop.render(cleared);
+    CHECK(differingPixels(expected,empty.getImageData(23,243,720,33))>100);
 }

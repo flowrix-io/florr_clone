@@ -553,7 +553,8 @@ Gambling commands have been removed. Legacy chip fields remain readable so exist
 The petal marketplace is included in `web`. Only visiting Mr. Bee opens its
 interface, with Market and Orders tabs; the normal Shop has neither. `/shop`
 and `/order` point players to the NPC. The server checks that a living player
-is near a market NPC for every request. Common minimum price is 1 star,
+first visits a market NPC to open it. That server-held access stays valid while
+walking away, and is revoked on leaving the world or respawning. Common minimum price is 1 star,
 multiplied by 3 per rarity. Sellers receive 80%; cancellations return remaining
 escrow without tax. Listings reserve unequipped petals immediately, and orders
 reserve stars. Filters accept names/IDs, exact rarities, `Ultra+` and `Rare-`.
