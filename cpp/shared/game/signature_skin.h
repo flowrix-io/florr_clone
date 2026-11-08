@@ -6,6 +6,7 @@
 #include <cctype>
 namespace flix {
 inline constexpr const char* kSignatureSkinId="signature_a19kisme";
+inline constexpr const char* kFanSkinId="signature_19k_fans";
 inline bool canEquipSignatureSkin(const std::string& id,std::string username) {
     if(id!=kSignatureSkinId)return true;
     for(char& c:username)c=char(std::tolower(static_cast<unsigned char>(c)));
@@ -33,6 +34,14 @@ inline CustomSkin makeSignatureSkin() {
         line.x=rings[ring][2*edge];line.y=rings[ring][2*edge+1];line.x2=rings[ring][2*next];line.y2=rings[ring][2*next+1];line.stroke=colors[ring];line.sw=widths[ring];skin.shapes.push_back(line);
     }
     return skin;
+}
+inline CustomSkin makeFanSkin() {
+    auto skin=makeSignatureSkin();skin.id=kFanSkinId;skin.name="19k's fans";
+    for(auto& shape:skin.shapes)shape.stroke="#ff9944";
+    return skin;
+}
+inline bool hasFanAnimation(const CustomSkin& skin) {
+    return skin.id==kFanSkinId && skin.author=="a19kisme" && skin.shapes.size()==72;
 }
 inline bool hasSignatureAnimation(const CustomSkin& skin) {
     return skin.id==kSignatureSkinId && skin.author=="a19kisme" && skin.shapes.size()==72 &&

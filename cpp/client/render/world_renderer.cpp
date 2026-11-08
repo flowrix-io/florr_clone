@@ -2693,6 +2693,11 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
     const double left = bar.left;
     const double right = bar.right;
 
+    if (entity.equippedSkinId == kFanSkinId) {
+        ui::TextStyle title;title.size=12.0*zoom;title.align=ui::Align::Left;
+        title.baseline=ui::Baseline::Alphabetic;
+        ui::text(canvas,"19k's fan",left,barY-20.0*zoom,title);
+    }
     if (options.names) {
         ui::TextStyle style;
         style.size = 12.0 * zoom;
@@ -3005,7 +3010,7 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
         variant = variant * 1099511628211ull + skin->shapes.size();
         variant = variant * 1099511628211ull + static_cast<std::uint64_t>(skin->editedAt);
-        if (hasSignatureAnimation(*skin)) {
+        if (hasSignatureAnimation(*skin) || hasFanAnimation(*skin)) {
             renderAnimatedSkin(canvas,*skin,kFlowerArtRadius,timeSeconds);
         } else if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
                                [&](Canvas& bitmap) {
