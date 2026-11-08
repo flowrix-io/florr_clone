@@ -89,7 +89,7 @@ void GameServer::runStartWavesCommand(Session& admin, net::Connection& connectio
     std::printf("[waves] %s opened a %s rift at wave %d\n", admin.username.c_str(),
                 waveBiomeInfo(biome).id, startWave);
     broadcastRiftState();
-    broadcastChat(net::ChatChannel::System, "", "<b>A Mysterious rift has opened!</b>");
+    broadcastChat(net::ChatChannel::System, "", "<b style=\"color: #555555;\">A Mysterious rift has opened!</b>");
 }
 
 void GameServer::runStopWavesCommand(Session& admin, net::Connection& connection) {

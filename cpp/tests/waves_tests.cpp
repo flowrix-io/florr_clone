@@ -25,7 +25,10 @@ void seedWaves(const std::string& path) {
     seedUser(path, "boss", "password7", true);
     seedUser(path, "alice", "password7");
     seedUser(path, "bob", "password7");
+    seedUser(path, "tier2", "password7", true, 2);
+    seedUser(path, "tier3", "password7", true, 3);
     seedUser(path, "tier4", "password7", true, 4);
+    seedUser(path, "owner", "password7", true, kOwnerAdminTier);
 }
 
 bool playing(Harness& h, NetClient& client, const char* name, const std::string& where = {}) {
@@ -347,15 +350,40 @@ TEST(start_waves_opens_a_black_rift_everyone_hears_about) {
     CHECK(bob.rift().open);
 }
 
-TEST(a_tier_that_cannot_spawn_cannot_open_a_rift) {
+TEST(only_tier_1_and_the_owner_manage_wave_rooms) {
     Harness h("waves-tier", seedWaves, dataDir(), 0);
     CHECK(h.ready);
     if (!h.ready) return;
-    NetClient admin;
-    CHECK(playing(h, admin, "tier4"));
-    CHECK(say(h, admin, "/admin start_waves"));
+    NetClient boss, owner, tier2, tier3, tier4;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(playing(h, owner, "owner"));
+    CHECK(playing(h, tier2, "tier2"));
+    CHECK(playing(h, tier3, "tier3"));
+    CHECK(playing(h, tier4, "tier4"));
+    std::vector<NetClient*> all{&boss, &owner, &tier2, &tier3, &tier4};
+
+    // Tiers 2-4 open nothing, and are told why. Tier 3 can spawn mobs, so
+    // this is a power of its own, not spawning's.
+    for (NetClient* lower : {&tier2, &tier3, &tier4}) {
+        CHECK(say(h, *lower, "/admin start_waves"));
+        CHECK(GameServerPeer::waves(h.server).phase == WavePhase::Idle);
+        CHECK(sawText(*lower, "admins cannot manage wave rooms (tier 1 only)."));
+    }
+
+    // Nor do they close one a tier 1 admin opened.
+    CHECK(say(h, boss, "/admin start_waves"));
+    CHECK(GameServerPeer::waves(h.server).phase == WavePhase::Open);
+    for (NetClient* lower : {&tier2, &tier3, &tier4}) {
+        CHECK(say(h, *lower, "/admin stop_waves"));
+        CHECK(GameServerPeer::waves(h.server).phase == WavePhase::Open);
+    }
+
+    // The owner closes and opens like tier 1.
+    CHECK(say(h, owner, "/admin stop_waves"));
     CHECK(GameServerPeer::waves(h.server).phase == WavePhase::Idle);
-    CHECK(say(h, admin, "/admin stop_waves"));
+    CHECK(say(h, owner, "/admin start_waves"));
+    CHECK(GameServerPeer::waves(h.server).phase == WavePhase::Open);
+    CHECK(h.stepUntil(all, [&] { return tier2.rift().open; }));
 }
 
 TEST(a_rift_only_opens_on_a_map) {

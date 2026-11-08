@@ -465,7 +465,7 @@ on the target.
 ### Wave survival: `/admin start_waves`
 
 `/admin start_waves [garden|desert|ocean] [starting wave]` (default garden, wave
-1; tiers 1-3, as spawning is) opens a black portal 450 units in front of you and
+1; tier 1 admins and the server owner only) opens a black portal 450 units in front of you and
 tells every player "A Mysterious rift has opened!". It only opens on a map, not
 in the PVP arena, the maze or a hosted game, and one is open at a time. The rift
 also shows as a black dot on that map's minimap.
@@ -491,8 +491,8 @@ petals as they do anywhere else; the supers on the disc are not announced and
 get no boss bar.
 
 Leaving with the Exit button goes to the title screen, as anywhere. The rift
-stays open until the game is over or `/admin stop_waves`, which closes it the
-same way. If everyone walks out, the rift stays and the game starts over for the
+stays open until the game is over or `/admin stop_waves` (tier 1 and the owner
+only, as opening is), which closes it the same way. If everyone walks out, the rift stays and the game starts over for the
 next flower through.
 
 ### Admin-hosted arena and iPad Cursor

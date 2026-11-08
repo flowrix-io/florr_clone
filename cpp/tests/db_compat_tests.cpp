@@ -445,6 +445,10 @@ TEST(an_admin_tier_is_read_strictly_and_kept_by_a_save) {
     // And the tiers themselves: each one below the top loses one more power.
     CHECK(adminTierAllows(1, AdminPower::UpdateServer));
     CHECK(!adminTierAllows(2, AdminPower::UpdateServer));
+    CHECK(adminTierAllows(1, AdminPower::ManageWaves));
+    CHECK(!adminTierAllows(2, AdminPower::ManageWaves));
+    CHECK(!adminTierAllows(3, AdminPower::ManageWaves));
+    CHECK(adminTierAllows(kOwnerAdminTier, AdminPower::ManageWaves));
     CHECK(adminTierAllows(2, AdminPower::GivePetals));
     CHECK(!adminTierAllows(3, AdminPower::GivePetals));
     CHECK(adminTierAllows(3, AdminPower::SpawnMobs));
