@@ -14,14 +14,22 @@ namespace flix {
 using namespace ui;
 namespace {
 struct Field {std::string text;TextFieldState state;};
-struct Forms {std::string account;bool marketLoaded=false,orders=false;int rarity=0,offset=0;double nextRefresh=0;Json query=Json::object(),pendingQuery=Json::object();std::string pendingAction,pendingTitle,validation;std::vector<std::string> pendingLines;Field filter{},rarityFilter{},item{"basic"},quantity{"1"},price{"1"};} forms;
+struct Forms {std::string account;bool marketLoaded=false,orders=false;int rarity=0,offset=0;double nextRefresh=0;Json query=Json::object(),pendingQuery=Json::object();std::string pendingAction,pendingTitle,validation;std::vector<std::string> pendingLines;MarketFeedback feedback;Field filter{},rarityFilter{},item{"basic"},quantity{"1"},price{"1"};} forms;
 void account(MenuContext& ctx){if(forms.account!=ctx.net.profile().username){forms=Forms{};forms.account=ctx.net.profile().username;}}
 TextStyle style(double size=13,unsigned color=0xFFFFFF){TextStyle t;t.size=size;t.fill=color;t.baseline=Baseline::Middle;return t;}
-void field(MenuContext& ctx,Field& f,Rect r,const std::string& placeholder,std::size_t max=32){inputField(ctx.canvas,r,f.text,placeholder,f.state.focused,ctx.timeSeconds,&f.state);if(!ctx.pointerBlocked)trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);if(f.state.focused){ctx.wantsText=true;TextEditOptions options;options.maxBytes=max;options.asciiOnly=true;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}}
+void field(MenuContext& ctx,Field& f,Rect r,const std::string& placeholder,std::size_t max=32){inputField(ctx.canvas,r,f.text,placeholder,f.state.focused,ctx.timeSeconds,&f.state);if(!ctx.pointerBlocked)trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);if(f.state.focused){ctx.wantsText=true;if(!forms.pendingAction.empty())return;TextEditOptions options;options.maxBytes=max;options.asciiOnly=true;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}}
 bool button(MenuContext& ctx,Rect r,const std::string& label){chip(ctx.canvas,r,label,r.contains(ctx.mouse()),ChipStyle{0x7473B0u,0x48477Au});return ctx.clicked(r);}
 double number(const std::string& s){if(s.empty()||s.size()>13||s.find_first_not_of("0123456789")!=std::string::npos)return -1;try{const double value=std::stod(s);return validMoney(value)?value:-1;}catch(...){return -1;}}
 void send(MenuContext& ctx,const char* kind,const char* action,Json q=Json::object()){q["kind"]=kind;q["action"]=action;ctx.net.requestAdminTools(q);}
-void result(MenuContext& ctx,const char* kind,Rect r){const auto& reply=ctx.net.adminTools(kind);text(ctx.canvas,ellipsize(reply["message"].asString(),12,r.w),r.x,r.y+r.h/2,style(12,reply["ok"].asBool(true)?0xF1E8FF:0xFFAAAA));}
+
+}
+void MarketFeedback::update(const Json& reply,double now) {
+    const double next=reply["revision"].asDouble(-1);
+    if(next==revision)return;
+    revision=next;
+    if(!reply["message"].asString().empty()){
+        message=reply["message"].asString();ok=reply["ok"].asBool();until=now+5;
+    }
 }
 std::string marketNumber(double value, bool exact) {
     if (!std::isfinite(value) || (!exact && std::fabs(value)>=1e6)) return ui::abbreviate(value);
@@ -73,15 +81,16 @@ MarketConfirmResult renderMarketConfirmation(MenuContext& ctx,Rect p,const std::
     if(button(ctx,{box.right()-216,box.bottom()-42,200,30},"Confirm"))return MarketConfirmResult::Confirm;
     return MarketConfirmResult::Pending;
 }
-void refreshMarketUi(){forms.marketLoaded=false;forms.pendingAction.clear();forms.validation.clear();}
+void refreshMarketUi(){forms.marketLoaded=false;forms.pendingAction.clear();forms.validation.clear();forms.feedback.clear();}
 void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     account(ctx);
     const auto money=[&](double value){return marketNumber(value,ctx.window.altHeld());};
     int& sorting=orders?ctx.settings.marketOrderSort:ctx.settings.marketListingSort;
-    const auto browse=[&](const char* action="browse",Json q=Json::object()) {q["orders"]=orders;q["offset"]=forms.offset;q["filter"]=forms.filter.text;q["rarityFilter"]=forms.rarityFilter.text;q["sort"]=sorting;forms.query=Json::object();for(const char* key:{"orders","offset","filter","rarityFilter","sort"})forms.query[key]=q[key];forms.nextRefresh=ctx.timeSeconds+1;int low,high;std::string saved=forms.rarityFilter.text;saved.erase(std::remove_if(saved.begin(),saved.end(),[](unsigned char c){return std::isspace(c);}),saved.end());if(collectionRarityFilter(saved,low,high))ctx.settings.marketRarityFilter=saved;send(ctx,"market",action,q);};
+    const auto browse=[&](const char* action="browse",Json q=Json::object()) {forms.feedback.clear();q["orders"]=orders;q["offset"]=forms.offset;q["filter"]=forms.filter.text;q["rarityFilter"]=forms.rarityFilter.text;q["sort"]=sorting;forms.query=Json::object();for(const char* key:{"orders","offset","filter","rarityFilter","sort"})forms.query[key]=q[key];forms.nextRefresh=ctx.timeSeconds+1;int low,high;std::string saved=forms.rarityFilter.text;saved.erase(std::remove_if(saved.begin(),saved.end(),[](unsigned char c){return std::isspace(c);}),saved.end());if(collectionRarityFilter(saved,low,high))ctx.settings.marketRarityFilter=saved;send(ctx,"market",action,q);};
     if(!forms.marketLoaded||forms.orders!=orders){forms.marketLoaded=true;forms.orders=orders;forms.pendingAction.clear();forms.offset=0;forms.rarityFilter.text=ctx.settings.marketRarityFilter;browse();}
     else if(ctx.timeSeconds>=forms.nextRefresh){send(ctx,"market","browse",forms.query);forms.nextRefresh=ctx.timeSeconds+1;}
     const auto& reply=ctx.net.adminTools("market");
+    forms.feedback.update(reply,ctx.timeSeconds);
     const bool pickerOpen=forms.item.state.focused;
     const auto choices=pickerOpen?marketPetalSuggestions(forms.item.text):std::vector<std::uint16_t>{};
     const double pickerHeight=26*std::max(std::size_t(1),choices.size());
@@ -136,7 +145,7 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     field(controls,forms.item,{p.x,formY+12,160,30},"Name or ID",64);
     ctx.wantsText=ctx.wantsText||controls.wantsText;
     const auto choose=[&](std::uint16_t index){forms.item.text=content().petal(index).id;forms.item.state=TextFieldState{};};
-    if(pickerOpen&&ctx.window.keyPressed(Key::Enter)&&!choices.empty())choose(choices.front());
+    if(pickerOpen&&forms.pendingAction.empty()&&ctx.window.keyPressed(Key::Enter)&&!choices.empty())choose(choices.front());
     if(pickerOpen&&ctx.window.keyPressed(Key::Escape))forms.item.state.focused=false;
     if(button(controls,{p.x+170,formY+12,28,30},"<"))forms.rarity=std::max(0,forms.rarity-1);
     text(ctx.canvas,rarityLabel(Rarity(forms.rarity)),p.x+204,formY+27,style(12));
@@ -156,7 +165,9 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     }
     text(ctx.canvas,ellipsize("Minimum: "+money(marketMinimum(Rarity(forms.rarity)))+" stars each. "+(orders?"Orders reserve stars.":"Listings expire after 48h; unsold petals return.")+" Alt: exact values.",11,p.w),p.x,formY+57,style(11));
     ctx.wantsText=ctx.wantsText||controls.wantsText;
-    if(forms.validation.empty())result(ctx,"market",{p.x,p.bottom()-29,p.w,25});
+    if(forms.validation.empty()){
+        if(forms.feedback.visible(ctx.timeSeconds))text(ctx.canvas,ellipsize(forms.feedback.message,12,p.w),p.x,p.bottom()-16,style(12,forms.feedback.ok?0xF1E8FF:0xFFAAAA));
+    }
     else text(ctx.canvas,ellipsize(forms.validation,12,p.w),p.x,p.bottom()-16,style(12,0xFFAAAA));
     if(pickerOpen&&forms.item.state.focused&&forms.pendingAction.empty())
         if(const auto selected=renderMarketPetalSuggestions(ctx,picker,choices))choose(*selected);
@@ -164,7 +175,7 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
         const auto decision=renderMarketConfirmation(ctx,p,forms.pendingTitle,forms.pendingLines);
         if(decision==MarketConfirmResult::Confirm){
             const auto action=forms.pendingAction;const Json q=forms.pendingQuery;forms.pendingAction.clear();
-            forms.nextRefresh=ctx.timeSeconds+1;send(ctx,"market",action.c_str(),q);
+            forms.feedback.clear();forms.nextRefresh=ctx.timeSeconds+1;send(ctx,"market",action.c_str(),q);
         }else if(decision==MarketConfirmResult::Cancel)forms.pendingAction.clear();
     }
 }

@@ -268,3 +268,19 @@ TEST(market_expiry_returns_petals_even_when_every_player_is_offline) {
     seller.disconnect();h.step(5,{});marketWallMillis+=std::int64_t(kMarketListingLifetimeMillis);h.step(90,{});
     CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),4);CHECK_EQ(db.storedTable("petalMarket").size(),std::size_t(0));
 }
+
+TEST(market_trade_feedback_survives_background_refreshes_and_expires) {
+    MarketFeedback feedback;Json reply=Json::object();reply["revision"]=1;reply["ok"]=false;reply["message"]="Not enough stars.";
+    feedback.update(reply,0);CHECK(feedback.visible(0));CHECK(!feedback.ok);
+    reply["revision"]=2;reply["ok"]=true;reply["message"]="";feedback.update(reply,1);
+    CHECK_EQ(feedback.message,"Not enough stars.");CHECK(feedback.visible(4.9));CHECK(!feedback.visible(5.1));
+    reply["revision"]=3;reply["message"]="Trade completed.";feedback.update(reply,6);CHECK(feedback.ok);CHECK(feedback.visible(6));
+    feedback.clear();CHECK(!feedback.visible(6));feedback.update(reply,6.1);CHECK(!feedback.visible(6.1));
+}
+TEST(market_mr_bee_has_unique_showman_art_without_changing_normal_bees) {
+    std::string error;CHECK(loadContent(dataDir(),error));SpriteCache sprites;CHECK(sprites.build(content(),dataDir()));
+    CHECK(sprites.mobArt(content().mobIndex("mr_bee"))==MobArt::MrBee);CHECK(sprites.mobArt(content().mobIndex("bee"))==MobArt::Bee);
+    const auto render=[&](MobArt art,double time,const char* path){Canvas canvas=Canvas::createVirtual(480,360);canvas.translate(215,180);MobArtAttributes attr;attr.radius=75;attr.clockMs=time;paintMobArt(canvas,art,attr);canvas.savePPM(path);return canvas.getImageData(0,0,480,360);};
+    const auto host=render(MobArt::MrBee,0,"/tmp/flowrix-mr-bee-showman.ppm"),bee=render(MobArt::Bee,0,"/tmp/flowrix-normal-bee.ppm");
+    CHECK(differingPixels(host,bee)>2000);CHECK(differingPixels(host,render(MobArt::MrBee,120,"/tmp/flowrix-mr-bee-showman-wings.ppm"))>100);
+}

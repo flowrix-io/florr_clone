@@ -98,6 +98,7 @@ enum class MobArt : std::uint8_t {
     BeetleMummy, BeetlePharaoh, Tomb,
     /// florr's nazar beetle: a blue shell with the nazar petal's eye on it.
     BeetleNazar,
+    MrBee, // Original Garden marketplace host.
 };
 
 /// How fast a walk cycle runs, in radians of phase per second.

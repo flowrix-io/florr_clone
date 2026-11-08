@@ -21,7 +21,7 @@
         },
         "description": "Garden market host. Open Craft nearby to browse the market. Occasionally shares public Ultra Bee loot.",
         "color": "#FFCA50",
-        "image": "$bee",
+        "image": "$mr_bee",
         "ai_type": "passive",
         "bee_ai": "always",
         "range": 100,
