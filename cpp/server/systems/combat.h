@@ -325,6 +325,12 @@ public:
     void applyPoison(World& world, Entity victim, Entity source, double perSecond,
                      double durationMillis, double nowMillis);
 
+    /// Keeps every poison already on `victim` running `millis` longer, each
+    /// stack at its own rate and still credited to whoever laid it: florr
+    /// privet's "extra Poison damage based on the existing Poison damage per
+    /// second". Nothing to extend, nothing happens -- this never poisons.
+    void applyExtraPoison(World& world, Entity victim, double millis, double nowMillis);
+
     /// A slow never weakens while it is live: the deeper factor wins and the
     /// expiry never comes closer, so a common petal grazing a mob cannot wipe
     /// the mythic stall already on it.
@@ -482,6 +488,12 @@ private:
         double poisonDurationMillis = 0;
         double slowFactor = 1.0;
         double slowDurationMillis = 0;
+        /// How much longer a hit keeps the victim's existing poison going.
+        /// Privet, and nothing else.
+        double extraPoisonMillis = 0;
+        /// The hit that lands spends the petal, whatever health it has left.
+        /// Privet, and nothing else (petalSpentOnHit).
+        bool spentOnHit = false;
         /// How long a hit from this body stops the victim healing. Dandelion,
         /// and nothing else.
         double noHealDurationMillis = 0;

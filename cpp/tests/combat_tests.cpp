@@ -205,6 +205,7 @@ struct Fixture {
     std::uint16_t burr = kInvalidIndex;
     std::uint16_t taproot = kInvalidIndex;
     std::uint16_t dandy = kInvalidIndex;
+    std::uint16_t privet = kInvalidIndex;
     std::uint16_t boney = kInvalidIndex;
     std::uint16_t clawy = kInvalidIndex;
     std::uint16_t fangy = kInvalidIndex;
@@ -241,6 +242,7 @@ const Fixture& fixture() {
               "burr":{"name":"Burr","damage":5,"health":5,"size":1,"armorReduction":1.5},
               "taproot":{"name":"Taproot","damage":10,"health":10,"size":1,"armorPerStack":12},
               "dandy":{"name":"Dandy","damage":8,"health":8,"size":1,"noHealDuration":10000},
+              "privet":{"name":"Privet","damage":0,"health":50,"size":0.6,"cooldown":4000,"extraPoisonDuration":200},
               "boney":{"name":"Boney","damage":14,"health":10,"size":1,"petalArmor":10},
               "clawy":{"name":"Clawy","damage":5,"health":10,"size":1,"clawCritDamage":100},
               "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35},
@@ -265,6 +267,7 @@ const Fixture& fixture() {
         f.burr = f.registry.petalIndex("burr");
         f.taproot = f.registry.petalIndex("taproot");
         f.dandy = f.registry.petalIndex("dandy");
+        f.privet = f.registry.petalIndex("privet");
         f.boney = f.registry.petalIndex("boney");
         f.clawy = f.registry.petalIndex("clawy");
         f.fangy = f.registry.petalIndex("fangy");
@@ -2970,6 +2973,85 @@ TEST(a_dandelion_hit_locks_healing_on_what_it_touches) {
     // Ten seconds, from the hit.
     CHECK(CombatSystem::healingBlocked(a.world, mob, 10999.0));
     CHECK(!CombatSystem::healingBlocked(a.world, mob, 11001.0));
+}
+
+// ---------------------------------------------------------------------------
+// Privet: extra poison, spent on the hit
+// ---------------------------------------------------------------------------
+
+TEST(extra_poison_stretches_every_live_stack_and_never_poisons) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity other = a.player({2000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 1000.0);
+
+    a.combat.applyPoison(a.world, mob, player, 5.0, 1000.0, 0.0);
+    a.combat.applyPoison(a.world, mob, other, 3.0, 2000.0, 0.0);
+    a.combat.applyExtraPoison(a.world, mob, 200.0, 500.0);
+    // Both stacks, each at its own rate and still its own layer's.
+    const Afflictions& afflictions = a.world.get<Afflictions>(mob);
+    CHECK_EQ(afflictions.poisonStacks.size(), std::size_t{2});
+    for (const PoisonStack& stack : afflictions.poisonStacks) {
+        CHECK_NEAR(stack.untilMillis, stack.source == player ? 1200.0 : 2200.0, 1e-9);
+        CHECK_NEAR(stack.perSecond, stack.source == player ? 5.0 : 3.0, 1e-9);
+    }
+    CHECK_NEAR(afflictions.poisonUntilMillis, 2200.0, 1e-9);
+
+    // A lapsed stack is not brought back: there is no poison left to stretch.
+    a.combat.applyExtraPoison(a.world, mob, 200.0, 1500.0);
+    CHECK_EQ(a.world.get<Afflictions>(mob).poisonStacks.size(), std::size_t{1});
+
+    // A victim nobody poisoned gains nothing, not even an Afflictions row.
+    const Entity clean = a.mob({1200, 1000}, 100.0);
+    a.combat.applyExtraPoison(a.world, clean, 200.0, 500.0);
+    CHECK(!a.world.has<Afflictions>(clean));
+
+    // A flower's single bite stretches only while it is live.
+    const Entity flower = a.player({3000, 1000});
+    a.combat.applyPoison(a.world, flower, mob, 4.0, 1000.0, 0.0);
+    a.combat.applyExtraPoison(a.world, flower, 200.0, 500.0);
+    CHECK_NEAR(a.world.get<Afflictions>(flower).poisonUntilMillis, 1200.0, 1e-9);
+    a.combat.applyExtraPoison(a.world, flower, 200.0, 5000.0);
+    CHECK_NEAR(a.world.get<Afflictions>(flower).poisonUntilMillis, 1200.0, 1e-9);
+}
+
+TEST(a_privet_hit_stretches_the_victims_poison_and_spends_the_petal) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.privet == kInvalidIndex) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1030, 1000}, 200.0, 60.0);
+    // A mob with no bite at all: the recoil alone would never break it.
+    a.world.add<ContactDamage>(mob, ContactDamage{0.0, 0.0});
+    a.combat.applyPoison(a.world, mob, player, 10.0, 3000.0, 900.0);
+    const double health = f.registry.petalStats(f.privet, Rarity::Common).health;
+    const Entity petal = equipPetal(a, player, f.privet, Rarity::Common, {1015, 1000});
+    a.world.add<Health>(petal, Health{health, health, 0.0, 0.0});
+
+    a.step(1000.0, f.registry);
+    const PetalStats stats = f.registry.petalStats(f.privet, Rarity::Common);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis,
+               3900.0 + stats.extraPoisonMillis, 1e-9);
+    // The landing is the whole of its life, whatever pool it had.
+    CHECK(a.world.has<Dead>(petal) || a.health(petal) <= 0.0);
+}
+
+TEST(a_privets_extra_poison_and_pool_are_flat_and_only_its_reload_climbs) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.privet == kInvalidIndex) return;
+
+    const PetalConfig& config = f.registry.petal(f.privet);
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        const PetalStats s = f.registry.petalStats(f.privet, clampRarity(t));
+        CHECK_NEAR(s.extraPoisonMillis, config.extraPoisonMillis, 1e-9);
+        CHECK_NEAR(s.health, config.health, 1e-9);
+        CHECK_NEAR(s.reloadMillis, config.cooldownMillis * std::pow(0.7, std::min(t, 8)), 1e-6);
+    }
+    // A petal that states none has none.
+    CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Common).extraPoisonMillis, 0.0, 1e-12);
 }
 
 TEST(a_locked_mob_refuses_the_glitch_petals_negative_damage_heal) {

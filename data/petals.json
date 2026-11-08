@@ -183,6 +183,21 @@
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ce76db\" stroke-width=\"4\" stroke=\"#a760b1\"/>\n</svg>",
         "isAdminPetal": false
     },
+    "privet": {
+        "name": "Privet",
+        "damage": 0,
+        "health": 1,
+        "size": 0.6,
+        "visual_scale": 1.25,
+        "cooldown": 4000,
+        "price": 18,
+        "extraPoisonDuration": 200,
+        "description": "Deals extra <c val=\"#CE76DB\">Poison</c> damage based on the existing <c val=\"#CE76DB\">Poison</c> damage per second.",
+        "color": "#381F3C",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-7.5 -7.5 15 15\"><circle r=\"7.5\" fill=\"#381F3C\"/><circle r=\"4.5\" fill=\"#45264A\"/></svg>",
+        "isAdminPetal": false
+    },
     "lightning": {
         "name": "Lightning",
         "damage": 25,

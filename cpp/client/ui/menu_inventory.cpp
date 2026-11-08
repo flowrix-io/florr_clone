@@ -399,7 +399,9 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         // "0" on either reads as a petal that does nothing. Damage is tested
         // against zero rather than above it -- a glitch's is negative, and
         // that is a heal it has to show.
-        if (stats.health > 0.0) lines.push_back(hp);
+        // A privet's point of health is there only so that anything breaks
+        // it; florr's card has no HP row for it, and neither does this one.
+        if (stats.health > 0.0 && !petalSpentOnHit(config)) lines.push_back(hp);
         if (stats.damage != 0.0) lines.push_back(hit);
     } else {
         // A nazar has neither a health pool nor a hit: florr's card shows its
@@ -424,6 +426,17 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         poison.labelColor = kStatPoison;
         poison.altText = "Poison: " + fineExact(total) + " (" + fineExact(perSecond) + "/s)";
         lines.push_back(poison);
+    }
+
+    // Privet, florr's Petal/Attribute/ExtraPoison, "Extra Poison: 0.2s": how
+    // much longer each hit keeps the victim's existing poison running.
+    if (stats.extraPoisonMillis > 0.0) {
+        char span[32];
+        std::snprintf(span, sizeof span, "%g", std::round(stats.extraPoisonMillis / 10.0) / 100.0);
+        TooltipLine extra{"Extra Poison: " + std::string(span) + "s", 12.0};
+        extra.alpha = 0.56;
+        extra.labelColor = kStatPoison;
+        lines.push_back(extra);
     }
 
     // Lotus, florr's Petal/Attribute/PoisonResistance: the poison the flower

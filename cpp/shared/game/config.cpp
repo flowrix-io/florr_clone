@@ -1301,6 +1301,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
 
     p.poisonPerSecond = ctx.range(src, "poison", 0.0, 0.0, kMaxPoisonPerMillis) * 1000.0;
     p.poisonDurationMillis = ctx.range(src, "poisonDuration", 0.0, 0.0, kMaxDurationMillis);
+    p.extraPoisonMillis = ctx.range(src, "extraPoisonDuration", 0.0, 0.0, kMaxDurationMillis);
     p.noHealDurationMillis = ctx.range(src, "noHealDuration", 0.0, 0.0, kMaxDurationMillis);
 
     p.speed = ctx.range(src, "speed", 0.0, -kMaxSpeedUnits, kMaxSpeedUnits);
@@ -1971,6 +1972,13 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         // florr's slot 14: 60 s x 0.7^tier, its web build stopping the curve
         // at tier 8.
         s.reloadMillis *= std::pow(0.7, std::min(rarityIndex(tier), 8));
+    } else if (petalSpentOnHit(c)) {
+        // The privet's slot 14 is the nazar's curve from 4 s, and the reload
+        // is the only thing about it that climbs. Its pool stays the flat
+        // point PetalConfig gives it: florr's has none, so nothing a tier of
+        // it meets should be able to hit it and leave it standing.
+        s.reloadMillis *= std::pow(0.7, std::min(rarityIndex(tier), 8));
+        s.health = c.health;
     }
     // The petal damage ladder, not the gentler passive-modifier curve: what a
     // cutter grants IS damage, so it keeps pace with petal damage and with the
@@ -1980,6 +1988,8 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     s.bodyDamage = c.bodyDamage * strength;
     s.poisonPerSecond = c.poisonPerSecond * strength;
     s.poisonDurationMillis = c.poisonDurationMillis;
+    // Flat, as florr's privet tooltip is: one constant at every tier.
+    s.extraPoisonMillis = c.extraPoisonMillis;
     // Flat, on purpose: gardn's dandelion locks healing for ten seconds at
     // every tier. See PetalConfig::noHealDurationMillis.
     s.noHealDurationMillis = c.noHealDurationMillis;
@@ -2183,6 +2193,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.collisionResist = std::min(0.95, s.collisionResist * boost);
         s.lifesteal *= boost;
         s.poisonDurationMillis *= boost;
+        s.extraPoisonMillis *= boost;
         s.noHealDurationMillis *= boost;
         s.killHealDurationMillis *= boost;
         s.slowDurationMillis *= boost;

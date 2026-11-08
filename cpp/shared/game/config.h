@@ -910,6 +910,13 @@ struct PetalConfig {
 
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
+    /// How much longer a hit from this petal keeps the victim's EXISTING
+    /// poison running, each live stack at its own rate: florr privet's
+    /// "Extra Poison: 0.2s", the "extra Poison damage based on the existing
+    /// Poison damage per second". A victim nobody has poisoned gains nothing.
+    /// Flat across the ladder, as florr's is (its builder passes one constant
+    /// at every tier); the privet climbs on its reload instead.
+    double extraPoisonMillis = 0;
 
     /// How long a hit from this petal stops the victim healing. gardn's
     /// dandelion, and nothing else: `dandy_ticks` is a flat ten seconds at
@@ -1162,6 +1169,8 @@ struct PetalStats {
     double reloadMillis = kDefaultPetalReloadMillis;
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
+    /// Flat across the ladder; see PetalConfig::extraPoisonMillis.
+    double extraPoisonMillis = 0;
     /// Flat across the ladder; see PetalConfig::noHealDurationMillis.
     double noHealDurationMillis = 0;
     double heal = 0;                    ///< burst heal per charge
@@ -1375,6 +1384,14 @@ inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "b
 /// and no damage (florr's tooltip hides both rows, slot 42), so charges are
 /// the only thing that ever retires one.
 inline bool petalWardsHits(const PetalConfig& config) { return config.id == "nazar"; }
+
+/// A privet is spent by the hit it lands, whatever it hit: florr gives it
+/// no health pool and no damage (its object's +0x24/+0x28 are 0, and its
+/// tooltip prints neither row), only a reload that shortens 0.7x a tier --
+/// the bubble's shape, a petal whose whole cost is its reload. Here it keeps
+/// a flat 1-point pool, so anything that touches it breaks it, and its
+/// landing charges it the rest (CombatSystem::resolveMelee).
+inline bool petalSpentOnHit(const PetalConfig& config) { return config.id == "privet"; }
 /// florr's Petal/Attribute/Charges, flat at every tier.
 inline constexpr std::uint8_t kNazarCharges = 3;
 /// What a warded hit still costs: florr's 98% off.

@@ -1611,6 +1611,32 @@ void CombatSystem::applyPoison(World& world, Entity victim, Entity source, doubl
     summarisePoison(afflictions, nowMillis);
 }
 
+void CombatSystem::applyExtraPoison(World& world, Entity victim, double millis, double nowMillis) {
+    if (!std::isfinite(millis) || millis <= 0.0) return;
+    // On the pool owner, where applyPoison put the poison in the first place.
+    victim = poolOwner(world, victim);
+    if (!world.isAlive(victim) || !world.has<Health>(victim)) return;
+    Afflictions* afflictions = world.tryGet<Afflictions>(victim);
+    if (afflictions == nullptr) return;
+
+    // A flower's one bite (see applyPoison), stretched only while it is live:
+    // a lapsed bite still holds its old rate until the tick clears it.
+    if (world.has<PlayerTag>(victim)) {
+        if (afflictions->poisoned(nowMillis)) afflictions->poisonUntilMillis += millis;
+        return;
+    }
+
+    // Every live stack, not only the privet owner's: florr's text reads the
+    // victim's poison, not the wearer's. Each keeps its own source, so the
+    // extra damage is credited to whoever laid that poison.
+    afflictions->pruneStacks(nowMillis);
+    if (afflictions->poisonStacks.empty()) return;
+    for (PoisonStack& stack : afflictions->poisonStacks) {
+        if (stack.perSecond > 0.0) stack.untilMillis += millis;
+    }
+    summarisePoison(*afflictions, nowMillis);
+}
+
 void CombatSystem::applySlow(World& world, Entity victim, double factor, double durationMillis,
                              Rarity sourceRarity, double nowMillis) {
     if (!std::isfinite(factor) || factor >= 1.0) return;
@@ -2377,7 +2403,8 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
         const bool inert = stats.damage <= 0.0 && stats.critDamage <= 0.0 &&
                            stats.poisonPerSecond <= 0.0 && stats.slowFactor >= 1.0 &&
                            stats.knockback <= 0.0 && stats.armorReduction <= 0.0 &&
-                           stats.noHealDurationMillis <= 0.0 && !petalDividesMobs(config);
+                           stats.noHealDurationMillis <= 0.0 && stats.extraPoisonMillis <= 0.0 &&
+                           !petalDividesMobs(config);
         if (inert) return;
 
         MeleeSource source;
@@ -2393,6 +2420,8 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
         source.slowFactor = stats.slowFactor;
         source.slowDurationMillis = stats.slowDurationMillis;
         source.noHealDurationMillis = stats.noHealDurationMillis;
+        source.extraPoisonMillis = stats.extraPoisonMillis;
+        source.spentOnHit = petalSpentOnHit(config);
         source.armorReduction = stats.armorReduction;
         source.critDamage = stats.critDamage;
         source.lifesteal = stats.lifesteal;
@@ -2693,6 +2722,9 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 }
                 applyPoison(world, victim, source.attacker, source.poisonPerSecond,
                             source.poisonDurationMillis, nowMillis);
+                // After the bite above, so a petal carrying both stretches
+                // its own poison too.
+                applyExtraPoison(world, victim, source.extraPoisonMillis, nowMillis);
                 applySlow(world, victim, source.slowFactor, source.slowDurationMillis,
                           source.rarity, nowMillis);
                 applyNoHeal(world, victim, source.noHealDurationMillis, nowMillis);
@@ -2779,10 +2811,19 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // Not a loose petal: the mobs it touches bite it already (the
             // looseVictim rule above), and charging the same contact twice
             // would halve the moon's life for nothing the player did.
+            //
+            // A privet pays everything it has left, so a mob with no bite --
+            // or one it out-tiers -- cannot keep it out stretching the same
+            // poison every tick. Its landing is the whole of its life.
             if (landed && source.isPetal && !source.isLoose && source.hitIntervalMillis <= 0.0 &&
                 (world.has<MobTag>(victim) || world.has<NpcTag>(victim))) {
-                applyDamage(world, source.attacker, victim, contactDamageOf(world, victim),
-                            nowMillis, DamageKind::Recoil);
+                double recoil = contactDamageOf(world, victim);
+                if (source.spentOnHit) {
+                    if (const Health* own = world.tryGet<Health>(source.attacker)) {
+                        recoil = std::max(recoil, own->current);
+                    }
+                }
+                applyDamage(world, source.attacker, victim, recoil, nowMillis, DamageKind::Recoil);
             }
 
             // Re-fetched, never cached across the calls above: adding Dead or
@@ -3218,6 +3259,7 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                 }
                 applyPoison(world, impact.victim, shot.entity, stats.poisonPerSecond,
                             stats.poisonDurationMillis, nowMillis);
+                applyExtraPoison(world, impact.victim, stats.extraPoisonMillis, nowMillis);
                 applySlow(world, impact.victim, stats.slowFactor, stats.slowDurationMillis,
                           rarity, nowMillis);
                 applyNoHeal(world, impact.victim, stats.noHealDurationMillis, nowMillis);
