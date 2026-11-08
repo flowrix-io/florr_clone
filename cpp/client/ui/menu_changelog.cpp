@@ -558,6 +558,14 @@ constexpr ChangelogEntry kChangelog[] = {
         "New petal: Glitch Light",
       }
     },
+    {"November 8, 2026",
+      {
+        "Improved server performance",
+        "Added waves (currently admin only)",
+        "Restyled mob gallery tiles",
+        "New petal: Privet",
+      }
+    },
       
 };
 
