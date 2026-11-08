@@ -272,7 +272,7 @@ struct ClientSettings {
     /// Shows the grey bug button in the top strip, which is the only way into
     /// the debug panel. Off by default, exactly as `debugMenuEnabled` was.
     bool showDebugButton = false;
-    int marketListingSort=0,marketOrderSort=0;
+    int marketListingSort=1,marketOrderSort=0;
     std::string marketRarityFilter;
     /// Asks the leaderboard to rank admin accounts too, which the server
     /// otherwise leaves off. Off by default; the TypeScript client kept the

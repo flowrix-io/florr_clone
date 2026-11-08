@@ -75,7 +75,7 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
     }
     Json page=Json::object(),rows=Json::array();int offset=0,total=0;integer(q["offset"],0,2000,offset);
     const auto filter=lowerCase(q["filter"].asString());
-    int sorting=0;integer(q["sort"],0,2,sorting);
+    int sorting=orders?0:1;integer(q["sort"],0,2,sorting);
     if(sorting==1&&!orders&&collectionRanks_.empty())collectionRanks_=collectionBaseRanks(content(),loot_->dropTables());
     std::vector<Json> sorted;
     const auto& entries=database_.storedTable(tableName);

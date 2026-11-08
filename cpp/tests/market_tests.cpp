@@ -47,8 +47,9 @@ TEST(commerce_market_sorting_and_rarity_ranges_are_server_side) {
         row("order_common",0,10000,true);row("order_rare",2,1000,true);row("listing_common",0,5,false);row("listing_rare",2,100,false);row("listing_mythic",5,243,false);row("listing_ultra",6,729,false);db.markDirty();CHECK(db.save());
     },dataDir(),0);CHECK(h.ready);if(!h.ready)return;NetClient client;CHECK(loginAs(h,client,"viewer","password7"));Json q=Json::object();q["orders"]=true;
     CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["rows"][0]["id"].asString(),"order_common");
-    q["orders"]=false;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["rows"][0]["id"].asString(),"listing_common");
-    q["sort"]=1e200;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["rows"][0]["id"].asString(),"listing_common");
+    q["orders"]=false;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["rows"][0]["id"].asString(),"listing_ultra");
+    q["sort"]=0;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["rows"][0]["id"].asString(),"listing_common");
+    q["sort"]=1e200;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["rows"][0]["id"].asString(),"listing_ultra");
     q["sort"]=1;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["rows"][0]["id"].asString(),"listing_ultra");
     for(const auto& range:std::vector<std::pair<std::string,int>>{{"Rare-",2},{"Ultra+",1},{"Mythic",1}}){q["rarityFilter"]=range.first;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["total"].asInt(),range.second);}
     q["rarityFilter"]="admin+";CHECK(request(h,client,"market","browse",q));CHECK(!client.adminTools("market")["ok"].asBool());
@@ -105,8 +106,8 @@ TEST(market_shop_and_order_tabs_render_locally_and_preferences_roundtrip) {
     shop.openMarket();shop.setSlide(1,false);
     Canvas canvas=Canvas::createVirtual(900,680);MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};ctx.bounds=ShopPanel::bounds(900,680);shop.render(ctx);canvas.savePPM("/tmp/flowrix-market-gui.ppm");
     shop.openMarket(true);shop.render(ctx);canvas.savePPM("/tmp/flowrix-orders-gui.ppm");
-    settings.marketListingSort=1;settings.marketOrderSort=2;settings.marketRarityFilter="Ultra+";
-    const auto path=tempPath("market-settings");CHECK(settings.save(path));ClientSettings loaded;CHECK(loaded.load(path));CHECK_EQ(loaded.marketListingSort,1);CHECK_EQ(loaded.marketOrderSort,2);CHECK_EQ(loaded.marketRarityFilter,std::string("Ultra+"));std::remove(path.c_str());
+    CHECK_EQ(settings.marketListingSort,1);settings.marketListingSort=0;settings.marketOrderSort=2;settings.marketRarityFilter="Ultra+";
+    const auto path=tempPath("market-settings");CHECK(settings.save(path));ClientSettings loaded;CHECK(loaded.load(path));CHECK_EQ(loaded.marketListingSort,0);CHECK_EQ(loaded.marketOrderSort,2);CHECK_EQ(loaded.marketRarityFilter,std::string("Ultra+"));std::remove(path.c_str());
 }
 
 TEST(market_public_gift_is_collectible_by_only_one_player) {
