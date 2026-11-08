@@ -733,7 +733,7 @@ bool GalleryPanel::render(MenuContext& ctx) {
 
     // --- input -------------------------------------------------------------
     // The close button answers the PRESS, before anything else can claim it.
-    const bool closing = ctx.pressed() && closeRect.contains(mouse);
+    const bool closing = ctx.pressed() && closeButtonHit(panel, ctx.window).contains(mouse);
 
     // Narrower than the reserve the grid was centred against, and hard against
     // the right padding: the bar the reference draws is 8 wide, not 12.

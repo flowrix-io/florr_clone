@@ -509,7 +509,7 @@ bool NotificationsPanel::render(MenuContext& ctx) {
     }
 
     if (!ctx.released()) return true;
-    if (closeRect.contains(mouse)) return false;
+    if (closeButtonHit(panel, ctx.window).contains(mouse)) return false;
     if (markAllRect.contains(mouse)) {
         // Every LOADED id, not every id the server holds: the reference marks
         // what it has, and a page never fetched was never shown as unread.

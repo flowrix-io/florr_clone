@@ -342,3 +342,131 @@ TEST(admin_touch_cursor_tracks_world_finger_independently_of_controls) {
     CHECK(!cursor.held());
     CHECK(!cursor.hasPointer());
 }
+
+// --- tablets ------------------------------------------------------------------
+//
+// The constants are the reference's CSS pixels times a phone's design units
+// per CSS pixel. A tablet has fewer units to the pixel, and its controls are
+// laid out in its own: the same size under the thumb as the reference drew
+// them, rather than the same share of a much larger screen.
+
+namespace {
+
+/// An iPad in landscape (1024x768 points): the long axis fixes the scale at
+/// 768/1080 points per unit, so the viewport is 1440 units wide and a point is
+/// 1.406 units.
+constexpr int kTabletWidth = 1440;
+constexpr int kTabletHeight = 1080;
+constexpr double kTabletUnitsPerPoint = 1080.0 / 768.0;
+
+} // namespace
+
+TEST(a_tablet_lays_its_controls_out_in_its_own_points) {
+    MobileControls phone;
+    phone.layout(kPhoneWidth, kPhoneHeight, inGameLoadoutBarHeight());
+    MobileControls tablet;
+    tablet.layout(kTabletWidth, kTabletHeight, inGameLoadoutBarHeight(), kTabletUnitsPerPoint);
+
+    // The stick sits the reference's 150 CSS pixels in, converted with the
+    // tablet's own ratio -- not the phone's 360 units, which on an iPad was a
+    // third of the way to the middle of the screen.
+    CHECK_NEAR(tablet.stickCentre().x, 150.0 * kTabletUnitsPerPoint, 1e-9);
+    CHECK_NEAR(tablet.attackCentre().x,
+               kTabletWidth - (30.0 + 46.0) * kTabletUnitsPerPoint, 1e-9);
+    // Smaller in design units, which is the point.
+    CHECK(tablet.stickCentre().x < phone.stickCentre().x);
+
+    // The stick still steers the way it does on a phone: a full push is a
+    // full-speed walk, and the base it is measured against is the smaller one.
+    const Vec2 centre = tablet.stickCentre();
+    tablet.update({began(1, centre.x, centre.y),
+                   moved(1, centre.x + 55.0 * kTabletUnitsPerPoint, centre.y)});
+    MobileControls::Stick stick;
+    CHECK(tablet.stick(stick));
+    CHECK_NEAR(stick.magnitude, 1.0, 1e-6);
+}
+
+TEST(a_phone_past_the_ceiling_keeps_the_layout_it_was_tuned_for) {
+    // A 667-point iPhone works out at 2.9 units a point. The clearances were
+    // measured at 2.4, and the phone gets exactly that layout.
+    MobileControls tuned;
+    tuned.layout(kPhoneWidth, kPhoneHeight, inGameLoadoutBarHeight());
+    MobileControls small;
+    small.layout(kPhoneWidth, kPhoneHeight, inGameLoadoutBarHeight(), 1920.0 / 667.0);
+    CHECK_NEAR(small.stickCentre().x, tuned.stickCentre().x, 1e-9);
+    CHECK_NEAR(small.stickCentre().y, tuned.stickCentre().y, 1e-9);
+    CHECK_NEAR(small.attackCentre().x, tuned.attackCentre().x, 1e-9);
+}
+
+TEST(tablet_controls_sit_clear_of_the_hud_in_either_orientation) {
+    // The same three neighbours as on a phone: the icon column, the chat
+    // column and the loadout bar. The stick is smaller here, and its lift
+    // over the chat column must not have shrunk with it. Landscape and
+    // upright (768x1024 points: an 810-unit viewport at 1.05 units a point),
+    // and the 12.9" iPad Pro, where a point is barely more than a unit.
+    struct Screen { int width; int height; double unitsPerPoint; };
+    for (const Screen screen : {Screen{kTabletWidth, kTabletHeight, kTabletUnitsPerPoint},
+                                Screen{810, 1080, 1080.0 / 1024.0},
+                                Screen{1440, 1080, 1080.0 / 1024.0}}) {
+        MobileControls controls;
+        controls.layout(screen.width, screen.height, inGameLoadoutBarHeight(),
+                        screen.unitsPerPoint);
+        const double chatTop = screen.height - 195.0;
+        const double barTop = screen.height - inGameLoadoutBarHeight();
+        int probed = 0;
+        for (double y = 0; y < screen.height; y += 3.0) {
+            for (double x = 0; x < screen.width; x += 3.0) {
+                if (!controls.hits(x, y)) continue;
+                ++probed;
+                CHECK(x > 73.0);
+                CHECK(!(y >= chatTop && x <= 385.0));
+                CHECK(y < barTop);
+
+                controls.reset();
+                controls.update({began(1, x, y), moved(1, x + 4000.0, y), began(2, x, y)});
+                MobileControls::Stick stick;
+                const int answered = (controls.stick(stick) ? 1 : 0) +
+                                     (controls.attackPressed() ? 1 : 0) +
+                                     (controls.retractPressed() ? 1 : 0) +
+                                     (controls.rowSwapPressed() ? 1 : 0);
+                CHECK(answered == 1);
+            }
+        }
+        CHECK(probed > 100);
+    }
+}
+
+TEST(a_finger_the_window_lost_without_an_end_lets_go_of_its_control) {
+    // The page lost focus with the stick pushed and attack held: the window
+    // dropped both contacts from its live set, and no end event came. The
+    // controls must not go on walking and firing.
+    Fixture f;
+    const Vec2 stickAt = f.controls.stickCentre();
+    const Vec2 attackAt = f.controls.attackCentre();
+    f.feed({began(1, stickAt.x, stickAt.y), moved(1, stickAt.x + 80.0, stickAt.y),
+            began(2, attackAt.x, attackAt.y)});
+    MobileControls::Stick stick;
+    CHECK(f.controls.stick(stick));
+    CHECK(f.controls.attackPressed());
+
+    // Still down: nothing changes.
+    f.controls.releaseLost({TouchPoint{1, 0, 0}, TouchPoint{2, 0, 0}});
+    CHECK(f.controls.stick(stick));
+    CHECK(f.controls.attackPressed());
+
+    // Only the attack finger is left.
+    f.controls.releaseLost({TouchPoint{2, 0, 0}});
+    CHECK(!f.controls.stick(stick));
+    CHECK(f.controls.attackPressed());
+
+    // Nothing is.
+    f.controls.releaseLost({});
+    CHECK(!f.controls.attackPressed());
+
+    // And the admin cursor's world finger, on the same terms.
+    TouchCursor cursor;
+    cursor.update({began(9, 800, 300)}, [](Vec2) { return true; });
+    CHECK(cursor.held());
+    cursor.releaseLost({});
+    CHECK(!cursor.held());
+}

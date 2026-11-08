@@ -525,7 +525,9 @@ bool SettingsPanel::render(MenuContext& ctx) {
     const Rect closeRect = closeButtonRect(panel);
     const bool closeHovered = inPanel && closeRect.contains(mouse);
     ui::panelClose(canvas, closeRect, closeHovered);
-    if (closeHovered && ctx.released()) keepOpen = false;
+    if (inPanel && ui::closeButtonHit(panel, ctx.window).contains(mouse) && ctx.released()) {
+        keepOpen = false;
+    }
 
     // --- tab bar ------------------------------------------------------------
     static constexpr std::array<const char*, kTabCount> kTabLabels = {
