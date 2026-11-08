@@ -430,9 +430,9 @@ struct CreditLine {
 constexpr std::array<CreditLine, 15> kCredits = {{
     {"Flowrix.pro", 18.0, kPaper, true, 10.0, 30.0},
     {"Developers", 14.0, kGoldHeading, false, 10.0, 24.0},
-    {"• sussybite8888", 12.0, kPaper, false, 8.0, 20.0},
+    {"• sussybite8888 — Game Owner / Head Developer", 12.0, kPaper, false, 8.0, 20.0},
     {"• cookery", 12.0, kPaper, false, 8.0, 20.0},
-    {"• 19kisme", 12.0, kPaper, false, 8.0, 20.0},
+    {"• 19kisme — Chief Executive Developer", 12.0, kPaper, false, 8.0, 20.0},
     {"• Arras Guard YT", 12.0, kPaper, false, 8.0, 20.0},
     {"Inspired By", 14.0, kGoldHeading, false, 10.0, 24.0},
     {"• florr.io by M28", 12.0, kPaper, false, 8.0, 28.0},
