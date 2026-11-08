@@ -339,6 +339,12 @@ private:
     /// rebakes anything.
     const Canvas* minimapStatic(bool rarityGlow);
     void drawDeathCard(Canvas&, double time);
+    /// The waves' top of the screen, and what a dead flower is told.
+    void drawWaveHud(Canvas&, double time);
+    /// What the gauge is showing, eased after the server's few reports a second.
+    double waveGaugeTimer_ = 0.0;
+    double waveGaugeRed_ = 0.0;
+    double waveGaugeAt_ = 0.0;
     /// The "Collected this run" panel the death card puts over the minimap.
     void drawRunLoot(Canvas&, double time);
     /// Counts this frame's pickups by the viewer's own flower into runLoot_.

@@ -366,6 +366,9 @@ void App::drawMinimap(Canvas& canvas) {
         case Realm::Arena:
             drawArenaLeaderboard(canvas);
             return;
+        case kWavesRealm:
+            // A disc small enough to read without one; flooooio has none.
+            return;
         case Realm::Overworld:
             break;
     }
@@ -429,6 +432,10 @@ void App::drawMinimap(Canvas& canvas) {
         if (!squadmate && !altHeld) continue;
         if (squadmate) dot(entity.position, 4.0, 0xFF69B4u, true);
         else dot(entity.position, 4.0, kInk, false);
+    }
+    // An open rift, because the chat line says only that one has opened.
+    if (net_.rift().open && net_.rift().realm == realm) {
+        dot(net_.rift().position, 5.0, 0x000000u, false);
     }
     // Self last, so the blue dot is never hidden under someone standing on it.
     dot(me, 3.0, 0x0000FFu, true);

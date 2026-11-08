@@ -44,12 +44,17 @@ enum class Realm : std::uint8_t {
 /// staged for keeps a one-cell layer and an empty grid.
 inline constexpr int kMaxRealms = 64;
 
-/// How many world MAPS can be staged: every realm that is not the arena or the
-/// maze.
-inline constexpr int kMaxWorldMaps = kMaxRealms - 3;
+/// How many world MAPS can be staged: every realm that is not the arena, the
+/// maze, the waves or a hosted game.
+inline constexpr int kMaxWorldMaps = kMaxRealms - 4;
 // Last realm is reserved for admin-hosted games, never a manifest slot.
 inline constexpr Realm kAdminArenaRealm = static_cast<Realm>(kMaxRealms - 1);
 inline constexpr const char* kAdminArenaSpawnChoice = "admin_arena";
+// The one below it is the wave survival mode's (shared/game/waves.h), reached
+// through a rift and never from the picker. Generated like the arena: a disc
+// of open floor with no grid and no map file.
+inline constexpr Realm kWavesRealm = static_cast<Realm>(kMaxRealms - 2);
+inline constexpr const char* kWavesBiomeId = "waves";
 
 /// A byte off the wire or out of a file, made safe.
 inline constexpr Realm realmFromByte(std::uint8_t value) {
@@ -72,7 +77,7 @@ inline constexpr Realm worldRealm(int mapSlot) {
 /// realms that are generated rather than authored and have no map file.
 inline constexpr int worldMapSlot(Realm realm) {
     if (realm == Realm::Overworld) return 0;
-    if (realm == Realm::Arena || realm == Realm::Maze) return -1;
+    if (realm == Realm::Arena || realm == Realm::Maze || realm == kWavesRealm) return -1;
     return static_cast<int>(realm) - 2;
 }
 
@@ -113,6 +118,30 @@ inline constexpr Vec2 kArenaSpawn{kArenaCentre.x + 1500.0, kArenaCentre.y};
 /// True inside the ring, edge inclusive -- the reference's isInPvpArena.
 inline constexpr bool insideArena(Vec2 p) {
     return distanceSq(p, kArenaCentre) <= kArenaRadius * kArenaRadius;
+}
+
+// ---------------------------------------------------------------------------
+// The waves disc
+// ---------------------------------------------------------------------------
+//
+// flooooio's wave map is a disc of radius 1500 (wave_room.go MapRadius), and
+// here it grows with each wave (waveRadius in shared/game/waves.h), so how big
+// it is now is Terrain::wavesRadius. The space is laid out for the largest it
+// can get, with the same margin of void as the arena: growing moves nothing.
+
+inline constexpr double kWavesStartRadius = 1500.0;
+inline constexpr double kWavesMaxRadius = 8000.0;
+inline constexpr double kWavesMargin = 500.0;
+inline constexpr Vec2 kWavesCentre{kWavesMaxRadius + kWavesMargin, kWavesMaxRadius + kWavesMargin};
+inline constexpr double kWavesWorldSize = 2.0 * (kWavesMaxRadius + kWavesMargin);
+
+/// A realm whose whole terrain is one disc of open floor.
+struct RealmDisc {
+    Vec2 centre;
+    double radius = 0.0;
+};
+inline constexpr bool isDiscRealm(Realm realm) {
+    return realm == Realm::Arena || realm == kWavesRealm;
 }
 
 /// The reference's PVP rules that are numbers: a flat 100 max health for

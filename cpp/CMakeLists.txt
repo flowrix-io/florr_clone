@@ -216,6 +216,7 @@ add_library(flix_shared STATIC
   shared/game/terrain.cpp
   shared/game/tiled_map.cpp
   shared/game/spatial.cpp
+  shared/game/waves.cpp
   shared/game/chat_images.cpp
   shared/game/html_entities.cpp
   shared/game/markup.cpp
@@ -242,6 +243,7 @@ add_library(flix_server STATIC
   server/sacrifice.cpp
   server/splitter.cpp
   server/squads.cpp
+  server/waves.cpp
   server/db.cpp
   server/crypto.cpp
   server/systems/movement.cpp

@@ -41,6 +41,7 @@ SpatialGrid::SpatialGrid(double cellSize) {
         double span = 0.0;
         if (realm == Realm::Overworld) span = kWorldSize;
         else if (realm == Realm::Arena) span = kArenaWorldSize;
+        else if (realm == kWavesRealm) span = kWavesWorldSize;
         else if (realm == Realm::Maze) span = activeMaze().worldSize();
         Layer& layer = layers_[static_cast<std::size_t>(i)];
         fitLayer(layer.cols, layer.rows, layer.buckets, layer.bucketEpoch, span, invCellSize_,
