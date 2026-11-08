@@ -2548,14 +2548,19 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             // The field is re-laid at the petal's feet every interval rather
             // than parented to it: a ground effect has no transform to follow,
             // and a patch that expires on the interval tracks the ring for free.
+            //
+            // The pulse is one blow, dealt the tick the cloud is laid, to every
+            // mob and flower in it, weaker the further it stands from the
+            // petal (see tickGroundEffects). No drip: what stands for the rest
+            // of the cloud's life is the glow and the wearer's own bite.
             const double interval = std::max(config.radiation.intervalMillis, net::kTickMillis);
             double pulse = stats.damage;
             if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player)) {
                 pulse *= modifiers->petalDamageScale;
             }
             const Entity cloud = emitGroundEffect(world, player, at, GroundEffectKind::Radiation,
-                                                  config.radiation.radius * adminReachScale(rarity), pulse, 1.0, rarity,
-                                                  interval / 1000.0);
+                                                  config.radiation.radius * adminReachScale(rarity), 0.0, 1.0, rarity,
+                                                  interval / 1000.0, pulse, interval);
             if (GroundEffect* field = world.tryGet<GroundEffect>(cloud)) {
                 // The same boosted pulse is what the wearer is poisoned
                 // against: a stronger uranium is stronger both ways.

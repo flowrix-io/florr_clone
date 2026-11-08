@@ -3557,7 +3557,7 @@ TEST(defending_drops_pollen_with_discrete_damage_and_consumes_it) {
     CHECK(rig.world.has<Dead>(rig.petals(0).front()));
 }
 
-TEST(uranium_lays_a_cloud_that_poisons_mobs_and_its_wearer) {
+TEST(uranium_lays_a_cloud_that_pulses_mobs_and_poisons_its_wearer) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "uranium", Rarity::Rare);
@@ -3570,10 +3570,12 @@ TEST(uranium_lays_a_cloud_that_poisons_mobs_and_its_wearer) {
         CHECK_EQ(field.kind, GroundEffectKind::Radiation);
         CHECK_EQ(field.owner, rig.player);
         CHECK_NEAR(field.radius, 160.0, 1e-9);
-        CHECK_NEAR(field.damagePerSecond, 4.0 * petalStatScale(Rarity::Rare), 1e-9);
+        // One blow a pulse, and no drip.
+        CHECK_NEAR(field.damagePerHit, 4.0 * petalStatScale(Rarity::Rare), 1e-9);
+        CHECK_NEAR(field.damagePerSecond, 0.0, 1e-12);
         CHECK_NEAR(field.poisonDurationMillis, 2000.0, 1e-9);
-        // The wearer takes the same rate the mobs do.
-        CHECK_NEAR(field.ownerPoisonPerSecond, field.damagePerSecond, 1e-9);
+        // The wearer is bitten at the pulse per second.
+        CHECK_NEAR(field.ownerPoisonPerSecond, field.damagePerHit, 1e-9);
         CHECK_NEAR(lifetime.remainingSeconds, 1.0, 1e-12);
     });
 }

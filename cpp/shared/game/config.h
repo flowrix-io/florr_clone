@@ -408,19 +408,21 @@ struct AmbushSpec {
     double triggerRadiusScale = 0;
 };
 
-/// A lingering damage field (uranium).
+/// A radiation pulse (uranium). Every `intervalMillis` the petal lays a cloud
+/// of `radius` where it stands, and every mob and flower in it takes one hit
+/// of the petal's damage, at full strength on the petal and falling off
+/// steeply to nothing at the rim (radiationStrength). A flower takes a quarter
+/// of that.
 struct RadiationSpec {
     bool present = false;
     double radius = 0;
     double intervalMillis = 0;
-    /// Above zero, the pulse lands as POISON of this length on whatever stands
-    /// in the cloud rather than as a drip, so it lingers after the victim
-    /// walks out. Zero keeps the drip.
+    /// How long the wearer's bite lasts (see selfPoisonScale). Zero puts no
+    /// bite on the wearer.
     double poisonDurationMillis = 0;
-    /// The wearer is poisoned too, at this multiple of the rate the cloud
-    /// poisons mobs at and for the same length, anywhere in the cloud's realm
-    /// -- not only inside it. Needs a
-    /// poisonDurationMillis to have anything to last.
+    /// The wearer is poisoned too, at this multiple of the pulse per second,
+    /// for poisonDurationMillis, anywhere in the cloud's realm -- not only
+    /// inside it, and at full strength wherever it stands.
     double selfPoisonScale = 0;
 };
 

@@ -36,11 +36,12 @@ std::uint32_t skinIdHash(const std::string& id) {
 
 /// The radius an entity is described at: its body's, or 10 for one without.
 ///
-/// A web is the exception. It has no body -- it is a patch of ground, not a
-/// thing -- and gardn draws it scaled to the reach of its field (RenderWeb.cc
-/// scales the art by `ent.radius / 10`), so that is what it is sent at. The
-/// other fields keep the 10: a pollen puff's disc is the grain lying on the
-/// ground, not the reach of its dust.
+/// A web and a uranium cloud are the exceptions. Neither has a body -- each is
+/// a patch of ground, not a thing -- and each is drawn at the reach of its
+/// field (gardn's RenderWeb.cc scales the art by `ent.radius / 10`; the cloud
+/// fades out to its rim), so that is what they are sent at. The other fields
+/// keep the 10: a pollen puff's disc is the grain lying on the ground, not the
+/// reach of its dust.
 double replicatedRadius(World& world, Entity e) {
     if (const Body* body = world.tryGet<Body>(e)) return body->radius;
     // A sacrifice's star, which is twice the mob it summons.
@@ -48,7 +49,10 @@ double replicatedRadius(World& world, Entity e) {
     // An opened tomb, at the size the tomb was drawn.
     if (const MobRemains* remains = world.tryGet<MobRemains>(e)) return remains->radius;
     if (const GroundEffect* effect = world.tryGet<GroundEffect>(e)) {
-        if (effect->kind == GroundEffectKind::Web && effect->radius > 0.0) return effect->radius;
+        if ((effect->kind == GroundEffectKind::Web || effect->kind == GroundEffectKind::Radiation) &&
+            effect->radius > 0.0) {
+            return effect->radius;
+        }
     }
     return 10.0;
 }

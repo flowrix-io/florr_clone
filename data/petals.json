@@ -1214,7 +1214,7 @@
         "color": "#63bf2e",
         "count": 1,
         "radiation": {
-            "radius": 160,
+            "radius": 1000,
             "intervalMs": 1000,
             "poisonDurationMs": 2000,
             "selfPoisonScale": 1

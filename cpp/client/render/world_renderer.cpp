@@ -335,14 +335,22 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                     break;
                 }
                 case GroundEffectKind::Radiation: {
-                    const std::uint32_t tint = 0x9B59B6u;
-                    ui::setFill(canvas, tint, 0.22);
-                    canvas.fillCircle(static_cast<float>(screen.x), static_cast<float>(screen.y),
-                                      static_cast<float>(radius));
-                    ui::setStroke(canvas, tint, 0.5);
-                    canvas.setLineWidth(static_cast<float>(2.0 * zoom));
-                    canvas.strokeCircle(static_cast<float>(screen.x), static_cast<float>(screen.y),
-                                        static_cast<float>(radius));
+                    // Strongest on the petal and gone at the rim, on the same
+                    // curve the pulse's damage falls off by
+                    // (radiationStrength), with no edge drawn. The server
+                    // sends the cloud at its reach (replicatedRadius).
+                    //
+                    // The ramp is laid over the inner 80% only: the curve is
+                    // under 1% there, and spending the bands where the glow
+                    // actually changes keeps the steep middle from banding.
+                    constexpr std::uint32_t kTint = 0x9B59B6u;
+                    constexpr double kCentreAlpha = 0.3;
+                    canvas.save();
+                    canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
+                    fillRadialRamp(canvas, radius * 0.8, kTint, 24, [radius](double r) {
+                        return kCentreAlpha * radiationStrength(r, radius);
+                    });
+                    canvas.restore();
                     break;
                 }
                 case GroundEffectKind::OpenTomb: {

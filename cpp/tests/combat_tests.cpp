@@ -1843,13 +1843,14 @@ TEST(a_timed_ground_effect_expires_and_stops_applying) {
 
 namespace {
 
-/// A uranium cloud as the petal system lays one: poison rather than a drip,
-/// and a bite on the wearer at `ownerRate`.
-Entity uraniumCloud(Arena& a, Entity owner, Vec2 at, double rate, double ownerRate,
+/// A uranium cloud as the petal system lays one, 100 across: a pulse of
+/// `pulse` to whatever stands in it, and a bite on the wearer at `ownerRate`.
+Entity uraniumCloud(Arena& a, Entity owner, Vec2 at, double pulse, double ownerRate,
                     double lifetimeSeconds) {
     const Entity field = a.world.create();
     a.world.add<GroundEffectTag>(field);
-    GroundEffect cloud{GroundEffectKind::Radiation, owner, 100.0, rate, 1.0, Rarity::Common};
+    GroundEffect cloud{GroundEffectKind::Radiation, owner, 100.0, 0.0, 1.0, Rarity::Common,
+                       pulse, 1000.0};
     cloud.poisonDurationMillis = 2000.0;
     cloud.ownerPoisonPerSecond = ownerRate;
     a.world.add<GroundEffect>(field, cloud);
@@ -1860,33 +1861,53 @@ Entity uraniumCloud(Arena& a, Entity owner, Vec2 at, double rate, double ownerRa
 
 } // namespace
 
-TEST(a_uranium_cloud_poisons_the_mobs_in_it_and_the_poison_outlasts_it) {
+TEST(a_uranium_pulse_hits_each_mob_once_weaker_the_further_it_stands) {
+    Arena a;
+    // The wearer stands on its own petal and is never pulsed.
+    const Entity player = a.player({1000, 1000});
+    // Every mob is 20 across, and the distance is to its EDGE.
+    const Entity onPetal = a.mob({1000, 1000}, 100.0);
+    const Entity quarter = a.mob({1045, 1000}, 100.0);   // edge 25 out of 100
+    const Entity halfway = a.mob({1070, 1000}, 100.0);   // edge 50 out
+    const Entity grazing = a.mob({1115, 1000}, 100.0);   // edge 95 out
+    const Entity outside = a.mob({1130, 1000}, 100.0);   // edge 110 out: past the rim
+    const Entity field = uraniumCloud(a, player, {1000, 1000}, 40.0, 0.0, 1.0);
+
+    // Most of it lands close in: (1 - gap/radius)^3 of the pulse.
+    a.step(0.0);
+    CHECK_NEAR(a.health(onPetal), 60.0, 1e-9);
+    CHECK_NEAR(a.health(quarter), 100.0 - 40.0 * 0.421875, 1e-9);
+    CHECK_NEAR(a.health(halfway), 95.0, 1e-9);
+    CHECK_NEAR(a.health(grazing), 100.0 - 40.0 * 0.000125, 1e-9);
+    CHECK_NEAR(a.health(outside), 100.0, 1e-9);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    // A blow, not a bite: nothing is left ticking on what it hit.
+    const Afflictions* bitten = a.world.tryGet<Afflictions>(onPetal);
+    CHECK(bitten == nullptr || bitten->poisonStacks.empty());
+
+    // The pulse is spent. The cloud stands out its second, and a mob that
+    // walks in meanwhile waits for the next one.
+    a.world.get<Transform>(outside).position = {1000, 1000};
+    a.step(net::kTickMillis);
+    a.step(500.0);
+    CHECK(!a.world.has<Dead>(field));
+    CHECK_NEAR(a.health(onPetal), 60.0, 1e-9);
+    CHECK_NEAR(a.health(outside), 100.0, 1e-9);
+}
+
+TEST(a_uranium_pulse_deals_a_rival_flower_a_quarter_of_a_mobs_share) {
     Arena a;
     const Entity player = a.player({5000, 5000});
-    const Entity mob = a.mob({1050, 1000}, 100.0);
-    const Entity outside = a.mob({1300, 1000}, 100.0);
-    const Entity field = uraniumCloud(a, player, {1000, 1000}, 30.0, 0.0,
-                                      net::kTickSeconds * 1.5);
+    const Entity rival = a.player({1070, 1000});
+    const Entity mob = a.mob({1070, 1000}, 100.0);
+    a.world.get<Faction>(player).friendlyFireEnabled = true;
+    a.world.get<Faction>(rival).friendlyFireEnabled = true;
+    uraniumCloud(a, player, {1000, 1000}, 40.0, 0.0, 1.0);
 
-    // A bite credited to the wearer, not a drip: nothing comes off yet.
+    // Half way out, an eighth of the pulse; the flower a quarter of that.
     a.step(0.0);
-    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
-    const Afflictions& bitten = a.world.get<Afflictions>(mob);
-    CHECK_EQ(bitten.poisonStacks.size(), std::size_t{1});
-    CHECK_EQ(bitten.poisonStacks[0].source, player);
-    CHECK_NEAR(bitten.poisonStacks[0].perSecond, 30.0, 1e-9);
-    CHECK_NEAR(bitten.poisonStacks[0].untilMillis, 2000.0, 1e-9);
-    CHECK(!a.world.has<Afflictions>(outside));
-
-    // The cloud is gone after this tick, and the poison carries on without it.
-    a.step(net::kTickMillis);
-    CHECK(a.world.has<Dead>(field));
-    CHECK_NEAR(a.health(mob), 99.0, 1e-9);
-    a.step(1000.0);
-    CHECK_NEAR(a.health(mob), 98.0, 1e-9);
-    a.step(2500.0);
-    CHECK_NEAR(a.health(mob), 98.0, 1e-9);
-    CHECK_NEAR(a.health(outside), 100.0, 1e-9);
+    CHECK_NEAR(a.health(mob), 95.0, 1e-9);
+    CHECK_NEAR(a.health(rival), 98.75, 1e-9);
 }
 
 TEST(a_uranium_cloud_poisons_its_wearer_wherever_it_stands) {

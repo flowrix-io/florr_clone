@@ -1546,22 +1546,34 @@ struct GroundEffect {
     double damagePerSecond = 0;
     double slowFactor = 1.0;
     Rarity rarity = Rarity::Common;
-    /// Pollen deals one discrete hit per victim on a fixed cadence; radiation
-    /// instead uses damagePerSecond every simulation step.
+    /// Pollen deals one discrete hit per victim on a fixed cadence. A uranium
+    /// cloud deals it once, the tick it is laid, scaled down with each
+    /// victim's distance from the petal, and then zeroes it (see
+    /// CombatSystem::tickGroundEffects).
     double damagePerHit = 0;
     double damageIntervalMillis = 0;
     /// The slow lands on flowers too. Set on the web a MOB lays (gardn's
     /// alloc_web), whose whole job is to catch the flower chasing through it;
     /// a Web petal's field keeps the reference's rule and slows mobs only.
     bool slowsFlowers = false;
-    /// Above zero, damagePerSecond lands as poison of this length on whatever
-    /// stands in the field, refreshed every tick it stays, instead of a drip.
-    /// A uranium cloud's. See RadiationSpec.
+    /// How long the bite a uranium cloud puts on its wearer lasts. See
+    /// RadiationSpec.
     double poisonDurationMillis = 0;
     /// Uranium poisons its wearer as well: `owner` at this rate, for
     /// poisonDurationMillis, every tick the field stands, anywhere in its realm.
     double ownerPoisonPerSecond = 0;
 };
+
+/// The share of a uranium pulse that lands `gap` from the petal in a cloud of
+/// `radius`: all of it on the petal and none at the rim, with most of it
+/// close in -- (1 - gap/radius)^3, so a quarter of the way out takes 42% and
+/// half way out an eighth. The server scales the pulse's damage by it and
+/// the client draws the cloud's glow on it, so what you see is what lands.
+inline double radiationStrength(double gap, double radius) {
+    if (!(radius > 0.0)) return 0.0;
+    const double left = std::fmin(1.0, std::fmax(0.0, 1.0 - gap / radius));
+    return left * left * left;
+}
 
 /// When a web-laying mob lays its next web. See WebSpec.
 ///

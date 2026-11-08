@@ -20,6 +20,10 @@ namespace {
 /// `size`: a baby termite connects as far as a soldier of its tier.
 constexpr double kColonyLinkRange = 100.0;
 
+/// What a uranium pulse deals a flower, as a share of what it deals a mob at
+/// the same distance: the petal's "-75% damage versus other flowers".
+constexpr double kRadiationFlowerDamageScale = 0.25;
+
 double colonyReach(const World& world, Entity e) {
     const MobType* type = world.tryGet<MobType>(e);
     const Rarity rarity = type != nullptr ? type->rarity : Rarity::Common;
@@ -2115,6 +2119,27 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
             if (!inside) continue;
             if (!canHit(world, victim, field.effect, nowMillis)) continue;
 
+            // A uranium pulse: one blow to every mob, NPC and flower canHit
+            // lets through, and to no petal or shot. Its strength falls off
+            // steeply from the whole pulse on the petal to nothing at the rim
+            // (radiationStrength), measured to the victim's EDGE as the reach
+            // is, so a boss the petal is inside takes all of it. A flower
+            // takes a quarter of that -- the petal's "-75% damage versus
+            // other flowers".
+            if (field.kind == GroundEffectKind::Radiation && field.damagePerHit > 0.0) {
+                const bool flower = world.has<PlayerTag>(victim);
+                if (!flower && !world.has<MobTag>(victim) && !world.has<NpcTag>(victim)) continue;
+                const double victimRadius = reach - field.radius;
+                const double edgeGap = std::max(0.0, std::sqrt(gapSq) - victimRadius);
+                const double strength = radiationStrength(edgeGap, field.radius);
+                const double amount = field.damagePerHit * strength *
+                                      (flower ? kRadiationFlowerDamageScale : 1.0);
+                if (amount > 0.0) {
+                    applyDamage(world, victim, field.effect, amount, nowMillis, DamageKind::Direct);
+                }
+                continue;
+            }
+
             // A hostile NPC stands in a field like a mob does -- canHit above
             // has already turned away the friendly ones.
             if (field.damagePerHit > 0.0 &&
@@ -2137,11 +2162,6 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                             .arm(victim, nowMillis + field.damageIntervalMillis);
                     }
                 }
-            } else if (field.damagePerSecond > 0.0 && field.poisonDurationMillis > 0.0) {
-                // Credited through the field to its owner, as a petal's bite
-                // is, so a mob the cloud kills pays out to whoever wore it.
-                applyPoison(world, victim, field.effect, field.damagePerSecond,
-                            field.poisonDurationMillis, nowMillis);
             } else if (field.damagePerSecond > 0.0) {
                 applyDamage(world, victim, field.effect, field.damagePerSecond * dt, nowMillis,
                             DamageKind::Periodic);
@@ -2154,6 +2174,14 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
             } else {
                 applySlow(world, victim, field.slowFactor, kGroundEffectSlowLingerMillis,
                           field.rarity, nowMillis);
+            }
+        }
+        // A uranium cloud spends its pulse on the tick it is laid. A mob that
+        // walks in later waits for the next one, rather than being hit at the
+        // rim on the way in and then left alone for the rest of the second.
+        if (field.kind == GroundEffectKind::Radiation && field.damagePerHit > 0.0) {
+            if (GroundEffect* effect = world.tryGet<GroundEffect>(field.effect)) {
+                effect->damagePerHit = 0.0;
             }
         }
     }
