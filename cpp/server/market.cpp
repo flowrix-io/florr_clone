@@ -1,6 +1,7 @@
 #include "server/game_server.h"
 #include "server/text.h"
 #include "server/collection_ranks.h"
+#include "server/systems/npcs.h"
 #include "shared/game/economy.h"
 #include "shared/game/skin_format.h"
 #include <algorithm>
@@ -16,7 +17,45 @@ void GameServer::syncCommerceAccount(const std::string& id) {
         if(auto* peer=listener_.find(cid))sendProfile(s,*peer);
     }
 }
+void GameServer::expireMarketListings() {
+    const double now=double(database_.nowMillis());
+    const auto keys=database_.storedTable("petalMarket").keys();
+    std::unordered_set<std::string> changed;
+    for(const auto& id:keys){
+        const Json row=database_.storedTable("petalMarket")[id];
+        if(!row.isObject()||row["orders"].asBool())continue;
+        double expires=row["expiresAt"].asDouble();
+        if(!std::isfinite(expires)||expires<=0){
+            double created=row["createdAt"].asDouble();
+            if(!std::isfinite(created)||created<=0){
+                created=now;
+                // Older listings encode their server timestamp in the ID.
+                const auto split=id.find('_');
+                if(split!=std::string::npos&&split>0&&split<=16&&id.substr(0,split).find_first_not_of("0123456789")==std::string::npos){
+                    try{const double stamp=std::stod(id.substr(0,split));if(stamp>0&&stamp<=now)created=stamp;}catch(...){}
+                }
+            }
+            expires=created+kMarketListingLifetimeMillis;
+            auto& saved=database_.rawTable("petalMarket")[id];saved["createdAt"]=created;saved["expiresAt"]=expires;database_.markDirty();
+        }
+        if(now<expires)continue;
+        int rarity=0,remaining=0;const auto owner=row["owner"].asString(),item=row["item"].asString();
+        if(!integer(row["rarity"],0,kLadderRarityCount-1,rarity)||!integer(row["quantity"],1,1000000,remaining)||item.empty()||item.size()>64||!database_.findUserById(owner))continue;
+        auto& record=database_.progress(owner);const auto key="petal_"+item;
+        // Full bags retain the escrow for retry; expired stock stays unbuyable.
+        if(record.itemCount(Rarity(rarity),key)>kMaxStackCount-remaining)continue;
+        record.addItem(Rarity(rarity),key,remaining);
+        database_.rawTable("petalMarket").erase(id);database_.markDirty();changed.insert(owner);
+    }
+    for(const auto& owner:changed)syncCommerceAccount(owner);
+}
 void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
+    expireMarketListings();
+    const bool standing=s.playing()&&world_.isAlive(s.entity)&&!world_.has<Dead>(s.entity);
+    const auto* body=standing?world_.tryGet<Transform>(s.entity):nullptr;
+    if(!body||npcs_->findService(world_,NpcService::Market,body->position,body->realm,kNpcServiceReach+kNpcServiceSlack)==NULL_ENTITY){
+        sendAdminTools(s,peer,"market",false,"Visit Mr. Bee near Garden spawn to use the marketplace.");return;
+    }
     const auto action=q["action"].asString();
     if(s.controlling||s.controlledBy||s.arena||s.eventKit){sendAdminTools(s,peer,"market",false,"Unavailable with a temporary event inventory or flower control.");return;}
     if(action!="browse"&&action!="post"&&action!="take"&&action!="cancel"){sendAdminTools(s,peer,"market",false,"Unknown market action.");return;} const bool orders=q["orders"].asBool();
@@ -50,11 +89,14 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
         Json row=Json::object();
         const auto id=std::to_string(database_.nowMillis())+"_"+std::to_string(rng_.next());
         row["id"]=id;row["owner"]=s.userId;row["item"]=item;row["rarity"]=rarity;row["quantity"]=quantity;row["price"]=price;row["orders"]=orders;
+        row["createdAt"]=double(database_.nowMillis());
+        if(!orders)row["expiresAt"]=row["createdAt"].asDouble()+kMarketListingLifetimeMillis;
         database_.rawTable(tableName)[id]=row;database_.markDirty();syncCommerceAccount(s.userId);
         message=orders?"Order funded. Stars held until filled or cancelled.":"Listing posted. Petals held until sold or cancelled.";
     } else if(action=="take" || action=="cancel") {
         const auto id=q["id"].asString(); const Json row=database_.storedTable(tableName)[id];
         if(!row.isObject()){fail("That entry is already gone. Refresh the market.");return;}
+        if(!row["orders"].asBool()&&row["expiresAt"].asDouble()<=double(database_.nowMillis())){fail("Listing expired. Unsold petals are returning to their owner when inventory has space.");return;}
         int rarity=0,remaining=0,quantity=0;
         const auto ownerId=row["owner"].asString(),item=row["item"].asString(),key="petal_"+item;
         const double price=row["price"].asDouble(-1);const bool isOrder=row["orders"].asBool();
@@ -82,12 +124,13 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
     }
     Json page=Json::object(),rows=Json::array();int offset=0,total=0;integer(q["offset"],0,2000,offset);
     const auto filter=lowerCase(trimmed(q["filter"].asString()));
-    int sorting=orders?0:1;integer(q["sort"],0,2,sorting);
-    if(sorting==1&&!orders&&collectionRanks_.empty())collectionRanks_=collectionBaseRanks(content(),loot_->dropTables());
+    int sorting=1;integer(q["sort"],0,2,sorting);
+    if(sorting==1&&collectionRanks_.empty())collectionRanks_=collectionBaseRanks(content(),loot_->dropTables());
     std::vector<Json> sorted;
     const auto& entries=database_.storedTable(tableName);
     for(const auto& id:entries.keys()) {
         const auto& row=entries[id];if(row["orders"].asBool()!=orders)continue;
+        if(!orders&&row["expiresAt"].asDouble()<=double(database_.nowMillis()))continue;
         const auto index=content().petalIndex(row["item"].asString());
         if(index==kInvalidIndex)continue;
         if(!filter.empty()&&row["item"].asString().find(filter)==std::string::npos&&
@@ -98,7 +141,12 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
     std::sort(sorted.begin(),sorted.end(),[&](const Json& a,const Json& b){
         const double ap=a["price"].asDouble(),bp=b["price"].asDouble();const int ar=a["rarity"].asInt(),br=b["rarity"].asInt();
         if(sorting==2 && ar!=br)return ar>br;
-        if(sorting==1&&!orders){const double av=collectionUnitScore(content(),collectionRanks_,content().petalIndex(a["item"].asString()),Rarity(ar))/ap,bv=collectionUnitScore(content(),collectionRanks_,content().petalIndex(b["item"].asString()),Rarity(br))/bp;if(av!=bv)return av>bv;}
+        if(sorting==1){
+            const double as=std::max(1.0,collectionUnitScore(content(),collectionRanks_,content().petalIndex(a["item"].asString()),Rarity(ar)));
+            const double bs=std::max(1.0,collectionUnitScore(content(),collectionRanks_,content().petalIndex(b["item"].asString()),Rarity(br)));
+            const double av=orders?ap/as:as/ap,bv=orders?bp/bs:bs/bp;
+            if(av!=bv)return av>bv;
+        }
         if(ap!=bp)return orders?ap>bp:ap<bp;
         if(ar!=br)return ar>br;
         return a["id"].asString()<b["id"].asString();

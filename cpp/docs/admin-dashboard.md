@@ -550,9 +550,24 @@ Gambling commands have been removed. Legacy chip fields remain readable so exist
 
 ### Market branch
 
-The separate `market` branch includes the free-skin web update plus the petal marketplace. `/shop` opens listings; `/order` opens funded orders. Both are also Shop tabs. Common minimum price is 1 star, multiplied by 3 per rarity. Sellers receive 80%; cancellations return remaining escrow without tax. Listings reserve unequipped petals immediately, and orders reserve stars. Filters accept exact rarities, `Ultra+` and `Rare-`; sort/filter preferences are saved locally.
+The petal marketplace is included in `web`. Only visiting Mr. Bee opens its
+interface, with Market and Orders tabs; the normal Shop has neither. `/shop`
+and `/order` point players to the NPC. The server checks that a living player
+is near a market NPC for every request. Common minimum price is 1 star,
+multiplied by 3 per rarity. Sellers receive 80%; cancellations return remaining
+escrow without tax. Listings reserve unequipped petals immediately, and orders
+reserve stars. Filters accept names/IDs, exact rarities, `Ultra+` and `Rare-`.
+Listings default to rarest per star; orders default to the highest payout relative
+to petal rarity. Saved sort/filter choices remain local. The open interface
+refreshes once per second and shows page and result counts. Posting, buying,
+filling and cancelling require a confirmation with exact costs.
 
-Apex Mr. Bee is a friendly NPC at Garden spawn. Use the Craft button/key nearby to open the market. He wanders within 260 world units of his home, appears as a gold minimap dot, and shares an Ultra Bee loot roll every 3–6 minutes. Each dropped item is public and has one human collector in total. Gambling and paid skins are absent. This branch is not merged into `web`.
+Listings expire after 48 hours on the server's persisted UTC clock. Unsold
+quantities return automatically, including offline accounts and server restarts;
+partial sales only return the remainder. Full stacks retain their expired escrow
+for retry and cannot be purchased. Funded orders remain until filled or cancelled.
+
+Apex Mr. Bee is a friendly NPC at Garden spawn. Use the Craft button/key nearby to open the market. He wanders within 260 world units of his home, appears as a gold minimap dot, and shares an Ultra Bee loot roll every 3–6 minutes. Each dropped item is public and has one human collector in total. Gambling and paid skins are absent. The same NPC and market are shipped on `web`.
 ### Petal bans, teams and personal loadouts
 
 In Admin → Events, use **Petal bans** to search display names, select one rarity or All rarities, and add/remove restrictions. Existing ID bans remain supported. Rules apply immediately to temporary event bags and both loadout rows; normal owned inventory is preserved.

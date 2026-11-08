@@ -202,8 +202,6 @@ struct ChatCommand {
 };
 
 constexpr ChatCommand kChatCommands[] = {
-    {"/shop", "Open player petal listings", false},
-    {"/order", "Open funded petal orders", false},
     {"/help", "Show available commands", false},
     {"/biome", "Show the most populated biome", false},
     {"/boss-timers", "Show each biome's unique/apex cooldown", false},

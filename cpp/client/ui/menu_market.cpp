@@ -14,7 +14,7 @@ namespace flix {
 using namespace ui;
 namespace {
 struct Field {std::string text;TextFieldState state;};
-struct Forms {std::string account;bool marketLoaded=false,orders=false;int rarity=0,offset=0;double nextRefresh=0;Json query=Json::object();Field filter{},rarityFilter{},item{"basic"},quantity{"1"},price{"1"};} forms;
+struct Forms {std::string account;bool marketLoaded=false,orders=false;int rarity=0,offset=0;double nextRefresh=0;Json query=Json::object(),pendingQuery=Json::object();std::string pendingAction,pendingTitle,validation;std::vector<std::string> pendingLines;Field filter{},rarityFilter{},item{"basic"},quantity{"1"},price{"1"};} forms;
 void account(MenuContext& ctx){if(forms.account!=ctx.net.profile().username){forms=Forms{};forms.account=ctx.net.profile().username;}}
 TextStyle style(double size=13,unsigned color=0xFFFFFF){TextStyle t;t.size=size;t.fill=color;t.baseline=Baseline::Middle;return t;}
 void field(MenuContext& ctx,Field& f,Rect r,const std::string& placeholder,std::size_t max=32){inputField(ctx.canvas,r,f.text,placeholder,f.state.focused,ctx.timeSeconds,&f.state);if(!ctx.pointerBlocked)trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);if(f.state.focused){ctx.wantsText=true;TextEditOptions options;options.maxBytes=max;options.asciiOnly=true;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}}
@@ -63,13 +63,23 @@ std::optional<std::uint16_t> renderMarketPetalSuggestions(MenuContext& ctx,Rect 
     }
     return {};
 }
-void refreshMarketUi(){forms.marketLoaded=false;}
+MarketConfirmResult renderMarketConfirmation(MenuContext& ctx,Rect p,const std::string& title,const std::vector<std::string>& lines) {
+    fillRound(ctx.canvas,p,6,0x183F23u);
+    const Rect box{p.x+(p.w-500)/2,p.y+(p.h-220)/2,500,220};
+    fillRound(ctx.canvas,box,8,0x426C48u);
+    text(ctx.canvas,title,box.x+16,box.y+24,style(18));
+    for(std::size_t i=0;i<lines.size();++i)text(ctx.canvas,ellipsize(lines[i],13,box.w-32),box.x+16,box.y+53+i*24,style(13));
+    if(button(ctx,{box.x+16,box.bottom()-42,200,30},"Go back")||ctx.window.keyPressed(Key::Escape))return MarketConfirmResult::Cancel;
+    if(button(ctx,{box.right()-216,box.bottom()-42,200,30},"Confirm"))return MarketConfirmResult::Confirm;
+    return MarketConfirmResult::Pending;
+}
+void refreshMarketUi(){forms.marketLoaded=false;forms.pendingAction.clear();forms.validation.clear();}
 void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     account(ctx);
     const auto money=[&](double value){return marketNumber(value,ctx.window.altHeld());};
     int& sorting=orders?ctx.settings.marketOrderSort:ctx.settings.marketListingSort;
     const auto browse=[&](const char* action="browse",Json q=Json::object()) {q["orders"]=orders;q["offset"]=forms.offset;q["filter"]=forms.filter.text;q["rarityFilter"]=forms.rarityFilter.text;q["sort"]=sorting;forms.query=Json::object();for(const char* key:{"orders","offset","filter","rarityFilter","sort"})forms.query[key]=q[key];forms.nextRefresh=ctx.timeSeconds+1;int low,high;std::string saved=forms.rarityFilter.text;saved.erase(std::remove_if(saved.begin(),saved.end(),[](unsigned char c){return std::isspace(c);}),saved.end());if(collectionRarityFilter(saved,low,high))ctx.settings.marketRarityFilter=saved;send(ctx,"market",action,q);};
-    if(!forms.marketLoaded||forms.orders!=orders){forms.marketLoaded=true;forms.orders=orders;forms.offset=0;forms.rarityFilter.text=ctx.settings.marketRarityFilter;browse();}
+    if(!forms.marketLoaded||forms.orders!=orders){forms.marketLoaded=true;forms.orders=orders;forms.pendingAction.clear();forms.offset=0;forms.rarityFilter.text=ctx.settings.marketRarityFilter;browse();}
     else if(ctx.timeSeconds>=forms.nextRefresh){send(ctx,"market","browse",forms.query);forms.nextRefresh=ctx.timeSeconds+1;}
     const auto& reply=ctx.net.adminTools("market");
     const bool pickerOpen=forms.item.state.focused;
@@ -77,7 +87,11 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     const double pickerHeight=26*std::max(std::size_t(1),choices.size());
     const Rect picker{p.x,p.bottom()-98+8-pickerHeight,300,pickerHeight};
     MenuContext controls=ctx;
-    controls.pointerBlocked=ctx.pointerBlocked||(pickerOpen&&picker.contains(ctx.mouse()));
+    controls.pointerBlocked=ctx.pointerBlocked||!forms.pendingAction.empty()||(pickerOpen&&picker.contains(ctx.mouse()));
+    const auto confirm=[&](const char* action,Json q,const std::string& title,std::vector<std::string> lines){
+        for(const auto& key:forms.query.keys())if(!q.contains(key))q[key]=forms.query[key];
+        forms.pendingAction=action;forms.pendingQuery=std::move(q);forms.pendingTitle=title;forms.pendingLines=std::move(lines);forms.validation.clear();
+    };
     const int total=std::max(0,reply["total"].asInt());
     const int offset=std::max(0,reply["offset"].asInt());
     const int pages=std::max(1,(total+4)/5);
@@ -86,16 +100,16 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     text(ctx.canvas,pager,p.right()-pagerWidth,p.y+10,style(12));
     const auto header=(orders?std::string("Fund requests; other players supply petals."):std::string("Petal listings. Seller receives 80%; tax 20%."))+"  Stars: "+money(ctx.net.profile().stars);
     text(ctx.canvas,ellipsize(header,13,std::max(0.0,p.w-pagerWidth-14)),p.x,p.y+10,style());
-    field(ctx,forms.filter,{p.x,p.y+25,220,30},"Search petal name / ID");
+    field(controls,forms.filter,{p.x,p.y+25,220,30},"Search petal name / ID");
     if(button(controls,{p.x+230,p.y+25,90,30},"Refresh")){forms.offset=0;browse();}
     if(button(controls,{p.right()-150,p.y+25,66,30},"<")){forms.offset=std::max(0,offset-5);browse();}
     if(button(controls,{p.right()-76,p.y+25,66,30},">")){if(offset+5<total){forms.offset=offset+5;browse();}}
-    field(ctx,forms.rarityFilter,{p.x+330,p.y+25,130,30},"All / Ultra+ / Rare-",16);
-    const char* sortLabel=sorting==0?"Price":sorting==1?(orders?"Highest offer":"Best value"):"Rarity";
-    if(button(controls,{p.x+470,p.y+25,std::max(90.0,p.w-630),30},sortLabel)){sorting=orders?(sorting==0?2:0):(sorting+1)%3;forms.offset=0;browse();}
+    field(controls,forms.rarityFilter,{p.x+330,p.y+25,130,30},"All / Ultra+ / Rare-",16);
+    const char* sortLabel=sorting==0?"Price":sorting==1?(orders?"Best offer":"Best value"):"Rarity";
+    if(button(controls,{p.x+470,p.y+25,std::max(90.0,p.w-630),30},sortLabel)){sorting=(sorting+1)%3;forms.offset=0;browse();}
     double y=p.y+66;
     const auto& rows=reply["rows"];
-    if(rows.isArray())for(const auto& row:rows.items()) {
+    if(rows.isArray()&&reply["orders"].asBool()==orders)for(const auto& row:rows.items()) {
         const auto rarity=Rarity(std::clamp(row["rarity"].asInt(),0,kLadderRarityCount-1));
         const auto index=content().petalIndex(row["item"].asString());
         const auto name=index==kInvalidIndex?row["item"].asString():content().petal(index).name;
@@ -103,7 +117,18 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
         fillRound(ctx.canvas,{p.x,y,p.w,30},4,0x315A36u);
         text(ctx.canvas,ellipsize(description,12,p.w-190),p.x,y+15,style(12,rarityColor(rarity)));
         const bool mine=row["mine"].asBool();
-        if(button(controls,{p.right()-178,y,168,29},mine?"Cancel / refund":orders?"Fill amount below":"Buy amount below")) {Json q=Json::object();q["id"]=row["id"];q["quantity"]=number(forms.quantity.text);browse(mine?"cancel":"take",q);}
+        if(button(controls,{p.right()-178,y,168,29},mine?"Cancel / refund":orders?"Fill amount below":"Buy amount below")) {
+            const double quantity=mine?row["quantity"].asDouble():number(forms.quantity.text);
+            if(quantity<1||quantity>row["quantity"].asDouble())forms.validation="Choose an amount within the remaining quantity.";
+            else {
+                Json q=Json::object();q["id"]=row["id"];q["quantity"]=quantity;
+                const double price=row["price"].asDouble(),gross=price*quantity;
+                std::vector<std::string> lines{name+" / "+rarityLabel(rarity)+" x"+marketNumber(quantity,true)};
+                if(mine)lines.push_back(orders?"Stars refunded: "+marketNumber(gross,true):"Remaining petals return to your inventory.");
+                else {lines.push_back("Price each: "+marketNumber(price,true)+" stars");lines.push_back(orders?"You receive: "+marketNumber(sellerProceeds(gross),true)+" stars (after 20% tax)":"Total cost: "+marketNumber(gross,true)+" stars");}
+                confirm(mine?"cancel":"take",q,mine?"Confirm cancellation":orders?"Confirm filling this order":"Confirm purchase",lines);
+            }
+        }
         y+=33;
     }
     const double formY=p.bottom()-98;
@@ -116,12 +141,32 @@ void renderMarket(MenuContext& ctx,Rect p,bool orders) {
     if(button(controls,{p.x+170,formY+12,28,30},"<"))forms.rarity=std::max(0,forms.rarity-1);
     text(ctx.canvas,rarityLabel(Rarity(forms.rarity)),p.x+204,formY+27,style(12));
     if(button(controls,{p.x+306,formY+12,28,30},">"))forms.rarity=std::min(kLadderRarityCount-1,forms.rarity+1);
-    field(ctx,forms.quantity,{p.x+344,formY+12,76,30},"1",7);field(ctx,forms.price,{p.x+430,formY+12,90,30},"Price",13);
-    if(button(controls,{p.x+530,formY+12,p.w-540,30},orders?"Post order":"List petals")) {Json q=Json::object();q["item"]=forms.item.text;q["rarity"]=forms.rarity;q["quantity"]=number(forms.quantity.text);q["price"]=number(forms.price.text);browse("post",q);}
-    text(ctx.canvas,ellipsize("Minimum: "+money(marketMinimum(Rarity(forms.rarity)))+" stars each (Common 1, x3 per rarity). Hold Alt for exact values.",11,p.w),p.x,formY+57,style(11));
-    result(ctx,"market",{p.x,p.bottom()-29,p.w,25});
-    if(pickerOpen&&forms.item.state.focused)
+    field(controls,forms.quantity,{p.x+344,formY+12,76,30},"1",7);field(controls,forms.price,{p.x+430,formY+12,90,30},"Price",13);
+    if(button(controls,{p.x+530,formY+12,p.w-540,30},orders?"Post order":"List petals")) {
+        const double quantity=number(forms.quantity.text),price=number(forms.price.text);
+        if(quantity<1||quantity>1000000||price<marketMinimum(Rarity(forms.rarity))||price*quantity>kEconomyMax)forms.validation="Check the amount and minimum price before posting.";
+        else {
+            Json q=Json::object();q["item"]=forms.item.text;q["rarity"]=forms.rarity;q["quantity"]=quantity;q["price"]=price;
+            std::vector<std::string> lines{forms.item.text+" / "+rarityLabel(Rarity(forms.rarity))+" x"+marketNumber(quantity,true),"Price each: "+marketNumber(price,true)+" stars"};
+            lines.push_back(orders?"Stars reserved: "+marketNumber(price*quantity,true):"Petals leave your bag until sold or cancelled.");
+            if(!orders)lines.push_back("If all sell: "+marketNumber(sellerProceeds(price*quantity),true)+" stars after 20% tax");
+            lines.push_back(orders?"Sellers receive 80%; 20% tax.":"Unsold petals return automatically after 48 hours.");
+            confirm("post",q,orders?"Confirm funded order":"Confirm listing",lines);
+        }
+    }
+    text(ctx.canvas,ellipsize("Minimum: "+money(marketMinimum(Rarity(forms.rarity)))+" stars each. "+(orders?"Orders reserve stars.":"Listings expire after 48h; unsold petals return.")+" Alt: exact values.",11,p.w),p.x,formY+57,style(11));
+    ctx.wantsText=ctx.wantsText||controls.wantsText;
+    if(forms.validation.empty())result(ctx,"market",{p.x,p.bottom()-29,p.w,25});
+    else text(ctx.canvas,ellipsize(forms.validation,12,p.w),p.x,p.bottom()-16,style(12,0xFFAAAA));
+    if(pickerOpen&&forms.item.state.focused&&forms.pendingAction.empty())
         if(const auto selected=renderMarketPetalSuggestions(ctx,picker,choices))choose(*selected);
+    if(!forms.pendingAction.empty()){
+        const auto decision=renderMarketConfirmation(ctx,p,forms.pendingTitle,forms.pendingLines);
+        if(decision==MarketConfirmResult::Confirm){
+            const auto action=forms.pendingAction;const Json q=forms.pendingQuery;forms.pendingAction.clear();
+            forms.nextRefresh=ctx.timeSeconds+1;send(ctx,"market",action.c_str(),q);
+        }else if(decision==MarketConfirmResult::Cancel)forms.pendingAction.clear();
+    }
 }
 
 }

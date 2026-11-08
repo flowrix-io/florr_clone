@@ -612,6 +612,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // The broadphase was built before the maps were: its layers are sized to
     // the default world until it is told what shape each realm really is.
     initHostedArena();
+    expireMarketListings();
     grid_.sizeToRealms(*terrain_);
 
     movement_ = std::make_unique<MovementSystem>();
@@ -929,6 +930,10 @@ void GameServer::tick(double nowMillis) {
     ++tick_;
     clockMillis_ = nowMillis;
     expirePoll();
+    if(nowMillis>=nextMarketExpiryCheckMillis_){
+        nextMarketExpiryCheckMillis_=nowMillis+1000;
+        expireMarketListings();
+    }
     tickPhaseCount_ = 0;
     if (!bossClocksRestored_) restoreBossClocks(nowMillis);
     tickStartedMillis_ = monotonicMillis();

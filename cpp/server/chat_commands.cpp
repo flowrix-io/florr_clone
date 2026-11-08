@@ -502,8 +502,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     const auto out = [&](const std::string& text) { sendSystem(connection, text); };
 
     if (verb == "/shop" || verb == "/order") {
-        Json data=Json::object();data["orders"]=verb=="/order";
-        sendAdminTools(session,connection,"market_open",true,"",data);return true;
+        out("Visit Mr. Bee near Garden spawn to open the marketplace and orders.");return true;
     }
     if (verb == "/casino") {
         out("Gambling has been removed.");

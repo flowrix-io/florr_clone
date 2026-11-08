@@ -805,7 +805,11 @@ bool ClientSettings::save(const std::string& path) const {
 // ---------------------------------------------------------------------------
 
 void MenuSystem::toggle(MenuId id) {
-    if(id==MenuId::Crafting&&nearbyNpc_==NpcService::Market){shop_.openMarket();id=MenuId::Shop;}
+    const bool marketNpc=id==MenuId::Crafting&&nearbyNpc_==NpcService::Market;
+    if(marketNpc){
+        id=MenuId::Shop;
+        if(open_==id){shop_.reset();shop_.openMarket();return;}
+    }
     // Opening a second menu closes the first. They share an anchor, so two at
     // once would be one menu with another hidden behind it.
     const bool opening = open_ != id;
@@ -834,7 +838,7 @@ void MenuSystem::toggle(MenuId id) {
             break;
         case MenuId::Talents:     talents_.reset(); break;
         case MenuId::Gallery:     gallery_.reset(); break;
-        case MenuId::Shop:        shop_.reset(); break;
+        case MenuId::Shop:        shop_.reset(); if(marketNpc)shop_.openMarket(); break;
         case MenuId::Skins:       skins_.reset(); break;
         case MenuId::Leaderboard: leaderboard_.reset(); break;
         case MenuId::Settings:    settings_panel_.reset(); break;
@@ -2675,7 +2679,6 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     wantsText_ = false;
     panelRect_ = Rect{};
     pollRect_ = pollOverlayBounds(net,canvas.width(),canvas.height());
-    if(net.takeMarketRequest()){shop_.openMarket(net.marketOrdersRequested());if(open_!=MenuId::Shop)toggle(MenuId::Shop);}
     if(net.takePollCreatorRequest() && open_!=MenuId::PollCreator)toggle(MenuId::PollCreator);
     // Taken back every frame and claimed again by whatever still holds the
     // keyboard this frame: a closed editor must not keep Ctrl+S from the

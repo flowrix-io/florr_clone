@@ -10,11 +10,19 @@
 using namespace flix;
 using namespace flix::testsupport;
 namespace {
+std::int64_t marketWallMillis=0;
+std::int64_t marketClock(){return marketWallMillis;}
 void seedWallet(const std::string& path,const char* name,double stars,bool admin=false) {
     seedUser(path,name,"password7",admin);Database db;std::string error;CHECK(db.load(path,error));db.progress(db.findUser(name)->id).stars=stars;db.markDirty();CHECK(db.save());
 }
 PlayerRecord& wallet(Harness& h,const char* name){return const_cast<Database&>(h.server.database()).progress(h.server.database().findUser(name)->id);}
 bool request(Harness& h,NetClient& client,const std::string& kind,const std::string& action,Json q=Json::object()) {
+    if(kind=="market"){
+        if(client.status()!=NetClient::Status::Playing){client.joinGame(1280,720);if(!h.stepUntil({&client},[&]{return client.status()==NetClient::Status::Playing;}))return false;}
+        auto* session=GameServerPeer::sessionOf(h.server,client.profile().username);bool found=false;
+        Query<Npc,Transform> npcs{h.server.world()};npcs.each([&](Entity,Npc& npc,Transform& at){if(npc.service==NpcService::Market&&session){h.server.world().get<Transform>(session->entity).position=at.position;found=true;}});
+        if(!found)return false;
+    }
     const auto before=client.adminTools(kind).dump();q["kind"]=kind;q["action"]=action;client.requestAdminTools(q);
     return h.stepUntil({&client},[&]{return client.adminTools(kind).dump()!=before;},120);
 }
@@ -74,11 +82,11 @@ TEST(market_mr_bee_is_an_apex_spawn_npc_and_gifts_single_public_copies) {
     for(int sample=0;sample<12;++sample){h.step(30,{&client});CHECK(distanceSq(world.get<Transform>(host).position,home)<=260.*260.+.01);}
 }
 
-TEST(market_commands_open_the_correct_gui_without_requiring_admin) {
+TEST(market_commands_cannot_open_the_npc_only_interface) {
     Harness h("market-open",[](const std::string& path){seedUser(path,"visitor","password7");},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
     NetClient client;CHECK(loginAs(h,client,"visitor","password7"));
-    client.sendChat("/shop");CHECK(h.stepUntil({&client},[&]{return client.takeMarketRequest();}));CHECK(!client.marketOrdersRequested());
-    h.step(16,{&client});client.sendChat("/order");CHECK(h.stepUntil({&client},[&]{return client.takeMarketRequest();}));CHECK(client.marketOrdersRequested());
+    client.sendChat("/shop");h.step(20,{&client});CHECK(!client.takeMarketRequest());
+    h.step(16,{&client});client.sendChat("/order");h.step(20,{&client});CHECK(!client.takeMarketRequest());
 }
 
 TEST(market_listing_escrow_survives_relogin_and_database_save) {
@@ -106,6 +114,7 @@ TEST(market_shop_and_order_tabs_render_locally_and_preferences_roundtrip) {
     shop.openMarket();shop.setSlide(1,false);
     Canvas canvas=Canvas::createVirtual(900,680);MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};ctx.bounds=ShopPanel::bounds(900,680);shop.render(ctx);canvas.savePPM("/tmp/flowrix-market-gui.ppm");
     shop.openMarket(true);shop.render(ctx);canvas.savePPM("/tmp/flowrix-orders-gui.ppm");
+    ShopPanel regular;regular.setSlide(1,false);Canvas regularCanvas=Canvas::createVirtual(900,680);MenuContext regularCtx{regularCanvas,window,client,sprites,renderer,settings,drag};regularCtx.bounds=ShopPanel::bounds(900,680);regular.render(regularCtx);regularCanvas.savePPM("/tmp/flowrix-regular-shop-no-market.ppm");
     CHECK_EQ(settings.marketListingSort,1);settings.marketListingSort=0;settings.marketOrderSort=2;settings.marketRarityFilter="Ultra+";
     const auto path=tempPath("market-settings");CHECK(settings.save(path));ClientSettings loaded;CHECK(loaded.load(path));CHECK_EQ(loaded.marketListingSort,0);CHECK_EQ(loaded.marketOrderSort,2);CHECK_EQ(loaded.marketRarityFilter,std::string("Ultra+"));std::remove(path.c_str());
 }
@@ -192,4 +201,70 @@ TEST(market_accepts_petal_names_and_ids_and_offers_disambiguated_suggestions) {
     const auto choices=marketPetalSuggestions("magic");CHECK(choices.size()<=5);for(auto index:choices)CHECK(!content().petal(index).isAdminPetal);
     CHECK(fontsReady());Canvas canvas=Canvas::createVirtual(380,210);SpriteCache sprites;WorldRenderer renderer;Window window;ClientSettings settings;DragState drag;MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};
     renderMarketPetalSuggestions(ctx,{25,40,330,130},choices);canvas.savePPM("/tmp/flowrix-market-petal-picker.ppm");
+}
+
+TEST(market_expiry_returns_only_unsold_escrow_offline_and_rejects_replays) {
+    Harness h("market-expiry",[](const std::string& path){seedWallet(path,"seller",100);seedWallet(path,"buyer",100);seedStack(path,"seller","petal_basic",Rarity::Common,5);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    auto& db=const_cast<Database&>(h.server.database());marketWallMillis=db.nowMillis();db.setClock(&marketClock);
+    NetClient seller,buyer;CHECK(loginAs(h,seller,"seller","password7"));CHECK(loginAs(h,buyer,"buyer","password7"));
+    Json q=posting("basic",0,3,10);q["expiresAt"]=1e16;CHECK(request(h,seller,"market","post",q));const auto row=seller.adminTools("market")["rows"][0];
+    CHECK_EQ(row["expiresAt"].asDouble(),double(marketWallMillis)+kMarketListingLifetimeMillis);
+    Json take=Json::object();take["id"]=row["id"];take["quantity"]=1;CHECK(request(h,buyer,"market","take",take));
+    CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),2);CHECK_EQ(wallet(h,"buyer").itemCount(Rarity::Common,"petal_basic"),1);
+    seller.disconnect();h.step(5,{&buyer});marketWallMillis+=std::int64_t(kMarketListingLifetimeMillis)-1;
+    CHECK(request(h,buyer,"market","browse"));CHECK_EQ(buyer.adminTools("market")["total"].asInt(),1);
+    const double balance=wallet(h,"buyer").stars;marketWallMillis+=1;
+    CHECK(request(h,buyer,"market","take",take));CHECK(!buyer.adminTools("market")["ok"].asBool());CHECK_EQ(wallet(h,"buyer").stars,balance);
+    CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),4);CHECK_EQ(db.storedTable("petalMarket").size(),std::size_t(0));
+    h.step(90,{&buyer});CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),4);
+    CHECK(db.save());Database saved;std::string error;CHECK(saved.load(h.dbPath,error));CHECK_EQ(saved.findProgress(saved.findUser("seller")->id)->itemCount(Rarity::Common,"petal_basic"),4);
+}
+TEST(market_expiry_recovers_legacy_listings_on_startup_and_retries_full_bags) {
+    Harness h("market-expiry-recovery",[](const std::string& path){
+        seedWallet(path,"seller",100);seedWallet(path,"buyer",100);Database db;std::string error;CHECK(db.load(path,error));
+        Json row=posting("basic",0,3,1);row["owner"]=db.findUser("seller")->id;
+        const auto id=std::to_string(db.nowMillis()-std::int64_t(kMarketListingLifetimeMillis)-1)+"_legacy";row["id"]=id;
+        db.rawTable("petalMarket")[id]=row;db.markDirty();CHECK(db.save());
+    },dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),3);CHECK_EQ(h.server.database().storedTable("petalMarket").size(),std::size_t(0));
+    auto& db=const_cast<Database&>(h.server.database());marketWallMillis=db.nowMillis();db.setClock(&marketClock);
+    NetClient seller,buyer;CHECK(loginAs(h,seller,"seller","password7"));CHECK(loginAs(h,buyer,"buyer","password7"));
+    CHECK(request(h,seller,"market","post",posting("basic",0,3,1)));const auto id=seller.adminTools("market")["rows"][0]["id"];
+    wallet(h,"seller").setItemCount(Rarity::Common,"petal_basic",kMaxStackCount);marketWallMillis+=std::int64_t(kMarketListingLifetimeMillis);
+    Json take=Json::object();take["id"]=id;take["quantity"]=1;const double balance=wallet(h,"buyer").stars;
+    CHECK(request(h,buyer,"market","take",take));CHECK(!buyer.adminTools("market")["ok"].asBool());CHECK_EQ(wallet(h,"buyer").stars,balance);
+    CHECK_EQ(db.storedTable("petalMarket")[id.asString()]["quantity"].asInt(),3);CHECK(request(h,buyer,"market","browse"));CHECK_EQ(buyer.adminTools("market")["total"].asInt(),0);
+    wallet(h,"seller").setItemCount(Rarity::Common,"petal_basic",kMaxStackCount-3);h.step(90,{&seller,&buyer});
+    CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),kMaxStackCount);CHECK_EQ(db.storedTable("petalMarket").size(),std::size_t(0));
+}
+TEST(market_orders_default_to_the_best_payout_relative_to_rarity) {
+    Harness h("market-best-offer",[](const std::string& path){seedWallet(path,"buyer",100000);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient buyer;CHECK(loginAs(h,buyer,"buyer","password7"));CHECK(request(h,buyer,"market","post",posting("basic",0,1,1000,true)));CHECK(request(h,buyer,"market","post",posting("basic",2,1,10000,true)));
+    CHECK_EQ(buyer.adminTools("market")["rows"][0]["rarity"].asInt(),0);
+    Json q=Json::object();q["orders"]=true;q["sort"]=0;CHECK(request(h,buyer,"market","browse",q));CHECK_EQ(buyer.adminTools("market")["rows"][0]["rarity"].asInt(),2);
+    CHECK_EQ(ClientSettings{}.marketOrderSort,1);
+}
+TEST(market_confirmation_displays_exact_costs_and_waits_for_explicit_confirmation) {
+    CHECK(fontsReady());Canvas canvas=Canvas::createVirtual(900,680);SpriteCache sprites;WorldRenderer renderer;Window window;NetClient client;ClientSettings settings;DragState drag;
+    MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};
+    const std::vector<std::string> lines{"Blueberries / Rare x3","Price each: 1,000,000,000 stars","Total cost: 3,000,000,000 stars"};
+    CHECK_EQ(renderMarketConfirmation(ctx,{60,160,780,430},"Confirm purchase",lines),MarketConfirmResult::Pending);
+    canvas.savePPM("/tmp/flowrix-market-confirmation.ppm");
+}
+
+TEST(market_remote_requests_cannot_bypass_mr_bee_proximity) {
+    Harness h("market-proximity",[](const std::string& path){seedWallet(path,"seller",200);seedStack(path,"seller","petal_basic",Rarity::Common,3);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient client;CHECK(loginAs(h,client,"seller","password7"));Json q=posting("basic",0,1,1);q["kind"]="market";q["action"]="post";
+    client.requestAdminTools(q);CHECK(h.stepUntil({&client},[&]{return !client.adminTools("market").isNull();}));CHECK(!client.adminTools("market")["ok"].asBool());CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),3);
+    CHECK(request(h,client,"market","browse"));CHECK(client.adminTools("market")["ok"].asBool());
+    auto* s=GameServerPeer::sessionOf(h.server,"seller");CHECK(s);if(!s)return;h.server.world().get<Transform>(s->entity).position={100000,100000};
+    const double revision=client.adminTools("market")["revision"].asDouble();client.requestAdminTools(q);CHECK(h.stepUntil({&client},[&]{return client.adminTools("market")["revision"].asDouble()>revision;}));CHECK(!client.adminTools("market")["ok"].asBool());CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),3);
+}
+
+TEST(market_expiry_returns_petals_even_when_every_player_is_offline) {
+    Harness h("market-idle-expiry",[](const std::string& path){seedWallet(path,"seller",100);seedStack(path,"seller","petal_basic",Rarity::Common,4);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    auto& db=const_cast<Database&>(h.server.database());marketWallMillis=db.nowMillis();db.setClock(&marketClock);
+    NetClient seller;CHECK(loginAs(h,seller,"seller","password7"));CHECK(request(h,seller,"market","post",posting("basic",0,4,1)));
+    seller.disconnect();h.step(5,{});marketWallMillis+=std::int64_t(kMarketListingLifetimeMillis);h.step(90,{});
+    CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_basic"),4);CHECK_EQ(db.storedTable("petalMarket").size(),std::size_t(0));
 }

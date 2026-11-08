@@ -542,6 +542,7 @@ double ShopPanel::preferredWidth() { return kWindowWidth; }
 double ShopPanel::preferredHeight() { return kWindowHeight; }
 
 void ShopPanel::reset() {
+    marketMode_=false;tab_=Tab::Offers;
     refreshMarketUi();
     // Whatever was typed into the code field is kept for the panel's whole
     // lifetime; closing it drops only the focus and any open dialog.
@@ -629,7 +630,7 @@ bool ShopPanel::render(MenuContext& ctx) {
     // --- window -------------------------------------------------------------
     drawFlorrPanel(canvas, panel, kWindowFill, kWindowRim);
 
-    text(canvas, "Shop", panel.x + panel.w * 0.5, panel.y + kTitleMiddle, shopText(kTitleSize));
+    text(canvas, marketMode_?"Mr. Bee's Market":"Shop", panel.x + panel.w * 0.5, panel.y + kTitleMiddle, shopText(kTitleSize));
 
     const Rect closeRect{panel.right() - kCloseFromRight, panel.y + kCloseTop, kCloseSide,
                          kCloseSide};
@@ -642,10 +643,12 @@ bool ShopPanel::render(MenuContext& ctx) {
     canvas.fillRect(static_cast<float>(panel.x), static_cast<float>(panel.y + kStripTop),
                     static_cast<float>(panel.w), static_cast<float>(kStripHeight));
     static constexpr std::array<const char*, 5> kTabLabels{"Shop", "Challenge", "Bonus", "Market", "Orders"};
-    const double tabsWidth = 5.0 * kTabWidth + 4.0 * kTabGap;
+    const int tabCount=marketMode_?2:3;
+    const double tabsWidth = tabCount * kTabWidth + (tabCount-1) * kTabGap;
     std::array<Rect, 5> tabRects{};
-    for (int i = 0; i < 5; ++i) {
-        const Rect rect{panel.x + (panel.w - tabsWidth) * 0.5 + i * (kTabWidth + kTabGap),
+    for (int j = 0; j < tabCount; ++j) {
+        const int i=marketMode_?j+3:j;
+        const Rect rect{panel.x + (panel.w - tabsWidth) * 0.5 + j * (kTabWidth + kTabGap),
                         panel.y + kStripTop + 10.0, kTabWidth, kTabHeight};
         tabRects[static_cast<std::size_t>(i)] = rect;
         const bool active = static_cast<int>(tab_) == i;
@@ -990,7 +993,8 @@ bool ShopPanel::render(MenuContext& ctx) {
 
     if (clicked(closeRect)) return false;
 
-    for (int i = 0; i < 5; ++i) {
+    for (int j = 0; j < tabCount; ++j) {
+        const int i=marketMode_?j+3:j;
         if (!clicked(tabRects[static_cast<std::size_t>(i)])) continue;
         // Leaving the code field behind clears its focus, or the shop would go
         // on eating keystrokes from a tab with no field on it.
