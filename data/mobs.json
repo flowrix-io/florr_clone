@@ -1,4 +1,35 @@
 {
+    "mr_bee": {
+        "name": "Mr. Bee",
+        "min_rarity": "apex",
+        "damage": 0,
+        "health": 35,
+        "size": 0.075,
+        "visual_scale": 0.8,
+        "speed": 0.06,
+        "cooldown": 2000,
+        "xp": {
+            "common": 0,
+            "uncommon": 0,
+            "rare": 0,
+            "epic": 0,
+            "legendary": 0,
+            "mythic": 0,
+            "ultra": 0,
+            "super": 0,
+            "unique": 0
+        },
+        "description": "Garden market host. Open Craft nearby to browse the market. Occasionally shares public Ultra Bee loot.",
+        "color": "#FFCA50",
+        "image": "$mr_bee",
+        "ai_type": "passive",
+        "bee_ai": "always",
+        "range": 100,
+        "npc": {
+            "service": "market"
+        },
+        "noEggDrop": true
+    },
     "bee": {
         "name": "Bee",
         "damage": 50,

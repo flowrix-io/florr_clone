@@ -272,6 +272,8 @@ struct ClientSettings {
     /// Shows the grey bug button in the top strip, which is the only way into
     /// the debug panel. Off by default, exactly as `debugMenuEnabled` was.
     bool showDebugButton = false;
+    int marketListingSort=1,marketOrderSort=1;
+    std::string marketRarityFilter;
     /// Asks the leaderboard to rank admin accounts too, which the server
     /// otherwise leaves off. Off by default; the TypeScript client kept the
     /// same flag in `localStorage.showAdminsOnLeaderboard`.
@@ -1286,6 +1288,7 @@ class ShopPanel {
 public:
     bool render(MenuContext&);
     void reset();
+    void openMarket(bool orders=false){marketMode_=true;tab_=orders?Tab::Orders:Tab::Market;}
     static double preferredWidth();
     /// Fixed: the title row, the tab strip, the header and two rows of offer
     /// cards come to this, and the other two tabs are laid out inside it.
@@ -1300,8 +1303,9 @@ public:
     }
 
 private:
-    enum class Tab : std::uint8_t { Offers, Challenges, Bonus };
+    enum class Tab : std::uint8_t { Offers, Challenges, Bonus, Market, Orders };
     Tab tab_ = Tab::Offers;
+    bool marketMode_ = false;
     double open_ = 1.0;
     bool closing_ = false;
 };

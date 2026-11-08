@@ -67,6 +67,14 @@ constexpr double kDeathWashAlpha = 0.54;
 const double kDeathCardEaseSeconds = easeTimeConstant(0.2);
 const double kLowHealthVignetteEaseSeconds = easeTimeConstant(0.1);
 
+/// The on-screen keyboard's lift (see the base transform in frame()): the air
+/// left between the focused field and the top of the keyboard, and how fast the
+/// frame slides to get there. A third of the way per 60 fps frame is about the
+/// pace of the keyboard's own slide, so the field rides up with it rather than
+/// jumping ahead of it or trailing behind.
+constexpr double kKeyboardLiftMargin = 16.0;
+const double kKeyboardLiftEaseSeconds = easeTimeConstant(0.3);
+
 /// JavaScript's `toFixed(2)`, for the stats overlay's frame time.
 std::string twoDecimals(double value) {
     char buffer[32];
@@ -615,26 +623,69 @@ void App::frame(double dt) {
     canvas.resetTransform();
     const float uiScale = static_cast<float>(window_.uiScale());
     canvas.scale(uiScale, uiScale);
+    // Then the on-screen keyboard's lift. A phone or tablet lays its keyboard
+    // OVER the page rather than resizing it, so a field near the bottom -- the
+    // chat line always, and on an iPad in landscape most of the sign-in form
+    // -- is typed into blind under it. A native field scrolls itself into view
+    // for that; this whole frame is one painted surface, so the frame slides up
+    // instead, by just enough to put last frame's focused field above the
+    // keyboard. The window reports pointer and touch positions in the slid
+    // frame's coordinates (Window::setViewLift), so nothing that hit-tests
+    // needs to know. What slides off the top is the part of the screen the
+    // player is not looking at while typing, and what is uncovered at the
+    // bottom is under the keyboard. Rounded to whole device pixels, so the
+    // baked text and the tile chunks are still laid one pixel to one pixel.
+    {
+        double target = 0.0;
+        Rect focused;
+        const double overlap = window_.softKeyboardOverlap();
+        if (overlap > 0 && ui::TextFieldRegions::instance().lastFocused(focused)) {
+            target = ui::keyboardLift(focused, window_.height(), overlap, kKeyboardLiftMargin);
+        }
+        if (config_.screenshotAfterFrames > 0) keyboardLift_ = target;
+        else easeToward(keyboardLift_, target, kKeyboardLiftEaseSeconds);
+        if (keyboardLift_ < 0.5 && target == 0.0) keyboardLift_ = 0.0;
+        const double lift = uiScale > 0 ? std::round(keyboardLift_ * uiScale) / uiScale : 0.0;
+        window_.setViewLift(lift);
+        if (lift > 0) {
+            // The band the slide uncovers at the bottom is drawn by nobody --
+            // every screen paints the frame's own height, which now ends
+            // above it -- and the canvas keeps its pixels from frame to
+            // frame, so without this it shows a smear of whatever was last
+            // there through the keyboard's translucent edge.
+            const float w = static_cast<float>(window_.width());
+            const float h = static_cast<float>(window_.height());
+            canvas.clearRect(0.0f, h - static_cast<float>(lift), w, static_cast<float>(lift) + 1.0f);
+            canvas.translate(0.0f, static_cast<float>(-lift));
+        }
+    }
     camera_.setViewport(window_.width(), window_.height());
     // Laid out every frame and before any screen runs: a phone that turns on
     // its side changes the viewport between one frame and the next, and the
     // claim handler is asked about a contact using whatever the last frame
     // placed.
+    // Sized in the screen's own points, not as a share of it: see kTouchScale.
     mobile_.layout(window_.width(), window_.height(),
                    inGameLoadoutBarHeight(menus_.settings().classicLoadoutBar,
-                                          window_.width()));
+                                          window_.width()),
+                   window_.unitsPerPoint());
     // This frame's contacts, before any screen reads them. Here rather than in
     // updatePlaying because the frames the controls are NOT up for are the
     // ones that matter: dying, or a panel opening over a deflected stick, has
     // to drop what it was holding, and neither of those runs updatePlaying at
     // all -- a button left held would still be firing on the next game.
-    if (touchControlsVisible()) mobile_.update(window_.touchEvents());
-    else mobile_.reset();
+    if (touchControlsVisible()) {
+        mobile_.update(window_.touchEvents());
+        mobile_.releaseLost(window_.touches());
+    } else {
+        mobile_.reset();
+    }
     mobile_.setAdminCursor(adminCursorEquipped());
     if (touchControlsVisible() && adminCursorEquipped() && !chatOpen_ && (menus_.open() == MenuId::None)) {
         adminTouch_.update(window_.touchEvents(), [this](Vec2 at) {
             return !mobile_.hits(at.x, at.y) && !menus_.capturesMouse(at) && !tutorial_.capturesMouse(at);
         });
+        adminTouch_.releaseLost(window_.touches());
     } else adminTouch_.reset();
 
     // Before any screen sees this frame's click. The browser's tutorial box is

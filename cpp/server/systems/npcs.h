@@ -92,6 +92,9 @@ public:
     void loadSites(const WorldMaps& maps, const ContentRegistry& content,
                    std::vector<std::string>& warnings);
 
+    /// Remove all NPCs (including admin extras), reload map sites and respawn.
+    std::size_t reset(World&, const Terrain&, const WorldMaps&, const ContentRegistry&, double);
+
     /// Seeds the stream the idle glances are rolled from.
     ///
     /// Their OWN stream, never the world's: a glance is decoration, and one
@@ -108,6 +111,8 @@ public:
 
     /// placeMissing(), then turns every NPC toward the nearest flower in
     /// `players` (or lets it glance about).
+    std::vector<RealmPoint> marketGiftSites(World&, double nowMillis);
+
     void run(World& world, const Terrain& terrain, const ContentRegistry& content,
              const std::vector<RealmPoint>& players, double nowMillis);
 

@@ -1905,6 +1905,16 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     const int rows = map->height();
     if (cols <= 0 || rows <= 0) return;
 
+    // Every authored realm (including prestige twins and dungeon copies)
+    // shares the same solid outer boundary. Draw it before either terrain
+    // early return, including when the camera is entirely outside the map.
+    const char* boundaryArt = "castle_c_0.svg";
+    for (const auto& theme : kAdminArenaThemes) {
+        if (map->templateId() == theme.name) { boundaryArt = theme.wall; break; }
+    }
+    drawBoundaryBlocks(canvas, camera, sprites_ ? sprites_->tileArt(boundaryArt) : nullptr,
+                       cols, rows);
+
     // The cells whose artwork can reach the screen, and NOT ONE MORE. A cell
     // is drawn over exactly its own square grown by kTileOverlap, so that
     // overlap is the whole margin this wants. A kTileSize margin -- the
@@ -4744,6 +4754,13 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         canvas.restore();
     };
 
+    // Market hosts remain easy to find even in a crowded spawn. Keep their
+    // bodies and plates above world combat, with chat and menus still above.
+    std::vector<const RemoteEntity*> foregroundNpcs;
+    const auto foregroundNpc = [this](const RemoteEntity& entity) {
+        return entity.kind==net::EntityKind::Npc && content_ &&
+               content_->mob(entity.typeIndex).npc.service==NpcService::Market;
+    };
     mobLabels_.clear();
     for (const net::EntityKind kind : kOrder) {
         // A drop's glitter opens the drop layer, so it lies UNDER every drop,
@@ -4779,6 +4796,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         for (const auto& entry : entities) {
             const RemoteEntity& entity = entry.second;
             if (layerOf(entity) != kind) continue;
+            if (foregroundNpc(entity)) { foregroundNpcs.push_back(&entity); continue; }
             if (mobs && sacrificed(entity)) continue;
             // A ring seed's typeIndex is a PETAL index, so it must be ruled
             // out before isHole reads it as a mob's.
@@ -4876,6 +4894,12 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
 
     drawEffects(canvas, camera);
     chargeOps(ops_.effects);
+    const auto foregroundLabelStart=mobLabels_.size();
+    for (const auto* npc:foregroundNpcs) drawLive(*npc);
+    chargeOps(ops_.mobs);
+    for (std::size_t i=foregroundLabelStart;i<mobLabels_.size();++i)
+        drawMobLabel(canvas,camera,mobLabels_[i]);
+    chargeOps(ops_.labels);
     if (lightClipped) canvas.restore();
     // Last of all, over every body and every effect: what somebody is saying
     // is the one thing on screen that must never be hidden behind the fight --

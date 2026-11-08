@@ -242,6 +242,7 @@ MobArt mobArtFor(const std::string& image) {
         {"ladybug_dark", MobArt::LadybugDark},
         {"ladybug_shiny", MobArt::LadybugShiny},
         {"bee", MobArt::Bee},
+        {"mr_bee", MobArt::MrBee},
         {"ant_baby", MobArt::AntBaby},
         {"ant_worker", MobArt::AntWorker},
         {"ant_soldier", MobArt::AntSoldier},
@@ -1232,14 +1233,25 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
+        case MobArt::MrBee:
         case MobArt::Bee: {
+            const bool host=art==MobArt::MrBee;
             // gardn's bee, drawn for its radius of 20.
             const std::uint32_t base = bodyColor(attr, 0xFFE763u);
             canvas.save();
             const double s = attr.radius / 20.0;
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
             roundStrokes(canvas, 5.0);
-
+            if(host){
+                // A showman's cyan/pink wings, gently beating behind the jacket.
+                const double flutter=std::sin(attr.clockMs*.012)*.13;
+                for(const double side:{-1.0,1.0}){
+                    canvas.save();canvas.rotate(static_cast<float>(side*(.25+flutter)));
+                    ui::setFill(canvas,0xBFF7FFu);ui::setStroke(canvas,side<0?0x20BEF4u:0xEF4FA6u);canvas.setLineWidth(2.5f);
+                    canvas.beginPath();canvas.ellipse(-9,static_cast<float>(side*20),22,12,static_cast<float>(side*.35),0,static_cast<float>(kTau));canvas.fill();canvas.stroke();
+                    canvas.beginPath();canvas.moveTo(-23,static_cast<float>(side*21));canvas.lineTo(5,static_cast<float>(side*22));canvas.stroke();canvas.restore();
+                }
+            }
             ui::setFill(canvas, 0x333333u);
             ui::setStroke(canvas, 0x292929u);
             canvas.beginPath();
@@ -1259,6 +1271,17 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.fillRect(-30.0f, -20.0f, 10.0f, 40.0f);
             canvas.fillRect(-10.0f, -20.0f, 10.0f, 40.0f);
             canvas.fillRect(10.0f, -20.0f, 10.0f, 40.0f);
+            if(host){
+                // Tailored blue hoodie, pink lightning, and a gold prize medal.
+                ui::setFill(canvas,0x15324Du);canvas.fillRect(-31,-21,42,42);
+                ui::setFill(canvas,0x1EBEF4u);canvas.fillRect(-29,-20,13,40);
+                ui::setStroke(canvas,0x7EE6FFu);canvas.setLineWidth(1.5f);canvas.beginPath();canvas.moveTo(-14,-18);canvas.lineTo(-14,18);canvas.stroke();
+                ui::setFill(canvas,0xF34FA5u);canvas.beginPath();canvas.moveTo(-8,-15);canvas.lineTo(1,-15);canvas.lineTo(-5,-2);canvas.lineTo(2,-2);canvas.lineTo(-10,15);canvas.lineTo(-6,2);canvas.lineTo(-13,2);canvas.closePath();canvas.fill();
+                ui::setStroke(canvas,0xFFC84Bu);canvas.setLineWidth(2);canvas.beginPath();canvas.moveTo(7,-18);canvas.quadraticCurveTo(-1,0,7,18);canvas.stroke();
+                ui::setFill(canvas,0xFFE68Au);ui::setStroke(canvas,0xB67A25u);canvas.setLineWidth(1);canvas.beginPath();
+                for(int i=0;i<10;++i){const double angle=-kPi/2+i*kPi/5,r=i%2?3:6;const float x=static_cast<float>(3+std::cos(angle)*r),y=static_cast<float>(std::sin(angle)*r);if(i==0)canvas.moveTo(x,y);else canvas.lineTo(x,y);}
+                canvas.closePath();canvas.fill();canvas.stroke();
+            }
             canvas.restore();
 
             ui::setStroke(canvas, outlineOf(base));
@@ -1266,6 +1289,15 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.ellipse(0.0f, 0.0f, 30.0f, 20.0f, 0.0f, 0.0f, static_cast<float>(kTau));
             canvas.stroke();
 
+            if(host){
+                // Dark shades, a little beard, and contrasting ear cups.
+                ui::setFill(canvas,0x172334u);canvas.beginPath();canvas.ellipse(25,0,6,11,0,0,static_cast<float>(kTau));canvas.fill();
+                ui::setStroke(canvas,0xFFFFFFu);canvas.setLineWidth(1.5f);canvas.beginPath();canvas.moveTo(27,-5);canvas.quadraticCurveTo(31,0,27,5);canvas.stroke();
+                ui::setStroke(canvas,0x172334u);canvas.setLineWidth(2);canvas.beginPath();canvas.moveTo(17,-13);canvas.lineTo(17,13);canvas.stroke();
+                ui::setFill(canvas,0x172334u);canvas.fillRect(12,-14,10,10);canvas.fillRect(12,4,10,10);
+                ui::setStroke(canvas,0x9EEFFFu);canvas.setLineWidth(1);canvas.beginPath();canvas.moveTo(14,-12);canvas.lineTo(18,-8);canvas.moveTo(14,6);canvas.lineTo(18,10);canvas.stroke();
+                for(const float side:{-1.f,1.f}){ui::setFill(canvas,side<0?0x20BEF4u:0xF34FA5u);ui::setStroke(canvas,0x172334u);canvas.setLineWidth(1.5f);canvas.beginPath();canvas.ellipse(12,side*19,5,4,0,0,static_cast<float>(kTau));canvas.fill();canvas.stroke();}
+            }
             ui::setStroke(canvas, 0x333333u);
             ui::setFill(canvas, 0x333333u);
             canvas.setLineWidth(3.0f);

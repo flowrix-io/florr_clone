@@ -181,7 +181,7 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
     CHECK(!content().mobStats(oracle, Rarity::Common).ambient);
     // The target dummy is another NPC: on the hostiles' side, so a flower
     // can hit it, and offering nothing but that. The trader is the third, the
-    // titan the fourth, assembler the fifth and casino the sixth.
+    // titan, assembler, Hel and Mr. Bee complete the NPC roster.
     // Nothing else in the shipped content is an NPC by accident.
     const std::uint16_t dummy = content().mobIndex("target_dummy");
     CHECK(dummy != kInvalidIndex);
@@ -194,8 +194,9 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
     const std::uint16_t titan = content().mobIndex("titan");
     const std::uint16_t assembler = content().mobIndex("assembler");
     const std::uint16_t casino = content().mobIndex("hel_casino");
+    const std::uint16_t market = content().mobIndex("mr_bee");
     for (std::uint16_t i = 0; i < content().mobCount(); ++i) {
-        if (i == oracle || i == dummy || i == trader || i == titan || i == assembler || i == casino) continue;
+        if (i == oracle || i == dummy || i == trader || i == titan || i == assembler || i == casino || i == market) continue;
         CHECK(!content().mob(i).npc.present);
     }
 }

@@ -38,7 +38,21 @@ namespace flix::ui {
 /// 1920 units across whatever the window's real width is -- so a control that
 /// should cover a phone's thumb has to be this much larger here than the
 /// number the reference writes for the same control.
+///
+/// It is the CEILING of the conversion now, and the default for a caller that
+/// does not know the real one (the tests' phone). The real one is the
+/// window's own (Window::unitsPerPoint), and on anything bigger than a phone
+/// it is smaller: an iPad in landscape is 1024 points across, so a point is
+/// about 1.4 units there, and the iPad Pro 12.9" is barely over 1. Laid out at
+/// the phone's 2.4 regardless, the controls came out at the same FRACTION of
+/// a tablet's screen as of a phone's -- a stick nearly five centimetres
+/// across on the big iPad, buttons the size of a palm, and a fifth of the
+/// world under the player's hands. The reference sized them in CSS pixels on
+/// every device, which is what a thumb is measured in.
 inline constexpr double kTouchScale = 2.4;
+/// The floor of the same conversion: a window wider than the design space --
+/// a touch monitor on a desk -- still gets them at no less than design size.
+inline constexpr double kMinTouchScale = 1.0;
 
 // A world finger stays independent of joystick/button fingers on iPad.
 class TouchCursor {
@@ -54,6 +68,15 @@ public:
         }
     }
     void reset() { held_ = false; pointed_ = false; }
+    /// As MobileControls::releaseLost: a finger the window dropped without an
+    /// end (the page lost focus under it) is not still dragging.
+    void releaseLost(const std::vector<TouchPoint>& live) {
+        if (!held_) return;
+        for (const TouchPoint& point : live) {
+            if (point.id == id_) return;
+        }
+        held_ = false;
+    }
     bool held() const { return held_; }
     bool hasPointer() const { return pointed_; }
     Vec2 position() const { return position_; }
@@ -70,7 +93,13 @@ public:
     /// `loadoutBarHeight` is what the loadout bar occupies from the bottom
     /// edge: the bar is centred and reaches nearly to the edge on its own, so
     /// everything here hangs ABOVE it rather than below.
-    void layout(int viewWidth, int viewHeight, double loadoutBarHeight);
+    ///
+    /// `unitsPerPoint` is the window's design units per CSS pixel
+    /// (Window::unitsPerPoint), which is what turns the reference's
+    /// measurements -- CSS pixels -- into design units for THIS screen. It is
+    /// held between kMinTouchScale and kTouchScale; the default is a phone's.
+    void layout(int viewWidth, int viewHeight, double loadoutBarHeight,
+                double unitsPerPoint = kTouchScale);
 
     /// Whether a finger landing here belongs to these controls.
     ///
@@ -82,6 +111,18 @@ public:
     /// One frame of the touch stream. Contacts that landed on a control are
     /// bound to it here and followed until they lift.
     void update(const std::vector<TouchEvent>& events);
+
+    /// Lets go of every control whose finger is no longer down, given the
+    /// window's live set (Window::touches) after the same frame's update().
+    ///
+    /// The event stream is not enough on its own. When the page loses focus
+    /// with fingers down -- a notification pulled over the game, a swipe to
+    /// another app that the browser does not answer with a touchcancel --
+    /// the window drops those contacts from its live set without an end
+    /// event, because the lift happens somewhere the page cannot see. A
+    /// control listening only for ends kept holding: the player came back to
+    /// a flower still walking in the direction the stick was last pushed.
+    void releaseLost(const std::vector<TouchPoint>& live);
 
     /// Drops every contact -- what a screen change, a panel opening over the
     /// controls or the setting being switched off has to do, or a stick that
@@ -130,9 +171,9 @@ private:
     /// corner of the first frame it is asked about.
     bool placed_ = false;
     bool adminCursor_ = false;
-    /// Everything shrinks by this together, and it is 1 on any viewport wide
-    /// enough to lay the controls out side by side -- which is every landscape
-    /// one. See layout().
+    /// Everything shrinks by this together: the screen's own points against a
+    /// phone's, times the shrink a viewport too narrow to lay the controls out
+    /// side by side needs (1 on every landscape one). See layout().
     double scale_ = 1.0;
     /// Where the finger holding the stick is, relative to the stick's centre,
     /// clamped to the base. The knob is drawn at it and the direction is read

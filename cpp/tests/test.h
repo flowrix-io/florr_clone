@@ -37,6 +37,7 @@ inline std::string& currentCase() {
 inline void reportFailure(const char* file, int line, const std::string& what) {
     ++failures();
     std::printf("  FAIL %s\n    %s:%d: %s\n", currentCase().c_str(), file, line, what.c_str());
+    std::fflush(stdout);
 }
 
 struct Registrar {

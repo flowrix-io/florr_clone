@@ -813,7 +813,8 @@ bool InventoryPanel::render(MenuContext& ctx) {
     // The field's pointer handling runs unless Close or Stack is taking this
     // press: neither of those disturbs the caret in the browser, and blurring
     // on them would lose a half-typed filter to a stray click on the toggle.
-    if (!(ctx.pressed() && (closeRect.contains(mouse) || toggleHit.contains(mouse)))) {
+    const Rect closeHit = closeButtonHit(panel, ctx.window);
+    if (!(ctx.pressed() && (closeHit.contains(mouse) || toggleHit.contains(mouse)))) {
         trackTextMouse(ctx.window, searchField_, searchRect,
                        inputFieldRun(searchRect, search_, searchField_), search_,
                        ctx.timeSeconds);
@@ -837,7 +838,7 @@ bool InventoryPanel::render(MenuContext& ctx) {
         // does. Both also swallow the press rather than letting it reach the
         // field or a cell, and neither disturbs the search focus -- the
         // browser's preventDefault leaves the input focused where it was.
-        if (closeRect.contains(mouse)) return false;
+        if (closeHit.contains(mouse)) return false;
         if (toggleHit.contains(mouse)) {
             // Scroll survives the flip: it is re-clamped against the new
             // content height on the next frame, which is all the browser does.

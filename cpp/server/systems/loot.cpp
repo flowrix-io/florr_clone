@@ -366,6 +366,21 @@ LootSystem::OrbForm orbFormFor(const LootSystem::WornOrbs& worn, std::uint16_t p
 // Drops
 // ---------------------------------------------------------------------------
 
+void LootSystem::spawnPublicMobLoot(World& world,const ContentRegistry& content,Rng& rng,
+                                    std::uint16_t mob,Rarity tier,Vec2 at,Realm realm) {
+    selected_.clear();rollTable(tables_.guaranteedForMob(mob),tier,rng);
+    const auto featured=pickFeatured(rng);
+    for(std::size_t row=0;row<selected_.size();++row){
+        const auto& entry=*selected_[row];
+        const Rarity rarity=row==featured?rollDropRarity(clampRarity(entry.rarityOffset),tier,rng):chaffDropRarity(tier);
+        const auto index=entry.kind==DropTables::Kind::RandomPetal?tables_.randomPetal(rng,rarity):entry.petalIndex;
+        if(index==kNoPetal||index>=content.petalCount()||rarityIndex(rarity)<rarityIndex(content.petal(index).minRarity))continue;
+        const Vec2 scatter=Vec2::fromAngle(rng.angle())*(20+rng.unit()*45);
+        const Entity e=spawnDrop(world,index,rarity,at+scatter,realm,{});
+        if(e!=NULL_ENTITY){auto& item=world.get<DropItem>(e);item.singleCopy=true;item.humansOnly=true;}
+    }
+}
+
 Entity LootSystem::spawnDrop(World& world, std::uint16_t petalIndex, Rarity rarity, Vec2 position,
                              Realm realm, const std::vector<Entity>& eligible) {
     if (petalIndex == kNoPetal) return NULL_ENTITY;

@@ -1065,6 +1065,39 @@ TEST(outside_the_map_repeats_solid_blocks) {
     CHECK(pixels[last] + pixels[last + 1] + pixels[last + 2] > 0);
 }
 
+TEST(outside_every_biome_and_instance_has_blocks_on_every_side) {
+    WorldMaps maps;
+    Terrain terrain;
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    CHECK(maps.load(testsupport::dataDir(), &terrain, error));
+    SpriteCache sprites;
+    sprites.build(content(), testsupport::dataDir());
+    WorldRenderer renderer;
+    renderer.setSprites(&sprites);
+    renderer.setWorldMaps(&maps);
+    for (std::size_t i = 0; i < maps.maps().size(); ++i) {
+        const auto& map = maps.maps()[i];
+        const double width = map.width() * kTileSize, height = map.height() * kTileSize;
+        WorldView view;
+        view.setRealm(worldRealm(static_cast<int>(i)));
+        // Completely outside: catches returns before the in-bounds tile loop,
+        // on all four strips and at opposite corners.
+        for (const Vec2 center : {Vec2{-512, height/2}, Vec2{width+512, height/2},
+                                 Vec2{width/2, -512}, Vec2{width/2, height+512},
+                                 Vec2{-512, -512}, Vec2{width+512, height+512}}) {
+            Canvas canvas = Canvas::createVirtual(32, 32);
+            renderer.draw(canvas, view, testsupport::frameCamera(32, center), center, 0);
+            const auto pixels = canvas.getImageData(0, 0, 32, 32);
+            CHECK_EQ(pixels.size(), 32u * 32u * 4u);
+            for (std::size_t p = 0; p + 3 < pixels.size(); p += 4) {
+                CHECK(pixels[p] + pixels[p+1] + pixels[p+2] > 0);
+                CHECK_EQ(pixels[p+3], std::uint8_t(255));
+            }
+        }
+    }
+}
+
 TEST(outside_the_admin_arena_repeats_walls_and_its_floor_stops_at_the_edge) {
     Terrain terrain;
     CHECK(terrain.setTiles(std::vector<std::uint8_t>(16 * 16, static_cast<std::uint8_t>(Tile::Open)),

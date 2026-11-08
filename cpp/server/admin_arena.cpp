@@ -269,6 +269,7 @@ void GameServer::applyHostedTeam(Session& s) {
 }
 void GameServer::endHostedKit(Session& s) {
     for(Entity e:bodiesOf(s))if(auto* side=world_.tryGet<Faction>(e))side->hostedTeam=0;
+    s.eventRestricted.reset();
     if(!s.eventKit)return;
     clearHostedGear(s);
     s.eventKit.reset();
@@ -277,6 +278,7 @@ void GameServer::endHostedKit(Session& s) {
     applyAccountToSession(s);
 }
 void GameServer::applyHostedKit(Session& s) {
+    const double stars = s.eventKit ? s.eventKit->stars : database_.progress(s.userId).stars;
     if (!s.eventKit) clearHostedGear(s);
     endHostedKit(s);
     auto kit = std::make_unique<PlayerRecord>(database_.progress(s.userId));
@@ -284,7 +286,7 @@ void GameServer::applyHostedKit(Session& s) {
         const auto stored = parsePlayerRecord(hostedArenaKit_);
         kit->inventory = stored.inventory; kit->loadout = stored.loadout;
     }
-    kit->stars = 0;
+    kit->stars = stars;
     s.eventKit = std::move(kit);
     enforceHostedRules(s);
     if(auto* progress=world_.tryGet<PlayerProgress>(s.entity)){
@@ -293,12 +295,16 @@ void GameServer::applyHostedKit(Session& s) {
     applyHostedTeam(s);
 }
 void GameServer::rebuildHostedRules() {
+    // Replies must round-trip through the rules editor, including old saves.
+    for (const char* key : {"bannedPetals", "bannedRarities", "petalBans"})
+        if (!hostedArenaRules_[key].isArray()) hostedArenaRules_[key]=Json::array();
     hostedArenaAllowed_.assign(content().petalCount(),0);
     const int maximum=std::clamp(hostedArenaRules_["maxRarity"].asInt(kRarityCount-1),0,kRarityCount-1);
     for (std::size_t i=0;i<content().petalCount();++i) {
         const auto& petal=content().petal(i);
         const bool healing=petal.burstHeal>0 || petal.passiveHeal>0 || petal.killHeal>0 || petal.lifesteal>0 || petalBoostsHealing(petal) || petal.id=="yggdrasil";
-        const bool summon=petal.id.size()>=4 && petal.id.compare(petal.id.size()-4,4,"_egg")==0;
+        const bool summon=petal.hatchesPets() || petal.projectile.summonMobIndex!=kInvalidIndex ||
+                          petal.id==kSacrificePetalId;
         bool banned=(hostedArenaRules_["noHealing"].asBool()&&healing) ||
                     (hostedArenaRules_["noProjectiles"].asBool()&&petal.projectile.present) ||
                     (hostedArenaRules_["noSummons"].asBool()&&summon) ||
@@ -317,21 +323,53 @@ void GameServer::rebuildHostedRules() {
 void GameServer::enforceHostedRules(Session& s) {
     if (!s.eventKit) return;
     auto& kit=*s.eventKit;
+    if (!s.eventRestricted) s.eventRestricted = std::make_unique<PlayerRecord>();
+    auto& hidden = *s.eventRestricted;
+    hidden.loadout.resize(kit.loadout.size());
     const auto allowed=[&](const std::string& id,int rarity) {
         const auto index=content().petalIndex(id);
         return index<hostedArenaAllowed_.size() && rarity>=0 && rarity<kRarityCount &&
                (hostedArenaAllowed_[index] & (1u<<rarity));
     };
     const int slots=std::clamp(hostedArenaRules_["activeSlots"].asInt(kLoadoutActiveSlots),1,int(kLoadoutActiveSlots));
-    for(std::size_t i=0;i<kit.loadout.size();++i) {
+    const auto slotAllowed = [&](std::size_t i, const StoredItem& item) {
+        return allowed(item.petalType, int(item.rarity)) &&
+               !(i < kLoadoutActiveSlots && i >= std::size_t(slots));
+    };
+    // Return only newly permitted gear. Other bans still apply, and unrelated
+    // inventory, loot, and player loadout changes survive rule edits.
+    for (int r=0;r<kRarityCount;++r) {
+        const std::string rarity=rarityName(Rarity(r));
+        const auto keys=hidden.inventory[rarity].keys();
+        for (const auto& key:keys) {
+            if (key.rfind("petal_",0)==0 && allowed(key.substr(6),r)) {
+                kit.addItem(Rarity(r),key,hidden.itemCount(Rarity(r),key));
+                hidden.inventory[rarity].erase(key);
+            }
+        }
+    }
+    for (std::size_t i=0;i<kit.loadout.size();++i) {
+        auto& saved=hidden.loadout[i];
+        if (saved && slotAllowed(i,*saved)) {
+            if (!kit.loadout[i]) kit.loadout[i]=saved;
+            else kit.addItem(saved->rarity,"petal_"+saved->petalType,1);
+            saved.reset();
+        }
         auto& slot=kit.loadout[i];
-        if(slot && (!allowed(slot->petalType,int(slot->rarity)) || (i<kLoadoutActiveSlots && i>=std::size_t(slots))))slot.reset();
+        if (slot && !slotAllowed(i,*slot)) {
+            if (saved) hidden.addItem(saved->rarity,"petal_"+saved->petalType,1);
+            saved=slot;
+            slot.reset();
+        }
     }
     for(int r=0;r<kRarityCount;++r) {
         const std::string rarity=rarityName(Rarity(r));
-        const auto keys=kit.inventory[rarity].keys(); // erase changes insertion-order storage
+        const auto keys=kit.inventory[rarity].keys();
         for(const auto& key:keys) {
-            if(key.rfind("petal_",0)==0 && !allowed(key.substr(6),r))kit.inventory[rarity].erase(key);
+            if(key.rfind("petal_",0)==0 && !allowed(key.substr(6),r)) {
+                hidden.addItem(Rarity(r),key,kit.itemCount(Rarity(r),key));
+                kit.inventory[rarity].erase(key);
+            }
         }
     }
 }

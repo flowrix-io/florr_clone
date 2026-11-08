@@ -686,6 +686,8 @@ public:
     void requestAdminTools(const Json&);
     double pollRemainingSeconds() const;
     bool pollVisible() const { return adminTools("poll")["active"].asBool() && !adminTools("poll")["voted"].asBool() && pollRemainingSeconds()>0; }
+    bool takeMarketRequest(){bool r=marketRequested_;marketRequested_=false;return r;}
+    bool marketOrdersRequested()const{return marketOrders_;}
     bool takePollCreatorRequest() { const bool result=pollCreatorRequested_;pollCreatorRequested_=false;return result; }
     const Json& adminTools(const std::string& kind) const { return adminTools_[kind]; }
     void publishSkin(const std::string& name, const std::vector<SkinShape>& shapes);
@@ -1169,6 +1171,7 @@ private:
     ChatBubbles chatBubbles_;
     DailyStreak dailyStreak_;
 
+    bool marketRequested_=false,marketOrders_=false;
     bool pollCreatorRequested_ = false;
     double pollDeadlineMillis_ = 0;
     Json adminTools_ = Json::object();

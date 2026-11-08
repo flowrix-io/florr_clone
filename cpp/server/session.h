@@ -184,7 +184,10 @@ struct Session {
     /// (src/server/playerManager.ts:99-158). Null outside the ring.
     std::unique_ptr<PlayerRecord> arena;
     std::uint32_t adminToolsRevision = 0;
+    bool marketAccess = false; // Granted near Mr. Bee; revoked on leave/respawn.
     std::unique_ptr<PlayerRecord> eventKit; // Never persisted or refunded.
+    // Temporarily hidden by event rules, restored when those rules permit it.
+    std::unique_ptr<PlayerRecord> eventRestricted;
 
     /// The flower's name, typed on the title screen and sent with JoinGame.
     /// Separate from `username`: the account is who you are, this is what the

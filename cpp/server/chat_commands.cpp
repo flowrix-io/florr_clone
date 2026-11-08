@@ -501,6 +501,9 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     const std::string argument = argumentOf(message);
     const auto out = [&](const std::string& text) { sendSystem(connection, text); };
 
+    if (verb == "/shop" || verb == "/order") {
+        out("Visit Mr. Bee near Garden spawn to open the marketplace and orders.");return true;
+    }
     if (verb == "/casino") {
         out("Gambling has been removed.");
         return true;
@@ -938,7 +941,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "notification &lt;type&gt; "
                     "&lt;message&gt;, clear_notifications, delete_guests, list_today_logins, "
                     "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
-                    "name&gt; &lt;username&gt;, restart [&lt;biome&gt; ...|&lt;N&gt;(s|m|h)|cancel|status|list], "
+                    "name&gt; &lt;username&gt;, fixnpc, restart [&lt;biome&gt; ...|&lt;N&gt;(s|m|h)|cancel|status|list], "
                     "backup_db [list], db [username] (open the database editor; full admins "
                     "only, tiers 1-2), update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
                     "DB first, then installs latest build + restarts; tier 1 only), change-maze "
@@ -3109,6 +3112,16 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     // A restart IS a process exit: pm2, systemd or docker is what brings the
     // server back. Players get the reference's warnings on the way down, which
     // is the whole reason it is scheduled rather than done.
+
+    if (verb == "fixnpc") {
+        if (lacks(AdminPower::SpawnMobs)) return;
+        if (!rest.empty()) { out("Usage: /admin fixnpc"); return; }
+        const auto removed = npcs_->reset(world_, *terrain_, worldMaps_, content(), clockMillis_);
+        out("NPCs reset: removed " + std::to_string(removed) +
+            "; respawned all configured map NPCs. Admin-spawned extras removed.");
+        audit("reset and respawned map NPCs");
+        return;
+    }
 
     if (verb == "restart") {
         const std::string arg = lowerCase(rest);

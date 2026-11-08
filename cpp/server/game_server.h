@@ -416,10 +416,18 @@ private:
         double endsAtMillis = 0;
         bool active = false;
     } poll_;
+    std::vector<Json> pollHistory_; // Completed summaries only; deliberately not persisted.
+    std::uint64_t pollHistoryRevision_ = 0;
+    Json pollSummary(const HostedPoll&) const;
     void sendPollState(Session&, net::Connection&, const std::string& message = {});
     void broadcastPollState(const std::string& voter = {});
     void runPollRequest(Session&, net::Connection&, const Json&);
     void expirePoll();
+    void runMarket(Session&,net::Connection&,const Json&);
+    void expireMarketListings();
+    void syncCommerceAccount(const std::string&);
+    std::vector<int> collectionRanks_;
+    double nextMarketGiftCheckMillis_=0,nextMarketExpiryCheckMillis_=0;
     void handleAdminTools(Session&, net::Connection&, ByteReader&);
     void sendAdminTools(Session&, net::Connection&, const std::string&, bool, const std::string&, const Json& = Json::object());
     void handlePublishSkin(Session&, net::Connection&, ByteReader&);

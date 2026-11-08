@@ -15,6 +15,7 @@
 // to draw a selection correctly: where a byte offset lands in x, and which
 // offset an x lands on.
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -211,14 +212,58 @@ class TextFieldRegions {
 public:
     static TextFieldRegions& instance();
 
-    /// Drops last frame's set. Called once, at the top of the frame.
-    void beginFrame() { boxes_.clear(); }
+    /// Drops last frame's set. Called once, at the top of the frame. The
+    /// focused field's box is kept for one more frame (lastFocused) because
+    /// the frame's lift is decided before anything in it is laid out.
+    void beginFrame() {
+        boxes_.clear();
+        lastFocused_ = focused_;
+        hadFocused_ = hasFocused_;
+        hasFocused_ = false;
+    }
     void record(Rect box) { boxes_.push_back(box); }
     const std::vector<Rect>& boxes() const { return boxes_; }
 
+    /// The field holding the caret, recorded by the same two paths as the
+    /// rest. What the frame slides up to keep clear of the on-screen keyboard
+    /// (see keyboardLift). Several in one frame -- a field blurring as the
+    /// next takes the caret -- keep the lowest, the one the keyboard reaches.
+    void recordFocused(Rect box) {
+        if (!hasFocused_ || box.bottom() > focused_.bottom()) focused_ = box;
+        hasFocused_ = true;
+    }
+    /// Last frame's focused field, or false when none held the caret.
+    bool lastFocused(Rect& out) const {
+        if (hadFocused_) out = lastFocused_;
+        return hadFocused_;
+    }
+
 private:
     std::vector<Rect> boxes_;
+    Rect focused_{};
+    Rect lastFocused_{};
+    bool hasFocused_ = false;
+    bool hadFocused_ = false;
 };
+
+/// How far to slide the frame up so a focused field ends `margin` design units
+/// above the on-screen keyboard -- the thing a native text field gets for
+/// free and a painted one does not.
+///
+/// `viewHeight` is the window's height and `overlap` the band the keyboard
+/// covers at its bottom (Window::softKeyboardOverlap), both in design units.
+/// Zero when the field already clears it; never more than the overlap, which
+/// would only open a gap between the field and the keyboard; and never so far
+/// that the field's own top leaves the screen -- a field taller than what the
+/// keyboard leaves shows its top, where the caret starts.
+inline double keyboardLift(Rect field, double viewHeight, double overlap, double margin) {
+    if (!(overlap > 0)) return 0.0;
+    const double visibleBottom = viewHeight - overlap;
+    double lift = field.bottom() + margin - visibleBottom;
+    lift = std::min(lift, overlap);
+    lift = std::min(lift, field.y);
+    return lift > 0 ? lift : 0.0;
+}
 
 /// Reads this frame from the window, applies it, and posts a copy or cut to
 /// the system clipboard. Returns true when `value` changed.

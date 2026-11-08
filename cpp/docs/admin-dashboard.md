@@ -560,8 +560,8 @@ changing a kit resets participants to that kit. Joining or respawning gives a fr
 copy. Host edits never remove petals from permanent inventories.
 
 Hosted participants always use temporary gear and rewards. Leaving restores their
-saved gear, XP and stars. Crafting, trades, forging, purchases, talents, saved-loadout
-presets and casino exchanges are unavailable during these events; star redemption
+saved gear, XP and stars. Crafting, trades, forging, purchases and casino
+exchanges are unavailable during these events; star redemption
 still credits the permanent wallet. New kit/preset data uses the existing inventory
 representation, including its loadout-in-inventory marker.
 
@@ -581,6 +581,27 @@ do not extend it; existing flood and repeat limits still apply.
 
 Gambling commands have been removed. Legacy chip fields remain readable so existing databases load without losing stored data. Hel remains an NPC.
 
+### Market branch
+
+The petal marketplace is included in `web`. Only visiting Mr. Bee opens its
+interface, with Market and Orders tabs; the normal Shop has neither. `/shop`
+and `/order` point players to the NPC. The server checks that a living player
+first visits a market NPC to open it. That server-held access stays valid while
+walking away, and is revoked on leaving the world or respawning. Common minimum price is 1 star,
+multiplied by 3 per rarity. Sellers receive 80%; cancellations return remaining
+escrow without tax. Listings reserve unequipped petals immediately, and orders
+reserve stars. Filters accept names/IDs, exact rarities, `Ultra+` and `Rare-`.
+Listings default to rarest per star; orders default to the highest payout relative
+to petal rarity. Saved sort/filter choices remain local. The open interface
+refreshes once per second and shows page and result counts. Posting, buying,
+filling and cancelling require a confirmation with exact costs.
+
+Listings expire after 48 hours on the server's persisted UTC clock. Unsold
+quantities return automatically, including offline accounts and server restarts;
+partial sales only return the remainder. Full stacks retain their expired escrow
+for retry and cannot be purchased. Funded orders remain until filled or cancelled.
+
+Apex Mr. Bee is a friendly NPC at Garden spawn. Use the Craft button/key nearby to open the market. He wanders within 260 world units of his home, appears as a gold minimap dot, and shares an Ultra Bee loot roll every 3–6 minutes. Each dropped item is public and has one human collector in total. Gambling and paid skins are absent. The same NPC and market are shipped on `web`.
 ### Petal bans, teams and personal loadouts
 
 In Admin → Events, use **Petal bans** to search display names, select one rarity or All rarities, and add/remove restrictions. Existing ID bans remain supported. Rules apply immediately to temporary event bags and both loadout rows; normal owned inventory is preserved.
@@ -592,3 +613,24 @@ The **Teams** tab offers Free for all, Me vs Everyone, Admins vs Players, and fo
 Hosted PvP toggles and live map updates preserve the current world view without a black teleport transition. Cursor teleport also skips that transition. The Arena editor's **Update** button broadcasts the current map and saves it to disk; brush edits continue to apply automatically.
 
 **No teams (normal)** clears all saved team assignments and restores normal combat rules while preserving the current PvP on/off setting. Free for all remains a separate option that enables PvP.
+
+Debug → Polls keeps completed results for the current server run. Newest / Newer / Older browse the history while the newest active poll keeps live counts. History is admin-only, stores totals rather than voter lists, survives reconnecting, and is deliberately absent from the database: restarting the server clears it.
+
+
+Event restrictions temporarily hold banned inventory and equipped petals. Removing
+all applicable restrictions restores them immediately without rejoining; reopening
+active slots restores their gear too. If a slot now has a different petal, its
+restored petal goes into the temporary bag instead. Event stars start at the
+account balance and survive kit edits; event rewards remain temporary. Talent
+resets and purchases affect the event copy only, and leaving restores the saved
+talent tree and star balance.
+
+The no-summons rule checks actual hatching and summoning behavior, including Egg,
+named eggs, Stick/Magic Stick, Spaceship shots, and Sacrifice. Applying the rule
+also removes existing player pets and summoning shots.
+
+`/admin fixnpc` resets NPCs across all biomes: it removes existing NPCs, including
+admin-spawned extras, reloads the configured map sites and immediately respawns
+them with fresh state. It requires spawn permission (tiers 1–3), preserves
+players and inventories, and awards no kill credit or loot. Mr. Bee’s gold
+minimap marker follows his live position, including beyond the viewport.
