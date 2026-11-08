@@ -791,16 +791,6 @@
     "type": "",
     "visible": true,
     "properties": [
-        {
-            "name": "npc",
-            "type": "string",
-            "value": "mr_bee"
-        },
-        {
-            "name": "rarity",
-            "type": "string",
-            "value": "apex"
-        }
     ]
 }],
          "opacity":1,
