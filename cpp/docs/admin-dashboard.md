@@ -548,6 +548,11 @@ do not extend it; existing flood and repeat limits still apply.
 
 Gambling commands have been removed. Legacy chip fields remain readable so existing databases load without losing stored data. Hel remains an NPC.
 
+### Market branch
+
+The separate `market` branch includes the free-skin web update plus the petal marketplace. `/shop` opens listings; `/order` opens funded orders. Both are also Shop tabs. Common minimum price is 1 star, multiplied by 3 per rarity. Sellers receive 80%; cancellations return remaining escrow without tax. Listings reserve unequipped petals immediately, and orders reserve stars. Filters accept exact rarities, `Ultra+` and `Rare-`; sort/filter preferences are saved locally.
+
+Apex Mr. Bee is a friendly NPC at Garden spawn. Use the Craft button/key nearby to open the market. He wanders within 260 world units of his home, appears as a gold minimap dot, and shares an Ultra Bee loot roll every 3–6 minutes. Each dropped item is public and has one human collector in total. Gambling and paid skins are absent. This branch is not merged into `web`.
 ### Petal bans, teams and personal loadouts
 
 In Admin → Events, use **Petal bans** to search display names, select one rarity or All rarities, and add/remove restrictions. Existing ID bans remain supported. Rules apply immediately to temporary event bags and both loadout rows; normal owned inventory is preserved.

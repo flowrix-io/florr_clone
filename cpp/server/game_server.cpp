@@ -1199,6 +1199,11 @@ void GameServer::runSystems(double nowMillis, double dt) {
     modes_->run(world_, *terrain_, content(), *spawning_, grid_, humanPlayers_, rng_, nowMillis);
     // Every flower, bots included, is somebody an NPC can turn to look at.
     npcs_->run(world_, *terrain_, content(), activePlayers_, nowMillis);
+    if(nowMillis>=nextMarketGiftCheckMillis_){
+        nextMarketGiftCheckMillis_=nowMillis+1000;
+        for(const auto& site:npcs_->marketGiftSites(world_,nowMillis))
+            loot_->spawnPublicMobLoot(world_,content(),rng_,content().mobIndex("bee"),Rarity::Ultra,site.position,site.realm);
+    }
     markTickPhase("modes+npcs");
     loot_->run(world_, grid_, content(), rng_, nowMillis, dt, commands_, events_);
     markTickPhase("loot");

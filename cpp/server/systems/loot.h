@@ -223,6 +223,10 @@ public:
         return tables_.load(content, path, errorOut);
     }
 
+    void spawnPublicMobLoot(World&,const ContentRegistry&,Rng&,std::uint16_t mob,Rarity,Vec2,Realm);
+
+    const DropTables& dropTables() const { return tables_; }
+
     void run(World& world, const SpatialGrid& grid, const ContentRegistry& content, Rng& rng,
              double nowMillis, double dt, CommandBuffer& commands, EventQueue& events);
 

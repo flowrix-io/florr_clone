@@ -108,6 +108,8 @@ public:
 
     /// placeMissing(), then turns every NPC toward the nearest flower in
     /// `players` (or lets it glance about).
+    std::vector<RealmPoint> marketGiftSites(World&, double nowMillis);
+
     void run(World& world, const Terrain& terrain, const ContentRegistry& content,
              const std::vector<RealmPoint>& players, double nowMillis);
 

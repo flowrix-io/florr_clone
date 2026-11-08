@@ -501,6 +501,10 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     const std::string argument = argumentOf(message);
     const auto out = [&](const std::string& text) { sendSystem(connection, text); };
 
+    if (verb == "/shop" || verb == "/order") {
+        Json data=Json::object();data["orders"]=verb=="/order";
+        sendAdminTools(session,connection,"market_open",true,"",data);return true;
+    }
     if (verb == "/casino") {
         out("Gambling has been removed.");
         return true;
