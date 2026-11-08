@@ -1820,6 +1820,16 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     const int rows = map->height();
     if (cols <= 0 || rows <= 0) return;
 
+    // Every authored realm (including prestige twins and dungeon copies)
+    // shares the same solid outer boundary. Draw it before either terrain
+    // early return, including when the camera is entirely outside the map.
+    const char* boundaryArt = "castle_c_0.svg";
+    for (const auto& theme : kAdminArenaThemes) {
+        if (map->templateId() == theme.name) { boundaryArt = theme.wall; break; }
+    }
+    drawBoundaryBlocks(canvas, camera, sprites_ ? sprites_->tileArt(boundaryArt) : nullptr,
+                       cols, rows);
+
     // The cells whose artwork can reach the screen, and NOT ONE MORE. A cell
     // is drawn over exactly its own square grown by kTileOverlap, so that
     // overlap is the whole margin this wants. A kTileSize margin -- the
