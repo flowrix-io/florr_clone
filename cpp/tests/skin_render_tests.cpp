@@ -260,6 +260,85 @@ TEST(signature_skin_animates_in_the_world_and_has_a_static_legacy_fallback) {
     const auto pixels=fallback.getImageData(0,0,160,160);CHECK(std::any_of(pixels.begin(),pixels.end(),[](auto v){return v!=0;}));
 }
 
+TEST(fan_skin_animates_for_the_wearer_and_other_players) {
+    CHECK(testsupport::fontsReady());
+    const std::vector<CustomSkin> catalog{makeFanSkin()};
+    for (const bool self : {false, true}) {
+        auto flower = flowerWearing(kFanSkinId);
+        if (self) flower.spawnFlags |= net::SpawnIsSelf;
+        WorldView view;
+        view.setRealm(Realm::Overworld);
+        view.seedForTest(flower);
+        WorldRenderer renderer;
+        renderer.setSkinCatalog(&catalog);
+        Canvas first = Canvas::createVirtual(240, 240);
+        Canvas second = Canvas::createVirtual(240, 240);
+        const auto camera = testsupport::frameCamera(240, kFlowerAt);
+        renderer.draw(first, view, camera, kFlowerAt, 0);
+        renderer.draw(second, view, camera, kFlowerAt, 1.4);
+        // Only the body: a changing label or health bar cannot pass this.
+        CHECK(testsupport::differingPixels(first.getImageData(90, 90, 60, 60),
+                                          second.getImageData(90, 90, 60, 60)) > 100);
+        if (self && std::getenv("FLIX_FAN_PREVIEW")) {
+            const std::string preview = std::getenv("FLIX_FAN_PREVIEW");
+            second.savePPM(preview);
+            for (int frame = 0; frame < 48; ++frame) {
+                Canvas animated = Canvas::createVirtual(240, 240);
+                renderer.draw(animated, view, camera, kFlowerAt, frame / 12.0);
+                animated.savePPM(preview + "." + std::to_string(frame) + ".ppm");
+            }
+        }
+    }
+}
+
+TEST(fan_skin_equip_reaches_the_wearer_and_other_players) {
+    Harness h("fan-equip", {}, flix::testsupport::dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient fan, watcher;
+    CHECK(joinAs(h, fan, "fan"));
+    CHECK(joinAs(h, watcher, "watcher"));
+    const auto* fanSkin = fan.findSkin(kFanSkinId);
+    const auto* watcherSkin = watcher.findSkin(kFanSkinId);
+    CHECK(fanSkin && hasFanAnimation(*fanSkin));
+    CHECK(watcherSkin && hasFanAnimation(*watcherSkin));
+    fan.equipSkin(kFanSkinId);
+    const auto netId = fan.view().self().netId;
+    CHECK(h.stepUntil({&fan, &watcher}, [&] {
+        const auto* own = flowerOf(fan, netId);
+        const auto* seen = flowerOf(watcher, netId);
+        return own && seen && own->equippedSkinId == kFanSkinId &&
+               seen->equippedSkinId == kFanSkinId;
+    }));
+}
+
+TEST(fan_skin_title_is_above_the_head_for_the_wearer_and_other_players) {
+    CHECK(testsupport::fontsReady());
+    const std::vector<CustomSkin> catalog{makeFanSkin()};
+    for (const bool self : {false, true}) {
+        const auto frame = [&](bool fan, double time = 0) {
+            auto flower = flowerWearing(fan ? kFanSkinId : "");
+            if (self) flower.spawnFlags |= net::SpawnIsSelf;
+            WorldView view;
+            view.setRealm(Realm::Overworld);
+            view.seedForTest(flower);
+            WorldRenderer renderer;
+            renderer.options.names = false;
+            renderer.options.healthBars = false;
+            renderer.setSkinCatalog(&catalog);
+            Canvas canvas = Canvas::createVirtual(240, 240);
+            renderer.draw(canvas, view, testsupport::frameCamera(240, kFlowerAt), kFlowerAt, time);
+            return canvas.getImageData(40, 45, 160, 40);
+        };
+        // The body ends at y=95. This region must contain the title even
+        // when the ordinary name/health plate is hidden.
+        CHECK(testsupport::differingPixels(frame(true), frame(false)) > 30);
+        // This crop contains only the overhead title and its motes, so the
+        // rotating skin cannot make a frozen particle effect pass.
+        CHECK(testsupport::differingPixels(frame(true, 0), frame(true, 1.4)) > 10);
+    }
+}
+
 TEST(signature_skin_is_owner_only_even_for_modified_clients_and_stale_saved_equips) {
     using namespace flix::testsupport;
     Harness h("signature-exclusive",[](const std::string& path){

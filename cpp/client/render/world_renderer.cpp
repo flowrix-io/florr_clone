@@ -178,6 +178,9 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             if (entity.isSelf()) drawSelfManaBar(canvas, entity, camera, at);
             else drawPlayerPlate(canvas, entity, camera, at, timeSeconds);
             drawFlower(canvas, entity, camera, at, timeSeconds);
+            // Cosmetic titles belong to the body, including the viewer's
+            // own flower, independently of the optional name/health plate.
+            drawFanTitle(canvas, entity, camera, at, timeSeconds);
             break;
 
         case net::EntityKind::Mob: {

@@ -9,6 +9,7 @@
 // against the wrong picture.
 
 #include "test.h"
+#include "shared/game/signature_skin.h"
 
 #include "client/net_client.h"
 #include "server_harness.h"
@@ -619,6 +620,7 @@ TEST(a_skin_similar_to_one_in_the_catalog_is_refused) {
     NetClient other;
     CHECK(registerAs(h, author, "author"));
     CHECK(registerAs(h, other, "other"));
+    const auto builtIns = h.server.database().storedTable("customSkins").keys().size();
 
     CHECK(publish(h, author, "blush", blushingFace()));
     CHECK(sawText(author, "Published \"blush\""));
@@ -645,7 +647,7 @@ TEST(a_skin_similar_to_one_in_the_catalog_is_refused) {
     CHECK(sawText(other, "Published \"squint\""));
 
     h.step(10, {&author, &other});
-    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), static_cast<std::size_t>(2));
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), builtIns + 2);
 }
 
 TEST(a_copy_with_a_new_rim_is_refused_when_published_or_saved_over_another_skin) {
@@ -814,6 +816,9 @@ TEST(signing_in_leaves_the_skin_catalog_s_save_text_cached) {
         db.load(path, error);
         db.rawTable("customSkins")["sk_a"] =
             skinToJson(storedSkin("sk_a", "original", "artist", 100, starterWithMouth()));
+        // Test a read of the existing catalogue, not first-login creation
+        // of the server-issued fan skin.
+        db.rawTable("customSkins")[kFanSkinId] = skinToJson(makeFanSkin());
         db.markDirty();
         db.save();
     }, flix::testsupport::dataDir(), 0);
@@ -826,6 +831,6 @@ TEST(signing_in_leaves_the_skin_catalog_s_save_text_cached) {
 
     NetClient client;
     CHECK(registerAs(h, client, "viewer"));
-    CHECK(h.stepUntil({&client}, [&] { return client.skinCatalog().size() == 1; }));
+    CHECK(h.stepUntil({&client}, [&] { return client.skinCatalog().size() == 2; }));
     CHECK(db.tableTextCached("customSkins"));
 }
