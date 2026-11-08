@@ -262,6 +262,18 @@ std::string oneDecimal(double value) {
     return text;
 }
 
+/// A stat that can be small and fractional -- a grape's 3.1 poison -- with one
+/// decimal below ten, where rounding would lose most of it, and like every
+/// other row from there up.
+std::string fineNumber(double value) {
+    return std::fabs(value) < 10.0 ? oneDecimal(value) : abbreviate(value);
+}
+
+/// fineNumber's ALT variant: the whole number where the row abbreviates.
+std::string fineExact(double value) {
+    return std::fabs(value) < 10.0 ? oneDecimal(value) : exactNumber(value);
+}
+
 /// Seconds as florr's header prints them: always one decimal, "2.0s".
 std::string reloadSeconds(double millis) {
     char buffer[32];
@@ -342,10 +354,14 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(body);
     }
 
-    // Dimmed to gardn's 0xffffff90 rather than a pre-mixed grey, and spaced
-    // off the description when there is one, off the tier row when there is not.
-    TooltipLine hp{"HP: " + abbreviate(health), 12.0, kPaper,
-                   config.description.empty() ? 10.0 : 4.0};
+    // The stat block is spaced off the description when there is one, off the
+    // tier row when there is not. The gap goes on whichever stat row turns out
+    // to be first (see the end), since HP and Damage are not always there.
+    const double statGap = config.description.empty() ? 10.0 : 4.0;
+    const std::size_t firstStat = lines.size();
+
+    // Dimmed to gardn's 0xffffff90 rather than a pre-mixed grey.
+    TooltipLine hp{"HP: " + abbreviate(health), 12.0};
     hp.alpha = 0.56;
     hp.labelColor = kStatHealth;
     hp.altText = "HP: " + exactNumber(health);
@@ -378,16 +394,47 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         hit.labelColor = kStatHealth;
     }
     if (!petalWardsHits(config)) {
-        lines.push_back(hp);
-        lines.push_back(hit);
+        // A row only for a stat the petal has, as gardn's card does: an iris
+        // hits with nothing but its poison and a gas has no health pool, and a
+        // "0" on either reads as a petal that does nothing. Damage is tested
+        // against zero rather than above it -- a glitch's is negative, and
+        // that is a heal it has to show.
+        if (stats.health > 0.0) lines.push_back(hp);
+        if (stats.damage != 0.0) lines.push_back(hit);
     } else {
         // A nazar has neither a health pool nor a hit: florr's card shows its
         // charges in their place. An admin petal holds three times as many.
         const int held = kNazarCharges * (rarity == Rarity::Admin ? 3 : 1);
-        TooltipLine charges{"Charges: " + std::to_string(held), 12.0, kPaper, hp.gapBefore};
+        TooltipLine charges{"Charges: " + std::to_string(held), 12.0};
         charges.alpha = 0.56;
         charges.labelColor = kStatGeneric;
         lines.push_back(charges);
+    }
+
+    // florr's Petal/Attribute/Poison, "Poison: 69 (23/s)": the whole dose one
+    // hit leaves, then the rate it ticks at. Gated the way applyPoison is: a
+    // rate with no duration never lands, so it is not printed either. The
+    // Damage talent is not applied -- the server's poison does not carry it.
+    if (stats.poisonPerSecond > 0.0 && stats.poisonDurationMillis > 0.0) {
+        const double perSecond = stats.poisonPerSecond;
+        const double total = perSecond * stats.poisonDurationMillis / 1000.0;
+        TooltipLine poison{"Poison: " + fineNumber(total) + " (" + fineNumber(perSecond) + "/s)",
+                           12.0};
+        poison.alpha = 0.56;
+        poison.labelColor = kStatPoison;
+        poison.altText = "Poison: " + fineExact(total) + " (" + fineExact(perSecond) + "/s)";
+        lines.push_back(poison);
+    }
+
+    // Lotus, florr's Petal/Attribute/PoisonResistance: the poison the flower
+    // shrugs off each second, and the whole of what the petal does.
+    if (stats.modifiers.poisonArmor > 0.0) {
+        const double armor = stats.modifiers.poisonArmor;
+        TooltipLine resist{"Poison Resistance: " + fineNumber(armor) + "/s", 12.0};
+        resist.alpha = 0.56;
+        resist.labelColor = kStatPoison;
+        resist.altText = "Poison Resistance: " + fineExact(armor) + "/s";
+        lines.push_back(resist);
     }
 
     // Relic. The whole petal is this one number.
@@ -604,6 +651,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         slam.altText = "Body Damage: +" + exactNumber(body);
         lines.push_back(slam);
     }
+    if (lines.size() > firstStat) lines[firstStat].gapBefore = statGap;
     return lines;
 }
 
