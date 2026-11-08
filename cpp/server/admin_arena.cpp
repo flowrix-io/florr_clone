@@ -394,7 +394,8 @@ void GameServer::runEventSetup(Session& host,net::Connection& peer,const Json& q
     if(action=="team_mode"||action=="team_assign"){
         const auto mode=q["mode"].asString();
         if(action=="team_mode"){
-            if(mode!="ffa"&&mode!="solo"&&mode!="admins"&&mode!="manual"){fail("Unknown team mode.");return;}
+            if(mode!="none"&&mode!="ffa"&&mode!="solo"&&mode!="admins"&&mode!="manual"){fail("Unknown team mode.");return;}
+            if(mode=="none")hostedArenaTeams_=Json::object();
             hostedArenaTeams_["mode"]=mode;
             if(mode=="solo")hostedArenaTeams_["leader"]=host.userId;
         }else{
@@ -409,12 +410,13 @@ void GameServer::runEventSetup(Session& host,net::Connection& peer,const Json& q
             }
             hostedArenaTeams_["mode"]="manual";hostedArenaTeams_["assignments"][id]=int(n);
         }
-        hostedArenaPvp_=true;
+        const bool normal=action=="team_mode"&&mode=="none";
+        if(!normal)hostedArenaPvp_=true;
         for(auto& [cid,s]:sessions_)if(s.playing()&&s.realm==kAdminArenaRealm){
-            applyHostedTeam(s);for(Entity e:bodiesOf(s))syncKitPvp(world_,e,true);
-            if(auto* c=listener_.find(cid))sendSystem(*c,hostedTeamFor(s)?"Arena team: "+std::string(kHostedTeamNames[hostedTeamFor(s)])+". Teammates cannot damage one another.":"Arena: free for all.");
+            applyHostedTeam(s);for(Entity e:bodiesOf(s))syncKitPvp(world_,e,hostedArenaPvp_);
+            if(auto* c=listener_.find(cid))sendSystem(*c,normal?"Teams disabled. Normal PvP rules apply.":hostedTeamFor(s)?"Arena team: "+std::string(kHostedTeamNames[hostedTeamFor(s)])+". Teammates cannot damage one another.":"Arena: free for all.");
         }
-        saveHostedArena();message="Teams applied and autosaved. PvP enabled.";
+        saveHostedArena();message=normal?"Teams cleared and autosaved. PvP unchanged.":"Teams applied and autosaved. PvP enabled.";
     }
     if(action=="save_current"){saveHostedArena();if(!database_.save()){fail("Could not save arena to disk.");return;}message="Arena saved to disk.";}
 
