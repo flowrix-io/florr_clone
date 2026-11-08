@@ -1,6 +1,7 @@
 #include "test.h"
 #include "render_rig.h"
 #include "client/ui/menus.h"
+#include "client/ui/market_ui.h"
 #include "server_harness.h"
 #include "shared/game/economy.h"
 #include "server/systems/loot.h"
@@ -119,4 +120,42 @@ TEST(market_public_gift_is_collectible_by_only_one_player) {
     h.step(5,{&alice,&bob});
     CHECK_EQ(wallet(h,"alice").itemCount(Rarity::Ultra,"petal_basic")+wallet(h,"bob").itemCount(Rarity::Ultra,"petal_basic"),before+1);
     CHECK(!world.isAlive(e));
+}
+
+TEST(market_numbers_keep_small_prices_exact_and_use_suffixes_for_long_values) {
+    CHECK_EQ(marketNumber(0.8),"0.8");CHECK_EQ(marketNumber(999),"999");
+    CHECK_EQ(marketNumber(1000),"1,000");CHECK_EQ(marketNumber(19000),"19,000");
+    CHECK_EQ(marketNumber(999999),"999,999");CHECK_EQ(marketNumber(12345.8),"12,345.8");
+    CHECK_EQ(marketNumber(1e6),"1M");CHECK_EQ(marketNumber(1250000),"1.2M");
+    CHECK_EQ(marketNumber(1e9),"1B");CHECK_EQ(marketNumber(1e12),"1T");
+    CHECK_EQ(marketNumber(1234567890.8,true),"1,234,567,890.8");
+}
+TEST(market_long_values_and_sort_labels_render_without_scientific_notation) {
+    Harness h("market-long-gui",[](const std::string& path){seedWallet(path,"seller",1234567890.8);seedStack(path,"seller","petal_basic",Rarity::Common,5);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient client;CHECK(loginAs(h,client,"seller","password7"));CHECK(request(h,client,"market","post",posting("basic",0,3,1000000000)));CHECK(fontsReady());
+    SpriteCache sprites;WorldRenderer renderer;Window window;ClientSettings settings;DragState drag;ShopPanel shop;
+    settings.marketListingSort=1;shop.openMarket();shop.setSlide(1,false);
+    Canvas canvas=Canvas::createVirtual(900,680);MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};ctx.bounds=ShopPanel::bounds(900,680);shop.render(ctx);canvas.savePPM("/tmp/flowrix-market-long-gui.ppm");
+    CHECK(ui::measure("Best value",13)<90);
+    shop.openMarket(true);Canvas orders=Canvas::createVirtual(900,680);MenuContext orderCtx{orders,window,client,sprites,renderer,settings,drag};orderCtx.bounds=ShopPanel::bounds(900,680);shop.render(orderCtx);orders.savePPM("/tmp/flowrix-orders-long-gui.ppm");
+}
+
+TEST(market_mr_bee_stays_in_front_of_overlapping_mobs_and_projectiles) {
+    std::string error;CHECK(loadContent(dataDir(),error));CHECK(fontsReady());
+    SpriteCache sprites;CHECK(sprites.build(content(),dataDir()));
+    constexpr int size=500;const Vec2 at{1000,1000};
+    WorldRenderer::EntityMap scene;
+    RemoteEntity mob;mob.netId=1;mob.kind=net::EntityKind::Mob;mob.typeIndex=content().mobIndex("rock");mob.position=mob.targetPosition=at;mob.radius=170;mob.healthFraction=1;scene[mob.netId]=mob;
+    RemoteEntity shot=mob;shot.netId=2;shot.kind=net::EntityKind::Projectile;shot.typeIndex=content().petalIndex("basic");shot.radius=140;scene[shot.netId]=shot;
+    RemoteEntity bee=mob;bee.netId=3;bee.kind=net::EntityKind::Npc;bee.typeIndex=content().mobIndex("mr_bee");bee.rarity=Rarity::Apex;bee.radius=80;bee.plate.opacity=1;
+    const auto frame=[&](const WorldRenderer::EntityMap& entities,const char* path){
+        Canvas canvas=Canvas::createVirtual(size,size);WorldRenderer renderer;renderer.setContent(&content());renderer.setSprites(&sprites);
+        Camera camera=frameCamera(size,at);renderer.draw(canvas,entities,camera,at,0);canvas.savePPM(path);
+        return canvas.getImageData(size/2-12,size/2-12,24,24);
+    };
+    const auto covered=frame(scene,"/tmp/flowrix-market-covered.ppm");
+    scene[bee.netId]=bee;const auto front=frame(scene,"/tmp/flowrix-market-mr-bee-front.ppm");
+    WorldRenderer::EntityMap alone;alone[bee.netId]=bee;
+    const auto expected=frame(alone,"/tmp/flowrix-market-mr-bee-alone.ppm");
+    CHECK(differingPixels(covered,expected)>100);CHECK_EQ(differingPixels(front,expected),0);
 }
