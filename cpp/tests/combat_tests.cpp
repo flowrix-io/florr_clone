@@ -7,6 +7,7 @@
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
+#include "shared/game/npc.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 #include "shared/net/protocol.h"
@@ -684,6 +685,33 @@ TEST(a_hazard_with_no_faction_hurts_everything) {
 // ---------------------------------------------------------------------------
 // Contact damage
 // ---------------------------------------------------------------------------
+
+TEST(contact_reaches_across_the_pet_gap_and_the_npc_slack) {
+    // Two pairs meet without overlapping: a pet and a wild mob across the gap
+    // separation keeps between mob bodies, and a flower and an NPC across the
+    // NPC's touch slack. The melee pass turns away far candidates before it
+    // asks what kind of pair they are, and must not turn these away.
+    Arena a;
+    const Entity owner = a.player({5000, 5000});
+    const Entity pet = a.actor({1000, 1000}, 15.0, 50.0, Team::Players);
+    a.world.add<MobTag>(pet);
+    a.world.add<Pet>(pet, Pet{owner, 0});
+    a.world.add<ContactDamage>(pet, ContactDamage{10.0, 0.0});
+    const double petGap = kMobCollisionBuffer * 0.6;
+    const Entity wild = a.mob({1000 + 15.0 + 20.0 + petGap, 1000}, 100.0);
+    a.world.add<ContactDamage>(wild, ContactDamage{10.0, 500.0});
+
+    const Entity flower = a.player({3000, 1000});
+    const Entity npc = a.actor({3000 + 20.0 + 30.0 + kNpcTouchSlack * 0.5, 1000}, 30.0, 500.0,
+                               Team::Hostiles);
+    a.world.add<NpcTag>(npc);
+    a.world.add<ContactDamage>(npc, ContactDamage{10.0, 500.0});
+
+    a.step(0.0);
+    CHECK(a.health(wild) < 100.0);
+    CHECK(a.health(pet) < 50.0);
+    CHECK(a.health(flower) < 100.0);
+}
 
 TEST(mob_contact_is_paced_by_the_flowers_post_hit_window_alone) {
     Arena a;
@@ -1618,6 +1646,36 @@ TEST(shots_are_found_when_the_servers_grid_leaves_them_out) {
     CHECK_NEAR(a.health(outgoing) + a.health(sibling), 16.0, 1e-9);
     CHECK(!a.world.has<Dead>(outgoing));
     CHECK(!a.world.has<Dead>(sibling));
+}
+
+TEST(a_shot_is_found_in_its_own_realm_wherever_its_realms_others_are) {
+    // Combat's shot index clamps each query to the box its own realm's shots
+    // were filed in. A shot at every edge of that box is still found, and one
+    // on the very same coordinates in another realm never is.
+    Arena a;
+    const Entity player = a.player({500, 500});
+    const Entity mob = a.mob({200, 200}, 100.0);
+    const Vec2 edges[] = {{1000, 1000}, {5000, 3000}, {3000, 5000}, {5000, 5000}};
+    std::vector<std::pair<Entity, Entity>> pairs;
+    for (const Vec2 at : edges) {
+        pairs.push_back(
+            {spawnDurableShot(a, at, {1000, 0}, 4.0, 500.0, player, player, 10.0),
+             spawnDurableShot(a, at + Vec2{5, 0}, {-1000, 0}, 4.0, 500.0, mob, NULL_ENTITY, 10.0,
+                              Team::Hostiles)});
+    }
+    const Entity alone = spawnDurableShot(a, {9000, 9000}, {1000, 0}, 4.0, 500.0, player, player,
+                                          10.0);
+    const Entity elsewhere = spawnDurableShot(a, {9005, 9000}, {-1000, 0}, 4.0, 500.0, mob,
+                                              NULL_ENTITY, 10.0, Team::Hostiles);
+    a.world.get<Transform>(elsewhere).realm = Realm::Arena;
+
+    a.stepWithServerGrid(0.0);
+    for (const auto& pair : pairs) {
+        CHECK(a.health(pair.first) < 10.0);
+        CHECK(a.health(pair.second) < 10.0);
+    }
+    CHECK_NEAR(a.health(alone), 10.0, 1e-9);
+    CHECK_NEAR(a.health(elsewhere), 10.0, 1e-9);
 }
 
 TEST(two_duellists_shots_still_shoot_each_other_down) {

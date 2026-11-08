@@ -23,6 +23,8 @@
 #include "server/db.h"
 #include "server/game_server.h"
 #include "server/systems/loot.h"
+#include "server/systems/movement.h"
+#include "server/systems/petals.h"
 #include "shared/game/waves.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
@@ -884,6 +886,15 @@ struct GameServerPeer {
     /// The one game of waves.
     static auto& waves(GameServer& server) { return server.waves_; }
     static SpawnSystem& spawning(GameServer& server) { return *server.spawning_; }
+    /// The tick's three broadphases: the shared one, separation's, and the
+    /// petals' attraction grid.
+    static const SpatialGrid& grid(const GameServer& server) { return server.grid_; }
+    static const SpatialGrid& separationGrid(const GameServer& server) {
+        return server.movement_->separationGrid();
+    }
+    static const SpatialGrid& attractionGrid(const GameServer& server) {
+        return server.petals_->attractionGrid();
+    }
     /// Runs this wave's clock out, the red one too: the next step starts the
     /// next wave whatever is left on the disc.
     static void endThisWave(GameServer& server) {
@@ -951,6 +962,33 @@ struct GameServerPeer {
         }
         return false;
     }
+
+    /// step()'s half of the tick profile, for tests that drive tick() by hand
+    /// (Harness::step does, and step() is the only caller of either half).
+    ///
+    /// foldTick stands in for one tick that stamped `phases` in that order,
+    /// each `eachMillis` long, and took `tookMillis` in all. foldLastTick folds
+    /// the stamps the last real tick() left. Both count the tick toward the
+    /// window's average and worst, as step() does.
+    static void foldTick(GameServer& server, const std::vector<const char*>& phases,
+                         double eachMillis, double tookMillis) {
+        server.tickStartedMillis_ = 0;
+        server.tickPhaseCount_ = 0;
+        double at = 0;
+        for (const char* name : phases) {
+            at += eachMillis;
+            server.tickPhases_[server.tickPhaseCount_++] = GameServer::TickPhase{name, at};
+        }
+        foldLastTick(server, tookMillis);
+    }
+    static void foldLastTick(GameServer& server, double tookMillis) {
+        server.debugTickAccumMillis_ += tookMillis;
+        server.debugTickMaxMillis_ = std::max(server.debugTickMaxMillis_, tookMillis);
+        ++server.debugTickSamples_;
+        server.foldTickPhases(tookMillis);
+    }
+    /// The once-a-second DebugStats, now.
+    static void broadcastDebugStats(GameServer& server) { server.broadcastDebugStats(); }
 };
 
 } // namespace flix::testsupport

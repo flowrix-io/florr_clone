@@ -1572,9 +1572,10 @@ void ContentRegistry::foldMapsIntoHash(const std::string& dataDir) {
 }
 
 namespace {
-/// What petal `c` fields at `r`. Defined beside petalStats(), which reads it
-/// out of the table loadFiles() fills with it.
+/// What petal `c` fields at `r`, and mob `c`. Defined beside petalStats() and
+/// mobStats(), which read them out of the tables loadFiles() fills with them.
 PetalStats buildPetalStats(const PetalConfig& c, Rarity r);
+MobStats buildMobStats(const MobConfig& c, Rarity r);
 } // namespace
 
 bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& petalsPath,
@@ -1773,6 +1774,14 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
                 buildPetalStats(petals_[i], static_cast<Rarity>(t));
         }
     }
+    // And every mob's: see mobStats().
+    mobStats_.resize(mobs_.size());
+    for (std::size_t i = 0; i < mobs_.size(); ++i) {
+        for (int t = 0; t < kRarityCount; ++t) {
+            mobStats_[i][static_cast<std::size_t>(t)] =
+                buildMobStats(mobs_[i], static_cast<Rarity>(t));
+        }
+    }
     warnings_ = std::move(warnings);
     hash_ = hash;
     errorOut.clear();
@@ -1829,8 +1838,26 @@ std::vector<std::uint16_t> ContentRegistry::randomPetFighters(Rarity rarity) con
     return fighters;
 }
 
-MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
-    const MobConfig& c = mob(index);
+const MobStats& ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
+    // Every tier past the ends reads as the end it is past, which is what
+    // buildMobStats() does with one too.
+    const auto tier = static_cast<std::size_t>(rarityIndex(clampRarity(rarityIndex(r))));
+    if (index < mobStats_.size()) return mobStats_[index][tier];
+    // An unknown index is the placeholder mob(), as everywhere else.
+    static const std::array<MobStats, kRarityCount> kMissing = [this] {
+        std::array<MobStats, kRarityCount> stats;
+        for (int t = 0; t < kRarityCount; ++t) {
+            stats[static_cast<std::size_t>(t)] =
+                buildMobStats(mob(kInvalidIndex), static_cast<Rarity>(t));
+        }
+        return stats;
+    }();
+    return kMissing[tier];
+}
+
+namespace {
+
+MobStats buildMobStats(const MobConfig& c, Rarity r) {
     // No mob is universal; one asked for anyway is an apex.
     const int tier = ladderIndex(clampRarity(rarityIndex(r)));
     const std::size_t t = static_cast<std::size_t>(tier);
@@ -1889,8 +1916,6 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     s.ambient = tier >= rarityIndex(c.minRarity) && !c.groups.empty() && !c.neverAmbient;
     return s;
 }
-
-namespace {
 
 PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // Universal reads everything below at apex, `tier`, except health and

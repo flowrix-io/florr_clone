@@ -577,7 +577,7 @@ do not extend it; existing flood and repeat limits still apply.
 
 ### Timed polls
 
-`/admin createpoll` opens a standalone creator for full admins. Choose 2–6 answers and a 10–3600 second duration. The top-center banner stays until the account votes or time expires; reconnecting cannot grant another vote. Results are in Debug → Polls, visible only to full admins.
+`/admin createpoll` opens a standalone creator for full admins. Choose 2–6 answers and a 10–3600 second duration. The top-center banner stays until the account votes or time expires; reconnecting cannot grant another vote. Results are on the Leaderboard's Polls tab, visible only to full admins.
 
 Gambling commands have been removed. Legacy chip fields remain readable so existing databases load without losing stored data. Hel remains an NPC.
 
@@ -614,7 +614,7 @@ Hosted PvP toggles and live map updates preserve the current world view without 
 
 **No teams (normal)** clears all saved team assignments and restores normal combat rules while preserving the current PvP on/off setting. Free for all remains a separate option that enables PvP.
 
-Debug → Polls keeps completed results for the current server run. Newest / Newer / Older browse the history while the newest active poll keeps live counts. History is admin-only, stores totals rather than voter lists, survives reconnecting, and is deliberately absent from the database: restarting the server clears it.
+Leaderboard → Polls keeps completed results for the current server run. Newest / Newer / Older browse the history while the newest active poll keeps live counts. History is admin-only, stores totals rather than voter lists, survives reconnecting, and is deliberately absent from the database: restarting the server clears it.
 
 
 Event restrictions temporarily hold banned inventory and equipped petals. Removing

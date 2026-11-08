@@ -63,7 +63,7 @@ class TiledMap;
 
 /// The character of one of the nine sections: what it is called, and the
 /// colour of its ground. The maze paints its floor in the ground of the
-/// section it borrows (world_renderer.cpp); /biome names the sections.
+/// section it borrows (world_renderer_terrain.cpp); /biome names the sections.
 struct Biome {
     const char* name;
     std::uint32_t ground;   ///< 0xRRGGBB

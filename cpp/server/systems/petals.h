@@ -229,6 +229,14 @@ public:
              CommandBuffer& commands, const Terrain* terrain = nullptr,
              EventQueue* events = nullptr);
 
+    /// Fits the attraction grid to the maps, as GameServer fits its own (see
+    /// SpatialGrid::sizeToRealms). Until then every map realm but the
+    /// overworld is ONE cell, and every petal on every ring there walks every
+    /// mob in the biome looking for the one it bends toward.
+    void sizeToRealms(const Terrain& terrain) { attractionGrid_.sizeToRealms(terrain); }
+    /// Only tests read it: how they check that sizing reached this grid.
+    const SpatialGrid& attractionGrid() const { return attractionGrid_; }
+
     /// Fold every flower's loadout into its PlayerModifiers, body radius and
     /// max health, without touching the ring.
     ///

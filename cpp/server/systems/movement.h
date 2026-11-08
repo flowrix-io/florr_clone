@@ -241,6 +241,14 @@ public:
     void runPlayerPhase(World& world, const Terrain& terrain, double nowMillis, double dt);
     void runWorldPhase(World& world, const Terrain& terrain, double nowMillis, double dt);
 
+    /// Fits the separation grid to the maps, as GameServer fits its own (see
+    /// SpatialGrid::sizeToRealms). Until then every map realm but the
+    /// overworld is ONE cell, and each mob's neighbour query returns every mob
+    /// in its biome: separation goes quadratic in a biome's population.
+    void sizeToRealms(const Terrain& terrain) { separationGrid_.sizeToRealms(terrain); }
+    /// Only tests read it: how they check that sizing reached this grid.
+    const SpatialGrid& separationGrid() const { return separationGrid_; }
+
 private:
     /// Queries are cached because rebuilding one per tick throws away the
     /// matched-archetype list that makes iteration free. They cannot be built

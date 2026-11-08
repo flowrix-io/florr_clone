@@ -448,6 +448,36 @@ TEST(spatial_grid_query_returns_a_complete_candidate_set) {
     }
 }
 
+TEST(spatial_grid_answers_a_one_cell_query_in_filing_order_and_once_each) {
+    // Most queries fit inside one cell, and those are answered by copying the
+    // cell rather than walking it: the answer must still be the walk's, in
+    // the order the bodies were filed and with each of them once.
+    SpatialGrid grid(600.0);
+    std::vector<Entity> out;
+    const Entity a = makeEntity(5, 1);
+    const Entity b = makeEntity(2, 1);
+    const Entity big = makeEntity(9, 1);
+    const Entity c = makeEntity(7, 1);
+    grid.insert(a, Realm::Overworld, Vec2{700, 700}, 10);
+    grid.insert(b, Realm::Overworld, Vec2{1000, 1100}, 10);
+    grid.insert(big, Realm::Overworld, Vec2{1300, 900}, 200);   // reaches in from next door
+    grid.insert(c, Realm::Overworld, Vec2{650, 1150}, 10);
+    grid.query(Realm::Overworld, Vec2{900, 900}, 50, out);
+    CHECK(out == (std::vector<Entity>{a, b, big, c}));
+
+    // Filed twice: nothing the server does, but the grid promises a caller
+    // each candidate once whatever was handed to it.
+    grid.insert(b, Realm::Overworld, Vec2{1000, 1100}, 10);
+    grid.query(Realm::Overworld, Vec2{900, 900}, 50, out);
+    CHECK(out == (std::vector<Entity>{a, b, big, c}));
+
+    // And a new tick forgets it.
+    grid.clear();
+    grid.insert(a, Realm::Overworld, Vec2{700, 700}, 10);
+    grid.query(Realm::Overworld, Vec2{900, 900}, 50, out);
+    CHECK(out == (std::vector<Entity>{a}));
+}
+
 TEST(spatial_grid_clear_retires_the_previous_tick) {
     SpatialGrid grid;
     std::vector<Entity> out;

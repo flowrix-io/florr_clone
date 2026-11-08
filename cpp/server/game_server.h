@@ -549,6 +549,10 @@ private:
     void initHostedArena();
     void saveHostedArena();
     void refreshHostedArena(bool reset);
+    /// Fits every broadphase the tick builds -- grid_, separation's and the
+    /// petals' attraction grid -- to the realms terrain_ now holds. Called at
+    /// start and whenever a realm changes shape (the hosted arena).
+    void sizeBroadphases();
     void runHostedArenaCommand(Session&, net::Connection&, const std::string&);
 
     // The wave survival mode (server/waves.cpp, shared/game/waves.h).
@@ -1847,11 +1851,35 @@ private:
     };
     void markTickPhase(const char* name);
     std::string describeTickPhases(double tookMillis) const;
-    std::array<TickPhase, 24> tickPhases_{};
+    /// Room for every stamp tick() makes (23 today) with some to spare: a stamp
+    /// past the end is dropped, and its time is reported as `other`.
+    std::array<TickPhase, 32> tickPhases_{};
     std::size_t tickPhaseCount_ = 0;
     double tickStartedMillis_ = 0;
     double slowTickWorstMillis_ = 0;
     std::string slowTickLine_;
+
+    /// The same stamps summed over the DebugStats window, for the debug
+    /// panel's Server tab: what each phase cost in total, its worst single
+    /// tick, and how many ticks it ran in (the idle gate and the snapshot
+    /// cadence skip some). foldTickPhases adds one tick after step() has timed
+    /// it; broadcastDebugStats sends the window and zeroes it.
+    ///
+    /// Entries are kept, zeroed, from one window to the next, and each new one
+    /// is inserted after the phase that ran before it, so the list stays in
+    /// the order tick() runs its phases whatever the first tick happened to
+    /// skip -- the panel's rows do not reshuffle. `other` is the part of the
+    /// tick no stamp covers: the work above tickStartedMillis_ and anything
+    /// after the last stamp.
+    struct TickPhaseTotal {
+        const char* name = "";
+        double totalMillis = 0;
+        double maxMillis = 0;
+        int runs = 0;
+    };
+    void foldTickPhases(double tookMillis);
+    std::vector<TickPhaseTotal> tickPhaseTotals_;
+    TickPhaseTotal tickOtherTotal_{"other"};
 
     /// When the next snapshot is due. The wire runs slower than the
     /// simulation: physics wants 30 Hz resolution, clients do not, and the

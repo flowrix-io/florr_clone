@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iterator>
 #include <optional>
 #include <random>
@@ -609,17 +610,17 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     for (const std::string& warning : worldMaps_.warnings()) {
         contentWarning("[map] %s\n", warning.c_str());
     }
-    // The broadphase was built before the maps were: its layers are sized to
-    // the default world until it is told what shape each realm really is.
     initHostedArena();
     expireMarketListings();
-    grid_.sizeToRealms(*terrain_);
 
     movement_ = std::make_unique<MovementSystem>();
     // The AI caches queries against one world and wanders from its own
     // stream, so it takes both at construction rather than per call.
     mobAi_ = std::make_unique<MobAiSystem>(world_, config.worldSeed ^ 0x9E3779B9ull);
     petals_ = std::make_unique<PetalSystem>();
+    // The broadphases were built before the maps were: their layers are sized
+    // to the default world until they are told what shape each realm really is.
+    sizeBroadphases();
     combat_ = std::make_unique<CombatSystem>();
     spawning_ = std::make_unique<SpawnSystem>();
     spawning_->seedBossClocks(config.worldSeed ^ 0xB055C10C5ull);
@@ -849,6 +850,7 @@ bool GameServer::step() {
         debugTickAccumMillis_ += tookMillis;
         if (tookMillis > debugTickMaxMillis_) debugTickMaxMillis_ = tookMillis;
         ++debugTickSamples_;
+        foldTickPhases(tookMillis);
         if (tookMillis >= kSlowTickLogMillis && tookMillis > slowTickWorstMillis_) {
             slowTickWorstMillis_ = tookMillis;
             slowTickLine_ = describeTickPhases(tookMillis);
@@ -899,6 +901,17 @@ std::size_t GameServer::playerCount() const {
 // Tick
 // ---------------------------------------------------------------------------
 
+void GameServer::sizeBroadphases() {
+    grid_.sizeToRealms(*terrain_);
+    // Their own grids, not grid_'s: each is rebuilt at a different point in
+    // the tick (see the systems). An unsized one is never WRONG -- a query
+    // only gets a superset -- but a biome left one cell wide hands every
+    // neighbour query the whole biome, which is what made separation and
+    // petal attraction most of the tick under a bot crowd.
+    if (movement_) movement_->sizeToRealms(*terrain_);
+    if (petals_) petals_->sizeToRealms(*terrain_);
+}
+
 void GameServer::markTickPhase(const char* name) {
     if (tickPhaseCount_ < tickPhases_.size()) {
         tickPhases_[tickPhaseCount_++] = TickPhase{name, monotonicMillis()};
@@ -924,6 +937,35 @@ std::string GameServer::describeTickPhases(double tookMillis) const {
     }
     if (!any) line += " no phase over 1 ms";
     return line;
+}
+
+void GameServer::foldTickPhases(double tookMillis) {
+    const auto add = [](TickPhaseTotal& total, double took) {
+        total.totalMillis += took;
+        if (took > total.maxMillis) total.maxMillis = took;
+        ++total.runs;
+    };
+    // Where the next phase not seen before goes: straight after the one this
+    // tick ran before it.
+    std::size_t insertAt = 0;
+    double from = tickStartedMillis_;
+    for (std::size_t i = 0; i < tickPhaseCount_; ++i) {
+        const TickPhase& phase = tickPhases_[i];
+        std::size_t at = 0;
+        while (at < tickPhaseTotals_.size() && tickPhaseTotals_[at].name != phase.name &&
+               std::strcmp(tickPhaseTotals_[at].name, phase.name) != 0) {
+            ++at;
+        }
+        if (at == tickPhaseTotals_.size()) {
+            at = insertAt;
+            tickPhaseTotals_.insert(tickPhaseTotals_.begin() + static_cast<std::ptrdiff_t>(at),
+                                    TickPhaseTotal{phase.name});
+        }
+        add(tickPhaseTotals_[at], phase.endedMillis - from);
+        from = phase.endedMillis;
+        insertAt = at + 1;
+    }
+    add(tickOtherTotal_, std::max(0.0, tookMillis - (from - tickStartedMillis_)));
 }
 
 void GameServer::tick(double nowMillis) {
@@ -4786,6 +4828,7 @@ void GameServer::broadcastDebugStats() {
     const double avgMillis =
         debugTickSamples_ > 0 ? debugTickAccumMillis_ / debugTickSamples_ : 0.0;
     const double maxMillis = debugTickMaxMillis_;
+    const int ticks = debugTickSamples_;
     debugTickAccumMillis_ = 0;
     debugTickMaxMillis_ = 0;
     debugTickSamples_ = 0;
@@ -4794,15 +4837,35 @@ void GameServer::broadcastDebugStats() {
     for (const auto& entry : sessions_) {
         if (entry.second.authenticated()) { anyone = true; break; }
     }
-    if (!anyone) return;
 
     ByteWriter w;
-    w.u8(static_cast<std::uint8_t>(net::ServerMessage::DebugStats));
-    w.f64(static_cast<double>(residentBytes()));
-    w.f64(static_cast<double>(heapBytes()));
-    w.f32(static_cast<float>(avgMillis));
-    w.f32(static_cast<float>(maxMillis));
-    broadcastToAuthenticated(w);
+    if (anyone) {
+        w.u8(static_cast<std::uint8_t>(net::ServerMessage::DebugStats));
+        w.f64(static_cast<double>(residentBytes()));
+        w.f64(static_cast<double>(heapBytes()));
+        w.f32(static_cast<float>(avgMillis));
+        w.f32(static_cast<float>(maxMillis));
+        w.u16(static_cast<std::uint16_t>(std::min(ticks, 0xFFFF)));
+        // Only the phases that ran this window: an idle server stops at the
+        // idle gate, and rows of zeroes would say the work was free rather
+        // than that it never happened.
+        std::uint8_t ran = 0;
+        for (const TickPhaseTotal& phase : tickPhaseTotals_) ran += phase.runs > 0 ? 1 : 0;
+        if (tickOtherTotal_.runs > 0) ++ran;
+        w.u8(ran);
+        const auto put = [&w](const TickPhaseTotal& phase) {
+            if (phase.runs <= 0) return;
+            w.str(phase.name);
+            w.f32(static_cast<float>(phase.totalMillis));
+            w.f32(static_cast<float>(phase.maxMillis));
+            w.u16(static_cast<std::uint16_t>(std::min(phase.runs, 0xFFFF)));
+        };
+        for (const TickPhaseTotal& phase : tickPhaseTotals_) put(phase);
+        put(tickOtherTotal_);
+    }
+    for (TickPhaseTotal& phase : tickPhaseTotals_) phase = TickPhaseTotal{phase.name};
+    tickOtherTotal_ = TickPhaseTotal{tickOtherTotal_.name};
+    if (anyone) broadcastToAuthenticated(w);
 }
 
 void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) {

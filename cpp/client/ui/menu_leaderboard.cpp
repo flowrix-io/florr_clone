@@ -3,6 +3,10 @@
 // Ranked over accounts rather than over who happens to be online, so the board
 // is a record of progress and not a snapshot of the lobby. The server answers
 // on request; the panel asks once when it opens and again only when told to.
+//
+// An admin's card has a second tab, Polls: the poll history and its results
+// (renderPollResults, menu_poll.cpp). Everyone else never sees the tab row,
+// and their board is laid out exactly as it was before the tab existed.
 
 #include <algorithm>
 #include <cstdio>
@@ -10,6 +14,7 @@
 
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
+#include "client/ui/poll_ui.h"
 #include "client/ui/text.h"
 
 namespace flix {
@@ -21,6 +26,12 @@ namespace {
 /// The card is a fixed 500x500 pinned under the top icon row, and every metric
 /// here is measured off it rather than off the window.
 constexpr double kHeaderHeight = 50.0;   ///< chrome above the scrolling body
+/// An admin's Players/Polls tabs, under the header: the row, and the room it
+/// takes from the top of the body (the row and a gap under it).
+constexpr double kTabWidth = 90.0;
+constexpr double kTabHeight = 26.0;
+constexpr double kTabGap = 5.0;
+constexpr double kTabBand = kTabHeight + 6.0;
 constexpr double kRowHeight = 40.0;
 constexpr double kColumnHeader = 30.0;
 constexpr double kScrollbarWidth = 10.0;
@@ -103,12 +114,21 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     const std::vector<LeaderboardRow>& rows = ctx.net.leaderboard();
     const bool pending = ctx.net.leaderboardPending();
 
+    // The tab row is an admin's alone, as the poll history is: the server
+    // answers anybody else's request for it with a refusal.
+    const bool admin = ctx.net.isSkinAdmin();
+    if (!admin) showPolls_ = false;
+    const double tabBand = admin ? kTabBand : 0.0;
+    const Rect boardTab{panel.x + 15.0, panel.y + kHeaderHeight, kTabWidth, kTabHeight};
+    const Rect pollsTab{boardTab.right() + kTabGap, boardTab.y, kTabWidth, kTabHeight};
+
     const Rect closeRect = closeButtonRect(panel);
     const Rect refreshRect{panel.right() - 140.0, panel.y + 10.0, 80.0, 30.0};
     // Inside the card's border on three sides, so neither the rows nor the
     // track ever paint over the frame.
-    const Rect view{panel.x + kMenuBorder, panel.y + kHeaderHeight, panel.w - kMenuBorder * 2,
-                    std::max(0.0, panel.h - kHeaderHeight - kMenuBorder)};
+    const double top = kHeaderHeight + tabBand;
+    const Rect view{panel.x + kMenuBorder, panel.y + top, panel.w - kMenuBorder * 2,
+                    std::max(0.0, panel.h - top - kMenuBorder)};
     const Rect bar{view.right() - kScrollbarWidth, view.y, kScrollbarWidth, view.h};
 
     // An empty board still reserves a row's worth of height, which is what
@@ -121,12 +141,13 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     // the board does; at the end of a long board that last 5px of content
     // sits under the card's border.
     scroll_.viewHeight = view.h + kTrackBottomInset;
-    const bool scrollable = scroll_.contentHeight > scroll_.viewHeight;
+    const bool scrollable = !showPolls_ && scroll_.contentHeight > scroll_.viewHeight;
 
     // The reference SUBTRACTS the wheel delta from its scroll offset, so a
     // wheel-down there walks the board back toward rank 1 rather than on to
     // rank 50 -- the other way round from the other panels, and kept.
-    if (panel.contains(mouse)) scroll_.offset += ctx.wheel() * kWheelStep;
+    // The poll history scrolls itself; the board must not move under it.
+    if (!showPolls_ && panel.contains(mouse)) scroll_.offset += ctx.wheel() * kWheelStep;
     // A finger is not inverted: the board follows it. Everything but the
     // track, which a finger drags the other way.
     scroll_.offset -=
@@ -139,6 +160,13 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     if (ctx.pressed()) {
         if (closeButtonHit(panel, ctx.window).contains(mouse)) {
             closing = true;
+        } else if (admin && boardTab.contains(mouse)) {
+            showPolls_ = false;
+        } else if (admin && pollsTab.contains(mouse)) {
+            showPolls_ = true;
+            drag.active = false;
+        } else if (showPolls_) {
+            // The history's own buttons act on release, through ctx.clicked.
         } else if (refreshRect.contains(mouse)) {
             ctx.net.requestLeaderboard(ctx.settings.showAdminsOnLeaderboard);
         } else if (scrollable && bar.contains(mouse)) {
@@ -151,7 +179,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     if (drag.active) {
         // Anywhere in the track column starts the drag and the content follows
         // the pointer from there; the thumb is never snapped under the cursor.
-        const double ratio = (mouse.y - drag.anchorY) / (panel.h - kThumbTravelInset);
+        const double ratio = (mouse.y - drag.anchorY) / (panel.h - kThumbTravelInset - tabBand);
         scroll_.offset = drag.anchorScroll + ratio * scroll_.maxOffset();
     }
     scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
@@ -161,6 +189,23 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     panelCard(canvas, panel, kLeaderboardSkin);
 
     panelHeading(canvas, panel, "Leaderboard");
+    panelClose(canvas, closeRect, closeRect.contains(mouse));
+
+    if (admin) {
+        const auto tab = [&](Rect r, const char* label, bool active) {
+            ButtonStyle style;
+            style.fill = active ? 0x8C5E0Eu : kLeaderboardSkin.border;
+            style.textSize = 13.0;
+            button(canvas, r, label, !active && r.contains(mouse), false, style);
+        };
+        tab(boardTab, "Players", !showPolls_);
+        tab(pollsTab, "Polls", showPolls_);
+    }
+    if (showPolls_) {
+        renderPollResults(ctx, Rect{panel.x, panel.y + top, panel.w,
+                                    std::max(0.0, panel.h - top - kMenuBorder)});
+        return true;
+    }
 
     // The count of every account the server holds, beside the title. It comes
     // with the board rather than being derived from it: the board is the top
@@ -180,7 +225,6 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     }
 
     pillButton(canvas, refreshRect, "Refresh", kLeaderboardSkin.border);
-    panelClose(canvas, closeRect, closeRect.contains(mouse));
 
     canvas.save();
     canvas.beginPath();

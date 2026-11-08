@@ -2413,8 +2413,11 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
         queryBodies(grid, source.realm, source.position, source.radius + kBroadphasePad,
                     candidates_);
         // Resolved once per source, for the shots below: the answer canDamage()
-        // would reach for every one of them.
-        const Entity sourcePlayer = creditedPlayer(world, source.attacker);
+        // would reach for every one of them. Only once a shot turns up, which
+        // for most bodies is never; nothing in a combat phase destroys an
+        // entity, so the answer is the same whenever it is asked.
+        Entity sourcePlayer = NULL_ENTITY;
+        bool sourcePlayerResolved = false;
         bool ricochetHit = false;
         for (const Entity victim : candidates_) {
             if (ricochetHit) break;
@@ -2426,6 +2429,10 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // a shot answerable to the attacker's own flower, and a shot's
             // reach carries none of the pet or NPC allowances.
             if (const FiledShot* shot = filedShot(victim)) {
+                if (!sourcePlayerResolved) {
+                    sourcePlayer = creditedPlayer(world, source.attacker);
+                    sourcePlayerResolved = true;
+                }
                 if (sourcePlayer != NULL_ENTITY && shot->player == sourcePlayer) continue;
                 const double reach = source.radius + shot->radius;
                 if ((shot->position - source.position).lengthSq() > reach * reach) continue;
@@ -2433,6 +2440,21 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             const Transform* transform = world.tryGet<Transform>(victim);
             const Body* body = world.tryGet<Body>(victim);
             if (transform == nullptr || body == nullptr) continue;
+
+            // Out of every reach this pair could be given -- the widest below
+            // is the pet gap plus the NPC slack -- before anything asks what
+            // kind of pair it is. Most candidates a cell hands back are
+            // nowhere near the source, and each of those questions is a
+            // lookup. Nothing above the exact test below acts on a victim out
+            // of its reach: resolvePetalPvp measures the plain sum of the radii.
+            // Only for a sum of radii that is not negative, which is where
+            // squaring the widest reach keeps it the widest.
+            const Vec2 offset = transform->position - source.position;
+            const double radii = source.radius + body->radius;
+            if (radii >= 0.0) {
+                const double widest = radii + kMobCollisionBuffer + kNpcTouchSlack;
+                if (offset.lengthSq() > widest * widest) continue;
+            }
 
             // A petal only ever bleeds inside its OWN hit block, below. The
             // reference has no mob-vs-petal collision at all, so letting a mob
@@ -2486,7 +2508,6 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                                    (source.isPlayerBody && world.has<NpcTag>(victim)) ||
                                    (looseVictim && !source.isPetal) || source.isLoose;
 
-            const Vec2 offset = transform->position - source.position;
             const double reach = source.radius + body->radius +
                                  (petPair ? kMobCollisionBuffer : 0.0) +
                                  (flushPair ? kNpcTouchSlack : 0.0);
@@ -3232,8 +3253,7 @@ void CombatSystem::fileShots(World& world) {
     filedShots_.clear();
     shotCells_.clear();
     maxShotRadius_ = 0.0;
-    shotRowMin_ = kShotCellLimit - 1;
-    shotRowMax_ = 0;
+    shotBounds_.fill(ShotBounds{});
 
     queries_->filedShots.each([&](Entity e, ProjectileTag&, Transform& transform, Body& body) {
         const std::uint32_t index = entityIndex(e);
@@ -3254,10 +3274,14 @@ void CombatSystem::fileShots(World& world) {
         if (!std::isfinite(at.x) || !std::isfinite(at.y)) return;
         if (body.radius > maxShotRadius_) maxShotRadius_ = body.radius;
         const std::uint32_t row = shotCellCoord(at.y, kShotCellSize);
-        shotRowMin_ = std::min(shotRowMin_, row);
-        shotRowMax_ = std::max(shotRowMax_, row);
-        shotCells_.push_back(
-            {shotCellKey(transform.realm, row, shotCellCoord(at.x, kShotCellSize)), slot});
+        const std::uint32_t column = shotCellCoord(at.x, kShotCellSize);
+        ShotBounds& bounds = shotBounds_[realmIndex(transform.realm)];
+        if (!bounds.filed) bounds = ShotBounds{true, row, row, column, column};
+        bounds.rowMin = std::min(bounds.rowMin, row);
+        bounds.rowMax = std::max(bounds.rowMax, row);
+        bounds.columnMin = std::min(bounds.columnMin, column);
+        bounds.columnMax = std::max(bounds.columnMax, column);
+        shotCells_.push_back({shotCellKey(transform.realm, row, column), slot});
     });
     // Slot as the tiebreak, so shots sharing a cell come back in filing order
     // and a query's answer does not depend on how the sort felt about ties.
@@ -3273,11 +3297,16 @@ void CombatSystem::queryShots(Realm realm, Vec2 center, double radius,
     if (!(radius >= 0.0)) radius = 0.0;   // negative, and NaN
     // Widened by the biggest shot, because a shot is filed only under its
     // centre: one whose edge reaches into the circle may sit a radius outside.
+    const ShotBounds& bounds = shotBounds_[realmIndex(realm)];
+    if (!bounds.filed) return;
     const double reach = radius + maxShotRadius_;
-    const std::uint32_t x0 = shotCellCoord(center.x - reach, kShotCellSize);
-    const std::uint32_t x1 = shotCellCoord(center.x + reach, kShotCellSize);
-    const std::uint32_t y0 = std::max(shotCellCoord(center.y - reach, kShotCellSize), shotRowMin_);
-    const std::uint32_t y1 = std::min(shotCellCoord(center.y + reach, kShotCellSize), shotRowMax_);
+    const std::uint32_t x0 =
+        std::max(shotCellCoord(center.x - reach, kShotCellSize), bounds.columnMin);
+    const std::uint32_t x1 =
+        std::min(shotCellCoord(center.x + reach, kShotCellSize), bounds.columnMax);
+    if (x0 > x1) return;
+    const std::uint32_t y0 = std::max(shotCellCoord(center.y - reach, kShotCellSize), bounds.rowMin);
+    const std::uint32_t y1 = std::min(shotCellCoord(center.y + reach, kShotCellSize), bounds.rowMax);
     for (std::uint32_t row = y0; row <= y1; ++row) {
         const std::uint64_t first = shotCellKey(realm, row, x0);
         const std::uint64_t last = shotCellKey(realm, row, x1);

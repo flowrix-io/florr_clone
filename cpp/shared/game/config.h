@@ -1568,7 +1568,10 @@ public:
 
     bool loaded() const { return !mobs_.empty(); }
 
-    MobStats mobStats(std::uint16_t index, Rarity r) const;
+    /// Read out of a table worked out once at load, as petalStats() is: a mob
+    /// at a tier is a page of ladders and id compares, and the server asks it
+    /// for every mob body every tick (combat's contact gather alone).
+    const MobStats& mobStats(std::uint16_t index, Rarity r) const;
     /// Read out of a table worked out once at load: what a petal fields at a
     /// tier is a page of ladders, pow()s and id compares, and the server asks
     /// it a few thousand times a tick -- each worn slot twice over just to
@@ -1658,6 +1661,8 @@ private:
     std::vector<std::uint16_t> standIns_;
     /// Petal index -> petalStats() at every tier. See there.
     std::vector<std::array<PetalStats, kRarityCount>> petalStats_;
+    /// Mob index -> mobStats() at every tier. See there.
+    std::vector<std::array<MobStats, kRarityCount>> mobStats_;
     std::vector<std::string> warnings_;
     std::uint32_t hash_ = 0;
 

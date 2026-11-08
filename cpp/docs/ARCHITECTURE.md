@@ -86,7 +86,9 @@ cpp/
   client/         app*.cpp (screens, HUD, chat, minimap), net_client,
                   world_view (the snapshot mirror and its motion),
                   interpolation.h ease.h camera.h
-    render/       world_renderer, sprites, mob_art (painted mobs),
+    render/       world_renderer (draw order; the class is split by area
+                  into world_renderer_*.cpp, listed at the top of
+                  world_renderer.cpp), sprites, mob_art (painted mobs),
                   skin_render, art_cache
     ui/           menus and panels, text, markup (chat lines),
                   mobile_controls (the touch stick and its three buttons),
@@ -285,7 +287,11 @@ construction:
 * **Broadphase** — `SpatialGrid` keeps one layer per realm; `insert` files an
   entity under its realm and `query` names the realm it asks about, so a
   candidate list never crosses. The movement system's separation grid and the
-  petal attraction grid are the same class and follow the same rule.
+  petal attraction grid are the same class and follow the same rule. Every
+  map layer is ONE cell until `sizeToRealms` fits it to its map, so each grid
+  the tick builds must be sized: `GameServer::sizeBroadphases` does all three
+  at start and when the hosted arena changes shape. An unsized grid still
+  answers correctly, only quadratically (every query returns the whole biome).
 * **Replication** streams a viewer only its own realm, squadmates included;
   positional events carry a realm and are filtered the same way.
 * **Player lists** are `RealmPoint`s (position + realm): the mob LOD gate, the
@@ -1206,10 +1212,22 @@ still signs in, and a published skin keeps its name until its author next saves 
 when the name has to pass. The spam checks are not applied to names, and guild
 names and descriptions are not moderated.
 
+## The debug panel
+
+The debug panel (Settings > Enable Debug Menu, then J or the bug button) has
+three tabs. Graphs keeps two minutes of client frame time and memory and of
+the server's tick time and memory. Profiling breaks down this frame's drawing
+calls. Server shows the last second of the server's tick, phase by phase. The
+phases are the `markTickPhase` stamps in `GameServer::tick`, which also feed
+the `[tick] slow tick` log line. `foldTickPhases` sums them over the second,
+and the `DebugStats` packet carries the sums: per phase, the total, the worst
+single tick and how many ticks the phase ran in. A new stamp shows up in the
+tab without any client change. Tick time that no stamp covers is reported as
+`other`.
+
 ## The asset browser and boot scripts
 
-The debug panel (Settings > Enable Debug Menu, then J or the bug button) has an
-Assets button, which opens the asset browser: `client/ui/menu_assets.cpp` for
+The debug panel has an Assets button, which opens the asset browser: `client/ui/menu_assets.cpp` for
 the panel, `client/ui/asset_files.h` for its file and text rules (listing,
 line index, colouring, undo), which the tests cover without a window. It is
 gated on the same switch as the debug panel and closes with it.

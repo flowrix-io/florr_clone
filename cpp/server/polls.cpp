@@ -84,7 +84,7 @@ void GameServer::runPollRequest(Session& s,net::Connection& peer,const Json& q) 
     next.question=question;next.author=s.username;next.options=std::move(options);next.counts.resize(next.options.size());
     next.endsAtMillis=clockMillis_+seconds*1000;next.active=true;poll_=std::move(next);++pollHistoryRevision_;
     Json result=Json::object();result["created"]=true;
-    sendAdminTools(s,peer,"poll_creator",true,"Poll created. Results are in Debug > Polls.",result);
+    sendAdminTools(s,peer,"poll_creator",true,"Poll created. Results are in Leaderboard > Polls.",result);
     broadcastPollState();
 }
 }

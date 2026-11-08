@@ -20,6 +20,7 @@
 // below is written as gather-then-apply for exactly this reason, and any
 // system that wants to deal damage must do the same.
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -856,10 +857,21 @@ private:
     };
     std::vector<ShotCell> shotCells_;
     double maxShotRadius_ = 0;
-    /// The rows any shot was filed in, whatever its realm, so that a query
-    /// with an absurd radius walks the rows that exist rather than millions.
-    std::uint32_t shotRowMin_ = 0;
-    std::uint32_t shotRowMax_ = 0;
+    /// The cells each realm's shots were filed in. A query is clamped to its
+    /// own realm's box before it searches: a realm with no shots -- every
+    /// biome nobody is shooting in -- answers at once, a body far from the
+    /// shots searches no rows, and a query with an absurd radius walks the
+    /// rows that exist rather than millions. Per realm, because with flowers
+    /// spread over the biomes the rows spanned by EVERY realm's shots cover
+    /// most of a map, and about two thousand bodies ask each tick.
+    struct ShotBounds {
+        bool filed = false;
+        std::uint32_t rowMin = 0;
+        std::uint32_t rowMax = 0;
+        std::uint32_t columnMin = 0;
+        std::uint32_t columnMax = 0;
+    };
+    std::array<ShotBounds, kMaxRealms> shotBounds_{};
     struct FiledShot {
         Entity entity = NULL_ENTITY;
         /// creditedPlayer() of the shot, resolved once when it is filed.

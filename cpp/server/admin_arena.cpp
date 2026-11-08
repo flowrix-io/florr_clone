@@ -94,7 +94,7 @@ void GameServer::saveHostedArena() {
     database_.markDirty();
 }
 void GameServer::refreshHostedArena(bool reset) {
-    grid_.sizeToRealms(*terrain_);
+    sizeBroadphases();
     if (reset) {
         std::vector<Entity> remove;
         Query<Transform> entities{world_};

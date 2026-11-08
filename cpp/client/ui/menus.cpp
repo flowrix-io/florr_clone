@@ -2178,6 +2178,7 @@ void DebugPanel::recordFrame(double dtSeconds, NetClient& net) {
         pushSample(serverResidentMB_, stats.residentBytes / kBytesPerMB, kHistory);
         pushSample(serverTickAvgMillis_, stats.tickAvgMillis, kHistory);
         pushSample(serverTickMaxMillis_, stats.tickMaxMillis, kHistory);
+        serverStats_ = std::move(stats);
     }
 }
 
@@ -2286,14 +2287,13 @@ bool DebugPanel::render(MenuContext& ctx) {
     const Rect closeRect = closeButtonRect(panel);
     panelClose(canvas, closeRect, closeRect.contains(mouse));
 
-    // Two tabs, the same shape the skin studio's are: a button row where the
+    // The tabs, the same shape the skin studio's are: a button row where the
     // active one is filled and the others are not.
-    const double kTabW = ctx.net.isSkinAdmin()?85.0:96.0;
+    constexpr double kTabW = 85.0;
     constexpr double kTabH = 26.0;
     const Rect tabRow{panel.x + kPad, panel.y + kHeader + kPad - 4.0, panel.w - kPad * 2, kTabH};
-    static const char* const kTabLabels[] = {"Graphs", "Profiling", "Polls"};
-    const int tabCount=ctx.net.isSkinAdmin()?3:2;
-    if(!ctx.net.isSkinAdmin() && tab_==Tab::Polls)tab_=Tab::Graphs;
+    static const char* const kTabLabels[] = {"Graphs", "Profiling", "Server"};
+    constexpr int tabCount = 3;
     for (int i = 0; i < tabCount; ++i) {
         const Rect r{tabRow.x + i * (kTabW + 5.0), tabRow.y, kTabW, kTabH};
         const bool active = static_cast<int>(tab_) == i;
@@ -2303,8 +2303,9 @@ bool DebugPanel::render(MenuContext& ctx) {
         button(canvas, r, kTabLabels[i], !active && r.contains(mouse), false, style);
         if (ctx.clicked(r)) tab_ = static_cast<Tab>(i);
     }
-    // Not a third tab: the asset browser needs a card several times this one's
-    // width, so the button hands over to it, and its own back button returns.
+    // Not another tab: the asset browser needs a card several times this
+    // one's width, so the button hands over to it, and its own back button
+    // returns.
     {
         const Rect r{tabRow.x + tabCount * (kTabW + 5.0), tabRow.y, kTabW, kTabH};
         ButtonStyle style;
@@ -2315,7 +2316,10 @@ bool DebugPanel::render(MenuContext& ctx) {
     }
 
     const Rect body{panel.x, tabRow.bottom(), panel.w, panel.bottom() - tabRow.bottom()};
-    if(tab_==Tab::Polls){renderPollResults(ctx,body);return !ctx.clicked(closeRect);}
+    if (tab_ == Tab::Server) {
+        drawServerTab(ctx, body);
+        return !ctx.clicked(closeRect);
+    }
     if (tab_ == Tab::Profiling) {
         drawProfilingTab(ctx, body);
         return !ctx.clicked(closeRect);
@@ -2507,6 +2511,169 @@ void DebugPanel::drawProfilingTab(MenuContext& ctx, Rect body) {
     if (shown < kinds.size()) {
         label.fill = 0x999999u;
         text(canvas, "+" + std::to_string(kinds.size() - shown) + " more", left + 5.0, cy, label);
+    }
+}
+
+namespace {
+
+/// One colour per phase, by its place in the tick rather than in the table,
+/// so a phase keeps its colour in the budget bar whichever way the rows are
+/// sorted. `other` is grey: it is the remainder, not a phase of its own.
+std::uint32_t tickPhaseColour(std::size_t tickOrder, const std::string& name) {
+    static constexpr std::uint32_t kPalette[] = {
+        0x60A5FAu, 0xF87171u, 0x34D399u, 0xFBBF24u, 0xA78BFAu, 0xF472B6u,
+        0x22D3EEu, 0xFB923Cu, 0xA3E635u, 0xE879F9u, 0x2DD4BFu, 0xFDE68Au,
+    };
+    if (name == "other") return 0x9CA3AFu;
+    return kPalette[tickOrder % (sizeof kPalette / sizeof kPalette[0])];
+}
+
+} // namespace
+
+void DebugPanel::drawServerTab(MenuContext& ctx, Rect body) {
+    Canvas& canvas = ctx.canvas;
+    constexpr double kPad = 15.0;
+    const double left = body.x + kPad;
+    const double width = body.w - kPad * 2;
+    double cy = body.y + 12.0;
+
+    TextStyle label;
+    label.size = 12.0;
+
+    const NetClient::ServerDebugStats& s = serverStats_;
+    if (!haveServerStats_) {
+        label.fill = 0xBBBBBBu;
+        text(canvas, "no data \xE2\x80\x94 join a game", left, cy + 10.0, label);
+        return;
+    }
+
+    const auto row = [&](const std::string& what, const std::string& value, std::uint32_t tint) {
+        label.fill = tint;
+        label.align = Align::Left;
+        text(canvas, what, left, cy, label);
+        label.align = Align::Right;
+        text(canvas, value, left + width, cy, label);
+        label.align = Align::Left;
+        cy += 17.0;
+    };
+
+    // The headline: the second's tick against the budget a tick has before
+    // the next one is late. Past the budget the server is falling behind, and
+    // step() lands the next tick at once rather than catching up.
+    const double ticks = std::max(1, s.ticks);
+    const double load = s.tickAvgMillis / net::kTickMillis;
+    const std::uint32_t loadTint = load < 0.5 ? 0x7FDB7Fu : load < 0.8 ? 0xFFDD66u : 0xE07070u;
+    row("Tick", "avg " + fixedDecimals(s.tickAvgMillis, 2) + " / max " +
+                    fixedDecimals(s.tickMaxMillis, 2) + " ms",
+        0x00FF00u);
+    row("Rate", std::to_string(s.ticks) + " of " + std::to_string(net::kTicksPerSecond) +
+                    " ticks in the last second",
+        0xBBBBBBu);
+    row("Budget", std::to_string(static_cast<int>(std::lround(load * 100.0))) + "% of " +
+                      fixedDecimals(net::kTickMillis, 1) + " ms",
+        loadTint);
+    cy += 2.0;
+
+    // The average tick as one bar, a segment per phase, against the budget.
+    // An overrun widens the scale so every phase still fits, and a tick mark
+    // shows where the budget ran out.
+    {
+        constexpr double kBarH = 14.0;
+        const double scale = std::max(net::kTickMillis, s.tickAvgMillis);
+        const Rect bar{left, cy - 7.0, width, kBarH};
+        setFill(canvas, 0x2A2A2Au, 1.0);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(bar.x), static_cast<float>(bar.y),
+                         static_cast<float>(bar.w), static_cast<float>(bar.h), 3.0f);
+        canvas.fill();
+        double x = bar.x;
+        for (std::size_t i = 0; i < s.phases.size(); ++i) {
+            const double share = s.phases[i].totalMillis / ticks / scale;
+            const double w = std::min(bar.right() - x, bar.w * share);
+            if (w <= 0) continue;
+            setFill(canvas, tickPhaseColour(i, s.phases[i].name), 1.0);
+            canvas.fillRect(static_cast<float>(x), static_cast<float>(bar.y),
+                            static_cast<float>(w), static_cast<float>(bar.h));
+            x += w;
+        }
+        if (s.tickAvgMillis > net::kTickMillis) {
+            const double at = bar.x + bar.w * (net::kTickMillis / scale);
+            setFill(canvas, 0xFFFFFFu, 1.0);
+            canvas.fillRect(static_cast<float>(at - 1.0), static_cast<float>(bar.y - 3.0), 2.0f,
+                            static_cast<float>(bar.h + 6.0));
+        }
+        cy += kBarH + 12.0;
+    }
+
+    // --- by phase ----------------------------------------------------------
+    label.fill = 0xFACC15u;
+    text(canvas, "Phases, ms per tick", left, cy, label);
+    const Rect sortRect{left + width - 110.0, cy - 11.0, 110.0, 18.0};
+    ButtonStyle sortStyle;
+    sortStyle.fill = 0x4D4D4Du;
+    sortStyle.textSize = 11.0;
+    button(canvas, sortRect, serverSortByCost_ ? "sort: cost" : "sort: tick order",
+           sortRect.contains(ctx.mouse()), false, sortStyle);
+    if (ctx.clicked(sortRect)) serverSortByCost_ = !serverSortByCost_;
+    cy += 20.0;
+
+    // Two figures a row: the phase's share of the average tick, which is what
+    // adds up to the headline, and its worst single tick, which is the one
+    // that shows up as a stutter. A phase that skipped ticks -- the snapshot
+    // ones run at the send rate, persist on its own timer -- says how many it
+    // ran in.
+    const double avgX = left + width - 70.0;
+    const double maxX = left + width - 5.0;
+    label.size = 11.0;
+    label.fill = 0x999999u;
+    label.align = Align::Right;
+    text(canvas, "avg", avgX, cy, label);
+    text(canvas, "max", maxX, cy, label);
+    label.align = Align::Left;
+    cy += 15.0;
+
+    std::vector<std::size_t> order(s.phases.size());
+    for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+    if (serverSortByCost_) {
+        std::stable_sort(order.begin(), order.end(), [&s](std::size_t a, std::size_t b) {
+            return s.phases[a].totalMillis > s.phases[b].totalMillis;
+        });
+    }
+    double busiest = 0.0;
+    for (const auto& phase : s.phases) busiest = std::max(busiest, phase.totalMillis);
+
+    std::size_t shown = 0;
+    for (std::size_t i : order) {
+        if (cy > body.bottom() - 26.0) break;
+        ++shown;
+        const NetClient::ServerDebugStats::TickPhase& phase = s.phases[i];
+        const std::uint32_t colour = tickPhaseColour(i, phase.name);
+        // The same backing bar the call-type table has, scaled to the
+        // costliest phase, so the one running away with the tick stands out.
+        const double share = busiest > 0 ? phase.totalMillis / busiest : 0.0;
+        setFill(canvas, colour, 0.22);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(left), static_cast<float>(cy - 9.0),
+                         static_cast<float>(std::max(2.0, width * share)), 13.0f, 3.0f);
+        canvas.fill();
+        setFill(canvas, colour, 1.0);
+        canvas.fillRect(static_cast<float>(left + 4.0), static_cast<float>(cy - 4.0), 7.0f, 7.0f);
+
+        std::string name = phase.name;
+        if (phase.runs != s.ticks) name += "  (" + std::to_string(phase.runs) + " ticks)";
+        label.fill = 0xFFFFFFu;
+        label.align = Align::Left;
+        text(canvas, name, left + 16.0, cy, label);
+        label.align = Align::Right;
+        text(canvas, fixedDecimals(phase.totalMillis / ticks, 2), avgX, cy, label);
+        text(canvas, fixedDecimals(phase.maxMillis, 2), maxX, cy, label);
+        label.align = Align::Left;
+        cy += 15.0;
+    }
+    if (shown < s.phases.size()) {
+        label.fill = 0x999999u;
+        text(canvas, "+" + std::to_string(s.phases.size() - shown) + " more", left + 5.0, cy,
+             label);
     }
 }
 
