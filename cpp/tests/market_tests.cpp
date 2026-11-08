@@ -160,3 +160,36 @@ TEST(market_mr_bee_stays_in_front_of_overlapping_mobs_and_projectiles) {
     const auto expected=frame(alone,"/tmp/flowrix-market-mr-bee-alone.ppm");
     CHECK(differingPixels(covered,expected)>100);CHECK_EQ(differingPixels(front,expected),0);
 }
+
+TEST(market_live_refresh_keeps_the_page_and_recovers_when_the_last_page_disappears) {
+    Harness h("market-refresh",[](const std::string& path){seedWallet(path,"seller",200);seedStack(path,"seller","petal_basic",Rarity::Common,10);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient client;CHECK(loginAs(h,client,"seller","password7"));
+    for(int i=0;i<7;++i)CHECK(request(h,client,"market","post",posting("basic",0,1,1)));
+    CHECK(fontsReady());SpriteCache sprites;WorldRenderer renderer;Window window;ClientSettings settings;DragState drag;ShopPanel shop;shop.openMarket();shop.setSlide(1,false);
+    Canvas canvas=Canvas::createVirtual(900,680);MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};ctx.bounds=ShopPanel::bounds(900,680);
+    refreshMarketUi();shop.render(ctx);h.step(8,{&client});
+    Json q=Json::object();q["offset"]=5;CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["total"].asInt(),7);CHECK_EQ(client.adminTools("market")["offset"].asInt(),5);CHECK_EQ(client.adminTools("market")["rows"].size(),std::size_t(2));
+    // Render the real page count at the far end of the list.
+    ctx.timeSeconds=.5;shop.render(ctx);canvas.savePPM("/tmp/flowrix-market-pagination.ppm");
+    const double revision=client.adminTools("market")["revision"].asDouble();h.step(8,{&client});CHECK_EQ(client.adminTools("market")["revision"].asDouble(),revision);
+    ctx.timeSeconds=1.01;shop.render(ctx);CHECK(h.stepUntil({&client},[&]{return client.adminTools("market")["revision"].asDouble()>revision;}));
+    const auto next=client.adminTools("market")["revision"].asDouble();ctx.timeSeconds=1.5;shop.render(ctx);h.step(8,{&client});CHECK_EQ(client.adminTools("market")["revision"].asDouble(),next);
+    q["offset"]=5;CHECK(request(h,client,"market","browse",q));const Json rows=client.adminTools("market")["rows"];
+    for(const auto& row:rows.items()){q["id"]=row["id"];CHECK(request(h,client,"market","cancel",q));}
+    CHECK_EQ(client.adminTools("market")["total"].asInt(),5);CHECK_EQ(client.adminTools("market")["offset"].asInt(),0);CHECK_EQ(client.adminTools("market")["rows"].size(),std::size_t(5));
+}
+
+TEST(market_accepts_petal_names_and_ids_and_offers_disambiguated_suggestions) {
+    Harness h("market-names",[](const std::string& path){seedWallet(path,"seller",200);seedStack(path,"seller","petal_magic_peas",Rarity::Common,4);seedStack(path,"seller","petal_third_eye",Rarity::Common,3);},dataDir(),0);CHECK(h.ready);if(!h.ready)return;
+    NetClient client;CHECK(loginAs(h,client,"seller","password7"));
+    CHECK(request(h,client,"market","post",posting(" bLuEbErRiEs ",0,2,1)));CHECK(client.adminTools("market")["ok"].asBool());CHECK_EQ(wallet(h,"seller").itemCount(Rarity::Common,"petal_magic_peas"),2);
+    CHECK_EQ(client.adminTools("market")["rows"][0]["item"].asString(),"magic_peas");
+    CHECK(request(h,client,"market","post",posting("THIRD_EYE",0,1,1)));CHECK(client.adminTools("market")["ok"].asBool());
+    Json q=Json::object();q["filter"]="blueberries";CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["total"].asInt(),1);CHECK_EQ(client.adminTools("market")["rows"][0]["item"].asString(),"magic_peas");
+    q["filter"]="Third Eye";CHECK(request(h,client,"market","browse",q));CHECK_EQ(client.adminTools("market")["total"].asInt(),1);CHECK_EQ(client.adminTools("market")["rows"][0]["item"].asString(),"third_eye");
+    CHECK(request(h,client,"market","post",posting("not a petal",0,1,1)));CHECK(!client.adminTools("market")["ok"].asBool());
+    for(const auto& query:{"blueber","MAGIC_PEAS"," Blueberries "}){const auto choices=marketPetalSuggestions(query);CHECK(!choices.empty());if(!choices.empty())CHECK_EQ(content().petal(choices.front()).id,"magic_peas");}
+    const auto choices=marketPetalSuggestions("magic");CHECK(choices.size()<=5);for(auto index:choices)CHECK(!content().petal(index).isAdminPetal);
+    CHECK(fontsReady());Canvas canvas=Canvas::createVirtual(380,210);SpriteCache sprites;WorldRenderer renderer;Window window;ClientSettings settings;DragState drag;MenuContext ctx{canvas,window,client,sprites,renderer,settings,drag};
+    renderMarketPetalSuggestions(ctx,{25,40,330,130},choices);canvas.savePPM("/tmp/flowrix-market-petal-picker.ppm");
+}

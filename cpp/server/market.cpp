@@ -24,14 +24,21 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
     if(q["filter"].asString().size()>64||q["rarityFilter"].asString().size()>32||q["item"].asString().size()>64||q["id"].asString().size()>80){fail("Market request is too long.");return;}
     int minimum=0,maximum=kLadderRarityCount-1;
     if(!collectionRarityFilter(q["rarityFilter"].asString(),minimum,maximum)){fail("Rarity filter: Mythic, Ultra+, Rare-, or All.");return;}
-    persistPlayer(s);
+    if(action!="browse")persistPlayer(s);
     auto& account=database_.progress(s.userId);
     if(!validBalance(account.stars)){fail("Invalid star balance. Ask an admin to review it.");return;}
     const auto tableName="petalMarket";
     std::string message;
     if(action=="post") {
         int rarity=0,quantity=0;
-        const auto item=q["item"].asString();const auto index=content().petalIndex(item);
+        const auto name=lowerCase(trimmed(q["item"].asString()));
+        auto index=content().petalIndex(name);
+        if(index==kInvalidIndex)for(std::size_t i=0;i<content().petalCount();++i)
+            if(lowerCase(content().petal(i).name)==name){
+                if(index!=kInvalidIndex){fail("Ambiguous petal name; select a suggestion with its ID.");return;}
+                index=static_cast<std::uint16_t>(i);
+            }
+        const auto item=index==kInvalidIndex?std::string():content().petal(index).id;
         const double price=q["price"].asDouble(-1);
         if(index==kInvalidIndex||content().petal(index).isAdminPetal||!integer(q["rarity"],0,kLadderRarityCount-1,rarity)||!integer(q["quantity"],1,1000000,quantity)||!validMoney(price)||price<marketMinimum(Rarity(rarity))||price*quantity>kEconomyMax) {fail("Invalid item, amount or price. Minimum is 1 star for Common, x3 each rarity. Admin and Universal petals cannot be traded.");return;}
         const auto& rows=database_.storedTable(tableName);
@@ -74,14 +81,17 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
         database_.markDirty();syncCommerceAccount(ownerId);syncCommerceAccount(s.userId);
     }
     Json page=Json::object(),rows=Json::array();int offset=0,total=0;integer(q["offset"],0,2000,offset);
-    const auto filter=lowerCase(q["filter"].asString());
+    const auto filter=lowerCase(trimmed(q["filter"].asString()));
     int sorting=orders?0:1;integer(q["sort"],0,2,sorting);
     if(sorting==1&&!orders&&collectionRanks_.empty())collectionRanks_=collectionBaseRanks(content(),loot_->dropTables());
     std::vector<Json> sorted;
     const auto& entries=database_.storedTable(tableName);
     for(const auto& id:entries.keys()) {
         const auto& row=entries[id];if(row["orders"].asBool()!=orders)continue;
-        if(!filter.empty()&&row["item"].asString().find(filter)==std::string::npos)continue;
+        const auto index=content().petalIndex(row["item"].asString());
+        if(index==kInvalidIndex)continue;
+        if(!filter.empty()&&row["item"].asString().find(filter)==std::string::npos&&
+           lowerCase(content().petal(index).name).find(filter)==std::string::npos)continue;
         const int rarity=row["rarity"].asInt(-1);if(rarity<minimum||rarity>maximum||!validMoney(row["price"].asDouble(-1))||row["price"].asDouble()<1)continue;
         sorted.push_back(row);
     }
@@ -93,6 +103,8 @@ void GameServer::runMarket(Session& s,net::Connection& peer,const Json& q) {
         if(ar!=br)return ar>br;
         return a["id"].asString()<b["id"].asString();
     });
+    // Sales/cancellations may remove the last page between refreshes.
+    offset=std::min(offset/5,std::max(0,(int(sorted.size())-1)/5))*5;
     for(const auto& row:sorted) {
         if(total++<offset||rows.size()>=5)continue;
         Json view=row;view.erase("owner");view["mine"]=row["owner"].asString()==s.userId;
