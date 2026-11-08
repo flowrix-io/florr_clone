@@ -321,7 +321,7 @@ TEST(nothing_puts_a_unique_or_apex_into_an_prestige_twin) {
                            rng) != NULL_ENTITY);
 }
 
-TEST(an_prestige_mob_pays_the_xp_of_the_tier_below) {
+TEST(a_prestige_mob_pays_the_xp_of_its_own_tier) {
     World world;
     Terrain terrain;
     SpawnSystem spawner;
@@ -344,15 +344,12 @@ TEST(an_prestige_mob_pays_the_xp_of_the_tier_below) {
         return e == NULL_ENTITY ? -1.0 : world.get<Bounty>(e).xp;
     };
 
-    // The plain garden pays a tier its own XP.
+    // A mob pays its own tier's XP, in the plain garden and its prestige twin alike.
     CHECK(xpOf(Rarity::Super, garden) == content.mobStats(bee, Rarity::Super).xp);
-    // The twin pays one tier down: a super is worth an ultra, an uncommon a
-    // common, and a common (console only) stays a common.
-    CHECK(xpOf(Rarity::Super, twin) == content.mobStats(bee, Rarity::Ultra).xp);
-    CHECK(xpOf(Rarity::Ultra, twin) == content.mobStats(bee, Rarity::Mythic).xp);
-    CHECK(xpOf(Rarity::Uncommon, twin) == content.mobStats(bee, Rarity::Common).xp);
+    CHECK(xpOf(Rarity::Super, twin) == content.mobStats(bee, Rarity::Super).xp);
+    CHECK(xpOf(Rarity::Ultra, twin) == content.mobStats(bee, Rarity::Ultra).xp);
+    CHECK(xpOf(Rarity::Uncommon, twin) == content.mobStats(bee, Rarity::Uncommon).xp);
     CHECK(xpOf(Rarity::Common, twin) == content.mobStats(bee, Rarity::Common).xp);
-    CHECK(content.mobStats(bee, Rarity::Ultra).xp < content.mobStats(bee, Rarity::Super).xp);
 }
 
 // ---------------------------------------------------------------------------
