@@ -160,9 +160,9 @@ void renderSignatureAura(Canvas& c, double radius, double time) {
 
 void renderAnimatedSkin(Canvas& c,const CustomSkin& skin,double radius,double time) {
     if(hasFanAnimation(skin)) {
-        c.save();c.scale(float(radius/25),float(radius/25));
+        c.save();c.scale(float(radius*.95/25),float(radius*.95/25));
         for(int ring=0;ring<12;++ring) {
-            c.save();c.rotate(float(time*(.13+ring*.018)*(ring%2?-1:1)));
+            c.save();c.rotate(float(time*.85*(.13+ring*.018)*(ring%2?-1:1)));
             ui::setStroke(c,ring%2?0xFF9944u:0xFFDB70u);c.setLineWidth(float(skin.shapes[ring*6].sw));
             c.beginPath();for(int edge=0;edge<6;++edge){const auto& line=skin.shapes[ring*6+edge];c.moveTo(line.x,line.y);c.lineTo(line.x2,line.y2);}c.stroke();c.restore();
         }
