@@ -4886,6 +4886,12 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
         ByteWriter published;published.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinPublished));
         writeCustomSkin(published,signature);broadcastToAuthenticated(published);
     }
+    if (!database_.storedTable("customSkins")[kFanSkinId].isObject()) {
+        auto fan=makeFanSkin();fan.createdAt=static_cast<double>(database_.nowMillis());
+        database_.rawTable("customSkins")[fan.id]=skinToJson(fan);database_.markDirty();
+        ByteWriter published;published.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinPublished));
+        writeCustomSkin(published,fan);broadcastToAuthenticated(published);
+    }
     // storedTable, not rawTable: this only reads, and rawTable drops the
     // table's cached text (Database::Table). Sent on every sign-in, that made
     // the next save re-dump every custom skin -- the 370 ms `persist` ticks.
@@ -5253,6 +5259,9 @@ void GameServer::foldLookAlikeSkins() {
     std::unordered_map<std::string, std::string> foldedInto;
     std::vector<const CustomSkin*> originals;
     for (const CustomSkin& skin : skins) {
+        if (skin.id==kSignatureSkinId || skin.id==kFanSkinId) {
+            originals.push_back(&skin);continue;
+        }
         const SkinLook& look = catalogSkinLook(skin);
         const CustomSkin* original = nullptr;
         const bool starter = skinsLookAlike(look, starterLook());

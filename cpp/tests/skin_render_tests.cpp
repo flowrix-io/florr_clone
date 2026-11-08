@@ -227,12 +227,15 @@ TEST(signature_skin_is_free_cosmetic_and_roundtrips_the_existing_database_format
     auto& db=const_cast<Database&>(h.server.database());const auto* user=db.findUser("a19kisme");CHECK(user&&!user->admin);
     CHECK_EQ(db.findProgress(user->id)->equippedSkinId,std::string(kSignatureSkinId));
     const auto& saved=db.storedTable("customSkins")[kSignatureSkinId];CHECK(!saved.contains("price"));CHECK(!saved.contains("animation"));CHECK(!saved.contains("owned"));
+    CHECK(owner.findSkin(kFanSkinId));CHECK(watcher.findSkin(kFanSkinId));
+    CHECK(hasFanAnimation(makeFanSkin()));CHECK(!hasSignatureAnimation(makeFanSkin()));
+    CHECK(canEquipSignatureSkin(kFanSkinId,"watcher"));
     CHECK(db.save());Database reopened;std::string error;CHECK(reopened.load(h.dbPath,error));
     CHECK(hasSignatureAnimation(skinFromJson(reopened.storedTable("customSkins")[kSignatureSkinId])));
     // Publishing a normal skin with no stars remains free.
     auto& publisher=db.progress(db.findUser("watcher")->id);publisher.stars=0;
     SkinShape rectangle;rectangle.t=SkinShapeType::Rect;rectangle.rx=17;rectangle.ry=11;rectangle.fill="#ec135a";
-    watcher.publishSkin("Free rectangle",{rectangle});CHECK(h.stepUntil({&owner,&watcher},[&]{return watcher.skinCatalog().size()==2;}));CHECK_EQ(publisher.stars,0.0);
+    watcher.publishSkin("Free rectangle",{rectangle});CHECK(h.stepUntil({&owner,&watcher},[&]{return watcher.skinCatalog().size()==3;}));CHECK_EQ(publisher.stars,0.0);
     // A normal published skin cannot select the named animation by its author.
     CustomSkin ordinary=*skin;ordinary.id="sk_another";CHECK(!hasSignatureAnimation(ordinary));
 }
