@@ -270,6 +270,11 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // At most three entries, scanned linearly: a set for a squad would cost
     // more to build each tick than it could ever save looking through.
     const auto exempt = [&](Entity e) {
+        // Public market hosts need current positions even beyond the viewport
+        // so their minimap markers follow wandering and admin dragging.
+        if (const auto* npc = world.tryGet<Npc>(e)) {
+            if (npc->service == NpcService::Market) return true;
+        }
         return frame.alwaysVisible != nullptr &&
                std::find(frame.alwaysVisible->begin(), frame.alwaysVisible->end(), e) !=
                    frame.alwaysVisible->end();

@@ -307,3 +307,53 @@ TEST(market_failed_transactions_do_not_erase_the_visible_page) {
     Canvas empty=Canvas::createVirtual(900,680);MenuContext cleared{empty,window,client,sprites,renderer,settings,drag};cleared.bounds=ctx.bounds;cleared.timeSeconds=.6;shop.render(cleared);
     CHECK(differingPixels(expected,empty.getImageData(23,243,720,33))>100);
 }
+
+TEST(market_marker_tracks_distant_host_and_fixnpc_restores_map_sites) {
+    Harness h("market-fixnpc", [](const std::string& path) {
+        seedUser(path, "operator", "password7", true);
+        seedUser(path, "visitor", "password7");
+    }, dataDir(), 0);
+    CHECK(h.ready); if (!h.ready) return;
+    NetClient admin, visitor;
+    CHECK(loginAs(h, admin, "operator", "password7"));
+    CHECK(loginAs(h, visitor, "visitor", "password7"));
+    admin.joinGame(1280,720); visitor.joinGame(1280,720);
+    CHECK(h.stepUntil({&admin,&visitor}, [&] {
+        return admin.status()==NetClient::Status::Playing && visitor.status()==NetClient::Status::Playing;
+    }));
+    World& world=h.server.world();
+    Entity host=NULL_ENTITY;
+    Query<Npc,Transform> npcs{world};
+    npcs.each([&](Entity e,Npc& npc,Transform& at) {
+        if(npc.service==NpcService::Market && at.realm==Realm::Overworld) host=e;
+    });
+    CHECK(host!=NULL_ENTITY); if(host==NULL_ENTITY)return;
+    const Vec2 home=world.get<Npc>(host).home;
+    const auto oldId=world.get<NetId>(host).value;
+    // Far beyond the normal viewport: the map still receives the host.
+    auto* session=GameServerPeer::sessionOf(h.server,"visitor");
+    CHECK(session!=nullptr); if(!session)return;
+    world.get<Transform>(session->entity).position=home+Vec2{10000,0};
+    CHECK(h.stepUntil({&admin,&visitor},[&]{return visitor.view().entities().count(oldId)!=0;}));
+    world.get<Transform>(host).position=home+Vec2{150,0};
+    CHECK(h.stepUntil({&admin,&visitor},[&] {
+        const auto it=visitor.view().entities().find(oldId);
+        return it!=visitor.view().entities().end() &&
+               distanceSq(it->second.targetPosition,world.get<Transform>(host).position)<25;
+    }));
+    visitor.sendChat("/admin fixnpc"); h.step(20,{&admin,&visitor});
+    CHECK(world.isAlive(host));
+    admin.sendChat("/admin fixnpc");
+    CHECK(h.stepUntil({&admin,&visitor},[&]{return !world.isAlive(host);}));
+    Entity replacement=NULL_ENTITY;
+    npcs.each([&](Entity e,Npc& npc,Transform& at) {
+        if(npc.service==NpcService::Market && at.realm==Realm::Overworld) replacement=e;
+    });
+    CHECK(replacement!=NULL_ENTITY);
+    if(replacement!=NULL_ENTITY) {
+        CHECK(world.get<NetId>(replacement).value!=oldId);
+        CHECK_NEAR(world.get<Npc>(replacement).home.x,home.x,1e-6);
+        CHECK_NEAR(world.get<Npc>(replacement).home.y,home.y,1e-6);
+    }
+    CHECK(h.stepUntil({&admin,&visitor},[&]{return visitor.view().entities().count(oldId)==0;}));
+}

@@ -595,3 +595,9 @@ talent tree and star balance.
 The no-summons rule checks actual hatching and summoning behavior, including Egg,
 named eggs, Stick/Magic Stick, Spaceship shots, and Sacrifice. Applying the rule
 also removes existing player pets and summoning shots.
+
+`/admin fixnpc` resets NPCs across all biomes: it removes existing NPCs, including
+admin-spawned extras, reloads the configured map sites and immediately respawns
+them with fresh state. It requires spawn permission (tiers 1–3), preserves
+players and inventories, and awards no kill credit or loot. Mr. Bee’s gold
+minimap marker follows his live position, including beyond the viewport.

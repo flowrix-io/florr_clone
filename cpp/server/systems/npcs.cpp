@@ -187,6 +187,19 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     return e;
 }
 
+std::size_t NpcSystem::reset(World& world, const Terrain& terrain, const WorldMaps& maps,
+                             const ContentRegistry& content, double nowMillis) {
+    std::vector<Entity> removed;
+    Query<NpcTag> all{world};
+    all.each([&](Entity e, NpcTag&) { removed.push_back(e); });
+    // Mutate only after iteration; reset gives no drops or kill credit.
+    for (Entity e : removed) world.destroy(e);
+    std::vector<std::string> warnings;
+    loadSites(maps, content, warnings);
+    placeMissing(world, terrain, content, nowMillis);
+    return removed.size();
+}
+
 void NpcSystem::placeMissing(World& world, const Terrain& terrain, const ContentRegistry& content,
                              double nowMillis) {
     for (Site& site : sites_) {

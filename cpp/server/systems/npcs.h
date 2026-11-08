@@ -92,6 +92,9 @@ public:
     void loadSites(const WorldMaps& maps, const ContentRegistry& content,
                    std::vector<std::string>& warnings);
 
+    /// Remove all NPCs (including admin extras), reload map sites and respawn.
+    std::size_t reset(World&, const Terrain&, const WorldMaps&, const ContentRegistry&, double);
+
     /// Seeds the stream the idle glances are rolled from.
     ///
     /// Their OWN stream, never the world's: a glance is decoration, and one
