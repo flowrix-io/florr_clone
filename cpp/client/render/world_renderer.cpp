@@ -3382,6 +3382,16 @@ void WorldRenderer::drawDiggerMob(Canvas& canvas, const MobDraw& mob, double rad
     canvas.restore();
 }
 
+void WorldRenderer::drawDiggerPicture(Canvas& canvas, double radius, double timeSeconds) const {
+    const double scale = radius / kFlowerArtRadius;
+    canvas.save();
+    canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
+    // gardn's FlowerRenderAttributes defaults, which its gallery leaves alone:
+    // the eyes 3 forward, the mouth a 15 smile.
+    drawFace(canvas, FaceSquareEyes, EquipCutter, 3.0, 0.0, 15.0, timeSeconds, kDiggerBodyColor);
+    canvas.restore();
+}
+
 void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, const MobDraw& mob,
                                      double radius, double rotation, bool mirrored,
                                      Vec2 bodyShift, double timeSeconds,

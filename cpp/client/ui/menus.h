@@ -1171,6 +1171,26 @@ private:
     std::array<SlotMotion, kAssemblerMaxOutputs> pops_{};
 };
 
+/// The body diameter the bestiary draws mob `mobIndex` at in its 60-unit
+/// tile, the same at every tier. A PAINTED mob (gardn's drawing code) is at
+/// gardn's mob gallery size: one gardn has paints exactly as far as gardn's
+/// own picture of it, measured, and any other is its world picture (common
+/// radius x `visual_scale`) at gardn's half size, the radius capped at 30
+/// first. A mob drawn from an SVG document is not gardn's: 1.15x its common
+/// radius x 2, capped at 48. The digger is a flower at gardn's size. See
+/// menu_gallery.cpp.
+double galleryMobDiameter(const ContentRegistry& content, const SpriteCache& sprites,
+                          std::uint16_t mobIndex);
+
+/// One bestiary tile's picture of mob `mobIndex` at `rarity`, on the `plate`
+/// its cell is drawn on: drawMobPicture at galleryMobDiameter, except for the
+/// two mobs gardn's gallery draws its own way -- the digger, an upright flower
+/// through `renderer`, and a centipede, its head on the plate's centre and
+/// one body segment behind, clipped to the plate.
+void drawGalleryMob(Canvas& canvas, const ContentRegistry& content, const SpriteCache& sprites,
+                    const WorldRenderer& renderer, std::uint16_t mobIndex, Rarity rarity,
+                    Rect plate, double timeSeconds);
+
 /// The bestiary: every mob at every tier it can appear at, and what the
 /// account has actually killed.
 class GalleryPanel {

@@ -39,6 +39,14 @@ namespace flix {
 
 class ContentRegistry;
 
+/// The turn a bestiary tile draws a PAINTED mob at -- one drawn by a painter
+/// in mob_art.h, which is gardn's drawing code -- 135 degrees counter-clockwise
+/// on screen (the canvas's y runs down, so a negative angle), which points a
+/// mob that faces +x up and to the left: gardn's GalleryMob
+/// `ctx.rotate(-3 * M_PI / 4)`. A mob drawn from an SVG document is not
+/// gardn's and stands upright (SpriteCache::mobPictureTilt).
+inline constexpr double kMobPictureTilt = -3.0 * kPi / 4.0;
+
 class SpriteCache {
 public:
     /// Compiles every mob and petal image in `content`, and remembers
@@ -77,8 +85,9 @@ public:
                  const MobMotion* motion = nullptr) const;
 
     /// Draws mob `index` as a picture inside the square of side `box` centred
-    /// on (x, y) -- a bestiary tile's job. Unturned and standing still on
-    /// `timeSeconds`, its body `diameter` across, unless the WHOLE picture --
+    /// on (x, y) -- a bestiary tile's job. Turned by mobPictureTilt and
+    /// standing still on `timeSeconds`, its body `diameter` across, unless
+    /// the WHOLE picture --
     /// legs, wings, a sting -- would then spill out of the box, in which case
     /// just small enough to fit. Centred on what it paints rather than on its
     /// body, so an ant's mandibles or a leech's trailing segment do not push
@@ -93,6 +102,18 @@ public:
     void drawMobPicture(Canvas&, std::uint16_t index, Rarity rarity, double x, double y,
                         double box, double diameter, double timeSeconds,
                         double worldRadius = 0.0) const;
+
+    /// How far drawMobPicture's picture of mob `index` reaches along its
+    /// longer side, in multiples of the drawn radius -- the same measurement
+    /// it centres and fits by, so a caller can ask for a picture of a given
+    /// span: `diameter = 2 * span / mobPictureSpan(...)`. `worldRadius` is as
+    /// for drawMobPicture. 2 (the body's circle) for art that paints nothing.
+    double mobPictureSpan(std::uint16_t index, double worldRadius = 0.0) const;
+
+    /// The turn drawMobPicture draws mob `index` at: kMobPictureTilt for a
+    /// painted mob (gardn's code), none for one drawn from an SVG document --
+    /// its own or a petal's (`$petal:<id>`).
+    double mobPictureTilt(std::uint16_t index) const;
 
     /// Which painter draws mob `index`, or MobArt::None for a document. The
     /// world renderer asks so it can feed a painted eye the gaze it eases.
