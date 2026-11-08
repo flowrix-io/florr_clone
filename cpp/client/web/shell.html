@@ -24,6 +24,21 @@
             font-family: 'Ubuntu', sans-serif;
             font-weight: 700;
             background-color: #000;
+            /* The page is one canvas and never scrolls, so a pull past its edge
+               is not a gesture it has any use for: without this an Android
+               tablet answers a swipe that starts at the top with the browser's
+               pull-to-refresh (reloading mid-game), and iOS rubber-bands the
+               whole page under the finger. */
+            overscroll-behavior: none;
+            /* iOS enlarges text it thinks is too small to read whenever the
+               device turns sideways. Nothing here is DOM text but the loading
+               screen, and that one should not jump on a rotation either. */
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+            /* The grey flash a mobile browser lays over anything tappable. The
+               canvas listens for clicks (that is how a text field raises the
+               keyboard), so a tap on a field flashed the whole screen. */
+            -webkit-tap-highlight-color: transparent;
         }
 
         canvas {
@@ -34,7 +49,9 @@
             height: 100%;
             touch-action: none;
             -webkit-user-select: none;
+            user-select: none;
             -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
         }
         #loadingScreen {
             position: absolute;
@@ -133,6 +150,37 @@
     },
   };
   window.Module = Module;
+
+  // --- tablets and phones ---------------------------------------------------
+  // The canvas consumes its own touches (touch-action: none, and the window's
+  // handlers cancel them), which is what keeps a finger from scrolling or
+  // zooming the page. Two things still get past that on an iPad.
+  //
+  // Safari's own pinch. iOS has ignored `user-scalable=no` since iOS 10, and
+  // a two-finger gesture that starts with one finger off the canvas -- on the
+  // loading screen, or on the edge of the screen in Split View -- zooms the
+  // whole page, after which every touch lands somewhere other than where it
+  // is drawn. Its gesture events are Safari-only and harmless to cancel
+  // elsewhere, since nothing else fires them.
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+    document.addEventListener(type, (event) => event.preventDefault(), { passive: false });
+  }
+  // And a page left scrolled. iOS scrolls the document to show a focused
+  // field, overflow: hidden or not -- the game's typing goes through an
+  // invisible one (cpp_canvas window.cpp, web_soft_keyboard) -- and a rotation
+  // in the middle of that can leave the page scrolled after the keyboard has
+  // gone, the canvas shifted up and a black band where its bottom should be.
+  // Nothing here scrolls on purpose, so whenever the viewport settles with no
+  // field focused the page goes back to the top. Not while one is focused:
+  // that is the keyboard's own scroll, still in use.
+  const settleScroll = () => {
+    const active = document.activeElement;
+    if (active && active.id === '__flix_soft_keyboard') return;
+    if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+  };
+  window.addEventListener('resize', settleScroll);
+  window.addEventListener('orientationchange', settleScroll);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', settleScroll);
 })();
 </script>
     <script>

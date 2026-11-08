@@ -170,6 +170,13 @@ public:
     void setRenderScale(double scale);
     double renderScale() const;
 
+    // Design units per point -- per CSS pixel in a page. The inverse of the
+    // fit: what a length that is about a FINGER, which is the same size on
+    // every screen, has to be multiplied by to be drawn or hit-tested in the
+    // design space. 44 points is a fingertip; on a phone in landscape that is
+    // about a hundred design units, on an iPad about sixty.
+    double unitsPerPoint() const;
+
     // Browser only: draws into a `desynchronized` (low-latency) 2D context,
     // which skips the compositor and can show a frame half drawn -- a
     // flicker -- so it is off unless asked for. The option can only be given
@@ -324,6 +331,25 @@ public:
     /// Takes the keyboard away, for a field that was closed by something other
     /// than a touch -- Escape, a send, a panel closing under it.
     void dismissSoftKeyboard();
+
+    /// How much of the bottom of the window the on-screen keyboard covers, in
+    /// design units. Zero while it is down, on a floating or split iPad
+    /// keyboard (which covers no fixed band), and always natively.
+    ///
+    /// Mobile browsers lay their keyboard OVER the page instead of resizing
+    /// it, so the window keeps its size and simply loses its bottom to the
+    /// keyboard -- on a tablet in landscape, half of it. Re-read every pump.
+    double softKeyboardOverlap() const;
+
+    /// Slides the frame up by `units` design units, to bring a field the
+    /// keyboard would cover into view. The caller draws its frame translated
+    /// by -viewLift() (after the uiScale() base transform); the window, for
+    /// its part, reports every pointer and touch position from then on in the
+    /// coordinates of that translated frame, so a tap lands on what is drawn
+    /// under the finger and every hit test above this stays as it was. Zero
+    /// -- the default -- is no lift. Negative values are taken as zero.
+    void setViewLift(double units);
+    double viewLift() const;
 
     /// UTF-8 typed this frame, for text fields. Distinct from keyPressed:
     /// this is what the keyboard layout produced, not which key was struck.

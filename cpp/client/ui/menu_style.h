@@ -20,6 +20,7 @@
 #include <string>
 
 #include "canvas.h"
+#include "window.h"
 
 #include "client/ui/draw.h"
 #include "client/ui/menu_theme.h"
@@ -93,6 +94,21 @@ void panelHeading(Canvas&, Rect panel, const std::string& title);
 /// hangs one off its own top-right corner uses this; the shop, whose header is
 /// a plate inside the card, positions its own inside that plate.
 Rect closeButtonRect(Rect panel);
+
+/// Where a press CLOSES a panel of these bounds: closeButtonRect, and for a
+/// finger the corner around it as well.
+///
+/// The button is 29 design units square, which is 21 CSS pixels on an iPad in
+/// landscape and 13 on a phone -- a third to a half of the 44 a fingertip
+/// needs, and the one control on every card a player reaches for without
+/// looking. So a finger is given the card's whole corner: everything up to the
+/// card's right and top edges (the padding the button sits in, which holds
+/// nothing else on any card), and a little past the button's left edge, held
+/// short enough to stay off the header pills that stand 17 units to its left
+/// ("Refresh", "Mark All Read"). Never below it, where the scrolling cards'
+/// lists begin. A mouse gets the button exactly, as before -- it can hit 29
+/// units, and the hover it shows is drawn to them.
+Rect closeButtonHit(Rect panel, const Window& window);
 
 /// THE close button. One size, one pair of radii, one colour, one hover.
 ///

@@ -428,6 +428,7 @@ bool trackTextMouse(Window& window, TextFieldState& state, Rect box, const TextR
                     const std::string& value, double timeSeconds) {
     const Vec2 mouse{window.mouseX(), window.mouseY()};
     TextFieldRegions::instance().record(box);
+    if (state.focused) TextFieldRegions::instance().recordFocused(box);
 
     if (state.dragging) {
         if (window.mouseDown(MouseButton::Left)) {
@@ -505,6 +506,7 @@ bool trackTextMouseWith(Window& window, TextFieldState& state, Rect box, const s
                         bool blurOutside) {
     const Vec2 mouse{window.mouseX(), window.mouseY()};
     TextFieldRegions::instance().record(box);
+    if (state.focused) TextFieldRegions::instance().recordFocused(box);
 
     if (state.dragging) {
         if (window.mouseDown(MouseButton::Left)) {

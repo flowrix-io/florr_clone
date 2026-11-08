@@ -199,20 +199,65 @@ EM_JS(void, web_replace_canvas, (const char* element), {
 // reason the native path re-reads the window size: a resize, a zoom and a
 // drag onto another display are three different events and only one of them
 // is reliably delivered.
+//
+// The layout box, not clientWidth/clientHeight. Those are rounded to whole CSS
+// pixels, and on a display whose device pixel ratio is not a whole number --
+// most Android phones and tablets: 2.625, 2.75, 1.5 -- the viewport is not a
+// whole number of CSS pixels either. A Pixel's 1080 device pixels are 411.43
+// CSS pixels; clientWidth says 411, the backing store came out at 1079 pixels,
+// and the browser stretched those 1079 across 1080 -- a resample that softens
+// every edge on the screen. The unrounded width times the ratio is the panel's
+// own pixel count again.
 EM_JS(double, web_css_width, (const char* element), {
   const node = document.getElementById(UTF8ToString(element));
-  return node ? node.clientWidth : 0;
+  return node ? node.getBoundingClientRect().width : 0;
 });
 EM_JS(double, web_css_height, (const char* element), {
   const node = document.getElementById(UTF8ToString(element));
-  return node ? node.clientHeight : 0;
+  return node ? node.getBoundingClientRect().height : 0;
+});
+
+// How much of the element's bottom the on-screen keyboard is covering, in CSS
+// pixels: zero unless OUR keyboard -- the one web_soft_keyboard raised -- is up.
+//
+// A phone or tablet browser does not shrink the page for its keyboard any
+// more (iOS never did; Chrome on Android stopped in 108): the layout viewport,
+// and with it the canvas, stays the size it was, and the keyboard is laid OVER
+// the bottom of it. Only the visual viewport shrinks, and that is what this
+// measures against. On an iPad in landscape that is the bottom half of the
+// screen -- the chat line and most of the sign-in form -- which the player is
+// then typing into blind.
+//
+// Gated on the stand-in <input> actually holding the focus, so the keyboard
+// being put away from its own "hide" key counts as gone at once, and on the
+// page not being pinch-zoomed, which shrinks the visual viewport for a reason
+// that has nothing to do with a keyboard.
+EM_JS(double, web_keyboard_overlap, (const char* element), {
+  const view = window.visualViewport;
+  const node = document.getElementById(UTF8ToString(element));
+  const field = document.activeElement;
+  if (!view || !node || !field || field.id !== '__flix_soft_keyboard') return 0;
+  if (Math.abs(view.scale - 1) > 0.01) return 0;
+  const covered = node.getBoundingClientRect().bottom - (view.offsetTop + view.height);
+  return covered > 0 ? covered : 0;
 });
 
 // Whether the primary pointing device is a finger. The same query the browser
 // client asks, and the only thing a page can say about it before anything has
 // been touched.
+//
+// Plus the one tablet that answers it wrong. An iPad asking for the desktop
+// site -- the default for every iPad since iPadOS 13 -- calls itself a Mac in
+// its user agent, and with a Magic Keyboard or a trackpad attached its primary
+// pointer is "fine" as well. What it cannot hide is its touch points: no Mac
+// has any. Without this the controls only came up after the first touch,
+// which on an iPad meant a player spawned into a world they could not move in
+// until they had tapped somewhere and found out they could.
 EM_JS(int, web_coarse_pointer, (), {
-  return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 1 : 0;
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return 1;
+  const touchMac = (navigator.maxTouchPoints || 0) > 1 &&
+                   /Macintosh|MacIntel/.test(navigator.userAgent + ' ' + (navigator.platform || ''));
+  return touchMac ? 1 : 0;
 });
 
 // The invisible <input> that stands in for a focusable canvas.
@@ -264,6 +309,15 @@ EM_JS(void, web_soft_keyboard, (int wanted), {
       node.value = ' ';
       node.__last = ' ';
     };
+    // iOS scrolls the document to bring a focused field into view, overflow:
+    // hidden or not, and does not always scroll it back when the keyboard
+    // goes: the canvas was then left shifted up by however far it went, with
+    // a black band under it, until the next rotation. Nothing on this page
+    // ever scrolls on purpose, so whenever the field lets go -- from here or
+    // from the keyboard's own "hide" key -- the page goes back to the top.
+    node.addEventListener('blur', () => {
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+    });
     node.addEventListener('compositionstart', () => { node.__composing = true; });
     node.addEventListener('compositionend', () => { node.__composing = false; settle(); });
     node.addEventListener('input', (event) => {
@@ -436,7 +490,8 @@ struct Window::Impl {
 #endif
   std::unique_ptr<Canvas> canvas;
   // The window as the OS sees it, in points.
-  int pointWidth = 0, pointHeight = 0;
+  // Doubles because a page's are not whole numbers: see web_css_width.
+  double pointWidth = 0, pointHeight = 0;
   // The canvas's backing store, in pixels.
   int pixelWidth = 0, pixelHeight = 0;
   // The design space, in design units. Zero until setDesignSize().
@@ -459,6 +514,13 @@ struct Window::Impl {
   // the mouse is divided by; `uiScale` is the caller's base transform.
   double fit = 1.0;
   double uiScale = 1.0;
+  // See Window::setViewLift and Window::softKeyboardOverlap. Both in design
+  // units; both zero natively, where nothing covers the window.
+  double viewLift = 0;
+  double keyboardOverlap = 0;
+  /// The frame's lift as the pointer sees it: a point on the screen is that
+  /// much further down the frame the caller drew.
+  float lift() const { return static_cast<float>(viewLift); }
   bool shouldClose = false;
 
   std::array<bool, kKeyCount> down{}, pressed{}, released{}, typedKeys{};
@@ -668,8 +730,7 @@ struct Window::Impl {
     // right way to lose. Shrinking the world to make room would be the zoom
     // this exists to refuse.
     if (designWidth > 0 && designHeight > 0) {
-      fit = std::max(static_cast<double>(pointWidth) / designWidth,
-                     static_cast<double>(pointHeight) / designHeight);
+      fit = std::max(pointWidth / designWidth, pointHeight / designHeight);
       if (!(fit > 0)) fit = 1.0;
     } else {
       fit = 1.0;
@@ -702,8 +763,8 @@ struct Window::Impl {
     const double cssHeight = web_css_height(elementId.c_str());
     if (!(cssWidth > 0) || !(cssHeight > 0)) return;
 
-    pointWidth = static_cast<int>(std::lround(cssWidth));
-    pointHeight = static_cast<int>(std::lround(cssHeight));
+    pointWidth = cssWidth;
+    pointHeight = cssHeight;
     devicePixelRatio = emscripten_get_device_pixel_ratio();
     if (!(devicePixelRatio > 0)) devicePixelRatio = 1.0;
 
@@ -741,6 +802,7 @@ struct Window::Impl {
     }
 
     recomputeScales();
+    keyboardOverlap = fit > 0 ? web_keyboard_overlap(elementId.c_str()) / fit : 0.0;
   }
 
   // Puts a fresh copy of the element in the page, so the next Canvas built on
@@ -789,7 +851,7 @@ struct Window::Impl {
   static void recordPointer(Impl* impl, double targetX, double targetY) {
     const float toDesign = impl->fit > 0 ? static_cast<float>(1.0 / impl->fit) : 1.0f;
     impl->mouseX = static_cast<float>(targetX) * toDesign;
-    impl->mouseY = static_cast<float>(targetY) * toDesign;
+    impl->mouseY = static_cast<float>(targetY) * toDesign + impl->lift();
   }
 
   // The input guard's pointer rule (see input_guard.h): a mouse sample the
@@ -912,7 +974,7 @@ struct Window::Impl {
       double targetX = point.targetX, targetY = point.targetY;
       impl->disguiseIfScripted(targetX, targetY);
       const float x = static_cast<float>(targetX) * toDesign;
-      const float y = static_cast<float>(targetY) * toDesign;
+      const float y = static_cast<float>(targetY) * toDesign + impl->lift();
       if (phase == TouchPhase::Began) {
         // A tap on a field is the one gesture this window does NOT consume.
         // Every browser refuses to raise its keyboard for a focus() made
@@ -967,7 +1029,7 @@ struct Window::Impl {
       impl->randomPoint(targetX, targetY);
     }
     const float x = static_cast<float>(targetX) * toDesign;
-    const float y = static_cast<float>(targetY) * toDesign;
+    const float y = static_cast<float>(targetY) * toDesign + impl->lift();
     if (impl->onKeyboardField(x, y)) {
       web_soft_keyboard(1);
       impl->softKeyboardUp = true;
@@ -1114,6 +1176,9 @@ struct Window::Impl {
     // held forever. Dropped whole rather than replayed as an end: whoever owns
     // them reads the live set, and there is nothing left in it.
     impl->touches.clear();
+    // And the ones still waiting for a frame. A start parked here would
+    // otherwise be drained on the way back as a contact that never ends.
+    impl->pendingTouches.clear();
     impl->claimed.clear();
     impl->mirroring = false;
     impl->touchInside = false;
@@ -1386,7 +1451,7 @@ bool Window::pump() {
         // business, not the pointer's.
         const float toDesign = impl_->fit > 0 ? static_cast<float>(1.0 / impl_->fit) : 1.0f;
         impl_->mouseX = event.motion.x * toDesign;
-        impl_->mouseY = event.motion.y * toDesign;
+        impl_->mouseY = event.motion.y * toDesign + impl_->lift();
         impl_->pointerIsTouch = false;
         break;
       }
@@ -1419,7 +1484,8 @@ bool Window::pump() {
         // the mouse is divided by.
         const double toDesign = impl_->fit > 0 ? 1.0 / impl_->fit : 1.0;
         const float x = static_cast<float>(event.tfinger.x * impl_->pointWidth * toDesign);
-        const float y = static_cast<float>(event.tfinger.y * impl_->pointHeight * toDesign);
+        const float y = static_cast<float>(event.tfinger.y * impl_->pointHeight * toDesign) +
+                        impl_->lift();
         const TouchPhase phase = event.type == SDL_FINGERDOWN  ? TouchPhase::Began
                                  : event.type == SDL_FINGERUP ? TouchPhase::Ended
                                                               : TouchPhase::Moved;
@@ -1453,6 +1519,10 @@ int Window::pixelHeight() const { return impl_->pixelHeight; }
 double Window::uiScale() const { return impl_->uiScale; }
 double Window::devicePixelRatio() const { return impl_->devicePixelRatio; }
 double Window::renderScale() const { return impl_->renderScale; }
+double Window::unitsPerPoint() const { return impl_->fit > 0 ? 1.0 / impl_->fit : 1.0; }
+double Window::softKeyboardOverlap() const { return impl_->keyboardOverlap; }
+void Window::setViewLift(double units) { impl_->viewLift = units > 0 ? units : 0.0; }
+double Window::viewLift() const { return impl_->viewLift; }
 
 void Window::setDesignSize(int width, int height) {
   impl_->designWidth = std::max(0, width);

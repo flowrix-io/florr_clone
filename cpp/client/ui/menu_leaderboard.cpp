@@ -137,7 +137,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     BarDrag& drag = barDrag();
     bool closing = false;
     if (ctx.pressed()) {
-        if (closeRect.contains(mouse)) {
+        if (closeButtonHit(panel, ctx.window).contains(mouse)) {
             closing = true;
         } else if (refreshRect.contains(mouse)) {
             ctx.net.requestLeaderboard(ctx.settings.showAdminsOnLeaderboard);

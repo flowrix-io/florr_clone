@@ -840,7 +840,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
     }
 
     if (!ctx.released()) return true;
-    if (closeRect.contains(mouse)) return false;
+    if (closeButtonHit(panel, ctx.window).contains(mouse)) return false;
     // Link rects are recorded unclipped, so the hit is gated on the body the
     // way the reference gates it.
     if (view.contains(mouse)) {
