@@ -454,6 +454,14 @@
         "probability": 0.3,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "privet",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },

@@ -888,3 +888,57 @@ TEST(a_respawn_into_another_realm_sends_the_client_that_realms_map) {
     CHECK_NEAR(client.arrival().y, world.get<Transform>(reborn).position.y, 1.0);
     flix::testsupport::removeDataDir(dir);
 }
+
+// Every broadphase the tick builds is fitted to every map realm, not only the
+// shared one. An unsized grid is never wrong -- a query only gets a superset --
+// so nothing but the bill shows it: a biome left one cell wide hands every
+// neighbour query the whole biome, and with a bot crowd mob separation and
+// petal attraction were most of the server tick (24 bots: 0.47 + 0.25 ms of a
+// 1.5 ms tick, worst ticks 21 ms and 11 ms). The hosted arena is resized at
+// run time, so that path is checked too.
+TEST(every_broadphase_the_tick_builds_is_fitted_to_every_map_realm) {
+    using namespace flix::testsupport;
+    Harness h("broadphase-sizes",
+              [](const std::string& path) { seedUser(path, "boss", "password7", true); },
+              dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+
+    const auto fitted = [&](const char* when) {
+        const SpatialGrid* grids[] = {&GameServerPeer::grid(h.server),
+                                      &GameServerPeer::separationGrid(h.server),
+                                      &GameServerPeer::attractionGrid(h.server)};
+        int mapRealmsWiderThanACell = 0;
+        for (const SpatialGrid* grid : grids) {
+            SpatialGrid expected{grid->cellSize()};
+            expected.sizeToRealms(h.server.terrain());
+            for (int i = 0; i < kMaxRealms; ++i) {
+                const Realm realm = static_cast<Realm>(i);
+                if (grid->cols(realm) != expected.cols(realm) ||
+                    grid->rows(realm) != expected.rows(realm)) {
+                    std::printf("    %s: a %.0f-unit grid's realm %d is %dx%d, sized it is %dx%d\n",
+                                when, grid->cellSize(), i, grid->cols(realm), grid->rows(realm),
+                                expected.cols(realm), expected.rows(realm));
+                    CHECK(false);
+                }
+                if (realm != Realm::Overworld && isWorldRealm(realm) &&
+                    h.server.terrain().hasMap(realm) && expected.cols(realm) > 1) {
+                    ++mapRealmsWiderThanACell;
+                }
+            }
+        }
+        // Not vacuous: the shipped maps have biomes beyond the overworld, and
+        // those are exactly the layers an unsized grid leaves one cell wide.
+        CHECK(mapRealmsWiderThanACell > 0);
+    };
+    fitted("at start");
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    boss.joinGame(1000, 800, kAdminArenaSpawnChoice, "Boss");
+    CHECK(h.stepUntil({&boss}, [&] { return boss.status() == NetClient::Status::Playing; }));
+    const int before = GameServerPeer::grid(h.server).cols(kAdminArenaRealm);
+    CHECK(say(h, boss, before == 3 ? "/admin arena empty 40" : "/admin arena empty 12"));
+    CHECK(GameServerPeer::grid(h.server).cols(kAdminArenaRealm) != before);
+    fitted("after an arena resize");
+}

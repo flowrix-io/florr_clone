@@ -408,19 +408,22 @@ struct AmbushSpec {
     double triggerRadiusScale = 0;
 };
 
-/// A lingering damage field (uranium).
+/// A radiation pulse (uranium). Every `intervalMillis` the petal lays a cloud
+/// of `radius` where it stands, and every mob and flower in it takes one hit
+/// of the petal's damage, at full strength on the petal and falling off
+/// steeply to nothing at the rim (radiationStrength). A flower takes a quarter
+/// of that.
 struct RadiationSpec {
     bool present = false;
     double radius = 0;
     double intervalMillis = 0;
-    /// Above zero, the pulse lands as POISON of this length on whatever stands
-    /// in the cloud rather than as a drip, so it lingers after the victim
-    /// walks out. Zero keeps the drip.
+    /// How long the wearer's bite lasts (see selfPoisonScale). Zero puts no
+    /// bite on the wearer.
     double poisonDurationMillis = 0;
-    /// The wearer is poisoned too, at this multiple of the rate the cloud
-    /// poisons mobs at and for the same length, anywhere in the cloud's realm
-    /// -- not only inside it. Needs a
-    /// poisonDurationMillis to have anything to last.
+    /// The wearer is poisoned too, at this multiple of the pulse per second,
+    /// for poisonDurationMillis, anywhere in the cloud's realm -- not only
+    /// inside it, and at full strength wherever it stands. Not while the
+    /// petal orbits a moon: a uranium on a moon never bites its wearer.
     double selfPoisonScale = 0;
 };
 
@@ -907,6 +910,13 @@ struct PetalConfig {
 
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
+    /// How much longer a hit from this petal keeps the victim's EXISTING
+    /// poison running, each live stack at its own rate: florr privet's
+    /// "Extra Poison: 0.2s", the "extra Poison damage based on the existing
+    /// Poison damage per second". A victim nobody has poisoned gains nothing.
+    /// Flat across the ladder, as florr's is (its builder passes one constant
+    /// at every tier); the privet climbs on its reload instead.
+    double extraPoisonMillis = 0;
 
     /// How long a hit from this petal stops the victim healing. gardn's
     /// dandelion, and nothing else: `dandy_ticks` is a flat ten seconds at
@@ -946,6 +956,10 @@ struct PetalConfig {
     /// defend held and attack not. Yucca's rule. Unlike `defendOnly` it moves
     /// nothing on the ring -- the petal still lunges with the rest of it.
     bool passiveHealDefendOnly = false;
+    /// The passive heal counts only while the flower is below this fraction of
+    /// its max health; 0 means always. Starfish's 0.75: a steady regen that
+    /// runs until the bar is back over three quarters, then stops.
+    double passiveHealBelow = 0;
     /// Healing per second, before rarity, that a kill buys the wearer for
     /// `killHealDurationMillis` afterwards: the totem's. florr's Heal per
     /// second is on the heal ladder and its Duration is flat across tiers.
@@ -1155,6 +1169,8 @@ struct PetalStats {
     double reloadMillis = kDefaultPetalReloadMillis;
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
+    /// Flat across the ladder; see PetalConfig::extraPoisonMillis.
+    double extraPoisonMillis = 0;
     /// Flat across the ladder; see PetalConfig::noHealDurationMillis.
     double noHealDurationMillis = 0;
     double heal = 0;                    ///< burst heal per charge
@@ -1368,6 +1384,14 @@ inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "b
 /// and no damage (florr's tooltip hides both rows, slot 42), so charges are
 /// the only thing that ever retires one.
 inline bool petalWardsHits(const PetalConfig& config) { return config.id == "nazar"; }
+
+/// A privet is spent by the hit it lands, whatever it hit: florr gives it
+/// no health pool and no damage (its object's +0x24/+0x28 are 0, and its
+/// tooltip prints neither row), only a reload that shortens 0.7x a tier --
+/// the bubble's shape, a petal whose whole cost is its reload. Here it keeps
+/// a flat 1-point pool, so anything that touches it breaks it, and its
+/// landing charges it the rest (CombatSystem::resolveMelee).
+inline bool petalSpentOnHit(const PetalConfig& config) { return config.id == "privet"; }
 /// florr's Petal/Attribute/Charges, flat at every tier.
 inline constexpr std::uint8_t kNazarCharges = 3;
 /// What a warded hit still costs: florr's 98% off.
@@ -1568,7 +1592,10 @@ public:
 
     bool loaded() const { return !mobs_.empty(); }
 
-    MobStats mobStats(std::uint16_t index, Rarity r) const;
+    /// Read out of a table worked out once at load, as petalStats() is: a mob
+    /// at a tier is a page of ladders and id compares, and the server asks it
+    /// for every mob body every tick (combat's contact gather alone).
+    const MobStats& mobStats(std::uint16_t index, Rarity r) const;
     /// Read out of a table worked out once at load: what a petal fields at a
     /// tier is a page of ladders, pow()s and id compares, and the server asks
     /// it a few thousand times a tick -- each worn slot twice over just to
@@ -1658,6 +1685,8 @@ private:
     std::vector<std::uint16_t> standIns_;
     /// Petal index -> petalStats() at every tier. See there.
     std::vector<std::array<PetalStats, kRarityCount>> petalStats_;
+    /// Mob index -> mobStats() at every tier. See there.
+    std::vector<std::array<MobStats, kRarityCount>> mobStats_;
     std::vector<std::string> warnings_;
     std::uint32_t hash_ = 0;
 

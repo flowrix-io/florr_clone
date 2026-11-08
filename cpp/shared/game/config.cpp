@@ -1301,6 +1301,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
 
     p.poisonPerSecond = ctx.range(src, "poison", 0.0, 0.0, kMaxPoisonPerMillis) * 1000.0;
     p.poisonDurationMillis = ctx.range(src, "poisonDuration", 0.0, 0.0, kMaxDurationMillis);
+    p.extraPoisonMillis = ctx.range(src, "extraPoisonDuration", 0.0, 0.0, kMaxDurationMillis);
     p.noHealDurationMillis = ctx.range(src, "noHealDuration", 0.0, 0.0, kMaxDurationMillis);
 
     p.speed = ctx.range(src, "speed", 0.0, -kMaxSpeedUnits, kMaxSpeedUnits);
@@ -1319,6 +1320,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.burstHealChargeMillis = ctx.range(src, "burstHealChargeMs", 0.0, 0.0, kMaxDurationMillis);
     p.passiveHeal = ctx.range(src, "passiveHeal", 0.0, 0.0, kMaxBaseStat);
     p.passiveHealDefendOnly = ctx.boolean(src, "passiveHealDefendOnly");
+    p.passiveHealBelow = ctx.range(src, "passiveHealBelow", 0.0, 0.0, 1.0);
     p.killHeal = ctx.range(src, "killHeal", 0.0, 0.0, kMaxBaseStat);
     p.killHealDurationMillis = ctx.range(src, "killHealDuration", 0.0, 0.0, kMaxDurationMillis);
     p.burstShield = ctx.range(src, "burstShield", 0.0, 0.0, kMaxBaseStat);
@@ -1572,9 +1574,10 @@ void ContentRegistry::foldMapsIntoHash(const std::string& dataDir) {
 }
 
 namespace {
-/// What petal `c` fields at `r`. Defined beside petalStats(), which reads it
-/// out of the table loadFiles() fills with it.
+/// What petal `c` fields at `r`, and mob `c`. Defined beside petalStats() and
+/// mobStats(), which read them out of the tables loadFiles() fills with them.
 PetalStats buildPetalStats(const PetalConfig& c, Rarity r);
+MobStats buildMobStats(const MobConfig& c, Rarity r);
 } // namespace
 
 bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& petalsPath,
@@ -1773,6 +1776,14 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
                 buildPetalStats(petals_[i], static_cast<Rarity>(t));
         }
     }
+    // And every mob's: see mobStats().
+    mobStats_.resize(mobs_.size());
+    for (std::size_t i = 0; i < mobs_.size(); ++i) {
+        for (int t = 0; t < kRarityCount; ++t) {
+            mobStats_[i][static_cast<std::size_t>(t)] =
+                buildMobStats(mobs_[i], static_cast<Rarity>(t));
+        }
+    }
     warnings_ = std::move(warnings);
     hash_ = hash;
     errorOut.clear();
@@ -1829,8 +1840,26 @@ std::vector<std::uint16_t> ContentRegistry::randomPetFighters(Rarity rarity) con
     return fighters;
 }
 
-MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
-    const MobConfig& c = mob(index);
+const MobStats& ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
+    // Every tier past the ends reads as the end it is past, which is what
+    // buildMobStats() does with one too.
+    const auto tier = static_cast<std::size_t>(rarityIndex(clampRarity(rarityIndex(r))));
+    if (index < mobStats_.size()) return mobStats_[index][tier];
+    // An unknown index is the placeholder mob(), as everywhere else.
+    static const std::array<MobStats, kRarityCount> kMissing = [this] {
+        std::array<MobStats, kRarityCount> stats;
+        for (int t = 0; t < kRarityCount; ++t) {
+            stats[static_cast<std::size_t>(t)] =
+                buildMobStats(mob(kInvalidIndex), static_cast<Rarity>(t));
+        }
+        return stats;
+    }();
+    return kMissing[tier];
+}
+
+namespace {
+
+MobStats buildMobStats(const MobConfig& c, Rarity r) {
     // No mob is universal; one asked for anyway is an apex.
     const int tier = ladderIndex(clampRarity(rarityIndex(r)));
     const std::size_t t = static_cast<std::size_t>(tier);
@@ -1890,8 +1919,6 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     return s;
 }
 
-namespace {
-
 PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // Universal reads everything below at apex, `tier`, except health and
     // damage, which take `strength` -- apex's times sqrt(2).
@@ -1945,6 +1972,13 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         // florr's slot 14: 60 s x 0.7^tier, its web build stopping the curve
         // at tier 8.
         s.reloadMillis *= std::pow(0.7, std::min(rarityIndex(tier), 8));
+    } else if (petalSpentOnHit(c)) {
+        // The privet's slot 14 is the nazar's curve from 4 s, and the reload
+        // is the only thing about it that climbs. Its pool stays the flat
+        // point PetalConfig gives it: florr's has none, so nothing a tier of
+        // it meets should be able to hit it and leave it standing.
+        s.reloadMillis *= std::pow(0.7, std::min(rarityIndex(tier), 8));
+        s.health = c.health;
     }
     // The petal damage ladder, not the gentler passive-modifier curve: what a
     // cutter grants IS damage, so it keeps pace with petal damage and with the
@@ -1954,6 +1988,8 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     s.bodyDamage = c.bodyDamage * strength;
     s.poisonPerSecond = c.poisonPerSecond * strength;
     s.poisonDurationMillis = c.poisonDurationMillis;
+    // Flat, as florr's privet tooltip is: one constant at every tier.
+    s.extraPoisonMillis = c.extraPoisonMillis;
     // Flat, on purpose: gardn's dandelion locks healing for ten seconds at
     // every tier. See PetalConfig::noHealDurationMillis.
     s.noHealDurationMillis = c.noHealDurationMillis;
@@ -2157,6 +2193,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.collisionResist = std::min(0.95, s.collisionResist * boost);
         s.lifesteal *= boost;
         s.poisonDurationMillis *= boost;
+        s.extraPoisonMillis *= boost;
         s.noHealDurationMillis *= boost;
         s.killHealDurationMillis *= boost;
         s.slowDurationMillis *= boost;

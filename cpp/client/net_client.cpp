@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <utility>
 
 #include "client/web/reload.h"
 #include "shared/game/absorb.h"
@@ -2190,6 +2191,16 @@ void NetClient::handleDebugStats(ByteReader& reader) {
     stats.heapBytes = reader.f64();
     stats.tickAvgMillis = reader.f32();
     stats.tickMaxMillis = reader.f32();
+    stats.ticks = reader.u16();
+    const int phaseCount = reader.u8();
+    for (int i = 0; i < phaseCount && reader.ok(); ++i) {
+        ServerDebugStats::TickPhase phase;
+        phase.name = reader.str();
+        phase.totalMillis = reader.f32();
+        phase.maxMillis = reader.f32();
+        phase.runs = reader.u16();
+        stats.phases.push_back(std::move(phase));
+    }
     if (!reader.ok()) return;
     serverDebugStats_ = stats;
     serverDebugStatsFresh_ = true;

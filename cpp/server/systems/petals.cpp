@@ -118,10 +118,6 @@ constexpr double kBehaviourShieldIntervalMillis = 10000.0;
 constexpr double kBehaviourHealIntervalMillis = 2000.0;
 constexpr double kBehaviourExplodeIntervalMillis = 3000.0;
 
-/// Starfish compares ABSOLUTE health, not a fraction: it is an emergency heal
-/// for a low-level flower and stops mattering once the bar outgrows it.
-constexpr double kStarfishHealthThreshold = 75.0;
-
 /// A scripted heal is a steeper curve than a burst petal's. `stats.heal`
 /// already carries its rarity; a script's literal does not, so the reference
 /// multiplies it by sqrt(3) per tier and by a flat 3 on top of the talent.
@@ -141,7 +137,6 @@ enum class PetalBehaviourKind : std::uint8_t {
     None,
     Lightning,
     BloodLeaf,
-    Starfish,
     Bomb,
     Shield,
     Healing,
@@ -164,7 +159,6 @@ struct PetalBehaviour {
 PetalBehaviour behaviourOf(const std::string& id) {
     if (id == "lightning") return {PetalBehaviourKind::Lightning, true, false, 0.0};
     if (id == "blood_leaf") return {PetalBehaviourKind::BloodLeaf, false, false, 0.0};
-    if (id == "starfish") return {PetalBehaviourKind::Starfish, false, false, 0.0};
     if (id == "bomb" || id == "explosive") return {PetalBehaviourKind::Bomb, true, true, 0.0};
     if (id == "shield") {
         return {PetalBehaviourKind::Shield, false, false, kBehaviourShieldIntervalMillis};
@@ -1519,6 +1513,13 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     // Every living flower regenerates one health per second even with an empty
     // loadout. Petal healing is added below and talent-scaled separately.
     aggregate.modifiers.passiveHealPerSecond = 1.0;
+    // Where the bar stands, for a passive heal that only runs under a line
+    // (passiveHealBelow). Read once as a number: nothing below should hold a
+    // component pointer across the loop.
+    double healthFraction = 1.0;
+    if (const Health* health = world.tryGet<Health>(player); health != nullptr && health->max > 0.0) {
+        healthFraction = health->current / health->max;
+    }
     std::uint16_t equipFlags = EquipNone;
     // Whether the ring is physically pulled in, by updateRing's rule rather
     // than runActions': with both keys held the ring LUNGES, so a flower doing
@@ -1604,7 +1605,13 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             // A yucca pays only while the flower blocks. Gated on the stance
             // alone, not on the body: a broken one heals like a broken leaf
             // does, per the rule at the top of this loop.
-            if (!registry.petal(equipped.configIndex).passiveHealDefendOnly || blocking) {
+            //
+            // A starfish pays only while the flower is under its line (75% of
+            // max): a steady regen that stops once the bar is back over it.
+            const PetalConfig& healer = registry.petal(equipped.configIndex);
+            const bool underLine = !(healer.passiveHealBelow > 0.0) ||
+                                   healthFraction < healer.passiveHealBelow;
+            if ((!healer.passiveHealDefendOnly || blocking) && underLine) {
                 aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
             }
             // Totem, worn like the leaf above and summed like it: a second
@@ -2548,19 +2555,31 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             // The field is re-laid at the petal's feet every interval rather
             // than parented to it: a ground effect has no transform to follow,
             // and a patch that expires on the interval tracks the ring for free.
+            //
+            // The pulse is one blow, dealt the tick the cloud is laid, to every
+            // mob and flower in it, weaker the further it stands from the
+            // petal (see tickGroundEffects). No drip: what stands for the rest
+            // of the cloud's life is the glow and the wearer's own bite.
             const double interval = std::max(config.radiation.intervalMillis, net::kTickMillis);
             double pulse = stats.damage;
             if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player)) {
                 pulse *= modifiers->petalDamageScale;
             }
             const Entity cloud = emitGroundEffect(world, player, at, GroundEffectKind::Radiation,
-                                                  config.radiation.radius * adminReachScale(rarity), pulse, 1.0, rarity,
-                                                  interval / 1000.0);
+                                                  config.radiation.radius * adminReachScale(rarity), 0.0, 1.0, rarity,
+                                                  interval / 1000.0, pulse, interval);
             if (GroundEffect* field = world.tryGet<GroundEffect>(cloud)) {
                 // The same boosted pulse is what the wearer is poisoned
                 // against: a stronger uranium is stronger both ways.
+                //
+                // Except while a moon is out: the ring, this petal with it,
+                // orbits the moon rather than the flower, and a uranium on a
+                // moon puts no bite on its wearer. A worn petal still rides
+                // the flower, so it is not on the moon.
+                const bool onMoon = thrownBody != player && !config.noPhysics &&
+                                    !config.hasFixedDirection;
                 field->poisonDurationMillis = config.radiation.poisonDurationMillis * adminEffectScale(rarity);
-                field->ownerPoisonPerSecond = rarity == Rarity::Admin ? 0.0
+                field->ownerPoisonPerSecond = rarity == Rarity::Admin || onMoon ? 0.0
                     : pulse * config.radiation.selfPoisonScale;
             }
         }
@@ -2833,8 +2852,8 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
     const PetalBehaviour behaviour = behaviourOf(config.id);
     // A break fires every effect the petal has, unconditionally: the reference
     // ran the same script in an "immediate mode" that skipped every guard, so
-    // a starfish heals on the way out whatever the flower's health was and a
-    // parked bomb detonates when something else destroys it.
+    // a blood leaf bursts on the way out whether or not the ring was held out,
+    // and a parked bomb detonates when something else destroys it.
     const bool guarded = trigger != PetalTrigger::Break;
 
     switch (behaviour.kind) {
@@ -2860,16 +2879,6 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
             explodePetal(world, player, at, stats.size * adminReachScale(rarity),
                          100.0 * (rarity == Rarity::Admin ? petalStrengthScale(rarity) : 1.0), nowMillis);
             healFromBehaviour(world, player, -1.0, rarity, nowMillis);
-            return;
-        }
-
-        case PetalBehaviourKind::Starfish: {
-            if (trigger == PetalTrigger::Collision || trigger == PetalTrigger::Interval) return;
-            if (guarded) {
-                const Health* health = world.tryGet<Health>(player);
-                if (health == nullptr || health->current >= (rarity == Rarity::Admin ? health->max * 0.75 : kStarfishHealthThreshold)) return;
-            }
-            healFromBehaviour(world, player, 25.0, rarity, nowMillis);
             return;
         }
 

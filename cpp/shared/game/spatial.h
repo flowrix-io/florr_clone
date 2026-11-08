@@ -143,6 +143,15 @@ private:
     /// also means a single grid cannot be queried from two threads at once.
     mutable std::vector<std::uint32_t> stamp_;
     mutable std::uint32_t queryEpoch_ = 0;
+
+    /// The epoch each entity INDEX was last filed in, and whether any entity
+    /// has been filed twice this epoch. While none has, no bucket holds an
+    /// entity twice, and a query that fits in one cell is that bucket as it
+    /// stands -- copied whole, with no stamps to write. Most queries are: a
+    /// body's reach is far smaller than a cell, and contact, separation and
+    /// petal attraction ask one for every body in the world each tick.
+    std::vector<std::uint32_t> filed_;
+    bool refiled_ = false;
 };
 
 } // namespace flix

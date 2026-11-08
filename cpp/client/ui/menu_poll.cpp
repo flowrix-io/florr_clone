@@ -58,7 +58,7 @@ bool PollCreatorPanel::render(MenuContext& ctx) {
     }
     const auto& reply=ctx.net.adminTools("poll_creator");
     text(ctx.canvas,ellipsize(reply["message"].asString(),12,p.w-40),p.x+20,p.bottom()-42,style(12,reply["ok"].asBool()?0xD8F5D8u:0xFFAAAAu));
-    text(ctx.canvas,"Results: top-left Debug menu > Polls. One vote per account.",p.x+20,p.bottom()-19,style(12));
+    text(ctx.canvas,"Results: Leaderboard > Polls. One vote per account.",p.x+20,p.bottom()-19,style(12));
     return !(reply["created"].asBool() && reply["ok"].asBool());
 }
 Rect pollOverlayBounds(const NetClient& net,int w,int h) {

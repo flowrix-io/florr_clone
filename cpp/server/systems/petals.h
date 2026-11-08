@@ -209,8 +209,9 @@ int liveMoonSlotOf(const ContentRegistry& registry, const Loadout& loadout);
 /// points had different semantics: a spawn ran the petal's script with its
 /// guards applied and could park it until it touched something, while a break
 /// ran the same script in "immediate mode", firing every effect
-/// unconditionally. Starfish therefore heals on break whatever the flower's
-/// health is, and a bomb explodes when it is destroyed as well as when it hits.
+/// unconditionally. A blood leaf therefore bursts on break whether or not the
+/// ring is held out, and a bomb explodes when it is destroyed as well as when
+/// it hits.
 enum class PetalTrigger : std::uint8_t { Spawn, Collision, Interval, Break };
 
 /// Owns a player's ring: which petals exist, where they are, when they break
@@ -228,6 +229,14 @@ public:
     void run(World& world, const ContentRegistry& registry, double nowMillis, double dt,
              CommandBuffer& commands, const Terrain* terrain = nullptr,
              EventQueue* events = nullptr);
+
+    /// Fits the attraction grid to the maps, as GameServer fits its own (see
+    /// SpatialGrid::sizeToRealms). Until then every map realm but the
+    /// overworld is ONE cell, and every petal on every ring there walks every
+    /// mob in the biome looking for the one it bends toward.
+    void sizeToRealms(const Terrain& terrain) { attractionGrid_.sizeToRealms(terrain); }
+    /// Only tests read it: how they check that sizing reached this grid.
+    const SpatialGrid& attractionGrid() const { return attractionGrid_; }
 
     /// Fold every flower's loadout into its PlayerModifiers, body radius and
     /// max health, without touching the ring.

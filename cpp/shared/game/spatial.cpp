@@ -65,6 +65,8 @@ void SpatialGrid::sizeToRealms(const Terrain& terrain) {
     for (Layer& layer : layers_) {
         std::fill(layer.bucketEpoch.begin(), layer.bucketEpoch.end(), 0);
     }
+    std::fill(filed_.begin(), filed_.end(), 0);
+    refiled_ = false;
     inserted_ = 0;
 }
 
@@ -79,6 +81,7 @@ int SpatialGrid::cellIndex(double offset, double invCellSize, int axisCells) {
 
 void SpatialGrid::clear() {
     inserted_ = 0;
+    refiled_ = false;
     if (++epoch_ == 0) {
         // Once every four billion ticks the epoch wraps onto the value stale
         // buckets already carry, so retire them all for real. Never hit in a
@@ -86,6 +89,7 @@ void SpatialGrid::clear() {
         for (Layer& layer : layers_) {
             std::fill(layer.bucketEpoch.begin(), layer.bucketEpoch.end(), 0);
         }
+        std::fill(filed_.begin(), filed_.end(), 0);
         epoch_ = 1;
     }
 }
@@ -101,7 +105,10 @@ void SpatialGrid::insert(Entity e, Realm realm, Vec2 position, double radius) {
     if (idx >= stamp_.size()) {
         // Grown here rather than in query(), so the read path never allocates.
         stamp_.resize(std::max<std::size_t>(static_cast<std::size_t>(idx) + 1, stamp_.size() * 2), 0);
+        filed_.resize(stamp_.size(), 0);
     }
+    if (filed_[idx] == epoch_) refiled_ = true;
+    filed_[idx] = epoch_;
 
     Layer& target = layer(realm);
     const int x0 = cellX(realm, position.x - radius);
@@ -139,28 +146,46 @@ void SpatialGrid::queryRect(Realm realm, Vec2 min, Vec2 max, std::vector<Entity>
     if (min.x > max.x) std::swap(min.x, max.x);
     if (min.y > max.y) std::swap(min.y, max.y);
 
-    if (++queryEpoch_ == 0) {
-        std::fill(stamp_.begin(), stamp_.end(), 0);
-        queryEpoch_ = 1;
-    }
-
     const Layer& source = layer(realm);
     const int x0 = cellX(realm, min.x);
     const int x1 = cellX(realm, max.x);
     const int y0 = cellY(realm, min.y);
     const int y1 = cellY(realm, max.y);
+
+    // One cell and nothing filed twice: the bucket IS the answer, in the order
+    // the walk below would give it and with nothing in it to strip.
+    if (x0 == x1 && y0 == y1 && !refiled_) {
+        const std::size_t b = source.bucketAt(x0, y0);
+        if (source.bucketEpoch[b] == epoch_) {
+            out.assign(source.buckets[b].begin(), source.buckets[b].end());
+        }
+        return;
+    }
+
+    if (++queryEpoch_ == 0) {
+        std::fill(stamp_.begin(), stamp_.end(), 0);
+        queryEpoch_ = 1;
+    }
     for (int cy = y0; cy <= y1; ++cy) {
         for (int cx = x0; cx <= x1; ++cx) {
             const std::size_t b = source.bucketAt(cx, cy);
             if (source.bucketEpoch[b] != epoch_) continue;   // last tick's contents
-            for (const Entity e : source.buckets[b]) {
+            const std::vector<Entity>& bucket = source.buckets[b];
+            // Room for the whole bucket, then written through a pointer and
+            // trimmed to what was kept: a push_back per candidate was half of
+            // what a query cost.
+            const std::size_t base = out.size();
+            out.resize(base + bucket.size());
+            Entity* write = out.data() + base;
+            for (const Entity e : bucket) {
                 const std::uint32_t idx = entityIndex(e);
                 if (idx < stamp_.size()) {
                     if (stamp_[idx] == queryEpoch_) continue;   // another of its cells
                     stamp_[idx] = queryEpoch_;
                 }
-                out.push_back(e);
+                *write++ = e;
             }
+            out.resize(static_cast<std::size_t>(write - out.data()));
         }
     }
 }

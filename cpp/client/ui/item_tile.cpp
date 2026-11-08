@@ -153,6 +153,7 @@ constexpr GardnIcon kGardnIcon[] = {
     {"poison_cactus",           33.5,   15,  0,       0, 0.824},   // art fills 82% of its box
     {"corn",               32,   16,  0,     0.5, 0.965},   // art fills 96% of its box
     {"cutter",             70,   40,  0,       0, 0.875},   // shrinks 20/40; fills 88% of its box
+    {"lightning_cutter",             70,   40,  0,       0, 0.875},   // shrinks 20/40; fills 88% of its box
     {"dahlia",             17,    7, 10,       0,     1},
     {"dandelion",          31,   10,  0,       1, 0.795},   // art fills 80% of its box
     {"egg",                28, 12.5,  0,       0, 0.938},   // art fills 94% of its box

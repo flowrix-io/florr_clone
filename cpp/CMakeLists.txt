@@ -322,6 +322,15 @@ add_library(flix_client STATIC
   client/render/skin_render.cpp
   client/render/sprites.cpp
   client/render/world_renderer.cpp
+  client/render/world_renderer_effects.cpp
+  client/render/world_renderer_events.cpp
+  client/render/world_renderer_flowers.cpp
+  client/render/world_renderer_glitch.cpp
+  client/render/world_renderer_map_elements.cpp
+  client/render/world_renderer_mobs.cpp
+  client/render/world_renderer_overlays.cpp
+  client/render/world_renderer_petals.cpp
+  client/render/world_renderer_terrain.cpp
   client/web/boot.cpp
   client/web/reload.cpp
 )

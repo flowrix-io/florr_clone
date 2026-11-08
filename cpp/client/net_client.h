@@ -913,6 +913,19 @@ public:
         double heapBytes = 0;
         double tickAvgMillis = 0;
         double tickMaxMillis = 0;
+        /// How many ticks the second held, and where their time went: one
+        /// entry per phase that ran, in the order the server runs them, with
+        /// `other` (the tick time no phase stamp covers) last. `totalMillis`
+        /// over `ticks` is the phase's share of the average tick; `runs` is how
+        /// many of those ticks it ran in, and `maxMillis` its worst one.
+        struct TickPhase {
+            std::string name;
+            double totalMillis = 0;
+            double maxMillis = 0;
+            int runs = 0;
+        };
+        int ticks = 0;
+        std::vector<TickPhase> phases;
     };
     /// True exactly once per DebugStats, so the panel appends one graph sample
     /// per packet rather than resampling whatever it last saw.

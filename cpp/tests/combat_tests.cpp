@@ -7,6 +7,7 @@
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
+#include "shared/game/npc.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 #include "shared/net/protocol.h"
@@ -204,6 +205,7 @@ struct Fixture {
     std::uint16_t burr = kInvalidIndex;
     std::uint16_t taproot = kInvalidIndex;
     std::uint16_t dandy = kInvalidIndex;
+    std::uint16_t privet = kInvalidIndex;
     std::uint16_t boney = kInvalidIndex;
     std::uint16_t clawy = kInvalidIndex;
     std::uint16_t fangy = kInvalidIndex;
@@ -240,6 +242,7 @@ const Fixture& fixture() {
               "burr":{"name":"Burr","damage":5,"health":5,"size":1,"armorReduction":1.5},
               "taproot":{"name":"Taproot","damage":10,"health":10,"size":1,"armorPerStack":12},
               "dandy":{"name":"Dandy","damage":8,"health":8,"size":1,"noHealDuration":10000},
+              "privet":{"name":"Privet","damage":0,"health":50,"size":0.6,"cooldown":4000,"extraPoisonDuration":200},
               "boney":{"name":"Boney","damage":14,"health":10,"size":1,"petalArmor":10},
               "clawy":{"name":"Clawy","damage":5,"health":10,"size":1,"clawCritDamage":100},
               "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35},
@@ -264,6 +267,7 @@ const Fixture& fixture() {
         f.burr = f.registry.petalIndex("burr");
         f.taproot = f.registry.petalIndex("taproot");
         f.dandy = f.registry.petalIndex("dandy");
+        f.privet = f.registry.petalIndex("privet");
         f.boney = f.registry.petalIndex("boney");
         f.clawy = f.registry.petalIndex("clawy");
         f.fangy = f.registry.petalIndex("fangy");
@@ -684,6 +688,33 @@ TEST(a_hazard_with_no_faction_hurts_everything) {
 // ---------------------------------------------------------------------------
 // Contact damage
 // ---------------------------------------------------------------------------
+
+TEST(contact_reaches_across_the_pet_gap_and_the_npc_slack) {
+    // Two pairs meet without overlapping: a pet and a wild mob across the gap
+    // separation keeps between mob bodies, and a flower and an NPC across the
+    // NPC's touch slack. The melee pass turns away far candidates before it
+    // asks what kind of pair they are, and must not turn these away.
+    Arena a;
+    const Entity owner = a.player({5000, 5000});
+    const Entity pet = a.actor({1000, 1000}, 15.0, 50.0, Team::Players);
+    a.world.add<MobTag>(pet);
+    a.world.add<Pet>(pet, Pet{owner, 0});
+    a.world.add<ContactDamage>(pet, ContactDamage{10.0, 0.0});
+    const double petGap = kMobCollisionBuffer * 0.6;
+    const Entity wild = a.mob({1000 + 15.0 + 20.0 + petGap, 1000}, 100.0);
+    a.world.add<ContactDamage>(wild, ContactDamage{10.0, 500.0});
+
+    const Entity flower = a.player({3000, 1000});
+    const Entity npc = a.actor({3000 + 20.0 + 30.0 + kNpcTouchSlack * 0.5, 1000}, 30.0, 500.0,
+                               Team::Hostiles);
+    a.world.add<NpcTag>(npc);
+    a.world.add<ContactDamage>(npc, ContactDamage{10.0, 500.0});
+
+    a.step(0.0);
+    CHECK(a.health(wild) < 100.0);
+    CHECK(a.health(pet) < 50.0);
+    CHECK(a.health(flower) < 100.0);
+}
 
 TEST(mob_contact_is_paced_by_the_flowers_post_hit_window_alone) {
     Arena a;
@@ -1620,6 +1651,36 @@ TEST(shots_are_found_when_the_servers_grid_leaves_them_out) {
     CHECK(!a.world.has<Dead>(sibling));
 }
 
+TEST(a_shot_is_found_in_its_own_realm_wherever_its_realms_others_are) {
+    // Combat's shot index clamps each query to the box its own realm's shots
+    // were filed in. A shot at every edge of that box is still found, and one
+    // on the very same coordinates in another realm never is.
+    Arena a;
+    const Entity player = a.player({500, 500});
+    const Entity mob = a.mob({200, 200}, 100.0);
+    const Vec2 edges[] = {{1000, 1000}, {5000, 3000}, {3000, 5000}, {5000, 5000}};
+    std::vector<std::pair<Entity, Entity>> pairs;
+    for (const Vec2 at : edges) {
+        pairs.push_back(
+            {spawnDurableShot(a, at, {1000, 0}, 4.0, 500.0, player, player, 10.0),
+             spawnDurableShot(a, at + Vec2{5, 0}, {-1000, 0}, 4.0, 500.0, mob, NULL_ENTITY, 10.0,
+                              Team::Hostiles)});
+    }
+    const Entity alone = spawnDurableShot(a, {9000, 9000}, {1000, 0}, 4.0, 500.0, player, player,
+                                          10.0);
+    const Entity elsewhere = spawnDurableShot(a, {9005, 9000}, {-1000, 0}, 4.0, 500.0, mob,
+                                              NULL_ENTITY, 10.0, Team::Hostiles);
+    a.world.get<Transform>(elsewhere).realm = Realm::Arena;
+
+    a.stepWithServerGrid(0.0);
+    for (const auto& pair : pairs) {
+        CHECK(a.health(pair.first) < 10.0);
+        CHECK(a.health(pair.second) < 10.0);
+    }
+    CHECK_NEAR(a.health(alone), 10.0, 1e-9);
+    CHECK_NEAR(a.health(elsewhere), 10.0, 1e-9);
+}
+
 TEST(two_duellists_shots_still_shoot_each_other_down) {
     // The shortcut that turns away a flower's own shots before any lookup must
     // not turn away ANOTHER flower's: in the arena two players' volleys trade
@@ -1785,13 +1846,14 @@ TEST(a_timed_ground_effect_expires_and_stops_applying) {
 
 namespace {
 
-/// A uranium cloud as the petal system lays one: poison rather than a drip,
-/// and a bite on the wearer at `ownerRate`.
-Entity uraniumCloud(Arena& a, Entity owner, Vec2 at, double rate, double ownerRate,
+/// A uranium cloud as the petal system lays one, 100 across: a pulse of
+/// `pulse` to whatever stands in it, and a bite on the wearer at `ownerRate`.
+Entity uraniumCloud(Arena& a, Entity owner, Vec2 at, double pulse, double ownerRate,
                     double lifetimeSeconds) {
     const Entity field = a.world.create();
     a.world.add<GroundEffectTag>(field);
-    GroundEffect cloud{GroundEffectKind::Radiation, owner, 100.0, rate, 1.0, Rarity::Common};
+    GroundEffect cloud{GroundEffectKind::Radiation, owner, 100.0, 0.0, 1.0, Rarity::Common,
+                       pulse, 1000.0};
     cloud.poisonDurationMillis = 2000.0;
     cloud.ownerPoisonPerSecond = ownerRate;
     a.world.add<GroundEffect>(field, cloud);
@@ -1802,33 +1864,53 @@ Entity uraniumCloud(Arena& a, Entity owner, Vec2 at, double rate, double ownerRa
 
 } // namespace
 
-TEST(a_uranium_cloud_poisons_the_mobs_in_it_and_the_poison_outlasts_it) {
+TEST(a_uranium_pulse_hits_each_mob_once_weaker_the_further_it_stands) {
+    Arena a;
+    // The wearer stands on its own petal and is never pulsed.
+    const Entity player = a.player({1000, 1000});
+    // Every mob is 20 across, and the distance is to its EDGE.
+    const Entity onPetal = a.mob({1000, 1000}, 100.0);
+    const Entity quarter = a.mob({1045, 1000}, 100.0);   // edge 25 out of 100
+    const Entity halfway = a.mob({1070, 1000}, 100.0);   // edge 50 out
+    const Entity grazing = a.mob({1115, 1000}, 100.0);   // edge 95 out
+    const Entity outside = a.mob({1130, 1000}, 100.0);   // edge 110 out: past the rim
+    const Entity field = uraniumCloud(a, player, {1000, 1000}, 40.0, 0.0, 1.0);
+
+    // Most of it lands close in: (1 - gap/radius)^3 of the pulse.
+    a.step(0.0);
+    CHECK_NEAR(a.health(onPetal), 60.0, 1e-9);
+    CHECK_NEAR(a.health(quarter), 100.0 - 40.0 * 0.421875, 1e-9);
+    CHECK_NEAR(a.health(halfway), 95.0, 1e-9);
+    CHECK_NEAR(a.health(grazing), 100.0 - 40.0 * 0.000125, 1e-9);
+    CHECK_NEAR(a.health(outside), 100.0, 1e-9);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    // A blow, not a bite: nothing is left ticking on what it hit.
+    const Afflictions* bitten = a.world.tryGet<Afflictions>(onPetal);
+    CHECK(bitten == nullptr || bitten->poisonStacks.empty());
+
+    // The pulse is spent. The cloud stands out its second, and a mob that
+    // walks in meanwhile waits for the next one.
+    a.world.get<Transform>(outside).position = {1000, 1000};
+    a.step(net::kTickMillis);
+    a.step(500.0);
+    CHECK(!a.world.has<Dead>(field));
+    CHECK_NEAR(a.health(onPetal), 60.0, 1e-9);
+    CHECK_NEAR(a.health(outside), 100.0, 1e-9);
+}
+
+TEST(a_uranium_pulse_deals_a_rival_flower_a_quarter_of_a_mobs_share) {
     Arena a;
     const Entity player = a.player({5000, 5000});
-    const Entity mob = a.mob({1050, 1000}, 100.0);
-    const Entity outside = a.mob({1300, 1000}, 100.0);
-    const Entity field = uraniumCloud(a, player, {1000, 1000}, 30.0, 0.0,
-                                      net::kTickSeconds * 1.5);
+    const Entity rival = a.player({1070, 1000});
+    const Entity mob = a.mob({1070, 1000}, 100.0);
+    a.world.get<Faction>(player).friendlyFireEnabled = true;
+    a.world.get<Faction>(rival).friendlyFireEnabled = true;
+    uraniumCloud(a, player, {1000, 1000}, 40.0, 0.0, 1.0);
 
-    // A bite credited to the wearer, not a drip: nothing comes off yet.
+    // Half way out, an eighth of the pulse; the flower a quarter of that.
     a.step(0.0);
-    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
-    const Afflictions& bitten = a.world.get<Afflictions>(mob);
-    CHECK_EQ(bitten.poisonStacks.size(), std::size_t{1});
-    CHECK_EQ(bitten.poisonStacks[0].source, player);
-    CHECK_NEAR(bitten.poisonStacks[0].perSecond, 30.0, 1e-9);
-    CHECK_NEAR(bitten.poisonStacks[0].untilMillis, 2000.0, 1e-9);
-    CHECK(!a.world.has<Afflictions>(outside));
-
-    // The cloud is gone after this tick, and the poison carries on without it.
-    a.step(net::kTickMillis);
-    CHECK(a.world.has<Dead>(field));
-    CHECK_NEAR(a.health(mob), 99.0, 1e-9);
-    a.step(1000.0);
-    CHECK_NEAR(a.health(mob), 98.0, 1e-9);
-    a.step(2500.0);
-    CHECK_NEAR(a.health(mob), 98.0, 1e-9);
-    CHECK_NEAR(a.health(outside), 100.0, 1e-9);
+    CHECK_NEAR(a.health(mob), 95.0, 1e-9);
+    CHECK_NEAR(a.health(rival), 98.75, 1e-9);
 }
 
 TEST(a_uranium_cloud_poisons_its_wearer_wherever_it_stands) {
@@ -2891,6 +2973,85 @@ TEST(a_dandelion_hit_locks_healing_on_what_it_touches) {
     // Ten seconds, from the hit.
     CHECK(CombatSystem::healingBlocked(a.world, mob, 10999.0));
     CHECK(!CombatSystem::healingBlocked(a.world, mob, 11001.0));
+}
+
+// ---------------------------------------------------------------------------
+// Privet: extra poison, spent on the hit
+// ---------------------------------------------------------------------------
+
+TEST(extra_poison_stretches_every_live_stack_and_never_poisons) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity other = a.player({2000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 1000.0);
+
+    a.combat.applyPoison(a.world, mob, player, 5.0, 1000.0, 0.0);
+    a.combat.applyPoison(a.world, mob, other, 3.0, 2000.0, 0.0);
+    a.combat.applyExtraPoison(a.world, mob, 200.0, 500.0);
+    // Both stacks, each at its own rate and still its own layer's.
+    const Afflictions& afflictions = a.world.get<Afflictions>(mob);
+    CHECK_EQ(afflictions.poisonStacks.size(), std::size_t{2});
+    for (const PoisonStack& stack : afflictions.poisonStacks) {
+        CHECK_NEAR(stack.untilMillis, stack.source == player ? 1200.0 : 2200.0, 1e-9);
+        CHECK_NEAR(stack.perSecond, stack.source == player ? 5.0 : 3.0, 1e-9);
+    }
+    CHECK_NEAR(afflictions.poisonUntilMillis, 2200.0, 1e-9);
+
+    // A lapsed stack is not brought back: there is no poison left to stretch.
+    a.combat.applyExtraPoison(a.world, mob, 200.0, 1500.0);
+    CHECK_EQ(a.world.get<Afflictions>(mob).poisonStacks.size(), std::size_t{1});
+
+    // A victim nobody poisoned gains nothing, not even an Afflictions row.
+    const Entity clean = a.mob({1200, 1000}, 100.0);
+    a.combat.applyExtraPoison(a.world, clean, 200.0, 500.0);
+    CHECK(!a.world.has<Afflictions>(clean));
+
+    // A flower's single bite stretches only while it is live.
+    const Entity flower = a.player({3000, 1000});
+    a.combat.applyPoison(a.world, flower, mob, 4.0, 1000.0, 0.0);
+    a.combat.applyExtraPoison(a.world, flower, 200.0, 500.0);
+    CHECK_NEAR(a.world.get<Afflictions>(flower).poisonUntilMillis, 1200.0, 1e-9);
+    a.combat.applyExtraPoison(a.world, flower, 200.0, 5000.0);
+    CHECK_NEAR(a.world.get<Afflictions>(flower).poisonUntilMillis, 1200.0, 1e-9);
+}
+
+TEST(a_privet_hit_stretches_the_victims_poison_and_spends_the_petal) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.privet == kInvalidIndex) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1030, 1000}, 200.0, 60.0);
+    // A mob with no bite at all: the recoil alone would never break it.
+    a.world.add<ContactDamage>(mob, ContactDamage{0.0, 0.0});
+    a.combat.applyPoison(a.world, mob, player, 10.0, 3000.0, 900.0);
+    const double health = f.registry.petalStats(f.privet, Rarity::Common).health;
+    const Entity petal = equipPetal(a, player, f.privet, Rarity::Common, {1015, 1000});
+    a.world.add<Health>(petal, Health{health, health, 0.0, 0.0});
+
+    a.step(1000.0, f.registry);
+    const PetalStats stats = f.registry.petalStats(f.privet, Rarity::Common);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis,
+               3900.0 + stats.extraPoisonMillis, 1e-9);
+    // The landing is the whole of its life, whatever pool it had.
+    CHECK(a.world.has<Dead>(petal) || a.health(petal) <= 0.0);
+}
+
+TEST(a_privets_extra_poison_and_pool_are_flat_and_only_its_reload_climbs) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.privet == kInvalidIndex) return;
+
+    const PetalConfig& config = f.registry.petal(f.privet);
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        const PetalStats s = f.registry.petalStats(f.privet, clampRarity(t));
+        CHECK_NEAR(s.extraPoisonMillis, config.extraPoisonMillis, 1e-9);
+        CHECK_NEAR(s.health, config.health, 1e-9);
+        CHECK_NEAR(s.reloadMillis, config.cooldownMillis * std::pow(0.7, std::min(t, 8)), 1e-6);
+    }
+    // A petal that states none has none.
+    CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Common).extraPoisonMillis, 0.0, 1e-12);
 }
 
 TEST(a_locked_mob_refuses_the_glitch_petals_negative_damage_heal) {

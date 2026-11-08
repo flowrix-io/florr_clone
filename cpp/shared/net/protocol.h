@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 84;
+inline constexpr std::uint16_t kProtocolVersion = 85;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -330,8 +330,15 @@ enum class ServerMessage : std::uint8_t {
                         ///< the world just now, which is every member sitting
                         ///< on the title screen.
     DebugStats,         ///< f64 residentBytes, f64 heapBytes, f32 tickAvgMs,
-                        ///< f32 tickMaxMs -- once a second, and only while
-                        ///< somebody is authenticated. The TypeScript server's
+                        ///< f32 tickMaxMs, u16 ticks, u8 phaseCount,
+                        ///< { str name, f32 totalMs, f32 maxMs, u16 runs }*
+                        ///< -- once a second, and only while somebody is
+                        ///< authenticated. `ticks` is how many ticks the
+                        ///< second held; the phases are where their time
+                        ///< went, in the order tick() runs them, `other`
+                        ///< last, each summed over the window with its worst
+                        ///< single tick and the number of ticks it ran in.
+                        ///< (Phases, version 85.) The TypeScript server's
                         ///< payload also carried heapTotal; nothing draws it,
                         ///< so it is not on this wire.
     MazeInfo,           ///< i64 dayNumber -- the maze the server is playing now.

@@ -1322,7 +1322,8 @@ public:
     static Rect bounds(int viewWidth, int viewHeight);
 };
 
-/// Account rankings, straight from the server.
+/// Account rankings, straight from the server, and for an admin the poll
+/// history beside them.
 class LeaderboardPanel {
 public:
     bool render(MenuContext&);
@@ -1333,6 +1334,9 @@ public:
 private:
     ui::Scroller scroll_;
     bool requested_ = false;
+    /// The admin-only Polls tab (renderPollResults) rather than the board.
+    /// Anyone else never sees the tab row and always gets the board.
+    bool showPolls_ = false;
 };
 
 /// Display switches, camera zoom and the menu keys.
@@ -1421,8 +1425,8 @@ private:
     ui::Scroller scroll_;
 };
 
-/// Frame time and memory graphs, client and server. Reachable only while the
-/// settings switch that puts the bug button in the strip is on.
+/// The admin's poll form, opened only by /admin createpoll. Results are on the
+/// leaderboard's Polls tab (renderPollResults).
 class PollCreatorPanel {
 public:
     bool render(MenuContext&);
@@ -1430,11 +1434,15 @@ public:
     static Rect bounds(int w,int h);
 };
 
+/// Frame time and memory graphs, client and server, this frame's drawing
+/// broken down, and where the server's tick time goes. Reachable only while
+/// the settings switch that puts the bug button in the strip is on.
 class DebugPanel {
 public:
-    /// Which half of the panel is showing. Graphs are the history of a few
-    /// whole-system numbers; Profiling is this frame's drawing broken down.
-    enum class Tab { Graphs, Profiling, Polls };
+    /// Which part of the panel is showing. Graphs are the history of a few
+    /// whole-system numbers; Profiling is this frame's drawing broken down;
+    /// Server is the last second of the server's tick, phase by phase.
+    enum class Tab { Graphs, Profiling, Server };
 
     bool render(MenuContext&);
     void reset();
@@ -1469,12 +1477,21 @@ private:
     /// by default; by name is for finding a particular call.
     bool sortByName_ = false;
 
+    /// The last DebugStats whole, for the Server tab: the graphs keep only the
+    /// two totals, the tab needs the phases. Replaced, not accumulated -- each
+    /// packet is already a second's sum.
+    NetClient::ServerDebugStats serverStats_;
+    /// The Server tab's order: by cost, to find the phase that is eating the
+    /// tick, or the order tick() runs them in, to read the tick as a sequence.
+    bool serverSortByCost_ = true;
+
     double sampleAge_ = 0;
     double sampleTotal_ = 0;
     int sampleCount_ = 0;
 
     bool drawGraphsTab(MenuContext&, Rect body);
     void drawProfilingTab(MenuContext&, Rect body);
+    void drawServerTab(MenuContext&, Rect body);
 
     /// One series on one graph.
     struct Series {
