@@ -97,6 +97,7 @@ const char* const kPetalsJson = R"JSON({
   "ram":      {"name":"RAM","damage":10,"health":2,"size":1,"cooldown":3000,"count":1,"color":"#3498DB"},
   "sawblade": {"name":"Sawblade","damage":20,"health":10,"size":1,"cooldown":2500,"count":1,"defendOnly":true,"color":"#AAAAAA"},
   "carrot":   {"name":"Carrot","damage":18,"health":18,"size":1.4,"cooldown":1000,"count":1,"projectile":{"count":1,"distance":500,"speed":300,"spreadAngle":0},"color":"#F09148"},
+  "starfish": {"name":"Starfish","damage":10,"health":10,"size":1,"cooldown":2000,"count":1,"passiveHeal":2.25,"passiveHealBelow":0.75,"color":"#A9403E"},
   "saucer":   {"name":"Saucer","damage":15,"health":5,"size":1,"cooldown":1000,"count":1,"projectile":{"count":1,"distance":700,"speed":350,"spreadAngle":0,"summonMobType":"critter","summonMax":3},"color":"#7C7C7C"}
 })JSON";
 
@@ -6644,4 +6645,58 @@ TEST(admin_orb_keeps_mana_full_and_pays_costs_larger_than_the_pool) {
     CHECK(!mana.infinite);
     CHECK(!mana.canAfford(30));
     CHECK_NEAR(mana.max, 0, 0.01);
+}
+
+/// A flower whose pool is far past 75 points with a starfish worn, set to
+/// `fraction` of its max. The line is 75% of the pool, so a flat-75 HP guard
+/// would leave every case here alone.
+struct StarfishRig : Rig {
+    explicit StarfishRig(double fraction) {
+        world.get<PlayerProgress>(player).level = 5;
+        equip(0, "starfish");
+        settleEquips();
+        Health& health = world.get<Health>(player);
+        health.current = health.max * fraction;
+    }
+    double current() { return world.get<Health>(player).current; }
+    double max() { return world.get<Health>(player).max; }
+
+    /// Health gained over `ticks` ticks, and the biggest single tick's gain.
+    std::pair<double, double> gainOver(int ticks) {
+        double total = 0.0, biggest = 0.0;
+        for (int i = 0; i < ticks; ++i) {
+            const double before = current();
+            tick();
+            total += current() - before;
+            biggest = std::max(biggest, current() - before);
+        }
+        return {total, biggest};
+    }
+};
+
+/// The flower's own regen, which every flower has whatever it wears.
+constexpr double kBaseRegenPerSecond = 1.0;
+
+TEST(a_starfish_is_a_steady_regen_under_three_quarters_health) {
+    if (!contentLoaded()) return;
+    StarfishRig rig(0.1);
+    CHECK(rig.max() > 300.0);
+    // A common starfish adds 2.25/s on top of the flower's own 1/s, spread
+    // evenly over the ticks: no burst like a rose's.
+    const auto [gained, biggest] = rig.gainOver(30 * 4);
+    CHECK_NEAR(gained, 4.0 * (kBaseRegenPerSecond + 2.25), 0.01);
+    CHECK_NEAR(biggest, (kBaseRegenPerSecond + 2.25) * net::kTickSeconds, 1e-6);
+}
+
+TEST(a_starfish_stops_once_the_flower_is_back_over_three_quarters) {
+    if (!contentLoaded()) return;
+    StarfishRig rig(0.8);
+    const auto [gained, biggest] = rig.gainOver(30 * 4);
+    CHECK_NEAR(gained, 4.0 * kBaseRegenPerSecond, 0.01);
+    (void)biggest;
+
+    // And it picks up again the moment the bar drops under the line.
+    rig.world.get<Health>(rig.player).current = rig.max() * 0.74;
+    const auto [regained, _] = rig.gainOver(30 * 2);
+    CHECK_NEAR(regained, 2.0 * (kBaseRegenPerSecond + 2.25), 0.01);
 }

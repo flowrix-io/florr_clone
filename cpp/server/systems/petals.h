@@ -209,8 +209,9 @@ int liveMoonSlotOf(const ContentRegistry& registry, const Loadout& loadout);
 /// points had different semantics: a spawn ran the petal's script with its
 /// guards applied and could park it until it touched something, while a break
 /// ran the same script in "immediate mode", firing every effect
-/// unconditionally. Starfish therefore heals on break whatever the flower's
-/// health is, and a bomb explodes when it is destroyed as well as when it hits.
+/// unconditionally. A blood leaf therefore bursts on break whether or not the
+/// ring is held out, and a bomb explodes when it is destroyed as well as when
+/// it hits.
 enum class PetalTrigger : std::uint8_t { Spawn, Collision, Interval, Break };
 
 /// Owns a player's ring: which petals exist, where they are, when they break

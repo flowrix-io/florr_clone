@@ -1319,6 +1319,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.burstHealChargeMillis = ctx.range(src, "burstHealChargeMs", 0.0, 0.0, kMaxDurationMillis);
     p.passiveHeal = ctx.range(src, "passiveHeal", 0.0, 0.0, kMaxBaseStat);
     p.passiveHealDefendOnly = ctx.boolean(src, "passiveHealDefendOnly");
+    p.passiveHealBelow = ctx.range(src, "passiveHealBelow", 0.0, 0.0, 1.0);
     p.killHeal = ctx.range(src, "killHeal", 0.0, 0.0, kMaxBaseStat);
     p.killHealDurationMillis = ctx.range(src, "killHealDuration", 0.0, 0.0, kMaxDurationMillis);
     p.burstShield = ctx.range(src, "burstShield", 0.0, 0.0, kMaxBaseStat);

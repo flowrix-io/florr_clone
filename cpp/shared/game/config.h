@@ -949,6 +949,10 @@ struct PetalConfig {
     /// defend held and attack not. Yucca's rule. Unlike `defendOnly` it moves
     /// nothing on the ring -- the petal still lunges with the rest of it.
     bool passiveHealDefendOnly = false;
+    /// The passive heal counts only while the flower is below this fraction of
+    /// its max health; 0 means always. Starfish's 0.75: a steady regen that
+    /// runs until the bar is back over three quarters, then stops.
+    double passiveHealBelow = 0;
     /// Healing per second, before rarity, that a kill buys the wearer for
     /// `killHealDurationMillis` afterwards: the totem's. florr's Heal per
     /// second is on the heal ladder and its Duration is flat across tiers.
