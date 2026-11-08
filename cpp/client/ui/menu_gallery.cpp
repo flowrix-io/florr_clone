@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "client/render/world_renderer.h"
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
@@ -76,17 +77,67 @@ constexpr double kTallyTilt = 19.0 * kPi / 180.0;
 /// spot instead of growing leftwards from one edge.
 constexpr double kTallyInset = 8.5;
 
-/// A mob is drawn at its own size, as the world draws it -- a baby ant is a
-/// speck inside its plate and a hornet nearly fills one, which is the one fact
-/// about a mob the grid can show without being read. Common's radius, never
-/// the cell's own rarity: a row would otherwise swell left to right and the
-/// grid would read as a size chart.
+/// How a mob is drawn in its 60-unit tile depends on whose drawing it is.
+///
+/// A PAINTED mob -- one a painter in mob_art.h draws, which is gardn's drawing
+/// code -- is drawn the way gardn's mob gallery draws it (GalleryMob in
+/// ~/gardn/Client/Ui/TitleScreen/MobGallery.cc): turned 135 degrees
+/// (kMobPictureTilt) and at gardn's size, which is the world's picture at half
+/// size -- `ctx.scale(0.5)` -- after a mob whose radius passes half the tile
+/// has been shrunk to that. galleryMobDiameter applies it to this game's own
+/// world picture, the art at its radius times its `visual_scale`, which is
+/// gardn's picture wherever the art was ported from gardn at gardn's size.
+constexpr double kGardnMobScale = 0.5;
+constexpr double kGardnMobRadiusCap = 30.0;
+
+/// For the painted mobs gardn has, what gardn's gallery actually PAINTS: the
+/// span of the picture along its longer side, in tile units, at the tile's
+/// tilt, standing still. Measured, not derived -- gardn draws many mobs at a
+/// fixed size whatever their radius (a bee is a 30x20 ellipse, a spider's legs
+/// are 35 long), so no rule over the radius reproduces it; a rule over OUR
+/// radius made a worker ant 69% of gardn's and a hornet 133%. Measured
+/// 2026-11-07 by linking ~/gardn's Client/Assets/Mob.cc against a gardn
+/// Renderer written over cpp_canvas, running GalleryMob::on_render's
+/// transforms, and taking the alpha (>= 16) bounding box at 8 px a unit.
+/// The centipedes are their head alone; the body segment gardn draws behind
+/// it is drawGalleryMob's. gardn's massive ladybug, massive beetle and boulder
+/// have no mob here, and its square and digger are not painted here (below).
+///
+/// `scaleOf` draws a mob gardn lacks at the very scale gardn draws one it
+/// has: the wasp is the hornet's painter in other colours, at the same size.
+struct GardnMobPicture {
+    const char* id;
+    double span;
+    const char* scaleOf = nullptr;
+};
+constexpr GardnMobPicture kGardnMobPicture[] = {
+    {"baby_ant", 20.1},       {"worker_ant", 23.8},     {"soldier_ant", 26.4},
+    {"bee", 36.4},            {"ladybug", 33.8},        {"beetle", 45.0},
+    {"dark_ladybug", 33.8},   {"hornet", 31.4},         {"cactus", 31.9},
+    {"rock", 34.1},           {"centipede", 44.5},      {"evil_centipede", 44.5},
+    {"desert_centipede", 44.5}, {"sandstorm", 32.0},    {"scorpion", 37.8},
+    {"spider", 37.4},         {"ant_hole", 30.0},       {"queen_ant", 50.6},
+    {"shiny_ladybug", 33.8},  {"wasp", 0.0, "hornet"},
+};
+
+/// A mob drawn from an SVG document -- its own, or a petal's -- is not
+/// gardn's, and is drawn as the gallery drew every mob before: upright, at
+/// its own size as the world draws it -- a speck of a baby, a hornet nearly
+/// filling the plate -- 1.15x its body across, capped at 48.
 constexpr double kIconZoom = 1.15;
 constexpr double kIconCap = 48.0;
-/// That size is the BODY's, and a spider's legs or a bee's sting reach well
-/// past it, so the whole picture is then held inside the plate: drawn smaller
-/// where it would spill onto the next tile. The inset clears the rim's inner
-/// half and leaves a sliver of plate showing round the art.
+
+/// The digger is the exception: its mobs.json entry is an SVG, but the world
+/// draws it as gardn does, a grey flower carrying a cutter, and so does its
+/// tile -- upright, as GalleryMob leaves gardn's digger, at gardn's radius 40
+/// shrunk to the cap and halved.
+constexpr double kGardnDiggerRadius = 40.0;
+
+/// That size is the BODY's, and a spider's legs or a bee's sting reach past
+/// it. gardn clips the art to its tile; here the whole picture is held inside
+/// the plate instead, drawn smaller only where it would spill onto the next
+/// tile. The inset clears the rim's inner half and leaves a sliver of plate
+/// showing round the art.
 constexpr double kIconInset = kCellRim * 0.5 + 2.0;
 
 /// Every rung of the ladder is a column, apex included: a biome's apex clock
@@ -537,6 +588,85 @@ ScrollDrag& scrollDrag() {
 
 } // namespace
 
+double galleryMobDiameter(const ContentRegistry& content, const SpriteCache& sprites,
+                          std::uint16_t mobIndex) {
+    const MobConfig& config = content.mob(mobIndex);
+    // Common's radius, never the cell's own tier: a row would otherwise swell
+    // left to right and the grid would read as a size chart.
+    const double radius = content.mobStats(mobIndex, Rarity::Common).radius;
+    if (config.id == "digger") {
+        return 2.0 * std::min(kGardnDiggerRadius, kGardnMobRadiusCap) * kGardnMobScale;
+    }
+    if (sprites.mobArt(mobIndex) == MobArt::None) {
+        return std::min(kIconCap, radius * 2.0 * kIconZoom);
+    }
+    for (const GardnMobPicture& row : kGardnMobPicture) {
+        if (config.id != row.id) continue;
+        if (row.scaleOf) {
+            // The same diameter is the same scale: a painter is fitted by the
+            // diameter alone, whatever world radius it is cut at.
+            const std::uint16_t other = content.mobIndex(row.scaleOf);
+            if (other != kInvalidIndex && other != mobIndex) {
+                return galleryMobDiameter(content, sprites, other);
+            }
+            break;
+        }
+        const double span = sprites.mobPictureSpan(mobIndex, radius);
+        if (span > 0.0) return 2.0 * row.span / span;
+    }
+    // gardn's GalleryMob over this game's world picture: shrunk to the cap,
+    // then drawn at half size, the art at the visual_scale the world draws it.
+    const double visualScale = config.visualScale > 0 ? config.visualScale : 1.0;
+    return 2.0 * std::min(radius, kGardnMobRadiusCap) * kGardnMobScale * visualScale;
+}
+
+void drawGalleryMob(Canvas& canvas, const ContentRegistry& content, const SpriteCache& sprites,
+                    const WorldRenderer& renderer, std::uint16_t mobIndex, Rarity rarity,
+                    Rect plate, double timeSeconds) {
+    const MobConfig& config = content.mob(mobIndex);
+    // Detail is cut from the mob's OWN common-tier radius, not from the tile:
+    // a rock in the bestiary is the rock the garden has, at picture size,
+    // rather than a boulder squeezed into 60 units.
+    const double radius = content.mobStats(mobIndex, Rarity::Common).radius;
+    const double diameter = galleryMobDiameter(content, sprites, mobIndex);
+    const double cx = plate.x + plate.w * 0.5;
+    const double cy = plate.y + plate.h * 0.5;
+
+    if (config.id == "digger") {
+        canvas.save();
+        canvas.translate(static_cast<float>(cx), static_cast<float>(cy));
+        renderer.drawDiggerPicture(canvas, diameter * 0.5, timeSeconds);
+        canvas.restore();
+        return;
+    }
+
+    // gardn's centipede: the head on the tile's centre and one body segment
+    // two radii behind it, drawn after the head as GalleryMob draws it, the
+    // pair clipped to the plate the way gardn clips every tile -- the
+    // segment runs off the corner rather than being shrunk to fit.
+    const std::uint16_t body = config.segmentBodyIndex;
+    if (config.gardnChain && body != kInvalidIndex && sprites.mobArt(mobIndex) != MobArt::None) {
+        const double tilt = sprites.mobPictureTilt(mobIndex);
+        const double behind = diameter;  // two drawn radii
+        canvas.save();
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(plate.x), static_cast<float>(plate.y),
+                         static_cast<float>(plate.w), static_cast<float>(plate.h),
+                         static_cast<float>(kCellRadius));
+        canvas.clip();
+        sprites.drawMob(canvas, mobIndex, rarity, cx, cy, diameter, tilt, timeSeconds, false,
+                        radius);
+        sprites.drawMob(canvas, body, rarity, cx - std::cos(tilt) * behind,
+                        cy - std::sin(tilt) * behind, diameter, tilt, timeSeconds, false,
+                        content.mobStats(body, Rarity::Common).radius);
+        canvas.restore();
+        return;
+    }
+
+    sprites.drawMobPicture(canvas, mobIndex, rarity, cx, cy, plate.w - kIconInset * 2.0, diameter,
+                           timeSeconds, radius);
+}
+
 double GalleryPanel::preferredWidth() { return kCardWidth; }
 
 double GalleryPanel::preferredHeight() { return kCardHeight; }
@@ -689,15 +819,8 @@ bool GalleryPanel::render(MenuContext& ctx) {
         }
 
         if (known) {
-            // Common's radius, whatever tier this cell is -- see kIconZoom.
-            const double radius = content().mobStats(cell.mobIndex, Rarity::Common).radius;
-            const double diameter = std::min(kIconCap, radius * 2.0 * kIconZoom);
-            // Cut its detail from the mob's OWN common-tier radius, not from
-            // the tile: a rock in the bestiary is the rock the garden has, at
-            // picture size, rather than a boulder squeezed into 60 units.
-            ctx.sprites.drawMobPicture(canvas, cell.mobIndex, cell.rarity, rect.x + rect.w * 0.5,
-                                       rect.y + rect.h * 0.5, rect.w - kIconInset * 2.0, diameter,
-                                       ctx.timeSeconds, radius);
+            drawGalleryMob(canvas, content(), ctx.sprites, ctx.renderer, cell.mobIndex, cell.rarity,
+                           rect, ctx.timeSeconds);
 
             // Abbreviated, unlike the drop table's own counts: five figures of
             // ant kills laid across a 60-unit plate is a smear, and a bestiary

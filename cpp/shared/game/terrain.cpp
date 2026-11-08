@@ -1253,6 +1253,7 @@ Terrain::WallResolution Terrain::resolveWall(Vec2 position, double radius, Realm
     // bug upstream costs the body a shove, never the tick.
     if (!std::isfinite(position.x) || !std::isfinite(position.y)) {
         position = realm == Realm::Arena ? kArenaSpawn
+                 : realm == kWavesRealm  ? kWavesCentre
                  : realm == Realm::Maze  ? activeMaze().spawn()
                                          : spawnPoint(realm);
     }
@@ -1274,7 +1275,7 @@ Terrain::WallResolution Terrain::resolveWall(Vec2 position, double radius, Realm
         result.unresolved = maze.blocksPoint(result.position);
         return result;
     }
-    if (realm == Realm::Arena) {
+    if (isDiscRealm(realm)) {
         result.position = clampInside(position, radius, realm);
         result.collided = result.position.x != position.x || result.position.y != position.y;
         return result;
@@ -1358,7 +1359,10 @@ Vec2 Terrain::resolveCircle(Vec2 position, double radius, Realm realm) const {
 
 bool Terrain::blocked(Vec2 p, Realm realm) const {
     if (realm == Realm::Maze) return activeMaze().blocksPoint(p);
-    if (realm == Realm::Arena) return !insideArena(p);
+    if (isDiscRealm(realm)) {
+        const RealmDisc ring = disc(realm);
+        return distanceSq(p, ring.centre) > ring.radius * ring.radius;
+    }
     bool water = false;
     return blockingLayerAt(p, realm, water) >= 0;
 }
@@ -1377,6 +1381,7 @@ Vec2 Terrain::realmExtent(Realm realm) const {
         return {side, side};
     }
     if (realm == Realm::Arena) return {kArenaWorldSize, kArenaWorldSize};
+    if (realm == kWavesRealm) return {kWavesWorldSize, kWavesWorldSize};
     const Grid& g = grid(realm);
     // A realm with no map staged still has to answer with something finite --
     // a clamp against zero would collapse every coordinate onto the origin.
@@ -1391,17 +1396,18 @@ double Terrain::realmSize(Realm realm) const {
 
 Vec2 Terrain::clampInside(Vec2 p, double radius, Realm realm) const {
     if (!std::isfinite(radius) || radius < 0.0) radius = 0.0;
-    if (realm == Realm::Arena) {
+    if (isDiscRealm(realm)) {
         // Radially, onto the ring's inside face: the reference's PVP clamp
         // (src/server/playerState.ts:1989-1996) with the body's own radius
         // where it wrote PLAYER_SIZE / 2.
-        const double maxR = std::max(0.0, kArenaRadius - radius);
-        const Vec2 offset = p - kArenaCentre;
+        const RealmDisc ring = disc(realm);
+        const double maxR = std::max(0.0, ring.radius - radius);
+        const Vec2 offset = p - ring.centre;
         const double distSq = offset.lengthSq();
-        if (!std::isfinite(distSq)) return kArenaCentre;
+        if (!std::isfinite(distSq)) return ring.centre;
         if (distSq <= maxR * maxR) return p;
         const double dist = std::sqrt(distSq);
-        return kArenaCentre + offset * (maxR / dist);
+        return ring.centre + offset * (maxR / dist);
     }
     // Per axis, because a map need not be square: clamping both axes against
     // the longer one would let a body walk off the short end of a corridor
@@ -1413,7 +1419,7 @@ Vec2 Terrain::clampInside(Vec2 p, double radius, Realm realm) const {
 }
 
 bool Terrain::outside(Vec2 p, Realm realm) const {
-    if (realm == Realm::Arena) return !insideArena(p);
+    if (isDiscRealm(realm)) return blocked(p, realm);
     const Vec2 extent = realmExtent(realm);
     return p.x < 0.0 || p.x >= extent.x || p.y < 0.0 || p.y >= extent.y;
 }
@@ -1423,7 +1429,7 @@ bool Terrain::segmentBlocked(Vec2 a, Vec2 b, Realm realm) const {
         return true;
     }
     if (realm == Realm::Maze) return activeMaze().blocksLine(a, b);
-    if (realm == Realm::Arena) return false;   // open floor, edge to edge
+    if (isDiscRealm(realm)) return false;   // open floor, edge to edge
 
     // The DDA visits every cell the segment passes through and asks each for
     // the shapes filed in it. A cell it does not visit cannot hold geometry the
@@ -1519,7 +1525,7 @@ bool Terrain::hasLineOfSight(Vec2 a, Vec2 b, Realm realm, int sampleCount) const
     if (distance < 10.0) return true;
 
     if (realm == Realm::Maze) return !activeMaze().blocksLine(a, b);
-    if (realm == Realm::Arena) return true;
+    if (isDiscRealm(realm)) return true;
 
     const int samples = std::max(1, sampleCount);
     for (int i = 0; i <= samples; ++i) {
@@ -1536,9 +1542,11 @@ bool Terrain::hasLineOfSight(Vec2 a, Vec2 b, Realm realm, int sampleCount) const
 }
 
 Vec2 Terrain::findOpenSpawn(Rng& rng, Vec2 around, double radius, Realm realm) const {
-    if (realm == Realm::Arena) {
-        if (!std::isfinite(around.x) || !std::isfinite(around.y)) around = kArenaSpawn;
-        radius = std::isfinite(radius) ? clamp(radius, 0.0, kArenaRadius) : 0.0;
+    if (isDiscRealm(realm)) {
+        if (!std::isfinite(around.x) || !std::isfinite(around.y)) {
+            around = realm == Realm::Arena ? kArenaSpawn : kWavesCentre;
+        }
+        radius = std::isfinite(radius) ? clamp(radius, 0.0, disc(realm).radius) : 0.0;
         return clampInside(around + rng.insideCircle(radius), kPlayerBaseRadius, realm);
     }
     if (realm == Realm::Maze) {

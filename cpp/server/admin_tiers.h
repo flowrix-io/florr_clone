@@ -6,10 +6,11 @@
 //
 //   owner   everything, and reaches tier 1 admins (below)
 //   tier 1  everything
-//   tier 2  cannot update the server
-//   tier 3  cannot update the server or give petals to anyone but themselves
-//   tier 4  cannot update the server, give petals to anyone but themselves or
-//           spawn mobs
+//   tier 2  cannot update the server or manage wave rooms
+//   tier 3  cannot update the server, manage wave rooms or give petals to
+//           anyone but themselves
+//   tier 4  cannot update the server, manage wave rooms, give petals to anyone
+//           but themselves or spawn mobs
 //
 // "To themselves" is a database admin's own account, by id. A temporary grant
 // at tier 3 or 4 gives nothing (chat_commands.cpp, `give`).
@@ -54,6 +55,8 @@ inline constexpr int kNotAnAdmin = -1;
 
 enum class AdminPower {
     UpdateServer,   ///< `update`
+    ManageWaves,    ///< `start_waves` and `stop_waves`: opening and closing the
+                    ///< wave survival rift
     GivePetals,     ///< `give` to another account, the database editor, which
                     ///< can write any bag, and everything that becomes petals
                     ///< in somebody's bag: the star code verbs and `sacrifice`
@@ -64,6 +67,7 @@ enum class AdminPower {
 constexpr int lowestTierWith(AdminPower power) {
     switch (power) {
         case AdminPower::UpdateServer: return 1;
+        case AdminPower::ManageWaves: return 1;
         case AdminPower::GivePetals: return 2;
         case AdminPower::SpawnMobs: return 3;
     }
@@ -93,6 +97,7 @@ inline std::string adminTierLabel(int tier) {
 inline const char* adminPowerVerb(AdminPower power) {
     switch (power) {
         case AdminPower::UpdateServer: return "update the server";
+        case AdminPower::ManageWaves: return "manage wave rooms";
         case AdminPower::GivePetals: return "give petals";
         case AdminPower::SpawnMobs: return "spawn mobs";
     }

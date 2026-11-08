@@ -758,14 +758,15 @@ const SpriteCache::PictureBounds& SpriteCache::pictureBounds(std::uint16_t index
     if (bounds.measured) return bounds;
     bounds.measured = true;
 
-    // Drawn exactly as drawMobPicture will draw it -- no motion, unturned --
-    // so what is measured is the picture, not the creature in the world.
+    // Drawn exactly as drawMobPicture will draw it -- no motion, at the
+    // tile's tilt -- so what is measured is the picture, not the creature in
+    // the world, and the turned picture is the one that is fitted and centred.
     const int side = static_cast<int>(std::ceil(2.0 * kProbeReach * kProbeRadius));
     const double centre = side * 0.5;
     Canvas probe = Canvas::createVirtual(side, side);
     for (const double t : kProbeTimes) {
-        draw(probe, mobSprite(index, Rarity::Common), centre, centre, kProbeRadius * 2.0, 0.0, t,
-             false, worldRadius);
+        draw(probe, mobSprite(index, Rarity::Common), centre, centre, kProbeRadius * 2.0,
+             mobPictureTilt(index), t, false, worldRadius);
     }
     const std::vector<std::uint8_t> rgba = probe.getImageData(0, 0, side, side);
     if (rgba.size() != static_cast<std::size_t>(side) * side * 4) return bounds;
@@ -799,8 +800,20 @@ void SpriteCache::drawMobPicture(Canvas& canvas, std::uint16_t index, Rarity rar
     const double reach = std::max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * radius;
     if (reach > box) radius *= box / reach;
     draw(canvas, mobSprite(index, rarity), x - (bounds.minX + bounds.maxX) * 0.5 * radius,
-         y - (bounds.minY + bounds.maxY) * 0.5 * radius, radius * 2.0, 0.0, timeSeconds, false,
-         worldRadius);
+         y - (bounds.minY + bounds.maxY) * 0.5 * radius, radius * 2.0, mobPictureTilt(index),
+         timeSeconds, false, worldRadius);
+}
+
+double SpriteCache::mobPictureTilt(std::uint16_t index) const {
+    if (index >= mobs_.size()) return 0.0;
+    // A `$petal:` mob carries no painter of its own: it is the petal's document.
+    return mobs_[index].art != MobArt::None ? kMobPictureTilt : 0.0;
+}
+
+double SpriteCache::mobPictureSpan(std::uint16_t index, double worldRadius) const {
+    if (index >= mobs_.size() || index >= mobPictureBounds_.size()) return 2.0;
+    const PictureBounds& bounds = pictureBounds(index, worldRadius);
+    return std::max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
 }
 
 MobArt SpriteCache::mobArt(std::uint16_t index) const {

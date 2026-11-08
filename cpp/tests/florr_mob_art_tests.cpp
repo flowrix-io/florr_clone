@@ -5,6 +5,7 @@
 #include "client/render/mob_art.h"
 #include "client/render/sprites.h"
 #include "client/render/world_renderer.h"
+#include "client/ui/menus.h"
 #include "client/world_view.h"
 #include "shared/core/types.h"
 #include "shared/game/config.h"
@@ -485,10 +486,10 @@ TEST(a_sponge_wears_one_of_three_colours_picked_by_its_id) {
 namespace {
 
 /// The mob gallery's numbers: a 60-unit plate less its inset, and the body
-/// it would draw before any fitting -- 1.15x the common radius, capped at 48.
+/// it would draw before any fitting -- the gallery's own galleryMobDiameter.
 constexpr double kPlateBox = 52.0;
 double galleryBody(std::uint16_t type) {
-    return std::min(48.0, shipped().mobStats(type, Rarity::Common).radius * 2.0 * 1.15);
+    return galleryMobDiameter(shipped(), shippedSprites(), type);
 }
 
 /// Where a mob's gallery picture paints, in units from the plate's centre,
@@ -507,8 +508,11 @@ bool pictureReach(std::uint16_t type, Reach& out, bool fitted = true) {
             shippedSprites().drawMobPicture(canvas, type, Rarity::Common, kView * 0.5, kView * 0.5,
                                             kPlateBox, galleryBody(type), t, radius);
         } else {
+            // The same tilt the tile draws at, so "fitted" and "unfitted"
+            // differ only in the fitting.
             shippedSprites().drawMob(canvas, type, Rarity::Common, kView * 0.5, kView * 0.5,
-                                     galleryBody(type), 0.0, t, false, radius);
+                                     galleryBody(type), shippedSprites().mobPictureTilt(type), t,
+                                     false, radius);
         }
     }
     const std::vector<std::uint8_t> rgba = canvas.getImageData(0, 0, kN, kN);
@@ -554,16 +558,103 @@ TEST(every_mob_stays_inside_its_gallery_plate) {
 }
 
 TEST(a_lopsided_gallery_picture_is_centred_on_what_it_paints) {
-    // A baby ant's mandibles stick out in front and nothing behind, so
-    // centred on its body it sat almost five units right of the plate's
-    // middle. It already fits, so it is moved, not shrunk.
+    // A baby ant's mandibles stick out in front and nothing behind -- off
+    // on a diagonal, at the gallery's tilt -- so centred on its body it sat
+    // off the plate's middle both ways. It already fits, so it is moved, not
+    // shrunk.
     const std::uint16_t ant = shipped().mobIndex("baby_ant");
     Reach before, after;
     CHECK(pictureReach(ant, before, false));
     CHECK(pictureReach(ant, after));
-    CHECK(before.right - before.left > 5.0);
+    const double lopsided = galleryBody(ant) * 0.1;
+    CHECK(std::abs(before.right - before.left) > lopsided);
+    CHECK(std::abs(before.top - before.bottom) > lopsided);
     CHECK(std::abs(after.right - after.left) <= 1.0);
+    CHECK(std::abs(after.top - after.bottom) <= 1.0);
     CHECK(std::abs((after.right + after.left) - (before.right + before.left)) <= 1.0);
+    CHECK(std::abs((after.top + after.bottom) - (before.top + before.bottom)) <= 1.0);
+}
+
+TEST(the_gallery_draws_a_mob_the_size_gardns_gallery_does) {
+    // A PAINTED mob is gardn's drawing and drawn as gardn's GalleryMob draws
+    // it, in the same 60-unit tile and turned 135 degrees. One gardn has paints
+    // exactly as far as gardn's picture of it does, whatever this game's
+    // radius -- the spider's is 37.4 units, measured. Any other is its world
+    // picture at gardn's half size: a body as many units across as its
+    // radius, the radius capped at 30, the art at its visual_scale. The wasp
+    // is drawn at the scale gardn draws its hornet.
+    //
+    // A mob drawn from an SVG document is not gardn's: upright, 1.15x its
+    // body across, capped at 48. Except the digger, which is gardn's flower.
+    ContentRegistry content;
+    std::string error;
+    const std::string dir = testsupport::tempDir("flix_gallery_mob_size");
+    CHECK(test::loadFixtureContent(content, dir, R"({
+        "spider": {"name":"Spider","health":1,"damage":1,"size":3,"image":"$spider"},
+        "small": {"name":"Small","health":1,"damage":1,"size":0.5,"image":"$ant_baby"},
+        "huge": {"name":"Huge","health":1,"damage":1,"size":20,"image":"$ant_baby"},
+        "scaled": {"name":"Scaled","health":1,"damage":1,"size":0.5,"visual_scale":0.5,
+                   "image":"$ant_baby"},
+        "hornet": {"name":"Hornet","health":1,"damage":1,"size":1.3,"image":"$hornet"},
+        "wasp": {"name":"Wasp","health":1,"damage":1,"size":2,"image":"$wasp"},
+        "drawn": {"name":"Drawn","health":1,"damage":1,"size":0.5,
+                  "image":"<svg viewBox=\"0 0 2 2\"><rect width=\"2\" height=\"2\" fill=\"#fff\"/></svg>"},
+        "big_drawn": {"name":"Big Drawn","health":1,"damage":1,"size":20,
+                  "image":"<svg viewBox=\"0 0 2 2\"><rect width=\"2\" height=\"2\" fill=\"#fff\"/></svg>"},
+        "digger": {"name":"Digger","health":1,"damage":1,"size":1,
+                  "image":"<svg viewBox=\"0 0 2 2\"><rect width=\"2\" height=\"2\" fill=\"#fff\"/></svg>"}
+    })",
+                                   R"({
+        "basic": {"name":"Basic","damage":5,"health":5,"size":1,"cooldown":1000,"count":1}
+    })",
+                                   error));
+    SpriteCache sprites;
+    sprites.build(content, dir);
+    const auto index = [&](const char* id) { return content.mobIndex(id); };
+    const auto drawn = [&](const char* id) {
+        return galleryMobDiameter(content, sprites, index(id));
+    };
+    const auto radius = [&](const char* id) {
+        return content.mobStats(index(id), Rarity::Common).radius;
+    };
+
+    // The spider, painted: its span is gardn's, give or take a pixel at 3x.
+    {
+        constexpr int kScale = 3;
+        constexpr int kN = 80 * kScale;
+        Canvas canvas = Canvas::createVirtual(kN, kN);
+        canvas.scale(kScale, kScale);
+        sprites.drawMobPicture(canvas, index("spider"), Rarity::Common, 40.0, 40.0, 52.0,
+                               drawn("spider"), 0.0, radius("spider"));
+        const std::vector<std::uint8_t> rgba = canvas.getImageData(0, 0, kN, kN);
+        int minX = kN, maxX = -1, minY = kN, maxY = -1;
+        for (int y = 0; y < kN; ++y) {
+            for (int x = 0; x < kN; ++x) {
+                if (rgba[(static_cast<std::size_t>(y) * kN + x) * 4 + 3] < 16) continue;
+                minX = std::min(minX, x);
+                maxX = std::max(maxX, x);
+                minY = std::min(minY, y);
+                maxY = std::max(maxY, y);
+            }
+        }
+        CHECK(maxX >= 0);
+        const double span = std::max(maxX + 1 - minX, maxY + 1 - minY) / double(kScale);
+        CHECK(std::abs(span - 37.4) <= 1.0);
+    }
+
+    CHECK(radius("small") < 30.0);
+    CHECK(std::abs(drawn("small") - radius("small")) < 1e-9);
+    CHECK(radius("huge") > 30.0);
+    CHECK(std::abs(drawn("huge") - 30.0) < 1e-9);
+    CHECK(std::abs(drawn("scaled") - radius("scaled") * 0.5) < 1e-9);
+    CHECK(std::abs(radius("wasp") - radius("hornet")) > 1.0);
+    CHECK(std::abs(drawn("wasp") - drawn("hornet")) < 1e-9);
+    CHECK(std::abs(sprites.mobPictureTilt(index("small")) - kMobPictureTilt) < 1e-12);
+
+    CHECK(std::abs(drawn("drawn") - radius("drawn") * 2.0 * 1.15) < 1e-9);
+    CHECK(std::abs(drawn("big_drawn") - 48.0) < 1e-9);
+    CHECK(sprites.mobPictureTilt(index("drawn")) == 0.0);
+    CHECK(std::abs(drawn("digger") - 30.0) < 1e-9);
 }
 
 TEST(a_gallery_picture_that_already_fits_keeps_its_size) {

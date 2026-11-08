@@ -18,6 +18,7 @@
 #include "shared/game/skin_format.h"
 #include "shared/game/skills.h"
 #include "shared/game/terrain.h"
+#include "shared/game/waves.h"
 #include "shared/net/admin_dashboard.h"
 #include "shared/net/admin_db.h"
 #include "shared/net/protocol.h"
@@ -1001,6 +1002,33 @@ public:
     /// Set when the server reports the player died; cleared by respawning, or
     /// by a yggdrasil raising this body back up.
     bool dead() const { return dead_; }
+
+    /// The black portal /admin start_waves opened, on whichever map it is.
+    struct RiftView {
+        bool open = false;
+        Realm realm = Realm::Overworld;
+        Vec2 position;
+        double radius = 0.0;
+    };
+    const RiftView& rift() const { return rift_; }
+
+    /// The game of waves this flower is in; `known` is false outside one.
+    struct WaveView {
+        struct Group {
+            std::uint16_t mobIndex = 0;
+            Rarity rarity = Rarity::Common;
+            std::uint16_t count = 0;
+        };
+        bool known = false;
+        WavePhase phase = WavePhase::Idle;
+        WaveBiome biome = WaveBiome::Garden;
+        int wave = 0;
+        double timer = 0.0;
+        double redTimer = 0.0;
+        double radius = kWavesStartRadius;
+        std::vector<Group> groups;
+    };
+    const WaveView& wave() const { return wave_; }
     const std::string& killerName() const { return killerName_; }
 
     /// Set once each time a yggdrasil raised this body. Cleared by whoever
@@ -1037,7 +1065,11 @@ private:
     void handleProfile(ByteReader&);
     void handleProfileDelta(ByteReader&);
     void handleJoinAccepted(ByteReader&);
+    RiftView rift_;
+    WaveView wave_;
     void handleRealmChange(ByteReader&, bool preserveView = false);
+    void handleRiftState(ByteReader&);
+    void handleWaveState(ByteReader&);
     void handleMazeInfo(ByteReader&);
     void handleChat(ByteReader&);
     /// The conversation already in progress when this account signed in, put

@@ -289,6 +289,15 @@ class Terrain {
 public:
     std::uint8_t adminArenaFloor = 1;
     std::uint8_t adminArenaWall = 0;
+    /// How far the waves disc reaches now: it grows with each wave. Set by the
+    /// server's game of waves, and by the client from its WaveState.
+    double wavesRadius = kWavesStartRadius;
+    /// The disc of a disc realm (isDiscRealm): the arena's ring, or the waves'
+    /// disc as big as it is now.
+    RealmDisc disc(Realm realm) const {
+        return realm == kWavesRealm ? RealmDisc{kWavesCentre, wavesRadius}
+                                    : RealmDisc{kArenaCentre, kArenaRadius};
+    }
 
     /// Segments the reference's sight test cuts the ray into. Every call site
     /// there goes through the four-argument form, so it is always this.

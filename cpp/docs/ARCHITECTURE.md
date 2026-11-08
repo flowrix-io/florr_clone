@@ -260,6 +260,10 @@ a nest's escort from the nest. A teleporter that leads to another map is a
 `RealmChange`: the client clears its view, adopts the new map's grid and snaps
 its camera. [maps/README.md](../../maps/README.md) has the manifest's rules.
 
+One more generated realm, `kWavesRealm`, is the disc of the wave survival mode
+(`shared/game/waves.h`, `server/waves.cpp`). It is reached only through the rift
+`/admin start_waves` opens; see `docs/admin-dashboard.md`.
+
 The TypeScript version put the arena at (150000, 150000) and the maze at
 (200000, 200000) inside one world space and guarded every clamp, section
 lookup and grid individually. Here nothing in one realm can reach another by

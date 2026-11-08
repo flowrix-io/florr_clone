@@ -21,6 +21,7 @@
 #include "client/render/darkness.h"
 #include "client/render/sprites.h"
 #include "client/world_view.h"
+#include "shared/game/waves.h"
 #include "shared/core/types.h"
 #include "shared/game/constants.h"
 #include "shared/game/skin_format.h"
@@ -173,6 +174,17 @@ public:
     /// florr's first dark stage. Held, not copied -- the caller keeps the
     /// vector alive across draw().
     void setLightClip(const std::vector<LightDisc>* discs) { lightClip_ = discs; }
+    /// The open rift, if any, drawn on the map it is on: a black portal on no
+    /// map's element list, because a server opened it at run time.
+    void setRift(bool open, Realm realm, Vec2 position, double radius) {
+        rift_.open = open;
+        rift_.realm = realm;
+        rift_.position = position;
+        rift_.radius = radius;
+    }
+    /// Which biome the waves disc is paved with, and how far it reaches.
+    void setWaveBiome(WaveBiome biome) { waveBiome_ = biome; }
+    void setWaveRadius(double radius) { waveRadius_ = radius; }
     void setSprites(const SpriteCache* sprites) { sprites_ = sprites; }
 
     /// Turns this frame's server events into effects. Drains `view.events()`.
@@ -243,6 +255,12 @@ public:
     /// avatar of a dead flower, which are the corpse drawn somewhere else.
     void drawDeadFlower(Canvas&, std::uint16_t equipFlags, double mouth,
                         double timeSeconds) const;
+
+    /// A wild digger as the world draws it -- a grey flower carrying a cutter
+    /// -- centred on the origin with a body `radius` across, upright and
+    /// looking where gardn's still face looks. Public for the mob gallery,
+    /// whose digger is this flower and not the mob's SVG.
+    void drawDiggerPicture(Canvas&, double radius, double timeSeconds) const;
 
     /// What every flower on screen has been heard saying, borrowed from
     /// NetClient. Optional: without it -- a tool, a test, a preview -- nobody
@@ -398,11 +416,19 @@ private:
     /// void beyond its square left black. The maze has no map file and so no
     /// artwork of its own -- terrain.h's kBiomes is its whole palette.
     void drawMaze(Canvas&, const Camera&) const;
-    /// The arena realm: a grey gridded floor inside the ring, dark void
-    /// outside it, and the red boundary the server clamps bodies to.
+    /// The arena realm: a grey gridded floor, carried on past the ring under
+    /// flooooio's border, black beyond that.
     void drawArena(Canvas&, const Camera&) const;
+    /// The waves realm: the biome's tile on a disc, black outside it.
+    void drawWaves(Canvas&, const Camera&, double timeSeconds) const;
     /// Teleporters, off the realm's own map.
     void drawMapElements(Canvas&, const Camera&, Realm realm, double timeSeconds) const;
+    /// florr's warp: one pad at a world position. `opening` runs 0 to 1 as a
+    /// black portal's cracks grow out, and is 1 for anything already there.
+    void drawPortal(Canvas&, const Camera&, Vec2 centre, double worldRadius, std::uint32_t color,
+                    std::uint32_t pad, double timeSeconds, double opening) const;
+    /// The open rift, if this view is on its map.
+    void drawRift(Canvas&, const Camera&, double timeSeconds) const;
     void drawEntity(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawFlower(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawDefaultFlower(Canvas&, const RemoteEntity&, double timeSeconds) const;
@@ -762,6 +788,23 @@ private:
     /// Which realm the view being drawn is in; decides what goes under the
     /// entities. Taken from the WorldView on each draw.
     mutable Realm realm_ = Realm::Overworld;
+
+    struct Rift {
+        bool open = false;
+        Realm realm = Realm::Overworld;
+        Vec2 position;
+        double radius = 0.0;
+    };
+    Rift rift_;
+    /// When this client first drew the rift now open; negative when none is.
+    mutable double riftOpenedAtSeconds_ = -1.0;
+    WaveBiome waveBiome_ = WaveBiome::Garden;
+    double waveRadius_ = kWavesStartRadius;
+    /// The edge as drawn: it eases out after the server's when the disc grows
+    /// (flooooio lerps its MapRadius the same way), and snaps when it shrinks,
+    /// which only a new game does.
+    mutable double waveRadiusDrawn_ = -1.0;
+    mutable double waveRadiusAt_ = 0.0;
 
     mutable SectionTiming timing_;
     mutable SectionOps ops_;
