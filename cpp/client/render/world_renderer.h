@@ -244,6 +244,12 @@ public:
     void drawDeadFlower(Canvas&, std::uint16_t equipFlags, double mouth,
                         double timeSeconds) const;
 
+    /// A wild digger as the world draws it -- a grey flower carrying a cutter
+    /// -- centred on the origin with a body `radius` across, upright and
+    /// looking where gardn's still face looks. Public for the mob gallery,
+    /// whose digger is this flower and not the mob's SVG.
+    void drawDiggerPicture(Canvas&, double radius, double timeSeconds) const;
+
     /// What every flower on screen has been heard saying, borrowed from
     /// NetClient. Optional: without it -- a tool, a test, a preview -- nobody
     /// speaks and no bubble is drawn.
