@@ -507,23 +507,34 @@ void App::drawWaveHud(Canvas& canvas, double time) {
     text(canvas, "Wave " + std::to_string(wave.wave), middle, lineY, gaugeStyle);
     y += gaugeHeight + 8.0 * kWaveUi;
 
-    // The mobs still up, one column per kind and rarest at the bottom:
-    // UIGameWaveMobIcons, counted by the server, where flooooio's counts only
-    // what its client has seen.
+    // The mobs still up, one column per kind: UIGameWaveMobIcons, counted by
+    // the server, where flooooio's counts only what its client has seen. A
+    // kind's rarities are one stack, the rarest in front and each lower one
+    // behind it a tenth of a tile further down, so an edge of each shows.
+    // By kind, then by rarity: what the stacks below are built in the order of.
+    std::vector<const NetClient::WaveView::Group*> sorted;
+    for (const NetClient::WaveView::Group& group : wave.groups) sorted.push_back(&group);
+    std::sort(sorted.begin(), sorted.end(), [](const auto* a, const auto* b) {
+        return a->mobIndex != b->mobIndex ? a->mobIndex < b->mobIndex
+                                          : rarityIndex(a->rarity) < rarityIndex(b->rarity);
+    });
     std::vector<std::vector<const NetClient::WaveView::Group*>> columns;
-    for (const NetClient::WaveView::Group& group : wave.groups) {
-        if (columns.empty() || columns.back().front()->mobIndex != group.mobIndex) {
+    for (const NetClient::WaveView::Group* group : sorted) {
+        if (columns.empty() || columns.back().front()->mobIndex != group->mobIndex) {
             columns.emplace_back();
         }
-        columns.back().push_back(&group);
+        columns.back().push_back(group);
     }
     const double icon = 30.0 * kWaveUi;
     const double columnStep = (30.0 + 10.0 + 1.0) * kWaveUi;
-    const double rowStep = (30.0 + 6.0) * kWaveUi;
+    const double stackStep = icon * 0.1;
     double x = middle - (static_cast<double>(columns.size()) * columnStep - (columnStep - icon)) * 0.5;
     for (const auto& column : columns) {
-        double top = y;
-        for (const NetClient::WaveView::Group* group : column) {
+        // Ascending rarity, so back to front: the commonest goes down first,
+        // lowest, and the rarest last, at the top.
+        for (std::size_t i = 0; i < column.size(); ++i) {
+            const NetClient::WaveView::Group* group = column[i];
+            const double top = y + static_cast<double>(column.size() - 1 - i) * stackStep;
             setFill(canvas, rarityColor(group->rarity));
             canvas.beginPath();
             canvas.roundRect(static_cast<float>(x), static_cast<float>(top),
@@ -547,7 +558,6 @@ void App::drawWaveHud(Canvas& canvas, double time) {
                 text(canvas, "x" + std::to_string(group->count), 0.0, 0.0, amount);
                 canvas.restore();
             }
-            top += rowStep;
         }
         x += columnStep;
     }
