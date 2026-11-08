@@ -2564,8 +2564,15 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             if (GroundEffect* field = world.tryGet<GroundEffect>(cloud)) {
                 // The same boosted pulse is what the wearer is poisoned
                 // against: a stronger uranium is stronger both ways.
+                //
+                // Except while a moon is out: the ring, this petal with it,
+                // orbits the moon rather than the flower, and a uranium on a
+                // moon puts no bite on its wearer. A worn petal still rides
+                // the flower, so it is not on the moon.
+                const bool onMoon = thrownBody != player && !config.noPhysics &&
+                                    !config.hasFixedDirection;
                 field->poisonDurationMillis = config.radiation.poisonDurationMillis * adminEffectScale(rarity);
-                field->ownerPoisonPerSecond = rarity == Rarity::Admin ? 0.0
+                field->ownerPoisonPerSecond = rarity == Rarity::Admin || onMoon ? 0.0
                     : pulse * config.radiation.selfPoisonScale;
             }
         }

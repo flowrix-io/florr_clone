@@ -5475,6 +5475,42 @@ TEST(the_ring_flies_back_to_the_flower_when_its_moon_breaks) {
     CHECK_NEAR(rig.radiusOf(basic), rig.ring().radius, 1e-3);
 }
 
+TEST(a_uranium_on_a_moon_pulses_mobs_but_does_not_bite_its_wearer) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "moon");
+    rig.equip(1, "uranium", Rarity::Rare);
+    rig.settleEquips(kMoonEquipTicks);
+    const Entity body = moonOf(rig);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    // Combat is not run here, so clouds are never reaped: each check clears
+    // the ones before it and waits for a fresh one.
+    Query<GroundEffect> fields{rig.world};
+    const auto freshCloud = [&] {
+        std::vector<Entity> old;
+        fields.collect(old);
+        for (const Entity e : old) rig.world.destroy(e);
+        CHECK(rig.tickUntil([&] { return fields.count() > 0; }, 120));
+        GroundEffect cloud;
+        fields.each([&](Entity, GroundEffect& field) { cloud = field; });
+        return cloud;
+    };
+
+    const GroundEffect onMoon = freshCloud();
+    CHECK_EQ(onMoon.kind, GroundEffectKind::Radiation);
+    CHECK(onMoon.damagePerHit > 0.0);
+    CHECK_NEAR(onMoon.ownerPoisonPerSecond, 0.0, 1e-12);
+
+    // Back on the flower once the moon breaks, and biting again.
+    rig.damage(body, 1e12);
+    rig.tick();
+    CHECK(moonOf(rig) == NULL_ENTITY);
+    const GroundEffect onFlower = freshCloud();
+    CHECK_NEAR(onFlower.ownerPoisonPerSecond, onFlower.damagePerHit, 1e-9);
+}
+
 TEST(a_flower_has_one_moon_however_many_are_equipped) {
     if (!contentLoaded()) return;
     Rig rig;

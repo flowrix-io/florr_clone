@@ -422,7 +422,8 @@ struct RadiationSpec {
     double poisonDurationMillis = 0;
     /// The wearer is poisoned too, at this multiple of the pulse per second,
     /// for poisonDurationMillis, anywhere in the cloud's realm -- not only
-    /// inside it, and at full strength wherever it stands.
+    /// inside it, and at full strength wherever it stands. Not while the
+    /// petal orbits a moon: a uranium on a moon never bites its wearer.
     double selfPoisonScale = 0;
 };
 
