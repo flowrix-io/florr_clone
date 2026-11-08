@@ -501,6 +501,7 @@ constexpr std::uint32_t kTeleporterColor = 0xFFFFFFu;
 /// fastest sparks coast to 4 * 0.9 / ln 10 = 1.56 radii out, so it has to be
 /// drawn before its centre reaches the edge.
 constexpr double kTeleporterCullRadii = 1.6;
+constexpr double kRiftCullRadii = 4.5;
 
 /// A one-colour radial gradient, painted as nested discs because cpp_canvas
 /// has no gradient: each disc's alpha is solved so that the coverage
@@ -1381,10 +1382,10 @@ void traceMazeCorner(Canvas& canvas, const Camera& camera, double x0, double y0,
                static_cast<float>(a0 + kPi * 0.5), false);
 }
 
-/// The reference's arena palette (src/graphics/pvp-arena.ts): gardn's "???"
-/// zone, a plain grey floor with a faint dark grid, in a darker void.
+/// The reference's arena floor (src/graphics/pvp-arena.ts): gardn's "???"
+/// zone, a plain grey with a faint dark grid. Its darker void and red ring gave
+/// way to flooooio's border (2026-11-07, user), as the waves' disc has.
 constexpr std::uint32_t kArenaFloor = 0x777777u;
-constexpr std::uint32_t kArenaVoid = 0x1A1A1Au;
 constexpr double kArenaGridCell = 50.0;
 
 } // namespace
@@ -1454,22 +1455,56 @@ void WorldRenderer::drawMaze(Canvas& canvas, const Camera& camera) const {
     canvas.restore();
 }
 
-void WorldRenderer::drawArena(Canvas& canvas, const Camera& camera) const {
-    const double zoom = camera.zoom();
-    const Vec2 centre = camera.worldToScreen(kArenaCentre);
-    const float radius = static_cast<float>(kArenaRadius * zoom);
+namespace {
 
-    // Dark void everywhere; the floor below paints over it inside the ring.
-    ui::setFill(canvas, kArenaVoid);
+/// How far flooooio's ground reaches from a disc's centre, on each axis: it
+/// lays radius/80 tiles of 300 across, centred on the disc (TileRenderer.zig
+/// renderGameTileset), which carries the floor on 0.875 radii past the edge.
+/// Past that the canvas is cleared, which is black here.
+double discGroundReach(double radius) { return radius / 80.0 * 300.0 * 0.5; }
+
+/// The square that ground covers, on the screen.
+Rect discGroundOnScreen(const Camera& camera, Vec2 centre, double radius) {
+    const double reach = discGroundReach(radius);
+    const Vec2 a = camera.worldToScreen({centre.x - reach, centre.y - reach});
+    const Vec2 b = camera.worldToScreen({centre.x + reach, centre.y + reach});
+    return {a.x, a.y, b.x - a.x, b.y - a.y};
+}
+
+/// flooooio's border (TileRenderer.zig renderBoundaryCircle): everything from
+/// half a unit past the edge out goes under black at 15%. flooooio strokes a
+/// ring five screens wide for it; a screen with a hole in it is the same
+/// picture without a stroke that size.
+void shadeOutsideDisc(Canvas& canvas, const Camera& camera, Vec2 centreWorld, double radius) {
+    const Vec2 centre = camera.worldToScreen(centreWorld);
+    const auto r = static_cast<float>((radius + 0.5) * camera.zoom());
+    canvas.save();
+    ui::setFill(canvas, 0x000000u, 0.15);
+    canvas.beginPath();
+    canvas.rect(0.0f, 0.0f, static_cast<float>(camera.viewportWidth()),
+                static_cast<float>(camera.viewportHeight()));
+    canvas.moveTo(static_cast<float>(centre.x) + r, static_cast<float>(centre.y));
+    canvas.arc(static_cast<float>(centre.x), static_cast<float>(centre.y), r, 0.0f,
+               static_cast<float>(kTau), false);
+    canvas.fill("evenodd");
+    canvas.restore();
+}
+
+} // namespace
+
+void WorldRenderer::drawArena(Canvas& canvas, const Camera& camera) const {
+    // The floor carries on past the ring, under flooooio's border, as the
+    // waves' disc does; black beyond the ground.
+    ui::setFill(canvas, 0x000000u);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
 
+    const Rect ground = discGroundOnScreen(camera, kArenaCentre, kArenaRadius);
     canvas.save();
     canvas.beginPath();
-    canvas.arc(static_cast<float>(centre.x), static_cast<float>(centre.y), radius, 0.0f,
-               static_cast<float>(kTau), false);
+    canvas.rect(static_cast<float>(ground.x), static_cast<float>(ground.y),
+                static_cast<float>(ground.w), static_cast<float>(ground.h));
     canvas.clip();
-
     ui::setFill(canvas, kArenaFloor);
     canvas.fillRect(0, 0, static_cast<float>(camera.viewportWidth()),
                     static_cast<float>(camera.viewportHeight()));
@@ -1477,10 +1512,10 @@ void WorldRenderer::drawArena(Canvas& canvas, const Camera& camera) const {
     // The grid is aligned to the arena's centre so its lines hold still as
     // the camera moves. One screen pixel wide at every zoom, as the browser
     // draws it (lineWidth 1 / zoomLevel inside the world transform).
+    const double reach = discGroundReach(kArenaRadius);
     const Rect visible = camera.visibleWorld(0);
-    const Rect arena{kArenaCentre.x - kArenaRadius, kArenaCentre.y - kArenaRadius,
-                     kArenaRadius * 2.0, kArenaRadius * 2.0};
-    const Rect span = intersection(visible, arena);
+    const Rect floor{kArenaCentre.x - reach, kArenaCentre.y - reach, reach * 2.0, reach * 2.0};
+    const Rect span = intersection(visible, floor);
     if (span.w > 0 && span.h > 0) {
         ui::setStroke(canvas, 0x000000u, 0.18);
         canvas.setLineWidth(1.0f);
@@ -1505,17 +1540,7 @@ void WorldRenderer::drawArena(Canvas& canvas, const Camera& camera) const {
     }
     canvas.restore();
 
-    // The boundary: a hard red ring -- bodies are clamped to it -- with a
-    // paler line just inside.
-    canvas.save();
-    ui::setStroke(canvas, 0xFF3C3Cu, 0.65);
-    canvas.setLineWidth(static_cast<float>(12.0 * zoom));
-    canvas.strokeCircle(static_cast<float>(centre.x), static_cast<float>(centre.y), radius);
-    ui::setStroke(canvas, 0xFFC8C8u, 0.4);
-    canvas.setLineWidth(static_cast<float>(4.0 * zoom));
-    canvas.strokeCircle(static_cast<float>(centre.x), static_cast<float>(centre.y),
-                        static_cast<float>((kArenaRadius - 8.0) * zoom));
-    canvas.restore();
+    shadeOutsideDisc(canvas, camera, kArenaCentre, kArenaRadius);
 }
 
 namespace {
@@ -1764,6 +1789,66 @@ void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* a
     strip(view.left(),0,0,height);
     strip(width,0,view.right(),height);
 }
+}
+
+void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera, double timeSeconds) const {
+    // flooooio paves its disc with the biome's tile at 300 units, the ground
+    // carrying on 0.875 radii past the edge under its border, and black
+    // beyond that.
+    constexpr double kWaveTileSize = 300.0;
+    const WaveBiomeInfo& biome = waveBiomeInfo(waveBiome_);
+    const double dt = std::clamp(timeSeconds - waveRadiusAt_, 0.0, 0.25);
+    waveRadiusAt_ = timeSeconds;
+    if (waveRadiusDrawn_ < 0.0 || waveRadius_ < waveRadiusDrawn_) {
+        waveRadiusDrawn_ = waveRadius_;
+    } else {
+        waveRadiusDrawn_ += (waveRadius_ - waveRadiusDrawn_) * (1.0 - std::exp(-dt * 3.0));
+    }
+    const double radius = waveRadiusDrawn_;
+    const auto width = static_cast<float>(camera.viewportWidth());
+    const auto height = static_cast<float>(camera.viewportHeight());
+    ui::setFill(canvas, 0x000000u);
+    canvas.fillRect(0, 0, width, height);
+
+    const Rect ground = discGroundOnScreen(camera, kWavesCentre, radius);
+    canvas.save();
+    canvas.beginPath();
+    canvas.rect(static_cast<float>(ground.x), static_cast<float>(ground.y),
+                static_cast<float>(ground.w), static_cast<float>(ground.h));
+    canvas.clip();
+    ui::setFill(canvas, biome.gaugeColor);
+    canvas.fillRect(0, 0, width, height);
+
+    const SvgDocument* art = sprites_ != nullptr ? sprites_->tileArt(biome.tile) : nullptr;
+    if (art != nullptr) {
+        // Squared up on the largest disc, so the pattern holds still as the
+        // ground grows under it.
+        const double reach = discGroundReach(radius);
+        const Rect visible = intersection(camera.visibleWorld(kTileOverlap),
+                                          Rect{kWavesCentre.x - reach, kWavesCentre.y - reach,
+                                               reach * 2.0, reach * 2.0});
+        const double originX = kWavesCentre.x - kWavesMaxRadius * 2.0;
+        const double originY = kWavesCentre.y - kWavesMaxRadius * 2.0;
+        if (visible.w > 0 && visible.h > 0) {
+            const int x0 = static_cast<int>(std::floor((visible.left() - originX) / kWaveTileSize));
+            const int y0 = static_cast<int>(std::floor((visible.top() - originY) / kWaveTileSize));
+            const int x1 = static_cast<int>(std::floor((visible.right() - originX) / kWaveTileSize));
+            const int y1 = static_cast<int>(std::floor((visible.bottom() - originY) / kWaveTileSize));
+            const auto side = static_cast<float>((kWaveTileSize + 2.0 * kTileOverlap) * camera.zoom());
+            for (int y = y0; y <= y1; ++y) {
+                for (int x = x0; x <= x1; ++x) {
+                    const Vec2 at = camera.worldToScreen({originX + x * kWaveTileSize - kTileOverlap,
+                                                          originY + y * kWaveTileSize - kTileOverlap});
+                    if (!drawCachedArt(canvas, *art, at.x, at.y, side, side)) {
+                        art->renderFitted(canvas, at.x, at.y, side, side, 0);
+                    }
+                }
+            }
+        }
+    }
+    canvas.restore();
+
+    shadeOutsideDisc(canvas, camera, kWavesCentre, radius);
 }
 
 void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm realm) const {
@@ -3787,13 +3872,83 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
     canvas.restore();
 }
 
+namespace {
+
+/// The Rift's cracks, from florr's warp painter (client.wasm, the branch taken
+/// when the warp's colour is black). Four or five branches leave the centre at
+/// even headings, each a chain of 5 to 10 points in polar form: every step goes
+/// 0.2 to 0.4 radii further out and turns up to 45 degrees, the turn dying away
+/// along the branch. Each is a tapered polygon, widest near the root, and grows
+/// from a hairline to a fifth of the radius as the portal opens.
+///
+/// florr rolls these once from the warp's id with a Lehmer generator and keeps
+/// them. The same generator, restarted from the same seed each frame, gives the
+/// same cracks on every frame and every client without storing anything.
+void drawPortalCracks(Canvas& canvas, double radius, std::uint32_t seed, double opening) {
+    constexpr std::uint64_t kModulus = 2147483647u;
+    std::uint64_t state = seed % kModulus;
+    if (state == 0) state = 1;
+    const auto next = [&state] { return state = state * 48271u % kModulus; };
+    const auto unit = [&next] { return static_cast<double>(next() - 1) / (kModulus - 2); };
+    const auto between = [&next](int lo, int hi) {
+        return lo + static_cast<int>(next() % static_cast<std::uint64_t>(hi - lo + 1));
+    };
+
+    const int branches = between(4, 5);
+    const double first = unit() * kTau;
+    const double open = std::clamp(opening, 0.0, 1.0);
+    const double taper = (1.0 - open) * 3.0 + open;
+    const double widest = opening * 0.2;
+    struct Point {
+        double x, y, width;
+    };
+    std::array<Point, 10> points;
+    for (int branch = 0; branch < branches; ++branch) {
+        const int count = between(5, 10);
+        double heading = kTau / branches * branch + first;
+        double reach = 0.0;
+        for (int i = 0; i < count; ++i) {
+            double width = std::pow(static_cast<double>(count - i - 1) / count, taper) * widest;
+            if (i == 0) width = 0.0;
+            if (i == 1) width *= 0.5;
+            points[static_cast<std::size_t>(i)] = {reach * std::cos(heading),
+                                                   reach * std::sin(heading), width};
+            reach += unit() * 0.2 + 0.2;
+            heading += (unit() * kPi * 0.5 - kPi * 0.25) * (count - i) / count;
+        }
+        // Up one side of the chain and back down the other.
+        const auto vertex = [&](int i, double side) {
+            const Point& here = points[static_cast<std::size_t>(i)];
+            const Point& before = points[static_cast<std::size_t>(std::max(i - 1, 0))];
+            const Point& after = points[static_cast<std::size_t>(std::min(i + 1, count - 1))];
+            const double dx = after.x - before.x;
+            const double dy = after.y - before.y;
+            const double length = std::max(std::sqrt(dx * dx + dy * dy), 1e-6);
+            return std::pair<float, float>(
+                static_cast<float>((here.x + side * dy / length * here.width) * radius),
+                static_cast<float>((here.y - side * dx / length * here.width) * radius));
+        };
+        canvas.beginPath();
+        for (int i = 0; i < count; ++i) {
+            const auto [x, y] = vertex(i, 1.0);
+            if (i == 0) canvas.moveTo(x, y);
+            else canvas.lineTo(x, y);
+        }
+        for (int i = count - 1; i >= 0; --i) {
+            const auto [x, y] = vertex(i, -1.0);
+            canvas.lineTo(x, y);
+        }
+        canvas.closePath();
+        canvas.fill();
+    }
+}
+
+} // namespace
+
 void WorldRenderer::drawMapElements(Canvas& canvas, const Camera& camera, Realm realm,
                                     double timeSeconds) const {
     const MapData* map = mapFor(realm);
     if (!map) return;
-    // florr runs the portal on a millisecond clock, and every rate below is
-    // its own, per millisecond.
-    const double ms = timeSeconds * 1000.0;
 
     // Of everything the annotation layer carries, only the teleporters paint:
     // the browser build's MAP_COLORS are all fully transparent, its spawn
@@ -3803,82 +3958,109 @@ void WorldRenderer::drawMapElements(Canvas& canvas, const Camera& camera, Realm 
     for (const MapElement& element : map->elements()) {
         if (element.kind != MapElementKind::Teleporter) continue;
         ++pad;
-        const Vec2 centre = element.centre();
-        if (!camera.visibleWorld(element.padRadius * kTeleporterCullRadii).contains(centre)) {
-            continue;
-        }
-        const Vec2 at = camera.worldToScreen(centre);
-        const double radius = element.padRadius * camera.zoom();
-        const std::uint32_t color = element.hasColor ? element.color : kTeleporterColor;
-
-        canvas.save();
-        canvas.translate(static_cast<float>(at.x), static_cast<float>(at.y));
-        // The glow: a radial gradient, solid to a fifth of the radius and
-        // clear from seven tenths of it.
-        fillRadialRamp(canvas, radius * 0.7, color, 16, [radius](double r) {
-            return r <= radius * 0.2 ? 1.0 : (radius * 0.7 - r) / (radius * 0.5);
-        });
-
-        // The sparks: a square is born at the centre every 10 ms and lives a
-        // second. It leaves at U(1, 4) radii a second on a random heading,
-        // its speed falling to a tenth every second, so at age `a` it has
-        // coasted speed * (1 - 0.1^a) / ln 10 out. It spins at 4 pi a life,
-        // shrinks from a tenth of the radius to nothing and fades in and out
-        // on sin(life * pi). florr rolls each spark when it is born and
-        // steps it every frame; here the rolls are hashed from the pad and
-        // the spark's birth slot, and the flight is that step's closed form.
-        constexpr double kSparkSlotMs = 10.0;
-        const auto newest = static_cast<std::int64_t>(std::floor(ms / kSparkSlotMs));
-        for (std::int64_t slot = newest; slot > newest - 100; --slot) {
-            const double age = (ms - static_cast<double>(slot) * kSparkSlotMs) / 1000.0;
-            const double life = 1.0 - age;
-            const double half = life * 0.05 * radius;
-            if (life <= 0.0 || half < 0.15) continue;
-            const auto seed = static_cast<std::uint32_t>(slot);
-            const double speed = 1.0 + 3.0 * hash01(seed, pad * 2u);
-            const double heading = kTau * hash01(seed, pad * 2u + 1u);
-            const double reach = speed * (1.0 - std::pow(0.1, age)) / std::log(10.0) * radius;
-            const double x = std::cos(heading) * reach;
-            const double y = std::sin(heading) * reach;
-            const double spin = life * 2.0 * kTau;
-            const double c = std::cos(spin) * half;
-            const double s = std::sin(spin) * half;
-            ui::setFill(canvas, color, std::sin(life * kPi));
-            canvas.beginPath();
-            canvas.moveTo(static_cast<float>(x + c - s), static_cast<float>(y + s + c));
-            canvas.lineTo(static_cast<float>(x - c - s), static_cast<float>(y - s + c));
-            canvas.lineTo(static_cast<float>(x - c + s), static_cast<float>(y - s - c));
-            canvas.lineTo(static_cast<float>(x + c + s), static_cast<float>(y + s - c));
-            canvas.closePath();
-            canvas.fill();
-        }
-
-        // Eleven hexagons, a tenth of the radius apart and thickening inwards:
-        // hexagon k is 1 - 0.1k across, stroked 0.2 + 0.1k of that wide with
-        // round joins, at half alpha so the overlaps build up. All of them
-        // breathe 5% on sin(t * 0.01) and turn at 3 rad/s, each the other way
-        // from its neighbours.
-        const double breath = std::sin(ms * 0.01) * 0.05;
-        ui::setStroke(canvas, color, 0.5);
-        canvas.setLineJoin("round");
-        for (int k = 0; k <= 10; ++k) {
-            const double size = std::abs(1.0 - 0.1 * k + breath) * radius;
-            if (size < 0.25) continue;
-            const double turn = ms * 0.003 * (k % 2 == 0 ? 1.0 : -1.0);
-            canvas.beginPath();
-            for (int corner = 0; corner < 6; ++corner) {
-                const double angle = turn + corner * kTau / 6.0;
-                const auto x = static_cast<float>(std::cos(angle) * size);
-                const auto y = static_cast<float>(std::sin(angle) * size);
-                if (corner == 0) canvas.moveTo(x, y);
-                else canvas.lineTo(x, y);
-            }
-            canvas.closePath();
-            canvas.setLineWidth(static_cast<float>((0.2 + 0.1 * k) * size));
-            canvas.stroke();
-        }
-        canvas.restore();
+        drawPortal(canvas, camera, element.centre(), element.padRadius,
+                   element.hasColor ? element.color : kTeleporterColor, pad, timeSeconds, 1.0);
     }
+}
+
+void WorldRenderer::drawRift(Canvas& canvas, const Camera& camera, double timeSeconds) const {
+    if (!rift_.open) {
+        riftOpenedAtSeconds_ = -1.0;
+        return;
+    }
+    if (riftOpenedAtSeconds_ < 0.0) riftOpenedAtSeconds_ = timeSeconds;
+    if (rift_.realm != realm_) return;
+    // The opening's ease: 1 - e^(-0.003078 t), t in milliseconds.
+    const double opening =
+        1.0 - std::exp(-0.003078 * (timeSeconds - riftOpenedAtSeconds_) * 1000.0);
+    const auto seed = static_cast<std::uint32_t>(
+        static_cast<std::int64_t>(rift_.position.x) * 31 + static_cast<std::int64_t>(rift_.position.y));
+    drawPortal(canvas, camera, rift_.position, rift_.radius, 0x000000u, seed, timeSeconds, opening);
+}
+
+void WorldRenderer::drawPortal(Canvas& canvas, const Camera& camera, Vec2 centre,
+                               double worldRadius, std::uint32_t color, std::uint32_t pad,
+                               double timeSeconds, double opening) const {
+    // Cracks reach four radii, where nothing else on a warp passes 1.6.
+    const double cull = (color & 0xFFFFFFu) == 0u ? kRiftCullRadii : kTeleporterCullRadii;
+    if (!camera.visibleWorld(worldRadius * cull).contains(centre)) return;
+    // florr runs the portal on a millisecond clock, and every rate below is
+    // its own, per millisecond.
+    const double ms = timeSeconds * 1000.0;
+
+    const Vec2 at = camera.worldToScreen(centre);
+    const double radius = worldRadius * camera.zoom();
+
+    canvas.save();
+    canvas.translate(static_cast<float>(at.x), static_cast<float>(at.y));
+    // The glow: a radial gradient, solid to a fifth of the radius and
+    // clear from seven tenths of it.
+    fillRadialRamp(canvas, radius * 0.7, color, 16, [radius](double r) {
+        return r <= radius * 0.2 ? 1.0 : (radius * 0.7 - r) / (radius * 0.5);
+    });
+
+    // A black warp is the Rift, and only then do the cracks show.
+    if ((color & 0xFFFFFFu) == 0u) drawPortalCracks(canvas, radius, pad, opening);
+
+    // The sparks: a square is born at the centre every 10 ms and lives a
+    // second. It leaves at U(1, 4) radii a second on a random heading,
+    // its speed falling to a tenth every second, so at age `a` it has
+    // coasted speed * (1 - 0.1^a) / ln 10 out. It spins at 4 pi a life,
+    // shrinks from a tenth of the radius to nothing and fades in and out
+    // on sin(life * pi). florr rolls each spark when it is born and
+    // steps it every frame; here the rolls are hashed from the pad and
+    // the spark's birth slot, and the flight is that step's closed form.
+    constexpr double kSparkSlotMs = 10.0;
+    const auto newest = static_cast<std::int64_t>(std::floor(ms / kSparkSlotMs));
+    for (std::int64_t slot = newest; slot > newest - 100; --slot) {
+        const double age = (ms - static_cast<double>(slot) * kSparkSlotMs) / 1000.0;
+        const double life = 1.0 - age;
+        const double half = life * 0.05 * radius;
+        if (life <= 0.0 || half < 0.15) continue;
+        const auto seed = static_cast<std::uint32_t>(slot);
+        const double speed = 1.0 + 3.0 * hash01(seed, pad * 2u);
+        const double heading = kTau * hash01(seed, pad * 2u + 1u);
+        const double reach = speed * (1.0 - std::pow(0.1, age)) / std::log(10.0) * radius;
+        const double x = std::cos(heading) * reach;
+        const double y = std::sin(heading) * reach;
+        const double spin = life * 2.0 * kTau;
+        const double c = std::cos(spin) * half;
+        const double s = std::sin(spin) * half;
+        ui::setFill(canvas, color, std::sin(life * kPi));
+        canvas.beginPath();
+        canvas.moveTo(static_cast<float>(x + c - s), static_cast<float>(y + s + c));
+        canvas.lineTo(static_cast<float>(x - c - s), static_cast<float>(y - s + c));
+        canvas.lineTo(static_cast<float>(x - c + s), static_cast<float>(y - s - c));
+        canvas.lineTo(static_cast<float>(x + c + s), static_cast<float>(y + s - c));
+        canvas.closePath();
+        canvas.fill();
+    }
+
+    // Eleven hexagons, a tenth of the radius apart and thickening inwards:
+    // hexagon k is 1 - 0.1k across, stroked 0.2 + 0.1k of that wide with
+    // round joins, at half alpha so the overlaps build up. All of them
+    // breathe 5% on sin(t * 0.01) and turn at 3 rad/s, each the other way
+    // from its neighbours.
+    const double breath = std::sin(ms * 0.01) * 0.05;
+    ui::setStroke(canvas, color, 0.5);
+    canvas.setLineJoin("round");
+    for (int k = 0; k <= 10; ++k) {
+        const double size = std::abs(1.0 - 0.1 * k + breath) * radius;
+        if (size < 0.25) continue;
+        const double turn = ms * 0.003 * (k % 2 == 0 ? 1.0 : -1.0);
+        canvas.beginPath();
+        for (int corner = 0; corner < 6; ++corner) {
+            const double angle = turn + corner * kTau / 6.0;
+            const auto x = static_cast<float>(std::cos(angle) * size);
+            const auto y = static_cast<float>(std::sin(angle) * size);
+            if (corner == 0) canvas.moveTo(x, y);
+            else canvas.lineTo(x, y);
+        }
+        canvas.closePath();
+        canvas.setLineWidth(static_cast<float>((0.2 + 0.1 * k) * size));
+        canvas.stroke();
+    }
+    canvas.restore();
 }
 
 void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const Camera& camera,
@@ -3890,6 +4072,10 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
     switch (entity.kind) {
         case net::EntityKind::Player:
             if (entity.dead()) {
+                // In the waves a dead flower is a camera: the server walks its
+                // body after whatever it is watching (GameServer::spectateWaves),
+                // so there is no corpse to show.
+                if (realm_ == kWavesRealm) break;
                 // A corpse carries none of the living furniture: no plate, no
                 // bar, no level, no petals.
                 drawCorpse(canvas, entity, camera, at, timeSeconds);
@@ -4402,7 +4588,8 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     }
 #endif
 
-    if (realm_ == Realm::Maze || realm_ == Realm::Arena || realm_ == kAdminArenaRealm) {
+    if (realm_ == Realm::Maze || realm_ == Realm::Arena || realm_ == kAdminArenaRealm ||
+        realm_ == kWavesRealm) {
         // Neither has a map for the chunk cache to hold, and the one it holds
         // is a realm the player has left: tens of megabytes of bitmaps.
         if (!terrainChunks_.chunks.empty()) terrainChunks_ = TerrainChunks{};
@@ -4411,10 +4598,13 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         drawMaze(canvas, camera);
     } else if (realm_ == Realm::Arena) {
         drawArena(canvas, camera);
+    } else if (realm_ == kWavesRealm) {
+        drawWaves(canvas, camera, timeSeconds);
     } else {
         drawTerrain(canvas, camera, realm_);
         drawMapElements(canvas, camera, realm_, timeSeconds);
     }
+    drawRift(canvas, camera, timeSeconds);
     chargeOps(ops_.terrain);
 
     // A dark map: florr draws every entity into a layer cut down to its

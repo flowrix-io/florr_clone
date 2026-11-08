@@ -206,6 +206,18 @@ struct Session {
     Realm adminArenaReturnRealm = Realm::Overworld;
     Vec2 adminArenaReturnPosition;
     std::string adminArenaReturnChoice;
+    /// Where this flower stepped into the rift, for /admin stop_waves to put
+    /// it back. A flower that leaves by the Exit button goes to the title
+    /// screen instead, as any other flower does.
+    bool wavesHasReturn = false;
+    Realm wavesReturnRealm = Realm::Overworld;
+    Vec2 wavesReturnPosition;
+    /// When this flower began standing on the rift; 0 when it is not.
+    double riftChargeSinceMillis = 0;
+    /// What a dead flower's camera is following in the waves, and when it last
+    /// lost something to follow (flooooio player_dead_camera.go).
+    Entity waveSpectating = NULL_ENTITY;
+    double waveSpectateSinceMillis = 0;
     bool adminKillHeld = false;
     bool adminTeleportHeld = false;
     Entity adminKillBody = NULL_ENTITY;

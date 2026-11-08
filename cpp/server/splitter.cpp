@@ -194,6 +194,9 @@ bool GameServer::splitSession(Session& session) {
     // the transfer below would hand the ring's score and bag to nobody. Said
     // out loud rather than left to the loadout to prevent.
     if (session.arena || session.realm == Realm::Arena) return false;
+    // Nor in the waves: a flower there is one life until the next wave, and
+    // game over is decided by who is still standing.
+    if (session.realm == kWavesRealm) return false;
     const Transform* origin = world_.tryGet<Transform>(session.entity);
     if (origin == nullptr) return false;
 

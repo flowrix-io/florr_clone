@@ -2633,6 +2633,8 @@ void SpawnSystem::announceIfNotable(const ContentRegistry& content, Entity entit
     // A prestige twin's supers are its bands' everyday stock, not events: the
     // server would announce one every few seconds.
     if (prestigeRealm(realm)) return;
+    // Nor are the waves': past wave 80 every mob there is one.
+    if (realm == kWavesRealm) return;
     // A permanent fixture is not an event. A dummy reaches this through a band
     // that names it outright, up to unique, or the console's spawn, and
     // announcing those would put a line in chat for a post nobody has to
