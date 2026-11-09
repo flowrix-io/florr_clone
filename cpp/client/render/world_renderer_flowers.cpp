@@ -227,7 +227,7 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
         variant = variant * 1099511628211ull + skin->shapes.size();
         variant = variant * 1099511628211ull + static_cast<std::uint64_t>(skin->editedAt);
-        if (hasSignatureAnimation(*skin)) {
+        if (hasSignatureAnimation(*skin) || hasFanAnimation(*skin)) {
             renderAnimatedSkin(canvas,*skin,kFlowerArtRadius,timeSeconds);
         } else if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
                                [&](Canvas& bitmap) {

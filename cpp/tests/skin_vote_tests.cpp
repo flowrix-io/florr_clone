@@ -113,6 +113,8 @@ TEST(a_vote_never_touches_the_skin_catalogs_save_text) {
         std::string error;
         db.load(path, error);
         seedCatalog(db);
+        // Keep this a vote/cache test rather than a first-login skin grant.
+        db.rawTable("customSkins")[kFanSkinId] = skinToJson(makeFanSkin());
         db.markDirty();
         db.save();
     }, flix::testsupport::dataDir(), 0);

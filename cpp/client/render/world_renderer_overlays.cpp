@@ -12,10 +12,70 @@
 #include "client/ui/draw.h"
 #include "client/ui/menu_widgets.h"
 #include "shared/game/config.h"
+#include "shared/game/signature_skin.h"
 
 namespace flix {
 
 using namespace world_render;
+
+void WorldRenderer::drawFanTitle(Canvas& canvas, const RemoteEntity& entity,
+                                  const Camera& camera, Vec2 at, double timeSeconds) const {
+    if (entity.equippedSkinId != kFanSkinId) return;
+    const double zoom = camera.zoom();
+    const Vec2 screen = camera.worldToScreen(at);
+    const double bodyRadius = kFlowerArtRadius * playerSizeMultiplier(entity);
+    const double time = std::isfinite(timeSeconds) ? timeSeconds : 0.0;
+    canvas.save();
+    canvas.translate(static_cast<float>(screen.x),
+                     static_cast<float>(screen.y - (bodyRadius + 12.0) * zoom));
+    canvas.scale(static_cast<float>(zoom), static_cast<float>(zoom));
+
+    ui::TextStyle title;
+    title.size = 12.0;
+    title.align = ui::Align::Centre;
+    title.baseline = ui::Baseline::Alphabetic;
+    title.fill = 0xFFE7A0u;
+    title.roundJoin = true;
+    const std::string label = "19k's fan";
+    const Vec2 pen = ui::textPen(label, 0, 0, title);
+    const double prefixWidth = ui::textWidth(canvas, "19k", title.size);
+
+    // Layered translucent outlines make a soft gold glow on both renderers;
+    // native Canvas does not implement shadowBlur. Keep the core text crisp.
+    ui::TextStyle glow = title;
+    glow.fill = glow.stroke = 0xFFAD42u;
+    for (int layer = 3; layer >= 1; --layer) {
+        glow.strokeWidth = layer * 2.0;
+        ui::paintRun(canvas, label, pen.x, pen.y, glow, 0.05, 0.05);
+    }
+
+    // Ten analytic motes, confined to the "19k" prefix, gently rise and fade.
+    // No particle entities, random state or growing per-player buffers.
+    const double phase = static_cast<double>(entity.netId % 97) / 97.0;
+    for (int i = 0; i < 10; ++i) {
+        const double life = time * 0.32 + i * 0.61803398875 + phase;
+        const double progress = life - std::floor(life);
+        const double fade = std::sin(progress * kPi);
+        const double x = pen.x + prefixWidth * ((i * 7 % 11) / 10.0) +
+                         1.5 * std::sin(time * 0.8 + i * 2.4);
+        const double y = 2.0 - progress * 24.0;
+        const float r = static_cast<float>(0.55 + 0.35 * fade);
+        const auto dot = [&](float radius, std::uint32_t color, double alpha) {
+            ui::setFill(canvas, color, alpha);
+            canvas.beginPath();
+            canvas.arc(static_cast<float>(x), static_cast<float>(y), radius, 0,
+                       static_cast<float>(kTau));
+            canvas.fill();
+        };
+        dot(r * 3.0f, 0xFFAC45u, 0.12 * fade);
+        dot(r, 0xFFF4CEu, 0.85 * fade);
+    }
+    ui::text(canvas, label, 0, 0, title);
+    // Highlight the prefix without recording a second selectable text run.
+    title.fill = 0xFFF8DDu;
+    ui::paintRun(canvas, "19k", pen.x, pen.y, title);
+    canvas.restore();
+}
 
 namespace {
 

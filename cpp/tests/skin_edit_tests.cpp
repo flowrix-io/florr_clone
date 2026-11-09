@@ -89,6 +89,7 @@ TEST(an_author_edits_a_skin_in_place_and_it_keeps_its_votes_and_stars) {
     CHECK(loginAs(h, artist, "artist", "hunter2!"));
     CHECK(loginAs(h, fan, "fan", "hunter2!"));
     CHECK(h.stepUntil({&artist, &fan}, [&] { return fan.findSkin("sk_red") != nullptr; }));
+    const auto catalogSize = fan.skinCatalog().size();
 
     CHECK(edit(h, artist, "sk_red", "crimson", disc("#2bd14f", 24)));
     CHECK(sawText(artist, "Saved \"crimson\""));
@@ -99,7 +100,7 @@ TEST(an_author_edits_a_skin_in_place_and_it_keeps_its_votes_and_stars) {
 
     // Everyone's copy is replaced, not joined by a second card.
     const CustomSkin* seen = fan.findSkin("sk_red");
-    CHECK_EQ(fan.skinCatalog().size(), std::size_t(2));
+    CHECK_EQ(fan.skinCatalog().size(), catalogSize);
     CHECK(seen && seen->shapes.size() == 1 && seen->shapes[0].fill == "#2bd14f");
     CHECK(seen && seen->author == "artist" && seen->createdAt == 100);
     CHECK(seen && seen->editedAt > 0);
@@ -114,7 +115,7 @@ TEST(an_author_edits_a_skin_in_place_and_it_keeps_its_votes_and_stars) {
     CHECK_EQ(row["name"].asString(), std::string("crimson"));
     CHECK_EQ(row["shapes"][0]["fill"].asString(), std::string("#2bd14f"));
     CHECK(row["editedAt"].asDouble(0) > 0);
-    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), std::size_t(2));
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), catalogSize);
 
     // A second edit moves editedAt on, which is what a baked picture of the
     // first one is keyed on.
@@ -176,6 +177,7 @@ TEST(a_skin_name_with_a_blocked_word_is_neither_published_nor_saved) {
 
     NetClient artist;
     CHECK(loginAs(h, artist, "artist", "hunter2!"));
+    const auto catalogSize = h.server.database().storedTable("customSkins").keys().size();
 
     const auto publish = [&](const char* name, const char* fill) {
         h.step(static_cast<int>(3 * net::kTicksPerSecond), {&artist});
@@ -187,7 +189,7 @@ TEST(a_skin_name_with_a_blocked_word_is_neither_published_nor_saved) {
     CHECK(publish("BigDick", "#2bd14f"));
     // Judged as it would be shown: the sanitiser takes these marks out.
     CHECK(publish("f!u@c#k", "#2bd14f"));
-    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), std::size_t(2));
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), catalogSize);
 
     // An edit is a post too.
     std::uint64_t mark = artist.chatSequence();
@@ -197,7 +199,7 @@ TEST(a_skin_name_with_a_blocked_word_is_neither_published_nor_saved) {
 
     // The obvious name for a red skin is not the slur it runs together into.
     CHECK(!publish("Red Skin", "#2bd14f"));
-    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), std::size_t(3));
+    CHECK_EQ(h.server.database().storedTable("customSkins").keys().size(), catalogSize + 1);
 }
 
 TEST(a_skin_round_trips_its_edit_time_and_an_unedited_one_stores_none) {
