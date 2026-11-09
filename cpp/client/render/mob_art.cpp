@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <utility>
 #include <vector>
+#include <cassert>
 
 #include "client/ui/draw.h"
 #include "client/ui/theme.h"
@@ -13,414 +14,478 @@
 #include "shared/game/constants.h"
 #include "svg.h"
 
-namespace flix {
+namespace flix
+{
 
-std::uint32_t outlineOf(std::uint32_t rgb) { return ui::shade(rgb, 0.8); }
+    std::uint32_t outlineOf(std::uint32_t rgb) { return ui::shade(rgb, 0.8); }
 
-namespace {
+    namespace
+    {
 
-/// gardn's seeded PRNG, transcribed from `Helpers/Math.cc`.
-///
-/// The point of it is that a rock's facets are a function of its RADIUS and
-/// nothing else: two clients drawing the same rock cut it the same way without
-/// a byte about the shape crossing the wire, and one rock keeps its own outline
-/// for as long as it lives rather than shimmering into a new one every frame.
-class SeedGenerator {
-public:
-    explicit SeedGenerator(std::uint32_t seed) : seed_(seed) {}
+        /// gardn's seeded PRNG, transcribed from `Helpers/Math.cc`.
+        ///
+        /// The point of it is that a rock's facets are a function of its RADIUS and
+        /// nothing else: two clients drawing the same rock cut it the same way without
+        /// a byte about the shape crossing the wire, and one rock keeps its own outline
+        /// for as long as it lives rather than shimmering into a new one every frame.
+        class SeedGenerator
+        {
+        public:
+            explicit SeedGenerator(std::uint32_t seed) : seed_(seed) {}
 
-    /// [0, 1).
-    double next() {
-        seed_ *= 167436543u;
-        seed_ += 5832385u;
-        seed_ *= (76372345u + seed_);
-        seed_ += 937323u;
-        return static_cast<double>(seed_ % 65536u) / 65536.0;
-    }
-
-    /// (-1, 1).
-    double binext() { return next() * 2.0 - 1.0; }
-
-private:
-    std::uint32_t seed_;
-};
-
-/// One step of libc++'s linear congruential engines, mod 2^31 - 1:
-/// minstd_rand0 multiplies by 16807, minstd_rand by 48271. florr scatters a
-/// mob's random details from one seeded off its id.
-std::uint32_t minstdStep(std::uint32_t x, std::uint32_t multiplier) {
-    return static_cast<std::uint32_t>((static_cast<std::uint64_t>(x) * multiplier) % 2147483647u);
-}
-
-/// uniform_real_distribution<float>'s [0, 1) from one draw of those engines,
-/// as libc++ computes it: (x - 1) / 2^31, in float.
-float minstdUnit(std::uint32_t x) {
-    return static_cast<float>(x - 1u) * 4.656612873077393e-10f;
-}
-
-/// The most facets or spines a body is cut into.
-///
-/// gardn's counts are `4 + radius/10` and `5 + radius/10`, over mobs whose
-/// radius never passes 60. Ours reach 43x their base size at the top of the
-/// rarity ladder, where those formulae would ask for hundreds of vertices to
-/// draw detail finer than the outline around it. The cap binds only past a
-/// radius of ~600 -- a mob wider than half the viewport -- and everything below
-/// it is gardn's own number.
-constexpr int kMaxFacets = 64;
-
-int facetCount(double radius, int base) {
-    // Clamped before the conversion, not after: a radius large enough to
-    // overflow the int is nonsense rather than a very detailed rock, and the
-    // conversion itself would be undefined.
-    const double n = base + std::min(radius, 10.0 * kMaxFacets) / 10.0;
-    return std::clamp(static_cast<int>(n), base, kMaxFacets);
-}
-
-void roundStrokes(Canvas& canvas, double width) {
-    canvas.setLineWidth(static_cast<float>(width));
-    canvas.setLineCap("round");
-    canvas.setLineJoin("round");
-}
-
-/// florr's colour scale: each channel times `f` in square-root space, which is
-/// `c * f * f`, rounded half up. florr cuts every shade of a mob from one base
-/// colour this way; a part it fills at 0.9 of the base is `shadeOf(base, 0.9)`.
-constexpr std::uint32_t shadeOf(std::uint32_t rgb, double f) { return ui::shade(rgb, f * f); }
-
-/// Where one of the assembler's two dial needles points at `clockMs`, in
-/// radians.
-///
-/// florr (0x100726660) re-aims each needle at a fresh U(-2pi, 2pi) every
-/// 200-1500 ms and eases it there, keeping 85% of the gap each 60 fps frame;
-/// the angle lives on the mob. A painter keeps nothing, so the aims are a
-/// hash of the mob's seed, the dial and the aim's number, laid on an 850 ms
-/// grid jittered by +-300 (gaps of 250-1450 ms), and the ease is replayed
-/// from four aims back -- by then what came before has decayed below a
-/// thousandth of a turn.
-double assemblerNeedle(std::uint32_t seed, int dial, double clockMs) {
-    constexpr double kPitch = 850.0;
-    constexpr double kJitter = 600.0;
-    constexpr double kKeepPerFrame = 0.85;
-    constexpr double kFrameMs = 1000.0 / 60.0;
-    const auto unit = [&](long long k, std::uint32_t salt) {
-        std::uint64_t x = (static_cast<std::uint64_t>(seed) << 32) ^
-                          static_cast<std::uint64_t>(k) * 0x9E3779B97F4A7C15ull ^
-                          (static_cast<std::uint64_t>(dial) + 1) * 0xC2B2AE3D27D4EB4Full ^ salt;
-        x ^= x >> 30; x *= 0xBF58476D1CE4E5B9ull;
-        x ^= x >> 27; x *= 0x94D049BB133111EBull;
-        x ^= x >> 31;
-        return static_cast<double>(x >> 11) * (1.0 / 9007199254740992.0);
-    };
-    const auto start = [&](long long k) { return k * kPitch + (unit(k, 1u) - 0.5) * kJitter; };
-    const auto aim = [&](long long k) { return (unit(k, 2u) * 2.0 - 1.0) * kTau; };
-    const auto eased = [&](double from, double to, double ms) {
-        return to + (from - to) * std::pow(kKeepPerFrame, std::max(0.0, ms) / kFrameMs);
-    };
-
-    long long k = static_cast<long long>(std::floor(clockMs / kPitch));
-    while (start(k + 1) <= clockMs) ++k;
-    while (start(k) > clockMs) --k;
-    double angle = aim(k - 5);
-    for (long long j = k - 4; j < k; ++j) angle = eased(angle, aim(j), start(j + 1) - start(j));
-    return eased(angle, aim(k), clockMs - start(k));
-}
-
-/// The blend florr moves claws, mandibles and wings by, 0..1: a slow idle
-/// cycle on the mob's clock, cross-faded by `aggro` into one three times as
-/// fast -- a mob that has locked on snaps and buzzes, one that is wandering
-/// flexes.
-double clawBeat(const MobArtAttributes& attr) {
-    const double idle = 0.5 - 0.5 * std::cos(attr.clockMs * 0.01);
-    const double frantic = 0.5 - 0.5 * std::cos(attr.clockMs * 0.03);
-    const double blend = std::clamp(attr.aggro, 0.0, 1.0);
-    return idle * (1.0 - blend) + frantic * blend;
-}
-
-/// gardn's own animation phase, in radians. gardn steps it every frame it
-/// draws a mob, by `(1 + 0.75 * |step|) * 0.075` -- 0.075 a frame, 4.5 rad/s at
-/// its 60 fps, plus 0.05625 for every unit the body moved that frame -- so a
-/// gardn bug's mandibles and wings keep time and hurry as it runs. That is the
-/// mob's clock and the ground it has covered.
-double gardnPhase(const MobArtAttributes& attr) {
-    return attr.clockMs * 0.0045 + attr.distance * 0.05625;
-}
-
-/// gardn's SET_BASE_COLOR: the colour a body is filled with, `own` on a wild
-/// mob and the flower's yellow on a summon. Every shade a painter cuts from
-/// it -- outlines, marks, a dark ladybug's spots -- is cut from the yellow
-/// then too.
-std::uint32_t bodyColor(const MobArtAttributes& attr, std::uint32_t own) {
-    return attr.pet ? kPetBodyColor : own;
-}
-
-/// A rim florr writes down as its own literal rather than cutting from the
-/// body. A summon's is the yellow's gardn outline, as every rim gardn derives
-/// from a base is.
-std::uint32_t rimColor(const MobArtAttributes& attr, std::uint32_t own) {
-    return attr.pet ? outlineOf(kPetBodyColor) : own;
-}
-
-// --- quadratic Bézier helpers, for cutting the hel beetle's shell ----------
-
-struct Pt {
-    double x, y;
-};
-
-Pt quadAt(Pt p0, Pt p1, Pt p2, double t) {
-    const double u = 1.0 - t;
-    return {u * u * p0.x + 2 * t * u * p1.x + t * t * p2.x,
-            u * u * p0.y + 2 * t * u * p1.y + t * t * p2.y};
-}
-
-/// The control point of the piece of a quadratic between parameters a and b
-/// (its blossom at (a, b)).
-Pt quadControl(Pt p0, Pt p1, Pt p2, double a, double b) {
-    const double w0 = (1 - a) * (1 - b), w1 = (1 - a) * b + a * (1 - b), w2 = a * b;
-    return {w0 * p0.x + w1 * p1.x + w2 * p2.x, w0 * p0.y + w1 * p1.y + w2 * p2.y};
-}
-
-/// The parameter in [0, 1] at which a quadratic monotone in y reaches `y`.
-double quadParamAtY(Pt p0, Pt p1, Pt p2, double y) {
-    double lo = 0.0, hi = 1.0;
-    const bool rising = p2.y > p0.y;
-    for (int i = 0; i < 60; ++i) {
-        const double mid = 0.5 * (lo + hi);
-        if ((quadAt(p0, p1, p2, mid).y < y) == rising) lo = mid;
-        else hi = mid;
-    }
-    return 0.5 * (lo + hi);
-}
-
-} // namespace
-
-void paintFlowerEyes(Canvas& canvas, double eyeX, double eyeY) {
-    canvas.save();
-    ui::setFill(canvas, 0x000000u);
-    canvas.beginPath();
-    canvas.ellipse(-7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
-    canvas.moveTo(10.2f, -4.8f);
-    canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
-    canvas.fill();
-    canvas.clip();
-    ui::setFill(canvas, 0xFFFFFFu);
-    canvas.beginPath();
-    canvas.arc(static_cast<float>(-7 + eyeX), static_cast<float>(-4.8 + eyeY),
-               3, 0, static_cast<float>(kTau));
-    canvas.arc(static_cast<float>(7 + eyeX), static_cast<float>(-4.8 + eyeY),
-               3, 0, static_cast<float>(kTau));
-    canvas.fill();
-    ui::setStroke(canvas, 0x000000u);
-    canvas.setLineWidth(1.0f);
-    canvas.beginPath();
-    canvas.ellipse(-7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
-    canvas.stroke();
-    canvas.beginPath();
-    canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
-    canvas.stroke();
-    canvas.restore();
-}
-
-MobArt mobArtFor(const std::string& image) {
-    if (image.empty() || image[0] != '$') return MobArt::None;
-    const std::string name = image.substr(1);
-    if (name == "rock") return MobArt::Rock;
-    if (name == "cactus") return MobArt::Cactus;
-    if (name == "sandstorm") return MobArt::Sandstorm;
-    if (name == "crab") return MobArt::Crab;
-    if (name == "leech") return MobArt::LeechHead;
-    if (name == "leech_body") return MobArt::LeechBody;
-    if (name == "spider") return MobArt::Spider;
-    if (name == "oracle") return MobArt::Oracle;
-    if (name == "trader") return MobArt::Trader;
-    if (name == "titan") return MobArt::Titan;
-    if (name == "moon") return MobArt::Moon;
-    if (name == "assembler") return MobArt::Assembler;
-    // florr's ports, under florr's own names.
-    static const std::pair<const char*, MobArt> kFlorr[] = {
-        {"scorpion", MobArt::Scorpion},
-        {"ladybug", MobArt::Ladybug},
-        {"ladybug_dark", MobArt::LadybugDark},
-        {"ladybug_shiny", MobArt::LadybugShiny},
-        {"bee", MobArt::Bee},
-        {"mr_bee", MobArt::MrBee},
-        {"ant_baby", MobArt::AntBaby},
-        {"ant_worker", MobArt::AntWorker},
-        {"ant_soldier", MobArt::AntSoldier},
-        {"ant_queen", MobArt::AntQueen},
-        {"fire_ant_baby", MobArt::FireAntBaby},
-        {"fire_ant_worker", MobArt::FireAntWorker},
-        {"fire_ant_soldier", MobArt::FireAntSoldier},
-        {"ant_hole", MobArt::AntHole},
-        {"fire_ant_burrow", MobArt::FireAntBurrow},
-        {"beetle", MobArt::Beetle},
-        {"beetle_hel", MobArt::BeetleHel},
-        {"hornet", MobArt::Hornet},
-        {"wasp", MobArt::Wasp},
-        {"centipede", MobArt::Centipede},
-        {"centipede_body", MobArt::CentipedeBody},
-        {"centipede_evil", MobArt::CentipedeEvil},
-        {"centipede_evil_body", MobArt::CentipedeEvilBody},
-        {"centipede_desert", MobArt::CentipedeDesert},
-        {"centipede_desert_body", MobArt::CentipedeDesertBody},
-        {"bubble", MobArt::Bubble},
-        {"bumble_bee", MobArt::BumbleBee},
-        {"shell", MobArt::Shell},
-        {"starfish", MobArt::Starfish},
-        {"jellyfish", MobArt::Jellyfish},
-        {"dandelion", MobArt::Dandelion},
-        {"fly", MobArt::Fly},
-        {"leafbug", MobArt::Leafbug},
-        {"leafbug_shiny", MobArt::LeafbugShiny},
-        {"mantis", MobArt::Mantis},
-        {"bush", MobArt::Bush},
-        {"roach", MobArt::Roach},
-        {"moth", MobArt::Moth},
-        {"firefly", MobArt::Firefly},
-        {"firefly_magic", MobArt::FireflyMagic},
-        {"dummy", MobArt::Dummy},
-        {"termite_baby", MobArt::TermiteBaby},
-        {"termite_worker", MobArt::TermiteWorker},
-        {"termite_soldier", MobArt::TermiteSoldier},
-        {"termite_overmind", MobArt::TermiteOvermind},
-        {"termite_mound", MobArt::TermiteMound},
-        {"termite_egg", MobArt::TermiteEgg},
-        {"ant_egg", MobArt::AntEgg},
-        {"fire_ant_egg", MobArt::FireAntEgg},
-        {"beetle_mummy", MobArt::BeetleMummy},
-        {"beetle_pharaoh", MobArt::BeetlePharaoh},
-        {"beetle_nazar", MobArt::BeetleNazar},
-        {"tomb", MobArt::Tomb},
-    };
-    for (const auto& [marker, art] : kFlorr) {
-        if (name == marker) return art;
-    }
-    return MobArt::None;
-}
-
-// ---------------------------------------------------------------------------
-// Every mob drawn by code, one case each
-// ---------------------------------------------------------------------------
-//
-// Every mob gardn draws is gardn's drawing: the rock, cactus, sandstorm,
-// spider and leech up front, and after the trader the ladybugs, bee, ants,
-// queen, holes, beetle, hornet and centipedes. gardn draws some of those at a
-// fixed size (the ants, bee, centipedes, queen) and those cases scale by the
-// radius gardn gives the mob; the rest scale themselves as gardn does. Their
-// mandibles and wings move on gardnPhase, and their colours are gardn's.
-//
-// The crab, oracle and trader are reference captures. Everything else -- the
-// scorpion, and every mob gardn has no drawing for -- is florr's own client,
-// ported. Those florr cases keep a few rules:
-//
-//   * florr scales each mob by `entity radius / design radius` and then draws
-//     in its design units -- the ant worker for a radius of 20, the scorpion
-//     for 40 -- and so does each case: `scale(radius / design)` and florr's
-//     numbers after it. The body florr draws for that radius is the hitbox,
-//     so these mobs carry no `visual_scale`.
-//   * The colours are florr's constants, and its shades are `shadeOf(base, f)`
-//     rather than a darker hex someone picked.
-//   * A part florr builds from an SVG path string is that same string here,
-//     parsed once into a function-local `static const Path2D` and filled or
-//     stroked as a Path2D. A Path2D is flattened with the transform in force
-//     when it is FILLED on both backends; an immediate path is not (the web
-//     backend bakes its points as they are added), so no case moves the
-//     transform between `beginPath` and `fill`.
-//   * florr's `getFillPath` -- a stroke's outline, filled -- is a stroke at
-//     that width with the same caps and joins.
-//   * Legs step on `distance` (kGaitRadiansPerUnitWalked); claws, mandibles
-//     and wings keep `clockMs` (clawBeat). florr's draw order is kept.
-//   * Facing is +x.
-//
-// Every case but the NPCs' also keeps gardn's summon rule: a pet's body is
-// the flower yellow. The colour it fills its body with goes through
-// bodyColor(), so the shades cut from it follow, and a rim florr writes down
-// as its own literal goes through rimColor(). gardn itself swaps only the
-// mobs it has a SET_BASE_COLOR for -- ants, bee, ladybugs, beetle, hornet,
-// cactus, rock, centipedes, spider, sandstorm, scorpion, ant hole -- and
-// every other case is that rule carried over to its body and rim.
-
-void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
-    if (attr.radius <= 0.0) return;
-
-    // The bee's feelers, which the bumble bee and the moth share outright: a
-    // stalk hooked out from the front of the head on each side with a ball on
-    // its tip. The -y one first, as florr lays them.
-    const auto clubbedFeelers = [&canvas]() {
-        ui::setStroke(canvas, 0x333333u);
-        ui::setFill(canvas, 0x333333u);
-        canvas.setLineWidth(3.0f);
-        for (const float side : {-1.0f, 1.0f}) {
-            canvas.beginPath();
-            canvas.moveTo(25.0f, 5.0f * side);
-            canvas.quadraticCurveTo(35.0f, 5.0f * side, 40.0f, 15.0f * side);
-            canvas.stroke();
-            canvas.beginPath();
-            canvas.arc(40.0f, 15.0f * side, 5.0f, 0.0f, static_cast<float>(kTau));
-            canvas.fill();
-        }
-    };
-
-    // The fly's pair of wings, which the moth wears too: two ovals swept back a
-    // tenth of a turn from the shoulders, each beating a tenth of a turn about
-    // the body's centre on the claw beat, at half opacity. Two fills, not one
-    // path: where the wings cross they are twice as dense, as florr's are.
-    const auto beatingWings = [&canvas, &attr](std::uint32_t color) {
-        constexpr double kSweep = kPi / 10.0;
-        const double beat = clawBeat(attr);
-        ui::setFill(canvas, color, 0.5);
-        for (const double side : {-1.0, 1.0}) {
-            canvas.save();
-            canvas.rotate(static_cast<float>(side * kSweep * beat));
-            canvas.beginPath();
-            canvas.ellipse(-7.0f, static_cast<float>(8.0 * side), 12.0f, 9.0f,
-                           static_cast<float>(-side * kSweep), 0.0f, static_cast<float>(kTau));
-            canvas.fill();
-            canvas.restore();
-        }
-    };
-
-    // One part of an SVG document florr draws whole (its asset painter,
-    // 0x1006d28c0) -- the pyramid mobs' wraps, headdress and tomb: a path
-    // filled and then outlined, or outlined first where the document says
-    // `paint-order: stroke`. kNoPaint skips either half; caps and joins are
-    // the document's, SVG's butt and miter where it names none.
-    constexpr std::uint32_t kNoPaint = 0xFFFFFFFFu;
-    struct SvgPart {
-        const Path2D* path;
-        std::uint32_t fill;
-        std::uint32_t stroke;
-        float width;
-        bool roundCap;
-        bool roundJoin;
-        bool strokeFirst;
-    };
-    const auto paintSvgParts = [&canvas](std::initializer_list<SvgPart> parts) {
-        for (const SvgPart& part : parts) {
-            const auto fill = [&] {
-                if (part.fill == kNoPaint) return;
-                ui::setFill(canvas, part.fill);
-                canvas.fill(*part.path);
-            };
-            const auto stroke = [&] {
-                if (part.stroke == kNoPaint) return;
-                ui::setStroke(canvas, part.stroke);
-                canvas.setLineWidth(part.width);
-                canvas.setLineCap(part.roundCap ? "round" : "butt");
-                canvas.setLineJoin(part.roundJoin ? "round" : "miter");
-                canvas.stroke(*part.path);
-            };
-            if (part.strokeFirst) {
-                stroke();
-                fill();
-            } else {
-                fill();
-                stroke();
+            /// [0, 1).
+            double next()
+            {
+                seed_ *= 167436543u;
+                seed_ += 5832385u;
+                seed_ *= (76372345u + seed_);
+                seed_ += 937323u;
+                return static_cast<double>(seed_ % 65536u) / 65536.0;
             }
-        }
-    };
 
-    switch (art) {
-        case MobArt::Rock: {
+            /// (-1, 1).
+            double binext() { return next() * 2.0 - 1.0; }
+
+        private:
+            std::uint32_t seed_;
+        };
+
+        /// One step of libc++'s linear congruential engines, mod 2^31 - 1:
+        /// minstd_rand0 multiplies by 16807, minstd_rand by 48271. florr scatters a
+        /// mob's random details from one seeded off its id.
+        std::uint32_t minstdStep(std::uint32_t x, std::uint32_t multiplier)
+        {
+            return static_cast<std::uint32_t>((static_cast<std::uint64_t>(x) * multiplier) % 2147483647u);
+        }
+
+        /// uniform_real_distribution<float>'s [0, 1) from one draw of those engines,
+        /// as libc++ computes it: (x - 1) / 2^31, in float.
+        float minstdUnit(std::uint32_t x)
+        {
+            return static_cast<float>(x - 1u) * 4.656612873077393e-10f;
+        }
+
+        /// The most facets or spines a body is cut into.
+        ///
+        /// gardn's counts are `4 + radius/10` and `5 + radius/10`, over mobs whose
+        /// radius never passes 60. Ours reach 43x their base size at the top of the
+        /// rarity ladder, where those formulae would ask for hundreds of vertices to
+        /// draw detail finer than the outline around it. The cap binds only past a
+        /// radius of ~600 -- a mob wider than half the viewport -- and everything below
+        /// it is gardn's own number.
+        constexpr int kMaxFacets = 64;
+
+        int facetCount(double radius, int base)
+        {
+            // Clamped before the conversion, not after: a radius large enough to
+            // overflow the int is nonsense rather than a very detailed rock, and the
+            // conversion itself would be undefined.
+            const double n = base + std::min(radius, 10.0 * kMaxFacets) / 10.0;
+            return std::clamp(static_cast<int>(n), base, kMaxFacets);
+        }
+
+        void roundStrokes(Canvas &canvas, double width)
+        {
+            canvas.setLineWidth(static_cast<float>(width));
+            canvas.setLineCap("round");
+            canvas.setLineJoin("round");
+        }
+
+        /// florr's colour scale: each channel times `f` in square-root space, which is
+        /// `c * f * f`, rounded half up. florr cuts every shade of a mob from one base
+        /// colour this way; a part it fills at 0.9 of the base is `shadeOf(base, 0.9)`.
+        constexpr std::uint32_t shadeOf(std::uint32_t rgb, double f) { return ui::shade(rgb, f * f); }
+
+        /// Where one of the assembler's two dial needles points at `clockMs`, in
+        /// radians.
+        ///
+        /// florr (0x100726660) re-aims each needle at a fresh U(-2pi, 2pi) every
+        /// 200-1500 ms and eases it there, keeping 85% of the gap each 60 fps frame;
+        /// the angle lives on the mob. A painter keeps nothing, so the aims are a
+        /// hash of the mob's seed, the dial and the aim's number, laid on an 850 ms
+        /// grid jittered by +-300 (gaps of 250-1450 ms), and the ease is replayed
+        /// from four aims back -- by then what came before has decayed below a
+        /// thousandth of a turn.
+        double assemblerNeedle(std::uint32_t seed, int dial, double clockMs)
+        {
+            constexpr double kPitch = 850.0;
+            constexpr double kJitter = 600.0;
+            constexpr double kKeepPerFrame = 0.85;
+            constexpr double kFrameMs = 1000.0 / 60.0;
+            const auto unit = [&](long long k, std::uint32_t salt)
+            {
+                std::uint64_t x = (static_cast<std::uint64_t>(seed) << 32) ^
+                                  static_cast<std::uint64_t>(k) * 0x9E3779B97F4A7C15ull ^
+                                  (static_cast<std::uint64_t>(dial) + 1) * 0xC2B2AE3D27D4EB4Full ^ salt;
+                x ^= x >> 30;
+                x *= 0xBF58476D1CE4E5B9ull;
+                x ^= x >> 27;
+                x *= 0x94D049BB133111EBull;
+                x ^= x >> 31;
+                return static_cast<double>(x >> 11) * (1.0 / 9007199254740992.0);
+            };
+            const auto start = [&](long long k)
+            { return k * kPitch + (unit(k, 1u) - 0.5) * kJitter; };
+            const auto aim = [&](long long k)
+            { return (unit(k, 2u) * 2.0 - 1.0) * kTau; };
+            const auto eased = [&](double from, double to, double ms)
+            {
+                return to + (from - to) * std::pow(kKeepPerFrame, std::max(0.0, ms) / kFrameMs);
+            };
+
+            long long k = static_cast<long long>(std::floor(clockMs / kPitch));
+            while (start(k + 1) <= clockMs)
+                ++k;
+            while (start(k) > clockMs)
+                --k;
+            double angle = aim(k - 5);
+            for (long long j = k - 4; j < k; ++j)
+                angle = eased(angle, aim(j), start(j + 1) - start(j));
+            return eased(angle, aim(k), clockMs - start(k));
+        }
+
+        /// The blend florr moves claws, mandibles and wings by, 0..1: a slow idle
+        /// cycle on the mob's clock, cross-faded by `aggro` into one three times as
+        /// fast -- a mob that has locked on snaps and buzzes, one that is wandering
+        /// flexes.
+        double clawBeat(const MobArtAttributes &attr)
+        {
+            const double idle = 0.5 - 0.5 * std::cos(attr.clockMs * 0.01);
+            const double frantic = 0.5 - 0.5 * std::cos(attr.clockMs * 0.03);
+            const double blend = std::clamp(attr.aggro, 0.0, 1.0);
+            return idle * (1.0 - blend) + frantic * blend;
+        }
+
+        /// gardn's own animation phase, in radians. gardn steps it every frame it
+        /// draws a mob, by `(1 + 0.75 * |step|) * 0.075` -- 0.075 a frame, 4.5 rad/s at
+        /// its 60 fps, plus 0.05625 for every unit the body moved that frame -- so a
+        /// gardn bug's mandibles and wings keep time and hurry as it runs. That is the
+        /// mob's clock and the ground it has covered.
+        double gardnPhase(const MobArtAttributes &attr)
+        {
+            return attr.clockMs * 0.0045 + attr.distance * 0.05625;
+        }
+
+        /// gardn's SET_BASE_COLOR: the colour a body is filled with, `own` on a wild
+        /// mob and the flower's yellow on a summon. Every shade a painter cuts from
+        /// it -- outlines, marks, a dark ladybug's spots -- is cut from the yellow
+        /// then too.
+        std::uint32_t bodyColor(const MobArtAttributes &attr, std::uint32_t own)
+        {
+            return attr.pet ? kPetBodyColor : own;
+        }
+
+        /// A rim florr writes down as its own literal rather than cutting from the
+        /// body. A summon's is the yellow's gardn outline, as every rim gardn derives
+        /// from a base is.
+        std::uint32_t rimColor(const MobArtAttributes &attr, std::uint32_t own)
+        {
+            return attr.pet ? outlineOf(kPetBodyColor) : own;
+        }
+
+        // --- quadratic Bézier helpers, for cutting the hel beetle's shell ----------
+
+        struct Pt
+        {
+            double x, y;
+        };
+
+        Pt quadAt(Pt p0, Pt p1, Pt p2, double t)
+        {
+            const double u = 1.0 - t;
+            return {u * u * p0.x + 2 * t * u * p1.x + t * t * p2.x,
+                    u * u * p0.y + 2 * t * u * p1.y + t * t * p2.y};
+        }
+
+        /// The control point of the piece of a quadratic between parameters a and b
+        /// (its blossom at (a, b)).
+        Pt quadControl(Pt p0, Pt p1, Pt p2, double a, double b)
+        {
+            const double w0 = (1 - a) * (1 - b), w1 = (1 - a) * b + a * (1 - b), w2 = a * b;
+            return {w0 * p0.x + w1 * p1.x + w2 * p2.x, w0 * p0.y + w1 * p1.y + w2 * p2.y};
+        }
+
+        /// The parameter in [0, 1] at which a quadratic monotone in y reaches `y`.
+        double quadParamAtY(Pt p0, Pt p1, Pt p2, double y)
+        {
+            double lo = 0.0, hi = 1.0;
+            const bool rising = p2.y > p0.y;
+            for (int i = 0; i < 60; ++i)
+            {
+                const double mid = 0.5 * (lo + hi);
+                if ((quadAt(p0, p1, p2, mid).y < y) == rising)
+                    lo = mid;
+                else
+                    hi = mid;
+            }
+            return 0.5 * (lo + hi);
+        }
+
+    } // namespace
+
+    void paintFlowerEyes(Canvas &canvas, double eyeX, double eyeY)
+    {
+        canvas.save();
+        ui::setFill(canvas, 0x000000u);
+        canvas.beginPath();
+        canvas.ellipse(-7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
+        canvas.moveTo(10.2f, -4.8f);
+        canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
+        canvas.fill();
+        canvas.clip();
+        ui::setFill(canvas, 0xFFFFFFu);
+        canvas.beginPath();
+        canvas.arc(static_cast<float>(-7 + eyeX), static_cast<float>(-4.8 + eyeY),
+                   3, 0, static_cast<float>(kTau));
+        canvas.arc(static_cast<float>(7 + eyeX), static_cast<float>(-4.8 + eyeY),
+                   3, 0, static_cast<float>(kTau));
+        canvas.fill();
+        ui::setStroke(canvas, 0x000000u);
+        canvas.setLineWidth(1.0f);
+        canvas.beginPath();
+        canvas.ellipse(-7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
+        canvas.stroke();
+        canvas.beginPath();
+        canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
+        canvas.stroke();
+        canvas.restore();
+    }
+
+    MobArt mobArtFor(const std::string &image)
+    {
+        if (image.empty() || image[0] != '$')
+            return MobArt::None;
+        const std::string name = image.substr(1);
+        if (name == "rock")
+            return MobArt::Rock;
+        if (name == "cactus")
+            return MobArt::Cactus;
+        if (name == "sandstorm")
+            return MobArt::Sandstorm;
+        if (name == "crab")
+            return MobArt::Crab;
+        if (name == "leech")
+            return MobArt::LeechHead;
+        if (name == "leech_body")
+            return MobArt::LeechBody;
+        if (name == "spider")
+            return MobArt::Spider;
+        if (name == "oracle")
+            return MobArt::Oracle;
+        if (name == "trader")
+            return MobArt::Trader;
+        if (name == "titan")
+            return MobArt::Titan;
+        if (name == "moon")
+            return MobArt::Moon;
+        if (name == "assembler")
+            return MobArt::Assembler;
+        // florr's ports, under florr's own names.
+        static const std::pair<const char *, MobArt> kFlorr[] = {
+            {"scorpion", MobArt::Scorpion},
+            {"ladybug", MobArt::Ladybug},
+            {"ladybug_dark", MobArt::LadybugDark},
+            {"ladybug_shiny", MobArt::LadybugShiny},
+            {"bee", MobArt::Bee},
+            {"mr_bee", MobArt::MrBee},
+            {"ant_baby", MobArt::AntBaby},
+            {"ant_worker", MobArt::AntWorker},
+            {"ant_soldier", MobArt::AntSoldier},
+            {"ant_queen", MobArt::AntQueen},
+            {"fire_ant_baby", MobArt::FireAntBaby},
+            {"fire_ant_worker", MobArt::FireAntWorker},
+            {"fire_ant_soldier", MobArt::FireAntSoldier},
+            {"ant_hole", MobArt::AntHole},
+            {"fire_ant_burrow", MobArt::FireAntBurrow},
+            {"beetle", MobArt::Beetle},
+            {"beetle_hel", MobArt::BeetleHel},
+            {"hornet", MobArt::Hornet},
+            {"wasp", MobArt::Wasp},
+            {"centipede", MobArt::Centipede},
+            {"centipede_body", MobArt::CentipedeBody},
+            {"centipede_evil", MobArt::CentipedeEvil},
+            {"centipede_evil_body", MobArt::CentipedeEvilBody},
+            {"centipede_desert", MobArt::CentipedeDesert},
+            {"centipede_desert_body", MobArt::CentipedeDesertBody},
+            {"bubble", MobArt::Bubble},
+            {"bumble_bee", MobArt::BumbleBee},
+            {"shell", MobArt::Shell},
+            {"starfish", MobArt::Starfish},
+            {"jellyfish", MobArt::Jellyfish},
+            {"dandelion", MobArt::Dandelion},
+            {"fly", MobArt::Fly},
+            {"leafbug", MobArt::Leafbug},
+            {"leafbug_shiny", MobArt::LeafbugShiny},
+            {"mantis", MobArt::Mantis},
+            {"bush", MobArt::Bush},
+            {"roach", MobArt::Roach},
+            {"moth", MobArt::Moth},
+            {"firefly", MobArt::Firefly},
+            {"firefly_magic", MobArt::FireflyMagic},
+            {"dummy", MobArt::Dummy},
+            {"termite_baby", MobArt::TermiteBaby},
+            {"termite_worker", MobArt::TermiteWorker},
+            {"termite_soldier", MobArt::TermiteSoldier},
+            {"termite_overmind", MobArt::TermiteOvermind},
+            {"termite_mound", MobArt::TermiteMound},
+            {"termite_egg", MobArt::TermiteEgg},
+            {"ant_egg", MobArt::AntEgg},
+            {"fire_ant_egg", MobArt::FireAntEgg},
+            {"beetle_mummy", MobArt::BeetleMummy},
+            {"beetle_pharaoh", MobArt::BeetlePharaoh},
+            {"beetle_nazar", MobArt::BeetleNazar},
+            {"tomb", MobArt::Tomb},
+        };
+        for (const auto &[marker, art] : kFlorr)
+        {
+            if (name == marker)
+                return art;
+        }
+        return MobArt::None;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Every mob drawn by code, one case each
+    // ---------------------------------------------------------------------------
+    //
+    // Every mob gardn draws is gardn's drawing: the rock, cactus, sandstorm,
+    // spider and leech up front, and after the trader the ladybugs, bee, ants,
+    // queen, holes, beetle, hornet and centipedes. gardn draws some of those at a
+    // fixed size (the ants, bee, centipedes, queen) and those cases scale by the
+    // radius gardn gives the mob; the rest scale themselves as gardn does. Their
+    // mandibles and wings move on gardnPhase, and their colours are gardn's.
+    //
+    // The crab, oracle and trader are reference captures. Everything else -- the
+    // scorpion, and every mob gardn has no drawing for -- is florr's own client,
+    // ported. Those florr cases keep a few rules:
+    //
+    //   * florr scales each mob by `entity radius / design radius` and then draws
+    //     in its design units -- the ant worker for a radius of 20, the scorpion
+    //     for 40 -- and so does each case: `scale(radius / design)` and florr's
+    //     numbers after it. The body florr draws for that radius is the hitbox,
+    //     so these mobs carry no `visual_scale`.
+    //   * The colours are florr's constants, and its shades are `shadeOf(base, f)`
+    //     rather than a darker hex someone picked.
+    //   * A part florr builds from an SVG path string is that same string here,
+    //     parsed once into a function-local `static const Path2D` and filled or
+    //     stroked as a Path2D. A Path2D is flattened with the transform in force
+    //     when it is FILLED on both backends; an immediate path is not (the web
+    //     backend bakes its points as they are added), so no case moves the
+    //     transform between `beginPath` and `fill`.
+    //   * florr's `getFillPath` -- a stroke's outline, filled -- is a stroke at
+    //     that width with the same caps and joins.
+    //   * Legs step on `distance` (kGaitRadiansPerUnitWalked); claws, mandibles
+    //     and wings keep `clockMs` (clawBeat). florr's draw order is kept.
+    //   * Facing is +x.
+    //
+    // Every case but the NPCs' also keeps gardn's summon rule: a pet's body is
+    // the flower yellow. The colour it fills its body with goes through
+    // bodyColor(), so the shades cut from it follow, and a rim florr writes down
+    // as its own literal goes through rimColor(). gardn itself swaps only the
+    // mobs it has a SET_BASE_COLOR for -- ants, bee, ladybugs, beetle, hornet,
+    // cactus, rock, centipedes, spider, sandstorm, scorpion, ant hole -- and
+    // every other case is that rule carried over to its body and rim.
+
+    void paintMobArt(Canvas &canvas, MobArt art, const MobArtAttributes &attr)
+    {
+        if (attr.radius <= 0.0)
+            return;
+
+        // The bee's feelers, which the bumble bee and the moth share outright: a
+        // stalk hooked out from the front of the head on each side with a ball on
+        // its tip. The -y one first, as florr lays them.
+        const auto clubbedFeelers = [&canvas]()
+        {
+            ui::setStroke(canvas, 0x333333u);
+            ui::setFill(canvas, 0x333333u);
+            canvas.setLineWidth(3.0f);
+            for (const float side : {-1.0f, 1.0f})
+            {
+                canvas.beginPath();
+                canvas.moveTo(25.0f, 5.0f * side);
+                canvas.quadraticCurveTo(35.0f, 5.0f * side, 40.0f, 15.0f * side);
+                canvas.stroke();
+                canvas.beginPath();
+                canvas.arc(40.0f, 15.0f * side, 5.0f, 0.0f, static_cast<float>(kTau));
+                canvas.fill();
+            }
+        };
+
+        // The fly's pair of wings, which the moth wears too: two ovals swept back a
+        // tenth of a turn from the shoulders, each beating a tenth of a turn about
+        // the body's centre on the claw beat, at half opacity. Two fills, not one
+        // path: where the wings cross they are twice as dense, as florr's are.
+        const auto beatingWings = [&canvas, &attr](std::uint32_t color)
+        {
+            constexpr double kSweep = kPi / 10.0;
+            const double beat = clawBeat(attr);
+            ui::setFill(canvas, color, 0.5);
+            for (const double side : {-1.0, 1.0})
+            {
+                canvas.save();
+                canvas.rotate(static_cast<float>(side * kSweep * beat));
+                canvas.beginPath();
+                canvas.ellipse(-7.0f, static_cast<float>(8.0 * side), 12.0f, 9.0f,
+                               static_cast<float>(-side * kSweep), 0.0f, static_cast<float>(kTau));
+                canvas.fill();
+                canvas.restore();
+            }
+        };
+
+        // One part of an SVG document florr draws whole (its asset painter,
+        // 0x1006d28c0) -- the pyramid mobs' wraps, headdress and tomb: a path
+        // filled and then outlined, or outlined first where the document says
+        // `paint-order: stroke`. kNoPaint skips either half; caps and joins are
+        // the document's, SVG's butt and miter where it names none.
+        constexpr std::uint32_t kNoPaint = 0xFFFFFFFFu;
+        struct SvgPart
+        {
+            const Path2D *path;
+            std::uint32_t fill;
+            std::uint32_t stroke;
+            float width;
+            bool roundCap;
+            bool roundJoin;
+            bool strokeFirst;
+        };
+        const auto paintSvgParts = [&canvas](std::initializer_list<SvgPart> parts)
+        {
+            for (const SvgPart &part : parts)
+            {
+                const auto fill = [&]
+                {
+                    if (part.fill == kNoPaint)
+                        return;
+                    ui::setFill(canvas, part.fill);
+                    canvas.fill(*part.path);
+                };
+                const auto stroke = [&]
+                {
+                    if (part.stroke == kNoPaint)
+                        return;
+                    ui::setStroke(canvas, part.stroke);
+                    canvas.setLineWidth(part.width);
+                    canvas.setLineCap(part.roundCap ? "round" : "butt");
+                    canvas.setLineJoin(part.roundJoin ? "round" : "miter");
+                    canvas.stroke(*part.path);
+                };
+                if (part.strokeFirst)
+                {
+                    stroke();
+                    fill();
+                }
+                else
+                {
+                    fill();
+                    stroke();
+                }
+            }
+        };
+
+        switch (art)
+        {
+        case MobArt::Rock:
+        {
             const double radius = attr.radius;
             const int sides = facetCount(radius, 4);
 
@@ -448,7 +513,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 const double y = gen.binext() * deflection;
                 canvas.moveTo(static_cast<float>(x), static_cast<float>(y));
             }
-            for (int i = 1; i < sides; ++i) {
+            for (int i = 1; i < sides; ++i)
+            {
                 const double angle = kTau * i / sides;
                 const double x = std::cos(angle) * radius + gen.binext() * deflection;
                 const double y = std::sin(angle) * radius + gen.binext() * deflection;
@@ -460,57 +526,80 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Cactus: {
+        case MobArt::Cactus:
+        {
             const double radius = attr.radius;
             const int spines = facetCount(radius, 5);
             const double step = kTau / spines;
 
-            // The spines first, so the body is laid over their roots and only
-            // the 10 units that clear it show. gardn rotates the canvas between
-            // spines and fills them all at once; this rotates the POINTS,
-            // because a path here is flattened with the transform in force when
-            // it is filled rather than the one in force when each point was
-            // added.
-            ui::setFill(canvas, 0x222222u);
-            canvas.beginPath();
-            for (int i = 0; i < spines; ++i) {
-                const double angle = step * i;
-                const double c = std::cos(angle), s = std::sin(angle);
-                const auto point = [&](double x, double y) {
-                    canvas.lineTo(static_cast<float>(x * c - y * s),
-                                  static_cast<float>(x * s + y * c));
-                };
-                canvas.moveTo(static_cast<float>((10.0 + radius) * c),
-                              static_cast<float>((10.0 + radius) * s));
-                point(0.5 + radius, 3.0);
-                point(0.5 + radius, -3.0);
-                point(10.0 + radius, 0.0);
+            int n = std::max(3, int(radius * 0.142857 + 3.0));
+            std::vector<float> px(n + 1), py(n + 1);
+            for (int d = 0; d <= n; d++)
+            {
+                float a = float(double(d) * 6.283185 * (1.0 / n));
+                px[d] = radius * std::cos(a);
+                py[d] = radius * std::sin(a);
             }
+            std::vector<float> sx(2 * n), sy(2 * n);
+            for (int d = 0; d < n; d++)
+            {
+                sx[2 * d] = px[d];
+                sy[2 * d] = py[d];
+                sx[2 * d + 1] = (px[d] + px[d + 1]) * .25f;
+                sy[2 * d + 1] = (py[d] + py[d + 1]) * .25f;
+            }
+            const float hw = 3.5f;
+            int m = 2 * n;
+            std::vector<float> ox(m), oy(m);
+            for (int i = 0; i < m; i++)
+            {
+                int a = (i + m - 1) % m, b = (i + 1) % m;
+                float ux = sx[i] - sx[a], uy = sy[i] - sy[a], vx = sx[b] - sx[i], vy = sy[b] - sy[i];
+                float lu = std::hypot(ux, uy), lv = std::hypot(vx, vy);
+                float n1x = -uy / lu, n1y = ux / lu, n2x = -vy / lv, n2y = vx / lv;
+                float k = hw / (1 + n1x * n2x + n1y * n2y);
+                ox[i] = (n1x + n2x) * k;
+                oy[i] = (n1y + n2y) * k;
+            }
+            canvas.save();
+            ui::setFill(canvas, 0x333333);
+            roundStrokes(canvas, 7.0);
+            
+            canvas.beginPath();
+            for (int i = 0; i < m; i++)
+            {
+                if (!i)
+                    canvas.moveTo(sx[i] + ox[i], sy[i] + oy[i]);
+                else
+                    canvas.lineTo(sx[i] + ox[i], sy[i] + oy[i]);
+            }
+            canvas.closePath();
+            for (int i = 0; i < m; i++)
+            {
+                if (!i)
+                    canvas.moveTo(sx[i] - ox[i], sy[i] - oy[i]);
+                else
+                    canvas.lineTo(sx[i] - ox[i], sy[i] - oy[i]);
+            }
+            canvas.closePath();
             canvas.fill();
-
             const std::uint32_t body = bodyColor(attr, attr.baseColor);
             ui::setFill(canvas, body);
             ui::setStroke(canvas, outlineOf(body));
             roundStrokes(canvas, 5.0);
             canvas.beginPath();
-            canvas.moveTo(static_cast<float>(radius), 0.0f);
-            for (int i = 0; i < spines; ++i) {
-                // Each lobe bulges IN to 0.9r between two spines, which is what
-                // makes the silhouette read as segments rather than as a circle
-                // with hairs.
-                const double base = step * i;
-                canvas.quadraticCurveTo(
-                    static_cast<float>(radius * 0.9 * std::cos(base + step * 0.5)),
-                    static_cast<float>(radius * 0.9 * std::sin(base + step * 0.5)),
-                    static_cast<float>(radius * std::cos(base + step)),
-                    static_cast<float>(radius * std::sin(base + step)));
-            }
+            canvas.moveTo(px[0], py[0]);
+            for (int d = 1; d <= n; d++)
+                canvas.quadraticCurveTo((px[d - 1] + px[d]) * .45f, (py[d - 1] + py[d]) * .45f, px[d], py[d]);
+            canvas.closePath();
             canvas.fill();
             canvas.stroke();
+            canvas.restore();
             break;
         }
 
-        case MobArt::Sandstorm: {
+        case MobArt::Sandstorm:
+        {
             const double radius = attr.radius;
             // Three hexagons at three different fractions of the same phase, so
             // the layers shear against each other instead of turning as one
@@ -524,7 +613,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             const double scales[3] = {1.0, 2.0 / 3.0, 1.0 / 3.0};
             const std::uint32_t base = bodyColor(attr, attr.baseColor);
             canvas.save();
-            for (int layer = 0; layer < 3; ++layer) {
+            for (int layer = 0; layer < 3; ++layer)
+            {
                 canvas.rotate(static_cast<float>(spin));
                 const std::uint32_t color = ui::shade(base, shades[layer]);
                 ui::setFill(canvas, color);
@@ -532,7 +622,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 const double r = radius * scales[layer];
                 canvas.beginPath();
                 canvas.moveTo(static_cast<float>(r), 0.0f);
-                for (int i = 1; i <= 6; ++i) {
+                for (int i = 1; i <= 6; ++i)
+                {
                     const double angle = kTau * i / 6.0;
                     canvas.lineTo(static_cast<float>(std::cos(angle) * r),
                                   static_cast<float>(std::sin(angle) * r));
@@ -544,7 +635,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Scorpion: {
+        case MobArt::Scorpion:
+        {
             // florr's scorpion, drawn for a radius of 40, the length of its
             // body: two claws pinching on the claw beat, eight legs stepping on
             // the ground it covers, a plated body, and a tail segment florr
@@ -576,7 +668,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             const double pinch = clawBeat(attr);
             ui::setFill(canvas, kLimb);
             ui::setStroke(canvas, kLimb);
-            for (const double side : {-1.0, 1.0}) {
+            for (const double side : {-1.0, 1.0})
+            {
                 // The first claw is the one on +y; it closes by turning toward -y.
                 const double y = -side;
                 canvas.save();
@@ -600,11 +693,14 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // The -y flank is the +y one mirrored through the body's axis.
             const double stride = attr.distance * kGaitRadiansPerUnitWalked;
             canvas.beginPath();
-            for (const double side : {-1.0, 1.0}) {
-                for (int k = 0; k < 4; ++k) {
+            for (const double side : {-1.0, 1.0})
+            {
+                for (int k = 0; k < 4; ++k)
+                {
                     double angle = kLegRest[k] -
                                    0.2 * std::cos(side * kPi * 0.5 + k * kPi * 0.5 + stride);
-                    if (side < 0) angle = -kPi - angle;
+                    if (side < 0)
+                        angle = -kPi - angle;
                     const double x = std::sin(angle) * kLegLength;
                     const double y = std::cos(angle) * kLegLength;
                     canvas.moveTo(0.0f, 0.0f);
@@ -680,7 +776,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Crab: {
+        case MobArt::Crab:
+        {
             // flooooio's MobRendererCrab, drawn at its own design radius of 25:
             // eight legs that swing and two claws that open and close. Facing
             // is +x: the claws lead, the legs splay off the flanks.
@@ -708,9 +805,11 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setStroke(canvas, kLimb);
             roundStrokes(canvas, 5.0);
             canvas.beginPath();
-            for (int side = 0; side < 2; ++side) {
+            for (int side = 0; side < 2; ++side)
+            {
                 const double flank = side == 0 ? -1.0 : 1.0;
-                for (int i = 0; i < 4; ++i) {
+                for (int i = 0; i < 4; ++i)
+                {
                     const double swing = 0.15 * std::sin(gait + flank + 2.0 * i) + 0.15;
                     const double legDir = i < 2 ? 1.0 : -1.0;
                     const double hipX = 4.0 * i - 5.0;
@@ -720,10 +819,12 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                     // Hip at the origin, knee 25 down the leg, foot 10 past the bend.
                     const double footX = -10.0 * std::sin(knee);
                     const double footY = 25.0 + 10.0 * std::cos(knee);
-                    const auto px = [&](double x, double y) {
+                    const auto px = [&](double x, double y)
+                    {
                         return static_cast<float>(x * cosHip - y * sinHip + hipX);
                     };
-                    const auto py = [&](double x, double y) {
+                    const auto py = [&](double x, double y)
+                    {
                         return static_cast<float>((x * sinHip + y * cosHip) * flank);
                     };
                     canvas.moveTo(px(0.0, 0.0), py(0.0, 0.0));
@@ -742,7 +843,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, kLimb);
             ui::setStroke(canvas, kLimb);
             roundStrokes(canvas, 2.0);
-            for (int side = 0; side < 2; ++side) {
+            for (int side = 0; side < 2; ++side)
+            {
                 const double flank = side == 0 ? -1.0 : 1.0;
                 canvas.save();
                 canvas.translate(12.0f, static_cast<float>(2.0 * flank));
@@ -796,30 +898,31 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        // --- the leech -----------------------------------------------------
-        //
-        // One tube, painted a joint at a time. The reference strokes a
-        // polyline through every segment's centre at width 25 and again at 22;
-        // ours cannot see the polyline, so each segment strokes the ONE span it
-        // does know -- its own centre to its leader's -- and the spans abut
-        // into the same shape.
-        //
-        // Two rules make that work, and both are the chain pass's doing
-        // (placeFollower in mob_ai.cpp): a segment is held exactly
-        // `kSegmentSpacingPerRadius` radii behind its leader, and it is turned
-        // to point straight AT it with no turn limit. So the leader's centre is
-        // at (spacing, 0) in the segment's own frame, every frame, and a
-        // round-capped bar to that point lands its cap exactly on the leader's
-        // own body.
-        //
-        // There is deliberately no outline. The reference's is 0.75 units on a
-        // body 25 across -- under a pixel at any zoom the game plays at -- and
-        // drawing it per segment is the one thing this scheme cannot do: a
-        // segment's outline would paint over its leader's fill, and the seam
-        // that puts at every joint is exactly the bead-chain look the bar is
-        // here to avoid.
+            // --- the leech -----------------------------------------------------
+            //
+            // One tube, painted a joint at a time. The reference strokes a
+            // polyline through every segment's centre at width 25 and again at 22;
+            // ours cannot see the polyline, so each segment strokes the ONE span it
+            // does know -- its own centre to its leader's -- and the spans abut
+            // into the same shape.
+            //
+            // Two rules make that work, and both are the chain pass's doing
+            // (placeFollower in mob_ai.cpp): a segment is held exactly
+            // `kSegmentSpacingPerRadius` radii behind its leader, and it is turned
+            // to point straight AT it with no turn limit. So the leader's centre is
+            // at (spacing, 0) in the segment's own frame, every frame, and a
+            // round-capped bar to that point lands its cap exactly on the leader's
+            // own body.
+            //
+            // There is deliberately no outline. The reference's is 0.75 units on a
+            // body 25 across -- under a pixel at any zoom the game plays at -- and
+            // drawing it per segment is the one thing this scheme cannot do: a
+            // segment's outline would paint over its leader's fill, and the seam
+            // that puts at every joint is exactly the bead-chain look the bar is
+            // here to avoid.
 
-        case MobArt::LeechHead: {
+        case MobArt::LeechHead:
+        {
             // The front cap of the tube, and the beak. The head paints no bar --
             // there is nothing in front of it to reach -- and needs none: the
             // first segment's bar ends its cap on this disc.
@@ -838,7 +941,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // buries the roots of both mandibles inside the head.
             ui::setStroke(canvas, 0x292929u);
             roundStrokes(canvas, 4.0);
-            for (int side = 0; side < 2; ++side) {
+            for (int side = 0; side < 2; ++side)
+            {
                 const double sign = side == 0 ? -1.0 : 1.0;
                 canvas.save();
                 canvas.rotate(static_cast<float>(beakAngle * sign));
@@ -859,7 +963,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::LeechBody: {
+        case MobArt::LeechBody:
+        {
             // The joint between this segment and the one it is following. A
             // segment whose leader has been killed is promoted to a chain of its
             // own by the server but still draws this bar, so a leech cut in half
@@ -875,7 +980,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Spider: {
+        case MobArt::Spider:
+        {
             // gardn's spider, drawn at gardn's own body radius of 15: the legs
             // are 35 long against that 15, so they stay the same length against
             // the body at every tier rather than a fixed number of units that a
@@ -896,13 +1002,20 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             const double s = std::sin(gait) * 0.2;
             const double c = std::cos(gait) * 0.2;
             const double legAngles[8] = {
-                -kPi + 0.9 + s, -kPi + 0.3 + c, -kPi - 0.3 + s, -kPi - 0.9 - c,
-                -0.9 - s,       -0.3 + c,       0.3 - s,        0.9 - c,
+                -kPi + 0.9 + s,
+                -kPi + 0.3 + c,
+                -kPi - 0.3 + s,
+                -kPi - 0.9 - c,
+                -0.9 - s,
+                -0.3 + c,
+                0.3 - s,
+                0.9 - c,
             };
             ui::setStroke(canvas, 0x333333u);
             roundStrokes(canvas, 5.0);
             canvas.beginPath();
-            for (const double angle : legAngles) {
+            for (const double angle : legAngles)
+            {
                 const double x = std::sin(angle) * 35.0;
                 const double y = std::cos(angle) * 35.0;
                 canvas.moveTo(0.0f, 0.0f);
@@ -925,7 +1038,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Oracle: {
+        case MobArt::Oracle:
+        {
             // Built from the reference art (oracle.svg, a 12-frame capture),
             // which is laid out on a body 28 units across: a dark disc with ten
             // tendrils rooted on its rim, a gold ring, the flower-yellow body,
@@ -970,7 +1084,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
             const double radius = attr.radius;
             const double s = radius / kArtRadius;
-            const auto circle = [&canvas](double r, std::uint32_t color, Vec2 at = {}) {
+            const auto circle = [&canvas](double r, std::uint32_t color, Vec2 at = {})
+            {
                 ui::setFill(canvas, color);
                 canvas.fillCircle(static_cast<float>(at.x), static_cast<float>(at.y),
                                   static_cast<float>(r));
@@ -984,7 +1099,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setStroke(canvas, kInk);
             roundStrokes(canvas, kTendrilWidth * s);
             canvas.beginPath();
-            for (int i = 0; i < kTendrils; ++i) {
+            for (int i = 0; i < kTendrils; ++i)
+            {
                 const double spoke = kTau * i / kTendrils;
                 const double sway = kSwayAmplitude * std::sin(phase + i * kSwayPhaseStep);
                 const double stretch = std::fabs(sway);
@@ -1013,7 +1129,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // LAST, over the pupil's edge, which is what seats it in the socket
             // rather than on top of it.
             Vec2 gaze = attr.gaze;
-            if (gaze.lengthSq() > 1.0) gaze = gaze * (1.0 / gaze.length());
+            if (gaze.lengthSq() > 1.0)
+                gaze = gaze * (1.0 / gaze.length());
             circle(kSocketRadius * s, kInk);
             circle(kPupilRadius * s, kPupil, gaze * (kPupilTravel * s));
             ui::setStroke(canvas, kInk);
@@ -1022,7 +1139,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Trader: {
+        case MobArt::Trader:
+        {
             // Built from the reference art (trader.svg, a 12-frame capture): a
             // player's flower -- the 26.5 ring, the 23.5 body, the eyes and the
             // resting smile, at exactly a player's proportions in its radius-25
@@ -1071,7 +1189,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             const double sweep =
                 std::atan2(cross * std::sin(half), cross * std::cos(half) - kPetalOrbit);
             canvas.beginPath();
-            for (int i = 0; i < kPetals; ++i) {
+            for (int i = 0; i < kPetals; ++i)
+            {
                 const double spoke = kTau * i / kPetals;
                 const Vec2 at = Vec2::fromAngle(spoke, kPetalOrbit);
                 canvas.arc(static_cast<float>(at.x), static_cast<float>(at.y),
@@ -1098,7 +1217,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.fillCircle(0.0f, 0.0f, static_cast<float>(kFlowerBodyRadius));
 
             Vec2 gaze = attr.gaze;
-            if (gaze.lengthSq() > 1.0) gaze = gaze * (1.0 / gaze.length());
+            if (gaze.lengthSq() > 1.0)
+                gaze = gaze * (1.0 / gaze.length());
             paintFlowerEyes(canvas, gaze.x * kFlowerEyeTravelX, gaze.y * kFlowerEyeTravelY);
 
             ui::setStroke(canvas, 0x222222u);
@@ -1115,16 +1235,18 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
         case MobArt::Ladybug:
         case MobArt::LadybugDark:
-        case MobArt::LadybugShiny: {
+        case MobArt::LadybugShiny:
+        {
             // gardn's ladybug, which scales itself to radius / 30. Its spots are
             // scattered from a SeedGenerator seeded off the mob's id: one to
             // seven of them, clipped to the shell.
             const bool dark = art == MobArt::LadybugDark;
-            const std::uint32_t own = dark                           ? 0x962921u
+            const std::uint32_t own = dark                          ? 0x962921u
                                       : art == MobArt::LadybugShiny ? 0xEBEB34u
                                                                     : 0xEB4034u;
             const std::uint32_t base = bodyColor(attr, own);
-            static const Path2D shell = [] {
+            static const Path2D shell = []
+            {
                 Path2D path;
                 path.moveTo(24.760068893432617f, 16.939273834228516f);
                 path.quadraticCurveTo(17.74359130859375f, 27.195226669311523f, 5.530136585235596f,
@@ -1147,7 +1269,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 return path;
             }();
             // The rim: the shell's outline 3.5 out, and back round 3.5 in.
-            static const Path2D rim = [] {
+            static const Path2D rim = []
+            {
                 Path2D path;
                 path.moveTo(27.64874267578125f, 18.915523529052734f);
                 path.quadraticCurveTo(19.813682556152344f, 30.36800765991211f, 6.175320625305176f,
@@ -1215,7 +1338,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, dark ? ui::shade(base, 1.2) : 0x111111u);
             SeedGenerator gen(attr.seed * 374572u + 46237u);
             const auto count = static_cast<std::uint32_t>(1 + gen.next() * 7);
-            for (std::uint32_t i = 0; i < count; ++i) {
+            for (std::uint32_t i = 0; i < count; ++i)
+            {
                 const double x = gen.binext() * 30;
                 const double y = gen.binext() * 30;
                 const double r = 4 + gen.next() * 5;
@@ -1233,25 +1357,14 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::MrBee:
-        case MobArt::Bee: {
-            const bool host=art==MobArt::MrBee;
+        case MobArt::Bee:
+        {
             // gardn's bee, drawn for its radius of 20.
             const std::uint32_t base = bodyColor(attr, 0xFFE763u);
             canvas.save();
             const double s = attr.radius / 20.0;
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
             roundStrokes(canvas, 5.0);
-            if(host){
-                // A showman's cyan/pink wings, gently beating behind the jacket.
-                const double flutter=std::sin(attr.clockMs*.012)*.13;
-                for(const double side:{-1.0,1.0}){
-                    canvas.save();canvas.rotate(static_cast<float>(side*(.25+flutter)));
-                    ui::setFill(canvas,0xBFF7FFu);ui::setStroke(canvas,side<0?0x20BEF4u:0xEF4FA6u);canvas.setLineWidth(2.5f);
-                    canvas.beginPath();canvas.ellipse(-9,static_cast<float>(side*20),22,12,static_cast<float>(side*.35),0,static_cast<float>(kTau));canvas.fill();canvas.stroke();
-                    canvas.beginPath();canvas.moveTo(-23,static_cast<float>(side*21));canvas.lineTo(5,static_cast<float>(side*22));canvas.stroke();canvas.restore();
-                }
-            }
             ui::setFill(canvas, 0x333333u);
             ui::setStroke(canvas, 0x292929u);
             canvas.beginPath();
@@ -1271,37 +1384,17 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.fillRect(-30.0f, -20.0f, 10.0f, 40.0f);
             canvas.fillRect(-10.0f, -20.0f, 10.0f, 40.0f);
             canvas.fillRect(10.0f, -20.0f, 10.0f, 40.0f);
-            if(host){
-                // Tailored blue hoodie, pink lightning, and a gold prize medal.
-                ui::setFill(canvas,0x15324Du);canvas.fillRect(-31,-21,42,42);
-                ui::setFill(canvas,0x1EBEF4u);canvas.fillRect(-29,-20,13,40);
-                ui::setStroke(canvas,0x7EE6FFu);canvas.setLineWidth(1.5f);canvas.beginPath();canvas.moveTo(-14,-18);canvas.lineTo(-14,18);canvas.stroke();
-                ui::setFill(canvas,0xF34FA5u);canvas.beginPath();canvas.moveTo(-8,-15);canvas.lineTo(1,-15);canvas.lineTo(-5,-2);canvas.lineTo(2,-2);canvas.lineTo(-10,15);canvas.lineTo(-6,2);canvas.lineTo(-13,2);canvas.closePath();canvas.fill();
-                ui::setStroke(canvas,0xFFC84Bu);canvas.setLineWidth(2);canvas.beginPath();canvas.moveTo(7,-18);canvas.quadraticCurveTo(-1,0,7,18);canvas.stroke();
-                ui::setFill(canvas,0xFFE68Au);ui::setStroke(canvas,0xB67A25u);canvas.setLineWidth(1);canvas.beginPath();
-                for(int i=0;i<10;++i){const double angle=-kPi/2+i*kPi/5,r=i%2?3:6;const float x=static_cast<float>(3+std::cos(angle)*r),y=static_cast<float>(std::sin(angle)*r);if(i==0)canvas.moveTo(x,y);else canvas.lineTo(x,y);}
-                canvas.closePath();canvas.fill();canvas.stroke();
-            }
             canvas.restore();
 
             ui::setStroke(canvas, outlineOf(base));
             canvas.beginPath();
             canvas.ellipse(0.0f, 0.0f, 30.0f, 20.0f, 0.0f, 0.0f, static_cast<float>(kTau));
             canvas.stroke();
-
-            if(host){
-                // Dark shades, a little beard, and contrasting ear cups.
-                ui::setFill(canvas,0x172334u);canvas.beginPath();canvas.ellipse(25,0,6,11,0,0,static_cast<float>(kTau));canvas.fill();
-                ui::setStroke(canvas,0xFFFFFFu);canvas.setLineWidth(1.5f);canvas.beginPath();canvas.moveTo(27,-5);canvas.quadraticCurveTo(31,0,27,5);canvas.stroke();
-                ui::setStroke(canvas,0x172334u);canvas.setLineWidth(2);canvas.beginPath();canvas.moveTo(17,-13);canvas.lineTo(17,13);canvas.stroke();
-                ui::setFill(canvas,0x172334u);canvas.fillRect(12,-14,10,10);canvas.fillRect(12,4,10,10);
-                ui::setStroke(canvas,0x9EEFFFu);canvas.setLineWidth(1);canvas.beginPath();canvas.moveTo(14,-12);canvas.lineTo(18,-8);canvas.moveTo(14,6);canvas.lineTo(18,10);canvas.stroke();
-                for(const float side:{-1.f,1.f}){ui::setFill(canvas,side<0?0x20BEF4u:0xF34FA5u);ui::setStroke(canvas,0x172334u);canvas.setLineWidth(1.5f);canvas.beginPath();canvas.ellipse(12,side*19,5,4,0,0,static_cast<float>(kTau));canvas.fill();canvas.stroke();}
-            }
             ui::setStroke(canvas, 0x333333u);
             ui::setFill(canvas, 0x333333u);
             canvas.setLineWidth(3.0f);
-            for (const float side : {-1.0f, 1.0f}) {
+            for (const float side : {-1.0f, 1.0f})
+            {
                 canvas.beginPath();
                 canvas.moveTo(25.0f, 5.0f * side);
                 canvas.quadraticCurveTo(35.0f, 5.0f * side, 40.0f, 15.0f * side);
@@ -1320,7 +1413,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         case MobArt::AntSoldier:
         case MobArt::FireAntBaby:
         case MobArt::FireAntWorker:
-        case MobArt::FireAntSoldier: {
+        case MobArt::FireAntSoldier:
+        {
             // gardn's ants, drawn for its radii: 14 for the baby, 19 for the
             // rest. A head with two mandibles twitching on gardn's phase; a
             // worker adds an abdomen, a soldier wings. gardn's fire ant is its
@@ -1340,7 +1434,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
             roundStrokes(canvas, 7.0);
 
-            if (!baby) {
+            if (!baby)
+            {
                 ui::setFill(canvas, base);
                 ui::setStroke(canvas, outlineOf(base));
                 canvas.beginPath();
@@ -1348,9 +1443,11 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 canvas.fill();
                 canvas.stroke();
             }
-            if (winged) {
+            if (winged)
+            {
                 ui::setFill(canvas, 0xEEEEEEu, 128.0 / 255.0);
-                for (const double side : {-1.0, 1.0}) {
+                for (const double side : {-1.0, 1.0})
+                {
                     canvas.save();
                     canvas.rotate(static_cast<float>(-side * 0.1 * a));
                     canvas.translate(-11.0f, static_cast<float>(8.0 * side));
@@ -1383,7 +1480,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::AntQueen: {
+        case MobArt::AntQueen:
+        {
             // gardn's queen, drawn for its radius of 40. gardn paints the
             // thorax's ring in the body colour, so only the abdomen and the head
             // wear one. gardn's queen never summons, so it has no
@@ -1395,7 +1493,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.save();
             const double s = attr.radius / 40.0;
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
-            const auto disc = [&canvas](std::uint32_t color, float x, float r) {
+            const auto disc = [&canvas](std::uint32_t color, float x, float r)
+            {
                 ui::setFill(canvas, color);
                 canvas.beginPath();
                 canvas.arc(x, 0.0f, r, 0.0f, static_cast<float>(kTau));
@@ -1407,7 +1506,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             disc(body, 0.0f, 21.5f);
 
             ui::setFill(canvas, 0xEEEEEEu, 127.0 / 255.0);
-            for (const double side : {-1.0, 1.0}) {
+            for (const double side : {-1.0, 1.0})
+            {
                 canvas.save();
                 canvas.rotate(static_cast<float>(-side * a * 0.1));
                 canvas.beginPath();
@@ -1437,12 +1537,14 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         }
 
         case MobArt::AntHole:
-        case MobArt::FireAntBurrow: {
+        case MobArt::FireAntBurrow:
+        {
             // gardn's ant hole and ant burrow: three discs at the full radius,
             // two thirds and one third of it, each a darker earth.
             const std::uint32_t base =
                 bodyColor(attr, art == MobArt::FireAntBurrow ? 0xB52D00u : 0xB58500u);
-            const auto disc = [&canvas](std::uint32_t color, double r) {
+            const auto disc = [&canvas](std::uint32_t color, double r)
+            {
                 ui::setFill(canvas, color);
                 canvas.beginPath();
                 canvas.arc(0.0f, 0.0f, static_cast<float>(r), 0.0f, static_cast<float>(kTau));
@@ -1454,7 +1556,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Beetle: {
+        case MobArt::Beetle:
+        {
             // gardn's beetle, which scales itself to radius / 35: two mandibles
             // pinching a tenth of a radian on gardn's phase, a shell inside a
             // ring of its own 0.8 shade, a seam and six dimples.
@@ -1467,7 +1570,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, 0x333333u);
             ui::setStroke(canvas, 0x333333u);
             roundStrokes(canvas, 7.0);
-            for (const double side : {1.0, -1.0}) {
+            for (const double side : {1.0, -1.0})
+            {
                 canvas.save();
                 canvas.translate(35.0f, 0.0f);
                 canvas.rotate(static_cast<float>(-side * 0.1 * a));
@@ -1514,8 +1618,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.stroke();
 
             canvas.beginPath();
-            for (const auto& d : {std::pair<float, float>{-17, -12}, {-17, 12}, {0, -15},
-                                  {0, 15}, {17, -12}, {17, 12}}) {
+            for (const auto &d : {std::pair<float, float>{-17, -12}, {-17, 12}, {0, -15}, {0, 15}, {17, -12}, {17, 12}})
+            {
                 canvas.moveTo(d.first + 5.0f, d.second);
                 canvas.arc(d.first, d.second, 5.0f, 0.0f, static_cast<float>(kTau));
             }
@@ -1525,7 +1629,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::BeetleHel: {
+        case MobArt::BeetleHel:
+        {
             // gardn has no hel beetle, so it is florr's, drawn for a radius of
             // 40: a shell with a bite taken out of its nose, and five teeth set
             // on an arc behind the bite showing through it, each creeping in
@@ -1538,28 +1643,35 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // has no path arithmetic, so the shape is rebuilt from the two
             // contours: the shell's front quads are cut where the bite's edge
             // crosses them, and the bite's edge between those points closes it.
-            static const Path2D bitten = [] {
+            static const Path2D bitten = []
+            {
                 const Pt top{0, -30}, nose{40, 0}, bottom{0, 30}, tail{-40, 0};
                 const Pt cUpper{40, -30}, cLower{40, 30}, cLowerBack{-40, 30},
                     cUpperBack{-40, -30};
                 const Pt b0{33, -22}, bc{19, 0}, b2{34, 23};
-                const auto shellFrontX = [&](double y) {
+                const auto shellFrontX = [&](double y)
+                {
                     return y < 0
                                ? quadAt(top, cUpper, nose, quadParamAtY(top, cUpper, nose, y)).x
                                : quadAt(nose, cLower, bottom,
                                         quadParamAtY(nose, cLower, bottom, y))
                                      .x;
                 };
-                const auto crossing = [&](double lo, double hi) {
-                    const auto inside = [&](double t) {
+                const auto crossing = [&](double lo, double hi)
+                {
+                    const auto inside = [&](double t)
+                    {
                         const Pt p = quadAt(b0, bc, b2, t);
                         return p.x < shellFrontX(p.y);
                     };
                     const bool loInside = inside(lo);
-                    for (int i = 0; i < 60; ++i) {
+                    for (int i = 0; i < 60; ++i)
+                    {
                         const double mid = 0.5 * (lo + hi);
-                        if (inside(mid) == loInside) lo = mid;
-                        else hi = mid;
+                        if (inside(mid) == loInside)
+                            lo = mid;
+                        else
+                            hi = mid;
                     }
                     return 0.5 * (lo + hi);
                 };
@@ -1570,7 +1682,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 const double tUpper = quadParamAtY(top, cUpper, nose, enter.y);
                 const double tLower = quadParamAtY(nose, cLower, bottom, leave.y);
 
-                const auto f = [](double v) { return static_cast<float>(v); };
+                const auto f = [](double v)
+                { return static_cast<float>(v); };
                 Path2D path;
                 path.moveTo(f(top.x), f(top.y));
                 const Pt c0 = quadControl(top, cUpper, nose, 0.0, tUpper);
@@ -1598,7 +1711,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             roundStrokes(canvas, 2.0);
             constexpr double kCentreX = 65.0;
             constexpr double kArc = 40.0;
-            for (int i = 0; i < 5; ++i) {
+            for (int i = 0; i < 5; ++i)
+            {
                 const double at = (i * 0.25 - 0.5) * 2.0 * 0.45;
                 const double a0 = at + 0.08, a1 = at - 0.08;
                 const Pt root0{kCentreX - kArc * std::cos(a0), -kArc * std::sin(a0)};
@@ -1624,9 +1738,9 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
             canvas.stroke(seam);
             ui::setFill(canvas, mark);
-            constexpr float kDimples[6][2] = {{-17, -12}, {-17, 12}, {0, -15},
-                                              {0, 15},    {17, -12}, {17, 12}};
-            for (const auto& d : kDimples) {
+            constexpr float kDimples[6][2] = {{-17, -12}, {-17, 12}, {0, -15}, {0, 15}, {17, -12}, {17, 12}};
+            for (const auto &d : kDimples)
+            {
                 canvas.beginPath();
                 canvas.arc(d[0], d[1], 5.0f, 0.0f, static_cast<float>(kTau));
                 canvas.fill();
@@ -1636,7 +1750,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Hornet: {
+        case MobArt::Hornet:
+        {
             // gardn's hornet, which scales itself to radius / 30: a sting, three
             // bands clipped to the body, a rim, and two flat feelers. gardn fills
             // the feelers in whatever fill was in force after the bands' clip
@@ -1652,7 +1767,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
             roundStrokes(canvas, 5.0);
 
-            if (!attr.inWorld) {
+            if (!attr.inWorld)
+            {
                 ui::setFill(canvas, 0x333333u);
                 ui::setStroke(canvas, 0x292929u);
                 canvas.beginPath();
@@ -1696,7 +1812,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Wasp: {
+        case MobArt::Wasp:
+        {
             // gardn has no wasp, so it is florr's: drawn for a radius of 30. A
             // sting, two amber bands bowed back at the middle cut to the body,
             // a rim, and a pair of flat, swept feelers. florr flicks those a
@@ -1707,16 +1824,19 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // lives in mobs.json's visual_scale for both, as the hornet's must
             // (gardn's painter has no 1.3), so the same numbers draw the two
             // the same size.
-            static const Path2D body = [] {
+            static const Path2D body = []
+            {
                 Path2D oval;
                 oval.ellipse(0.0f, 0.0f, 30.0f, 20.0f, 0.0f, 0.0f, static_cast<float>(kTau));
                 return oval;
             }();
             static const Path2D sting = svgPathData("M11 0-11-10-11 10Z");
             static const Path2D feeler = svgPathData("M0 0Q15 5 33 14 15 0 0 0Z");
-            static const Path2D stripes = [] {
+            static const Path2D stripes = []
+            {
                 Path2D bands;
-                const auto band = [&bands](float left, float width) {
+                const auto band = [&bands](float left, float width)
+                {
                     const float right = left + width;
                     bands.moveTo(left, -20.0f);
                     bands.lineTo(right, -20.0f);
@@ -1739,7 +1859,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // in the world the loaded missile is drawn on the tail by the
             // world renderer instead, so it can leave and grow back. See the
             // hornet.
-            if (!attr.inWorld) {
+            if (!attr.inWorld)
+            {
                 ui::setFill(canvas, 0x333333u);
                 ui::setStroke(canvas, 0x333333u);
                 canvas.save();
@@ -1763,7 +1884,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, 0x333333u);
             ui::setStroke(canvas, 0x333333u);
             canvas.setLineWidth(3.0f);
-            for (const float side : {-1.0f, 1.0f}) {
+            for (const float side : {-1.0f, 1.0f})
+            {
                 canvas.save();
                 canvas.scale(1.0f, side);
                 canvas.translate(25.0f, 5.0f);
@@ -1780,7 +1902,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         case MobArt::CentipedeEvil:
         case MobArt::CentipedeEvilBody:
         case MobArt::CentipedeDesert:
-        case MobArt::CentipedeDesertBody: {
+        case MobArt::CentipedeDesertBody:
+        {
             // gardn's centipedes, drawn for their radius of 35: a dark foot
             // either side, the body ringed in its 0.8 shade, and on a head two
             // antennae, each a stalk ending in a bead.
@@ -1799,7 +1922,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             roundStrokes(canvas, 7.0);
 
             ui::setFill(canvas, 0x333333u);
-            for (const float y : {-30.0f, 30.0f}) {
+            for (const float y : {-30.0f, 30.0f})
+            {
                 canvas.beginPath();
                 canvas.arc(0.0f, y, 15.0f, 0.0f, static_cast<float>(kTau));
                 canvas.fill();
@@ -1812,11 +1936,13 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setStroke(canvas, outlineOf(base));
             canvas.stroke();
 
-            if (head) {
+            if (head)
+            {
                 ui::setStroke(canvas, 0x333333u);
                 ui::setFill(canvas, 0x333333u);
                 canvas.setLineWidth(3.0f);
-                for (const float side : {-1.0f, 1.0f}) {
+                for (const float side : {-1.0f, 1.0f})
+                {
                     canvas.beginPath();
                     canvas.moveTo(25.0f, 10.0f * side);
                     canvas.quadraticCurveTo(45.0f, 10.0f * side, 55.0f, 30.0f * side);
@@ -1830,7 +1956,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Bubble: {
+        case MobArt::Bubble:
+        {
             // Drawn for a radius of 12: a white ring, a white disc just inside
             // it, and a glint up and to the right -- all translucent, so it is
             // the ground showing through that colours it. florr scales the
@@ -1855,11 +1982,13 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::BumbleBee: {
+        case MobArt::BumbleBee:
+        {
             // Drawn for a radius of 27.5: the bee's plan on a rounder body, no
             // sting, and a golden rim. Its bands are plain rectangles the full
             // height of the body, trimmed to it by a clip. Nothing on it moves.
-            static const Path2D body = [] {
+            static const Path2D body = []
+            {
                 Path2D oval;
                 oval.ellipse(0.0f, 0.0f, 30.0f, 25.0f, 0.0f, 0.0f, static_cast<float>(kTau));
                 return oval;
@@ -1875,7 +2004,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.clip(body);
             ui::setFill(canvas, 0x333333u);
             // The left edge of each band, ten wide.
-            for (const float left : {10.0f, -10.0f, -30.0f}) {
+            for (const float left : {10.0f, -10.0f, -30.0f})
+            {
                 canvas.fillRect(left, -25.0f, 10.0f, 50.0f);
             }
             canvas.restore();
@@ -1887,7 +2017,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Shell: {
+        case MobArt::Shell:
+        {
             // Drawn for a radius of 30 and nudged 3 back along its axis: a hinge
             // tab behind, the fan of the shell over it -- a 144 degree arc of the
             // rim closed by three curves through the hinge -- and four ridges
@@ -1933,7 +2064,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
             // The ridges, each its own stroke, outermost first.
             canvas.setLineWidth(4.0f);
-            const auto ridge = [&](float x0, float y0, float cy, float x1, float y1) {
+            const auto ridge = [&](float x0, float y0, float cy, float x1, float y1)
+            {
                 canvas.beginPath();
                 canvas.moveTo(x0, y0);
                 canvas.quadraticCurveTo(0.0f, cy, x1, y1);
@@ -1948,7 +2080,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Starfish: {
+        case MobArt::Starfish:
+        {
             // Drawn for a radius of 20: five arms whose tips sit 30 out, joined
             // by curves pulled almost to the centre, filled and ringed twice --
             // a 10-wide ring in the body's 0.9 shade, then a 5-wide one in the
@@ -1980,7 +2113,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             constexpr double kArmLostBelow[kArms] = {0.0, 0.6, 0.2, 0.4, 0.8};
             /// The spots along an arm: how far out, how big, and how much of
             /// the arm must be left for it to show.
-            struct Spot {
+            struct Spot
+            {
                 double distance, radius, needs;
             };
             constexpr Spot kSpots[] = {{25.0, 2.0, 0.8}, {18.0, 3.0, 0.5}, {9.0, 4.0, 0.0}};
@@ -1996,7 +2130,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // length.
             double arm[kArms];
             Vec2 tip[kArms];
-            for (int i = 0; i < kArms; ++i) {
+            for (int i = 0; i < kArms; ++i)
+            {
                 arm[i] = attr.health >= kArmLostBelow[i] ? 1.0 : 0.0;
                 const double reach = 30.0 * (0.5 + 0.5 * arm[i]);
                 tip[i] = Vec2::fromAngle(kTau * i / kArms, reach);
@@ -2004,7 +2139,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
             Path2D shape;
             shape.moveTo(static_cast<float>(tip[0].x), static_cast<float>(tip[0].y));
-            for (int i = 1; i <= kArms; ++i) {
+            for (int i = 1; i <= kArms; ++i)
+            {
                 const Vec2 from = tip[i - 1];
                 const Vec2 to = tip[i % kArms];
                 shape.quadraticCurveTo(static_cast<float>((from.x + to.x) * kWaist),
@@ -2027,10 +2163,13 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.stroke(shape);
 
             ui::setFill(canvas, 0xD4766Cu);
-            for (int i = 0; i < kArms; ++i) {
+            for (int i = 0; i < kArms; ++i)
+            {
                 const double angle = kTau * i / kArms;
-                for (const Spot& spot : kSpots) {
-                    if (arm[i] < spot.needs) continue;
+                for (const Spot &spot : kSpots)
+                {
+                    if (arm[i] < spot.needs)
+                        continue;
                     const Vec2 at = Vec2::fromAngle(angle, spot.distance);
                     canvas.fillCircle(static_cast<float>(at.x), static_cast<float>(at.y),
                                       static_cast<float>(spot.radius));
@@ -2041,7 +2180,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Jellyfish: {
+        case MobArt::Jellyfish:
+        {
             // Drawn for a radius of 50: eight tentacles trailing from just inside
             // the bell, then the bell over them -- an opaque white rim and a
             // half-clear white disc. florr drops the renderer's opacity to 0.7
@@ -2061,7 +2201,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // translucent ones cross they do not merge into one.
             roundStrokes(canvas, 7.0);
             ui::setStroke(canvas, 0xFFFFFFu, 178.0 / 255.0);
-            for (int i = 0; i < 8; ++i) {
+            for (int i = 0; i < 8; ++i)
+            {
                 const double spoke = kTau * i / 8;
                 const double phase = attr.clockMs * 0.003 + 37.0 * i;
                 const double sway = 0.5 * std::sin(std::fmod(phase, kTau));
@@ -2085,7 +2226,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Dandelion: {
+        case MobArt::Dandelion:
+        {
             // Drawn for a radius of 25: a white head ringed in its 0.9 shade
             // over the roots of ten dark stems.
             //
@@ -2113,11 +2255,14 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             roundStrokes(canvas, 7.0);
             ui::setStroke(canvas, 0x333333u);
             std::uint32_t draw = attr.seed & 0x7FFFu;
-            if (draw == 0) draw = 1;
+            if (draw == 0)
+                draw = 1;
             canvas.beginPath();
-            for (int i = 0; i < kStems; ++i) {
+            for (int i = 0; i < kStems; ++i)
+            {
                 float reach = kSeedDistance;
-                if (attr.inWorld) {
+                if (attr.inWorld)
+                {
                     draw = minstdStep(draw, 16807u);
                     reach = kStemRoot + minstdUnit(draw) * 6.0f;
                 }
@@ -2135,8 +2280,10 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, head);
             canvas.fillCircle(0.0f, 0.0f, 23.5f);
 
-            if (!attr.inWorld) {
-                for (int i = 0; i < kStems; ++i) {
+            if (!attr.inWorld)
+            {
+                for (int i = 0; i < kStems; ++i)
+                {
                     const float angle = static_cast<float>(kTau * i / kStems);
                     const float x = std::cos(angle) * kSeedDistance;
                     const float y = std::sin(angle) * kSeedDistance;
@@ -2151,7 +2298,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Fly: {
+        case MobArt::Fly:
+        {
             // A grey disc of radius 14 with a pair of pale wings over its back.
             // florr sizes the fly from its rarity alone rather than the entity's
             // radius, at 1x for a common one, so the disc IS the design radius.
@@ -2174,7 +2322,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         }
 
         case MobArt::Leafbug:
-        case MobArt::LeafbugShiny: {
+        case MobArt::LeafbugShiny:
+        {
             // Drawn for a radius of 20. A leaf for a body -- an outline, a fill
             // and five veins, all SVG paths florr ships -- on eight dark legs,
             // with two curled antennae at its tip.
@@ -2240,11 +2389,14 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setStroke(canvas, 0x333333u);
             const double stride = attr.distance * kGaitRadiansPerUnitWalked;
             canvas.beginPath();
-            for (const double side : {-1.0, 1.0}) {
-                for (int k = 0; k < 4; ++k) {
+            for (const double side : {-1.0, 1.0})
+            {
+                for (int k = 0; k < 4; ++k)
+                {
                     double angle = kLegRest[k] -
                                    0.2 * std::cos(side * kPi * 0.5 + k * kPi * 0.5 + stride);
-                    if (side < 0) angle = -kPi - angle;
+                    if (side < 0)
+                        angle = -kPi - angle;
                     const double x = std::sin(angle) * 37.0;
                     const double y = std::cos(angle) * 37.0;
                     canvas.moveTo(0.0f, 0.0f);
@@ -2263,7 +2415,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // The one rooted on -y turns toward +y and its twin the other way.
             const double sway = clawBeat(attr);
             ui::setFill(canvas, antennaColor);
-            for (int i = 0; i < 2; ++i) {
+            for (int i = 0; i < 2; ++i)
+            {
                 const double side = i == 0 ? 1.0 : -1.0;
                 canvas.save();
                 canvas.translate(kAntennaRootX, kAntennaRootY[i]);
@@ -2282,13 +2435,15 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, leaf);
             canvas.fill(body);
             ui::setFill(canvas, rim);
-            for (const Path2D& vein : veins) canvas.fill(vein);
+            for (const Path2D &vein : veins)
+                canvas.fill(vein);
 
             canvas.restore();
             break;
         }
 
-        case MobArt::Mantis: {
+        case MobArt::Mantis:
+        {
             // Drawn for a radius of 20. Six legs drawn in code under the body,
             // and the body itself from an illustration in its own coordinates,
             // which florr centres by translating (-130, -121.653): a long oval
@@ -2335,11 +2490,14 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setStroke(canvas, 0x333333u);
             roundStrokes(canvas, 5.0);
             const double stride = attr.distance * kGaitRadiansPerUnitWalked + 2.0;
-            for (const double side : {-1.0, 1.0}) {
-                for (int k = 0; k < 3; ++k) {
+            for (const double side : {-1.0, 1.0})
+            {
+                for (int k = 0; k < 3; ++k)
+                {
                     double angle =
                         kLegRest[k] - 0.2 * std::cos(side * kPi * 0.5 + kLegPhase[k] + stride);
-                    if (side < 0) angle = -kPi - angle;
+                    if (side < 0)
+                        angle = -kPi - angle;
                     const double x = std::sin(angle) * 37.0;
                     const double y = std::cos(angle) * 37.0;
                     canvas.beginPath();
@@ -2361,19 +2519,22 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.fill(body);
 
             roundStrokes(canvas, 3.2);
-            for (const Path2D& crease : creases) canvas.stroke(crease);
+            for (const Path2D &crease : creases)
+                canvas.stroke(crease);
             canvas.stroke(spine);
 
             // The feelers are slivers florr only ever outlines.
             ui::setStroke(canvas, 0x353535u);
             roundStrokes(canvas, 2.677);
-            for (const Path2D& feeler : feelers) canvas.stroke(feeler);
+            for (const Path2D &feeler : feelers)
+                canvas.stroke(feeler);
 
             canvas.restore();
             break;
         }
 
-        case MobArt::Bush: {
+        case MobArt::Bush:
+        {
             // Drawn for a radius of 30: a five-lobed leaf rosette -- florr's SVG
             // asset, ringed in the leaf's rim colour -- with a vein down each
             // lobe and a spray of small veins either side of it. The leafbug's
@@ -2390,7 +2551,7 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 "3.193.714 6.698.961 10.082.404 7.206-1.186 10.487-3.266 11.093-5.133z");
             // Filled one at a time, as florr does, so two veins that cross can
             // never cancel each other's winding.
-            static constexpr const char* kVeins[25] = {
+            static constexpr const char *kVeins[25] = {
                 "M139.185 112.312c.58-.238 1.238-.062 1.522.495.284.557.038 1.194-.495 1.522"
                 "l-7.844 4.836c-.884.545-2.057.104-2.528-.821-.471-.925-.139-2.134.821-2.528z",
                 "M134.48 126.79c.33.533.966.778 1.523.494.557-.284.733-.944.495-1.523l-3.504"
@@ -2442,9 +2603,11 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 "M108.096 102.613c-.46-.112-.784-.511-.71-.978.074-.466.506-.746.978-.71l6.935"
                 ".527c.782.06 1.302.85 1.18 1.624-.123.774-.862 1.364-1.624 1.179z",
             };
-            static const std::vector<Path2D> veins = [] {
+            static const std::vector<Path2D> veins = []
+            {
                 std::vector<Path2D> out;
-                for (const char* d : kVeins) out.push_back(svgPathData(d));
+                for (const char *d : kVeins)
+                    out.push_back(svgPathData(d));
                 return out;
             }();
             const std::uint32_t rim = rimColor(attr, 0x21853Cu);
@@ -2461,13 +2624,15 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, bodyColor(attr, 0x32A852u));
             canvas.fill(body);
             ui::setFill(canvas, rim);
-            for (const Path2D& vein : veins) canvas.fill(vein);
+            for (const Path2D &vein : veins)
+                canvas.fill(vein);
 
             canvas.restore();
             break;
         }
 
-        case MobArt::Roach: {
+        case MobArt::Roach:
+        {
             // Drawn for a radius of 20, and drawn from an illustration rather
             // than in code: every part is a path in the artwork's own
             // coordinates, which florr centres by translating (-128, -138.5). A
@@ -2521,7 +2686,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // The two oval marks on the back, each tilted 0.44 rad away from
             // the body's axis.
             ui::setFill(canvas, bodyRim);
-            for (int i = 0; i < 2; ++i) {
+            for (int i = 0; i < 2; ++i)
+            {
                 const float tilt = i == 0 ? 0.4399999976158142f : -0.4399999976158142f;
                 canvas.beginPath();
                 canvas.ellipse(134.78f, i == 0 ? 132.246f : 144.752f, 3.139f, 4.627f, tilt, 0.0f,
@@ -2538,7 +2704,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Moth: {
+        case MobArt::Moth:
+        {
             // Drawn for a radius of 25: a dark disc with a lighter one inside
             // it, no outline, the bee's feelers set back by 8, and the fly's
             // wings in white, half again as large and nudged forward.
@@ -2572,7 +2739,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         }
 
         case MobArt::Firefly:
-        case MobArt::FireflyMagic: {
+        case MobArt::FireflyMagic:
+        {
             // Drawn for a radius of 25, everything 4 units forward of the mob's
             // centre. A lantern of an abdomen with one dark band across it, two
             // translucent wings, a round head, and over all of it a soft disc of
@@ -2618,7 +2786,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.save();
             canvas.scale(1.2999999523162842f, 1.2999999523162842f);
             ui::setFill(canvas, 0xEEEEEEu, 127.0 / 255.0);
-            for (const double side : {-1.0, 1.0}) {
+            for (const double side : {-1.0, 1.0})
+            {
                 canvas.save();
                 canvas.rotate(static_cast<float>(side * 0.3141592653589793 * beat));
                 canvas.beginPath();
@@ -2640,7 +2809,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
             // --- light -----------------------------------------------------
             // About the abdomen, at a third of the renderer's opacity.
-            if (attr.inWorld) {
+            if (attr.inWorld)
+            {
                 const double reach = 35.0 + 15.0 * std::sin(std::fmod(attr.clockMs * 0.005, kTau));
                 canvas.beginPath();
                 canvas.arc(-12.0f, 0.0f, static_cast<float>(reach), 0.0f,
@@ -2653,7 +2823,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Dummy: {
+        case MobArt::Dummy:
+        {
             // florr draws its dummy with the code it draws a player's flower
             // with, set to a grey face that never changes its expression: a grey
             // disc ringed in its 0.9 shade, two black button eyes, each a tall
@@ -2678,10 +2849,12 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.fillCircle(0.0f, 0.0f, 23.5f);
 
             const bool dead = attr.health <= 0.0;
-            for (const double side : {-1.0, 1.0}) {
+            for (const double side : {-1.0, 1.0})
+            {
                 canvas.save();
                 canvas.translate(static_cast<float>(side * 7.0), -5.0f);
-                if (dead) {
+                if (dead)
+                {
                     // A dead eye's cross: two strokes 4 out along each diagonal.
                     constexpr float r = 4.0f;
                     roundStrokes(canvas, 3.0);
@@ -2694,7 +2867,9 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                     canvas.moveTo(r, -r);
                     canvas.lineTo(-r, r);
                     canvas.stroke();
-                } else {
+                }
+                else
+                {
                     canvas.scale(1.0f, static_cast<float>(kEyeStretch));
                     ui::setFill(canvas, kInk);
                     canvas.fillCircle(0.0f, 0.0f, static_cast<float>(kEyeRadius));
@@ -2726,7 +2901,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
         case MobArt::TermiteBaby:
         case MobArt::TermiteWorker:
-        case MobArt::TermiteSoldier: {
+        case MobArt::TermiteSoldier:
+        {
             // florr's ants in termite gold, drawn for a radius of 17.5 (the
             // baby) or 20: a head with two mandibles, a worker adds an
             // abdomen behind it, a soldier wings over that. Every part is a
@@ -2739,7 +2915,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             const std::uint32_t rim = rimColor(attr, 0xA1822Du);
             const std::uint32_t fill = bodyColor(attr, 0xC7A138u);
             const bool baby = art == MobArt::TermiteBaby;
-            const auto segment = [&canvas, rim, fill](float x, float r) {
+            const auto segment = [&canvas, rim, fill](float x, float r)
+            {
                 ui::setFill(canvas, fill);
                 ui::setStroke(canvas, rim);
                 canvas.beginPath();
@@ -2754,10 +2931,13 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             roundStrokes(canvas, 7.0);
 
             const float pinch = static_cast<float>(clawBeat(attr));
-            if (!baby) segment(-8.0f, 10.0f);
-            if (art == MobArt::TermiteSoldier) {
+            if (!baby)
+                segment(-8.0f, 10.0f);
+            if (art == MobArt::TermiteSoldier)
+            {
                 ui::setFill(canvas, 0xEEEEEEu, 127.0 / 255.0);
-                for (const double side : {-1.0, 1.0}) {
+                for (const double side : {-1.0, 1.0})
+                {
                     canvas.save();
                     canvas.rotate(static_cast<float>(side * kPi / 10.0 * pinch));
                     canvas.beginPath();
@@ -2772,7 +2952,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             const float head = baby ? 0.0f : 8.0f;
             ui::setStroke(canvas, 0x292929u);
             canvas.beginPath();
-            for (const float side : {-1.0f, 1.0f}) {
+            for (const float side : {-1.0f, 1.0f})
+            {
                 canvas.moveTo(head, 7.0f * side);
                 canvas.lineTo(head + 15.0f, (10.0f - pinch) * side);
                 canvas.lineTo(head + 22.0f, (5.0f - pinch) * side);
@@ -2785,7 +2966,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::TermiteOvermind: {
+        case MobArt::TermiteOvermind:
+        {
             // Drawn for a radius of 14: one round head ringed 3 wide, and two
             // small curved mandibles under it, set 4 forward, twitching half
             // a unit on the claw beat.
@@ -2797,7 +2979,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
             ui::setStroke(canvas, 0x292929u);
             canvas.beginPath();
-            for (const float side : {-1.0f, 1.0f}) {
+            for (const float side : {-1.0f, 1.0f})
+            {
                 canvas.moveTo(4.0f, 3.5f * side);
                 canvas.quadraticCurveTo(9.5f, (5.0f - pinch) * side, 15.0f,
                                         (2.5f - pinch) * side);
@@ -2818,7 +3001,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         case MobArt::TermiteMound:
         case MobArt::TermiteEgg:
         case MobArt::AntEgg:
-        case MobArt::FireAntEgg: {
+        case MobArt::FireAntEgg:
+        {
             // Discs and nothing else, florr's colours. The mound is the ant
             // hole's three rings -- the full radius, two thirds and one third
             // of it, each a darker clay; an egg a shell with a pale yolk four
@@ -2827,34 +3011,45 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // ant's a pinker pair. A summoned one is the yellow: a mound
             // ringed as gardn's ant hole cuts its rings from its base, an egg
             // a yellow yolk in that yellow's outline.
-            const auto disc = [&canvas](std::uint32_t color, double r) {
+            const auto disc = [&canvas](std::uint32_t color, double r)
+            {
                 ui::setFill(canvas, color);
                 canvas.beginPath();
                 canvas.arc(0.0f, 0.0f, static_cast<float>(r), 0.0f, static_cast<float>(kTau));
                 canvas.fill();
             };
-            if (attr.pet && art == MobArt::TermiteMound) {
+            if (attr.pet && art == MobArt::TermiteMound)
+            {
                 disc(kPetBodyColor, attr.radius);
                 disc(outlineOf(kPetBodyColor), attr.radius * 2 / 3);
                 disc(ui::shade(kPetBodyColor, 0.6), attr.radius / 3);
-            } else if (attr.pet) {
+            }
+            else if (attr.pet)
+            {
                 disc(outlineOf(kPetBodyColor), attr.radius);
                 disc(kPetBodyColor, attr.radius * 0.8);
-            } else if (art == MobArt::TermiteMound) {
+            }
+            else if (art == MobArt::TermiteMound)
+            {
                 disc(0xA39D43u, attr.radius);
                 disc(0x858033u, attr.radius * 2 / 3);
                 disc(0x605D28u, attr.radius / 3);
-            } else if (art == MobArt::FireAntEgg) {
+            }
+            else if (art == MobArt::FireAntEgg)
+            {
                 disc(0xCFA995u, attr.radius);
                 disc(0xFFD1B8u, attr.radius * 0.8);
-            } else {
+            }
+            else
+            {
                 disc(0xCFC295u, attr.radius);
                 disc(0xFFF0B8u, attr.radius * 0.8);
             }
             break;
         }
 
-        case MobArt::BeetleNazar: {
+        case MobArt::BeetleNazar:
+        {
             // florr's nazar beetle, drawn for a radius of 40: the beetle's
             // mandibles closing on the claw beat, a rounder shell in the nazar
             // petal's blue inside a 7-wide ring of 0.9 of it, and the petal's
@@ -2884,7 +3079,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, 0x333333u);
             ui::setStroke(canvas, 0x333333u);
             roundStrokes(canvas, 7.0);
-            for (int i = 0; i < 2; ++i) {
+            for (int i = 0; i < 2; ++i)
+            {
                 canvas.save();
                 canvas.translate(35.0f, 0.0f);
                 canvas.rotate(static_cast<float>(i == 0 ? -close : close));
@@ -2915,7 +3111,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         }
 
         case MobArt::BeetleMummy:
-        case MobArt::BeetlePharaoh: {
+        case MobArt::BeetlePharaoh:
+        {
             // florr's pyramid beetles, one painter for both (0x1007213e0),
             // drawn for a radius of 40: the beetle's mandibles, its shell in
             // undead green with the seam and six dimples in 0.9 of it, and
@@ -2996,7 +3193,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, 0x333333u);
             ui::setStroke(canvas, 0x333333u);
             roundStrokes(canvas, 7.0);
-            for (int i = 0; i < 2; ++i) {
+            for (int i = 0; i < 2; ++i)
+            {
                 canvas.save();
                 canvas.translate(35.0f, 0.0f);
                 canvas.rotate(static_cast<float>(i == 0 ? -close : close));
@@ -3013,9 +3211,9 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.stroke(shell);
             canvas.stroke(seam);
             ui::setFill(canvas, mark);
-            constexpr float kDimples[6][2] = {{-17, -12}, {-17, 12}, {0, -15},
-                                              {0, 15},    {17, -12}, {17, 12}};
-            for (const auto& d : kDimples) {
+            constexpr float kDimples[6][2] = {{-17, -12}, {-17, 12}, {0, -15}, {0, 15}, {17, -12}, {17, 12}};
+            for (const auto &d : kDimples)
+            {
                 canvas.beginPath();
                 canvas.arc(d[0], d[1], 5.0f, 0.0f, static_cast<float>(kTau));
                 canvas.fill();
@@ -3023,12 +3221,14 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
             canvas.save();
             canvas.transform(1.53f, 0.0f, 0.0f, 1.53f, -69.15f, -84.15f);
-            for (const Path2D& wrap : wraps) {
+            for (const Path2D &wrap : wraps)
+            {
                 paintSvgParts({{&wrap, 0xE5DAA1u, 0xB7AE81u, 2.333f, true, true, false}});
             }
             canvas.restore();
 
-            if (art == MobArt::BeetlePharaoh) {
+            if (art == MobArt::BeetlePharaoh)
+            {
                 canvas.transform(0.0f, -1.5f, 1.5f, 0.0f, -67.5f, 82.5f);
                 paintSvgParts({
                     {&headdress[0], 0xFFDC06u, 0xCCB005u, 1.366f, false, true, false},
@@ -3048,7 +3248,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Tomb: {
+        case MobArt::Tomb:
+        {
             // florr's tomb (0x1007209e0): a sarcophagus, one document drawn
             // for a radius of 40 at 0.95 and turned a quarter so its head
             // lies along +x -- the wood, its red bands, the lid's rim, the
@@ -3096,7 +3297,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             const double s = attr.radius / 40.0;
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
             canvas.transform(0.0f, 0.95f, -0.95f, 0.0f, 52.25f, -52.25f);
-            if (attr.opened) {
+            if (attr.opened)
+            {
                 paintSvgParts({
                     {&tomb[2], wood, rim, 4.667f, false, false, false},
                     {&hollow, 0x655027u, rim, 4.667f, false, false, false},
@@ -3116,7 +3318,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Titan: {
+        case MobArt::Titan:
+        {
             constexpr double kArtRadius = 27.35;
             constexpr int kTeeth = 20;
             constexpr double kToothRoot = 25.53;
@@ -3145,13 +3348,16 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setFill(canvas, kCog);
             canvas.beginPath();
             const double pitch = kTau / kTeeth;
-            for (int i = 0; i < kTeeth; ++i) {
+            for (int i = 0; i < kTeeth; ++i)
+            {
                 const double spoke = pitch * i;
                 const Vec2 top0 = Vec2::fromAngle(spoke - kToothTopHalf, kArtRadius);
                 const Vec2 top1 = Vec2::fromAngle(spoke + kToothTopHalf, kArtRadius);
                 const Vec2 root = Vec2::fromAngle(spoke + pitch * 0.5, kToothRoot);
-                if (i == 0) canvas.moveTo(static_cast<float>(top0.x), static_cast<float>(top0.y));
-                else canvas.lineTo(static_cast<float>(top0.x), static_cast<float>(top0.y));
+                if (i == 0)
+                    canvas.moveTo(static_cast<float>(top0.x), static_cast<float>(top0.y));
+                else
+                    canvas.lineTo(static_cast<float>(top0.x), static_cast<float>(top0.y));
                 canvas.lineTo(static_cast<float>(top1.x), static_cast<float>(top1.y));
                 canvas.lineTo(static_cast<float>(root.x), static_cast<float>(root.y));
             }
@@ -3161,10 +3367,12 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
             // The glints travel as a flower's pupils do.
             Vec2 gaze = attr.gaze;
-            if (gaze.lengthSq() > 1.0) gaze = gaze * (1.0 / gaze.length());
+            if (gaze.lengthSq() > 1.0)
+                gaze = gaze * (1.0 / gaze.length());
             const Vec2 glint{gaze.x * kFlowerEyeTravelX, gaze.y * kFlowerEyeTravelY};
 
-            for (const double side : {-1.0, 1.0}) {
+            for (const double side : {-1.0, 1.0})
+            {
                 const double ex = side * kEyeX;
                 // Everything below is clipped under the brow: the line run on
                 // past both ends, and down well below the eye.
@@ -3226,7 +3434,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Moon: {
+        case MobArt::Moon:
+        {
             // gardn's moon petal (Client/Assets/Petal.cc): a grey disc, its
             // outline stroked UNDER the fill so only the outer half shows, and
             // ten craters scattered over a square one crater-reach wider than
@@ -3269,7 +3478,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             ui::setStroke(canvas, 0x7C7C7Cu);
             canvas.setLineWidth(3.0f);
             canvas.beginPath();
-            for (int i = 0; i < kCraters; ++i) {
+            for (int i = 0; i < kCraters; ++i)
+            {
                 const double x = gen.binext() * reach;
                 const double y = gen.binext() * reach;
                 const double r = gen.binext() * 10.0 + 10.0;
@@ -3277,7 +3487,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 // draws are spent on the ones that show. Its three rolls are
                 // still taken, so the rest land where gardn puts them.
                 const double clear = kGardnMoonRadius + r + 1.5;
-                if (x * x + y * y >= clear * clear) continue;
+                if (x * x + y * y >= clear * clear)
+                    continue;
                 canvas.moveTo(static_cast<float>(x + r), static_cast<float>(y));
                 canvas.arc(static_cast<float>(x), static_cast<float>(y), static_cast<float>(r),
                            0.0f, static_cast<float>(kTau));
@@ -3288,7 +3499,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             break;
         }
 
-        case MobArt::Assembler: {
+        case MobArt::Assembler:
+        {
             // florr's assembler (render 0x100724d40, mob id 75): a machine on
             // a tread, every part an SVG path string of florr's in a 200-unit
             // box centred on the body, scaled so a radius of 90 of those units
@@ -3385,15 +3597,17 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             constexpr std::uint32_t kNeedle = 0xFF0000u;
             constexpr double kGearRate = 0.003;
 
-            const auto part = [&canvas](const Path2D& path, std::uint32_t fill,
-                                        std::uint32_t edge, double width) {
+            const auto part = [&canvas](const Path2D &path, std::uint32_t fill,
+                                        std::uint32_t edge, double width)
+            {
                 ui::setFill(canvas, fill);
                 canvas.fill(path);
                 ui::setStroke(canvas, edge);
                 roundStrokes(canvas, width);
                 canvas.stroke(path);
             };
-            const auto edgeOnly = [&canvas](const Path2D& path, std::uint32_t edge, double width) {
+            const auto edgeOnly = [&canvas](const Path2D &path, std::uint32_t edge, double width)
+            {
                 ui::setStroke(canvas, edge);
                 roundStrokes(canvas, width);
                 canvas.stroke(path);
@@ -3407,7 +3621,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             part(housing, kHousing, kHousingEdge, 3.5);
             const double turn = std::fmod(attr.clockMs * kGearRate, kTau);
             const Vec2 gears[] = {{168.786, 78.736}, {168.106, 114.079}};
-            for (int i = 0; i < 2; ++i) {
+            for (int i = 0; i < 2; ++i)
+            {
                 canvas.save();
                 canvas.translate(static_cast<float>(gears[i].x), static_cast<float>(gears[i].y));
                 canvas.rotate(static_cast<float>(i == 0 ? turn : -turn));
@@ -3429,7 +3644,8 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             part(dials, kDial, kPin, 2.0);
             ui::setStroke(canvas, kNeedle);
             roundStrokes(canvas, 2.0);
-            for (int dial = 0; dial < 2; ++dial) {
+            for (int dial = 0; dial < 2; ++dial)
+            {
                 canvas.save();
                 canvas.translate(31.5f, dial == 0 ? 74.25f : 88.75f);
                 canvas.rotate(static_cast<float>(assemblerNeedle(attr.seed, dial, attr.clockMs)));
@@ -3448,7 +3664,9 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
 
         case MobArt::None:
             break;
+        default:
+            assert(!"Mob art not covered!");
+        }
     }
-}
 
 } // namespace flix
