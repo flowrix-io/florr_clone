@@ -15,6 +15,7 @@
 //     (groundTakesSacrifice), and then the petal stays on the bar.
 
 #include "server/game_server.h"
+#include "server/routine_log_policy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -244,7 +245,9 @@ void GameServer::offerSacrifice(Session& session, Entity corpse) {
     world_.add<Replicated>(e, replicated);
     world_.add<NetId>(e, NetId{netIds_.next()});
 
-    std::printf("[SACRIFICE] %s spent a %s\n", session.username.c_str(), petalName.c_str());
+    if (shouldLogRoutineActivity(session.username)) {
+        std::printf("[SACRIFICE] %s spent a %s\n", session.username.c_str(), petalName.c_str());
+    }
     if (connection != nullptr) sendProfile(session, *connection);
 }
 

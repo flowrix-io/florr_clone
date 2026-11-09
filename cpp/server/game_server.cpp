@@ -22,6 +22,7 @@
 #include "server/chat_moderation.h"
 #include "server/guilds.h"
 #include "server/loot_eligibility.h"
+#include "server/routine_log_policy.h"
 #include "server/text.h"
 #include "server/systems/combat.h"
 #include "server/systems/loot.h"
@@ -1533,10 +1534,12 @@ void GameServer::reapSessionsWithoutSockets() {
     }
     for (const net::ConnectionId id : orphaned) {
         const Session& session = sessions_.at(id);
-        std::printf("[SESSION] connection %u closed without a disconnect; ending its session (%s%s)\n",
-                    static_cast<unsigned>(id),
-                    session.username.empty() ? "not signed in" : session.username.c_str(),
-                    session.entity != NULL_ENTITY ? ", in the world" : "");
+        if (shouldLogRoutineActivity(session.username)) {
+            std::printf("[SESSION] connection %u closed without a disconnect; ending its session (%s%s)\n",
+                        static_cast<unsigned>(id),
+                        session.username.empty() ? "not signed in" : session.username.c_str(),
+                        session.entity != NULL_ENTITY ? ", in the world" : "");
+        }
         std::fflush(stdout);
         endSession(id);
     }
@@ -6899,8 +6902,10 @@ Entity GameServer::spawnPlayer(Session& session) {
     // account's flower into another's record. The cost is whatever the stray
     // body earned after the saves stopped seeing it.
     if (session.entity != NULL_ENTITY || session.split()) {
-        std::printf("[SESSION] %s (connection %u) still held a body at spawn; removing it\n",
-                    session.username.c_str(), static_cast<unsigned>(session.connection));
+        if (shouldLogRoutineActivity(session.username)) {
+            std::printf("[SESSION] %s (connection %u) still held a body at spawn; removing it\n",
+                        session.username.c_str(), static_cast<unsigned>(session.connection));
+        }
         despawnPlayer(session, true);
         // A split with no active half to end it through, should one ever exist.
         endSplit(session, clockMillis_, false);
