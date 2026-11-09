@@ -286,19 +286,35 @@ void GameServer::spawnWaveMob(const WaveMob& mob, double nowMillis) {
             flowers.push_back({at->position, body != nullptr ? body->radius : kPlayerBaseRadius});
         }
     }
+    const double inside = std::max(0.0, terrain_->wavesRadius - kWaveSpawnSafety);
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
-        // Uniform in distance, not area, so they crowd towards the middle.
+        // Uniform in distance, not area, so they crowd in: around a flower
+        // picked at random (kWaveSpawnReach), or the middle while nobody stands.
         const double heading = rng_.unit() * kTau;
-        const double out = rng_.unit() * std::max(0.0, terrain_->wavesRadius - kWaveSpawnSafety);
-        const Vec2 spot{kWavesCentre.x + std::cos(heading) * out,
-                        kWavesCentre.y + std::sin(heading) * out};
+        Vec2 from = kWavesCentre;
+        double out = rng_.unit() * inside;
+        if (!flowers.empty()) {
+            const auto& flower = flowers[rng_.below(static_cast<std::uint32_t>(flowers.size()))];
+            from = flower.first;
+            out = kWaveSpawnSafety + flower.second + reach + rng_.unit() * kWaveSpawnReach;
+        }
+        const Vec2 spot{from.x + std::cos(heading) * out, from.y + std::sin(heading) * out};
+        if (distanceSq(spot, kWavesCentre) > inside * inside) continue;
         const bool clear = std::none_of(flowers.begin(), flowers.end(), [&](const auto& flower) {
             const double gap = kWaveSpawnSafety + flower.second + reach;
             return distanceSq(spot, flower.first) < gap * gap;
         });
         if (!clear) continue;
-        if (spawning_->spawnMob(world_, *terrain_, content(), index, mob.rarity, spot, kWavesRealm,
-                                nowMillis, rng_) != NULL_ENTITY) {
+        const Entity spawned = spawning_->spawnMob(world_, *terrain_, content(), index, mob.rarity,
+                                                   spot, kWavesRealm, nowMillis, rng_);
+        if (spawned != NULL_ENTITY) {
+            // flooooio's hostile mobs notice a flower 2000 away, which on its
+            // 1500 disc is all of it. The disc grows here, and a mob that only
+            // looked as far as it does in the wild would wander the far side
+            // for the rest of the wave. So it sees as far as any mob ever does.
+            if (MobAi* ai = world_.tryGet<MobAi>(spawned); ai != nullptr && ai->kind == AiKind::Hostile) {
+                ai->aggroRange = std::max(ai->aggroRange, kMobTargetRetainRadius);
+            }
             ++waves_.mobs;
             waves_.bodyArea += kPi * reach * reach;
             waves_.spawnedSinceSurvey = true;
@@ -341,6 +357,9 @@ void GameServer::stepWaveClock(double nowMillis) {
         return;
     }
     if (waves_.redTimer < length && waves_.mobs > kWaveRedMobCount) {
+        // Red spawns nothing, so the wave is what is on the disc now, and
+        // clearing it ends the wave as clearing any other does.
+        if (!waves_.red) waves_.spawner.forfeit();
         waves_.red = true;
         waves_.redTimer = std::min(length, waves_.redTimer + step);
         return;

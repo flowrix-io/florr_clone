@@ -479,11 +479,15 @@ the biome's mobs, at a rarity that climbs with the wave up to super (ultras from
 about wave 55, supers from about 75, nothing else past 90); from wave 15, 15% of
 waves are special, one mob family in a swarm. A wave lasts 60 seconds up to wave
 10 and grows slowly after (67 at wave 30, 77 at wave 100), and its mobs come
-fast enough to all be out by half of that. The disc holds at most 1500 mobs, and
-at most 8 discs' worth of mob bodies; past that the rest of the wave waits until
-there is room. A wave ends at once when all its mobs have spawned and 2 or fewer
-are left. When the clock runs out with more than 4 mobs up, a red clock runs as
-long again with no more spawns. Then the next wave starts. Whoever died watches
+fast enough to all be out by half of that. Each one spawns within 1500 of the
+300-unit safety gap around a flower, not anywhere on the grown disc, and a
+hostile one goes for a flower wherever it is on the disc. The disc holds at most
+1500 mobs, and at most 8 discs' worth of mob bodies; past that the rest of the
+wave waits until there is room. A wave ends at once when all its mobs have
+spawned and 2 or fewer are left. When the clock runs out with more than 4 mobs
+up, a red clock runs as long again with no more spawns: whatever had not spawned
+is dropped, and clearing the disc to 2 or fewer ends the red clock at once too.
+Then the next wave starts. Whoever died watches
 the nearest thing still up, and gets up beside a survivor at the next wave. When
 nobody is left standing the game is over: the rift closes, the disc is cleared
 and everyone is put back where they went in, standing. Mobs pay XP and drop

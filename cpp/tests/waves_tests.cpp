@@ -646,6 +646,113 @@ TEST(two_mobs_left_ends_a_wave_and_three_do_not) {
                       static_cast<int>(400.0 / net::kTickMillis) + 2));
 }
 
+TEST(clearing_a_red_wave_ends_it_though_mobs_were_still_to_come) {
+    // A high wave's disc fills before its budget is spent, and the rest waits
+    // for room. Red spawns nothing, so a cleared red disc is a cleared wave.
+    Harness h("waves-red-cleared", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves garden 10"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    CHECK(h.stepUntil({&boss}, [&] { return run.mobs > kWaveRedMobCount; }, 600));
+    CHECK(!run.spawner.finished());
+
+    run.timer = waveLength(run.wave);
+    h.step(10, {&boss});
+    CHECK(run.red);
+    CHECK(run.spawner.finished());
+    killMobsLeaving(h, 0);
+    CHECK(h.stepUntil({&boss}, [&] { return run.wave == 11; },
+                      static_cast<int>(400.0 / net::kTickMillis) + 2));
+    CHECK(!run.red);
+    CHECK(run.redTimer < 1.0);
+}
+
+TEST(a_hostile_wave_mob_hunts_a_flower_from_across_a_grown_disc) {
+    // Wave 60's disc reaches 4450 from the middle: the far side is further from
+    // the flower than any mob notices one in the wild, and than the radius the
+    // AI slows to a fifth past.
+    Harness h("waves-hunter", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves garden 60"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    World& world = h.server.world();
+    Entity hunter = NULL_ENTITY;
+    CHECK(h.stepUntil({&boss}, [&] {
+        Query<MobTag, Transform, MobAi> mobs{world};
+        mobs.without<Dead, BodySegment>();
+        mobs.each([&](Entity e, MobTag&, Transform& at, MobAi& ai) {
+            if (hunter == NULL_ENTITY && at.realm == kWavesRealm && ai.kind == AiKind::Hostile) {
+                hunter = e;
+            }
+        });
+        return hunter != NULL_ENTITY;
+    }, 300));
+    if (hunter == NULL_ENTITY) return;
+
+    const Entity flower = bodyOf(h, "boss");
+    const Vec2 me = world.get<Transform>(flower).position;
+    const Vec2 out = kWavesCentre - me;   // a flower arrives at least halfway out
+    const Vec2 far = kWavesCentre + out * ((h.server.terrain().wavesRadius - 300.0) / out.length());
+    world.get<Transform>(hunter).position = far;
+    world.get<MobAi>(hunter).target = NULL_ENTITY;
+    const double before = distance(far, me);
+    CHECK(before > kMobActiveRadius);
+
+    h.step(static_cast<int>(3000.0 / net::kTickMillis), {&boss});
+    CHECK(world.isAlive(hunter));
+    if (!world.isAlive(hunter)) return;
+    CHECK(world.get<MobAi>(hunter).target == flower);
+    const Vec2 now = world.get<Transform>(flower).position;
+    CHECK(distance(world.get<Transform>(hunter).position, now) < before - 300.0);
+}
+
+TEST(on_a_grown_disc_wave_mobs_spawn_around_the_flowers) {
+    Harness h("waves-spawn-near", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves garden 60"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    World& world = h.server.world();
+    const Entity flower = bodyOf(h, "boss");
+    const double flowerRadius = world.get<Body>(flower).radius;
+    std::set<Entity> seen;
+    int checked = 0;
+    for (int tick = 0; tick < 300 && checked < 30; ++tick) {
+        h.step(1, {&boss});
+        const Vec2 me = world.get<Transform>(flower).position;
+        Query<MobTag, Transform, MobType> mobs{world};
+        mobs.without<Dead>();
+        mobs.each([&](Entity e, MobTag&, Transform& at, MobType& type) {
+            if (at.realm != kWavesRealm || !seen.insert(e).second) return;
+            // A chain's tail trails its head; the head is where it was placed.
+            const BodySegment* link = world.tryGet<BodySegment>(e);
+            if (link != nullptr && !link->head) return;
+            ++checked;
+            const double mobRadius = content().mobStats(type.configIndex, type.rarity).radius;
+            const double furthest = kWaveSpawnSafety + flowerRadius + mobRadius + kWaveSpawnReach;
+            // A tick of walking either way, and a shove from the crowd.
+            CHECK(distance(at.position, me) <= furthest + 100.0);
+            CHECK(distance(at.position, me) >= kWaveSpawnSafety);
+        });
+    }
+    CHECK(checked >= 10);
+}
+
 TEST(a_handful_left_at_the_bell_goes_straight_to_the_next_wave) {
     Harness h("waves-handful", seedWaves, dataDir(), 0);
     CHECK(h.ready);
@@ -1053,3 +1160,4 @@ TEST(a_dead_flower_on_the_disc_leaves_no_corpse) {
     CHECK(flower(kAdminArenaRealm) > 0);
     CHECK_EQ(flower(kWavesRealm), 0);
 }
+

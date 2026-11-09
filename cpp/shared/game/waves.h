@@ -7,15 +7,18 @@
 // super. A wave lasts 60 seconds, longer from wave 11, and its mobs come fast
 // enough to all be out by half of that. It ends at once when they are all out
 // and two or fewer are left. When the clock runs out and more than four are
-// left, a red clock runs the same length with no more spawning. Either way the
-// next wave then starts, and everyone who died gets up beside somebody still
-// standing. Nobody standing ends the game and closes the rift.
+// left, a red clock runs the same length with no more spawning, and clearing
+// the disc ends that early too. Either way the next wave then starts, and
+// everyone who died gets up beside somebody still standing. Nobody standing
+// ends the game and closes the rift.
 //
 // Where this differs from flooooio, by request (2026-11-07): its clock runs at
 // 0.48 of real time; it has no early end; it spawns at one pace whatever the
 // wave, so a high wave runs out of time before its budget is spent; it stops
 // at mythic; its disc stays one size; and its room stays open on GAME OVER until
-// everyone has left.
+// everyone has left. Because the disc grows, a mob spawns around a flower
+// rather than anywhere on it, and a hostile one sees a flower anywhere on it
+// where flooooio's looks 2000 units (all of its 1500 disc).
 //
 // This file is the rules, with no server in them: GameServer (server/waves.cpp)
 // owns the rift, the flowers and the mobs.
@@ -86,6 +89,11 @@ inline constexpr double kWaveRadiusGrowth = 50.0;
 /// No spawn closer than this to a living flower (plus its radius), nor this
 /// close to the disc's edge.
 inline constexpr double kWaveSpawnSafety = 300.0;
+/// A mob spawns around a flower, at most this far past kWaveSpawnSafety:
+/// flooooio's own disc, where anywhere on it is that close to everybody. The
+/// disc grows here, and spawning anywhere on it would leave most of a wave
+/// out of sight, to be hunted down before the wave could end early.
+inline constexpr double kWaveSpawnReach = kWavesStartRadius;
 /// Where a flower that died gets up: within this of a living one.
 inline constexpr double kWaveReviveDistance = 200.0;
 
@@ -123,6 +131,13 @@ public:
     /// Every mob of this wave has been handed out. Until then, an empty disc only
     /// means the wave has barely started.
     bool finished() const { return points_ == 0 && queue_.empty(); }
+    /// Gives up whatever of the wave has not come out yet. The red clock spawns
+    /// nothing more, so what a full disc held back would never arrive, and a
+    /// wave waiting on it could not end early however clear its disc got.
+    void forfeit() {
+        points_ = 0;
+        queue_.clear();
+    }
     /// How many times flooooio's pace this wave spawns at; 1 until its budget
     /// would not be spent within kWaveSpawnWindow of the wave.
     double pace() const { return pace_; }
