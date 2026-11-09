@@ -108,6 +108,8 @@ struct Effect {
 struct LightningBolt {
     std::vector<Vec2> points;
     double ageSeconds = 0;
+    /// A glitch lightning's arm (net::DamageGlitch on the event), drawn green.
+    bool glitch = false;
 };
 
 /// The flourish a drop plays as it lands: it slides in from a random offset

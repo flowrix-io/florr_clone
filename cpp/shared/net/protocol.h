@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 85;
+inline constexpr std::uint16_t kProtocolVersion = 86;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -979,6 +979,9 @@ enum DamageEventFlags : std::uint8_t {
     DamageFlashOnly = 1 << 5,
     /// A glitch petal's hit or shot, which the client paints green. The amount
     /// beside it is already the rolled one (see glitchDamageScale). Version 80.
+    ///
+    /// Also set on a Lightning event, whose flag byte carries nothing else, for
+    /// a glitch lightning's strike: its bolts are drawn green. Version 86.
     DamageGlitch = 1 << 6,
 };
 
@@ -1020,7 +1023,8 @@ enum class EventKind : std::uint8_t {
     /// reach. The ONLY event with a variable tail -- u8 count, then that many
     /// f32 x, f32 y -- because a bolt is drawn to each mob the strike hit and
     /// the client has no way to work out which those were: the strike's damage
-    /// is resolved a tick later, by which time the dead are gone.
+    /// is resolved a tick later, by which time the dead are gone. `flag` is
+    /// DamageGlitch for a glitch lightning's strike (green bolts), else 0.
     Lightning,
 };
 

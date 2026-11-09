@@ -1960,7 +1960,8 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.damage = 1.0;
         s.health = 1.0;
         s.reloadMillis = 512000.0 / std::pow(2.0, rarityIndex(tier));
-    } else if (c.id == "lightning") {
+    } else if (c.id == "lightning" || c.id == "glitch_lightning") {
+        // The glitch form keeps the flat pool of the petal it copies.
         s.health = 10.0;
     } else if (c.id == "bubble" || c.id == "magic_bubble") {
         // The magic bubble is a bubble with a mana price, and it pays the same

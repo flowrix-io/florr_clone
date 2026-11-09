@@ -22,6 +22,8 @@ namespace {
 constexpr double kNumberArcPeak = 0.45;
 
 constexpr std::uint32_t kLightningColor = 0xFFFFFFu;
+/// A glitch lightning's bolts: the green its numbers are painted in.
+constexpr std::uint32_t kGlitchLightningColor = ui::kStatGlitch;
 constexpr double kLightningWidth = 2.65;
 
 /// A glint never paints solid: it sits over the petal it came off.
@@ -242,6 +244,7 @@ void WorldRenderer::drawLightning(Canvas& canvas, const Camera& camera) const {
     const double zoom = camera.zoom();
 
     canvas.save();
+    bool glitch = false;
     ui::setStroke(canvas, kLightningColor);
     canvas.setLineWidth(static_cast<float>(kLightningWidth * zoom));
     // Round on both, or every joint in a hard-angled arm shows as a notch and
@@ -250,6 +253,12 @@ void WorldRenderer::drawLightning(Canvas& canvas, const Camera& camera) const {
     canvas.setLineJoin("round");
     for (const LightningBolt& bolt : bolts_) {
         if (bolt.points.size() < 2) continue;
+        // Set only when it changes: one strike's arms share a colour, so a
+        // frame of strikes switches at most once per strike.
+        if (bolt.glitch != glitch) {
+            glitch = bolt.glitch;
+            ui::setStroke(canvas, glitch ? kGlitchLightningColor : kLightningColor);
+        }
         const double t = clamp(bolt.ageSeconds / kLightningLifeSeconds, 0.0, 1.0);
         canvas.setGlobalAlpha(static_cast<float>(1.0 - t));
         canvas.beginPath();

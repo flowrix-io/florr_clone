@@ -2022,21 +2022,26 @@
         "description": "Lightning, but it can glitch mobs and petals.",
         "color": "#00ff00",
         "count": 1,
-        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-10.5 -10.5 21 21\"><path d=\"M10 0L4.755 1.545L8.09 5.878L2.939 4.045L3.09 9.511L0 5L-3.09 9.511L-2.939 4.045L-8.09 5.878L-4.755 1.545L-10 0L-4.755 -1.545L-8.09 -5.878L-2.939 -4.045L-3.09 -9.511L0 -5L3.09 -9.511L2.939 -4.045L8.09 -5.878L4.755 -1.545Z\" fill=\"#00f200\" stroke=\"#00c400\" stroke-width=\"1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
     },
     "glitch_missile": {
         "name": "Glitch Missile",
         "damage": 10,
         "health": 10,
-        "size": 0.9,
-        "cooldown": 1200,
-        "price": 10,
-        "description": "Missiles, but they can glitch mobs and petals.",
-        "color": "#00ff00",
+        "size": 1,
+        "cooldown": 2000,
+        "price": 21,
+        "description": "You can actually shoot this one.",
+        "color": "#222222",
         "count": 1,
-        "defendOnly": true,
-        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#00ff00\" stroke=\"#00ff00\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#00ff00\" stroke=\"#00ff00\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+        "isAdminPetal": false,
+        "projectile": {
+            "count": 1,
+            "distance": 500,
+            "speed": 300,
+            "spreadAngle": 0
+        }
     },
     "glitch_light": {
         "name": "Glitch Light",

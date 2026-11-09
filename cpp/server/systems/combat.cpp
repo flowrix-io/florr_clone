@@ -2097,9 +2097,12 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
         if (effect.radius <= 0.0) return;
         // A strike's burst is a pollen puff in every respect the field pass
         // cares about -- same reach rule, same rim rule, same once-per-victim
-        // chip -- and differs only in the colour of the number it reports.
-        const DamageKind hitKind = world.has<LightningBurst>(e) ? DamageKind::Lightning
-                                                                : DamageKind::Direct;
+        // chip -- and differs only in the colour of the number it reports. A
+        // glitch strike's is a glitch hit: rolled per victim below, and green.
+        const LightningBurst* strike = world.tryGet<LightningBurst>(e);
+        const DamageKind hitKind = strike == nullptr ? DamageKind::Direct
+                                   : strike->glitch  ? DamageKind::Glitch
+                                                     : DamageKind::Lightning;
         fields_.push_back({e, effect.kind, hitKind, transform.position, effect.radius,
                            effect.damagePerSecond, effect.slowFactor, effect.rarity,
                            effect.damagePerHit, effect.damageIntervalMillis, transform.realm,
@@ -2180,9 +2183,13 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                     // which provokes a neutral mob. Direct is how a C++ chip
                     // buys both of those -- the flash it also lights is what
                     // steerAggressive reads as "something just hurt me".
-                    const DamageResult hit = applyDamage(world, victim, field.effect,
-                                                         field.damagePerHit, nowMillis,
-                                                         field.hitKind);
+                    // One roll per victim, here at the swing rather than in
+                    // applyDamage, which a colony re-enters per share.
+                    const double swing = field.hitKind == DamageKind::Glitch
+                                             ? rollGlitchDamage(field.damagePerHit)
+                                             : field.damagePerHit;
+                    const DamageResult hit = applyDamage(world, victim, field.effect, swing,
+                                                         nowMillis, field.hitKind);
                     if (!hit.refused) {
                         world.ensure<HitCooldowns>(field.effect)
                             .arm(victim, nowMillis + field.damageIntervalMillis);

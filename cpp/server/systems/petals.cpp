@@ -155,9 +155,13 @@ struct PetalBehaviour {
 };
 
 /// Petal id -> what it does. `explosive` is `bomb` under an admin-only name and
-/// `test_explosive` is the repeating version of the same blast.
+/// `test_explosive` is the repeating version of the same blast. The glitch
+/// lightning is the lightning's strike; what makes it a glitch strike (green
+/// bolts, rolled hits) is asked of the registry, not of this table.
 PetalBehaviour behaviourOf(const std::string& id) {
-    if (id == "lightning") return {PetalBehaviourKind::Lightning, true, false, 0.0};
+    if (id == "lightning" || id == "glitch_lightning") {
+        return {PetalBehaviourKind::Lightning, true, false, 0.0};
+    }
     if (id == "blood_leaf") return {PetalBehaviourKind::BloodLeaf, false, false, 0.0};
     if (id == "bomb" || id == "explosive") return {PetalBehaviourKind::Bomb, true, true, 0.0};
     if (id == "shield") {
@@ -2309,8 +2313,9 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             // Armed BEFORE firing: the effect is allowed to destroy this very
             // petal, which moves the instance out from under the pointer.
             instance->collisionFired = true;
-            runBehaviour(world, player, petal, config, stats, instance->rarity,
-                         transform->position, PetalTrigger::Collision, nowMillis);
+            runBehaviour(world, registry, player, petal, instance->configIndex, stats,
+                         instance->rarity, transform->position, PetalTrigger::Collision,
+                         nowMillis);
             continue;
         }
 
@@ -2550,6 +2555,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
         const Vec2 at = transform->position;
         const Rarity rarity = instance->rarity;
         const auto slot = instance->slot;
+        const std::uint16_t configIndex = instance->configIndex;
 
         if (config.radiation.present) {
             // The field is re-laid at the petal's feet every interval rather
@@ -2596,8 +2602,8 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             }
         }
         if (behaviour.intervalMillis > 0.0) {
-            runBehaviour(world, player, petal, config, stats, rarity, at, PetalTrigger::Interval,
-                         nowMillis);
+            runBehaviour(world, registry, player, petal, configIndex, stats, rarity, at,
+                         PetalTrigger::Interval, nowMillis);
         }
     }
 }
@@ -2807,10 +2813,9 @@ void PetalSystem::drainBehaviourQueues(World& world, const ContentRegistry& regi
     // reference's does: the petal that broke is already gone, and the one that
     // replaces it has not been armed yet.
     for (const PendingBreak& broken : pendingBreaks_) {
-        const PetalConfig& config = registry.petal(broken.configIndex);
         const PetalStats stats = registry.petalStats(broken.configIndex, broken.rarity);
-        runBehaviour(world, player, NULL_ENTITY, config, stats, broken.rarity, broken.at,
-                     PetalTrigger::Break, nowMillis);
+        runBehaviour(world, registry, player, NULL_ENTITY, broken.configIndex, stats,
+                     broken.rarity, broken.at, PetalTrigger::Break, nowMillis);
     }
     pendingBreaks_.clear();
 
@@ -2824,10 +2829,9 @@ void PetalSystem::drainBehaviourQueues(World& world, const ContentRegistry& regi
         if (instance == nullptr) continue;
         const std::uint16_t configIndex = instance->configIndex;
         const Rarity rarity = instance->rarity;
-        const PetalConfig& config = registry.petal(configIndex);
         const PetalStats stats = registry.petalStats(configIndex, rarity);
-        runBehaviour(world, player, petal, config, stats, rarity, origin, PetalTrigger::Spawn,
-                     nowMillis);
+        runBehaviour(world, registry, player, petal, configIndex, stats, rarity, origin,
+                     PetalTrigger::Spawn, nowMillis);
     }
     pendingSpawns_.clear();
 }
@@ -2846,10 +2850,10 @@ void PetalSystem::queueBreakBehaviour(World& world, const ContentRegistry& regis
     pendingBreaks_.push_back({instance->configIndex, instance->rarity, transform->position});
 }
 
-void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
-                               const PetalConfig& config, const PetalStats& stats, Rarity rarity,
-                               Vec2 at, PetalTrigger trigger, double nowMillis) {
-    const PetalBehaviour behaviour = behaviourOf(config.id);
+void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, Entity player,
+                               Entity petal, std::uint16_t configIndex, const PetalStats& stats,
+                               Rarity rarity, Vec2 at, PetalTrigger trigger, double nowMillis) {
+    const PetalBehaviour behaviour = behaviourOf(registry.petal(configIndex).id);
     // A break fires every effect the petal has, unconditionally: the reference
     // ran the same script in an "immediate mode" that skipped every guard, so
     // a blood leaf bursts on the way out whether or not the ring was held out,
@@ -2863,7 +2867,11 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
         case PetalBehaviourKind::Lightning:
             // Parked at spawn, so only a contact or a break strikes.
             if (trigger == PetalTrigger::Spawn || trigger == PetalTrigger::Interval) return;
-            strikeLightning(world, player, at, stats.damage, rarity);
+            // A glitch form's strike is a glitch petal's hit: each mob it
+            // lands on rolls its own amount and shows it green, and the bolts
+            // are drawn green.
+            strikeLightning(world, player, at, stats.damage, rarity,
+                            registry.isGlitchForm(configIndex));
             return;
 
         case PetalBehaviourKind::BloodLeaf: {
@@ -2919,7 +2927,7 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
 }
 
 void PetalSystem::emitDamageBurst(World& world, Entity player, Vec2 at, double radius,
-                                  double damage, bool lightning) {
+                                  double damage, bool lightning, bool glitch) {
     if (radius <= 0.0 || damage <= 0.0) return;
     // An instantaneous area hit, expressed as a damage field that lives for a
     // single tick.
@@ -2948,12 +2956,13 @@ void PetalSystem::emitDamageBurst(World& world, Entity player, Vec2 at, double r
     world.add<Lifetime>(burst, Lifetime{net::kTickSeconds * 1.5});
     // Nothing about the field changes -- same reach rule, same rim rule, same
     // one chip per victim. The tag says only that the number combat reports for
-    // it is a strike's cyan rather than an ordinary hit's red.
-    if (lightning) world.add<LightningBurst>(burst);
+    // it is a strike's cyan rather than an ordinary hit's red -- or, for a
+    // glitch strike, that each victim's hit is rolled and green.
+    if (lightning) world.add<LightningBurst>(burst, LightningBurst{glitch});
 }
 
 void PetalSystem::strikeLightning(World& world, Entity player, Vec2 at, double damage,
-                                  Rarity rarity) {
+                                  Rarity rarity, bool glitch) {
     // A strike is a petal hitting something, so it is paid at the PETAL rate --
     // the steep effect table getDamageMultiplier() puts a puff, a pulse and a
     // shot on, not the gentle stat table a body slam takes. The reference hands
@@ -2971,11 +2980,13 @@ void PetalSystem::strikeLightning(World& world, Entity player, Vec2 at, double d
     // apex petal.
     const double base =
         damage > 0.0 ? damage : kLightningFallbackDamage * petalStrengthScale(rarity);
-    emitDamageBurst(world, player, at, kLightningRadius * adminReachScale(rarity), base * scale, true);
-    reportLightning(world, player, at, kLightningRadius * adminReachScale(rarity));
+    emitDamageBurst(world, player, at, kLightningRadius * adminReachScale(rarity), base * scale,
+                    true, glitch);
+    reportLightning(world, player, at, kLightningRadius * adminReachScale(rarity), glitch);
 }
 
-void PetalSystem::reportLightning(World& world, Entity player, Vec2 at, double radius) {
+void PetalSystem::reportLightning(World& world, Entity player, Vec2 at, double radius,
+                                  bool glitch) {
     if (events_ == nullptr) return;
     const Transform* ownerAt = world.tryGet<Transform>(player);
     const Realm realm = ownerAt != nullptr ? ownerAt->realm : Realm::Overworld;
@@ -3004,7 +3015,8 @@ void PetalSystem::reportLightning(World& world, Entity player, Vec2 at, double r
 
     // Drawn to the nearest of them when there are more than fit: the queue
     // trims (EventQueue::lightning).
-    events_->lightning(at, radius, realm, lightningTargets_);
+    events_->lightning(at, radius, realm, lightningTargets_,
+                       glitch ? std::uint8_t{net::DamageGlitch} : std::uint8_t{0});
 }
 
 void PetalSystem::explodePetal(World& world, Entity player, Vec2 at, double petalSize,

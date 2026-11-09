@@ -492,9 +492,9 @@ private:
 
     /// Run one petal's scripted behaviour. `at` is where the effect lands,
     /// which is the flower for a spawn and the petal itself thereafter.
-    void runBehaviour(World& world, Entity player, Entity petal, const PetalConfig& config,
-                      const PetalStats& stats, Rarity rarity, Vec2 at, PetalTrigger trigger,
-                      double nowMillis);
+    void runBehaviour(World& world, const ContentRegistry& registry, Entity player,
+                      Entity petal, std::uint16_t configIndex, const PetalStats& stats,
+                      Rarity rarity, Vec2 at, PetalTrigger trigger, double nowMillis);
     /// Remember a petal that just broke, so its break effect can run once the
     /// player's own columns are no longer held open by the slot pass.
     void queueBreakBehaviour(World& world, const ContentRegistry& registry, Entity petal);
@@ -505,18 +505,22 @@ private:
     /// beyond its own radius and damage.
     ///
     /// `lightning` marks the burst with LightningBurst, which changes nothing
-    /// about who it hits or how hard -- only the colour of the number combat
-    /// reports for it.
+    /// about who it hits -- only the colour of the number combat reports for
+    /// it, and, with `glitch`, that each victim's hit is rolled
+    /// (rollGlitchDamage) and green.
     void emitDamageBurst(World& world, Entity player, Vec2 at, double radius, double damage,
-                         bool lightning = false);
+                         bool lightning = false, bool glitch = false);
     /// One strike. `damage` is the petal's own stat, already up the rarity
     /// ladder; `rarity` is the tier it came from, which is what puts the
-    /// fallback on that same ladder for a petal whose `damage` is 0.
-    void strikeLightning(World& world, Entity player, Vec2 at, double damage, Rarity rarity);
+    /// fallback on that same ladder for a petal whose `damage` is 0. `glitch`
+    /// is a glitch form's strike: rolled, green hits and green bolts.
+    void strikeLightning(World& world, Entity player, Vec2 at, double damage, Rarity rarity,
+                         bool glitch = false);
     /// The strike's visual half: one event carrying the bolts' endpoints. The
     /// damage half is a field, and a field has nothing on the wire the client
-    /// could draw a strike from.
-    void reportLightning(World& world, Entity player, Vec2 at, double radius);
+    /// could draw a strike from. `glitch` sets DamageGlitch on the event's
+    /// flag byte, which the client draws as green bolts.
+    void reportLightning(World& world, Entity player, Vec2 at, double radius, bool glitch);
     void explodePetal(World& world, Entity player, Vec2 at, double petalSize, double damage,
                       double nowMillis);
     /// The scripted heal, which is a different curve from a burst petal's:

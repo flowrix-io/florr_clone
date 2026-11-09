@@ -239,8 +239,10 @@ public:
     /// the archetypes happen to hold, which is a direction rather than a disc
     /// -- the browser build shipped that bug, and every bolt in a dense pile
     /// fanned the same way. Only the drawing is trimmed; what the strike
-    /// damages is the caller's own list.
-    void lightning(Vec2 at, double radius, Realm realm, std::vector<Vec2> targets) {
+    /// damages is the caller's own list. `flag` rides the event's flag byte:
+    /// net::DamageGlitch draws the bolts green.
+    void lightning(Vec2 at, double radius, Realm realm, std::vector<Vec2> targets,
+                   std::uint8_t flag = 0) {
         if (targets.size() > net::kMaxLightningTargets) {
             const auto cap = static_cast<std::ptrdiff_t>(net::kMaxLightningTargets);
             std::partial_sort(targets.begin(), targets.begin() + cap, targets.end(),
@@ -253,6 +255,7 @@ public:
         e.kind = net::EventKind::Lightning;
         e.position = at;
         e.radius = radius;
+        e.flag = flag;
         e.realm = realm;
         e.points = std::move(targets);
         e.positional = true;

@@ -64,6 +64,7 @@ const char* const kPetalsJson = R"JSON({
   "sparkblade":{"name":"Spark Blade","damage":1,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#00FFFF"},
   "gazer":    {"name":"Gazer","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"equipFlags":"ThirdEye","noPhysics":true,"color":"#000000"},
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
+  "glitch_lightning":{"name":"Glitch Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#00FF00"},
   "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
   "nazar":    {"name":"Nazar","damage":0,"health":null,"size":1,"cooldown":60000,"count":1,"defendOnly":true,"color":"#1213BD"},
   "capacitor":{"name":"Capacitor","damage":0,"health":null,"size":1.25,"cooldown":2500,"count":1,"color":"#000000"},
@@ -1330,6 +1331,50 @@ TEST(a_strike_reports_a_bolt_to_every_mob_it_hit) {
     const WireEvent* nearOnly = firstStrike(far);
     CHECK(nearOnly != nullptr);
     if (nearOnly != nullptr) CHECK_EQ(nearOnly->points.size(), std::size_t(1));
+}
+
+/// Whether the one-tick burst `rig`'s strike left behind is a glitch strike's.
+/// -1 when there is no burst at all.
+int strikeBurstIsGlitch(Rig& rig) {
+    int glitch = -1;
+    Query<LightningBurst> bursts{rig.world};
+    bursts.each([&](Entity, LightningBurst& burst) { glitch = burst.glitch ? 1 : 0; });
+    return glitch;
+}
+
+TEST(a_glitch_lightning_strikes_like_lightning_and_its_strike_is_marked_glitch) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "glitch_lightning");
+    rig.settleEquips();
+    rig.settleRing();
+
+    // The same arming and the same reach as the lightning's own strike: the
+    // mob on the ring arms it, the one well away from the petal is struck too.
+    const Vec2 orbit = rig.world.get<Transform>(rig.petals(0).front()).position;
+    addMob(rig, orbit);
+    addMob(rig, {1400.0, 1000.0});
+
+    CHECK(rig.tickUntil([&] { return firstStrike(rig) != nullptr; }, 120));
+    const WireEvent* strike = firstStrike(rig);
+    CHECK(strike != nullptr);
+    if (strike == nullptr) return;
+    CHECK_EQ(strike->points.size(), std::size_t(2));
+    // Green bolts on the client, and rolled, green hits in combat.
+    CHECK((strike->flag & net::DamageGlitch) != 0);
+    CHECK_EQ(strikeBurstIsGlitch(rig), 1);
+
+    // The lightning it is a form of stays white and unrolled.
+    Rig plain;
+    plain.equip(0, "lightning");
+    plain.settleEquips();
+    plain.settleRing();
+    addMob(plain, plain.world.get<Transform>(plain.petals(0).front()).position);
+    CHECK(plain.tickUntil([&] { return firstStrike(plain) != nullptr; }, 120));
+    const WireEvent* white = firstStrike(plain);
+    CHECK(white != nullptr);
+    if (white != nullptr) CHECK_EQ(static_cast<int>(white->flag), 0);
+    CHECK_EQ(strikeBurstIsGlitch(plain), 0);
 }
 
 TEST(a_strike_into_a_pile_keeps_the_nearest_bolts) {

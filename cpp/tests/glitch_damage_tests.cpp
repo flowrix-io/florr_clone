@@ -117,6 +117,19 @@ struct Sim {
         return e;
     }
 
+    /// The one-tick field a lightning petal's strike leaves at `at`, as
+    /// PetalSystem::emitDamageBurst lays it: `glitch` is a glitch lightning's.
+    Entity strike(Entity owner, Vec2 at, bool glitch) {
+        const Entity e = world.create();
+        world.add<GroundEffectTag>(e);
+        world.add<Transform>(e, Transform{at, 0.0, Realm::Overworld});
+        world.add<GroundEffect>(e, GroundEffect{GroundEffectKind::Poison, owner, 300.0, 0.0,
+                                                1.0, Rarity::Common, kPetalDamage, 0.0});
+        world.add<Lifetime>(e, Lifetime{net::kTickSeconds * 1.5});
+        world.add<LightningBurst>(e, LightningBurst{glitch});
+        return e;
+    }
+
     /// One tick, far enough after the last that no hit window is still shut.
     void step() {
         now += 1000.0;
@@ -187,6 +200,47 @@ struct Ink {
     std::size_t pixels = 0;
 };
 
+/// Sums the channels of every pixel that is not black.
+Ink inkOf(const std::vector<std::uint8_t>& rgba) {
+    Ink ink;
+    for (std::size_t i = 0; i + 3 < rgba.size(); i += 4) {
+        if (rgba[i] == 0 && rgba[i + 1] == 0 && rgba[i + 2] == 0) continue;
+        ink.r += rgba[i];
+        ink.g += rgba[i + 1];
+        ink.b += rgba[i + 2];
+        ++ink.pixels;
+    }
+    return ink;
+}
+
+/// A frame of one lightning strike with `flags` on its event, minus a frame of
+/// the bare ground, channel by channel: what the bolts alone added.
+Ink renderBolts(std::uint8_t flags) {
+    const auto frame = [&](bool strike) {
+        Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+        const Camera camera = testsupport::frameCamera(kFrameSize, kHitAt);
+        WorldView view;
+        view.setRealm(Realm::Overworld);
+        WorldRenderer renderer;
+        if (strike) {
+            ViewEvent e;
+            e.kind = net::EventKind::Lightning;
+            e.position = kHitAt;
+            e.radius = 1000.0;
+            e.flag = flags;
+            e.points = {{kHitAt.x + 150.0, kHitAt.y}, {kHitAt.x, kHitAt.y + 150.0}};
+            view.events().push_back(e);
+            renderer.ingestEvents(view);
+        }
+        renderer.update(0.0);
+        renderer.draw(canvas, view, camera, kHitAt, 0.0);
+        return inkOf(canvas.getImageData(0, 0, kFrameSize, kFrameSize));
+    };
+    const Ink ground = frame(false);
+    const Ink bolts = frame(true);
+    return Ink{bolts.r - ground.r, bolts.g - ground.g, bolts.b - ground.b, 0};
+}
+
 Ink renderNumber(std::uint8_t flags) {
     CHECK(testsupport::fontsReady());
     Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
@@ -206,16 +260,7 @@ Ink renderNumber(std::uint8_t flags) {
     renderer.update(0.0);
     renderer.draw(canvas, view, camera, kHitAt, 0.0);
 
-    const std::vector<std::uint8_t> rgba = canvas.getImageData(0, 0, kFrameSize, kFrameSize);
-    Ink ink;
-    for (std::size_t i = 0; i + 3 < rgba.size(); i += 4) {
-        if (rgba[i] == 0 && rgba[i + 1] == 0 && rgba[i + 2] == 0) continue;
-        ink.r += rgba[i];
-        ink.g += rgba[i + 1];
-        ink.b += rgba[i + 2];
-        ++ink.pixels;
-    }
-    return ink;
+    return inkOf(canvas.getImageData(0, 0, kFrameSize, kFrameSize));
 }
 
 } // namespace
@@ -333,6 +378,62 @@ TEST(a_glitch_form_is_green_even_when_it_copied_a_lightning_petal) {
     }
 }
 
+TEST(a_glitch_lightnings_strike_rolls_each_mob_on_its_own_and_is_green) {
+    const GlitchContent& content = glitchContent();
+    CHECK(content.ok);
+    Sim sim;
+    const Entity near = sim.mob({0, 0});
+    const Entity far = sim.mob({150, 0});
+    const Entity player = sim.player({600, 600});
+
+    Tally tally;
+    int differed = 0;
+    for (int i = 0; i < 4000; ++i) {
+        const Entity burst = sim.strike(player, {50, 0}, true);
+        sim.step();
+        const std::vector<WireEvent> a = sim.numbersOn(near);
+        const std::vector<WireEvent> b = sim.numbersOn(far);
+        CHECK_EQ(a.size(), std::size_t(1));
+        CHECK_EQ(b.size(), std::size_t(1));
+        if (!a.empty() && !b.empty()) {
+            // Green, and not the cyan a lightning strike is otherwise painted.
+            CHECK(isGreen(a[0]));
+            CHECK(isGreen(b[0]));
+            CHECK((a[0].flag & net::DamageLightning) == 0);
+            tally.add(a[0].amount);
+            tally.add(b[0].amount);
+            if (std::fabs(a[0].amount - b[0].amount) > 1e-6) ++differed;
+        }
+        if (sim.world.isAlive(burst)) sim.world.destroy(burst);
+    }
+    CHECK_EQ(tally.total(), 8000);
+    checkShares(tally);
+    // One roll per mob struck, not one per strike: two independent rolls
+    // disagree 1 - (0.25^2 + 0.4^2 + 0.35^2) = 65.5% of the time.
+    CHECK_NEAR(differed / 4000.0, 0.655, 0.03);
+}
+
+TEST(a_plain_lightning_strike_stays_cyan_and_unrolled) {
+    const GlitchContent& content = glitchContent();
+    CHECK(content.ok);
+    Sim sim;
+    const Entity mob = sim.mob({0, 0});
+    const Entity player = sim.player({600, 600});
+
+    for (int i = 0; i < 200; ++i) {
+        const Entity burst = sim.strike(player, {50, 0}, false);
+        sim.step();
+        const std::vector<WireEvent> numbers = sim.numbersOn(mob);
+        CHECK_EQ(numbers.size(), std::size_t(1));
+        if (!numbers.empty()) {
+            CHECK(!isGreen(numbers[0]));
+            CHECK((numbers[0].flag & net::DamageLightning) != 0);
+            CHECK_NEAR(numbers[0].amount, kPetalDamage, 1e-9);
+        }
+        if (sim.world.isAlive(burst)) sim.world.destroy(burst);
+    }
+}
+
 TEST(a_glitch_petal_hitting_a_duellist_is_rolled_and_green) {
     const GlitchContent& content = glitchContent();
     CHECK(content.ok);
@@ -409,4 +510,18 @@ TEST(a_glitch_number_is_painted_green_and_the_others_keep_their_colours) {
     const Ink hit = renderNumber(0);
     CHECK(hit.pixels > 50);
     CHECK(hit.r > hit.g * 1.5);
+}
+
+TEST(a_glitch_lightnings_bolts_are_green_and_a_plain_strikes_stay_white) {
+    // What the bolts add over the bare ground, whatever colour that is. White
+    // raises red and blue with green; #00ff00 raises green alone, and takes
+    // red and blue away from the ground it covers.
+    const Ink white = renderBolts(0);
+    CHECK(white.r > 1000.0);
+    CHECK(white.b > 1000.0);
+
+    const Ink green = renderBolts(net::DamageGlitch);
+    CHECK(green.g > 1000.0);
+    CHECK(green.r < green.g * 0.2);
+    CHECK(green.b < green.g * 0.2);
 }

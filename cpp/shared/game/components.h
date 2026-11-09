@@ -1537,7 +1537,12 @@ struct LightningClock {
 /// side of the rim counts as inside, and a strike wants every one of those to
 /// stay exactly what the burst already had. All it wants is a different colour
 /// on the number.
-struct LightningBurst {};
+///
+/// `glitch` is a glitch form's strike (glitch_lightning): each victim's hit is
+/// rolled as a glitch petal's is and reported green instead of cyan.
+struct LightningBurst {
+    bool glitch = false;
+};
 
 struct GroundEffect {
     GroundEffectKind kind = GroundEffectKind::Poison;

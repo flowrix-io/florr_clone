@@ -506,9 +506,9 @@ TEST(a_universal_petal_is_an_apex_one_with_sqrt2_its_health_and_damage) {
         const PetalStats a = r.petalStats(i, Rarity::Apex);
 
         // Health and damage, and the damage riders: sqrt(2) times apex. The
-        // two petals that override the ladder with a flat figure keep it.
+        // petals that override the ladder with a flat figure keep it.
         const bool flatBody = id == "yggdrasil";
-        const bool flatHealth = flatBody || id == "lightning";
+        const bool flatHealth = flatBody || id == "lightning" || id == "glitch_lightning";
         if (!near(u.damage, flatBody ? a.damage : a.damage * root2)) {
             std::printf("    %s universal damage %g, apex %g\n", id.c_str(), u.damage, a.damage);
             CHECK(false);

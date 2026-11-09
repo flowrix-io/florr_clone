@@ -581,6 +581,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                 for (const Vec2& target : event.points) {
                     if (bolts_.size() >= kMaxLightningBolts) break;
                     LightningBolt bolt;
+                    bolt.glitch = (event.flag & net::DamageGlitch) != 0;
                     buildLightningBolt(event.position, target, bolt.points);
                     bolts_.push_back(std::move(bolt));
                 }
