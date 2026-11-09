@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 86;
+inline constexpr std::uint16_t kProtocolVersion = 87;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -482,7 +482,8 @@ enum class ServerMessage : std::uint8_t {
                     ///< which grows each wave), u16 groups,
                     ///< { u16 mobIndex, u8 rarity, u16 count }*. Five times a
                     ///< second to the flowers in the waves realm, and once as
-                    ///< one arrives. (Version 83; radius, version 84.)
+                    ///< one arrives. (Version 83; radius, version 84;
+                    ///< biomes past ocean, version 87.)
 };
 
 // ---------------------------------------------------------------------------

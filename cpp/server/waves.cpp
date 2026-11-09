@@ -29,7 +29,8 @@ constexpr double kWaveSurveyMillis = 200.0;
 // player_dead_camera.go: how long a dead flower waits between targets.
 constexpr double kWaveSpectateSwitchMillis = 500.0;
 constexpr int kWaveMaxCatchUpSteps = 8;
-constexpr int kWaveMaxStartWave = 1000;
+// The wire's u16, which is also as far as startNextWave counts.
+constexpr int kWaveMaxStartWave = std::numeric_limits<int>::max(); // nobody would ever get to max, giving 1b stars if you manage to do it :)
 constexpr std::size_t kWaveMaxIconGroups = 64;
 
 bool readWaveNumber(const std::string& word, int& out) {
@@ -47,7 +48,9 @@ bool readWaveNumber(const std::string& word, int& out) {
 void GameServer::runStartWavesCommand(Session& admin, net::Connection& connection,
                                       const std::vector<std::string>& args) {
     const auto out = [&](const std::string& s) { sendSystem(connection, escapedMarkup(s)); };
-    const std::string usage = "Usage: start_waves [garden|desert|ocean] [starting wave]";
+    std::string biomes;
+    for (const WaveBiomeInfo& info : kWaveBiomes) biomes += (biomes.empty() ? "" : "|") + std::string(info.id);
+    const std::string usage = "Usage: start_waves [" + biomes + "] [starting wave]";
     if (args.size() > 2) { out(usage); return; }
     WaveBiome biome = WaveBiome::Garden;
     int startWave = 1;
@@ -286,10 +289,12 @@ void GameServer::spawnWaveMob(const WaveMob& mob, double nowMillis) {
             flowers.push_back({at->position, body != nullptr ? body->radius : kPlayerBaseRadius});
         }
     }
+    const double inside = std::max(0.0, terrain_->wavesRadius - kWaveSpawnSafety);
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
-        // Uniform in distance, not area, so they crowd towards the middle.
+        // Evenly over the disc's area (the square root), where flooooio's,
+        // uniform in distance, crowds the middle.
         const double heading = rng_.unit() * kTau;
-        const double out = rng_.unit() * std::max(0.0, terrain_->wavesRadius - kWaveSpawnSafety);
+        const double out = std::sqrt(rng_.unit()) * inside;
         const Vec2 spot{kWavesCentre.x + std::cos(heading) * out,
                         kWavesCentre.y + std::sin(heading) * out};
         const bool clear = std::none_of(flowers.begin(), flowers.end(), [&](const auto& flower) {
@@ -297,8 +302,16 @@ void GameServer::spawnWaveMob(const WaveMob& mob, double nowMillis) {
             return distanceSq(spot, flower.first) < gap * gap;
         });
         if (!clear) continue;
-        if (spawning_->spawnMob(world_, *terrain_, content(), index, mob.rarity, spot, kWavesRealm,
-                                nowMillis, rng_) != NULL_ENTITY) {
+        const Entity spawned = spawning_->spawnMob(world_, *terrain_, content(), index, mob.rarity,
+                                                   spot, kWavesRealm, nowMillis, rng_);
+        if (spawned != NULL_ENTITY) {
+            // flooooio's hostile mobs notice a flower 2000 away, which on its
+            // 1500 disc is all of it. The disc grows here, and a mob that only
+            // looked as far as it does in the wild would wander the far side
+            // for the rest of the wave. So it sees as far as any mob ever does.
+            if (MobAi* ai = world_.tryGet<MobAi>(spawned); ai != nullptr && ai->kind == AiKind::Hostile) {
+                ai->aggroRange = std::max(ai->aggroRange, kMobTargetRetainRadius);
+            }
             ++waves_.mobs;
             waves_.bodyArea += kPi * reach * reach;
             waves_.spawnedSinceSurvey = true;
@@ -312,7 +325,7 @@ void GameServer::startNextWave(double nowMillis) {
     waves_.red = false;
     waves_.redTimer = 0.0;
     waves_.timer = 0.0;
-    waves_.wave = std::min(waves_.wave + 1, 65535);
+    waves_.wave = waves_.wave + 1;
     waves_.spawner.next(waves_.biome, waves_.wave, rng_);
     // Out from the middle, so whatever stood at the old edge stands where it
     // was; the client eases its own edge out after it.
@@ -341,6 +354,9 @@ void GameServer::stepWaveClock(double nowMillis) {
         return;
     }
     if (waves_.redTimer < length && waves_.mobs > kWaveRedMobCount) {
+        // Red spawns nothing, so the wave is what is on the disc now, and
+        // clearing it ends the wave as clearing any other does.
+        if (!waves_.red) waves_.spawner.forfeit();
         waves_.red = true;
         waves_.redTimer = std::min(length, waves_.redTimer + step);
         return;
@@ -409,7 +425,9 @@ void GameServer::surveyWaves(double nowMillis) {
         // A chain is one animal on the HUD, and its head stands for it.
         if (content().mob(type.configIndex).chainBody) return;
         auto& count = groups[{type.configIndex, static_cast<std::uint8_t>(type.rarity)}];
-        if (count < 65535) ++count;
+        // Saturates at the wire's u16 rather than wrapping to 0; not a cap on
+        // the mobs, only on the number the HUD can show.
+        if (count < std::numeric_limits<std::uint16_t>::max()) ++count;
     });
     waves_.mobs = mobs;
     waves_.bodyArea = area;

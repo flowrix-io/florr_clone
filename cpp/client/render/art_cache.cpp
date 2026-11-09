@@ -107,9 +107,15 @@ namespace {
 /// is then a texel-for-pixel copy in a different order, and nothing is
 /// resampled. Never together with `snapToDevice`, whose snap assumes an
 /// unturned box.
+///
+/// `bakeBoxW` x `bakeBoxH` is the user-space box the picture is baked into,
+/// and normally the box (w, h) it is drawn into. When the bake is the larger, only
+/// its top-left w x h is blitted: a crop, for a cell of a grid whose cells are
+/// a pixel apart in size (drawCachedArtCell). Never together with
+/// `snapToDevice`, whose blit is the whole padded bitmap.
 bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double x, double y,
-                double w, double h, bool snapToDevice, bool quarterTurns,
-                const std::function<void(Canvas&, int, int)>& paint) {
+                double w, double h, double bakeBoxW, double bakeBoxH, bool snapToDevice,
+                bool quarterTurns, const std::function<void(Canvas&, int, int)>& paint) {
     if (!(w > 0.0) || !(h > 0.0)) return false;
     // A colour tint (a hit flash) is applied as the styles are set, and a blit
     // sets none: the picture is drawn the long way while one is on.
@@ -138,8 +144,15 @@ bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double
         if (!(m[0] > 0.0) || !(m[3] > 0.0)) return false;
     }
 
-    const int bakeW = static_cast<int>(std::lround(w * scaleX));
-    const int bakeH = static_cast<int>(std::lround(h * scaleY));
+    const int bakeW = static_cast<int>(std::lround(bakeBoxW * scaleX));
+    const int bakeH = static_cast<int>(std::lround(bakeBoxH * scaleY));
+    // The part of the bake that is blitted, in its texels.
+    const int cropW = static_cast<int>(std::lround(w * scaleX));
+    const int cropH = static_cast<int>(std::lround(h * scaleY));
+    const bool cropped = cropW != bakeW || cropH != bakeH;
+    if (cropped && (snapToDevice || cropW <= 0 || cropH <= 0 || cropW > bakeW || cropH > bakeH)) {
+        return false;
+    }
 
     // Where the box lands on the device grid, and the fraction of a pixel it
     // sits past the last whole one. Baking always puts the picture at the same
@@ -169,9 +182,8 @@ bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double
     // to match. An unsnapped one is blitted into exactly w x h, so its bitmap
     // must be exactly the box: a padded one is squashed into it, the empty
     // last row and column filtered into the picture's edge. On the ground that
-    // edge is what a tile's neighbour overlaps by kTileOverlap, and at a small
-    // enough scale the overlap is under a pixel -- the black backdrop showed
-    // through along every tile boundary on screen, as a grid.
+    // edge is where a tile meets its neighbour, and the black backdrop showed
+    // through it along every tile boundary on screen, as a grid.
     const int pad = snapToDevice ? 1 : 0;
 
     Cache& c = cache();
@@ -218,6 +230,12 @@ bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double
         w = (bakeW + pad) / scaleX;
         h = (bakeH + pad) / scaleY;
     }
+    if (cropped) {
+        canvas.drawCanvas(found->second.bitmap, 0.0f, 0.0f, static_cast<float>(cropW),
+                          static_cast<float>(cropH), static_cast<float>(x), static_cast<float>(y),
+                          static_cast<float>(w), static_cast<float>(h));
+        return true;
+    }
     canvas.drawCanvas(found->second.bitmap, static_cast<float>(x), static_cast<float>(y),
                       static_cast<float>(w), static_cast<float>(h));
     return true;
@@ -230,8 +248,22 @@ bool drawCachedArt(Canvas& canvas, const SvgDocument& art, double x, double y, d
     // Time-dependent ink cannot be baked.
     if (art.animated()) return false;
     bool rendered = true;
-    const bool drawn = drawCached(canvas, &art, 0, x, y, w, h, /*snapToDevice=*/false,
+    const bool drawn = drawCached(canvas, &art, 0, x, y, w, h, w, h, /*snapToDevice=*/false,
                                   /*quarterTurns=*/true, [&](Canvas& bitmap, int bw, int bh) {
+                                      rendered = art.renderFitted(bitmap, 0.0f, 0.0f,
+                                                                  static_cast<float>(bw),
+                                                                  static_cast<float>(bh), 0.0f);
+                                  });
+    return drawn && rendered;
+}
+
+bool drawCachedArtCell(Canvas& canvas, const SvgDocument& art, double x, double y, double w,
+                       double h, double side) {
+    if (art.animated()) return false;
+    bool rendered = true;
+    const bool drawn = drawCached(canvas, &art, 0, x, y, w, h, side, side,
+                                  /*snapToDevice=*/false, /*quarterTurns=*/true,
+                                  [&](Canvas& bitmap, int bw, int bh) {
                                       rendered = art.renderFitted(bitmap, 0.0f, 0.0f,
                                                                   static_cast<float>(bw),
                                                                   static_cast<float>(bh), 0.0f);
@@ -242,7 +274,7 @@ bool drawCachedArt(Canvas& canvas, const SvgDocument& art, double x, double y, d
 bool drawCachedPicture(Canvas& canvas, const void* owner, std::uint64_t variant, double x,
                        double y, double w, double h,
                        const std::function<void(Canvas&)>& paint) {
-    return drawCached(canvas, owner, variant, x, y, w, h, /*snapToDevice=*/true,
+    return drawCached(canvas, owner, variant, x, y, w, h, w, h, /*snapToDevice=*/true,
                       /*quarterTurns=*/false, [&](Canvas& bitmap, int bw, int bh) {
         // The callback draws in the BOX's user space, so the device scale the
         // bake was sized at goes on first.
@@ -266,6 +298,10 @@ void resetArtCache() {
 #else
 
 bool drawCachedArt(Canvas&, const SvgDocument&, double, double, double, double) { return false; }
+
+bool drawCachedArtCell(Canvas&, const SvgDocument&, double, double, double, double, double) {
+    return false;
+}
 
 bool drawCachedPicture(Canvas&, const void*, std::uint64_t, double, double, double, double,
                        const std::function<void(Canvas&)>&) {

@@ -8,8 +8,25 @@
 namespace flix {
 namespace {
 
-// mobSpawnRules. The ids are ours; each of flooooio's mobs is here under its own
-// name. The weights are its own, which is why a garden centipede is 1 in 300.
+// mobSpawnRules, one row per WaveBiome. The ids are ours; each of flooooio's
+// mobs is here under its own name. The weights are its own, which is why a
+// garden centipede is 1 in 300.
+//
+// flooooio stops at ocean, and the rows after it are ours, from the mob group
+// each of those maps' bands grow (data/mobs.json `groups`), laid out as its
+// rows are. An ordinary mob weighs 50, as in its garden, and a rare one its
+// share of that in the group (a golden leafbug is 0.02 of a leafbug, so 1). A
+// chain weighs 1 and costs kCentipedePoints, as its centipedes do, and a rare
+// variant costs 5, as its shiny ladybug does. Wave 1 is the gentle mobs and the
+// hostile ones come in by wave 3, as in flooooio's, except where a biome has
+// too few gentle ones to fill a wave: the hel map grows nothing but hel
+// beetles, and the pyramid little but mummies. The pharaoh beetle, the
+// pyramid's one-off, comes as a rare one there.
+//
+// Left out, as flooooio leaves out the ant hole: what the overworld grows as a
+// nest (the termite mound, a dungeon door; the server, which hatches glitches),
+// and the computer's sun, a still body six times a hornet's size that a super
+// one would cover the disc with.
 struct Rule {
     const char* id;
     int spawnsAfter;
@@ -17,8 +34,9 @@ struct Rule {
     int points;
 };
 constexpr int kCentipedePoints = 3;
-const std::array<std::vector<Rule>, 3>& rules() {
-    static const std::array<std::vector<Rule>, 3> table{{
+constexpr int kRarePoints = 5;
+const std::array<std::vector<Rule>, kWaveBiomeCount>& rules() {
+    static const std::array<std::vector<Rule>, kWaveBiomeCount> table{{
         {{"bee", 1, 50, 1},
          {"spider", 3, 50, 1},
          {"hornet", 3, 50, 1},
@@ -31,7 +49,7 @@ const std::array<std::vector<Rule>, 3>& rules() {
          {"sandstorm", 1, 200, 1},
          {"cactus", 1, 200, 1},
          {"scorpion", 3, 200, 1},
-         {"shiny_ladybug", 3, 1, 5},
+         {"shiny_ladybug", 3, 1, kRarePoints},
          {"desert_centipede", 1, 1, kCentipedePoints}},
         {{"starfish", 3, 1, 1},
          {"jellyfish", 3, 1, 1},
@@ -40,14 +58,45 @@ const std::array<std::vector<Rule>, 3>& rules() {
          {"shell", 1, 1, 1},
          {"crab", 2, 1, 1},
          {"leech", 4, 1, 1}},
+        // Jungle.
+        {{"bush", 1, 50, 1},
+         {"leafbug", 1, 50, 1},
+         {"dark_ladybug", 1, 50, 1},
+         {"firefly", 2, 50, 1},
+         {"mantis", 3, 50, 1},
+         {"wasp", 3, 50, 1},
+         {"golden_leafbug", 3, 1, kRarePoints},
+         {"magic_firefly", 3, 2.5, kRarePoints},
+         {"evil_centipede", 2, 1, kCentipedePoints}},
+        // Computer.
+        {{"javascript", 1, 50, 1},
+         {"cube", 1, 50, 1},
+         {"dust", 1, 50, 1},
+         {"glitch", 2, 50, 1},
+         {"glitch_flower", 3, 40, 1},
+         {"c++", 3, 0.5, kRarePoints},
+         {"c--", 3, 0.005, kRarePoints}},
+        // Hel.
+        {{"hel_beetle", 1, 50, 1}},
+        // Sewers.
+        {{"garbage", 1, 50, 1},
+         {"roach", 1, 50, 1},
+         {"moth", 1, 50, 1},
+         {"fly", 2, 50, 1},
+         {"spider", 3, 50, 1}},
+        // Pyramid.
+        {{"tomb", 1, 3, 1},
+         {"mummy_beetle", 1, 50, 1},
+         {"pharaoh_beetle", 5, 1, kRarePoints}},
     }};
     return table;
 }
 
-// specialWaveMobGroups, without the mobs flooooio left commented out.
+// specialWaveMobGroups, without the mobs flooooio left commented out, and ours
+// after ocean: each a family of that biome's row, whose weights pick within it.
 using Group = std::vector<const char*>;
-const std::array<std::vector<Group>, 3>& specialGroups() {
-    static const std::array<std::vector<Group>, 3> table{{
+const std::array<std::vector<Group>, kWaveBiomeCount>& specialGroups() {
+    static const std::array<std::vector<Group>, kWaveBiomeCount> table{{
         {{"baby_ant", "worker_ant", "soldier_ant"},
          {"bee"},
          {"hornet"},
@@ -61,8 +110,22 @@ const std::array<std::vector<Group>, 3>& specialGroups() {
          {"shell"},
          {"shell", "sponge"},
          {"starfish"}},
+        {{"mantis"},
+         {"wasp"},
+         {"leafbug", "golden_leafbug"},
+         {"firefly", "magic_firefly"},
+         {"evil_centipede"}},
+        {{"glitch"}, {"glitch", "glitch_flower"}, {"javascript"}, {"cube"}, {"dust"}},
+        {{"hel_beetle"}},
+        {{"fly"}, {"spider"}, {"roach"}, {"moth"}},
+        {{"mummy_beetle"}, {"tomb"}},
     }};
     return table;
+}
+
+const std::vector<Group>& groupsOf(WaveBiome biome) {
+    const auto index = static_cast<std::size_t>(biome);
+    return specialGroups()[index < specialGroups().size() ? index : 0];
 }
 
 // relativeRarity, which florr's own wave chances are, Common through Ultra, and
@@ -175,6 +238,12 @@ bool waveBiomeNamed(const std::string& word, WaveBiome& out) {
     return false;
 }
 
+std::vector<const char*> waveMobIds(WaveBiome biome) {
+    std::vector<const char*> ids;
+    for (const Rule& rule : rulesOf(biome)) ids.push_back(rule.id);
+    return ids;
+}
+
 double waveLength(int wave) {
     return std::max(18.9287 * std::pow(static_cast<double>(std::max(wave, 0)), 0.2) + 30.0, 60.0);
 }
@@ -210,7 +279,7 @@ Rarity rollWaveRarity(int wave, Rng& rng) {
 
 void WaveSpawner::next(WaveBiome biome, int wave, Rng& rng, int forcedGroup) {
     totalTime_ = -1;
-    const auto& groups = specialGroups()[std::min<std::size_t>(static_cast<std::size_t>(biome), 2)];
+    const auto& groups = groupsOf(biome);
     group_ = -1;
     if (forcedGroup >= 0 && forcedGroup < static_cast<int>(groups.size())) {
         group_ = forcedGroup;
@@ -233,8 +302,7 @@ void WaveSpawner::step(WaveBiome biome, int wave, Rng& rng, std::vector<WaveMob>
     out.clear();
     ++totalTime_;
     if (points_ > 0 && totalTime_ % kSpawnDelaySteps == 0) {
-        const auto& groups =
-            specialGroups()[std::min<std::size_t>(static_cast<std::size_t>(biome), 2)];
+        const auto& groups = groupsOf(biome);
         const Group* group = group_ >= 0 ? &groups[static_cast<std::size_t>(group_)] : nullptr;
         const double base =
             group == nullptr

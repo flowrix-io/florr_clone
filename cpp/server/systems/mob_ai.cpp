@@ -5,6 +5,7 @@
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
 #include "shared/game/rarity.h"
+#include "shared/game/realm.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1733,6 +1734,10 @@ bool MobAiSystem::stepsThisTick(Entity self, Vec2 position, Realm realm, Rarity 
     // AI in exchange for the one class of mob whose behaviour anybody watches
     // from a distance.
     if (isBossRarity(rarity)) return true;
+    // Nor is anything on the waves disc. A wave ends when its disc is clear, so
+    // every mob on it is somebody's business, and the disc grows past this
+    // radius: at a fifth of the rate the far side's hunters never arrive.
+    if (realm == kWavesRealm) return true;
     if (mobActive(position, realm, activePlayers)) return true;
     return (tick_ + entityIndex(self)) % static_cast<std::uint64_t>(kMobFarStride) == 0;
 }

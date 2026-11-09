@@ -47,7 +47,7 @@
 //            one thing that keeps full rate out there is the idle drift, which
 //            carries no gate in the reference either. The caller supplies the
 //            player positions, so a region with nobody in it costs one
-//            distance test per mob.
+//            distance test per mob. Bosses and the waves disc are never gated.
 //   CADENCE  every mob near a player runs its whole brain every tick,
 //            acquisition included -- that is what the reference pays, and a
 //            mob that scans on a timer ignores a player who walked into its

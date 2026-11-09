@@ -464,8 +464,9 @@ on the target.
 
 ### Wave survival: `/admin start_waves`
 
-`/admin start_waves [garden|desert|ocean] [starting wave]` (default garden, wave
-1; tier 1 admins and the server owner only) opens a black portal 450 units in front of you and
+`/admin start_waves [garden|desert|ocean|jungle|computer|hel|sewers|pyramid]
+[starting wave]` (default garden, wave 1, at most 65535; tier 1 admins and the
+server owner only) opens a black portal 450 units in front of you and
 tells every player "A Mysterious rift has opened!". It only opens on a map, not
 in the PVP arena, the maze or a hosted game, and one is open at a time. The rift
 also shows as a black dot on that map's minimap.
@@ -479,16 +480,34 @@ the biome's mobs, at a rarity that climbs with the wave up to super (ultras from
 about wave 55, supers from about 75, nothing else past 90); from wave 15, 15% of
 waves are special, one mob family in a swarm. A wave lasts 60 seconds up to wave
 10 and grows slowly after (67 at wave 30, 77 at wave 100), and its mobs come
-fast enough to all be out by half of that. The disc holds at most 1500 mobs, and
-at most 8 discs' worth of mob bodies; past that the rest of the wave waits until
-there is room. A wave ends at once when all its mobs have spawned and 2 or fewer
-are left. When the clock runs out with more than 4 mobs up, a red clock runs as
-long again with no more spawns. Then the next wave starts. Whoever died watches
+fast enough to all be out by half of that. They spawn evenly over the whole
+disc, at least 300 units from its edge and from every flower, and a hostile one
+goes for a flower wherever it is on the disc. The disc holds at most
+1500 mobs, and at most 8 discs' worth of mob bodies; past that the rest of the
+wave waits until there is room. A wave ends at once when all its mobs have
+spawned and 2 or fewer are left. When the clock runs out with more than 4 mobs
+up, a red clock runs as long again with no more spawns: whatever had not spawned
+is dropped, and clearing the disc to 2 or fewer ends the red clock at once too.
+Then the next wave starts. Whoever died watches
 the nearest thing still up, and gets up beside a survivor at the next wave. When
 nobody is left standing the game is over: the rift closes, the disc is cleared
 and everyone is put back where they went in, standing. Mobs pay XP and drop
 petals as they do anywhere else; the supers on the disc are not announced and
 get no boss bar.
+
+Garden, desert and ocean are flooooio's tables. The other five are ours, drawn
+from the mob group each map grows (`data/mobs.json` `groups`) and laid out the
+way flooooio's are (`shared/game/waves.cpp` says how):
+
+| biome | mobs (from wave) | special waves |
+| --- | --- | --- |
+| jungle | bush, leafbug, dark ladybug (1); firefly, evil centipede (2); mantis, wasp, and rarely golden leafbug and magic firefly (3) | mantis; wasp; leafbugs; fireflies; evil centipede |
+| computer | JavaScript, cube, dust (1); glitch (2); glitch flower, and rarely C++ and C-- (3) | glitch; glitch + glitch flower; JavaScript; cube; dust |
+| hel | hel beetle (1), as the hel map grows nothing else | hel beetle |
+| sewers | garbage, roach, moth (1); fly (2); spider (3) | fly; spider; roach; moth |
+| pyramid | mummy beetle and rarely tomb (1); rarely pharaoh beetle (5) | mummy beetle; tomb |
+
+Nests (termite mound, server) and the computer's sun are left out of them.
 
 Leaving with the Exit button goes to the title screen, as anywhere. The rift
 stays open until the game is over or `/admin stop_waves` (tier 1 and the owner
