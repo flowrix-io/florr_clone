@@ -267,6 +267,15 @@ struct Session {
         return stage == SessionStage::Authenticated || stage == SessionStage::Playing;
     }
     bool playing() const { return stage == SessionStage::Playing && entity != NULL_ENTITY; }
+    /// What the flower's nameplate says: the name typed on the title screen,
+    /// or the account's when none was.
+    const std::string& nameplate() const { return displayName.empty() ? username : displayName; }
+    /// Whether the session's body is in `r`.
+    bool playingIn(Realm r) const { return playing() && realm == r; }
+    /// The realm whose rules the account is on now: the body's, or the
+    /// overworld's with no body. The maze shifts the ring and has a track of
+    /// its own, so the Profile and the bar are read through this.
+    Realm accountRealm() const { return playing() ? realm : Realm::Overworld; }
     /// Whether a splitter has given this connection a second body.
     bool split() const { return splitOther != NULL_ENTITY; }
     /// Whether `body` is one of this session's own -- either half.

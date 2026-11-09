@@ -97,12 +97,6 @@ Realm realmOfBody(const World& world, Entity body) {
     return transform != nullptr ? transform->realm : Realm::Overworld;
 }
 
-/// What a flower's nameplate says, which is what the world shows above it:
-/// the name typed on the title screen, or the account's when none was.
-std::string nameplateOf(const Session& session) {
-    return session.displayName.empty() ? session.username : session.displayName;
-}
-
 /// The two System lines the steered player is given, so a flower that stops
 /// answering its keys is never a mystery to the person at them.
 constexpr const char* kControlTakenNotice =
@@ -210,7 +204,7 @@ void GameServer::sendDashboardPlayers(net::Connection& connection, const std::st
         // its nameplate off the screen, and the account is what every command
         // takes. Case-blind on both, as the console's own lookups are.
         if (!needle.empty() && key.find(needle) == std::string::npos &&
-            lowerCase(nameplateOf(other)).find(needle) == std::string::npos) {
+            lowerCase(other.nameplate()).find(needle) == std::string::npos) {
             continue;
         }
         rows.push_back({&other, std::move(key)});
@@ -241,7 +235,7 @@ void GameServer::sendDashboardPlayers(net::Connection& connection, const std::st
         net::AdminDashboardPlayer row;
         row.connection = other.connection;
         row.username = other.username;
-        row.name = nameplateOf(other);
+        row.name = other.nameplate();
         row.realm = realmOfBody(world_, other.entity);
         if (bodyDown(world_, other.entity)) row.flags |= net::AdminDashboardDead;
         if (other.controlledBy != 0) row.flags |= net::AdminDashboardControlled;

@@ -78,9 +78,10 @@ cpp/
                   the annotations; spatial -- the broadphase; skin_format
                   skin_likeness -- player skins, and when two are the same
                   picture (publish refusal, the start-up fold); chat_images ...
-  server/         headless authoritative simulation: game_server (the tick),
-                  session, replication, db, chat_commands, bot_ai,
-                  auto_update, squads, splitter
+  server/         headless authoritative simulation: game_server (the tick;
+                  the class is split by area into the files listed at the
+                  top of game_server.cpp), session, replication, db,
+                  chat_commands, bot_ai, auto_update, squads, splitter
     systems/      movement petals mob_ai combat spawning mode_spawning
                   dungeons npcs loot
   client/         app*.cpp (screens, HUD, chat, minimap), net_client,

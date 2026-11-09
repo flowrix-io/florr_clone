@@ -1,4 +1,3 @@
-#include <sstream>
 // The Skin Studio: a two-tab authoring surface for data-driven player skins.
 //
 // Not a picker. The player assembles a skin out of drawing primitives, names
@@ -34,7 +33,6 @@
 
 #include "client/net_client.h"
 #include "client/render/skin_render.h"
-#include "shared/game/signature_skin.h"
 #include "client/ui/draw.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menu_widgets.h"
@@ -1421,11 +1419,7 @@ void Studio::drawVoteRow(Canvas& canvas, Rect r, const CustomSkin& skin) {
              like);
     Action dislike = like;
     dislike.k = Act::Dislike;
-    std::string dislikes = abbreviate(skin.dislikes);
-    if (skin.dislikes < 1000 && std::floor(skin.dislikes) != skin.dislikes) {
-        std::ostringstream score; score << skin.dislikes; dislikes = score.str();
-    }
-    votePill(canvas, {r.x + pillW + 4.0, r.y, pillW, r.h}, 1, dislikes,
+    votePill(canvas, {r.x + pillW + 4.0, r.y, pillW, r.h}, 1, abbreviate(skin.dislikes),
              mine == SkinVote::Dislike, dislike);
     Action star = like;
     star.k = Act::Favorite;
@@ -1509,7 +1503,7 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
         clipRound(canvas, {board.x + 2, board.y + 2, board.w - 4, board.h - 4}, 3.0);
         canvas.translate(static_cast<float>(board.x + board.w / 2),
                          static_cast<float>(board.y + board.h / 2));
-        renderAnimatedSkin(canvas,skin,board.w*.36,timeSeconds);
+        renderSkinShapes(canvas, skin.shapes, board.w * 0.36);
         canvas.restore();
 
         ui::text(canvas, clipChars(skin.name, 14), card.x + cardW * 0.5, board.bottom() + 14.0,
@@ -1551,13 +1545,9 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
         Action equip;
         equip.k = Act::Equip;
         equip.id = skin.id;
-        const Rect equipRect{card.x+8.0,actionsY,equipW,24.0};
-        if(canEquipSignatureSkin(skin.id,me)) {
-            actionButton(canvas,equipRect,equipped?"Equipped":"Equip",equip,
-                         equipped?kAccent:kAccentPurple,kBodySize);
-        } else {
-            ui::button(canvas,equipRect,"Exclusive",false,true,buttonStyle(kNeutralFill,kBodySize));
-        }
+        actionButton(canvas, {card.x + 8.0, actionsY, equipW, 24.0},
+                     equipped ? "Equipped" : "Equip", equip,
+                     equipped ? kAccent : kAccentPurple, kBodySize);
         if (canDelete) {
             Action del;
             del.k = Act::Delete;

@@ -226,6 +226,25 @@ target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # --- server ------------------------------------------------------------------
 add_library(flix_server STATIC
   server/game_server.cpp
+  server/accounts.cpp
+  server/admin_cursor.cpp
+  server/chat.cpp
+  server/connections.cpp
+  server/crafting.cpp
+  server/guild_service.cpp
+  server/inventory.cpp
+  server/leaderboard.cpp
+  server/loadout.cpp
+  server/notifications.cpp
+  server/players.cpp
+  server/profile.cpp
+  server/realms.cpp
+  server/restart.cpp
+  server/rewards.cpp
+  server/shop.cpp
+  server/skins.cpp
+  server/squad_service.cpp
+  server/talents.cpp
   server/account_limits.cpp
   server/account_search.cpp
   server/admin_dashboard.cpp
@@ -236,7 +255,7 @@ add_library(flix_server STATIC
   server/admin_arena.cpp
   server/admin_tools.cpp
   server/polls.cpp
-    server/market.cpp
+  server/market.cpp
   server/chat_commands.cpp
   server/chat_moderation.cpp
   server/replication.cpp

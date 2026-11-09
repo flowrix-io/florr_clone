@@ -30,10 +30,4 @@ std::uint32_t skinHexColor(const std::string& text, std::uint32_t fallback);
 /// no skin can paint past its own flower.
 void renderSkinShapes(Canvas& canvas, const std::vector<SkinShape>& shapes, double radius);
 
-/// Animated presentation for the server-issued Hex Singularity cosmetic.
-/// Other skins use the ordinary, unchanged shape painter.
-void renderSignatureAura(Canvas&, double radius, double timeSeconds);
-
-void renderAnimatedSkin(Canvas&, const CustomSkin&, double radius, double timeSeconds);
-
 } // namespace flix

@@ -15,6 +15,7 @@
 //     (groundTakesSacrifice), and then the petal stays on the bar.
 
 #include "server/game_server.h"
+#include "server/game_server_internal.h"
 #include "server/routine_log_policy.h"
 
 #include <algorithm>
@@ -254,8 +255,6 @@ void GameServer::offerSacrifice(Session& session, Entity corpse) {
 void GameServer::announceSacrificeSummon(Entity mob, Realm realm) {
     const MobType& type = world_.get<MobType>(mob);
     const std::string& name = content().mob(type.configIndex).name;
-    char colorAttribute[32];
-    std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(type.rarity));
     const std::string biome = biomeOfRealm(realm);
     // Worded per recipient, as a boss spawn is: a player in the summon's own
     // biome is told it was summoned, everyone else -- the title screen included
@@ -268,7 +267,7 @@ void GameServer::announceSacrificeSummon(Entity mob, Realm realm) {
         const bool here =
             session.playing() && !biome.empty() && biomeOfEntity(session.entity) == biome;
         sendChatTo(*connection, net::ChatChannel::System, "",
-                   std::string("<b style=\"color: ") + colorAttribute + ";\">A " +
+                   rarityBoldTag(type.rarity) + "A " +
                        rarityLabel(type.rarity) + " " + name + " has been summoned" +
                        (here ? "" : " somewhere") + "!</b>");
     }

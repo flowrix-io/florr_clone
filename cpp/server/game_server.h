@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -62,7 +63,7 @@ struct WornSlot {
 
 /// The dense petal index behind a key an account's bag files a stack under
 /// ("petal_rose"), or kInvalidIndex for a key this build has no petal for.
-/// Defined in game_server.cpp beside inventoryKey(), which is the one place
+/// Defined in inventory.cpp beside inventoryKey(), which is the one place
 /// the two spellings meet; declared here for the other server files that read
 /// a bag -- the dashboard's inventory view -- so they do not grow a second.
 std::uint16_t petalIndexFromInventoryKey(const std::string& key);
@@ -72,7 +73,7 @@ std::uint16_t petalIndexFromInventoryKey(const std::string& key);
 /// the titan forge's universal_craft. Anything else is Generic, which is also
 /// what an older notification with no type reads as. The one list of tags
 /// there is: the feed reads rows through it, and `/admin notification` refuses
-/// a tag it answers Generic for. Defined in game_server.cpp.
+/// a tag it answers Generic for. Defined in notifications.cpp.
 net::NotificationKind notificationKind(const std::string& type);
 
 /// Milliseconds since the first call, from a steady clock.
@@ -307,6 +308,21 @@ private:
     /// sends everything an authentication sends -- the tail Register and
     /// RegisterGuest share.
     void beginNewAccount(Session&, net::Connection&, const Account&);
+    /// Spends one of the socket's login attempts (Session::loginAttemptsAllowed),
+    /// or refuses the request with RateLimited and returns false. Every way in
+    /// -- register, guest, login, resume -- is on this one budget.
+    bool spendLoginBudget(Session&, net::Connection&);
+    /// Makes `session` the account `userId`: out of the world first (see
+    /// leaveWorld), every other connection on the account replaced, the admin
+    /// flags read from the account and from nothing else, and `token` -- or a
+    /// fresh one, when it is empty -- as the session's. The welcome is
+    /// welcomeSignedIn's.
+    void signInAs(Session&, const std::string& userId, const std::string& username,
+                  const std::string& token);
+    /// What a socket is sent the moment it is signed in: the AuthResult, then
+    /// the streak, the whole Profile, the skin catalogue, the guild and the
+    /// chat backlog.
+    void welcomeSignedIn(Session&, net::Connection&);
     void handleLogin(Session&, net::Connection&, ByteReader&);
     void handleResume(Session&, net::Connection&, ByteReader&);
     void handleChangePassword(Session&, net::Connection&, ByteReader&);
@@ -357,7 +373,7 @@ private:
     void leaveWorld(Session&);
     void handleInput(Session&, ByteReader&);
     void handleChat(Session&, net::Connection&, ByteReader&);
-    void handleSetLoadout(Session&, ByteReader&);
+    void handleSetLoadout(Session&, net::Connection&, ByteReader&);
     /// A client's digest of the bag and bar it holds, against the server's
     /// own copy: the Profile goes again when they disagree and none has gone
     /// lately enough to still be on its way.
@@ -365,13 +381,24 @@ private:
     /// The ProfileDigest of what sendProfile would put in the bag and the bar
     /// for this session right now.
     std::uint32_t profileDigest(Session&);
-    void handleSwapLoadout(Session&, ByteReader&);
+    void handleSwapLoadout(Session&, net::Connection&, ByteReader&);
     void handleSwapLoadoutRows(Session&, net::Connection&);
     void handleSaveLoadoutPreset(Session&, net::Connection&, ByteReader&);
     void handleLoadLoadoutPreset(Session&, net::Connection&, ByteReader&);
     /// True, with the player told why, when the session's body is in the maze,
-    /// which locks the loadout for the run. Every loadout edit asks first.
-    bool loadoutLockedInMaze(Session&);
+    /// which locks the loadout for the run -- or in a hosted event whose host
+    /// locked it. Every loadout edit asks first.
+    bool loadoutLockedInMaze(Session&, net::Connection&);
+    /// True, with the player told why, when saved loadouts are closed to the
+    /// session: an arena run, or an event with a kit of its own.
+    bool presetsClosed(const Session&, net::Connection&);
+    /// The record whose ring a loadout edit changes (liveRecord's), with every
+    /// slot there to change.
+    PlayerRecord& editableLoadout(Session&);
+    /// The tail of every edit to the record a session plays on (liveRecord) --
+    /// its ring, its talents: saved, worn by every body the session has, and
+    /// restated in the client's Profile.
+    void recordEdited(Session&, net::Connection&);
     void handleCraft(Session&, net::Connection&, ByteReader&);
     /// A guaranteed craft at an oracle. Refused unless the session's body is
     /// alive and standing at one; see NpcSystem::findService.
@@ -689,6 +716,13 @@ private:
     /// is where the reference draws the line too -- an ultra is crafted often
     /// enough to be noise.
     void announceRareCraft(const Session&, std::uint16_t petalIndex, Rarity made);
+    /// The NPC offering `service` that the session's living body is standing
+    /// at -- of `tier`, when one is given -- or NULL_ENTITY once `refuse` has
+    /// been handed why not: no body to stand with, or none in reach. `npc`
+    /// names it in those lines: "an oracle", "the titan".
+    Entity serviceAtHand(const Session&, NpcService service, const std::string& npc,
+                         const std::function<void(const std::string&)>& refuse,
+                         std::optional<Rarity> tier = std::nullopt);
     /// How long `userId` has left to wait for the oracle, 0 when it may craft.
     /// A lapsed wait is forgotten on the way.
     double oracleWaitMillis(const std::string& userId);
@@ -776,6 +810,9 @@ private:
     /// Drops a bot out of whatever squad it was in, on its way out of the
     /// world. A squad holding a destroyed body would rank a corpse for loot.
     void removeBotFromSquad(Entity body);
+    /// Tells the squad a member just left (`departure`) who went, and who
+    /// leads it now if that changed, and restates its roster.
+    void tellSquadOfDeparture(const SquadRoster::Departure& departure, const std::string& leaverName);
     /// Rebuilds the loot ranking's table of who fights together. Once a tick
     /// rather than on membership change: a member's BODY changes on every
     /// death, so a table cached against the roster goes stale without the
@@ -970,6 +1007,8 @@ private:
     /// of what changed since it was last told (Session::profileShadow), or the
     /// whole Profile when that would be no larger or nothing has been told.
     void sendProfile(Session&, net::Connection&);
+    /// sendProfile to the session's own connection, when it still has one.
+    void sendProfile(Session&);
     /// The whole Profile, whatever the client was told before: the sign-in's,
     /// and the repair for a client that holds something it was never sent.
     void sendFullProfile(Session&, net::Connection&);
@@ -1043,6 +1082,13 @@ private:
     /// than indexed: membership lives on the guild, not on the account, and a
     /// derived index would be a second thing to keep true.
     std::string guildNameForUser(const std::string& username) const;
+    /// The guild the session's account is in, or "" once the player has been
+    /// told they are in none.
+    std::string guildOf(const Session&, net::Connection&);
+    /// The guild the session's account leads, or "" once the player has been
+    /// told they are in none, or that only the leader may `action` ("kick
+    /// players").
+    std::string guildLedBy(const Session&, net::Connection&, const char* action);
     Session* sessionForUser(const std::string& username);
     net::Connection* connectionForUser(const std::string& username);
     /// One roster message: the guild as it stands, each member flagged online
@@ -1148,10 +1194,15 @@ private:
     /// account's row. Counted again from scratch only after something other
     /// than handleVoteSkin rewrote rows (skinTalliesStale_).
     struct SkinTally {
-        double likes = 0;
-        double dislikes = 0;
+        std::uint32_t likes = 0;
+        std::uint32_t dislikes = 0;
     };
     SkinTally skinTally(const std::string& id);
+    /// Puts skin's tally (skinTally) on it, for the wire.
+    void fillTally(CustomSkin& skin);
+    /// A new or edited skin, to every signed-in client: SkinPublished replaces
+    /// whatever copy a client held.
+    void broadcastSkin(const CustomSkin& skin);
     /// Takes every account's vote on, and favourite of, the skins in `ids`
     /// off its row -- the skins are gone, and a dead favourite would still
     /// count against the account's kMaxFavoriteSkins.
@@ -1214,6 +1265,9 @@ private:
     /// on leave, on death, and periodically -- a crash must not cost a session
     /// of progress.
     void persistPlayer(const Session&);
+    /// Takes the session's body out of the world for good -- a disconnect, a
+    /// sign-out -- saved first if it is the one the session is playing.
+    void dropBody(Session&);
     /// Writes the account's stats, tree and loadout onto a body that already
     /// exists. Deliberately NOT a spawn: it must not heal, protect or reload
     /// anything, because it also runs on every loadout edit and talent
