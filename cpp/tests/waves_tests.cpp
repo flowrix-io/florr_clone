@@ -717,6 +717,68 @@ TEST(two_mobs_left_ends_a_wave_and_three_do_not) {
                       static_cast<int>(400.0 / net::kTickMillis) + 2));
 }
 
+TEST(the_hud_counts_each_kind_and_rarity_left_on_the_disc) {
+    Harness h("waves-hud-counts", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(say(h, boss, "/admin start_waves"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
+    CHECK(throughTheRift(h, {&boss}, boss, "boss"));
+    immortal(h, "boss");
+    auto& run = GameServerPeer::waves(h.server);
+    CHECK(h.stepUntil({&boss}, [&] { return run.spawner.finished() && !run.spawnedSinceSurvey; }, 600));
+    const std::uint16_t rock = content().mobIndex("rock");
+    CHECK(rock != kInvalidIndex);
+    if (rock == kInvalidIndex) return;
+
+    // Rocks stand still, across the disc out of the flower's reach, so the
+    // count holds still too. Three of one rarity and one of another: two tiles,
+    // and the three must read x3, not x0 or x1.
+    World& world = h.server.world();
+    SpawnSystem& spawner = GameServerPeer::spawning(h.server);
+    const Vec2 flower = world.get<Transform>(bodyOf(h, "boss")).position;
+    Vec2 away = kWavesCentre - flower;
+    const double length = std::hypot(away.x, away.y);
+    away = length > 1.0 ? away * (1.0 / length) : Vec2{1.0, 0.0};
+    std::set<Entity> placed;
+    const auto place = [&](Rarity rarity, double along) {
+        const Vec2 at = kWavesCentre + away * 1100.0 + Vec2{-away.y, away.x} * along;
+        const Entity e = spawner.spawnMob(world, h.server.terrain(), content(), rock, rarity, at,
+                                          kWavesRealm, h.clock, h.probeRng);
+        CHECK(e != NULL_ENTITY);
+        placed.insert(e);
+    };
+    place(Rarity::Rare, -300.0);
+    place(Rarity::Rare, 0.0);
+    place(Rarity::Rare, 300.0);
+    place(Rarity::Epic, 600.0);
+    // Everything else on the disc goes, leaving four: more than the early end's two.
+    {
+        std::vector<Entity> others;
+        Query<MobTag, Transform> mobs{world};
+        mobs.without<Dead>();
+        mobs.each([&](Entity e, MobTag&, Transform& at) {
+            if (at.realm == kWavesRealm && placed.count(e) == 0) others.push_back(e);
+        });
+        for (const Entity e : others) world.add<Dead>(e, Dead{NULL_ENTITY});
+    }
+
+    const auto countOf = [&](Rarity rarity) -> int {
+        for (const auto& group : boss.wave().groups) {
+            if (group.mobIndex == rock && group.rarity == rarity) return group.count;
+        }
+        return -1;
+    };
+    CHECK(h.stepUntil({&boss}, [&] { return boss.wave().groups.size() == 2; },
+                      static_cast<int>(2000.0 / net::kTickMillis)));
+    CHECK_EQ(countOf(Rarity::Rare), 3);
+    CHECK_EQ(countOf(Rarity::Epic), 1);
+    CHECK_EQ(run.mobs, 4);
+    CHECK_EQ(run.wave, 1);
+}
+
 TEST(clearing_a_red_wave_ends_it_though_mobs_were_still_to_come) {
     // A high wave's disc fills before its budget is spent, and the rest waits
     // for room. Red spawns nothing, so a cleared red disc is a cleared wave.
@@ -788,8 +850,10 @@ TEST(a_hostile_wave_mob_hunts_a_flower_from_across_a_grown_disc) {
     CHECK(distance(world.get<Transform>(hunter).position, now) < before - 300.0);
 }
 
-TEST(on_a_grown_disc_wave_mobs_spawn_around_the_flowers) {
-    Harness h("waves-spawn-near", seedWaves, dataDir(), 0);
+TEST(on_a_grown_disc_wave_mobs_spawn_evenly_over_it) {
+    // Wave 60's disc reaches 4450 from the middle. Mobs land all over it, not
+    // in a ring around the flower: half of them in the outer half of its area.
+    Harness h("waves-spawn-even", seedWaves, dataDir(), 0);
     CHECK(h.ready);
     if (!h.ready) return;
     NetClient boss;
@@ -801,9 +865,12 @@ TEST(on_a_grown_disc_wave_mobs_spawn_around_the_flowers) {
     World& world = h.server.world();
     const Entity flower = bodyOf(h, "boss");
     const double flowerRadius = world.get<Body>(flower).radius;
+    const double inside = h.server.terrain().wavesRadius - kWaveSpawnSafety;
     std::set<Entity> seen;
     int checked = 0;
-    for (int tick = 0; tick < 300 && checked < 30; ++tick) {
+    int outerHalf = 0;
+    int farFromFlower = 0;
+    for (int tick = 0; tick < 900 && checked < 60; ++tick) {
         h.step(1, {&boss});
         const Vec2 me = world.get<Transform>(flower).position;
         Query<MobTag, Transform, MobType> mobs{world};
@@ -815,13 +882,17 @@ TEST(on_a_grown_disc_wave_mobs_spawn_around_the_flowers) {
             if (link != nullptr && !link->head) return;
             ++checked;
             const double mobRadius = content().mobStats(type.configIndex, type.rarity).radius;
-            const double furthest = kWaveSpawnSafety + flowerRadius + mobRadius + kWaveSpawnReach;
             // A tick of walking either way, and a shove from the crowd.
-            CHECK(distance(at.position, me) <= furthest + 100.0);
-            CHECK(distance(at.position, me) >= kWaveSpawnSafety);
+            CHECK(distance(at.position, kWavesCentre) <= inside + 100.0);
+            CHECK(distance(at.position, me) >= kWaveSpawnSafety + flowerRadius + mobRadius - 100.0);
+            if (distance(at.position, kWavesCentre) > inside / std::sqrt(2.0)) ++outerHalf;
+            if (distance(at.position, me) > 3000.0) ++farFromFlower;
         });
     }
-    CHECK(checked >= 10);
+    CHECK(checked >= 40);
+    CHECK(outerHalf * 4 >= checked);
+    CHECK(outerHalf * 4 <= checked * 3);
+    CHECK(farFromFlower * 5 >= checked);
 }
 
 TEST(a_handful_left_at_the_bell_goes_straight_to_the_next_wave) {

@@ -291,18 +291,12 @@ void GameServer::spawnWaveMob(const WaveMob& mob, double nowMillis) {
     }
     const double inside = std::max(0.0, terrain_->wavesRadius - kWaveSpawnSafety);
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
-        // Uniform in distance, not area, so they crowd in: around a flower
-        // picked at random (kWaveSpawnReach), or the middle while nobody stands.
+        // Evenly over the disc's area (the square root), where flooooio's,
+        // uniform in distance, crowds the middle.
         const double heading = rng_.unit() * kTau;
-        Vec2 from = kWavesCentre;
-        double out = rng_.unit() * inside;
-        if (!flowers.empty()) {
-            const auto& flower = flowers[rng_.below(static_cast<std::uint32_t>(flowers.size()))];
-            from = flower.first;
-            out = kWaveSpawnSafety + flower.second + reach + rng_.unit() * kWaveSpawnReach;
-        }
-        const Vec2 spot{from.x + std::cos(heading) * out, from.y + std::sin(heading) * out};
-        if (distanceSq(spot, kWavesCentre) > inside * inside) continue;
+        const double out = std::sqrt(rng_.unit()) * inside;
+        const Vec2 spot{kWavesCentre.x + std::cos(heading) * out,
+                        kWavesCentre.y + std::sin(heading) * out};
         const bool clear = std::none_of(flowers.begin(), flowers.end(), [&](const auto& flower) {
             const double gap = kWaveSpawnSafety + flower.second + reach;
             return distanceSq(spot, flower.first) < gap * gap;
@@ -431,6 +425,9 @@ void GameServer::surveyWaves(double nowMillis) {
         // A chain is one animal on the HUD, and its head stands for it.
         if (content().mob(type.configIndex).chainBody) return;
         auto& count = groups[{type.configIndex, static_cast<std::uint8_t>(type.rarity)}];
+        // Saturates at the wire's u16 rather than wrapping to 0; not a cap on
+        // the mobs, only on the number the HUD can show.
+        if (count < std::numeric_limits<std::uint16_t>::max()) ++count;
     });
     waves_.mobs = mobs;
     waves_.bodyArea = area;

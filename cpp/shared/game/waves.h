@@ -16,9 +16,9 @@
 // 0.48 of real time; it has no early end; it spawns at one pace whatever the
 // wave, so a high wave runs out of time before its budget is spent; it stops
 // at mythic; its disc stays one size; and its room stays open on GAME OVER until
-// everyone has left. Because the disc grows, a mob spawns around a flower
-// rather than anywhere on it, and a hostile one sees a flower anywhere on it
-// where flooooio's looks 2000 units (all of its 1500 disc).
+// everyone has left. Mobs spawn evenly over the disc's area where flooooio's
+// crowd its middle, and because the disc grows, a hostile one sees a flower
+// anywhere on it where flooooio's looks 2000 units (all of its 1500 disc).
 //
 // flooooio has three biomes, garden, desert and ocean. Jungle, computer, hel,
 // sewers and pyramid are ours, built the same way out of what those maps grow
@@ -115,11 +115,6 @@ inline constexpr double kWaveRadiusGrowth = 50.0;
 /// No spawn closer than this to a living flower (plus its radius), nor this
 /// close to the disc's edge.
 inline constexpr double kWaveSpawnSafety = 300.0;
-/// A mob spawns around a flower, at most this far past kWaveSpawnSafety:
-/// flooooio's own disc, where anywhere on it is that close to everybody. The
-/// disc grows here, and spawning anywhere on it would leave most of a wave
-/// out of sight, to be hunted down before the wave could end early.
-inline constexpr double kWaveSpawnReach = kWavesStartRadius;
 /// Where a flower that died gets up: within this of a living one.
 inline constexpr double kWaveReviveDistance = 200.0;
 

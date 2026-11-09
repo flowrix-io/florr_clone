@@ -480,9 +480,9 @@ the biome's mobs, at a rarity that climbs with the wave up to super (ultras from
 about wave 55, supers from about 75, nothing else past 90); from wave 15, 15% of
 waves are special, one mob family in a swarm. A wave lasts 60 seconds up to wave
 10 and grows slowly after (67 at wave 30, 77 at wave 100), and its mobs come
-fast enough to all be out by half of that. Each one spawns within 1500 of the
-300-unit safety gap around a flower, not anywhere on the grown disc, and a
-hostile one goes for a flower wherever it is on the disc. The disc holds at most
+fast enough to all be out by half of that. They spawn evenly over the whole
+disc, at least 300 units from its edge and from every flower, and a hostile one
+goes for a flower wherever it is on the disc. The disc holds at most
 1500 mobs, and at most 8 discs' worth of mob bodies; past that the rest of the
 wave waits until there is room. A wave ends at once when all its mobs have
 spawned and 2 or fewer are left. When the clock runs out with more than 4 mobs
