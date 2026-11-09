@@ -18,6 +18,7 @@
 #include "server_harness.h"
 #include "shared/game/skin_format.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -333,10 +334,46 @@ TEST(fan_skin_title_is_above_the_head_for_the_wearer_and_other_players) {
         // The body ends at y=95. This region must contain the title even
         // when the ordinary name/health plate is hidden.
         CHECK(testsupport::differingPixels(frame(true), frame(false)) > 30);
-        // This crop contains only the overhead title and its motes, so the
-        // rotating skin cannot make a frozen particle effect pass.
+        // This crop contains only the overhead title effects, so the
+        // rotating skin cannot make a frozen title effect pass.
         CHECK(testsupport::differingPixels(frame(true, 0), frame(true, 1.4)) > 10);
     }
+}
+
+TEST(fan_skin_title_scales_with_the_flowers_drawn_size) {
+    CHECK(testsupport::fontsReady());
+    const std::vector<CustomSkin> catalog{makeFanSkin()};
+    const auto titleWidth = [&](double scale) {
+        auto flower = flowerWearing(kFanSkinId);
+        flower.spawnFlags |= net::SpawnIsSelf;
+        flower.radius *= scale;
+        WorldView view;
+        view.setRealm(Realm::Overworld);
+        view.seedForTest(flower);
+        WorldRenderer renderer;
+        renderer.setSkinCatalog(&catalog);
+        Canvas canvas = Canvas::createVirtual(420, 420);
+        renderer.draw(canvas, view, testsupport::frameCamera(420, kFlowerAt), kFlowerAt, 0.7);
+        // Only pixels above the drawn body's edge, excluding the skin itself.
+        const int height = static_cast<int>(210 - 25 * scale - 5);
+        const auto pixels = canvas.getImageData(0, 0, 420, height);
+        int left = 420, right = -1;
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < 420; ++x) {
+                const auto p = static_cast<std::size_t>((y * 420 + x) * 4);
+                if (pixels[p] > 80 && pixels[p + 1] > 40) {
+                    left = std::min(left, x);
+                    right = std::max(right, x);
+                }
+            }
+        }
+        return right - left + 1;
+    };
+    const int normal = titleWidth(1.0);
+    const int doubled = titleWidth(2.0);
+    CHECK(normal > 50);
+    CHECK(doubled > normal * 1.7);
+    CHECK(doubled < normal * 2.3);
 }
 
 TEST(signature_skin_is_owner_only_even_for_modified_clients_and_stale_saved_equips) {

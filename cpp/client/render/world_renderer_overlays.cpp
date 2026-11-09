@@ -22,16 +22,19 @@ void WorldRenderer::drawFanTitle(Canvas& canvas, const RemoteEntity& entity,
                                   const Camera& camera, Vec2 at, double timeSeconds) const {
     if (entity.equippedSkinId != kFanSkinId) return;
     const double zoom = camera.zoom();
+    const double flowerScale = playerSizeMultiplier(entity);
+    if (flowerScale <= 0.0) return;
     const Vec2 screen = camera.worldToScreen(at);
-    const double bodyRadius = kFlowerArtRadius * playerSizeMultiplier(entity);
+    const double bodyRadius = kFlowerArtRadius * flowerScale;
     const double time = std::isfinite(timeSeconds) ? timeSeconds : 0.0;
     canvas.save();
     canvas.translate(static_cast<float>(screen.x),
-                     static_cast<float>(screen.y - (bodyRadius + 12.0) * zoom));
-    canvas.scale(static_cast<float>(zoom), static_cast<float>(zoom));
+                     static_cast<float>(screen.y - (bodyRadius + 12.0 * flowerScale) * zoom));
+    const float titleScale = static_cast<float>(zoom * flowerScale);
+    canvas.scale(titleScale, titleScale);
 
     ui::TextStyle title;
-    title.size = 12.0;
+    title.size = 16.0;
     title.align = ui::Align::Centre;
     title.baseline = ui::Baseline::Alphabetic;
     title.fill = 0xFFE7A0u;
@@ -44,22 +47,23 @@ void WorldRenderer::drawFanTitle(Canvas& canvas, const RemoteEntity& entity,
     // native Canvas does not implement shadowBlur. Keep the core text crisp.
     ui::TextStyle glow = title;
     glow.fill = glow.stroke = 0xFFAD42u;
+    const double glowAlpha = 0.075 + 0.015 * std::sin(time * 1.6);
     for (int layer = 3; layer >= 1; --layer) {
-        glow.strokeWidth = layer * 2.0;
-        ui::paintRun(canvas, label, pen.x, pen.y, glow, 0.05, 0.05);
+        glow.strokeWidth = layer * 2.4;
+        ui::paintRun(canvas, label, pen.x, pen.y, glow, glowAlpha, glowAlpha);
     }
 
-    // Ten analytic motes, confined to the "19k" prefix, gently rise and fade.
+    // Fourteen analytic motes around "19k", gently rising and fading.
     // No particle entities, random state or growing per-player buffers.
     const double phase = static_cast<double>(entity.netId % 97) / 97.0;
-    for (int i = 0; i < 10; ++i) {
-        const double life = time * 0.32 + i * 0.61803398875 + phase;
+    for (int i = 0; i < 14; ++i) {
+        const double life = time * 0.38 + i * 0.61803398875 + phase;
         const double progress = life - std::floor(life);
         const double fade = std::sin(progress * kPi);
         const double x = pen.x + prefixWidth * ((i * 7 % 11) / 10.0) +
                          1.5 * std::sin(time * 0.8 + i * 2.4);
-        const double y = 2.0 - progress * 24.0;
-        const float r = static_cast<float>(0.55 + 0.35 * fade);
+        const double y = 2.0 - progress * 30.0;
+        const float r = static_cast<float>(0.7 + 0.45 * fade);
         const auto dot = [&](float radius, std::uint32_t color, double alpha) {
             ui::setFill(canvas, color, alpha);
             canvas.beginPath();
@@ -67,8 +71,15 @@ void WorldRenderer::drawFanTitle(Canvas& canvas, const RemoteEntity& entity,
                        static_cast<float>(kTau));
             canvas.fill();
         };
-        dot(r * 3.0f, 0xFFAC45u, 0.12 * fade);
-        dot(r, 0xFFF4CEu, 0.85 * fade);
+        dot(r * 3.0f, 0xFFAC45u, 0.17 * fade);
+        if (i % 4 == 0) {
+            ui::setFill(canvas, 0xFFF4CEu, 0.4 * fade * fade);
+            canvas.fillRect(static_cast<float>(x - r * 2.2), static_cast<float>(y - 0.35),
+                            r * 4.4f, 0.7f);
+            canvas.fillRect(static_cast<float>(x - 0.35), static_cast<float>(y - r * 2.2),
+                            0.7f, r * 4.4f);
+        }
+        dot(r, 0xFFF4CEu, 0.9 * fade);
     }
     ui::text(canvas, label, 0, 0, title);
     // Highlight the prefix without recording a second selectable text run.
@@ -332,7 +343,12 @@ void WorldRenderer::drawChatBubbles(Canvas& canvas, const EntityMap& entities,
         // player sees the bubble sitting over, and the two differ by the size
         // modifiers a loadout carries.
         const double bodyRadius = kFlowerArtRadius * playerSizeMultiplier(speaker);
-        const double lift = bodyRadius + kChatBubbleGap + bubble.row * kChatBubbleRowStep;
+        // The title sits 12 units above the body and its motes rise another
+        // 30; leave the bubble clear even when the flower grows.
+        const double gap = speaker.equippedSkinId == kFanSkinId
+                               ? std::max(kChatBubbleGap, 42.0 * playerSizeMultiplier(speaker) + 20.0)
+                               : kChatBubbleGap;
+        const double lift = bodyRadius + gap + bubble.row * kChatBubbleRowStep;
         const double centreY = screen.y - lift * zoom;
 
         const double textSize = kChatBubbleTextSize * zoom * scale;
