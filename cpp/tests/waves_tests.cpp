@@ -3,6 +3,7 @@
 // the disc put on the screen.
 
 #include <cmath>
+#include <cstdio>
 #include <set>
 #include <string>
 
@@ -151,6 +152,76 @@ TEST(the_first_wave_holds_only_what_spawns_from_wave_one) {
     }
     CHECK(!seen.empty());
     for (const std::string& id : seen) CHECK(id == "bee" || id == "baby_ant");
+}
+
+TEST(every_biome_names_only_mobs_the_game_has) {
+    for (std::size_t biome = 0; biome < kWaveBiomes.size(); ++biome) {
+        const std::vector<const char*> ids = waveMobIds(static_cast<WaveBiome>(biome));
+        CHECK(!ids.empty());
+        for (const char* id : ids) CHECK(shippedContent().mobIndex(id) != kInvalidIndex);
+    }
+}
+
+TEST(every_biome_paves_its_disc_with_tile_art_that_ships) {
+    // Every .svg in maps/tiles is staged; a name that is not one leaves the
+    // disc a flat fill of the gauge colour.
+    for (const WaveBiomeInfo& biome : kWaveBiomes) {
+        std::FILE* art = std::fopen(repoMap(std::string("tiles/") + biome.tile).c_str(), "rb");
+        CHECK(art != nullptr);
+        if (art != nullptr) std::fclose(art);
+    }
+}
+
+TEST(every_biome_has_a_first_wave_and_it_ends) {
+    // A table whose every mob waits for a later wave would spend nothing, and
+    // its first wave could only ever end on the clock.
+    std::vector<WaveMob> due;
+    for (std::size_t biome = 0; biome < kWaveBiomes.size(); ++biome) {
+        const auto which = static_cast<WaveBiome>(biome);
+        Rng rng(41 + biome);
+        WaveSpawner spawner;
+        spawner.next(which, 1, rng);
+        int mobs = 0;
+        const int length = static_cast<int>(waveLength(1) * kWaveStepsPerSecond);
+        for (int step = 0; step < length && !spawner.finished(); ++step) {
+            spawner.step(which, 1, rng, due);
+            mobs += static_cast<int>(due.size());
+        }
+        CHECK(spawner.finished());
+        CHECK(mobs > 0);
+    }
+}
+
+TEST(every_biomes_special_waves_are_each_one_family) {
+    // A family naming a mob its biome's table lacks would quietly fall back on
+    // the whole table: a swarm of everything. Every family is three kinds at
+    // most, and every biome has at least one.
+    std::vector<WaveMob> due;
+    for (std::size_t biome = 0; biome < kWaveBiomes.size(); ++biome) {
+        const auto which = static_cast<WaveBiome>(biome);
+        const std::vector<const char*> table = waveMobIds(which);
+        int families = 0;
+        for (int group = 0;; ++group) {
+            Rng rng(43 + biome * 16 + static_cast<std::uint64_t>(group));
+            WaveSpawner spawner;
+            spawner.next(which, 20, rng, group);
+            if (!spawner.special()) break;
+            ++families;
+            std::set<std::string> kinds;
+            for (int step = 0; step < 30 * 120 && !spawner.finished(); ++step) {
+                spawner.step(which, 20, rng, due);
+                for (const WaveMob& mob : due) kinds.insert(mob.id);
+            }
+            CHECK(spawner.finished());
+            CHECK(!kinds.empty());
+            CHECK(kinds.size() <= 3);
+            for (const std::string& kind : kinds) {
+                CHECK(std::any_of(table.begin(), table.end(),
+                                  [&](const char* id) { return kind == id; }));
+            }
+        }
+        CHECK(families > 0);
+    }
 }
 
 TEST(a_special_wave_swarms_with_one_family_on_a_bonus_budget) {

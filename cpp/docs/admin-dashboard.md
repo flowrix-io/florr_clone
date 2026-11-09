@@ -464,8 +464,9 @@ on the target.
 
 ### Wave survival: `/admin start_waves`
 
-`/admin start_waves [garden|desert|ocean] [starting wave]` (default garden, wave
-1; tier 1 admins and the server owner only) opens a black portal 450 units in front of you and
+`/admin start_waves [garden|desert|ocean|jungle|computer|hel|sewers|pyramid]
+[starting wave]` (default garden, wave 1, at most 65535; tier 1 admins and the
+server owner only) opens a black portal 450 units in front of you and
 tells every player "A Mysterious rift has opened!". It only opens on a map, not
 in the PVP arena, the maze or a hosted game, and one is open at a time. The rift
 also shows as a black dot on that map's minimap.
@@ -493,6 +494,20 @@ nobody is left standing the game is over: the rift closes, the disc is cleared
 and everyone is put back where they went in, standing. Mobs pay XP and drop
 petals as they do anywhere else; the supers on the disc are not announced and
 get no boss bar.
+
+Garden, desert and ocean are flooooio's tables. The other five are ours, drawn
+from the mob group each map grows (`data/mobs.json` `groups`) and laid out the
+way flooooio's are (`shared/game/waves.cpp` says how):
+
+| biome | mobs (from wave) | special waves |
+| --- | --- | --- |
+| jungle | bush, leafbug, dark ladybug (1); firefly, evil centipede (2); mantis, wasp, and rarely golden leafbug and magic firefly (3) | mantis; wasp; leafbugs; fireflies; evil centipede |
+| computer | JavaScript, cube, dust (1); glitch (2); glitch flower, and rarely C++ and C-- (3) | glitch; glitch + glitch flower; JavaScript; cube; dust |
+| hel | hel beetle (1), as the hel map grows nothing else | hel beetle |
+| sewers | garbage, roach, moth (1); fly (2); spider (3) | fly; spider; roach; moth |
+| pyramid | mummy beetle and rarely tomb (1); rarely pharaoh beetle (5) | mummy beetle; tomb |
+
+Nests (termite mound, server) and the computer's sun are left out of them.
 
 Leaving with the Exit button goes to the title screen, as anywhere. The rift
 stays open until the game is over or `/admin stop_waves` (tier 1 and the owner
