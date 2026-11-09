@@ -23,11 +23,61 @@ using namespace world_render;
 
 namespace {
 
-/// Every tile is drawn 1.5 units oversized on each side, so the software
-/// rasteriser's anti-aliased edges never leave a hairline seam between two
-/// cells of one continuous surface. Symmetric about the cell's centre, so a
-/// tile that is turned by its flip bits stays registered with its neighbours.
-constexpr double kTileOverlap = 1.5;
+/// Tiles are NOT drawn oversized. Every tile grid here -- the map's layers,
+/// the waves' disc, the admin arena -- puts each cell in exactly its own box,
+/// with both edges snapped to whole device pixels, so a boundary is covered
+/// by one tile or the other and never by both or neither. Each cell used to
+/// be painted 1.5 units past each side to hide anti-aliased seams, and that
+/// overlap was visible: translucent ink at an edge (every wall's drop shadow)
+/// went down twice in the strip two neighbours shared, a dark tick at every
+/// tile boundary along every shore, and the art, stretched 1% to fill the
+/// bigger box, no longer met its neighbour's where a line crossed between
+/// them. See tileBakePixels and drawTileArt.
+
+/// Where one coordinate lands on the device grid: `v` in user units, at
+/// `toPixels` device pixels per user unit, rounded to the nearest whole pixel.
+double snapToPixel(double v, double toPixels) { return std::round(v * toPixels) / toPixels; }
+
+/// Device pixels per user unit at the frame's base transform, read back off
+/// the canvas the way the tile cache reads it.
+double devicePixelsPerUnit(const Canvas& canvas) {
+    const double logical = canvas.width() > 0 ? static_cast<double>(canvas.width()) : 1.0;
+    const double perUnit = static_cast<double>(canvas.pixelWidth()) / logical;
+    return perUnit > 0.0 ? perUnit : 1.0;
+}
+
+/// The side, in device pixels, every tile picture of a grid is baked at when
+/// one cell is `pitch` device pixels across: the largest box a snapped cell
+/// can get. Snapping both edges of every cell makes them floor(pitch) or
+/// ceil(pitch) pixels wide -- and as tall -- so one size of bitmap, cropped
+/// to the smaller cells (drawCachedArtCell), serves the whole grid. The
+/// epsilon keeps a whole-pixel pitch from rounding up a pixel on float error.
+double tileBakePixels(double pitch) { return std::max(1.0, std::ceil(pitch - 1e-6)); }
+
+/// One tile's artwork filling exactly the box (left, top, w, h), whose edges
+/// the caller has put on whole device pixels. `side` is the grid's bake side
+/// (tileBakePixels) in the same user units; w and h are at most that.
+///
+/// Through the web's art cache when it can, which bakes the picture at `side`
+/// and blits the w x h of it this cell needs. Otherwise straight, stretched to
+/// the box -- a pixel's difference on an axis at most -- because renderFitted
+/// letterboxes a non-square box ('meet') and the half-pixel bands it would
+/// leave are exactly the seams snapping exists to close.
+void drawTileArt(Canvas& canvas, const SvgDocument& document, double left, double top, double w,
+                 double h, double side) {
+    if (drawCachedArtCell(canvas, document, left, top, w, h, side)) return;
+    if (w == h) {
+        document.renderFitted(canvas, static_cast<float>(left), static_cast<float>(top),
+                              static_cast<float>(w), static_cast<float>(h), 0.0f);
+        return;
+    }
+    canvas.save();
+    canvas.translate(static_cast<float>(left), static_cast<float>(top));
+    canvas.scale(static_cast<float>(w / side), static_cast<float>(h / side));
+    document.renderFitted(canvas, 0.0f, 0.0f, static_cast<float>(side), static_cast<float>(side),
+                          0.0f);
+    canvas.restore();
+}
 
 /// Clips to a world rectangle. Every tiled draw needs one: the artwork inside
 /// a 400-unit ground tile is free to overflow its own box (hel.svg rotates
@@ -248,55 +298,30 @@ struct CellSpan {
     int y1 = -1;
 };
 
-/// The side of every tile's box in DEVICE pixels, at `zoom` world units to
-/// design units and `toPixels` design units to device pixels.
-///
-/// A WHOLE NUMBER of device pixels, and the same number for every tile.
-///
-/// Whole, because a tile's box edge that falls inside a pixel is covered
-/// only fractionally, and a tile is a STACK of shapes: the background goes
-/// down over the neighbour's finished picture at that fraction and the
-/// shapes above it cannot put back what they covered, so a sliver of the
-/// tile's own background survives as a hairline. It is faint -- a couple of
-/// percent -- but it is at every boundary at once, which reads as a grid
-/// ruled over the map. On a whole pixel the edge is covered or it is not,
-/// and there is no fraction for the background to come through.
-///
-/// The same number for all of them, because the alternative -- snapping
-/// each box's far edge as well -- makes neighbouring tiles differ in size
-/// by a pixel, and the web build bakes a bitmap per size (art_cache.h): one
-/// tile picture would occupy up to four entries instead of one. Only the
-/// CORNER moves per tile, so the art is scaled identically everywhere and
-/// the grid as a whole is quantised to the pixel it is drawn on.
-///
-/// And never less than a whole pixel past the next cell's corner. The
-/// overlap is in WORLD units, so it shrinks with the camera, and a high
-/// tier of antennae takes the camera out to 0.1 -- where 1.5 units is a
-/// fifth of a pixel. Two neighbouring corners, each rounded on its own,
-/// can then land a whole pixel further apart than `side` reaches, and that
-/// pixel is the black the frame was cleared to: at every boundary where the
-/// rounding falls that way, a grid of black lines a dozen tiles apart.
-/// Corners one cell apart are never more than ceil(step) pixels apart, so
-/// ceil(step) + 1 always overlaps. At any zoom where the overlap is a pixel
-/// and a half or more -- every zoom short of those antennae -- the first
-/// term is already the larger one and nothing moves.
-double tileSidePixels(double zoom, double toPixels) {
-    const double step = kTileSize * zoom * toPixels;
-    return std::max(std::round((kTileSize + kTileOverlap * 2.0) * zoom * toPixels),
-                    std::ceil(step) + 1.0);
-}
-
 /// Paints `span` of `map`'s tile layers. `corner(tx, ty)` is the top-left of
-/// cell (tx, ty)'s oversized box in the canvas's user units, already on a
-/// whole device pixel, and `side` is the box's side in the same units. The
-/// direct path and the chunk cache both paint through here, so a baked chunk
-/// is the very picture the direct path would have drawn in its place.
+/// cell (tx, ty) in the canvas's user units, already on a whole device pixel,
+/// and the cell's box runs to corner(tx + 1, ty + 1): every edge on a whole
+/// pixel, and each shared with the neighbour on that side, so the cells tile
+/// the plane with no gap and no overlap at any zoom.
+///
+/// Whole pixels, because a box edge that falls inside a pixel is covered only
+/// fractionally, and a tile is a STACK of shapes: the background goes down
+/// over the neighbour's finished picture at that fraction and the shapes
+/// above it cannot put back what they covered, so a sliver of the tile's own
+/// background survives as a hairline -- faint, but at every boundary at once,
+/// which reads as a grid ruled over the map. On a whole pixel the edge is
+/// covered or it is not. And SHARED, because two corners each rounded on
+/// their own can land a pixel further apart than a fixed tile size reaches:
+/// at the antennae's 0.1 zoom, that was a black line every dozen tiles.
+///
+/// `side` is the grid's bake side (tileBakePixels) in user units. The direct
+/// path and the chunk cache both paint through here, so a baked chunk is the
+/// very picture the direct path would have drawn in its place.
 template <typename Corner>
 void paintTerrainCells(Canvas& canvas, const MapData& map,
                        const std::vector<const SvgDocument*>& art, CellSpan span, double side,
                        const Corner& corner) {
     const int cols = map.width();
-    const double half = side * 0.5;
 
     // A cell's compiled artwork, or null: an empty cell, a tile whose art
     // index is out of the palette, or a file the data directory does not
@@ -309,44 +334,52 @@ void paintTerrainCells(Canvas& canvas, const MapData& map,
         return slot < art.size() ? art[slot] : nullptr;
     };
 
-    // One cell's artwork, fitted to its oversized square and turned by its flip
-    // bits. The unturned case -- which is every cell of a hand-painted centre
-    // and most of a map -- skips the transform entirely and draws into an
+    // One cell's artwork, fitted to its own box and turned by its flip bits.
+    // The unturned case -- which is every cell of a hand-painted centre and
+    // most of a map -- skips the transform entirely and draws into an
     // axis-aligned box, because a save/rotate/restore around a tile costs more
     // than the tile does.
     //
-    // Both cases hand drawCachedArt the SAME box, and that is deliberate: what
-    // the web build bakes is the tile UNTURNED, and the rotation is in the
-    // canvas transform the blit goes through. So one bitmap serves all eight
-    // orientations and the cache key needs no orientation in it. Baking the
-    // turned picture instead would need the flip bits in that key -- without
-    // them every rotation of one tile would collide on the first one baked,
-    // and every edge tile in the map is painted as four rotations of one
-    // picture.
+    // Both cases hand the art cache the SAME bake side, and that is
+    // deliberate: what the web build bakes is the tile UNTURNED, and the
+    // rotation is in the canvas transform the blit goes through. So one bitmap
+    // serves all eight orientations and the cache key needs no orientation in
+    // it. Baking the turned picture instead would need the flip bits in that
+    // key -- without them every rotation of one tile would collide on the
+    // first one baked, and every edge tile in the map is painted as four
+    // rotations of one picture.
     const auto drawCell = [&](const SvgDocument& document, int tx, int ty, std::uint8_t flags) {
-        // The box's own corner, snapped. `side` is already whole pixels, so
-        // the corner being on one puts all four edges on one -- and the
-        // turned case takes its centre from here rather than from the cell's
-        // own centre, so that both paths keep drawing the SAME box.
         const Vec2 at = corner(tx, ty);
-        const double left = at.x;
-        const double top = at.y;
+        const Vec2 end = corner(tx + 1, ty + 1);
+        const double w = end.x - at.x;
+        const double h = end.y - at.y;
+        if (!(w > 0.0) || !(h > 0.0)) return;
         const TileOrientation orientation = tileOrientation(flags);
         if (orientation.radians == 0.0 && !orientation.mirror) {
-            if (!drawCachedArt(canvas, document, left, top, side, side)) {
-                document.renderFitted(canvas, static_cast<float>(left), static_cast<float>(top),
-                                      static_cast<float>(side), static_cast<float>(side), 0.0f);
-            }
+            drawTileArt(canvas, document, at.x, at.y, w, h, side);
             return;
         }
+        // Turned about the box's own centre, by the rotation and mirror as
+        // one exact matrix of 0s and 1s -- as orientInTile turns the shapes
+        // -- rather than through rotate(), whose float sine of a half turn is
+        // 1e-7 off zero. That is enough to move a vertex off a subsample
+        // line it sits on exactly, and an odd-sized cell's centre line is one
+        // (the edge art has vertices on it), so the same tile rasterised at
+        // two places -- in a chunk and straight on the frame -- came out a
+        // sample apart. A quarter turn swaps the box's sides in the turned
+        // space, so a cell a pixel wider than it is tall is drawn a pixel
+        // taller than wide there and lands back on itself.
+        const float c = static_cast<float>(std::round(std::cos(orientation.radians)));
+        const float s = static_cast<float>(std::round(std::sin(orientation.radians)));
+        const float flip = orientation.mirror ? -1.0f : 1.0f;
+        const bool sideways = s != 0.0f;
+        const double bw = sideways ? h : w;
+        const double bh = sideways ? w : h;
         canvas.save();
-        canvas.translate(static_cast<float>(left + half), static_cast<float>(top + half));
-        if (orientation.radians != 0.0) canvas.rotate(static_cast<float>(orientation.radians));
-        if (orientation.mirror) canvas.scale(-1.0f, 1.0f);
-        if (!drawCachedArt(canvas, document, -half, -half, side, side)) {
-            document.renderFitted(canvas, static_cast<float>(-half), static_cast<float>(-half),
-                                  static_cast<float>(side), static_cast<float>(side), 0.0f);
-        }
+        canvas.translate(static_cast<float>(at.x + w * 0.5), static_cast<float>(at.y + h * 0.5));
+        // rotate(radians) then scale(flip, 1).
+        canvas.transform(c * flip, s * flip, -s, c, 0.0f, 0.0f);
+        drawTileArt(canvas, document, -bw * 0.5, -bh * 0.5, bw, bh, side);
         canvas.restore();
     };
 
@@ -382,19 +415,11 @@ void paintTerrainCells(Canvas& canvas, const MapData& map,
         }
     }
 
-    // Layer by layer, and NOT cell by cell. Every tile is painted kTileOverlap
-    // oversized, so each one reaches 1.5 units into all four of its
-    // neighbours; finishing a whole cell before starting the next one put a
-    // cell's LOWER layer on top of the layer ABOVE it in the cell before,
-    // which is the one thing the overlap cannot survive. Where an edge tile
-    // sat next to any other dirt -- every run of wall edging on the map --
-    // the grass under it was laid down after that neighbour's dirt and wiped
-    // the overlap back off, leaving the two tiles meeting on a bare seam
-    // again: a hairline of the layer below at exactly `boundary -
-    // kTileOverlap`, an anti-aliased edge's worth of it, which is the
-    // subpixel gap this order exists to close. Painting a layer across the
-    // whole span before the next one starts is also what Tiled itself means
-    // by a layer.
+    // Layer by layer, which is what Tiled itself means by a layer. No cell
+    // reaches past its own box, so the order between cells changes nothing
+    // today; it mattered while tiles were painted oversized, when a cell's
+    // LOWER layer laid after its neighbour's upper one wiped the overlap back
+    // off, and it keeps mattering for any art that spills its box.
     for (std::size_t layer = 0; layer < layerCount; ++layer) {
         const std::vector<TiledCell>& cells = map.layers()[layer].cells;
         for (int ty = span.y0; ty <= span.y1; ++ty) {
@@ -446,16 +471,20 @@ constexpr int kChunkBakeCellsPerFrame = 1024;
 // Outside tiles repeat in small cached patches on the web. The patch stays
 // near 512 logical pixels, so antennae zoom does not issue one blit per tiny
 // block. Native rendering keeps the direct SVG path, like the terrain cache.
+// The one tile grid still drawn oversized: its cells sit on the patch's own
+// fractional pitch, not on device pixels, and its art is the opaque centre
+// tiles the admin arena walls with, where the overlap has nothing to double.
 void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* art,int cols,int rows) {
+    constexpr double kPatchTileOverlap=1.5;
     if(cols<=0||rows<=0)return;
-    const Rect view=camera.visibleWorld(kTileOverlap);
+    const Rect view=camera.visibleWorld(kPatchTileOverlap);
     const double width=cols*kTileSize,height=rows*kTileSize;
     const int cells=std::clamp(int(512/(kTileSize*camera.zoom())),1,16);
     const double worldSide=cells*kTileSize,side=worldSide*camera.zoom();
     static const int fallbackIdentity=0;
     const void* owner=art?static_cast<const void*>(art):&fallbackIdentity;
     const auto patch=[&](Canvas& c) {
-        const float step=float(side/cells),overlap=float(kTileOverlap*camera.zoom());
+        const float step=float(side/cells),overlap=float(kPatchTileOverlap*camera.zoom());
         for(int y=0;y<cells;++y)for(int x=0;x<cells;++x) {
             if(art)art->renderFitted(c,x*step-overlap,y*step-overlap,step+2*overlap,step+2*overlap,0);
             else {ui::setFill(c,0x555555u);c.fillRect(x*step,y*step,step,step);}
@@ -517,7 +546,7 @@ void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera, double timeS
         // Squared up on the largest disc, so the pattern holds still as the
         // ground grows under it.
         const double reach = discGroundReach(radius);
-        const Rect visible = intersection(camera.visibleWorld(kTileOverlap),
+        const Rect visible = intersection(camera.visibleWorld(0),
                                           Rect{kWavesCentre.x - reach, kWavesCentre.y - reach,
                                                reach * 2.0, reach * 2.0});
         const double originX = kWavesCentre.x - kWavesMaxRadius * 2.0;
@@ -527,13 +556,22 @@ void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera, double timeS
             const int y0 = static_cast<int>(std::floor((visible.top() - originY) / kWaveTileSize));
             const int x1 = static_cast<int>(std::floor((visible.right() - originX) / kWaveTileSize));
             const int y1 = static_cast<int>(std::floor((visible.bottom() - originY) / kWaveTileSize));
-            const auto side = static_cast<float>((kWaveTileSize + 2.0 * kTileOverlap) * camera.zoom());
+            // Each cell in exactly its own box on whole device pixels, as the
+            // map's are (paintTerrainCells).
+            const double toPixels = devicePixelsPerUnit(canvas);
+            const double side =
+                tileBakePixels(kWaveTileSize * camera.zoom() * toPixels) / toPixels;
+            const auto cornerAt = [&](int x, int y) {
+                const Vec2 at = camera.worldToScreen(
+                    {originX + x * kWaveTileSize, originY + y * kWaveTileSize});
+                return Vec2{snapToPixel(at.x, toPixels), snapToPixel(at.y, toPixels)};
+            };
             for (int y = y0; y <= y1; ++y) {
                 for (int x = x0; x <= x1; ++x) {
-                    const Vec2 at = camera.worldToScreen({originX + x * kWaveTileSize - kTileOverlap,
-                                                          originY + y * kWaveTileSize - kTileOverlap});
-                    if (!drawCachedArt(canvas, *art, at.x, at.y, side, side)) {
-                        art->renderFitted(canvas, at.x, at.y, side, side, 0);
+                    const Vec2 at = cornerAt(x, y);
+                    const Vec2 end = cornerAt(x + 1, y + 1);
+                    if (end.x > at.x && end.y > at.y) {
+                        drawTileArt(canvas, *art, at.x, at.y, end.x - at.x, end.y - at.y, side);
                     }
                 }
             }
@@ -550,7 +588,7 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
         const auto& wall = kAdminArenaThemes[std::min<std::size_t>(terrain_->adminArenaWall, kAdminArenaThemes.size()-1)];
         ui::setFill(canvas, floor.color);
         canvas.fillRect(0, 0, camera.viewportWidth(), camera.viewportHeight());
-        const Rect visible = camera.visibleWorld(kTileOverlap);
+        const Rect visible = camera.visibleWorld(0);
         const int x0 = std::max(0,int(std::floor(visible.left()/kTileSize)));
         const int y0 = std::max(0,int(std::floor(visible.top()/kTileSize)));
         const int x1 = std::min(terrain_->tileCols(realm)-1,int(std::floor(visible.right()/kTileSize)));
@@ -558,14 +596,23 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
         const auto* floorArt = sprites_ ? sprites_->tileArt(floor.floor) : nullptr;
         const auto* wallArt = sprites_ ? sprites_->tileArt(wall.wall) : nullptr;
         drawBoundaryBlocks(canvas,camera,wallArt,terrain_->tileCols(realm),terrain_->tileRows(realm));
-        const float side = float((kTileSize+2*kTileOverlap)*camera.zoom());
+        // Each cell in exactly its own box on whole device pixels, as the
+        // map's are (paintTerrainCells).
+        const double toPixels = devicePixelsPerUnit(canvas);
+        const double side = tileBakePixels(kTileSize*camera.zoom()*toPixels)/toPixels;
+        const auto cornerAt = [&](int x, int y) {
+            const Vec2 at = camera.worldToScreen({x*kTileSize, y*kTileSize});
+            return Vec2{snapToPixel(at.x,toPixels), snapToPixel(at.y,toPixels)};
+        };
         for (int y=y0;y<=y1;++y) for(int x=x0;x<=x1;++x) {
             const bool solid = terrain_->atTile(x,y,realm) == Tile::Solid;
             const auto* art = solid ? wallArt : floorArt;
-            const Vec2 at = camera.worldToScreen({x*kTileSize-kTileOverlap,y*kTileSize-kTileOverlap});
+            const Vec2 at = cornerAt(x,y);
+            const Vec2 end = cornerAt(x+1,y+1);
+            if (!(end.x > at.x) || !(end.y > at.y)) continue;
             if (art) {
-                if (!drawCachedArt(canvas,*art,at.x,at.y,side,side)) art->renderFitted(canvas,at.x,at.y,side,side,0);
-            } else if (solid) { ui::setFill(canvas,0x555555u); canvas.fillRect(at.x,at.y,side,side); }
+                drawTileArt(canvas,*art,at.x,at.y,end.x-at.x,end.y-at.y,side);
+            } else if (solid) { ui::setFill(canvas,0x555555u); canvas.fillRect(at.x,at.y,end.x-at.x,end.y-at.y); }
         }
         ui::setStroke(canvas,0x414141u);canvas.setLineWidth(float(4*camera.zoom()));
         canvas.beginPath();
@@ -599,13 +646,12 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     if (cols <= 0 || rows <= 0) return;
 
     // The cells whose artwork can reach the screen, and NOT ONE MORE. A cell
-    // is drawn over exactly its own square grown by kTileOverlap, so that
-    // overlap is the whole margin this wants. A kTileSize margin -- the
-    // reflex, and what this used to ask for -- buys a whole extra ring of
-    // cells all the way round: measured on a 1280x720 view of garden.tmj,
-    // 60 cells against 32, for artwork that is off screen before it is
-    // drawn.
-    const Rect visible = camera.visibleWorld(kTileOverlap);
+    // is drawn over exactly its own square, so the view itself is the whole
+    // margin this wants. A kTileSize margin -- the reflex, and what this used
+    // to ask for -- buys a whole extra ring of cells all the way round:
+    // measured on a 1280x720 view of garden.tmj, 60 cells against 32, for
+    // artwork that is off screen before it is drawn.
+    const Rect visible = camera.visibleWorld(0);
     CellSpan span;
     span.x0 = std::max(0, static_cast<int>(std::floor(visible.left() / kTileSize)));
     span.y0 = std::max(0, static_cast<int>(std::floor(visible.top() / kTileSize)));
@@ -630,18 +676,13 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
         return;
     }
 
-    const double zoom = camera.zoom();
     // Device pixels per design unit: the base transform the frame was opened
-    // with, read back off the canvas the way the tile cache reads it.
-    const double logical = canvas.width() > 0 ? static_cast<double>(canvas.width()) : 1.0;
-    const double perUnit = static_cast<double>(canvas.pixelWidth()) / logical;
-    const double toPixels = perUnit > 0.0 ? perUnit : 1.0;
-    const double side = tileSidePixels(zoom, toPixels) / toPixels;
+    // with.
+    const double toPixels = devicePixelsPerUnit(canvas);
+    const double side = tileBakePixels(kTileSize * camera.zoom() * toPixels) / toPixels;
     paintTerrainCells(canvas, *map, art, span, side, [&](int tx, int ty) {
-        const Vec2 corner = camera.worldToScreen(
-            {tx * kTileSize - kTileOverlap, ty * kTileSize - kTileOverlap});
-        return Vec2{std::round(corner.x * toPixels) / toPixels,
-                    std::round(corner.y * toPixels) / toPixels};
+        const Vec2 corner = camera.worldToScreen({tx * kTileSize, ty * kTileSize});
+        return Vec2{snapToPixel(corner.x, toPixels), snapToPixel(corner.y, toPixels)};
     });
 }
 
@@ -675,7 +716,7 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     // number every chunk in the cache shares.
     const double scale = zoom * toPixels;
     if (!(scale > 0.0) || !std::isfinite(scale)) return false;
-    const double side = tileSidePixels(zoom, toPixels);
+    const double side = tileBakePixels(kTileSize * scale);
     int cells = 1;
     while (cells < kMaxChunkCells && kTileSize * scale * cells * 2.0 <= kChunkPixels) cells *= 2;
 
@@ -689,15 +730,15 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     }
 
     // Everything below is in device pixels, on one grid fixed to the WORLD
-    // rather than to the camera: chunk k spans grid(k) to grid(k + 1), and a
-    // cell's box corner is its own corner rounded on that same grid. Both are
-    // whole pixels, so neighbouring chunks meet exactly, each chunk is blitted
-    // texel for pixel, and moving the camera moves only `ox`/`oy` -- the world
-    // origin's place on the screen, itself snapped to a whole pixel, which is
-    // how far the direct path's per-tile snapping moved the map anyway.
-    const double chunkWorld = kTileSize * cells;
-    const auto grid = [&](int k) { return std::round(k * chunkWorld * scale); };
-    const auto cornerAt = [&](int t) { return std::round((t * kTileSize - kTileOverlap) * scale); };
+    // rather than to the camera: cell t's box runs from cornerAt(t) to
+    // cornerAt(t + 1), and chunk k from the corner of its first cell to the
+    // corner of the first cell past it. All whole pixels, so neighbouring
+    // chunks meet exactly on a cell boundary, each chunk is blitted texel for
+    // pixel, and moving the camera moves only `ox`/`oy` -- the world origin's
+    // place on the screen, itself snapped to a whole pixel, which is how far
+    // the direct path's per-tile snapping moved the map anyway.
+    const auto cornerAt = [&](int t) { return std::round(t * kTileSize * scale); };
+    const auto grid = [&](int k) { return cornerAt(k * cells); };
     const Vec2 origin = camera.worldToScreen({0.0, 0.0});
     const double ox = std::round(toPixels * origin.x + m[4]);
     const double oy = std::round(toPixels * origin.y + m[5]);
@@ -739,13 +780,13 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
             const double left = grid(kx);
             const int width = static_cast<int>(grid(kx + 1) - left);
             if (width <= 0 || height <= 0) continue;
-            // The chunk's own cells and the ring round them. Every tile is
-            // painted kTileOverlap oversized, so the cells either side reach
-            // into the chunk's edges, and only painting them here as well --
-            // in the same layer-major order -- puts the same pixels in those
-            // edges that the direct path does. Without them each chunk
-            // boundary would be a seam of exactly the kind
-            // paintTerrainCells' order exists to close.
+            // The chunk's own cells and the ring round them. A cell's box
+            // ends on its boundary, but a little art does not: renderFitted
+            // only clips a picture that spills its viewBox by more than 1%,
+            // and the foliage and hut edges reach a couple of pixels past
+            // theirs. Painting the ring here as well puts those pixels in
+            // the chunk's edges, as the direct path does; without it each
+            // chunk boundary would cut them off.
             const CellSpan region{std::max(0, kx * cells - 1), std::max(0, ky * cells - 1),
                                   std::min(cols - 1, (kx + 1) * cells),
                                   std::min(rows - 1, (ky + 1) * cells)};

@@ -45,6 +45,21 @@ namespace flix {
 bool drawCachedArt(Canvas& canvas, const SvgDocument& art, double x, double y, double w,
                    double h);
 
+/// drawCachedArt for one cell of a tile grid whose cells are not all the same
+/// size: `art` is baked fitted into a `side` x `side` box and only the top-left
+/// `w` x `h` of that bake is blitted, into the box (x, y, w, h).
+///
+/// A grid whose pitch is a fraction of a device pixel cannot put every cell
+/// on whole pixels at one size: snapped, its cells come out a pixel apart in
+/// width and height, four sizes in all. Baked at each, a tile picture would
+/// take four bitmaps; baked once at the largest and cropped, it takes one, and
+/// the picture in a cell a pixel short is a pixel short of its far edge -- a
+/// copy of texels either way, never a resample. `w` and `h` must not exceed
+/// `side`. The same quarter turns and mirrors drawCachedArt accepts are
+/// accepted here, the crop being taken in the box's own (turned) space.
+bool drawCachedArtCell(Canvas& canvas, const SvgDocument& art, double x, double y, double w,
+                       double h, double side);
+
 /// Draws whatever `paint` draws, through a cached rasterisation of it.
 ///
 /// The generalisation of drawCachedArt: the picture is not one SVG but

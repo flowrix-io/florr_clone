@@ -236,3 +236,146 @@ TEST(map_tiles_leave_no_seam_when_antennae_zoom_the_camera_far_out) {
         CHECK(blackLines(pixels, false) == 0);
     }
 }
+
+namespace {
+
+/// A data directory holding one 100 x 100 map: white paper on the bottom
+/// layer, and over all of it a veil -- a square of black at half opacity --
+/// on the layer above, turned through all eight of Tiled's orientations cell
+/// by cell. A veil over paper is ONE grey wherever exactly one veil covers a
+/// pixel: darker where two do (tiles painted into each other), lighter or
+/// darker again where none does or the backdrop shows through (a seam).
+std::string veilDataDir() {
+    const std::string dir = testsupport::tempDir("flix_terrain_veil");
+    constexpr int kSide = 100;
+    static const std::uint32_t kFlips[8] = {0u,          0x80000000u, 0x40000000u, 0xC0000000u,
+                                            0x20000000u, 0xA0000000u, 0x60000000u, 0xE0000000u};
+    std::string paper, veil;
+    for (int y = 0; y < kSide; ++y) {
+        for (int x = 0; x < kSide; ++x) {
+            if (!paper.empty()) { paper += ","; veil += ","; }
+            paper += "1";
+            veil += std::to_string(2u | kFlips[(x + y * 3) % 8]);
+        }
+    }
+    const std::string side = std::to_string(kSide);
+    const std::string map = R"({
+ "compressionlevel": -1, "infinite": false, "orientation": "orthogonal",
+ "renderorder": "right-down", "tiledversion": "1.10.1", "type": "map",
+ "version": "1.10", "nextlayerid": 3, "nextobjectid": 1,
+ "tilewidth": 256, "tileheight": 256, "width": )" + side + R"(, "height": )" + side + R"(,
+ "tilesets": [ { "firstgid": 1, "source": "veil.tsj" } ],
+ "layers": [
+  { "type": "tilelayer", "id": 1, "name": "background", "opacity": 1, "visible": true,
+    "x": 0, "y": 0, "width": )" + side + R"(, "height": )" + side + R"(, "data": [)" + paper + R"(] },
+  { "type": "tilelayer", "id": 2, "name": "veil", "opacity": 1, "visible": true,
+    "x": 0, "y": 0, "width": )" + side + R"(, "height": )" + side + R"(, "data": [)" + veil + R"(] }
+ ]
+})";
+    const std::string tileset = R"({
+ "columns": 0, "name": "veil", "tilecount": 2, "tiledversion": "1.10.1",
+ "tileheight": 256, "tilewidth": 256, "type": "tileset", "version": "1.10",
+ "tiles": [
+  { "id": 0, "image": "tiles/paper.svg", "imageheight": 256, "imagewidth": 256,
+    "properties": [ { "name": "covers_everything", "type": "bool", "value": true } ] },
+  { "id": 1, "image": "tiles/veil.svg", "imageheight": 256, "imagewidth": 256 }
+ ]
+})";
+    const bool written =
+        testsupport::writeText(dir + "/veil.tmj", map) &&
+        testsupport::writeText(dir + "/veil.tsj", tileset) &&
+        testsupport::writeText(dir + "/maps.json", "{ \"maps\": [ { \"file\": \"veil.tmj\" } ] }\n") &&
+        testsupport::writeText(dir + "/paper.svg",
+                               R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">)"
+                               R"(<rect width="256" height="256" fill="#ffffff"/></svg>)") &&
+        testsupport::writeText(dir + "/veil.svg",
+                               R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">)"
+                               R"(<rect width="256" height="256" fill="#000000" opacity="0.5"/></svg>)");
+    return written ? dir : std::string();
+}
+
+/// The pixels of `frame` (RGBA, `width` wide) more than one level off the
+/// frame's centre pixel in any channel.
+int offCentrePixels(const std::vector<std::uint8_t>& frame, int width, int height) {
+    const std::size_t mid = (static_cast<std::size_t>(height / 2) * width + width / 2) * 4;
+    int off = 0;
+    for (std::size_t i = 0; i + 3 < frame.size(); i += 4) {
+        for (std::size_t c = 0; c < 3; ++c) {
+            if (std::abs(static_cast<int>(frame[i + c]) - static_cast<int>(frame[mid + c])) > 1) {
+                ++off;
+                break;
+            }
+        }
+    }
+    return off;
+}
+
+} // namespace
+
+TEST(map_tiles_meet_without_overlapping_at_any_zoom_or_display_scale) {
+    // Every tile is painted into exactly its own cell, both edges on whole
+    // device pixels and shared with the neighbour. They used to be painted
+    // 1.5 units oversized, which put a strip of every boundary under two
+    // tiles: wherever the art was translucent at its edge -- the drop shadow
+    // along every shore and wall -- the strip came out twice as dark, a tick
+    // at each tile boundary. A uniform veil turns that into a whole grid of
+    // darker lines, and a seam into lines of another colour, so the frame
+    // must be one grey from edge to edge. Painted straight and through the
+    // chunk cache, at display scales where a cell is a fraction of a pixel
+    // past a whole number, and with the cells turned every way Tiled turns
+    // them (a quarter turn of a cell a pixel wider than tall must still land
+    // on itself).
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    const std::string dir = veilDataDir();
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+    WorldMaps maps;
+    CHECK(maps.load(dir, nullptr, error));
+    SpriteCache sprites;
+    sprites.build(content(), dir);
+    const Vec2 centre{12800.3, 12800.7};
+    struct Display { int width, height; };
+    for (const bool cache : {false, true}) {
+        for (const Display display : {Display{1280, 720}, Display{1366, 768}, Display{960, 540}}) {
+            for (const double zoom : {1.0, 1.6, 1.37, 0.85, 0.3, 0.106}) {
+                WorldRenderer renderer;
+                renderer.setSprites(&sprites);
+                renderer.setWorldMaps(&maps);
+                renderer.setTerrainCache(cache);
+                WorldView view;
+                view.setRealm(Realm::Overworld);
+                // The cache's first frame paints most chunks straight; the
+                // later ones blit them. Both must be the one grey.
+                for (int pass = 0; pass < (cache ? 2 : 1); ++pass) {
+                    std::vector<std::uint8_t> pixels;
+                    for (int i = 0; i < (pass == 0 ? 1 : kFramesToBakeAll); ++i) {
+                        Canvas canvas = Canvas::createVirtual(display.width, display.height);
+                        canvas.setLogicalSize(kDesignWidth, kDesignHeight);
+                        canvas.resetTransform();
+                        const float scale = static_cast<float>(display.width) / kDesignWidth;
+                        canvas.scale(scale, scale);
+                        Camera camera;
+                        camera.setViewport(kDesignWidth, kDesignHeight);
+                        camera.userZoom = zoom;
+                        camera.snapTo(centre);
+                        renderer.draw(canvas, view, camera, centre, 0.0);
+                        pixels = canvas.getImageData(0, 0, display.width, display.height);
+                    }
+                    const std::size_t mid =
+                        (static_cast<std::size_t>(display.height / 2) * display.width +
+                         display.width / 2) * 4;
+                    // The veil really is there: half-black over white.
+                    CHECK(pixels.size() > mid + 2 && pixels[mid] > 100 && pixels[mid] < 160);
+                    const int off = offCentrePixels(pixels, display.width, display.height);
+                    if (off != 0) {
+                        std::printf("    %s %dx%d zoom %.3f pass %d: %d pixels off the veil's grey\n",
+                                    cache ? "cached" : "straight", display.width, display.height,
+                                    zoom, pass, off);
+                    }
+                    CHECK(off == 0);
+                }
+            }
+        }
+    }
+}
