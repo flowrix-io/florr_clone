@@ -28,6 +28,20 @@ Session* GameServer::sessionForEntity(Entity e) {
     return nullptr;
 }
 
+Session* GameServer::creditedSession(Entity body) {
+    if (Session* session = sessionForEntity(body)) return session;
+    if (body == NULL_ENTITY) return nullptr;
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        // The account the body played for, still signed in on this socket.
+        if (session.lastBody == body && !session.userId.empty() &&
+            session.lastBodyUserId == session.userId) {
+            return &session;
+        }
+    }
+    return nullptr;
+}
+
 Session* GameServer::sessionForUser(const std::string& username) {
     const std::string key = lowerCase(username);
     if (key.empty()) return nullptr;

@@ -166,7 +166,8 @@ void GameServer::bankKills() {
             }
             // A contributor who has left still holds their slot -- nobody is
             // promoted into the gap -- but there is no account left to pay.
-            Session* session = sessionForEntity(share.player);
+            // One between lives, on the title screen, has not left.
+            Session* session = creditedSession(share.player);
             if (session == nullptr || session->userId.empty()) continue;
             // ONE PERSON, ONE KILL. A splitter puts two of somebody's flowers
             // on the same corpse, and both of them are in this ledger; paying
@@ -235,9 +236,11 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     // Credited to the top damage dealer alone, whatever the kill was shared
     // with: `ranked` is already sorted by damage, so that is its first row.
     // No player to credit -- a mob's kill, or a top dealer who has left --
-    // still gets the line, without the "by".
+    // still gets the line, without the "by". One who died and has not spawned
+    // again has not left: their rows move to their next body when it is made
+    // (Session::lastBody), and until then creditedSession still finds them.
     const Session* session =
-        ranked.empty() ? nullptr : sessionForEntity(ranked.front().player);
+        ranked.empty() ? nullptr : creditedSession(ranked.front().player);
     if (session == nullptr || !session->authenticated()) {
         broadcastChat(net::ChatChannel::System, "", opening + "!</b>");
         return;

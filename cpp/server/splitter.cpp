@@ -276,6 +276,10 @@ void GameServer::endSplit(Session& session, double nowMillis, bool armReload) {
     if (!session.split()) return;
     const Entity parked = session.splitOther;
     session.splitOther = NULL_ENTITY;
+    // One person, one flower again: what the half coming off did to a mob still
+    // standing is the remaining half's, or a boss it hurt most is credited to
+    // nobody when it falls.
+    handOverCredit(parked, session.entity);
     if (armReload) {
         armSplitterReload(session, nowMillis);
         // And hold the split itself off for the same cooldown. The slot's own

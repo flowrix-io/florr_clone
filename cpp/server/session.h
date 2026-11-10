@@ -96,6 +96,20 @@ struct Session {
     /// is exactly what a second body is for.
     Entity splitOther = NULL_ENTITY;
 
+    /// The last body taken out of the world, and the account it was playing
+    /// for, until spawnPlayer makes the next one.
+    ///
+    /// Mob damage ledgers name a flower by body (Bounty::handOver), and the
+    /// client's way back from the death card is LeaveGame, then JoinGame from
+    /// the title screen: seconds with no body at all, between a corpse that is
+    /// destroyed and a flower that does not exist yet. This is what still
+    /// names the person in between -- the next body inherits its rows, and a
+    /// boss that falls in the gap is credited to them (creditedSession) rather
+    /// than to nobody. The account rides along so a socket that signed into
+    /// another one meanwhile never hands it someone else's damage.
+    Entity lastBody = NULL_ENTITY;
+    std::string lastBodyUserId;
+
     /// The earliest the splitter may cut this flower in two again.
     ///
     /// Zero -- the ordinary case -- means "the moment it is equipped", which is

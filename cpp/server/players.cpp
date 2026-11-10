@@ -12,6 +12,7 @@
 #include "server/routine_log_policy.h"
 #include "server/text.h"
 #include "server/systems/petals.h"
+#include "server/systems/spawning.h"
 #include "shared/game/config.h"
 #include "shared/game/skills.h"
 
@@ -403,6 +404,17 @@ Entity GameServer::spawnPlayer(Session& session) {
 
     session.entity = entity;
     session.stage = SessionStage::Playing;
+    // Same person, new body: whatever the last one did to a mob that is still
+    // standing is this one's now, so a boss it softened up before dying is
+    // still credited to them when it falls -- the line names them, not
+    // nobody, and the gallery, XP and drops count them in. Only for the
+    // account that body played for.
+    if (session.lastBody != NULL_ENTITY && !session.userId.empty() &&
+        session.lastBodyUserId == session.userId) {
+        handOverCredit(session.lastBody, entity);
+    }
+    session.lastBody = NULL_ENTITY;
+    session.lastBodyUserId.clear();
     // A fresh body has a death of its own still to announce.
     session.deathReported = false;
     // And a fresh life owes nothing to the last one's losses: a splitter on
@@ -585,6 +597,12 @@ void GameServer::despawnPlayer(Session& session, bool persist) {
     session.eventRestricted.reset();
     session.realm = Realm::Overworld;
 
+    // Remembered past its destruction: the mobs it hurt still have it on their
+    // ledgers, and the next body takes those rows over. After endSplit, which
+    // has already moved the other half's rows onto this one.
+    session.lastBody = session.entity;
+    session.lastBodyUserId = session.userId;
+
     // The petals and pets belong to the body, not the account, so they go
     // with it.
     destroyBody(session.entity);
@@ -628,6 +646,21 @@ void GameServer::destroyBody(Entity body) {
         }
     }
     commands_.destroy(body);
+}
+
+void GameServer::handOverCredit(Entity from, Entity to) {
+    if (from == NULL_ENTITY || to == NULL_ENTITY || from == to) return;
+    Query<Bounty> ledgers{world_};
+    ledgers.each([&](Entity, Bounty& bounty) {
+        Bounty::handOver(bounty.contributors, from, to);
+    });
+    // The snapshot a wave nest weighs its ledger against moves with it, or the
+    // whole inherited row reads as damage landed this tick and the next wave
+    // turns on a flower that has not touched the nest.
+    Query<NestWaves> nests{world_};
+    nests.each([&](Entity, NestWaves& waves) {
+        Bounty::handOver(waves.ledgerSeen, from, to);
+    });
 }
 
 } // namespace flix

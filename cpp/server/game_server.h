@@ -1226,6 +1226,10 @@ private:
     /// is exactly the part a splitter's second body must not repeat.
     Entity createPlayerBody(Session&, Realm, Vec2 position);
     void despawnPlayer(Session&, bool persist);
+    /// Rewrites every mob's damage ledger so `from`'s rows are `to`'s
+    /// (Bounty::handOver). Called when one person goes on in another body: a
+    /// respawn, or a splitter half coming off.
+    void handOverCredit(Entity from, Entity to);
     /// Queues a player body's destruction together with everything it put
     /// into the world: its petals AND the pets its eggs hatched. Every path
     /// that takes a body away goes through here -- a pet left behind keeps a
@@ -1318,6 +1322,11 @@ private:
 
     Session* sessionFor(net::ConnectionId id);
     Session* sessionForEntity(Entity e);
+    /// Whose damage a ledger row is: sessionForEntity, or the session whose
+    /// LAST body this was while it has not made the next one (Session::
+    /// lastBody). For crediting a kill only -- nothing else may treat a
+    /// destroyed body as somebody's.
+    Session* creditedSession(Entity body);
 
     /// The biome a realm belongs to.
     ///

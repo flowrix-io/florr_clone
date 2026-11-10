@@ -452,6 +452,38 @@ struct Bounty {
         }
         contributors.push_back({player, damage});
     }
+
+    /// Moves `from`'s row onto `to`: the same person carrying on in another
+    /// body. A row names a flower by its BODY, and a body is one life -- a
+    /// respawn makes a new one, a splitter half coming off leaves only the
+    /// other. Left behind, the row names an entity that no longer exists, and
+    /// everything that reads the ledger by player -- the defeat line's credit,
+    /// the gallery, the XP and the drops -- takes whoever did that damage for
+    /// someone who has left. The reference keyed this tally by socket id,
+    /// which a respawn does not change.
+    ///
+    /// When `to` already has a row the two are summed into whichever came
+    /// FIRST: the ledger is in first-hit order, and that order breaks an exact
+    /// tie at the loot cut.
+    static void handOver(std::vector<Share>& shares, Entity from, Entity to) {
+        if (from == to || from == NULL_ENTITY || to == NULL_ENTITY) return;
+        const std::size_t none = shares.size();
+        std::size_t fromAt = none;
+        std::size_t toAt = none;
+        for (std::size_t i = 0; i < shares.size(); ++i) {
+            if (shares[i].player == from) fromAt = i;
+            else if (shares[i].player == to) toAt = i;
+        }
+        if (fromAt == none) return;
+        if (toAt == none) {
+            shares[fromAt].player = to;
+            return;
+        }
+        const std::size_t keep = fromAt < toAt ? fromAt : toAt;
+        const std::size_t drop = fromAt < toAt ? toAt : fromAt;
+        shares[keep] = Share{to, shares[fromAt].damage + shares[toAt].damage};
+        shares.erase(shares.begin() + static_cast<std::ptrdiff_t>(drop));
+    }
 };
 
 // ---------------------------------------------------------------------------
