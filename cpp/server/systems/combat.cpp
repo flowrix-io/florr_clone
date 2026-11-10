@@ -1957,7 +1957,7 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
     // carries. The other trigger -- a firefly's touch -- fires in the contact
     // phase above, where the collision it needs is resolved.
     tickMobLightning(world, grid, content, nowMillis);
-    tickProjectiles(world, grid, content, nowMillis, dt);
+    tickProjectiles(world, grid, content, nowMillis);
     tickGroundEffects(world, grid, content, nowMillis, dt);
     // Last, so a bubble that went down to poison, a petal or a shot this tick
     // -- in any phase -- pops all the same.
@@ -2482,6 +2482,10 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
         // entity, so the answer is the same whenever it is asked.
         Entity sourcePlayer = NULL_ENTITY;
         bool sourcePlayerResolved = false;
+        // Per shot group of this source's realm: 0 not yet asked, 1 none of
+        // its shots can be damaged by this source, 2 some can. Cleared only
+        // once a shot turns up, for the same reason.
+        std::array<std::uint8_t, kMaxShotGroups> groupVerdicts{};
         bool ricochetHit = false;
         for (const Entity victim : candidates_) {
             if (ricochetHit) break;
@@ -2500,6 +2504,23 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 if (sourcePlayer != NULL_ENTITY && shot->player == sourcePlayer) continue;
                 const double reach = source.radius + shot->radius;
                 if ((shot->position - source.position).lengthSq() > reach * reach) continue;
+                // Another flower's shots on this flower's side -- a ring
+                // standing in a friend's volley -- are refused by canHit()
+                // every one, and nothing below acts on a shot before it: asked
+                // once per group instead of once per shot. Only for a flower's
+                // things, because a wild mob can damage players' shots and
+                // asking would only cost the sides.
+                if (sourcePlayer != NULL_ENTITY && shot->group != kNoShotGroup &&
+                    !shotRealms_[shot->realm].crowded) {
+                    std::uint8_t& verdict = groupVerdicts[shot->group];
+                    if (verdict == 0) {
+                        verdict = canDamageShotGroup(world, source.attacker, shot->realm,
+                                                     shot->group)
+                                      ? 2
+                                      : 1;
+                    }
+                    if (verdict == 1) continue;
+                }
             }
             const Transform* transform = world.tryGet<Transform>(victim);
             const Body* body = world.tryGet<Body>(victim);
@@ -3078,15 +3099,12 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
 }
 
 void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
-                                   const ContentRegistry& content, double nowMillis, double dt) {
+                                   const ContentRegistry& content, double nowMillis) {
     shots_.clear();
     queries_->projectiles.each([&](Entity e, Projectile& projectile, Transform& transform,
                                    Body& body, Motion& motion) {
-        // Movement has already flown the shot this tick, so the budget spent
-        // is the distance it just covered -- not one it is about to.
-        shots_.push_back({e, transform.position, projectile.lastPosition, body.radius,
-                          motion.velocity.length() * dt, body.mass, motion.velocity.length(),
-                          transform.realm});
+        shots_.push_back({e, transform.position, projectile.lastPosition, body.radius, body.mass,
+                          motion.velocity.length(), transform.realm});
     });
 
     for (const ShotSource& shot : shots_) {
@@ -3113,15 +3131,29 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         // glitch hit, exactly as their bodies do.
         const DamageKind hitKind = petalHitKind(content, petalIndex);
 
-        // Centred on the segment, so the pad the broadphase already spends on
-        // the tick's travel covers the whole of it rather than only the end.
+        // Centred on the segment and as wide as half of it: every point of the
+        // segment is then inside the circle, and the grid files a body under
+        // every cell its own radius touches (the shot index widens itself by
+        // its biggest shot instead), so the exact test below can accept
+        // nothing this leaves out. It used to add the tick's travel on top, a
+        // leftover from when the query was centred on the head: for a fast
+        // shot that more than doubled the area searched for nothing.
         const Vec2 flown = shot.position - shot.from;
         const double flownLength = flown.length();
         const Vec2 midpoint = shot.from + flown * 0.5;
-        queryBodies(grid, shot.realm, midpoint,
-                    shot.radius + flownLength * 0.5 + shot.travelled + kBroadphasePad,
-                    candidates_);
-        const Entity shooter = filedShotPlayer(shot.entity);
+        // Two shots answerable to the same flower never hurt each other --
+        // canDamage() refuses the pair on its very first rule -- and a
+        // flower's own volleys are most of what a dense cloud finds around
+        // each of its shots. Nor do two flowers' shots on one side, which is
+        // what a second cloud standing in the first is. Both are left out by
+        // the query itself, a whole run of them at a time, which is what
+        // keeps a loadout of spray or gas -- or two of them -- from making
+        // this pass quadratic in the size of the cloud.
+        const FiledShot* self = filedShot(shot.entity);
+        const Entity shooter = self != nullptr ? self->player : NULL_ENTITY;
+        const ShotSkip skip = self != nullptr ? shotSkip(world, *self) : ShotSkip{};
+        queryBodies(grid, shot.realm, midpoint, shot.radius + flownLength * 0.5 + kBroadphasePad,
+                    candidates_, &skip);
 
         // Gathered whole before a single hit lands. The loop below marks
         // victims Dead and that relocates their rows, so nothing here may hold
@@ -3129,18 +3161,26 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         impacts_.clear();
         for (const Entity victim : candidates_) {
             if (victim == shot.entity) continue;
-            // Two shots answerable to the same flower never hurt each other --
-            // canDamage() refuses the pair on its very first rule -- and a
-            // flower's own volleys are most of what a dense cloud finds around
-            // each of its shots. Turned away off the filing table, before a
-            // single component lookup, which is what keeps a loadout of gas
-            // from making this pass quadratic in the size of the cloud.
-            if (shooter != NULL_ENTITY && filedShotPlayer(victim) == shooter) continue;
             if (!world.isAlive(victim)) continue;
-            if (!isShootable(world, victim)) continue;
-            const Transform* transform = world.tryGet<Transform>(victim);
-            const Body* body = world.tryGet<Body>(victim);
-            if (transform == nullptr || body == nullptr) continue;
+            // Another flower's shot is read off the filing table, which IS its
+            // Transform and Body for the phase. Anything else answerable to
+            // this shot's own flower -- its ring, mostly, which a fresh volley
+            // is still flying through -- is refused by canHit() whatever the
+            // distance, and nothing before canHit() acts on a victim, so it is
+            // turned away here before a single component is read.
+            Vec2 position;
+            double radius = 0.0;
+            if (const FiledShot* filed = filedShot(victim)) {
+                position = filed->position;
+                radius = filed->radius;
+            } else {
+                if (shooter != NULL_ENTITY && phaseCredit(world, victim) == shooter) continue;
+                const Transform* transform = world.tryGet<Transform>(victim);
+                const Body* body = world.tryGet<Body>(victim);
+                if (transform == nullptr || body == nullptr) continue;
+                position = transform->position;
+                radius = body->radius;
+            }
 
             // Against the SEGMENT the shot just flew, not its endpoint. A
             // fast shot covers more ground in a tick than its own hit reach is
@@ -3149,7 +3189,7 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // `offset` stays the vector from the
             // point of closest approach, which is what the shove below pushes
             // along and what the nearest-first ordering sorts on.
-            const Vec2 toVictim = transform->position - shot.from;
+            const Vec2 toVictim = position - shot.from;
             double along = 0.0;
             if (flownLength > 1e-9) {
                 const Vec2 axis = flown * (1.0 / flownLength);
@@ -3158,10 +3198,13 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             const Vec2 nearest = shot.from + (flownLength > 1e-9
                                                   ? flown * (along / flownLength)
                                                   : Vec2{});
-            const Vec2 offset = transform->position - nearest;
-            const double reach = shot.radius + body->radius;
+            const Vec2 offset = position - nearest;
+            const double reach = shot.radius + radius;
             const double distanceSquared = offset.lengthSq();
             if (distanceSquared > reach * reach) continue;
+            // After the distance test, which turns away most candidates for the
+            // two lookups this costs. Pure filters both, so the order is free.
+            if (!isShootable(world, victim)) continue;
             // Above canHit() on purpose: a glitch shot marks the flower it
             // touches whether or not the hit itself is refused, and a
             // flower under respawn protection is not in `impacts_` at all.
@@ -3314,11 +3357,6 @@ std::uint32_t shotCellCoord(double at, double cellSize) {
     return static_cast<std::uint32_t>(c);
 }
 
-std::uint64_t shotCellKey(Realm realm, std::uint32_t row, std::uint32_t column) {
-    return (static_cast<std::uint64_t>(realmIndex(realm)) << 48) |
-           (static_cast<std::uint64_t>(row) << 24) | column;
-}
-
 } // namespace
 
 void CombatSystem::fileShots(World& world) {
@@ -3328,9 +3366,26 @@ void CombatSystem::fileShots(World& world) {
         if (index < shotSlot_.size()) shotSlot_[index] = kNoShotSlot;
     }
     filedShots_.clear();
+    shotPlaces_.clear();
     shotCells_.clear();
+    shotSides_.clear();
     maxShotRadius_ = 0.0;
-    shotBounds_.fill(ShotBounds{});
+    // Field by field rather than refilled, so each realm keeps its vectors'
+    // capacity from one phase to the next.
+    for (ShotRealm& filed : shotRealms_) {
+        filed.shots = 0;
+        filed.shift = 0;
+        filed.groupPlayers.clear();
+        filed.crowded = false;
+        filed.prepared = false;
+        filed.sided = false;
+        filed.skips.clear();
+    }
+    ++creditPhase_;
+    // The shot before is nearly always of the same volley, so its group is
+    // the first one tried.
+    std::size_t lastRealm = kMaxRealms;
+    std::uint32_t lastGroup = kNoShotGroup;
 
     queries_->filedShots.each([&](Entity e, ProjectileTag&, Transform& transform, Body& body) {
         const std::uint32_t index = entityIndex(e);
@@ -3343,57 +3398,264 @@ void CombatSystem::fileShots(World& world) {
         shotSlot_[index] = slot;
         // Resolved now, once, rather than per pair: nothing in a combat phase
         // destroys an entity, so the answer cannot change before it is read.
-        filedShots_.push_back({e, creditedPlayer(world, e), transform.position, body.radius});
+        const Entity player = creditedPlayer(world, e);
+        filedShots_.push_back({e, player, transform.position, body.radius});
 
         // A position no query can reach is not filed, as the main grid files
         // none: it is still a shot, it is just never a candidate.
         const Vec2 at = transform.position;
-        if (!std::isfinite(at.x) || !std::isfinite(at.y)) return;
+        if (!std::isfinite(at.x) || !std::isfinite(at.y)) {
+            shotPlaces_.push_back(ShotPlace{});
+            return;
+        }
         if (body.radius > maxShotRadius_) maxShotRadius_ = body.radius;
         const std::uint32_t row = shotCellCoord(at.y, kShotCellSize);
         const std::uint32_t column = shotCellCoord(at.x, kShotCellSize);
-        ShotBounds& bounds = shotBounds_[realmIndex(transform.realm)];
-        if (!bounds.filed) bounds = ShotBounds{true, row, row, column, column};
-        bounds.rowMin = std::min(bounds.rowMin, row);
-        bounds.rowMax = std::max(bounds.rowMax, row);
-        bounds.columnMin = std::min(bounds.columnMin, column);
-        bounds.columnMax = std::max(bounds.columnMax, column);
-        shotCells_.push_back({shotCellKey(transform.realm, row, column), slot});
+        const std::size_t realm = realmIndex(transform.realm);
+        ShotRealm& filed = shotRealms_[realm];
+        if (filed.shots == 0) {
+            filed.rowMin = filed.rowMax = row;
+            filed.columnMin = filed.columnMax = column;
+        } else {
+            filed.rowMin = std::min(filed.rowMin, row);
+            filed.rowMax = std::max(filed.rowMax, row);
+            filed.columnMin = std::min(filed.columnMin, column);
+            filed.columnMax = std::max(filed.columnMax, column);
+        }
+        ++filed.shots;
+        filedShots_.back().realm = static_cast<std::uint8_t>(realm);
+        if (!filed.crowded) {
+            std::uint32_t group = kNoShotGroup;
+            if (realm == lastRealm && lastGroup != kNoShotGroup &&
+                filed.groupPlayers[lastGroup] == player) {
+                group = lastGroup;
+            } else {
+                const auto found =
+                    std::find(filed.groupPlayers.begin(), filed.groupPlayers.end(), player);
+                if (found != filed.groupPlayers.end()) {
+                    group = static_cast<std::uint32_t>(found - filed.groupPlayers.begin());
+                } else if (filed.groupPlayers.size() < kMaxShotGroups) {
+                    group = static_cast<std::uint32_t>(filed.groupPlayers.size());
+                    filed.groupPlayers.push_back(player);
+                } else {
+                    filed.crowded = true;
+                }
+            }
+            filedShots_.back().group = group;
+            lastRealm = realm;
+            lastGroup = group;
+        }
+        shotPlaces_.push_back(ShotPlace{true, static_cast<std::uint8_t>(realm), row, column});
     });
-    // Slot as the tiebreak, so shots sharing a cell come back in filing order
-    // and a query's answer does not depend on how the sort felt about ties.
-    std::sort(shotCells_.begin(), shotCells_.end(), [](const ShotCell& a, const ShotCell& b) {
-        return a.key != b.key ? a.key < b.key : a.slot < b.slot;
-    });
+
+    // Each realm's cell size and table, laid end to end in realm order -- the
+    // order the list itself is sorted in.
+    std::size_t tableSize = 0;
+    for (ShotRealm& filed : shotRealms_) {
+        if (filed.shots == 0) continue;
+        const std::uint64_t budget =
+            std::max<std::uint64_t>(kShotCellFloor, kShotCellsPerShot * filed.shots);
+        const auto cells = [&](std::uint32_t shift) {
+            return static_cast<std::uint64_t>((filed.rowMax >> shift) - (filed.rowMin >> shift) + 1) *
+                   static_cast<std::uint64_t>((filed.columnMax >> shift) -
+                                              (filed.columnMin >> shift) + 1);
+        };
+        while (cells(filed.shift) > budget) ++filed.shift;
+        filed.rowMin >>= filed.shift;
+        filed.rowMax >>= filed.shift;
+        filed.columnMin >>= filed.shift;
+        filed.columnMax >>= filed.shift;
+        filed.width = filed.columnMax - filed.columnMin + 1;
+        filed.base = static_cast<std::uint32_t>(tableSize);
+        const std::size_t height = filed.rowMax - filed.rowMin + 1;
+        tableSize += height * filed.width + 1;
+    }
+    const auto cellOf = [&](const ShotPlace& place) -> std::size_t {
+        const ShotRealm& filed = shotRealms_[place.realm];
+        return filed.base +
+               static_cast<std::size_t>((place.row >> filed.shift) - filed.rowMin) * filed.width +
+               ((place.column >> filed.shift) - filed.columnMin);
+    };
+
+    // Counted one cell along, so that once summed, each entry is where its
+    // own cell STARTS -- and a realm's extra last entry is where its last ends.
+    shotCellStart_.assign(tableSize, 0);
+    for (const ShotPlace& place : shotPlaces_) {
+        if (place.filed) ++shotCellStart_[cellOf(place) + 1];
+    }
+    for (std::size_t i = 1; i < shotCellStart_.size(); ++i) {
+        shotCellStart_[i] += shotCellStart_[i - 1];
+    }
+    // Placed in slot order, so shots sharing a cell come back in filing order
+    // and a query's answer depends on nothing but where the shots are.
+    shotCellCursor_ = shotCellStart_;
+    shotCells_.resize(shotCellStart_.empty() ? 0 : shotCellStart_.back());
+    for (std::size_t slot = 0; slot < shotPlaces_.size(); ++slot) {
+        const ShotPlace& place = shotPlaces_[slot];
+        if (!place.filed) continue;
+        shotCells_[shotCellCursor_[cellOf(place)]++] =
+            ShotCell{static_cast<std::uint32_t>(slot), 0};
+    }
+
+    // Back to front, so each entry inherits the end of the run the next one is
+    // in when the two share a cell and a flower.
+    for (std::size_t i = shotCells_.size(); i-- > 0;) {
+        ShotCell& cell = shotCells_[i];
+        const std::uint32_t cellEnd = shotCellStart_[cellOf(shotPlaces_[cell.slot]) + 1];
+        const bool sameRun = i + 1 < cellEnd && filedShots_[shotCells_[i + 1].slot].player ==
+                                                    filedShots_[cell.slot].player;
+        cell.runEnd = sameRun ? shotCells_[i + 1].runEnd : static_cast<std::uint32_t>(i + 1);
+    }
 }
 
 void CombatSystem::queryShots(Realm realm, Vec2 center, double radius,
-                              std::vector<Entity>& out) const {
+                              std::vector<Entity>& out, const ShotSkip* skip) const {
     if (shotCells_.empty()) return;
     if (!std::isfinite(center.x) || !std::isfinite(center.y)) return;
     if (!(radius >= 0.0)) radius = 0.0;   // negative, and NaN
+    const ShotRealm& filed = shotRealms_[realmIndex(realm)];
+    if (filed.shots == 0) return;
+    if (skip != nullptr && skip->everything) return;
+    // Asked of a run's first shot and good for the whole of it: a run is one
+    // flower's shots, so one group's.
+    const auto skipped = [&](const FiledShot& shot) {
+        if (skip == nullptr) return false;
+        if (skip->player != NULL_ENTITY && shot.player == skip->player) return true;
+        return skip->groups != nullptr && shot.group < skip->groupCount &&
+               skip->groups[shot.group] != 0;
+    };
     // Widened by the biggest shot, because a shot is filed only under its
     // centre: one whose edge reaches into the circle may sit a radius outside.
-    const ShotBounds& bounds = shotBounds_[realmIndex(realm)];
-    if (!bounds.filed) return;
     const double reach = radius + maxShotRadius_;
-    const std::uint32_t x0 =
-        std::max(shotCellCoord(center.x - reach, kShotCellSize), bounds.columnMin);
-    const std::uint32_t x1 =
-        std::min(shotCellCoord(center.x + reach, kShotCellSize), bounds.columnMax);
+    const auto coord = [&](double at) { return shotCellCoord(at, kShotCellSize) >> filed.shift; };
+    const std::uint32_t x0 = std::max(coord(center.x - reach), filed.columnMin);
+    const std::uint32_t x1 = std::min(coord(center.x + reach), filed.columnMax);
     if (x0 > x1) return;
-    const std::uint32_t y0 = std::max(shotCellCoord(center.y - reach, kShotCellSize), bounds.rowMin);
-    const std::uint32_t y1 = std::min(shotCellCoord(center.y + reach, kShotCellSize), bounds.rowMax);
+    const std::uint32_t y0 = std::max(coord(center.y - reach), filed.rowMin);
+    const std::uint32_t y1 = std::min(coord(center.y + reach), filed.rowMax);
     for (std::uint32_t row = y0; row <= y1; ++row) {
-        const std::uint64_t first = shotCellKey(realm, row, x0);
-        const std::uint64_t last = shotCellKey(realm, row, x1);
-        auto it = std::lower_bound(shotCells_.begin(), shotCells_.end(), first,
-                                   [](const ShotCell& cell, std::uint64_t key) {
-                                       return cell.key < key;
-                                   });
-        for (; it != shotCells_.end() && it->key <= last; ++it) {
-            out.push_back(filedShots_[it->slot].entity);
+        const std::size_t rowStart =
+            filed.base + static_cast<std::size_t>(row - filed.rowMin) * filed.width;
+        // The span's last cell's end is the next cell's start, which the table
+        // has even for the last cell of the realm.
+        std::uint32_t i = shotCellStart_[rowStart + (x0 - filed.columnMin)];
+        const std::uint32_t end = shotCellStart_[rowStart + (x1 - filed.columnMin) + 1];
+        while (i < end) {
+            const ShotCell& cell = shotCells_[i];
+            const FiledShot& shot = filedShots_[cell.slot];
+            // A run never leaves its cell, so the jump lands on the next
+            // flower's shots in this cell or on the cell after it.
+            if (skipped(shot)) {
+                i = cell.runEnd;
+                continue;
+            }
+            out.push_back(shot.entity);
+            ++i;
         }
+    }
+}
+
+CombatSystem::ShotSkip CombatSystem::shotSkip(World& world, const FiledShot& shot) {
+    ShotSkip skip;
+    skip.player = shot.player;
+    if (shot.group == kNoShotGroup) return skip;
+    ShotRealm& filed = shotRealms_[shot.realm];
+    if (filed.crowded) return skip;
+    if (!filed.prepared) prepareShotTrades(world, shot.realm);
+    const std::uint32_t count = static_cast<std::uint32_t>(filed.groupPlayers.size());
+    const std::uint8_t* row = filed.skips.data() + static_cast<std::size_t>(shot.group) * (count + 1);
+    skip.groups = row;
+    skip.groupCount = count;
+    skip.everything = row[count] != 0;
+    return skip;
+}
+
+void CombatSystem::prepareShotSides(World& world, std::size_t realm) {
+    ShotRealm& filed = shotRealms_[realm];
+    if (filed.sided) return;
+    filed.sided = true;
+    // Every side present, each with one shot to stand for it. A volley is one
+    // side end to end, so the side just seen is the first tried.
+    const std::size_t first = shotSides_.size();
+    const std::uint32_t height = filed.rowMax - filed.rowMin + 1;
+    const std::uint32_t begin = shotCellStart_[filed.base];
+    const std::uint32_t end =
+        shotCellStart_[filed.base + static_cast<std::size_t>(height) * filed.width];
+    std::size_t last = first;
+    for (std::uint32_t i = begin; i < end; ++i) {
+        const FiledShot& shot = filedShots_[shotCells_[i].slot];
+        const TeamInfo team = teamOf(world, shot.entity);
+        const ShotSide side{shot.group, team.team, team.friendlyFire, team.known,
+                            ignoresMobs(world, shot.entity), mobsDoing(world, shot.entity),
+                            shot.entity};
+        const auto same = [&](const ShotSide& other) {
+            return other.group == side.group && other.team == side.team &&
+                   other.friendlyFire == side.friendlyFire && other.known == side.known &&
+                   other.ignoresMobs == side.ignoresMobs && other.mobsDoing == side.mobsDoing;
+        };
+        if (last < shotSides_.size() && same(shotSides_[last])) continue;
+        last = first;
+        while (last < shotSides_.size() && !same(shotSides_[last])) ++last;
+        if (last == shotSides_.size()) shotSides_.push_back(side);
+    }
+    filed.sidesBegin = static_cast<std::uint32_t>(first);
+    filed.sidesEnd = static_cast<std::uint32_t>(shotSides_.size());
+}
+
+bool CombatSystem::canDamageShotGroup(World& world, Entity attacker, std::size_t realm,
+                                      std::uint32_t group) {
+    prepareShotSides(world, realm);
+    const ShotRealm& filed = shotRealms_[realm];
+    for (std::size_t x = filed.sidesBegin; x < filed.sidesEnd; ++x) {
+        if (shotSides_[x].group == group && canDamage(world, attacker, shotSides_[x].example)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CombatSystem::prepareShotTrades(World& world, std::size_t realm) {
+    ShotRealm& filed = shotRealms_[realm];
+    filed.prepared = true;
+    const std::uint32_t count = static_cast<std::uint32_t>(filed.groupPlayers.size());
+    const std::size_t stride = static_cast<std::size_t>(count) + 1;
+    filed.skips.assign(stride * count, 0);
+    const auto at = [&](std::uint32_t a, std::uint32_t b) -> std::uint8_t& {
+        return filed.skips[a * stride + b];
+    };
+    // canDamage()'s first rule: a flower's shots never land on each other.
+    // Not the shots that answer to nobody -- two mobs' shots on opposite
+    // sides of the ring trade like anyone's.
+    for (std::uint32_t a = 0; a < count; ++a) {
+        if (filed.groupPlayers[a] != NULL_ENTITY) at(a, a) = 1;
+    }
+
+    if (count >= 2) {
+        prepareShotSides(world, realm);
+        // Group a's shots skip group b's when no side of the one can damage
+        // any side of the other. canDamage() itself decides, on the shots that
+        // stand for the two sides: everything it reads off a shot is the side,
+        // and the rest is the two flowers, which each group has one of.
+        for (std::uint32_t a = 0; a < count; ++a) {
+            for (std::uint32_t b = 0; b < count; ++b) {
+                if (a == b) continue;
+                bool trades = false;
+                for (std::size_t x = filed.sidesBegin; x < filed.sidesEnd && !trades; ++x) {
+                    if (shotSides_[x].group != a) continue;
+                    for (std::size_t y = filed.sidesBegin; y < filed.sidesEnd && !trades; ++y) {
+                        if (shotSides_[y].group != b) continue;
+                        trades = canDamage(world, shotSides_[x].example, shotSides_[y].example);
+                    }
+                }
+                at(a, b) = trades ? 0 : 1;
+            }
+        }
+    }
+
+    for (std::uint32_t a = 0; a < count; ++a) {
+        bool everything = true;
+        for (std::uint32_t b = 0; b < count && everything; ++b) everything = at(a, b) != 0;
+        at(a, count) = everything ? 1 : 0;
     }
 }
 
@@ -3410,8 +3672,21 @@ Entity CombatSystem::filedShotPlayer(Entity e) const {
     return shot != nullptr ? shot->player : NULL_ENTITY;
 }
 
+Entity CombatSystem::phaseCredit(const World& world, Entity e) {
+    const std::uint32_t index = entityIndex(e);
+    if (index >= phaseCredits_.size()) {
+        phaseCredits_.resize(std::max<std::size_t>(static_cast<std::size_t>(index) + 1,
+                                                   phaseCredits_.size() * 2));
+    }
+    PhaseCredit& credit = phaseCredits_[index];
+    if (credit.entity != e || credit.phase != creditPhase_) {
+        credit = PhaseCredit{e, creditedPlayer(world, e), creditPhase_};
+    }
+    return credit.player;
+}
+
 void CombatSystem::queryBodies(const SpatialGrid& grid, Realm realm, Vec2 center, double radius,
-                               std::vector<Entity>& out) {
+                               std::vector<Entity>& out, const ShotSkip* skip) {
     grid.query(realm, center, radius, out);
     // The server's grid files no shots, but a focused simulation that builds
     // its grid from every body does -- and must not be handed a shot twice.
@@ -3420,7 +3695,7 @@ void CombatSystem::queryBodies(const SpatialGrid& grid, Realm realm, Vec2 center
                                  [&](Entity e) { return isFiledShot(e); }),
                   out.end());
     }
-    queryShots(realm, center, radius, out);
+    queryShots(realm, center, radius, out, skip);
 }
 
 void CombatSystem::pushFromImpact(World& world, Entity victim, Vec2 offset, double shotMass,

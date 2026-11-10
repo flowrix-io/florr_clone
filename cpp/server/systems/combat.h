@@ -636,7 +636,6 @@ private:
         /// cannot step over a body between one tick and the next.
         Vec2 from;
         double radius = 0;
-        double travelled = 0;
         /// Momentum, for the shove a hit delivers and the recoil it repays.
         double mass = 1;
         double speed = 0;
@@ -725,7 +724,7 @@ private:
     void resolvePetalPvp(World& world, const MeleeSource& source, Entity victim,
                          Vec2 victimPosition, double victimRadius, double nowMillis);
     void tickProjectiles(World& world, const SpatialGrid& grid, const ContentRegistry& content,
-                         double nowMillis, double dt);
+                         double nowMillis);
 
     /// Files every projectile in the shot index, and resolves the flower each
     /// one is answerable to. Run at the top of both phases, at the same points the
@@ -738,15 +737,52 @@ private:
     /// The flower a filed shot is answerable to, or NULL_ENTITY for a shot
     /// with none (a wild mob's) and for anything that is not a filed shot.
     Entity filedShotPlayer(Entity e) const;
+    /// creditedPlayer() of any entity, worked out once a phase and then read
+    /// back: a flower's own ring is in reach of most of its fresh shots, and
+    /// walking each petal up to its flower for every one of them was a large
+    /// share of a heavy volley's hit tests. Exact for the same reason the
+    /// filed shots' answers are: nothing in a combat phase destroys an entity,
+    /// tags a flower or hands anything to a new owner.
+    Entity phaseCredit(const World& world, Entity e);
     /// Every body a pass that may hit a PROJECTILE has to consider: the main
     /// broadphase's candidates plus combat's own shots. The passes that only
     /// ever want flowers or mobs query the main grid directly and never pay
     /// for the shots at all.
+    ///
+    /// `skip`, when given, leaves out the shots it names (see ShotSkip) a run
+    /// of them at a time rather than one candidate at a time.
+    struct ShotSkip;
     void queryBodies(const SpatialGrid& grid, Realm realm, Vec2 center, double radius,
-                     std::vector<Entity>& out);
+                     std::vector<Entity>& out, const ShotSkip* skip = nullptr);
     /// Appends every filed shot that could overlap the circle -- candidates,
-    /// as a grid query returns, for the caller's exact test.
-    void queryShots(Realm realm, Vec2 center, double radius, std::vector<Entity>& out) const;
+    /// as a grid query returns, for the caller's exact test -- less those
+    /// `skip` names. What it does append comes in the order it would without
+    /// the skip.
+    void queryShots(Realm realm, Vec2 center, double radius, std::vector<Entity>& out,
+                    const ShotSkip* skip = nullptr) const;
+    /// Which filed shots `shot` (a filed shot itself) can never land on this
+    /// phase, for queryShots(): its own flower's, and every group's in its
+    /// realm that canDamage() refuses whichever of their shots meet. Prepares
+    /// the realm's sides and trades on its first call there in a phase.
+    struct ShotSkip {
+        Entity player = NULL_ENTITY;
+        /// The asking group's row of its realm's table, one flag per group,
+        /// or nullptr where there is none (a realm with too many groups).
+        const std::uint8_t* groups = nullptr;
+        std::uint32_t groupCount = 0;
+        /// Every shot in the realm is one to skip: nothing to read at all.
+        bool everything = false;
+    };
+    ShotSkip shotSkip(World& world, const FiledShot& shot);
+    /// Works out, once a phase, the sides of every shot in `realm` (ShotSide).
+    void prepareShotSides(World& world, std::size_t realm);
+    /// Works out, once a phase, which of `realm`'s groups can trade hits. See
+    /// ShotRealm.
+    void prepareShotTrades(World& world, std::size_t realm);
+    /// Whether `attacker` can damage any shot of `group` in `realm`:
+    /// canDamage() asked of one shot for each of the group's sides.
+    bool canDamageShotGroup(World& world, Entity attacker, std::size_t realm,
+                            std::uint32_t group);
     /// Spread a shared chain's pool across the bodies that draw on it: every
     /// segment behind `owner` is given the owner's health FRACTION and its
     /// flash, and -- when the hit was fatal -- the same death.
@@ -854,36 +890,105 @@ private:
     /// shot) look here, through queryBodies(), at cells sized to a shot rather
     /// than to a mob's aggro range.
     ///
-    /// A sorted list of (cell, shot) rather than a SpatialGrid: cells this
-    /// small over every map realm would be megabytes of empty buckets, while
-    /// this costs sixteen bytes a shot and nothing where there are none. Each
-    /// shot is filed under the cell its CENTRE is in, once, and a query widens
-    /// itself by the largest shot filed instead -- so there are no duplicates
-    /// to strip.
+    /// Not a SpatialGrid: cells this small over every map realm would be
+    /// megabytes of empty buckets. Instead every filed shot goes in ONE list,
+    /// counting-sorted by realm, row, column and then filing order, and each
+    /// realm keeps a table of where each of its cells starts in that list --
+    /// over the box its own shots span, and nowhere else. A query reads the
+    /// start and end of each row it crosses straight out of the table: no
+    /// search, and nothing at all where there are no shots. Each shot is filed
+    /// under the cell its CENTRE is in, once, and a query widens itself by the
+    /// largest shot filed instead -- so there are no duplicates to strip.
     static constexpr double kShotCellSize = 64.0;
+    /// What one realm's table may cost: the larger of a flat floor and a few
+    /// cells a shot. A realm whose shots span more than that -- two bots at
+    /// opposite corners of a biome -- is filed at doubled cells until it fits
+    /// (ShotRealm::shift), so a handful of shots never buys a table the size
+    /// of the map. A dense cloud fits at the finest cells.
+    static constexpr std::uint64_t kShotCellFloor = 256;
+    static constexpr std::uint64_t kShotCellsPerShot = 4;
     struct ShotCell {
-        /// Realm, row, column, most significant first: one row of one realm is
-        /// a contiguous run, found with one binary search.
-        std::uint64_t key = 0;
         std::uint32_t slot = 0;
+        /// One past the last entry of the RUN this one is in: the consecutive
+        /// entries of the same cell whose shots answer to the same flower.
+        /// A shot's hit test never wants its own flower's shots, and a dense
+        /// volley is nothing else -- a cell of one flower's spray is a single
+        /// run, stepped over in one jump. Without it every shot walked every
+        /// sibling near it, and a few thousand of them made the combat phase
+        /// quadratic in the size of the cloud.
+        std::uint32_t runEnd = 0;
     };
+    /// Every filed shot with a finite position, in cell order.
     std::vector<ShotCell> shotCells_;
-    double maxShotRadius_ = 0;
-    /// The cells each realm's shots were filed in. A query is clamped to its
-    /// own realm's box before it searches: a realm with no shots -- every
-    /// biome nobody is shooting in -- answers at once, a body far from the
-    /// shots searches no rows, and a query with an absurd radius walks the
-    /// rows that exist rather than millions. Per realm, because with flowers
-    /// spread over the biomes the rows spanned by EVERY realm's shots cover
-    /// most of a map, and about two thousand bodies ask each tick.
-    struct ShotBounds {
+    /// Each realm's cell table, laid end to end: for its cell `c`, the index in
+    /// shotCells_ its shots start at is shotCellStart_[base + c], and the next
+    /// entry is where they end -- a realm's table has one entry more than it
+    /// has cells, so the last cell has an end too. Cells run row by row, so
+    /// the shots of any span of one row are one contiguous range.
+    std::vector<std::uint32_t> shotCellStart_;
+    /// The counting sort's write cursor, kept between phases for its capacity.
+    std::vector<std::uint32_t> shotCellCursor_;
+    /// Each filed shot's cell, by slot, from gathering to the sort.
+    struct ShotPlace {
         bool filed = false;
+        std::uint8_t realm = 0;
+        std::uint32_t row = 0;
+        std::uint32_t column = 0;
+    };
+    std::vector<ShotPlace> shotPlaces_;
+    double maxShotRadius_ = 0;
+    /// One realm's part of the index. A query is clamped to its own realm's box
+    /// before it reads anything: a realm with no shots -- every biome nobody is
+    /// shooting in -- answers at once, a body far from the shots reads no rows,
+    /// and a query with an absurd radius walks the rows that exist rather than
+    /// millions. Per realm, because with flowers spread over the biomes the
+    /// rows spanned by EVERY realm's shots cover most of a map, and about two
+    /// thousand bodies ask each tick.
+    struct ShotRealm {
+        std::uint32_t shots = 0;
+        /// Cells here are kShotCellSize << shift across. The bounds below are
+        /// in those cells once fileShots() has picked it, and in 64-unit cells
+        /// while it is still gathering.
+        std::uint32_t shift = 0;
         std::uint32_t rowMin = 0;
         std::uint32_t rowMax = 0;
         std::uint32_t columnMin = 0;
         std::uint32_t columnMax = 0;
+        std::uint32_t width = 0;
+        /// Where this realm's table starts in shotCellStart_.
+        std::uint32_t base = 0;
+        /// SHOT AGAINST SHOT. A realm's shots are put in GROUPS, one per flower
+        /// they answer to (and one for the shots that answer to none, a wild
+        /// mob's). Most groups can never hurt each other's shots -- two
+        /// flowers outside the ring are on one side -- and a hit test that
+        /// knew it could step over the other group's runs as it steps over
+        /// its own. Two players with heavy volleys standing together put tens
+        /// of thousands of shots in reach of each other, and each pair used to
+        /// be refused by canDamage() one at a time.
+        ///
+        /// `groupPlayers` is filled while filing. The table is worked out the
+        /// first time a hit test asks in this realm in a phase
+        /// (prepareShotTrades), and only where there are two groups or more:
+        /// for one group its row is just "its own flower's".
+        std::vector<Entity> groupPlayers;
+        /// More groups than kMaxShotGroups: no table, each shot skips only its
+        /// own flower's.
+        bool crowded = false;
+        bool prepared = false;
+        /// Its shots' sides are shotSides_[sidesBegin, sidesEnd) once `sided`.
+        bool sided = false;
+        std::uint32_t sidesBegin = 0;
+        std::uint32_t sidesEnd = 0;
+        /// Row `a` is groupCount + 1 flags: [b] whether group a's shots can
+        /// never land on group b's, and [groupCount] whether that is every
+        /// group here.
+        std::vector<std::uint8_t> skips;
     };
-    std::array<ShotBounds, kMaxRealms> shotBounds_{};
+    std::array<ShotRealm, kMaxRealms> shotRealms_{};
+    /// Past this many groups a realm gets no table: the pairs to settle grow
+    /// as its square, and a hit test there skips only its own flower's shots.
+    static constexpr std::uint32_t kMaxShotGroups = 16;
+    static constexpr std::uint32_t kNoShotGroup = 0xFFFFFFFFu;
     struct FiledShot {
         Entity entity = NULL_ENTITY;
         /// creditedPlayer() of the shot, resolved once when it is filed.
@@ -894,12 +999,40 @@ private:
         /// Body for the rest of the phase, read without a lookup.
         Vec2 position;
         double radius = 0;
+        /// Its group in its realm (ShotRealm), or kNoShotGroup for a shot no
+        /// query can reach or a realm too crowded to group.
+        std::uint32_t group = kNoShotGroup;
+        std::uint8_t realm = 0;
     };
+    /// Everything canDamage() reads off a SHOT, as opposed to off the flowers
+    /// behind it: the side teamOf() walks to, and the two mob rules. Two shots
+    /// of one group and one side are interchangeable to it, so a group's
+    /// sides, each with one shot to stand for it, are all the table needs.
+    struct ShotSide {
+        std::uint32_t group = 0;
+        Team team = Team::Neutral;
+        bool friendlyFire = false;
+        bool known = false;
+        bool ignoresMobs = false;
+        bool mobsDoing = false;
+        Entity example = NULL_ENTITY;
+    };
+    std::vector<ShotSide> shotSides_;
     std::vector<FiledShot> filedShots_;
     /// filedShots_ slot by entity INDEX, or kNoShotSlot. The handle stored in
     /// the slot is compared on every read, because the world recycles indices.
     static constexpr std::uint32_t kNoShotSlot = 0xFFFFFFFFu;
     std::vector<std::uint32_t> shotSlot_;
+    /// phaseCredit()'s answers by entity INDEX, each good for the phase it was
+    /// written in and for the handle it was written for. fileShots() starts a
+    /// new phase, so nothing is ever cleared.
+    struct PhaseCredit {
+        Entity entity = NULL_ENTITY;
+        Entity player = NULL_ENTITY;
+        std::uint64_t phase = 0;
+    };
+    std::vector<PhaseCredit> phaseCredits_;
+    std::uint64_t creditPhase_ = 0;
 
     /// A strike's own broadphase answer and the two lists it builds from it.
     /// Separate from candidates_ because a contact strike is thrown from INSIDE

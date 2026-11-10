@@ -1681,6 +1681,58 @@ TEST(a_shot_is_found_in_its_own_realm_wherever_its_realms_others_are) {
     CHECK_NEAR(a.health(elsewhere), 10.0, 1e-9);
 }
 
+TEST(a_volley_skips_only_its_own_shots_however_they_are_interleaved_in_a_cell) {
+    // The shot index steps over a flower's own shots a run at a time. Filed
+    // one of ours, one of theirs, in turn, in a single cell, every run is one
+    // shot long -- and each of ours still has to find every one of theirs.
+    // Ours are shielded, so theirs cannot do the finding for them: whatever
+    // theirs lose, ours found.
+    Arena a;
+    const Entity player = a.player({500, 1000});
+    const Entity mob = a.mob({200, 1000}, 100.0);
+    std::vector<Entity> ours;
+    std::vector<Entity> theirs;
+    for (int i = 0; i < 3; ++i) {
+        const double x = 1000.0 + 4.0 * i;
+        ours.push_back(
+            spawnDurableShot(a, {x, 1000}, {1000, 0}, 2.0, 500.0, player, player, 100.0));
+        a.world.get<Health>(ours.back()).invulnerableUntilMillis = 1000.0;
+        theirs.push_back(spawnDurableShot(a, {x + 2.0, 1000}, {-1000, 0}, 1.0, 500.0, mob,
+                                          NULL_ENTITY, 100.0, Team::Hostiles));
+    }
+
+    a.stepWithServerGrid(0.0);
+    // Each of theirs met all three of ours, at two points a hit, and none of
+    // ours touched another of ours.
+    for (const Entity shot : theirs) CHECK_NEAR(a.health(shot), 94.0, 1e-9);
+    for (const Entity shot : ours) CHECK_NEAR(a.health(shot), 97.0, 1e-9);
+}
+
+TEST(a_flowers_volley_skips_another_flowers_only_when_none_of_its_shots_can_be_hit) {
+    // A shot steps over another flower's shots when canDamage() refuses every
+    // pairing of the two flowers' sides. Bob has two here, filed in one cell:
+    // a plain shot first, which alice's cannot touch, then one flagged for
+    // the ring, which it can. Alice's is shielded, so only her own hit test
+    // can make the trade -- a table that judged bob by his first shot would
+    // skip him whole and leave the flagged one untouched.
+    Arena a;
+    const Entity alice = a.player({500, 1000});
+    const Entity bob = a.player({1500, 1000});
+    const Entity plain =
+        spawnDurableShot(a, {1002, 1000}, {-1000, 0}, 1.0, 500.0, bob, bob, 100.0);
+    const Entity flagged =
+        spawnDurableShot(a, {1004, 1000}, {-1000, 0}, 1.0, 500.0, bob, bob, 100.0);
+    a.world.get<Faction>(flagged).friendlyFireEnabled = true;
+    const Entity fromAlice =
+        spawnDurableShot(a, {1000, 1000}, {1000, 0}, 2.0, 500.0, alice, alice, 100.0);
+    a.world.get<Health>(fromAlice).invulnerableUntilMillis = 1000.0;
+
+    a.stepWithServerGrid(0.0);
+    CHECK_NEAR(a.health(flagged), 98.0, 1e-9);
+    CHECK_NEAR(a.health(plain), 100.0, 1e-9);
+    CHECK_NEAR(a.health(fromAlice), 99.0, 1e-9);
+}
+
 TEST(two_duellists_shots_still_shoot_each_other_down) {
     // The shortcut that turns away a flower's own shots before any lookup must
     // not turn away ANOTHER flower's: in the arena two players' volleys trade
@@ -4420,6 +4472,31 @@ double shotLossFrom(std::uint16_t petal) {
 }
 
 } // namespace
+
+TEST(a_petal_in_another_flowers_volley_hits_only_the_shots_it_can_damage) {
+    // The melee pass asks once per flower's shots whether a source can damage
+    // any of them, and steps over the lot when it cannot. Bob's two shots sit
+    // on alice's petal: a plain one first, which her petal cannot touch, then
+    // one flagged for the ring, which it can. A pass that judged bob by his
+    // first shot would leave the flagged one whole. The petal has no health,
+    // so neither shot can hit it back and only the petal decides.
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    Arena a;
+    const Entity alice = a.player({1000, 1000});
+    const Entity bob = a.player({3000, 1000});
+    const Entity plain =
+        spawnDurableShot(a, {1100, 1000}, {0, 0}, 1.0, 500.0, bob, bob, 100.0);
+    const Entity flagged =
+        spawnDurableShot(a, {1102, 1000}, {0, 0}, 1.0, 500.0, bob, bob, 100.0);
+    a.world.get<Faction>(flagged).friendlyFireEnabled = true;
+    equipPetal(a, alice, f.plain, Rarity::Common, {1100, 1000});
+
+    a.step(1000.0, f.registry);
+    CHECK(a.health(flagged) < 100.0);
+    CHECK_NEAR(a.health(plain), 100.0, 1e-9);
+}
 
 TEST(a_plank_hits_a_shot_twenty_times_as_hard_as_a_mob) {
     const Fixture& f = fixture();
