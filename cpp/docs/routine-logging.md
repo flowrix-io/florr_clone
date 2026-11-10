@@ -2,7 +2,10 @@
 
 `cpp/server/routine_log_policy.h` contains the explicit server-side list of
 accounts excluded from routine gameplay and diagnostic output. The current
-list contains `a19kisme`. Matching uses the authenticated account username,
+list contains `a19kisme`, but exclusions are temporarily disabled by
+`kRoutineLogExclusionsEnabled = false`: every account currently receives
+normal routine logging. Set it to `true` and rebuild to re-enable the saved
+preference. Matching uses the authenticated account username,
 case-insensitively; a displayed flower name never selects this preference.
 
 The policy applies to orphan-session cleanup, stale-body cleanup and the

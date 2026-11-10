@@ -38,9 +38,10 @@ std::string capturedOutput(const std::function<void()>& action) {
 
 } // namespace
 
-TEST(routine_logging_policy_matches_only_the_configured_account) {
-    CHECK(!shouldLogRoutineActivity("a19kisme"));
-    CHECK(!shouldLogRoutineActivity("A19KIsMe"));
+TEST(routine_logging_is_temporarily_enabled_for_all_accounts) {
+    CHECK(!kRoutineLogExclusionsEnabled);
+    CHECK(shouldLogRoutineActivity("a19kisme"));
+    CHECK(shouldLogRoutineActivity("A19KIsMe"));
     CHECK(shouldLogRoutineActivity("a19kisme2"));
     CHECK(shouldLogRoutineActivity("other"));
     CHECK(shouldLogRoutineActivity(""));

@@ -8,9 +8,12 @@
 
 namespace flix {
 
+// Temporarily disabled: all accounts currently receive normal routine logs.
+inline constexpr bool kRoutineLogExclusionsEnabled = false;
 inline constexpr std::array<std::string_view, 1> kRoutineLogExcludedAccounts{"a19kisme"};
 
 inline bool shouldLogRoutineActivity(std::string_view accountUsername) {
+    if (!kRoutineLogExclusionsEnabled) return true;
     for (const auto excluded : kRoutineLogExcludedAccounts) {
         if (accountUsername.size() != excluded.size()) continue;
         bool matches = true;
