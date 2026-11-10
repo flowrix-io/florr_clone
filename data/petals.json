@@ -2063,7 +2063,7 @@
         "size": 1,
         "cooldown": 2000,
         "price": 21,
-        "description": "You can actually shoot this one.",
+        "description": "You can actually shoot fast this one.",
         "color": "#222222",
         "count": 1,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#222222\" stroke=\"#222222\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</svg>",
@@ -2082,7 +2082,7 @@
         "size": 1,
         "cooldown": 200,
         "price": 10,
-        "description": "You can actually shoot this one... with magic.",
+        "description": "You can actually shoot fast this one... with magic.",
         "color": "#222222",
         "count": 1,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#42E3F5\" stroke=\"#42E3F5\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /></svg>",
@@ -2093,6 +2093,83 @@
             "distance": 1500,
             "speed": 1500,
             "spreadAngle": 0
+        }
+    },
+    "speed_nuke_missile": {
+        "name": "Speed Nuke Missile",
+        "damage": 100,
+        "health": 10,
+        "size": 1,
+        "cooldown": 1000,
+        "price": 21,
+        "description": "You can actually snipe with this one.",
+        "color": "#222222",
+        "count": 1,
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#222222\" stroke=\"#222222\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</svg>",
+        "isAdminPetal": true,
+        "projectile": {
+            "count": 1,
+            "distance": 2000,
+            "speed": 5000,
+            "spreadAngle": 0
+        }
+    },
+    "magic_speed_nuke_missile": {
+        "name": "Magic Speed Nuke Missile",
+        "damage": 350,
+        "health": 2,
+        "size": 1,
+        "cooldown": 100,
+        "price": 10,
+        "description": "You can actually snipe with this one... with magic.",
+        "color": "#222222",
+        "count": 1,
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#42E3F5\" stroke=\"#42E3F5\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /></svg>",
+        "isAdminPetal": true,
+        "requiredMana": 10,
+        "projectile": {
+            "count": 1,
+            "distance": 2000,
+            "speed": 5000,
+            "spreadAngle": 0
+        }
+    },
+    "nuke": {
+        "name": "Nuke?",
+        "damage": 1000,
+        "health": 100,
+        "size": 2,
+        "cooldown": 1,
+        "price": 21,
+        "description": "You can actually shoot this one... every millisecond.",
+        "color": "#222222",
+        "count": 1,
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#222222\" stroke=\"#222222\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</svg>",
+        "isAdminPetal": true,
+        "projectile": {
+            "count": 1,
+            "distance": 2000,
+            "speed": 5000,
+            "spreadAngle": 0
+        }
+    },
+    "spray": {
+        "name": "Spray",
+        "damage": 1000,
+        "health": 100,
+        "size": 2,
+        "cooldown": 30,
+        "price": 21,
+        "description": "You can actually shoot this one... very spread out.",
+        "color": "#222222",
+        "count": 10,
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#222222\" stroke=\"#222222\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</svg>",
+        "isAdminPetal": true,
+        "projectile": {
+            "count": 300,
+            "distance": 2000,
+            "speed": 5000,
+            "spreadAngle": 360
         }
     }
 }
