@@ -1850,8 +1850,9 @@ private:
     std::array<Rect, kStripSlotCount> stripRects_{};
     /// When each slot's slide-in began, in seconds. Negative means idle.
     std::array<double, kStripSlotCount> slideStart_{};
-    /// Whether a slot was visible last frame, so a late reveal (the exit and
-    /// debug buttons) can slide in on the false->true edge only.
+    /// Whether a slot was visible last frame, so a late reveal (the exit,
+    /// debug, account and admin buttons) can slide in on the false->true edge
+    /// only.
     std::array<bool, kStripSlotCount> stripVisible_{};
     bool stripSeeded_ = false;
     /// The slot the current press began on. A click only counts when the
