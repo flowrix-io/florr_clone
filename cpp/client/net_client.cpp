@@ -2052,8 +2052,8 @@ void NetClient::handleSkinDeleted(ByteReader& reader) {
 
 void NetClient::handleSkinVotes(ByteReader& reader) {
     const std::string id = reader.str();
-    const double likes = reader.f64();
-    const double dislikes = reader.f64();
+    const std::uint32_t likes = reader.u32();
+    const std::uint32_t dislikes = reader.u32();
     if (!reader.ok()) return;
     for (CustomSkin& skin : skinCatalog_) {
         if (skin.id != id) continue;

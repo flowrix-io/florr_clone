@@ -31,7 +31,6 @@
 #include "shared/game/components.h"
 #include "shared/game/config.h"
 #include "shared/game/map_elements.h"
-#include "shared/game/signature_skin.h"
 #include "shared/game/terrain.h"
 
 namespace flix {
@@ -178,9 +177,6 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             if (entity.isSelf()) drawSelfManaBar(canvas, entity, camera, at);
             else drawPlayerPlate(canvas, entity, camera, at, timeSeconds);
             drawFlower(canvas, entity, camera, at, timeSeconds);
-            // Cosmetic titles belong to the body, including the viewer's
-            // own flower, independently of the optional name/health plate.
-            drawFanTitle(canvas, entity, camera, at, timeSeconds);
             break;
 
         case net::EntityKind::Mob: {
@@ -564,12 +560,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             if (entity.kind == net::EntityKind::Mob) mobShadows_.erase(entity.netId);
             return;
         }
-        double visibleRadius = entity.radius;
-        if (entity.kind == net::EntityKind::Player) {
-            if (const auto* skin = wornSkin(entity); skin && hasSignatureAnimation(*skin))
-                visibleRadius = std::max(visibleRadius,kFlowerArtRadius*playerSizeMultiplier(entity)*6);
-        }
-        if (!onScreen(at, visibleRadius)) return;
+        if (!onScreen(at, entity.radius)) return;
 
         if (entity.kind == net::EntityKind::Drop) ++timing_.itemCount;
         drawEntity(canvas, entity, camera, at, timeSeconds);

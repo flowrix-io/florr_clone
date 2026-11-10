@@ -11,7 +11,6 @@
 #include "client/render/skin_render.h"
 #include "client/ui/draw.h"
 #include "shared/game/config.h"
-#include "shared/game/signature_skin.h"
 
 namespace flix {
 
@@ -92,11 +91,6 @@ void WorldRenderer::drawFlower(Canvas& canvas, const RemoteEntity& entity, const
     const double radius = kFlowerArtRadius * playerSizeMultiplier(entity) * zoom;
     if (radius <= 0.5) return;
     const double scale = radius / kFlowerArtRadius;
-
-    if (const auto* skin = wornSkin(entity); skin && hasSignatureAnimation(*skin)) {
-        canvas.save(); canvas.translate(float(screen.x),float(screen.y));
-        renderSignatureAura(canvas,radius,timeSeconds); canvas.restore();
-    }
 
     const auto paintBody = [&](Canvas& target) {
         // Charging a pad: the body turns, face and all. Inside the glitch's
@@ -227,9 +221,7 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
         variant = variant * 1099511628211ull + skin->shapes.size();
         variant = variant * 1099511628211ull + static_cast<std::uint64_t>(skin->editedAt);
-        if (hasSignatureAnimation(*skin) || hasFanAnimation(*skin)) {
-            renderAnimatedSkin(canvas,*skin,kFlowerArtRadius,timeSeconds);
-        } else if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
+        if (!drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
                                [&](Canvas& bitmap) {
                                    bitmap.translate(static_cast<float>(reach),
                                                     static_cast<float>(reach));

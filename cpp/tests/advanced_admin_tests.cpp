@@ -3,7 +3,6 @@
 #include "render_rig.h"
 #include "client/ui/admin_tools_ui.h"
 #include "client/ui/menus.h"
-#include "shared/game/signature_skin.h"
 using namespace flix;
 using namespace flix::testsupport;
 namespace {

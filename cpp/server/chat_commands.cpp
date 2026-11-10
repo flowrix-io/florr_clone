@@ -1410,9 +1410,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             if (!other.playing()) continue;
             const PlayerProgress* progress = world_.tryGet<PlayerProgress>(other.entity);
             rows.push_back("Player ID: " + std::to_string(entry.first) + ", Username: " +
-                           other.username + ", Nickname: " +
-                           (other.displayName.empty() ? other.username : other.displayName) +
-                           ", Level: " + std::to_string(progress != nullptr ? progress->level : 0));
+                           other.username + ", Nickname: " + other.nameplate() + ", Level: " + std::to_string(progress != nullptr ? progress->level : 0));
         }
         // Bots are players to every system in the world; hiding them here
         // would make the count disagree with what the console can teleport.
@@ -2246,7 +2244,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("XP cannot be granted during an arena run. Leave the arena first.");
             return;
         }
-        const bool maze = target && target->playing() && target->realm == Realm::Maze;
+        const bool maze = target && target->playingIn(Realm::Maze);
         PlayerRecord& record = database_.progress(account->id);
         const PlayerProgress* live = target && target->playing()
             ? world_.tryGet<PlayerProgress>(target->entity) : nullptr;
@@ -2349,11 +2347,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             database_.markDirty();
             // One profile for the whole batch, rather than one per petal.
             if (self) sendProfile(session, connection);
-            else if (online) {
-                if (net::Connection* peer = listener_.find(target.session->connection)) {
-                    sendProfile(*target.session, *peer);
-                }
-            }
+            else if (online) sendProfile(*target.session);
             out("Gave " + std::to_string(amount) + "x every " + rarityName(rarity) +
                 " petal" + (excludedNames.empty() ? std::string() : " except " + excludedNames) +
                 " to " + (self ? std::string("yourself") : username) + ".");
@@ -2420,11 +2414,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         PlayerRecord& record = database_.progress(userId);
         record.addItem(rarity, "petal_" + content().petal(petalIndex).id, amount);
         database_.markDirty();
-        if (online) {
-            if (net::Connection* peer = listener_.find(target.session->connection)) {
-                sendProfile(*target.session, *peer);
-            }
-        }
+        if (online) sendProfile(*target.session);
         const std::string amountLabel = amount > 1 ? std::to_string(amount) + "x " : std::string();
         out("Gave " + amountLabel + rarityText + " " + itemType + " petal to " +
             (online ? target.name + " (" + std::to_string(target.session->connection) + ")"

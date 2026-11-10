@@ -1211,6 +1211,12 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
     // First frame: stagger every visible button so the strip cascades in.
     // After that only a false->true edge starts a slide, which is what makes
     // the exit and debug buttons sweep in when they appear.
+    //
+    // A button revealed while the cascade is still running takes its turn in
+    // it instead of starting at once. The Account and admin buttons are the
+    // ones that need this: they wait on the auth answer, which usually lands
+    // halfway down the wave, and starting their slide right away put them in
+    // place before the buttons to their left had moved.
     if (!stripSeeded_) {
         stripSeeded_ = true;
         slideStart_.fill(-1.0);
@@ -1225,6 +1231,20 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
             const auto at = static_cast<std::size_t>(i);
             if (visible[at] && !stripVisible_[at]) slideStart_[at] = timeSeconds;
             else if (!visible[at]) slideStart_[at] = -1.0;
+        }
+        // Keep the wave in table order: a button that has not started moving
+        // yet goes at least one stagger behind the visible button before it,
+        // if that one is still sliding. A button already on its way is never
+        // pulled back off-screen, and one that has landed (-1) holds nobody up.
+        double previous = -1.0;
+        for (int i = 0; i < kStripSlotCount; ++i) {
+            const auto at = static_cast<std::size_t>(i);
+            if (!visible[at]) continue;
+            double& start = slideStart_[at];
+            if (previous >= 0 && start >= timeSeconds) {
+                start = std::max(start, previous + kIconStaggerSeconds);
+            }
+            previous = start;
         }
     }
     stripVisible_ = visible;

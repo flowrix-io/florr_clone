@@ -75,11 +75,11 @@ struct CustomSkin {
     /// An edit keeps the id, so this is what tells a picture baked from the
     /// old shapes that it is stale. Stored only when set.
     double editedAt = 0;
-    /// Server-weighted like/dislike scores. Wire only, never in the skin's
+    /// How many accounts like and dislike it. Wire only, never in the skin's
     /// JSON: every vote lives on the VOTER's account row, so these are the
     /// server's tally of those, filled in as the skin is sent.
-    double likes = 0;
-    double dislikes = 0;
+    std::uint32_t likes = 0;
+    std::uint32_t dislikes = 0;
 };
 
 /// One account's vote on one skin. On the wire as a u8; in the database as

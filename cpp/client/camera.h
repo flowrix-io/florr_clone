@@ -92,7 +92,7 @@ public:
     /// world than the default view, which is what makes them worth wearing.
     /// The client's to apply: the server never sends it, and works the same
     /// figure out only to bound the viewport a client may claim
-    /// (claimableViewport, server/game_server.cpp).
+    /// (claimableViewport, server/players.cpp).
     double loadoutZoom = 1.0;
 
 private:

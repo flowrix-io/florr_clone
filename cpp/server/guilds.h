@@ -90,4 +90,9 @@ inline int guildMemberIndex(const Json& guild, const std::string& username) {
     return -1;
 }
 
+/// Whether `username` leads `guild`. Case-blind, as every name match is.
+inline bool isGuildLeader(const Json& guild, const std::string& username) {
+    return lowerCase(guild["leaderUsername"].asString()) == lowerCase(username);
+}
+
 } // namespace flix

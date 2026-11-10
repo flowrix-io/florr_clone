@@ -468,7 +468,7 @@ void GameServer::surveyWaves(double nowMillis) {
         const int reached = waves_.wave;
         std::vector<net::ConnectionId> players;
         for (const auto& entry : sessions_) {
-            if (entry.second.playing() && entry.second.realm == kWavesRealm) {
+            if (entry.second.playingIn(kWavesRealm)) {
                 players.push_back(entry.first);
             }
         }
@@ -483,7 +483,7 @@ void GameServer::surveyWaves(double nowMillis) {
         return;
     }
     for (auto& entry : sessions_) {
-        if (entry.second.playing() && entry.second.realm == kWavesRealm) {
+        if (entry.second.playingIn(kWavesRealm)) {
             sendWaveState(entry.second);
         }
     }
@@ -532,7 +532,7 @@ void GameServer::closeWaves() {
     const double now = clockMillis_;
     for (auto& entry : sessions_) {
         Session& session = entry.second;
-        if (session.playing() && session.realm == kWavesRealm) leaveWaves(session, now);
+        if (session.playingIn(kWavesRealm)) leaveWaves(session, now);
     }
     clearWaveRealm();
     stopChargingRift();

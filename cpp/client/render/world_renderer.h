@@ -587,8 +587,6 @@ private:
     /// so a grown flower paints over its own plate rather than under it.
     void drawPlayerPlate(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
                          double timeSeconds) const;
-    void drawFanTitle(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
-                      double timeSeconds) const;
     /// The mana bar, in the slot the viewer's own health bar used to occupy.
     ///
     /// Only the viewer's own flower has one, because mana is not replicated

@@ -3690,6 +3690,135 @@ TEST(a_boss_no_player_killed_is_still_announced) {
     CHECK(!sawText(client, "Super Bee has been defeated by"));
 }
 
+namespace {
+
+/// Every super bee standing: the one the console made, and any the world
+/// stocked while the test ran, so none of them dies under another name.
+std::vector<Entity> superBees(World& world) {
+    const std::uint16_t bee = content().mobIndex("bee");
+    std::vector<Entity> supers;
+    Query<MobTag, MobType> mobs{world};
+    mobs.each([&](Entity e, MobTag&, MobType& type) {
+        if (type.configIndex == bee && type.rarity == Rarity::Super) supers.push_back(e);
+    });
+    return supers;
+}
+
+/// Poison from `source` heavy enough to finish `mob` on its next tick, landing
+/// a sliver of `source`'s own on the ledger as it does.
+void poisonFrom(World& world, Entity mob, Entity source) {
+    if (!world.has<Afflictions>(mob)) world.add<Afflictions>(mob, Afflictions{});
+    world.get<Afflictions>(mob).poisonStacks.push_back({source, 1e12, 1e18});
+}
+
+void killFlower(World& world, Entity body) {
+    Health& health = world.get<Health>(body);
+    health.invulnerableUntilMillis = 0;
+    health.current = 0;
+    world.add<Dead>(body, Dead{NULL_ENTITY});
+}
+
+const char* const kBossCreditedLine =
+    "Super Bee has been defeated by <span style=\"color: #00ff00;\">@boss</span>";
+
+} // namespace
+
+TEST(a_boss_is_credited_to_a_top_dealer_who_died_and_came_back) {
+    // The ledger names a flower by its body, and the way back from the death
+    // card is LeaveGame then JoinGame -- a new body. Whoever did most of the
+    // damage before they died is still who the boss fell to; the line used to
+    // go anonymous because it looked for the body that was gone.
+    Harness h("cmd-boss-credit-respawn", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    World& world = h.server.world();
+    const Entity first = onlyPlayer(world);
+    CHECK(first != NULL_ENTITY);
+    if (first == NULL_ENTITY) return;
+
+    CHECK(say(h, client, "/admin spawn bee super"));
+    CHECK(sawText(client, "Spawned super bee"));
+    const std::vector<Entity> supers = superBees(world);
+    CHECK(!supers.empty());
+    for (const Entity e : supers) world.get<Bounty>(e).credit(first, 1e15);
+
+    killFlower(world, first);
+    CHECK(h.stepUntil({&client}, [&] { return client.dead(); }, 60));
+    client.leaveGame();
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    const Entity second = onlyPlayer(world);
+    CHECK(second != NULL_ENTITY && second != first);
+    if (second == NULL_ENTITY || second == first) return;
+    // One person, one row: the old body's damage is the new body's now.
+    for (const Entity e : supers) {
+        const Bounty& bounty = world.get<Bounty>(e);
+        CHECK(bounty.contributors.size() == 1);
+        CHECK(!bounty.contributors.empty() && bounty.contributors.front().player == second);
+    }
+
+    // The new body finishes it with a sliver of its own; the old body's share
+    // dwarfs it, so the line is only right if the two are the same person.
+    for (const Entity e : supers) poisonFrom(world, e, second);
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, kBossCreditedLine); }, 120));
+    CHECK(!sawText(client, "Super Bee has been defeated!"));
+}
+
+TEST(a_boss_that_falls_while_its_top_dealer_is_on_the_title_screen_is_theirs) {
+    // Between the death card and the next join the top dealer has no body at
+    // all. They have not left: a boss a squadmate finishes in those seconds is
+    // still credited to them.
+    Harness h("cmd-boss-credit-title", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "mate", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient mate;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, mate, "mate", "password7"));
+    boss.joinGame(1920, 1080, {}, "Boss");
+    mate.joinGame(1920, 1080, {}, "Mate");
+    CHECK(h.stepUntil({&boss, &mate}, [&] {
+        return boss.status() == NetClient::Status::Playing &&
+               mate.status() == NetClient::Status::Playing;
+    }, 200));
+
+    World& world = h.server.world();
+    const Entity bossBody = bodyNamed(world, "Boss");
+    const Entity mateBody = bodyNamed(world, "Mate");
+    CHECK(bossBody != NULL_ENTITY && mateBody != NULL_ENTITY);
+    if (bossBody == NULL_ENTITY || mateBody == NULL_ENTITY) return;
+
+    CHECK(say(h, boss, "/admin spawn bee super"));
+    CHECK(sawText(boss, "Spawned super bee"));
+    const std::vector<Entity> supers = superBees(world);
+    CHECK(!supers.empty());
+    for (const Entity e : supers) world.get<Bounty>(e).credit(bossBody, 1e15);
+
+    killFlower(world, bossBody);
+    CHECK(h.stepUntil({&boss, &mate}, [&] { return boss.dead(); }, 60));
+    boss.leaveGame();
+    CHECK(h.stepUntil({&boss, &mate}, [&] {
+        return boss.status() == NetClient::Status::LoggedIn;
+    }));
+    CHECK(!world.isAlive(bossBody));
+
+    for (const Entity e : supers) poisonFrom(world, e, mateBody);
+    CHECK(h.stepUntil({&boss, &mate}, [&] { return sawText(mate, kBossCreditedLine); }, 120));
+    CHECK(!sawText(mate, "Super Bee has been defeated!"));
+}
+
 TEST(killall_announces_the_bosses_it_removes) {
     // killall removes mobs without killing them, so the death path never sees
     // them; it announces the bosses it clears itself, with nobody credited.
