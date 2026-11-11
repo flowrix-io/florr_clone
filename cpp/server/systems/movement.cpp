@@ -419,6 +419,10 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
 
     queries_->players.each([&](Entity e, PlayerTag&, Transform& transform, Motion& motion,
                                Body& body, PlayerInput& input) {
+        // Here rather than where the packet lands, because a bot never sends
+        // one: it writes `current` straight into this component.
+        input.trackStillness(dt * 1000.0);
+
         // Facing is the WALK heading, and it is frozen while the flower is
         // standing still: it is where the flower went, not where its owner is
         // pointing. Under cursor control the two are the same value, so this

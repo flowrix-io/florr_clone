@@ -274,6 +274,45 @@ TEST(the_aim_angle_is_the_aim_and_the_walk_heading_is_the_facing) {
     CHECK_NEAR(fx.world.get<Transform>(player).angle, kPi * 0.5, 1e-12);
 }
 
+TEST(the_afk_clock_counts_untouched_movement_not_a_still_body) {
+    Fixture fx;
+    const Entity player = fx.spawnPlayer({3000, 3000});
+    PlayerInput& input = fx.world.get<PlayerInput>(player);
+    const double tick = net::kTickSeconds * 1000.0;
+
+    // Never steered: still since the body appeared.
+    fx.step(30);
+    CHECK_NEAR(input.stillMillis, 30 * tick, 1e-6);
+
+    // None of these is its owner moving it: the aim, the angle of a frame that
+    // is not walking, and being shoved -- the AFK farmer is knocked about by
+    // everything its petals are fighting.
+    input.current.aimAngle = 1.0;
+    input.current.moveAngle = 2.0;
+    fx.world.get<Motion>(player).velocity = {kPlayerMaxSpeed, 0.0};
+    fx.step(30);
+    CHECK(fx.positionOf(player).x > 3000.0);
+    CHECK_NEAR(input.stillMillis, 60 * tick, 1e-6);
+
+    // Walking restarts it, on the tick the input changes...
+    fx.drive(player, 0.0, 1.0);
+    fx.step(1);
+    CHECK_EQ(input.stillMillis, 0.0);
+    // ...and then holding the same direction is untouched input again, which
+    // is what a key taped down against a wall looks like.
+    fx.step(30);
+    CHECK_NEAR(input.stillMillis, 30 * tick, 1e-6);
+
+    // A new bearing or a release is a touch.
+    fx.drive(player, 1.0, 1.0);
+    fx.step(1);
+    CHECK_EQ(input.stillMillis, 0.0);
+    fx.step(10);
+    fx.drive(player, 1.0, 0.0);
+    fx.step(1);
+    CHECK_EQ(input.stillMillis, 0.0);
+}
+
 // ---------------------------------------------------------------------------
 // Knockback
 // ---------------------------------------------------------------------------

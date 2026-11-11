@@ -731,10 +731,15 @@ void GameServer::runSystems(double nowMillis, double dt) {
         activePlayers_.push_back({transform.position, transform.realm});
     });
     humanPlayers_.clear();
+    humanLaps_.clear();
     for (const auto& entry : sessions_) {
         if (!entry.second.playing()) continue;
         if (const Transform* transform = world_.tryGet<Transform>(entry.second.entity)) {
             humanPlayers_.push_back({transform->position, transform->realm});
+            const PlayerInput* input = world_.tryGet<PlayerInput>(entry.second.entity);
+            if (input == nullptr || !afkForSpawns(*input)) {
+                humanLaps_.push_back({transform->position, transform->realm});
+            }
         }
     }
     fileBodies(world_, grid_);
@@ -805,7 +810,8 @@ void GameServer::runSystems(double nowMillis, double dt) {
                    commands_);
     // The arena and the maze are filled whole rather than by viewport, and only
     // while someone is in them.
-    modes_->run(world_, *terrain_, content(), *spawning_, grid_, humanPlayers_, rng_, nowMillis);
+    modes_->run(world_, *terrain_, content(), *spawning_, grid_, humanPlayers_, humanLaps_, rng_,
+                nowMillis);
     // Every flower, bots included, is somebody an NPC can turn to look at.
     npcs_->run(world_, *terrain_, content(), activePlayers_, nowMillis);
     if(nowMillis>=nextMarketGiftCheckMillis_){

@@ -533,6 +533,38 @@ struct PlayerInput {
     bool adminPhase = false;
     Vec2 phaseSafePosition;
     Realm phaseSafeRealm = Realm::Overworld;
+
+    /// The AFK clock: how long the MOVEMENT half of `current` -- moveAngle and
+    /// moveStrength -- has gone without changing, in milliseconds. It counts
+    /// from the moment the body appears, so a flower nobody ever steers has
+    /// been still since it joined.
+    ///
+    /// Input rather than position, because the flower this is aimed at is not
+    /// standing still: it is parked in a mob biome being knocked about by
+    /// everything its petals are farming, and a position test would restart
+    /// on every bump. The input is what its owner stopped touching. Held keys
+    /// against a wall and a mouse left resting off the flower are constant
+    /// input too -- the camera follows the flower, so a still mouse sends the
+    /// same bearing however far the flower is shoved.
+    double stillMillis = 0;
+    /// The movement `stillMillis` is measuring against.
+    double stillMoveAngle = 0;
+    double stillMoveStrength = 0;
+
+    /// One tick of the AFK clock. Any change of movement restarts it, except
+    /// the angle of a flower that is not walking: it means nothing (see
+    /// InputFrame::moveAngle), and a resting client may send anything there.
+    void trackStillness(double dtMillis) {
+        const bool resting = !(current.moveStrength > 0.0) && !(stillMoveStrength > 0.0);
+        if (resting || (current.moveStrength == stillMoveStrength &&
+                        current.moveAngle == stillMoveAngle)) {
+            stillMillis += dtMillis;
+            return;
+        }
+        stillMillis = 0;
+        stillMoveAngle = current.moveAngle;
+        stillMoveStrength = current.moveStrength;
+    }
 };
 
 /// Account-scoped identity. Cold: read on join, on save, and when someone

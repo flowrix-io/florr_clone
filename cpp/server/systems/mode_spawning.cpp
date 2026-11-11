@@ -75,7 +75,7 @@ Rarity ModeSpawner::rollArenaTier(Rng& rng) const {
 }
 
 bool ModeSpawner::nearPlayer(Realm realm, Vec2 at, double gap) const {
-    for (const RealmPoint& player : players_) {
+    for (const RealmPoint& player : laps_) {
         if (player.realm != realm) continue;
         if (distanceSq(player.position, at) < gap * gap) return true;
     }
@@ -105,10 +105,11 @@ bool ModeSpawner::mazeBodyFits(const Maze& maze, Vec2 at, double radius) {
            maze.isFloor({at.x, at.y - r}) && maze.isFloor({at.x, at.y + r});
 }
 
-void ModeSpawner::count(World& world, const std::vector<RealmPoint>& players) {
+void ModeSpawner::count(World& world, const std::vector<RealmPoint>& players,
+                        const std::vector<RealmPoint>& laps) {
     census_ = Census{};
-    players_ = players;
-    for (const RealmPoint& player : players_) {
+    laps_ = laps;
+    for (const RealmPoint& player : players) {
         if (player.realm == Realm::Arena) ++census_.arenaPlayers;
         if (player.realm == Realm::Maze) ++census_.mazePlayers;
     }
@@ -130,12 +131,13 @@ void ModeSpawner::count(World& world, const std::vector<RealmPoint>& players) {
 
 void ModeSpawner::run(World& world, const Terrain& terrain, const ContentRegistry& content,
                       SpawnSystem& spawner, const SpatialGrid& grid,
-                      const std::vector<RealmPoint>& players, Rng& rng, double nowMillis) {
+                      const std::vector<RealmPoint>& players,
+                      const std::vector<RealmPoint>& laps, Rng& rng, double nowMillis) {
     if (nowMillis < nextPassMillis_) return;
     nextPassMillis_ = nowMillis + kModeSpawnIntervalMillis;
 
     resolvePools(content);
-    count(world, players);
+    count(world, players, laps);
 
     if (census_.arenaPlayers > 0) runArena(world, terrain, content, spawner, grid, rng, nowMillis);
     if (census_.mazePlayers > 0) {

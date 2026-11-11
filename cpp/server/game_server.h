@@ -1777,6 +1777,9 @@ private:
     /// The band spawner, the mob LOD and the NPCs take activePlayers_, bots
     /// included (see runSystems).
     std::vector<RealmPoint> humanPlayers_;
+    /// humanPlayers_ less the AFK flowers (kAfkMillis): the ones ModeSpawner
+    /// keeps its spawns clear of.
+    std::vector<RealmPoint> humanLaps_;
 
     std::vector<Bot> bots_;
     /// The biomes bots are spread over, resolved from the staged maps once.

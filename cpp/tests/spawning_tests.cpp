@@ -1426,6 +1426,45 @@ TEST(nothing_ever_wakes_in_a_flowers_lap) {
     CHECK(sim.mobsWithin(underfoot, kMinSpawnDistance) > 0);
 }
 
+TEST(an_afk_flower_has_no_lap) {
+    // The anti-AFK rule: a flower nobody has steered for kAfkMillis gives up
+    // the clearance above, and the band wakes a mob right on top of it.
+    const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+
+    const std::vector<Vec2> away{Vec2{kCentre.x + 40000.0, kCentre.y + 40000.0}};
+    for (int i = 0; i < 400; ++i) sim.tick(away);
+    const std::vector<SpawnSystem::LatentSite> stocked = sim.latent();
+    CHECK(stocked.size() > 10);
+
+    // A real flower this time, since AFK is read off its PlayerInput, standing
+    // on a record a moment short of the line: it still has its lap.
+    const Vec2 underfoot = stocked.front().position;
+    const Entity flower = makePlayer(sim.world, underfoot);
+    PlayerInput input;
+    input.stillMillis = kAfkMillis - 1.0;
+    sim.world.add<PlayerInput>(flower, input);
+    const std::vector<Vec2> standing{underfoot};
+    for (int i = 0; i < 200; ++i) sim.tick(standing);
+    CHECK(sim.mobsWithin(underfoot, kSpawnViewportHalfWidth) > 0);
+    CHECK_EQ(sim.mobsWithin(underfoot, kMinSpawnDistance), 0);
+
+    // Over it, the records under its feet wake where they are.
+    sim.world.get<PlayerInput>(flower).stillMillis = kAfkMillis;
+    for (int i = 0; i < 200; ++i) sim.tick(standing);
+    CHECK(sim.mobsWithin(underfoot, kMinSpawnDistance) > 0);
+
+    // One touch of the controls and it has its lap back: nothing new wakes in
+    // it. (What already did is the band's now, and stays.)
+    sim.world.get<PlayerInput>(flower).stillMillis = 0.0;
+    const int inLap = sim.mobsWithin(underfoot, kMinSpawnDistance);
+    for (int i = 0; i < 200; ++i) sim.tick(standing);
+    CHECK(sim.mobsWithin(underfoot, kMinSpawnDistance) <= inLap);
+}
+
 namespace {
 
 /// Records inside the rectangle `half` around `centre`, leaving out the ones

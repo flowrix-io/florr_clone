@@ -237,6 +237,22 @@ inline constexpr double kEscortSpawnScatter = 1.0;
 /// a second, so the distance the record was placed at says nothing about the
 /// distance it wakes at.
 inline constexpr double kMinSpawnDistance = 250.0;
+
+/// A flower whose movement input has not changed for this long is AFK, and
+/// gives up its lap: kMinSpawnDistance -- and the arena's and the maze's own
+/// stand-offs -- stop counting it, so a band can put a mob down right on top
+/// of it. That is what stops a parked flower farming a biome through its
+/// petals: everything the band would otherwise only ever have walked into
+/// range now also lands in it, at full size, without a gap to grow into.
+///
+/// Only the gap. A replacement in somebody's view still waits out its delay
+/// (kInViewRespawnMinMillis), and an AFK flower still wakes, stocks and
+/// charges luck like any other: it is the lap alone it has stopped earning.
+/// One touch of the movement controls restores it (PlayerInput::stillMillis).
+inline constexpr double kAfkMillis = 5.0 * 60.0 * 1000.0;
+
+inline bool afkForSpawns(const PlayerInput& input) { return input.stillMillis >= kAfkMillis; }
+
 inline constexpr double kMinMobSpawnSpacing = 80.0;
 inline constexpr double kPreliminarySpawnRadius = 20.0;
 
@@ -431,6 +447,9 @@ public:
         /// a giant flower keeps every spawn the same visible distance away as
         /// a small one rather than having them appear inside it.
         double radius = kPlayerBaseRadius;
+        /// Gone kAfkMillis without touching its movement: no spawn keeps any
+        /// distance from it. Still a viewer in every other respect.
+        bool afk = false;
     };
 
     /// The live-mob ceiling this pass will not spawn past.

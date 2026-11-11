@@ -176,14 +176,23 @@ Entity freshestAttacker(World& world, const Bounty* bounty, Realm realm,
 /// who are owed the same neighbourhood anyway.
 constexpr double kViewerMatchRadius = 24.0;
 
+/// Whether a spawn in `realm` has to keep its distance from this flower: one
+/// standing in it that has not gone AFK (kAfkMillis).
+bool hasALap(const SpawnSystem::Viewer& viewer, Realm realm) {
+    return viewer.realm == realm && !viewer.afk;
+}
+
 /// The flower closest to `at` in `realm` -- the first of equals -- or null when
 /// nobody is in it. Its squared distance goes to `distSqOut` when one is given.
+/// `lapsOnly` passes over the AFK flowers, for a caller placing something
+/// clear of somebody's lap.
 const SpawnSystem::Viewer* nearestViewer(const std::vector<SpawnSystem::Viewer>& viewers,
-                                         Realm realm, Vec2 at, double* distSqOut = nullptr) {
+                                         Realm realm, Vec2 at, double* distSqOut = nullptr,
+                                         bool lapsOnly = false) {
     const SpawnSystem::Viewer* nearest = nullptr;
     double nearestSq = 0.0;
     for (const SpawnSystem::Viewer& viewer : viewers) {
-        if (viewer.realm != realm) continue;
+        if (viewer.realm != realm || (lapsOnly && viewer.afk)) continue;
         const double distSq = distanceSq(viewer.position, at);
         if (nearest != nullptr && distSq >= nearestSq) continue;
         nearest = &viewer;
@@ -227,10 +236,12 @@ bool inBorderBand(Vec2 position, Vec2 extent) {
 /// size. A caller that does not know yet what it is placing passes the nominal
 /// radius a placement is spaced by (kPreliminarySpawnRadius) and re-asks with
 /// the real one once the type is rolled.
+///
+/// An AFK flower has no lap (kAfkMillis): a spawn may land right on top of it.
 bool nearAnyPlayer(const std::vector<SpawnSystem::Viewer>& viewers, Realm realm, Vec2 position,
                    double gap, double bodyRadius) {
     for (const SpawnSystem::Viewer& viewer : viewers) {
-        if (viewer.realm != realm) continue;
+        if (!hasALap(viewer, realm)) continue;
         const double reach = gap + bodyRadius + viewer.radius;
         if (distanceSq(viewer.position, position) < reach * reach) return true;
     }
@@ -273,12 +284,12 @@ double distanceToSegmentSq(Vec2 p, Vec2 a, Vec2 b) {
     return distanceSq(p, a + ab * t);
 }
 
-/// The bearing from `at` TOWARDS the nearest flower, which lays a chain head's
-/// body directly away from it. Unset when nobody is in the realm.
+/// The bearing from `at` TOWARDS the nearest flower with a lap, which lays a
+/// chain head's body directly away from it. Unset when nobody is in the realm.
 std::optional<double> facingNearestFlower(const std::vector<SpawnSystem::Viewer>& viewers,
                                           Realm realm, Vec2 at) {
     double nearestSq = 0.0;
-    const SpawnSystem::Viewer* nearest = nearestViewer(viewers, realm, at, &nearestSq);
+    const SpawnSystem::Viewer* nearest = nearestViewer(viewers, realm, at, &nearestSq, true);
     if (nearest == nullptr || !(nearestSq > 0.0)) return std::nullopt;
     return (nearest->position - at).angle();
 }
@@ -294,7 +305,7 @@ bool clearOfEveryLap(const std::vector<SpawnSystem::Viewer>& viewers, Realm real
     if (!facing) return !nearAnyPlayer(viewers, realm, at, gap, footprint.tail + footprint.tailRadius);
     const Vec2 tailEnd = at + Vec2::fromAngle(*facing + kPi, footprint.tail);
     for (const SpawnSystem::Viewer& viewer : viewers) {
-        if (viewer.realm != realm) continue;
+        if (!hasALap(viewer, realm)) continue;
         const double reach = gap + footprint.tailRadius + viewer.radius;
         if (distanceToSegmentSq(viewer.position, at, tailEnd) < reach * reach) return false;
     }
@@ -1312,6 +1323,9 @@ void SpawnSystem::gatherViewers(World& world, const std::vector<RealmPoint>& pla
         // it several times over the base, and a spawn gap measured from the
         // centre of a flower that big lands inside it.
         if (const Body* body = world.tryGet<Body>(e)) viewer.radius = body->radius;
+        if (const PlayerInput* input = world.tryGet<PlayerInput>(e)) {
+            viewer.afk = afkForSpawns(*input);
+        }
         worldViewers_.push_back(viewer);
     });
 
@@ -1342,6 +1356,7 @@ void SpawnSystem::gatherViewers(World& world, const std::vector<RealmPoint>& pla
             viewer.half = candidate.half;
             viewer.luck = candidate.luck;
             viewer.radius = candidate.radius;
+            viewer.afk = candidate.afk;
         }
         viewers_.push_back(viewer);
     }

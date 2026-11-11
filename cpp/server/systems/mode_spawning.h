@@ -100,12 +100,15 @@ inline constexpr double kModeSpawnIntervalMillis = kPopulationIntervalMillis;
 class ModeSpawner {
 public:
     /// `players` is every connected flower with a body, in whatever realm; the
-    /// pass keeps the ones in the arena and the maze. `grid` is the tick's
-    /// broadphase, for the too-close checks -- at maze density a linear scan
-    /// per placement attempt is what made the reference's fill quadratic.
+    /// pass keeps the ones in the arena and the maze. `laps` is the same list
+    /// less the AFK ones (kAfkMillis): those still keep a realm populated, but
+    /// nothing keeps its distance from them. `grid` is the tick's broadphase,
+    /// for the too-close checks -- at maze density a linear scan per placement
+    /// attempt is what made the reference's fill quadratic.
     void run(World& world, const Terrain& terrain, const ContentRegistry& content,
              SpawnSystem& spawner, const SpatialGrid& grid,
-             const std::vector<RealmPoint>& players, Rng& rng, double nowMillis);
+             const std::vector<RealmPoint>& players, const std::vector<RealmPoint>& laps,
+             Rng& rng, double nowMillis);
 
     /// Destroys every mob in the maze. Called on rotation: yesterday's mobs
     /// would be standing inside today's walls.
@@ -134,7 +137,8 @@ private:
     void resolvePools(const ContentRegistry& content);
     std::uint16_t pickWeighted(const std::vector<PoolEntry>& pool, Rng& rng) const;
 
-    void count(World& world, const std::vector<RealmPoint>& players);
+    void count(World& world, const std::vector<RealmPoint>& players,
+               const std::vector<RealmPoint>& laps);
     void runArena(World& world, const Terrain& terrain, const ContentRegistry& content,
                   SpawnSystem& spawner, const SpatialGrid& grid, Rng& rng, double nowMillis);
     void runMaze(World& world, const Terrain& terrain, const ContentRegistry& content,
@@ -156,7 +160,8 @@ private:
     MazeBiome mazePoolBiome_ = MazeBiome::Garden;
     bool mazePoolReady_ = false;
 
-    std::vector<RealmPoint> players_;
+    /// The flowers a placement keeps its distance from: `laps` from run().
+    std::vector<RealmPoint> laps_;
     std::vector<Entity> candidates_;
     std::vector<Entity> doomed_;
     Census census_;

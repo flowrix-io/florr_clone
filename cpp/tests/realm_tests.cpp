@@ -222,7 +222,7 @@ TEST(the_mode_spawner_fills_only_the_realms_someone_is_in) {
     double now = 0;
     for (int pass = 0; pass < 6; ++pass) {
         now += kModeSpawnIntervalMillis;
-        modes.run(world, terrain, content(), spawner, grid, {}, rng, now);
+        modes.run(world, terrain, content(), spawner, grid, {}, {}, rng, now);
         commands.flush();
     }
     CHECK_EQ(countIn(Realm::Arena), 0);
@@ -234,7 +234,7 @@ TEST(the_mode_spawner_fills_only_the_realms_someone_is_in) {
     for (int pass = 0; pass < 12; ++pass) {
         now += kModeSpawnIntervalMillis;
         rebuildGrid();
-        modes.run(world, terrain, content(), spawner, grid, duellist, rng, now);
+        modes.run(world, terrain, content(), spawner, grid, duellist, duellist, rng, now);
         commands.flush();
     }
     const int arenaMobs = countIn(Realm::Arena);
@@ -256,7 +256,7 @@ TEST(the_mode_spawner_fills_only_the_realms_someone_is_in) {
     for (int pass = 0; pass < 8; ++pass) {
         now += kModeSpawnIntervalMillis;
         rebuildGrid();
-        modes.run(world, terrain, content(), spawner, grid, explorer, rng, now);
+        modes.run(world, terrain, content(), spawner, grid, explorer, explorer, rng, now);
         commands.flush();
     }
     CHECK(countIn(Realm::Maze) > 0);
