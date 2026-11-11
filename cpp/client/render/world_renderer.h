@@ -535,8 +535,10 @@ private:
     /// body.
     double glitchFlowerReach(const MobConfig&, const MobPose&) const;
     /// The garbage mob, whose artwork in mobs.json is an empty document: a
-    /// deterministic pile of petals seeded on where it stands.
-    void drawGarbagePile(Canvas&, Vec2 at, double baseSize, double timeSeconds) const;
+    /// deterministic pile of petals seeded on its net id, so it keeps its
+    /// look when it is pushed.
+    void drawGarbagePile(Canvas&, std::uint32_t netId, double baseSize,
+                         double timeSeconds) const;
     /// The eased eye offset a flower-shaped mob looks along. Keyed by netId so
     /// each mob eases on its own.
     ///

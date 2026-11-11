@@ -224,14 +224,19 @@ const std::vector<std::uint16_t>& WorldRenderer::droppablePetals() const {
     return droppablePetals_;
 }
 
-void WorldRenderer::drawGarbagePile(Canvas& canvas, Vec2 at, double baseSize,
+void WorldRenderer::drawGarbagePile(Canvas& canvas, std::uint32_t netId, double baseSize,
                                     double timeSeconds) const {
     const std::vector<std::uint16_t>& eligible = droppablePetals();
     if (eligible.empty() || !sprites_ || !content_) return;
 
-    // Seeded on where the pile stands, so every client builds the same pile out
-    // of the same petals without a byte of it crossing the wire.
-    const long long seed = static_cast<long long>(std::floor(at.x * 1000.0 + at.y * 1000.0));
+    // Seeded on the server's id for the mob, so every client builds the same
+    // pile out of the same petals without a byte of it crossing the wire, and
+    // the pile stays the same pile however far it is shoved. The browser build
+    // seeded on where it stood, which reshuffled it on every push. Hashed
+    // rather than used raw: ids are small and consecutive, and the picks below
+    // read the seed's low six digits as a fraction of the petal list, so raw
+    // ids would build every pile out of the first few petals.
+    const long long seed = static_cast<long long>(hash01(netId, 0x6A5Du) * 2147483648.0);
     const int count = 5 + static_cast<int>(((seed % 5) + 5) % 5);
     for (int i = 0; i < count; ++i) {
         const long long petalSeed = ((seed + i * 1000LL) % 1000000LL + 1000000LL) % 1000000LL;
@@ -476,7 +481,7 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         canvas.save();
         canvas.translate(static_cast<float>(art.x), static_cast<float>(art.y));
         canvas.scale(static_cast<float>(mirrored ? -zoom : zoom), static_cast<float>(zoom));
-        drawGarbagePile(canvas, mob.position, mob.radius * 2.0, timeSeconds);
+        drawGarbagePile(canvas, mob.netId, mob.radius * 2.0, timeSeconds);
         canvas.restore();
     } else if (id == "digger") {
         // A flower carrying a cutter rather than a bug, the way gardn draws it.
