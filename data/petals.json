@@ -124,12 +124,12 @@
     "bone": {
         "name": "Bone",
         "health": 10,
-        "damage": 14,
+        "damage": 12,
         "petalArmor": 10,
         "size": 1,
         "cooldown": 1500,
         "price": 23,
-        "description": "Sturdy. Loses half of its armor each hit.",
+        "description": "Sturdy.",
         "color": "#FFFFFF",
         "count": 1,
         "image": "<svg \n  xmlns=\"http://www.w3.org/2000/svg\" \n  width=\"32\" \n  height=\"32\"\n  viewBox=\"-25 -15 50 30\">\n  <g transform=\"scale(S)\">\n    <path \n      fill=\"#FFFFFF\" \n      stroke=\"#CFCFCF\" \n      stroke-width=\"1\"\n      vector-effect=\"non-scaling-stroke\"\n      d=\"M -10 -4 \n         Q 0 0 10 -4\n         C 14 -10 20 -2 14 0\n         C 20 2 14 10 10 4\n         Q 0 0 -10 4\n         C -14 10 -20 2 -14 0\n         C -20 -2 -14 -10 -10 -4 Z\"\n    />\n  </g>\n</svg>"
