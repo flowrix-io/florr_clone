@@ -121,9 +121,13 @@ directory to exactly that set
 first (`cmake/prune_staged_content.cmake`), so a file that stopped being
 content is not shipped inside the next wasm. Flat is what makes the references
 inside the files resolve: a map names its tilesets as siblings, and the client
-looks a tile's art up by bare name. The wasm builds embed the directory as
+looks a tile's art up by bare name. The JSON is staged minified
+(`tools/json_minify.cpp`): whitespace between tokens removed, tokens exactly
+as written, each source parsed with the game's own reader first so that a
+broken file fails the build. The wasm builds embed the directory as
 `/data`, minus what each has no use for: the client and the server leave out
-the TTF, and only the offline page carries it. Both programs take `--data <dir>`, default `data`, so a native binary is
+the TTF, and only the offline page carries it; the server leaves out the SVG
+art as well, which it names but never opens. Both programs take `--data <dir>`, default `data`, so a native binary is
 run from its build directory; the repository's own `data/` has no maps and is
 not a valid `--data` directory.
 
@@ -504,8 +508,10 @@ both sides read it.
   `ContentRegistry::load`, `shared/game/config.cpp`) is FNV-1a over the raw
   bytes of, in this order, `mobs.json`, `petals.json`, `mob_drops.json`,
   `maps.json`, and every map the manifest names, in manifest order, each
-  followed by the tilesets it names. Raw bytes, so even reformatting a file is
-  a mismatch; the drop table because both sides read it — the server's loot
+  followed by the tilesets it names. The bytes of the staged, minified copies,
+  so re-indenting a source file changes nothing but any other edit is a
+  mismatch, including one that leaves a number's value alone and only changes
+  how it is spelled; the drop table because both sides read it — the server's loot
   rolls it, the client's gallery quotes its chances; the tilesets because
   every collision shape lives in them.
 * **A refused client does not redial** — the server would refuse the same
@@ -819,7 +825,7 @@ why the archive can never carry a database. README.md's "Shipping a change" is
 the checklist; the reasons behind it:
 
 * **A build embeds its tree.** Both wasms carry the staged content, and the
-  handshake compares a hash of its raw bytes. A `dist/` built from a tree with
+  handshake compares a hash of its bytes. A `dist/` built from a tree with
   an uncommitted data or map edit holds a client that handshakes with nothing
   but a server built from that same tree, and one built with uncommitted code
   ships code the commit does not have. Build what you commit from a clean

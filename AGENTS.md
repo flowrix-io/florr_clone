@@ -41,10 +41,10 @@ version; in `cpp/client/web/`, the text and markup code and
   `cpp/CMakeLists.txt` stages them flat into `<build>/data`, which the wasm
   builds embed as `/data`. The repo-root `data/` is not a valid `--data`
   directory by itself (it has no maps); run binaries from their build dir.
-- The handshake compares a content hash taken over the raw bytes of the three
-  JSON files, `maps.json`, every map it lists and their tilesets, so any edit
-  to them — even reformatting — means client and server are rebuilt and
-  shipped together.
+- The handshake compares a content hash taken over the bytes of the three
+  JSON files, `maps.json`, every map it lists and their tilesets, as staged
+  (minified by `cpp/tools/json_minify.cpp`), so any edit to them other than
+  whitespace means client and server are rebuilt and shipped together.
 
 ## dist/
 

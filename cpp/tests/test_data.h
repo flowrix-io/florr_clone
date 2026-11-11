@@ -82,7 +82,9 @@ inline const std::string& dataDir() {
 /// One shipped content file by bare name -- "mobs.json", "petals.json",
 /// "mob_drops.json" -- for a test that loads or reads it on its own. The staged
 /// copy when there is one; otherwise the file in the source tree's data/ that
-/// CMake stages it from, which holds the same bytes.
+/// CMake stages it from, which holds the same content -- though not the same
+/// bytes, since the staged copy is minified (tools/json_minify.cpp), so a hash
+/// of the one is not a hash of the other.
 inline std::string dataFile(const std::string& name) {
     const std::string staged = dataDir() + "/" + name;
     if (detail::readable(staged)) return staged;

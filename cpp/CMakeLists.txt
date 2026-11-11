@@ -434,6 +434,16 @@ add_custom_command(
 target_sources(flix_client PRIVATE ${FLIX_FACE_TABLE})
 target_include_directories(flix_client PRIVATE ${FLIX_GENERATED_DIR})
 
+# What stages the JSON content (see the staging command below). Built from the
+# game's own JSON reader rather than linked against flix_shared, which it would
+# otherwise have to wait for; json.cpp needs nothing but headers.
+add_executable(json_minify tools/json_minify.cpp shared/core/json.cpp)
+target_include_directories(json_minify PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(EMSCRIPTEN)
+  target_link_options(json_minify PRIVATE
+    "-sENVIRONMENT=node" "-sNODERAWFS=1" "-sEXIT_RUNTIME=1" "-sALLOW_MEMORY_GROWTH=1")
+endif()
+
 # The repository's data/ (mobs.json, petals.json, mob_drops.json) and maps/ are
 # the single source of truth; stage them beside the binaries so both programs
 # find one content directory.
@@ -508,7 +518,9 @@ file(GLOB FLIX_TILE_ART CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../maps/ti
 # missing one is a blank backdrop, not a broken build.
 file(GLOB FLIX_GROUND_ART CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../maps/ground/*.svg)
 
-set(FLIX_DATA_SOURCES
+# What the programs parse, which is staged minified (tools/json_minify.cpp),
+# and the art, which is staged as it is.
+set(FLIX_DATA_JSON
     ${CMAKE_CURRENT_SOURCE_DIR}/../data/mobs.json
     ${CMAKE_CURRENT_SOURCE_DIR}/../data/petals.json
     ${CMAKE_CURRENT_SOURCE_DIR}/../data/mob_drops.json
@@ -518,11 +530,13 @@ set(FLIX_DATA_SOURCES
     # manifest names one that is not there -- which is better than a server
     # that boots with a realm missing.
     ${FLIX_MAP_FILES}
-    # The tilesets those maps name, and the tile art the tilesets name.
-    ${FLIX_MAP_TILESETS}
+    # The tilesets those maps name.
+    ${FLIX_MAP_TILESETS})
+set(FLIX_DATA_ART
+    # The tile art the tilesets name, and the title screen's backdrops.
     ${FLIX_TILE_ART}
-    # The title screen's backdrops.
     ${FLIX_GROUND_ART})
+set(FLIX_DATA_SOURCES ${FLIX_DATA_JSON} ${FLIX_DATA_ART})
 
 set(FLIX_DATA_STAGED)
 foreach(source IN LISTS FLIX_DATA_SOURCES)
@@ -562,10 +576,21 @@ endif()
 # data directory. What the author sees in Tiled is what is drawn, and that is
 # only true if the same files ship.
 #
-# A plain `copy`, not `copy_if_different`: the outputs must come out strictly
-# newer than the inputs, or every build would see them as still out of date and
-# relink the wasm for nothing. The DEPENDS list is what keeps this from running
-# when no data changed.
+# The JSON is staged with the whitespace between its tokens taken out
+# (tools/json_minify.cpp): nearly half its bytes, and the maps' most of all,
+# since Tiled indents them and spaces every tile id. Tokens are left exactly as
+# written, so every reader parses the same values, and the content hash, which
+# both sides take over the staged bytes, is the hash of the minified copies. The
+# tool also parses each source with the game's reader first, so a file the
+# server would refuse fails the build, at a line and column in the source.
+# Like font_table, it runs natively on a native build and under Node on a web
+# one.
+#
+# A plain `copy`, not `copy_if_different`, and a tool that writes every output
+# on every run: the outputs must come out strictly newer than the inputs, or
+# every build would see them as still out of date and relink the wasm for
+# nothing. The DEPENDS list is what keeps this from running when no data
+# changed.
 #
 # The prune runs first, and it is what keeps the directory equal to the content
 # this tree declares rather than to the union of everything every configuration
@@ -580,8 +605,9 @@ add_custom_command(
           -DFLIX_DATA_DIR=${FLIX_DATA_DIR}
           -DFLIX_DATA_MANIFEST=${FLIX_DATA_MANIFEST}
           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/prune_staged_content.cmake
-  COMMAND ${CMAKE_COMMAND} -E copy ${FLIX_DATA_SOURCES} ${FLIX_DATA_DIR}/
-  DEPENDS ${FLIX_DATA_SOURCES} ${FLIX_DATA_MANIFEST}
+  COMMAND ${CMAKE_COMMAND} -E copy ${FLIX_DATA_ART} ${FLIX_DATA_DIR}/
+  COMMAND json_minify ${FLIX_DATA_DIR} ${FLIX_DATA_JSON}
+  DEPENDS ${FLIX_DATA_SOURCES} ${FLIX_DATA_MANIFEST} json_minify
   COMMENT "Staging game content")
 
 add_custom_target(flix_data ALL DEPENDS ${FLIX_DATA_STAGED})
@@ -596,10 +622,10 @@ if(EMSCRIPTEN)
   # so there is nothing to gain from a separate fetch it would have to wait for
   # anyway; a single artifact cannot half-deploy, which a .wasm and a stale
   # .data next to it can; and the server build has no page to run a preload
-  # from at all. The whole set is about 3MB, the maps most of it -- more of
-  # the linked wasm by now than the code is -- but it is nearly all text, and
-  # it deflates with the rest of the module in the bundle.wasm.bin the page
-  # prefers (scripts/build-web.js).
+  # from at all. The whole set is about 2MB with its JSON minified (3.7MB
+  # before), the maps most of it, but it is nearly all text, and it deflates
+  # with the rest of the module in the bundle.wasm.bin the page prefers
+  # (scripts/build-web.js).
   #
   # The directory is embedded whole; each target below then excludes what it
   # has no use for. The patterns are matched against the staged files' full
@@ -799,8 +825,11 @@ if(EMSCRIPTEN)
     "-sEXPORTED_RUNTIME_METHODS=['FS']"
     "-O3"
     ${FLIX_EMBED_DATA}
-    # The server sets no text.
-    "SHELL:--exclude-file *.ttf")
+    # The server sets no text and draws nothing: of the staged files it reads
+    # only the JSON. The SVG art -- tiles, map props, the title backdrops --
+    # it refers to by name, in what it sends the client, and never opens.
+    "SHELL:--exclude-file *.ttf"
+    "SHELL:--exclude-file *.svg")
 
   # --- the offline build -----------------------------------------------------
   # Both halves in one wasm, in one page, in one file. offline/main.cpp starts

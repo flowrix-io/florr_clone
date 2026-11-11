@@ -842,6 +842,11 @@ tilesets as siblings, a tileset names its art under `tiles/`, and the client's
 sprite cache looks a tile's art up by bare name. `maps/tileset.tsj` and
 `maps/tiles/grass_c_0.svg` both land directly in that directory.
 
+The maps, the tilesets and `maps.json` are staged **minified**: the whitespace
+Tiled writes between tokens is removed, which halves them, and every token is
+left as written. Save them however Tiled likes. A map that does not parse fails
+the build, with the line and column in the file you edited.
+
 - The **maps** come out of `maps.json`, never globbed.
 - The **tilesets** are read out of the maps at configure time, so a map that
   starts naming a second `.tsj` stages it on the next build.
