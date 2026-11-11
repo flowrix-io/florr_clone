@@ -566,7 +566,13 @@ constexpr ChangelogEntry kChangelog[] = {
         "New petal: Privet",
       }
     },
-      
+    {"November 10, 2026",
+      {
+        "Fixed bug where player projectiles caused lag",
+        "Added a new zone in Termite Ant Hell",
+        "Reworked some petals",
+      }
+    }
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
