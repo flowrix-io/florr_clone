@@ -1,7 +1,7 @@
 #pragma once
 // What WorldRenderer's translation units share.
 //
-// WorldRenderer is one class across ten files, split by what each part draws
+// WorldRenderer is one class across eleven files, split by what each part draws
 // (the list is at the top of world_renderer.cpp). A constant or helper that
 // one file uses stays in that file's anonymous namespace; this header is only
 // what more than one of them asks for. A helper that grows a second caller

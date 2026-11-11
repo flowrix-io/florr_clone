@@ -432,6 +432,14 @@ private:
     /// The open rift, if this view is on its map.
     void drawRift(Canvas&, const Camera&, double timeSeconds) const;
     void drawEntity(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
+    /// A web on the ground at `screen`, `radius` user units across, turned by
+    /// `angle`, stroked from one retained path (world_renderer_ground.cpp).
+    void drawWeb(Canvas&, Vec2 screen, double radius, double angle) const;
+    /// A radiation cloud is not drawn where the entity pass meets it: it is
+    /// queued, and drawRadiation lays every queued cloud in one layer at the
+    /// end of the ground-effect pass.
+    void queueRadiation(Vec2 screen, double radius) const;
+    void drawRadiation(Canvas&, const Camera&) const;
     void drawFlower(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawDefaultFlower(Canvas&, const RemoteEntity&, double timeSeconds) const;
     void drawHitbox(Canvas&, const RemoteEntity&, const Camera&, Vec2 at) const;
@@ -905,6 +913,19 @@ private:
         std::size_t bytes = 0;
     };
     mutable TerrainChunks terrainChunks_;
+
+    /// Every web's strands at radius one, built on first use. Geometry only,
+    /// so a lost GPU context does not take it with it.
+    mutable Path2D webPath_;
+    struct RadiationCloud {
+        Vec2 screen;
+        double radius = 0.0;
+    };
+    /// This frame's clouds, queued by drawEntity for drawRadiation.
+    mutable std::vector<RadiationCloud> radiationClouds_;
+    /// One cloud, baked once; and the screen-covering layer they are laid in.
+    mutable std::unique_ptr<Canvas> radiationSprite_;
+    mutable std::unique_ptr<Canvas> radiationLayer_;
 #ifdef __EMSCRIPTEN__
     bool terrainCache_ = true;
 #else

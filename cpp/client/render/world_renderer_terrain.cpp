@@ -688,6 +688,8 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
 
 void WorldRenderer::dropCanvasCaches() {
     terrainChunks_ = TerrainChunks{};
+    radiationSprite_.reset();
+    radiationLayer_.reset();
 #ifdef __EMSCRIPTEN__
     glitchAtlas_ = GlitchAtlas{};
     glitchCells_.clear();

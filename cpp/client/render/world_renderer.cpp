@@ -15,6 +15,8 @@
 //                                    hitboxes
 //   world_renderer_effects.cpp       damage numbers, explosions, lightning,
 //                                    sacrifice rituals
+//   world_renderer_ground.cpp        webs (one retained path) and radiation
+//                                    clouds (one layer)
 // and world_renderer_internal.h holds what more than one of them uses.
 
 #include "client/render/world_renderer_internal.h"
@@ -297,61 +299,19 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                 // drawSacrificeRituals.
                 case GroundEffectKind::Sacrifice:
                     break;
-                case GroundEffectKind::Web: {
+                case GroundEffectKind::Web:
                     // Ten spokes out to the rim, then five concentric rings of
                     // quadratic segments sagging between them.
-                    constexpr int kSpokes = 10;
-                    constexpr int kLevels = 5;
-                    canvas.save();
-                    canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
-                    canvas.rotate(static_cast<float>(entity.angle));
-                    canvas.setGlobalAlpha(static_cast<float>(0x60 / 255.0));
-                    ui::setStroke(canvas, 0xFFFFFFu);
-                    canvas.setLineCap("round");
-                    canvas.setLineWidth(static_cast<float>(std::max(1.0, radius * 0.075)));
-                    canvas.beginPath();
-                    for (int i = 0; i < kSpokes; ++i) {
-                        const double angle = kTau * i / kSpokes;
-                        canvas.moveTo(0, 0);
-                        canvas.lineTo(static_cast<float>(std::cos(angle) * radius),
-                                      static_cast<float>(std::sin(angle) * radius));
-                    }
-                    for (int j = 0; j < kLevels; ++j) {
-                        const double ring = j * radius / kLevels;
-                        const double sag = ring - radius / (2 * kLevels);
-                        canvas.moveTo(static_cast<float>(ring), 0);
-                        for (int i = 0; i < kSpokes; ++i) {
-                            const double to = kTau * (i + 1) / kSpokes;
-                            const double between = kPi * (2 * i + 1) / kSpokes;
-                            canvas.quadraticCurveTo(static_cast<float>(std::cos(between) * sag),
-                                                    static_cast<float>(std::sin(between) * sag),
-                                                    static_cast<float>(std::cos(to) * ring),
-                                                    static_cast<float>(std::sin(to) * ring));
-                        }
-                    }
-                    canvas.stroke();
-                    canvas.restore();
+                    drawWeb(canvas, screen, radius, entity.angle);
                     break;
-                }
-                case GroundEffectKind::Radiation: {
+                case GroundEffectKind::Radiation:
                     // Strongest on the petal and gone at the rim, on the same
                     // curve the pulse's damage falls off by
                     // (radiationStrength), with no edge drawn. The server
-                    // sends the cloud at its reach (replicatedRadius).
-                    //
-                    // The ramp is laid over the inner 80% only: the curve is
-                    // under 1% there, and spending the bands where the glow
-                    // actually changes keeps the steep middle from banding.
-                    constexpr std::uint32_t kTint = 0x9B59B6u;
-                    constexpr double kCentreAlpha = 0.3;
-                    canvas.save();
-                    canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
-                    fillRadialRamp(canvas, radius * 0.8, kTint, 24, [radius](double r) {
-                        return kCentreAlpha * radiationStrength(r, radius);
-                    });
-                    canvas.restore();
+                    // sends the cloud at its reach (replicatedRadius). Drawn
+                    // with every other cloud at the end of the effect pass.
+                    queueRadiation(screen, radius);
                     break;
-                }
                 case GroundEffectKind::OpenTomb: {
                     // The tomb's own painter in its broken-open state, at the
                     // size and facing the tomb had when it fell.
@@ -420,6 +380,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     ops_ = SectionOps{};
     opMark_ = canvasOps();
     ++frame_;
+    radiationClouds_.clear();
 #ifdef __EMSCRIPTEN__
     // A new frame empties the glitch atlas. One that ran out of room last
     // frame is made bigger now, between frames, and one nothing has wanted
@@ -652,6 +613,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         for (const DyingPetal& dying : dyingPetals_) {
             if (layerOf(dying.entity) == kind) drawDyingPetal(dying);
         }
+        if (kind == net::EntityKind::Effect) drawRadiation(canvas, camera);
         chargeOps(kind == net::EntityKind::Mob || kind == net::EntityKind::Npc ? ops_.mobs
                   : kind == net::EntityKind::Petal      ? ops_.petals
                   : kind == net::EntityKind::Drop       ? ops_.items

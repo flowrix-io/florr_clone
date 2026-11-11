@@ -2707,12 +2707,28 @@ void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
   int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
   const int bx0=std::max(cx0, static_cast<int>(std::floor(dx0))), bx1=std::min(cx1, static_cast<int>(std::ceil(dx1)));
   const int by0=std::max(cy0, static_cast<int>(std::floor(dy0))), by1=std::min(cy1, static_cast<int>(std::ceil(dy1)));
-  for (int y = by0; y < by1; ++y)
+  if (bx0>=bx1 || by0>=by1) return;
+  // Which source column each destination column samples, worked out once
+  // for the whole blit rather than once per pixel: the same expression, so
+  // the same texels. A screen-sized upscale paid a divide, two clamps and a
+  // bounds test per pixel for an answer that only changes along one axis.
+  static thread_local std::vector<int> columns;
+  columns.resize(static_cast<size_t>(bx1-bx0));
+  for (int x = bx0; x < bx1; ++x)
+    columns[static_cast<size_t>(x-bx0)] = std::clamp(static_cast<int>((x + 0.5f - dx0) * s.width_ / std::max(1e-3f, dx1-dx0)), 0, s.width_ - 1);
+  const bool clipped = state_.clip != nullptr;
+  const float alpha = state_.alpha;
+  for (int y = by0; y < by1; ++y) {
+    const int sy = std::clamp(static_cast<int>((y + 0.5f - dy0) * s.height_ / std::max(1e-3f, dy1-dy0)), 0, s.height_ - 1);
+    const Color* row = s.pixels_.data() + static_cast<size_t>(sy) * s.width_;
+    Color* dst = pixels_.data() + static_cast<size_t>(y) * width_;
     for (int x = bx0; x < bx1; ++x) {
-      const int sx = std::clamp(static_cast<int>((x + 0.5f - dx0) * s.width_ / std::max(1e-3f, dx1-dx0)), 0, s.width_ - 1);
-      const int sy = std::clamp(static_cast<int>((y + 0.5f - dy0) * s.height_ / std::max(1e-3f, dy1-dy0)), 0, s.height_ - 1);
-      paint(x, y, s.pixels_[static_cast<size_t>(sy) * s.width_ + sx], state_.alpha * clipAt(x,y));
+      const Color texel = row[columns[static_cast<size_t>(x-bx0)]];
+      // blend() would return at once for these.
+      if (texel.a == 0) continue;
+      blend(dst[x], texel, clipped ? alpha * clipAt(x,y) : alpha);
     }
+  }
 #endif
 }
 void Canvas::drawCanvas(const Canvas&s,float sx,float sy,float sw,float sh,float a,float b,float c,float d) {
