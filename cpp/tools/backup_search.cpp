@@ -7,12 +7,12 @@
 //
 // BACKUPS is a db_backups directory -- every inventory-*.json in it, as
 // `backups` lists them -- or one database file. SEARCH is what the editor's
-// search box takes (server/account_search.h): name parts; level, stars and
+// search box takes (server/account_search.h): name parts or an id; level, stars and
 // what an account owns and wears; when it was made and last signed in; its
 // flags. An account must answer every word. A time ago (active<7d) counts back
 // from now, not from when the backup was taken. Quote the search, as a shell
 // reads `>` and `<` as redirections. --user keeps only the account with
-// exactly that name, in any case, and shows it in every backup: what it held,
+// exactly that name or id, in any case, and shows it in every backup: what it held,
 // with "(no match)" where it misses the search, or that it is not there.
 // --limit caps the accounts printed per backup (20; 0 prints all). --data
 // names the content directory petals are named from, the staged build/data by
@@ -183,8 +183,11 @@ int main(int argc, char** argv) {
         std::size_t matched = 0;
         for (const std::string& key : users.keys()) {
             const Account account = parseAccountRecord(users[key], key);
-            if (!user.empty() && lowerCase(account.username) != user) continue;
-            if (!account_search::namesMatch(query, account.username)) continue;
+            if (!user.empty() && lowerCase(account.username) != user &&
+                lowerCase(account.id) != user) {
+                continue;
+            }
+            if (!account_search::namesMatch(query, account)) continue;
             const bool stored = players.contains(account.id);
             const PlayerRecord record =
                 stored ? parsePlayerRecord(players[account.id]) : PlayerRecord{};
@@ -205,7 +208,7 @@ int main(int argc, char** argv) {
                 }
             }
             row.username = account.username;
-            row.exact = query.names.size() == 1 && lowerCase(account.username) == query.names[0];
+            row.exact = account_search::exactMatch(query, account);
             row.lastActiveAtMillis = account.lastActiveAtMillis;
             rows.push_back(std::move(row));
         }

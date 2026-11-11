@@ -760,7 +760,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
     double listTop = accountsTab.bottom() + 8.0;
     const Rect searchRect{left.x, listTop, left.w, kFieldHeight};
     if (s.accountsTab) {
-        inputField(canvas, searchRect, s.search, "Name, rose>=10, loadout:rose",
+        inputField(canvas, searchRect, s.search, "Name or id, rose>=10, loadout:rose",
                    s.searchField.focused, now, &s.searchField);
         listTop = searchRect.bottom() + 6.0;
         if (!db.listError.empty() && !db.listPending) {

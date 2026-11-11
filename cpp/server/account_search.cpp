@@ -17,6 +17,7 @@ namespace flix::account_search {
 namespace {
 
 constexpr const char* kLoadoutPrefix = "loadout:";
+constexpr const char* kIdPrefix = "id:";
 
 /// Lowercase, with the characters a display name spells a word break with
 /// taken out, so "Yin Yang", yin_yang and yinyang compare equal.
@@ -287,6 +288,15 @@ bool parse(const std::string& text, const ContentRegistry& content, Query& out,
         const std::string word = lowered.substr(at, end - at);
         at = end + 1;
         if (word.empty()) continue;
+        if (word.rfind(kIdPrefix, 0) == 0) {
+            std::string id = word.substr(std::char_traits<char>::length(kIdPrefix));
+            if (id.empty() || id.find_first_of(":<>=") != std::string::npos) {
+                error = "\"" + word + "\" needs an account id after it, like id:f78zsg7ns23v.";
+                return false;
+            }
+            out.ids.push_back(std::move(id));
+            continue;
+        }
         // A username is letters, digits and underscores, so a word with any of
         // these in it can only be a count.
         if (word.find_first_of(":<>=") == std::string::npos) {
@@ -382,11 +392,21 @@ bool satisfies(const Term& term, double value) {
     return false;
 }
 
-bool namesMatch(const Query& query, const std::string& username) {
-    const std::string lowered = lowerCase(username);
-    return std::all_of(query.names.begin(), query.names.end(), [&](const std::string& part) {
-        return lowered.find(part) != std::string::npos;
-    });
+bool namesMatch(const Query& query, const Account& account) {
+    const std::string name = lowerCase(account.username);
+    const std::string id = lowerCase(account.id);
+    return std::all_of(query.names.begin(), query.names.end(),
+                       [&](const std::string& part) {
+                           return name.find(part) != std::string::npos || id == part;
+                       }) &&
+           std::all_of(query.ids.begin(), query.ids.end(), [&](const std::string& part) {
+               return id.find(part) != std::string::npos;
+           });
+}
+
+bool exactMatch(const Query& query, const Account& account) {
+    return query.names.size() == 1 && (lowerCase(account.username) == query.names[0] ||
+                                       lowerCase(account.id) == query.names[0]);
 }
 
 bool termsMatch(const Query& query, const Subject& subject, std::vector<double>& values) {

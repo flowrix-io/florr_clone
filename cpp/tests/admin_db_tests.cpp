@@ -1136,6 +1136,15 @@ TEST(an_account_search_reads_names_counts_and_loadout_words) {
     CHECK(q.terms[2].petal.empty());
     CHECK(q.terms[2].compare == account_search::Compare::Equal);
 
+    // An id: word is an id part, never a petal.
+    CHECK(account_search::parse("bob ID:F78Z", content, q, error));
+    CHECK_EQ(q.names.size(), 1u);
+    CHECK_EQ(q.ids.size(), 1u);
+    CHECK_EQ(q.ids[0], std::string("f78z"));
+    CHECK(q.terms.empty());
+    CHECK(!account_search::parse("id:", content, q, error));
+    CHECK(error.find("\"id:\"") != std::string::npos);
+
     // Each refusal names the word it could not read.
     CHECK(!account_search::parse("rse>=1", content, q, error));
     CHECK(error.find("\"rse\"") != std::string::npos);
@@ -1350,6 +1359,15 @@ TEST(the_database_editor_finds_accounts_by_what_they_own_and_wear) {
     CHECK_EQ(list("bob"), std::string("bobby"));
     CHECK(boss.adminDb().listError.empty());
     CHECK(boss.adminDb().accounts[0].note.empty());
+
+    // A whole id, pasted in any case, finds its account; id: finds a part.
+    const std::string carolId = h.server.database().findUser("carol")->id;
+    std::string shouted = carolId;
+    for (char& c : shouted) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    CHECK_EQ(list(shouted), std::string("carol"));
+    CHECK_EQ(list("id:" + carolId.substr(2, 6) + " rose>=1"), std::string("carol"));
+    // Only a whole id: a part of one is still a name part.
+    CHECK_EQ(list(carolId.substr(0, carolId.size() - 1)), std::string());
 }
 
 TEST(the_database_editor_finds_accounts_by_when_they_were_made_and_seen) {

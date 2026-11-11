@@ -488,12 +488,11 @@ void GameServer::adminDbList(net::Connection& connection, const std::string& sea
     const std::int64_t now = db.nowMillis();
     for (const std::string& name : parsed ? db.usernames() : nobody) {
         const Account* account = db.findUser(name);
-        if (account == nullptr || !account_search::namesMatch(query, account->username)) continue;
+        if (account == nullptr || !account_search::namesMatch(query, *account)) continue;
         std::vector<double> values;
         const account_search::Subject subject{account, db.findProgress(account->id), now};
         if (!account_search::termsMatch(query, subject, values)) continue;
-        rows.push_back({account,
-                        query.names.size() == 1 && lowerCase(account->username) == query.names[0],
+        rows.push_back({account, account_search::exactMatch(query, *account),
                         online.count(account->id) != 0, std::move(values)});
     }
     // The exact name first, then by the first count the search asked about --

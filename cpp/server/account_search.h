@@ -7,7 +7,9 @@
 // it, and tools/backup_search.cpp the backups. A search is words separated by
 // spaces, and an account must answer every one:
 //
-//   bob                the username contains "bob", in any case
+//   bob                the username contains "bob", in any case, or the
+//                      account's id is "bob" -- a whole id, pasted
+//   id:f78z            the account id contains "f78z"
 //   level>=50          a number compared with >, >=, <, <= or = (==); stars,
 //                      xp and streak (the daily login streak) the same way
 //   created>=2026-10-01  when the account was made; active<2026-09, when it
@@ -79,8 +81,10 @@ struct Term {
 };
 
 struct Query {
-    /// Lowercased. The username must contain every one.
+    /// Lowercased. The username must contain every one, or the id be it.
     std::vector<std::string> names;
+    /// Lowercased, from `id:` words. The id must contain every one.
+    std::vector<std::string> ids;
     /// In the order typed. The first one orders the results.
     std::vector<Term> terms;
 };
@@ -105,8 +109,14 @@ double valueOf(const Term& term, const Subject& subject, int level);
 
 bool satisfies(const Term& term, double value);
 
-/// Whether `username` holds every name word of `query`, in any case.
-bool namesMatch(const Query& query, const std::string& username);
+/// Whether `account` answers every name and id word of `query`, in any case:
+/// its username holds each name word or its id is that word, and its id holds
+/// each id word.
+bool namesMatch(const Query& query, const Account& account);
+
+/// Whether `query` is one name word that is exactly `account`'s username or
+/// id: the account it was typed for, listed first.
+bool exactMatch(const Query& query, const Account& account);
 
 /// Whether `subject` answers every term of `query`. When it does, `values`
 /// holds what each term read, in the query's order.

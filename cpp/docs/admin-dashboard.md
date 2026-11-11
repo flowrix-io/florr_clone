@@ -272,6 +272,8 @@ answer every one (the grammar lives in `cpp/server/account_search.h`):
 | search | finds accounts |
 |---|---|
 | `bob` | whose name contains "bob", in any case |
+| `f78zsg7ns23v` | whose account id is that, whole (as the Text view shows it) |
+| `id:f78z` | whose account id contains "f78z" |
 | `level>=50` | at level 50 or more; `>`, `>=`, `<`, `<=`, `=` all work |
 | `stars>=1000`, `xp>=1e6`, `streak>=7` | by stars, total XP, or daily login streak |
 | `created>=2026-10-01` | made on or after 1 October (UTC) |
