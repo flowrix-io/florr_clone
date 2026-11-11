@@ -27,7 +27,7 @@ namespace {
 // Emphasis is therefore the one tag in this copy that changes anything on
 // screen.
 constexpr TutorialStep kSteps[Tutorial::kStepCount] = {
-    {"Welcome to flowrix.pro!",
+    {"Welcome to flowrix.sussybite.dev!",
      "Let's learn the basics! You'll learn how to move, use petals, equip items, and craft "
      "upgrades.",
      true, TutorialGesture::None},
