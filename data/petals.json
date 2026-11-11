@@ -43,10 +43,10 @@
     },
     "light": {
         "name": "Light",
-        "damage": 5,
+        "damage": 10,
         "health": 5,
         "size": 1,
-        "cooldown": 400,
+        "cooldown": 800,
         "price": 12,
         "description": "Weaker than most petals, but recharges very quickly.",
         "color": "#90EE90",
