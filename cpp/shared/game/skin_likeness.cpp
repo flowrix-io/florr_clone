@@ -33,14 +33,28 @@ constexpr double kBodyShare = 0.25;
 
 double cellCentre(int i) { return kGridOrigin + (i + 0.5) * kSkinLookCell; }
 
-/// True when a painted cell is in `look`'s rim: within kRimCells of the outside.
-bool inRim(const SkinLook& look, int x, int y) {
+bool sameColour(std::uint32_t a, std::uint32_t b, int slack);
+
+/// True when a cell is within kRimCells of the unpainted outside: the band the
+/// rim starts from.
+bool inBand(const SkinLook& look, int x, int y) {
     for (int dy = -kRimCells; dy <= kRimCells; ++dy) {
         for (int dx = -kRimCells; dx <= kRimCells; ++dx) {
             if (look.at(x + dx, y + dy) == 0) return true;
         }
     }
     return false;
+}
+
+/// True when a painted cell is in `look`'s rim (SkinLook::rim).
+bool inRim(const SkinLook& look, int x, int y) { return look.rimAt(x, y); }
+
+/// True when a cell is something drawn on `look`: painted, not the body's
+/// colour and not rim.
+bool isDetail(const SkinLook& look, int x, int y) {
+    const std::uint32_t colour = look.at(x, y);
+    return colour != 0 && !look.rimAt(x, y) &&
+           !sameColour(colour, look.body, kSkinLookColourSlack);
 }
 
 /// The first and last cells whose centres lie in [lo, hi], clamped to the
@@ -198,31 +212,159 @@ private:
         }
         look.centreX = sumX / look.painted;
         look.centreY = sumY / look.painted;
+        look.body = commonest(counts);
+        findRim(look);
 
-        // The lowest colour on a tie, so the answer never depends on the map's
-        // iteration order.
-        std::uint32_t body = 0;
-        int most = 0;
-        for (const auto& [colour, count] : counts) {
-            if (count > most || (count == most && colour < body)) {
-                body = colour;
-                most = count;
-            }
-        }
         int inside = 0;
         for (int y = look.y0; y < look.y0 + look.h; ++y) {
             for (int x = look.x0; x < look.x0 + look.w; ++x) {
-                const std::uint32_t colour = look.at(x, y);
-                if (colour == 0 || inRim(look, x, y)) continue;
+                if (look.at(x, y) == 0 || look.rimAt(x, y)) continue;
                 ++inside;
-                if (colour != body) ++look.detail;
+                if (isDetail(look, x, y)) ++look.detail;
             }
         }
         look.hasBody = inside >= look.painted * kBodyShare;
     }
 
+    /// The colour with the most cells, the lowest on a tie, so the answer never
+    /// depends on the map's iteration order.
+    static std::uint32_t commonest(const std::unordered_map<std::uint32_t, int>& counts) {
+        std::uint32_t best = 0;
+        int most = 0;
+        for (const auto& [colour, count] : counts) {
+            if (count > most || (count == most && colour < best)) {
+                best = colour;
+                most = count;
+            }
+        }
+        return best;
+    }
+
+    /// SkinLook::rim: the band within kRimCells of the outside, then the
+    /// outline it is the edge of, followed in as deep as a stroke can reach.
+    /// Only an outline that is most of the band: a feature that merely touches
+    /// the edge -- an antenna, a mouth drawn past the body -- is not one.
+    static void findRim(SkinLook& look) {
+        const auto index = [&](int x, int y) {
+            return static_cast<std::size_t>(y - look.y0) * static_cast<std::size_t>(look.w) +
+                   static_cast<std::size_t>(x - look.x0);
+        };
+        // How many cells in from the outside each painted cell is: 1 beside it.
+        std::vector<int> depth(look.cells.size(), 0);
+        std::vector<std::pair<int, int>> queue;
+        for (int y = look.y0; y < look.y0 + look.h; ++y) {
+            for (int x = look.x0; x < look.x0 + look.w; ++x) {
+                if (look.at(x, y) == 0) continue;
+                bool edge = false;
+                for (int dy = -1; dy <= 1 && !edge; ++dy) {
+                    for (int dx = -1; dx <= 1 && !edge; ++dx) edge = look.at(x + dx, y + dy) == 0;
+                }
+                if (!edge) continue;
+                depth[index(x, y)] = 1;
+                queue.emplace_back(x, y);
+            }
+        }
+        for (std::size_t i = 0; i < queue.size(); ++i) {
+            const auto [x, y] = queue[i];
+            const int next = depth[index(x, y)] + 1;
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (look.at(x + dx, y + dy) == 0 || depth[index(x + dx, y + dy)] != 0) continue;
+                    depth[index(x + dx, y + dy)] = next;
+                    queue.emplace_back(x + dx, y + dy);
+                }
+            }
+        }
+
+        look.rim.assign(look.cells.size(), 0);
+        std::unordered_map<std::uint32_t, int> bandCounts;
+        int band = 0;
+        for (std::size_t i = 0; i < look.cells.size(); ++i) {
+            if (look.cells[i] == 0 || depth[i] > kRimCells) continue;
+            look.rim[i] = 1;
+            ++bandCounts[look.cells[i]];
+            ++band;
+        }
+        const std::uint32_t outline = commonest(bandCounts);
+        if (outline == 0 || sameColour(outline, look.body, kSkinLookColourSlack)) return;
+        int ofOutline = 0;
+        for (const auto& [colour, count] : bandCounts) {
+            if (sameColour(colour, outline, kSkinLookColourSlack)) ofOutline += count;
+        }
+        if (ofOutline * 2 < band) return;
+
+        const auto isOutline = [&](std::uint32_t colour) {
+            return sameColour(colour, outline, kSkinLookColourSlack) &&
+                   !sameColour(colour, look.body, kSkinLookColourSlack);
+        };
+        queue.clear();
+        for (int y = look.y0; y < look.y0 + look.h; ++y) {
+            for (int x = look.x0; x < look.x0 + look.w; ++x) {
+                if (look.rimAt(x, y) && isOutline(look.at(x, y))) queue.emplace_back(x, y);
+            }
+        }
+        for (std::size_t i = 0; i < queue.size(); ++i) {
+            const auto [x, y] = queue[i];
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    const std::uint32_t colour = look.at(x + dx, y + dy);
+                    if (colour == 0 || look.rimAt(x + dx, y + dy) || !isOutline(colour) ||
+                        depth[index(x + dx, y + dy)] > kSkinOutlineCells) {
+                        continue;
+                    }
+                    look.rim[index(x + dx, y + dy)] = 1;
+                    queue.emplace_back(x + dx, y + dy);
+                }
+            }
+        }
+    }
+
     std::vector<std::uint32_t> cells_;
 };
+
+/// How many of `look`'s detail cells are the starter's two eyes, still drawn
+/// where and as the starter draws them; 0 when they are gone. Kept within the
+/// nudge (kStarterEyesKept), and standing on the body: a busy picture that
+/// is only dark where the eyes go draws over the ring just past them too
+/// (kStarterEyesClutter), and those are its own eyes.
+int starterEyesIn(const SkinLook& look, const SkinLook& starter) {
+    int eyes = 0, kept = 0, clutter = 0, ring = 0;
+    for (int y = starter.y0; y < starter.y0 + starter.h; ++y) {
+        for (int x = starter.x0; x < starter.x0 + starter.w; ++x) {
+            if (isDetail(starter, x, y)) {
+                ++eyes;
+                bool found = false;
+                for (int dy = -kSkinLookNudgeCells; dy <= kSkinLookNudgeCells && !found; ++dy) {
+                    for (int dx = -kSkinLookNudgeCells; dx <= kSkinLookNudgeCells && !found; ++dx) {
+                        found = isDetail(look, x + dx, y + dy) &&
+                                sameColour(look.at(x + dx, y + dy), starter.at(x, y),
+                                           kSkinSimilarColourSlack);
+                    }
+                }
+                kept += found;
+                continue;
+            }
+            if (starter.at(x, y) == 0) continue;
+            // The starter's body a cell past the nudge from its nearest eye.
+            constexpr int kPast = kSkinLookNudgeCells + 1;
+            int nearest = kPast + 1;
+            for (int dy = -kPast; dy <= kPast; ++dy) {
+                for (int dx = -kPast; dx <= kPast; ++dx) {
+                    if (isDetail(starter, x + dx, y + dy)) {
+                        nearest = std::min(nearest, std::max(std::abs(dx), std::abs(dy)));
+                    }
+                }
+            }
+            if (nearest != kPast) continue;
+            ++ring;
+            if (isDetail(look, x, y)) ++clutter;
+        }
+    }
+    if (eyes == 0 || kept < kStarterEyesKept * eyes || clutter > kStarterEyesClutter * ring) {
+        return 0;
+    }
+    return std::min(kept, look.detail);
+}
 
 /// One shape's placement: renderSkinShapes translates to (x, y), then rotates.
 struct Placement {
@@ -442,17 +584,30 @@ SkinLook fittedOnto(const SkinLook& look, const SkinLook& like, double scale) {
                                 toGrid(look.y0 + look.h - 1, look.centreY, like.centreY) + 1);
     SkinLook out;
     out.hasBody = look.hasBody;
+    out.body = look.body;
     if (right < left || bottom < top) return out;
     out.x0 = left;
     out.y0 = top;
     out.w = right - left + 1;
     out.h = bottom - top + 1;
     out.cells.reserve(static_cast<std::size_t>(out.w) * out.h);
+    std::vector<std::uint8_t> outlineRim;
+    outlineRim.reserve(out.cells.capacity());
     for (int y = top; y <= bottom; ++y) {
         const int fromY = static_cast<int>(std::lround((y - like.centreY) / scale + look.centreY));
         for (int x = left; x <= right; ++x) {
             const int fromX = static_cast<int>(std::lround((x - like.centreX) / scale + look.centreX));
             out.cells.push_back(look.at(fromX, fromY));
+            outlineRim.push_back(look.rimAt(fromX, fromY) ? 1 : 0);
+        }
+    }
+    // The band is the fitted picture's own, a resize can move its edge; the
+    // outline inside it comes along with the picture.
+    out.rim.assign(out.cells.size(), 0);
+    std::size_t i = 0;
+    for (int y = top; y <= bottom; ++y) {
+        for (int x = left; x <= right; ++x, ++i) {
+            out.rim[i] = out.cells[i] != 0 && (outlineRim[i] != 0 || inBand(out, x, y));
         }
     }
     return out;
@@ -490,9 +645,18 @@ void hashText(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 SkinLook sampleSkinLook(const std::vector<SkinShape>& shapes) {
+    // The starter's own, sampled once: its eyes are what every other look's
+    // ownDetail leaves out, and it has nothing of its own.
+    static const SkinLook starter = [] {
+        Raster raster;
+        for (const SkinShape& shape : starterSkinShapes()) sampleShape(raster, shape);
+        return raster.crop();
+    }();
     Raster raster;
     for (const SkinShape& shape : shapes) sampleShape(raster, shape);
-    return raster.crop();
+    SkinLook look = raster.crop();
+    look.ownDetail = look.detail - starterEyesIn(look, starter);
+    return look;
 }
 
 int skinLookDifference(const SkinLook& a, const SkinLook& b, int stopAfter) {
@@ -505,7 +669,7 @@ bool skinsLookAlikeLinedUp(const SkinLook& a, const SkinLook& b) {
 
 bool skinsLookSimilar(const SkinLook& a, const SkinLook& b) {
     const int detailShare =
-        static_cast<int>(kSkinSimilarDetailShare * std::min(a.detail, b.detail));
+        static_cast<int>(kSkinSimilarDetailShare * std::min(a.ownDetail, b.ownDetail));
     return differsByAtMostLinedUp(a, b, std::max(kSkinLookAlikeCells, detailShare));
 }
 

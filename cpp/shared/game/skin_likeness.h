@@ -48,13 +48,31 @@ inline constexpr int kSkinLookColourSlack = 24;
 /// the starter, is 10: a change.
 inline constexpr int kSkinLookAlikeCells = 9;
 
-/// skinsLookSimilar's allowance: how many cells may differ, as a share of the
-/// detail (SkinLook::detail) on the less detailed of the two. Measured over every
-/// pair in a 96-skin catalog and checked by eye: the pairs that are one design
-/// came out at 19%, 43% and 50% -- a face added to a pattern, a copy traced again
-/// a size up, a flower moved off centre -- and the closest two different designs
-/// (a third eye and a mouth on the starter) at 82%.
+/// skinsLookSimilar's allowance: how many cells may differ, as a share of what
+/// the author drew (SkinLook::ownDetail) on the less detailed of the two. Measured
+/// over every pair in a 96-skin catalog and checked by eye: the pairs that are one
+/// design came out at 19%, 43% and 50% -- a face added to a pattern, a copy traced
+/// again a size up, a flower moved off centre -- and the closest two different
+/// designs (a third eye and a mouth on the starter) at 82%.
+///
+/// Re-measured on the 892-skin live catalog of 2026-11-11, whose 256 flagged pairs
+/// were labelled by eye: counted against SkinLook::detail, every one of the 164
+/// pairs that are different designs was flagged, mostly two mouths on the
+/// starter, whose shared eyes were most of the detail. Against ownDetail 26 of
+/// them are, and 57 of the 64 copies still are.
 inline constexpr double kSkinSimilarDetailShare = 0.5;
+/// How deep an outline can reach into a skin, in cells: the widest stroke
+/// (kMaxSkinStrokeWidth, 14 units) is 7 cells. SkinLook::rim follows the outline
+/// this far in, so a thick one is a rim and not detail.
+inline constexpr int kSkinOutlineCells = 7;
+/// How much of the starter's eyes a skin must still paint, within the nudge, for
+/// them to be the starter's eyes and not something drawn there.
+inline constexpr double kStarterEyesKept = 0.8;
+/// How much of the ring just past the nudge round the starter's eyes may be
+/// drawn on before they count as somebody's own eyes in a busy picture. Over the
+/// live catalog faces drew on 0 to 8 of its 64 cells (a nose touching them, 14),
+/// and the pictures that only happen to be dark where the eyes go 20 to 43.
+inline constexpr double kStarterEyesClutter = 0.25;
 /// The wide tests' colour slack, per channel. A copy with every colour one step
 /// past kSkinLookColourSlack paints what looks like the same skin. Over that
 /// catalog 48 joins no two skins that 24 kept apart; a real recolour is further off.
@@ -75,10 +93,23 @@ struct SkinLook {
     /// How many cells are painted, and the middle of them in grid cells.
     int painted = 0;
     double centreX = 0, centreY = 0;
-    /// How many painted cells are what is drawn ON the skin: not its most
-    /// common colour (the body), and not within two cells of the unpainted
-    /// outside (its rim). The starter's is its two eyes.
+    /// The most common colour: the body.
+    std::uint32_t body = 0;
+    /// Row-major like `cells`: 1 where the cell is rim. The rim is every
+    /// painted cell within two cells of the unpainted outside, and the outline
+    /// that band is the edge of: when most of the band is one colour that is
+    /// not the body's, that colour inward as far as kSkinOutlineCells. So a
+    /// 14-unit outline is a rim, as the studio's 3-unit one is.
+    std::vector<std::uint8_t> rim;
+    /// How many painted cells are what is drawn ON the skin: not the body's
+    /// colour (within kSkinLookColourSlack, so a body drawn in a few near shades
+    /// is still one body), and not the rim. The starter's is its two eyes.
     int detail = 0;
+    /// The detail less the starter's two eyes, when the skin still has them where
+    /// the starter does: what its author drew. Most faces are a mouth on the
+    /// starter, and its eyes are on every one of them, so they say nothing about
+    /// which face it is. The starter's own is 0.
+    int ownDetail = 0;
     /// False for a skin that is all edge, floating lines with nothing behind
     /// them: a rim only means something around a body.
     bool hasBody = false;
@@ -86,8 +117,18 @@ struct SkinLook {
     /// Any cell of the grid; outside the crop is unpainted.
     std::uint32_t at(int x, int y) const {
         if (x < x0 || y < y0 || x >= x0 + w || y >= y0 + h) return 0;
-        return cells[static_cast<std::size_t>(y - y0) * static_cast<std::size_t>(w) +
-                     static_cast<std::size_t>(x - x0)];
+        return cells[index(x, y)];
+    }
+    /// Whether a cell of the grid is rim; outside the crop is not.
+    bool rimAt(int x, int y) const {
+        if (x < x0 || y < y0 || x >= x0 + w || y >= y0 + h) return false;
+        return rim[index(x, y)] != 0;
+    }
+
+private:
+    std::size_t index(int x, int y) const {
+        return static_cast<std::size_t>(y - y0) * static_cast<std::size_t>(w) +
+               static_cast<std::size_t>(x - x0);
     }
 };
 
@@ -113,8 +154,8 @@ inline bool skinsLookAlike(const SkinLook& a, const SkinLook& b) {
 bool skinsLookAlikeLinedUp(const SkinLook& a, const SkinLook& b);
 
 /// True when `a` and `b` are the same kind of skin to somebody browsing for one:
-/// lined up as above, no more than kSkinSimilarDetailShare of what is drawn on
-/// them differs. What a publish or an edit is refused on.
+/// lined up as above, no more than kSkinSimilarDetailShare of what their authors
+/// drew (SkinLook::ownDetail) differs. What a publish or an edit is refused on.
 ///
 /// Measured against the detail and not the whole picture because the body says
 /// nothing. Counted in cells, a near-identical copy (27) scored worse than a new
@@ -122,6 +163,8 @@ bool skinsLookAlikeLinedUp(const SkinLook& a, const SkinLook& b);
 /// of the detail they are 43% and 91%. The rim is left out of the difference as
 /// it is left out of the detail: a copy with a new outline is a copy. A recolour
 /// past kSkinSimilarColourSlack differs everywhere and stays a different skin.
+/// The starter's eyes are left out of the share and not out of the difference:
+/// two faces that both kept them are told apart by what else is on them.
 bool skinsLookSimilar(const SkinLook& a, const SkinLook& b);
 
 /// A hash of every field `shapes` carries, so a cached look can tell that the

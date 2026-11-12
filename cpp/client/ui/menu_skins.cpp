@@ -108,6 +108,8 @@ constexpr double kScrollbarWidth = 10.0;
 /// -- so 256 apiece leaves a full-size skin room to arrive whole. What is left
 /// is still a bound on pasting a file in here, which is all it was ever for.
 constexpr std::size_t kMaxSkinTextBytes = static_cast<std::size_t>(kMaxSkinShapes) * 256;
+/// The Browse search: longer than any skin name or username it can match.
+constexpr std::size_t kMaxSearchBytes = 32;
 /// One wheel notch is ~100 CSS px of deltaY in a browser; the window reports
 /// notches, so the step is spelled out as every other list panel spells it.
 constexpr double kWheelStep = 100.0;
@@ -533,6 +535,25 @@ Rect browseBody(const Layout& l) {
     return {l.body.x, top, l.body.w, std::max(0.0, l.panel.bottom() - kPad - top)};
 }
 
+/// The Browse tab's search box: the rest of the sort row after its three
+/// chips, a little taller than they are so its type is not cramped, and
+/// centred on them.
+Rect browseSearchField(const Layout& l) {
+    constexpr double kSearchHeight = 28.0;
+    const double x = l.body.x + 3 * (kSortWidth + kTabGap) + 8.0;
+    const double y = l.tabs.bottom() + 12.0 + (kSortHeight - kSearchHeight) * 0.5;
+    return {x, y, std::max(0.0, l.body.right() - x), kSearchHeight};
+}
+
+/// Whether a skin is one the Browse search asks for: its name or its author
+/// holds `needle` (already lower case), in any case. Ids are not searched;
+/// players never see one.
+bool skinMatches(const CustomSkin& skin, const std::string& needle) {
+    if (needle.empty()) return true;
+    return lowerCase(skin.name).find(needle) != std::string::npos ||
+           lowerCase(skin.author).find(needle) != std::string::npos;
+}
+
 /// Everything the studio keeps between frames.
 struct Studio {
     enum class Tab : std::uint8_t { Create, Browse };
@@ -545,6 +566,10 @@ struct Studio {
 
     Tab tab = Tab::Create;
     Sort sort = Sort::Newest;
+    /// The Browse search, as typed. Kept while the panel is closed, as the
+    /// sort is.
+    std::string search;
+    TextFieldState searchField;
     std::vector<Shape> shapes = starterSkinShapes();
     int selected = 0;
     std::string skinName;
@@ -679,7 +704,7 @@ struct Studio {
     double drawPalette(Canvas&, Rect, const char* caption, const std::string& current,
                        bool isFill);
     void drawPicker(Canvas&, Rect, const std::string& current, double timeSeconds);
-    void drawSortRow(Canvas&);
+    void drawSortRow(Canvas&, double timeSeconds);
     void drawVoteRow(Canvas&, Rect, const CustomSkin&);
     void stepper(Canvas&, Rect, const char* caption, Field, double value, double step);
     void drawTextEditor(Canvas&, Rect, double timeSeconds);
@@ -1392,7 +1417,7 @@ void Studio::drawFooter(Canvas& canvas, double timeSeconds) {
                  editing ? "Save changes" : "Publish", publish, kAccent);
 }
 
-void Studio::drawSortRow(Canvas& canvas) {
+void Studio::drawSortRow(Canvas& canvas, double timeSeconds) {
     static const char* const kLabels[] = {"Newest", "Top rated", "Favorites"};
     const double y = layout.tabs.bottom() + 12.0;
     for (int i = 0; i < 3; ++i) {
@@ -1403,9 +1428,8 @@ void Studio::drawSortRow(Canvas& canvas) {
                    kLabels[i], pick, static_cast<int>(sort) == i ? kAccentPurple : kNeutralFill,
                    kBodySize);
     }
-    ui::text(canvas, "Equip one and everyone sees it.",
-             layout.body.x + 3 * (kSortWidth + kTabGap) + 8.0, y + kSortHeight * 0.5,
-             label(kBodySize));
+    inputField(canvas, browseSearchField(layout), search, "Search by name or author",
+               searchField.focused, timeSeconds, &searchField);
 }
 
 void Studio::drawVoteRow(Canvas& canvas, Rect r, const CustomSkin& skin) {
@@ -1427,7 +1451,7 @@ void Studio::drawVoteRow(Canvas& canvas, Rect r, const CustomSkin& skin) {
 }
 
 void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSeconds) {
-    drawSortRow(canvas);
+    drawSortRow(canvas, timeSeconds);
 
     const Rect view = browseBody(layout);
     const std::vector<CustomSkin>& skins = catalog();
@@ -1447,15 +1471,26 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
     const double cardW = (view.w - (cols - 1) * kGap - kScrollbarWidth - 4.0) / cols;
     const double preview = cardW - 30.0;
 
+    // The search narrows whichever list the sort chose, Favorites included.
+    const std::size_t first = search.find_first_not_of(' ');
+    const std::string needle =
+        first == std::string::npos
+            ? std::string()
+            : lowerCase(search.substr(first, search.find_last_not_of(' ') - first + 1));
     std::vector<const CustomSkin*> sorted;
     sorted.reserve(skins.size());
+    bool anyListed = false;
     for (const CustomSkin& skin : skins) {
         if (sort == Sort::Favorites && !(net && net->isFavoriteSkin(skin.id))) continue;
+        anyListed = true;
+        if (!skinMatches(skin, needle)) continue;
         sorted.push_back(&skin);
     }
     if (sorted.empty()) {
-        ui::text(canvas, "No favorites yet. Press the star on a skin to keep it here.", view.x,
-                 view.y + 24.0, label(kBodySize));
+        const std::string why =
+            !anyListed ? std::string("No favorites yet. Press the star on a skin to keep it here.")
+                         : "No skins match \"" + clipChars(search, 24) + "\".";
+        ui::text(canvas, why, view.x, view.y + 24.0, label(kBodySize));
         return;
     }
     // Top rated is the net score, then the plainer favourite of two that tie
@@ -2149,10 +2184,13 @@ bool Studio::handleInput(MenuContext& ctx) {
     // picker closed some other way -- another shape, another tab -- must not
     // leave the keyboard with it.
     if (tab != Tab::Create || textMode || pickerHex.w <= 0) hexField.blur();
+    // The search box only on the tab it is drawn on, and not under a confirm.
+    if (tab != Tab::Browse || confirming) searchField.blur();
     const bool naming = tab == Tab::Create && !textMode && nameField.focused;
     const bool editing = tab == Tab::Create && textMode;
     const bool hexing = hexField.focused;
-    if (naming || editing || hexing) ctx.wantsText = true;
+    const bool searching = searchField.focused;
+    if (naming || editing || hexing || searching) ctx.wantsText = true;
 
     if (naming) {
         TextEditOptions typing;
@@ -2192,6 +2230,22 @@ bool Studio::handleInput(MenuContext& ctx) {
         if (ctx.window.keyPressed(Key::Enter) || ctx.window.keyPressed(Key::Escape)) {
             hexField.blur();
         }
+    } else if (searching) {
+        TextEditOptions typing;
+        typing.maxBytes = kMaxSearchBytes;
+        // Live: every keystroke narrows the cards, from the top of the list.
+        if (editText(ctx.window, search, searchField, ctx.timeSeconds, typing)) {
+            browseScroll.offset = 0;
+        }
+        if (ctx.window.keyPressed(Key::Enter) || ctx.window.keyPressed(Key::Escape)) {
+            searchField.blur();
+        }
+    }
+    if (tab == Tab::Browse && !confirming) {
+        const Rect field = browseSearchField(layout);
+        trackTextMouse(ctx.window, searchField, field, inputFieldRun(field, search, searchField),
+                       search, ctx.timeSeconds);
+        if (insideInclusive(field, mouse)) ctx.window.setCursorShape(CursorShape::Text);
     }
     if (pickerHex.w > 0) {
         trackTextMouse(ctx.window, hexField, pickerHex,
@@ -2281,6 +2335,7 @@ void SkinsPanel::reset() {
     Studio& state = studio();
     state.nameField.blur();
     state.hexField.blur();
+    state.searchField.blur();
     state.textField.dragging = false;
     state.dragging = false;
     state.pickerDrag = Studio::PickerDrag::None;

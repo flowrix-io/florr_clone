@@ -321,6 +321,67 @@ TEST(a_look_counts_the_detail_on_the_body_and_not_the_body) {
     CHECK_EQ(sampleSkinLook({circle(0, 0, 25, "#123456")}).detail, 0);
     // And a skin that paints nothing is measured without dividing by nothing.
     CHECK_EQ(sampleSkinLook({circle(0, 0, 0.5, "#123456")}).painted, 0);
+
+    // A body drawn in a few near shades is one body, not detail on itself.
+    std::vector<SkinShape> shaded = starterSkinShapes();
+    shaded.push_back(polygon(0, {-20, -14, 20, -14, 20, 14, -20, 14}, "#fff070"));
+    shaded.push_back(polygon(0, {-20, 14, 20, 14, 18, 20, -18, 20}, "#f8e05c"));
+    std::swap(shaded[1], shaded[3]);
+    std::swap(shaded[2], shaded[4]);
+    CHECK_EQ(sampleSkinLook(shaded).detail, starter.detail);
+}
+
+TEST(a_skin_s_own_detail_leaves_out_the_starter_s_eyes) {
+    // Every face drawn on the starter has its eyes, so they are nobody's.
+    const SkinLook starter = sampleSkinLook(starterSkinShapes());
+    CHECK_EQ(starter.ownDetail, 0);
+    const SkinLook smile = sampleSkinLook(starterWithMouth());
+    CHECK_EQ(smile.ownDetail, smile.detail - starter.detail);
+    // On any body colour, and nudged.
+    std::vector<SkinShape> red = starterWithMouth();
+    red[0].fill = "#d01c1d";
+    CHECK_EQ(sampleSkinLook(red).ownDetail, smile.ownDetail);
+    CHECK_NEAR(sampleSkinLook(movedBy(starterWithMouth(), 1.5, 0)).ownDetail, smile.ownDetail, 3);
+
+    // Eyes somewhere else are the author's.
+    const SkinLook moved = sampleSkinLook(movedBy(starterSkinShapes(), 12, 0));
+    CHECK_EQ(moved.ownDetail, moved.detail);
+    // And so is a busy picture that is only dark where the eyes go.
+    std::vector<SkinShape> chequered = {starterSkinShapes()[0]};
+    for (int row = 0; row < 8; ++row) {
+        for (int col = (row % 2); col < 8; col += 2) {
+            const double x = -20 + col * 5, y = -20 + row * 5;
+            chequered.push_back(polygon(0, {x, y, x + 5, y, x + 5, y + 5, x, y + 5}, "#d01c1d"));
+        }
+    }
+    chequered.push_back(starterSkinShapes()[1]);
+    chequered.push_back(starterSkinShapes()[2]);
+    const SkinLook busy = sampleSkinLook(chequered);
+    CHECK_EQ(busy.ownDetail, busy.detail);
+}
+
+TEST(a_thick_outline_is_a_skin_s_rim_and_not_its_detail) {
+    // An outline twice as deep as the band round the starter: a rim, and the
+    // eyes are still all that is on it. (Much past this the outline covers more
+    // of the starter than its yellow does, and becomes the body.)
+    std::vector<SkinShape> thick = starterSkinShapes();
+    thick[0].sw = 6;
+    CHECK_EQ(sampleSkinLook(thick).detail, sampleSkinLook(starterSkinShapes()).detail);
+
+    // A giant disc so outlined has nothing on it to forgive a face by: a face
+    // drawn on it is a new skin, as on any plain disc.
+    SkinShape giant = circle(0, 0, 64, "#ffe763");
+    giant.stroke = "#cdb74f";
+    giant.sw = kMaxSkinStrokeWidth;
+    std::vector<SkinShape> face = {giant};
+    for (SkinShape s : starterWithMouth()) {
+        if (s.t != SkinShapeType::Circle) face.push_back(s);
+    }
+    CHECK(!similar({giant}, face));
+    // Its outline drawn in another colour is still the same disc.
+    SkinShape orange = giant;
+    orange.stroke = "#e07020";
+    CHECK(similar({giant}, {orange}));
 }
 
 TEST(a_copy_moved_or_resized_is_similar_but_not_alike) {
@@ -342,8 +403,10 @@ TEST(a_copy_moved_or_resized_is_similar_but_not_alike) {
 }
 
 TEST(a_little_added_to_a_detailed_skin_is_similar) {
+    // "A little" next to what its author drew, the smile and the cheeks: the
+    // eyes are the starter's. A nose of radius 5 adds half as much again.
     std::vector<SkinShape> withNose = blushingFace();
-    withNose.push_back(circle(0, 3, 5, "#ff3333"));
+    withNose.push_back(circle(0, 3, 4, "#ff3333"));
     CHECK(!alike(blushingFace(), withNose));
     CHECK(similar(blushingFace(), withNose));
     // Order does not matter: which of the two is the original is the server's
@@ -366,6 +429,112 @@ TEST(a_different_design_on_the_same_body_is_not_similar) {
     // past the allowance is a change.
     CHECK(!similar({circle(0, 0, 25, "#123456")},
                    {circle(0, 0, 25, "#123456"), circle(0, 0, 5, "#ffffff")}));
+}
+
+TEST(two_mouths_on_the_starter_are_two_skins) {
+    // The live catalog's commonest false match: the eyes were most of the detail
+    // on both, so the mouths, all that tells them apart, came in under half.
+    // Drawn as the catalog's pair were, wide: a mouth 14 units across bends by
+    // two cells, which the nudge cannot tell from straight.
+    const auto withMouth = [](double y, double x2, double y2, Vec2 c1, Vec2 c2) {
+        std::vector<SkinShape> shapes = starterSkinShapes();
+        SkinShape mouth;
+        mouth.t = SkinShapeType::Curve;
+        mouth.x = -x2;
+        mouth.y = y;
+        mouth.x2 = x2;
+        mouth.y2 = y2;
+        mouth.cx1 = c1.x;
+        mouth.cy1 = c1.y;
+        mouth.cx2 = c2.x;
+        mouth.cy2 = c2.y;
+        mouth.stroke = "#111111";
+        mouth.sw = 2;
+        shapes.push_back(mouth);
+        return shapes;
+    };
+    const std::vector<SkinShape> smile = withMouth(4, 12, 4, {-4, 11}, {1, 19});
+    const std::vector<SkinShape> frown = withMouth(13, 10, 12, {-8, 2.4}, {9, 2.4});
+    CHECK(!similar(smile, frown));
+    CHECK(!similar(frown, smile));
+    // A mouth is a skin, and the plain starter is not like it.
+    CHECK(!similar(starterSkinShapes(), smile));
+    // While the same smile, nudged, is the same skin.
+    CHECK(similar(smile, movedBy(smile, 1.5, 1)));
+}
+
+namespace {
+
+/// A skin a player reported refused (2026-11-11): a black globe badge on white,
+/// lettered "DNS", every white a shade or two off the next.
+std::vector<SkinShape> dnsBadge() {
+    const char* const kPaths[][2] = {
+        {"-25,-1.2,-24.8,-1.2,-24.7,-3.4,-24.4,-5.5,-23.8,-7.6,-23,-9.7,-22.1,-11.7,-20.9,-13.6,-18.2,-17.2,-16.6,-18.7,-14.9,-20.1,-13.2,-21.4,-11.3,-22.4,-8,-23.6,-2.3,-25,-25,-25", "#fcfcfc"},
+        {"2.3,-25,-11.3,-22.4,-20.9,-13.6,-24.4,-5.5,-25,1.4,-21.4,13.4,-18.6,17,-11.1,22,-2.3,25,2.3,25,12.1,21.8,21.3,13,25,3,24.5,-4.4,21.3,-13,11.3,-22.4", "#050505"},
+        {"25,-1,25,-25,2.3,-25,7.7,-23.8,11.3,-22.4,13.3,-21.2,15.2,-19.9,16.9,-18.4,18.5,-16.7,20,-14.9,21.3,-13,22.4,-11,23.4,-8.9,24.1,-6.7,24.5,-4.4,24.8,-1", "#fcfcfc"},
+        {"-3,-22.6,-4.6,-22.6,-4.6,-22.3,-6.2,-22,-8.8,-21,-11.6,-19.7,-14.3,-18,-16.5,-16.2,-17.3,-15.2,-18.1,-13.7,-14,-13.4,-12.7,-13.4,-11.2,-13.7,-10.4,-14.4,-8.9,-15.9,-5.4,-19.8", "#fbfbfb"},
+        {"3,-22.6,4.7,-20.7,9.2,-15.5,10.9,-13.8,11.6,-13.6,14.1,-13.5,17,-13.7,18.1,-13.9,17.3,-14.9,15.3,-17,12.8,-19,10,-20.6,8.6,-21.3,7.2,-21.9,5.7,-22.3,4.3,-22.5", "#fafafa"},
+        {"-1.2,-21.2,-2,-20.5,-3.7,-19,-5.1,-17.7,-5.7,-17,-6.4,-16.3,-7,-15.6,-7.4,-15,-7.8,-14.3,-8.1,-13.7,-1,-13.7,-1,-14.5,-0.9,-16.8,-0.9,-18.2,-0.9,-19.5,-1.1,-20.7", "#f8f8f8"},
+        {"1,-21.2,1,-13.4,1.8,-13.4,4.1,-13.3,5.4,-13.3,6.6,-13.4,7.2,-13.4,7.8,-13.5,8.3,-13.7,7.2,-15,6.1,-16.4,4.9,-17.7,3.7,-18.9,3,-19.5,2.4,-20.1,1.7,-20.7", "#efefef"},
+        {"-19.9,11.4,19.7,11.4,20.7,9.3,21.5,7.2,22.1,5.3,22.5,3.4,22.7,-0.1,22.3,-3.7,21.2,-7.5,19.7,-11.7,-19.7,-11.7,-21.4,-7,-22.4,-3.3,-22.7,-0.1,-22.4,3,-21.4,6.7", "#fbfbfb"},
+        {"8.6,2.3,8.1,5.7,12.5,6.6,15.2,5.8,17.6,2.6,16.4,-0.1,13.1,-2.1,12.3,-3.2,16.8,-2.8,17.2,-5.9,13.6,-6.5,9.3,-4.6,8.4,-2.5,9.6,0.1,13.3,2.5,11.9,3.5", "#040404"},
+        {"-17.4,6.3,-12.9,6.4,-11.5,6.3,-9.3,5.7,-8.4,5.1,-7.6,4.3,-6.6,2.2,-6.1,-0.3,-6.4,-2.7,-6.8,-3.8,-7.4,-4.7,-8.2,-5.4,-9.2,-5.9,-11.5,-6.4,-12.9,-6.4,-17.4,-6.3", "#040404"},
+        {"2.8,0.6,2.1,-0.9,-0.2,-5.2,-0.8,-6.3,-5,-6.3,-5,6.3,-1.4,6.1,-1.8,3.7,-1.7,1.2,-1.4,-0.6,1.1,4,2.1,6.3,6.3,6.3,6.3,-6.1,3,-6.1,3.1,-2.7", "#030303"},
+        {"-13.7,-3.2,-13.7,2.1,-13.6,3.3,-13.1,3.8,-12.5,3.8,-11.8,3.3,-11.1,2.5,-10.4,1.5,-10,0.4,-9.8,-0.7,-10,-1.8,-10.2,-2.2,-10.6,-2.6,-11.1,-2.9,-11.8,-3.1,-12.7,-3.2", "#f9f9f9"},
+        {"-2.3,25,-6.8,23.7,-9,22.9,-11.1,22,-13.1,21,-15.1,19.8,-16.9,18.5,-18.6,17,-20.1,15.3,-21.4,13.4,-22.5,11.3,-23.4,9,-23.9,7.4,-24.7,2.6,-25,1.4,-25,25", "#fdfdfd"},
+        {"2.3,25,25,25,25,3,24.3,4.7,23.2,9.2,22.8,10.5,21.3,13,19.4,15.6,17.3,18,14.8,20.1,13.5,21,12.1,21.8,10.7,22.6,9.1,23.2,7.6,23.7,3.7,24.5", "#fdfdfd"},
+        {"-3.2,22.6,-6.5,19.5,-8.1,18,-9.6,16.4,-10.7,14.8,-11.2,13.7,-18.1,13.7,-17.9,14.6,-17.2,15.5,-16.2,16.5,-14.9,17.5,-13.5,18.5,-11.8,19.4,-8.5,21.1,-5.4,22.2,-4.2,22.5", "#fbfbfb"},
+        {"-8.6,13.7,-8.4,13.9,-8,14.5,-7.5,15.2,-6.9,15.9,-6.3,16.7,-5.5,17.5,-4.8,18.3,-4,19,-3.2,19.7,-2.5,20.3,-1.8,20.8,-1.5,21,-1.3,21.1,-1,21.2,-1,13.7", "#f9f9f9"},
+        {"8.6,13.7,1.2,13.7,1.2,14.5,1.1,16.7,1.1,18,1.1,19.3,1.3,20.5,1.4,21,2.7,20,4,18.9,5.4,17.6,6,17,6.6,16.3,7.2,15.7,7.7,15,8.2,14.3", "#fdfdfd"},
+        {"18.1,13.7,11.2,13.7,10.9,14.5,10.5,15.2,9.1,16.8,7.4,18.5,5.2,20.5,3.4,22.3,4.1,22.6,5.1,22.5,6.4,22.2,7.9,21.5,11.2,19.7,14.3,17.5,16.8,15.4,17.7,14.4", "#fbfbfb"},
+    };
+    std::vector<SkinShape> shapes;
+    for (const auto& path : kPaths) {
+        std::vector<double> points;
+        for (const char* at = path[0]; *at != '\0';) {
+            char* end = nullptr;
+            points.push_back(std::strtod(at, &end));
+            at = *end == ',' ? end + 1 : end;
+        }
+        shapes.push_back(polygon(0, std::move(points), path[1]));
+    }
+    return shapes;
+}
+
+/// The catalog skin it was refused as: a bullseye of rings one or two units
+/// wide, which the grid samples into black-and-white noise.
+std::vector<SkinShape> bullseye() {
+    std::vector<SkinShape> shapes;
+    const struct { double r; const char* fill; const char* stroke; } kRings[] = {
+        {27, "#111111", ""}, {25, "#ffffff", ""}, {24, "#111111", ""}, {22, "#ffffff", ""},
+        {21, "#111111", ""}, {20, "#ffffff", ""}, {18, "", "#111111"}, {15, "#3a86ff", "#111111"},
+        {14, "#ffffff", ""}, {13, "#3a86ff", ""}, {12, "#3a86ff", "#111111"}, {11, "#3a86ff", "#ffffff"},
+        {10, "#3a86ff", "#111111"}, {9, "#3a86ff", "#ffffff"}, {8, "#3a86ff", "#111111"},
+        {8, "#ffffff", ""}, {7, "#111111", ""}, {6, "#ffffff", ""}, {5, "#111111", ""},
+        {4, "#ffffff", ""}, {3, "#111111", ""}, {2, "#ffffff", ""}, {1.5, "#111111", ""},
+        {0.5, "#ffffff", ""},
+    };
+    for (const auto& ring : kRings) {
+        SkinShape s = circle(0, 0, ring.r, ring.fill);
+        s.stroke = ring.stroke;
+        s.sw = *ring.stroke != '\0' ? 2 : 0;
+        shapes.push_back(s);
+    }
+    return shapes;
+}
+
+} // namespace
+
+TEST(a_busy_badge_in_near_white_shades_is_not_another_busy_skin) {
+    // Every near-white on the badge used to count as detail, the body being one
+    // exact white, which doubled its allowance; and two busy black-and-white
+    // pictures have black and white within a cell nearly everywhere.
+    const SkinLook badge = sampleSkinLook(dnsBadge());
+    CHECK(badge.detail < badge.painted / 4);
+    CHECK(!similar(dnsBadge(), bullseye()));
+    CHECK(!similar(bullseye(), dnsBadge()));
+    // Still itself, moved a little.
+    CHECK(similar(dnsBadge(), movedBy(dnsBadge(), 1.5, -1)));
 }
 
 TEST(a_skin_copied_with_a_new_rim_is_similar) {
@@ -630,7 +799,7 @@ TEST(a_skin_similar_to_one_in_the_catalog_is_refused) {
     CHECK(publish(h, author, "blush 3", resizedBy(blushingFace(), 1.1)));
     h.step(200, {&author, &other});
     std::vector<SkinShape> withNose = blushingFace();
-    withNose.push_back(circle(0, 3, 5, "#ff3333"));
+    withNose.push_back(circle(0, 3, 4, "#ff3333"));
     CHECK(publish(h, author, "blush 4", withNose));
     // Somebody else's, the same.
     CHECK(publish(h, other, "my blush", withNose));
