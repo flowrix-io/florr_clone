@@ -1377,6 +1377,15 @@ double mobUndeadMillis(const MobConfig& config, Rarity rarity);
 /// gives it no body on the ring.
 inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "bandage"; }
 
+/// Whether a `held` petal does nothing while `other` is worn on the active row
+/// with it. The user's rule (2026-11-11): a splitter worn with a bandage does
+/// not spawn, as a spare copy of a petal that does not stack does not
+/// (petalOnlyBestCopyCounts), and so does not split the flower either. Both
+/// stay equippable, and the bandage works as ever. See slotHeldBack.
+inline bool petalHeldBackBy(const PetalConfig& held, const PetalConfig& other) {
+    return held.id == kSplitterPetalId && petalDelaysDeath(other);
+}
+
 /// A nazar takes most of a hit off its flower and pays a charge for it --
 /// florr's "When the flower receives damage, reduces it by 98% and consumes a
 /// charge". Out on the ring, unlike the worn family above: florr gives it a
@@ -1840,6 +1849,29 @@ int bestCopySlot(std::uint16_t configIndex, EquippedAt&& equippedAt) {
         }
     }
     return best;
+}
+
+/// Whether active slot `index` is held back by another petal on the row
+/// (petalHeldBackBy). Such a slot serves its equip reload, then fields
+/// nothing, and the bar draws it as not loaded: the server's ring pass builds
+/// it with zero copies, as it builds a spare moon.
+///
+/// `equippedAt` as for bestCopySlot, so a mimic copying a bandage holds a
+/// splitter back as the bandage would.
+template <class EquippedAt>
+bool slotHeldBack(const ContentRegistry& registry, int index, EquippedAt&& equippedAt) {
+    if (index < 0 || index >= kLoadoutActiveSlots) return false;
+    const EquippedPetal held = equippedAt(index);
+    if (held.empty()) return false;
+    const PetalConfig& config = registry.petal(held.configIndex);
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        if (i == index) continue;
+        const EquippedPetal other = equippedAt(i);
+        if (!other.empty() && petalHeldBackBy(config, registry.petal(other.configIndex))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------

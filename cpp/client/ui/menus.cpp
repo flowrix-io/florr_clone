@@ -1430,15 +1430,18 @@ double slotReloadProgress(const NetClient& net, int index) {
 }
 
 /// Whether the flower's slot `index` holds a petal that does nothing because a
-/// better copy of it is on the bar (petalOnlyBestCopyCounts). Nothing of it is
-/// out to break, so once its equip reload has run out the server reports
-/// nothing about it, and it would read as loaded.
+/// better copy of it is on the bar (petalOnlyBestCopyCounts), or because
+/// another petal on the bar holds it back (slotHeldBack: a splitter beside a
+/// bandage). Nothing of it is out to break, so once its equip reload has run
+/// out the server reports nothing about it, and it would read as loaded.
 bool slotOutranked(const NetClient& net, int index) {
     if (index < 0 || index >= kLoadoutActiveSlots) return false;
     const Profile& profile = net.profile();
     const auto equippedAt = [&](int i) { return profile.equipped(content(), i); };
     const EquippedPetal equipped = equippedAt(index);
-    return !equipped.empty() && petalOnlyBestCopyCounts(content().petal(equipped.configIndex)) &&
+    if (equipped.empty()) return false;
+    if (slotHeldBack(content(), index, equippedAt)) return true;
+    return petalOnlyBestCopyCounts(content().petal(equipped.configIndex)) &&
            bestCopySlot(equipped.configIndex, equippedAt) != index;
 }
 
@@ -2006,6 +2009,9 @@ void MenuSystem::useLoadoutSlot(NetClient& net, int slot) {
     // one anyway -- it owns the cooldown -- but a click that flew off and did
     // nothing is a click the player would try again harder.
     if (slotReloadProgress(net, slot) < 1.0) return;
+    // Nor is one that is held back (a splitter beside a bandage): it is drawn
+    // as not loaded, and the server would not act on it.
+    if (slotOutranked(net, slot)) return;
     net.usePetal(slot);
 }
 

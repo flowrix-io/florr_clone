@@ -882,7 +882,13 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // than skipped, so that the count changing -- the live moon taken off,
         // a better one put on -- rebuilds the slot through the one path that
         // already knows how, full reload included.
-        const int count = petalAnchorsRing(config) && i != moonSlot
+        //
+        // A slot another petal on the row holds back (a splitter beside a
+        // bandage) is the same: zero copies, for the same reasons.
+        const bool heldBack = slotHeldBack(registry, i, [&](int j) {
+            return equippedPetal(registry, loadout, j);
+        });
+        const int count = (petalAnchorsRing(config) && i != moonSlot) || heldBack
                               ? 0
                               : petalCopies(std::max(0, stats.count), skills);
         const double reload = reloadMillisFor(stats, reloadScale);

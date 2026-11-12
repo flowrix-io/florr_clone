@@ -70,7 +70,13 @@ int GameServer::splitterSlotOf(Entity body) const {
         // A slot serving its cooldown is still EQUIPPED. Reading a reloading
         // splitter as "not worn" would merge the flower back together the
         // instant it switched halves, which is the one moment it must not.
-        if (!slot.empty() && content().petal(slot.configIndex).id == kSplitterPetalId) return i;
+        if (slot.empty() || content().petal(slot.configIndex).id != kSplitterPetalId) continue;
+        // Held back by a bandage on the row (slotHeldBack), it is on the bar
+        // but not out: the flower does not split, and a split one merges back.
+        const bool heldBack = slotHeldBack(content(), i, [&](int j) {
+            return equippedPetal(content(), *loadout, j);
+        });
+        return heldBack ? -1 : i;
     }
     return -1;
 }
