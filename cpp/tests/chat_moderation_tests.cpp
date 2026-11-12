@@ -1,8 +1,10 @@
 #include "test.h"
 
 #include "server/chat_moderation.h"
+#include "shared/core/json.h"
 
 #include <string>
+#include <vector>
 
 using flix::blockedWordIn;
 using flix::blockedWordInName;
@@ -315,4 +317,143 @@ TEST(chat_filter_applies_obfuscation_rules_across_the_expanded_dictionary) {
             CHECK(blocked(dressed));
         }
     }
+}
+
+// -- the lists as a server edits them (/mod terms) ----------------------------
+
+namespace {
+
+using flix::ChatTermEdits;
+using flix::ChatTerms;
+using flix::TermFit;
+
+bool blockedBy(const ChatTermEdits& edits, const std::string& line) {
+    return !blockedWordIn(line, edits.applied()).empty();
+}
+
+} // namespace
+
+TEST(a_term_added_here_blocks_what_its_fit_says_with_every_spelling_rule) {
+    ChatTermEdits edits;
+    std::string said;
+    CHECK(edits.block("noob", nullptr, said));
+    // A new term is a whole word, or its plural, read through the same
+    // spellings the built-in ones are.
+    for (const char* line : {"you noob", "NOOBS", "n00b", "n o o b", "n.o.o.b"}) {
+        CHECK(blockedBy(edits, line));
+    }
+    CHECK(!blockedBy(edits, "noobish"));
+    CHECK(!blocked("you noob"));   // the built-in lists are untouched
+
+    const TermFit anywhere = TermFit::Anywhere;
+    CHECK(edits.block("noob", &anywhere, said));
+    CHECK(blockedBy(edits, "noobish"));
+    CHECK(!edits.block("noob", nullptr, said));   // already there, at its fit
+    CHECK(said.find("already") != std::string::npos);
+
+    CHECK(edits.unblock("noob", said));
+    CHECK(!blockedBy(edits, "you noob"));
+    CHECK(!edits.unblock("noob", said));
+    CHECK(edits.empty());
+}
+
+TEST(a_built_in_term_is_switched_off_refitted_and_back_on) {
+    ChatTermEdits edits;
+    std::string said;
+    CHECK(edits.unblock("ass", said));
+    CHECK(!blockedBy(edits, "kick ass"));
+    CHECK(blockedBy(edits, "fuck"));   // only that one
+    CHECK_EQ(edits.unblocked.size(), std::size_t{1});
+
+    // Blocked again with no fit named, it is its built-in self.
+    CHECK(edits.block("ass", nullptr, said));
+    CHECK(edits.empty());
+    CHECK(blockedBy(edits, "kick ass"));
+    CHECK(!blockedBy(edits, "class"));
+
+    // Re-fitted, it is an edit; back at its own fit, no edit at all.
+    const TermFit start = TermFit::Start;
+    CHECK(edits.block("ass", &start, said));
+    CHECK(blockedBy(edits, "assessment"));
+    const TermFit word = TermFit::Word;
+    CHECK(edits.block("ass", &word, said));
+    CHECK(edits.empty());
+}
+
+TEST(an_allowed_word_lets_the_blocked_term_inside_it_through) {
+    ChatTermEdits edits;
+    std::string said;
+    const TermFit anywhere = TermFit::Anywhere;
+    CHECK(edits.block("hell", &anywhere, said));
+    CHECK(blockedBy(edits, "hello there"));
+    CHECK(edits.allow("hello", said));
+    CHECK(!blockedBy(edits, "hello there"));
+    CHECK(blockedBy(edits, "what the hell"));
+
+    // A blocked term is not allowed whole: unblock is how it stops blocking.
+    CHECK(!edits.allow("hell", said));
+    CHECK(!edits.allow("fuck", said));
+    CHECK(edits.unallow("hello", said));
+    CHECK(blockedBy(edits, "hello there"));
+
+    // A built-in allowed word switched off: what it held is blocked.
+    CHECK(!blocked("he sniggered"));
+    CHECK(edits.unallow("snigger", said));
+    CHECK(blockedBy(edits, "he sniggered"));
+    CHECK(edits.allow("snigger", said));
+    CHECK(!blockedBy(edits, "he sniggered"));
+}
+
+TEST(a_term_is_plain_letters) {
+    std::string reason;
+    CHECK(ChatTermEdits::validTerm("noob", reason));
+    CHECK(ChatTermEdits::validTerm("ab", reason));
+    for (const char* word : {"", "a", "sh1t", "two words", "NOOB", "caf\xC3\xA9", "a$$",
+                             "abcdefghijklmnopqrstuvwxyzabcdefg"}) {
+        CHECK(!ChatTermEdits::validTerm(word, reason));
+    }
+    CHECK(!reason.empty());
+}
+
+TEST(a_name_is_held_to_the_edited_lists_too) {
+    ChatTermEdits edits;
+    std::string said;
+    CHECK(edits.block("noob", nullptr, said));
+    const ChatTerms terms = edits.applied();
+    CHECK(!blockedWordInName("BigNoob", terms).empty());
+    CHECK(!blockedWordInName("xXNoobXx", terms).empty());
+    CHECK(blockedWordInName("BigNoob").empty());
+    CHECK(edits.unblock("dick", said));
+    CHECK(blockedWordInName("BigDick", edits.applied()).empty());
+    CHECK(!blockedWordInName("BigDick").empty());
+}
+
+TEST(the_stored_edits_read_back_and_a_bad_hand_edit_is_dropped) {
+    ChatTermEdits edits;
+    std::string said;
+    const TermFit start = TermFit::Start;
+    CHECK(edits.block("noob", &start, said));
+    CHECK(edits.unblock("ass", said));
+    CHECK(edits.allow("grasshopper", said));
+    CHECK(edits.unallow("shitzu", said));
+    const ChatTermEdits read = ChatTermEdits::fromJson(edits.toJson());
+    CHECK_EQ(read.toJson().dump(), edits.toJson().dump());
+
+    flix::Json table;
+    std::string error;
+    CHECK(flix::Json::parse(R"({"blocked": {"two words": "word", "noob": "bogus", "good": "start",
+                                          "ass": "word", "fuck": "start"},
+                                "unblocked": ["notbuiltin", "ass", 7],
+                                "allowed": ["fuck", "grassy", "grassy"],
+                                "unallowed": ["grassy", "snigger"]})",
+                            table, error));
+    const ChatTermEdits cleaned = ChatTermEdits::fromJson(table);
+    // "ass" at its own fit is no edit; "fuck" re-fitted is one.
+    CHECK_EQ(cleaned.blocked.size(), std::size_t{2});
+    CHECK_EQ(cleaned.blocked[0].word, std::string("good"));
+    CHECK_EQ(cleaned.blocked[1].word, std::string("fuck"));
+    CHECK(cleaned.unblocked == std::vector<std::string>{"ass"});
+    CHECK(cleaned.allowed == std::vector<std::string>{"grassy"});
+    CHECK(cleaned.unallowed == std::vector<std::string>{"snigger"});
+    CHECK(ChatTermEdits::fromJson(flix::Json()).empty());
 }

@@ -79,7 +79,7 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     // A Bad notice is what takes the client's loading screen back down to the
     // lobby, where the player can change the name.
     const std::string nameplate = sanitizePlayerName(name);
-    std::string refusedFor = blockedWordInName(nameplate);
+    std::string refusedFor = blockedWordInName(nameplate, database_.chatTerms());
     if (refusedFor.empty() && chatLineReversesText(escapedMarkup(nameplate))) {
         refusedFor = "reverses text";
     }

@@ -35,15 +35,112 @@
 // "class", "assassin", "Scunthorpe", "grape" and "therapist" out of it; the
 // few real words that still contain a listed one ("snigger", "shiitake") are
 // listed as allowed.
+//
+// Both lists are built in and editable in game: chat moderators and admins
+// add, switch off and re-fit terms with `/mod terms` (server/chat_commands.cpp).
+// What they change is kept as edits OVER the built-in lists -- the database's
+// `chatTerms` table, ChatTermEdits below -- so a term a later build adds to the
+// built-in list still reaches a server that edited others. The Chinese
+// phrases are built in only.
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace flix {
 
+class Json;
+
+/// How much of a word a listed term has to be.
+enum class TermFit : std::uint8_t {
+    /// Anywhere in a word: "fuck" in "motherfucking".
+    Anywhere,
+    /// The start of a word: "cunt" in "cunts", but not in "Scunthorpe".
+    Start,
+    /// The whole word, or its plural: "ass" and "asses", but not "class",
+    /// "assassin" or "assess".
+    Word,
+};
+
+/// "anywhere", "start" or "word": what the `chatTerms` table stores and what
+/// `/mod terms block` takes.
+const char* termFitName(TermFit fit);
+/// "anywhere in a word", for a sentence.
+const char* termFitLabel(TermFit fit);
+/// The fit `name` says -- termFitName's words, or "inside" and "whole" -- or
+/// false.
+bool parseTermFit(const std::string& name, TermFit& out);
+
+struct ChatTerm {
+    std::string word;   ///< lower-case a-z
+    TermFit fit = TermFit::Word;
+};
+
+/// The lists the word check reads.
+struct ChatTerms {
+    /// Profanity, sexual vulgarity, slurs.
+    std::vector<ChatTerm> blocked;
+    /// Real words a blocked one sits inside ("snigger"): a match that lies
+    /// wholly within one of these is let through.
+    std::vector<ChatTerm> allowed;
+
+    /// The built-in lists, unedited.
+    static const ChatTerms& builtIn();
+};
+
+/// What a server changed of the built-in lists: the `chatTerms` table.
+///
+/// Each edit says what it did in `said`, a sentence for whoever asked, and
+/// returns whether it changed anything. `word` must already be a validTerm.
+struct ChatTermEdits {
+    /// Terms added, and built-in terms blocked with another fit than their own.
+    std::vector<ChatTerm> blocked;
+    /// Built-in blocked terms switched off.
+    std::vector<std::string> unblocked;
+    /// Allowed words added.
+    std::vector<std::string> allowed;
+    /// Built-in allowed words switched off.
+    std::vector<std::string> unallowed;
+
+    /// How many terms, and how many allowed words, a server may add: each one
+    /// is read against every word of every line.
+    static constexpr std::size_t kMaxAdded = 300;
+
+    /// Whether `word` is something the lists can hold: 2 to 32 letters a-z.
+    /// The reason is a sentence for whoever typed it.
+    static bool validTerm(const std::string& word, std::string& reasonOut);
+
+    /// Blocks `word` -- a new term, a built-in one switched back on, or either
+    /// re-fitted. With no `fit`, a new term is a whole word and a known one
+    /// keeps the fit it has.
+    bool block(const std::string& word, const TermFit* fit, std::string& said);
+    /// Stops blocking `word`: a term added here is dropped, a built-in one is
+    /// switched off.
+    bool unblock(const std::string& word, std::string& said);
+    bool allow(const std::string& word, std::string& said);
+    bool unallow(const std::string& word, std::string& said);
+
+    bool empty() const {
+        return blocked.empty() && unblocked.empty() && allowed.empty() && unallowed.empty();
+    }
+
+    /// The built-in lists with these edits made.
+    ChatTerms applied() const;
+
+    /// The table's shape: {"blocked": {word: fit name}, "unblocked": [word],
+    /// "allowed": [word], "unallowed": [word]}. The read drops anything that
+    /// is not a valid term, a fit, or -- for the switched-off lists -- a
+    /// built-in word, so a hand edit of the table cannot break the filter.
+    static ChatTermEdits fromJson(const Json& table);
+    Json toJson() const;
+};
+
 /// The blocked word `line` -- one chat line's markup -- draws, as the list
 /// spells it, or an empty string when it draws none. The word is for the
-/// server's log; a speaker is never shown it.
-std::string blockedWordIn(const std::string& line);
+/// server's log; a speaker is never shown it. The server passes its own
+/// lists (Database::chatTerms); the built-in ones are for tests.
+std::string blockedWordIn(const std::string& line,
+                          const ChatTerms& terms = ChatTerms::builtIn());
 
 /// The same check for a name a player chose -- a username, a nameplate, a
 /// skin's name -- as `blockedWordIn` says it. A name differs from a chat line
@@ -53,7 +150,8 @@ std::string blockedWordIn(const std::string& line);
 /// start a new word ("BigAss", "xXDickXx", "dick4u") and after a lead-in like
 /// "big" or "my" ("bigdick", "kissmyass"). Run together with anything else, a
 /// whole word still passes ("pussylover"): that is the price of "Hitchcock".
-std::string blockedWordInName(const std::string& name);
+std::string blockedWordInName(const std::string& name,
+                              const ChatTerms& terms = ChatTerms::builtIn());
 
 /// What a line draws, folded for "is this the same line again": lower-cased,
 /// spaces, punctuation and invisible characters gone, pictures kept by

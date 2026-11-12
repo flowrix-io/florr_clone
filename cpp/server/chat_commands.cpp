@@ -300,6 +300,16 @@ constexpr const char* kMutedNotice =
     "<span style=\"color: #ff8866;\">You are muted and cannot send chat messages.</span>";
 constexpr const char* kUnknownCommand =
     "Unknown command. Available commands: /biome, /level-from-string, /loadout-from-string";
+/// The `/mod` usage lines: the answer to a bare `/mod`, to a verb nothing
+/// matches, and to a bare `/mod terms`.
+constexpr const char* kModCommands =
+    "Moderator commands: /mod mute <username>, /mod unmute <username>, /mod muted (who is "
+    "muted), /mod terms (the chat filter's terms)";
+constexpr const char* kTermCommands =
+    "/mod terms list (every term), /mod terms block <word> [word|start|anywhere], /mod terms "
+    "unblock <word>, /mod terms allow <word> (let a word through that holds a blocked one), "
+    "/mod terms unallow <word>, /mod terms check <text> (what the filter says of a line)";
+
 /// The squad usage line, which is both the answer to a bare `/squad` and to a
 /// subcommand nothing matches.
 constexpr const char* kSquadCommands =
@@ -340,6 +350,82 @@ bool GameServer::speakerMuted(const Session& session, net::Connection& connectio
     if (account == nullptr || !account->muted) return false;
     sendSystem(connection, kMutedNotice);
     return true;
+}
+
+bool GameServer::chatModerator(const Session& session) const {
+    // By id, off the account: the flag is server-held, and reading it here
+    // rather than off a copy taken at login is what makes revoke_mod hold
+    // from the next command on.
+    if (!session.authenticated()) return false;
+    const Account* account = database_.findUserById(session.userId);
+    return account != nullptr && account->chatModerator;
+}
+
+bool GameServer::chatModerates(const Session& session) const {
+    return effectiveAdmin(session) || chatModerator(session);
+}
+
+void GameServer::setMuted(const Session& session, const std::string& username, bool muting,
+                          std::string& said) {
+    const bool admin = effectiveAdmin(session);
+    // Straight to the account, so an offline player can be muted too: the
+    // flag is persisted and outlives the session. By account name alone: a
+    // nameplate is not a name anyone owns (see resolveCommandTarget). Read
+    // first: the mutable lookup drops the row's cached text, which a refusal
+    // has no reason to.
+    const Account* seen = std::as_const(database_).findUser(username);
+    if (seen == nullptr) {
+        said = "No account named \"" + username + "\" exists." +
+               (admin ? " Use list-players to see online players." : "");
+        return;
+    }
+    // Muting a full admin is refused, so a temporary grantee cannot silence
+    // the admin who lent them the console, nor a moderator the admins. A
+    // banned admin holds no admin standing, this immunity included.
+    if (muting && seen->adminActive()) {
+        said = seen->username + " is a full admin and cannot be muted.";
+        return;
+    }
+    if (!admin) {
+        // A moderator acts on players. Their own mute is another moderator's
+        // or an admin's to lift, and moderators answer to the admins, not to
+        // each other.
+        if (seen->id == session.userId) {
+            said = muting ? "You cannot mute yourself." : "You cannot unmute yourself.";
+            return;
+        }
+        if (seen->chatModerator) {
+            said = seen->username + " is a chat moderator. Only an admin can " +
+                   (muting ? "mute" : "unmute") + " a moderator.";
+            return;
+        }
+    }
+    if (seen->muted == muting) {
+        said = seen->username + " is already " + (muting ? "muted." : "not muted.");
+        return;
+    }
+    Account* account = database_.findUser(username);
+    account->muted = muting;
+    account->mutedAtMillis = muting ? database_.nowMillis() : 0;
+    account->mutedBy = muting ? session.username : std::string();
+    database_.markDirty();
+    std::printf("[chat] %s (%s) %s %s\n", session.username.c_str(),
+                admin ? adminTierLabel(adminTier(session)).c_str() : "chat moderator",
+                muting ? "muted" : "unmuted", account->username.c_str());
+
+    Session* holder = sessionForUser(account->username);
+    if (holder != nullptr) {
+        if (net::Connection* peer = listener_.find(holder->connection)) {
+            sendSystem(*peer, muting ? std::string("<span style=\"color: #ff8866;\">You have been "
+                                                   "muted by ") +
+                                           (admin ? "an admin" : "a moderator") +
+                                           " and can no longer send chat messages.</span>"
+                                     : "<span style=\"color: #6eff6e;\">You have been unmuted and "
+                                       "can send chat messages again.</span>");
+        }
+    }
+    said = std::string(muting ? "Muted " : "Unmuted ") + account->username +
+           (holder != nullptr ? "." : " (offline).");
 }
 
 bool GameServer::grantAdmin(const std::string& sessionToken) {
@@ -661,6 +747,19 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         return true;
     }
 
+    // -- chat moderation ---------------------------------------------------
+    //
+    // A chat moderator's whole console, which admins reach too. Denied the
+    // way /admin is, by saying it is not there.
+    if (verb == "/mod") {
+        if (!chatModerates(session)) {
+            out("Command does not exist.");
+            return true;
+        }
+        runModCommand(session, connection, argument);
+        return true;
+    }
+
     // -- guilds ------------------------------------------------------------
     //
     // Routed into the same cores the guild panel's binary messages use, so the
@@ -886,6 +985,26 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         help += "/g &lt;message&gt; - Send a message to your guild<br/>";
         help += "<br/>Chat supports HTML tags: <b>bold</b>, <i>italic</i>, <u>underline</u>, "
                 "<span style=\"color: red\">colored text</span>, <blink>blinking text</blink>";
+        if (chatModerates(session)) {
+            help += "<br/><br/><b>Moderator commands" +
+                    std::string(effectiveAdmin(session) ? " (admins have them too)" : "") +
+                    ":</b><br/>";
+            help += "/mod mute &lt;username&gt; - Bar a player from chat until unmuted (not admins"
+                    + std::string(effectiveAdmin(session) ? "" : " or other moderators") +
+                    ")<br/>";
+            help += "/mod unmute &lt;username&gt; - Let a muted player chat again<br/>";
+            help += "/mod muted - List muted accounts<br/>";
+            help += "/mod terms - The chat filter: what was changed here, and how to change it<br/>";
+            help += "/mod terms list - Every term the filter blocks, and the words it allows<br/>";
+            help += "/mod terms block &lt;word&gt; [word|start|anywhere] - Block a term (default: "
+                    "the whole word or its plural)<br/>";
+            help += "/mod terms unblock &lt;word&gt; - Stop blocking a term, built-in ones "
+                    "included<br/>";
+            help += "/mod terms allow &lt;word&gt; - Let through a word that holds a blocked term "
+                    "(snigger)<br/>";
+            help += "/mod terms unallow &lt;word&gt; - Stop allowing a word<br/>";
+            help += "/mod terms check &lt;text&gt; - What the filter says of a line";
+        }
         if (effectiveAdmin(session)) {
             // The reference leaves its own angle brackets unescaped here, which
             // its sanitiser then eats along with the rest of the line. Escaped,
@@ -938,7 +1057,9 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "default one tier up), demote_admin &lt;username&gt; [tier] (lower a "
                     "lower-tier admin; default one tier down), mute "
                     "&lt;username&gt; (bar an account from chat, persists across "
-                    "sessions), unmute &lt;username&gt;, unmute_all (lift every mute), "
+                    "sessions), unmute &lt;username&gt;, unmute_all (lift every mute), grant_mod "
+                    "&lt;username&gt; (make a chat moderator: /mod mute, unmute and the filter's "
+                    "terms; full admins only), revoke_mod &lt;username&gt;, list_mods, "
                     "notification &lt;type&gt; "
                     "&lt;message&gt;, clear_notifications, delete_guests, list_today_logins, "
                     "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
@@ -956,6 +1077,182 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
 
     out(kUnknownCommand);
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Chat moderation
+// ---------------------------------------------------------------------------
+
+void GameServer::runModCommand(Session& session, net::Connection& connection,
+                               const std::string& command) {
+    // Escaped, as the admin console's answers are: they quote what was typed.
+    const auto out = [&](const std::string& text) { sendSystem(connection, escapedMarkup(text)); };
+    const std::vector<std::string> words = splitWords(command);
+    const std::string verb = words.empty() ? std::string() : lowerCase(words[0]);
+
+    if (verb == "mute" || verb == "unmute") {
+        if (words.size() != 2) {
+            out("Usage: /mod " + verb + " <username>");
+            return;
+        }
+        std::string said;
+        setMuted(session, words[1], verb == "mute", said);
+        out(said);
+        return;
+    }
+
+    if (verb == "muted") {
+        // Every account, online or not, as unmute_all walks them: a mute is on
+        // the account and outlives the session.
+        const std::int64_t now = database_.nowMillis();
+        std::vector<std::string> rows;
+        for (const std::string& name : database_.usernames()) {
+            const Account* account = std::as_const(database_).findUser(name);
+            if (account == nullptr || !account->muted) continue;
+            rows.push_back(account->username +
+                           (account->mutedBy.empty() ? std::string()
+                                                     : " \xE2\x80\x94 by " + account->mutedBy) +
+                           (account->mutedAtMillis != 0
+                                ? ", " + agoLabel(now - account->mutedAtMillis)
+                                : std::string()));
+        }
+        if (rows.empty()) {
+            out("Nobody is muted.");
+            return;
+        }
+        // The newest last, where the eye lands, and few enough to read.
+        constexpr std::size_t kShown = 40;
+        out("Muted accounts (" + std::to_string(rows.size()) + "):");
+        const std::size_t from = rows.size() > kShown ? rows.size() - kShown : 0;
+        if (from > 0) out("  ... and " + std::to_string(from) + " more before these");
+        for (std::size_t i = from; i < rows.size(); ++i) out("  " + rows[i]);
+        return;
+    }
+
+    if (verb == "terms") {
+        runChatTermsCommand(session, connection, words, argumentOf(trimmed(command)));
+        return;
+    }
+
+    out(kModCommands);
+}
+
+void GameServer::runChatTermsCommand(Session& session, net::Connection& connection,
+                                     const std::vector<std::string>& words,
+                                     const std::string& rest) {
+    const auto out = [&](const std::string& text) { sendSystem(connection, escapedMarkup(text)); };
+    const std::string sub = words.size() >= 2 ? lowerCase(words[1]) : std::string();
+    const ChatTerms& terms = database_.chatTerms();
+    const auto listed = [](const std::vector<std::string>& names) {
+        std::string line;
+        for (const std::string& name : names) line += (line.empty() ? "" : ", ") + name;
+        return line;
+    };
+
+    if (sub.empty()) {
+        // What this server changed, which is what a moderator coming back to
+        // the filter wants to know first; the whole list is one word away.
+        const ChatTermEdits edits = database_.chatTermEdits();
+        out("The chat filter blocks " + plural(static_cast<int>(terms.blocked.size()), "term", "terms") +
+            " and allows " + plural(static_cast<int>(terms.allowed.size()), "word", "words") +
+            " that hold one.");
+        if (edits.empty()) {
+            out("It runs the built-in lists: nothing has been changed here.");
+        } else {
+            std::vector<std::string> added;
+            for (const ChatTerm& term : edits.blocked) {
+                added.push_back(term.word + " (" + termFitName(term.fit) + ")");
+            }
+            if (!added.empty()) out("Blocked here: " + listed(added));
+            if (!edits.unblocked.empty()) out("Built-in terms switched off: " + listed(edits.unblocked));
+            if (!edits.allowed.empty()) out("Allowed here: " + listed(edits.allowed));
+            if (!edits.unallowed.empty()) {
+                out("Built-in allowed words switched off: " + listed(edits.unallowed));
+            }
+        }
+        out(kTermCommands);
+        return;
+    }
+
+    if (sub == "list") {
+        for (const TermFit fit : {TermFit::Anywhere, TermFit::Start, TermFit::Word}) {
+            std::vector<std::string> names;
+            for (const ChatTerm& term : terms.blocked) {
+                if (term.fit == fit) names.push_back(term.word);
+            }
+            if (names.empty()) continue;
+            std::string label = termFitLabel(fit);
+            if (fit == TermFit::Word) label += " or its plural";
+            out("Blocked " + label + " (" + std::to_string(names.size()) + "): " + listed(names));
+        }
+        std::vector<std::string> allowed;
+        for (const ChatTerm& term : terms.allowed) allowed.push_back(term.word);
+        out("Allowed (" + std::to_string(allowed.size()) + "): " +
+            (allowed.empty() ? std::string("none") : listed(allowed)));
+        return;
+    }
+
+    if (sub == "check") {
+        const std::string line = argumentOf(rest);
+        if (line.empty()) {
+            out("Usage: /mod terms check <text>");
+            return;
+        }
+        // The word check a chat line gets (screenChatLine), on the line as
+        // typed here; a name gets more readings (blockedWordInName).
+        const std::string word = blockedWordIn(line, terms);
+        const std::string name = blockedWordInName(line, terms);
+        if (!word.empty()) {
+            out("Blocked in chat: it reads as \"" + word + "\".");
+        } else if (!name.empty()) {
+            out("Passes in chat, but is blocked as a name: it reads as \"" + name + "\".");
+        } else {
+            out("Passes: the filter finds no blocked term in it.");
+        }
+        return;
+    }
+
+    const bool blocking = sub == "block", unblocking = sub == "unblock";
+    const bool allowing = sub == "allow", unallowing = sub == "unallow";
+    if (!blocking && !unblocking && !allowing && !unallowing) {
+        out(kTermCommands);
+        return;
+    }
+    if (words.size() < 3 || words.size() > (blocking ? 4u : 3u)) {
+        out(blocking ? "Usage: /mod terms block <word> [word|start|anywhere]  (default: a new "
+                       "term is a whole word, or its plural)"
+                     : "Usage: /mod terms " + sub + " <word>");
+        return;
+    }
+    const std::string word = lowerCase(words[2]);
+    std::string reason;
+    if (!ChatTermEdits::validTerm(word, reason)) {
+        out(reason);
+        return;
+    }
+    TermFit fit = TermFit::Word;
+    if (words.size() == 4 && !parseTermFit(words[3], fit)) {
+        out("\"" + words[3] + "\" is not a fit. word = the whole word or its plural (ass, asses; "
+            "not class), start = the start of a word (cunt, cunts; not Scunthorpe), anywhere = "
+            "anywhere inside a word (fuck in motherfucking).");
+        return;
+    }
+    ChatTermEdits edits = database_.chatTermEdits();
+    std::string said;
+    const bool changed = blocking     ? edits.block(word, words.size() == 4 ? &fit : nullptr, said)
+                         : unblocking ? edits.unblock(word, said)
+                         : allowing   ? edits.allow(word, said)
+                                      : edits.unallow(word, said);
+    if (changed) {
+        database_.setChatTermEdits(edits);
+        // The log is the record of who changed the filter: the reply reaches
+        // the one who typed it.
+        std::printf("[chat] %s (%s) edited the chat filter: %s\n", session.username.c_str(),
+                    effectiveAdmin(session) ? adminTierLabel(adminTier(session)).c_str()
+                                            : "chat moderator",
+                    said.c_str());
+    }
+    out(said);
 }
 
 // ---------------------------------------------------------------------------
@@ -1356,7 +1653,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("Announcement not sent: it contains invisible characters that reverse text.");
             return;
         }
-        if (!blockedWordIn(said).empty()) {
+        if (!blockedWordIn(said, database_.chatTerms()).empty()) {
             out("Announcement not sent: it contains a word that is not allowed in chat.");
             return;
         }
@@ -2756,48 +3053,89 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     }
 
     if (verb == "mute" || verb == "unmute") {
-        const bool muting = verb == "mute";
         if (words.size() != 2) {
             out("Usage: " + verb + " <username>");
             return;
         }
-        // Straight to the account, so an offline player can be muted too: the
-        // flag is persisted and outlives the session. By account name alone:
-        // a nameplate is not a name anyone owns (see resolveCommandTarget).
-        Account* account = database_.findUser(words[1]);
-        if (account == nullptr) {
-            out("No account named \"" + words[1] +
-                "\" exists. Use list-players to see online players.");
-            return;
-        }
-        // Muting a full admin is refused, so a temporary grantee cannot
-        // silence the admin who lent them the console. A banned admin holds
-        // no admin standing, this immunity included.
-        if (muting && account->adminActive()) {
-            out(account->username + " is a full admin and cannot be muted.");
-            return;
-        }
-        if (account->muted == muting) {
-            out(account->username + " is already " + (muting ? "muted." : "not muted."));
-            return;
-        }
-        account->muted = muting;
-        account->mutedAtMillis = muting ? database_.nowMillis() : 0;
-        account->mutedBy = muting ? session.username : std::string();
-        database_.markDirty();
+        // /mod mute's rule and words, one copy of both (setMuted).
+        std::string said;
+        setMuted(session, words[1], verb == "mute", said);
+        out(said);
+        return;
+    }
 
-        Session* holder = sessionForUser(account->username);
-        if (holder != nullptr) {
-            if (net::Connection* peer = listener_.find(holder->connection)) {
-                sendSystem(*peer,
-                           muting ? "<span style=\"color: #ff8866;\">You have been muted by an "
-                                    "admin and can no longer send chat messages.</span>"
-                                  : "<span style=\"color: #6eff6e;\">You have been unmuted and "
-                                    "can send chat messages again.</span>");
-            }
+    if (verb == "grant_mod" || verb == "revoke_mod") {
+        const bool granting = verb == "grant_mod";
+        // A database admin's act, as grant_admin is: the flag outlives the
+        // session, and a console lent for one life must not hand out standing
+        // that outlasts it. Any tier: every tier mutes already.
+        if (!session.admin) {
+            out("Only a full admin can make or unmake chat moderators.");
+            return;
         }
-        out(std::string(muting ? "Muted " : "Unmuted ") + account->username +
-            (holder != nullptr ? "." : " (offline)."));
+        if (words.size() != 2) {
+            out("Usage: " + verb + " <username>");
+            return;
+        }
+        // By account name, online or not, as mute is. Never by nameplate.
+        const Account* seen = std::as_const(database_).findUser(words[1]);
+        if (seen == nullptr) {
+            out("No account named \"" + words[1] + "\" exists.");
+            return;
+        }
+        if (seen->chatModerator == granting) {
+            out(seen->username + (granting ? " is already a chat moderator."
+                                           : " is not a chat moderator."));
+            return;
+        }
+        Account* account = database_.findUser(words[1]);
+        account->chatModerator = granting;
+        account->chatModeratorBy = granting ? session.username : std::string();
+        database_.markDirty();
+        std::printf("[admin] %s %s %s\n", session.username.c_str(),
+                    granting ? "made a chat moderator of" : "took chat moderator from",
+                    account->username.c_str());
+        bool online = false;
+        for (auto& [id, other] : sessions_) {
+            if (!other.authenticated() || other.userId != account->id) continue;
+            online = true;
+            net::Connection* peer = listener_.find(id);
+            if (peer == nullptr) continue;
+            // The catalog's leading byte is where the client learns it, and
+            // what shows or hides the /mod rows in its autocomplete.
+            sendSkinCatalog(other, *peer);
+            sendSystem(*peer, granting
+                                  ? "<span style=\"color: #6eff6e;\">You are now a chat moderator: "
+                                    "you can mute and unmute players and edit the chat filter's "
+                                    "terms. Type /mod to see how.</span>"
+                                  : "<span style=\"color: #ff8866;\">You are no longer a chat "
+                                    "moderator.</span>");
+        }
+        const std::string standing =
+            account->adminActive() ? " (as an admin, they moderate chat already)" : "";
+        out((granting ? "Made " + account->username + " a chat moderator"
+                      : "Took chat moderator from " + account->username) +
+            standing + (online ? "." : " (offline)."));
+        return;
+    }
+
+    if (verb == "list_mods") {
+        std::vector<std::string> rows;
+        for (const std::string& username : database_.usernames()) {
+            const Account* account = std::as_const(database_).findUser(username);
+            if (account == nullptr || !account->chatModerator) continue;
+            rows.push_back(account->username +
+                           (account->chatModeratorBy.empty()
+                                ? std::string()
+                                : " \xE2\x80\x94 made by " + account->chatModeratorBy) +
+                           (sessionForUser(account->username) != nullptr ? ", online" : ""));
+        }
+        if (rows.empty()) {
+            out("There are no chat moderators. grant_mod <username> makes one.");
+            return;
+        }
+        out("Chat moderators (" + std::to_string(rows.size()) + "):");
+        for (const std::string& row : rows) out("  " + row);
         return;
     }
 

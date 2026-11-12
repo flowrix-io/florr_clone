@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "server/admin_tiers.h"
+#include "server/chat_moderation.h"
 #include "server/crypto.h"
 #include "shared/core/json.h"
 #include "shared/game/rarity.h"
@@ -177,6 +178,14 @@ struct Account {
     bool muted = false;
     std::int64_t mutedAtMillis = 0;
     std::string mutedBy;
+
+    /// A chat moderator: mutes and unmutes players and edits the chat
+    /// filter's terms (`/mod`), and nothing else of the console. Given and
+    /// taken by a full admin (`/admin grant_mod`, `revoke_mod`), by account,
+    /// and held here, on the server -- never read off anything a player
+    /// chose. Not an admin power, so an admin ban leaves it where it is.
+    bool chatModerator = false;
+    std::string chatModeratorBy;
 
     /// Wall-clock millis the account was created. Zero on accounts that predate
     /// the field. Wall clock, not the tick clock: it is compared against a
@@ -513,7 +522,10 @@ public:
     /// second refuses; setPassword holds a new password to the same rule.
     /// Login asks neither: an account made under an older, looser rule must
     /// still be able to sign in. `reasonOut` is a sentence for the player.
-    static bool validUsername(const std::string& username, std::string& reasonOut);
+    /// `terms` is the chat filter's lists the name is held to: the server's
+    /// own (chatTerms) wherever there is a database to ask.
+    static bool validUsername(const std::string& username, std::string& reasonOut,
+                              const ChatTerms& terms = ChatTerms::builtIn());
     static bool validPassword(const std::string& password, std::string& reasonOut);
 
     /// bcrypt cost for new and upgraded passwords. Clamped to bcrypt's legal
@@ -674,6 +686,23 @@ public:
     /// as long as nobody can read it.
     std::vector<std::string> storedTableNames() const;
 
+    // -- the chat filter's terms --------------------------------------------
+    //
+    // The built-in lists with this server's edits made (server/chat_moderation.h).
+    // The edits are the `chatTerms` table, kept with the unmodelled ones so the
+    // admin editor can read and fix it -- and whoever writes that table other
+    // than setChatTermEdits calls reloadChatTerms after.
+
+    /// The lists every chat line, name and skin name is held to.
+    const ChatTerms& chatTerms() const { return chatTerms_; }
+    /// What this server changed of the built-in lists, as stored.
+    ChatTermEdits chatTermEdits() const;
+    /// Stores `edits` as the table, marks the database dirty, and reads them
+    /// into chatTerms.
+    void setChatTermEdits(const ChatTermEdits& edits);
+    /// Reads the table into chatTerms again.
+    void reloadChatTerms();
+
 private:
     void reset();
     bool parseRoot(Json& root, std::string& errorOut);
@@ -707,6 +736,8 @@ private:
     std::vector<std::string> topKeyOrder_;
     /// The last save's size, to reserve the next one's buffer in one go.
     std::size_t lastSaveBytes_ = 0;
+    /// The `chatTerms` table, applied to the built-in lists.
+    ChatTerms chatTerms_ = ChatTerms::builtIn();
 
     std::string path_;
     bool loadFailed_ = false;

@@ -1232,6 +1232,9 @@ TEST(an_account_search_reads_dates_times_ago_and_flags) {
     CHECK_EQ(q.terms[3].value, 1.0);
     CHECK(q.terms[4].field == account_search::Field::Muted);
     CHECK_EQ(q.terms[4].value, 0.0);
+    CHECK(account_search::parse("is:mod", content, q, error));
+    CHECK_EQ(q.terms.size(), 1u);
+    CHECK(q.terms[0].field == account_search::Field::Moderator);
 
     CHECK(!account_search::parse("created>=yesterday", content, q, error));
     CHECK(error.find("created>=yesterday") != std::string::npos);

@@ -185,7 +185,7 @@ bool readFlag(const std::string& word, Term& term, std::string& error) {
     const bool is = word.rfind("is:", 0) == 0;
     static constexpr struct { const char* name; Field field; const char* label; } kFlags[] = {
         {"admin", Field::Admin, "Admin"}, {"muted", Field::Muted, "Muted"},
-        {"guest", Field::Guest, "Guest"}};
+        {"guest", Field::Guest, "Guest"}, {"mod", Field::Moderator, "Chat moderator"}};
     const std::string flag = word.substr(is ? 3 : 4);
     for (const auto& known : kFlags) {
         if (flag != known.name) continue;
@@ -195,7 +195,7 @@ bool readFlag(const std::string& word, Term& term, std::string& error) {
         term.value = is ? 1 : 0;
         return true;
     }
-    error = "\"" + word + "\" names no flag: is: or not: with admin, muted or guest.";
+    error = "\"" + word + "\" names no flag: is: or not: with admin, mod, muted or guest.";
     return false;
 }
 
@@ -321,6 +321,7 @@ double valueOf(const Term& term, const Subject& subject, int level) {
         case Field::Admin: return account != nullptr && account->admin ? 1 : 0;
         case Field::Muted: return account != nullptr && account->muted ? 1 : 0;
         case Field::Guest: return account != nullptr && account->guest ? 1 : 0;
+        case Field::Moderator: return account != nullptr && account->chatModerator ? 1 : 0;
         case Field::Created:
         case Field::Active: {
             const std::int64_t at = account == nullptr            ? 0
@@ -442,6 +443,7 @@ std::string valueText(const Term& term, double value) {
         case Field::Admin:
         case Field::Muted:
         case Field::Guest:
+        case Field::Moderator:
             return std::string();
         case Field::Created:
         case Field::Active: {

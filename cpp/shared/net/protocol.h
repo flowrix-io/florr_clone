@@ -22,7 +22,17 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 88;
+inline constexpr std::uint16_t kProtocolVersion = 89;
+
+/// SkinCatalog's leading byte: what the server says this account may do, so the
+/// client shows the matching chat-autocomplete rows and panels. Advisory only:
+/// every command is checked again on the server.
+enum Standing : std::uint8_t {
+    /// Holds the admin console: a database admin, or a temporary grant.
+    StandingAdmin = 1 << 0,
+    /// A chat moderator (`/mod`).
+    StandingChatModerator = 1 << 1,
+};
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -293,14 +303,15 @@ enum class ServerMessage : std::uint8_t {
                         ///< The shop panel's own reply channel: a refusal is a
                         ///< modal on the card, not a line in the chat, so it
                         ///< cannot travel as a Notice.
-    SkinCatalog,        ///< u8 isAdmin, str equippedSkinId, u16 count,
+    SkinCatalog,        ///< u8 standing(Standing bits), str equippedSkinId, u16 count,
                         ///< { CustomSkin }*, u16 votes, { str skinId,
                         ///< u8 vote(SkinVote) }*, u16 favorites, { str skinId }*.
                         ///< Sent once per authentication: the
                         ///< studio's Browse tab lists it, and it is also what
                         ///< lets a client draw a skin somebody else is wearing.
                         ///< The two lists after the skins are this account's
-                        ///< own votes and favourites. (Lists: version 70.)
+                        ///< own votes and favourites. (Lists: version 70.
+                        ///< Standing bits, was a bool isAdmin: version 89.)
     SkinPublished,      ///< CustomSkin -- broadcast, for the same reason. An id
                         ///< the client already has is an edit, and replaces
                         ///< its copy. (CustomSkin's editedAt: version 73.)

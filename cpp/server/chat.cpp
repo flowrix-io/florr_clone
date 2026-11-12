@@ -218,7 +218,7 @@ bool GameServer::screenChatLine(Session& session, net::Connection& speaker,
     // Refused, not starred: nothing of it reaches anyone. The word goes in
     // the log, which is how an admin tells a false match from a real one;
     // the speaker is not shown it.
-    const std::string word = blockedWordIn(text);
+    const std::string word = blockedWordIn(text, database_.chatTerms());
     if (!word.empty()) {
         std::printf("[chat] refused a line from %s (\"%s\"): %s\n", session.username.c_str(),
                     word.c_str(), text.c_str());

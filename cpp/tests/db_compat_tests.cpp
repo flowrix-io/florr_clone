@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "server/chat_moderation.h"
 #include "server/crypto.h"
 #include "server/db.h"
 #include "shared/core/json.h"
@@ -775,4 +776,38 @@ TEST(an_unmarked_record_keeps_its_worn_petals_out_of_the_bag) {
     const Json migrated = playerRecordJson(record);
     CHECK_EQ(migrated["inventory"]["common"]["petal_basic"].asInt(), 6);
     CHECK_EQ(migrated["inventory"]["rare"]["petal_stinger"].asInt(), 1);
+}
+
+TEST(the_chat_filters_edits_and_a_moderator_survive_a_save) {
+    const std::string path = scratchPath("chat-terms");
+    std::remove(path.c_str());
+    std::string error;
+    {
+        Database db;
+        CHECK(db.load(path, error));
+        db.setPasswordCost(4);
+        CHECK(db.createUser("keeper", "a-good-password").ok());
+        db.findUser("keeper")->chatModerator = true;
+        db.findUser("keeper")->chatModeratorBy = "boss";
+        ChatTermEdits edits;
+        std::string said;
+        CHECK(edits.block("noob", nullptr, said));
+        CHECK(edits.unblock("ass", said));
+        db.setChatTermEdits(edits);
+        // In force at once, for chat and for the next name asked of it.
+        CHECK(!blockedWordIn("you noob", db.chatTerms()).empty());
+        CHECK(!db.createUser("BigNoob", "a-good-password").ok());
+        CHECK(db.save());
+    }
+    Database reloaded;
+    CHECK(reloaded.load(path, error));
+    CHECK(!blockedWordIn("you noob", reloaded.chatTerms()).empty());
+    CHECK(blockedWordIn("kick ass", reloaded.chatTerms()).empty());
+    CHECK(reloaded.chatTermEdits().unblocked == std::vector<std::string>{"ass"});
+    const Account* keeper = reloaded.findUser("keeper");
+    CHECK(keeper != nullptr);
+    if (keeper != nullptr) {
+        CHECK(keeper->chatModerator);
+        CHECK_EQ(keeper->chatModeratorBy, std::string("boss"));
+    }
 }

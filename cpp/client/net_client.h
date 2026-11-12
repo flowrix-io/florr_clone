@@ -869,6 +869,9 @@ public:
     const CustomSkin* findSkin(const std::string& id) const;
     const std::string& equippedSkinId() const { return equippedSkinId_; }
     bool isSkinAdmin() const { return skinAdmin_; }
+    /// Whether the server says this account is a chat moderator, from the same
+    /// SkinCatalog byte: what offers the /mod rows (admins see them as well).
+    bool isChatModerator() const { return chatModerator_; }
     /// This account's vote on skin `id`, and whether it starred it: the
     /// server's word, from the SkinCatalog and every SkinOpinion since.
     SkinVote skinVote(const std::string& id) const;
@@ -1191,6 +1194,7 @@ private:
     std::vector<CustomSkin> skinCatalog_;
     std::string equippedSkinId_;
     bool skinAdmin_ = false;
+    bool chatModerator_ = false;
     std::unordered_map<std::string, SkinVote> skinVotes_;
     std::unordered_set<std::string> favoriteSkins_;
 

@@ -72,7 +72,7 @@ void GameServer::runPollRequest(Session& s,net::Connection& peer,const Json& q) 
     const double seconds=q["seconds"].asDouble(-1);
     if(question.empty()||question.size()>120||!choices.isArray()||choices.size()<2||choices.size()>6||
        !std::isfinite(seconds)||seconds<10||seconds>3600||std::floor(seconds)!=seconds){fail("Use a question up to 120 bytes, 2-6 choices, and a duration of 10-3600 seconds.");return;}
-    const auto clean=[&](const std::string& text){return blockedWordIn(escapedMarkup(text)).empty() && !chatLineReversesText(escapedMarkup(text));};
+    const auto clean=[&](const std::string& text){return blockedWordIn(escapedMarkup(text),database_.chatTerms()).empty() && !chatLineReversesText(escapedMarkup(text));};
     if(!clean(question)){fail("The question contains disallowed language or text-direction controls.");return;}
     std::vector<std::string> options;std::unordered_set<std::string> unique;
     for(const auto& value:choices.items()) {

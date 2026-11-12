@@ -317,6 +317,7 @@ void NetClient::forgetAccount() {
     pollCreatorRequested_ = false;pollDeadlineMillis_ = 0;
     equippedSkinId_.clear();
     skinAdmin_ = false;
+    chatModerator_ = false;
     skinVotes_.clear();
     favoriteSkins_.clear();
     leaderboard_.clear();
@@ -1994,7 +1995,7 @@ bool NetClient::isFavoriteSkin(const std::string& id) const {
 }
 
 void NetClient::handleSkinCatalog(ByteReader& reader) {
-    const bool admin = reader.boolean();
+    const std::uint8_t standing = reader.u8();
     const std::string equipped = reader.str();
     const std::uint16_t count = reader.u16();
     std::vector<CustomSkin> skins;
@@ -2019,7 +2020,8 @@ void NetClient::handleSkinCatalog(ByteReader& reader) {
     for (std::uint16_t i = 0; i < favoriteCount && reader.ok(); ++i) favorites.insert(reader.str());
     if (!reader.ok()) return;
     skinCatalog_ = std::move(skins);
-    skinAdmin_ = admin;
+    skinAdmin_ = (standing & net::StandingAdmin) != 0;
+    chatModerator_ = (standing & net::StandingChatModerator) != 0;
     equippedSkinId_ = equipped;
     skinVotes_ = std::move(votes);
     favoriteSkins_ = std::move(favorites);

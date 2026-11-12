@@ -876,6 +876,12 @@ private:
     /// One `/admin` (or `/cmd`) body, already stripped of its prefix. The
     /// caller has checked that this session may run it.
     void runAdminCommand(Session&, net::Connection&, const std::string& command);
+    /// `/mod`: what a chat moderator does -- mute, unmute, the muted list and
+    /// the chat filter's terms. Admins reach it too (chatModerates).
+    void runModCommand(Session&, net::Connection&, const std::string& command);
+    /// `/mod terms ...`, for runModCommand.
+    void runChatTermsCommand(Session&, net::Connection&, const std::vector<std::string>& words,
+                             const std::string& rest);
 
     /// One System line to one connection. Console output is one line per
     /// message rather than one message with embedded newlines, where the
@@ -949,6 +955,20 @@ private:
     int adminTier(const Session&) const;
     /// Whether this session's console holds `power`. False for a non-admin.
     bool adminMay(const Session&, AdminPower) const;
+    /// Whether this session's account is a chat moderator (Account::
+    /// chatModerator), read off the account each time so a grant or a revoke
+    /// holds from the next command on.
+    bool chatModerator(const Session&) const;
+    /// Whether this session may run `/mod`: a chat moderator, or anyone who
+    /// holds the admin console, whose `mute` it already is.
+    bool chatModerates(const Session&) const;
+    /// Mutes or unmutes the account `username` for `session`, by account name
+    /// and online or not, and says how it went in `said`. One rule for the
+    /// console's `mute` and `/mod mute`: never yourself, never an active full
+    /// admin, and a moderator who holds no admin console reaches neither
+    /// another moderator nor one of them.
+    void setMuted(const Session& session, const std::string& username, bool muting,
+                  std::string& said);
 
     /// What an admin command's `<player>` argument resolved to.
     ///

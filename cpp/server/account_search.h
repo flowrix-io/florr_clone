@@ -20,7 +20,8 @@
 //                      signed in less than a week ago; created>30d, made
 //                      more than 30 days ago. Never signed in, or made before
 //                      the server kept the date, is longest ago of all
-//   is:guest           a flag: admin, muted or guest; not:muted its opposite
+//   is:guest           a flag: admin, mod (chat moderator), muted or guest;
+//                      not:muted its opposite
 //   petals>=5000       every petal the account owns, summed
 //   mythic>=100        every petal it owns at one rarity
 //   rose>10            one petal at every rarity; mythic:rose>10 (or
@@ -55,7 +56,7 @@ namespace account_search {
 enum class Field : std::uint8_t {
     Level, Stars, Xp, Streak,
     Created, Active,
-    Admin, Muted, Guest,
+    Admin, Muted, Guest, Moderator,
     Owned, Loadout,
 };
 enum class Compare : std::uint8_t { Greater, AtLeast, Less, AtMost, Equal };

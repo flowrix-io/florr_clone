@@ -119,6 +119,43 @@ it a temporary grant. `/admin list_admins` lists banned admins, their tier and
 who banned them. The database editor cannot change a ban (`adminBanned`,
 `adminBannedBy`, `adminBannedAt` in the account's record).
 
+### Chat moderators
+
+A full admin, of any tier, makes an account a **chat moderator** with
+`/admin grant_mod <username>` and takes it back with `/admin revoke_mod
+<username>`, by account name, online or offline; `/admin list_mods` lists them
+and who made each one. A temporary grant cannot make one, as it cannot lend the
+console. The flag is the account's `chatModerator` (with `chatModeratorBy`) in
+the database, read on every command, so a revoke holds from the moderator's
+next command on. It is not an admin power: an admin ban leaves it alone.
+
+A moderator gets one command, `/mod`, and nothing else of the console. Admins
+can use it too.
+
+| command | |
+|---|---|
+| `/mod mute <username>` | bar an account from chat until unmuted, online or offline |
+| `/mod unmute <username>` | lift it |
+| `/mod muted` | the muted accounts, who muted each and when |
+| `/mod terms` | how many terms the chat filter has, and what was changed on this server |
+| `/mod terms list` | every blocked term, by fit, and every allowed word |
+| `/mod terms block <word> [word\|start\|anywhere]` | block a term; a new one is a whole word (or its plural) by default; a built-in one switched off goes back on |
+| `/mod terms unblock <word>` | stop blocking a term; a built-in one is switched off |
+| `/mod terms allow <word>` | let through a word that holds a blocked term (`snigger`); a blocked term itself cannot be allowed |
+| `/mod terms unallow <word>` | stop allowing a word, built-in ones included |
+| `/mod terms check <text>` | what the filter says of a line, and of it as a name |
+
+A moderator cannot mute or unmute themselves, another moderator or an admin;
+an admin can mute a moderator, and nobody mutes an active full admin. A term
+is 2 to 32 letters a-z: the filter already reads capitals, digits and symbols
+for letters (`sh1t`), accents, look-alike letters and held letters. Term edits
+apply at once to chat, announcements, poll text, new usernames, nameplates and
+skin names. They are stored as the `chatTerms` table: changes over the
+built-in lists in `server/chat_moderation.cpp`, so terms a later build adds
+still arrive. The database editor can fix that table too, and the filter
+re-reads it on every edit. Every mute and term edit is logged under `[chat]`
+with who made it.
+
 ### Admin passwords
 
 No admin's password can be changed from inside the game, at any tier, banned
@@ -259,6 +296,9 @@ sent to it. Announcing is done from the dashboard or with `/admin announce`.
 | `/admin unban_admin <username>` | lift it (full admins only, from a higher tier) |
 | `/admin promote_admin <username> [tier]` | raise a lower-tier admin, up to your own tier; one tier up by default (full admins only) |
 | `/admin demote_admin <username> [tier]` | lower a lower-tier admin, down to tier 4; one tier down by default (full admins only) |
+| `/admin grant_mod <username>` | make an account a chat moderator (full admins only; see [Chat moderators](#chat-moderators)) |
+| `/admin revoke_mod <username>` | take it back (full admins only) |
+| `/admin list_mods` | the chat moderators and who made each |
 
 A `<username>` is an account name, or a bot's name; there is no lookup by id.
 
@@ -281,7 +321,7 @@ answer every one (the grammar lives in `cpp/server/account_search.h`):
 | `created=2026-10-01T18:30` | made in that minute; a date is the whole month, day or minute it names |
 | `active<7d` | signed in less than 7 days ago; `m`, `h`, `d` and `w` all work |
 | `created>30d` | made more than 30 days ago |
-| `is:guest`, `not:muted` | by a flag: `admin`, `muted` or `guest` |
+| `is:guest`, `not:muted` | by a flag: `admin`, `mod` (chat moderator), `muted` or `guest` |
 | `petals>=5000` | owning 5,000 petals or more in all |
 | `mythic>=100` | owning 100 or more mythic petals |
 | `rose>10` | owning more than 10 roses, any rarity |

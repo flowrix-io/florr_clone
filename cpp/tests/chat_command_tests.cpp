@@ -18,6 +18,7 @@
 
 #include "server_harness.h"
 #include "server/bot_identity.h"
+#include "server/chat_moderation.h"
 #include "server/db.h"
 #include "server/systems/spawning.h"
 #include "shared/game/terrain.h"
@@ -1071,6 +1072,144 @@ TEST(a_full_admin_cannot_be_muted) {
     CHECK(loginAs(h, boss, "boss", "password7"));
     CHECK(say(h, boss, "/admin mute other"));
     CHECK(sawText(boss, "is a full admin and cannot be muted"));
+}
+
+TEST(an_admin_makes_a_chat_moderator_who_mutes_and_unmutes_players) {
+    Harness h("cmd-moderator", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "keeper", "password7");
+        seedUser(path, "loud", "password7");
+        seedUser(path, "peer", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss, keeper, loud;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, keeper, "keeper", "password7"));
+    CHECK(loginAs(h, loud, "loud", "password7"));
+
+    // Not a moderator yet: the console is not there, and a player cannot make
+    // one.
+    CHECK(say(h, keeper, "/mod mute loud"));
+    CHECK(sawText(keeper, "Command does not exist."));
+    CHECK(!h.server.database().findUser("loud")->muted);
+    CHECK(!keeper.isChatModerator());
+    CHECK(say(h, loud, "/admin grant_mod loud"));
+    CHECK(!h.server.database().findUser("loud")->chatModerator);
+
+    CHECK(say(h, boss, "/admin grant_mod keeper"));
+    CHECK(sawText(boss, "Made keeper a chat moderator."));
+    CHECK(h.stepUntil({&boss, &keeper}, [&] { return keeper.isChatModerator(); }));
+    CHECK(sawText(keeper, "You are now a chat moderator"));
+    CHECK(!keeper.isSkinAdmin());
+    CHECK(h.server.database().findUser("keeper")->chatModerator);
+
+    CHECK(say(h, keeper, "/mod mute loud"));
+    CHECK(sawText(keeper, "Muted loud."));
+    CHECK(h.stepUntil({&keeper, &loud}, [&] { return sawText(loud, "muted by a moderator"); }));
+    const std::size_t bossLines = boss.chat().size();
+    loud.sendChat("can you hear me");
+    h.step(30, {&boss, &loud});
+    CHECK_EQ(boss.chat().size(), bossLines);
+
+    // Never an admin, never themselves, never another moderator -- whom an
+    // admin still reaches, offline too.
+    CHECK(say(h, keeper, "/mod mute boss"));
+    CHECK(sawText(keeper, "boss is a full admin and cannot be muted."));
+    CHECK(say(h, keeper, "/mod mute keeper"));
+    CHECK(sawText(keeper, "You cannot mute yourself."));
+    CHECK(say(h, boss, "/admin grant_mod peer"));
+    CHECK(sawText(boss, "Made peer a chat moderator (offline)."));
+    CHECK(say(h, keeper, "/mod mute peer"));
+    CHECK(sawText(keeper, "peer is a chat moderator. Only an admin can mute a moderator."));
+    CHECK(!h.server.database().findUser("peer")->muted);
+    CHECK(say(h, boss, "/mod mute peer"));
+    CHECK(sawText(boss, "Muted peer (offline)."));
+    CHECK(h.server.database().findUser("peer")->muted);
+
+    CHECK(say(h, keeper, "/mod muted"));
+    CHECK(sawText(keeper, "Muted accounts (2):"));
+    CHECK(sawText(keeper, "loud \xE2\x80\x94 by keeper"));
+
+    CHECK(say(h, keeper, "/mod unmute loud"));
+    CHECK(sawText(keeper, "Unmuted loud."));
+    CHECK(!h.server.database().findUser("loud")->muted);
+
+    CHECK(say(h, boss, "/admin list_mods"));
+    CHECK(sawText(boss, "Chat moderators (2):"));
+    CHECK(sawText(boss, "keeper \xE2\x80\x94 made by boss, online"));
+
+    // Taken back, the console goes with it, from the next command on.
+    CHECK(say(h, boss, "/admin revoke_mod keeper"));
+    CHECK(sawText(boss, "Took chat moderator from keeper."));
+    CHECK(h.stepUntil({&boss, &keeper}, [&] { return !keeper.isChatModerator(); }));
+    const std::uint64_t mark = keeper.chatSequence();
+    CHECK(say(h, keeper, "/mod mute loud"));
+    CHECK(sawTextSince(keeper, mark, "Command does not exist."));
+    CHECK(!h.server.database().findUser("loud")->muted);
+}
+
+TEST(a_moderator_edits_the_chat_filters_terms_and_chat_obeys_at_once) {
+    Harness h("cmd-chat-terms", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "keeper", "password7");
+        seedUser(path, "talker", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss, keeper, talker;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, keeper, "keeper", "password7"));
+    CHECK(loginAs(h, talker, "talker", "password7"));
+    CHECK(say(h, boss, "/admin grant_mod keeper"));
+    CHECK(h.stepUntil({&boss, &keeper}, [&] { return keeper.isChatModerator(); }));
+
+    // A player does not reach the list.
+    CHECK(say(h, talker, "/mod terms block hello"));
+    CHECK(sawText(talker, "Command does not exist."));
+    CHECK(h.server.database().chatTermEdits().empty());
+
+    talker.sendChat("you noob");
+    CHECK(h.stepUntil({&boss, &talker}, [&] { return sawText(boss, "you noob"); }));
+
+    CHECK(say(h, keeper, "/mod terms block noob"));
+    CHECK(sawText(keeper, "Blocked \"noob\" as a whole word."));
+    h.step(60, {&boss, &talker});   // past the per-line cooldown
+    talker.sendChat("noob again");
+    CHECK(h.stepUntil({&boss, &talker}, [&] { return sawText(talker, "not allowed in chat"); }));
+    h.step(10, {&boss, &talker});
+    CHECK(!sawText(boss, "noob again"));
+
+    CHECK(say(h, keeper, "/mod terms check what a n00b"));
+    CHECK(sawText(keeper, "Blocked in chat: it reads as \"noob\"."));
+    CHECK(say(h, keeper, "/mod terms block sh1t"));
+    CHECK(sawText(keeper, "A term is 2 to 32 letters a-z"));
+    CHECK(say(h, keeper, "/mod terms"));
+    CHECK(sawText(keeper, "Blocked here: noob (word)"));
+    CHECK(say(h, keeper, "/mod terms list"));
+    CHECK(sawText(keeper, "Blocked as a whole word or its plural ("));
+
+    // A built-in term switched off and on, by an admin this time: /mod is
+    // theirs too.
+    CHECK(say(h, boss, "/mod terms unblock ass"));
+    CHECK(sawText(boss, "Stopped blocking \"ass\"."));
+    h.step(60, {&boss, &talker});   // past the per-line cooldown
+    talker.sendChat("kick ass");
+    CHECK(h.stepUntil({&boss, &talker}, [&] { return sawText(boss, "kick ass"); }));
+    CHECK(say(h, boss, "/mod terms block ass"));
+    CHECK(sawText(boss, "Blocking \"ass\" again, as a whole word."));
+
+    CHECK(say(h, boss, "/mod terms unblock noob"));
+    h.step(60, {&boss, &talker});   // past the per-line cooldown
+    talker.sendChat("noob once more");
+    CHECK(h.stepUntil({&boss, &talker}, [&] { return sawText(boss, "noob once more"); }));
+
+    // Kept as edits over the built-in lists, in the database.
+    CHECK(say(h, keeper, "/mod terms allow grassy"));
+    const ChatTermEdits stored = h.server.database().chatTermEdits();
+    CHECK(stored.blocked.empty());
+    CHECK(stored.unblocked.empty());
+    CHECK(stored.allowed == std::vector<std::string>{"grassy"});
 }
 
 TEST(a_temporary_grant_opens_the_console_and_closes_on_respawn) {

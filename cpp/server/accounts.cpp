@@ -88,7 +88,7 @@ void GameServer::handleRegister(Session& session, net::Connection& connection, B
     // The database's own rules -- the one copy, which createUser applies again
     // below -- so this answer and that one cannot disagree.
     std::string reason;
-    if (!Database::validUsername(username, reason)) {
+    if (!Database::validUsername(username, reason, database_.chatTerms())) {
         sendAuthResult(connection, net::AuthStatus::UsernameInvalid, "", "", reason);
         return;
     }

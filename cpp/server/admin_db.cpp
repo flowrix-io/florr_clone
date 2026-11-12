@@ -645,6 +645,9 @@ void GameServer::adminDbEdit(Session& session, net::Connection& connection, Byte
         // The edited entry's parent, so the row and its siblings are current
         // -- an append or a delete renumbers an array's tail.
         sendAdminDbTable(connection, key, AdminDbPath(path.begin(), path.end() - 1));
+        // The chat filter reads its terms out of this table once, when it is
+        // written; an edit here is a write like /mod terms is.
+        if (key == "chatTerms") database_.reloadChatTerms();
         // A guild roster is pushed to its members whenever it changes; an edit
         // here is a change like any other.
         if (key == "guilds") {

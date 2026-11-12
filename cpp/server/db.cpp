@@ -394,6 +394,8 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.muted = value["muted"].asBool(false);
     account.mutedAtMillis = static_cast<std::int64_t>(value["mutedAt"].asDouble(0));
     account.mutedBy = value["mutedBy"].asString();
+    account.chatModerator = value["chatModerator"].asBool(false);
+    account.chatModeratorBy = account.chatModerator ? value["chatModeratorBy"].asString() : "";
     account.createdAtMillis = static_cast<std::int64_t>(value["createdAt"].asDouble(0));
     account.createdFromHash = value["createdFromHash"].asString();
     account.guest = value["guest"].asBool(false);
@@ -401,8 +403,9 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
 
     collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "owner",
                           "adminTier", "adminBanned", "adminBannedAt", "adminBannedBy",
-                          "lastActiveAt", "muted", "mutedAt", "mutedBy", "createdAt",
-                          "createdFromHash", "guest", "passwordChosen"},
+                          "lastActiveAt", "muted", "mutedAt", "mutedBy", "chatModerator",
+                          "chatModeratorBy", "createdAt", "createdFromHash", "guest",
+                          "passwordChosen"},
                   account.extra);
     return account;
 }
@@ -433,6 +436,10 @@ Json accountToJson(const Account& account) {
         out["muted"] = true;
         if (account.mutedAtMillis != 0) out["mutedAt"] = millisJson(account.mutedAtMillis);
         if (!account.mutedBy.empty()) out["mutedBy"] = account.mutedBy;
+    }
+    if (account.chatModerator) {
+        out["chatModerator"] = true;
+        if (!account.chatModeratorBy.empty()) out["chatModeratorBy"] = account.chatModeratorBy;
     }
     // Both omitted when unset, so accounts written before the registration
     // limits existed round-trip through this build unchanged.
@@ -585,6 +592,7 @@ void Database::reset() {
     otherTopText_.clear();
     topKeyOrder_.clear();
     lastSaveBytes_ = 0;
+    chatTerms_ = ChatTerms::builtIn();
     path_.clear();
     loadFailed_ = false;
     dirty_ = false;
@@ -630,6 +638,7 @@ bool Database::load(const std::string& path, std::string& errorOut) {
             return false;
         }
     }
+    reloadChatTerms();
     // File order is not creation order, and creatorStanding walks newest first
     // and stops at its window.
     for (auto& entry : usersByCreator_) {
@@ -728,6 +737,19 @@ std::vector<std::string> Database::storedTableNames() const {
     }
     return names;
 }
+
+ChatTermEdits Database::chatTermEdits() const {
+    // The const read: the table's cached text stays good.
+    return ChatTermEdits::fromJson(otherTop_["chatTerms"]);
+}
+
+void Database::setChatTermEdits(const ChatTermEdits& edits) {
+    rawTable("chatTerms") = edits.toJson();
+    markDirty();
+    reloadChatTerms();
+}
+
+void Database::reloadChatTerms() { chatTerms_ = chatTermEdits().applied(); }
 
 Json playerRecordJson(const PlayerRecord& record) { return playerToJson(record); }
 PlayerRecord parsePlayerRecord(const Json& value) { return playerFromJson(value); }
@@ -1108,7 +1130,8 @@ std::string Database::canonicalUsername(const std::string& username) const {
     return account ? account->username : std::string();
 }
 
-bool Database::validUsername(const std::string& username, std::string& reasonOut) {
+bool Database::validUsername(const std::string& username, std::string& reasonOut,
+                             const ChatTerms& terms) {
     if (username.size() < 3 || username.size() > 16) {
         reasonOut = "Username must be 3 to 16 characters.";
         return false;
@@ -1136,7 +1159,7 @@ bool Database::validUsername(const std::string& username, std::string& reasonOut
     // with the word, which is how an admin tells a false match from a real
     // one; the player is not shown it. Only asked of a new name: an account
     // that already holds one signs in without coming through here.
-    if (const std::string word = blockedWordInName(username); !word.empty()) {
+    if (const std::string word = blockedWordInName(username, terms); !word.empty()) {
         std::printf("[names] refused the username \"%s\" (\"%s\")\n", username.c_str(),
                     word.c_str());
         reasonOut = "That username is not allowed. Pick another.";
@@ -1238,7 +1261,7 @@ CreateResult Database::createUser(const std::string& username, const std::string
 CreateResult Database::createAccount(const std::string& username, const std::string& password,
                                      const std::string& createdFromHash, int cost) {
     CreateResult result;
-    if (!validUsername(username, result.reason)) {
+    if (!validUsername(username, result.reason, chatTerms_)) {
         result.status = CreateStatus::UsernameInvalid;
         return result;
     }
@@ -1327,7 +1350,7 @@ bool Database::renameUser(const std::string& userId, const std::string& username
         return false;
     }
     const std::string oldKey = stored->second;
-    if (!validUsername(username, reasonOut)) return false;
+    if (!validUsername(username, reasonOut, chatTerms_)) return false;
     if (isGuestUsername(username)) {
         reasonOut = "That name is kept for guest accounts. Pick another.";
         return false;

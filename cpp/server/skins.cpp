@@ -106,8 +106,8 @@ std::string base36(std::uint64_t value) {
 /// Whether a skin's sanitised name may go in the catalogue, where every player
 /// reads it. If not, the author is told and the log says why, as for a chat line.
 bool skinNameAllowed(const Session& session, net::Connection& connection,
-                     const std::string& name) {
-    const std::string word = blockedWordInName(name);
+                     const std::string& name, const ChatTerms& terms) {
+    const std::string word = blockedWordInName(name, terms);
     if (word.empty()) return true;
     std::printf("[names] refused the skin name \"%s\" from %s (\"%s\")\n", name.c_str(),
                 session.username.c_str(), word.c_str());
@@ -118,13 +118,13 @@ bool skinNameAllowed(const Session& session, net::Connection& connection,
 /// A skin as a publish or an edit posts it, sanitised (sanitizeSkin) and its
 /// name allowed -- or false, with the author told why not.
 bool postableSkin(const Session& session, net::Connection& connection, const std::string& name,
-                  const std::vector<SkinShape>& shapes, SkinCheck& out) {
+                  const std::vector<SkinShape>& shapes, const ChatTerms& terms, SkinCheck& out) {
     out = sanitizeSkin(name, shapes);
     if (!out.ok()) {
         sendSkinChat(connection, out.error);
         return false;
     }
-    return skinNameAllowed(session, connection, out.name);
+    return skinNameAllowed(session, connection, out.name, terms);
 }
 
 /// Whether the account has starred skin `id`.
@@ -148,11 +148,15 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinCatalog));
     // Advisory only: it decides whether the takedown button is drawn and
-    // whether the chat autocomplete offers the /admin rows. Every delete, and
-    // every admin command, is re-checked server-side regardless of what the
-    // client believes -- so a temporary grant may safely raise it, which is
-    // how a grantee's console appears without them logging out and back in.
-    w.boolean(effectiveAdmin(session));
+    // whether the chat autocomplete offers the /admin and /mod rows. Every
+    // delete, and every admin or moderator command, is re-checked server-side
+    // regardless of what the client believes -- so a temporary grant may
+    // safely raise it, which is how a grantee's console appears without them
+    // logging out and back in.
+    std::uint8_t standing = 0;
+    if (effectiveAdmin(session)) standing |= net::StandingAdmin;
+    if (chatModerator(session)) standing |= net::StandingChatModerator;
+    w.u8(standing);
     w.str(record.equippedSkinId);
     const std::size_t at = w.reserveU16();
 
@@ -250,7 +254,7 @@ void GameServer::handlePublishSkin(Session& session, net::Connection& connection
         return;
     }
     SkinCheck check;
-    if (!postableSkin(session, connection, name, shapes, check)) return;
+    if (!postableSkin(session, connection, name, shapes, database_.chatTerms(), check)) return;
 
     // Read through storedTable, and the mutable table taken only for the
     // write at the end: rawTable drops the catalogue's cached text, and every
@@ -327,7 +331,7 @@ void GameServer::handleEditSkin(Session& session, net::Connection& connection,
         return;
     }
     SkinCheck check;
-    if (!postableSkin(session, connection, name, shapes, check)) return;
+    if (!postableSkin(session, connection, name, shapes, database_.chatTerms(), check)) return;
 
     // A rename keeps the picture, which is in the catalogue already, so only
     // new shapes are sampled -- and compared with every skin but this one.

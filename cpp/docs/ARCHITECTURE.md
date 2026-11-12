@@ -1199,9 +1199,12 @@ check parses the line both ways a client may (with and without `<a>`) and
 folds look-alike and "fancy text" letters, stand-ins (`sh1t`, `a$$`), held
 letters, punctuation and spelled-out letters. Each listed word says whether it
 may sit inside a word, must start one, or must be the whole word, which is what
-keeps "class", "assassin" and "Scunthorpe" clean; the lists are at the top of
-`chat_moderation.cpp`, and a refused line is logged with the word that
-matched. A line (or announcement) that draws a control making a browser reorder
+keeps "class", "assassin" and "Scunthorpe" clean. The built-in lists are at
+the top of `chat_moderation.cpp`; chat moderators and admins edit them in game
+with `/mod terms` (see `cpp/docs/admin-dashboard.md`), and a server's edits are
+the database's `chatTerms` table, kept as changes over the built-in lists
+(`ChatTermEdits`) and applied by `Database::chatTerms()`, which every caller
+passes to the check. A refused line is logged with the word that matched. A line (or announcement) that draws a control making a browser reorder
 Latin letters — U+202B, U+202E, U+2067 or U+2068, typed or as a character
 reference — is refused outright, because the word check reads stored order and
 `\u202Ekcuf` draws a word it never sees.

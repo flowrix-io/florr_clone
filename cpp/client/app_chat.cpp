@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <utility>
 
@@ -192,115 +193,137 @@ constexpr double kChatWheelStep = 42.0;
 /// what this client and its server added since and pruned of what neither
 /// answers.
 ///
-/// Admin rows are carried in the same table and filtered at draw time by
-/// matchChatCommands: they are offered only to a client the server has told
-/// is admin.
+/// Admin and moderator rows are carried in the same table and filtered at
+/// draw time by matchChatCommands: they are offered only to a client the
+/// server has told is admin, or a chat moderator -- whose rows admins are
+/// offered too, as they can run them.
+enum class CommandRole : std::uint8_t { Everyone, Moderator, Admin };
+
 struct ChatCommand {
     const char* command;
     const char* description;
-    bool admin;
+    CommandRole role;
 };
 
+/// The table's own shorthand for the roles.
+constexpr CommandRole kForAll = CommandRole::Everyone;
+constexpr CommandRole kForMods = CommandRole::Moderator;
+constexpr CommandRole kForAdmins = CommandRole::Admin;
+
 constexpr ChatCommand kChatCommands[] = {
-    {"/help", "Show available commands", false},
-    {"/biome", "Show the most populated biome", false},
-    {"/boss-timers", "Show each biome's unique/apex cooldown", false},
-    {"/admin createpoll", "Open the standalone poll creator", true},
-    {"/admin save", "Save player progress", true},
-    {"/admin list-players", "List online players", true},
-    {"/admin list-sockets", "List connected sockets", true},
-    {"/admin set_max_enemies", "Set max enemy count", true},
-    {"/admin set_bot_count", "Set bot count (0-100, or \"default\")", true},
-    {"/admin spawn", "Spawn a mob: /admin spawn <mob> <rarity> [x y] [amount] [stack]", true},
-    {"/admin killall", "Kill all wild mobs (pets left intact)", true},
-    {"/admin teleport", "Teleport a player", true},
-    {"/admin tp", "Teleport a player (shorthand)", true},
-    {"/admin teleport_all", "Teleport every player and bot: /admin teleport_all <x> <y>", true},
-    {"/admin tpall", "Teleport every player (shorthand)", true},
-    {"/admin teleport_bots", "Teleport every bot only: /admin teleport_bots <x> <y>", true},
-    {"/admin tpbots", "Teleport every bot only (shorthand)", true},
-    {"/admin corrupt", "Toggle corruption (fights players anywhere): /admin corrupt <player> [on|off|toggle]", true},
-    {"/admin god", "Make yourself invulnerable: /admin god [on|off|toggle]", true},
-    {"/admin generate_code", "Generate a star code", true},
-    {"/admin gen_code", "Generate a star code (shorthand)", true},
-    {"/admin list_codes", "List all generated codes", true},
-    {"/admin delete_code", "Delete a code", true},
-    {"/admin notification", "Create a notification", true},
-    {"/admin notify", "Create a notification (shorthand)", true},
-    {"/admin clear_notifications", "Clear all notifications", true},
-    {"/admin clear_notifs", "Clear notifications (shorthand)", true},
-    {"/admin arena gui", "Open the visual arena editor", true},
-    {"/admin arena", "Host games: bring/return/map/empty/build/wall/floor/pvp", true},
-    {"/admin phase", "Toggle walking through walls: [on|off|toggle]", true},
-    {"/admin give_xp", "Give XP: <amount> [username], default yourself", true},
-    {"/admin give", "Give petals: /admin give <player> <item> <rarity> [amount], or /admin give all <rarity> <amount> [player] [--exclude <petal> ...]", true},
-    {"/admin grant_admin", "Lend a player the admin console until they respawn: /admin grant_admin <player> [tier]", true},
-    {"/admin revoke_admin", "Take back a temporary admin grant: /admin revoke_admin <player>", true},
-    {"/admin list_admins", "List active temporary admin grants and banned admins", true},
-    {"/admin ban_admin", "Bar a lower-tier admin from admin powers: /admin ban_admin <player>", true},
-    {"/admin unban_admin", "Give a banned admin their powers back: /admin unban_admin <player>", true},
-    {"/admin promote_admin", "Raise a lower-tier admin, up to your tier: /admin promote_admin <player> [tier]", true},
-    {"/admin demote_admin", "Lower a lower-tier admin's tier: /admin demote_admin <player> [tier]", true},
-    {"/admin mute", "Bar a player from chat until unmuted: /admin mute <player>", true},
-    {"/admin unmute", "Let a muted player chat again: /admin unmute <player>", true},
-    {"/admin unmute_all", "Lift every mute on every account", true},
-    {"/admin delete_guests", "Delete default guest accounts", true},
-    {"/admin list_today_logins", "List accounts active in last 24h", true},
-    {"/admin list_active", "List accounts active in last 24h (shorthand)", true},
-    {"/cmd", "Execute server command (alias)", true},
-    {"/forcelocalplayerflags", "Set local player face/equip flags (client-only)", false},
-    {"/squad-create", "Create a new squad ([public|private])", false},
-    {"/squad-invite", "Invite a player to your squad", false},
-    {"/squad-find-public", "List joinable public squads", false},
-    {"/squad-join", "Join a public squad by its ID", false},
-    {"/squad-public", "Make your squad public (leader only)", false},
-    {"/squad-private", "Make your squad private (leader only)", false},
-    {"/squad-accept", "Accept a squad invite", false},
-    {"/squad-decline", "Decline a squad invite", false},
-    {"/squad-leave", "Leave your current squad", false},
-    {"/squad-info", "Show squad members", false},
-    {"/l", "Say something to the players who can see you", false},
-    {"/s", "Send a message to your squad", false},
-    {"/w", "Whisper to one player: /w <player> <message>", false},
-    {"/local", "Switch the chat to Local: the players who can see you", false},
-    {"/global", "Switch the chat to Global: everyone on the server", false},
-    {"/squad", "Switch the chat to your squad", false},
-    {"/guild", "Switch the chat to your guild", false},
-    {"/whisper", "Switch the chat to whispers, answering the last one", false},
-    {"/guild-create", "Create a new guild: /guild-create <tag> [name]", false},
-    {"/guild-invite", "Invite a player to your guild (leader only)", false},
-    {"/guild-accept", "Accept a guild invite", false},
-    {"/guild-decline", "Decline a guild invite", false},
-    {"/guild-leave", "Leave your current guild", false},
-    {"/guild-kick", "Kick a member from the guild (leader only)", false},
-    {"/guild-rename", "Rename your guild (leader only)", false},
-    {"/guild-description", "Set or clear your guild's description (leader only)", false},
-    {"/guild-info", "Show guild members and status", false},
-    {"/guild-squad", "Invite online guildmates into a squad", false},
-    {"/guild-list", "List all guilds (id, name, members)", false},
-    {"/guild-menu", "Toggle the guild menu panel", false},
-    {"/g", "Send a message to your guild", false},
-    {"/admin guild_force_join", "Force a player into a guild", true},
-    {"/admin guild_list", "List all guilds", true},
-    {"/admin guild_info", "Show info for a guild by id", true},
-    {"/admin restart", "Restart selected biomes or schedule server restart: restart [<biome> ...|<N>(s|m|h)|cancel|status|list]", true},
-    {"/admin backup_db", "Back up the database: backup_db [list]", true},
-    {"/admin db", "Open the database editor (full admins): /admin db <key> [username]", true},
-    {"/admin gui", "Open the admin dashboard: players, bags, control, spawn, give, announce", true},
-    {"/admin control", "Steer another player's flower with your controls: /admin control <player>", true},
-    {"/admin release", "Give back the flower you are steering", true},
-    {"/admin announce", "A banner for every player (full admins): /admin announce <message>", true},
-    {"/admin update", "Back up DB, install latest build from GitHub, restart: update [now|<N>(s|m|h)|status|cancel]", true},
-    {"/admin change-maze", "Change the maze: change-maze [next|garden|desert|ocean|<dayNumber>]", true},
-    {"/admin sacrifice", "Lay Hel's Apex Sacrifice now, or say where it lies", true},
-    {"/level-from-string", "Show what level a player named <name> would roll", false},
-    {"/loadout-from-string", "Show the loadout a player named <name> would roll", false},
+    {"/help", "Show available commands", kForAll},
+    {"/biome", "Show the most populated biome", kForAll},
+    {"/boss-timers", "Show each biome's unique/apex cooldown", kForAll},
+    {"/admin createpoll", "Open the standalone poll creator", kForAdmins},
+    {"/admin save", "Save player progress", kForAdmins},
+    {"/admin list-players", "List online players", kForAdmins},
+    {"/admin list-sockets", "List connected sockets", kForAdmins},
+    {"/admin set_max_enemies", "Set max enemy count", kForAdmins},
+    {"/admin set_bot_count", "Set bot count (0-100, or \"default\")", kForAdmins},
+    {"/admin spawn", "Spawn a mob: /admin spawn <mob> <rarity> [x y] [amount] [stack]", kForAdmins},
+    {"/admin killall", "Kill all wild mobs (pets left intact)", kForAdmins},
+    {"/admin teleport", "Teleport a player", kForAdmins},
+    {"/admin tp", "Teleport a player (shorthand)", kForAdmins},
+    {"/admin teleport_all", "Teleport every player and bot: /admin teleport_all <x> <y>", kForAdmins},
+    {"/admin tpall", "Teleport every player (shorthand)", kForAdmins},
+    {"/admin teleport_bots", "Teleport every bot only: /admin teleport_bots <x> <y>", kForAdmins},
+    {"/admin tpbots", "Teleport every bot only (shorthand)", kForAdmins},
+    {"/admin corrupt", "Toggle corruption (fights players anywhere): /admin corrupt <player> [on|off|toggle]", kForAdmins},
+    {"/admin god", "Make yourself invulnerable: /admin god [on|off|toggle]", kForAdmins},
+    {"/admin generate_code", "Generate a star code", kForAdmins},
+    {"/admin gen_code", "Generate a star code (shorthand)", kForAdmins},
+    {"/admin list_codes", "List all generated codes", kForAdmins},
+    {"/admin delete_code", "Delete a code", kForAdmins},
+    {"/admin notification", "Create a notification", kForAdmins},
+    {"/admin notify", "Create a notification (shorthand)", kForAdmins},
+    {"/admin clear_notifications", "Clear all notifications", kForAdmins},
+    {"/admin clear_notifs", "Clear notifications (shorthand)", kForAdmins},
+    {"/admin arena gui", "Open the visual arena editor", kForAdmins},
+    {"/admin arena", "Host games: bring/return/map/empty/build/wall/floor/pvp", kForAdmins},
+    {"/admin phase", "Toggle walking through walls: [on|off|toggle]", kForAdmins},
+    {"/admin give_xp", "Give XP: <amount> [username], default yourself", kForAdmins},
+    {"/admin give", "Give petals: /admin give <player> <item> <rarity> [amount], or /admin give all <rarity> <amount> [player] [--exclude <petal> ...]", kForAdmins},
+    {"/admin grant_admin", "Lend a player the admin console until they respawn: /admin grant_admin <player> [tier]", kForAdmins},
+    {"/admin revoke_admin", "Take back a temporary admin grant: /admin revoke_admin <player>", kForAdmins},
+    {"/admin list_admins", "List active temporary admin grants and banned admins", kForAdmins},
+    {"/admin ban_admin", "Bar a lower-tier admin from admin powers: /admin ban_admin <player>", kForAdmins},
+    {"/admin unban_admin", "Give a banned admin their powers back: /admin unban_admin <player>", kForAdmins},
+    {"/admin promote_admin", "Raise a lower-tier admin, up to your tier: /admin promote_admin <player> [tier]", kForAdmins},
+    {"/admin demote_admin", "Lower a lower-tier admin's tier: /admin demote_admin <player> [tier]", kForAdmins},
+    {"/admin mute", "Bar a player from chat until unmuted: /admin mute <player>", kForAdmins},
+    {"/admin unmute", "Let a muted player chat again: /admin unmute <player>", kForAdmins},
+    {"/admin unmute_all", "Lift every mute on every account", kForAdmins},
+    {"/admin grant_mod", "Make a player a chat moderator: /admin grant_mod <player>", kForAdmins},
+    {"/admin revoke_mod", "Take chat moderator away: /admin revoke_mod <player>", kForAdmins},
+    {"/admin list_mods", "List chat moderators", kForAdmins},
+    {"/mod mute", "Bar a player from chat until unmuted: /mod mute <player>", kForMods},
+    {"/mod unmute", "Let a muted player chat again: /mod unmute <player>", kForMods},
+    {"/mod muted", "List muted accounts", kForMods},
+    {"/mod terms", "The chat filter: what was changed here, and how to change it", kForMods},
+    {"/mod terms list", "Every term the chat filter blocks, and the words it allows", kForMods},
+    {"/mod terms block", "Block a term: /mod terms block <word> [word|start|anywhere]", kForMods},
+    {"/mod terms unblock", "Stop blocking a term: /mod terms unblock <word>", kForMods},
+    {"/mod terms allow", "Let through a word that holds a blocked term: /mod terms allow <word>", kForMods},
+    {"/mod terms unallow", "Stop allowing a word: /mod terms unallow <word>", kForMods},
+    {"/mod terms check", "What the chat filter says of a line: /mod terms check <text>", kForMods},
+    {"/admin delete_guests", "Delete default guest accounts", kForAdmins},
+    {"/admin list_today_logins", "List accounts active in last 24h", kForAdmins},
+    {"/admin list_active", "List accounts active in last 24h (shorthand)", kForAdmins},
+    {"/cmd", "Execute server command (alias)", kForAdmins},
+    {"/forcelocalplayerflags", "Set local player face/equip flags (client-only)", kForAll},
+    {"/squad-create", "Create a new squad ([public|private])", kForAll},
+    {"/squad-invite", "Invite a player to your squad", kForAll},
+    {"/squad-find-public", "List joinable public squads", kForAll},
+    {"/squad-join", "Join a public squad by its ID", kForAll},
+    {"/squad-public", "Make your squad public (leader only)", kForAll},
+    {"/squad-private", "Make your squad private (leader only)", kForAll},
+    {"/squad-accept", "Accept a squad invite", kForAll},
+    {"/squad-decline", "Decline a squad invite", kForAll},
+    {"/squad-leave", "Leave your current squad", kForAll},
+    {"/squad-info", "Show squad members", kForAll},
+    {"/l", "Say something to the players who can see you", kForAll},
+    {"/s", "Send a message to your squad", kForAll},
+    {"/w", "Whisper to one player: /w <player> <message>", kForAll},
+    {"/local", "Switch the chat to Local: the players who can see you", kForAll},
+    {"/global", "Switch the chat to Global: everyone on the server", kForAll},
+    {"/squad", "Switch the chat to your squad", kForAll},
+    {"/guild", "Switch the chat to your guild", kForAll},
+    {"/whisper", "Switch the chat to whispers, answering the last one", kForAll},
+    {"/guild-create", "Create a new guild: /guild-create <tag> [name]", kForAll},
+    {"/guild-invite", "Invite a player to your guild (leader only)", kForAll},
+    {"/guild-accept", "Accept a guild invite", kForAll},
+    {"/guild-decline", "Decline a guild invite", kForAll},
+    {"/guild-leave", "Leave your current guild", kForAll},
+    {"/guild-kick", "Kick a member from the guild (leader only)", kForAll},
+    {"/guild-rename", "Rename your guild (leader only)", kForAll},
+    {"/guild-description", "Set or clear your guild's description (leader only)", kForAll},
+    {"/guild-info", "Show guild members and status", kForAll},
+    {"/guild-squad", "Invite online guildmates into a squad", kForAll},
+    {"/guild-list", "List all guilds (id, name, members)", kForAll},
+    {"/guild-menu", "Toggle the guild menu panel", kForAll},
+    {"/g", "Send a message to your guild", kForAll},
+    {"/admin guild_force_join", "Force a player into a guild", kForAdmins},
+    {"/admin guild_list", "List all guilds", kForAdmins},
+    {"/admin guild_info", "Show info for a guild by id", kForAdmins},
+    {"/admin restart", "Restart selected biomes or schedule server restart: restart [<biome> ...|<N>(s|m|h)|cancel|status|list]", kForAdmins},
+    {"/admin backup_db", "Back up the database: backup_db [list]", kForAdmins},
+    {"/admin db", "Open the database editor (full admins): /admin db <key> [username]", kForAdmins},
+    {"/admin gui", "Open the admin dashboard: players, bags, control, spawn, give, announce", kForAdmins},
+    {"/admin control", "Steer another player's flower with your controls: /admin control <player>", kForAdmins},
+    {"/admin release", "Give back the flower you are steering", kForAdmins},
+    {"/admin announce", "A banner for every player (full admins): /admin announce <message>", kForAdmins},
+    {"/admin update", "Back up DB, install latest build from GitHub, restart: update [now|<N>(s|m|h)|status|cancel]", kForAdmins},
+    {"/admin change-maze", "Change the maze: change-maze [next|garden|desert|ocean|<dayNumber>]", kForAdmins},
+    {"/admin sacrifice", "Lay Hel's Apex Sacrifice now, or say where it lies", kForAdmins},
+    {"/level-from-string", "Show what level a player named <name> would roll", kForAll},
+    {"/loadout-from-string", "Show the loadout a player named <name> would roll", kForAll},
 };
 
 /// The commands whose names start with what has been typed, case-blind.
 /// Shared by the key handler and the draw pass so the highlighted row and the
 /// completed text can never come from two different lists.
-std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool includeAdmin) {
+std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool admin,
+                                                  bool moderator) {
     const std::string needle = lowerCase(typed);
 
     std::vector<const ChatCommand*> matches;
@@ -310,7 +333,8 @@ std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool
         // on what the server actually said -- the admin flag that arrives with
         // the skin catalog, which a temporary grant re-sends. Listing them to
         // everyone would advertise a console most players cannot open.
-        if (command.admin && !includeAdmin) continue;
+        if (command.role == CommandRole::Admin && !admin) continue;
+        if (command.role == CommandRole::Moderator && !admin && !moderator) continue;
         const std::string name = lowerCase(command.command);
         if (name.size() >= needle.size() && name.compare(0, needle.size(), needle) == 0) {
             matches.push_back(&command);
@@ -897,7 +921,7 @@ void App::editChatLine() {
     }
 
     if (chatSuggestion_ >= 0) {
-        const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_, net_.isSkinAdmin());
+        const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_, net_.isSkinAdmin(), net_.isChatModerator());
         if (matches.empty()) {
             chatSuggestion_ = -1;
         } else {
@@ -1130,7 +1154,7 @@ void App::drawChat(Canvas& canvas, double time) {
     // transcript back until the next keystroke, as the reference's do.
     const bool suggesting = chatOpen_ && chatSuggestion_ >= 0;
     if (suggesting) {
-        const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_, net_.isSkinAdmin());
+        const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_, net_.isSkinAdmin(), net_.isChatModerator());
         if (!matches.empty()) {
             // Clamped locally: the key handler owns the selection, and a draw
             // pass that edited it would fight whatever the last keystroke did.

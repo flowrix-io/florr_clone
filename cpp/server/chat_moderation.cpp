@@ -1,6 +1,7 @@
 #include "server/chat_moderation.h"
 
 #include "server/text.h"
+#include "shared/core/json.h"
 #include "shared/core/text.h"
 #include "shared/game/markup.h"
 
@@ -20,21 +21,17 @@ namespace {
 // The lists
 // ---------------------------------------------------------------------------
 
-/// How much of a word a listed one has to be.
-enum class Fit : std::uint8_t {
-    /// Anywhere in a word: "fuck" in "motherfucking".
-    Inside,
-    /// The start of a word: "cunt" in "cunts", but not in "Scunthorpe".
-    Start,
-    /// The whole word, or its plural: "ass" and "asses", but not "class",
-    /// "assassin" or "assess".
-    Whole,
-};
-
+/// The built-in lists' rows. TermFit's names are short for these tables.
 struct Listed {
     const char* word;   ///< lower-case a-z
-    Fit fit;
+    TermFit fit;
 };
+
+namespace Fit {
+constexpr TermFit Inside = TermFit::Anywhere;
+constexpr TermFit Start = TermFit::Start;
+constexpr TermFit Whole = TermFit::Word;
+} // namespace Fit
 
 /// Profanity, sexual vulgarity, slurs. Kept to words that are bad in nearly
 /// every sentence they turn up in: "hell", "damn" and "crap" are left alone,
@@ -536,27 +533,27 @@ bool endsWord(const std::vector<Cell>& word, std::size_t to) {
     return reads(to, 'e') && reads(to + 1, 's') && onlyStandIns(word, to + 2, word.size());
 }
 
-/// Calls `found(from, to)` for every place `listed` fits in `word` until it
-/// returns true, and says whether it did.
+/// Calls `found(from, to)` for every place `listed`, as `fit` says, fits in
+/// `word` until it returns true, and says whether it did.
 template <typename Found>
-bool findListed(const Word& read, const Listed& listed, Found&& found) {
+bool findListed(const Word& read, const char* listed, TermFit fit, Found&& found) {
     const std::vector<Cell>& word = read.cells;
     // Most listed words need a letter this word does not have at all, and are
     // over before the quadratic part: a line of 200 's's was 1.5 ms without.
     std::uint32_t present = 0;
     for (const Cell& cell : word) present |= cell.letters;
-    for (const char* c = listed.word; *c != '\0'; ++c) {
+    for (const char* c = listed; *c != '\0'; ++c) {
         if ((present & letter(*c)) == 0) return false;
     }
     for (std::size_t from = 0; from < word.size(); ++from) {
         // A word that has to start one may only have stand-ins before it.
-        if (from > 0 && listed.fit != Fit::Inside && !word[from - 1].standIn) break;
+        if (from > 0 && fit != Fit::Inside && !word[from - 1].standIn) break;
         if (read.through && !read.pieceStarts[from]) continue;
-        const std::size_t to = matchEnd(word, from, listed.word);
+        const std::size_t to = matchEnd(word, from, listed);
         if (to == kNoMatch) continue;
         if (read.spaced && to != word.size()) continue;
         if (onlyStandIns(word, from, to)) continue;
-        if (listed.fit == Fit::Whole && !endsWord(word, to)) continue;
+        if (fit == Fit::Whole && !endsWord(word, to)) continue;
         if (found(from, to)) return true;
     }
     return false;
@@ -575,24 +572,28 @@ bool isInnocentPair(const Word& word) {
 }
 
 /// The first listed word `source` draws, read with or without <a>, or null.
-const char* findBlocked(const std::string& source, bool links) {
+const char* findBlocked(const std::string& source, bool links, const ChatTerms& terms) {
     for (const Word& word : wordsIn(drawnCharacters(source, links))) {
         if (isInnocentPair(word)) continue;
         std::vector<std::pair<std::size_t, std::size_t>> allowed;
-        for (const Listed& listed : kAllowed) {
-            findListed(word, listed, [&](std::size_t from, std::size_t to) {
+        for (const ChatTerm& listed : terms.allowed) {
+            findListed(word, listed.word.c_str(), listed.fit, [&](std::size_t from, std::size_t to) {
                 allowed.emplace_back(from, to);
                 return false;
             });
         }
-        for (const Listed& listed : kBlocked) {
-            const bool found = findListed(word, listed, [&](std::size_t from, std::size_t to) {
-                for (const auto& [first, last] : allowed) {
-                    if (first <= from && to <= last) return false;
-                }
-                return true;
-            });
-            if (found) return listed.word;
+        const auto inAllowed = [&](std::size_t from, std::size_t to) {
+            for (const auto& [first, last] : allowed) {
+                if (first <= from && to <= last) return true;
+            }
+            return false;
+        };
+        for (const ChatTerm& listed : terms.blocked) {
+            const bool found = findListed(word, listed.word.c_str(), listed.fit,
+                                          [&](std::size_t from, std::size_t to) {
+                                              return !inAllowed(from, to);
+                                          });
+            if (found) return listed.word.c_str();
         }
         if(word.cells.size()<4)continue;
         Word reversed;
@@ -600,13 +601,19 @@ const char* findBlocked(const std::string& source, bool links) {
         const bool plain=std::none_of(word.cells.begin(),word.cells.end(),[](const Cell& cell) {
             return cell.standIn;
         });
-        for(const Listed& listed:kBlocked) {
-            if(std::strlen(listed.word)<4)continue;
+        for(const ChatTerm& listed:terms.blocked) {
+            if(listed.word.size()<4)continue;
             if(plain&&std::any_of(std::begin(kNotReversed),std::end(kNotReversed),[&](const char* name) {
-                return std::strcmp(listed.word,name)==0;
+                return listed.word==name;
             }))continue;
-            const Listed whole{listed.word,Fit::Whole};
-            if(findListed(reversed,whole,[](std::size_t,std::size_t){return true;}))return listed.word;
+            // An allowed word read backwards lets the reversal through too, so
+            // a moderator's "allow" covers both readings of the word it names.
+            const bool found = findListed(reversed, listed.word.c_str(), Fit::Whole,
+                                          [&](std::size_t from, std::size_t to) {
+                                              return !inAllowed(word.cells.size() - to,
+                                                                word.cells.size() - from);
+                                          });
+            if(found)return listed.word.c_str();
         }
     }
     return nullptr;
@@ -664,9 +671,9 @@ const char* findBlockedChinese(const std::string& source,bool links) {
 
 } // namespace
 
-std::string blockedWordIn(const std::string& line) {
+std::string blockedWordIn(const std::string& line, const ChatTerms& terms) {
     for (const bool links : {true, false}) {
-        if (const char* word = findBlocked(line, links)) return word;
+        if (const char* word = findBlocked(line, links, terms)) return word;
         if (const char* word = findBlockedChinese(line, links)) return word;
     }
     return {};
@@ -719,17 +726,18 @@ bool leadsInto(const std::vector<Cell>& word, std::size_t at, const char* listed
 
 } // namespace
 
-std::string blockedWordInName(const std::string& name) {
+std::string blockedWordInName(const std::string& name, const ChatTerms& terms) {
     const std::string drawn = escapedMarkup(name);
-    std::string word = blockedWordIn(drawn);
-    if (word.empty()) word = blockedWordIn(escapedMarkup(splitAtWordStarts(name)));
+    std::string word = blockedWordIn(drawn, terms);
+    if (word.empty()) word = blockedWordIn(escapedMarkup(splitAtWordStarts(name)), terms);
     if (!word.empty()) return word;
     for (const Word& read : wordsIn(drawnCharacters(drawn, true))) {
         if (read.through) continue;
         std::size_t from = 0;
         while (from < read.cells.size() && read.cells[from].standIn) ++from;
-        for (const Listed& listed : kBlocked) {
-            if (listed.fit == Fit::Whole && leadsInto(read.cells, from, listed.word, false)) {
+        for (const ChatTerm& listed : terms.blocked) {
+            if (listed.fit == Fit::Whole &&
+                leadsInto(read.cells, from, listed.word.c_str(), false)) {
                 return listed.word;
             }
         }
@@ -869,6 +877,318 @@ bool chatLineReversesText(const std::string& line) {
         }
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// The lists as a server has them
+// ---------------------------------------------------------------------------
+
+const char* termFitName(TermFit fit) {
+    switch (fit) {
+        case TermFit::Anywhere: return "anywhere";
+        case TermFit::Start: return "start";
+        case TermFit::Word: return "word";
+    }
+    return "word";
+}
+
+const char* termFitLabel(TermFit fit) {
+    switch (fit) {
+        case TermFit::Anywhere: return "anywhere in a word";
+        case TermFit::Start: return "at the start of a word";
+        case TermFit::Word: return "as a whole word";
+    }
+    return "as a whole word";
+}
+
+bool parseTermFit(const std::string& name, TermFit& out) {
+    const std::string key = lowerCase(name);
+    if (key == "anywhere" || key == "inside") {
+        out = TermFit::Anywhere;
+    } else if (key == "start") {
+        out = TermFit::Start;
+    } else if (key == "word" || key == "whole") {
+        out = TermFit::Word;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+const ChatTerms& ChatTerms::builtIn() {
+    static const ChatTerms terms = [] {
+        ChatTerms built;
+        for (const Listed& listed : kBlocked) built.blocked.push_back({listed.word, listed.fit});
+        for (const Listed& listed : kAllowed) built.allowed.push_back({listed.word, listed.fit});
+        return built;
+    }();
+    return terms;
+}
+
+namespace {
+
+/// The built-in row for `word`, or null.
+template <std::size_t N>
+const Listed* builtInRow(const Listed (&rows)[N], const std::string& word) {
+    for (const Listed& row : rows) {
+        if (word == row.word) return &row;
+    }
+    return nullptr;
+}
+
+bool listHas(const std::vector<std::string>& words, const std::string& word) {
+    return std::find(words.begin(), words.end(), word) != words.end();
+}
+
+/// Takes `word` out of `words`; whether it was there.
+bool listDrop(std::vector<std::string>& words, const std::string& word) {
+    const auto at = std::find(words.begin(), words.end(), word);
+    if (at == words.end()) return false;
+    words.erase(at);
+    return true;
+}
+
+ChatTerm* termIn(std::vector<ChatTerm>& terms, const std::string& word) {
+    for (ChatTerm& term : terms) {
+        if (term.word == word) return &term;
+    }
+    return nullptr;
+}
+
+std::string quoted(const std::string& word) { return "\"" + word + "\""; }
+
+} // namespace
+
+bool ChatTermEdits::validTerm(const std::string& word, std::string& reasonOut) {
+    const bool letters = std::all_of(word.begin(), word.end(), [](char c) {
+        return c >= 'a' && c <= 'z';
+    });
+    if (word.size() < 2 || word.size() > 32 || !letters) {
+        // The filter reads every other spelling of a letter -- capitals, "1"
+        // for "i", "$" for "s", accents, Cyrillic look-alikes, held letters --
+        // as the plain one, so the plain one is all a term needs to be.
+        reasonOut = "A term is 2 to 32 letters a-z, with no spaces. Write the plain spelling: "
+                    "the filter already reads capitals, digits and symbols for letters (sh1t "
+                    "is shit), accents, look-alike letters and held letters.";
+        return false;
+    }
+    return true;
+}
+
+bool ChatTermEdits::block(const std::string& word, const TermFit* fit, std::string& said) {
+    const ChatTerms before = applied();
+    const auto allowedToo = [&] {
+        for (const ChatTerm& allowedWord : before.allowed) {
+            if (allowedWord.word == word) {
+                return " Note: " + quoted(word) +
+                       " is also an allowed word, which lets it through; unallow it to block it.";
+            }
+        }
+        return std::string();
+    };
+    ChatTerm* edited = termIn(blocked, word);
+    if (const Listed* row = builtInRow(kBlocked, word)) {
+        const bool wasOff = listHas(unblocked, word);
+        const TermFit was = edited != nullptr ? edited->fit : row->fit;
+        const TermFit now = fit != nullptr ? *fit : was;
+        if (!wasOff && now == was) {
+            said = quoted(word) + " is already blocked " + termFitLabel(now) + "." + allowedToo();
+            return false;
+        }
+        listDrop(unblocked, word);
+        // A built-in term at its own fit is no edit: it reads the built-in row.
+        blocked.erase(std::remove_if(blocked.begin(), blocked.end(),
+                                     [&](const ChatTerm& term) { return term.word == word; }),
+                      blocked.end());
+        if (now != row->fit) blocked.push_back({word, now});
+        said = (wasOff ? "Blocking " + quoted(word) + " again, " : "Now blocking " + quoted(word) + " ") +
+               termFitLabel(now) + "." + allowedToo();
+        return true;
+    }
+    const TermFit now = fit != nullptr ? *fit : edited != nullptr ? edited->fit : TermFit::Word;
+    if (edited != nullptr) {
+        if (edited->fit == now) {
+            said = quoted(word) + " is already blocked " + termFitLabel(now) + "." + allowedToo();
+            return false;
+        }
+        edited->fit = now;
+        said = "Now blocking " + quoted(word) + " " + termFitLabel(now) + "." + allowedToo();
+        return true;
+    }
+    std::size_t added = 0;
+    for (const ChatTerm& term : blocked) {
+        if (builtInRow(kBlocked, term.word) == nullptr) ++added;
+    }
+    if (added >= kMaxAdded) {
+        said = "The filter already holds " + std::to_string(kMaxAdded) +
+               " added terms, the most it takes. Unblock one first.";
+        return false;
+    }
+    blocked.push_back({word, now});
+    said = "Blocked " + quoted(word) + " " + termFitLabel(now) + "." + allowedToo();
+    return true;
+}
+
+bool ChatTermEdits::unblock(const std::string& word, std::string& said) {
+    if (builtInRow(kBlocked, word) != nullptr) {
+        if (listHas(unblocked, word)) {
+            said = quoted(word) + " is not blocked: it is a built-in term that is switched off.";
+            return false;
+        }
+        blocked.erase(std::remove_if(blocked.begin(), blocked.end(),
+                                     [&](const ChatTerm& term) { return term.word == word; }),
+                      blocked.end());
+        unblocked.push_back(word);
+        said = "Stopped blocking " + quoted(word) +
+               ". It is a built-in term: block it to switch it back on.";
+        return true;
+    }
+    const auto at = std::find_if(blocked.begin(), blocked.end(),
+                                 [&](const ChatTerm& term) { return term.word == word; });
+    if (at == blocked.end()) {
+        said = quoted(word) + " is not a blocked term. /mod terms list shows them.";
+        return false;
+    }
+    blocked.erase(at);
+    said = "Stopped blocking " + quoted(word) + ".";
+    return true;
+}
+
+bool ChatTermEdits::allow(const std::string& word, std::string& said) {
+    // A blocked term allowed whole is a term that blocks nothing, which is
+    // what unblock is for -- and says so in the list, where this would not.
+    for (const ChatTerm& term : applied().blocked) {
+        if (term.word == word) {
+            said = quoted(word) + " is a blocked term. Unblock it to stop blocking it.";
+            return false;
+        }
+    }
+    if (builtInRow(kAllowed, word) != nullptr) {
+        if (!listDrop(unallowed, word)) {
+            said = quoted(word) + " is already allowed.";
+            return false;
+        }
+        said = "Allowing " + quoted(word) + " again.";
+        return true;
+    }
+    if (listHas(allowed, word)) {
+        said = quoted(word) + " is already allowed.";
+        return false;
+    }
+    if (allowed.size() >= kMaxAdded) {
+        said = "The filter already holds " + std::to_string(kMaxAdded) +
+               " added allowed words, the most it takes. Unallow one first.";
+        return false;
+    }
+    allowed.push_back(word);
+    said = "Allowed " + quoted(word) + ": a blocked term inside it no longer stops a line.";
+    return true;
+}
+
+bool ChatTermEdits::unallow(const std::string& word, std::string& said) {
+    if (builtInRow(kAllowed, word) != nullptr) {
+        if (listHas(unallowed, word)) {
+            said = quoted(word) + " is not allowed: it is a built-in allowed word that is "
+                                  "switched off.";
+            return false;
+        }
+        unallowed.push_back(word);
+        said = "Stopped allowing " + quoted(word) +
+               ". It is a built-in allowed word: allow it to switch it back on.";
+        return true;
+    }
+    if (!listDrop(allowed, word)) {
+        said = quoted(word) + " is not an allowed word. /mod terms list shows them.";
+        return false;
+    }
+    said = "Stopped allowing " + quoted(word) + ".";
+    return true;
+}
+
+ChatTerms ChatTermEdits::applied() const {
+    ChatTerms terms;
+    // The built-in rows in their own order, so the log names the same word
+    // for a line it always did; the added ones after them.
+    for (const Listed& row : kBlocked) {
+        if (listHas(unblocked, row.word)) continue;
+        TermFit fit = row.fit;
+        for (const ChatTerm& term : blocked) {
+            if (term.word == row.word) fit = term.fit;
+        }
+        terms.blocked.push_back({row.word, fit});
+    }
+    for (const ChatTerm& term : blocked) {
+        if (builtInRow(kBlocked, term.word) == nullptr) terms.blocked.push_back(term);
+    }
+    for (const Listed& row : kAllowed) {
+        if (!listHas(unallowed, row.word)) terms.allowed.push_back({row.word, row.fit});
+    }
+    for (const std::string& word : allowed) {
+        if (builtInRow(kAllowed, word) == nullptr) terms.allowed.push_back({word, TermFit::Anywhere});
+    }
+    return terms;
+}
+
+ChatTermEdits ChatTermEdits::fromJson(const Json& table) {
+    ChatTermEdits edits;
+    std::string reason;
+    const auto words = [&](const Json& list, std::vector<std::string>& out, bool builtIn,
+                           bool (*known)(const std::string&)) {
+        if (!list.isArray()) return;
+        for (const Json& item : list.items()) {
+            const std::string word = item.asString();
+            if (!validTerm(word, reason) || listHas(out, word)) continue;
+            if (builtIn != known(word)) continue;
+            if (!builtIn && out.size() >= kMaxAdded) continue;
+            out.push_back(word);
+        }
+    };
+    const Json& blocked = table["blocked"];
+    if (blocked.isObject()) {
+        std::size_t added = 0;
+        for (const std::string& word : blocked.keys()) {
+            TermFit fit;
+            if (!validTerm(word, reason) || !parseTermFit(blocked[word].asString(), fit)) continue;
+            const Listed* row = builtInRow(kBlocked, word);
+            if (row != nullptr && row->fit == fit) continue;
+            if (row == nullptr && added++ >= kMaxAdded) continue;
+            edits.blocked.push_back({word, fit});
+        }
+    }
+    words(table["unblocked"], edits.unblocked, true,
+          [](const std::string& word) { return builtInRow(kBlocked, word) != nullptr; });
+    words(table["allowed"], edits.allowed, false,
+          [](const std::string& word) { return builtInRow(kAllowed, word) != nullptr; });
+    words(table["unallowed"], edits.unallowed, true,
+          [](const std::string& word) { return builtInRow(kAllowed, word) != nullptr; });
+    // An added allowed word that is a blocked term would block nothing (see
+    // allow); a hand edit cannot make one either.
+    const ChatTerms terms = ChatTermEdits{edits.blocked, edits.unblocked, {}, {}}.applied();
+    edits.allowed.erase(std::remove_if(edits.allowed.begin(), edits.allowed.end(),
+                                       [&](const std::string& word) {
+                                           for (const ChatTerm& term : terms.blocked) {
+                                               if (term.word == word) return true;
+                                           }
+                                           return false;
+                                       }),
+                        edits.allowed.end());
+    return edits;
+}
+
+Json ChatTermEdits::toJson() const {
+    Json table = Json::object();
+    Json blockedTable = Json::object();
+    for (const ChatTerm& term : blocked) blockedTable[term.word] = Json(termFitName(term.fit));
+    table["blocked"] = std::move(blockedTable);
+    const auto list = [](const std::vector<std::string>& words) {
+        Json array = Json::array();
+        for (const std::string& word : words) array.push(Json(word));
+        return array;
+    };
+    table["unblocked"] = list(unblocked);
+    table["allowed"] = list(allowed);
+    table["unallowed"] = list(unallowed);
+    return table;
 }
 
 } // namespace flix
