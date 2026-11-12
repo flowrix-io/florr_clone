@@ -158,82 +158,189 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
     if (chatModerator(session)) standing |= net::StandingChatModerator;
     w.u8(standing);
     w.str(record.equippedSkinId);
-    const std::size_t at = w.reserveU16();
 
-    // One frame holds as much of the catalogue as fits, and no more. A client
-    // drops any frame past kMaxFrameBytes and redials, so a catalogue that
-    // outgrew it -- a few dozen full-size skins from one account would do --
-    // ended every sign-in, every player's, admins' too, with nothing to show
-    // why. The skins someone online is wearing go first, so every flower in
-    // the world still draws; what is left out is only missing from the
-    // studio's Browse tab, and a worn skin it lacks draws as the plain flower.
-    //
-    // The account's own votes and favourites close the frame, and are laid
-    // out first so the skins are budgeted around them: a player who voted on
-    // a few thousand skins must not be the one whose sign-in overruns it.
-    // Only skins still in the catalogue -- the client has no card for any
-    // other.
-    ByteWriter tail;
-    {
-        std::vector<std::pair<const std::string*, SkinVote>> votes;
-        for (const auto& [id, vote] : record.skinVotes) {
-            if (votes.size() < 0xFFFF && skins[id].isObject()) votes.emplace_back(&id, vote);
-        }
-        tail.u16(static_cast<std::uint16_t>(votes.size()));
-        for (const auto& [id, vote] : votes) {
-            tail.str(*id);
-            tail.u8(static_cast<std::uint8_t>(vote));
-        }
-        std::vector<const std::string*> favorites;
-        for (const std::string& id : record.favoriteSkins) {
-            if (skins[id].isObject()) favorites.push_back(&id);
-        }
-        tail.u16(static_cast<std::uint16_t>(favorites.size()));
-        for (const std::string* id : favorites) tail.str(*id);
+    // Only the skin this account wears. The catalogue no longer fits a frame
+    // (a client drops any past kMaxFrameBytes), and nobody needs all of it:
+    // the Browse tab pages it in (handleBrowseSkins), and a client asks for
+    // the skins on the flowers it sees (handleFetchSkins). This one is sent
+    // so the player's own flower and the studio's Equipped state are right
+    // from the first frame.
+    const CustomSkin worn = skinFromJson(skins[record.equippedSkinId]);
+    if (!worn.id.empty() && !worn.shapes.empty()) {
+        CustomSkin skin = worn;
+        fillTally(skin);
+        w.u16(1);
+        writeCustomSkin(w, skin);
+    } else {
+        w.u16(0);
     }
-    constexpr std::size_t kFrameBudget = net::kMaxFrameBytes - 64 * 1024;
-    const std::size_t catalogBudget = tail.size() < kFrameBudget ? kFrameBudget - tail.size() : 0;
-    // This account's favourites go first too: a starred skin that missed the
-    // frame would vanish from the one list the player keeps on purpose.
-    std::unordered_set<std::string> worn{record.equippedSkinId};
-    worn.insert(record.favoriteSkins.begin(), record.favoriteSkins.end());
-    for (const auto& entry : sessions_) {
-        if (entry.second.userId.empty()) continue;
-        if (const PlayerRecord* other = database_.findProgress(entry.second.userId)) {
-            worn.insert(other->equippedSkinId);
+
+    // The account's own votes and favourites: only skins still in the
+    // catalogue, so a dead id never lights a card.
+    std::uint16_t voteCount = 0;
+    const std::size_t votesAt = w.reserveU16();
+    for (const auto& [id, vote] : record.skinVotes) {
+        if (voteCount == 0xFFFF || !skins[id].isObject()) continue;
+        w.str(id);
+        w.u8(static_cast<std::uint8_t>(vote));
+        ++voteCount;
+    }
+    w.patchU16(votesAt, voteCount);
+    std::uint16_t favoriteCount = 0;
+    const std::size_t favoritesAt = w.reserveU16();
+    for (const std::string& id : record.favoriteSkins) {
+        if (favoriteCount == 0xFFFF || !skins[id].isObject()) continue;
+        w.str(id);
+        ++favoriteCount;
+    }
+    w.patchU16(favoritesAt, favoriteCount);
+    connection.send(w);
+}
+
+namespace {
+
+/// A Browse row: what the sort and the search read, without the shapes.
+struct BrowseRow {
+    const std::string* key = nullptr;
+    double createdAt = 0;
+    std::int64_t score = 0;
+    std::uint32_t likes = 0;
+};
+
+/// The frame budget a reply's skins are packed into, under kMaxFrameBytes
+/// with room to spare for the rest of the reply.
+constexpr std::size_t kSkinFrameBudget = net::kMaxFrameBytes - 64 * 1024;
+
+} // namespace
+
+void GameServer::handleBrowseSkins(Session& session, net::Connection& connection,
+                                   ByteReader& reader) {
+    const std::uint32_t token = reader.u32();
+    const std::uint8_t sortByte = reader.u8();
+    const std::string search = reader.str();
+    const std::uint32_t offset = reader.u32();
+    if (!reader.ok() || !session.authenticated()) return;
+    if (sortByte > static_cast<std::uint8_t>(SkinSort::Favorites)) return;
+    const auto sort = static_cast<SkinSort>(sortByte);
+
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinPage));
+    w.u32(token);
+    // Answered either way: a client left waiting on a dropped request would
+    // never load the next page.
+    if (!spend(session.requestAllowance)) {
+        w.u8(1);
+        connection.send(w);
+        return;
+    }
+    w.u8(0);
+
+    // Read-only, so storedTable: see sendSkinCatalog. Rows are filtered and
+    // sorted by the few fields that decide it; only the page's own skins are
+    // parsed whole.
+    const Json& skins = database_.storedTable("customSkins");
+    const std::string needle = skinSearchNeedle(search);
+    // The const lookup: progress() would drop the account row's cached text.
+    std::unordered_set<std::string> starred;
+    if (sort == SkinSort::Favorites) {
+        const PlayerRecord* record = std::as_const(database_).findProgress(session.userId);
+        if (record != nullptr) {
+            starred.insert(record->favoriteSkins.begin(), record->favoriteSkins.end());
         }
     }
+    std::vector<BrowseRow> rows;
+    rows.reserve(sort == SkinSort::Favorites ? starred.size() : skins.size());
+    for (const std::string& key : skins.keys()) {
+        if (sort == SkinSort::Favorites && starred.count(key) == 0) continue;
+        const Json& row = skins[key];
+        // As catalogByAge: a row without an id or shapes is never sent.
+        if (!row.isObject() || row["id"].asString().empty()) continue;
+        if (!row["shapes"].isArray() || row["shapes"].size() == 0) continue;
+        if (!skinMatchesSearch(row["name"].stringRef(), row["author"].stringRef(), needle)) {
+            continue;
+        }
+        BrowseRow entry;
+        entry.key = &key;
+        entry.createdAt = row["createdAt"].asDouble(0.0);
+        if (sort == SkinSort::Top) {
+            const SkinTally tally = skinTally(key);
+            entry.likes = tally.likes;
+            entry.score = static_cast<std::int64_t>(tally.likes) - tally.dislikes;
+        }
+        rows.push_back(entry);
+    }
+    // A total order, ties broken by id, so the pages of one listing never
+    // overlap or skip whatever request they arrive in.
+    std::sort(rows.begin(), rows.end(), [sort](const BrowseRow& a, const BrowseRow& b) {
+        if (sort == SkinSort::Top) {
+            if (a.score != b.score) return a.score > b.score;
+            if (a.likes != b.likes) return a.likes > b.likes;
+        }
+        if (a.createdAt != b.createdAt) return a.createdAt > b.createdAt;
+        return *a.key > *b.key;
+    });
+
+    w.u32(static_cast<std::uint32_t>(rows.size()));
+    w.u32(offset);
+    const std::size_t countAt = w.reserveU16();
     std::uint16_t count = 0;
-    bool full = false;
-    const auto add = [&](const std::string& id) {
-        CustomSkin skin = skinFromJson(skins[id]);
-        if (skin.id.empty() || skin.shapes.empty()) return;
+    for (std::size_t i = offset; i < rows.size() && count < kSkinPageSize; ++i) {
+        CustomSkin skin = skinFromJson(skins[*rows[i].key]);
         fillTally(skin);
         const std::size_t before = w.size();
         writeCustomSkin(w, skin);
-        if (w.size() > catalogBudget || count == 0xFFFF) {
+        // Always the first, so a page moves on: no single skin comes near
+        // the budget (kMaxSkinShapes caps it at ~25 KB).
+        if (w.size() > kSkinFrameBudget && count > 0) {
             w.buffer().resize(before);
-            full = true;
-            return;
+            break;
         }
         ++count;
-    };
-    for (const std::string& id : skins.keys()) {
-        if (worn.count(id) != 0) add(id);
     }
-    for (const std::string& id : skins.keys()) {
-        if (worn.count(id) == 0) add(id);
-    }
-    w.patchU16(at, count);
-    w.raw(tail.data(), tail.size());
+    w.patchU16(countAt, count);
     connection.send(w);
-    // Once per process: past this point it is true of every sign-in.
-    static bool reported = false;
-    if (full && !reported) {
-        reported = true;
-        std::printf("[skins] the catalogue no longer fits one frame; sent %u of %zu skins\n",
-                    static_cast<unsigned>(count), skins.keys().size());
+}
+
+void GameServer::handleFetchSkins(Session& session, net::Connection& connection,
+                                  ByteReader& reader) {
+    const std::uint8_t asked = reader.u8();
+    std::vector<std::string> ids;
+    for (int i = 0; i < asked; ++i) {
+        std::string id = reader.str();
+        if (static_cast<int>(ids.size()) < kMaxSkinFetch) ids.push_back(std::move(id));
     }
+    if (!reader.ok() || !session.authenticated() || ids.empty()) return;
+    // Unanswered when the budget is spent: the client asks again a few
+    // seconds later for whatever it still lacks.
+    if (!spend(session.requestAllowance)) return;
+
+    const Json& skins = database_.storedTable("customSkins");
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinsFetched));
+    const std::size_t countAt = w.reserveU16();
+    std::uint16_t count = 0;
+    std::vector<const std::string*> missing;
+    for (const std::string& id : ids) {
+        CustomSkin skin = skinFromJson(skins[id]);
+        if (skin.id.empty() || skin.shapes.empty()) {
+            missing.push_back(&id);
+            continue;
+        }
+        fillTally(skin);
+        // kMaxSkinFetch full-size skins come to ~400 KB, inside a frame. An id
+        // left out regardless is neither sent nor missing, and asked again.
+        const std::size_t before = w.size();
+        writeCustomSkin(w, skin);
+        if (w.size() > kSkinFrameBudget) {
+            w.buffer().resize(before);
+            break;
+        }
+        ++count;
+    }
+    w.patchU16(countAt, count);
+    w.u16(static_cast<std::uint16_t>(missing.size()));
+    for (const std::string* id : missing) w.str(*id);
+    connection.send(w);
 }
 
 void GameServer::handlePublishSkin(Session& session, net::Connection& connection,

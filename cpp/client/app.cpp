@@ -148,7 +148,8 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     net_.view().setContent(&content());
     renderer_.setSprites(&sprites_);
     // The published skins, for the flowers wearing them. NetClient owns the
-    // list and replaces it on every SkinCatalog/SkinPublished/SkinDeleted, so
+    // list and adds to it as skins arrive (the worn one at sign-in, the ones on
+    // flowers in view, Browse pages, publishes) and drops one on SkinDeleted, so
     // the renderer holds the container and looks a wearer up per frame rather
     // than caching a resolved pointer that a takedown would dangle.
     renderer_.setSkinCatalog(&net_.skinCatalog());

@@ -86,6 +86,31 @@ struct CustomSkin {
 /// +1 / -1 under the voter's `skinVotes`, with None stored as no entry.
 enum class SkinVote : std::uint8_t { None, Like, Dislike };
 
+/// The studio's Browse orders, as BrowseSkins asks for one. The server sorts:
+/// a client holds only the pages it has loaded, so it cannot.
+/// - Newest: createdAt, newest first.
+/// - Top: likes minus dislikes, then likes, then newest.
+/// - Favorites: the account's starred skins only, newest first.
+enum class SkinSort : std::uint8_t { Newest, Top, Favorites };
+
+/// How many skins one Browse page holds at most. A page of unusually large
+/// skins stops short of it at the frame's byte budget, and the next request
+/// carries on from there.
+inline constexpr int kSkinPageSize = 200;
+/// The Browse search: longer than any skin name or username it can match.
+inline constexpr std::size_t kMaxSkinSearchBytes = 32;
+/// Ids per FetchSkins request.
+inline constexpr int kMaxSkinFetch = 16;
+
+/// The search as both ends run it: trimmed, lower-cased and cut to
+/// kMaxSkinSearchBytes. Empty matches everything.
+std::string skinSearchNeedle(const std::string& search);
+/// Whether a skin named `name` by `author` holds `needle` (a
+/// skinSearchNeedle) in either, in any case. Ids are not searched; players
+/// never see one.
+bool skinMatchesSearch(const std::string& name, const std::string& author,
+                       const std::string& needle);
+
 const char* skinShapeTypeName(SkinShapeType);
 bool parseSkinShapeType(const std::string& word, SkinShapeType& out);
 

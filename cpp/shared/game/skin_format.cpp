@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "shared/core/text.h"
 #include "shared/core/types.h"
 
 namespace flix {
@@ -345,6 +346,19 @@ CustomSkin skinFromJson(const Json& value) {
         if (sanitizeSkinShape(std::move(s), kept)) skin.shapes.push_back(std::move(kept));
     }
     return skin;
+}
+
+std::string skinSearchNeedle(const std::string& search) {
+    std::string needle = lowerCase(trimmed(search));
+    if (needle.size() > kMaxSkinSearchBytes) needle.resize(kMaxSkinSearchBytes);
+    return needle;
+}
+
+bool skinMatchesSearch(const std::string& name, const std::string& author,
+                       const std::string& needle) {
+    if (needle.empty()) return true;
+    return lowerCase(name).find(needle) != std::string::npos ||
+           lowerCase(author).find(needle) != std::string::npos;
 }
 
 } // namespace flix

@@ -970,13 +970,16 @@ TEST(a_catalog_full_of_copies_is_folded_into_its_originals_at_start) {
     NetClient client;
     CHECK(connectClient(h, client));
     client.requestLogin("wearer", "hunter2!");
-    CHECK(h.stepUntil({&client}, [&] { return client.skinCatalog().size() == 2; }));
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(flix::testsupport::browseAll(h, client));
+    CHECK_EQ(client.skinBrowse().skins.size(), static_cast<std::size_t>(2));
 }
 
 TEST(signing_in_leaves_the_skin_catalog_s_save_text_cached) {
-    // Every sign-in is sent the catalog. Read through rawTable it lost the
-    // table's cached text, so the next save dumped every skin again: on the
-    // live database, a 370 ms tick on every save that followed a sign-in.
+    // Every sign-in reads the catalog, and every Browse page. Read through
+    // rawTable it lost the table's cached text, so the next save dumped every
+    // skin again: on the live database, a 370 ms tick on every save that
+    // followed a sign-in.
     Harness h("skin-catalog-cache", [&](const std::string& path) {
         Database db;
         std::string error;
@@ -995,6 +998,8 @@ TEST(signing_in_leaves_the_skin_catalog_s_save_text_cached) {
 
     NetClient client;
     CHECK(registerAs(h, client, "viewer"));
-    CHECK(h.stepUntil({&client}, [&] { return client.skinCatalog().size() == 1; }));
+    CHECK(db.tableTextCached("customSkins"));
+    CHECK(flix::testsupport::browseAll(h, client));
+    CHECK_EQ(client.skinBrowse().skins.size(), static_cast<std::size_t>(1));
     CHECK(db.tableTextCached("customSkins"));
 }

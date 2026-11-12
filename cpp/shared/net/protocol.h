@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 89;
+inline constexpr std::uint16_t kProtocolVersion = 90;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -252,6 +252,15 @@ enum class ClientMessage : std::uint8_t {
                         ///< Checked as PublishSkin is; answered with a
                         ///< SkinPublished broadcast of the same id. (Version 73.)
     AdminTools, ///< str JSON: permission-checked arena/events/codes requests.
+    BrowseSkins,        ///< u32 token, u8 sort(SkinSort), str search, u32 offset
+                        ///< -- one Browse page: up to kSkinPageSize skins of the
+                        ///< catalogue in that order, those whose name or author
+                        ///< holds `search`, from `offset`. Answered with a
+                        ///< SkinPage carrying the token. (Version 90.)
+    FetchSkins,         ///< u8 count, { str skinId }* -- up to kMaxSkinFetch
+                        ///< skins by id: the ones on flowers this client sees
+                        ///< and has not been sent. Answered with SkinsFetched.
+                        ///< (Version 90.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -306,12 +315,16 @@ enum class ServerMessage : std::uint8_t {
     SkinCatalog,        ///< u8 standing(Standing bits), str equippedSkinId, u16 count,
                         ///< { CustomSkin }*, u16 votes, { str skinId,
                         ///< u8 vote(SkinVote) }*, u16 favorites, { str skinId }*.
-                        ///< Sent once per authentication: the
-                        ///< studio's Browse tab lists it, and it is also what
-                        ///< lets a client draw a skin somebody else is wearing.
+                        ///< Sent once per authentication, and again when the
+                        ///< account's standing changes.
                         ///< The two lists after the skins are this account's
-                        ///< own votes and favourites. (Lists: version 70.
-                        ///< Standing bits, was a bool isAdmin: version 89.)
+                        ///< own votes and favourites. The skins are only the
+                        ///< one this account wears, if any: the Browse tab
+                        ///< pages the catalogue in with BrowseSkins, and a
+                        ///< client asks for anybody else's with FetchSkins.
+                        ///< (Lists: version 70. Standing bits, was a bool
+                        ///< isAdmin: version 89. The worn skin only, was the
+                        ///< whole catalogue: version 90.)
     SkinPublished,      ///< CustomSkin -- broadcast, for the same reason. An id
                         ///< the client already has is an edit, and replaces
                         ///< its copy. (CustomSkin's editedAt: version 73.)
@@ -495,6 +508,17 @@ enum class ServerMessage : std::uint8_t {
                     ///< second to the flowers in the waves realm, and once as
                     ///< one arrives. (Version 83; radius, version 84;
                     ///< biomes past ocean, version 87.)
+    SkinPage,       ///< u32 token, u8 refused, u32 total, u32 offset, u16 count,
+                    ///< { CustomSkin }* -- the answer to BrowseSkins with the
+                    ///< same token: `count` skins of the sorted, searched
+                    ///< list from `offset`, which holds `total` in all. At
+                    ///< most kSkinPageSize, fewer when the frame's byte
+                    ///< budget runs out first. `refused` is set, and nothing
+                    ///< else is, when the request budget was spent: the
+                    ///< client asks again later. (Version 90.)
+    SkinsFetched,   ///< u16 count, { CustomSkin }*, u16 missing, { str skinId }*
+                    ///< -- the answer to FetchSkins: the skins asked for that
+                    ///< exist, and the ids that do not. (Version 90.)
 };
 
 // ---------------------------------------------------------------------------

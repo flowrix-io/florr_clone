@@ -177,7 +177,8 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
             break;
         // PublishSkin and EditSkin are billed too, but by their handler, which
         // says so: a player retrying a refused design should hear why nothing
-        // happened.
+        // happened. So are BrowseSkins and FetchSkins, whose handlers answer a
+        // refusal so that the client knows to ask again.
         default: break;
     }
 
@@ -252,6 +253,8 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::DeleteSkin:    handleDeleteSkin(*session, connection, reader); break;
         case net::ClientMessage::VoteSkin:      handleVoteSkin(*session, connection, reader); break;
         case net::ClientMessage::FavoriteSkin:  handleFavoriteSkin(*session, connection, reader); break;
+        case net::ClientMessage::BrowseSkins:   handleBrowseSkins(*session, connection, reader); break;
+        case net::ClientMessage::FetchSkins:    handleFetchSkins(*session, connection, reader); break;
         case net::ClientMessage::Logout:        handleLogout(*session); break;
         case net::ClientMessage::AdminDb:       handleAdminDb(*session, connection, reader); break;
         case net::ClientMessage::AdminDashboard:

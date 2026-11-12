@@ -18,6 +18,7 @@
 #include <vector>
 
 using namespace flix;
+using flix::testsupport::browseAll;
 using flix::testsupport::Harness;
 using flix::testsupport::loginAs;
 using flix::testsupport::loginNew;
@@ -88,7 +89,8 @@ TEST(an_author_edits_a_skin_in_place_and_it_keeps_its_votes_and_stars) {
     NetClient fan;
     CHECK(loginAs(h, artist, "artist", "hunter2!"));
     CHECK(loginAs(h, fan, "fan", "hunter2!"));
-    CHECK(h.stepUntil({&artist, &fan}, [&] { return fan.findSkin("sk_red") != nullptr; }));
+    CHECK(browseAll(h, fan, {&artist}));
+    CHECK(fan.findSkin("sk_red") != nullptr);
 
     CHECK(edit(h, artist, "sk_red", "crimson", disc("#2bd14f", 24)));
     CHECK(sawText(artist, "Saved \"crimson\""));

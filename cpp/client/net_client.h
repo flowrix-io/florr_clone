@@ -861,10 +861,11 @@ public:
     /// Every published skin the server has told this client about, the one this
     /// account is wearing, and whether it may take other people's skins down.
     ///
-    /// One registry for two readers: the studio's Browse tab lists it, and the
-    /// world renderer resolves a wearer's id through it. A skin nobody has been
-    /// sent cannot be drawn, which is why the catalog arrives at login rather
-    /// than when the studio opens.
+    /// Not the whole catalogue: the skin this account wears (sent at sign-in),
+    /// the ones on flowers it has seen (asked for as they appear -- a skin
+    /// nobody has been sent cannot be drawn), every page the Browse tab
+    /// loaded, and every skin published since. The world renderer resolves a
+    /// wearer's id through it; the Browse tab lists skinBrowse() instead.
     const std::vector<CustomSkin>& skinCatalog() const { return skinCatalog_; }
     const CustomSkin* findSkin(const std::string& id) const;
     const std::string& equippedSkinId() const { return equippedSkinId_; }
@@ -876,6 +877,27 @@ public:
     /// server's word, from the SkinCatalog and every SkinOpinion since.
     SkinVote skinVote(const std::string& id) const;
     bool isFavoriteSkin(const std::string& id) const;
+
+    /// The Browse tab's list: the server's pages of one sort and search, in
+    /// the server's order, as far as they have been loaded.
+    struct SkinBrowse {
+        SkinSort sort = SkinSort::Newest;
+        /// skinSearchNeedle() of the search.
+        std::string needle;
+        std::vector<CustomSkin> skins;
+        /// How many the listing holds, loaded or not.
+        std::uint32_t total = 0;
+        /// The first page has arrived: until then an empty list is not news.
+        bool loaded = false;
+        /// A page has been asked for and has not arrived.
+        bool pending = false;
+    };
+    /// Asks for the listing `sort` + `search`, starting it over when either
+    /// differs from the one held, and for its next kSkinPageSize skins when
+    /// `more` is set and some are left. Meant to be called every frame the tab
+    /// is shown: it sends only what is missing, one page at a time.
+    void browseSkins(SkinSort sort, const std::string& search, bool more);
+    const SkinBrowse& skinBrowse() const { return skinBrowse_; }
 
     /// Puts a locally generated System line in the transcript. Every notice
     /// the reference makes, its own included, is a chat line and nothing more.
@@ -1130,6 +1152,17 @@ private:
     void forgetWorld();
     void handleDailyStreak(ByteReader&);
     void handleSkinCatalog(ByteReader&);
+    void handleSkinPage(ByteReader&);
+    void handleSkinsFetched(ByteReader&);
+    /// Puts each skin in skinCatalog_, over any copy of it there.
+    void rememberSkins(std::vector<CustomSkin> skins);
+    /// Asks for the skins on flowers in view that skinCatalog_ lacks. Run
+    /// after every snapshot; an id is asked again only after
+    /// kSkinFetchRetryMillis, and never once the server said it is gone.
+    void requestMissingSkins();
+    /// Drops the Browse listing and every skin asked for: a new connection
+    /// answers none of the old one's requests.
+    void forgetSkinRequests();
     void handleSkinPublished(ByteReader&);
     void handleSkinDeleted(ByteReader&);
     void handleSkinVotes(ByteReader&);
@@ -1192,6 +1225,17 @@ private:
     double pollDeadlineMillis_ = 0;
     Json adminTools_ = Json::object();
     std::vector<CustomSkin> skinCatalog_;
+    SkinBrowse skinBrowse_;
+    /// Whether skinBrowse_ is a listing asked for on this connection.
+    bool browseStarted_ = false;
+    /// Names the listing a SkinPage belongs to; a reply to an older one is
+    /// dropped.
+    std::uint32_t browseToken_ = 0;
+    double browseSentAtMillis_ = 0;
+    double browseRetryAtMillis_ = 0;
+    /// Skins asked for with FetchSkins and not yet held: when, by
+    /// renderClockMillis(), or infinity for one the server said is gone.
+    std::unordered_map<std::string, double> skinAskedAt_;
     std::string equippedSkinId_;
     bool skinAdmin_ = false;
     bool chatModerator_ = false;

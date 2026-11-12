@@ -4,6 +4,9 @@
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <limits>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "client/web/reload.h"
@@ -78,6 +81,8 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::VoteSkin:            return "voteSkin";
         case net::ClientMessage::FavoriteSkin:        return "favoriteSkin";
         case net::ClientMessage::EditSkin:            return "editSkin";
+        case net::ClientMessage::BrowseSkins:         return "browseSkins";
+        case net::ClientMessage::FetchSkins:          return "fetchSkins";
     }
     return "unknown";
 }
@@ -101,6 +106,8 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::ShopResult:          return "shopResult";
         case net::ServerMessage::AdminTools: return "adminTools";
         case net::ServerMessage::SkinCatalog:         return "skinCatalog";
+        case net::ServerMessage::SkinPage:            return "skinPage";
+        case net::ServerMessage::SkinsFetched:        return "skinsFetched";
         case net::ServerMessage::SkinPublished:       return "skinPublished";
         case net::ServerMessage::SkinDeleted:         return "skinDeleted";
         case net::ServerMessage::Notifications:       return "notifications";
@@ -235,6 +242,7 @@ void NetClient::send(ByteWriter& w) {
 
 void NetClient::onConnect(net::Connection&) {
     status_ = Status::Handshaking;
+    forgetSkinRequests();
     // The handshake goes out unprompted: the server answers with Welcome, and
     // until then nothing else this client sends will be accepted.
     ByteWriter w;
@@ -312,6 +320,7 @@ void NetClient::forgetAccount() {
     whisperPartner_.clear();
     dailyStreak_ = DailyStreak{};
     skinCatalog_.clear();
+    forgetSkinRequests();
     adminTools_ = Json::object();
     marketRequested_=false;marketOrders_=false;
     pollCreatorRequested_ = false;pollDeadlineMillis_ = 0;
@@ -1161,7 +1170,10 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::Profile:      handleProfile(reader); break;
         case net::ServerMessage::ProfileDelta: handleProfileDelta(reader); break;
         case net::ServerMessage::JoinAccepted: handleJoinAccepted(reader); break;
-        case net::ServerMessage::Snapshot:     view_.applySnapshot(reader); break;
+        case net::ServerMessage::Snapshot:
+            view_.applySnapshot(reader);
+            requestMissingSkins();
+            break;
         case net::ServerMessage::Chat:         handleChat(reader); break;
         case net::ServerMessage::Notice:       handleNotice(reader); break;
         case net::ServerMessage::Died:         handleDied(reader); break;
@@ -1189,6 +1201,8 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
             break;
         }
         case net::ServerMessage::SkinCatalog:   handleSkinCatalog(reader); break;
+        case net::ServerMessage::SkinPage:      handleSkinPage(reader); break;
+        case net::ServerMessage::SkinsFetched:  handleSkinsFetched(reader); break;
         case net::ServerMessage::SkinPublished: handleSkinPublished(reader); break;
         case net::ServerMessage::SkinDeleted:   handleSkinDeleted(reader); break;
         case net::ServerMessage::SkinVotes:     handleSkinVotes(reader); break;
@@ -2019,7 +2033,10 @@ void NetClient::handleSkinCatalog(ByteReader& reader) {
     const std::uint16_t favoriteCount = reader.u16();
     for (std::uint16_t i = 0; i < favoriteCount && reader.ok(); ++i) favorites.insert(reader.str());
     if (!reader.ok()) return;
-    skinCatalog_ = std::move(skins);
+    // Added to, not replaced: it is only the worn skin, and it comes again
+    // whenever the standing changes, which must not cost the skins this
+    // client has already been sent.
+    rememberSkins(std::move(skins));
     skinAdmin_ = (standing & net::StandingAdmin) != 0;
     chatModerator_ = (standing & net::StandingChatModerator) != 0;
     equippedSkinId_ = equipped;
@@ -2027,26 +2044,192 @@ void NetClient::handleSkinCatalog(ByteReader& reader) {
     favoriteSkins_ = std::move(favorites);
 }
 
+namespace {
+
+/// How long a page or a fetch is waited for before it is asked again: one the
+/// server refused, or never answered.
+constexpr double kSkinRetryMillis = 5000.0;
+
+/// Reads `count` skins, stopping at the first that does not decode.
+std::vector<CustomSkin> readSkins(ByteReader& reader, std::uint16_t count) {
+    std::vector<CustomSkin> skins;
+    skins.reserve(count);
+    for (std::uint16_t i = 0; i < count; ++i) {
+        CustomSkin skin;
+        if (!readCustomSkin(reader, skin)) break;
+        skins.push_back(std::move(skin));
+    }
+    return skins;
+}
+
+/// Removes skin `id` from `skins`; whether it was there.
+bool eraseSkin(std::vector<CustomSkin>& skins, const std::string& id) {
+    const auto gone = std::remove_if(skins.begin(), skins.end(),
+                                     [&](const CustomSkin& s) { return s.id == id; });
+    const bool found = gone != skins.end();
+    skins.erase(gone, skins.end());
+    return found;
+}
+
+} // namespace
+
+void NetClient::forgetSkinRequests() {
+    skinBrowse_ = SkinBrowse{};
+    browseStarted_ = false;
+    browseRetryAtMillis_ = 0;
+    skinAskedAt_.clear();
+}
+
+void NetClient::rememberSkins(std::vector<CustomSkin> skins) {
+    if (skins.empty()) return;
+    std::unordered_map<std::string, std::size_t> at;
+    at.reserve(skinCatalog_.size());
+    for (std::size_t i = 0; i < skinCatalog_.size(); ++i) at.emplace(skinCatalog_[i].id, i);
+    for (CustomSkin& skin : skins) {
+        skinAskedAt_.erase(skin.id);
+        const auto known = at.find(skin.id);
+        if (known != at.end()) {
+            skinCatalog_[known->second] = std::move(skin);
+        } else {
+            at.emplace(skin.id, skinCatalog_.size());
+            skinCatalog_.push_back(std::move(skin));
+        }
+    }
+}
+
+void NetClient::browseSkins(SkinSort sort, const std::string& search, bool more) {
+    if (!haveSession()) return;
+    const std::string needle = skinSearchNeedle(search);
+    if (!browseStarted_ || sort != skinBrowse_.sort || needle != skinBrowse_.needle) {
+        skinBrowse_ = SkinBrowse{};
+        skinBrowse_.sort = sort;
+        skinBrowse_.needle = needle;
+        browseStarted_ = true;
+        browseRetryAtMillis_ = 0;
+        // Whatever the old listing still had in flight is dropped on arrival.
+        ++browseToken_;
+    }
+    const double now = renderClockMillis();
+    if (skinBrowse_.pending && now - browseSentAtMillis_ < kSkinRetryMillis) return;
+    if (now < browseRetryAtMillis_) return;
+    if (skinBrowse_.loaded && (!more || skinBrowse_.skins.size() >= skinBrowse_.total)) return;
+    skinBrowse_.pending = true;
+    browseSentAtMillis_ = now;
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::BrowseSkins);
+    w.u32(browseToken_);
+    w.u8(static_cast<std::uint8_t>(sort));
+    w.str(needle);
+    w.u32(static_cast<std::uint32_t>(skinBrowse_.skins.size()));
+    send(w);
+}
+
+void NetClient::handleSkinPage(ByteReader& reader) {
+    const std::uint32_t token = reader.u32();
+    const bool refused = reader.boolean();
+    if (!reader.ok() || !browseStarted_ || token != browseToken_) return;
+    skinBrowse_.pending = false;
+    if (refused) {
+        browseRetryAtMillis_ = renderClockMillis() + kSkinRetryMillis;
+        return;
+    }
+    const std::uint32_t total = reader.u32();
+    reader.u32();   // offset: where the page started in the server's list
+    const std::uint16_t count = reader.u16();
+    std::vector<CustomSkin> skins = readSkins(reader, count);
+    if (!reader.ok()) {
+        browseRetryAtMillis_ = renderClockMillis() + kSkinRetryMillis;
+        return;
+    }
+    skinBrowse_.loaded = true;
+    skinBrowse_.total = total;
+    // Appended where it lands, skipping any skin already listed: a vote or a
+    // publish between two pages can move one skin across the boundary.
+    std::unordered_set<std::string> listed;
+    for (const CustomSkin& skin : skinBrowse_.skins) listed.insert(skin.id);
+    for (const CustomSkin& skin : skins) {
+        if (listed.insert(skin.id).second) skinBrowse_.skins.push_back(skin);
+    }
+    // An empty page is the end, whatever the count said: asking again for it
+    // would only bring back another.
+    if (skins.empty()) skinBrowse_.total = static_cast<std::uint32_t>(skinBrowse_.skins.size());
+    rememberSkins(std::move(skins));
+}
+
+void NetClient::handleSkinsFetched(ByteReader& reader) {
+    const std::uint16_t count = reader.u16();
+    std::vector<CustomSkin> skins = readSkins(reader, count);
+    const std::uint16_t missing = reader.u16();
+    std::vector<std::string> gone;
+    for (std::uint16_t i = 0; i < missing && reader.ok(); ++i) gone.push_back(reader.str());
+    if (!reader.ok()) return;
+    rememberSkins(std::move(skins));
+    for (const std::string& id : gone) {
+        skinAskedAt_[id] = std::numeric_limits<double>::infinity();
+    }
+}
+
+void NetClient::requestMissingSkins() {
+    if (!haveSession()) return;
+    const double now = renderClockMillis();
+    std::vector<const std::string*> wanted;
+    for (const auto& entry : view_.entities()) {
+        const std::string& id = entry.second.equippedSkinId;
+        if (id.empty() || findSkin(id) != nullptr) continue;
+        const auto asked = skinAskedAt_.find(id);
+        // Infinity, for a skin that is gone, never comes round again.
+        if (asked != skinAskedAt_.end() && !(now - asked->second >= kSkinRetryMillis)) continue;
+        if (std::any_of(wanted.begin(), wanted.end(),
+                        [&](const std::string* other) { return *other == id; })) {
+            continue;
+        }
+        wanted.push_back(&id);
+        if (static_cast<int>(wanted.size()) == kMaxSkinFetch) break;
+    }
+    if (wanted.empty()) return;
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::FetchSkins);
+    w.u8(static_cast<std::uint8_t>(wanted.size()));
+    for (const std::string* id : wanted) {
+        w.str(*id);
+        skinAskedAt_[*id] = now;
+    }
+    send(w);
+}
+
 void NetClient::handleSkinPublished(ByteReader& reader) {
     CustomSkin skin;
     if (!readCustomSkin(reader, skin)) return;
-    // Replace in place when it is already known: a republished id is an edit,
-    // and appending it would leave the Browse tab showing the skin twice.
-    for (CustomSkin& known : skinCatalog_) {
-        if (known.id == skin.id) {
-            known = std::move(skin);
-            return;
-        }
+    // In the Browse list, an edit replaces its card. A new skin goes on top
+    // of a Newest listing whose search would show it: the server counts it
+    // in from now on, so the next page's offset counts it too. Anywhere else
+    // it waits for the listing to be asked for again.
+    bool listed = false;
+    for (CustomSkin& known : skinBrowse_.skins) {
+        if (known.id != skin.id) continue;
+        known = skin;
+        listed = true;
+        break;
     }
-    skinCatalog_.push_back(std::move(skin));
+    if (!listed && skin.editedAt == 0 && skinBrowse_.loaded &&
+        skinBrowse_.sort == SkinSort::Newest &&
+        skinMatchesSearch(skin.name, skin.author, skinBrowse_.needle)) {
+        skinBrowse_.skins.insert(skinBrowse_.skins.begin(), skin);
+        ++skinBrowse_.total;
+    }
+    // Replaced in place when it is already known: a republished id is an
+    // edit, and appending it would leave two copies.
+    std::vector<CustomSkin> one;
+    one.push_back(std::move(skin));
+    rememberSkins(std::move(one));
 }
 
 void NetClient::handleSkinDeleted(ByteReader& reader) {
     const std::string id = reader.str();
     if (!reader.ok() || id.empty()) return;
-    skinCatalog_.erase(std::remove_if(skinCatalog_.begin(), skinCatalog_.end(),
-                                      [&](const CustomSkin& s) { return s.id == id; }),
-                       skinCatalog_.end());
+    eraseSkin(skinCatalog_, id);
+    if (eraseSkin(skinBrowse_.skins, id) && skinBrowse_.total > 0) --skinBrowse_.total;
+    skinAskedAt_.erase(id);
     if (equippedSkinId_ == id) equippedSkinId_.clear();
     skinVotes_.erase(id);
     favoriteSkins_.erase(id);
@@ -2057,11 +2240,15 @@ void NetClient::handleSkinVotes(ByteReader& reader) {
     const std::uint32_t likes = reader.u32();
     const std::uint32_t dislikes = reader.u32();
     if (!reader.ok()) return;
-    for (CustomSkin& skin : skinCatalog_) {
-        if (skin.id != id) continue;
-        skin.likes = likes;
-        skin.dislikes = dislikes;
-        return;
+    // The card keeps its place in a Top rated listing: reordering under the
+    // pointer would move what the player is about to click.
+    for (std::vector<CustomSkin>* list : {&skinCatalog_, &skinBrowse_.skins}) {
+        for (CustomSkin& skin : *list) {
+            if (skin.id != id) continue;
+            skin.likes = likes;
+            skin.dislikes = dislikes;
+            break;
+        }
     }
 }
 
@@ -2078,6 +2265,12 @@ void NetClient::handleSkinOpinion(ByteReader& reader) {
     }
     if (favorite) favoriteSkins_.insert(id);
     else favoriteSkins_.erase(id);
+    // Unstarred, it leaves the Favorites listing, and the server's: the next
+    // page's offset must not count it.
+    if (!favorite && skinBrowse_.sort == SkinSort::Favorites &&
+        eraseSkin(skinBrowse_.skins, id) && skinBrowse_.total > 0) {
+        --skinBrowse_.total;
+    }
 }
 
 void NetClient::handleChat(ByteReader& reader) {

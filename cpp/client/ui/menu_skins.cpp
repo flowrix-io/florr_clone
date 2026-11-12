@@ -17,9 +17,10 @@
 //
 // The Browse tab owns none of what it shows. Publishing, editing, equipping,
 // voting, starring and taking a skin down are all requests to the server,
-// which sanitizes, assigns the id and broadcasts -- the catalog this panel
-// lists is NetClient's, the same one the world renderer resolves a wearer's
-// skin through, and a vote or a star lights up when the server says it landed.
+// which sanitizes, assigns the id and broadcasts. The list itself is the
+// server's too: it sorts and searches the catalogue and sends it a page of up
+// to kSkinPageSize skins at a time as the list is scrolled (NetClient::
+// browseSkins), and a vote or a star lights up when the server says it landed.
 // Copying a card's code is the one thing it does on its own: the code is the
 // Text editor's, so a copied skin pastes straight back into it.
 
@@ -108,8 +109,19 @@ constexpr double kScrollbarWidth = 10.0;
 /// -- so 256 apiece leaves a full-size skin room to arrive whole. What is left
 /// is still a bound on pasting a file in here, which is all it was ever for.
 constexpr std::size_t kMaxSkinTextBytes = static_cast<std::size_t>(kMaxSkinShapes) * 256;
-/// The Browse search: longer than any skin name or username it can match.
-constexpr std::size_t kMaxSearchBytes = 32;
+/// How long the Browse search must stand still before it is sent: a listing
+/// per keystroke would be a request per keystroke.
+constexpr double kSearchSettleSeconds = 0.3;
+/// How close to the end of the loaded cards the list may scroll before the
+/// next page is asked for, in rows.
+constexpr double kLoadAheadRows = 2.0;
+/// A Browse card, the gap between two, and so the distance from one row's
+/// top to the next's.
+constexpr double kBrowseCardH = 240.0;
+constexpr double kBrowseGap = 10.0;
+constexpr double kBrowseRowPitch = kBrowseCardH + kBrowseGap;
+/// The "Loading more skins..." line under the last row.
+constexpr double kMoreLineHeight = 40.0;
 /// One wheel notch is ~100 CSS px of deltaY in a browser; the window reports
 /// notches, so the step is spelled out as every other list panel spells it.
 constexpr double kWheelStep = 100.0;
@@ -545,21 +557,12 @@ Rect browseSearchField(const Layout& l) {
     return {x, y, std::max(0.0, l.body.right() - x), kSearchHeight};
 }
 
-/// Whether a skin is one the Browse search asks for: its name or its author
-/// holds `needle` (already lower case), in any case. Ids are not searched;
-/// players never see one.
-bool skinMatches(const CustomSkin& skin, const std::string& needle) {
-    if (needle.empty()) return true;
-    return lowerCase(skin.name).find(needle) != std::string::npos ||
-           lowerCase(skin.author).find(needle) != std::string::npos;
-}
-
 /// Everything the studio keeps between frames.
 struct Studio {
     enum class Tab : std::uint8_t { Create, Browse };
     /// The Browse tab's order. Favorites is a filter as well as an order: the
-    /// starred skins only, newest first.
-    enum class Sort : std::uint8_t { Newest, Top, Favorites };
+    /// starred skins only, newest first. The server sorts (SkinSort).
+    using Sort = SkinSort;
     /// Which of the selected shape's two colours the custom picker edits.
     enum class PickerTarget : std::uint8_t { None, Fill, Stroke };
     enum class PickerDrag : std::uint8_t { None, Square, Hue };
@@ -570,6 +573,11 @@ struct Studio {
     /// sort is.
     std::string search;
     TextFieldState searchField;
+    /// The search the listing was asked for: `search` once it has stood still
+    /// for kSearchSettleSeconds, or at once when the box lets go of the caret.
+    std::string searchAsked;
+    std::string searchSeen;
+    double searchSeenAt = 0;
     std::vector<Shape> shapes = starterSkinShapes();
     int selected = 0;
     std::string skinName;
@@ -592,26 +600,15 @@ struct Studio {
     std::string copiedId;
     double copiedAt = -1.0;
 
-    /// The published catalog, borrowed from NetClient rather than copied.
-    ///
-    /// The reference keeps its own array and refills it from applyCatalog /
-    /// applySkinPublished / applySkinDeleted; here the connection already
-    /// maintains exactly that list -- and has to, because the world renderer
-    /// resolves a wearer's skin through the same registry. Two copies of it
-    /// would be two things to keep in step. Null before the first render, and
-    /// whenever the panel draws without a connection.
+    /// The connection, for the Browse listing (NetClient::skinBrowse) and the
+    /// skins and opinions the cards show -- borrowed rather than copied: the
+    /// connection keeps both in step with the server's broadcasts. Null
+    /// before the first render, and whenever the panel draws without one.
     const NetClient* net = nullptr;
     /// Rebound every frame for the same reason: the two lists read a finger's
     /// drag off it while they lay themselves out. Null before the first render.
     const Window* window = nullptr;
 
-    static const std::vector<CustomSkin>& noSkins() {
-        static const std::vector<CustomSkin> none;
-        return none;
-    }
-    const std::vector<CustomSkin>& catalog() const {
-        return net ? net->skinCatalog() : noSkins();
-    }
     bool isAdmin() const { return net && net->isSkinAdmin(); }
     const std::string& equippedId() const {
         static const std::string none;
@@ -1454,10 +1451,24 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
     drawSortRow(canvas, timeSeconds);
 
     const Rect view = browseBody(layout);
-    const std::vector<CustomSkin>& skins = catalog();
+    // The server's pages, in its order: it sorts and searches, because this
+    // client holds only what it has loaded (NetClient::browseSkins).
+    static const NetClient::SkinBrowse kNoListing;
+    const NetClient::SkinBrowse& listing = net ? net->skinBrowse() : kNoListing;
+    const std::vector<CustomSkin>& skins = listing.skins;
     if (skins.empty()) {
-        ui::text(canvas, "Nothing published yet. Make one in the Create tab.", view.x,
-                 view.y + 24.0, label(kBodySize));
+        browseScroll.contentHeight = 0;
+        std::string why;
+        if (!listing.loaded) {
+            why = "Loading skins...";
+        } else if (!listing.needle.empty()) {
+            why = "No skins match \"" + clipChars(searchAsked, 24) + "\".";
+        } else if (listing.sort == Sort::Favorites) {
+            why = "No favorites yet. Press the star on a skin to keep it here.";
+        } else {
+            why = "Nothing published yet. Make one in the Create tab.";
+        }
+        ui::text(canvas, why, view.x, view.y + 24.0, label(kBodySize));
         return;
     }
 
@@ -1466,52 +1477,17 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
     // not -- its preview was derived from the card WIDTH and overran the
     // bottom edge, so the buttons painted on top of the artwork.
     constexpr int cols = 4;
-    constexpr double kGap = 10.0;
-    constexpr double kCardH = 240.0;
+    constexpr double kGap = kBrowseGap;
+    constexpr double kCardH = kBrowseCardH;
     const double cardW = (view.w - (cols - 1) * kGap - kScrollbarWidth - 4.0) / cols;
     const double preview = cardW - 30.0;
 
-    // The search narrows whichever list the sort chose, Favorites included.
-    const std::size_t first = search.find_first_not_of(' ');
-    const std::string needle =
-        first == std::string::npos
-            ? std::string()
-            : lowerCase(search.substr(first, search.find_last_not_of(' ') - first + 1));
-    std::vector<const CustomSkin*> sorted;
-    sorted.reserve(skins.size());
-    bool anyListed = false;
-    for (const CustomSkin& skin : skins) {
-        if (sort == Sort::Favorites && !(net && net->isFavoriteSkin(skin.id))) continue;
-        anyListed = true;
-        if (!skinMatches(skin, needle)) continue;
-        sorted.push_back(&skin);
-    }
-    if (sorted.empty()) {
-        const std::string why =
-            !anyListed ? std::string("No favorites yet. Press the star on a skin to keep it here.")
-                         : "No skins match \"" + clipChars(search, 24) + "\".";
-        ui::text(canvas, why, view.x, view.y + 24.0, label(kBodySize));
-        return;
-    }
-    // Top rated is the net score, then the plainer favourite of two that tie
-    // on it (more likes), then the newer -- so a fresh skin nobody has voted
-    // on yet still sorts the way the Newest tab would put it.
-    const bool byScore = sort == Sort::Top;
-    std::stable_sort(sorted.begin(), sorted.end(),
-                     [byScore](const CustomSkin* a, const CustomSkin* b) {
-                         if (byScore) {
-                             const auto score = [](const CustomSkin* s) {
-                                 return static_cast<std::int64_t>(s->likes) -
-                                        static_cast<std::int64_t>(s->dislikes);
-                             };
-                             if (score(a) != score(b)) return score(a) > score(b);
-                             if (a->likes != b->likes) return a->likes > b->likes;
-                         }
-                         return a->createdAt > b->createdAt;
-                     });
-
-    const double rows = std::ceil(static_cast<double>(sorted.size()) / cols);
-    browseScroll.contentHeight = rows * (kCardH + kGap) - kGap;
+    // While pages are left, a line under the last row says the next is on
+    // its way; scrolling near it is what asks for it.
+    const bool more = skins.size() < listing.total;
+    const double rows = std::ceil(static_cast<double>(skins.size()) / cols);
+    const double cardsHeight = rows * kBrowseRowPitch - kGap;
+    browseScroll.contentHeight = cardsHeight + (more ? kMoreLineHeight : 0.0);
     browseScroll.viewHeight = view.h;
     if (window && !confirming) {
         browseScroll.offset -= touchScroll(*window, view, browseScroll.maxOffset() > 0);
@@ -1522,11 +1498,11 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
     clipRect(canvas, view);
     const Rect outerClip = regionClip;
     regionClip = view;
-    for (std::size_t i = 0; i < sorted.size(); ++i) {
-        const CustomSkin& skin = *sorted[i];
+    for (std::size_t i = 0; i < skins.size(); ++i) {
+        const CustomSkin& skin = skins[i];
         const std::size_t col = i % cols, row = i / cols;
         const Rect card{view.x + static_cast<double>(col) * (cardW + kGap),
-                        view.y + static_cast<double>(row) * (kCardH + kGap) - browseScroll.offset,
+                        view.y + static_cast<double>(row) * kBrowseRowPitch - browseScroll.offset,
                         cardW, kCardH};
         if (card.bottom() < view.y || card.y > view.bottom()) continue;
         const bool equipped = skin.id == equippedId();
@@ -1590,6 +1566,11 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
             del.name = skin.name;
             iconBtn(canvas, {card.x + 8.0 + equipW + 4.0, actionsY, 24.0, 24.0}, 2, del);
         }
+    }
+    if (more) {
+        ui::text(canvas, "Loading more skins...", view.x + (view.w - kScrollbarWidth) * 0.5,
+                 view.y + cardsHeight - browseScroll.offset + kMoreLineHeight * 0.5 + 6.0,
+                 label(kBodySize, Align::Centre));
     }
     canvas.restore();
     regionClip = outerClip;
@@ -1683,6 +1664,19 @@ void Studio::draw(MenuContext& ctx) {
         }
         drawFooter(canvas, ctx.timeSeconds);
     } else {
+        if (search != searchSeen) {
+            searchSeen = search;
+            searchSeenAt = ctx.timeSeconds;
+        }
+        if (!searchField.focused || ctx.timeSeconds - searchSeenAt >= kSearchSettleSeconds) {
+            searchAsked = search;
+        }
+        // The next page once the list is scrolled to within a couple of rows
+        // of its end. The scroller is last frame's, which is the one the
+        // player is looking at.
+        const bool nearEnd = browseScroll.offset + browseScroll.viewHeight >=
+                             browseScroll.contentHeight - kLoadAheadRows * kBrowseRowPitch;
+        ctx.net.browseSkins(sort, searchAsked, nearEnd);
         drawBrowse(canvas, lowerCase(ctx.net.profile().username), ctx.timeSeconds);
     }
 
@@ -2232,8 +2226,9 @@ bool Studio::handleInput(MenuContext& ctx) {
         }
     } else if (searching) {
         TextEditOptions typing;
-        typing.maxBytes = kMaxSearchBytes;
-        // Live: every keystroke narrows the cards, from the top of the list.
+        typing.maxBytes = kMaxSkinSearchBytes;
+        // Every keystroke goes back to the top of the list; the listing is
+        // asked for once the search settles (Studio::draw).
         if (editText(ctx.window, search, searchField, ctx.timeSeconds, typing)) {
             browseScroll.offset = 0;
         }

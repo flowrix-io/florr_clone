@@ -463,6 +463,8 @@ private:
     void handleDeleteSkin(Session&, net::Connection&, ByteReader&);
     void handleVoteSkin(Session&, net::Connection&, ByteReader&);
     void handleFavoriteSkin(Session&, net::Connection&, ByteReader&);
+    void handleBrowseSkins(Session&, net::Connection&, ByteReader&);
+    void handleFetchSkins(Session&, net::Connection&, ByteReader&);
     void handleLeaderboard(const Session&, net::Connection&, ByteReader&);
     void handleNotifications(net::Connection&, ByteReader&);
     void handleUsePetal(Session&, ByteReader&);
@@ -1183,9 +1185,12 @@ private:
     /// Tells this connection about its own guild, or that it has none. Sent
     /// once per authentication, and after every change that could alter it.
     void sendGuildState(const Session&, net::Connection&);
-    /// The whole published-skin catalog, this client's admin flag and the skin
-    /// its account is wearing. Sent once per authentication, beside the
-    /// profile: a client that has not seen a skin cannot draw whoever wears it.
+    /// This client's standing, the skin its account is wearing (the id, and
+    /// the skin itself), and its votes and favourites. Sent once per
+    /// authentication, beside the profile, and again when the standing
+    /// changes. The rest of the catalogue is paged in by the Browse tab
+    /// (handleBrowseSkins) and fetched by id for flowers the client sees
+    /// (handleFetchSkins): sent whole, it outgrew a frame.
     void sendSkinCatalog(Session&, net::Connection&);
     /// A published skin's sampled look (skin_likeness.h), sampled again only
     /// when the shapes filed under its id change -- `/admin db` can edit a

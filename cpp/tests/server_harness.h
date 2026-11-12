@@ -732,6 +732,25 @@ inline bool loginAs(Harness& h, NetClient& client, const char* name, const char*
     return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
 }
 
+/// Pages the whole Browse listing `sort` + `search` into `client`, a page at a
+/// time, as a player scrolling to the bottom of the tab would; `others` are
+/// stepped too. Every skin it lists is then in skinCatalog() as well. False if
+/// a page never arrives.
+inline bool browseAll(Harness& h, NetClient& client, std::vector<NetClient*> others = {},
+                      SkinSort sort = SkinSort::Newest, const std::string& search = {}) {
+    others.push_back(&client);
+    for (int page = 0; page < 100; ++page) {
+        client.browseSkins(sort, search, true);
+        const NetClient::SkinBrowse& listing = client.skinBrowse();
+        if (!listing.pending) {
+            if (listing.loaded && listing.skins.size() >= listing.total) return true;
+            return false;   // refused, or not signed in: nothing is on its way
+        }
+        if (!h.stepUntil(others, [&] { return !client.skinBrowse().pending; })) return false;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Seeds: accounts written into the database before the server opens it
 // ---------------------------------------------------------------------------

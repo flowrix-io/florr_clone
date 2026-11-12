@@ -17,6 +17,7 @@
 
 using namespace flix;
 using flix::testsupport::connectClient;
+using flix::testsupport::browseAll;
 using flix::testsupport::Harness;
 using flix::testsupport::loginAs;
 using flix::testsupport::loginNew;
@@ -75,7 +76,8 @@ TEST(a_vote_moves_the_tally_for_everyone_and_is_kept_on_the_voters_row) {
     NetClient watcher;
     CHECK(loginNew(h, fan, "fan", "hunter2!"));
     CHECK(loginNew(h, watcher, "watcher", "hunter2!"));
-    CHECK(h.stepUntil({&fan, &watcher}, [&] { return skinIn(watcher, "sk_red") != nullptr; }));
+    CHECK(browseAll(h, watcher, {&fan}));
+    CHECK(skinIn(watcher, "sk_red") != nullptr);
 
     fan.voteSkin("sk_red", SkinVote::Like);
     CHECK(h.stepUntil({&fan, &watcher}, [&] {
@@ -142,6 +144,7 @@ TEST(an_author_and_a_guest_cannot_vote_but_may_star) {
 
     NetClient artist;
     CHECK(loginAs(h, artist, "artist", "hunter2!"));
+    CHECK(browseAll(h, artist));
     artist.voteSkin("sk_red", SkinVote::Like);
     CHECK(h.stepUntil({&artist}, [&] { return sawText(artist, "can't vote on your own skin"); }));
     CHECK(rowOf(h, "artist")->skinVotes.empty());
@@ -187,7 +190,7 @@ TEST(votes_and_stars_come_back_with_the_next_sign_in) {
 
     NetClient fan;
     CHECK(loginAs(h, fan, "fan", "hunter2!"));
-    CHECK(h.stepUntil({&fan}, [&] { return skinIn(fan, "sk_blue") != nullptr; }));
+    CHECK(browseAll(h, fan));
     CHECK_EQ(skinIn(fan, "sk_blue")->likes, 3u);
     CHECK_EQ(skinIn(fan, "sk_red")->dislikes, 2u);
     CHECK(fan.skinVote("sk_blue") == SkinVote::Like);
@@ -201,7 +204,7 @@ TEST(votes_and_stars_come_back_with_the_next_sign_in) {
     fan.disconnect();
     NetClient again;
     CHECK(loginAs(h, again, "fan", "hunter2!"));
-    CHECK(h.stepUntil({&again}, [&] { return skinIn(again, "sk_blue") != nullptr; }));
+    CHECK(browseAll(h, again));
     CHECK(!again.isFavoriteSkin("sk_red"));
     CHECK(again.skinVote("sk_blue") == SkinVote::Like);
 }
@@ -221,6 +224,8 @@ TEST(taking_a_skin_down_forgets_every_vote_and_star_on_it) {
     NetClient artist;
     CHECK(loginNew(h, fan, "fan", "hunter2!"));
     CHECK(loginAs(h, artist, "artist", "hunter2!"));
+    CHECK(browseAll(h, fan, {&artist}));
+    CHECK(browseAll(h, artist, {&fan}));
     fan.voteSkin("sk_red", SkinVote::Like);
     fan.favoriteSkin("sk_red", true);
     CHECK(h.stepUntil({&fan, &artist}, [&] {
