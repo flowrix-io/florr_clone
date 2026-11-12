@@ -52,3 +52,6 @@ dev-cert.key
 
 # Python bytecode, from running the LED matrix app's render locally.
 __pycache__/
+
+# Stress test SVG file
+stress_test.svg

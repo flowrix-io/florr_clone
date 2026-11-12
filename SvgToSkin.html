@@ -110,6 +110,15 @@
             </select>
             <input type="color" id="holeColor" value="#ffe763" style="width:38px;height:24px;padding:0;border:1px solid #3d3d3d;background:#1c1c1c">
         </label>
+        <label class="row">Colours
+            <select id="colorMode">
+                <option value="picture" selected>as they look</option>
+                <option value="source">source colours</option>
+            </select>
+        </label>
+        <label class="row">Fill gaps
+            <input type="checkbox" id="fillGaps" checked>
+        </label>
         <label class="row">Decimals
             <select id="precision">
                 <option value="0">0</option>
@@ -120,6 +129,14 @@
         <div class="hint">
             Size 50 fills the flower body (radius 25). Anything past radius 100 in
             local space is clipped by the renderer.<br><br>
+            Past the shape limit, the shapes kept are the ones that matter most to
+            how the drawing looks at skin size. "As they look" paints
+            see-through, gradient and stand-in shapes in the colour they show;
+            solid shapes keep their exact colour either way.<br><br>
+            "Fill gaps" lets shapes traced from the picture sit beneath the
+            drawing, so artwork made of pieces edge to edge (a traced image)
+            doesn't open holes where pieces were dropped. Those shapes are not
+            in your SVG; untick it to keep to your own shapes.<br><br>
             Skins can't subtract shapes, so a donut or a cut-out has to be painted
             over — the default is the flower-body yellow. The CLI drops holes
             instead unless you pass <code>--hole-fill</code>.
@@ -260,16 +277,24 @@
     }
 
     // ── conversion ──────────────────────────────────────────────────────────
+    var shownSrc = null, pending = 0;
+    /** A big drawing takes a moment to convert: wait for the slider to settle. */
+    function scheduleConvert() {
+        clearTimeout(pending);
+        pending = setTimeout(convert, $('src').value.length > 200000 ? 250 : 0);
+    }
+
     function convert() {
         var src = $('src').value.trim();
-        $('svgStage').innerHTML = '';
         if (!src) {
+            $('svgStage').innerHTML = ''; shownSrc = null;
             $('outText').value = ''; $('stats').textContent = ''; $('warnings').textContent = '';
             lastResult = null; drawPreview(null);
             return;
         }
         // Show the source as-is (local tool, local file — nothing is uploaded).
-        $('svgStage').innerHTML = src;
+        // Only when it changed: re-parsing a huge SVG per slider tick is slow.
+        if (src !== shownSrc) { $('svgStage').innerHTML = src; shownSrc = src; }
 
         var opt = {
             maxShapes: parseInt($('maxShapes').value, 10),
@@ -280,8 +305,10 @@
             // A hole can only be painted over, never subtracted — default to the
             // flower-body yellow, which is what most artwork sits on.
             holeFill: $('holeMode').value === 'fill' ? $('holeColor').value : '',
+            recolor: $('colorMode').value !== 'source',
+            fillGaps: $('fillGaps').checked,
         };
-        var res;
+        var res, t0 = Date.now();
         try {
             res = SvgToSkin.convertSvg(src, opt);
         } catch (e) {
@@ -301,7 +328,8 @@
                 + ' &middot; ' + types
                 + '<br>from <b>' + res.stats.sourceShapes + '</b> source shapes'
                 + ' &middot; scaled &times;' + res.stats.scale.toFixed(3)
-                + ' &middot; bounds ' + res.stats.bounds.w.toFixed(1) + '&times;' + res.stats.bounds.h.toFixed(1);
+                + ' &middot; bounds ' + res.stats.bounds.w.toFixed(1) + '&times;' + res.stats.bounds.h.toFixed(1)
+                + ' &middot; ' + (Date.now() - t0) + ' ms';
         } else {
             $('stats').textContent = '';
         }
@@ -331,16 +359,16 @@
         if (e.dataTransfer && e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
     });
 
-    $('src').addEventListener('input', convert);
+    $('src').addEventListener('input', scheduleConvert);
     ['maxShapes', 'size', 'minWeight'].forEach(function (id) {
         $(id).addEventListener('input', function () {
             $(id + 'V').textContent = id === 'minWeight' ? $(id).value + '%' : $(id).value;
-            convert();
+            scheduleConvert();
         });
     });
-    ['fit', 'precision', 'holeMode', 'holeColor'].forEach(function (id) { $(id).addEventListener('change', convert); });
+    ['fit', 'precision', 'holeMode', 'holeColor', 'colorMode', 'fillGaps'].forEach(function (id) { $(id).addEventListener('change', scheduleConvert); });
     $('holeColor').addEventListener('input', function () {
-        if ($('holeMode').value === 'fill') convert();
+        if ($('holeMode').value === 'fill') scheduleConvert();
     });
     ['showBody', 'showClip'].forEach(function (id) {
         $(id).addEventListener('change', function () { drawPreview(lastResult && lastResult.shapes); });
