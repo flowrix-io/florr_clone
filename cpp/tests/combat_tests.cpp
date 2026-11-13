@@ -3767,7 +3767,50 @@ TEST(a_sandstorm_passes_through_other_mobs_and_its_pet_hits_on_the_way) {
         CHECK(a.health(pet) < 1e9);
     }
 }
+TEST(sandstorms_of_one_team_push_each_other_apart_but_not_other_mobs) {
+    // collides_with_own_kind: a stick's storms keep apart from one another,
+    // while a ladybug and a storm of the other team still pass through them.
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    if (!error.empty()) return;
+    const std::uint16_t sandstorm = content().mobIndex("sandstorm");
+    const std::uint16_t ladybug = content().mobIndex("ladybug");
+    CHECK(content().mob(sandstorm).collidesWithOwnKind);
 
+    Arena a;
+    Terrain terrain;
+    MovementSystem movement;
+    a.combat.terrain = &terrain;
+
+    const Vec2 at{3000.0, 3000.0};
+    const Entity owner = a.player({1000.0, 1000.0});
+    const auto petStorm = [&](Vec2 where) {
+        const Entity pet = a.actor(where, 25.0, 1e9, Team::Players);
+        a.world.add<MobTag>(pet);
+        a.world.add<Pet>(pet, Pet{owner, 0});
+        a.world.add<MobType>(pet, MobType{sandstorm, Rarity::Common, 1.0});
+        return pet;
+    };
+    const Entity first = petStorm(at);
+    const Entity second = petStorm(at + Vec2{5.0, 0.0});
+    const Entity wildLadybug = a.mob(at + Vec2{0.0, 5.0}, 1e9, 0.0, 25.0);
+    a.world.add<MobType>(wildLadybug, MobType{ladybug, Rarity::Common, 1.0});
+    const Entity wildStorm = a.mob(at + Vec2{0.0, -5.0}, 1e9, 0.0, 25.0);
+    a.world.add<MobType>(wildStorm, MobType{sandstorm, Rarity::Common, 1.0});
+
+    double nowMillis = 1000.0;
+    for (int tick = 0; tick < 30; ++tick) {
+        movement.run(a.world, terrain, nowMillis, net::kTickSeconds);
+        nowMillis += net::kTickMillis;
+    }
+    // The two pet storms have been shoved clear of each other.
+    CHECK(distance(a.world.get<Transform>(first).position,
+                   a.world.get<Transform>(second).position) > 25.0);
+    // The wild ladybug and the wild storm are in the pet storms' way and are
+    // neither pushed by them nor push them: they stay where they were put.
+    CHECK_NEAR(distance(a.world.get<Transform>(wildLadybug).position, at + Vec2{0.0, 5.0}), 0.0, 1e-9);
+    CHECK_NEAR(distance(a.world.get<Transform>(wildStorm).position, at + Vec2{0.0, -5.0}), 0.0, 1e-9);
+}
 TEST(a_spinning_ring_is_decoration_and_bites_nobody) {
     const RingFixture& f = ringFixture();
     CHECK(f.ok);
