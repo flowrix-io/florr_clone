@@ -3701,6 +3701,73 @@ TEST(a_mob_cannot_squish_a_flower_into_a_wall) {
     }
 }
 
+TEST(a_sandstorm_passes_through_other_mobs_and_its_pet_hits_on_the_way) {
+    // A sandstorm is wind: the separation pass neither pushes it nor lets it
+    // push, wild or summoned (the config's no_mob_collision). A pet one still
+    // deals its contact damage to every wild mob it blows through, and takes
+    // the wild mob's bite back. A ladybug pet on the same path is the control:
+    // it shoves the wild mob, so the harness is separating for real.
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    if (!error.empty()) return;
+    const std::uint16_t sandstorm = content().mobIndex("sandstorm");
+    const std::uint16_t ladybug = content().mobIndex("ladybug");
+    CHECK(content().mob(sandstorm).noMobCollision);
+    CHECK(!content().mob(ladybug).noMobCollision);
+
+    for (const std::uint16_t petType : {sandstorm, ladybug}) {
+        const bool phases = petType == sandstorm;
+        Arena a;
+        Terrain terrain;
+        MovementSystem movement;
+        a.combat.terrain = &terrain;
+
+        const Vec2 wildAt{3000.0, 3000.0};
+        const Entity owner = a.player({1000.0, 1000.0});
+        const Entity pet = a.actor(wildAt - Vec2{100.0, 0.0}, 25.0, 1e9, Team::Players);
+        a.world.add<MobTag>(pet);
+        a.world.add<Pet>(pet, Pet{owner, 0});
+        a.world.add<MobType>(pet, MobType{petType, Rarity::Common, 1.0});
+        a.world.add<ContactDamage>(pet, ContactDamage{5.0, 0.0});
+
+        const Entity wild = a.mob(wildAt, 1e9, 0.0, 25.0);
+        a.world.add<MobType>(wild, MobType{ladybug, Rarity::Common, 1.0});
+        a.world.add<ContactDamage>(wild, ContactDamage{5.0, kMobHitIntervalMillis});
+        // A second wild sandstorm sits in the same spot: storms do not shove
+        // each other either, and it must not shove the ladybug.
+        const Entity storm = a.mob(wildAt, 1e9, 0.0, 25.0);
+        a.world.add<MobType>(storm, MobType{sandstorm, Rarity::Common, 1.0});
+
+        double nowMillis = 1000.0;
+        double straySideways = 0.0;
+        for (int tick = 0; tick < 30; ++tick) {
+            a.world.get<Motion>(pet).velocity = {200.0, 0.0};   // what the pet AI does
+            a.world.get<Motion>(wild).velocity = {};
+            a.world.get<Motion>(storm).velocity = {};
+            movement.run(a.world, terrain, nowMillis, net::kTickSeconds);
+            a.step(nowMillis, content());
+            nowMillis += net::kTickMillis;
+            straySideways = std::max(
+                straySideways, std::fabs(a.world.get<Transform>(pet).position.y - wildAt.y));
+        }
+
+        const double wildDrift = distance(a.world.get<Transform>(wild).position, wildAt);
+        if (phases) {
+            // Straight through and out the far side, nobody shoved.
+            CHECK_NEAR(a.world.get<Transform>(pet).position.x,
+                       wildAt.x - 100.0 + 200.0 * net::kTickSeconds * 30.0, 1e-6);
+            CHECK_NEAR(straySideways, 0.0, 1e-9);
+            CHECK_NEAR(wildDrift, 0.0, 1e-9);
+            CHECK_NEAR(distance(a.world.get<Transform>(storm).position, wildAt), 0.0, 1e-9);
+        } else {
+            CHECK(wildDrift > 1.0);
+        }
+        // Either way the two bodies met, and both bit.
+        CHECK(a.health(wild) < 1e9);
+        CHECK(a.health(pet) < 1e9);
+    }
+}
+
 TEST(a_spinning_ring_is_decoration_and_bites_nobody) {
     const RingFixture& f = ringFixture();
     CHECK(f.ok);
