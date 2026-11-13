@@ -87,6 +87,35 @@ def png(im):
     return 'data:image/png;base64,' + base64.b64encode(b.getvalue()).decode()
 
 
+def remove_background(im, tolerance=25):
+    """Remove only edge-connected pixels matching the dominant border colour."""
+    import cv2
+    original=im.convert('RGBA')
+    sample=original.copy(); sample.thumbnail((1024,1024),Image.Resampling.LANCZOS)
+    a=np.array(sample); rgb=a[:,:,:3]; visible=a[:,:,3]>0
+    border=np.zeros(visible.shape,bool)
+    border[0,:]=border[-1,:]=True; border[:,0]=border[:,-1]=True
+    colors=rgb[border & visible]
+    if not len(colors): return original
+    bins=(colors//24).astype(np.int32)
+    keys=bins[:,0]*121+bins[:,1]*11+bins[:,2]
+    dominant=np.bincount(keys).argmax()
+    bg=np.median(colors[keys==dominant],axis=0).astype(np.uint8)
+    lab=cv2.cvtColor(rgb,cv2.COLOR_RGB2LAB).astype(np.float32)
+    reference=cv2.cvtColor(bg.reshape(1,1,3),cv2.COLOR_RGB2LAB)[0,0].astype(np.float32)
+    distance=np.linalg.norm(lab-reference,axis=2)
+    candidate=(distance<=max(1,min(100,int(tolerance)))) | ~visible
+    _,labels=cv2.connectedComponents(candidate.astype(np.uint8),connectivity=4)
+    edge_labels=np.unique(labels[border & candidate])
+    remove=np.isin(labels,edge_labels[edge_labels!=0])
+    mask=Image.fromarray((~remove).astype(np.uint8)*255).resize(original.size,Image.Resampling.NEAREST)
+    out=np.array(original)
+    out[:,:,3]=np.minimum(out[:,:,3],np.array(mask))
+    if not out[:,:,3].any():
+        raise ValueError('Background removal found no foreground. Lower its tolerance or turn it off.')
+    return Image.fromarray(out)
+
+
 def convert_file(data, name='', frame=0, options=None):
     """Decode once; retain supported SVG geometry instead of tracing its pixels."""
     options = options or {}
@@ -94,8 +123,13 @@ def convert_file(data, name='', frame=0, options=None):
         raise ValueError('Choose an image smaller than 40 MB.')
     data, name = unpack_svgz(data, name)
     im, meta = decode(data, name, frame)  # validates XML/resources before native parsing
+    cutout=None
+    if options.get('removeBackground',False):
+        im=remove_background(im,options.get('backgroundTolerance',25))
+        cutout=png(im)
+        meta['notes'].append('Edge background removed locally. Best on solid backgrounds; fine edges and complex scenes may need manual cleanup.')
     is_svg = Path(name).suffix.lower() == '.svg' or data.lstrip().startswith(b'<svg')
-    if is_svg and options.get('mode', 'game') != 'exact' and options.get('style', 'auto') in ('auto', 'vector'):
+    if is_svg and cutout is None and options.get('mode', 'game') != 'exact' and options.get('style', 'auto') in ('auto', 'vector'):
         import json
         import subprocess
         from defusedxml import ElementTree
@@ -136,6 +170,7 @@ def convert_file(data, name='', frame=0, options=None):
         meta['notes'].append('Native SVG needs approximation: ' + ' '.join(native['warnings']) + ' Using complete-image tracing to retain the artwork.')
     result = convert(im, options)
     result['meta'] = meta
+    if cutout: result['cutout']=cutout
     return result
 
 

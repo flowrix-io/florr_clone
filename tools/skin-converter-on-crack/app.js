@@ -1,10 +1,10 @@
 'use strict';
 const $=id=>document.getElementById(id);
 let imageData='',filename='',current=null,busy=false;
-const controls=['gameLimit','mode','style','grid','budget','size','alpha','background','threshold','trim','frame'];
+const controls=['gameLimit','mode','style','grid','budget','size','alpha','background','threshold','trim','frame','removeBackground','backgroundTolerance'];
 function status(message,kind=''){ $('status').textContent=message; $('status').className='status '+kind; }
-function options(){return {gameLimit:+$('gameLimit').value,mode:$('mode').value,style:$('style').value,grid:+$('grid').value,budget:+$('budget').value,size:+$('size').value,alpha:$('alpha').value,background:$('background').value,threshold:+$('threshold').value,trim:$('trim').checked};}
-function available(enabled){ for(const id of ['copy','save','savePng']) $(id).disabled=!enabled; }
+function options(){return {removeBackground:$('removeBackground').checked,backgroundTolerance:+$('backgroundTolerance').value,gameLimit:+$('gameLimit').value,mode:$('mode').value,style:$('style').value,grid:+$('grid').value,budget:+$('budget').value,size:+$('size').value,alpha:$('alpha').value,background:$('background').value,threshold:+$('threshold').value,trim:$('trim').checked};}
+function available(enabled){ for(const id of ['copy','save','savePng']) $(id).disabled=!enabled; $('saveCutout').disabled=!enabled||!current?.cutout; }
 async function load(file){
  if(busy)return;
  if(file.size>40*1024*1024){status('Choose an image smaller than 40 MB.','error');return;}
@@ -38,7 +38,8 @@ for(const event of ['dragleave','drop'])$('drop').addEventListener(event,e=>{e.p
 $('drop').addEventListener('drop',e=>{if(e.dataTransfer.files[0])load(e.dataTransfer.files[0]);});
 document.addEventListener('paste',e=>{const file=[...e.clipboardData.items].find(x=>x.kind==='file'&&x.type.startsWith('image/'));if(file){e.preventDefault();load(file.getAsFile());}});
 $('convert').onclick=run;
-controls.forEach(id=>$(id).addEventListener('change',()=>{if(imageData){status('Settings changed. Click “Make my skin” to update the export.');available(false);}if(id==='budget' && +$('budget').value>+$('gameLimit').value) $('gameLimit').value=$('budget').value; if(id==='style' && ['polygon','vector'].includes($('style').value)) $('mode').value='game'; if(id==='mode' && $('mode').value==='exact') $('style').value='pixel'; $('budget').disabled=$('mode').value==='exact';}));
+controls.forEach(id=>$(id).addEventListener('change',()=>{if(imageData){status('Settings changed. Click “Make my skin” to update the export.');available(false);}if(id==='budget' && +$('budget').value>+$('gameLimit').value) $('gameLimit').value=$('budget').value; if(id==='removeBackground' && $('removeBackground').checked) $('alpha').value='cutout'; if(id==='style' && ['polygon','vector'].includes($('style').value)) $('mode').value='game'; if(id==='mode' && $('mode').value==='exact') $('style').value='pixel'; $('budget').disabled=$('mode').value==='exact';}));
+$('backgroundTolerance').oninput=()=>$('backgroundToleranceValue').textContent=$('backgroundTolerance').value;
 $('threshold').oninput=()=>$('thresholdValue').textContent=$('threshold').value;
 $('pixels').onchange=()=>document.querySelector('.previewcard').classList.toggle('smooth',!$('pixels').checked);
 $('side').onclick=()=>{$('comparison').hidden=false;$('wipeview').hidden=true;$('side').classList.add('selected');$('wipe').classList.remove('selected');};
@@ -47,6 +48,7 @@ $('wipeRange').oninput=()=>{const value=$('wipeRange').value;$('wipeClip').style
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(current.code);$('copy').textContent='Copied ✓';setTimeout(()=>$('copy').innerHTML='Copy skin code <span>⧉</span>',1700);}catch{$('code').focus();$('code').select();status('Code selected. Press Command+C (or Ctrl+C) to copy.');}};
 function download(href,ext){const a=document.createElement('a');a.href=href;a.download=(filename.replace(/\.[^.]+$/,'')||'my-skin')+ext;a.click();}
 $('save').onclick=()=>{const url=URL.createObjectURL(new Blob([current.code+'\n'],{type:'text/plain'}));download(url,'.skin.txt');setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('saveCutout').onclick=()=>download(current.cutout,'.transparent.png');
 $('savePng').onclick=()=>download(current.result,'.skin.png');
 $('demo').onclick=()=>{const c=document.createElement('canvas');c.width=c.height=24;const x=c.getContext('2d');
  for(let y=0;y<24;y++)for(let i=0;i<24;i++){const d=Math.hypot(i-11.5,y-11.5);if(d<10){x.fillStyle=d>8.5?'#c9a446':'#ffe365';x.fillRect(i,y,1,1);}}

@@ -77,3 +77,7 @@ Maximum export budget: 1,000 shapes. Smart mode now traces contours first; it no
 longer silently switches to rectangular pixel runs. Polygons only disables
 ellipse fitting; Crisp pixel art / Exact pixel grid retain pixel-block export.
 Current game import limits remain unchanged.
+
+## Background removal
+
+Enable **Remove background**, adjust **Background tolerance**, then convert. The local edge-connected colour filter works best on solid backgrounds; it is not a semantic photo cutout model. Existing transparent borders are preserved. Use **Save transparent PNG** for the cutout before skin quantization. SVGs are rasterized when removal is enabled.

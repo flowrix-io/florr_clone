@@ -15,6 +15,27 @@ class ConversionTests(unittest.TestCase):
         with patch('converter.vector_shapes',side_effect=ValueError('Tracing failed')):
             with self.assertRaisesRegex(ValueError,'did not switch to rectangles'):
                 convert(self.fixture(),{'style':'auto'})
+    def test_background_removal_keeps_enclosed_matching_details(self):
+        from converter import remove_background
+        a=np.full((24,24,4),255,np.uint8)
+        a[5:19,5:19]=[200,30,40,255]
+        a[10:14,10:14]=[255,255,255,255]
+        out=np.array(remove_background(Image.fromarray(a),10))
+        self.assertEqual(out[0,0,3],0)
+        self.assertEqual(out[7,7,3],255)
+        self.assertEqual(out[11,11,3],255)
+    def test_background_removal_retains_existing_transparency(self):
+        from converter import remove_background
+        im=self.fixture()
+        self.assertTrue(np.array_equal(np.array(im),np.array(remove_background(im))))
+    def test_background_removal_applies_to_svg_and_returns_cutout(self):
+        from converter import convert_file
+        data=b'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="white"/><circle cx="12" cy="12" r="6" fill="red"/></svg>'
+        result=convert_file(data,'test.svg',options={'removeBackground':True,'style':'polygon','budget':64})
+        out=Image.open(io.BytesIO(__import__('base64').b64decode(result['cutout'].split(',')[1])))
+        self.assertEqual(out.getpixel((0,0))[3],0)
+        self.assertEqual(out.getpixel((12,12))[3],255)
+        self.assertNotEqual(result['method'],'Native SVG geometry')
     def fixture(self):
         a=np.zeros((16,24,4),np.uint8)
         a[2:14,4:20]=[255,220,80,255]; a[6:9,8:10]=[30,50,40,255]
