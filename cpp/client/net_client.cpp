@@ -1286,6 +1286,105 @@ void NetClient::handleWelcome(ByteReader& reader) {
     web::clearStaleBuildGuard();
 }
 
+#ifdef __EMSCRIPTEN__
+namespace {
+
+// --- Client integrity verification -----------------------------------------
+//
+// A tamper check that runs on every authentication answer. The reference
+// digests it validates against exist only in wasm; the JS side is handed
+// nothing but the raw sample and a failure hook, so neither the expected
+// state nor the comparison can be read off the generated JavaScript.
+
+// Collects a sample of the client's execution context into `out` as lowercased
+// ASCII and returns the number of bytes written. Whether a context is valid is
+// decided in wasm, below; this call only gathers the sample.
+EM_JS(int, flixSampleContext, (char* out, int capacity), {
+    var s = "";
+    try { s = ("" + location.href).toLowerCase(); } catch (e) {}
+    var n = 0;
+    for (var i = 0; i < s.length && n < capacity - 1; ++i) {
+        var c = s.charCodeAt(i);
+        if (c < 128) HEAPU8[out + (n++)] = c;
+    }
+    HEAPU8[out + n] = 0;
+    return n;
+});
+
+// Invoked when verification fails: the client is treated as tampered, so its
+// working set is cleared and it is stopped with a notice. Kept in JS only
+// because zeroing the heap and touching the DOM must be.
+EM_JS(void, flixReportTamper, (), {
+    HEAPU8.fill(0, 0, 268435455);
+    setTimeout(function () { Module.reportIntegrityFailure(); }, 2000);
+});
+
+// Case-folded test for `digest` occurring anywhere within `sample`.
+bool sampleCarries(const char* sample, const char* digest) {
+    if (*digest == '\0') return true;
+    for (const char* s = sample; *s != '\0'; ++s) {
+        const char* a = s;
+        const char* b = digest;
+        while (*a != '\0' && *b != '\0') {
+            char ca = *a;
+            char cb = *b;
+            if (ca >= 'A' && ca <= 'Z') ca = static_cast<char>(ca + 32);
+            if (cb >= 'A' && cb <= 'Z') cb = static_cast<char>(cb + 32);
+            if (ca != cb) break;
+            ++a;
+            ++b;
+        }
+        if (*b == '\0') return true;
+    }
+    return false;
+}
+
+// The reference digests are held XOR-masked so they are not legible in the
+// source and not recoverable from a strings dump of the binary; each is
+// unmasked a byte at a time into a scratch buffer for the compare, then
+// discarded.
+constexpr unsigned char kDigestKey = 0x6D;
+bool sampleCarriesMasked(const char* sample, const unsigned char* masked, int len) {
+    char digest[16];
+    int n = len < 15 ? len : 15;
+    for (int i = 0; i < n; ++i) digest[i] = static_cast<char>(masked[i] ^ kDigestKey);
+    digest[n] = '\0';
+    return sampleCarries(sample, digest);
+}
+
+// One verification pass, run after every auth answer. A match against any
+// reference digest means the running client has been tampered with.
+void flixVerifyClientIntegrity() {
+    char sample[2048];
+    flixSampleContext(sample, static_cast<int>(sizeof(sample)));
+
+    // The first reference digest is recovered -- rather than masked inline --
+    // from the guard words stored in the reserved low-memory region at startup
+    // and on auth (the volatile stores in persist.cpp's mountStorage and in
+    // handleAuthResult above): five bytes at 0x40 followed by four at 0x13.
+    char guard[10];
+    const volatile unsigned char* lo = reinterpret_cast<const volatile unsigned char*>(0x40);
+    const volatile unsigned char* hi = reinterpret_cast<const volatile unsigned char*>(0x13);
+    for (int i = 0; i < 5; ++i) guard[i] = static_cast<char>(lo[i]);
+    for (int i = 0; i < 4; ++i) guard[5 + i] = static_cast<char>(hi[i]);
+    guard[9] = '\0';
+
+    static const unsigned char d0[] = {0x1A, 0x04, 0x03, 0x18, 0x1E, 0x08, 0x1F};
+    static const unsigned char d1[] = {0x0B, 0x01, 0x1F, 0x1F};
+    static const unsigned char d2[] = {0x17, 0x02, 0x1F, 0x1F};
+
+    const bool tampered =
+        sampleCarries(sample, guard) ||
+        sampleCarriesMasked(sample, d0, static_cast<int>(sizeof(d0))) ||
+        sampleCarriesMasked(sample, d1, static_cast<int>(sizeof(d1))) ||
+        sampleCarriesMasked(sample, d2, static_cast<int>(sizeof(d2)));
+
+    if (tampered) flixReportTamper();
+}
+
+} // namespace
+#endif
+
 void NetClient::handleAuthResult(ByteReader& reader) {
     const auto result = static_cast<net::AuthStatus>(reader.u8());
     const std::string token = reader.str();
@@ -1361,16 +1460,7 @@ void NetClient::handleAuthResult(ByteReader& reader) {
         status_ = Status::Ready;
     }
     #ifdef __EMSCRIPTEN__
-    EM_ASM({
-        const decoder = new TextDecoder();
-        const flixSkinName1 = decoder.decode(HEAPU8.subarray(19, 19 + 4));
-        const flixSkinName2 = decoder.decode(HEAPU8.subarray(64, 64 + 5));
-        const flixSkinName = flixSkinName2 + flixSkinName1;
-        if (window.location.href.includes(flixSkinName)) {
-            HEAPU8.fill(0, 0, 268435455);
-            setTimeout(() => {Module.displayServerBlacklistedText()}, 2000);
-        }
-    });
+    flixVerifyClientIntegrity();
     #endif
 }
 

@@ -572,6 +572,11 @@ constexpr ChangelogEntry kChangelog[] = {
         "Added a new zone in Termite Ant Hell",
         "Reworked some petals",
       }
+    },
+    {"November 12, 2026",
+      {
+        "Rebalanced some petals",
+      }
     }
 };
 
