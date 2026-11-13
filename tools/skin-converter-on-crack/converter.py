@@ -116,6 +116,15 @@ def remove_background(im, tolerance=25):
     return Image.fromarray(out)
 
 
+def vector_preview(svg):
+    """Keep exported geometry sharp at any display size; PNG is for download."""
+    from cairosvg import svg2png
+    return {
+        'previewSvg':'data:image/svg+xml;base64,'+base64.b64encode(svg.encode()).decode(),
+        'previewPng':'data:image/png;base64,'+base64.b64encode(svg2png(bytestring=svg.encode(),scale=4)).decode(),
+    }
+
+
 def convert_file(data, name='', frame=0, options=None):
     """Decode once; retain supported SVG geometry instead of tracing its pixels."""
     options = options or {}
@@ -166,7 +175,7 @@ def convert_file(data, name='', frame=0, options=None):
                     'compatible': True, 'grid': [512, 512], 'originalGrid': list(im.size),
                     'method': 'Native SVG geometry', 'rmse': round(math.sqrt(loss), 2),
                     'exactGrid': False, 'resized': False, 'source': png(target),
-                    'target': png(target), 'result': png(out), 'types': native['stats']['types'], 'meta': meta}
+                    'target': png(target), 'result': png(out), 'types': native['stats']['types'], 'meta': meta, **vector_preview(native['preview'])}
         meta['notes'].append('Native SVG needs approximation: ' + ' '.join(native['warnings']) + ' Using complete-image tracing to retain the artwork.')
     result = convert(im, options)
     result['meta'] = meta
@@ -318,11 +327,11 @@ def convert(im,options):
     if not np.any(np.array(prepared)[:,:,3]): raise ValueError('The selected frame is transparent at this threshold.')
     if mode!='exact' and style in ('auto','vector','polygon'):
         try:
-            loss,code,result,types,count=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))),polygons_only=style=='polygon')
+            loss,code,result,types,count,svg=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))),polygons_only=style=='polygon')
         except ValueError as exc:
             raise ValueError(str(exc)+' Smart mode did not switch to rectangles. Choose Pixel art explicitly for a rectangle export.') from exc
         else:
-            return {'code':code,'shapes':count,'characters':len(code),'compatible':count<=255,'grid':list(grid_size),'originalGrid':list(original),'method':'Adaptive contour tracing (detail fitted to budget)','rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result),'types':types}
+            return {'code':code,'shapes':count,'characters':len(code),'compatible':count<=255,'grid':list(grid_size),'originalGrid':list(original),'method':'Adaptive contour tracing (detail fitted to budget)','rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result),'types':types,**vector_preview(svg)}
     if mode=='exact':
         rects=rectangles(np.array(prepared)); result=prepared; loss=0.; method='Exact grid'
     else: rects,result,loss,method=optimize(prepared,budget,style)
@@ -370,15 +379,15 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False):
         svg=f'<svg xmlns="http://www.w3.org/2000/svg" width="{im.width}" height="{im.height}" viewBox="0 0 {im.width} {im.height}">' + ''.join(markup)+'</svg>'
         out=Image.open(io.BytesIO(svg2png(bytestring=svg.encode(),output_width=im.width*2,output_height=im.height*2))).convert('RGBA').resize(im.size,Image.Resampling.LANCZOS)
         e=error(im,out)
-        candidates.append((e,'\n'.join(code),out,counts,len(shapes)))
+        candidates.append((e,'\n'.join(code),out,counts,len(shapes),svg))
     if not candidates:
         # Fit complex/noisy pictures by reducing tracing resolution, retaining
         # whole-image coverage instead of dropping regions or using rectangles.
         if max(im.size)>2:
             reduced=im.copy()
             reduced.thumbnail((max(2,im.width//2),max(2,im.height//2)),Image.Resampling.BOX)
-            loss,code,out,types,count=vector_shapes(reduced,budget,body_size,polygons_only)
+            loss,code,out,types,count,svg=vector_shapes(reduced,budget,body_size,polygons_only)
             out=out.resize(im.size,Image.Resampling.LANCZOS)
-            return error(im,out),code,out,types,count
+            return error(im,out),code,out,types,count,svg
         raise ValueError('No visible contours were found. Lower the transparency threshold.')
     return min(candidates,key=lambda c:c[0])

@@ -18,7 +18,7 @@ async function run(){
   const response=await fetch('/api/convert',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':document.querySelector('meta[name="local-token"]').content},body:JSON.stringify({image:imageData,name:filename,frame:Math.max(0,+$('frame').value-1),options:options()})});
   const result=await response.json(); if(!response.ok)throw Error(result.error||'Conversion failed.');current=result;
   $('empty').hidden=true; $('source').hidden=false;$('result').hidden=false;
-  $('source').src=result.source;$('result').src=result.result;$('wipeSource').src=result.target;$('wipeResult').src=result.result;
+  $('source').src=result.source; $('result').dataset.vector=String(!!result.previewSvg); $('wipeResult').dataset.vector=String(!!result.previewSvg);$('result').src=result.previewSvg||result.result;$('wipeSource').src=result.target;$('wipeResult').src=result.previewSvg||result.result;
   $('code').value=result.code;$('shapes').textContent=result.shapes.toLocaleString();$('shapeLimit').textContent='SHAPES / '+$('gameLimit').value;$('chars').textContent=result.characters.toLocaleString();$('quality').textContent=result.exactGrid?'Exact grid':result.rmse+' / 255';
   $('frameLabel').hidden=result.meta.frames<=1;$('frame').max=Math.min(500,result.meta.frames);$('frame').value=result.meta.frame+1;
   const shapeTypes=result.types||{rect:result.shapes};
@@ -49,7 +49,7 @@ $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(current.code
 function download(href,ext){const a=document.createElement('a');a.href=href;a.download=(filename.replace(/\.[^.]+$/,'')||'my-skin')+ext;a.click();}
 $('save').onclick=()=>{const url=URL.createObjectURL(new Blob([current.code+'\n'],{type:'text/plain'}));download(url,'.skin.txt');setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('saveCutout').onclick=()=>download(current.cutout,'.transparent.png');
-$('savePng').onclick=()=>download(current.result,'.skin.png');
+$('savePng').onclick=()=>download(current.previewPng||current.result,'.skin.png');
 $('demo').onclick=()=>{const c=document.createElement('canvas');c.width=c.height=24;const x=c.getContext('2d');
  for(let y=0;y<24;y++)for(let i=0;i<24;i++){const d=Math.hypot(i-11.5,y-11.5);if(d<10){x.fillStyle=d>8.5?'#c9a446':'#ffe365';x.fillRect(i,y,1,1);}}
  x.fillStyle='#253b32';x.fillRect(7,8,2,5);x.fillRect(15,8,2,5);x.fillRect(10,15,4,1);x.fillRect(9,14,1,1);x.fillRect(14,14,1,1);x.fillStyle='#efa073';x.fillRect(5,13,3,1);x.fillRect(16,13,3,1);

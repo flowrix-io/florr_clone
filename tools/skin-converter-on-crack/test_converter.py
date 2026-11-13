@@ -36,6 +36,16 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(out.getpixel((0,0))[3],0)
         self.assertEqual(out.getpixel((12,12))[3],255)
         self.assertNotEqual(result['method'],'Native SVG geometry')
+    def test_vector_preview_uses_exported_geometry_at_display_resolution(self):
+        import base64
+        from defusedxml import ElementTree
+        result=convert(self.fixture(),{'style':'polygon','grid':32,'budget':255})
+        svg=base64.b64decode(result['previewSvg'].split(',')[1])
+        root=ElementTree.fromstring(svg)
+        self.assertEqual(len(root),result['shapes'])
+        self.assertTrue(all(e.tag.endswith('polygon') for e in root))
+        hi=Image.open(io.BytesIO(base64.b64decode(result['previewPng'].split(',')[1])))
+        self.assertGreater(hi.width,result['grid'][0])
     def fixture(self):
         a=np.zeros((16,24,4),np.uint8)
         a[2:14,4:20]=[255,220,80,255]; a[6:9,8:10]=[30,50,40,255]
