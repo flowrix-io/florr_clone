@@ -1,0 +1,6 @@
+Pillow>=12.0,<14
+numpy>=2.0,<3
+pillow-heif>=1.0,<2
+CairoSVG>=2.7,<3
+rawpy>=0.25,<1
+opencv-python-headless>=4.12,<6

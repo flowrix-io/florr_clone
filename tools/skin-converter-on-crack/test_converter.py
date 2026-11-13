@@ -1,0 +1,155 @@
+import io
+import re
+import unittest
+import numpy as np
+from PIL import Image
+from converter import decode, convert, rectangles, draw_rects
+
+class ConversionTests(unittest.TestCase):
+    def fixture(self):
+        a=np.zeros((16,24,4),np.uint8)
+        a[2:14,4:20]=[255,220,80,255]; a[6:9,8:10]=[30,50,40,255]
+        a[6:9,15:17]=[30,50,40,255]
+        return Image.fromarray(a)
+    def test_exact_run_merge_preserves_every_pixel(self):
+        im=self.fixture();rects=rectangles(np.array(im))
+        self.assertLess(len(rects),10)
+        self.assertTrue(np.array_equal(np.array(im),np.array(draw_rects(rects,im.size))))
+    def test_commands_reconstruct_grid_in_skin_coordinates(self):
+        result=convert(self.fixture(),{'mode':'exact','trim':False})
+        a=np.zeros((16,24,4),np.uint8);factor=46/24
+        for line in result['code'].splitlines():
+            self.assertTrue(line.startswith('rect '))
+            fields=dict(word.split('=') for word in line.split()[1:])
+            x,y,rx,ry=(float(fields[k]) for k in ('x','y','rx','ry'))
+            x0=round((x-rx)/factor+12);x1=round((x+rx)/factor+12)
+            y0=round((y-ry)/factor+8);y1=round((y+ry)/factor+8)
+            a[y0:y1,x0:x1]=(*bytes.fromhex(fields['fill'][1:]),255)
+            self.assertLessEqual(max(abs(x),abs(y),rx,ry),64)
+        self.assertTrue(np.array_equal(a,np.array(self.fixture())))
+    def test_no_approximation_if_exact_fits_budget(self):
+        result=convert(self.fixture(),{'grid':128})
+        self.assertTrue(result['compatible']);self.assertTrue(result['exactGrid'])
+    def test_photo_never_exceeds_budget_and_preview_matches_shapes(self):
+        rng=np.random.default_rng(42)
+        im=Image.fromarray(np.dstack((rng.integers(0,256,(32,32,3),dtype=np.uint8),np.full((32,32),255,np.uint8))))
+        for style in ('auto','detail','pixel'):
+            result=convert(im,{'budget':32,'style':style,'trim':False})
+            self.assertLessEqual(result['shapes'],32)
+            self.assertEqual(len(result['code'].splitlines()),result['shapes'])
+    def test_exact_over_budget_is_marked_incompatible(self):
+        a=np.zeros((32,32,4),np.uint8);a[:,:,3]=255
+        for y in range(32):
+            for x in range(32):a[y,x,:3]=[x*7,y*7,(x+y)*3]
+        result=convert(Image.fromarray(a),{'mode':'exact'})
+        self.assertFalse(result['compatible']);self.assertTrue(result['exactGrid'])
+        self.assertEqual(result['shapes'],1024)
+    def test_alpha_cutout_and_matte_are_explicit(self):
+        im=Image.new('RGBA',(4,4),(255,0,0,64))
+        with self.assertRaises(ValueError):convert(im,{})
+        result=convert(im,{'alpha':'matte','background':'#ffffff'})
+        self.assertIn('#ffbfbf',result['code'])
+    def test_transparent_image_rejected(self):
+        with self.assertRaises(ValueError):convert(Image.new('RGBA',(8,8)),{})
+    def test_common_and_extended_decoders(self):
+        formats=['PNG','JPEG','WEBP','TIFF','BMP','GIF','ICO','PPM','TGA','AVIF','HEIF','JPEG2000']
+        for fmt in formats:
+            with self.subTest(format=fmt):
+                im=self.fixture().resize((32,32)).convert('RGB')
+                b=io.BytesIO();im.save(b,format=fmt)
+                decoded,meta=decode(b.getvalue(),'art.'+fmt.lower())
+                self.assertEqual(decoded.size,(32,32))
+    def test_animation_selects_requested_frame(self):
+        b=io.BytesIO();Image.new('RGB',(4,4),'red').save(b,format='GIF',save_all=True,append_images=[Image.new('RGB',(4,4),'blue')],duration=100,loop=0)
+        im,meta=decode(b.getvalue(),'test.gif',1)
+        self.assertEqual(meta['frames'],2);self.assertEqual(im.getpixel((0,0)),(0,0,255,255))
+    def test_svg_aspect_ratio_and_no_external_fetch(self):
+        data=b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="red"/></svg>'
+        im,_=decode(data,'test.svg');self.assertEqual(im.size,(40,20))
+        data=b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><image href="https://example.com/a.png" width="20" height="20"/></svg>'
+        with self.assertRaises(ValueError):decode(data,'test.svg')
+    def test_exif_orientation(self):
+        im=Image.new('RGB',(6,10));e=im.getexif();e[274]=6
+        b=io.BytesIO();im.save(b,format='JPEG',exif=e)
+        decoded,_=decode(b.getvalue(),'rotated.jpg');self.assertEqual(decoded.size,(10,6))
+    def test_invalid_file_rejected(self):
+        with self.assertRaises(ValueError):decode(b'not an image','picture.png')
+    def test_resize_reported(self):
+        result=convert(Image.new('RGB',(300,100),'red'),{'grid':128,'mode':'exact'})
+        self.assertTrue(result['resized']);self.assertEqual(result['grid'],[128,43])
+
+if __name__=='__main__':unittest.main()
+
+class VectorTests(unittest.TestCase):
+    def test_contour_mode_uses_outlines_not_pixel_rectangles(self):
+        from PIL import ImageDraw
+        im=Image.new('RGBA',(96,96));d=ImageDraw.Draw(im)
+        d.ellipse((8,8,88,88),fill='#e66452');d.ellipse((30,30,45,60),fill='#ffffff')
+        result=convert(im,{'style':'vector','budget':255,'grid':128,'trim':False})
+        self.assertEqual(result['method'],'Layered contour tracing')
+        self.assertNotIn('rect ',result['code'])
+        self.assertLess(result['shapes'],30)
+        for line in result['code'].splitlines():
+            if line.startswith('polygon '):
+                points=line.split('points=')[1].split()[0].split(',')
+                self.assertLessEqual(len(points),32)
+    def test_transparent_donut_keeps_its_hole(self):
+        from PIL import ImageDraw
+        im=Image.new('RGBA',(64,64));d=ImageDraw.Draw(im)
+        d.ellipse((5,5,58,58),fill='#2e78d4');d.ellipse((22,22,41,41),fill=(0,0,0,0))
+        result=convert(im,{'style':'vector','budget':255,'trim':False})
+        preview=Image.open(io.BytesIO(__import__('base64').b64decode(result['result'].split(',')[1])))
+        self.assertLess(preview.getpixel((32,32))[3],10)
+
+class EdgeColorTests(unittest.TestCase):
+    def test_cutout_does_not_add_white_halos(self):
+        im=Image.new('RGBA',(8,8),(20,180,170,160))
+        result=convert(im,{'mode':'exact'})
+        self.assertIn('#14b4aa',result['code'])
+
+class NativeSvgTests(unittest.TestCase):
+    def test_flowrix_target_rejects_exact_export_over_128_shapes(self):
+        import base64
+        from server import convert_request
+        im=Image.new('RGB',(16,16))
+        im.putdata([(255,0,0) if (x+y)%2 else (0,0,255) for y in range(16) for x in range(16)])
+        b=io.BytesIO();im.save(b,format='PNG')
+        request={'image':base64.b64encode(b.getvalue()).decode(),'name':'check.png',
+                 'options':{'gameLimit':128,'mode':'exact','style':'pixel'}}
+        result=convert_request(request)
+        self.assertEqual(result['shapes'],256)
+        self.assertFalse(result['compatible'])
+        request['options']['mode']='game'
+        result=convert_request(request)
+        self.assertLessEqual(result['shapes'],128)
+        self.assertTrue(result['compatible'])
+
+    def test_compressed_svg_keeps_native_geometry(self):
+        import gzip
+        from converter import convert_file
+        data=gzip.compress(b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/></svg>')
+        result=convert_file(data,'art.svgz')
+        self.assertEqual(result['method'],'Native SVG geometry')
+        self.assertEqual(result['shapes'],1)
+
+    def test_svg_retains_native_circle_and_curve(self):
+        from converter import convert_file
+        svg=b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#ff0000"/><path d="M20 50 C30 20 70 20 80 50" fill="none" stroke="#ffffff" stroke-width="3"/></svg>'
+        result=convert_file(svg,'art.svg')
+        self.assertEqual(result['method'],'Native SVG geometry')
+        self.assertIn('circle ',result['code'])
+        self.assertIn('curve ',result['code'])
+        self.assertEqual(result['shapes'],2)
+        self.assertLess(result['rmse'],8)
+
+    def test_svg_external_image_is_rejected_before_native_conversion(self):
+        from converter import convert_file
+        svg=b'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><image href="file:///etc/passwd" width="20" height="20"/></svg>'
+        with self.assertRaises(ValueError):convert_file(svg,'bad.svg')
+
+    def test_raster_files_still_use_complete_pixel_mode(self):
+        from converter import convert_file
+        b=io.BytesIO();Image.new('RGB',(20,10),'red').save(b,format='PNG')
+        result=convert_file(b.getvalue(),'art.png',options={'mode':'exact'})
+        self.assertEqual(result['method'],'Exact grid')
+        self.assertEqual(result['shapes'],1)
