@@ -68,3 +68,7 @@ game release such as Petalwild protocol 89. No game runtime files are changed.
 Launch: double-click Open Skin Converter on Crack.command. Dependencies install
 on first launch; image conversion then stays on localhost. See NOTICE.md for
 upstream attribution and LICENSE for AGPL terms.
+
+High detail export now supports up to 511 shapes. This is a converter export
+limit, not a game protocol update. Flowrix and Petalwild targets retain their
+128/255 caps and exact exports above those caps are flagged.

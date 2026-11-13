@@ -107,7 +107,7 @@ def convert_file(data, name='', frame=0, options=None):
         if not root.get('viewBox'):
             root.set('viewBox', f'0 0 {im.width} {im.height}')
         size = max(8, min(100, float(options.get('size', 46))))
-        budget = max(8, min(255, int(options.get('budget', 255))))
+        budget = max(8, min(511, int(options.get('budget', 511))))
         request = {'svg': ElementTree.tostring(root, encoding='unicode'), 'size': size, 'budget': budget}
         process = subprocess.run(['node', str(Path(__file__).with_name('svg-native.js'))],
                                  input=json.dumps(request), text=True, capture_output=True, timeout=20)
@@ -272,7 +272,7 @@ def commands(rects,size,body_size=46):
 def convert(im,options):
     im=im.convert('RGBA')
     mode=options.get('mode','game'); grid=max(8,min(512,int(options.get('grid',128))))
-    budget=max(8,min(255,int(options.get('budget',255))))
+    budget=max(8,min(511,int(options.get('budget',511))))
     style=options.get('style','auto')
     background=options.get('background','#ffffff')
     if len(background)!=7 or background[0]!='#': raise ValueError('Invalid matte colour.')
@@ -341,5 +341,5 @@ def vector_shapes(im,budget,body_size=46):
     if not candidates:
         # A small colour palette and stronger simplification is the bounded
         # fallback. Do not quietly return a picture with whole regions missing.
-        raise ValueError('This picture needs more than the selected shape budget for outline tracing. Raise it to 255 or try Pixel art mode.')
+        raise ValueError('This picture needs more than the selected shape budget for outline tracing. Raise it to 511 or try Pixel art mode.')
     return min(candidates,key=lambda c:c[0])

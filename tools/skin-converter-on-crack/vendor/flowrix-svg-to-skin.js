@@ -38,7 +38,7 @@
 
     // ── format limits (mirror cpp/shared/game/skin_format.h) ────────────────
     var LIMITS = {
-        MAX_SKIN_SHAPES: 255,
+        MAX_SKIN_SHAPES: 511,
         MAX_POLY_POINTS: 16,
         SKIN_COORD_LIMIT: 64,
         SKIN_RADIUS_LIMIT: 64,
@@ -1120,7 +1120,7 @@
      * Convert SVG source into skin shapes + command text.
      *
      * options:
-     *   maxShapes  shape budget (default/max 255)
+     *   maxShapes  shape budget (default/max 511)
      *   size       fit the drawing into a size×size box, centred on the origin
      *              (default 50 = the flower body's diameter)
      *   fit        'content' (default, uses the drawn bbox) or 'viewbox'
@@ -1334,7 +1334,7 @@
             'Usage: node scripts/svg-to-skin.js <input.svg> [options]',
             '',
             '  -o, --out <file>     write to a file instead of stdout',
-            '      --max-shapes <n> shape budget, 1-255 (default 255)',
+            '      --max-shapes <n> shape budget, 1-511 (default 511)',
             '      --size <n>       fit the art into an n×n box (default 50 = body diameter)',
             '      --fit <mode>     content (default) | viewbox',
             '      --precision <n>  decimals, 0-3 (default 1)',

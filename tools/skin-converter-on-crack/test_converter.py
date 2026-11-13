@@ -108,6 +108,17 @@ class EdgeColorTests(unittest.TestCase):
         self.assertIn('#14b4aa',result['code'])
 
 class NativeSvgTests(unittest.TestCase):
+    def test_high_detail_target_preserves_more_than_255_vectors(self):
+        import base64
+        from server import convert_request
+        shapes=''.join(f'<circle cx="{x*3+2}" cy="{y*3+2}" r="1" fill="#e06040"/>' for y in range(10) for x in range(30))
+        svg=('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 92 32">'+shapes+'</svg>').encode()
+        result=convert_request({'image':base64.b64encode(svg).decode(),'name':'detail.svg','options':{'gameLimit':511,'budget':511}})
+        self.assertEqual(result['method'],'Native SVG geometry')
+        self.assertEqual(result['shapes'],300)
+        self.assertTrue(result['compatible'])
+        self.assertFalse(result['gameCompatible'])
+
     def test_flowrix_target_rejects_exact_export_over_128_shapes(self):
         import base64
         from server import convert_request

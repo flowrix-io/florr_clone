@@ -26,6 +26,7 @@ async function run(){
   if(result.exactGrid)notes.push('Every prepared grid pixel is preserved.');else notes.push('Colour error '+result.rmse+' / 255 (lower is better).');
   notes.push(...result.meta.notes);status(notes.join(' '),result.compatible?'':'warn');
   $('compatibility').textContent=result.compatible?`✓ Within the game’s ${$('gameLimit').value}-shape limit. Paste into Skin Studio’s Text editor. Cutout edges use the alpha threshold; scaling and rotation can soften edges.`:`⚠ ${result.shapes.toLocaleString()} shapes: this exact export exceeds the selected ${$('gameLimit').value}-shape limit and cannot be pasted into the current game. Choose Game-ready to make a compatible version.`;
+  if(!result.gameCompatible && +$('gameLimit').value===511) $('compatibility').textContent='511-shape export: current Flowrix (128) and Petalwild (255) cannot import this many shapes. Select their target to generate a compatible version.';
   $('compatibility').style.color=result.compatible?'#5a8054':'#a06d28';available(true);
  }catch(error){status(error.message,'error'); current=null;available(false);$('code').value='';}
  finally{busy=false;controls.forEach(id=>$(id).disabled=false);$('budget').disabled=$('mode').value==='exact';$('drop').disabled=false;$('convert').disabled=!imageData;$('convert').innerHTML='Make my skin <span>↗</span>';}

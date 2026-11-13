@@ -17,10 +17,12 @@ SLOTS=threading.BoundedSemaphore(2)
 def convert_request(request):
     image=base64.b64decode(request['image'],validate=True)
     options=dict(request.get('options',{}))
-    limit=128 if int(options.get('gameLimit',128))==128 else 255
-    options['budget']=min(limit,int(options.get('budget',255)))
+    requested=int(options.get('gameLimit',511))
+    limit=requested if requested in (128,255,511) else 511
+    options['budget']=min(limit,int(options.get('budget',511)))
     result=convert_file(image,str(request.get('name','')),request.get('frame',0),options)
     result['compatible']=result['shapes']<=limit
+    result['gameCompatible']=result['shapes']<= (128 if limit==128 else 255)
     return result
 
 class Handler(BaseHTTPRequestHandler):
