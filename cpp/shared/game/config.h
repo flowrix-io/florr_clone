@@ -577,6 +577,10 @@ struct MobConfig {
     bool noEggDrop = false;
     bool reversed = false;       ///< art is mirrored horizontally
     bool noMobCollision = false;
+    /// Exception to noMobCollision (`collides_with_own_kind`): this mob still
+    /// pushes and is pushed by other mobs of the same type on the same team,
+    /// and by nothing else.
+    bool collidesWithOwnKind = false;
     /// A hole in the ground (`hole`): drawn beneath every other mob, so what
     /// comes out of it stands on top of it rather than vanishing under it.
     /// gardn's `attributes.hole`, and a matter of draw order only (the client
