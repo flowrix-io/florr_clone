@@ -344,7 +344,9 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False,detail=.6,max_color
     import subprocess
     import cv2
     from cairosvg import svg2png
-    b=io.BytesIO();im.save(b,format='PNG')
+    trace_scale=max(1,math.ceil(128/max(im.size)))
+    traced=im.resize((im.width*trace_scale,im.height*trace_scale),Image.Resampling.NEAREST) if trace_scale>1 else im
+    b=io.BytesIO();traced.save(b,format='PNG')
     candidates=[]; root=Path(__file__).resolve().parent
     factor=body_size/max(im.size)
     detail=max(.1,min(1.5,float(detail)))
@@ -361,7 +363,7 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False,detail=.6,max_color
         markup=[];code=[];counts={}
         def num(n): return f'{n:.6f}'.rstrip('0').rstrip('.') if n else '0'
         for s in shapes:
-            points=np.array(s['points'],dtype=np.float32);fill=s['fill'];kind='polygon';oval=None
+            points=np.array(s['points'],dtype=np.float32)/trace_scale;fill=s['fill'];kind='polygon';oval=None
             if not polygons_only and len(points)>=5 and cv2.isContourConvex(points):
                 ellipse=cv2.fitEllipse(points)
                 (cx,cy),(dx,dy),rotation=ellipse

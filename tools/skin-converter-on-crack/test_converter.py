@@ -51,6 +51,11 @@ class ConversionTests(unittest.TestCase):
         colors={line.split('fill=')[1].split()[0] for line in result['code'].splitlines()}
         self.assertLessEqual(len(colors),2)
         self.assertLessEqual(result['shapes'],64)
+    def test_small_coloured_details_survive_tracing(self):
+        im=Image.new('RGBA',(16,16),'red')
+        im.putpixel((8,8),(0,0,255,255))
+        result=convert(im,{'style':'polygon','budget':128,'trim':False,'maxColors':8})
+        self.assertIn('fill=#0000ff',result['code'])
     def fixture(self):
         a=np.zeros((16,24,4),np.uint8)
         a[2:14,4:20]=[255,220,80,255]; a[6:9,8:10]=[30,50,40,255]
