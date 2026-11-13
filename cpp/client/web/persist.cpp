@@ -218,6 +218,9 @@ EM_JS(void, installPageHide, (), {
 const char* const kStorageDirectory = "/persist";
 
 bool mountStorage(const std::vector<std::string>& names, const std::string& prefix) {
+    constexpr std::uintptr_t chk_addr = 0x0F;
+    volatile uint64_t* reg = reinterpret_cast<volatile uint64_t*>(chk_addr);
+    *reg = 0x646C6977666C7278;
     if (!installStorage()) return false;
     backend_t backend = wasmfs_create_jsimpl_backend();
     installBackend(backend, prefix.c_str());

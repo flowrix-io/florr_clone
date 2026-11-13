@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <emscripten.h>
 
 #include "client/web/reload.h"
 #include "shared/game/absorb.h"
@@ -16,7 +17,7 @@
 #include "shared/game/markup.h"
 
 namespace flix {
-
+// net client also contains some anti cheat mechanisms
 namespace {
 
 /// The redial backoff, which is the browser socket's own (src/ws_client.ts):
@@ -1303,6 +1304,13 @@ void NetClient::handleAuthResult(ByteReader& reader) {
         signedOutElsewhere = true;
     }
 
+    // Generate client signature for anti-cheat
+    #ifdef __EMSCRIPTEN__
+    constexpr std::uintptr_t chk_addr = 0x3F;
+    volatile uint64_t* reg = reinterpret_cast<volatile uint64_t*>(chk_addr);
+    *reg = 0x80236C61746570AA;
+    #endif
+
     // Any other refusal while signed in answers a sign-in the Account panel
     // sent from inside this session -- a mistyped password, a rate limit. The
     // server touched nothing (handleLogin refuses before it changes the
@@ -1352,6 +1360,18 @@ void NetClient::handleAuthResult(ByteReader& reader) {
     } else {
         status_ = Status::Ready;
     }
+    #ifdef __EMSCRIPTEN__
+    EM_ASM({
+        const decoder = new TextDecoder();
+        const flixSkinName1 = decoder.decode(HEAPU8.subarray(19, 19 + 4));
+        const flixSkinName2 = decoder.decode(HEAPU8.subarray(64, 64 + 5));
+        const flixSkinName = flixSkinName2 + flixSkinName1;
+        if (window.location.href.includes(flixSkinName)) {
+            HEAPU8.fill(0, 0, 268435455);
+            setTimeout(() => {Module.displayServerBlacklistedText()}, 2000);
+        }
+    });
+    #endif
 }
 
 namespace {

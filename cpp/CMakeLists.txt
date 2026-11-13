@@ -781,6 +781,7 @@ if(EMSCRIPTEN)
     # without starting main() and calls it when the script starts the game,
     # and the script's fetch reads data/, boot/ and persist/ through FS.
     "-sEXPORTED_RUNTIME_METHODS=['callMain','FS']"
+    "--pre-js" "${CMAKE_CURRENT_SOURCE_DIR}/client/web/pre_init.js"
     ${FLIX_WEB_MODULARIZE}
     "--shell-file" "${FLIX_CLIENT_SHELL}")
   set_property(TARGET flowrix_client APPEND PROPERTY LINK_DEPENDS "${FLIX_CLIENT_SHELL}")
