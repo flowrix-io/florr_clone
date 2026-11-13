@@ -42,10 +42,12 @@ class ConversionTests(unittest.TestCase):
     def test_photo_never_exceeds_budget_and_preview_matches_shapes(self):
         rng=np.random.default_rng(42)
         im=Image.fromarray(np.dstack((rng.integers(0,256,(32,32,3),dtype=np.uint8),np.full((32,32),255,np.uint8))))
-        for style in ('detail','pixel'):
+        for style in ('auto','polygon','detail','pixel'):
             result=convert(im,{'budget':32,'style':style,'trim':False})
             self.assertLessEqual(result['shapes'],32)
             self.assertEqual(len(result['code'].splitlines()),result['shapes'])
+            if style=='polygon':
+                self.assertTrue(all(line.startswith('polygon ') for line in result['code'].splitlines()))
     def test_exact_over_budget_is_marked_incompatible(self):
         a=np.zeros((32,32,4),np.uint8);a[:,:,3]=255
         for y in range(32):
@@ -95,7 +97,7 @@ class VectorTests(unittest.TestCase):
         im=Image.new('RGBA',(96,96));d=ImageDraw.Draw(im)
         d.ellipse((8,8,88,88),fill='#e66452');d.ellipse((30,30,45,60),fill='#ffffff')
         result=convert(im,{'style':'vector','budget':255,'grid':128,'trim':False})
-        self.assertEqual(result['method'],'Layered contour tracing')
+        self.assertEqual(result['method'],'Adaptive contour tracing (detail fitted to budget)')
         self.assertNotIn('rect ',result['code'])
         self.assertLess(result['shapes'],30)
         for line in result['code'].splitlines():

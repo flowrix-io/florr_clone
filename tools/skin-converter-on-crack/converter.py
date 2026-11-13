@@ -287,7 +287,7 @@ def convert(im,options):
         except ValueError as exc:
             raise ValueError(str(exc)+' Smart mode did not switch to rectangles. Choose Pixel art explicitly for a rectangle export.') from exc
         else:
-            return {'code':code,'shapes':count,'characters':len(code),'compatible':count<=255,'grid':list(grid_size),'originalGrid':list(original),'method':'Layered contour tracing','rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result),'types':types}
+            return {'code':code,'shapes':count,'characters':len(code),'compatible':count<=255,'grid':list(grid_size),'originalGrid':list(original),'method':'Adaptive contour tracing (detail fitted to budget)','rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result),'types':types}
     if mode=='exact':
         rects=rectangles(np.array(prepared)); result=prepared; loss=0.; method='Exact grid'
     else: rects,result,loss,method=optimize(prepared,budget,style)
@@ -337,7 +337,13 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False):
         e=error(im,out)
         candidates.append((e,'\n'.join(code),out,counts,len(shapes)))
     if not candidates:
-        # A small colour palette and stronger simplification is the bounded
-        # fallback. Do not quietly return a picture with whole regions missing.
-        raise ValueError('This picture needs more than the selected shape budget for outline tracing. Raise it to 1000 or try Pixel art mode.')
+        # Fit complex/noisy pictures by reducing tracing resolution, retaining
+        # whole-image coverage instead of dropping regions or using rectangles.
+        if max(im.size)>2:
+            reduced=im.copy()
+            reduced.thumbnail((max(2,im.width//2),max(2,im.height//2)),Image.Resampling.BOX)
+            loss,code,out,types,count=vector_shapes(reduced,budget,body_size,polygons_only)
+            out=out.resize(im.size,Image.Resampling.LANCZOS)
+            return error(im,out),code,out,types,count
+        raise ValueError('No visible contours were found. Lower the transparency threshold.')
     return min(candidates,key=lambda c:c[0])
