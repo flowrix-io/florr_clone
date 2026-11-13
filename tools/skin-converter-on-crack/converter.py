@@ -107,7 +107,7 @@ def convert_file(data, name='', frame=0, options=None):
         if not root.get('viewBox'):
             root.set('viewBox', f'0 0 {im.width} {im.height}')
         size = max(8, min(100, float(options.get('size', 46))))
-        budget = max(8, min(511, int(options.get('budget', 511))))
+        budget = max(8, min(1000, int(options.get('budget', 1000))))
         request = {'svg': ElementTree.tostring(root, encoding='unicode'), 'size': size, 'budget': budget}
         process = subprocess.run(['node', str(Path(__file__).with_name('svg-native.js'))],
                                  input=json.dumps(request), text=True, capture_output=True, timeout=20)
@@ -272,7 +272,7 @@ def commands(rects,size,body_size=46):
 def convert(im,options):
     im=im.convert('RGBA')
     mode=options.get('mode','game'); grid=max(8,min(512,int(options.get('grid',128))))
-    budget=max(8,min(511,int(options.get('budget',511))))
+    budget=max(8,min(1000,int(options.get('budget',1000))))
     style=options.get('style','auto')
     background=options.get('background','#ffffff')
     if len(background)!=7 or background[0]!='#': raise ValueError('Invalid matte colour.')
@@ -280,13 +280,11 @@ def convert(im,options):
     source=im.copy(); source.thumbnail((768,768))
     prepared,original,grid_size=prepare(im,grid,bool(options.get('trim',True)),background,options.get('alpha','cutout'),max(1,min(255,int(options.get('threshold',128)))),style=='pixel')
     if not np.any(np.array(prepared)[:,:,3]): raise ValueError('The selected frame is transparent at this threshold.')
-    if style=='auto' and len(rectangles(np.array(prepared)))<=budget:
-        mode='exact'
-    if mode!='exact' and style in ('auto','vector'):
+    if mode!='exact' and style in ('auto','vector','polygon'):
         try:
-            loss,code,result,types,count=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))))
+            loss,code,result,types,count=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))),polygons_only=style=='polygon')
         except ValueError:
-            if style=='vector': raise
+            if style in ('vector','polygon'): raise
             style='detail'
         else:
             return {'code':code,'shapes':count,'characters':len(code),'compatible':count<=255,'grid':list(grid_size),'originalGrid':list(original),'method':'Layered contour tracing','rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result),'types':types}
@@ -297,7 +295,7 @@ def convert(im,options):
     return {'code':code,'shapes':len(rects),'characters':len(code),'compatible':len(rects)<=255,'grid':list(grid_size),'originalGrid':list(original),'method':method,'rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result)}
 
 
-def vector_shapes(im,budget,body_size=46):
+def vector_shapes(im,budget,body_size=46,polygons_only=False):
     """Trace whole color regions; preserve paths by splitting, never dropping them."""
     import subprocess
     import cv2
@@ -317,7 +315,7 @@ def vector_shapes(im,budget,body_size=46):
         def num(n): return f'{n:.6f}'.rstrip('0').rstrip('.') if n else '0'
         for s in shapes:
             points=np.array(s['points'],dtype=np.float32);fill=s['fill'];kind='polygon';oval=None
-            if len(points)>=5 and cv2.isContourConvex(points):
+            if not polygons_only and len(points)>=5 and cv2.isContourConvex(points):
                 ellipse=cv2.fitEllipse(points)
                 (cx,cy),(dx,dy),rotation=ellipse
                 area=abs(cv2.contourArea(points))
@@ -341,5 +339,5 @@ def vector_shapes(im,budget,body_size=46):
     if not candidates:
         # A small colour palette and stronger simplification is the bounded
         # fallback. Do not quietly return a picture with whole regions missing.
-        raise ValueError('This picture needs more than the selected shape budget for outline tracing. Raise it to 511 or try Pixel art mode.')
+        raise ValueError('This picture needs more than the selected shape budget for outline tracing. Raise it to 1000 or try Pixel art mode.')
     return min(candidates,key=lambda c:c[0])

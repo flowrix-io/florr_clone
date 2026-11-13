@@ -72,3 +72,8 @@ upstream attribution and LICENSE for AGPL terms.
 High detail export now supports up to 511 shapes. This is a converter export
 limit, not a game protocol update. Flowrix and Petalwild targets retain their
 128/255 caps and exact exports above those caps are flagged.
+
+Maximum export budget: 1,000 shapes. Smart mode now traces contours first; it no
+longer silently switches to rectangular pixel runs. Polygons only disables
+ellipse fitting; Crisp pixel art / Exact pixel grid retain pixel-block export.
+Current game import limits remain unchanged.

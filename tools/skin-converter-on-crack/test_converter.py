@@ -27,8 +27,8 @@ class ConversionTests(unittest.TestCase):
             a[y0:y1,x0:x1]=(*bytes.fromhex(fields['fill'][1:]),255)
             self.assertLessEqual(max(abs(x),abs(y),rx,ry),64)
         self.assertTrue(np.array_equal(a,np.array(self.fixture())))
-    def test_no_approximation_if_exact_fits_budget(self):
-        result=convert(self.fixture(),{'grid':128})
+    def test_pixel_style_preserves_exact_grid_when_it_fits(self):
+        result=convert(self.fixture(),{'grid':128,'style':'pixel'})
         self.assertTrue(result['compatible']);self.assertTrue(result['exactGrid'])
     def test_photo_never_exceeds_budget_and_preview_matches_shapes(self):
         rng=np.random.default_rng(42)
@@ -108,6 +108,24 @@ class EdgeColorTests(unittest.TestCase):
         self.assertIn('#14b4aa',result['code'])
 
 class NativeSvgTests(unittest.TestCase):
+    def test_1000_target_preserves_700_native_shapes(self):
+        import base64
+        from server import convert_request
+        shapes=''.join(f'<circle cx="{x*3+2}" cy="{y*3+2}" r="1"/>' for y in range(20) for x in range(35))
+        svg=('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 107 62">'+shapes+'</svg>').encode()
+        result=convert_request({'image':base64.b64encode(svg).decode(),'name':'many.svg','options':{'gameLimit':1000,'budget':1000}})
+        self.assertEqual(result['shapes'],700)
+        self.assertTrue(result['compatible'])
+        self.assertFalse(result['gameCompatible'])
+
+    def test_polygon_look_emits_polygons_for_raster(self):
+        from PIL import ImageDraw
+        im=Image.new('RGBA',(48,48));d=ImageDraw.Draw(im)
+        d.polygon([(3,40),(24,3),(44,40)],fill='#ff4400')
+        result=convert(im,{'style':'polygon','budget':1000,'grid':64})
+        self.assertTrue(result['code'].startswith('polygon '))
+        self.assertNotIn('rect ',result['code'])
+
     def test_high_detail_target_preserves_more_than_255_vectors(self):
         import base64
         from server import convert_request

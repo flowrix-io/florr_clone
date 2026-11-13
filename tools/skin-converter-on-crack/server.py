@@ -18,7 +18,7 @@ def convert_request(request):
     image=base64.b64decode(request['image'],validate=True)
     options=dict(request.get('options',{}))
     requested=int(options.get('gameLimit',511))
-    limit=requested if requested in (128,255,511) else 511
+    limit=requested if requested in (128,255,511,1000) else 1000
     options['budget']=min(limit,int(options.get('budget',511)))
     result=convert_file(image,str(request.get('name','')),request.get('frame',0),options)
     result['compatible']=result['shapes']<=limit

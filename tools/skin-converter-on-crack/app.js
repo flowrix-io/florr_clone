@@ -26,7 +26,7 @@ async function run(){
   if(result.exactGrid)notes.push('Every prepared grid pixel is preserved.');else notes.push('Colour error '+result.rmse+' / 255 (lower is better).');
   notes.push(...result.meta.notes);status(notes.join(' '),result.compatible?'':'warn');
   $('compatibility').textContent=result.compatible?`✓ Within the game’s ${$('gameLimit').value}-shape limit. Paste into Skin Studio’s Text editor. Cutout edges use the alpha threshold; scaling and rotation can soften edges.`:`⚠ ${result.shapes.toLocaleString()} shapes: this exact export exceeds the selected ${$('gameLimit').value}-shape limit and cannot be pasted into the current game. Choose Game-ready to make a compatible version.`;
-  if(!result.gameCompatible && +$('gameLimit').value===511) $('compatibility').textContent='511-shape export: current Flowrix (128) and Petalwild (255) cannot import this many shapes. Select their target to generate a compatible version.';
+  if(!result.gameCompatible && +$('gameLimit').value>255) $('compatibility').textContent=$('gameLimit').value+'-shape export: current Flowrix (128) and Petalwild (255) cannot import this many shapes. Select their target to generate a compatible version.';
   $('compatibility').style.color=result.compatible?'#5a8054':'#a06d28';available(true);
  }catch(error){status(error.message,'error'); current=null;available(false);$('code').value='';}
  finally{busy=false;controls.forEach(id=>$(id).disabled=false);$('budget').disabled=$('mode').value==='exact';$('drop').disabled=false;$('convert').disabled=!imageData;$('convert').innerHTML='Make my skin <span>↗</span>';}
@@ -37,7 +37,7 @@ for(const event of ['dragleave','drop'])$('drop').addEventListener(event,e=>{e.p
 $('drop').addEventListener('drop',e=>{if(e.dataTransfer.files[0])load(e.dataTransfer.files[0]);});
 document.addEventListener('paste',e=>{const file=[...e.clipboardData.items].find(x=>x.kind==='file'&&x.type.startsWith('image/'));if(file){e.preventDefault();load(file.getAsFile());}});
 $('convert').onclick=run;
-controls.forEach(id=>$(id).addEventListener('change',()=>{if(imageData){status('Settings changed. Click “Make my skin” to update the export.');available(false);}if(id==='mode')$('budget').disabled=$('mode').value==='exact';}));
+controls.forEach(id=>$(id).addEventListener('change',()=>{if(imageData){status('Settings changed. Click “Make my skin” to update the export.');available(false);}if(id==='budget' && +$('budget').value>+$('gameLimit').value) $('gameLimit').value=$('budget').value; if(id==='mode')$('budget').disabled=$('mode').value==='exact';}));
 $('threshold').oninput=()=>$('thresholdValue').textContent=$('threshold').value;
 $('pixels').onchange=()=>document.querySelector('.previewcard').classList.toggle('smooth',!$('pixels').checked);
 $('side').onclick=()=>{$('comparison').hidden=false;$('wipeview').hidden=true;$('side').classList.add('selected');$('wipe').classList.remove('selected');};
