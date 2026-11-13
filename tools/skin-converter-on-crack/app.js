@@ -23,6 +23,7 @@ async function run(){
   $('frameLabel').hidden=result.meta.frames<=1;$('frame').max=Math.min(500,result.meta.frames);$('frame').value=result.meta.frame+1;
   const shapeTypes=result.types||{rect:result.shapes};
   const notes=[Object.entries(shapeTypes).map(([kind,count])=>`${count} ${kind}`).join(', ')+'.',`${result.meta.format} · ${result.meta.width} × ${result.meta.height} · ${result.method} · ${result.grid.join(' × ')} px grid.`];
+  if(result.traceGrid && result.traceGrid.some((n,i)=>n!==result.grid[i]))notes.push('Outline resolution reduced to '+result.traceGrid.join(' × ')+' to fit the shape budget.');
   if(result.resized)notes.push('Resized from '+result.originalGrid.join(' × ')+' px.');
   if(result.exactGrid)notes.push('Every prepared grid pixel is preserved.');else notes.push('Colour error '+result.rmse+' / 255 (lower is better).');
   notes.push(...result.meta.notes);status(notes.join(' '),result.compatible?'':'warn');
@@ -38,7 +39,7 @@ for(const event of ['dragleave','drop'])$('drop').addEventListener(event,e=>{e.p
 $('drop').addEventListener('drop',e=>{if(e.dataTransfer.files[0])load(e.dataTransfer.files[0]);});
 document.addEventListener('paste',e=>{const file=[...e.clipboardData.items].find(x=>x.kind==='file'&&x.type.startsWith('image/'));if(file){e.preventDefault();load(file.getAsFile());}});
 $('convert').onclick=run;
-controls.forEach(id=>$(id).addEventListener('change',()=>{if(imageData){status('Settings changed. Click “Make my skin” to update the export.');available(false);}if(id==='budget' && +$('budget').value>+$('gameLimit').value) $('gameLimit').value=$('budget').value; if(id==='removeBackground' && $('removeBackground').checked) $('alpha').value='cutout'; if(id==='style' && ['polygon','vector'].includes($('style').value)) $('mode').value='game'; if(id==='mode' && $('mode').value==='exact') $('style').value='pixel'; $('budget').disabled=$('mode').value==='exact';}));
+controls.forEach(id=>$(id).addEventListener('change',()=>{if(imageData){status('Settings changed. Click “Make my skin” to update the export.');available(false);}if(id==='gameLimit') $('budget').value=$('gameLimit').value; if(id==='budget' && +$('budget').value>+$('gameLimit').value) $('gameLimit').value=$('budget').value; if(id==='removeBackground' && $('removeBackground').checked) $('alpha').value='cutout'; if(id==='style' && ['polygon','vector'].includes($('style').value)) $('mode').value='game'; if(id==='mode' && $('mode').value==='exact') $('style').value='pixel'; $('budget').disabled=$('mode').value==='exact';}));
 $('backgroundTolerance').oninput=()=>$('backgroundToleranceValue').textContent=$('backgroundTolerance').value;
 $('threshold').oninput=()=>$('thresholdValue').textContent=$('threshold').value;
 $('pixels').onchange=()=>document.querySelector('.previewcard').classList.toggle('smooth',!$('pixels').checked);

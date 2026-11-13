@@ -331,7 +331,7 @@ def convert(im,options):
         except ValueError as exc:
             raise ValueError(str(exc)+' Smart mode did not switch to rectangles. Choose Pixel art explicitly for a rectangle export.') from exc
         else:
-            return {'code':code,'shapes':count,'characters':len(code),'compatible':count<=255,'grid':list(grid_size),'originalGrid':list(original),'method':'Adaptive contour tracing (detail fitted to budget)','rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result),'types':types,**vector_preview(svg)}
+            return {'code':code,'shapes':count,'characters':len(code),'compatible':count<=255,'grid':list(grid_size),'originalGrid':list(original),'method':'Adaptive contour tracing (detail fitted to budget)','rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result),'types':types,'traceGrid':[int(v) for v in __import__('re').search(r'viewBox="0 0 (\d+) (\d+)"',svg).groups()],**vector_preview(svg)}
     if mode=='exact':
         rects=rectangles(np.array(prepared)); result=prepared; loss=0.; method='Exact grid'
     else: rects,result,loss,method=optimize(prepared,budget,style)
@@ -346,13 +346,19 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False,detail=.6,max_color
     from cairosvg import svg2png
     trace_scale=max(1,math.ceil(128/max(im.size)))
     traced=im.resize((im.width*trace_scale,im.height*trace_scale),Image.Resampling.NEAREST) if trace_scale>1 else im
-    b=io.BytesIO();traced.save(b,format='PNG')
     candidates=[]; root=Path(__file__).resolve().parent
     factor=body_size/max(im.size)
     detail=max(.1,min(1.5,float(detail)))
     max_colors=max(2,min(255,int(max_colors)))
     palette=sorted(set([v for v in (2,4,8,24,64,128,255) if v<=max_colors]+[max_colors]))
     for colors in palette:
+        # Reduce colour noise BEFORE tracing, not after geometry creation.
+        # Recolouring thousands of noisy regions still spends thousands of
+        # polygons and forced the old fitter down to a coarse pixel grid.
+        quant=im.convert('RGB').quantize(colors=colors,method=Image.Quantize.MEDIANCUT,dither=Image.Dither.NONE).convert('RGBA')
+        quant.putalpha(im.getchannel('A'))
+        if trace_scale>1: quant=quant.resize(traced.size,Image.Resampling.NEAREST)
+        b=io.BytesIO();quant.save(b,format='PNG')
         request={'png':base64.b64encode(b.getvalue()).decode(),'colors':colors,'simplify':detail,'cornerThreshold':60 if detail<.4 else (100 if detail>1 else 80)}
         process=subprocess.run(['node',str(root/'vectorize.js')],input=__import__('json').dumps(request),text=True,capture_output=True,timeout=35,cwd=root)
         if process.returncode: raise ValueError('The local vector tracer failed. Try a smaller pixel grid or Pixel art mode.')

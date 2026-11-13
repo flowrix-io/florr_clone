@@ -56,6 +56,15 @@ class ConversionTests(unittest.TestCase):
         im.putpixel((8,8),(0,0,255,255))
         result=convert(im,{'style':'polygon','budget':128,'trim':False,'maxColors':8})
         self.assertIn('fill=#0000ff',result['code'])
+    def test_colour_noise_is_reduced_without_shrinking_outline_grid(self):
+        from PIL import ImageDraw
+        im=Image.new('RGB',(128,128),(30,120,40))
+        ImageDraw.Draw(im).ellipse((20,20,108,108),fill=(245,200,20))
+        a=np.array(im).astype(np.int16)
+        a=np.clip(a+np.random.default_rng(8).integers(-4,5,a.shape),0,255).astype(np.uint8)
+        result=convert(Image.fromarray(a),{'style':'polygon','grid':128,'budget':128,'trim':False})
+        self.assertEqual(result['traceGrid'],[128,128])
+        self.assertLessEqual(result['shapes'],128)
     def fixture(self):
         a=np.zeros((16,24,4),np.uint8)
         a[2:14,4:20]=[255,220,80,255]; a[6:9,8:10]=[30,50,40,255]
