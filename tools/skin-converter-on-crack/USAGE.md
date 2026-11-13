@@ -81,3 +81,7 @@ Current game import limits remain unchanged.
 ## Background removal
 
 Enable **Remove background**, adjust **Background tolerance**, then convert. The local edge-connected colour filter works best on solid backgrounds; it is not a semantic photo cutout model. Existing transparent borders are preserved. Use **Save transparent PNG** for the cutout before skin quantization. SVGs are rasterized when removal is enabled.
+
+## Trace tuning and inspection
+
+Raster contours offer Fine corners, Balanced and Smooth detail presets, plus a colour limit. Native SVG retains its original paths. Preview zoom reaches 800%; drag a side-by-side preview to pan both images together. These local controls are inspired by vector-editing workflows; they do not use Vectorizer.AI services or models.

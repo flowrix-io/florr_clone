@@ -71,7 +71,7 @@ function contourPolygons(all){
  return out;
 }
 const req=JSON.parse(fs.readFileSync(0,'utf8'));
-const svg=vtracer.convertBuffer(Buffer.from(req.png,'base64'),{mode:'polygon',hierarchical:'stacked',maxColors:req.colors,colorPrecision:8,filterSpeckle:req.speckle||0,simplify:req.simplify??0.5,cornerThreshold:80,pathPrecision:3,optimize:1});
+const svg=vtracer.convertBuffer(Buffer.from(req.png,'base64'),{mode:'polygon',hierarchical:'stacked',maxColors:req.colors,colorPrecision:8,filterSpeckle:req.speckle||0,simplify:req.simplify??0.5,cornerThreshold:req.cornerThreshold??80,pathPrecision:3,optimize:1});
 const shapes=[];
 for(const m of svg.matchAll(/<path\b([^>]+)\/?\s*>/g)){
  const d=/\bd="([^"]+)"/.exec(m[1]),fill=/\bfill="(#[0-9a-fA-F]{6})"/.exec(m[1]);if(!d||!fill)continue;

@@ -46,6 +46,11 @@ class ConversionTests(unittest.TestCase):
         self.assertTrue(all(e.tag.endswith('polygon') for e in root))
         hi=Image.open(io.BytesIO(base64.b64decode(result['previewPng'].split(',')[1])))
         self.assertGreater(hi.width,result['grid'][0])
+    def test_palette_limit_and_contour_detail_stay_within_budget(self):
+        result=convert(self.fixture(),{'style':'polygon','budget':64,'maxColors':2,'detail':.2})
+        colors={line.split('fill=')[1].split()[0] for line in result['code'].splitlines()}
+        self.assertLessEqual(len(colors),2)
+        self.assertLessEqual(result['shapes'],64)
     def fixture(self):
         a=np.zeros((16,24,4),np.uint8)
         a[2:14,4:20]=[255,220,80,255]; a[6:9,8:10]=[30,50,40,255]

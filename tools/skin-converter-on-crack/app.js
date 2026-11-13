@@ -1,14 +1,14 @@
 'use strict';
 const $=id=>document.getElementById(id);
 let imageData='',filename='',current=null,busy=false;
-const controls=['gameLimit','mode','style','grid','budget','size','alpha','background','threshold','trim','frame','removeBackground','backgroundTolerance'];
+const controls=['gameLimit','mode','style','grid','budget','size','alpha','background','threshold','trim','frame','removeBackground','backgroundTolerance','detail','maxColors'];
 function status(message,kind=''){ $('status').textContent=message; $('status').className='status '+kind; }
-function options(){return {removeBackground:$('removeBackground').checked,backgroundTolerance:+$('backgroundTolerance').value,gameLimit:+$('gameLimit').value,mode:$('mode').value,style:$('style').value,grid:+$('grid').value,budget:+$('budget').value,size:+$('size').value,alpha:$('alpha').value,background:$('background').value,threshold:+$('threshold').value,trim:$('trim').checked};}
+function options(){return {detail:+$('detail').value,maxColors:+$('maxColors').value,removeBackground:$('removeBackground').checked,backgroundTolerance:+$('backgroundTolerance').value,gameLimit:+$('gameLimit').value,mode:$('mode').value,style:$('style').value,grid:+$('grid').value,budget:+$('budget').value,size:+$('size').value,alpha:$('alpha').value,background:$('background').value,threshold:+$('threshold').value,trim:$('trim').checked};}
 function available(enabled){ for(const id of ['copy','save','savePng']) $(id).disabled=!enabled; $('saveCutout').disabled=!enabled||!current?.cutout; }
 async function load(file){
  if(busy)return;
  if(file.size>40*1024*1024){status('Choose an image smaller than 40 MB.','error');return;}
- filename=file.name; imageData=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});
+ resetPreview(); filename=file.name; imageData=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});
  $('fileline').textContent=filename+' · '+(file.size/1024).toFixed(1)+' KB'; $('frame').value=1; current=null; available(false); $('convert').disabled=false; await run();
 }
 async function run(){
@@ -55,3 +55,18 @@ $('demo').onclick=()=>{const c=document.createElement('canvas');c.width=c.height
  x.fillStyle='#253b32';x.fillRect(7,8,2,5);x.fillRect(15,8,2,5);x.fillRect(10,15,4,1);x.fillRect(9,14,1,1);x.fillRect(14,14,1,1);x.fillStyle='#efa073';x.fillRect(5,13,3,1);x.fillRect(16,13,3,1);
  c.toBlob(b=>load(new File([b],'sunny-pixel-flower.png',{type:'image/png'})));
 };
+
+let previewZoom=1,previewX=0,previewY=0,previewDrag=null;
+function paintPreview(){
+ for(const id of ['source','result','wipeSource','wipeResult']) $(id).style.transform=`translate(${previewX}px,${previewY}px) scale(${previewZoom})`;
+ $('zoomReset').textContent=Math.round(previewZoom*100)+'%';
+}
+function resetPreview(){previewZoom=1;previewX=previewY=0;paintPreview();}
+$('zoomReset').onclick=resetPreview;
+$('zoomIn').onclick=()=>{previewZoom=Math.min(8,previewZoom*1.5);paintPreview();};
+$('zoomOut').onclick=()=>{previewZoom=Math.max(1,previewZoom/1.5);if(previewZoom===1)previewX=previewY=0;paintPreview();};
+for(const el of document.querySelectorAll('.pane,#wipeview')){
+ el.addEventListener('pointerdown',e=>{if(previewZoom<=1||e.target.id==='wipeRange')return;previewDrag={x:e.clientX,y:e.clientY,panX:previewX,panY:previewY};el.setPointerCapture(e.pointerId);e.preventDefault();});
+ el.addEventListener('pointermove',e=>{if(!previewDrag)return;previewX=Math.max(-800,Math.min(800,previewDrag.panX+e.clientX-previewDrag.x));previewY=Math.max(-800,Math.min(800,previewDrag.panY+e.clientY-previewDrag.y));paintPreview();});
+ for(const event of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(event,()=>previewDrag=null);
+}

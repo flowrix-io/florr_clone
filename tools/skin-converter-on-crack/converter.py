@@ -327,7 +327,7 @@ def convert(im,options):
     if not np.any(np.array(prepared)[:,:,3]): raise ValueError('The selected frame is transparent at this threshold.')
     if mode!='exact' and style in ('auto','vector','polygon'):
         try:
-            loss,code,result,types,count,svg=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))),polygons_only=style=='polygon')
+            loss,code,result,types,count,svg=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))),polygons_only=style=='polygon', detail=options.get('detail',.6), max_colors=options.get('maxColors',255))
         except ValueError as exc:
             raise ValueError(str(exc)+' Smart mode did not switch to rectangles. Choose Pixel art explicitly for a rectangle export.') from exc
         else:
@@ -339,7 +339,7 @@ def convert(im,options):
     return {'code':code,'shapes':len(rects),'characters':len(code),'compatible':len(rects)<=255,'grid':list(grid_size),'originalGrid':list(original),'method':method,'rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result)}
 
 
-def vector_shapes(im,budget,body_size=46,polygons_only=False):
+def vector_shapes(im,budget,body_size=46,polygons_only=False,detail=.6,max_colors=255):
     """Trace whole color regions; preserve paths by splitting, never dropping them."""
     import subprocess
     import cv2
@@ -347,8 +347,11 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False):
     b=io.BytesIO();im.save(b,format='PNG')
     candidates=[]; root=Path(__file__).resolve().parent
     factor=body_size/max(im.size)
-    for colors in (2,4,8,24,64,128,255):
-        request={'png':base64.b64encode(b.getvalue()).decode(),'colors':colors,'simplify':0.6}
+    detail=max(.1,min(1.5,float(detail)))
+    max_colors=max(2,min(255,int(max_colors)))
+    palette=sorted(set([v for v in (2,4,8,24,64,128,255) if v<=max_colors]+[max_colors]))
+    for colors in palette:
+        request={'png':base64.b64encode(b.getvalue()).decode(),'colors':colors,'simplify':detail,'cornerThreshold':60 if detail<.4 else (100 if detail>1 else 80)}
         process=subprocess.run(['node',str(root/'vectorize.js')],input=__import__('json').dumps(request),text=True,capture_output=True,timeout=35,cwd=root)
         if process.returncode: raise ValueError('The local vector tracer failed. Try a smaller pixel grid or Pixel art mode.')
         shapes=__import__('json').loads(process.stdout)['shapes']
@@ -386,7 +389,7 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False):
         if max(im.size)>2:
             reduced=im.copy()
             reduced.thumbnail((max(2,im.width//2),max(2,im.height//2)),Image.Resampling.BOX)
-            loss,code,out,types,count,svg=vector_shapes(reduced,budget,body_size,polygons_only)
+            loss,code,out,types,count,svg=vector_shapes(reduced,budget,body_size,polygons_only,detail,max_colors)
             out=out.resize(im.size,Image.Resampling.LANCZOS)
             return error(im,out),code,out,types,count,svg
         raise ValueError('No visible contours were found. Lower the transparency threshold.')
