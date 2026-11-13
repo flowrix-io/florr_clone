@@ -21,7 +21,8 @@ async function run(){
   $('source').src=result.source;$('result').src=result.result;$('wipeSource').src=result.target;$('wipeResult').src=result.result;
   $('code').value=result.code;$('shapes').textContent=result.shapes.toLocaleString();$('shapeLimit').textContent='SHAPES / '+$('gameLimit').value;$('chars').textContent=result.characters.toLocaleString();$('quality').textContent=result.exactGrid?'Exact grid':result.rmse+' / 255';
   $('frameLabel').hidden=result.meta.frames<=1;$('frame').max=Math.min(500,result.meta.frames);$('frame').value=result.meta.frame+1;
-  const notes=[`${result.meta.format} · ${result.meta.width} × ${result.meta.height} · ${result.method} · ${result.grid.join(' × ')} px grid.`];
+  const shapeTypes=result.types||{rect:result.shapes};
+  const notes=[Object.entries(shapeTypes).map(([kind,count])=>`${count} ${kind}`).join(', ')+'.',`${result.meta.format} · ${result.meta.width} × ${result.meta.height} · ${result.method} · ${result.grid.join(' × ')} px grid.`];
   if(result.resized)notes.push('Resized from '+result.originalGrid.join(' × ')+' px.');
   if(result.exactGrid)notes.push('Every prepared grid pixel is preserved.');else notes.push('Colour error '+result.rmse+' / 255 (lower is better).');
   notes.push(...result.meta.notes);status(notes.join(' '),result.compatible?'':'warn');
@@ -37,7 +38,7 @@ for(const event of ['dragleave','drop'])$('drop').addEventListener(event,e=>{e.p
 $('drop').addEventListener('drop',e=>{if(e.dataTransfer.files[0])load(e.dataTransfer.files[0]);});
 document.addEventListener('paste',e=>{const file=[...e.clipboardData.items].find(x=>x.kind==='file'&&x.type.startsWith('image/'));if(file){e.preventDefault();load(file.getAsFile());}});
 $('convert').onclick=run;
-controls.forEach(id=>$(id).addEventListener('change',()=>{if(imageData){status('Settings changed. Click “Make my skin” to update the export.');available(false);}if(id==='budget' && +$('budget').value>+$('gameLimit').value) $('gameLimit').value=$('budget').value; if(id==='mode')$('budget').disabled=$('mode').value==='exact';}));
+controls.forEach(id=>$(id).addEventListener('change',()=>{if(imageData){status('Settings changed. Click “Make my skin” to update the export.');available(false);}if(id==='budget' && +$('budget').value>+$('gameLimit').value) $('gameLimit').value=$('budget').value; if(id==='style' && ['polygon','vector'].includes($('style').value)) $('mode').value='game'; if(id==='mode' && $('mode').value==='exact') $('style').value='pixel'; $('budget').disabled=$('mode').value==='exact';}));
 $('threshold').oninput=()=>$('thresholdValue').textContent=$('threshold').value;
 $('pixels').onchange=()=>document.querySelector('.previewcard').classList.toggle('smooth',!$('pixels').checked);
 $('side').onclick=()=>{$('comparison').hidden=false;$('wipeview').hidden=true;$('side').classList.add('selected');$('wipe').classList.remove('selected');};

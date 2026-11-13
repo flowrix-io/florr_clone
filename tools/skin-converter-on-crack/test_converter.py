@@ -6,6 +6,15 @@ from PIL import Image
 from converter import decode, convert, rectangles, draw_rects
 
 class ConversionTests(unittest.TestCase):
+    def test_polygon_selection_overrides_exact_pixel_mode(self):
+        result=convert(self.fixture(),{'mode':'exact','style':'polygon','budget':1000})
+        self.assertTrue(all(line.startswith('polygon ') for line in result['code'].splitlines()))
+        self.assertGreater(result['shapes'],0)
+    def test_auto_never_silently_switches_to_rectangles(self):
+        from unittest.mock import patch
+        with patch('converter.vector_shapes',side_effect=ValueError('Tracing failed')):
+            with self.assertRaisesRegex(ValueError,'did not switch to rectangles'):
+                convert(self.fixture(),{'style':'auto'})
     def fixture(self):
         a=np.zeros((16,24,4),np.uint8)
         a[2:14,4:20]=[255,220,80,255]; a[6:9,8:10]=[30,50,40,255]
@@ -33,7 +42,7 @@ class ConversionTests(unittest.TestCase):
     def test_photo_never_exceeds_budget_and_preview_matches_shapes(self):
         rng=np.random.default_rng(42)
         im=Image.fromarray(np.dstack((rng.integers(0,256,(32,32,3),dtype=np.uint8),np.full((32,32),255,np.uint8))))
-        for style in ('auto','detail','pixel'):
+        for style in ('detail','pixel'):
             result=convert(im,{'budget':32,'style':style,'trim':False})
             self.assertLessEqual(result['shapes'],32)
             self.assertEqual(len(result['code'].splitlines()),result['shapes'])

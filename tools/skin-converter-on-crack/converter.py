@@ -274,6 +274,7 @@ def convert(im,options):
     mode=options.get('mode','game'); grid=max(8,min(512,int(options.get('grid',128))))
     budget=max(8,min(1000,int(options.get('budget',1000))))
     style=options.get('style','auto')
+    if style in ('vector','polygon'): mode='game'
     background=options.get('background','#ffffff')
     if len(background)!=7 or background[0]!='#': raise ValueError('Invalid matte colour.')
     bytes.fromhex(background[1:])
@@ -283,9 +284,8 @@ def convert(im,options):
     if mode!='exact' and style in ('auto','vector','polygon'):
         try:
             loss,code,result,types,count=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))),polygons_only=style=='polygon')
-        except ValueError:
-            if style in ('vector','polygon'): raise
-            style='detail'
+        except ValueError as exc:
+            raise ValueError(str(exc)+' Smart mode did not switch to rectangles. Choose Pixel art explicitly for a rectangle export.') from exc
         else:
             return {'code':code,'shapes':count,'characters':len(code),'compatible':count<=255,'grid':list(grid_size),'originalGrid':list(original),'method':'Layered contour tracing','rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result),'types':types}
     if mode=='exact':
