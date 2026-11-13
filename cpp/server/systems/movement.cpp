@@ -1036,8 +1036,11 @@ void MovementSystem::buildSeparationSet(World& world) {
         if (const MobType* type = world.tryGet<MobType>(e)) {
             const MobConfig& config = registry.mob(type->configIndex);
             entry.noCollision = config.noMobCollision;
+            entry.collidesWithOwnKind = config.collidesWithOwnKind;
+            entry.configIndex = type->configIndex;
             entry.gardnChain = config.gardnChain;
         }
+        if (const Faction* faction = world.tryGet<Faction>(e)) entry.team = faction->team;
         if (const HoleTether* tether = world.tryGet<HoleTether>(e)) {
             if (tether->emerging) entry.emergingFrom = tether->hole;
         }
@@ -1061,7 +1064,7 @@ void MovementSystem::separateMobs(World& world, const Terrain& terrain) {
     // the order the set happens to be walked in. Mass plays no part -- the
     // separation is symmetric and driven purely by the two radii.
     for (SeparationEntry& self : separationSet_) {
-        if (self.noCollision) continue;
+        if (self.noCollision && !self.collidesWithOwnKind) continue;
         // The grid files a mob under every cell its own circle touches, so a
         // query of this mob's radius plus the buffer already returns every
         // neighbour that can be inside the sum of the two radii.
@@ -1087,9 +1090,16 @@ void MovementSystem::separateMobs(World& world, const Terrain& terrain) {
                 if (joined || !(self.gardnChain && other.gardnChain)) continue;
             }
             // The exemption belongs to the PAIR: a mob flagged
-            // no_mob_collision neither pushes nor is pushed.
-            if (other.noCollision) continue;
-
+            // no_mob_collision neither pushes nor is pushed -- unless both are
+            // the same collides_with_own_kind type on one team (a stick's
+            // storms against each other, never against an enemy or a wild
+            // storm). Symmetric, so both sides of the pair agree.
+            if (self.noCollision || other.noCollision) {
+                const bool ownKind = self.collidesWithOwnKind && other.collidesWithOwnKind &&
+                                     self.configIndex == other.configIndex &&
+                                     self.team == other.team;
+                if (!ownKind) continue;
+            }
             const Vec2 toOther = other.position - self.position;
             const double distance = toOther.length();
             const double minDistance = self.radius + other.radius + kMobCollisionBuffer;
