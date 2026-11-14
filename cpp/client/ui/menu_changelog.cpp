@@ -577,6 +577,11 @@ constexpr ChangelogEntry kChangelog[] = {
       {
         "Rebalanced some petals",
       }
+    },
+    {"November 13, 2026",
+      {
+        "Added Waves (opens randomly)"
+      }
     }
 };
 

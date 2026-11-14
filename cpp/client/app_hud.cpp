@@ -502,7 +502,7 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     // In a prestige biome a super is ordinary stock, not a boss
     // (shared/game/prestige.h), and keeps only the bar under its body.
     const bool prestige = worldMaps_.isPrestige(net_.view().realm());
-    // The waves raise supers by the dozen from wave 80; none of them is a boss.
+    // The waves raise supers by the dozen from wave 200; none of them is a boss.
     if (net_.view().realm() == kWavesRealm) return 0.0;
     std::vector<const RemoteEntity*> bosses;
     const Rect view = camera_.visibleWorld();
@@ -531,10 +531,18 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
         bosses.push_back(&entity);
     }
     if (bosses.empty()) return 0.0;
-    // The entity table is unordered, so two bosses on screen at once would
-    // otherwise trade rows from frame to frame.
-    std::sort(bosses.begin(), bosses.end(),
-              [](const RemoteEntity* a, const RemoteEntity* b) { return a->netId < b->netId; });
+    // Rarest first, so when more bosses are on screen than there are rows the
+    // apexes and uniques keep theirs. The entity table is unordered, so the
+    // netId tiebreak is what stops two bosses of one tier trading rows from
+    // frame to frame.
+    std::sort(bosses.begin(), bosses.end(), [](const RemoteEntity* a, const RemoteEntity* b) {
+        if (a->rarity != b->rarity) return a->rarity > b->rarity;
+        return a->netId < b->netId;
+    });
+    /// No more rows than this, however many bosses are in view: past it the
+    /// stack would bury the top of the screen.
+    constexpr std::size_t kMaxBossBars = 4;
+    if (bosses.size() > kMaxBossBars) bosses.resize(kMaxBossBars);
 
     constexpr double kBarWidth = 400.0;
     constexpr double kBarHeight = 34.0;

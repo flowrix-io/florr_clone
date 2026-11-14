@@ -322,6 +322,25 @@ inline Rarity rollSpawnRarity(double difficulty, double luck, Rng& rng) {
                        rng);
 }
 
+/// The chance that one spawn on difficulty-`difficulty` ground comes out at
+/// `tier` or above, at neutral luck: the ground's own odds, not any one
+/// player's. Pure, the exact probability rollSpawnRarity() draws from.
+inline double spawnChanceAtLeast(double difficulty, Rarity tier) {
+    const int floor = rarityIndex(tier);
+    if (isRandomDifficulty(difficulty)) {
+        double total = 0.0, above = 0.0;
+        for (std::size_t i = 0; i < kNaturalRaritySpread.size(); ++i) {
+            total += kNaturalRaritySpread[i];
+            if (static_cast<int>(i) >= floor) above += kNaturalRaritySpread[i];
+        }
+        return total > 0.0 ? above / total : 0.0;
+    }
+    const TierMix mix = tierMixForDifficulty(difficulty);
+    if (rarityIndex(mix.lower) >= floor) return 1.0;
+    if (rarityIndex(mix.upper) >= floor) return mix.upperChance;
+    return 0.0;
+}
+
 /// The tier a difficulty mostly produces -- the more likely half of its blend.
 /// What the minimap paints a band in, so a band reads as the tier a player will
 /// actually meet in it.

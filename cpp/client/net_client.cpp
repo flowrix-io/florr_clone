@@ -8,8 +8,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-
+#endif
 #include "client/web/reload.h"
 #include "shared/game/absorb.h"
 #include "shared/core/text.h"

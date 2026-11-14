@@ -142,6 +142,9 @@ struct Harness {
         // The cheapest cost there is, as seedUser() writes its accounts at: a
         // test about accounts is not a test of how slow bcrypt is.
         config.passwordCost = crypto::kBcryptMinCost;
+        // A rift that opened because the suite ran across the top of an hour
+        // would be in every test's way; the tests of it turn it back on.
+        config.hourlyRifts = false;
         if (configure) configure(config);
 
         std::string error;

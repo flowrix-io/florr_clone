@@ -355,6 +355,25 @@ inline constexpr double kTargetMobDensity = 9000.0 / (kWorldSize * kWorldSize);
 /// the spawn that happened rather than of a scheduler.
 inline constexpr Rarity kAnnouncedRarity = Rarity::Super;
 
+/// A super is news only where supers are rare (user, 2026-11-13). On ground
+/// where more than this share of spawns comes out a boss -- a band's chance of
+/// rolling super or above at neutral luck, spawnChanceAtLeast(difficulty,
+/// kAnnouncedRarity) -- a super is the band's ordinary stock and appears and
+/// dies without a line in chat. The deep Ant Hell bands (102.5, 105, 130) are
+/// the shipped ground past it; a difficulty-100 band is 2% and still announces.
+///
+/// Supers only. A unique or apex is its biome's clock's to hand out, at most
+/// one per cooldown however steep the band, so it is announced wherever it
+/// stands. Ground no band covers rolls nothing and reads as 0%, so a console
+/// super there, or in a map-less realm, still announces.
+inline constexpr double kQuietBossChance = 0.03;
+
+/// A boss whose spawn was not announced (kQuietBossChance), so its defeat is
+/// not either: chat never mourns a boss nobody was told about. Set once at the
+/// spawn and carried to whatever the mob turns or divides into, so the answer
+/// is the ground it was born on, not the ground it happens to die on.
+struct QuietBoss {};
+
 /// The two tiers above super are not band difficulty's to hand out: a band's
 /// roll stops at super, and a wild unique or apex is a super spawn that a
 /// BIOME'S CLOCK upgraded. Each biome keeps one clock per tier, and while a
@@ -908,8 +927,18 @@ private:
     /// Queues one boss for whoever owns the chat channel, when the spawn was
     /// notable enough to be worth one: kAnnouncedRarity and up, and never a
     /// permanent fixture (a super target dummy is a DPS post, not an event).
-    void announceIfNotable(const ContentRegistry& content, Entity entity, std::uint16_t mobIndex,
-                           Rarity rarity, Vec2 position, Realm realm);
+    /// A super on ground past kQuietBossChance is tagged QuietBoss instead.
+    /// `zone` is the band that placed it, or kInvalidIndex for the ground
+    /// under `position`.
+    void announceIfNotable(World& world, const ContentRegistry& content, Entity entity,
+                           std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
+                           std::uint16_t zone);
+
+    /// The chance one band spawn comes out a boss (kAnnouncedRarity or above)
+    /// on the ground a boss appeared on: `zone`'s difficulty when a band placed
+    /// it, otherwise the band under `at` (difficultyAt). Neutral luck: the
+    /// ground's odds, not the nearest flower's.
+    double bossChanceAt(Realm realm, Vec2 at, std::uint16_t zone) const;
 
     void rebuildZones(const ContentRegistry& content);
 
@@ -1156,3 +1185,4 @@ void spawnMobRingSeeds(World& world, const ContentRegistry& content, Entity mob,
 
 FLIX_COMPONENT(flix::AmbientMob);
 FLIX_COMPONENT(flix::NestWaves);
+FLIX_COMPONENT(flix::QuietBoss);

@@ -106,6 +106,14 @@ const WorldMaps& authoredMaps();
 void makeBandedWorld(WorldMaps& out, const std::vector<Rect>& bands, const std::string& mobs,
                      double difficulty = 0.0);
 
+/// The difficulty at which `chance` (0..1, exclusive) of a band's spawns come
+/// out a boss: the ultra/super blend, read off the curve rather than written
+/// down, so retuning the anchors moves it too.
+double groundWithBossChance(double chance) {
+    return difficultyForTierValue(static_cast<double>(rarityIndex(kAnnouncedRarity)) - 1.0 +
+                                  chance);
+}
+
 /// The same, with ONE band and the `singular` flag on it: a band that holds a
 /// single mob however large it is drawn. See MapElement::singular.
 void makeSingularBandWorld(WorldMaps& out, const Rect& band, const std::string& mobs,
@@ -6173,9 +6181,10 @@ TEST(a_hard_band_is_where_every_boss_in_the_world_comes_from) {
     // bosses at all. Those two rules cannot coexist with a pass that rations
     // one ultra to the whole world, which is why the pass is gone.
     //
-    // Also checks what survived: the ANNOUNCEMENT. A super, unique or apex is
-    // queued for the chat channel from the band fill, which is now the spawn
-    // path that produces them.
+    // Also checks what became of the ANNOUNCEMENT: a band that grows nothing
+    // but supers grows them as stock, so not one of them is queued for chat
+    // (kQuietBossChance), and each carries the tag that keeps its defeat as
+    // quiet. a_super_is_announced_only_where_supers_are_rare has the other side.
     const std::string path = writeTiledFixture(
         "flix_hard_band.tmj",
         fixtureMapBody(bandObject(1, 2000, 2000, 14000, 14000, 200.0, "hornet 100%")));
@@ -6208,13 +6217,8 @@ TEST(a_hard_band_is_where_every_boss_in_the_world_comes_from) {
         }
     });
     CHECK(mobs > 0);
-    // And every one of them was worth announcing. The queue is bounded, so this
-    // is "some were queued", not "one per mob".
-    CHECK(!sim.spawner.bossSpawns.empty());
-    for (const SpawnSystem::BossSpawn& boss : sim.spawner.bossSpawns) {
-        CHECK(rarityIndex(boss.rarity) >= rarityIndex(kAnnouncedRarity));
-        CHECK(boss.realm == Realm::Overworld);
-    }
+    CHECK(sim.spawner.bossSpawns.empty());
+    live.each([&](Entity e, MobTag&, MobType&) { CHECK(sim.world.has<QuietBoss>(e)); });
     std::remove(path.c_str());
 }
 
@@ -6226,10 +6230,14 @@ TEST(an_announced_boss_carries_the_map_it_spawned_on) {
     // staged map can queue one. Without the realm, a super filling a band on
     // map two was announced as "here" to flowers standing at the same numbers
     // on the overworld, which they cannot even reach.
+    //
+    // Ground where supers are still rare enough to be news (half
+    // kQuietBossChance): a difficulty-200 band's supers are not announced.
     const Realm other = worldRealm(1);
     const std::string path = writeTiledFixture(
         "flix_hard_band_realm1.tmj",
-        fixtureMapBody(bandObject(1, 2000, 2000, 14000, 14000, 200.0, "hornet 100%")));
+        fixtureMapBody(bandObject(1, 2000, 2000, 14000, 14000,
+                                  groundWithBossChance(kQuietBossChance * 0.5), "hornet 100%")));
     MapData second;
     std::string error;
     if (!second.loadTiled(path, error, other) || second.elements().size() != 1) {
@@ -6288,6 +6296,106 @@ TEST(a_soft_band_announces_nothing) {
     });
     CHECK(mobs > 0);
     CHECK(sim.spawner.bossSpawns.empty());
+    std::remove(path.c_str());
+}
+
+TEST(a_super_is_announced_only_where_supers_are_rare) {
+    // User rule (2026-11-13): where more than kQuietBossChance of a band's
+    // spawns come out a boss, a super is that band's stock and appears without
+    // a line in chat. The chance is the GROUND's, at neutral luck, wherever the
+    // super came from -- the band's own fill or the console's spawnMob. Uniques
+    // and apexes, which only the biome's clock hands out, announce anyway.
+    const double rare = groundWithBossChance(kQuietBossChance * 0.5);
+    const double steep = groundWithBossChance(std::min(0.99, kQuietBossChance * 2.0));
+    CHECK(spawnChanceAtLeast(rare, kAnnouncedRarity) <= kQuietBossChance);
+    CHECK(spawnChanceAtLeast(steep, kAnnouncedRarity) > kQuietBossChance);
+    // Random ground never rolls a boss at all.
+    CHECK(spawnChanceAtLeast(kRandomDifficulty, kAnnouncedRarity) <= kQuietBossChance);
+
+    const Rect rareBand{kCentre.x - 6000.0, kCentre.y - 1500.0, 3000.0, 3000.0};
+    const Rect steepBand{kCentre.x + 3000.0, kCentre.y - 1500.0, 3000.0, 3000.0};
+    const std::string path = writeTiledFixture(
+        "flix_quiet_boss_bands.tmj",
+        fixtureMapBody(bandObject(1, rareBand.x, rareBand.y, rareBand.w, rareBand.h, rare,
+                                  "bee 100%") +
+                       "," +
+                       bandObject(2, steepBand.x, steepBand.y, steepBand.w, steepBand.h, steep,
+                                  "bee 100%")));
+    MapData map;
+    map.setId("banded");
+    std::string error;
+    if (!map.loadTiled(path, error)) {
+        std::fprintf(stderr, "[test] %s did not load: %s\n", path.c_str(), error.c_str());
+        CHECK(false);
+        return;
+    }
+    WorldMaps maps;
+    maps.adoptSingle(map);
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    // One pass builds the bands and deals the clock; a flower far from both.
+    const std::vector<Vec2> players{Vec2{kCentre.x, kCentre.y + 9000.0}};
+    sim.tick(players);
+    sim.spawner.bossSpawns.clear();
+
+    const std::uint16_t hornet = shipped().mobIndex("hornet");
+    const std::uint16_t bee = shipped().mobIndex("bee");
+    CHECK(hornet != kInvalidIndex && bee != kInvalidIndex);
+    const auto centreOf = [](const Rect& r) { return Vec2{r.x + r.w * 0.5, r.y + r.h * 0.5}; };
+    const auto spawn = [&](Rarity tier, Vec2 at) {
+        return sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), hornet, tier, at,
+                                    Realm::Overworld, sim.now, sim.rng);
+    };
+    const auto queued = [&](Entity e) {
+        for (const SpawnSystem::BossSpawn& boss : sim.spawner.bossSpawns) {
+            if (boss.entity == e) return true;
+        }
+        return false;
+    };
+
+    const Entity news = spawn(Rarity::Super, centreOf(rareBand));
+    const Entity stock = spawn(Rarity::Super, centreOf(steepBand));
+    CHECK(news != NULL_ENTITY && stock != NULL_ENTITY);
+    CHECK(queued(news));
+    CHECK(!sim.world.has<QuietBoss>(news));
+    CHECK(!queued(stock));
+    CHECK(sim.world.has<QuietBoss>(stock));
+    // Below the line nothing is announced or tagged, steep ground or not.
+    const Entity ultra = spawn(Rarity::Ultra, centreOf(steepBand) + Vec2{600.0, 0.0});
+    CHECK(ultra != NULL_ENTITY);
+    CHECK(!queued(ultra));
+    CHECK(!sim.world.has<QuietBoss>(ultra));
+
+    // A unique on the steep ground is still news.
+    CHECK_EQ(sim.spawner.bossClocks().size(), std::size_t(1));
+    if (!sim.spawner.bossClocks().empty()) {
+        sim.spawner.bossClocks().front().uniqueReadyMillis = sim.now;
+    }
+    const Entity unique = spawn(Rarity::Unique, centreOf(steepBand) + Vec2{0.0, 900.0});
+    CHECK(unique != NULL_ENTITY);
+    CHECK(queued(unique));
+    CHECK(!sim.world.has<QuietBoss>(unique));
+
+    // What a super turns or divides into keeps the answer it was born with:
+    // its spawn line (or the lack of one) is the one chat already has.
+    sim.spawner.bossSpawns.clear();
+    const Entity turnedStock =
+        sim.spawner.convertMob(sim.world, sim.terrain, shipped(), stock, bee, sim.now, sim.rng);
+    const Entity turnedNews =
+        sim.spawner.convertMob(sim.world, sim.terrain, shipped(), news, bee, sim.now, sim.rng);
+    CHECK(turnedStock != NULL_ENTITY && turnedNews != NULL_ENTITY);
+    CHECK(sim.world.has<QuietBoss>(turnedStock));
+    CHECK(!sim.world.has<QuietBoss>(turnedNews));
+    CHECK(sim.spawner.bossSpawns.empty());
+
+    CHECK(sim.spawner.divideMob(sim.world, sim.terrain, shipped(), turnedStock, 3, sim.now,
+                                sim.rng));
+    int quietPieces = 0;
+    Query<MobTag, DividedMob> pieces{sim.world};
+    pieces.each([&](Entity e, MobTag&, DividedMob&) {
+        quietPieces += sim.world.has<QuietBoss>(e) ? 1 : 0;
+    });
+    CHECK_EQ(quietPieces, 3);
     std::remove(path.c_str());
 }
 

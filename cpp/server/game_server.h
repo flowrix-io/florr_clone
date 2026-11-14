@@ -138,6 +138,11 @@ struct ServerConfig {
     /// second of CPU, which is the point in production and nothing but a wait
     /// in a test.
     int passwordCost = 0;
+    /// Whether the hourly rift rolls (server/waves.cpp): on the hour, by the
+    /// wall clock, a one-in-five chance of a garden rift when no game of waves
+    /// is open. Only the test harness turns it off, so that a test which
+    /// happens to run across an hour is not handed a rift it never asked for.
+    bool hourlyRifts = true;
 };
 
 class GameServer : public net::TransportHandler {
@@ -587,6 +592,13 @@ private:
     // The wave survival mode (server/waves.cpp, shared/game/waves.h).
     void runStartWavesCommand(Session&, net::Connection&, const std::vector<std::string>& args);
     void runStopWavesCommand(Session&, net::Connection&);
+    /// Opens the rift at `at` in `realm`, tells everyone, and logs `by`.
+    void openRift(WaveBiome, int startWave, Realm realm, Vec2 at, const std::string& by);
+    /// On the hour by the wall clock, rolls the hourly rift; see ServerConfig::hourlyRifts.
+    void stepHourlyRift();
+    /// Opens a garden rift at wave 1 somewhere in the garden's common zone.
+    /// False, and nothing opened, when there is no such ground.
+    bool openHourlyRift();
     void stepWaves(double nowMillis);
     void stepRiftPortal(double nowMillis, double dt);
     void stopChargingRift();
@@ -635,6 +647,10 @@ private:
         Vec2 riftPosition;
     };
     WaveRun waves_;
+    /// The wall-clock hour (Unix milliseconds / one hour) the hourly rift last
+    /// rolled for. -1 until the first tick, which records the hour the server
+    /// came up in without rolling: a restart is not the top of an hour.
+    std::int64_t riftHour_ = -1;
     bool transferHostedArena(Session&, bool entering);
 
     void serviceAdminCursor();

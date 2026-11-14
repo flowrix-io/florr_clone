@@ -9,6 +9,7 @@
 
 #include "shared/game/content_report.h"
 #include "shared/game/prestige.h"
+#include "shared/game/waves.h"
 
 namespace flix {
 namespace {
@@ -627,6 +628,7 @@ Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const Conte
     const std::optional<DungeonDweller> dungeon =
         dweller != nullptr ? std::optional<DungeonDweller>(*dweller) : std::nullopt;
     const bool keepAwake = world.has<KeepAwake>(mob);
+    const bool quiet = world.has<QuietBoss>(mob);
 
     // Past the boss clock: a unique turned is the unique that was already
     // standing, not a new one asking to be let in.
@@ -666,6 +668,16 @@ Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const Conte
     }
     if (dungeon) world.add<DungeonDweller>(turned, *dungeon);
     if (keepAwake) world.add<KeepAwake>(turned);
+    // Announced (or not) as the mob it was: its spawn line is the one chat
+    // already had, so its defeat follows that, not the turned spawn's own
+    // answer, which the resize above threw away.
+    if (quiet != world.has<QuietBoss>(turned)) {
+        if (quiet) {
+            world.add<QuietBoss>(turned);
+        } else {
+            world.remove<QuietBoss>(turned);
+        }
+    }
     return turned;
 }
 
@@ -726,6 +738,7 @@ bool SpawnSystem::divideMob(World& world, const Terrain& terrain, const ContentR
     const std::optional<Lifetime> lifetime =
         timer != nullptr ? std::optional<Lifetime>(*timer) : std::nullopt;
     const bool keepAwake = world.has<KeepAwake>(mob);
+    const bool quiet = world.has<QuietBoss>(mob);
 
     std::vector<Entity> bodies{mob};
     for (int i = 1; i < pieces; ++i) {
@@ -782,6 +795,8 @@ bool SpawnSystem::divideMob(World& world, const Terrain& terrain, const ContentR
         if (lifetime) world.add<Lifetime>(piece, *lifetime);
         if (dungeon) world.add<DungeonDweller>(piece, *dungeon);
         if (keepAwake) world.add<KeepAwake>(piece);
+        // Pieces of a super that came in silently go out silently.
+        if (quiet) world.add<QuietBoss>(piece);
         if (tether) {
             world.add<HoleTether>(piece, *tether);
             // A nest falls with the last of its brood, this piece included.
@@ -954,7 +969,10 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     world.add<Body>(e, Body{radius, stats.mass});
     world.add<Knockback>(e);
     world.add<Faction>(e, Faction{Team::Hostiles, false});
-    world.add<Health>(e, Health{stats.health, stats.health, 0.0, 0.0});
+    // The waves disc's uniques and apexes are many times as tough as a wild one.
+    const double maxHealth =
+        stats.health * (realm == kWavesRealm ? waveHealthScale(rarity) : 1.0);
+    world.add<Health>(e, Health{maxHealth, maxHealth, 0.0, 0.0});
     // Every mob is armoured, so this is unconditional: added at spawn even at
     // zero, the archetype is the same one a stripped mob sits in and a bur
     // costs no row move to land on.
@@ -1050,7 +1068,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
             waves.mobIndex = mobIndex;
             // Seeded full: the first band fires on the first damage the hole
             // takes, and never before it.
-            waves.previousHealth = stats.health;
+            waves.previousHealth = maxHealth;
             world.add<NestWaves>(e, std::move(waves));
         }
         // Armed, with nothing out: the brood waits for a flower (runNests).
@@ -1101,7 +1119,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // Roots only. A nest's escorts and a centipede's segments carry their
     // parent's tier, and announcing those would put a line in chat for every
     // bead of a super centipede rather than one for the animal.
-    if (depth == 0) announceIfNotable(content, e, mobIndex, rarity, at, realm);
+    if (depth == 0) announceIfNotable(world, content, e, mobIndex, rarity, at, realm, zone);
 
     return e;
 }
@@ -2638,21 +2656,38 @@ void SpawnSystem::latentSites(Realm realm, std::vector<LatentSite>& out) const {
 // Announcements
 // ---------------------------------------------------------------------------
 
-void SpawnSystem::announceIfNotable(const ContentRegistry& content, Entity entity,
+double SpawnSystem::bossChanceAt(Realm realm, Vec2 at, std::uint16_t zone) const {
+    const double difficulty =
+        zone < zones_.size() ? zones_[zone].difficulty : difficultyAt(realm, at);
+    return spawnChanceAtLeast(difficulty, kAnnouncedRarity);
+}
+
+void SpawnSystem::announceIfNotable(World& world, const ContentRegistry& content, Entity entity,
                                     std::uint16_t mobIndex, Rarity rarity, Vec2 position,
-                                    Realm realm) {
+                                    Realm realm, std::uint16_t zone) {
     if (rarityIndex(rarity) < rarityIndex(kAnnouncedRarity)) return;
     // A prestige twin's supers are its bands' everyday stock, not events: the
     // server would announce one every few seconds.
     if (prestigeRealm(realm)) return;
-    // Nor are the waves': past wave 80 every mob there is one.
-    if (realm == kWavesRealm) return;
+    // Nor are the waves': from wave 250 every mob there is one. Their uniques
+    // and apexes are a 1% and 0.1% chance on top of that, and are news
+    // wherever they stand (user, 2026-11-13).
+    if (realm == kWavesRealm && rarityIndex(rarity) < rarityIndex(Rarity::Unique)) return;
     // A permanent fixture is not an event. A dummy reaches this through a band
     // that names it outright, up to unique, or the console's spawn, and
     // announcing those would put a line in chat for a post nobody has to
     // fight. (The shipped DPS row is the jungle's map NPCs, which NpcSystem
     // places and which never come through here.)
     if (mobIndex >= content.mobCount() || content.mob(mobIndex).neverAmbient) return;
+    // Nor is a super on ground that grows them as more than kQuietBossChance
+    // of its stock (user, 2026-11-13): there it is what the band is for, not
+    // an event. Tagged, so its defeat goes as quietly. Uniques and apexes are
+    // clock-rationed and announce wherever they stand.
+    if (rarityIndex(rarity) < rarityIndex(Rarity::Unique) &&
+        bossChanceAt(realm, position, zone) > kQuietBossChance) {
+        world.add<QuietBoss>(entity);
+        return;
+    }
     // Oldest first, so a server that never drains this keeps the announcements
     // somebody might still care about instead of the ones from an hour ago --
     // but lowest tier first of all. A band restocking in bulk (after a

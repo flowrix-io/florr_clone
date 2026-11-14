@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "server_harness.h"
+#include "server/systems/spawning.h"
 #include "shared/game/prestige.h"
 #include "shared/game/map_elements.h"
 
@@ -1746,3 +1747,84 @@ TEST(every_body_a_dense_map_places_stands_on_open_ground) {
     flix::testsupport::removeDataDir(dir);
 }
 
+
+TEST(a_super_on_ground_thick_with_them_is_neither_announced_nor_mourned) {
+    // User rule (2026-11-13): above kQuietBossChance a super is the ground's
+    // stock, and chat hears nothing of it either way -- no spawn line, no
+    // defeat line. The same super on ground where supers are rare is news.
+    using flix::testsupport::fixtureBand;
+    using flix::testsupport::fixtureDoor;
+    using flix::testsupport::fixtureMap;
+    using flix::testsupport::stageDataDir;
+    const double cell = kTileSize;
+    // The ultra/super blend's super share, read off the curve.
+    const auto groundWithBossChance = [](double chance) {
+        return difficultyForTierValue(static_cast<double>(rarityIndex(kAnnouncedRarity)) - 1.0 +
+                                      chance);
+    };
+    const Rect rareBand{cell * 12, cell * 4, cell * 16, cell * 16};
+    const Rect steepBand{cell * 30, cell * 4, cell * 16, cell * 16};
+    std::string steep = fixtureBand(steepBand.x, steepBand.y, steepBand.w, steepBand.h, "bee 100%",
+                                    groundWithBossChance(std::min(0.99, kQuietBossChance * 2.0)));
+    // Its own object id: fixtureBand writes one fixed id for every band.
+    steep.replace(steep.find("\"id\": 81"), 8, "\"id\": 82");
+    const std::string dir = stageDataDir(
+        "quiet-supers",
+        {{"meadow",
+          fixtureMap(48, 48, fixtureDoor("meadow", "Meadow", cell * 2, cell * 2, cell * 4, cell * 4),
+                     std::string(),
+                     fixtureBand(rareBand.x, rareBand.y, rareBand.w, rareBand.h, "bee 100%",
+                                 groundWithBossChance(kQuietBossChance * 0.5)) +
+                         "," + steep)}});
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+    Harness h("spawn-quiet-supers", {}, dir, 0);
+    if (!h.ready) { CHECK(false); flix::testsupport::removeDataDir(dir); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "watcher", "password7"));
+    client.joinGame(1280, 720);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    SpawnSystem& spawner = flix::testsupport::GameServerPeer::spawning(h.server);
+    const std::uint16_t hornet = content().mobIndex("hornet");
+    CHECK(hornet != kInvalidIndex);
+    if (hornet == kInvalidIndex) { flix::testsupport::removeDataDir(dir); return; }
+    const auto centreOf = [](const Rect& r) { return Vec2{r.x + r.w * 0.5, r.y + r.h * 0.5}; };
+    std::vector<Entity> supers;
+    for (const Rect& band : {rareBand, steepBand}) {
+        supers.push_back(spawner.spawnMob(world, h.server.terrain(), content(), hornet,
+                                          Rarity::Super, centreOf(band), Realm::Overworld, h.clock,
+                                          h.probeRng));
+        CHECK(supers.back() != NULL_ENTITY);
+        if (supers.back() == NULL_ENTITY) { flix::testsupport::removeDataDir(dir); return; }
+    }
+    const auto heard = [&](const std::string& what) {
+        int lines = 0;
+        for (const auto& line : client.chat()) {
+            if (line.text.find(what) != std::string::npos) ++lines;
+        }
+        return lines;
+    };
+    const std::string spawned = std::string(rarityLabel(Rarity::Super)) + " Hornet has spawned";
+    const std::string defeated =
+        std::string(rarityLabel(Rarity::Super)) + " Hornet has been defeated";
+    CHECK(h.stepUntil({&client}, [&] { return heard(spawned) >= 1; }, 60));
+    h.step(static_cast<int>(2000.0 / net::kTickMillis), {&client});
+    CHECK_EQ(heard(spawned), 1);
+
+    for (const Entity e : supers) {
+        if (!world.has<Afflictions>(e)) world.add<Afflictions>(e, Afflictions{});
+        world.get<Afflictions>(e).poisonStacks.push_back({NULL_ENTITY, 1e12, 1e18});
+    }
+    CHECK(h.stepUntil({&client}, [&] {
+        for (const Entity e : supers) {
+            if (world.isAlive(e)) return false;
+        }
+        return true;
+    }, 120));
+    h.step(static_cast<int>(1000.0 / net::kTickMillis), {&client});
+    CHECK_EQ(heard(defeated), 1);
+    flix::testsupport::removeDataDir(dir);
+}

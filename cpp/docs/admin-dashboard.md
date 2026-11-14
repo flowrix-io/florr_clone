@@ -513,13 +513,21 @@ tells every player "A Mysterious rift has opened!". It only opens on a map, not
 in the PVP arena, the maze or a hosted game, and one is open at a time. The rift
 also shows as a black dot on that map's minimap.
 
+Rifts also open on their own: at the top of every hour (server wall clock),
+when no rift is open and no game of waves is running, there is a 20% chance of
+a garden rift at wave 1, somewhere in the garden map's common zone (its
+difficulty-0 band) and nowhere else. It is announced with the same line, and
+stays open until somebody plays it or `/admin stop_waves` closes it.
+
 Stand on it for a second, as on any teleporter, and you are on a disc in a realm
 of its own. The disc starts at radius 1500 and grows by 50 each wave, up to 8000
 (from wave 131); a game started at a later wave starts at that wave's size. The
 first flower through starts wave 1. The rules are flooooio's, with the changes
 noted in `shared/game/waves.h`: each wave spends 10 points per wave number on
-the biome's mobs, at a rarity that climbs with the wave up to super (ultras from
-about wave 55, supers from about 75, nothing else past 90); from wave 15, 15% of
+the biome's mobs, at a rarity that climbs with the wave (flooooio's climb to
+mythic; ultras take over from about wave 60, and from wave 76 every mob is one;
+from wave 201 a growing share are supers, all of them from wave 250; from wave
+300 1% are uniques, and from wave 400 0.1% apexes); from wave 15, 15% of
 waves are special, one mob family in a swarm. A wave lasts 60 seconds up to wave
 10 and grows slowly after (67 at wave 30, 77 at wave 100), and its mobs come
 fast enough to all be out by half of that. They spawn evenly over the whole
@@ -534,8 +542,10 @@ Then the next wave starts. Whoever died watches
 the nearest thing still up, and gets up beside a survivor at the next wave. When
 nobody is left standing the game is over: the rift closes, the disc is cleared
 and everyone is put back where they went in, standing. Mobs pay XP and drop
-petals as they do anywhere else; the supers on the disc are not announced and
-get no boss bar.
+petals as they do anywhere else. The supers on the disc are not announced and
+get no boss bar; its uniques and apexes are announced to everyone, as anywhere,
+and have no biome clock to wait for and no limit of one at a time. A unique on
+the disc has 10 times the health it has anywhere else, and an apex 50 times.
 
 Garden, desert and ocean are flooooio's tables. The other five are ours, drawn
 from the mob group each map grows (`data/mobs.json` `groups`) and laid out the

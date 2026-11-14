@@ -33,6 +33,16 @@ constexpr int kWaveMaxCatchUpSteps = 8;
 constexpr int kWaveMaxStartWave = std::numeric_limits<int>::max(); // nobody would ever get to max, giving 1b stars if you manage to do it :)
 constexpr std::size_t kWaveMaxIconGroups = 64;
 
+// The hourly rift (user, 2026-11-13): at the top of every wall-clock hour with
+// no game of waves open, one chance in five of a garden rift, opened in the
+// garden's common zone -- its difficulty-0 band -- and nowhere else.
+constexpr double kHourlyRiftChance = 0.2;
+constexpr std::int64_t kHourMillis = 60 * 60 * 1000;
+constexpr const char* kHourlyRiftMapId = "garden";
+constexpr double kHourlyRiftDifficulty = 0.0;
+constexpr WaveBiome kHourlyRiftBiome = WaveBiome::Garden;
+constexpr int kHourlyRiftStartWave = 1;
+
 bool readWaveNumber(const std::string& word, int& out) {
     const auto parsed = std::from_chars(word.data(), word.data() + word.size(), out);
     return parsed.ec == std::errc{} && parsed.ptr == word.data() + word.size() && out >= 1 &&
@@ -78,8 +88,12 @@ void GameServer::runStartWavesCommand(Session& admin, net::Connection& connectio
     const Realm realm = at.realm;
     const Vec2 ahead{at.position.x + std::cos(at.angle) * kRiftOffset,
                      at.position.y + std::sin(at.angle) * kRiftOffset};
-    const Vec2 riftAt = terrain_->findOpenSpawn(rng_, ahead, kRiftOffsetJitter, realm);
+    openRift(biome, startWave, realm, terrain_->findOpenSpawn(rng_, ahead, kRiftOffsetJitter, realm),
+             admin.username);
+}
 
+void GameServer::openRift(WaveBiome biome, int startWave, Realm realm, Vec2 at,
+                          const std::string& by) {
     waves_ = WaveRun{};
     waves_.phase = WavePhase::Open;
     waves_.biome = biome;
@@ -87,12 +101,65 @@ void GameServer::runStartWavesCommand(Session& admin, net::Connection& connectio
     waves_.wave = startWave;
     waves_.riftOpen = true;
     waves_.riftRealm = realm;
-    waves_.riftPosition = riftAt;
+    waves_.riftPosition = at;
 
-    std::printf("[waves] %s opened a %s rift at wave %d\n", admin.username.c_str(),
-                waveBiomeInfo(biome).id, startWave);
+    std::printf("[waves] %s opened a %s rift at wave %d (%.0f, %.0f)\n", by.c_str(),
+                waveBiomeInfo(biome).id, startWave, at.x, at.y);
     broadcastRiftState();
     broadcastChat(net::ChatChannel::System, "", "<b style=\"color: #555555;\">A Mysterious rift has opened!</b>");
+}
+
+void GameServer::stepHourlyRift() {
+    if (!config_.hourlyRifts) return;
+    const std::int64_t hour = database_.nowMillis() / kHourMillis;
+    // The first tick, or a wall clock set back: this hour has had its turn.
+    if (riftHour_ < 0 || hour < riftHour_) {
+        riftHour_ = hour;
+        return;
+    }
+    if (hour == riftHour_) return;
+    // One roll however many hours turned since the last tick: a server that
+    // stalled over two of them is not owed two rifts.
+    riftHour_ = hour;
+    if (waves_.phase != WavePhase::Idle) return;
+    if (!(rng_.unit() < kHourlyRiftChance)) return;
+    if (!openHourlyRift()) {
+        std::printf("[waves] the hourly rift found no common ground in %s\n", kHourlyRiftMapId);
+    }
+}
+
+bool GameServer::openHourlyRift() {
+    bool found = false;
+    const Realm realm = worldMaps_.realmOfId(kHourlyRiftMapId, found);
+    const MapData* map = found ? worldMaps_.forRealm(realm) : nullptr;
+    if (map == nullptr) return false;
+    // Weighted by area, so a common zone drawn in pieces is one zone.
+    std::vector<const MapElement*> common;
+    double total = 0.0;
+    for (const MapElement& element : map->elements()) {
+        if (!element.isSpawnBand() || element.isSingularBand()) continue;
+        if (element.difficulty != kHourlyRiftDifficulty) continue;
+        common.push_back(&element);
+        total += element.area();
+    }
+    if (common.empty() || !(total > 0.0)) return false;
+    constexpr int kAttempts = 20;
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+        double roll = rng_.unit() * total;
+        const MapElement* zone = common.back();
+        for (const MapElement* candidate : common) {
+            roll -= candidate->area();
+            if (roll < 0.0) {
+                zone = candidate;
+                break;
+            }
+        }
+        Vec2 at;
+        if (!map->spawnInElement(*zone, rng_, *terrain_, at)) continue;
+        openRift(kHourlyRiftBiome, kHourlyRiftStartWave, realm, at, "the hour");
+        return true;
+    }
+    return false;
 }
 
 void GameServer::runStopWavesCommand(Session& admin, net::Connection& connection) {
@@ -490,6 +557,7 @@ void GameServer::surveyWaves(double nowMillis) {
 }
 
 void GameServer::stepWaves(double nowMillis) {
+    stepHourlyRift();
     if (waves_.phase == WavePhase::Idle) return;
     const double elapsed = waves_.lastTickMillis >= 0.0
                                ? std::clamp(nowMillis - waves_.lastTickMillis, 0.0, 1000.0)
