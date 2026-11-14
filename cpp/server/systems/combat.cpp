@@ -2176,8 +2176,8 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                 !world.has<Pet>(victim)) {
                 const HitCooldowns* cooldowns = world.tryGet<HitCooldowns>(field.effect);
                 if (cooldowns == nullptr || cooldowns->ready(victim, nowMillis)) {
-                    // A discrete chip, not a drip: a puff bites once every
-                    // 500 ms and a lightning burst exactly once. The reference
+                    // A discrete chip, not a drip: a pollen puff bites each
+                    // mob once and a lightning burst exactly once. The reference
                     // reports both through markEnemyDamaged(), the ordinary
                     // hit channel, and credits them through creditDamage(),
                     // which provokes a neutral mob. Direct is how a C++ chip

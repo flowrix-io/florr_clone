@@ -1615,7 +1615,8 @@ struct GroundEffect {
     double damagePerSecond = 0;
     double slowFactor = 1.0;
     Rarity rarity = Rarity::Common;
-    /// Pollen deals one discrete hit per victim on a fixed cadence. A uranium
+    /// A field with an interval deals one discrete hit per victim on that
+    /// cadence; pollen sets it to its whole lifetime, so once each. A uranium
     /// cloud deals it once, the tick it is laid, scaled down with each
     /// victim's distance from the petal, and then zeroes it (see
     /// CombatSystem::tickGroundEffects).

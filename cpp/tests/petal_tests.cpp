@@ -3597,7 +3597,8 @@ TEST(defending_drops_pollen_with_discrete_damage_and_consumes_it) {
     fields.each([&](Entity, GroundEffect& field, Lifetime& lifetime) {
         CHECK_EQ(field.kind, GroundEffectKind::Poison);
         CHECK_NEAR(field.damagePerHit, 10.0 * petalStatScale(Rarity::Rare), 1e-9);
-        CHECK_NEAR(field.damageIntervalMillis, 500.0, 1e-9);
+        // Once per mob: the re-bite never comes round before the puff is gone.
+        CHECK(field.damageIntervalMillis >= lifetime.remainingSeconds * 1000.0);
         CHECK_NEAR(lifetime.remainingSeconds, 5.0, 1e-12);
     });
     CHECK(rig.world.has<Dead>(rig.petals(0).front()));
@@ -6744,4 +6745,37 @@ TEST(a_starfish_stops_once_the_flower_is_back_over_three_quarters) {
     rig.world.get<Health>(rig.player).current = rig.max() * 0.74;
     const auto [regained, _] = rig.gainOver(30 * 2);
     CHECK_NEAR(regained, 2.0 * (kBaseRegenPerSecond + 2.25), 0.01);
+}
+
+// A mob standing on the flower sits in every puff the grains lay, and used to
+// be bitten by each one every 500 ms for its five seconds: ~7x the listed
+// damage per grain. Each puff now hits it once, so the total is bounded by the
+// grain's damage times the puffs laid.
+TEST(a_mob_under_the_flower_takes_one_hit_per_pollen_puff) {
+    if (!contentLoaded()) return;
+    for (Rarity rarity : {Rarity::Common, Rarity::Rare, Rarity::Mythic}) {
+        Rig rig;
+        rig.equip(0, "pollen", rarity);
+        rig.settleEquips();
+        const Entity mob = addMob(rig, {1000.0, 1000.0});
+        rig.world.get<Health>(mob) = Health{1e15, 1e15, 0.0, 0.0};
+        rig.setFlags(net::InputDefend);
+        CombatSystem combat;
+        std::vector<Entity> puffs;
+        const int ticks = static_cast<int>(10000.0 / net::kTickMillis);
+        for (int i = 0; i < ticks; ++i) {
+            rig.tick();
+            Query<GroundEffect> fields{rig.world};
+            fields.each([&](Entity e, GroundEffect&) {
+                if (std::find(puffs.begin(), puffs.end(), e) == puffs.end()) puffs.push_back(e);
+            });
+            ricochetCombatTick(rig, combat);
+            rig.reap();
+        }
+        const double perGrain = fixture().registry.petalStats(petalId("pollen"), rarity).damage;
+        const double taken = 1e15 - rig.world.get<Health>(mob).current;
+        CHECK(puffs.size() > 1u);
+        CHECK(taken >= perGrain);
+        CHECK(taken <= perGrain * static_cast<double>(puffs.size()) + 1e-6);
+    }
 }

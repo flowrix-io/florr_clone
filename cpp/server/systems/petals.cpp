@@ -23,7 +23,6 @@ constexpr double kPollenRadiusPerSize = 6.0;
 constexpr double kWebThrowDistance = 620.0;
 constexpr double kWebLifetimeSeconds = 10.0;
 constexpr double kPollenLifetimeSeconds = 5.0;
-constexpr double kPollenHitIntervalMillis = 500.0;
 
 /// How long the ring takes to fly across when what it is laid out around
 /// changes -- a moon coming out, or breaking and handing the ring back to the
@@ -2370,12 +2369,17 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player)) {
                     damage *= modifiers->petalDamageScale;
                 }
+                // One hit per mob for the puff's whole life, so a grain is
+                // worth its listed damage. The old 500 ms re-bite made each
+                // grain hit up to ten times, and with a fresh puff every
+                // reload stacked under the flower, a mob on it took ~7x the
+                // listed damage per grain.
+                const double lifetimeSeconds = kPollenLifetimeSeconds * adminReachScale(instance->rarity);
                 emitGroundEffect(world, player, transform->position,
                                  GroundEffectKind::Poison,
                                  stats.size * kPollenRadiusPerSize * adminReachScale(instance->rarity),
-                                 0.0, 1.0, instance->rarity,
-                                 kPollenLifetimeSeconds * adminReachScale(instance->rarity), damage,
-                                 kPollenHitIntervalMillis);
+                                 0.0, 1.0, instance->rarity, lifetimeSeconds, damage,
+                                 lifetimeSeconds * 1000.0);
                 world.add<Dead>(petal, Dead{player});
                 continue;
             }
