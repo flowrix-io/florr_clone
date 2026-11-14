@@ -9,6 +9,7 @@
 
 #include "shared/game/content_report.h"
 #include "shared/game/prestige.h"
+#include "shared/game/waves.h"
 
 namespace flix {
 namespace {
@@ -954,7 +955,10 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     world.add<Body>(e, Body{radius, stats.mass});
     world.add<Knockback>(e);
     world.add<Faction>(e, Faction{Team::Hostiles, false});
-    world.add<Health>(e, Health{stats.health, stats.health, 0.0, 0.0});
+    // The waves disc's uniques and apexes are many times as tough as a wild one.
+    const double maxHealth =
+        stats.health * (realm == kWavesRealm ? waveHealthScale(rarity) : 1.0);
+    world.add<Health>(e, Health{maxHealth, maxHealth, 0.0, 0.0});
     // Every mob is armoured, so this is unconditional: added at spawn even at
     // zero, the archetype is the same one a stripped mob sits in and a bur
     // costs no row move to land on.
@@ -1050,7 +1054,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
             waves.mobIndex = mobIndex;
             // Seeded full: the first band fires on the first damage the hole
             // takes, and never before it.
-            waves.previousHealth = stats.health;
+            waves.previousHealth = maxHealth;
             world.add<NestWaves>(e, std::move(waves));
         }
         // Armed, with nothing out: the brood waits for a flower (runNests).
@@ -2645,8 +2649,10 @@ void SpawnSystem::announceIfNotable(const ContentRegistry& content, Entity entit
     // A prestige twin's supers are its bands' everyday stock, not events: the
     // server would announce one every few seconds.
     if (prestigeRealm(realm)) return;
-    // Nor are the waves': past wave 80 every mob there is one.
-    if (realm == kWavesRealm) return;
+    // Nor are the waves': from wave 250 every mob there is one. Their uniques
+    // and apexes are a 1% and 0.1% chance on top of that, and are news
+    // wherever they stand (user, 2026-11-13).
+    if (realm == kWavesRealm && rarityIndex(rarity) < rarityIndex(Rarity::Unique)) return;
     // A permanent fixture is not an event. A dummy reaches this through a band
     // that names it outright, up to unique, or the console's spawn, and
     // announcing those would put a line in chat for a post nobody has to

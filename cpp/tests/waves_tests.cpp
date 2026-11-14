@@ -2,6 +2,7 @@
 // its ending through a real server and real sockets, then what the portal and
 // the disc put on the screen.
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -305,7 +306,7 @@ TEST(special_waves_start_at_fifteen) {
     CHECK(from > 200 && from < 400);   // 15% of 2000
 }
 
-TEST(rarity_climbs_with_the_wave_up_to_super) {
+TEST(rarity_climbs_with_the_wave_to_ultra_then_super) {
     Rng rng(19);
     const auto mean = [&rng](int wave) {
         double total = 0.0;
@@ -315,23 +316,60 @@ TEST(rarity_climbs_with_the_wave_up_to_super) {
     CHECK(mean(1) < 0.5);
     CHECK(mean(10) > mean(1));
     CHECK(mean(30) > mean(10));
-    CHECK(mean(80) > mean(60));
-    const auto share = [&rng](int wave, Rarity rarity) {
+    CHECK(mean(70) > mean(50));
+    const auto share = [&rng](int wave, Rarity rarity, int rolls = 2000) {
         int hits = 0;
-        for (int i = 0; i < 400; ++i) hits += rollWaveRarity(wave, rng) == rarity;
-        return hits / 400.0;
+        for (int i = 0; i < rolls; ++i) hits += rollWaveRarity(wave, rng) == rarity;
+        return hits / static_cast<double>(rolls);
     };
-    // Past wave 60 nothing below mythic is left; ultras then supers take over.
-    for (int i = 0; i < 400; ++i) {
-        const Rarity rolled = rollWaveRarity(61, rng);
-        CHECK(rarityIndex(rolled) >= rarityIndex(Rarity::Mythic));
-        CHECK(rarityIndex(rolled) <= rarityIndex(Rarity::Super));
+    const auto onlyBetween = [&rng](int wave, Rarity lowest, Rarity highest) {
+        bool inside = true;
+        for (int i = 0; i < 2000; ++i) {
+            const int rolled = rarityIndex(rollWaveRarity(wave, rng));
+            inside = inside && rolled >= rarityIndex(lowest) && rolled <= rarityIndex(highest);
+        }
+        return inside;
+    };
+    // Past wave 60 nothing below mythic is left, and past 75 no mythic either.
+    CHECK(onlyBetween(61, Rarity::Mythic, Rarity::Ultra));
+    CHECK(share(kWaveMythicEndsAfter, Rarity::Mythic) < 0.05);
+    // Then ultras alone, all the way to kWaveSuperFrom.
+    for (const int wave : {kWaveMythicEndsAfter + 1, 100, 150, kWaveSuperFrom}) {
+        CHECK(onlyBetween(wave, Rarity::Ultra, Rarity::Ultra));
     }
-    CHECK(share(70, Rarity::Ultra) > 0.5);
-    CHECK(share(95, Rarity::Super) > 0.95);
-    // And never past super, even where a double cannot raise 1.3 that far.
-    for (const int wave : {120, 500, 65535}) {
-        for (int i = 0; i < 200; ++i) CHECK(rollWaveRarity(wave, rng) == Rarity::Super);
+    // Supers take over evenly from there.
+    const double early = share(kWaveSuperFrom + 10, Rarity::Super);
+    const double half = share((kWaveSuperFrom + kWaveAllSuperAt) / 2, Rarity::Super);
+    const double late = share(kWaveAllSuperAt - 10, Rarity::Super);
+    CHECK(early > 0.12 && early < 0.28);
+    CHECK(half > 0.43 && half < 0.57);
+    CHECK(late > 0.72 && late < 0.88);
+    for (const int wave : {kWaveAllSuperAt, 275, kWaveUniqueFrom - 1}) {
+        CHECK(onlyBetween(wave, Rarity::Super, Rarity::Super));
+    }
+}
+
+TEST(from_wave_300_one_in_a_hundred_is_unique_and_from_400_one_in_a_thousand_apex) {
+    Rng rng(23);
+    constexpr int kRolls = 200000;
+    const auto count = [&rng](int wave) {
+        std::array<int, kRarityCount> tally{};
+        for (int i = 0; i < kRolls; ++i) ++tally[static_cast<std::size_t>(rarityIndex(rollWaveRarity(wave, rng)))];
+        return tally;
+    };
+    const auto at300 = count(kWaveUniqueFrom);
+    CHECK_EQ(at300[rarityIndex(Rarity::Super)] + at300[rarityIndex(Rarity::Unique)], kRolls);
+    CHECK(at300[rarityIndex(Rarity::Unique)] > 1800 && at300[rarityIndex(Rarity::Unique)] < 2200);
+    CHECK_EQ(count(kWaveApexFrom - 1)[rarityIndex(Rarity::Apex)], 0);
+    // An apex is not taken out of the uniques' share: 1% of them stay unique.
+    for (const int wave : {kWaveApexFrom, 1000, 65535}) {
+        const auto tally = count(wave);
+        const int supers = tally[rarityIndex(Rarity::Super)];
+        const int uniques = tally[rarityIndex(Rarity::Unique)];
+        const int apexes = tally[rarityIndex(Rarity::Apex)];
+        CHECK_EQ(supers + uniques + apexes, kRolls);
+        CHECK(uniques > 1800 && uniques < 2200);
+        CHECK(apexes > 140 && apexes < 260);
     }
 }
 
@@ -1099,12 +1137,12 @@ TEST(a_full_disc_holds_the_rest_of_the_wave_until_there_is_room) {
     if (!h.ready) return;
     NetClient boss;
     CHECK(playing(h, boss, "boss"));
-    CHECK(say(h, boss, "/admin start_waves garden 95"));
+    CHECK(say(h, boss, "/admin start_waves garden 260"));
     CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
     CHECK(throughTheRift(h, {&boss}, boss, "boss"));
     immortal(h, "boss");
     auto& run = GameServerPeer::waves(h.server);
-    // Supers fill it in seconds, long before the wave's 950 points are spent.
+    // Supers fill it in seconds, long before the wave's 2600 points are spent.
     CHECK(h.stepUntil({&boss}, [&] { return run.bodyArea >= kWaveMaxBodyArea; },
                       static_cast<int>(20000.0 / net::kTickMillis)));
     h.step(static_cast<int>(5000.0 / net::kTickMillis), {&boss});
@@ -1168,6 +1206,103 @@ TEST(a_super_on_the_disc_is_stock_not_a_boss) {
     CHECK_EQ(defeats(), before);
     poison(onMap);
     CHECK(h.stepUntil({&boss}, [&] { return defeats() > before; }, 120));
+}
+
+TEST(a_unique_or_apex_on_the_disc_is_announced_to_everyone) {
+    Harness h("waves-bosses", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss, alice;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(playing(h, alice, "alice"));
+    World& world = h.server.world();
+    SpawnSystem& spawner = GameServerPeer::spawning(h.server);
+    const std::uint16_t hornet = content().mobIndex("hornet");
+    CHECK(hornet != kInvalidIndex);
+    if (hornet == kInvalidIndex) return;
+    const auto heard = [&](const NetClient& client, const std::string& what) {
+        int lines = 0;
+        for (const auto& line : client.chat()) {
+            if (line.text.find(what) != std::string::npos) ++lines;
+        }
+        return lines;
+    };
+    const auto poison = [&](Entity e) {
+        if (!world.has<Afflictions>(e)) world.add<Afflictions>(e, Afflictions{});
+        world.get<Afflictions>(e).poisonStacks.push_back({NULL_ENTITY, 1e12, 1e18});
+    };
+
+    // Neither has a biome clock on the disc to wait for, and two of a tier may
+    // stand there at once: the one-per-biome cull is the maps'.
+    const std::string unique = std::string(rarityLabel(Rarity::Unique)) + " Hornet has ";
+    const std::string apex = std::string(rarityLabel(Rarity::Apex)) + " Hornet has ";
+    std::vector<Entity> mobs;
+    for (const Rarity rarity : {Rarity::Unique, Rarity::Unique, Rarity::Apex}) {
+        const double offset = 500.0 * static_cast<double>(mobs.size());
+        mobs.push_back(spawner.spawnMob(world, h.server.terrain(), content(), hornet, rarity,
+                                        kWavesCentre + Vec2{offset - 500.0, 0.0}, kWavesRealm,
+                                        h.clock, h.probeRng));
+        CHECK(mobs.back() != NULL_ENTITY);
+        if (mobs.back() == NULL_ENTITY) return;
+    }
+    // Alice is on a map, nowhere near the disc, and still told.
+    CHECK(h.stepUntil({&boss, &alice}, [&] {
+        return heard(alice, unique + "spawned") == 2 && heard(alice, apex + "spawned") == 1;
+    }, 60));
+    h.step(static_cast<int>(2000.0 / net::kTickMillis), {&boss, &alice});
+    for (const Entity mob : mobs) CHECK(world.isAlive(mob) && !world.has<Dead>(mob));
+
+    for (const Entity mob : mobs) poison(mob);
+    CHECK(h.stepUntil({&boss, &alice}, [&] {
+        return heard(alice, unique + "been defeated") == 2 && heard(alice, apex + "been defeated") == 1;
+    }, 120));
+}
+
+TEST(a_unique_on_the_disc_has_ten_times_its_health_and_an_apex_fifty) {
+    Harness h("waves-boss-health", seedWaves, dataDir(), 0);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    World& world = h.server.world();
+    SpawnSystem& spawner = GameServerPeer::spawning(h.server);
+    const auto spawnOnDisc = [&](std::uint16_t index, Rarity rarity) {
+        return spawner.spawnMob(world, h.server.terrain(), content(), index, rarity, kWavesCentre,
+                                kWavesRealm, h.clock, h.probeRng);
+    };
+    const auto healthOf = [&](Entity e) { return world.get<Health>(e); };
+
+    const std::uint16_t hornet = content().mobIndex("hornet");
+    CHECK(hornet != kInvalidIndex);
+    if (hornet == kInvalidIndex) return;
+    for (const auto& [rarity, scale] : {std::pair{Rarity::Super, 1.0}, std::pair{Rarity::Unique, 10.0},
+                                        std::pair{Rarity::Apex, 50.0}}) {
+        const Entity mob = spawnOnDisc(hornet, rarity);
+        CHECK(mob != NULL_ENTITY);
+        if (mob == NULL_ENTITY) continue;
+        const double wild = content().mobStats(hornet, rarity).health;
+        CHECK(healthOf(mob).max == wild * scale);
+        CHECK(healthOf(mob).current == healthOf(mob).max);
+    }
+
+    // A chain is one animal: every bead of a unique centipede is ten times too.
+    const std::uint16_t centipede = content().mobIndex("centipede");
+    CHECK(centipede != kInvalidIndex);
+    if (centipede == kInvalidIndex) return;
+    const std::uint16_t bead = content().mob(centipede).segmentBodyIndex;
+    CHECK(bead != kInvalidIndex);
+    const Entity head = spawnOnDisc(centipede, Rarity::Unique);
+    CHECK(head != NULL_ENTITY);
+    if (head == NULL_ENTITY || bead == kInvalidIndex) return;
+    CHECK(healthOf(head).max == content().mobStats(centipede, Rarity::Unique).health * 10.0);
+    int beads = 0;
+    Query<BodySegment, Health> chain{world};
+    chain.each([&](Entity e, BodySegment& link, Health& health) {
+        if (link.chainHead != head || e == head) return;
+        ++beads;
+        CHECK(health.max == content().mobStats(bead, Rarity::Unique).health * 10.0);
+    });
+    CHECK(beads > 0);
 }
 
 // -- the screen -------------------------------------------------------------

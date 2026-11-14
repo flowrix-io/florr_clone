@@ -3,8 +3,9 @@
 // (~/flooooio/Sources/server/internal/wave: wave_mob_spawner.go, wave_pool.go).
 //
 // A party fights on a disc that grows each wave. Each wave spends a budget of points on mobs drawn
-// from the biome's table, at a rarity that climbs with the wave number, up to
-// super. A wave lasts 60 seconds, longer from wave 11, and its mobs come fast
+// from the biome's table, at a rarity that climbs with the wave number: ultras
+// until wave 200, all supers from 250, and a rare unique or apex past that. A
+// wave lasts 60 seconds, longer from wave 11, and its mobs come fast
 // enough to all be out by half of that. It ends at once when they are all out
 // and two or fewer are left. When the clock runs out and more than four are
 // left, a red clock runs the same length with no more spawning, and clearing
@@ -15,8 +16,8 @@
 // Where this differs from flooooio, by request (2026-11-07): its clock runs at
 // 0.48 of real time; it has no early end; it spawns at one pace whatever the
 // wave, so a high wave runs out of time before its budget is spent; it stops
-// at mythic; its disc stays one size; and its room stays open on GAME OVER until
-// everyone has left. Mobs spawn evenly over the disc's area where flooooio's
+// at mythic, where ours goes on to apex; its disc stays one size; and its room
+// stays open on GAME OVER until everyone has left. Mobs spawn evenly over the disc's area where flooooio's
 // crowd its middle, and because the disc grows, a hostile one sees a flower
 // anywhere on it where flooooio's looks 2000 units (all of its 1500 disc).
 //
@@ -100,8 +101,30 @@ inline constexpr int kWaveClearedMobCount = 2;
 /// A wave's mobs are all out by this share of its length: a wave whose budget
 /// flooooio's pace would not spend by then spawns faster.
 inline constexpr double kWaveSpawnWindow = 0.5;
-/// The rarest a wave's mob can be.
-inline constexpr Rarity kWaveTopRarity = Rarity::Super;
+/// The rarity schedule past mythic (user, 2026-11-13), where flooooio's climb
+/// would have put supers on the disc from about wave 75 and nothing else from
+/// 90. Mythics end after wave 75 and ultras hold to kWaveSuperFrom; then
+/// supers take a share that grows evenly to all of them at kWaveAllSuperAt.
+inline constexpr int kWaveMythicEndsAfter = 75;
+inline constexpr int kWaveSuperFrom = 200;
+inline constexpr int kWaveAllSuperAt = 250;
+/// Above super, a flat chance a mob has from these waves on: a unique 1 in 100
+/// from wave 300, an apex 1 in 1000 from wave 400.
+inline constexpr int kWaveUniqueFrom = 300;
+inline constexpr double kWaveUniqueChance = 0.01;
+inline constexpr int kWaveApexFrom = 400;
+inline constexpr double kWaveApexChance = 0.001;
+/// A unique or apex on the disc stands this many times its health anywhere
+/// else (user, 2026-11-13). Applied where every mob's health is made
+/// (SpawnSystem::spawnMobAt), so a chain's every bead, a converted mob and an
+/// operator's spawn on the disc have it too.
+inline constexpr double kWaveUniqueHealthScale = 10.0;
+inline constexpr double kWaveApexHealthScale = 50.0;
+inline constexpr double waveHealthScale(Rarity rarity) {
+    return rarity == Rarity::Apex     ? kWaveApexHealthScale
+           : rarity == Rarity::Unique ? kWaveUniqueHealthScale
+                                      : 1.0;
+}
 /// How full the disc may get before the spawner waits and the rest of the wave
 /// comes as room is made; neither is flooooio's. A count, against special
 /// waves piling up unattended, and the floor the bodies cover: a super hornet
@@ -129,9 +152,11 @@ double waveRadius(int wave);
 /// Every mob id the biome's waves can hold, in its table's order.
 std::vector<const char*> waveMobIds(WaveBiome biome);
 
-/// The rarity a mob of this wave rolls: pickRandomRarity, up to super where
-/// flooooio stops at mythic, then mobSpawnEndAfter lifting whatever has stopped
-/// spawning by this wave.
+/// The rarity a mob of this wave rolls: pickRandomRarity up to ultra (flooooio
+/// stops at mythic), then mobSpawnEndAfter lifting whatever has stopped
+/// spawning by this wave, mythic included from kWaveMythicEndsAfter; then
+/// supers from kWaveSuperFrom, and uniques and apexes from kWaveUniqueFrom and
+/// kWaveApexFrom. Draws one number below kWaveSuperFrom, as it always has.
 Rarity rollWaveRarity(int wave, Rng& rng);
 
 struct WaveMob {

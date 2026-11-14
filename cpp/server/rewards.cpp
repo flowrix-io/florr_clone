@@ -41,7 +41,9 @@ void GameServer::announceBossSpawns() {
         // nest's escort, the arena, an operator's console -- so there is one
         // place a boss becomes news and no way to add a spawn path that
         // produces one the server says nothing about.
-        noteBossSighting(boss.entity, clockMillis_);
+        // Not a wave's: no bot can reach the disc, and one it is told about
+        // would hold a callout slot until the wave killed it.
+        if (boss.realm != kWavesRealm) noteBossSighting(boss.entity, clockMillis_);
         // A sacrifice's mob was announced as summoned by the ritual that
         // brought it (announceSacrificeSummon), at any tier.
         const Replicated* replicated = world_.tryGet<Replicated>(boss.entity);
@@ -76,9 +78,11 @@ void GameServer::announceBossSpawns() {
             // and (9000, 9000) on one is not near (9000, 9000) on the other.
             const Transform* transform =
                 session.playing() ? world_.tryGet<Transform>(session.entity) : nullptr;
+            // The waves disc is one place: a flower on it is where the boss is.
             const bool here = transform != nullptr && transform->realm == boss.realm &&
-                              transform->realm == Realm::Overworld &&
-                              sectionAt(transform->position) == section;
+                              (boss.realm == kWavesRealm ||
+                               (transform->realm == Realm::Overworld &&
+                                sectionAt(transform->position) == section));
             sendChatTo(*connection, net::ChatChannel::System, "",
                        opening + "A " + tier +
                            " " + name + " has spawned" + (here ? "" : " somewhere") + "!</b>");
@@ -219,8 +223,12 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     if (rarityIndex(type.rarity) < rarityIndex(kAnnouncedRarity)) return;
     // Nor does a prestige biome's super, whose spawn was never announced
     // either: there it is the bands' everyday stock (shared/game/prestige.h).
+    // Nor a wave's, below unique, for the same reason (announceIfNotable).
     if (const Transform* at = world_.tryGet<Transform>(mob)) {
-        if (worldMaps_.isPrestige(at->realm) || at->realm == kWavesRealm) return;
+        if (worldMaps_.isPrestige(at->realm)) return;
+        if (at->realm == kWavesRealm && rarityIndex(type.rarity) < rarityIndex(Rarity::Unique)) {
+            return;
+        }
     }
     // The head's death is the animal's. A centipede's beads each carry their
     // own ledger and die one by one, and a line per bead would be ten more

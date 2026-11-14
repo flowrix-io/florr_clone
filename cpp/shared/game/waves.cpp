@@ -128,14 +128,15 @@ const std::vector<Group>& groupsOf(WaveBiome biome) {
     return specialGroups()[index < specialGroups().size() ? index : 0];
 }
 
-// relativeRarity, which florr's own wave chances are, Common through Ultra, and
-// a super a hundredth of an ultra, as an ultra is of a mythic. flooooio has no
-// super; that weight is ours.
-constexpr std::array<double, 8> kRelativeRarity{28710.94, 4921.88, 656.25, 52.5,
-                                                1.0,      0.1,     0.001,  0.00001};
+// relativeRarity, which florr's own wave chances are, Common through Ultra.
+// Nothing above: a super had a hundredth of an ultra's weight here, which put
+// them on the disc from wave 75 and left nothing else by 90. Supers, uniques
+// and apexes now come on a schedule of their own (rollWaveRarity).
+constexpr std::array<double, 7> kRelativeRarity{28710.94, 4921.88, 656.25, 52.5, 1.0, 0.1, 0.001};
 // mobSpawnEndAfter: past this wave a rarity no longer spawns, and whatever rolled
-// it is lifted one step. Mythic never ends.
-constexpr std::array<int, 5> kRarityEndsAfter{20, 30, 40, 50, 60};
+// it is lifted one step. Common through legendary are flooooio's, where mythic
+// never ends; ours does, and the climb has made ultras most of a wave by then.
+constexpr std::array<int, 6> kRarityEndsAfter{20, 30, 40, 50, 60, kWaveMythicEndsAfter};
 // amountTable: how many mobs one ordinary spawn is, 1 to 5.
 constexpr std::array<double, 5> kAmountWeights{0.25, 0.20, 0.15, 0.10, 0.05};
 // spawnDelay: a spawn every 0.8 s.
@@ -267,14 +268,32 @@ Rarity rollWaveRarity(int wave, Rng& rng) {
             break;
         }
     }
-    rolled = std::min(rolled, static_cast<int>(kWaveTopRarity));
     // Lowest first, so a rarity lifted into one that has ended too keeps rising.
     // flooooio walks a Go map here, in a random order each time, which stops
     // short of that some of the time; the table says what it means to do.
     for (std::size_t i = 0; i < kRarityEndsAfter.size(); ++i) {
         if (rolled == static_cast<int>(i) && wave > kRarityEndsAfter[i]) ++rolled;
     }
-    return static_cast<Rarity>(rolled);
+    Rarity rarity = static_cast<Rarity>(rolled);
+    // Past kWaveSuperFrom an ultra is a super by a share growing evenly to all of
+    // them at kWaveAllSuperAt. Every mob is an ultra by then, so this is the
+    // whole wave's mix. Drawn only where it can come out either way, so every
+    // wave below keeps the one draw it has always made.
+    if (rarity == Rarity::Ultra && wave > kWaveSuperFrom) {
+        const double share = static_cast<double>(wave - kWaveSuperFrom) /
+                             static_cast<double>(kWaveAllSuperAt - kWaveSuperFrom);
+        if (share >= 1.0 || rng.unit() < share) rarity = Rarity::Super;
+    }
+    if (rarity == Rarity::Super && wave >= kWaveUniqueFrom) {
+        const double roll = rng.unit();
+        const double apex = wave >= kWaveApexFrom ? kWaveApexChance : 0.0;
+        if (roll < apex) {
+            rarity = Rarity::Apex;
+        } else if (roll < apex + kWaveUniqueChance) {
+            rarity = Rarity::Unique;
+        }
+    }
+    return rarity;
 }
 
 void WaveSpawner::next(WaveBiome biome, int wave, Rng& rng, int forcedGroup) {
