@@ -13,8 +13,11 @@ whole colour regions into layered polygons, fitting smooth ellipses when useful.
 It tries multiple colour palettes and chooses the lowest-error compatible result.
 Long outlines are triangulated and merged into polygons of at most 16 vertices;
 regions are not discarded simply to hit the shape count. **Crisp pixel art** uses
-exact merged pixel runs where possible. **Soft detail** is the older rectangular
-approximation, retained as an explicit option.
+exact merged pixel runs where possible. **Soft contours** uses fitted spline outlines. Rectangles are reserved for
+explicit pixel-art / exact-grid exports. Selecting Smart, Smooth or Soft resets
+a stale Exact mode. Smart compares spline and straight contour reconstructions
+and chooses the lower-error export; whole oval regions can become one ellipse
+before long outlines are split.
 
 SVG and compressed SVGZ now use the Flowrix SVG-to-skin engine directly first:
 supported circles, ellipses, rectangles, lines and cubic curves retain their

@@ -6,6 +6,25 @@ from PIL import Image
 from converter import decode, convert, rectangles, draw_rects
 
 class ConversionTests(unittest.TestCase):
+    def test_contour_styles_override_stale_exact_mode(self):
+        from PIL import ImageDraw
+        im=Image.new('RGBA',(96,96))
+        ImageDraw.Draw(im).ellipse((8,8,88,88),fill='orange')
+        for style in ('auto','vector','detail','polygon'):
+            with self.subTest(style=style):
+                result=convert(im,{'mode':'exact','style':style,'budget':128,'trim':False})
+                self.assertNotIn('rect ',result['code'])
+                self.assertLessEqual(result['shapes'],128)
+                self.assertIn('previewSvg',result)
+
+    def test_smooth_round_region_is_one_ellipse_before_splitting(self):
+        from PIL import ImageDraw
+        im=Image.new('RGBA',(128,128))
+        ImageDraw.Draw(im).ellipse((12,24,116,104),fill='orange')
+        result=convert(im,{'style':'vector','budget':128,'trim':False})
+        self.assertEqual(result['types'],{'ellipse':1})
+        self.assertLess(result['rmse'],20)
+
     def test_polygon_selection_overrides_exact_pixel_mode(self):
         result=convert(self.fixture(),{'mode':'exact','style':'polygon','budget':1000})
         self.assertTrue(all(line.startswith('polygon ') for line in result['code'].splitlines()))

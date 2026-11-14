@@ -318,16 +318,23 @@ def convert(im,options):
     mode=options.get('mode','game'); grid=max(8,min(512,int(options.get('grid',128))))
     budget=max(8,min(1000,int(options.get('budget',1000))))
     style=options.get('style','auto')
-    if style in ('vector','polygon'): mode='game'
+    # Pixel exports must be explicit. A restored Exact setting must never
+    # override a subsequent Smart / Smooth / Soft contour selection.
+    if style != 'pixel' and 'style' in options: mode='game'
     background=options.get('background','#ffffff')
     if len(background)!=7 or background[0]!='#': raise ValueError('Invalid matte colour.')
     bytes.fromhex(background[1:])
     source=im.copy(); source.thumbnail((768,768))
     prepared,original,grid_size=prepare(im,grid,bool(options.get('trim',True)),background,options.get('alpha','cutout'),max(1,min(255,int(options.get('threshold',128)))),style=='pixel')
     if not np.any(np.array(prepared)[:,:,3]): raise ValueError('The selected frame is transparent at this threshold.')
-    if mode!='exact' and style in ('auto','vector','polygon'):
+    if mode!='exact' and style != 'pixel':
         try:
             loss,code,result,types,count,svg=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))),polygons_only=style=='polygon', detail=options.get('detail',.6), max_colors=options.get('maxColors',255))
+            if style=='auto':
+                # Smoothing can erase small corners. Smart compares fitted
+                # curves with straight contours using the rendered export.
+                straight=vector_shapes(prepared,budget,max(8,min(100,float(options.get('size',46)))),detail=options.get('detail',.6),max_colors=options.get('maxColors',255),smooth=False)
+                if straight[0]<loss: loss,code,result,types,count,svg=straight
         except ValueError as exc:
             raise ValueError(str(exc)+' Smart mode did not switch to rectangles. Choose Pixel art explicitly for a rectangle export.') from exc
         else:
@@ -339,7 +346,7 @@ def convert(im,options):
     return {'code':code,'shapes':len(rects),'characters':len(code),'compatible':len(rects)<=255,'grid':list(grid_size),'originalGrid':list(original),'method':method,'rmse':round(math.sqrt(loss),2),'exactGrid':loss==0,'matchPercent':round(float(np.all(np.asarray(prepared)==np.asarray(result),axis=2).mean())*100,1),'resized':original!=grid_size,'source':png(source),'target':png(prepared),'result':png(result)}
 
 
-def vector_shapes(im,budget,body_size=46,polygons_only=False,detail=.6,max_colors=255):
+def vector_shapes(im,budget,body_size=46,polygons_only=False,detail=.6,max_colors=255,smooth=True):
     """Trace whole color regions; preserve paths by splitting, never dropping them."""
     import subprocess
     import cv2
@@ -359,18 +366,38 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False,detail=.6,max_color
         quant.putalpha(im.getchannel('A'))
         if trace_scale>1: quant=quant.resize(traced.size,Image.Resampling.NEAREST)
         b=io.BytesIO();quant.save(b,format='PNG')
-        request={'png':base64.b64encode(b.getvalue()).decode(),'colors':colors,'simplify':detail,'cornerThreshold':60 if detail<.4 else (100 if detail>1 else 80)}
+        request={'png':base64.b64encode(b.getvalue()).decode(),'colors':colors,'simplify':detail,'mode':'spline' if smooth and not polygons_only else 'polygon','cornerThreshold':60 if detail<.4 else (100 if detail>1 else 80)}
         process=subprocess.run(['node',str(root/'vectorize.js')],input=__import__('json').dumps(request),text=True,capture_output=True,timeout=35,cwd=root)
         if process.returncode: raise ValueError('The local vector tracer failed. Try a smaller pixel grid or Pixel art mode.')
-        shapes=__import__('json').loads(process.stdout)['shapes']
+        traced_data=__import__('json').loads(process.stdout)
+        shapes=[]
+        for region in traced_data['regions']:
+            oval=None
+            # Recognize a whole oval BEFORE polygon splitting. Fitting the
+            # individual triangulated pieces cannot recover a round outline.
+            if not polygons_only and len(region['paths'])==1:
+                points=np.array(region['paths'][0],dtype=np.float32)/trace_scale
+                if len(points)>=5:
+                    (cx,cy),(dx,dy),rotation=cv2.fitEllipse(points)
+                    area=abs(cv2.contourArea(points))
+                    if dx>1 and dy>1 and abs(math.pi*dx*dy/4-area)<max(1,area*.06):
+                        angle=math.radians(rotation)
+                        shifted=points-np.array([cx,cy])
+                        u=(shifted[:,0]*math.cos(angle)+shifted[:,1]*math.sin(angle))/(dx/2)
+                        v=(-shifted[:,0]*math.sin(angle)+shifted[:,1]*math.cos(angle))/(dy/2)
+                        if np.max(np.abs(np.sqrt(u*u+v*v)-1))<.08:
+                            oval=(cx,cy,dx/2,dy/2,rotation)
+            if oval:
+                shapes.append({'points':region['paths'][0],'fill':region['fill'],'oval':oval})
+            else: shapes.extend(region['shapes'])
         if len(shapes)>budget:
             # Reducing the palette does not guarantee monotonic region counts.
             continue
         markup=[];code=[];counts={}
         def num(n): return f'{n:.6f}'.rstrip('0').rstrip('.') if n else '0'
         for s in shapes:
-            points=np.array(s['points'],dtype=np.float32)/trace_scale;fill=s['fill'];kind='polygon';oval=None
-            if not polygons_only and len(points)>=5 and cv2.isContourConvex(points):
+            points=np.array(s['points'],dtype=np.float32)/trace_scale;fill=s['fill'];oval=s.get('oval');kind='ellipse' if oval else 'polygon'
+            if not oval and not polygons_only and len(points)>=5 and cv2.isContourConvex(points):
                 ellipse=cv2.fitEllipse(points)
                 (cx,cy),(dx,dy),rotation=ellipse
                 area=abs(cv2.contourArea(points))
@@ -397,7 +424,7 @@ def vector_shapes(im,budget,body_size=46,polygons_only=False,detail=.6,max_color
         if max(im.size)>2:
             reduced=im.copy()
             reduced.thumbnail((max(2,im.width//2),max(2,im.height//2)),Image.Resampling.BOX)
-            loss,code,out,types,count,svg=vector_shapes(reduced,budget,body_size,polygons_only,detail,max_colors)
+            loss,code,out,types,count,svg=vector_shapes(reduced,budget,body_size,polygons_only,detail,max_colors,smooth)
             out=out.resize(im.size,Image.Resampling.LANCZOS)
             return error(im,out),code,out,types,count,svg
         raise ValueError('No visible contours were found. Lower the transparency threshold.')
