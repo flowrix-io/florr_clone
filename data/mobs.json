@@ -516,6 +516,7 @@
             "desert"
         ],
         "no_mob_collision": true,
+        "collides_with_own_kind": true,
         "hideRotation": true,
         "noEggDrop": true
     },

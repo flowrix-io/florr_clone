@@ -1071,12 +1071,16 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.noEggDrop = ctx.boolean(src, "noEggDrop");
     m.reversed = ctx.boolean(src, "reversed");
     m.noMobCollision = ctx.boolean(src, "no_mob_collision");
+    m.collidesWithOwnKind = ctx.boolean(src, "collides_with_own_kind");
     m.hole = ctx.boolean(src, "hole");
     m.intangible = ctx.boolean(src, "intangible");
     m.colony = ctx.boolean(src, "colony");
     // Untouchable means by other mobs too, whether or not the entry says so
     // twice.
-    if (m.intangible) m.noMobCollision = true;
+    if (m.intangible) {
+        m.noMobCollision = true;
+        m.collidesWithOwnKind = false;
+    }
     m.stingerShooter = ctx.boolean(src, "stinger");
     {
         const std::string bee = ctx.text(src, "bee_ai");

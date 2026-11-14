@@ -331,6 +331,11 @@ private:
         bool gardnChain = false;
         /// The config's `no_mob_collision`: neither pushes nor is pushed.
         bool noCollision = false;
+        /// The config's `collides_with_own_kind`: a noCollision mob that still
+        /// pushes and is pushed by the same mob type on the same team.
+        bool collidesWithOwnKind = false;
+        std::uint16_t configIndex = 0;
+        Team team = Team::Hostiles;
         /// The parent this mob is still climbing out of (HoleTether::emerging),
         /// NULL_ENTITY once it is clear. The pair does not push each other.
         Entity emergingFrom = NULL_ENTITY;
