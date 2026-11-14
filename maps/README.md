@@ -918,7 +918,10 @@ on which a difficulty-100 band is *full* of ultras, so on this scale an ultra or
 a super comes from the ground it stands on, and a unique or an apex from a super
 its biome's clock upgraded (see `difficulty` above). What survives is the
 announcement: a super, unique or apex spawning is still worth telling the server
-about.
+about — except a super on ground where more than 3% of spawns come out a boss
+(`kQuietBossChance`), which is that band's stock and spawns and dies without a
+line in chat. A difficulty-100 band (2%) still announces its supers; anything
+past about 101 does not. Uniques and apexes announce wherever they stand.
 
 ## What guards this
 
@@ -1114,6 +1117,9 @@ derived from the file rather than pinned, because the author is still drawing)
   `a_soft_band_announces_nothing`,
   `an_announced_boss_carries_the_map_it_spawned_on` — what replaced the boss
   pass, and the announcement that outlived it.
+- `a_super_is_announced_only_where_supers_are_rare` and `spawn_tests.cpp`'s
+  `a_super_on_ground_thick_with_them_is_neither_announced_nor_mourned` — the
+  3% line on a super's announcement.
 - `min_rarity_still_floors_a_named_mob_whatever_the_ground_says` and
   `a_neverambient_mob_never_comes_from_a_group_roll_however_hard_the_ground` —
   the two mob properties a zone's number does not override.

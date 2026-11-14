@@ -224,6 +224,9 @@ void GameServer::announceBossDefeat(Entity mob, const MobType& type,
     // Nor does a prestige biome's super, whose spawn was never announced
     // either: there it is the bands' everyday stock (shared/game/prestige.h).
     // Nor a wave's, below unique, for the same reason (announceIfNotable).
+    // Nor a super born on ground that grows them as everyday stock
+    // (kQuietBossChance): its spawn was silent, so its defeat is.
+    if (world_.has<QuietBoss>(mob)) return;
     if (const Transform* at = world_.tryGet<Transform>(mob)) {
         if (worldMaps_.isPrestige(at->realm)) return;
         if (at->realm == kWavesRealm && rarityIndex(type.rarity) < rarityIndex(Rarity::Unique)) {
