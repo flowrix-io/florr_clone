@@ -513,6 +513,12 @@ tells every player "A Mysterious rift has opened!". It only opens on a map, not
 in the PVP arena, the maze or a hosted game, and one is open at a time. The rift
 also shows as a black dot on that map's minimap.
 
+Rifts also open on their own: at the top of every hour (server wall clock),
+when no rift is open and no game of waves is running, there is a 20% chance of
+a garden rift at wave 1, somewhere in the garden map's common zone (its
+difficulty-0 band) and nowhere else. It is announced with the same line, and
+stays open until somebody plays it or `/admin stop_waves` closes it.
+
 Stand on it for a second, as on any teleporter, and you are on a disc in a realm
 of its own. The disc starts at radius 1500 and grows by 50 each wave, up to 8000
 (from wave 131); a game started at a later wave starts at that wave's size. The

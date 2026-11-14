@@ -92,6 +92,35 @@ bool heardRiftLine(const NetClient& client) {
     return false;
 }
 
+// The hourly rift's wall clock: the database's, which is the one it reads.
+constexpr std::int64_t kHour = 60 * 60 * 1000;
+std::int64_t hourlyWallMillis = 0;
+std::int64_t hourlyClock() { return hourlyWallMillis; }
+
+/// A harness with the hourly rift on and its wall clock in the test's hands,
+/// started half way through an hour.
+void driveTheHour(Harness& h) {
+    auto& db = const_cast<Database&>(h.server.database());
+    hourlyWallMillis = (db.nowMillis() / kHour) * kHour + kHour / 2;
+    db.setClock(&hourlyClock);
+}
+
+void hourlyRifts(ServerConfig& config) { config.hourlyRifts = true; }
+
+/// Whether `at` is on the garden's common ground: inside one of its bands at
+/// difficulty 0, read from the map the server loaded.
+bool onGardenCommonGround(const GameServer& server, Realm realm, Vec2 at) {
+    bool found = false;
+    const Realm garden = server.worldMaps().realmOfId("garden", found);
+    if (!found || realm != garden) return false;
+    const MapData* map = server.worldMaps().forRealm(garden);
+    if (map == nullptr) return false;
+    for (const MapElement& element : map->elements()) {
+        if (element.isSpawnBand() && element.difficulty == 0.0 && element.contains(at)) return true;
+    }
+    return false;
+}
+
 } // namespace
 
 // -- the rules --------------------------------------------------------------
@@ -504,6 +533,102 @@ TEST(a_rift_only_opens_on_a_map) {
     CHECK(boss.view().realm() == Realm::Maze);
     CHECK(say(h, boss, "/admin start_waves"));
     CHECK(GameServerPeer::waves(h.server).phase == WavePhase::Idle);
+}
+
+TEST(on_the_hour_one_time_in_five_a_rift_opens_on_the_gardens_common_ground) {
+    Harness h("waves-hourly", seedWaves, dataDir(), 0, hourlyRifts);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss;
+    CHECK(playing(h, boss, "boss"));
+    driveTheHour(h);
+    // The garden has common ground for this to land on at all.
+    bool gardenFound = false;
+    const Realm garden = h.server.worldMaps().realmOfId("garden", gardenFound);
+    CHECK(gardenFound);
+    bool anyCommon = false;
+    if (const MapData* map = h.server.worldMaps().forRealm(garden)) {
+        for (const MapElement& element : map->elements()) {
+            anyCommon = anyCommon || (element.isSpawnBand() && element.difficulty == 0.0);
+        }
+    }
+    CHECK(anyCommon);
+
+    constexpr int kHours = 150;
+    int opened = 0;
+    int midHour = 0;
+    int offGround = 0;
+    for (int hour = 0; hour < kHours; ++hour) {
+        // The rest of the hour rolls nothing, however many ticks it has.
+        h.step(3, {&boss});
+        hourlyWallMillis += kHour / 2 - 1;
+        h.step(3, {&boss});
+        if (GameServerPeer::waves(h.server).phase != WavePhase::Idle) ++midHour;
+
+        // The top of the next one.
+        hourlyWallMillis += 1;
+        h.step(1, {&boss});
+        const auto& waves = GameServerPeer::waves(h.server);
+        if (waves.phase == WavePhase::Open) {
+            ++opened;
+            if (!onGardenCommonGround(h.server, waves.riftRealm, waves.riftPosition)) ++offGround;
+            CHECK(waves.biome == WaveBiome::Garden);
+            CHECK_EQ(waves.startWave, 1);
+            if (opened == 1) {
+                CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open && heardRiftLine(boss); }));
+                CHECK(boss.rift().realm == garden);
+            }
+            // Not say(): the client keeps 100 chat lines, and 150 hours of
+            // rifts fill them, so a reply no longer grows the list.
+            boss.sendChat("/admin stop_waves");
+            CHECK(h.stepUntil({&boss}, [&] {
+                return GameServerPeer::waves(h.server).phase == WavePhase::Idle;
+            }));
+        }
+        hourlyWallMillis += kHour / 2;
+    }
+    std::printf("  hourly rifts: %d of %d hours\n", opened, kHours);
+    CHECK_EQ(midHour, 0);
+    CHECK_EQ(offGround, 0);
+    // One in five: 30 expected, sd ~4.9.
+    CHECK(opened >= 12 && opened <= 50);
+}
+
+TEST(the_hour_leaves_an_open_or_running_game_of_waves_alone) {
+    Harness h("waves-hourly-busy", seedWaves, dataDir(), 0, hourlyRifts);
+    CHECK(h.ready);
+    if (!h.ready) return;
+    NetClient boss, alice;
+    CHECK(playing(h, boss, "boss"));
+    CHECK(playing(h, alice, "alice"));
+    driveTheHour(h);
+    h.step(2, {&boss, &alice});
+    CHECK(say(h, boss, "/admin start_waves desert 5"));
+    CHECK(h.stepUntil({&boss, &alice}, [&] { return alice.rift().open; }));
+    const Vec2 rift = GameServerPeer::waves(h.server).riftPosition;
+    const auto unchanged = [&] {
+        const auto& waves = GameServerPeer::waves(h.server);
+        return waves.riftOpen && waves.biome == WaveBiome::Desert && waves.startWave == 5 &&
+               waves.riftPosition.x == rift.x && waves.riftPosition.y == rift.y;
+    };
+    // Open and waiting for somebody.
+    bool held = true;
+    for (int hour = 0; hour < 40; ++hour) {
+        hourlyWallMillis += kHour;
+        h.step(1, {&boss, &alice});
+        held = held && unchanged() && GameServerPeer::waves(h.server).phase == WavePhase::Open;
+    }
+    CHECK(held);
+    // Being played.
+    immortal(h, "alice");
+    CHECK(throughTheRift(h, {&boss, &alice}, alice, "alice"));
+    CHECK(GameServerPeer::waves(h.server).phase == WavePhase::Playing);
+    for (int hour = 0; hour < 40; ++hour) {
+        hourlyWallMillis += kHour;
+        h.step(1, {&boss, &alice});
+        held = held && unchanged() && GameServerPeer::waves(h.server).phase == WavePhase::Playing;
+    }
+    CHECK(held);
 }
 
 TEST(start_waves_reads_its_biome_and_starting_wave) {
