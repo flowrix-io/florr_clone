@@ -104,11 +104,11 @@ cpp/
   cmake/          prune_staged_content.cmake
   docs/           this file, admin-dashboard.md
   third_party/
-    cpp_canvas/   the vendored Canvas2D-alike renderer, locally modified
+    cpp_canvas/   the Canvas2D-alike renderer, a git submodule
 ```
 
 Includes are repo-relative from `cpp/` — `#include "shared/core/world.h"` —
-except the vendored canvas headers, which are included by bare name
+except the canvas headers, which are included by bare name
 (`"canvas.h"`). Build directories (`cpp/build`, `cpp/build-web`, ...) are
 gitignored.
 
@@ -634,11 +634,15 @@ frame, and the touch and click handlers answer from it.
 
 `third_party/cpp_canvas`, a Canvas2D-shaped API (`save`/`restore`,
 `translate`/`rotate`/`scale`, paths, `fill`/`stroke`, `fillText`,
-`drawCanvas`), vendored and locally modified. A frame is one draw list issued
-against it, and the two builds consume that list differently:
+`drawCanvas`). It is a git submodule of
+[sussybite8888/cpp_canvas](https://github.com/sussybite8888/cpp_canvas), built
+through its own `CMakeLists.txt`; a change to it is made in that repository and
+reaches the game as a bump of the submodule commit. A frame is one draw list
+issued against it, and the two builds consume that list differently:
 
-* **Natively** it is a software rasterizer — a large fill is split across
-  scanline bands on a small thread pool — presented through an SDL2 window. The
+* **Natively** it is a software rasterizer — calls are recorded, culled where
+  later opaque drawing covers them, and a large fill is split across scanline
+  bands on a small thread pool — presented through an SDL2 window. The
   native client is CPU-bound by it, which is why even the dev flavour is
   optimised.
 * **On the web** nothing is rasterised in wasm and no framebuffer is

@@ -84,4 +84,10 @@ a privilege by username, display name or any other string a player chooses.
 `maps/README.md` (map authoring), `cpp/docs/admin-dashboard.md` (admin tools),
 `cpp/third_party/cpp_canvas/README.md` (the canvas library).
 
+`cpp/third_party/cpp_canvas` is a git submodule
+(https://github.com/sussybite8888/cpp_canvas; the CMake configure runs
+`git submodule update --init` for a clone made without `--recursive`). A
+change to the library is made and pushed in that repository, then the
+submodule commit is bumped here.
+
 Do not edit README.md
