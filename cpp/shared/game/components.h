@@ -1606,6 +1606,10 @@ struct LightningClock {
 /// rolled as a glitch petal's is and reported green instead of cyan.
 struct LightningBurst {
     bool glitch = false;
+    /// The only victims this strike may land on, picked when it was thrown
+    /// (the plain lightning petal's tier + 2 nearest). Empty is the uncapped
+    /// strike: everything the field's reach covers, as before.
+    std::vector<Entity> targets;
 };
 
 struct GroundEffect {

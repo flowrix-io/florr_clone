@@ -2107,7 +2107,8 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                            effect.damagePerSecond, effect.slowFactor, effect.rarity,
                            effect.damagePerHit, effect.damageIntervalMillis, transform.realm,
                            effect.slowsFlowers, effect.owner, effect.poisonDurationMillis,
-                           effect.ownerPoisonPerSecond});
+                           effect.ownerPoisonPerSecond,
+                           strike != nullptr && !strike->targets.empty()});
     });
 
     for (const FieldSource& field : fields_) {
@@ -2146,6 +2147,17 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                                     ? gapSq <= reach * reach
                                     : gapSq < reach * reach;
             if (!inside) continue;
+            // A capped strike picked its victims when it was thrown. Read back
+            // per victim rather than held from the gather: arming a cooldown
+            // below adds a component to the effect and moves it.
+            if (field.listedVictims) {
+                const LightningBurst* strike = world.tryGet<LightningBurst>(field.effect);
+                if (strike == nullptr ||
+                    std::find(strike->targets.begin(), strike->targets.end(), victim) ==
+                        strike->targets.end()) {
+                    continue;
+                }
+            }
             if (!canHit(world, victim, field.effect, nowMillis)) continue;
 
             // A uranium pulse: one blow to every mob, NPC and flower canHit

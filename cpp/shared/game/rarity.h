@@ -217,6 +217,12 @@ inline constexpr int icosahedronMaxHits(Rarity r) {
     return limits[static_cast<std::size_t>(rarityIndex(clampRarity(rarityIndex(r))))];
 }
 
+/// How many mobs a lightning petal's strike lands on: florr's Bounces, tier + 2
+/// -- two at common, eleven at apex. Universal and Admin read apex's, as every
+/// other non-strength figure does. The glitch form, the cutter and the battery
+/// are not capped; this is the plain lightning petal's alone.
+inline constexpr int lightningStrikeTargets(Rarity r) { return ladderIndex(r) + 2; }
+
 /// Multipliers for scripted effects that do not read PetalStats.
 inline constexpr double adminEffectScale(Rarity r) { return r == Rarity::Admin ? 10.0 : 1.0; }
 inline constexpr double adminReachScale(Rarity r) { return r == Rarity::Admin ? 3.0 : 1.0; }
