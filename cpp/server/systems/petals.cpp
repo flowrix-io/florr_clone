@@ -97,11 +97,14 @@ constexpr double kCapacitorChargePerMillis = 1.0;
 constexpr double kCapacitorMaxCharge = 60.0;
 constexpr double kCapacitorWindowMillis = 1000.0;
 
-/// An explosion reaches three times the petal's DRAWN size, and the reference
-/// arrives at that by multiplying by 40 twice -- once turning the size stat
-/// into pixels and once again inside the blast -- so the radius really is this
-/// large. It is why the throttle below exists.
-constexpr double kExplosionRadiusPerSize = 4800.0;
+/// Blast reach per unit of the petal's `size` stat: 120, so a size-2 bomb
+/// reaches 240 -- a couple of mobs' widths around where it went off.
+///
+/// The reference meant `size * 40 * 3` ("convert to pixels, make it 3x
+/// larger") but its caller had already multiplied by 40, so it shipped 4800 a
+/// unit: a bomb that went off 9600 units out, several screens past anything
+/// its owner could see. That doubled conversion is not carried over.
+constexpr double kExplosionRadiusPerSize = 120.0;
 /// A flat positional shove, undivided by the victim's mass: the reference
 /// writes it straight onto the mob rather than routing it through the
 /// mass-scaled push a petal's own knockback stat takes.
@@ -116,6 +119,20 @@ constexpr double kBehaviourShieldAmount = 50.0;
 constexpr double kBehaviourShieldIntervalMillis = 10000.0;
 constexpr double kBehaviourHealIntervalMillis = 2000.0;
 constexpr double kBehaviourExplodeIntervalMillis = 3000.0;
+
+/// What one blast deals at common. The bomb's `damage` stat is 0 -- its body
+/// hits nothing, the blast is all of it -- so the figure lives here.
+constexpr double kBombBlastDamage = 30.0;
+constexpr double kTestExplosiveBlastDamage = 50.0;
+
+/// A blast is a petal hitting things, so it climbs the same ladder a petal's
+/// damage does and takes the Damage talent on top, as a lightning strike
+/// does. It used to be flat below Admin: a mythic bomb hit for a common's 30.
+double blastDamage(const World& world, Entity player, double common, Rarity rarity) {
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player);
+    const double talent = modifiers != nullptr ? modifiers->petalDamageScale : 1.0;
+    return common * petalStrengthScale(rarity) * talent;
+}
 
 /// A scripted heal is a steeper curve than a burst petal's. `stats.heal`
 /// already carries its rarity; a script's literal does not, so the reference
@@ -2921,7 +2938,7 @@ void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, En
         case PetalBehaviourKind::Bomb:
             if (trigger == PetalTrigger::Spawn || trigger == PetalTrigger::Interval) return;
             explodePetal(world, player, at, stats.size * adminReachScale(rarity),
-                         30.0 * (rarity == Rarity::Admin ? petalStrengthScale(rarity) : 1.0), nowMillis);
+                         blastDamage(world, player, kBombBlastDamage, rarity), nowMillis);
             // Consumed by its own blast, which is what puts the slot on its
             // reload; the break effect above is guarded against firing again.
             if (trigger == PetalTrigger::Collision && world.isAlive(petal)) {
@@ -2949,7 +2966,7 @@ void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, En
         case PetalBehaviourKind::TestExplosive:
             if (trigger == PetalTrigger::Collision) return;
             explodePetal(world, player, at, stats.size * adminReachScale(rarity),
-                         50.0 * (rarity == Rarity::Admin ? petalStrengthScale(rarity) : 1.0), nowMillis);
+                         blastDamage(world, player, kTestExplosiveBlastDamage, rarity), nowMillis);
             return;
     }
 }
@@ -3109,13 +3126,17 @@ void PetalSystem::explodePetal(World& world, Entity player, Vec2 at, double peta
     const double radius = petalSize * kExplosionRadiusPerSize;
     emitDamageBurst(world, player, at, radius, damage);
 
+    // The burst is an unreplicated field, so without this the blast lands its
+    // numbers and nothing else: the event is the explosion the client draws.
+    const Transform* ownerAt = world.tryGet<Transform>(player);
+    const Realm realm = ownerAt != nullptr ? ownerAt->realm : Realm::Overworld;
+    if (events_ != nullptr) events_->explosion(at, radius, realm);
+
     // Knockback is dealt here rather than left to the field, because a field
     // has no direction to push along. Collected first: writing the impulse adds
     // a component, which moves the mob between archetypes. In the owner's
     // realm, as the burst itself is.
-    const Transform* ownerAt = world.tryGet<Transform>(player);
-    collectMobsNear(world, ownerAt != nullptr ? ownerAt->realm : Realm::Overworld, at, radius,
-                    mobScratch_);
+    collectMobsNear(world, realm, at, radius, mobScratch_);
     for (const Entity mob : mobScratch_) {
         const Transform* transform = world.tryGet<Transform>(mob);
         if (transform == nullptr) continue;

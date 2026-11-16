@@ -1025,8 +1025,8 @@ enum DamageEventFlags : std::uint8_t {
 /// without the server streaming per-frame animation state.
 ///
 /// The ids are positional, so a kind nothing produces any more keeps its
-/// place: deleting it would renumber every kind after it. Four are like that
-/// -- Heal, PetalBroke, LevelUp and Explosion.
+/// place: deleting it would renumber every kind after it. Three are like that
+/// -- Heal, PetalBroke and LevelUp.
 enum class EventKind : std::uint8_t {
     /// u32 netId, f32 amount, u8 DamageEventFlags -- the floating number --
     /// and, in the f32 `radius` no hit has, the share of the victim's max
@@ -1052,9 +1052,9 @@ enum class EventKind : std::uint8_t {
     LevelUp,        ///< u32 netId, u16 newLevel. Never produced: a level
                     ///< travels as streamed state (FieldPlayerVisuals, and
                     ///< the viewer's own block).
-    Explosion,      ///< f32 x, f32 y, f32 radius, u8 colorIndex. Never
-                    ///< produced by this server, though the client still
-                    ///< draws one at `position` with `radius`.
+    /// A petal's blast (bomb, explosive, blood leaf...) at `position`,
+    /// reaching `radius`. Fixed fields only; `flag` is unused.
+    Explosion,
     /// A lightning strike: `position` is where it landed and `radius` its
     /// reach. The ONLY event with a variable tail -- u8 count, then that many
     /// f32 x, f32 y -- because a bolt is drawn to each mob the strike hit and

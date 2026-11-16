@@ -71,6 +71,13 @@ struct EffectParticle {
     /// angle, so the others leave it at zero.
     double rotation = 0;
     std::uint32_t color = 0xFFFFFFu;
+    /// Exponential slowdown, per second: the velocity keeps e^(-drag dt) of
+    /// itself each step. 0 for a particle that coasts.
+    double drag = 0;
+    /// An explosion's smoke puff, which swells as it fades: its radius runs
+    /// from `size` to `size * (1 + growth)` over its life. 0 for debris, which
+    /// shrinks with the life left instead.
+    double growth = 0;
 };
 
 /// A short-lived visual with no gameplay meaning.

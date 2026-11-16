@@ -232,6 +232,18 @@ public:
         events_.push_back(e);
     }
 
+    /// A petal's blast: `radius` is its reach, which is what the client
+    /// throws the smoke and sparks out to. See net::EventKind::Explosion.
+    void explosion(Vec2 at, double radius, Realm realm) {
+        WireEvent e;
+        e.kind = net::EventKind::Explosion;
+        e.position = at;
+        e.radius = radius;
+        e.realm = realm;
+        e.positional = true;
+        events_.push_back(e);
+    }
+
     /// `targets` is where the bolts end -- whatever the strike hit, read
     /// before the damage lands -- and the strike is drawn to the
     /// net::kMaxLightningTargets of them nearest `at` when there are more than
