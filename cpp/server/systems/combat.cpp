@@ -7,6 +7,7 @@
 
 #include "server/loot_eligibility.h"
 #include "server/systems/movement.h"
+#include "shared/game/difficulty.h"
 #include "shared/game/npc.h"
 #include "shared/game/admin_arena.h"
 
@@ -1792,6 +1793,11 @@ Entity CombatSystem::reflectionTarget(const World& world, Entity source) {
     return actor;
 }
 
+double CombatSystem::rollDiceDamage(double amount, double chance) {
+    if (!(chance > 0.0) || !(amount > 0.0)) return amount;
+    return rng_.chance(std::min(1.0, chance)) ? amount * kDiceDamageScale : amount;
+}
+
 double CombatSystem::rollGlitchDamage(double amount) {
     // A swing of nothing has nothing to scale, so it draws nothing.
     return amount > 0.0 ? amount * glitchDamageScale(rng_.unit()) : amount;
@@ -2455,6 +2461,12 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
             source.damage *= tomatoGrowth(nowMillis - petal.spawnedAtMillis);
         }
         if (petalShredsShots(config)) source.shotDamageScale = kPlankShotDamageScale;
+        if (petalRollsDice(config)) {
+            const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(petal.owner);
+            const double luck = modifiers != nullptr ? modifiers->luck : kNeutralSpawnLuck;
+            source.diceChance =
+                kDiceChance + kDiceChancePerLuck * std::max(0.0, luck - kNeutralSpawnLuck);
+        }
         if (petalInvertsCpp(config)) {
             source.convertsFrom = content.mobIndex(kCppMobId);
             source.convertsInto = content.mobIndex(kCMinusMobId);
@@ -2724,6 +2736,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // ring or a hostile NPC is every collision there is. A petal, a
             // shot, a field or a shock goes past it whole.
             if (mobTouchesPlayer) swing *= collisionDamageTakenScale(world, victim);
+            swing = rollDiceDamage(swing, source.diceChance);
             if (source.hitKind == DamageKind::Glitch) swing = rollGlitchDamage(swing);
             DamageResult hit =
                 applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);
@@ -3071,6 +3084,7 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
 
     // A claw opens on a fresh duellist exactly as it opens on a fresh mob.
     double swing = swingDamage(world, source.damage, source.critDamage, victim);
+    swing = rollDiceDamage(swing, source.diceChance);
     if (source.hitKind == DamageKind::Glitch) swing = rollGlitchDamage(swing);
     const DamageResult hit =
         applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);

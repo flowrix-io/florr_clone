@@ -183,6 +183,19 @@
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ce76db\" stroke-width=\"4\" stroke=\"#a760b1\"/>\n</svg>",
         "isAdminPetal": false
     },
+    "dice": {
+        "name": "Dice",
+        "damage": 10,
+        "health": 10,
+        "size": 1,
+        "cooldown": 2500,
+        "price": 20,
+        "description": "Has a 5% chance of dealing 35x damage. Chance increases by 4% per point in luck.",
+        "color": "#CFCFCF",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-12 -12 24 24\"><rect x=\"-10\" y=\"-10\" width=\"20\" height=\"20\" fill=\"#CFCFCF\"/><rect x=\"-7.6\" y=\"-7.6\" width=\"15.2\" height=\"15.2\" fill=\"#FFFFFF\"/><circle cx=\"-4\" cy=\"-4\" r=\"2.2\" fill=\"#777777\"/><circle cx=\"4\" cy=\"4\" r=\"2.2\" fill=\"#777777\"/></svg>",
+        "isAdminPetal": false
+    },
     "privet": {
         "name": "Privet",
         "damage": 0,

@@ -504,6 +504,14 @@
         "probability": 0.2,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "dice",
+        "rarity": "common",
+        "probability": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },

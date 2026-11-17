@@ -502,6 +502,9 @@ private:
         /// Added to `damage` while the victim is above kClawCritHealthFraction.
         /// Claw, and nothing else; already on the flower's petal curve.
         double critDamage = 0;
+        /// Chance a swing lands kDiceDamageScale x. Dice, and nothing else;
+        /// the owner's luck already folded in.
+        double diceChance = 0;
         /// Fraction of what a hit actually took off that heals `owner`. Fang.
         double lifesteal = 0;
         /// The flower a petal belongs to -- who a fang heals. NULL_ENTITY for
@@ -834,6 +837,8 @@ private:
     /// relic squad re-enters applyDamage once per share, and each share rolling
     /// for itself would break one hit into different amounts.
     double rollGlitchDamage(double amount);
+    /// A dice's 35x, drawn only when `chance` is above zero.
+    double rollDiceDamage(double amount, double chance);
 
     /// The colony's and the relic's split: `amount` shared evenly over `group`
     /// plus `victim`, each share going back through applyDamage as that body's

@@ -208,6 +208,7 @@ struct Fixture {
     std::uint16_t privet = kInvalidIndex;
     std::uint16_t boney = kInvalidIndex;
     std::uint16_t clawy = kInvalidIndex;
+    std::uint16_t dice = kInvalidIndex;
     std::uint16_t fangy = kInvalidIndex;
     std::uint16_t moon = kInvalidIndex;
     std::uint16_t plank = kInvalidIndex;
@@ -245,6 +246,7 @@ const Fixture& fixture() {
               "privet":{"name":"Privet","damage":0,"health":50,"size":0.6,"cooldown":4000,"extraPoisonDuration":200},
               "boney":{"name":"Boney","damage":14,"health":10,"size":1,"petalArmor":10},
               "clawy":{"name":"Clawy","damage":5,"health":10,"size":1,"clawCritDamage":100},
+              "dice":{"name":"Dice","damage":5,"health":10,"size":1},
               "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35},
               "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6},
               "plank":{"name":"Plank","damage":18,"health":15,"size":3},
@@ -270,6 +272,7 @@ const Fixture& fixture() {
         f.privet = f.registry.petalIndex("privet");
         f.boney = f.registry.petalIndex("boney");
         f.clawy = f.registry.petalIndex("clawy");
+        f.dice = f.registry.petalIndex("dice");
         f.fangy = f.registry.petalIndex("fangy");
         f.moon = f.registry.petalIndex("moon");
         f.plank = f.registry.petalIndex("plank");
@@ -3958,6 +3961,23 @@ TEST(a_bones_armor_blunts_a_shot_but_not_a_drip) {
 // ---------------------------------------------------------------------------
 // Claw: an opening strike
 // ---------------------------------------------------------------------------
+
+TEST(a_dice_with_enough_luck_always_lands_its_multiplier) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.dice == kInvalidIndex) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    // Enough luck points that the chance passes 100%.
+    PlayerModifiers modifiers;
+    modifiers.luck = kNeutralSpawnLuck + (1.0 - kDiceChance) / kDiceChancePerLuck + 1.0;
+    a.world.add<PlayerModifiers>(player, modifiers);
+    const Entity mob = a.mob({1040, 1000}, 500.0);
+    equipPetal(a, player, f.dice, Rarity::Common, {1025, 1000});
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 500.0 - 5.0 * kDiceDamageScale, 1e-9);
+}
 
 TEST(a_claw_adds_its_bonus_only_while_the_victim_is_above_eighty_percent) {
     const Fixture& f = fixture();
