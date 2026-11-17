@@ -9,6 +9,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace flix::ui {
@@ -579,6 +580,55 @@ void inputField(Canvas& canvas, Rect r, const std::string& value, const std::str
                         static_cast<float>(caretBand.h));
     }
     canvas.restore();
+}
+
+bool beginLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent, LayerBox& box) {
+    const std::array<float, 6> m = frame.currentTransform();
+    const std::array<Vec2, 4> corners = {Vec2{extent.x, extent.y}, Vec2{extent.right(), extent.y},
+                                         Vec2{extent.x, extent.bottom()},
+                                         Vec2{extent.right(), extent.bottom()}};
+    double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    for (std::size_t i = 0; i < corners.size(); ++i) {
+        const double dx = m[0] * corners[i].x + m[2] * corners[i].y + m[4];
+        const double dy = m[1] * corners[i].x + m[3] * corners[i].y + m[5];
+        x0 = i == 0 ? dx : std::min(x0, dx);
+        x1 = i == 0 ? dx : std::max(x1, dx);
+        y0 = i == 0 ? dy : std::min(y0, dy);
+        y1 = i == 0 ? dy : std::max(y1, dy);
+    }
+    const int left = std::max(0, static_cast<int>(std::floor(x0)));
+    const int top = std::max(0, static_cast<int>(std::floor(y0)));
+    const int right = std::min(frame.pixelWidth(), static_cast<int>(std::ceil(x1)));
+    const int bottom = std::min(frame.pixelHeight(), static_cast<int>(std::ceil(y1)));
+    if (right <= left || bottom <= top) return false;
+    box = {left, top, right - left, bottom - top};
+
+    // The surface only ever grows, in steps of 64 as the glitch buffer does,
+    // so a box that widens by a pixel -- a tile rocking, a window being
+    // dragged wider -- does not reallocate it on every frame of the change.
+    if (!layer || layer->pixelWidth() < box.w || layer->pixelHeight() < box.h) {
+        const int w = (std::max(box.w, layer ? layer->pixelWidth() : 0) + 63) / 64 * 64;
+        const int h = (std::max(box.h, layer ? layer->pixelHeight() : 0) + 63) / 64 * 64;
+        layer = std::make_unique<Canvas>(Canvas::createVirtual(w, h));
+    }
+    layer->clearRect(0, 0, static_cast<float>(box.w), static_cast<float>(box.h));
+    layer->save();
+    layer->setTransform(m[0], m[1], m[2], m[3], m[4] - static_cast<float>(left),
+                        m[5] - static_cast<float>(top));
+    return true;
+}
+
+/// Lays what beginLayer readied onto the frame at `alpha`, pixel for pixel.
+void endLayer(Canvas& frame, Canvas& layer, const LayerBox& box, double alpha) {
+    layer.restore();
+    const auto w = static_cast<float>(box.w);
+    const auto h = static_cast<float>(box.h);
+    frame.save();
+    frame.resetTransform();
+    frame.setGlobalAlpha(static_cast<float>(alpha));
+    frame.drawCanvas(layer, 0, 0, w, h, static_cast<float>(box.x), static_cast<float>(box.y), w,
+                     h);
+    frame.restore();
 }
 
 } // namespace flix::ui

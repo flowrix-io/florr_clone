@@ -16,6 +16,7 @@
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
+#include "client/ui/petal_hover.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "shared/core/text.h"
@@ -116,13 +117,6 @@ struct Grid {
     std::vector<Section> sections;
     double contentHeight = 0;
 };
-
-/// The tooltip's dwell timer.
-///
-/// File-local rather than a panel field because InventoryPanel's members are
-/// declared in menus.h, which this file does not own -- and there is exactly
-/// one inventory panel in the client, so one timer is the right number.
-TooltipDelay tooltipDelay;
 
 bool matchesSearch(std::uint16_t petalIndex, const std::string& needle) {
     if (needle.empty()) return true;
@@ -690,7 +684,6 @@ void InventoryPanel::reset() {
     // Stack mode all survive a close and reopen in the browser -- the panel is
     // a window onto the account, not a wizard that starts over.
     searchField_.blur();
-    tooltipDelay.reset();
 }
 
 bool InventoryPanel::render(MenuContext& ctx) {
@@ -845,6 +838,8 @@ bool InventoryPanel::render(MenuContext& ctx) {
         // No hover wash: the pointer turning into a hand is what says a cell
         // can be picked up (below), and the tile itself stays its own colour.
         tile.timeSeconds = ctx.timeSeconds;
+        // Its tooltip is named below, from the hover the grid worked out.
+        tile.tooltip = false;
         drawItemTile(canvas, ctx.sprites, rect, tile);
     }
     canvas.restore();
@@ -852,30 +847,15 @@ bool InventoryPanel::render(MenuContext& ctx) {
     scrollThumb(canvas, panel, view.y, visibleH, grid.contentHeight, scroll_.offset);
 
     // --- tooltip -----------------------------------------------------------
-    // Anchored to the CELL rather than the cursor, and only after the dwell.
-    // A press cancels it: what follows is a drag, and a box under the dragged
-    // petal is the one thing in the way. `mousePressed` as well as `mouseDown`,
-    // because a quick click -- and every tap on a list -- is pressed and
-    // released on one frame and is never seen held.
-    //
-    // A finger never dwells at all. Its pointer only rests where it last
-    // lifted, which after a scroll is on whatever petal happened to slide
-    // under it; the dwell would put that petal's box up after every drag.
-    const bool pointerDown = ctx.window.mouseDown(MouseButton::Left) ||
-                             ctx.window.mousePressed(MouseButton::Left) || ctx.drag.active() ||
-                             ctx.window.pointerIsTouch();
-    if (tooltipDelay.update(hovered, ctx.timeSeconds, pointerDown) && hovered >= 0) {
+    // The cell under the pointer, handed to the shared petal tooltip (see
+    // petal_hover.h), which paints it after the dwell at the end of the frame
+    // as it does for every other surface. Named here rather than left to the
+    // tile, because `hovered` already knows what the clip and the scroll
+    // allow: a cell scrolled half out of the view answers only for its
+    // visible half.
+    if (hovered >= 0) {
         const Cell& cell = grid.cells[static_cast<std::size_t>(hovered)];
-        // The reload the bar would actually run, as the slot wedge times it.
-        const double reloadScale =
-            profile.skills.reloadScale() *
-            (1.0 - barReloadCut(content(), [&](int i) { return profile.equipped(content(), i); }));
-        const std::vector<TooltipLine> lines =
-            petalTooltipLines(cell.petalIndex, cell.rarity, profile.skills, reloadScale);
-        const bool alt = ctx.window.altHeld();
-        const Vec2 size = measureTooltip(lines, 0.0, 0.0, alt);
-        const Vec2 at = tooltipAnchor(hoveredRect, size, canvas.width(), canvas.height());
-        paintTooltip(canvas, at.x, at.y, lines, 0.0, 0.0, alt);
+        notePetalHoverAt(hoveredRect, cell.petalIndex, cell.rarity);
     }
 
     // --- input -------------------------------------------------------------
@@ -940,5 +920,14 @@ bool InventoryPanel::render(MenuContext& ctx) {
     }
     return true;
 }
+
+namespace ui {
+
+std::vector<TooltipLine> petalTooltip(std::uint16_t petalIndex, Rarity rarity,
+                                      const SkillSet& skills, double reloadScale) {
+    return petalTooltipLines(petalIndex, rarity, skills, reloadScale);
+}
+
+} // namespace ui
 
 } // namespace flix

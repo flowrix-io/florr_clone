@@ -557,6 +557,8 @@ void drawDropCard(Canvas& canvas, const SpriteCache& sprites, double cellX, doub
     tile.rarity = rarity;
     if (cell.drop->maxQuantity > 1) tile.badge = "x" + std::to_string(cell.drop->maxQuantity);
     tile.timeSeconds = timeSeconds;
+    // Inside the mob's own tooltip: a box over a box.
+    tile.tooltip = false;
     drawItemTile(canvas, sprites, {cardX, rowY, kCardSize, kCardSize}, tile);
 
     // Aggregated branches can push the expected count past one drop per kill;

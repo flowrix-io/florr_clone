@@ -15,6 +15,7 @@
 #include <string>
 
 #include "client/ui/item_tile.h"
+#include "client/ui/petal_hover.h"
 #include "client/ui/menu_style.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
@@ -429,6 +430,8 @@ std::optional<SlotGrid::Pick> SlotGrid::render(
     canvas.rect(static_cast<float>(clip.x), static_cast<float>(clip.y), static_cast<float>(clip.w),
                 static_cast<float>(clip.h));
     canvas.clip();
+    // The petal tooltip answers only inside the view, as the hover does.
+    const PetalHoverClip hoverClip(canvas, clip);
 
     std::optional<Pick> hovered;
     for (std::size_t row = 0; row < types.size(); ++row) {
@@ -500,6 +503,8 @@ std::optional<SlotTierGrid::Pick> SlotTierGrid::render(
     canvas.rect(static_cast<float>(clip.x), static_cast<float>(clip.y), static_cast<float>(clip.w),
                 static_cast<float>(clip.h));
     canvas.clip();
+    // The petal tooltip answers only inside the view, as the hover does.
+    const PetalHoverClip hoverClip(canvas, clip);
 
     std::optional<Pick> hovered;
     for (std::size_t row = 0; row < rows; ++row) {

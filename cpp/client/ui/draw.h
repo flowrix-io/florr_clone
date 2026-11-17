@@ -7,6 +7,7 @@
 // caller's business.
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "canvas.h"
@@ -259,5 +260,30 @@ inline bool insideInclusive(Rect r, Vec2 point) {
     return r.w > 0 && r.h > 0 && point.x >= r.x && point.x <= r.right() && point.y >= r.y &&
            point.y <= r.bottom();
 }
+
+// ---------------------------------------------------------------------------
+// Scratch layers
+// ---------------------------------------------------------------------------
+
+/// A whole-pixel box on a canvas's backing store.
+struct LayerBox {
+    int x = 0;
+    int y = 0;
+    int w = 0;
+    int h = 0;
+};
+
+/// Readies `layer` to take everything `frame` would have painted inside
+/// `extent` (in `frame`'s current user units), so that endLayer can lay it
+/// down as ONE see-through picture -- a stack of translucent pieces faded as
+/// a whole, rather than each piece at that alpha over the one below it. The
+/// layer draws in the very units the frame does: its transform is the frame's
+/// less a WHOLE-pixel offset, so every edge, glyph and cached sprite lands on
+/// the subpixel it would have landed on the frame, and the blit back is a
+/// one-to-one copy. False when the box is off the frame altogether.
+bool beginLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent, LayerBox& box);
+
+/// Lays what beginLayer readied onto the frame at `alpha`, pixel for pixel.
+void endLayer(Canvas& frame, Canvas& layer, const LayerBox& box, double alpha);
 
 } // namespace flix::ui
