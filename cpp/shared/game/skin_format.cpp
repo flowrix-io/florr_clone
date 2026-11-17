@@ -184,8 +184,12 @@ void writeSkinShape(ByteWriter& w, const SkinShape& s) {
     w.f32(static_cast<float>(s.sw));
     w.str(s.fill);
     w.str(s.stroke);
-    w.u8(static_cast<std::uint8_t>(s.points.size() / 2));
-    for (const double v : s.points) w.f32(static_cast<float>(v));
+    // Whole pairs only, and exactly as many values as the count announces: a
+    // stray odd value (or more than 255 pairs) would otherwise desync the
+    // reader and garble every shape after this one.
+    const std::size_t pairs = std::min<std::size_t>(s.points.size() / 2, 255);
+    w.u8(static_cast<std::uint8_t>(pairs));
+    for (std::size_t i = 0; i < pairs * 2; ++i) w.f32(static_cast<float>(s.points[i]));
 }
 
 bool readSkinShape(ByteReader& r, SkinShape& out) {

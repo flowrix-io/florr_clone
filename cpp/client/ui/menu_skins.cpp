@@ -1958,6 +1958,9 @@ std::string Studio::parseShapes(const std::string& source, std::vector<Shape>& o
                     p = comma + 1;
                 }
             }
+            if (pts.size() % 2 != 0) {
+                return where + "\"points\" has an odd count of numbers (needs x,y pairs)";
+            }
             if (pts.size() < 6) {
                 return where + "polygon needs points=x,y,x,y,x,y (\xe2\x89\xa5" "3 points)";
             }
