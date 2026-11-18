@@ -15,10 +15,12 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "client/render/world_renderer.h"
+#include "client/ui/draw.h"
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
@@ -588,6 +590,30 @@ ScrollDrag& scrollDrag() {
     return drag;
 }
 
+
+/// The mob card's fade. It shows the moment the pointer is on a killed cell
+/// and fades in, and outlives the hover by its fade-out, so it keeps the
+/// cell it was describing for as long as it is still on its way out.
+///
+/// File-local rather than a panel field for the reason the inventory's own
+/// state is: GalleryPanel's members are declared in menus.h, and there is one
+/// gallery in the client.
+struct GalleryCardFade {
+    bool showing = false;
+    Cell cell;
+    double opacity = 0.0;
+    double lastSeconds = -1.0;
+    /// Where a part-faded card is painted, so the half-black box, its text and
+    /// its drop table fade as ONE picture.
+    std::unique_ptr<Canvas> layer;
+};
+GalleryCardFade cardFade;
+
+/// How long the card takes to fade in, and to fade out: the same as a
+/// petal's tooltip, so the two read as one kind of thing.
+constexpr double kCardFadeInSeconds = 0.12;
+constexpr double kCardFadeOutSeconds = 0.12;
+
 } // namespace
 
 double galleryMobDiameter(const ContentRegistry& content, const SpriteCache& sprites,
@@ -857,9 +883,29 @@ bool GalleryPanel::render(MenuContext& ctx) {
 
     // --- tooltip -----------------------------------------------------------
     // Only over a mob the account has actually killed. A locked cell says
-    // nothing, which is what keeps the grid a checklist.
-    if (hovered >= 0 && cells[static_cast<std::size_t>(hovered)].kills > 0) {
-        const Cell& cell = cells[static_cast<std::size_t>(hovered)];
+    // nothing, which is what keeps the grid a checklist. Shown the moment the
+    // pointer arrives and faded in; faded out, still describing the cell it
+    // was on, once the pointer has left it.
+    {
+        GalleryCardFade& fade = cardFade;
+        const double dt = fade.lastSeconds < 0.0
+                              ? 0.0
+                              : clamp(ctx.timeSeconds - fade.lastSeconds, 0.0, 0.1);
+        fade.lastSeconds = ctx.timeSeconds;
+        if (hovered >= 0 && cells[static_cast<std::size_t>(hovered)].kills > 0) {
+            // Straight onto the new cell at whatever opacity the card had, so
+            // running the pointer along a row swaps the card without a blink.
+            fade.showing = true;
+            fade.cell = cells[static_cast<std::size_t>(hovered)];
+            fade.opacity = std::min(1.0, fade.opacity + dt / kCardFadeInSeconds);
+            if (fade.opacity <= 0.0) fade.opacity = std::min(1.0, 1.0 / 60.0 / kCardFadeInSeconds);
+        } else {
+            fade.opacity = std::max(0.0, fade.opacity - dt / kCardFadeOutSeconds);
+            if (fade.opacity <= 0.0) fade.showing = false;
+        }
+    }
+    if (cardFade.showing && cardFade.cell.mobIndex < content().mobCount()) {
+        const Cell& cell = cardFade.cell;
         const MobConfig& config = content().mob(cell.mobIndex);
         const MobStats stats = content().mobStats(cell.mobIndex, cell.rarity);
 
@@ -935,13 +981,28 @@ bool GalleryPanel::render(MenuContext& ctx) {
         if (tx < 4.0) tx = 4.0;
         if (ty < contentTop) ty = contentTop;
 
-        const Rect box = paintTooltip(canvas, tx, ty, lines, minWidth, dropsHeight);
+        // Painted whole into a scratch layer while part faded, and laid down
+        // once: the box, its text and its drop table are stacked, and fading
+        // each piece alone would let the box show through its own contents.
+        // A few units of slack all round for the outlines' reach.
+        Canvas* target = &canvas;
+        LayerBox layerBox;
+        const bool faded = cardFade.opacity < 0.999;
+        if (faded) {
+            constexpr double kSlack = 4.0;
+            const Rect extent{tx - kSlack, ty - kSlack, size.x + kSlack * 2, size.y + kSlack * 2};
+            if (!beginLayer(canvas, cardFade.layer, extent, layerBox)) return !closing;
+            target = cardFade.layer.get();
+        }
+        Canvas& card = *target;
+
+        const Rect box = paintTooltip(card, tx, ty, lines, minWidth, dropsHeight);
 
         if (hasDrops) {
             double cy = box.y + kDropsGapY;
             TextStyle heading = galleryStyle(12.0, 0xFFD700u);
             heading.baseline = Baseline::Top;
-            text(canvas, "Drops:", box.x, cy, heading);
+            text(card, "Drops:", box.x, cy, heading);
             cy += kDropsHeaderH;
 
             const double tableX = tx + (size.x - tableWidth) * 0.5;
@@ -950,7 +1011,7 @@ bool GalleryPanel::render(MenuContext& ctx) {
             for (std::size_t i = 0; i < columns.size(); ++i) {
                 const Rarity rarity = clampRarity(columns[i]);
                 header.fill = rarityColor(rarity);
-                text(canvas, rarityLabel(rarity),
+                text(card, rarityLabel(rarity),
                      tableX + static_cast<double>(i) * kDropCellW + kDropCellW * 0.5,
                      cy + kColHeaderH * 0.5, header);
             }
@@ -964,11 +1025,12 @@ bool GalleryPanel::render(MenuContext& ctx) {
                     // as an empty frame.
                     const DropCell& square = rows[r].cells[static_cast<std::size_t>(columns[i])];
                     if (square.drop == nullptr) continue;
-                    drawDropCard(canvas, ctx.sprites, cellX, rowY, clampRarity(columns[i]), square,
+                    drawDropCard(card, ctx.sprites, cellX, rowY, clampRarity(columns[i]), square,
                                  ctx.timeSeconds);
                 }
             }
         }
+        if (faded) endLayer(canvas, card, layerBox, cardFade.opacity);
     }
 
     return !closing;

@@ -92,6 +92,14 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
         rotation = entity.angle;
     } else if (config && config->hasFixedDirection) {
         rotation = config->fixedDirection;
+    } else if (config && config->projectile.speed > 0.0 && config->projectile.distance > 0.0) {
+        // A petal that is fired -- a carrot, a missile, a pea -- points down
+        // the bearing it will leave along rather than spinning, so the ring
+        // shows where the volley will go. That bearing is the instance's
+        // facing, which the server fires from, and it is drawn the way the
+        // shot itself is drawn in flight (turned to its heading), so the
+        // petal leaves the ring already pointing the way it flies.
+        rotation = entity.angle;
     } else if (config && config->clumpFacesInward &&
                content_->petalStats(entity.typeIndex, entity.rarity).count > 1) {
         // A grain faces out of its clump's centre, so half a turn on points

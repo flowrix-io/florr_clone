@@ -38,10 +38,16 @@ StoredItem petalItem(const std::string& petalType, Rarity rarity);
 /// One loadout slot as a body in `realm` actually wears it.
 WornSlot wornSlot(const PlayerRecord& record, std::size_t slot, Realm realm);
 
-/// Five common basics on the bar and nothing else worn: the kit a new account
-/// and an arena run both start from. Returns the basic petal's index, or
-/// kInvalidIndex when the content has none (and then the bar is left empty).
-std::uint16_t wearStarterKit(PlayerRecord& record);
+/// Common basics on the bar and nothing else worn: the kit a new account
+/// (kNewAccountStarterPetals) and an arena run (kArenaStarterPetals) start
+/// from. Returns the basic petal's index, or kInvalidIndex when the content
+/// has none (and then the bar is left empty).
+/// How many common Basics a brand-new account wears: the whole active bar.
+inline constexpr int kNewAccountStarterPetals = 10;
+/// How many the arena hands a run: the reference's enterPvpArena kit.
+inline constexpr int kArenaStarterPetals = 5;
+/// Puts `petals` common Basics on the first active slots and clears the rest.
+std::uint16_t wearStarterKit(PlayerRecord& record, int petals);
 
 /// What a brand-new account starts with.
 void grantStarterKit(PlayerRecord& record);

@@ -456,6 +456,12 @@ private:
     void runPollRequest(Session&, net::Connection&, const Json&);
     void expirePoll();
     void runMarket(Session&,net::Connection&,const Json&);
+    /// The shop's Lock button (server/shop.cpp): kind "shop" on the same JSON
+    /// channel as the market.
+    void runShopLock(Session&, net::Connection&, const Json&);
+    /// The store rotation `userId` is shown and may buy from: the one it
+    /// locked while the lock holds, the clock's otherwise.
+    std::int64_t shopRotationFor(const std::string& userId) const;
     void expireMarketListings();
     void syncCommerceAccount(const std::string&);
     std::vector<int> collectionRanks_;
