@@ -314,6 +314,14 @@ public:
     /// this snapshot told the client.
     void build(World& world, Entity viewer, ClientView& view, const Frame& frame, ByteWriter& out);
 
+    /// Brackets one snapshot pass -- the builds for every client on the same
+    /// tick -- so the world's replicated entities are listed once for all of
+    /// them instead of once per client. Between the two the world must not
+    /// change: nothing a build does touches it. A build outside a pass lists
+    /// them itself, through the same code.
+    void beginPass(World& world);
+    void endPass() { passIndexed_ = false; }
+
     ReplicationTolerances tolerances;
 
     /// Per-AXIS half-extent of the replicated region, as a multiple of the
@@ -378,6 +386,22 @@ private:
         double distanceSq;
     };
 
+    /// One replicated entity, as the gather reads it: everything the in-view
+    /// test needs without a component lookup. Sorted by realm, then net id,
+    /// so a client scans only its own realm's run, and that run is already in
+    /// the net id order the snapshot is written in.
+    struct Indexed {
+        Entity entity;
+        Vec2 position;
+        std::uint32_t netId;
+        Realm realm;
+        bool drop;     ///< carries a DropItem, whose claims are per viewer
+        bool market;   ///< a market NPC, streamed from any distance
+    };
+    void indexWorld(World& world);
+
+    std::vector<Indexed> index_;
+    bool passIndexed_ = false;
     std::vector<Candidate> candidates_;
     std::vector<std::uint32_t> removals_;
 };

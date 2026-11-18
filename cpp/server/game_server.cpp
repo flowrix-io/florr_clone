@@ -928,6 +928,9 @@ void GameServer::replicate(double nowMillis) {
     // Reused across recipients rather than allocated per session: it is at
     // most three entities and almost always none.
     std::vector<Entity> squadBodies;
+    // Every client's gather reads one listing of the world, taken here: no
+    // build changes the world, so it holds for the whole loop.
+    replicator_.beginPass(world_);
     for (auto& entry : sessions_) {
         Session& session = entry.second;
         if (!session.playing()) continue;
@@ -963,6 +966,7 @@ void GameServer::replicate(double nowMillis) {
         replicator_.build(world_, viewpoint, views_[session.connection], frame, scratch_);
         if (!scratch_.empty()) connection->send(scratch_);
     }
+    replicator_.endPass();
 }
 
 void GameServer::broadcastDebugStats() {

@@ -336,7 +336,7 @@ bool shotCanReach(double gap, double shotReach, double targetRadius) {
 
 MobAiSystem::MobAiSystem(World& world, std::uint64_t seed)
     : mobs_(world), pets_(world), segments_(world), nests_(world), rings_(world),
-      seeds_(world), playerModifiers_(world), rng_(seed) {
+      seeds_(world), playerModifiers_(world), players_(world), rng_(seed) {
     // A pet is not a wild mob with a different target list: it follows an
     // owner, pops back to them and is retired off their screen, so it runs its
     // own pass below. Dead mobs still exist until the reaper runs, and a corpse
@@ -345,6 +345,9 @@ MobAiSystem::MobAiSystem(World& world, std::uint64_t seed)
     pets_.without<Dead>();
     segments_.without<Dead>();
     playerModifiers_.without<Dead>();
+    // The body grid's own filter (fileBodies), so the list holds exactly the
+    // flowers a grid query could have returned.
+    players_.without<ProjectileTag, Intangible>();
     // nests_ deliberately keeps Dead spawners: a dying nest is exactly when its
     // brood has to be released.
     rings_.without<Dead>();
@@ -589,24 +592,21 @@ void MobAiSystem::recover(World& world, Entity self, const Drive& drive, double 
 // Targeting
 // ---------------------------------------------------------------------------
 
-Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const SpatialGrid& grid,
+Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain,
                                   Entity self, Vec2 from, Realm realm, double range,
                                   bool raisedOnly) {
     ++stats_.targetScans;
 
-    // Never acquire what holdTarget() drops on the very next tick. A range
-    // that grows with body size passes the retention radius at the top of the
-    // ladder -- a unique queen ant's is over 14,000 units against 9,600 -- and
-    // past it the mob would lock on, let go and scan again every tick.
-    const double reach = std::min(range * maxAggroScale_ + maxAggroBonus_, kMobTargetRetainRadius);
-    grid.query(realm, from, reach, gridScratch_);
+    // Every flower, not a broadphase query: there are a few dozen at most,
+    // and a query out to the aggro reach returns every mob and petal in it as
+    // well. No reach prefilter is needed -- the circle test below is the
+    // whole rule, and every flower inside its own circle (range * scale +
+    // bonus) passed the grid's reach prefilter too, so the set is exactly
+    // what the grid used to hand over.
     candidates_.clear();
-    for (const Entity candidate : gridScratch_) {
-        if (candidate == self) continue;
-        if (!world.has<PlayerTag>(candidate)) continue;
-        if (!isStanding(world, candidate)) continue;
-        const Transform* transform = world.tryGet<Transform>(candidate);
-        if (transform == nullptr) continue;
+    for (const Flower& flower : flowerList_) {
+        if (flower.entity == self) continue;
+        if (flower.realm != realm) continue;
 
         // Each flower is noticed inside its own circle: poo shrinks the range
         // and a bulb grows it, and a raised aggro radius then adds on top. How far inside that
@@ -614,15 +614,12 @@ Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const Sp
         // and "who is the most conspicuous". All of it is measured from the
         // mob's centre, the point it meets the world with (kMobWallRadius),
         // so poo shrinks the whole circle -- the body under it included.
-        const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(candidate);
-        if (raisedOnly && (mods == nullptr || !aggroRaised(*mods))) continue;
-        const double bonus = mods != nullptr ? mods->aggroRadiusBonus : 0.0;
-        const double scale = mods != nullptr ? mods->aggroRangeScale : 1.0;
-        const double gap = distance(from, transform->position);
+        if (raisedOnly && !flower.raised) continue;
+        const double gap = distance(from, flower.position);
         if (gap > kMobTargetRetainRadius) continue;
-        const double score = gap - (range * scale + bonus);
+        const double score = gap - (range * flower.aggroScale + flower.aggroBonus);
         if (score > 0.0) continue;
-        candidates_.push_back(Candidate{candidate, transform->position, score});
+        candidates_.push_back(Candidate{flower.entity, flower.position, score});
     }
 
     std::sort(candidates_.begin(), candidates_.end(),
@@ -1496,7 +1493,7 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     // glow. Skipped outright while nobody glows, so a world without a bulb in
     // it never pays a neutral mob's broadphase query.
     if (ai.kind == AiKind::Neutral && ai.target == NULL_ENTITY && anyAggroRaised_) {
-        ai.target = acquireTarget(world, terrain, grid, self, transform.position, transform.realm,
+        ai.target = acquireTarget(world, terrain, self, transform.position, transform.realm,
                                   range, /*raisedOnly=*/true);
     }
     if (ai.kind == AiKind::Hostile) {
@@ -1504,7 +1501,7 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
         // outranks a summon, so it takes the mob over the moment one comes
         // into range rather than waiting for the pet to die or walk off.
         if (ai.target == NULL_ENTITY || world.has<Pet>(ai.target)) {
-            const Entity player = acquireTarget(world, terrain, grid, self, transform.position,
+            const Entity player = acquireTarget(world, terrain, self, transform.position,
                                                 transform.realm, range);
             if (player != NULL_ENTITY) ai.target = player;
         }
@@ -2631,13 +2628,24 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     if (!(dt > 0.0) || !std::isfinite(dt)) return;
     ++tick_;
 
-    maxAggroBonus_ = 0.0;
-    maxAggroScale_ = 1.0;
     anyAggroRaised_ = false;
     playerModifiers_.each([&](Entity, PlayerTag&, PlayerModifiers& mods) {
-        if (mods.aggroRadiusBonus > maxAggroBonus_) maxAggroBonus_ = mods.aggroRadiusBonus;
-        if (mods.aggroRangeScale > maxAggroScale_) maxAggroScale_ = mods.aggroRangeScale;
         anyAggroRaised_ = anyAggroRaised_ || aggroRaised(mods);
+    });
+
+    // Snapshotted after the contact phase's deaths, which is when the grid it
+    // replaces was filed (the broadphase). Exact for the whole pass: nothing
+    // below moves, hurts or kills a flower -- see flowerList_.
+    flowerList_.clear();
+    players_.each([&](Entity flower, PlayerTag&, Transform& transform, Body&) {
+        if (!isStanding(world, flower)) return;
+        Flower entry{flower, transform.position, transform.realm};
+        if (const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(flower)) {
+            entry.raised = aggroRaised(*mods);
+            entry.aggroBonus = mods->aggroRadiusBonus;
+            entry.aggroScale = mods->aggroRangeScale;
+        }
+        flowerList_.push_back(entry);
     });
 
     // Watermarks belong to mobs, and mobs are reaped without telling this
