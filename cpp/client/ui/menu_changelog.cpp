@@ -582,6 +582,14 @@ constexpr ChangelogEntry kChangelog[] = {
       {
         "Added Waves (opens randomly)"
       }
+    },
+    {"November 17, 2026",
+      {
+        "New petal: Blood Stinger",
+        "New petal: Dice",
+        "Fixed termite mounds building up in jungle",
+        "Bossbars now show the position of the mob"
+      }
     }
 };
 
