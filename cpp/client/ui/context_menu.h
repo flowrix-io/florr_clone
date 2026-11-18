@@ -5,7 +5,8 @@
 // everything. Built out of the shop button's green (kBody/kFrame in
 // context_menu.cpp) rather than a panel colour: it appears over every panel in
 // turn, and a card in any one of their hues would read as that panel having
-// grown a limb.
+// grown a limb. Its edge is gardn's panel frame (cardFrame), the same edge
+// every other card in the game wears.
 
 #include <cstdint>
 #include <string>
@@ -20,7 +21,7 @@ namespace flix::ui {
 
 /// What a row does. The app maps these onto whatever holds the caret or the
 /// selection, so the menu itself knows nothing about fields or panels.
-enum class ContextAction : std::uint8_t { None, Cut, Copy, Paste, SelectAll };
+enum class ContextAction : std::uint8_t { None, Cut, Copy, Paste, SelectAll, Favorite };
 
 class ContextMenu {
 public:

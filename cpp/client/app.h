@@ -415,6 +415,8 @@ private:
     /// older lines instead of zooming the camera behind it.
     Rect chatColumn_{};
     ui::ContextMenu contextMenu_;
+    /// The petal type the open context menu was raised on, or kNoPetal.
+    std::uint16_t contextPetal_ = kNoPetal;
 
     /// Text entry shared by the login fields and the chat box.
     ///
