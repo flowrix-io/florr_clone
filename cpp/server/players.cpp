@@ -102,10 +102,8 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
             return;
         }
         session.spawnChoice = where;
-    } else if (where == kArenaSpawnChoice || where == kMazeSpawnChoice) {
-        // The two destinations that are not on any map at all: each is a realm
-        // of its own (realm.h), generated rather than authored, so there is no
-        // spawn rectangle to look up.
+    } else if (where == kMazeSpawnChoice) {
+        // The generated maze has no authored spawn rectangle.
         session.spawnChoice = where;
     } else if (!where.empty() && where != "default") {
         if (worldMaps_.choice(where) != nullptr) {

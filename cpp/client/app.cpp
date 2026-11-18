@@ -195,14 +195,12 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
         std::fprintf(stderr, "[map] %s; the spawn picker will offer the default only\n",
                      mapWarning.c_str());
     }
-    // Everything the picker can name: the default, the two realms that have
-    // no map file, and then every player spawn rectangle every staged map
+    // Everything the picker can name: the default, the generated realms that have
+    // no map file, and then every pickable player spawn rectangle a map
     // draws -- which is how a second map is reachable without walking to a
     // teleporter first. pickerTabs() files these under one tab per biome.
     spawnChoices_.push_back(
         SpawnChoice{"default", "Default", 0x00BE4Fu, Realm::Overworld, -1, {}, {}});
-    spawnChoices_.push_back(
-        SpawnChoice{kArenaSpawnChoice, "PVP Arena", 0xDC3C3Cu, Realm::Arena, -1, {}, {}});
     spawnChoices_.push_back(
         SpawnChoice{kMazeSpawnChoice, "Maze", 0x573D80u, Realm::Maze, -1, {}, {}});
     spawnChoices_.push_back(SpawnChoice{kAdminArenaSpawnChoice, "Admin Arena", 0xFFB020u, kAdminArenaRealm, -1, {}, "admin_arena"});

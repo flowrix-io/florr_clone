@@ -262,7 +262,7 @@ TEST(the_player_list_pages_in_account_order_and_searches_both_names) {
     }
 }
 
-TEST(a_bag_is_read_by_connection_from_the_account_even_in_the_arena) {
+TEST(a_bag_is_read_by_connection_from_the_account_in_another_realm) {
     Harness h("dash-bag", [](const std::string& path) {
         seedUsers(path, {"boss", "visitor", "pirate"}, {"boss"});
     }, dataDir(), 0);
@@ -270,8 +270,7 @@ TEST(a_bag_is_read_by_connection_from_the_account_even_in_the_arena) {
     NetClient boss, visitor, pirate;
     const std::vector<NetClient*> all{&boss, &visitor, &pirate};
     CHECK(enterWorld(h, {&boss, &visitor}, {"boss", "visitor"}, {"Boss", "Visitor"}));
-    // The ring plays on a scratch kit; the dashboard must not be reading it.
-    CHECK(enterWorld(h, {&pirate}, {"pirate"}, {"Pirate"}, 1000, 800, kArenaSpawnChoice));
+    CHECK(enterWorld(h, {&pirate}, {"pirate"}, {"Pirate"}, 1000, 800, kMazeSpawnChoice));
 
     CHECK(say(h, boss, "/admin give pirate rose legendary 3", all));
     CHECK(say(h, boss, "/admin give visitor basic rare 2", all));

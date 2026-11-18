@@ -367,83 +367,17 @@ TEST(a_client_that_picks_the_maze_arrives_in_it_and_cannot_walk_through_its_wall
     }
 }
 
-TEST(a_client_that_picks_pvp_fights_in_the_ring_with_the_arena_kit) {
-    Harness h("arena-join");
+TEST(a_saved_pvp_choice_starts_in_the_overworld) {
+    Harness h("retired-arena");
     if (!h.ready) { CHECK(false); return; }
-
     NetClient client;
     CHECK(joinAs(h, client, "gladiator", kArenaSpawnChoice));
-    CHECK(client.view().realm() == Realm::Arena);
-
-    World& world = h.server.world();
-    const Entity body = bodyNamed(world, "gladiator");
+    CHECK(client.view().realm() == Realm::Overworld);
+    const Entity body = bodyNamed(h.server.world(), "gladiator");
     CHECK(body != NULL_ENTITY);
     if (body == NULL_ENTITY) return;
-    CHECK(world.get<Transform>(body).realm == Realm::Arena);
-    CHECK_NEAR(world.get<Transform>(body).position.x, kArenaSpawn.x, 1e-6);
-    CHECK_NEAR(world.get<Transform>(body).position.y, kArenaSpawn.y, 1e-6);
-    // The ring's rules: players hurt each other, health is a flat pool, and
-    // the kit is the starter ring with an empty bag whatever the account owns.
-    CHECK(world.get<Faction>(body).friendlyFireEnabled);
-    CHECK_NEAR(world.get<Health>(body).max, kArenaMaxHealth, 1e-9);
-    CHECK(world.has<ArenaScore>(body));
-    CHECK(h.stepUntil({&client}, [&] { return client.profile().loadout.size() == kLoadoutSlots; }));
-    const std::uint16_t basic = content().petalIndex("basic");
-    int basics = 0;
-    for (std::size_t i = 0; i < client.profile().loadout.size() && i < kLoadoutActiveSlots; ++i) {
-        if (!client.profile().loadout[i].empty() && client.profile().loadout[i].petalIndex == basic) {
-            ++basics;
-        }
-    }
-    CHECK_EQ(basics, 5);
-    CHECK(client.profile().inventory.empty());
-
-    // Running east from the spawn meets the ring inside two seconds. The body
-    // is held on its inside face and never leaves the arena's space.
-    //
-    // The lane is cleared every step: the arena's crowd is placed at random
-    // and refills as it thins, and a mob that wanders in shoves the flower
-    // sideways or kills it short of the ring -- real combat, not a leak in
-    // the ring, and not what this measures.
-    const auto clearLane = [&] {
-        const Vec2 at = world.get<Transform>(body).position;
-        std::vector<Entity> doomed;
-        Query<MobTag, Transform> mobs{world};
-        mobs.each([&](Entity e, MobTag&, Transform& transform) {
-            if (transform.realm == Realm::Arena && distance(transform.position, at) < 2000.0) {
-                doomed.push_back(e);
-            }
-        });
-        for (const Entity e : doomed) world.destroy(e);
-    };
-    net::InputFrame input;
-    input.moveStrength = 1.0;
-    input.moveAngle = 0.0;
-    for (int i = 0; i < 150; ++i) {
-        input.sequence = static_cast<std::uint32_t>(i + 1);
-        client.sendInput(input);
-        clearLane();
-        h.step(1, {&client});
-        const Vec2 at = world.get<Transform>(body).position;
-        CHECK(world.get<Transform>(body).realm == Realm::Arena);
-        // The ring holds the flower's own MOVEMENT absolutely: stepCollide
-        // clamps every step into the disc. A mob walking into it is the one
-        // thing that can carry it past the line, because the contact bounce
-        // takes back the overlap as an immediate displacement with no wall
-        // resolve behind it (combat.cpp, bounceOffMob) -- deliberately, and
-        // the next movement step pulls it back. So the bound is the ring plus
-        // about one shove, and it is a bound on how far OUT a body can be
-        // carried rather than on whether the arena leaks.
-        CHECK(distance(at, kArenaCentre) <= kArenaRadius + kMobContactKnockback + 1e-6);
-    }
-    CHECK(distance(world.get<Transform>(body).position, kArenaCentre) >
-          kArenaRadius - world.get<Body>(body).radius - 1.0);
-
-    // Leaving the ring ends the run: the account's own loadout is back and
-    // the arena kit is gone with the body.
-    client.leaveGame();
-    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
-    CHECK(bodyNamed(world, "gladiator") == NULL_ENTITY);
+    CHECK(!h.server.world().has<ArenaScore>(body));
+    CHECK(!h.server.world().get<Faction>(body).friendlyFireEnabled);
 }
 
 TEST(a_maze_run_is_played_one_rarity_down_on_the_mazes_own_track) {
@@ -532,80 +466,28 @@ TEST(a_maze_run_is_played_one_rarity_down_on_the_mazes_own_track) {
     CHECK_EQ(client.profile().level, outsideLevel);
 }
 
-TEST(an_arena_run_never_touches_the_account_it_is_played_from) {
-    // The run is a scratch copy of the account: what is looted, crafted or
-    // lost in the ring belongs to the run, and a quarter of what survives it
-    // reaches the account on the way out. Nothing else does.
-    Harness h("arena-account");
+TEST(the_desert_portal_still_takes_a_player_into_the_pyramid) {
+    Harness h("pyramid-portal", {}, flix::testsupport::dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
-
     NetClient client;
-    CHECK(joinAs(h, client, "duellist", kArenaSpawnChoice));
-    World& world = h.server.world();
-    const Entity body = bodyNamed(world, "duellist");
+    CHECK(joinAs(h, client, "explorer", "desert"));
+    const WorldMaps& maps = h.server.worldMaps();
+    const MapData* desert = maps.forRealm(client.view().realm());
+    CHECK(desert && desert->id() == "desert");
+    if (!desert) return;
+    const Entity body = bodyNamed(h.server.world(), "explorer");
     CHECK(body != NULL_ENTITY);
     if (body == NULL_ENTITY) return;
-
-    // The account keeps the starter kit it registered with while the ring
-    // hands out its own; the client is shown the ring's.
-    const std::string userId = world.get<PlayerAccount>(body).userId;
-    const std::uint16_t basic = content().petalIndex("basic");
-    const std::uint16_t rose = content().petalIndex("rose");
-    CHECK(basic != kInvalidIndex);
-    CHECK(rose != kInvalidIndex);
-    const auto accountItems = [&](std::uint16_t petalIndex) {
-        const PlayerRecord* record = h.server.database().findProgress(userId);
-        return record != nullptr
-                   ? record->itemCount(Rarity::Common, "petal_" + content().petal(petalIndex).id)
-                   : -1;
-    };
-    const int accountBasics = accountItems(basic);
-    CHECK(accountBasics > 0);
-    CHECK(h.stepUntil({&client}, [&] { return !client.profile().loadout.empty(); }));
-    CHECK_EQ(client.profile().stackCount(basic, Rarity::Common), std::uint32_t(0));
-
-    // Twelve roses looted in the ring -- through the real pickup path, which
-    // is what banks them -- reach the run's bag and never the account's.
-    for (int i = 0; i < 12; ++i) {
-        const Vec2 at = world.get<Transform>(body).position;
-        const Entity drop = world.create();
-        world.add<DropTag>(drop);
-        world.add<Transform>(drop, Transform{at, 0.0, Realm::Arena});
-        world.add<Body>(drop, Body{10.0, 1.0});
-        DropItem item;
-        item.configIndex = rose;
-        item.rarity = Rarity::Common;
-        world.add<DropItem>(drop, std::move(item));
-        world.add<Lifetime>(drop, Lifetime{30.0});
-        world.add<Replicated>(drop, Replicated{net::EntityKind::Drop, 0, rose, Rarity::Common, 0});
-        h.step(2, {&client});
+    for (const MapElement& pad : desert->elements()) {
+        if (pad.kind != MapElementKind::Teleporter || pad.targetMap != "pyramid") continue;
+        h.server.world().get<Transform>(body).position = pad.centre();
+        CHECK(h.stepUntil({&client}, [&] {
+            const MapData* current = maps.forRealm(client.view().realm());
+            return current && current->id() == "pyramid";
+        }, 120));
+        return;
     }
-    CHECK(h.stepUntil({&client}, [&] {
-        return client.profile().stackCount(rose, Rarity::Common) == 12;
-    }));
-    CHECK_EQ(accountItems(rose), 0);
-
-    // The ring's five starter basics taken off the bar sit in the run's bag
-    // beside the loot, and must not leave with it: join, unequip, leave was a
-    // free basic every lap.
-    for (std::uint8_t slot = 0; slot < 5; ++slot) {
-        client.setLoadoutSlot(slot, kNoPetal, Rarity::Common);
-    }
-    CHECK(h.stepUntil({&client}, [&] {
-        return client.profile().stackCount(basic, Rarity::Common) == 5;
-    }));
-
-    // Out through the door: a quarter of the run's twelve, none of its basics,
-    // and the account's own kit back on the client.
-    client.leaveGame();
-    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
-    CHECK_EQ(accountItems(rose), 3);
-    CHECK_EQ(accountItems(basic), accountBasics);
-    CHECK(h.stepUntil({&client}, [&] {
-        return client.profile().stackCount(basic, Rarity::Common) ==
-               static_cast<std::uint32_t>(accountBasics);
-    }));
-    CHECK_EQ(client.profile().stackCount(rose, Rarity::Common), std::uint32_t(3));
+    CHECK(false);
 }
 
 TEST(a_maze_flower_and_an_overworld_flower_never_see_each_other) {

@@ -228,7 +228,7 @@ private:
         std::vector<std::size_t> choices;
     };
     /// The first row, in order: Default, every distinct biome the doors are
-    /// filed under (in spawnChoices_ order), then the PVP arena and the maze.
+    /// filed under (in spawnChoices_ order), then the maze.
     std::vector<PickerTab> pickerTabs() const;
     /// Whether the next join goes to the prestige biomes: the arrow is up AND
     /// the profile holds the talent. The arrow alone is a preference that

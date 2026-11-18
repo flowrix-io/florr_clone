@@ -244,6 +244,7 @@ const door = object({
         prop('biome', 'string', 'pyramid'),
         prop('color', 'color', '#ffccb77a'),
         prop('label', 'string', 'Pyramid'),
+        prop('pickable', 'bool', false),
         prop('order', 'float', 8),
     ],
 });

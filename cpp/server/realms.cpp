@@ -175,7 +175,6 @@ const SpawnChoice* GameServer::chosenDoor(const Session& session) const {
 Realm GameServer::spawnRealmFor(const Session& session) const {
     if (session.spawnChoice == kAdminArenaSpawnChoice && (effectiveAdmin(session) || session.adminArenaAdmitted))
         return kAdminArenaRealm;
-    if (session.spawnChoice == kArenaSpawnChoice) return Realm::Arena;
     if (session.spawnChoice == kMazeSpawnChoice) return Realm::Maze;
     // A spawn point carries the map it is on, so choosing one is how a player
     // joins straight into a map other than the overworld.
