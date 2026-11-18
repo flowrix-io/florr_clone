@@ -2122,6 +2122,64 @@ TEST(a_killed_mob_is_replaced_where_it_died_rather_than_anywhere_in_its_band) {
     CHECK(sim.populationIn(watched) >= before - 3);
 }
 
+TEST(a_band_hunted_for_one_mob_keeps_its_tables_mix) {
+    // What gets killed is not what the table rolls. A tanky mob nobody
+    // bothers with (a termite mound) outlives every termite round it, and if
+    // each kill's slot were re-rolled at the table's odds the band would
+    // ratchet toward whatever survives. Here only ladybugs die, and the band
+    // has to stay half ladybugs anyway.
+    const Rect band{kCentre.x - 6000.0, kCentre.y - 6000.0, 12000.0, 12000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 50% ladybug 50%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::uint16_t ladybug = shipped().mobIndex("ladybug");
+    const std::uint16_t bee = shipped().mobIndex("bee");
+
+    const auto mix = [&](int& bees, int& ladybugs) {
+        bees = ladybugs = 0;
+        const auto count = [&](std::uint16_t type) {
+            if (type == bee) ++bees;
+            if (type == ladybug) ++ladybugs;
+        };
+        for (const SpawnSystem::LatentSite& site : sim.latent()) count(site.mobIndex);
+        Query<MobTag, MobType> mobs{sim.world};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (!sim.world.has<Dead>(e)) count(type.configIndex);
+        });
+    };
+
+    // Wander the band so many screens' worth of it get hunted.
+    int killed = 0;
+    for (int round = 0; round < 40; ++round) {
+        const Vec2 at{band.x + 1500.0 + (round % 5) * 2200.0,
+                      band.y + 1500.0 + ((round / 5) % 5) * 2200.0};
+        const std::vector<Vec2> visiting{at};
+        for (int i = 0; i < 40; ++i) sim.tick(visiting);
+        std::vector<Entity> doomed;
+        Query<MobTag, MobType> mobs{sim.world};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (type.configIndex == ladybug && !sim.world.has<Dead>(e)) doomed.push_back(e);
+        });
+        for (const Entity e : doomed) sim.world.add<Dead>(e, Dead{NULL_ENTITY});
+        killed += static_cast<int>(doomed.size());
+        sim.tick(visiting);
+        for (const Entity e : doomed) {
+            if (sim.world.isAlive(e)) sim.world.destroy(e);
+        }
+    }
+    // Let the last replacements land.
+    for (int i = 0; i < 400; ++i) sim.tick({kCentre});
+
+    int bees = 0;
+    int ladybugs = 0;
+    mix(bees, ladybugs);
+    CHECK(killed > bandTarget(band) / 2);
+    const double share = static_cast<double>(ladybugs) / static_cast<double>(bees + ladybugs);
+    CHECK(share > 0.42);
+    CHECK(share < 0.58);
+}
+
 TEST(a_singular_band_holds_one_mob_however_large_it_is_drawn) {
     // The one band whose SIZE says nothing about its population. An ordinary
     // band is stocked to its area times a density, which is the right rule for
@@ -2478,10 +2536,33 @@ std::vector<Entity> animalsOfRarity(World& world, Rarity rarity) {
 
 } // namespace
 
-TEST(an_ant_hole_above_ultra_sends_out_nothing_above_ultra) {
+/// The live queens leashed to `nest`, and the tiers of everything else it sent.
+struct Brood {
+    std::vector<Entity> queens;
+    std::vector<Rarity> queenTiers;
+    std::vector<Rarity> minions;
+};
+Brood broodOf(World& world, Entity nest) {
+    Brood out;
+    Query<MobTag, MobType, HoleTether> members{world};
+    members.without<Dead>();
+    members.each([&](Entity e, MobTag&, MobType& type, HoleTether& tether) {
+        if (tether.hole != nest) return;
+        if (world.has<NestQueen>(e)) {
+            out.queens.push_back(e);
+            out.queenTiers.push_back(type.rarity);
+        } else {
+            out.minions.push_back(type.rarity);
+        }
+    });
+    return out;
+}
+
+TEST(an_ant_hole_above_ultra_sends_out_nothing_above_ultra_but_its_queen) {
     // The hole is the boss; what comes out of it is not. Its opening guard
     // and every wave the damage releases are held to ultra, however high the
-    // hole itself stands.
+    // hole itself stands -- all but its one queen, who stands at the hole's
+    // own tier.
     for (const Rarity tier : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
         Sim sim;
         const std::uint16_t hole = shipped().mobIndex("ant_hole");
@@ -2489,16 +2570,76 @@ TEST(an_ant_hole_above_ultra_sends_out_nothing_above_ultra) {
         const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), hole, tier,
                                                  kCentre, Realm::Overworld, sim.now, sim.rng);
         CHECK(nest != NULL_ENTITY);
-        const std::vector<Rarity> guard = minionTiers(sim.world, nest);
-        CHECK(!guard.empty());
-        for (const Rarity r : guard) CHECK(r == Rarity::Ultra);
+        const Brood guard = broodOf(sim.world, nest);
+        CHECK(!guard.minions.empty());
+        for (const Rarity r : guard.minions) CHECK(r == Rarity::Ultra);
 
         // Nine tenths of it gone in one blow: every band it crossed fires.
         sim.world.get<Health>(nest).current = sim.world.get<Health>(nest).max * 0.1;
         sim.tick({});
-        const std::vector<Rarity> all = minionTiers(sim.world, nest);
-        CHECK(all.size() > guard.size());
-        for (const Rarity r : all) CHECK(r == Rarity::Ultra);
+        const Brood all = broodOf(sim.world, nest);
+        CHECK(all.minions.size() > guard.minions.size());
+        for (const Rarity r : all.minions) CHECK(r == Rarity::Ultra);
+        CHECK(all.queens.size() <= 1);
+        for (const Rarity r : all.queenTiers) CHECK(r == tier);
+    }
+}
+
+TEST(a_nest_sends_one_queen_at_its_own_tier_past_the_boss_clock) {
+    // A fixture hole whose queen is the grub, guarded by three grubs. The
+    // first grub is the queen, at the hole's own tier even with the biome's
+    // clocks cooling; the rest are ultra minions. She takes no unique slot
+    // from the biome either, so the one-per-biome cull leaves her be.
+    ContentRegistry content;
+    std::string error;
+    CHECK(test::loadFixtureContent(content, testsupport::tempDir("flix_nest_queen_tests"), R"({
+        "grub": {"name":"Grub","health":10,"damage":1,"size":1,"speed":0.2,
+                 "ai_type":"passive"},
+        "hole": {"name":"Hole","health":100,"damage":1,"size":1,"speed":0,
+                 "ai_type":"passive","no_mob_collision":true,"hole":true,
+                 "queen":"grub","initial_spawns":["grub","grub","grub"]}
+    })",
+                                   R"({
+        "basic": {"name":"Basic","damage":5,"health":5,"size":1,"cooldown":1000,"count":1}
+    })",
+                                   error));
+    const std::uint16_t hole = content.mobIndex("hole");
+    const std::uint16_t grub = content.mobIndex("grub");
+    CHECK_EQ(content.mob(hole).queenIndex, grub);
+
+    WorldMaps maps;
+    makeBandedWorld(maps, {Rect{kCentre.x + 12000.0, kCentre.y + 12000.0, 500.0, 500.0}},
+                    "grub 100%");
+    for (const Rarity tier : {Rarity::Super, Rarity::Unique}) {
+        Sim sim;
+        sim.spawner.worldMaps = &maps;
+        sim.spawner.run(sim.world, sim.terrain, content, {}, sim.rng, sim.now, 0.05,
+                        sim.commands);
+        sim.commands.flush();
+        // A unique hole needs its clock ready; spent straight after, so the
+        // queen comes out past a COOLING clock.
+        if (tier == Rarity::Unique) onlyClock(sim).uniqueReadyMillis = 0.0;
+        const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, content, hole, tier,
+                                                 kCentre, Realm::Overworld, sim.now, sim.rng);
+        CHECK(nest != NULL_ENTITY);
+        onlyClock(sim).uniqueReadyMillis = sim.now + kUniqueSpawnCooldownMillis;
+        const Brood brood = broodOf(sim.world, nest);
+        CHECK_EQ(brood.queens.size(), std::size_t(1));
+        CHECK(brood.queenTiers.front() == tier);
+        CHECK_EQ(brood.minions.size(), std::size_t(2));
+        for (const Rarity r : brood.minions) CHECK(r == Rarity::Ultra);
+        CHECK(sim.world.has<QueenLaid>(nest));
+
+        // The population pass culls a biome's extra uniques; she is not one.
+        const Entity queen = brood.queens.front();
+        for (int i = 0; i < 3; ++i) {
+            sim.now += 600.0;
+            sim.spawner.run(sim.world, sim.terrain, content, {}, sim.rng, sim.now, 0.0,
+                            sim.commands);
+            sim.commands.flush();
+        }
+        CHECK(sim.world.isAlive(queen));
+        CHECK(sim.world.isAlive(nest));
     }
 }
 

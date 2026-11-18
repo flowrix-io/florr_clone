@@ -21,6 +21,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace flix {
@@ -178,12 +179,28 @@ public:
         if (!isAlive(e)) return nullptr;
         const Slot& slot = slots_[entityIndex(e)];
         Column* c = archetypes_[slot.archetype]->column(componentId<T>());
-        return c ? reinterpret_cast<T*>(c->at(slot.row)) : nullptr;
+        // Strided by sizeof(T), which is the column's info->size: one fewer
+        // dependent load than Column::at() on the hottest lookup there is.
+        return c ? reinterpret_cast<T*>(c->data) + slot.row : nullptr;
     }
 
     template <class T>
     const T* tryGet(Entity e) const {
         return const_cast<World*>(this)->tryGet<T>(e);
+    }
+
+    /// Two components of `e` off one entity lookup -- either pointer null when
+    /// it lacks that one, both when it is dead. For the inner loops that ask
+    /// every candidate for the same pair.
+    template <class A, class B>
+    std::pair<A*, B*> tryGetPair(Entity e) {
+        if (!isAlive(e)) return {nullptr, nullptr};
+        const Slot& slot = slots_[entityIndex(e)];
+        Archetype& archetype = *archetypes_[slot.archetype];
+        Column* a = archetype.column(componentId<A>());
+        Column* b = archetype.column(componentId<B>());
+        return {a ? reinterpret_cast<A*>(a->data) + slot.row : nullptr,
+                b ? reinterpret_cast<B*>(b->data) + slot.row : nullptr};
     }
 
     /// Reference to `e`'s `T`. Undefined behaviour if absent — use only where

@@ -562,9 +562,12 @@ public:
     /// A boss placed this way announces itself like any other, which is what
     /// makes "every boss is announced" a property of the system rather than of
     /// each caller.
+    ///
+    /// `clockGated` false lets a unique or apex past a cooling biome clock: a
+    /// dungeon's queen (DungeonSystem::populate) is her nest's, not the biome's.
     Entity spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                     std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                    double nowMillis, Rng& rng);
+                    double nowMillis, Rng& rng, bool clockGated = true);
 
     /// Turns `mob` into an `into` where it stands: a C++ a yin yang landed on
     /// becomes a C-- (CombatSystem::conversions). The old body is destroyed,
@@ -986,6 +989,23 @@ private:
     std::uint16_t chooseZoneMobType(const ContentRegistry&, const SpawnZone&, Vec2 at, Rarity,
                                     Rng&);
 
+    /// What a band STOCKS: chooseZoneMobType, then steered back toward the
+    /// band's own table by what the band already holds.
+    ///
+    /// A slot is handed back where a mob was killed, and a fresh roll for it
+    /// is the table's odds -- but what gets killed is not. A tanky mob nobody
+    /// bothers with (a termite mound) outlives every termite around it, so a
+    /// plain re-roll ratchets the band toward whatever survives. This picks
+    /// among the table's mobs by how far each is BELOW its share of the band
+    /// (latent records and live mobs, every tier), which holds the band at
+    /// the table however unevenly it is hunted. A band that is empty, or
+    /// exactly on its table, rolls exactly as chooseZoneMobType would.
+    ///
+    /// Only for a band with its own `mobs` table: a band that defers to the
+    /// region under each point has no single table to count against.
+    std::uint16_t chooseBandMobType(const ContentRegistry&, const SpawnZone&,
+                                    std::uint16_t zoneIndex, Vec2 at, Rarity, Rng&);
+
     /// The distribution `at` grows, ignoring difficulty bands: the mob region
     /// covering it, or the map's `defaultMobGroup`. kInvalidIndex when neither
     /// names anything the content has.
@@ -1001,6 +1021,18 @@ private:
     std::uint16_t rollResolvedRows(const ContentRegistry&,
                                    const std::vector<SpawnZone::ResolvedRow>& rows, Rarity,
                                    Rng&) const;
+
+    /// Each mob a table can roll at `rarity` and its share of a roll, groups
+    /// opened into their members, into `bandShares_`. Shares need not sum to
+    /// one: a group row that admits nothing at this tier is left out.
+    void flattenResolvedRows(const ContentRegistry&,
+                             const std::vector<SpawnZone::ResolvedRow>& rows, Rarity);
+    struct BandShare {
+        std::uint16_t mob = kInvalidIndex;
+        double share = 0.0;
+        int count = 0;
+    };
+    std::vector<BandShare> bandShares_;
 
     /// True when a body of `halfSize` at `position` would touch a mob the last
     /// census saw, or a record this band already holds, with `extraGap` of
@@ -1023,8 +1055,8 @@ private:
     /// is drawn either way, so asking for a facing never shifts the stream
     /// every later spawn is rolled from.
     ///
-    /// `clockGated` false lets a unique or apex past a cooling biome clock;
-    /// summonSacrifice is the only caller that asks.
+    /// `clockGated` false lets a unique or apex past a cooling biome clock:
+    /// summonSacrifice and a nest's queen ask.
     Entity spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                       std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                       double nowMillis, Rng& rng, int depth, std::uint16_t zone,
@@ -1151,7 +1183,14 @@ private:
     /// counted. A KILLED one is taken off as it is banked, so whatever the
     /// next census cannot find any more went away without dying, and
     /// `vanished_` is that pass's list of them.
-    struct CensusMob { Entity entity = NULL_ENTITY; Vec2 position; std::uint16_t zone = kInvalidIndex; };
+    /// `mobIndex` is the type it is standing as, which is what a band's
+    /// composition is counted by (chooseBandMobType).
+    struct CensusMob {
+        Entity entity = NULL_ENTITY;
+        Vec2 position;
+        std::uint16_t zone = kInvalidIndex;
+        std::uint16_t mobIndex = kInvalidIndex;
+    };
     std::vector<CensusMob> censusMobs_;
     std::vector<CensusMob> vanished_;
     /// Band mobs this census put back to sleep, for their bodies and escorts

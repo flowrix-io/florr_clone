@@ -12,12 +12,16 @@ namespace flix::ui {
 namespace {
 
 constexpr double kRowHeight = 26.0;
-constexpr double kPadX = 12.0;
-constexpr double kPadY = 5.0;
+constexpr double kPadX = 14.0;
+constexpr double kPadY = 7.0;
 constexpr double kMinWidth = 132.0;
 constexpr double kTextSize = 13.0;
-constexpr double kRadius = 5.0;
-constexpr double kBorder = 2.0;
+// gardn's panel edge, as every card wears it (panelCard): a rounded rect in
+// the border colour with a square body dropped into it.
+constexpr double kRadius = kMenuRadius;
+constexpr double kBorder = 5.0;
+constexpr double kDividerWidth = 2.0;
+constexpr double kDividerInset = 6.0;
 
 /// The shop BUTTON's green -- the stars icon in the top strip -- not the shop
 /// card's, which is a duller shade of it. Both literals are that button's own
@@ -90,7 +94,7 @@ ContextAction ContextMenu::update(Canvas& canvas, Window& window) {
     // The rows are painted here rather than in a separate pass: this card is
     // the last thing drawn in the frame, so there is nothing left for its own
     // hit test to be a frame behind.
-    inlaid(canvas, card, kBody, kFrame, kBorder, kRadius);
+    cardFrame(canvas, card, kBody, kFrame, kBorder, kRadius);
     if (inside) window.setCursorShape(CursorShape::Arrow);
 
     ContextAction chosen = ContextAction::None;
@@ -99,7 +103,10 @@ ContextAction ContextMenu::update(Canvas& canvas, Window& window) {
         const Rect row{card.x + kBorder, y, card.w - kBorder * 2, kRowHeight};
         const bool hovered = item.enabled && row.contains(mouse);
         if (hovered) {
-            fillRound(canvas, {row.x + 1.0, row.y, row.w - 2.0, row.h}, 3.0, kHover);
+            // Square, like the body it sits in.
+            setFill(canvas, kHover);
+            canvas.fillRect(static_cast<float>(row.x), static_cast<float>(row.y),
+                            static_cast<float>(row.w), static_cast<float>(row.h));
         }
         // A disabled row is dimmed whole -- plate, label and outline -- rather
         // than recoloured, so it reads as the same row turned off.
@@ -120,6 +127,18 @@ ContextAction ContextMenu::update(Canvas& canvas, Window& window) {
 
         if (hovered && window.mousePressed(MouseButton::Left)) chosen = item.action;
         y += kRowHeight;
+    }
+
+    // Dividers between rows, in the rim's colour, over any hover wash so the
+    // highlighted row keeps its edges. Inset from the sides so they read as
+    // rules on the body rather than as the frame cutting through it.
+    setFill(canvas, kFrame);
+    for (std::size_t i = 1; i < items_.size(); ++i) {
+        const double ruleY = card.y + kPadY + static_cast<double>(i) * kRowHeight;
+        canvas.fillRect(static_cast<float>(card.x + kBorder + kDividerInset),
+                        static_cast<float>(ruleY - kDividerWidth * 0.5),
+                        static_cast<float>(card.w - (kBorder + kDividerInset) * 2),
+                        static_cast<float>(kDividerWidth));
     }
 
     if (chosen != ContextAction::None) close();

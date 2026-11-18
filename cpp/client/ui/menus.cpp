@@ -581,6 +581,17 @@ void ClientSettings::bindControl(ControlAction action, Key key) {
     hotkeys[static_cast<std::size_t>(meta.menu)] = key;
 }
 
+bool ClientSettings::isFavoritePetal(const std::string& id) const {
+    return std::find(favoritePetals.begin(), favoritePetals.end(), id) != favoritePetals.end();
+}
+
+void ClientSettings::toggleFavoritePetal(const std::string& id) {
+    if (id.empty()) return;
+    const auto it = std::find(favoritePetals.begin(), favoritePetals.end(), id);
+    if (it != favoritePetals.end()) favoritePetals.erase(it);
+    else favoritePetals.push_back(id);
+}
+
 bool ClientSettings::load(const std::string& path) {
     std::ifstream file(path);
     if (!file) return false;
@@ -657,6 +668,9 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "tutorialDone") tutorialCompleted = number != 0;
         else if (key == "tutorialStep") tutorialStep = number;
         else if (key == "notifRead") readNotifications.push_back(value);
+        else if (key == "favPetal") {
+            if (!isFavoritePetal(value)) favoritePetals.push_back(value);
+        }
         else if (key.rfind("key.", 0) == 0) {
             const int slot = std::atoi(key.c_str() + 4);
             if (slot > 0 && slot < kMenuCount && menuKeyIsRebindable(slot) && number > 0 &&
@@ -722,6 +736,7 @@ bool ClientSettings::save(const std::string& path) const {
     for (std::size_t i = firstMark; i < readNotifications.size(); ++i) {
         file << "notifRead " << readNotifications[i] << '\n';
     }
+    for (const std::string& id : favoritePetals) file << "favPetal " << id << '\n';
     for (int i = 1; i < kMenuCount; ++i) {
         if (!menuKeyIsRebindable(i)) continue;
         file << "key." << i << ' ' << static_cast<int>(hotkeys[static_cast<std::size_t>(i)])
@@ -2711,7 +2726,8 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     if (drawn_ == MenuId::None) return;
     MenuContext ctx{canvas,    window,      net, sprites,    renderer, settings_,
                     drag_,     timeSeconds, dt,  panelRect_, false};
-    ctx.pointerBlocked = pollRect_.contains({window.mouseX(),window.mouseY()});
+    ctx.pointerBlocked =
+        externalPointerBlock_ || pollRect_.contains({window.mouseX(), window.mouseY()});
     ctx.adminGrantOffered = adminGrantOffered_;
     ctx.profiling = profiling_;
     // As the strip last laid it out, which on the title screen is the frame

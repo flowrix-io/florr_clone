@@ -41,6 +41,20 @@
         "clumpFacesInward": true,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-5 -7.75 13.5 15.5\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 7 0 L -3.5 6.062 L -3.5 -6.062 Z\"\n        fill=\"#333333\"\n        stroke=\"#292929\"\n        stroke-width=\"3\"\n        stroke-linecap=\"round\"\n        stroke-linejoin=\"round\" />\n</svg>"
     },
+    "blood_stinger": {
+        "name": "Blood Stinger",
+        "damage": 100,
+        "health": 2,
+        "size": 1,
+        "cooldown": 7500,
+        "price": 20,
+        "description": "It really hurts, but it's very fragile. Costs its flower 5 health each time it grows back.",
+        "color": "#9C1010",
+        "count": 1,
+        "clumped": true,
+        "clumpFacesInward": true,
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-5 -7.75 13.5 15.5\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 7 0 L -3.5 6.062 L -3.5 -6.062 Z\"\n        fill=\"#9C1010\"\n        stroke=\"#7E0D0D\"\n        stroke-width=\"3\"\n        stroke-linecap=\"round\"\n        stroke-linejoin=\"round\" />\n</svg>"
+    },
     "light": {
         "name": "Light",
         "damage": 5,
@@ -1720,7 +1734,8 @@
         "description": "Increases knockback received. Also absorbs lightning damage dealt to the flower.",
         "color": "#EEEEEE",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-11.75 -11.75 23.5 23.5\"><path d=\"M-9-9q6-2 18 0 1 11 0 18-11 2-18 0-2-10 0-18\" fill=\"#eeeeee\" stroke=\"#c1c1c1\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-11.75 -11.75 23.5 23.5\"><path d=\"M-9-9q6-2 18 0 1 11 0 18-11 2-18 0-2-10 0-18\" fill=\"#eeeeee\" stroke=\"#c1c1c1\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+        "defendOnly": true
     },
     "amulet": {
         "name": "Amulet",
@@ -1787,8 +1802,8 @@
     },
     "ram": {
         "name": "RAM",
-        "damage": 10,
-        "health": 2,
+        "damage": 20,
+        "health": 9,
         "size": 1,
         "cooldown": 3000,
         "price": 100,

@@ -311,6 +311,13 @@ public:
     /// the one who dealt it.
     void creditKills(World& world, const CombatSystem& combat, double nowMillis);
 
+    /// Lands what the ring charged its own flowers this tick -- a blood
+    /// stinger growing back -- through combat's damage path, so it is taken
+    /// exactly as a mob's hit is, and never kills. Call once a tick, after
+    /// run() and once combat's tick is open (beginTick), so the hit is
+    /// numbered and flashed.
+    void applySelfDamage(World& world, CombatSystem& combat, double nowMillis);
+
     /// `killer` finished a mob: one more totem stack, lasting from now for
     /// the longest Duration on its bar. No-op for a killer wearing no totem,
     /// so a stack is only ever earned with one on.
@@ -726,6 +733,12 @@ private:
     /// the action pass, for the reason PendingBreak documents.
     std::vector<Entity> pendingSpawns_;
     std::vector<PendingBreak> pendingBreaks_;
+    /// What applySelfDamage still owes: one entry per flower per tick.
+    struct PendingSelfDamage {
+        Entity player = NULL_ENTITY;
+        double amount = 0.0;
+    };
+    std::vector<PendingSelfDamage> pendingSelfDamage_;
     /// runPetBroods' snapshot of the queens it serves, and the slot each is filed under.
     std::vector<std::pair<Entity, std::uint8_t>> broodScratch_;
     std::vector<Entity> mobScratch_;

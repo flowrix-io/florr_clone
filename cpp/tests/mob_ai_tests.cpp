@@ -459,6 +459,26 @@ TEST(hostile_mob_charges_a_player_inside_its_range) {
     CHECK(sim.gap(mob, player) < before - 30.0);
 }
 
+TEST(hostile_mob_never_notices_a_flower_standing_on_its_spot_in_another_realm) {
+    CHECK(contentReady());
+    // The player scan walks every flower rather than a realm's grid layer, so
+    // the realm is its own test: a maze flower at the overworld mob's very
+    // coordinates is a world away. (This fixture files every body as an
+    // overworld one, so only that test can tell the two flowers apart.)
+    Sim sim;
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);    // range 300
+    const Entity elsewhere = sim.spawnPlayer(kOrigin + Vec2{100, 0});
+    sim.world.get<Transform>(elsewhere).realm = Realm::Maze;
+    sim.tickIntent(5);
+    CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
+    CHECK(sim.totalScans > 0);
+
+    // The same flower in the mob's own realm is charged, so the scan did run.
+    const Entity here = sim.spawnPlayer(kOrigin + Vec2{200, 0});
+    sim.tickIntent(5);
+    CHECK_EQ(sim.brainOf(mob).target, here);
+}
+
 TEST(hostile_mob_ignores_a_player_beyond_its_range) {
     CHECK(contentReady());
     Sim sim;

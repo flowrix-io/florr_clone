@@ -180,6 +180,7 @@
         "hideRotation": true,
         "noEggDrop": true,
         "no_mob_collision": true,
+        "queen": "queen_ant",
         "hole": true,
         "initial_spawns": [
             "baby_ant",
@@ -261,6 +262,7 @@
         "hideRotation": true,
         "noEggDrop": true,
         "no_mob_collision": true,
+        "queen": "soldier_fire_ant",
         "hole": true,
         "intangible": true,
         "ambush": {
@@ -1691,6 +1693,7 @@
         "hideRotation": true,
         "noEggDrop": true,
         "no_mob_collision": true,
+        "queen": "glitch_flower",
         "initial_spawns": [
             "glitch",
             "javascript",
@@ -2417,6 +2420,7 @@
         "hideRotation": true,
         "noEggDrop": true,
         "no_mob_collision": true,
+        "queen": "termite_overmind",
         "hole": true,
         "intangible": true,
         "dungeon": {

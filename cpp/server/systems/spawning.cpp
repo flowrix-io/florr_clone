@@ -585,13 +585,13 @@ void spawnMobRingSeeds(World& world, const ContentRegistry& content, Entity mob,
 
 Entity SpawnSystem::spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                              std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                             double nowMillis, Rng& rng) {
+                             double nowMillis, Rng& rng, bool clockGated) {
     // No band owns a mob somebody else asked for -- the arena, the maze, a
     // script, an operator's console -- so it is counted against no band's
     // target and is recycled the old way rather than going back to a record
     // there is no band to hold.
     return spawnMobAt(world, terrain, content, mobIndex, rarity, position, realm, nowMillis, rng, 0,
-                      kInvalidIndex);
+                      kInvalidIndex, std::nullopt, clockGated);
 }
 
 Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const ContentRegistry& content,
@@ -660,8 +660,11 @@ Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const Conte
     // vanished, and its band handed the slot a second time.
     if (slot) {
         world.get<AmbientMob>(turned) = *slot;
+        const MobType* turnedType = world.tryGet<MobType>(turned);
         for (CensusMob& tracked : censusMobs_) {
-            if (tracked.entity == mob) tracked.entity = turned;
+            if (tracked.entity != mob) continue;
+            tracked.entity = turned;
+            if (turnedType != nullptr) tracked.mobIndex = turnedType->configIndex;
         }
     } else {
         world.remove<AmbientMob>(turned);
@@ -1236,12 +1239,29 @@ Entity SpawnSystem::spawnEscort(World& world, const Terrain& terrain, const Cont
                                 std::uint16_t childIndex, Rarity nestRarity, Vec2 at, Realm realm,
                                 Entity parent, double nowMillis, Rng& rng, int depth) {
     if (census_.mobs >= mobCap) return NULL_ENTITY;
+    // The nest's queen: the first child of the type its config names, by
+    // whichever path asks first. She stands at the nest's own tier.
+    bool queen = false;
+    if (parent != NULL_ENTITY && !world.has<QueenLaid>(parent)) {
+        if (const MobType* nest = world.tryGet<MobType>(parent)) {
+            queen = nest->configIndex < content.mobCount() &&
+                    content.mob(nest->configIndex).queenIndex == childIndex;
+        }
+    }
     // Every such path comes through here -- a hole's opening guard, its
     // waves, a queen's soldiers and a broken tomb's mummy -- so this is where
-    // a minion is held to ultra, however far above that its nest stands.
-    const Entity child = spawnMobAt(world, terrain, content, childIndex, minionRarity(nestRarity),
-                                    at, realm, nowMillis, rng, depth, kInvalidIndex);
+    // a minion is held to ultra, however far above that its nest stands. The
+    // queen is not: a unique hole has a unique queen. An escort is never
+    // clock-gated (depth > 0), so she is past the boss clock too.
+    const Entity child =
+        spawnMobAt(world, terrain, content, childIndex,
+                   queen ? nestRarity : minionRarity(nestRarity), at, realm, nowMillis, rng,
+                   depth, kInvalidIndex, std::nullopt, !queen);
     if (child == NULL_ENTITY || parent == NULL_ENTITY) return child;
+    if (queen) {
+        world.add<NestQueen>(child);
+        world.add<QueenLaid>(parent);
+    }
 
     // The leash, on all three paths that put a child into the world. Dragged
     // past the retreat radius from whatever made it, an escort drops its target
@@ -1485,7 +1505,8 @@ void SpawnSystem::takeCensus(World& world, const ContentRegistry& content,
         ++census_.mobs;
         if (ambient.zone < zones_.size()) {
             ++zones_[ambient.zone].liveMobs;
-            censusMobs_.push_back(CensusMob{e, transform.position, ambient.zone});
+            censusMobs_.push_back(
+                CensusMob{e, transform.position, ambient.zone, type.configIndex});
         }
         // The placement record the stocking pass spaces its next spawns
         // against.
@@ -1556,7 +1577,11 @@ void SpawnSystem::noteLiveBandMob(World& world, Entity e, std::uint16_t zone) {
     const Body* body = world.tryGet<Body>(e);
     mobPlacements_.push_back(
         MobPlacement{transform->position, body != nullptr ? body->radius : 0.0, transform->realm});
-    if (zone < zones_.size()) censusMobs_.push_back(CensusMob{e, transform->position, zone});
+    if (zone < zones_.size()) {
+        const MobType* type = world.tryGet<MobType>(e);
+        censusMobs_.push_back(CensusMob{e, transform->position, zone,
+                                        type != nullptr ? type->configIndex : kInvalidIndex});
+    }
 }
 
 bool SpawnSystem::seenBy(const std::vector<Viewer>& viewers, Realm realm, Vec2 position,
@@ -1816,6 +1841,9 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
             ambush->released = false;
             ambush->broodHealth = 0;
             if (Bounty* bounty = world.tryGet<Bounty>(nest)) bounty->contributors.clear();
+            // A fresh brood brings a fresh queen. Last: the remove moves the
+            // row `ambush` points into.
+            if (world.has<QueenLaid>(nest)) world.remove<QueenLaid>(nest);
             continue;
         }
 
@@ -2122,6 +2150,7 @@ bool SpawnSystem::topBossTaken(World& world, Rarity rarity, Realm realm) {
     ambient_->each([&](Entity e, MobTag&, Transform& transform, Body&, MobType& type,
                        AmbientMob&) {
         if (taken || type.rarity != rarity || !isWholeAnimal(world, e)) return;
+        if (world.has<NestQueen>(e)) return;
         taken = isWorldRealm(transform.realm) && biomeKey(transform.realm) == key;
     });
     return taken;
@@ -2139,6 +2168,8 @@ void SpawnSystem::noteStandingBosses(World& world, const CommandBuffer& commands
                        AmbientMob& ambient) {
         if (type.rarity != Rarity::Unique && type.rarity != Rarity::Apex) return;
         if (!isWorldRealm(transform.realm) || !isWholeAnimal(world, e)) return;
+        // A nest's queen is her nest's, not her biome's.
+        if (world.has<NestQueen>(e)) return;
         topBosses_.push_back(TopBoss{biomeKey(transform.realm), type.rarity, ambient.spawnOrder, e});
     });
     for (BiomeBossClock& clock : bossClocks_) clock.uniqueStanding = clock.apexStanding = false;
@@ -2243,6 +2274,113 @@ std::uint16_t SpawnSystem::chooseZoneMobType(const ContentRegistry& content,
     // meadow beside it, three tiers up.
     if (zone.resolved.empty()) return chooseRegionMobAt(content, zone.realm, at, rarity, rng);
     return rollResolvedRows(content, zone.resolved, rarity, rng);
+}
+
+void SpawnSystem::flattenResolvedRows(const ContentRegistry& content,
+                                      const std::vector<SpawnZone::ResolvedRow>& rows,
+                                      Rarity rarity) {
+    bandShares_.clear();
+    double total = 0.0;
+    for (const SpawnZone::ResolvedRow& row : rows) total += std::max(0.0, row.weight);
+    const auto add = [&](std::uint16_t mob, double share) {
+        if (mob == kInvalidIndex || mob >= content.mobCount() || !(share > 0.0)) return;
+        for (BandShare& existing : bandShares_) {
+            if (existing.mob == mob) {
+                existing.share += share;
+                return;
+            }
+        }
+        bandShares_.push_back(BandShare{mob, share, 0});
+    };
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        const SpawnZone::ResolvedRow& row = rows[i];
+        // The same rule rollResolvedRows has: an unweighted table is its
+        // first row.
+        const double rowShare =
+            total > 0.0 ? std::max(0.0, row.weight) / total : (i == 0 ? 1.0 : 0.0);
+        if (!(rowShare > 0.0)) continue;
+        if (row.group == kInvalidIndex) {
+            add(row.mob, rowShare);
+            continue;
+        }
+        if (row.group >= content.mobGroupCount()) continue;
+        // chooseGroupMob's eligibility, member for member.
+        const MobGroup& members = content.mobGroup(row.group);
+        double groupTotal = 0.0;
+        for (const MobGroupMember& member : members.members) {
+            if (!(member.weight > 0.0)) continue;
+            if (!content.mobStats(member.mob, rarity).ambient) continue;
+            groupTotal += member.weight;
+        }
+        if (!(groupTotal > 0.0)) continue;
+        for (const MobGroupMember& member : members.members) {
+            if (!(member.weight > 0.0)) continue;
+            if (!content.mobStats(member.mob, rarity).ambient) continue;
+            add(member.mob, rowShare * member.weight / groupTotal);
+        }
+    }
+}
+
+std::uint16_t SpawnSystem::chooseBandMobType(const ContentRegistry& content,
+                                            const SpawnZone& zone, std::uint16_t zoneIndex,
+                                            Vec2 at, Rarity rarity, Rng& rng) {
+    // The plain roll first, and it keeps its say on whether there is a spawn
+    // at all: a row that admits nothing at this tier is still "no spawn this
+    // attempt", with the same odds it always had.
+    const std::uint16_t rolled = chooseZoneMobType(content, zone, at, rarity, rng);
+    if (rolled == kInvalidIndex || zone.resolved.empty() || zone.singular) return rolled;
+
+    flattenResolvedRows(content, zone.resolved, rarity);
+    if (bandShares_.size() < 2) return rolled;
+    // Something the table cannot name (a stand-in is rolled later, so this is
+    // only ever a data oddity): leave it be.
+    const auto known = [&](std::uint16_t mob) -> BandShare* {
+        for (BandShare& share : bandShares_) {
+            if (share.mob == mob) return &share;
+        }
+        return nullptr;
+    };
+    if (known(rolled) == nullptr) return rolled;
+
+    double shareTotal = 0.0;
+    for (const BandShare& share : bandShares_) shareTotal += share.share;
+    int held = 0;
+    for (const LatentMob& record : zone.latent) {
+        if (BandShare* share = known(record.mobIndex)) {
+            ++share->count;
+            ++held;
+        }
+    }
+    for (const CensusMob& live : censusMobs_) {
+        if (live.zone != zoneIndex) continue;
+        if (BandShare* share = known(live.mobIndex)) {
+            ++share->count;
+            ++held;
+        }
+    }
+    if (held == 0) return rolled;
+
+    // Each mob's shortfall against its share of the band as it will be with
+    // this one added. Over the mobs this tier can roll the shortfalls sum to
+    // exactly one, so at least one is positive; a band right on its table has
+    // every shortfall equal to the table's own odds.
+    double deficitTotal = 0.0;
+    for (const BandShare& share : bandShares_) {
+        const double target = share.share / shareTotal * static_cast<double>(held + 1);
+        deficitTotal += std::max(0.0, target - static_cast<double>(share.count));
+    }
+    if (!(deficitTotal > 0.0)) return rolled;
+    double roll = rng.unit() * deficitTotal;
+    std::uint16_t last = rolled;
+    for (const BandShare& share : bandShares_) {
+        const double target = share.share / shareTotal * static_cast<double>(held + 1);
+        const double deficit = std::max(0.0, target - static_cast<double>(share.count));
+        if (!(deficit > 0.0)) continue;
+        last = share.mob;
+        roll -= deficit;
+        if (roll < 0.0) return share.mob;
+    }
+    return last;
 }
 
 // ---------------------------------------------------------------------------
@@ -2353,7 +2491,7 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // A prestige twin's band grows what the plain band would, a tier up --
     // and still never past super (shared/game/prestige.h).
     if (zone.prestige) rarity = prestigeRarity(rarity);
-    std::uint16_t type = chooseZoneMobType(content, zone, at, rarity, rng);
+    std::uint16_t type = chooseBandMobType(content, zone, zoneIndex, at, rarity, rng);
     if (type == kInvalidIndex) return false;
     // A band naming a mob outright can name one below its own tier; the mob's
     // floor wins, exactly as it does on every other spawn path. Read the tier

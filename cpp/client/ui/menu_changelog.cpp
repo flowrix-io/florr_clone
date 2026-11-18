@@ -587,6 +587,10 @@ constexpr ChangelogEntry kChangelog[] = {
       {
         "Petal stats now show when hovering a petal anywhere, not just in the inventory",
         "Petal stats now show instantly and fade in and out"
+        "New petal: Blood Stinger",
+        "New petal: Dice",
+        "Fixed termite mounds building up in jungle",
+        "Bossbars now show the position of the mob"
       }
     }
 };

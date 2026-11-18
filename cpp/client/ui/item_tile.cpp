@@ -193,6 +193,7 @@ constexpr GardnIcon kGardnIcon[] = {
     {"starfish",           26,    8,  0,       -1, 0.797},   // art fills 80% of its box
     {"stick",              27,   15,  0,       1,     1},
     {"stinger",          15.5,    7,  0,       0,     1},
+    {"blood_stinger",    15.5,    7,  0,       0,     1},
     // gardn's drawing of this one hard-codes `ctx.scale(0.5)` and ignores the
     // radius, so its picture is a 10.75-unit speck -- the one place the
     // measurement does not transfer. Sized from the radius like every other
@@ -542,7 +543,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         // breaks the triangle, and four outward points read as a star.
         const PetalConfig& config = content().petal(tile.petalIndex);
         const bool facesInward = config.clumpFacesInward &&
-                                 !(config.id == "stinger" && copies == 3);
+                                 !((config.id == "stinger" || config.id == "blood_stinger") && copies == 3);
         // No cap: gardn's own oversize rule lives inside the cluster, and every
         // petal it measures already fits its plate. The face clip is what
         // catches anything this game later adds that does not.
