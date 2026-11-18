@@ -288,7 +288,8 @@ std::string colourMarkup(const std::string& text, std::uint32_t rgb) {
 /// `reloadScale` -- the Reload talent and the bar's golden leaves -- for the
 /// same reason.
 std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rarity,
-                                           const SkillSet& skills, double reloadScale) {
+                                           const SkillSet& skills, double reloadScale,
+                                           double flowerHealth) {
     const PetalConfig& config = content().petal(petalIndex);
     const PetalStats stats = content().petalStats(petalIndex, rarity);
     const double health = std::round(stats.health * skills.healthScale(SkillId::PetalHealth));
@@ -489,6 +490,29 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(bonus);
     }
 
+    // What a healing petal is worth, in the two shapes healing comes in. A
+    // petal that is used up to heal -- a rose flying home to the flower --
+    // heals once per use, so its line is a flat amount; one that heals just
+    // by being worn -- a leaf -- heals every second, so its line is a rate.
+    // Both carry the Healing talent, as the server applies it to both.
+    {
+        const double talent = skills.effectScale(SkillId::Healing);
+        const auto healLine = [&](const std::string& label, double amount,
+                                  const std::string& unit) {
+            const bool small = amount < 1000.0;
+            TooltipLine line{label + (small ? oneDecimal(amount) : abbreviate(amount)) + unit,
+                             12.0};
+            line.alpha = 0.56;
+            line.labelColor = kStatHeal;
+            line.altText = label + (small ? oneDecimal(amount) : exactNumber(amount)) + unit;
+            lines.push_back(line);
+        };
+        if (stats.heal > 0.0) healLine("Heal: ", stats.heal * talent, "");
+        if (stats.passiveHealPerSecond > 0.0) {
+            healLine("Passive Heal: ", stats.passiveHealPerSecond * talent, "/s");
+        }
+    }
+
     // Totem, florr's two lines in florr's order: how long a kill keeps it
     // healing, then how much. The heal carries the Healing talent, as florr's
     // does.
@@ -654,6 +678,107 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         regen.labelColor = kStatMana;
         regen.altText = "Mana/s: " + exactNumber(stats.passiveManaPerSecond);
         lines.push_back(regen);
+    }
+
+    // Everything else a petal changes about the flower or what it touches,
+    // each as the number it actually is at this tier. The description says
+    // WHAT a petal does; these say how much, which is the whole of what a
+    // player comparing two tiers of it needs. One line per stat, only when
+    // the petal moves it, in the stat's own colour.
+    {
+        const auto statLine = [&](const std::string& body, std::uint32_t colour,
+                                  const std::string& alt = std::string()) {
+            TooltipLine line{body, 12.0};
+            line.alpha = 0.56;
+            line.labelColor = colour;
+            if (!alt.empty()) line.altText = alt;
+            lines.push_back(line);
+        };
+        // A multiplier as the change it makes: 1.25 is "+25%", 0.8 "-20%".
+        const auto change = [](double factor) {
+            const double percent = (factor - 1.0) * 100.0;
+            char buffer[32];
+            std::snprintf(buffer, sizeof buffer, "%s%g%%", percent >= 0.0 ? "+" : "-",
+                          std::round(std::fabs(percent) * 10.0) / 10.0);
+            return std::string(buffer);
+        };
+        const PetalModifiers& mods = stats.modifiers;
+        // As health, not as a factor: what this flower, at its level and with
+        // its Flower Health talent, actually gains from wearing it. The relic
+        // states its own share above.
+        if (mods.maxHealth != 1.0 && !petalSharesFlowerDamage(config)) {
+            const double extra = flowerHealth * (mods.maxHealth - 1.0);
+            const std::string sign = extra >= 0.0 ? "+" : "-";
+            statLine("Extra Health: " + sign + abbreviate(std::fabs(extra)), kStatHealth,
+                     "Extra Health: " + sign + exactNumber(std::fabs(extra)));
+        }
+        if (mods.speed != 1.0) statLine("Movement Speed: " + change(mods.speed), kStatGeneric);
+        if (mods.damage != 1.0) statLine("Damage: " + change(mods.damage), kStatDamage);
+        if (mods.playerRadius != 1.0) {
+            statLine("Flower Size: " + change(mods.playerRadius), kStatGeneric);
+        }
+        if (mods.rotationSpeed != 1.0) {
+            statLine("Rotation Speed: " + change(mods.rotationSpeed), kStatGeneric);
+        }
+        if (mods.aggroRange != 1.0) {
+            statLine("Mob Aggro Range: " + change(mods.aggroRange), kStatGeneric);
+        }
+        if (mods.aggroRadius > 0.0) {
+            statLine("Mob Aggro Radius: +" + abbreviate(mods.aggroRadius), kStatGeneric);
+        }
+        if (mods.attackRange > 0.0) {
+            statLine("Attack Range: +" + abbreviate(mods.attackRange), kStatGeneric);
+        }
+        if (mods.luck > 0.0) statLine("Luck: +" + fineNumber(mods.luck), kStatGeneric);
+        if (mods.magnetism > 0.0) {
+            statLine("Pickup Range: +" + abbreviate(mods.magnetism), kStatGeneric);
+        }
+        if (mods.petalAttractionRadius > 0.0) {
+            statLine("Attraction Range: +" + abbreviate(mods.petalAttractionRadius),
+                     kStatGeneric);
+        }
+        // Vision: how many times as much world the bar shows with it on, the
+        // same figure the camera applies (petalCameraZoom).
+        const double zoom = petalCameraZoom(content(), petalIndex, rarity);
+        if (zoom > 0.0 && zoom < 1.0) {
+            char buffer[32];
+            std::snprintf(buffer, sizeof buffer, "x%g", std::round(100.0 / zoom) / 100.0);
+            statLine("Vision: " + std::string(buffer), kStatGeneric);
+        }
+        if (stats.armorPerStack > 0.0) {
+            statLine("Armor per Stack: " + abbreviate(stats.armorPerStack), kStatArmor,
+                     "Armor per Stack: " + exactNumber(stats.armorPerStack));
+        }
+        if (stats.shield > 0.0) {
+            statLine("Shield: " + abbreviate(stats.shield), kStatHealth,
+                     "Shield: " + exactNumber(stats.shield));
+        }
+        const auto seconds = [](double millis) {
+            char buffer[32];
+            std::snprintf(buffer, sizeof buffer, "%gs", std::round(millis / 100.0) / 10.0);
+            return std::string(buffer);
+        };
+        if (stats.noHealDurationMillis > 0.0) {
+            statLine("Heal Block: " + seconds(stats.noHealDurationMillis), kStatDanger);
+        }
+        if (stats.slowFactor < 1.0 && stats.slowDurationMillis > 0.0) {
+            statLine("Slow: " + change(stats.slowFactor) + " for " +
+                         seconds(stats.slowDurationMillis),
+                     kStatDuration);
+        }
+        if (stats.spongeDamageDurationMillis > 0.0) {
+            statLine("Damage Spread: " + seconds(stats.spongeDamageDurationMillis),
+                     kStatDuration);
+        }
+        if (stats.webRadius > 0.0) {
+            statLine("Web Radius: " + abbreviate(stats.webRadius), kStatGeneric);
+        }
+        // Only where the petal sets its own: every petal shoves a little, and
+        // a line on every card saying so would bury the ones built for it.
+        static const double kDefaultKnockback = PetalConfig{}.knockback;
+        if (stats.knockback > 0.0 && config.knockback != kDefaultKnockback) {
+            statLine("Knockback: " + fineNumber(stats.knockback), kStatGeneric);
+        }
     }
 
     // Only the cutters have one, and theirs moves with rarity, so the number
@@ -924,8 +1049,9 @@ bool InventoryPanel::render(MenuContext& ctx) {
 namespace ui {
 
 std::vector<TooltipLine> petalTooltip(std::uint16_t petalIndex, Rarity rarity,
-                                      const SkillSet& skills, double reloadScale) {
-    return petalTooltipLines(petalIndex, rarity, skills, reloadScale);
+                                      const SkillSet& skills, double reloadScale,
+                                      double flowerHealth) {
+    return petalTooltipLines(petalIndex, rarity, skills, reloadScale, flowerHealth);
 }
 
 } // namespace ui

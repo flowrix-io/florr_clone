@@ -2656,6 +2656,21 @@ bool slidesUp(MenuId id) {
     return id == MenuId::Inventory;
 }
 
+/// How far the pointer has to move from where it picked a petal up in the
+/// inventory before the card slides out of the way: past a click's wobble,
+/// well short of the bar.
+constexpr double kInventoryTuckDistance = 12.0;
+
+/// A drag out of the inventory: where it began, and whether it has moved far
+/// enough to be one. File-local, as the panels' own state is, because the
+/// menu system's members are declared in menus.h -- and there is one drag.
+struct InventoryDragTuck {
+    bool armed = false;
+    bool tucked = false;
+    Vec2 origin{};
+};
+InventoryDragTuck inventoryDrag;
+
 /// Every card hung under the top icon row slides in from the left the way
 /// florr's shop does -- the shop itself, the corner overlays, and the two
 /// reached from them (the database editor and the asset browser). The cards
@@ -2875,12 +2890,35 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     const double talentsTarget = open_ == MenuId::Talents ? 1.0 : 0.0;
     talentsOpen_ +=
         (talentsTarget - talentsOpen_) * (1.0 - std::exp(-kSlotCardOpenRate * dt * 1000.0));
+    // A petal dragged out of the inventory takes the inventory out of its way:
+    // the card stands over the first slots of the loadout bar, which is where
+    // most drags are headed. Not on the press -- a drag starts there, and a
+    // click on a cell is a press and a release on it, which equips the petal
+    // -- but once the pointer has moved off where it went down, which is
+    // what makes it a drag. Tucked from then until the petal is let go, then
+    // risen again, still open.
+    {
+        const Vec2 pointer{window.mouseX(), window.mouseY()};
+        const bool fromInventory = drag_.source == DragState::Source::Inventory;
+        if (!fromInventory) {
+            inventoryDrag.armed = false;
+            inventoryDrag.tucked = false;
+        } else if (!inventoryDrag.armed) {
+            inventoryDrag.armed = true;
+            inventoryDrag.origin = pointer;
+        } else if (distance(pointer, inventoryDrag.origin) > kInventoryTuckDistance) {
+            inventoryDrag.tucked = true;
+        }
+    }
+    const bool inventoryTucked = inventoryDrag.tucked && open_ == MenuId::Inventory;
     if (open_ != MenuId::None) {
         if (open_ == MenuId::Crafting && drawn_ != MenuId::Crafting) craftOpen_ = 0.0;
         if (slidesFromLeft(open_) && drawn_ != open_) sideOpen_ = 0.0;
         if (open_ == MenuId::Talents && drawn_ != MenuId::Talents) talentsOpen_ = 0.0;
         drawn_ = open_;
-        panelSlide_ = slidesUp(open_) ? std::min(1.0, panelSlide_ + dt / kPanelSlideSeconds) : 1.0;
+        panelSlide_ = !slidesUp(open_)    ? 1.0
+                      : inventoryTucked ? std::max(0.0, panelSlide_ - dt / kPanelSlideSeconds)
+                                        : std::min(1.0, panelSlide_ + dt / kPanelSlideSeconds);
     } else if (drawn_ == MenuId::Crafting) {
         // Gone once it is out of sight below the view's edge.
         if (craftOpen_ <= 0.001) drawn_ = MenuId::None;

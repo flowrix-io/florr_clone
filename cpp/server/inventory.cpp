@@ -91,12 +91,11 @@ WornSlot wornSlot(const PlayerRecord& record, std::size_t slot, Realm realm) {
     return worn;
 }
 
-std::uint16_t wearStarterKit(PlayerRecord& record) {
-    constexpr std::size_t kStarterPetals = 5;
+std::uint16_t wearStarterKit(PlayerRecord& record, int petals) {
     record.loadout.assign(kLoadoutSlots, std::nullopt);
     const std::uint16_t basic = content().petalIndex("basic");
     if (basic == kInvalidIndex) return basic;
-    for (std::size_t i = 0; i < kStarterPetals && i < kLoadoutActiveSlots; ++i) {
+    for (int i = 0; i < petals && i < kLoadoutActiveSlots; ++i) {
         record.loadout[i] = petalItem(content().petal(basic).id, Rarity::Common);
     }
     return basic;
@@ -106,14 +105,16 @@ std::uint16_t wearStarterKit(PlayerRecord& record) {
 ///
 /// An empty loadout is a flower that cannot fight anything, which makes the
 /// first minute of the game a walk through a field of mobs that can only hurt
-/// it. Five Basic petals is the smallest kit that is actually playable, and
-/// the five spares beside them are exactly one craft batch -- a brand-new
-/// account can walk to the crafting panel and roll its first Unusual.
+/// it. A whole bar of Basic petals -- every active slot full -- so a new
+/// flower starts with a complete ring rather than half of one, and the five
+/// spares beside them are exactly one craft batch -- a brand-new account can
+/// walk to the crafting panel and roll its first Unusual.
 void grantStarterKit(PlayerRecord& record) {
     // A content set with no basic petal leaves a new account as it was made.
     if (content().petalIndex("basic") == kInvalidIndex) return;
     constexpr int kStartingSpares = 5;
-    giveToInventory(record, wearStarterKit(record), Rarity::Common, kStartingSpares);
+    giveToInventory(record, wearStarterKit(record, kNewAccountStarterPetals), Rarity::Common,
+                    kStartingSpares);
 }
 
 } // namespace flix

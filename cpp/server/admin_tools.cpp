@@ -18,6 +18,7 @@ void GameServer::handleAdminTools(Session& s,net::Connection& peer,ByteReader& r
     const Json q=Json::parseOrNull(raw);if(!q.isObject())return;
     const auto kind=q["kind"].asString(),action=q["action"].asString();
     if(kind=="market"){runMarket(s,peer,q);return;}
+    if(kind=="shop"){runShopLock(s,peer,q);return;}
     if(kind=="poll"){runPollRequest(s,peer,q);return;}
     if(kind=="event"||kind=="arena"){runEventSetup(s,peer,q);return;}
     if(kind=="codes") {

@@ -205,7 +205,7 @@ std::unique_ptr<PlayerRecord> GameServer::startArenaRun(const PlayerRecord& acco
     run->stars = account.stars;
     run->renderFlags = account.renderFlags;
     run->equippedSkinId = account.equippedSkinId;
-    wearStarterKit(*run);
+    wearStarterKit(*run, kArenaStarterPetals);
     return run;
 }
 

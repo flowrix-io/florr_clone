@@ -4,6 +4,7 @@
 #include "server/systems/combat.h"
 #include "server/systems/movement.h"
 #include "server/systems/petals.h"
+#include "server/systems/shot_range.h"
 
 #include <algorithm>
 #include <cmath>
@@ -3752,7 +3753,8 @@ TEST(a_projectile_petal_fires_its_fan_and_respects_its_cooldown) {
         offsets.push_back(wrapAngle(motion.velocity.angle() - petalHeading));
         CHECK_NEAR(motion.velocity.length(), 800.0, 1e-6);
         CHECK_NEAR(projectile.damage, 6.0, 1e-9);
-        CHECK_NEAR(projectile.remainingDistance, 1000.0, 1e-9);
+        // The petal's authored 1000, flown kPlayerShotRangeScale times as far.
+        CHECK_NEAR(projectile.remainingDistance, 1000.0 * kPlayerShotRangeScale, 1e-9);
         CHECK(projectile.creditTo == rig.player);
         CHECK(projectile.owner == rig.player);
     });

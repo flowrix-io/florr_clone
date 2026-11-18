@@ -1,4 +1,5 @@
 #include "server/systems/petals.h"
+#include "server/systems/shot_range.h"
 
 #include <algorithm>
 #include <array>
@@ -2711,15 +2712,18 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
     // flies at, full stop: a grown flower fires a wider pea at the same pace,
     // not a faster one. Size and speed are separate knobs and the file is the
     // only authority on the second.
-    const double shotSpeed = spec.speed * (rarity == Rarity::Admin ? 2.0 : 1.0);
-    const double shotDistance = spec.distance * adminReachScale(rarity);
+    // Both through shot_range.h, which the wall and the mob a carrot meets
+    // read as well: a flower's shot flies kPlayerShotRangeScale times its
+    // petal's authored reach.
+    const double shotSpeed = petalShotSpeed(spec, rarity);
+    const double shotDistance = petalShotRange(spec, rarity);
 
-    // The flower's own motion, carried into the volley. Taken from the FLOWER
-    // and not from the petal because a petal's velocity is dominated by its
-    // orbit, which would fan a volley sideways by however far round the ring
-    // the petal happened to be.
-    const Motion* ownerMotion = world.tryGet<Motion>(player);
-    const Vec2 inherited = ownerMotion != nullptr ? ownerMotion->velocity : Vec2{};
+    // The flower's own motion is NOT carried into the volley. A shot leaves
+    // along the bearing its petal was pointing down, at the speed the petal
+    // states, whatever the flower was doing: adding the flower's velocity bent
+    // every volley toward wherever the player happened to be walking, so a
+    // carrot thrown forward while strafing went off at an angle no petal was
+    // aiming at.
     const Transform* ownerAt = world.tryGet<Transform>(player);
     const Realm realm = ownerAt != nullptr ? ownerAt->realm : Realm::Overworld;
 
@@ -2740,7 +2744,7 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
         const Entity shot = world.create();
         world.add<ProjectileTag>(shot);
         world.add<Transform>(shot, Transform{from, angle, realm});
-        world.add<Motion>(shot, Motion{Vec2::fromAngle(angle, shotSpeed) + inherited});
+        world.add<Motion>(shot, Motion{Vec2::fromAngle(angle, shotSpeed)});
         // Mass is area on the same scale a mob's is, so the shove a shot
         // delivers grows with the square of the flower that grew it.
         world.add<Body>(shot, Body{shotRadius, projectileMass(shotRadius)});

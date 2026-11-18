@@ -5,6 +5,7 @@
 #include "client/render/world_renderer_internal.h"
 
 #include <algorithm>
+#include <unordered_map>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -511,6 +512,67 @@ void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* a
     strip(width,0,view.right(),height);
 }
 
+/// The wall a map is walled in with, to carry on past its edge: the commonest
+/// tile on its wall layers around the map's outer ring that fills its whole
+/// square opaquely and is drawn unturned -- the centre piece of the boundary
+/// wall, rather than one of its edge or corner pieces. A map whose wall art is
+/// not marked opaque (the computer's green board) gets its commonest unturned
+/// wall tile instead. Null when the map has neither; drawBoundaryBlocks then
+/// fills the outside in plain wall grey.
+///
+/// Worked out once per map and kept: it is a scan of the whole ring, and the
+/// answer only changes when the map does.
+const SvgDocument* boundaryArt(const MapData& map, const std::vector<const SvgDocument*>& art) {
+    static std::unordered_map<const MapData*, int> chosen;
+    const auto known = chosen.find(&map);
+    int pick = -1;
+    if (known != chosen.end()) {
+        pick = known->second;
+    } else {
+        const int cols = map.width(), rows = map.height();
+        // The outer two cells all round: deep enough to reach past a ring of
+        // edge pieces onto the wall's own centre tiles.
+        constexpr int kRingDepth = 2;
+        std::unordered_map<int, int> counts;
+        std::unordered_map<int, int> fallback;
+        const auto look = [&](int tx, int ty) {
+            const std::size_t index = static_cast<std::size_t>(ty) * static_cast<std::size_t>(cols) +
+                                      static_cast<std::size_t>(tx);
+            for (const TiledLayer& layer : map.layers()) {
+                if (!layer.collides || index >= layer.cells.size()) continue;
+                const TiledCell& cell = layer.cells[index];
+                if (cell.art < 0) continue;
+                const TileOrientation turn = tileOrientation(cell.flags);
+                if (turn.radians != 0.0 || turn.mirror) continue;
+                ++fallback[cell.art];
+                if ((cell.flags & kTileCoversEverything) != 0) ++counts[cell.art];
+            }
+        };
+        for (int ty = 0; ty < rows; ++ty) {
+            for (int tx = 0; tx < cols; ++tx) {
+                const bool ring = tx < kRingDepth || ty < kRingDepth || tx >= cols - kRingDepth ||
+                                  ty >= rows - kRingDepth;
+                if (ring) look(tx, ty);
+            }
+        }
+        const auto commonest = [](const std::unordered_map<int, int>& tally) {
+            int best = 0, index = -1;
+            for (const auto& [art, count] : tally) {
+                if (count > best || (count == best && art < index)) {
+                    best = count;
+                    index = art;
+                }
+            }
+            return index;
+        };
+        pick = commonest(counts);
+        if (pick < 0) pick = commonest(fallback);
+        chosen[&map] = pick;
+    }
+    if (pick < 0 || static_cast<std::size_t>(pick) >= art.size()) return nullptr;
+    return art[static_cast<std::size_t>(pick)];
+}
+
 } // namespace
 
 void WorldRenderer::drawWaves(Canvas& canvas, const Camera& camera, double timeSeconds) const {
@@ -645,6 +707,16 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     const int rows = map->height();
     if (cols <= 0 || rows <= 0) return;
 
+    const std::vector<const SvgDocument*>& art = artFor(*map);
+    if (art.empty()) return;
+
+    // Past the map's edge, its boundary wall carries on rather than the frame
+    // going black: an antennae's wide view at the side of a map showed a void
+    // beside a wall the flower cannot cross anyway. Painted before the map,
+    // and only outside it, so it is drawn whether or not the view reaches any
+    // of the map's own cells.
+    drawBoundaryBlocks(canvas, camera, boundaryArt(*map, art), cols, rows);
+
     // The cells whose artwork can reach the screen, and NOT ONE MORE. A cell
     // is drawn over exactly its own square, so the view itself is the whole
     // margin this wants. A kTileSize margin -- the reflex, and what this used
@@ -658,9 +730,6 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     span.x1 = std::min(cols - 1, static_cast<int>(std::floor(visible.right() / kTileSize)));
     span.y1 = std::min(rows - 1, static_cast<int>(std::floor(visible.bottom() / kTileSize)));
     if (span.x1 < span.x0 || span.y1 < span.y0) return;
-
-    const std::vector<const SvgDocument*>& art = artFor(*map);
-    if (art.empty()) return;
 
     // The reader guarantees width*height cells on every layer, and the cell
     // loop indexes on that rather than going through the bounds-checked
