@@ -1,11 +1,10 @@
 #pragma once
 // The onboarding tutorial: an eleven-step card over a live game.
 //
-// The browser build draws this one surface out of a fixed DOM box and its own
-// stylesheet rather than out of the game's widgets, which is why nothing here
-// reuses draw.h's plate() or button(): the card is plain Ubuntu on a
-// translucent dark rectangle with two flat pill buttons, and a gardn-style
-// control in it would read as a different design.
+// The card is drawn as a gardn tooltip -- the half-black rounded plate with
+// outlined white Ubuntu that every petal and mob tooltip uses (paintTooltip in
+// menu_widgets.cpp) -- and its two buttons are draw.h's gardn button(), so the
+// tutorial reads as part of the same game rather than a DOM box laid over it.
 //
 // Its persistent state is two values -- whether the tutorial is finished and
 // how far it had got -- which ride in ClientSettings so there is one client
@@ -181,14 +180,12 @@ private:
     bool skipArmed_ = false;
     double skipArmedUntil_ = 0;
 
-    /// How far each button's `transition: all 0.2s ease` has run, 0 to 1.
-    /// Linear here and eased when it is read, which is one value per button
-    /// instead of a start value, an end value and a clock.
-    double skipHover_ = 0;
-    double nextHover_ = 0;
-    /// The previous frame's clock, so the two transitions can be advanced
-    /// without the caller having to hand this class a dt as well.
-    double lastNow_ = -1;
+    /// The pointer over each button and the left button held, as the last
+    /// update() saw them: button() takes hover and press rather than tracking
+    /// them itself.
+    bool overSkip_ = false;
+    bool overNext_ = false;
+    bool pressing_ = false;
 
     /// The layout the last update() measured, so capturesMouse() and draw()
     /// answer for the same card the click was tested against.

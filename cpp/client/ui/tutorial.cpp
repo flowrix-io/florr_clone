@@ -6,8 +6,10 @@
 
 #include "client/net_client.h"
 #include "client/ui/draw.h"
+#include "client/ui/menu_style.h"
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
+#include "client/ui/text_select.h"
 #include "client/ui/theme.h"
 #include "shared/core/text.h"
 
@@ -87,61 +89,52 @@ constexpr TutorialStep kSteps[Tutorial::kStepCount] = {
 /// `Tutorial::draw`.
 constexpr int kCraftingHighlightStep = 7;
 
-// --- the stylesheet, in numbers ---------------------------------------------
+// --- the card, in numbers ---------------------------------------------------
 //
-// #tutorialBox and .tutorial-* from src/tutorial.ts, under the page's own
-// `* { margin: 0; padding: 0; box-sizing: border-box }` reset. Border-box is
-// why the 500px cap is the card's whole width and not its content column's.
+// A gardn tooltip scaled up to a 500px card: paintTooltip's half-black plate
+// and radius, its outlined white text, and draw.h's gardn buttons.
 
 constexpr double kCardTop = 60.0;
 constexpr double kCardMaxWidth = 500.0;
-constexpr double kPadX = 25.0;
-constexpr double kPadY = 20.0;
-constexpr double kCardRadius = 12.0;
+constexpr double kPadX = 16.0;
+constexpr double kPadY = 14.0;
+constexpr double kCardRadius = 6.0;     ///< paintTooltip's kTooltipRadius
+constexpr double kCardAlpha = 0.5;      ///< paintTooltip's half-black fill
 
 constexpr double kHeadSize = 24.0;
-constexpr double kTitleGap = 15.0;      ///< the h2's margin-bottom
+constexpr double kTitleGap = 10.0;
 constexpr double kCopySize = 16.0;
-constexpr double kBodyLeading = 1.6;    ///< the p's line-height
-constexpr double kBodyGap = 20.0;       ///< the p's margin-bottom
+constexpr double kBodyLeading = 1.4;
+constexpr double kBodyGap = 14.0;
+/// gardn's 0xffffff90: the stat rows' dim, used here for the <em> asides.
+constexpr double kAsideAlpha = 0.56;
 
-constexpr double kLabelSize = 14.0;
-constexpr double kButtonPadX = 20.0;
-constexpr double kButtonPadY = 10.0;
-constexpr double kButtonMargin = 5.0;
-constexpr double kButtonGap = 10.0;     ///< the buttons row's `gap`
-constexpr double kPillRadius = 8.0;
+constexpr double kLabelSize = 16.0;
+constexpr double kButtonPadX = 14.0;
+constexpr double kButtonH = 32.0;
+constexpr double kButtonGap = 10.0;
+constexpr double kButtonRim = 3.0;
+constexpr double kButtonRadius = 3.0;
+constexpr std::uint32_t kSkipFill = 0x666666u;      ///< the death card's Close
+constexpr std::uint32_t kSkipArmedFill = 0xBB5555u;
+constexpr std::uint32_t kNextFill = kAccent;
 
 constexpr double kCounterSize = 14.0;
+constexpr double kCounterAlpha = 0.7;
 
-constexpr double kDotSize = 8.0;
-constexpr double kDotGap = 5.0;
-constexpr double kDotsGap = 15.0;       ///< .tutorial-progress's margin-top
+constexpr double kDotRadius = 4.5;
+constexpr double kDotGap = 6.0;
+constexpr double kDotsGap = 12.0;
+constexpr double kDotRim = 1.5;
 constexpr double kActiveDotScale = 1.3;
+constexpr std::uint32_t kDotIdle = 0x777777u;
 
 constexpr double kIntroSeconds = 0.3;   ///< the box's `slideIn`
-constexpr double kHoverSeconds = 0.2;   ///< the buttons' `transition`
 /// The browser's own `setTimeout(..., 1000)` after the socket authenticates.
 constexpr double kStartDelay = 1.0;
 /// How long a first click on Skip stands in for the confirm() dialog.
 constexpr double kSkipArmSeconds = 4.0;
-
-constexpr std::uint32_t kCardFill = 0x282828u;      ///< rgba(40, 40, 40, 0.85)
-constexpr double kCardAlpha = 0.85;
-constexpr double kCardShadowAlpha = 0.30;           ///< 0 4px 20px rgba(0,0,0,0.3)
-constexpr double kShadowSigma = 10.0;               ///< a CSS blur radius of 20
-constexpr double kCardShadowDrop = 4.0;
-
-constexpr double kSkipFillAlpha = 0.2;
-constexpr double kSkipHoverAlpha = 0.3;
-constexpr double kSkipLabelAlpha = 0.9;
-constexpr double kNextFillAlpha = 0.9;
-constexpr double kNextHoverAlpha = 1.0;
-constexpr std::uint32_t kNextLabel = 0x333333u;
-constexpr double kCounterAlpha = 0.7;
-constexpr double kDotIdleAlpha = 0.3;
-constexpr double kButtonHoverScale = 1.05;
-constexpr double kButtonHoverShadow = 0.2;          ///< 0 5px 15px rgba(0,0,0,0.2)
+constexpr double kShadowSigma = 10.0;   ///< the highlight ring's blur
 
 /// The yellow ring `.tutorial-highlight` puts round an anchored element.
 /// Static, not the pulse the same rule also asks for: the pulse animates
@@ -150,11 +143,6 @@ constexpr double kButtonHoverShadow = 0.2;          ///< 0 5px 15px rgba(0,0,0,0
 constexpr std::uint32_t kHighlight = 0xFFFF00u;     ///< 0 0 20px rgba(255,255,0,0.8)
 constexpr double kHighlightAlpha = 0.8;
 constexpr double kHighlightRadius = 3.0;            ///< .crafting-panel's own
-
-/// Blink's synthetic-oblique slant. The reference has the real Ubuntu Italic
-/// to hand; this client stages the bold face only, so an <em> run
-/// is sheared rather than substituted, and its glyphs are a shade wider.
-constexpr double kItalicShear = 0.2;
 
 // --- CSS line boxes ---------------------------------------------------------
 //
@@ -224,7 +212,6 @@ double cubicBezier(double x1, double y1, double x2, double y2, double x) {
 }
 
 double easeOut(double t) { return cubicBezier(0.0, 0.0, 0.58, 1.0, t); }
-double ease(double t) { return cubicBezier(0.25, 0.1, 0.25, 1.0, t); }
 
 // --- description parsing -----------------------------------------------------
 
@@ -282,65 +269,25 @@ std::vector<Word> parseDescription(const std::string& html) {
     return words;
 }
 
-/// The card's fill and its drop shadow.
-///
-/// The shadow is painted as disjoint rings at the alpha a Gaussian of sigma 10
-/// leaves at that distance, which is the same trick the talents card uses: the
-/// rings do not overlap, so each one's alpha is the final answer and only the
-/// fringe is ever rasterised.
-void cardPlate(Canvas& canvas, Rect card) {
-    constexpr double kBand = 2.0;
-    constexpr int kOuterBands = 12;
-    /// Bands inside the shadow's own edge, so the strip the 4px drop exposes
-    /// below the card is not painted as though it were outside it.
-    constexpr int kInnerBands = 3;
-    const double falloff = kShadowSigma * std::sqrt(2.0);
-
-    canvas.save();
-    canvas.setLineCap("butt");
-    canvas.setLineJoin("round");
-    canvas.setLineWidth(static_cast<float>(kBand));
-    for (int i = -kInnerBands; i < kOuterBands; ++i) {
-        const double d = (i + 0.5) * kBand;
-        setStroke(canvas, kInk, kCardShadowAlpha * 0.5 * std::erfc(d / falloff));
-        canvas.beginPath();
-        canvas.roundRect(static_cast<float>(card.x - d),
-                         static_cast<float>(card.y + kCardShadowDrop - d),
-                         static_cast<float>(card.w + d * 2.0),
-                         static_cast<float>(card.h + d * 2.0),
-                         static_cast<float>(kCardRadius + d));
-        canvas.stroke();
-    }
-    canvas.restore();
-
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(card.x), static_cast<float>(card.y),
-                     static_cast<float>(card.w), static_cast<float>(card.h),
-                     static_cast<float>(kCardRadius));
-    setFill(canvas, kCardFill, kCardAlpha);
-    canvas.fill();
-}
-
-/// A rounded rectangle in a flat colour: every button and dot on this card.
-void fillRounded(Canvas& canvas, Rect r, double radius, std::uint32_t rgb, double alpha) {
-    if (r.w <= 0 || r.h <= 0 || alpha <= 0) return;
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
-                     static_cast<float>(r.h),
-                     static_cast<float>(std::min(radius, std::min(r.w, r.h) * 0.5)));
-    setFill(canvas, rgb, alpha);
-    canvas.fill();
-}
-
-/// Plain, unstroked text: this card is a DOM box, and nothing in it is drawn
-/// with the game's stroked-then-filled lettering.
-TextStyle cardText(double size, std::uint32_t fill, Align align = Align::Left) {
-    TextStyle style;
-    style.size = size;
-    style.fill = fill;
-    style.strokeWidth = 0;
+/// Outlined white text on the card: the tooltip's own lettering.
+TextStyle cardText(double size, Align align = Align::Left) {
+    TextStyle style = labelStyle(size, kPaper);
+    style.roundJoin = true;
     style.align = align;
     style.baseline = Baseline::Alphabetic;
+    return style;
+}
+
+double buttonWidth(const char* label) {
+    return measure(label, kLabelSize) + (kButtonPadX + kButtonRim) * 2.0;
+}
+
+ButtonStyle cardButton(std::uint32_t fill) {
+    ButtonStyle style;
+    style.fill = fill;
+    style.outlineWidth = kButtonRim;
+    style.radius = kButtonRadius;
+    style.textSize = kLabelSize;
     return style;
 }
 
@@ -366,9 +313,9 @@ void Tutorial::beginGame(const ClientSettings& settings, double nowSeconds, bool
     stepShownAt_ = nowSeconds;
     advanceAt_ = -1;
     skipArmed_ = false;
-    skipHover_ = 0;
-    nextHover_ = 0;
-    lastNow_ = nowSeconds;
+    overSkip_ = false;
+    overNext_ = false;
+    pressing_ = false;
     lastLoadout_.clear();
     movementDetected_ = false;
     petalsExtended_ = false;
@@ -500,19 +447,19 @@ Tutorial::Layout Tutorial::layout(int viewWidth, double nowSeconds) const {
     };
 
     const double titleWidth = measure(step.title, kHeadSize);
-    const double skipWidth = measure("Skip Tutorial", kLabelSize) + kButtonPadX * 2.0;
-    const double armedWidth = measure("Are you sure?", kLabelSize) + kButtonPadX * 2.0;
-    const double nextWidth = measure("Next", kLabelSize) + kButtonPadX * 2.0;
+    const double skipWidth = buttonWidth("Skip Tutorial");
+    const double armedWidth = buttonWidth("Are you sure?");
+    const double nextWidth = buttonWidth("Next");
     const double counterWidth =
         measure(std::to_string(step_ + 1) + " / " + std::to_string(kStepCount), kCounterSize);
 
     double buttonsWidth = 0;
-    if (showSkip) buttonsWidth += (skipArmed_ ? armedWidth : skipWidth) + kButtonMargin * 2.0;
-    if (showNext) buttonsWidth += nextWidth + kButtonMargin * 2.0;
+    if (showSkip) buttonsWidth += skipArmed_ ? armedWidth : skipWidth;
+    if (showNext) buttonsWidth += nextWidth;
     if (showSkip && showNext) buttonsWidth += kButtonGap;
 
     const double maxContent =
-        std::max({titleWidth, widest(wrap(1e9)), buttonsWidth + counterWidth});
+        std::max({titleWidth, widest(wrap(1e9)), buttonsWidth + kButtonGap + counterWidth});
     const double cardW = std::min(kCardMaxWidth, maxContent + kPadX * 2.0);
     out.contentW = cardW - kPadX * 2.0;
     out.lines = wrap(out.contentW);
@@ -529,24 +476,21 @@ Tutorial::Layout Tutorial::layout(int viewWidth, double nowSeconds) const {
     out.firstBaseline = y + baselineIn(kCopySize, bodyLine);
     y += bodyLine * static_cast<double>(out.lines.size()) + kBodyGap;
 
-    const double buttonH = normalLineHeight(kLabelSize) + kButtonPadY * 2.0;
-    const double rowH = buttonsWidth > 0 ? buttonH + kButtonMargin * 2.0
-                                         : normalLineHeight(kCounterSize);
-    double bx = out.contentX + kButtonMargin;
-    const double by = y + kButtonMargin;
+    const double rowH = std::max(buttonsWidth > 0 ? kButtonH : 0.0,
+                                 normalLineHeight(kCounterSize));
+    double bx = out.contentX;
+    const double by = y + (rowH - kButtonH) * 0.5;
     if (showSkip) {
-        out.skip = Rect{bx, by, skipArmed_ ? armedWidth : skipWidth, buttonH};
-        bx += out.skip.w + kButtonMargin * 2.0 + kButtonGap;
+        out.skip = Rect{bx, by, skipArmed_ ? armedWidth : skipWidth, kButtonH};
+        bx += out.skip.w + kButtonGap;
     }
-    if (showNext) out.next = Rect{bx, by, nextWidth, buttonH};
-    // The counter is the flex row's second child, centred against a row the
-    // buttons' own margins made taller than it is.
+    if (showNext) out.next = Rect{bx, by, nextWidth, kButtonH};
     out.counterBaseline = y + (rowH - normalLineHeight(kCounterSize)) * 0.5 +
                           baselineIn(kCounterSize, normalLineHeight(kCounterSize));
     y += rowH + kDotsGap;
 
     out.dotsTop = y;
-    y += kDotSize;
+    y += kDotRadius * 2.0;
     out.card.h = y + kPadY - kCardTop;
 
     // The 0.3s intro. `slideIn` animates `transform`, and an animation outranks
@@ -585,9 +529,6 @@ void Tutorial::noteGestures(const Gestures& gestures) {
 
 void Tutorial::update(Window& window, ClientSettings& settings, const Profile& profile,
                       double nowSeconds) {
-    const double dt = lastNow_ < 0 ? 0.0 : clamp(nowSeconds - lastNow_, 0.0, 0.1);
-    lastNow_ = nowSeconds;
-
     if (!pending_ && !visible_) return;
 
     // Watched from the moment the tutorial is armed, exactly as the browser's
@@ -641,9 +582,9 @@ void Tutorial::update(Window& window, ClientSettings& settings, const Profile& p
     const bool overNext = current.next.w > 0 && next.contains(mouse);
     if (overSkip || overNext) window.setCursorShape(CursorShape::Hand);
 
-    const double hoverStep = dt / kHoverSeconds;
-    skipHover_ = clamp(skipHover_ + (overSkip ? hoverStep : -hoverStep), 0.0, 1.0);
-    nextHover_ = clamp(nextHover_ + (overNext ? hoverStep : -hoverStep), 0.0, 1.0);
+    overSkip_ = overSkip;
+    overNext_ = overNext;
+    pressing_ = window.mouseDown(MouseButton::Left);
 
     if (skipArmed_ && nowSeconds >= skipArmedUntil_) skipArmed_ = false;
 
@@ -732,95 +673,56 @@ void Tutorial::draw(Canvas& canvas, Rect highlightCard) {
         canvas.translate(static_cast<float>(-cx), static_cast<float>(-cy));
     }
 
-    cardPlate(canvas, snapped(l.card));
-    text(canvas, step.title, l.contentX, baselinePixel(l.titleBaseline),
-         cardText(kHeadSize, kPaper));
+    // The tooltip plate: half-black, no border, no shadow.
+    const Rect plateBox = snapped(l.card);
+    setFill(canvas, kInk, kCardAlpha);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(plateBox.x), static_cast<float>(plateBox.y),
+                     static_cast<float>(plateBox.w), static_cast<float>(plateBox.h),
+                     static_cast<float>(kCardRadius));
+    canvas.fill();
 
+    TextCaptureScope off(false);
+    text(canvas, step.title, l.contentX, baselinePixel(l.titleBaseline), cardText(kHeadSize));
+
+    // Through paintRun, as the tooltip's rows are, so an <em> aside can dim
+    // its fill and keep its outline opaque -- gardn's stat-row look.
+    const TextStyle body = cardText(kCopySize);
     double baseline = l.firstBaseline;
     for (const Line& line : l.lines) {
         for (const Piece& piece : line.pieces) {
-            const double x = l.contentX + piece.x;
-            const double pen = baselinePixel(baseline);
-            if (piece.italic) {
-                canvas.save();
-                // x' = x - shear * (y - baseline): the glyphs lean right above
-                // the baseline and stay put on it.
-                canvas.transform(1.0f, 0.0f, static_cast<float>(-kItalicShear), 1.0f,
-                                 static_cast<float>(kItalicShear * pen), 0.0f);
-                text(canvas, piece.text, x, pen, cardText(kCopySize, kPaper));
-                canvas.restore();
-            } else {
-                text(canvas, piece.text, x, pen, cardText(kCopySize, kPaper));
-            }
+            paintRun(canvas, piece.text, l.contentX + piece.x, baselinePixel(baseline), body, 1.0,
+                     piece.italic ? kAsideAlpha : 1.0);
         }
         baseline += kCopySize * kBodyLeading;
     }
 
-    const auto paintButton = [&](Rect box, const std::string& label, double hover, double fill,
-                                 double hoverFill, std::uint32_t labelColour, double labelAlpha) {
-        if (box.w <= 0) return;
-        const double e = ease(hover);
-        const double scale = 1.0 + (kButtonHoverScale - 1.0) * e;
-        canvas.save();
-        const double cx = box.x + box.w * 0.5;
-        const double cy = box.y + box.h * 0.5;
-        canvas.translate(static_cast<float>(cx), static_cast<float>(cy));
-        canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
-        canvas.translate(static_cast<float>(-cx), static_cast<float>(-cy));
-        if (e > 0.0) {
-            // The hover state's own `0 5px 15px rgba(0,0,0,0.2)`.
-            constexpr double kBand = 2.0;
-            const double falloff = 7.5 * std::sqrt(2.0);
-            canvas.setLineCap("butt");
-            canvas.setLineJoin("round");
-            canvas.setLineWidth(static_cast<float>(kBand));
-            for (int i = 0; i < 8; ++i) {
-                const double d = (i + 0.5) * kBand;
-                setStroke(canvas, kInk, kButtonHoverShadow * e * 0.5 * std::erfc(d / falloff));
-                canvas.beginPath();
-                canvas.roundRect(static_cast<float>(box.x - d), static_cast<float>(box.y + 5.0 - d),
-                                 static_cast<float>(box.w + d * 2.0),
-                                 static_cast<float>(box.h + d * 2.0),
-                                 static_cast<float>(kPillRadius + d));
-                canvas.stroke();
-            }
-        }
-        fillRounded(canvas, snapped(box), kPillRadius, kPaper, fill + (hoverFill - fill) * e);
-        canvas.setGlobalAlpha(static_cast<float>(l.alpha * labelAlpha));
-        text(canvas, label, box.x + box.w * 0.5,
-             baselinePixel(box.y + kButtonPadY +
-                           baselineIn(kLabelSize, normalLineHeight(kLabelSize))),
-             cardText(kLabelSize, labelColour, Align::Centre));
-        canvas.restore();
-    };
+    if (l.skip.w > 0) {
+        button(canvas, snapped(l.skip), skipArmed_ ? "Are you sure?" : "Skip Tutorial", overSkip_,
+               overSkip_ && pressing_, cardButton(skipArmed_ ? kSkipArmedFill : kSkipFill));
+    }
+    if (l.next.w > 0) {
+        button(canvas, snapped(l.next), "Next", overNext_, overNext_ && pressing_,
+               cardButton(kNextFill));
+    }
 
-    paintButton(l.skip, skipArmed_ ? "Are you sure?" : "Skip Tutorial", skipHover_, kSkipFillAlpha,
-                kSkipHoverAlpha, kPaper, kSkipLabelAlpha);
-    paintButton(l.next, "Next", nextHover_, kNextFillAlpha, kNextHoverAlpha, kNextLabel, 1.0);
+    const std::string counter = std::to_string(step_ + 1) + " / " + std::to_string(kStepCount);
+    const Vec2 counterPen = textPen(counter, l.contentX + l.contentW,
+                                    baselinePixel(l.counterBaseline),
+                                    cardText(kCounterSize, Align::Right));
+    paintRun(canvas, counter, counterPen.x, counterPen.y, cardText(kCounterSize), 1.0,
+             kCounterAlpha);
 
-    canvas.setGlobalAlpha(static_cast<float>(l.alpha * kCounterAlpha));
-    text(canvas, std::to_string(step_ + 1) + " / " + std::to_string(kStepCount),
-         l.contentX + l.contentW, baselinePixel(l.counterBaseline),
-         cardText(kCounterSize, kPaper, Align::Right));
-    canvas.setGlobalAlpha(static_cast<float>(l.alpha));
-
-    // The dots are rebuilt with the card's innerHTML on every step, so the
-    // 0.3s transition their rule carries never has an old value to run from:
-    // the active one is simply 1.3x and white from the first frame it exists.
-    const double dotsWidth = kStepCount * kDotSize + (kStepCount - 1) * kDotGap;
-    const double dotsX = l.card.x + l.card.w * 0.5 - dotsWidth * 0.5;
+    // The pagination dots as gardn draws any small disc: a fill with a black
+    // rim, the current step white and a size up.
+    const double pitch = kDotRadius * 2.0 + kDotGap;
+    const double dotsWidth = kStepCount * pitch - kDotGap;
+    const double dotsX = l.card.x + l.card.w * 0.5 - dotsWidth * 0.5 + kDotRadius;
     for (int i = 0; i < kStepCount; ++i) {
-        // The idle dots are snapped like any other background box; the active
-        // one is a `transform: scale(1.3)` on that same snapped box, and a
-        // transformed element is composited rather than snapped again.
-        const Rect box = snapped(Rect{dotsX + i * (kDotSize + kDotGap), l.dotsTop, kDotSize,
-                                      kDotSize});
-        const double centreX = box.x + box.w * 0.5;
-        const double centreY = box.y + box.h * 0.5;
-        const double radius = box.w * 0.5 * (i == step_ ? kActiveDotScale : 1.0);
-        setFill(canvas, kPaper, i == step_ ? 1.0 : kDotIdleAlpha);
-        canvas.fillCircle(static_cast<float>(centreX), static_cast<float>(centreY),
-                          static_cast<float>(radius));
+        const bool active = i == step_;
+        disc(canvas, Vec2{dotsX + i * pitch, l.dotsTop + kDotRadius},
+             kDotRadius * (active ? kActiveDotScale : 1.0), active ? kPaper : kDotIdle, kInk,
+             kDotRim);
     }
 
     canvas.setGlobalAlpha(1.0f);
