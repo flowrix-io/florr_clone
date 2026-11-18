@@ -749,6 +749,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // the player pipeline, before moveEnemies(). Keep that temporal boundary:
     // a mob cannot escape a petal it was already touching by moving first.
     combat_->beginTick(world_, nowMillis, dt, events_);
+    petals_->applySelfDamage(world_, *combat_, nowMillis);
     combat_->runContactPhase(world_, grid_, content(), nowMillis);
     markTickPhase("contact");
 

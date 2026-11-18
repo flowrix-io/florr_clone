@@ -65,6 +65,7 @@ const char* const kPetalsJson = R"JSON({
   "gazer":    {"name":"Gazer","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"equipFlags":"ThirdEye","noPhysics":true,"color":"#000000"},
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "glitch_lightning":{"name":"Glitch Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#00FF00"},
+  "blood_stinger":{"name":"Blood Stinger","damage":100,"health":2,"size":1,"cooldown":1000,"count":1,"color":"#9C1010"},
   "bomb":     {"name":"Bomb","damage":0,"health":10,"size":2,"cooldown":1500,"count":1,"color":"#000000"},
   "test_explosive":{"name":"Test Explosive","damage":15,"health":10,"size":1,"cooldown":2000,"count":1,"color":"#FF0000"},
   "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
@@ -2700,6 +2701,96 @@ TEST(a_yucca_heals_only_while_the_flower_is_blocking) {
     rig.tick(30);
     const double blockGain = health.current - mid;
     CHECK(blockGain > idleGain);
+}
+
+/// Ticks `rig` with the server's self-damage pass after each ring step, and
+/// returns every drop in the flower's health, one entry per tick that lost any.
+std::vector<double> selfDamageDrops(Rig& rig, CombatSystem& combat, int ticks) {
+    std::vector<double> drops;
+    for (int i = 0; i < ticks; ++i) {
+        rig.tick();
+        const double before = rig.world.get<Health>(rig.player).current;
+        rig.system.applySelfDamage(rig.world, combat, rig.now);
+        const double after = rig.world.get<Health>(rig.player).current;
+        if (after < before) drops.push_back(before - after);
+    }
+    return drops;
+}
+
+TEST(a_blood_stinger_costs_its_flower_five_health_each_time_it_grows_back) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger");
+    // Two spawns: the first, then one more after it is broken.
+    std::vector<double> drops = selfDamageDrops(rig, combat, 100);
+    CHECK_EQ(drops.size(), std::size_t{1});
+    if (!drops.empty()) CHECK_NEAR(drops[0], 5.0, 1e-9);
+    // Standing on the ring costs nothing more.
+    CHECK(selfDamageDrops(rig, combat, 60).empty());
+
+    for (const Entity petal : rig.petals(0)) rig.world.get<Health>(petal).current = 0.0;
+    drops = selfDamageDrops(rig, combat, 100);
+    CHECK_EQ(drops.size(), std::size_t{1});
+    if (!drops.empty()) CHECK_NEAR(drops[0], 5.0, 1e-9);
+}
+
+TEST(a_blood_stinger_costs_more_at_a_higher_tier) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger", Rarity::Rare);
+    const std::vector<double> drops = selfDamageDrops(rig, combat, 100);
+    CHECK_EQ(drops.size(), std::size_t{1});
+    if (!drops.empty()) CHECK_NEAR(drops[0], 5.0 * petalStrengthScale(Rarity::Rare), 1e-9);
+}
+
+TEST(a_blood_stinger_lands_through_the_post_hit_window_and_leaves_it_as_it_was) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger");
+    bool paid = false;
+    double window = 0.0;
+    for (int i = 0; i < 100 && !paid; ++i) {
+        rig.tick();
+        // As if a mob had just landed and its window were still running.
+        window = rig.now + 40.0;
+        Health& health = rig.world.get<Health>(rig.player);
+        health.hitCooldownUntilMillis = window;
+        const double before = health.current;
+        rig.system.applySelfDamage(rig.world, combat, rig.now);
+        paid = rig.world.get<Health>(rig.player).current < before;
+    }
+    CHECK(paid);
+    CHECK_EQ(rig.world.get<Health>(rig.player).hitCooldownUntilMillis, window);
+}
+
+TEST(a_blood_stinger_does_not_open_a_post_hit_window) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger");
+    CHECK_EQ(selfDamageDrops(rig, combat, 100).size(), std::size_t{1});
+    CHECK(rig.world.get<Health>(rig.player).hitCooldownUntilMillis <= rig.now);
+}
+
+TEST(a_blood_stinger_never_kills_its_flower) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger");
+    bool paid = false;
+    for (int i = 0; i < 100 && !paid; ++i) {
+        rig.tick();
+        // Held at 3 up to the payment, whatever the flower regenerates.
+        rig.world.get<Health>(rig.player).current = 3.0;
+        rig.system.applySelfDamage(rig.world, combat, rig.now);
+        paid = rig.world.get<Health>(rig.player).current < 3.0;
+    }
+    CHECK(paid);
+    CHECK_NEAR(rig.world.get<Health>(rig.player).current, 1.0, 1e-9);
+    CHECK(!rig.world.has<Dead>(rig.player));
 }
 
 TEST(a_leaf_heals_whatever_the_stance) {

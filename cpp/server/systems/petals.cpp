@@ -138,6 +138,11 @@ double blastDamage(const World& world, Entity player, double common, Rarity rari
 /// already carries its rarity; a script's literal does not, so the reference
 /// multiplies it by sqrt(3) per tier and by a flat 3 on top of the talent.
 constexpr double kBehaviourHealScale = 3.0;
+/// What a blood stinger costs its own flower each time it grows back, at
+/// common: it climbs the tiers on the petal strength ladder its damage does
+/// (petalStrengthScale), lands as a mob's hit would (applySelfDamage), and is
+/// never the blow that kills.
+constexpr double kBloodStingerSelfDamage = 5.0;
 
 /// How close a yggdrasil has to pass to a corpse to raise it.
 constexpr double kYggdrasilRevivalRange = 80.0;
@@ -153,6 +158,7 @@ enum class PetalBehaviourKind : std::uint8_t {
     None,
     Lightning,
     BloodLeaf,
+    BloodStinger,
     Bomb,
     Shield,
     Healing,
@@ -185,6 +191,7 @@ PetalBehaviour behaviourOf(const std::string& id) {
     if (id == "lightning") return {PetalBehaviourKind::Lightning, true, true, 0.0};
     if (id == "glitch_lightning") return {PetalBehaviourKind::Lightning, true, false, 0.0};
     if (id == "blood_leaf") return {PetalBehaviourKind::BloodLeaf, false, false, 0.0};
+    if (id == "blood_stinger") return {PetalBehaviourKind::BloodStinger, false, false, 0.0};
     if (id == "bomb" || id == "explosive") return {PetalBehaviourKind::Bomb, true, true, 0.0};
     if (id == "shield") {
         return {PetalBehaviourKind::Shield, false, false, kBehaviourShieldIntervalMillis};
@@ -2935,6 +2942,21 @@ void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, En
             return;
         }
 
+        case PetalBehaviourKind::BloodStinger: {
+            // Spawn only, and paid by the flower rather than here: the hit has
+            // to go down combat's damage path to land as a mob's does, and
+            // that path is not this system's (applySelfDamage). One payment
+            // per flower per tick, so a clump that grows back together costs
+            // its price once, not once per stinger.
+            if (trigger != PetalTrigger::Spawn) return;
+            if (rarity == Rarity::Admin) return;
+            for (const PendingSelfDamage& pending : pendingSelfDamage_) {
+                if (pending.player == player) return;
+            }
+            pendingSelfDamage_.push_back({player, kBloodStingerSelfDamage * petalStrengthScale(rarity)});
+            return;
+        }
+
         case PetalBehaviourKind::Bomb:
             if (trigger == PetalTrigger::Spawn || trigger == PetalTrigger::Interval) return;
             explodePetal(world, player, at, stats.size * adminReachScale(rarity),
@@ -3169,6 +3191,35 @@ void PetalSystem::healFromBehaviour(World& world, Entity player, double amount, 
     // lethal: taking a flower to zero raises a death, and the death notice
     // belongs to the combat path this system cannot reach.
     if (health->current < 1.0) health->current = 1.0;
+}
+
+void PetalSystem::applySelfDamage(World& world, CombatSystem& combat, double nowMillis) {
+    for (const PendingSelfDamage& pending : pendingSelfDamage_) {
+        const Health* health = world.tryGet<Health>(pending.player);
+        if (health == nullptr || !health->alive() || world.has<Dead>(pending.player)) continue;
+        // Non-lethal: capped one point short of what the bar holds before
+        // anything blunts it. Armour, a nazar and a shield only take off from
+        // there, so whatever lands leaves the flower standing.
+        const double amount = std::min(pending.amount, health->current - 1.0);
+        if (amount <= 0.0) continue;
+        // Past the post-hit window: a mob that just landed does not spare
+        // the flower its stinger's price, and the price does not buy the
+        // flower a window against the mobs either. So the window is lifted
+        // for this one hit and put back as it was, whatever applyDamage set.
+        // The spawn invulnerability is not touched.
+        const double window = health->hitCooldownUntilMillis;
+        world.get<Health>(pending.player).hitCooldownUntilMillis = 0.0;
+        // From nobody, as a landed hit: the same dodge, armour, root stack,
+        // shield, sponge, cotton, flash and number a mob's contact gets. A
+        // source of its own flower would be refused as the same side.
+        combat.applyDamage(world, pending.player, NULL_ENTITY, amount, nowMillis,
+                           DamageKind::Direct);
+        // Re-fetched: a hit can add components to the flower, moving its row.
+        if (Health* after = world.tryGet<Health>(pending.player)) {
+            after->hitCooldownUntilMillis = window;
+        }
+    }
+    pendingSelfDamage_.clear();
 }
 
 bool PetalSystem::touchesMob(World& world, Realm realm, Vec2 at, double radius) {

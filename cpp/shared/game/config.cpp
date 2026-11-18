@@ -2080,7 +2080,9 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // TypeScript; they have stayed in code since.
     s.count = c.count;
     const bool lightCount = c.id == "light" || c.id == "glitch_light";
-    if (lightCount || c.id == "pollen" || c.id == "stinger") {
+    // A blood stinger is a stinger in every number but its reload.
+    const bool stingerCount = c.id == "stinger" || c.id == "blood_stinger";
+    if (lightCount || c.id == "pollen" || stingerCount) {
         static constexpr std::array<int, kLadderRarityCount> kLightCount = {
             1, 2, 2, 3, 3, 5, 5, 5, 5, 5,
         };
@@ -2098,7 +2100,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // many stingers the tier fields. So legendary -> mythic, one stinger to
     // three, holds each at 8100, and mythic -> ultra, three to five, takes each
     // from 8100 to 14580.
-    if (c.id == "stinger" && s.count > 1) s.damage /= s.count;
+    if (stingerCount && s.count > 1) s.damage /= s.count;
     s.breakable = c.breakable;
     // Geometric, not the passive-modifier curve the rest of this block takes:
     // see petalZoomScale.
