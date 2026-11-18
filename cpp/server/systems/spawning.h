@@ -562,9 +562,12 @@ public:
     /// A boss placed this way announces itself like any other, which is what
     /// makes "every boss is announced" a property of the system rather than of
     /// each caller.
+    ///
+    /// `clockGated` false lets a unique or apex past a cooling biome clock: a
+    /// dungeon's queen (DungeonSystem::populate) is her nest's, not the biome's.
     Entity spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                     std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                    double nowMillis, Rng& rng);
+                    double nowMillis, Rng& rng, bool clockGated = true);
 
     /// Turns `mob` into an `into` where it stands: a C++ a yin yang landed on
     /// becomes a C-- (CombatSystem::conversions). The old body is destroyed,
@@ -1023,8 +1026,8 @@ private:
     /// is drawn either way, so asking for a facing never shifts the stream
     /// every later spawn is rolled from.
     ///
-    /// `clockGated` false lets a unique or apex past a cooling biome clock;
-    /// summonSacrifice is the only caller that asks.
+    /// `clockGated` false lets a unique or apex past a cooling biome clock:
+    /// summonSacrifice and a nest's queen ask.
     Entity spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                       std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                       double nowMillis, Rng& rng, int depth, std::uint16_t zone,

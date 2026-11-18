@@ -585,13 +585,13 @@ void spawnMobRingSeeds(World& world, const ContentRegistry& content, Entity mob,
 
 Entity SpawnSystem::spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                              std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                             double nowMillis, Rng& rng) {
+                             double nowMillis, Rng& rng, bool clockGated) {
     // No band owns a mob somebody else asked for -- the arena, the maze, a
     // script, an operator's console -- so it is counted against no band's
     // target and is recycled the old way rather than going back to a record
     // there is no band to hold.
     return spawnMobAt(world, terrain, content, mobIndex, rarity, position, realm, nowMillis, rng, 0,
-                      kInvalidIndex);
+                      kInvalidIndex, std::nullopt, clockGated);
 }
 
 Entity SpawnSystem::convertMob(World& world, const Terrain& terrain, const ContentRegistry& content,
@@ -1236,12 +1236,29 @@ Entity SpawnSystem::spawnEscort(World& world, const Terrain& terrain, const Cont
                                 std::uint16_t childIndex, Rarity nestRarity, Vec2 at, Realm realm,
                                 Entity parent, double nowMillis, Rng& rng, int depth) {
     if (census_.mobs >= mobCap) return NULL_ENTITY;
+    // The nest's queen: the first child of the type its config names, by
+    // whichever path asks first. She stands at the nest's own tier.
+    bool queen = false;
+    if (parent != NULL_ENTITY && !world.has<QueenLaid>(parent)) {
+        if (const MobType* nest = world.tryGet<MobType>(parent)) {
+            queen = nest->configIndex < content.mobCount() &&
+                    content.mob(nest->configIndex).queenIndex == childIndex;
+        }
+    }
     // Every such path comes through here -- a hole's opening guard, its
     // waves, a queen's soldiers and a broken tomb's mummy -- so this is where
-    // a minion is held to ultra, however far above that its nest stands.
-    const Entity child = spawnMobAt(world, terrain, content, childIndex, minionRarity(nestRarity),
-                                    at, realm, nowMillis, rng, depth, kInvalidIndex);
+    // a minion is held to ultra, however far above that its nest stands. The
+    // queen is not: a unique hole has a unique queen. An escort is never
+    // clock-gated (depth > 0), so she is past the boss clock too.
+    const Entity child =
+        spawnMobAt(world, terrain, content, childIndex,
+                   queen ? nestRarity : minionRarity(nestRarity), at, realm, nowMillis, rng,
+                   depth, kInvalidIndex, std::nullopt, !queen);
     if (child == NULL_ENTITY || parent == NULL_ENTITY) return child;
+    if (queen) {
+        world.add<NestQueen>(child);
+        world.add<QueenLaid>(parent);
+    }
 
     // The leash, on all three paths that put a child into the world. Dragged
     // past the retreat radius from whatever made it, an escort drops its target
@@ -1816,6 +1833,9 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
             ambush->released = false;
             ambush->broodHealth = 0;
             if (Bounty* bounty = world.tryGet<Bounty>(nest)) bounty->contributors.clear();
+            // A fresh brood brings a fresh queen. Last: the remove moves the
+            // row `ambush` points into.
+            if (world.has<QueenLaid>(nest)) world.remove<QueenLaid>(nest);
             continue;
         }
 
@@ -2122,6 +2142,7 @@ bool SpawnSystem::topBossTaken(World& world, Rarity rarity, Realm realm) {
     ambient_->each([&](Entity e, MobTag&, Transform& transform, Body&, MobType& type,
                        AmbientMob&) {
         if (taken || type.rarity != rarity || !isWholeAnimal(world, e)) return;
+        if (world.has<NestQueen>(e)) return;
         taken = isWorldRealm(transform.realm) && biomeKey(transform.realm) == key;
     });
     return taken;
@@ -2139,6 +2160,8 @@ void SpawnSystem::noteStandingBosses(World& world, const CommandBuffer& commands
                        AmbientMob& ambient) {
         if (type.rarity != Rarity::Unique && type.rarity != Rarity::Apex) return;
         if (!isWorldRealm(transform.realm) || !isWholeAnimal(world, e)) return;
+        // A nest's queen is her nest's, not her biome's.
+        if (world.has<NestQueen>(e)) return;
         topBosses_.push_back(TopBoss{biomeKey(transform.realm), type.rarity, ambient.spawnOrder, e});
     });
     for (BiomeBossClock& clock : bossClocks_) clock.uniqueStanding = clock.apexStanding = false;

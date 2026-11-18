@@ -779,6 +779,11 @@ struct MobConfig {
     /// afterwards. Both are already resolved to mob indices.
     std::vector<std::uint16_t> initialSpawns;
     std::vector<std::vector<std::uint16_t>> spawnWaves;
+    /// The nest's queen (`queen`): the FIRST child of this type the nest sends
+    /// out, by any path -- its opening guard, a wave, its ambush brood, its
+    /// dungeon -- comes out at the nest's OWN tier, not held to ultra the way
+    /// a minion is, and past its biome's boss clock. One per nest.
+    std::uint16_t queenIndex = kInvalidIndex;
 
     ProjectileSpec projectile;
     PetalRingSpec petalRing;

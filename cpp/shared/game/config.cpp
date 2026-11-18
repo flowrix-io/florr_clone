@@ -1174,6 +1174,12 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
         }
     }
 
+    if (src.contains("queen")) {
+        const Json& queen = src["queen"];
+        if (!queen.isString()) ctx.warn(std::string("queen is ") + typeName(queen) + ", not a mob id; ignored");
+        else m.queenIndex = ctx.link(mobIds, queen.asString(), "queen");
+    }
+
     m.projectile = parseProjectile(ctx, src, &petalIds);
     m.petalRing = parsePetalRing(ctx, src, petalIds);
     m.periodicSpawn = parsePeriodicSpawn(ctx, src, mobIds);
