@@ -131,6 +131,18 @@ bool matchesSearch(std::uint16_t petalIndex, const std::string& needle) {
            lowerCase(config.id).find(needle) != std::string::npos;
 }
 
+/// Orders a run of cells alphabetically by the petal's display name, ignoring
+/// case. Ties (two petals sharing a name) fall back to the petal index so the
+/// order never shuffles between frames.
+void sortByName(std::vector<Cell>& entries) {
+    std::sort(entries.begin(), entries.end(), [](const Cell& a, const Cell& b) {
+        const std::string nameA = lowerCase(content().petal(a.petalIndex).name);
+        const std::string nameB = lowerCase(content().petal(b.petalIndex).name);
+        if (nameA != nameB) return nameA < nameB;
+        return a.petalIndex < b.petalIndex;
+    });
+}
+
 /// Places `entries` as a centred five-column block starting at `y`, then
 /// advances `y` past it. The last row is centred on its own, which is what
 /// stops a trailing pair of petals from hugging the left edge.
@@ -173,9 +185,8 @@ Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
     if (stacked) {
         // One cell per petal TYPE, shown at the best tier the account holds.
         // Deliberately no tier headings: the point of this mode is a compact
-        // catalogue of what you own, not where it sits on the ladder. Petal
-        // indices are assigned in sorted-id order, which is the canonical
-        // ordering this mode is sorted by in the browser too.
+        // catalogue of what you own, not where it sits on the ladder. Sorted
+        // alphabetically by display name.
         std::vector<Cell> entries;
         for (std::size_t i = 0; i < content().petalCount(); ++i) {
             const auto petalIndex = static_cast<std::uint16_t>(i);
@@ -188,6 +199,7 @@ Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
                 break;
             }
         }
+        sortByName(entries);
         layoutRun(grid, entries, kGridPadding, innerWidth, y);
         y += kSectionGap;
         grid.contentHeight = y + kGridTopPad;
@@ -197,15 +209,14 @@ Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
     for (int tier = kRarityCount - 1; tier >= 0; --tier) {
         const Rarity rarity = clampRarity(tier);
         std::vector<Cell> entries;
-        // Left in the profile's own order, which is the order the server sent
-        // and therefore acquisition order. Sorting it here would arrange the
-        // same account's grid differently from the browser's.
+        // Alphabetical by display name within each tier.
         for (const Profile::Stack& stack : profile.inventory) {
             if (stack.rarity != rarity || stack.count == 0) continue;
             if (!matchesSearch(stack.petalIndex, needle)) continue;
             entries.push_back({Rect{}, stack.petalIndex, stack.rarity, stack.count});
         }
         if (entries.empty()) continue;
+        sortByName(entries);
 
         y += kLabelHeight;
         grid.sections.push_back({rarity, y - kLabelToGrid});
