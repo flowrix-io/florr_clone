@@ -172,8 +172,11 @@ void flowerBar(Canvas& canvas, double x, double y, double w, double h, const Hea
 
 /// The white pointer that rides on a ring around a squadmate's avatar, aimed
 /// at where that flower actually is. `angle` is the bearing from the viewer.
-void squadArrow(Canvas& canvas, double centreX, double centreY, double angle, double scale) {
-    const double ring = 42.0 * scale;
+/// `ring` is the radius it rides at before `scale`; the boss bars' icon is a
+/// square plate, wider across its corners than the squad's round avatar.
+void squadArrow(Canvas& canvas, double centreX, double centreY, double angle, double scale,
+                double ringRadius = 42.0) {
+    const double ring = ringRadius * scale;
     const double length = 20.0 * scale;
     const double width = 16.0 * scale;
 
@@ -561,6 +564,12 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     /// the name, which is why this is not a plain margin.
     constexpr double kTopMargin = 108.0;
     const double centreX = window_.width() * 0.5;
+    /// The mob on the bar's right end is the squad HUD's avatar at 1.5x:
+    /// the squad's 80% scale times 1.5, for the body and for the pointer on
+    /// the ring around it alike.
+    constexpr double kIconScale = 0.8 * 1.5;
+    constexpr double kIconRadius = kHudFlowerRadius * kIconScale;
+    const Vec2 eye = net_.view().self().position;
 
     // One see-through layer, like the block in the corner. ui::healthBar
     // clips the fill apart from its plate so the two never blend into each
@@ -613,6 +622,28 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
                            formatNumber(maxHealth, true)
                      : std::string(rarityLabel(boss.rarity)),
              centreX, barY + kBarHeight + kTierDrop, tier);
+
+        // The mob itself, no plate, centred on the bar's right end at 1.5x
+        // the size a squadmate's avatar is drawn -- its picture's longer side as
+        // wide as that flower -- with the squad HUD's pointer riding around it
+        // aimed at the boss. All client-side: the bearing is from the flower
+        // this client sees.
+        const double iconX = bar.plateX + bar.plateWidth;
+        const double iconY = barY + kBarHeight * 0.5;
+        const Vec2 away = boss.position - eye;
+        if (away.x * away.x + away.y * away.y > 1.0) {
+            squadArrow(canvas, iconX, iconY, std::atan2(away.y, away.x), kIconScale);
+        }
+        const double commonRadius = content().mobStats(boss.typeIndex, Rarity::Common).radius;
+        const double span = sprites_.mobPictureSpan(boss.typeIndex, commonRadius);
+        const double box = kIconRadius * 2.0;
+        // Opaque, unlike the rest of the layer: a mob is many overlapping
+        // shapes, and each one see-through shows the parts under it.
+        canvas.save();
+        canvas.setGlobalAlpha(1.0f);
+        sprites_.drawMobPicture(canvas, boss.typeIndex, boss.rarity, iconX, iconY, box,
+                                2.0 * box / std::max(span, 1e-6), timeSeconds_, commonRadius);
+        canvas.restore();
     }
 
     canvas.restore();

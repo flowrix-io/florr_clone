@@ -203,14 +203,12 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
         std::fprintf(stderr, "[map] %s; the spawn picker will offer the default only\n",
                      mapWarning.c_str());
     }
-    // Everything the picker can name: the default, the two realms that have
-    // no map file, and then every player spawn rectangle every staged map
+    // Everything the picker can name: the default, the generated realms that have
+    // no map file, and then every pickable player spawn rectangle a map
     // draws -- which is how a second map is reachable without walking to a
     // teleporter first. pickerTabs() files these under one tab per biome.
     spawnChoices_.push_back(
         SpawnChoice{"default", "Default", 0x00BE4Fu, Realm::Overworld, -1, {}, {}});
-    spawnChoices_.push_back(
-        SpawnChoice{kArenaSpawnChoice, "PVP Arena", 0xDC3C3Cu, Realm::Arena, -1, {}, {}});
     spawnChoices_.push_back(
         SpawnChoice{kMazeSpawnChoice, "Maze", 0x573D80u, Realm::Maze, -1, {}, {}});
     spawnChoices_.push_back(SpawnChoice{kAdminArenaSpawnChoice, "Admin Arena", 0xFFB020u, kAdminArenaRealm, -1, {}, "admin_arena"});
@@ -867,6 +865,10 @@ void App::frame(double dt) {
     // stops painting it -- the settings switch off, a panel covering it, the
     // title screen's own layout -- has to leave nothing behind to press.
     chatBox_ = {};
+    // The right-click menu is painted after the panels but answers this
+    // frame's click: a press on one of its rows must not also reach the panel
+    // under it (an inventory cell would pick its petal up).
+    menus_.setPointerBlocked(contextMenu_.contains({window_.mouseX(), window_.mouseY()}));
 #ifdef __EMSCRIPTEN__
     canvasPhaseMark_ = canvasOpsEmitted();
 #endif
@@ -1209,7 +1211,18 @@ void App::updateTextSelection(Canvas& canvas) {
         const bool overOwnUi = overField || menus_.capturesMouse(mouse) ||
                                selectable.overText(mouse) ||
                                (chatOpen_ && chatBox_.contains(mouse));
-        if (overOwnUi) {
+        const std::uint16_t petal = menus_.inventoryPetalUnderPointer();
+        if (petal != kNoPetal && !overField) {
+            // A petal in the inventory: the only thing to do with one here is
+            // star it, which floats its type to the front of the grid.
+            contextPetal_ = petal;
+            const bool starred =
+                menus_.settings().isFavoritePetal(content().petal(petal).id);
+            std::vector<ui::ContextMenu::Item> items;
+            items.push_back({ui::ContextAction::Favorite, starred ? "Unfavorite" : "Favorite", true});
+            contextMenu_.open(mouse, std::move(items), window_.width(), window_.height());
+        } else if (overOwnUi) {
+            contextPetal_ = kNoPetal;
             const bool editable = field.valid();
             const bool fieldHasSelection = editable && !field.state->selection.empty();
             const bool canCopy = (fieldHasSelection && field.options.copyable) ||
@@ -1266,6 +1279,15 @@ void App::updateTextSelection(Canvas& canvas) {
         case ui::ContextAction::SelectAll:
             if (field.valid()) field.state->selection.selectAll(*field.value);
             else selectable.selectAll();
+            break;
+        case ui::ContextAction::Favorite:
+            if (contextPetal_ != kNoPetal && contextPetal_ < content().petalCount()) {
+                menus_.settings().toggleFavoritePetal(content().petal(contextPetal_).id);
+                // Saved now rather than on the way out: a star is a deliberate
+                // choice, and losing it to a crash would read as it not taking.
+                menus_.settings().save(settingsPath());
+            }
+            contextPetal_ = kNoPetal;
             break;
         case ui::ContextAction::None:
             break;

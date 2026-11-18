@@ -35,8 +35,11 @@ constexpr double kPetalDeathSeconds = 0.125;
 /// over the same window.
 constexpr double kDpsWindowSeconds = 10.0;
 
-constexpr std::uint32_t kExplosionOuter = 0xFF4500u;
-constexpr std::uint32_t kExplosionInner = 0xFFD700u;
+/// An explosion's smoke: white and three greys, white the most common.
+constexpr std::uint32_t kExplosionSmoke[] = {0xFFFFFFu, 0xFFFFFFu, 0xDCDCDCu, 0xB4B4B4u,
+                                             0x8C8C8Cu};
+/// Its sparks: red, orange and yellow.
+constexpr std::uint32_t kExplosionSparks[] = {0xFF3B1Fu, 0xFF8A1Eu, 0xFFD43Bu};
 
 /// Lightning: white arms that flash and fade over half a second.
 constexpr double kLightningLifeSeconds = 0.5;

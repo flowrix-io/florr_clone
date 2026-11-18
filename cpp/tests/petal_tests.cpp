@@ -66,6 +66,9 @@ const char* const kPetalsJson = R"JSON({
   "gazer":    {"name":"Gazer","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"equipFlags":"ThirdEye","noPhysics":true,"color":"#000000"},
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "glitch_lightning":{"name":"Glitch Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#00FF00"},
+  "blood_stinger":{"name":"Blood Stinger","damage":100,"health":2,"size":1,"cooldown":1000,"count":1,"color":"#9C1010"},
+  "bomb":     {"name":"Bomb","damage":0,"health":10,"size":2,"cooldown":1500,"count":1,"color":"#000000"},
+  "test_explosive":{"name":"Test Explosive","damage":15,"health":10,"size":1,"cooldown":2000,"count":1,"color":"#FF0000"},
   "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
   "nazar":    {"name":"Nazar","damage":0,"health":null,"size":1,"cooldown":60000,"count":1,"defendOnly":true,"color":"#1213BD"},
   "capacitor":{"name":"Capacitor","damage":0,"health":null,"size":1.25,"cooldown":2500,"count":1,"color":"#000000"},
@@ -144,9 +147,10 @@ struct Rig {
     World world;
     CommandBuffer commands{world};
     PetalSystem system;
-    /// Where the tick's one-shot visuals land. Only the lightning strike
-    /// reports one, and it is the only way to see a strike at all: its damage
-    /// is a field combat resolves later, and leaves nothing on this system.
+    /// Where the tick's one-shot visuals land: a lightning strike's bolts and
+    /// a blast's explosion. They are the only way to see either at all: the
+    /// damage is a field combat resolves later, and leaves nothing on this
+    /// system.
     EventQueue events;
     Entity player = NULL_ENTITY;
     // Deliberately not zero: a timer that was never set reads as 0, and a
@@ -1496,6 +1500,120 @@ TEST(a_lightning_is_spent_by_its_one_strike) {
 }
 
 // ---------------------------------------------------------------------------
+// Explosions: the bomb and the test explosive
+// ---------------------------------------------------------------------------
+
+/// PetalSystem's kExplosionRadiusPerSize, private to it, spelt out for the
+/// reason kStrikeRadius is.
+constexpr double kBlastRadiusPerSize = 120.0;
+
+std::vector<const WireEvent*> explosions(const Rig& rig) {
+    std::vector<const WireEvent*> out;
+    for (const WireEvent& e : rig.events.events()) {
+        if (e.kind == net::EventKind::Explosion) out.push_back(&e);
+    }
+    return out;
+}
+
+/// What the one-tick burst a blast left behind deals each victim, or -1 when
+/// there is none.
+double blastBurstDamage(Rig& rig) {
+    double damage = -1.0;
+    Query<GroundEffect> bursts{rig.world};
+    bursts.each([&](Entity, GroundEffect& effect) { damage = effect.damagePerHit; });
+    return damage;
+}
+
+TEST(a_bomb_goes_off_on_contact_and_the_client_is_told) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "bomb");
+    // Held still, so the bomb is where the mobs below are put.
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity petal = rig.petals(0).front();
+    const Vec2 at = rig.position(petal);
+    const double reach =
+        fixture().registry.petalStats(petalId("bomb"), Rarity::Common).size * kBlastRadiusPerSize;
+
+    // Nothing in reach yet: a parked bomb does not go off on its own.
+    rig.tick(30);
+    CHECK(explosions(rig).empty());
+
+    const Entity touched = addMob(rig, at);
+    const Entity inside = addMob(rig, at + Vec2{reach * 0.5, 0});
+    const Entity outside = addMob(rig, at + Vec2{reach + 300.0, 0});
+
+    CHECK(rig.tickUntil([&] { return !explosions(rig).empty(); }, 30));
+    const auto blasts = explosions(rig);
+    CHECK_EQ(blasts.size(), std::size_t(1));
+    if (blasts.empty()) return;
+    // Drawn where the bomb was, out to the reach it actually hits.
+    CHECK(blasts.front()->positional);
+    CHECK((blasts.front()->position - at).length() < 20.0);
+    CHECK_NEAR(blasts.front()->radius, reach, 1e-3);
+    // Used up by it, and its death is not a second blast.
+    CHECK(rig.world.has<Dead>(petal));
+
+    CombatSystem combat;
+    ricochetCombatTick(rig, combat);
+    const auto hurt = [&](Entity mob) {
+        return rig.world.get<Health>(mob).current < rig.world.get<Health>(mob).max;
+    };
+    CHECK(hurt(touched));
+    CHECK(hurt(inside));
+    CHECK(!hurt(outside));
+
+    rig.tick(30);
+    CHECK_EQ(explosions(rig).size(), std::size_t(1));
+}
+
+TEST(a_blast_climbs_the_rarity_ladder_and_takes_the_damage_talent) {
+    if (!contentLoaded()) return;
+    double talentScale = 0.0;
+    const auto blastAt = [&](Rarity rarity, bool talented) {
+        Rig rig;
+        if (talented) {
+            rig.world.add<PlayerSkillTree>(rig.player);
+            rig.world.get<PlayerSkillTree>(rig.player)
+                .skills.set(SkillId::Damage, rarityIndex(Rarity::Legendary));
+        }
+        rig.equip(0, "bomb", rarity);
+        rig.freezeRing();
+        rig.settleEquips();
+        rig.settleRing();
+        addMob(rig, rig.position(rig.petals(0).front()));
+        rig.tickUntil([&] { return !explosions(rig).empty(); }, 30);
+        if (talented) talentScale = rig.modifiers().petalDamageScale;
+        return blastBurstDamage(rig);
+    };
+    const double common = blastAt(Rarity::Common, false);
+    CHECK(common > 0.0);
+    CHECK_NEAR(blastAt(Rarity::Mythic, false), common * petalStrengthScale(Rarity::Mythic), 1e-6);
+    const double talented = blastAt(Rarity::Common, true);
+    CHECK(talentScale > 1.0);
+    CHECK_NEAR(talented, common * talentScale, 1e-6);
+}
+
+TEST(a_test_explosive_goes_off_by_itself_and_the_client_is_told) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "test_explosive");
+    rig.settleEquips();
+    // No mob anywhere: it needs none.
+    CHECK(rig.tickUntil([&] { return !explosions(rig).empty(); }, 300));
+    const auto blasts = explosions(rig);
+    if (blasts.empty()) return;
+    const double reach = fixture().registry.petalStats(petalId("test_explosive"), Rarity::Common)
+                             .size * kBlastRadiusPerSize;
+    CHECK_NEAR(blasts.front()->radius, reach, 1e-3);
+    // And again on its interval, without breaking.
+    const std::size_t first = explosions(rig).size();
+    CHECK(rig.tickUntil([&] { return explosions(rig).size() > first; }, 300));
+}
+
+// ---------------------------------------------------------------------------
 // The battery
 // ---------------------------------------------------------------------------
 
@@ -2584,6 +2702,96 @@ TEST(a_yucca_heals_only_while_the_flower_is_blocking) {
     rig.tick(30);
     const double blockGain = health.current - mid;
     CHECK(blockGain > idleGain);
+}
+
+/// Ticks `rig` with the server's self-damage pass after each ring step, and
+/// returns every drop in the flower's health, one entry per tick that lost any.
+std::vector<double> selfDamageDrops(Rig& rig, CombatSystem& combat, int ticks) {
+    std::vector<double> drops;
+    for (int i = 0; i < ticks; ++i) {
+        rig.tick();
+        const double before = rig.world.get<Health>(rig.player).current;
+        rig.system.applySelfDamage(rig.world, combat, rig.now);
+        const double after = rig.world.get<Health>(rig.player).current;
+        if (after < before) drops.push_back(before - after);
+    }
+    return drops;
+}
+
+TEST(a_blood_stinger_costs_its_flower_five_health_each_time_it_grows_back) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger");
+    // Two spawns: the first, then one more after it is broken.
+    std::vector<double> drops = selfDamageDrops(rig, combat, 100);
+    CHECK_EQ(drops.size(), std::size_t{1});
+    if (!drops.empty()) CHECK_NEAR(drops[0], 5.0, 1e-9);
+    // Standing on the ring costs nothing more.
+    CHECK(selfDamageDrops(rig, combat, 60).empty());
+
+    for (const Entity petal : rig.petals(0)) rig.world.get<Health>(petal).current = 0.0;
+    drops = selfDamageDrops(rig, combat, 100);
+    CHECK_EQ(drops.size(), std::size_t{1});
+    if (!drops.empty()) CHECK_NEAR(drops[0], 5.0, 1e-9);
+}
+
+TEST(a_blood_stinger_costs_more_at_a_higher_tier) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger", Rarity::Rare);
+    const std::vector<double> drops = selfDamageDrops(rig, combat, 100);
+    CHECK_EQ(drops.size(), std::size_t{1});
+    if (!drops.empty()) CHECK_NEAR(drops[0], 5.0 * petalStrengthScale(Rarity::Rare), 1e-9);
+}
+
+TEST(a_blood_stinger_lands_through_the_post_hit_window_and_leaves_it_as_it_was) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger");
+    bool paid = false;
+    double window = 0.0;
+    for (int i = 0; i < 100 && !paid; ++i) {
+        rig.tick();
+        // As if a mob had just landed and its window were still running.
+        window = rig.now + 40.0;
+        Health& health = rig.world.get<Health>(rig.player);
+        health.hitCooldownUntilMillis = window;
+        const double before = health.current;
+        rig.system.applySelfDamage(rig.world, combat, rig.now);
+        paid = rig.world.get<Health>(rig.player).current < before;
+    }
+    CHECK(paid);
+    CHECK_EQ(rig.world.get<Health>(rig.player).hitCooldownUntilMillis, window);
+}
+
+TEST(a_blood_stinger_does_not_open_a_post_hit_window) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger");
+    CHECK_EQ(selfDamageDrops(rig, combat, 100).size(), std::size_t{1});
+    CHECK(rig.world.get<Health>(rig.player).hitCooldownUntilMillis <= rig.now);
+}
+
+TEST(a_blood_stinger_never_kills_its_flower) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    CombatSystem combat;
+    rig.equip(0, "blood_stinger");
+    bool paid = false;
+    for (int i = 0; i < 100 && !paid; ++i) {
+        rig.tick();
+        // Held at 3 up to the payment, whatever the flower regenerates.
+        rig.world.get<Health>(rig.player).current = 3.0;
+        rig.system.applySelfDamage(rig.world, combat, rig.now);
+        paid = rig.world.get<Health>(rig.player).current < 3.0;
+    }
+    CHECK(paid);
+    CHECK_NEAR(rig.world.get<Health>(rig.player).current, 1.0, 1e-9);
+    CHECK(!rig.world.has<Dead>(rig.player));
 }
 
 TEST(a_leaf_heals_whatever_the_stance) {

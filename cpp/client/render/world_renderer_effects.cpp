@@ -114,31 +114,24 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
                 break;
             }
             case Effect::Kind::Explosion: {
-                // The rings reach e.radius and the debris is thrown from
-                // inside them; the particles below are tested individually.
+                // Everything is thrown out to about e.radius; the particles
+                // below are tested individually.
                 if (!onScreen(e.position, e.radius * 2.0)) break;
-                const Vec2 screen = camera.worldToScreen(e.position);
-                canvas.setGlobalAlpha(static_cast<float>(1.0 - t));
-                // Two rings expanding together, the inner one at half the
-                // radius, then the debris over the top of both.
-                ui::setStroke(canvas, kExplosionOuter);
-                canvas.setLineWidth(static_cast<float>(3.0 * zoom));
-                canvas.strokeCircle(static_cast<float>(screen.x), static_cast<float>(screen.y),
-                                    static_cast<float>(e.radius * t * zoom));
-                ui::setStroke(canvas, kExplosionInner);
-                canvas.setLineWidth(static_cast<float>(1.0 * zoom));
-                canvas.strokeCircle(static_cast<float>(screen.x), static_cast<float>(screen.y),
-                                    static_cast<float>(e.radius * t * 0.5 * zoom));
-
+                // Puffs swell and fade, sparks shrink and fade. The puffs come
+                // first in the list (see ingestEvents), so the sparks are
+                // painted over the smoke.
                 for (const EffectParticle& p : e.particles) {
                     const double left = p.lifeSeconds / p.maxLifeSeconds;
                     if (left <= 0) continue;
-                    if (!onScreen(p.position, p.size)) continue;
+                    const bool puff = p.growth > 0;
+                    const double radius = puff ? p.size * (1.0 + p.growth * (1.0 - left))
+                                               : p.size * left;
+                    if (!onScreen(p.position, radius)) continue;
                     const Vec2 at = camera.worldToScreen(p.position);
-                    canvas.setGlobalAlpha(static_cast<float>(left));
+                    canvas.setGlobalAlpha(static_cast<float>(puff ? 0.85 * left : left));
                     ui::setFill(canvas, p.color);
                     canvas.fillCircle(static_cast<float>(at.x), static_cast<float>(at.y),
-                                      static_cast<float>(p.size * left * zoom));
+                                      static_cast<float>(radius * zoom));
                 }
                 canvas.setGlobalAlpha(1.0f);
                 break;

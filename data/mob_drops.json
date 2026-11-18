@@ -504,6 +504,14 @@
         "probability": 0.2,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "dice",
+        "rarity": "common",
+        "probability": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
@@ -778,6 +786,14 @@
         "itemType": "missile",
         "rarity": "common",
         "probability": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "blood_stinger",
+        "rarity": "common",
+        "probability": 0.5,
         "minQuantity": 1,
         "maxQuantity": 1
       }

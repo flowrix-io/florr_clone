@@ -1016,6 +1016,17 @@ struct ColonyMember {};
 /// and a nest standing in the overworld while its dungeon is occupied.
 struct KeepAwake {};
 
+/// A nest's queen (MobConfig::queenIndex): out at the nest's own tier, which
+/// may be above ultra, and past the boss clock. She belongs to her nest, not
+/// to her biome, so she neither spends nor holds that biome's unique or apex
+/// slot: noteStandingBosses and topBossTaken skip her, and the
+/// one-per-biome cull leaves her standing.
+struct NestQueen {};
+
+/// On a nest whose queen has come out: the next child of her type is a
+/// minion again. Taken off when an ambush nest re-arms with a fresh brood.
+struct QueenLaid {};
+
 /// One piece of a mob a divider split (SpawnSystem::divideMob), and how many
 /// pieces it came apart into. Each is worth that share of the whole: its
 /// health, size, bite, XP and ledger were cut when it was made, its shots are
@@ -1742,6 +1753,8 @@ FLIX_COMPONENT(flix::DungeonEntrance);
 FLIX_COMPONENT(flix::DungeonDweller);
 FLIX_COMPONENT(flix::ColonyMember);
 FLIX_COMPONENT(flix::KeepAwake);
+FLIX_COMPONENT(flix::NestQueen);
+FLIX_COMPONENT(flix::QueenLaid);
 FLIX_COMPONENT(flix::DividedMob);
 FLIX_COMPONENT(flix::Pet);
 FLIX_COMPONENT(flix::PetBrood);

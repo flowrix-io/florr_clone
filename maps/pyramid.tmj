@@ -228,6 +228,11 @@
                          "name":"label",
                          "type":"string",
                          "value":"Pyramid"
+                        },
+                        {
+                         "name":"pickable",
+                         "type":"bool",
+                         "value":false
                         }, 
                         {
                          "name":"order",

@@ -923,7 +923,7 @@ private:
     /// `range` is measured from the mob's centre -- the point it meets the
     /// world with -- and a flower's poo shrinks all of it. `raisedOnly` is a
     /// neutral mob's scan: it sees only flowers whose aggro is raised (a bulb).
-    Entity acquireTarget(World& world, const Terrain& terrain, const SpatialGrid& grid,
+    Entity acquireTarget(World& world, const Terrain& terrain,
                          Entity self, Vec2 from, Realm realm, double range,
                          bool raisedOnly = false);
     /// The PET a wild mob settles for when no flower is to be had. Distinct
@@ -1043,6 +1043,9 @@ private:
     /// it, and a mob that despawned is not there to be walked at all.
     Query<MobRingPetal> seeds_;
     Query<PlayerTag, PlayerModifiers> playerModifiers_;
+    /// Every flower the body grid files (Transform + Body, not Intangible):
+    /// what acquireTarget() walks instead of querying the grid.
+    Query<PlayerTag, Transform, Body> players_;
 
     Rng rng_;
     Stats stats_;
@@ -1050,15 +1053,6 @@ private:
     /// Ticks run, which is the phase the far stride is measured against.
     std::uint64_t tick_ = 0;
 
-    /// The widest aggro bonus any live player carries, recomputed once per
-    /// tick. The bonus is per-player but the broadphase radius is per-query, so
-    /// without it a mob would query its bare range and miss exactly the player
-    /// whose petals were meant to draw attention.
-    double maxAggroBonus_ = 0;
-    /// The widest aggro-range multiplier any live player carries, floored at
-    /// 1, for the same reason: a range scaled past 1 reaches beyond the bare
-    /// query a mob would otherwise make.
-    double maxAggroScale_ = 1.0;
     /// Whether any live player's aggro is raised this tick -- the gate on a
     /// neutral mob's scan, which can only ever find such a player.
     bool anyAggroRaised_ = false;
@@ -1077,6 +1071,23 @@ private:
     std::vector<Entity> seedList_;
     std::vector<Entity> gridScratch_;
     std::vector<Candidate> candidates_;
+    /// One standing flower as a player scan sees it.
+    struct Flower {
+        Entity entity = NULL_ENTITY;
+        Vec2 position;
+        Realm realm = Realm::Overworld;
+        bool raised = false;        ///< aggroRaised(): what a neutral mob can see
+        double aggroBonus = 0.0;    ///< PlayerModifiers::aggroRadiusBonus
+        double aggroScale = 1.0;    ///< PlayerModifiers::aggroRangeScale
+    };
+    /// This tick's standing flowers, snapshotted once at the top of run(). A
+    /// player scan used to be a broadphase query out to the aggro reach -- up
+    /// to 9,600 units -- that handed back every mob and petal in it to keep
+    /// the dozen flowers; on prod that was a ninth of the server's CPU. A
+    /// snapshot rather than a list of handles because nothing in this pass
+    /// moves, hurts or kills a flower (shots and webs are deferred), so the
+    /// four lookups per flower per scan would answer the same every time.
+    std::vector<Flower> flowerList_;
     /// This tick's pets, snapshotted before anything moves -- which is where
     /// the reference builds it, so a pet is hunted from where it stood at the
     /// top of the tick rather than from wherever the pet pass has since

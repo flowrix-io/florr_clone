@@ -94,8 +94,7 @@ constexpr std::size_t kSearchLimit = 128;
 constexpr double kRuleWidth = 5.0;
 constexpr double kRuleGap = 13.0;
 
-/// How wide the hover tooltip's body text wraps. Its dwell before it appears
-/// is TooltipDelay::kDelaySeconds.
+/// How wide the hover tooltip's body text wraps.
 constexpr double kTooltipWrapWidth = 230.0;
 
 /// One laid-out cell. In stacked mode a cell stands for a petal TYPE at the
@@ -118,11 +117,31 @@ struct Grid {
     double contentHeight = 0;
 };
 
+/// The favourite marker: a star centred this far in from the tile's corner.
+constexpr double kFavoriteStarInset = 9.0;
+constexpr double kFavoriteStarRadius = 6.5;
+constexpr std::uint32_t kFavoriteStar = 0xFFE15Au;
+
 bool matchesSearch(std::uint16_t petalIndex, const std::string& needle) {
     if (needle.empty()) return true;
     const PetalConfig& config = content().petal(petalIndex);
     return lowerCase(config.name).find(needle) != std::string::npos ||
            lowerCase(config.id).find(needle) != std::string::npos;
+}
+
+/// Orders a run of cells: favourited petal types first, then alphabetically
+/// by display name, ignoring case. Ties (two petals sharing a name) fall back
+/// to the petal index so the order never shuffles between frames.
+void sortCells(std::vector<Cell>& entries, const ClientSettings& settings) {
+    std::sort(entries.begin(), entries.end(), [&](const Cell& a, const Cell& b) {
+        const bool favA = settings.isFavoritePetal(content().petal(a.petalIndex).id);
+        const bool favB = settings.isFavoritePetal(content().petal(b.petalIndex).id);
+        if (favA != favB) return favA;
+        const std::string nameA = lowerCase(content().petal(a.petalIndex).name);
+        const std::string nameB = lowerCase(content().petal(b.petalIndex).name);
+        if (nameA != nameB) return nameA < nameB;
+        return a.petalIndex < b.petalIndex;
+    });
 }
 
 /// Places `entries` as a centred five-column block starting at `y`, then
@@ -159,17 +178,16 @@ void layoutRun(Grid& grid, const std::vector<Cell>& entries, double left, double
 /// carries a petal index alone. Mobs drop no consumables, and the TypeScript
 /// build's speed boosts, health potions and shields became powder, roses and
 /// shells where an account loads (server/db.cpp).
-Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
-               const std::string& needle) {
+Grid buildGrid(const Profile& profile, const ClientSettings& settings, double innerWidth,
+               bool stacked, const std::string& needle) {
     Grid grid;
     double y = kGridTopPad;
 
     if (stacked) {
         // One cell per petal TYPE, shown at the best tier the account holds.
         // Deliberately no tier headings: the point of this mode is a compact
-        // catalogue of what you own, not where it sits on the ladder. Petal
-        // indices are assigned in sorted-id order, which is the canonical
-        // ordering this mode is sorted by in the browser too.
+        // catalogue of what you own, not where it sits on the ladder. Favourites
+        // first, then alphabetical by display name.
         std::vector<Cell> entries;
         for (std::size_t i = 0; i < content().petalCount(); ++i) {
             const auto petalIndex = static_cast<std::uint16_t>(i);
@@ -182,6 +200,7 @@ Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
                 break;
             }
         }
+        sortCells(entries, settings);
         layoutRun(grid, entries, kGridPadding, innerWidth, y);
         y += kSectionGap;
         grid.contentHeight = y + kGridTopPad;
@@ -191,15 +210,14 @@ Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
     for (int tier = kRarityCount - 1; tier >= 0; --tier) {
         const Rarity rarity = clampRarity(tier);
         std::vector<Cell> entries;
-        // Left in the profile's own order, which is the order the server sent
-        // and therefore acquisition order. Sorting it here would arrange the
-        // same account's grid differently from the browser's.
+        // Favourites first, then alphabetical by display name, within each tier.
         for (const Profile::Stack& stack : profile.inventory) {
             if (stack.rarity != rarity || stack.count == 0) continue;
             if (!matchesSearch(stack.petalIndex, needle)) continue;
             entries.push_back({Rect{}, stack.petalIndex, stack.rarity, stack.count});
         }
         if (entries.empty()) continue;
+        sortCells(entries, settings);
 
         y += kLabelHeight;
         grid.sections.push_back({rarity, y - kLabelToGrid});
@@ -869,7 +887,7 @@ bool InventoryPanel::render(MenuContext& ctx) {
     // empty. The shared trim takes spaces, tabs, CRs and LFs, which is every
     // blank this field can hold -- editText lets no other control byte into a
     // single-line field.
-    const Grid grid = buildGrid(profile, innerWidth, stacked_, trimmed(lowerCase(search_)));
+    const Grid grid = buildGrid(profile, ctx.settings, innerWidth, stacked_, trimmed(lowerCase(search_)));
 
     scroll_.contentHeight = grid.contentHeight;
     scroll_.viewHeight = visibleH;
@@ -901,6 +919,8 @@ bool InventoryPanel::render(MenuContext& ctx) {
             break;
         }
     }
+    hoveredPetal_ = hovered >= 0 ? grid.cells[static_cast<std::size_t>(hovered)].petalIndex
+                                 : kNoPetal;
 
     canvas.save();
     canvas.beginPath();
@@ -966,6 +986,13 @@ bool InventoryPanel::render(MenuContext& ctx) {
         // Its tooltip is named below, from the hover the grid worked out.
         tile.tooltip = false;
         drawItemTile(canvas, ctx.sprites, rect, tile);
+        // A gold star in the free top-left corner marks a favourite; the count
+        // badge holds the top-right one.
+        if (ctx.settings.isFavoritePetal(content().petal(cell.petalIndex).id)) {
+            const Vec2 at{rect.x + kFavoriteStarInset, rect.y + kFavoriteStarInset};
+            fillStar(canvas, at, kFavoriteStarRadius + 1.5, kInk);
+            fillStar(canvas, at, kFavoriteStarRadius, kFavoriteStar);
+        }
     }
     canvas.restore();
 

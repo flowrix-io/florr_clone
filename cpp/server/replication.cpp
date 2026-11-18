@@ -213,6 +213,26 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
     return out;
 }
 
+void Replicator::indexWorld(World& world) {
+    index_.clear();
+    Query<NetId, Replicated, Transform> replicated{world};
+    replicated.each([&](Entity e, NetId& id, Replicated&, Transform& transform) {
+        const Npc* npc = world.tryGet<Npc>(e);
+        index_.push_back(Indexed{e, transform.position, id.value, transform.realm,
+                                 world.has<DropItem>(e),
+                                 npc != nullptr && npc->service == NpcService::Market});
+    });
+    std::sort(index_.begin(), index_.end(), [](const Indexed& a, const Indexed& b) {
+        if (a.realm != b.realm) return static_cast<int>(a.realm) < static_cast<int>(b.realm);
+        return a.netId < b.netId;
+    });
+}
+
+void Replicator::beginPass(World& world) {
+    indexWorld(world);
+    passIndexed_ = true;
+}
+
 void Replicator::build(World& world, Entity viewer, ClientView& view,
                        const Frame& frame, ByteWriter& out) {
     const Transform* viewerTransform = world.tryGet<Transform>(viewer);
@@ -294,11 +314,22 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     const PlayerAccount* viewerAccount = world.tryGet<PlayerAccount>(viewer);
     const net::ConnectionId viewerOwner =
         viewerAccount != nullptr ? viewerAccount->connection : 0;
-    Query<NetId, Replicated, Transform> replicated{world};
-    replicated.each([&](Entity e, NetId& id, Replicated&, Transform& transform) {
-        if (const DropItem* drop = world.tryGet<DropItem>(e)) {
-            if (!drop->eligible.empty() && !claimed(drop->eligible, viewer, viewerOwner)) return;
-            if (claimed(drop->pickedUpBy, viewer, viewerOwner)) return;
+    if (!passIndexed_) indexWorld(world);
+    const auto runBegin = std::partition_point(index_.begin(), index_.end(), [&](const Indexed& x) {
+        return static_cast<int>(x.realm) < static_cast<int>(realm);
+    });
+    const auto runEnd = std::partition_point(runBegin, index_.end(),
+                                             [&](const Indexed& x) { return x.realm == realm; });
+    // Only the viewer's own realm: nothing in another is ever streamed to it --
+    // the viewer is always in this one, and a squadmate or market NPC is
+    // exempt from the box only within it.
+    for (auto it = runBegin; it != runEnd; ++it) {
+        const Indexed& entry = *it;
+        const Entity e = entry.entity;
+        if (entry.drop) {
+            const DropItem* drop = world.tryGet<DropItem>(e);
+            if (!drop->eligible.empty() && !claimed(drop->eligible, viewer, viewerOwner)) continue;
+            if (claimed(drop->pickedUpBy, viewer, viewerOwner)) continue;
         }
         // The viewer's own body is always replicated, however the camera sits:
         // losing it would leave the client with no flower of its own to draw,
@@ -306,10 +337,14 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // A squadmate is exempt for its own reason -- see Frame::alwaysVisible
         // -- but only within the viewer's realm: a party member in the maze has
         // no position that means anything on an overworld screen.
-        if (e != viewer && transform.realm != realm) return;
-        if (e != viewer && outsideView(transform.position) && !exempt(e)) return;
-        candidates_.push_back({e, id.value, flix::distanceSq(transform.position, centre)});
-    });
+        if (e != viewer && outsideView(entry.position) && !entry.market &&
+            !(frame.alwaysVisible != nullptr &&
+              std::find(frame.alwaysVisible->begin(), frame.alwaysVisible->end(), e) !=
+                  frame.alwaysVisible->end())) {
+            continue;
+        }
+        candidates_.push_back({e, entry.netId, flix::distanceSq(entry.position, centre)});
+    }
 
     if (candidates_.size() > maxEntities) {
         // Nearest wins. That is both the cheapest useful rule and the one that
@@ -321,11 +356,12 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
                              return a.distanceSq < b.distanceSq;
                          });
         candidates_.resize(maxEntities);
+        // In net id order, so each record can name its entity by the gap from
+        // the one before (see the Snapshots layout in protocol.h). The realm's
+        // run is already in that order, so only a cut list needs sorting.
+        std::sort(candidates_.begin(), candidates_.end(),
+                  [](const Candidate& a, const Candidate& b) { return a.netId < b.netId; });
     }
-    // In net id order, so each record can name its entity by the gap from the
-    // one before (see the Snapshots layout in protocol.h).
-    std::sort(candidates_.begin(), candidates_.end(),
-              [](const Candidate& a, const Candidate& b) { return a.netId < b.netId; });
 
     for (auto& tracked : view.tracked) tracked.second.seenThisTick = false;
 

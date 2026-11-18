@@ -228,7 +228,7 @@ private:
         std::vector<std::size_t> choices;
     };
     /// The first row, in order: Default, every distinct biome the doors are
-    /// filed under (in spawnChoices_ order), then the PVP arena and the maze.
+    /// filed under (in spawnChoices_ order), then the maze.
     std::vector<PickerTab> pickerTabs() const;
     /// Whether the next join goes to the prestige biomes: the arrow is up AND
     /// the profile holds the talent. The arrow alone is a preference that
@@ -415,6 +415,8 @@ private:
     /// older lines instead of zooming the camera behind it.
     Rect chatColumn_{};
     ui::ContextMenu contextMenu_;
+    /// The petal type the open context menu was raised on, or kNoPetal.
+    std::uint16_t contextPetal_ = kNoPetal;
 
     /// Text entry shared by the login fields and the chat box.
     ///

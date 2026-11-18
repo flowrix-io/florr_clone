@@ -398,11 +398,11 @@ TEST(only_a_tree_with_prestige_joins_the_prestige_biome) {
         CHECK(realmOf(world, bodyNamed(world, "climber")) == desertTwin);
     }
 
-    // The arena has no twin: the flag means nothing there.
+    // The maze has no twin: the flag means nothing there.
     climber.leaveGame();
     h.step(5, {&climber, &walker});
-    CHECK(join(h, climber, "climber", true, kArenaSpawnChoice));
-    CHECK(realmOf(world, bodyNamed(world, "climber")) == Realm::Arena);
+    CHECK(join(h, climber, "climber", true, kMazeSpawnChoice));
+    CHECK(realmOf(world, bodyNamed(world, "climber")) == Realm::Maze);
 }
 
 TEST(prestige_is_bought_with_225_points_and_not_on_the_maze_tree) {

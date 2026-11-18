@@ -66,8 +66,23 @@ constexpr std::size_t kMaxDyingPetals = 512;
 constexpr std::size_t kMaxDyingDrops = 64;
 constexpr std::size_t kMaxMobShadows = 1024;
 
-/// Explosion: a ring pair plus debris, all of it over one second.
+/// Explosion: grey and white smoke puffs thrown out from the centre, swelling
+/// as they fade, with small red, orange and yellow sparks flying out past
+/// them -- all of it over one second. Both kinds are thrown hard and dragged
+/// to a stop, so the blast bursts out and then hangs.
 constexpr double kExplosionLifeSeconds = 1.0;
+/// Puffs: one per ten units of reach, within these bounds, each settling at
+/// 35-85% of the reach and ending 2.2 times the size it started.
+constexpr double kPuffsPerUnit = 0.1;
+constexpr double kMinPuffs = 10;
+constexpr double kMaxPuffs = 32;
+constexpr double kPuffDrag = 3.0;
+constexpr double kPuffGrowth = 1.2;
+/// Sparks: one per six units of reach, settling at 55-110% of it.
+constexpr double kSparksPerUnit = 1.0 / 6.0;
+constexpr double kMinSparks = 14;
+constexpr double kMaxSparks = 48;
+constexpr double kSparkDrag = 4.0;
 
 /// How long one straight run of a bolt is before it breaks again, in world
 /// units. Random per bolt inside the range, so two arms of the same strike
@@ -218,6 +233,18 @@ double randomUnit() {
     state ^= state >> 17;
     state ^= state << 5;
     return static_cast<double>(state >> 8) * (1.0 / 16777216.0);
+}
+
+/// The launch speed that leaves a particle `reach` from where it started when
+/// its life runs out, under `drag`.
+double launchSpeedFor(double reach, double drag, double lifeSeconds) {
+    return reach * drag / (1.0 - std::exp(-drag * lifeSeconds));
+}
+
+template <std::size_t N>
+std::uint32_t pickColor(const std::uint32_t (&palette)[N]) {
+    const auto i = static_cast<std::size_t>(randomUnit() * static_cast<double>(N));
+    return palette[std::min(i, N - 1)];
 }
 
 /// One grain of `rarity`'s colour thrown from `at` (see kGrainSeconds).
@@ -553,20 +580,49 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                 e.position = event.position;
                 e.radius = event.radius > 0 ? event.radius : 60;
                 e.lifeSeconds = kExplosionLifeSeconds;
+                const double reach = e.radius;
 
-                const int count = static_cast<int>(clamp(e.radius / 5.0, 10.0, 50.0));
-                e.particles.reserve(static_cast<std::size_t>(count));
-                for (int i = 0; i < count; ++i) {
-                    const double angle = kTau * i / count + randomUnit() * 0.5;
-                    const double speed = (2.0 + randomUnit() * 3.0) * kFramesPerSecond;
-                    const double life = (800.0 + randomUnit() * 400.0) / 1000.0;
+                const int puffs = static_cast<int>(clamp(reach * kPuffsPerUnit, kMinPuffs, kMaxPuffs));
+                const int sparks =
+                    static_cast<int>(clamp(reach * kSparksPerUnit, kMinSparks, kMaxSparks));
+                e.particles.reserve(static_cast<std::size_t>(puffs + sparks));
+
+                // Smoke first, so the sparks are drawn over it. Spread evenly
+                // round the centre with a little jitter, so the cloud is a
+                // ring rather than a lopsided clump.
+                for (int i = 0; i < puffs; ++i) {
+                    const double angle = kTau * (i + randomUnit() - 0.5) / puffs;
+                    const Vec2 out{std::cos(angle), std::sin(angle)};
+                    const double life = 0.65 + randomUnit() * 0.35;
+                    const double speed =
+                        launchSpeedFor(reach * (0.35 + randomUnit() * 0.5), kPuffDrag, life);
                     EffectParticle p;
-                    p.position = {e.position.x + (randomUnit() - 0.5) * 10.0,
-                                  e.position.y + (randomUnit() - 0.5) * 10.0};
-                    p.velocity = {std::cos(angle) * speed, std::sin(angle) * speed};
+                    p.position = e.position + out * (reach * 0.05 * randomUnit());
+                    p.velocity = out * speed;
                     p.lifeSeconds = p.maxLifeSeconds = life;
-                    p.size = 2.0 + randomUnit() * 3.0;
-                    p.color = randomUnit() > 0.5 ? kExplosionOuter : kExplosionInner;
+                    p.size = reach * (0.08 + randomUnit() * 0.06);
+                    p.growth = kPuffGrowth;
+                    p.drag = kPuffDrag;
+                    p.color = pickColor(kExplosionSmoke);
+                    e.particles.push_back(p);
+                }
+
+                // Sparks: small, and the size grows only gently with the
+                // blast, so a big one is more sparks rather than bigger ones.
+                const double sparkScale = clamp(std::sqrt(reach / 120.0), 0.75, 2.0);
+                for (int i = 0; i < sparks; ++i) {
+                    const double angle = kTau * randomUnit();
+                    const Vec2 out{std::cos(angle), std::sin(angle)};
+                    const double life = 0.4 + randomUnit() * 0.4;
+                    const double speed =
+                        launchSpeedFor(reach * (0.55 + randomUnit() * 0.55), kSparkDrag, life);
+                    EffectParticle p;
+                    p.position = e.position;
+                    p.velocity = out * speed;
+                    p.lifeSeconds = p.maxLifeSeconds = life;
+                    p.size = (1.5 + randomUnit() * 2.0) * sparkScale;
+                    p.drag = kSparkDrag;
+                    p.color = pickColor(kExplosionSparks);
                     e.particles.push_back(p);
                 }
                 effects_.push_back(std::move(e));
@@ -773,6 +829,7 @@ void WorldRenderer::update(double dt) {
         e.ageSeconds += dt;
         for (EffectParticle& p : e.particles) {
             p.position += p.velocity * dt;
+            if (p.drag > 0) p.velocity = p.velocity * std::exp(-p.drag * dt);
             p.lifeSeconds -= dt;
         }
     }

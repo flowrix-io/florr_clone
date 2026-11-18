@@ -332,3 +332,32 @@ TEST(a_skin_published_while_browsing_goes_on_top_of_newest_and_pages_stay_whole)
     CHECK_EQ(viewer.skinBrowse().skins.size(), static_cast<std::size_t>(kTotal + 1));
     CHECK_EQ(seen.size(), static_cast<std::size_t>(kTotal + 1));
 }
+
+// A polygon carrying an odd count of numbers (a stray trailing value pasted
+// into the text editor) used to write every value but announce only the whole
+// pairs, so the reader fell one float behind and every later shape -- and the
+// publish -- came out as garbage.
+TEST(an_odd_polygon_value_does_not_desync_the_shapes_after_it) {
+    SkinShape polygon;
+    polygon.t = SkinShapeType::Polygon;
+    polygon.fill = "#8b7933";
+    polygon.points = {-8.6, -10.1, 7.7, -14, 5.6, 4.9, 8.4};   // 3.5 points
+    SkinShape circle;
+    circle.t = SkinShapeType::Circle;
+    circle.x = 4;
+    circle.r = 6;
+    circle.fill = "#ffffff";
+
+    ByteWriter w;
+    writeSkinShape(w, polygon);
+    writeSkinShape(w, circle);
+    ByteReader r(w.data(), w.size());
+    SkinShape a;
+    SkinShape b;
+    CHECK(readSkinShape(r, a));
+    CHECK(readSkinShape(r, b));
+    CHECK_EQ(a.points.size(), static_cast<std::size_t>(6));
+    CHECK(b.t == SkinShapeType::Circle);
+    CHECK_EQ(b.fill, std::string("#ffffff"));
+    CHECK_EQ(r.remaining(), static_cast<std::size_t>(0));
+}

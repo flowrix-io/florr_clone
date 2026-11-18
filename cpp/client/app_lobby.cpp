@@ -548,13 +548,12 @@ void App::drawTitlePetals(Canvas& canvas, double time) {
 // ---------------------------------------------------------------------------
 
 std::vector<App::PickerTab> App::pickerTabs() const {
-    // Default first and the two generated realms last, with every biome the
+    // Default first and the maze last, with every biome the
     // doors are filed under between them in the order the doors were loaded
     // -- which is the order maps.json lists the maps, so the overworld's own
     // doors decide the row and a temporary map never reorders it.
     std::vector<PickerTab> tabs;
     tabs.push_back(PickerTab{"default", "Default", 0x00BE4Fu, {}});
-    PickerTab arena{kArenaSpawnChoice, "PVP Arena", 0xDC3C3Cu, {}};
     PickerTab maze{kMazeSpawnChoice, "Maze", 0x573D80u, {}};
     for (std::size_t i = 0; i < spawnChoices_.size(); ++i) {
         const SpawnChoice& choice = spawnChoices_[i];
@@ -562,11 +561,6 @@ std::vector<App::PickerTab> App::pickerTabs() const {
         if (choice.id == "default") {
             tabs.front().color = choice.color;
             tabs.front().choices.push_back(i);
-            continue;
-        }
-        if (choice.id == kArenaSpawnChoice) {
-            arena.color = choice.color;
-            arena.choices.push_back(i);
             continue;
         }
         if (choice.id == kMazeSpawnChoice) {
@@ -589,10 +583,8 @@ std::vector<App::PickerTab> App::pickerTabs() const {
         }
         tab->choices.push_back(i);
     }
-    // Neither generated realm has a prestige version, so neither is offered
-    // while the arrow is up.
+    // The maze has no prestige version.
     if (!prestigeOn()) {
-        tabs.push_back(std::move(arena));
         tabs.push_back(std::move(maze));
     }
     return tabs;

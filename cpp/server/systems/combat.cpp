@@ -8,6 +8,7 @@
 
 #include "server/loot_eligibility.h"
 #include "server/systems/movement.h"
+#include "shared/game/difficulty.h"
 #include "shared/game/npc.h"
 #include "shared/game/admin_arena.h"
 
@@ -1793,6 +1794,11 @@ Entity CombatSystem::reflectionTarget(const World& world, Entity source) {
     return actor;
 }
 
+double CombatSystem::rollDiceDamage(double amount, double chance) {
+    if (!(chance > 0.0) || !(amount > 0.0)) return amount;
+    return rng_.chance(std::min(1.0, chance)) ? amount * kDiceDamageScale : amount;
+}
+
 double CombatSystem::rollGlitchDamage(double amount) {
     // A swing of nothing has nothing to scale, so it draws nothing.
     return amount > 0.0 ? amount * glitchDamageScale(rng_.unit()) : amount;
@@ -2324,87 +2330,108 @@ void CombatSystem::resolveAuras(World& world, const SpatialGrid& grid, double no
 }
 
 void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
-    queries_->contact.each([&](Entity e, ContactDamage& contact, Transform& transform, Body& body) {
-        MeleeSource source;
-        source.attacker = e;
-        source.position = transform.position;
-        source.realm = transform.realm;
-        source.radius = body.radius;
-        source.damage = contact.amount;
-        source.hitIntervalMillis = contact.intervalMillis;
-        source.isMobBody = world.has<MobTag>(e);
-        source.isNpcBody = world.has<NpcTag>(e);
-        source.isPet = world.has<Pet>(e);
-        source.isPlayerBody = world.has<PlayerTag>(e);
-        source.givesWay = source.isMobBody && !anchoredAgainstKnockback(world, content, e);
-        // A seed of a mob's ring is a piece of that mob's body, so it hits
-        // like one: the same bounce off the flower (bounceOffMob), and the
-        // one-contact-per-tick rule shared with the hull, so an animal wearing
-        // ten of them still only touches a flower once a tick. It brings the
-        // ring PETAL's own riders along, resolved at spawn -- a dandelion's
-        // seed head locks healing exactly as its loose seeds do.
-        if (const MobRingPetal* seed = world.tryGet<MobRingPetal>(e)) {
-            source.isMobRing = true;
-            source.noHealDurationMillis = seed->noHealDurationMillis;
-        }
-        // A mob's contact bounces a flower gardn's way (bounceOffMob), which
-        // resolveMelee applies itself; no knockback stat rides on it.
-        source.knockback = 0.0;
-
-        // The creature this body is, and at what tier: a mob's own, or the one
-        // an NPC wears -- whose touch carries everything its mob's does.
-        std::uint16_t configIndex = kInvalidIndex;
-        Rarity rarity = Rarity::Common;
-        if (const MobType* type = world.tryGet<MobType>(e)) {
-            configIndex = type->configIndex;
-            rarity = type->rarity;
-        } else if (const Npc* npc = world.tryGet<Npc>(e)) {
-            configIndex = npc->configIndex;
-            rarity = npc->rarity;
-        }
-        if (configIndex != kInvalidIndex) {
-            const MobConfig& config = content.mob(configIndex);
-            const MobStats stats = content.mobStats(configIndex, rarity);
-            source.poisonPerSecond = stats.poisonPerSecond;
-            source.poisonDurationMillis = stats.poisonDurationMillis;
-            source.rarity = rarity;
-            source.glitchInfecting = config.glitchInfecting;
-            // Wild only: a pet's velocity is published raw by its own pass,
-            // which would drop the recoil on the next tick anyway.
-            source.gardnRecoil = source.isMobBody && !source.isPet && stats.gardnMotion;
-            source.yieldsToFlower = source.givesWay && config.gardnChain;
-            if (config.lightning.present && config.lightning.onContact) {
-                // Past the BODY. A flower touching this mob has its centre a
-                // whole body radius away, so a reach measured from the centre
-                // stops reaching the very thing that triggered it as soon as
-                // the mob is bigger than the reach -- which an ultra firefly
-                // is. See LightningSpec::radius.
-                source.lightningRadius = body.radius + config.lightning.radius;
-                source.lightningDamage = lightningDamageOf(config, stats);
-                source.lightningCooldownMillis = lightningCooldownOf(config);
+    // A chunk at a time: what kind of body a row is -- mob, NPC, pet, flower,
+    // ring seed -- and which optional parts it can have are facts about its
+    // archetype, so they are asked once per chunk instead of once per body.
+    queries_->contact.chunks([&](std::size_t rows, const Entity* entities,
+                                 ContactDamage* contacts, Transform* transforms, Body* bodies) {
+        const Entity first = entities[0];
+        const bool isMobBody = world.has<MobTag>(first);
+        const bool isNpcBody = world.has<NpcTag>(first);
+        const bool isPet = world.has<Pet>(first);
+        const bool isPlayerBody = world.has<PlayerTag>(first);
+        const bool hasSeed = world.has<MobRingPetal>(first);
+        const bool hasType = world.has<MobType>(first);
+        const bool hasNpc = world.has<Npc>(first);
+        const bool hasModifiers = world.has<PlayerModifiers>(first);
+        const bool hasUndead = world.has<Undead>(first);
+        for (std::size_t row = 0; row < rows; ++row) {
+            const Entity e = entities[row];
+            const ContactDamage& contact = contacts[row];
+            const Transform& transform = transforms[row];
+            const Body& body = bodies[row];
+            MeleeSource source;
+            source.attacker = e;
+            source.position = transform.position;
+            source.realm = transform.realm;
+            source.radius = body.radius;
+            source.damage = contact.amount;
+            source.hitIntervalMillis = contact.intervalMillis;
+            source.isMobBody = isMobBody;
+            source.isNpcBody = isNpcBody;
+            source.isPet = isPet;
+            source.isPlayerBody = isPlayerBody;
+            source.givesWay = source.isMobBody && !anchoredAgainstKnockback(world, content, e);
+            // A seed of a mob's ring is a piece of that mob's body, so it hits
+            // like one: the same bounce off the flower (bounceOffMob), and the
+            // one-contact-per-tick rule shared with the hull, so an animal wearing
+            // ten of them still only touches a flower once a tick. It brings the
+            // ring PETAL's own riders along, resolved at spawn -- a dandelion's
+            // seed head locks healing exactly as its loose seeds do.
+            if (const MobRingPetal* seed = hasSeed ? world.tryGet<MobRingPetal>(e) : nullptr) {
+                source.isMobRing = true;
+                source.noHealDurationMillis = seed->noHealDurationMillis;
             }
+            // A mob's contact bounces a flower gardn's way (bounceOffMob), which
+            // resolveMelee applies itself; no knockback stat rides on it.
+            source.knockback = 0.0;
+
+            // The creature this body is, and at what tier: a mob's own, or the one
+            // an NPC wears -- whose touch carries everything its mob's does.
+            std::uint16_t configIndex = kInvalidIndex;
+            Rarity rarity = Rarity::Common;
+            if (const MobType* type = hasType ? world.tryGet<MobType>(e) : nullptr) {
+                configIndex = type->configIndex;
+                rarity = type->rarity;
+            } else if (const Npc* npc = hasNpc ? world.tryGet<Npc>(e) : nullptr) {
+                configIndex = npc->configIndex;
+                rarity = npc->rarity;
+            }
+            if (configIndex != kInvalidIndex) {
+                const MobConfig& config = content.mob(configIndex);
+                const MobStats& stats = content.mobStats(configIndex, rarity);
+                source.poisonPerSecond = stats.poisonPerSecond;
+                source.poisonDurationMillis = stats.poisonDurationMillis;
+                source.rarity = rarity;
+                source.glitchInfecting = config.glitchInfecting;
+                // Wild only: a pet's velocity is published raw by its own pass,
+                // which would drop the recoil on the next tick anyway.
+                source.gardnRecoil = source.isMobBody && !source.isPet && stats.gardnMotion;
+                source.yieldsToFlower = source.givesWay && config.gardnChain;
+                if (config.lightning.present && config.lightning.onContact) {
+                    // Past the BODY. A flower touching this mob has its centre a
+                    // whole body radius away, so a reach measured from the centre
+                    // stops reaching the very thing that triggered it as soon as
+                    // the mob is bigger than the reach -- which an ultra firefly
+                    // is. See LightningSpec::radius.
+                    source.lightningRadius = body.radius + config.lightning.radius;
+                    source.lightningDamage = lightningDamageOf(config, stats);
+                    source.lightningCooldownMillis = lightningCooldownOf(config);
+                }
+            }
+            if (const PlayerModifiers* modifiers =
+                    hasModifiers ? world.tryGet<PlayerModifiers>(e) : nullptr) {
+                source.damage *= modifiers->damageScale;
+            }
+            // An Undead flower's body hits for what its bandage leaves of it.
+            if (const Undead* undead = hasUndead ? world.tryGet<Undead>(e) : nullptr) {
+                source.damage *= undead->bodyDamageScale;
+            }
+            // recalculatePlayerStats() stores the flower's body damage ROUNDED and
+            // every contact hit deals exactly that integer, so a level-10 flower
+            // with the rare Damage talent hits for 44 rather than 44.4 and a mob
+            // sitting on an exact health boundary dies on the same hit it dies on
+            // in the reference. Mob contact damage is unrounded on both sides.
+            if (source.isPlayerBody) source.damage = std::round(source.damage);
+            // A body that does nothing on contact is not gathered -- but a shock IS
+            // something it does, so a mob whose whole weapon is the strike still
+            // reaches resolveMelee rather than being dropped for dealing no bump.
+            if (source.damage <= 0.0 && source.poisonPerSecond <= 0.0 &&
+                source.lightningRadius <= 0.0) {
+                continue;
+            }
+            melee_.push_back(source);
         }
-        if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(e)) {
-            source.damage *= modifiers->damageScale;
-        }
-        // An Undead flower's body hits for what its bandage leaves of it.
-        if (const Undead* undead = world.tryGet<Undead>(e)) {
-            source.damage *= undead->bodyDamageScale;
-        }
-        // recalculatePlayerStats() stores the flower's body damage ROUNDED and
-        // every contact hit deals exactly that integer, so a level-10 flower
-        // with the rare Damage talent hits for 44 rather than 44.4 and a mob
-        // sitting on an exact health boundary dies on the same hit it dies on
-        // in the reference. Mob contact damage is unrounded on both sides.
-        if (source.isPlayerBody) source.damage = std::round(source.damage);
-        // A body that does nothing on contact is not gathered -- but a shock IS
-        // something it does, so a mob whose whole weapon is the strike still
-        // reaches resolveMelee rather than being dropped for dealing no bump.
-        if (source.damage <= 0.0 && source.poisonPerSecond <= 0.0 &&
-            source.lightningRadius <= 0.0) {
-            return;
-        }
-        melee_.push_back(source);
     });
 }
 
@@ -2456,6 +2483,12 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
             source.damage *= tomatoGrowth(nowMillis - petal.spawnedAtMillis);
         }
         if (petalShredsShots(config)) source.shotDamageScale = kPlankShotDamageScale;
+        if (petalRollsDice(config)) {
+            const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(petal.owner);
+            const double luck = modifiers != nullptr ? modifiers->luck : kNeutralSpawnLuck;
+            source.diceChance =
+                kDiceChance + kDiceChancePerLuck * std::max(0.0, luck - kNeutralSpawnLuck);
+        }
         if (petalInvertsCpp(config)) {
             source.convertsFrom = content.mobIndex(kCppMobId);
             source.convertsInto = content.mobIndex(kCMinusMobId);
@@ -2535,8 +2568,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                     if (verdict == 1) continue;
                 }
             }
-            const Transform* transform = world.tryGet<Transform>(victim);
-            const Body* body = world.tryGet<Body>(victim);
+            const auto [transform, body] = world.tryGetPair<Transform, Body>(victim);
             if (transform == nullptr || body == nullptr) continue;
 
             // Out of every reach this pair could be given -- the widest below
@@ -2725,6 +2757,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // ring or a hostile NPC is every collision there is. A petal, a
             // shot, a field or a shock goes past it whole.
             if (mobTouchesPlayer) swing *= collisionDamageTakenScale(world, victim);
+            swing = rollDiceDamage(swing, source.diceChance);
             if (source.hitKind == DamageKind::Glitch) swing = rollGlitchDamage(swing);
             DamageResult hit =
                 applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);
@@ -3072,6 +3105,7 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
 
     // A claw opens on a fresh duellist exactly as it opens on a fresh mob.
     double swing = swingDamage(world, source.damage, source.critDamage, victim);
+    swing = rollDiceDamage(swing, source.diceChance);
     if (source.hitKind == DamageKind::Glitch) swing = rollGlitchDamage(swing);
     const DamageResult hit =
         applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);

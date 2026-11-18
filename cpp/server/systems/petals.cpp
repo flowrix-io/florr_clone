@@ -98,11 +98,14 @@ constexpr double kCapacitorChargePerMillis = 1.0;
 constexpr double kCapacitorMaxCharge = 60.0;
 constexpr double kCapacitorWindowMillis = 1000.0;
 
-/// An explosion reaches three times the petal's DRAWN size, and the reference
-/// arrives at that by multiplying by 40 twice -- once turning the size stat
-/// into pixels and once again inside the blast -- so the radius really is this
-/// large. It is why the throttle below exists.
-constexpr double kExplosionRadiusPerSize = 4800.0;
+/// Blast reach per unit of the petal's `size` stat: 120, so a size-2 bomb
+/// reaches 240 -- a couple of mobs' widths around where it went off.
+///
+/// The reference meant `size * 40 * 3` ("convert to pixels, make it 3x
+/// larger") but its caller had already multiplied by 40, so it shipped 4800 a
+/// unit: a bomb that went off 9600 units out, several screens past anything
+/// its owner could see. That doubled conversion is not carried over.
+constexpr double kExplosionRadiusPerSize = 120.0;
 /// A flat positional shove, undivided by the victim's mass: the reference
 /// writes it straight onto the mob rather than routing it through the
 /// mass-scaled push a petal's own knockback stat takes.
@@ -118,10 +121,29 @@ constexpr double kBehaviourShieldIntervalMillis = 10000.0;
 constexpr double kBehaviourHealIntervalMillis = 2000.0;
 constexpr double kBehaviourExplodeIntervalMillis = 3000.0;
 
+/// What one blast deals at common. The bomb's `damage` stat is 0 -- its body
+/// hits nothing, the blast is all of it -- so the figure lives here.
+constexpr double kBombBlastDamage = 30.0;
+constexpr double kTestExplosiveBlastDamage = 50.0;
+
+/// A blast is a petal hitting things, so it climbs the same ladder a petal's
+/// damage does and takes the Damage talent on top, as a lightning strike
+/// does. It used to be flat below Admin: a mythic bomb hit for a common's 30.
+double blastDamage(const World& world, Entity player, double common, Rarity rarity) {
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player);
+    const double talent = modifiers != nullptr ? modifiers->petalDamageScale : 1.0;
+    return common * petalStrengthScale(rarity) * talent;
+}
+
 /// A scripted heal is a steeper curve than a burst petal's. `stats.heal`
 /// already carries its rarity; a script's literal does not, so the reference
 /// multiplies it by sqrt(3) per tier and by a flat 3 on top of the talent.
 constexpr double kBehaviourHealScale = 3.0;
+/// What a blood stinger costs its own flower each time it grows back, at
+/// common: it climbs the tiers on the petal strength ladder its damage does
+/// (petalStrengthScale), lands as a mob's hit would (applySelfDamage), and is
+/// never the blow that kills.
+constexpr double kBloodStingerSelfDamage = 5.0;
 
 /// How close a yggdrasil has to pass to a corpse to raise it.
 constexpr double kYggdrasilRevivalRange = 80.0;
@@ -137,6 +159,7 @@ enum class PetalBehaviourKind : std::uint8_t {
     None,
     Lightning,
     BloodLeaf,
+    BloodStinger,
     Bomb,
     Shield,
     Healing,
@@ -169,6 +192,7 @@ PetalBehaviour behaviourOf(const std::string& id) {
     if (id == "lightning") return {PetalBehaviourKind::Lightning, true, true, 0.0};
     if (id == "glitch_lightning") return {PetalBehaviourKind::Lightning, true, false, 0.0};
     if (id == "blood_leaf") return {PetalBehaviourKind::BloodLeaf, false, false, 0.0};
+    if (id == "blood_stinger") return {PetalBehaviourKind::BloodStinger, false, false, 0.0};
     if (id == "bomb" || id == "explosive") return {PetalBehaviourKind::Bomb, true, true, 0.0};
     if (id == "shield") {
         return {PetalBehaviourKind::Shield, false, false, kBehaviourShieldIntervalMillis};
@@ -2922,10 +2946,25 @@ void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, En
             return;
         }
 
+        case PetalBehaviourKind::BloodStinger: {
+            // Spawn only, and paid by the flower rather than here: the hit has
+            // to go down combat's damage path to land as a mob's does, and
+            // that path is not this system's (applySelfDamage). One payment
+            // per flower per tick, so a clump that grows back together costs
+            // its price once, not once per stinger.
+            if (trigger != PetalTrigger::Spawn) return;
+            if (rarity == Rarity::Admin) return;
+            for (const PendingSelfDamage& pending : pendingSelfDamage_) {
+                if (pending.player == player) return;
+            }
+            pendingSelfDamage_.push_back({player, kBloodStingerSelfDamage * petalStrengthScale(rarity)});
+            return;
+        }
+
         case PetalBehaviourKind::Bomb:
             if (trigger == PetalTrigger::Spawn || trigger == PetalTrigger::Interval) return;
             explodePetal(world, player, at, stats.size * adminReachScale(rarity),
-                         30.0 * (rarity == Rarity::Admin ? petalStrengthScale(rarity) : 1.0), nowMillis);
+                         blastDamage(world, player, kBombBlastDamage, rarity), nowMillis);
             // Consumed by its own blast, which is what puts the slot on its
             // reload; the break effect above is guarded against firing again.
             if (trigger == PetalTrigger::Collision && world.isAlive(petal)) {
@@ -2953,7 +2992,7 @@ void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, En
         case PetalBehaviourKind::TestExplosive:
             if (trigger == PetalTrigger::Collision) return;
             explodePetal(world, player, at, stats.size * adminReachScale(rarity),
-                         50.0 * (rarity == Rarity::Admin ? petalStrengthScale(rarity) : 1.0), nowMillis);
+                         blastDamage(world, player, kTestExplosiveBlastDamage, rarity), nowMillis);
             return;
     }
 }
@@ -3113,13 +3152,17 @@ void PetalSystem::explodePetal(World& world, Entity player, Vec2 at, double peta
     const double radius = petalSize * kExplosionRadiusPerSize;
     emitDamageBurst(world, player, at, radius, damage);
 
+    // The burst is an unreplicated field, so without this the blast lands its
+    // numbers and nothing else: the event is the explosion the client draws.
+    const Transform* ownerAt = world.tryGet<Transform>(player);
+    const Realm realm = ownerAt != nullptr ? ownerAt->realm : Realm::Overworld;
+    if (events_ != nullptr) events_->explosion(at, radius, realm);
+
     // Knockback is dealt here rather than left to the field, because a field
     // has no direction to push along. Collected first: writing the impulse adds
     // a component, which moves the mob between archetypes. In the owner's
     // realm, as the burst itself is.
-    const Transform* ownerAt = world.tryGet<Transform>(player);
-    collectMobsNear(world, ownerAt != nullptr ? ownerAt->realm : Realm::Overworld, at, radius,
-                    mobScratch_);
+    collectMobsNear(world, realm, at, radius, mobScratch_);
     for (const Entity mob : mobScratch_) {
         const Transform* transform = world.tryGet<Transform>(mob);
         if (transform == nullptr) continue;
@@ -3152,6 +3195,35 @@ void PetalSystem::healFromBehaviour(World& world, Entity player, double amount, 
     // lethal: taking a flower to zero raises a death, and the death notice
     // belongs to the combat path this system cannot reach.
     if (health->current < 1.0) health->current = 1.0;
+}
+
+void PetalSystem::applySelfDamage(World& world, CombatSystem& combat, double nowMillis) {
+    for (const PendingSelfDamage& pending : pendingSelfDamage_) {
+        const Health* health = world.tryGet<Health>(pending.player);
+        if (health == nullptr || !health->alive() || world.has<Dead>(pending.player)) continue;
+        // Non-lethal: capped one point short of what the bar holds before
+        // anything blunts it. Armour, a nazar and a shield only take off from
+        // there, so whatever lands leaves the flower standing.
+        const double amount = std::min(pending.amount, health->current - 1.0);
+        if (amount <= 0.0) continue;
+        // Past the post-hit window: a mob that just landed does not spare
+        // the flower its stinger's price, and the price does not buy the
+        // flower a window against the mobs either. So the window is lifted
+        // for this one hit and put back as it was, whatever applyDamage set.
+        // The spawn invulnerability is not touched.
+        const double window = health->hitCooldownUntilMillis;
+        world.get<Health>(pending.player).hitCooldownUntilMillis = 0.0;
+        // From nobody, as a landed hit: the same dodge, armour, root stack,
+        // shield, sponge, cotton, flash and number a mob's contact gets. A
+        // source of its own flower would be refused as the same side.
+        combat.applyDamage(world, pending.player, NULL_ENTITY, amount, nowMillis,
+                           DamageKind::Direct);
+        // Re-fetched: a hit can add components to the flower, moving its row.
+        if (Health* after = world.tryGet<Health>(pending.player)) {
+            after->hitCooldownUntilMillis = window;
+        }
+    }
+    pendingSelfDamage_.clear();
 }
 
 bool PetalSystem::touchesMob(World& world, Realm realm, Vec2 at, double radius) {

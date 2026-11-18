@@ -85,7 +85,12 @@ bool DungeonSystem::populate(World& world, const Terrain& terrain, const Content
     const DungeonSpec spec = content.mob(type->configIndex).dungeon;
     // What a nest's brood comes out at everywhere else: the nest's own tier,
     // held to ultra, so a super mound is the boss and not a dungeon of supers.
+    // Its queen (the overmind) is the exception: the mound's own tier, past
+    // the boss clock, one per mound.
     const Rarity rarity = minionRarity(type->rarity);
+    const Rarity queenRarity = type->rarity;
+    const std::uint16_t queenIndex = content.mob(type->configIndex).queenIndex;
+    bool queenLaid = false;
 
     instance.live = true;
     instance.entrance = entrance;
@@ -137,9 +142,15 @@ bool DungeonSystem::populate(World& world, const Terrain& terrain, const Content
             } else {
                 where = map->defaultSpawn(rng, terrain);
             }
-            const Entity mob = spawning.spawnMob(world, terrain, content, entry.mobIndex, rarity,
-                                                 where, instance.realm, nowMillis, rng);
+            const bool queen = !queenLaid && entry.mobIndex == queenIndex;
+            const Entity mob = spawning.spawnMob(world, terrain, content, entry.mobIndex,
+                                                 queen ? queenRarity : rarity, where,
+                                                 instance.realm, nowMillis, rng, !queen);
             if (mob == NULL_ENTITY) continue;
+            if (queen) {
+                queenLaid = true;
+                world.add<NestQueen>(mob);
+            }
             if (const Health* health = world.tryGet<Health>(mob)) broodHealth += health->max;
             placed.push_back(mob);
         }

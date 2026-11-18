@@ -779,6 +779,11 @@ struct MobConfig {
     /// afterwards. Both are already resolved to mob indices.
     std::vector<std::uint16_t> initialSpawns;
     std::vector<std::vector<std::uint16_t>> spawnWaves;
+    /// The nest's queen (`queen`): the FIRST child of this type the nest sends
+    /// out, by any path -- its opening guard, a wave, its ambush brood, its
+    /// dungeon -- comes out at the nest's OWN tier, not held to ultra the way
+    /// a minion is, and past its biome's boss clock. One per nest.
+    std::uint16_t queenIndex = kInvalidIndex;
 
     ProjectileSpec projectile;
     PetalRingSpec petalRing;
@@ -1321,6 +1326,13 @@ inline constexpr const char* kSawbladePetalId = "sawblade";
 /// What a plank's hit is multiplied by against a shot or another petal --
 /// "Does 20x damage vs projectiles and petals".
 inline constexpr double kPlankShotDamageScale = 20.0;
+/// florr's dice (petal id 67): "Has a 5% chance of dealing 35x damage.
+/// Chance increases by 4% per point in luck." Rolled per swing, per victim.
+/// A luck point is luck above the neutral 1.0 (kNeutralSpawnLuck).
+inline constexpr double kDiceChance = 0.05;
+inline constexpr double kDiceChancePerLuck = 0.04;
+inline constexpr double kDiceDamageScale = 35.0;
+inline bool petalRollsDice(const PetalConfig& config) { return config.id == "dice"; }
 
 inline bool petalShredsShots(const PetalConfig& config) { return config.id == "plank"; }
 

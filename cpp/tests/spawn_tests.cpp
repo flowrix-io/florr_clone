@@ -1253,19 +1253,17 @@ TEST(an_authored_band_and_region_still_parse) {
 // Doors: safe ground, and who may use which
 // ---------------------------------------------------------------------------
 
-TEST(the_pyramid_is_a_biome_of_its_own_the_title_screen_offers) {
-    // The pyramid (2026-10-21): a map and a biome of its own, one door the
-    // picker gives a tab, a prestige twin like every biome, a pad each way to
-    // the desert, and (user) dark inside with its minimap hidden.
+TEST(the_pyramid_is_reached_through_the_desert_portal) {
     WorldMaps maps;
     std::string error;
     CHECK(maps.load(dataDir(), nullptr, error));
-    const SpawnChoice* door = maps.choice("pyramid");
+    CHECK(maps.choice("pyramid") == nullptr);
+    const SpawnChoice* door = maps.door("pyramid");
     CHECK(door != nullptr);
     if (door == nullptr) return;
     CHECK_EQ(door->biome, std::string("pyramid"));
     CHECK_EQ(door->label, std::string("Pyramid"));
-    CHECK(door->pickable);
+    CHECK(!door->pickable);
     const MapData* map = maps.forRealm(door->realm);
     CHECK(map != nullptr && map->id() == "pyramid");
     if (map == nullptr) return;

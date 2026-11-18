@@ -288,6 +288,15 @@ struct ClientSettings {
     /// rides in the settings file with everything else. Server ids carry no
     /// whitespace, which is what lets them share this file's key/value lines.
     std::vector<std::string> readNotifications;
+    /// Petal TYPES the player starred from the inventory's right-click menu,
+    /// by config id (whitespace-free, like the notification ids above), in the
+    /// order they were starred. The inventory puts them ahead of everything
+    /// else in its sort. Client-side only: it is a view preference, not
+    /// something the account or the server needs to know.
+    std::vector<std::string> favoritePetals;
+    bool isFavoritePetal(const std::string& id) const;
+    /// Stars `id`, or unstars it when it already is.
+    void toggleFavoritePetal(const std::string& id);
     /// The key that opens each menu, indexed by MenuId.
     std::array<Key, kMenuCount> hotkeys{};
     /// The key bound to every other action, indexed by ControlAction. The four
@@ -474,9 +483,14 @@ public:
     /// the rest of the panel geometry, so the anchors can be read side by side.
     static Rect bounds(int viewWidth, int viewHeight);
 
+    /// The petal type of the cell under the pointer at the last paint, or
+    /// kNoPetal.
+    std::uint16_t hoveredPetal() const { return hoveredPetal_; }
+
 private:
 
     ui::Scroller scroll_;
+    std::uint16_t hoveredPetal_ = kNoPetal;
     /// One slot per item TYPE at its best tier, instead of one per tier.
     bool stacked_ = false;
     double stackLerp_ = 0;
@@ -1643,6 +1657,15 @@ public:
     /// True when the cursor is over menu furniture, so the game must not treat
     /// the click as aiming or the wheel as a zoom.
     bool capturesMouse(Vec2 mouse) const;
+    /// Set by the app for the frame when the pointer is over something drawn
+    /// above every panel -- the right-click menu -- so a click on one of its
+    /// rows does not also land on the inventory cell underneath it.
+    void setPointerBlocked(bool blocked) { externalPointerBlock_ = blocked; }
+    /// The petal type under the pointer in the open inventory as of its last
+    /// paint, or kNoPetal. What a right-click there offers to favourite.
+    std::uint16_t inventoryPetalUnderPointer() const {
+        return open_ == MenuId::Inventory ? inventory_.hoveredPetal() : kNoPetal;
+    }
     bool pollCapturesMouse(Vec2 mouse) const { return pollRect_.w>0 && pollRect_.contains(mouse); }
 
     /// How far in from the left edge something hung under the top icon row
@@ -1994,6 +2017,7 @@ private:
     GuildPanel guild_;
     PollCreatorPanel pollCreator_;
     Rect pollRect_;
+    bool externalPointerBlock_ = false;
     DebugPanel debug_;
     AdminDbPanel adminDb_;
     AdminDashboardPanel adminDashboard_;
