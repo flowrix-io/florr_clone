@@ -247,6 +247,7 @@ add_library(flix_client STATIC
   client/ui/menu_style.cpp
   client/ui/menu_widgets.cpp
   client/ui/item_tile.cpp
+  client/ui/petal_hover.cpp
   client/ui/menus.cpp
   client/ui/menu_inventory.cpp
   client/ui/menu_slot_card.cpp
@@ -760,7 +761,7 @@ if(EMSCRIPTEN)
     # link otherwise strips, so that stack names the C++ it ran through rather
     # than wasm-function[1234]. It costs the size of the names, and nothing
     # per tick.
-    "SHELL:--pre-js ${CMAKE_CURRENT_SOURCE_DIR}/server/node/pre_init.js"
+    "SHELL:--pre-js \"${CMAKE_CURRENT_SOURCE_DIR}/server/node/pre_init.js\""
     "--profiling-funcs"
     "-flto"
     "-msimd128"

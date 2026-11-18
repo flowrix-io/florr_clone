@@ -22,6 +22,7 @@
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_icons.h"
 #include "client/ui/menu_theme.h"
+#include "client/ui/petal_hover.h"
 #include "client/ui/text.h"
 #include "shared/game/config.h"
 
@@ -451,70 +452,6 @@ void drawPresetSlot(Canvas& canvas, const SpriteCache& sprites, Rect r, const st
     drawPetalCluster(canvas, sprites, face->petalIndex, face->rarity, stats.size, 1, 0.0, 0.0,
                      0.0, timeSeconds);
     canvas.restore();
-}
-
-/// A whole-pixel box on a canvas's backing store.
-struct LayerBox {
-    int x = 0;
-    int y = 0;
-    int w = 0;
-    int h = 0;
-};
-
-/// Readies `layer` to take everything `frame` would have painted inside
-/// `extent` (in `frame`'s current user units), so that endLayer can lay it
-/// down as ONE see-through picture. The layer draws in the very units the
-/// frame does: its transform is the frame's less a WHOLE-pixel offset, so
-/// every edge, glyph and cached sprite lands on the subpixel it would have
-/// landed on the frame, and the blit back is a one-to-one copy. False when the
-/// box is off the frame altogether.
-bool beginLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent, LayerBox& box) {
-    const std::array<float, 6> m = frame.currentTransform();
-    const std::array<Vec2, 4> corners = {Vec2{extent.x, extent.y}, Vec2{extent.right(), extent.y},
-                                         Vec2{extent.x, extent.bottom()},
-                                         Vec2{extent.right(), extent.bottom()}};
-    double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-    for (std::size_t i = 0; i < corners.size(); ++i) {
-        const double dx = m[0] * corners[i].x + m[2] * corners[i].y + m[4];
-        const double dy = m[1] * corners[i].x + m[3] * corners[i].y + m[5];
-        x0 = i == 0 ? dx : std::min(x0, dx);
-        x1 = i == 0 ? dx : std::max(x1, dx);
-        y0 = i == 0 ? dy : std::min(y0, dy);
-        y1 = i == 0 ? dy : std::max(y1, dy);
-    }
-    const int left = std::max(0, static_cast<int>(std::floor(x0)));
-    const int top = std::max(0, static_cast<int>(std::floor(y0)));
-    const int right = std::min(frame.pixelWidth(), static_cast<int>(std::ceil(x1)));
-    const int bottom = std::min(frame.pixelHeight(), static_cast<int>(std::ceil(y1)));
-    if (right <= left || bottom <= top) return false;
-    box = {left, top, right - left, bottom - top};
-
-    // The surface only ever grows, in steps of 64 as the glitch buffer does,
-    // so a box that widens by a pixel -- a tile rocking, a window being
-    // dragged wider -- does not reallocate it on every frame of the change.
-    if (!layer || layer->pixelWidth() < box.w || layer->pixelHeight() < box.h) {
-        const int w = (std::max(box.w, layer ? layer->pixelWidth() : 0) + 63) / 64 * 64;
-        const int h = (std::max(box.h, layer ? layer->pixelHeight() : 0) + 63) / 64 * 64;
-        layer = std::make_unique<Canvas>(Canvas::createVirtual(w, h));
-    }
-    layer->clearRect(0, 0, static_cast<float>(box.w), static_cast<float>(box.h));
-    layer->save();
-    layer->setTransform(m[0], m[1], m[2], m[3], m[4] - static_cast<float>(left),
-                        m[5] - static_cast<float>(top));
-    return true;
-}
-
-/// Lays what beginLayer readied onto the frame at `alpha`, pixel for pixel.
-void endLayer(Canvas& frame, Canvas& layer, const LayerBox& box, double alpha) {
-    layer.restore();
-    const auto w = static_cast<float>(box.w);
-    const auto h = static_cast<float>(box.h);
-    frame.save();
-    frame.resetTransform();
-    frame.setGlobalAlpha(static_cast<float>(alpha));
-    frame.drawCanvas(layer, 0, 0, w, h, static_cast<float>(box.x), static_cast<float>(box.y), w,
-                     h);
-    frame.restore();
 }
 
 /// Advances the secondary selection to the next non-empty slot in `step`'s
@@ -1935,6 +1872,12 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         // the title screen nothing is out there to be hit.
         if (inGame_) tile.flash = renderer.slotHitTint(entry.slot);
         const Rect box{anim.cx - anim.w * 0.5, anim.cy - anim.h * 0.5, anim.w, anim.h};
+        // In game the bar is painted through a scratch layer, which the tile
+        // cannot place on the screen by itself, so the bar names it: the box,
+        // carried down by however much of the bar's rise is still to run.
+        tile.tooltip = false;
+        notePetalHoverAt({box.x, box.y + (1.0 - loadoutSlide_) * 120.0, box.w, box.h},
+                         anim.petalIndex, anim.rarity);
         if (!entry.rock) {
             drawItemTile(target, sprites, box, tile);
             return;
@@ -2129,6 +2072,8 @@ void MenuSystem::drawDragged(Canvas& canvas, Window& window, const SpriteCache& 
     tile.petalIndex = drag_.petalIndex;
     tile.rarity = drag_.rarity;
     tile.timeSeconds = timeSeconds;
+    // On the cursor, not somewhere to point at.
+    tile.tooltip = false;
     canvas.save();
     canvas.translate(static_cast<float>(dragTile_.cx), static_cast<float>(dragTile_.cy));
     if (!snapped) {
@@ -2871,6 +2816,9 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
                         const OverlayFn& overStripUnderBar) {
     wantsText_ = false;
     panelRect_ = Rect{};
+    // Every petal tile this frame paints reports itself from here on, and the
+    // one under the pointer gets its tooltip at the end (see petal_hover.h).
+    beginPetalHover(canvas, window.mouseX(), window.mouseY());
     pollRect_ = pollOverlayBounds(net,canvas.width(),canvas.height());
     if(net.takePollCreatorRequest() && open_!=MenuId::PollCreator)toggle(MenuId::PollCreator);
     // Taken back every frame and claimed again by whatever still holds the
@@ -3013,6 +2961,9 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // standing on: the chip hangs where the corner cards do.
     drawReleaseChip(canvas, window, net);
     if (layer == PanelLayer::Over) {
+        // The card is opaque: a hotbar petal it is standing on is hidden, and
+        // the pointer is over the card rather than over the petal.
+        if (drawn_ != MenuId::None) coverPetalHover(panelRect_);
         renderOpenPanel(canvas, window, net, sprites, renderer, timeSeconds, dt);
     }
 
@@ -3022,8 +2973,11 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // on nothing.
     updateLoadoutInput(window, net, timeSeconds);
     drawDragged(canvas, window, sprites, timeSeconds);
+    coverPetalHover(pollRect_);
     MenuContext pollCtx{canvas,window,net,sprites,renderer,settings_,drag_,timeSeconds,dt,pollRect_};
     renderPollOverlay(pollCtx);
+    // Last, over every surface a petal tile could have been painted on.
+    paintPetalHover(canvas, window, drag_, net.profile(), timeSeconds);
 }
 
 void MenuSystem::drawReleaseChip(Canvas& canvas, Window& window, NetClient& net) {

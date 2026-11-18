@@ -181,6 +181,11 @@ struct ItemTile {
 
     double alpha = 1.0;
     double timeSeconds = 0.0;
+
+    /// Hovering the tile shows the petal's tooltip (see petal_hover.h). Off
+    /// for a tile that is not a petal anyone is pointing at: one riding the
+    /// cursor, a drop on the ground, a card inside another tooltip.
+    bool tooltip = true;
 };
 
 /// Draws `tile` centred in `rect`, scaled from the 60x60 design cell to the

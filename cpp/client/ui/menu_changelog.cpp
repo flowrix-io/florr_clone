@@ -582,6 +582,12 @@ constexpr ChangelogEntry kChangelog[] = {
       {
         "Added Waves (opens randomly)"
       }
+    },
+    {"November 17, 2026",
+      {
+        "Petal stats now show when hovering a petal anywhere, not just in the inventory",
+        "Petal stats now show instantly and fade in and out"
+      }
     }
 };
 

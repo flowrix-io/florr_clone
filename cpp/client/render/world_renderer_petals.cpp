@@ -178,6 +178,9 @@ void WorldRenderer::drawDrop(Canvas& canvas, const Camera& camera, Vec2 at,
     // ground, and the name rides with the plate so a spinning despawn spins
     // its label too.
     tile.timeSeconds = 0.0;
+    // A drop in the world is walked over, not read: the HUD's tooltips are
+    // for the petals the panels and the bar hold.
+    tile.tooltip = false;
     ui::drawItemTile(canvas, *sprites_, {-cell * 0.5, -cell * 0.5, cell, cell}, tile);
 
     canvas.restore();

@@ -9,6 +9,7 @@
 #include "client/render/art_cache.h"
 #include "client/ui/draw.h"
 #include "client/ui/menu_widgets.h"
+#include "client/ui/petal_hover.h"
 #include "client/ui/text.h"
 #include "client/ui/text_select.h"
 #include "shared/game/components.h"
@@ -459,6 +460,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
     const double scale = side / kItemTileDesign;
 
     const bool filled = !tile.empty && tile.petalIndex != kNoPetal;
+    if (filled && tile.tooltip) notePetalHover(canvas, rect, tile.petalIndex, tile.rarity);
     const bool greyed = filled && tile.greyed;
     const std::uint32_t base = tile.empty ? tile.emptyFill
                                : greyed   ? kGreyedFace
