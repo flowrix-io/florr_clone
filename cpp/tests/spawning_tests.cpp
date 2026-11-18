@@ -2122,6 +2122,64 @@ TEST(a_killed_mob_is_replaced_where_it_died_rather_than_anywhere_in_its_band) {
     CHECK(sim.populationIn(watched) >= before - 3);
 }
 
+TEST(a_band_hunted_for_one_mob_keeps_its_tables_mix) {
+    // What gets killed is not what the table rolls. A tanky mob nobody
+    // bothers with (a termite mound) outlives every termite round it, and if
+    // each kill's slot were re-rolled at the table's odds the band would
+    // ratchet toward whatever survives. Here only ladybugs die, and the band
+    // has to stay half ladybugs anyway.
+    const Rect band{kCentre.x - 6000.0, kCentre.y - 6000.0, 12000.0, 12000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 50% ladybug 50%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::uint16_t ladybug = shipped().mobIndex("ladybug");
+    const std::uint16_t bee = shipped().mobIndex("bee");
+
+    const auto mix = [&](int& bees, int& ladybugs) {
+        bees = ladybugs = 0;
+        const auto count = [&](std::uint16_t type) {
+            if (type == bee) ++bees;
+            if (type == ladybug) ++ladybugs;
+        };
+        for (const SpawnSystem::LatentSite& site : sim.latent()) count(site.mobIndex);
+        Query<MobTag, MobType> mobs{sim.world};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (!sim.world.has<Dead>(e)) count(type.configIndex);
+        });
+    };
+
+    // Wander the band so many screens' worth of it get hunted.
+    int killed = 0;
+    for (int round = 0; round < 40; ++round) {
+        const Vec2 at{band.x + 1500.0 + (round % 5) * 2200.0,
+                      band.y + 1500.0 + ((round / 5) % 5) * 2200.0};
+        const std::vector<Vec2> visiting{at};
+        for (int i = 0; i < 40; ++i) sim.tick(visiting);
+        std::vector<Entity> doomed;
+        Query<MobTag, MobType> mobs{sim.world};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (type.configIndex == ladybug && !sim.world.has<Dead>(e)) doomed.push_back(e);
+        });
+        for (const Entity e : doomed) sim.world.add<Dead>(e, Dead{NULL_ENTITY});
+        killed += static_cast<int>(doomed.size());
+        sim.tick(visiting);
+        for (const Entity e : doomed) {
+            if (sim.world.isAlive(e)) sim.world.destroy(e);
+        }
+    }
+    // Let the last replacements land.
+    for (int i = 0; i < 400; ++i) sim.tick({kCentre});
+
+    int bees = 0;
+    int ladybugs = 0;
+    mix(bees, ladybugs);
+    CHECK(killed > bandTarget(band) / 2);
+    const double share = static_cast<double>(ladybugs) / static_cast<double>(bees + ladybugs);
+    CHECK(share > 0.42);
+    CHECK(share < 0.58);
+}
+
 TEST(a_singular_band_holds_one_mob_however_large_it_is_drawn) {
     // The one band whose SIZE says nothing about its population. An ordinary
     // band is stocked to its area times a density, which is the right rule for
