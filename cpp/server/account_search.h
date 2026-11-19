@@ -22,6 +22,15 @@
 //                      the server kept the date, is longest ago of all
 //   is:guest           a flag: admin, mod (chat moderator), muted or guest;
 //                      not:muted its opposite
+//   createdfromhash:ab any field the account record stores, by its name
+//                      (case, underscores and hyphens ignored): key:text
+//                      contains it, key=text is it exactly, key: alone is
+//                      set at all (non-empty, true or non-zero), key= is
+//                      empty or unset. A flag reads true/false (yes/no):
+//                      muted=true, passwordchosen=false. A number compares
+//                      (admintier>=2), and a time also takes a date or a
+//                      time ago, as created does: mutedat>=2026-11,
+//                      adminbannedat<7d. Not the password hash
 //   petals>=5000       every petal the account owns, summed
 //   mythic>=100        every petal it owns at one rarity
 //   rose>10            one petal at every rarity; mythic:rose>10 (or
@@ -58,6 +67,19 @@ enum class Field : std::uint8_t {
     Created, Active,
     Admin, Muted, Guest, Moderator,
     Owned, Loadout,
+    /// A field of the account record, by name: Term::key.
+    Stored,
+};
+/// How a Stored term reads its field.
+enum class StoredMatch : std::uint8_t {
+    /// Compared as a number (`compare`, `value`, `span`, `ago`); a flag is 1 or 0.
+    Number,
+    /// The field's text holds Term::text.
+    Contains,
+    /// The field's text is Term::text.
+    Equals,
+    /// Non-empty, true or non-zero.
+    Set,
 };
 enum class Compare : std::uint8_t { Greater, AtLeast, Less, AtMost, Equal };
 
@@ -79,6 +101,11 @@ struct Term {
     /// How a result row names what it read: "Level", "Petals", "Mythic Rose",
     /// "Loadout Rose", "Created".
     std::string label;
+    /// Stored: the field's name, folded ("createdfromhash").
+    std::string key;
+    StoredMatch match = StoredMatch::Number;
+    /// Stored Contains and Equals: lowercased.
+    std::string text;
 };
 
 struct Query {
@@ -128,8 +155,9 @@ std::string countText(double value);
 
 /// What `term` read, as a result row shows it: "1,234", "2026-10-01 18:30"
 /// (UTC), "3d ago", "never". Empty for a flag, which every row found by it
-/// shares.
-std::string valueText(const Term& term, double value);
+/// shares. A Stored text term shows the field as `account` holds it, when
+/// given: a search like createdfromhash: is asking what it is.
+std::string valueText(const Term& term, double value, const Account* account = nullptr);
 
 } // namespace account_search
 } // namespace flix

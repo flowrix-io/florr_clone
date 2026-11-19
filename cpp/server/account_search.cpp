@@ -180,6 +180,121 @@ bool readWhen(const std::string& text, Term& term) {
     return true;
 }
 
+/// A field of the account record, as a Stored term reads it.
+enum class StoredKind : std::uint8_t { Flag, Number, Time, Text };
+
+struct StoredField {
+    /// Folded, as typed: "createdfromhash".
+    const char* name;
+    /// As the file spells it.
+    const char* label;
+    StoredKind kind;
+    /// Flag, Number and Time: the number. Unused for Text.
+    double (*number)(const Account&);
+    /// Text: the text. Unused otherwise.
+    const std::string& (*text)(const Account&);
+};
+
+double noNumber(const Account&) { return 0; }
+const std::string& noText(const Account&) {
+    static const std::string kEmpty;
+    return kEmpty;
+}
+
+// Every field accountToJson writes but the password hash, read off the
+// struct rather than the JSON so an unset field reads its default
+// (passwordChosen true, adminTier 1) instead of "absent".
+constexpr StoredField kStoredFields[] = {
+    {"id", "id", StoredKind::Text, noNumber, [](const Account& a) -> const std::string& { return a.id; }},
+    {"username", "username", StoredKind::Text, noNumber,
+     [](const Account& a) -> const std::string& { return a.username; }},
+    {"isplaintext", "isPlainText", StoredKind::Flag,
+     [](const Account& a) { return a.isPlainText ? 1.0 : 0.0; }, noText},
+    {"admin", "admin", StoredKind::Flag, [](const Account& a) { return a.admin ? 1.0 : 0.0; }, noText},
+    {"owner", "owner", StoredKind::Flag,
+     [](const Account& a) { return a.adminTier == kOwnerAdminTier ? 1.0 : 0.0; }, noText},
+    {"admintier", "adminTier", StoredKind::Number,
+     [](const Account& a) { return static_cast<double>(a.adminTier); }, noText},
+    {"adminbanned", "adminBanned", StoredKind::Flag,
+     [](const Account& a) { return a.adminBanned ? 1.0 : 0.0; }, noText},
+    {"adminbannedat", "adminBannedAt", StoredKind::Time,
+     [](const Account& a) { return static_cast<double>(a.adminBannedAtMillis); }, noText},
+    {"adminbannedby", "adminBannedBy", StoredKind::Text, noNumber,
+     [](const Account& a) -> const std::string& { return a.adminBannedBy; }},
+    {"lastactiveat", "lastActiveAt", StoredKind::Time,
+     [](const Account& a) { return static_cast<double>(a.lastActiveAtMillis); }, noText},
+    {"muted", "muted", StoredKind::Flag, [](const Account& a) { return a.muted ? 1.0 : 0.0; }, noText},
+    {"mutedat", "mutedAt", StoredKind::Time,
+     [](const Account& a) { return static_cast<double>(a.mutedAtMillis); }, noText},
+    {"mutedby", "mutedBy", StoredKind::Text, noNumber,
+     [](const Account& a) -> const std::string& { return a.mutedBy; }},
+    {"chatmoderator", "chatModerator", StoredKind::Flag,
+     [](const Account& a) { return a.chatModerator ? 1.0 : 0.0; }, noText},
+    {"chatmoderatorby", "chatModeratorBy", StoredKind::Text, noNumber,
+     [](const Account& a) -> const std::string& { return a.chatModeratorBy; }},
+    {"createdat", "createdAt", StoredKind::Time,
+     [](const Account& a) { return static_cast<double>(a.createdAtMillis); }, noText},
+    {"createdfromhash", "createdFromHash", StoredKind::Text, noNumber,
+     [](const Account& a) -> const std::string& { return a.createdFromHash; }},
+    {"guest", "guest", StoredKind::Flag, [](const Account& a) { return a.guest ? 1.0 : 0.0; }, noText},
+    {"passwordchosen", "passwordChosen", StoredKind::Flag,
+     [](const Account& a) { return a.passwordChosen ? 1.0 : 0.0; }, noText},
+};
+
+const StoredField* findStoredField(const std::string& folded) {
+    for (const StoredField& field : kStoredFields) {
+        if (folded == field.name) return &field;
+    }
+    return nullptr;
+}
+
+/// true/false, yes/no, on/off, 1/0.
+bool readFlagWord(const std::string& text, double& out) {
+    if (text == "true" || text == "yes" || text == "on" || text == "1") { out = 1; return true; }
+    if (text == "false" || text == "no" || text == "off" || text == "0") { out = 0; return true; }
+    return false;
+}
+
+/// `key:operand` (`compared` false) or `key<op>operand`, `term.compare` read.
+bool readStored(const StoredField& field, const std::string& word, bool compared,
+                const std::string& operand, Term& term, std::string& error) {
+    term.field = Field::Stored;
+    term.key = field.name;
+    term.label = field.label;
+    const bool equal = !compared || term.compare == Compare::Equal;
+    if (!compared && operand.empty()) {
+        term.match = StoredMatch::Set;
+        term.compare = Compare::Equal;
+        term.value = 1;
+        return true;
+    }
+    if (field.kind == StoredKind::Text) {
+        if (!equal) {
+            error = "\"" + word + "\" compares text: use " + field.name + ":part (contains) or " +
+                    field.name + "=whole.";
+            return false;
+        }
+        term.match = compared ? StoredMatch::Equals : StoredMatch::Contains;
+        term.text = operand;
+        term.compare = Compare::Equal;
+        term.value = 1;
+        return true;
+    }
+    term.match = StoredMatch::Number;
+    if (!compared) term.compare = Compare::Equal;
+    if (field.kind == StoredKind::Flag) {
+        if (equal && readFlagWord(operand, term.value)) return true;
+        error = "\"" + word + "\" is a flag: " + field.name + "=true or " + field.name + "=false.";
+        return false;
+    }
+    if (readNumber(operand, term.value)) return true;
+    if (field.kind == StoredKind::Time && readWhen(operand, term)) return true;
+    error = "\"" + word + "\" needs a number after the comparison, like " + field.name +
+            (field.kind == StoredKind::Time ? ">=2026-10-01 or " + std::string(field.name) + "<7d."
+                                            : ">=2.");
+    return false;
+}
+
 /// is:admin, not:guest.
 bool readFlag(const std::string& word, Term& term, std::string& error) {
     const bool is = word.rfind("is:", 0) == 0;
@@ -241,6 +356,16 @@ bool readTerm(const std::string& word, const ContentRegistry& content, Term& ter
             error = "\"" + word + "\" needs a number after the comparison, like " + spec +
                     ">=10.";
             return false;
+        }
+        // Any other field of the account record, by its name.
+        if (compared) {
+            if (const StoredField* field = findStoredField(name)) {
+                return readStored(*field, word, true, operand, term, error);
+            }
+        } else if (const std::size_t colon = spec.find(':'); colon != std::string::npos) {
+            if (const StoredField* field = findStoredField(folded(spec.substr(0, colon)))) {
+                return readStored(*field, word, false, spec.substr(colon + 1), term, error);
+            }
         }
     }
 
@@ -332,6 +457,25 @@ double valueOf(const Term& term, const Subject& subject, int level) {
             // file kept the date: as long ago as anything can be.
             if (at <= 0) return std::numeric_limits<double>::infinity();
             return static_cast<double>(subject.nowMillis - at);
+        }
+        case Field::Stored: {
+            const StoredField* field = findStoredField(term.key);
+            if (field == nullptr) return 0;
+            static const Account kUnset;
+            const Account& read = account != nullptr ? *account : kUnset;
+            if (field->kind == StoredKind::Text) {
+                const std::string text = lowerCase(field->text(read));
+                switch (term.match) {
+                    case StoredMatch::Contains: return text.find(term.text) != std::string::npos;
+                    case StoredMatch::Equals: return text == term.text;
+                    default: return !text.empty();
+                }
+            }
+            const double number = field->number(read);
+            if (term.match == StoredMatch::Set) return number != 0;
+            if (field->kind != StoredKind::Time || !term.ago) return number;
+            if (number <= 0) return std::numeric_limits<double>::infinity();
+            return static_cast<double>(subject.nowMillis) - number;
         }
         case Field::Owned:
         case Field::Loadout:
@@ -438,8 +582,34 @@ std::string countText(double value) {
     return out;
 }
 
-std::string valueText(const Term& term, double value) {
+std::string valueText(const Term& term, double value, const Account* account) {
     switch (term.field) {
+        case Field::Stored: {
+            const StoredField* field = findStoredField(term.key);
+            if (field == nullptr) return std::string();
+            switch (field->kind) {
+                case StoredKind::Flag: return std::string();
+                case StoredKind::Number:
+                    return account != nullptr ? countText(field->number(*account))
+                                              : countText(value);
+                case StoredKind::Time: {
+                    if (term.match == StoredMatch::Number && term.ago) {
+                        return std::isinf(value) ? "unset" : agoText(value);
+                    }
+                    const double at = account != nullptr ? field->number(*account)
+                                      : term.match == StoredMatch::Number ? value
+                                                                          : 0;
+                    return at <= 0 ? "unset" : dateText(at);
+                }
+                case StoredKind::Text: {
+                    if (account == nullptr) return std::string();
+                    std::string text = field->text(*account);
+                    if (text.size() > 48) text = text.substr(0, 45) + "...";
+                    return text.empty() ? "unset" : text;
+                }
+            }
+            return std::string();
+        }
         case Field::Admin:
         case Field::Muted:
         case Field::Guest:

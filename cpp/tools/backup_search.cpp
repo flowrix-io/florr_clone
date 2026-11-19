@@ -9,7 +9,7 @@
 // `backups` lists them -- or one database file. SEARCH is what the editor's
 // search box takes (server/account_search.h): name parts or an id; level, stars and
 // what an account owns and wears; when it was made and last signed in; its
-// flags. An account must answer every word. A time ago (active<7d) counts back
+// flags; any field of the account record (createdfromhash:ab12). An account must answer every word. A time ago (active<7d) counts back
 // from now, not from when the backup was taken. Quote the search, as a shell
 // reads `>` and `<` as redirections. --user keeps only the account with
 // exactly that name or id, in any case, and shows it in every backup: what it held,
@@ -90,6 +90,8 @@ std::string baseName(const std::string& path) {
 
 struct Row {
     std::string username;
+    /// What a field search (createdfromhash:) shows of it.
+    Account account;
     bool exact = false;
     std::int64_t lastActiveAtMillis = 0;
     int level = 0;
@@ -208,6 +210,7 @@ int main(int argc, char** argv) {
                 }
             }
             row.username = account.username;
+            row.account = account;
             row.exact = account_search::exactMatch(query, account);
             row.lastActiveAtMillis = account.lastActiveAtMillis;
             rows.push_back(std::move(row));
@@ -241,7 +244,8 @@ int main(int argc, char** argv) {
             std::string counts;
             for (std::size_t t = 0; t < query.terms.size(); ++t) {
                 if (query.terms[t].field == account_search::Field::Level) continue;
-                const std::string text = account_search::valueText(query.terms[t], row.values[t]);
+                const std::string text =
+                    account_search::valueText(query.terms[t], row.values[t], &row.account);
                 if (text.empty()) continue;
                 if (!counts.empty()) counts += ", ";
                 counts += query.terms[t].label + " " + text;
