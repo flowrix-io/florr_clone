@@ -586,11 +586,29 @@ constexpr ChangelogEntry kChangelog[] = {
     {"November 17, 2026",
       {
         "Petal stats now show when hovering a petal anywhere, not just in the inventory",
-        "Petal stats now show instantly and fade in and out"
+        "Petal stats now show instantly and fade in and out",
         "New petal: Blood Stinger",
         "New petal: Dice",
         "Fixed termite mounds building up in jungle",
-        "Bossbars now show the position of the mob"
+        "Bossbars now show the position of the mob",
+      }
+    },
+    {"November 18, 2026",
+      {
+        "Petal stats now show exact numbers for every effect, like Extra Health",
+        "Healing petals now show how much they heal",
+        "Mob gallery stats now show instantly and fade in and out",
+        "Petal stats now show while dragging a petal on mobile",
+        "Shop lock now works",
+        "Projectiles no longer get pushed by your movement",
+        "Projectiles now face where they will fire",
+        "Projectiles now fly twice as far",
+        "Carrots now refresh their flight time when bouncing",
+        "Inventory now hides while dragging a petal out of it",
+        "Equipping antennae now zooms smoothly",
+        "The edge of the map now shows wall instead of black",
+        "New players now start with 10 Basics",
+        "Buffed Leaf",
       }
     }
 };

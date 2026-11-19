@@ -173,22 +173,60 @@ void paintPetalHover(Canvas& canvas, Window& window, const DragState& drag,
     s.lastSeconds = timeSeconds;
 
     // Shown the moment the pointer is over a petal, and anchored to the TILE,
-    // never to the cursor. A press hides it -- what follows is a click or a
-    // drag, and a box in the way is the last thing either wants -- until the
-    // pointer moves on to another tile. `mousePressed` as well as `mouseDown`,
-    // because a quick click is pressed and released on one frame and is never
-    // seen held. A finger shows nothing: its pointer rests where it last
-    // lifted, on whatever slid under it.
-    const bool pointerDown = window.mouseDown(MouseButton::Left) ||
-                             window.mousePressed(MouseButton::Left) ||
-                             window.mouseDown(MouseButton::Right) || drag.active();
+    // never to the cursor.
+    //
+    // With a mouse, a press hides it -- what follows is a click or a drag,
+    // and a box in the way is the last thing either wants -- until the pointer
+    // moves on to another tile. `mousePressed` as well as `mouseDown`, because
+    // a quick click is pressed and released on one frame and is never seen
+    // held.
+    //
+    // A finger has no hover, so on a touchscreen the rules turn round: a tap
+    // is how a petal is read. The card shows while the finger is on the tile
+    // and stays up once it lifts, until the next tap lands somewhere else; a
+    // petal being dragged shows its own card beside the finger, which is the
+    // only moment a phone player can see what they are holding. The one thing
+    // that shows nothing is a list the finger has just scrolled, whose
+    // resting pointer is on whatever slid under it rather than on anything
+    // anyone chose.
+    const bool touch = window.pointerIsTouch();
+    if (touch && drag.active() && drag.petalIndex != kNoPetal) {
+        // The finger covers the tile it is dragging, so the card is anchored
+        // to a finger-sized box around the touch rather than to the tile.
+        constexpr double kFingerBox = 70.0;
+        s.have = true;
+        s.rect = {s.mouse.x - kFingerBox * 0.5, s.mouse.y - kFingerBox * 0.5, kFingerBox,
+                  kFingerBox};
+        s.petalIndex = drag.petalIndex;
+        s.rarity = drag.rarity;
+    }
     const int key = hoverKey(s);
     if (key != s.lastKey) {
         s.lastKey = key;
         s.suppressed = false;
     }
-    if (pointerDown) s.suppressed = true;
-    const bool wanted = key >= 0 && !s.suppressed && !window.pointerIsTouch();
+    bool wanted = false;
+    if (touch) {
+        // A finger landing that does not move the pointer -- the joystick,
+        // a touch button, any contact a control claimed for itself -- is the
+        // player getting on with the game, and takes the card away with it.
+        // The pointer's own finger lands where the pointer now is, so a
+        // contact somewhere else is a different finger.
+        for (const TouchEvent& event : window.touchEvents()) {
+            if (event.phase != TouchPhase::Began) continue;
+            const double dx = event.point.x - s.mouse.x, dy = event.point.y - s.mouse.y;
+            // ...and the pointer's own finger landing is a fresh tap, which
+            // reads the petal under it again, the same one included.
+            s.suppressed = dx * dx + dy * dy > 4.0;
+        }
+        wanted = key >= 0 && !s.suppressed && !window.touchScrolling();
+    } else {
+        const bool pointerDown = window.mouseDown(MouseButton::Left) ||
+                                 window.mousePressed(MouseButton::Left) ||
+                                 window.mouseDown(MouseButton::Right) || drag.active();
+        if (pointerDown) s.suppressed = true;
+        wanted = key >= 0 && !s.suppressed;
+    }
 
     if (wanted) {
         // Straight onto the new petal, at whatever opacity the card already
@@ -211,8 +249,12 @@ void paintPetalHover(Canvas& canvas, Window& window, const DragState& drag,
     const double reloadScale =
         profile.skills.reloadScale() *
         (1.0 - barReloadCut(content(), [&](int i) { return profile.equipped(content(), i); }));
+    // The flower's own max health, before any petal: its level's, under its
+    // Flower Health talent -- the figure a cactus's share is a share of.
+    const double flowerHealth = maxHealthForLevel(profile.level) *
+                                profile.skills.statScale(SkillId::PlayerHealth);
     const std::vector<TooltipLine> lines =
-        petalTooltip(s.shownPetal, s.shownRarity, profile.skills, reloadScale);
+        petalTooltip(s.shownPetal, s.shownRarity, profile.skills, reloadScale, flowerHealth);
     const bool alt = window.altHeld();
     const Vec2 size = measureTooltip(lines, 0.0, 0.0, alt);
     const Vec2 at = tooltipAnchor(s.shownRect, size, canvas.width(), canvas.height());

@@ -33,6 +33,7 @@
 #include "client/ui/menu_icons.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
+#include "client/ui/petal_hover.h"
 #include "client/ui/market_ui.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
@@ -266,6 +267,13 @@ struct ShopState {
     std::int64_t offersRotation = INT64_MIN;
     std::vector<ShopOffer> offers;
 
+    /// Whether this opening has asked the server where the account's store
+    /// stands -- locked or not -- yet. Asked once each time the window opens;
+    /// the answer arrives as the "shop" reply on the tools channel.
+    bool lockAsked = false;
+    /// The last reply whose refusal has been shown, so one is shown once.
+    double lockRevisionSeen = -1;
+
     std::vector<FallingStar> stars;
     Rng rng;
 };
@@ -498,6 +506,19 @@ std::string rotationCaption(std::int64_t secondsLeft) {
     return "Store will change in " + time;
 }
 
+/// The same line while the store is locked: how long the lock still holds.
+std::string lockCaption(std::int64_t secondsLeft) {
+    const std::int64_t s = std::max<std::int64_t>(0, secondsLeft);
+    const auto unit = [](std::int64_t n, const char* one, const char* many) {
+        return std::to_string(n) + " " + (n == 1 ? one : many);
+    };
+    std::string time;
+    if (s >= 3600) time = unit(s / 3600, "hour", "hours");
+    else if (s >= 60) time = unit(s / 60, "minute", "minutes");
+    else time = unit(s, "second", "seconds");
+    return "Offers locked for " + time;
+}
+
 /// The discount tag, centred on `corner` and tipped clockwise: a black rounded
 /// rect with the saving on it, stuck over the tile's top-right corner.
 void drawDiscountBadge(Canvas& canvas, Vec2 corner, int percent) {
@@ -554,6 +575,9 @@ void ShopPanel::reset() {
     state.lines.clear();
     state.pendingPetal = kNoPetal;
     state.pressedAt = {-1e9, -1e9};
+    // Asked again on the next opening: the lock may have run out, or been
+    // pressed from another tab, while the window was shut.
+    state.lockAsked = false;
     // The shower belongs to the moment a code was redeemed. It can only be
     // drawn while the window is up, and a shower that resumed mid-air an hour
     // later would be a ghost of a reward already given.
@@ -690,13 +714,46 @@ bool ShopPanel::render(MenuContext& ctx) {
     std::array<Rect, kShopOfferCount> priceButtons{};
     Rect codeField{};
     Rect redeemButton{};
+    Rect lockButton{};
+
+    // Where the account's store stands. Asked for once each opening, and kept
+    // in step afterwards by the answer every Lock and Unlock press gets back.
+    const auto sendShop = [&](const char* action) {
+        Json q = Json::object();
+        q["kind"] = "shop";
+        q["action"] = action;
+        ctx.net.requestAdminTools(q);
+    };
+    if (live && !state.lockAsked && ctx.net.haveSession()) {
+        state.lockAsked = true;
+        sendShop("status");
+    }
+    const Json& lockReply = ctx.net.adminTools("shop");
+    const bool lockAnswered = lockReply["kind"].asString() == "shop";
+    const std::int64_t now = shopClockNow();
+    const auto lockedUntil = static_cast<std::int64_t>(lockReply["until"].asDouble(0));
+    const bool storeLocked =
+        lockAnswered && lockReply["ok"].asBool() && lockReply["locked"].asBool() && now < lockedUntil;
+    if (lockAnswered && !lockReply["ok"].asBool() &&
+        lockReply["revision"].asDouble(0) != state.lockRevisionSeen) {
+        state.lockRevisionSeen = lockReply["revision"].asDouble(0);
+        const std::string why = lockReply["message"].asString();
+        if (!why.empty()) {
+            state.modal = ShopState::Modal::Alert;
+            state.lines = wrapMessage("Lock failed: " + why, kDialogLineSize, 260.0);
+        }
+    }
 
     if (tab_ == Tab::Market || tab_ == Tab::Orders) {
         MenuContext market=ctx; market.pointerBlocked=ctx.pointerBlocked||modalUp||open_<.9||closing_;
         renderMarket(market,{panel.x+13,panel.y+kStripTop+kStripHeight+8,panel.w-26,panel.h-kStripTop-kStripHeight-25},tab_==Tab::Orders);
         ctx.wantsText=ctx.wantsText||market.wantsText;
     } else if (tab_ == Tab::Offers) {
-        const std::int64_t rotation = shopRotation(shopClockNow());
+        // A locked store keeps showing the rotation it was locked on; the
+        // server prices a purchase from the same one.
+        const std::int64_t rotation =
+            storeLocked ? static_cast<std::int64_t>(lockReply["rotation"].asDouble(0))
+                        : shopRotation(now);
         if (state.offersRotation != rotation) {
             state.offersRotation = rotation;
             state.offers = shopOffers(rotation);
@@ -704,21 +761,29 @@ bool ShopPanel::render(MenuContext& ctx) {
 
         text(canvas, "Today's offers:", panel.x + panel.w * 0.5, panel.y + kHeadingMiddle,
              shopText(kOffersHeadingSize));
-        const std::int64_t remaining = shopRotationEnd(rotation) - shopClockNow();
-        text(canvas, rotationCaption(remaining), panel.x + panel.w * 0.5, panel.y + kSubMiddle,
-             shopText(kSubSize));
+        const std::string caption = storeLocked
+                                        ? lockCaption(lockedUntil - now)
+                                        : rotationCaption(shopRotationEnd(rotation) - now);
+        text(canvas, caption, panel.x + panel.w * 0.5, panel.y + kSubMiddle, shopText(kSubSize));
 
-        // Locking an offer through a rotation is florr's; nothing on this
-        // server keeps per-account offers, so the button is drawn where it
-        // belongs and left inert -- no hover, no press -- rather than made to
-        // lie about what it did.
-        {
-            const double width = measure("Lock", kLockSize) + textPad(kLockSize) + kLockExtra;
+        // Lock keeps these ten cards through the hourly change, for up to a
+        // day; Unlock goes back to the live store. Held by the server against
+        // the account (server/shop.cpp), which prices a purchase from the
+        // same rotation the cards were drawn from. Not offered until the
+        // server has said where the store stands, so the label never lies.
+        if (lockAnswered && lockReply["ok"].asBool()) {
+            const char* label = storeLocked ? "Unlock" : "Lock";
+            const double width = measure(label, kLockSize) + textPad(kLockSize) + kLockExtra;
             const double right = panel.x + kGridLeft + 4.0 * kCellWidth + kPlateWidth;
-            const Rect lock{right - width, panel.y + kHeaderTop + (kHeaderHeight - kLockHeight) * 0.5,
-                            width, kLockHeight};
-            drawFlorrButton(canvas, lock, kLockFace, kButtonBorder, kButtonRadius, false, false);
-            text(canvas, "Lock", lock.x + lock.w * 0.5, lock.y + lock.h * 0.5, shopText(kLockSize));
+            lockButton = Rect{right - width,
+                              panel.y + kHeaderTop + (kHeaderHeight - kLockHeight) * 0.5, width,
+                              kLockHeight};
+            const bool hot = lockButton.contains(under);
+            if (hot) cursor = CursorShape::Hand;
+            drawFlorrButton(canvas, lockButton, storeLocked ? kDialogGrey : kLockFace,
+                            kButtonBorder, kButtonRadius, hot, !modalUp && pressing(lockButton));
+            text(canvas, label, lockButton.x + lockButton.w * 0.5,
+                 lockButton.y + lockButton.h * 0.5, shopText(kLockSize));
         }
 
         std::array<Rect, kShopOfferCount> tiles{};
@@ -832,6 +897,9 @@ bool ShopPanel::render(MenuContext& ctx) {
     if (state.shown != ShopState::Modal::None) {
         const double alpha = std::floor(kScrimMax * clamp(state.scrim, 0.0, 1.0)) / 255.0;
         if (alpha > 0) fillWindowRect(canvas, panel, kInk, alpha);
+        // The cards under the scrim are not what the pointer is on: only the
+        // petal in the dialog itself, painted after this, may show its stats.
+        coverPetalHover(panel);
 
         const bool confirming = state.shown == ShopState::Modal::Confirm;
         const std::string title = confirming ? "Confirm" : "Error";
@@ -1005,6 +1073,11 @@ bool ShopPanel::render(MenuContext& ctx) {
 
     if (!trimmed(state.code).empty() && clicked(redeemButton)) {
         submitCode();
+        return true;
+    }
+
+    if (clicked(lockButton)) {
+        sendShop(storeLocked ? "unlock" : "lock");
         return true;
     }
 

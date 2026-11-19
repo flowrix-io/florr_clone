@@ -296,7 +296,7 @@
         "description": "Gathers energy from the sun to heal your flower passively.",
         "color": "#000000",
         "count": 1,
-        "passiveHeal": 1,
+        "passiveHeal": 2,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-21.5 -10.5 38 21\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M -20 0 \n           L -15 0 \n           C -10 -12, 5 -12, 15 0 \n           C 5 12, -10 12, -15 0\" \n        fill=\"#39b54a\" \n        stroke=\"#2e933c\" \n        stroke-width=\"3\" \n        stroke-linecap=\"round\" \n        stroke-linejoin=\"round\"/>\n  <path d=\"M -9 0 \n           Q 0 -1.5, 7.5 0\" \n        fill=\"none\" \n        stroke=\"#2e933c\" \n        stroke-width=\"3\" \n        stroke-linecap=\"round\" \n        stroke-linejoin=\"round\"/>\n</svg>",
         "isAdminPetal": false
     },

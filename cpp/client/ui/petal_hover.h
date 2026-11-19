@@ -9,6 +9,10 @@
 // shop, the loadout bar, the crafting card,
 // the oracle, the trader, the titan, the assembler, the run's loot, all alike.
 //
+// On a touchscreen, where nothing hovers, a tap reads a petal instead: its card
+// stays up after the finger lifts, and a petal being dragged shows its card
+// beside the finger.
+//
 // One tooltip a frame: the LAST tile under the pointer wins, because it is the
 // one painted on top. Something opaque painted over a tile afterwards (an open
 // panel over the loadout bar) says so through coverPetalHover, so a petal the
@@ -39,8 +43,11 @@ namespace flix::ui {
 /// The inventory's petal tooltip rows: name, tier, description and stats,
 /// with HP and damage at the account's talents and the reload at
 /// `reloadScale` (defined in menu_inventory.cpp, beside the rows it builds).
+/// `flowerHealth` is the viewer's own max health before petals -- what a
+/// health multiplier is shown as a number of.
 std::vector<TooltipLine> petalTooltip(std::uint16_t petalIndex, Rarity rarity,
-                                      const SkillSet& skills, double reloadScale);
+                                      const SkillSet& skills, double reloadScale,
+                                      double flowerHealth);
 
 /// Starts a frame's collection. `screen` is the canvas the frame is shown on,
 /// at its base transform -- design units, which is what the pointer is in.

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 
 #include "server/game_server_internal.h"
@@ -27,7 +28,83 @@ std::string numberText(double value) {
     return buffer;
 }
 
+/// How long a lock holds the store, in rotations: a day. Long enough to come
+/// back for a card after a session away, and short enough that one good hour
+/// cannot be kept on sale for good -- a card can be bought any number of
+/// times, so a lock with no end would be a standing price on a unique.
+constexpr std::int64_t kShopLockRotations = 24;
+
+/// The table the locks live in: account id -> the rotation it locked. Its own
+/// top-level table, read and written as raw JSON the way the star codes are,
+/// because nothing but these two handlers ever looks at it.
+constexpr const char* kShopLockTable = "shopLocks";
+
+/// The rotation `stored` names, when it is a lock still in force at
+/// `current`; -1 when it is not one at all or has run out.
+std::int64_t liveLock(const Json& stored, std::int64_t current) {
+    if (!stored.isNumber()) return -1;
+    const double value = stored.asDouble(-1);
+    if (!std::isfinite(value) || value < 0) return -1;
+    const auto rotation = static_cast<std::int64_t>(value);
+    if (rotation > current || current - rotation >= kShopLockRotations) return -1;
+    return rotation;
+}
+
 } // namespace
+
+std::int64_t GameServer::shopRotationFor(const std::string& userId) const {
+    const std::int64_t current = shopRotation(shopClockNow());
+    // Read through storedTable, which does not invalidate the table's cached
+    // text: a purchase is not an edit to the locks.
+    const Json& locks = database_.storedTable(kShopLockTable);
+    if (!locks.isObject() || !locks.contains(userId)) return current;
+    const std::int64_t locked = liveLock(locks[userId], current);
+    return locked >= 0 ? locked : current;
+}
+
+/// The shop's Lock button: `status`, `lock` or `unlock`, answered with where
+/// the account's store stands -- `locked`, the `rotation` it is showing and,
+/// while locked, `until` (seconds since the epoch) when the lock runs out.
+/// Sent on the market's JSON channel, so no message layout changed for it.
+void GameServer::runShopLock(Session& session, net::Connection& connection, const Json& q) {
+    const std::string action = q["action"].asString();
+    if (action != "status" && action != "lock" && action != "unlock") {
+        sendAdminTools(session, connection, "shop", false, "Unknown shop action.");
+        return;
+    }
+    const std::int64_t current = shopRotation(shopClockNow());
+    std::int64_t locked = -1;
+    {
+        const Json& locks = database_.storedTable(kShopLockTable);
+        if (locks.isObject() && locks.contains(session.userId)) {
+            locked = liveLock(locks[session.userId], current);
+            // A lock that has run out is cleared on the way past, so the
+            // table does not keep every account that ever pressed the button.
+            if (locked < 0) {
+                database_.rawTable(kShopLockTable).erase(session.userId);
+                database_.markDirty();
+            }
+        }
+    }
+    if (action == "lock" && locked < 0) {
+        locked = current;
+        database_.rawTable(kShopLockTable)[session.userId] = Json(static_cast<double>(current));
+        database_.markDirty();
+    } else if (action == "unlock" && locked >= 0) {
+        locked = -1;
+        database_.rawTable(kShopLockTable).erase(session.userId);
+        database_.markDirty();
+    }
+
+    Json data = Json::object();
+    data["locked"] = Json(locked >= 0);
+    data["rotation"] = Json(static_cast<double>(locked >= 0 ? locked : current));
+    if (locked >= 0) {
+        data["until"] =
+            Json(static_cast<double>(shopRotationEnd(locked + kShopLockRotations - 1)));
+    }
+    sendAdminTools(session, connection, "shop", true, {}, data);
+}
 
 void GameServer::handleBuyPetal(Session& session, net::Connection& connection, ByteReader& reader) {
     const std::uint16_t petalIndex = reader.u16();
@@ -61,10 +138,11 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     // included; anything else costs the full ladder price. The slot is only a
     // claim about WHICH card was clicked -- the offers are regenerated here,
     // and a slot whose petal and tier do not match the current rotation's is a
-    // click on a store that has since changed.
+    // click on a store that has since changed. A locked store is the
+    // rotation the account locked, for as long as the lock holds.
     double price = shopPrice(petalIndex, rarity);
     if (!offCard) {
-        const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
+        const std::vector<ShopOffer> offers = shopOffers(shopRotationFor(session.userId));
         const auto slot = static_cast<std::size_t>(offerSlot);
         if (slot >= offers.size() || offers[slot].petalIndex != petalIndex ||
             offers[slot].rarity != rarity) {

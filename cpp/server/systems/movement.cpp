@@ -1,4 +1,5 @@
 #include "server/systems/movement.h"
+#include "server/systems/shot_range.h"
 
 #include <algorithm>
 #include <cmath>
@@ -853,7 +854,13 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
             if (pushedBack.lengthSq() > 1e-12) {
                 const Vec2 normal = pushedBack.normalized();
                 const double into = velocity.x * normal.x + velocity.y * normal.y;
-                if (into < 0.0) velocity -= normal * (2.0 * into);
+                if (into < 0.0) {
+                    velocity -= normal * (2.0 * into);
+                    // Every wall a carrot comes off gives it its whole flight
+                    // back, so it keeps ricocheting round a room rather than
+                    // dying a bounce or two in.
+                    refillShotFlight(projectile, world.tryGet<Lifetime>(e));
+                }
             }
         } else if (out.blocked) {
             // The map edge eats shots.
