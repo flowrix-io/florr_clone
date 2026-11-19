@@ -515,7 +515,18 @@ EM_JS(int, flix_ch_listen,
     }
 
     if (url === "/transport-info") {
-      const body = JSON.stringify(advertisement);
+      // A request that came through Cloudflare's proxy was dialled at a
+      // Cloudflare address, and Cloudflare carries TCP only: a WebTransport
+      // handshake to that host can never land, and the client would wait out
+      // its whole handshake timeout before falling back -- on every new tab,
+      // since the client remembers the failure per tab only. So the answer
+      // through the proxy is WebSocket, and the advertisement stands for
+      // anyone who reached this server directly.
+      const proxied = typeof request.headers["cf-ray"] === "string" ||
+                      typeof request.headers["cf-connecting-ip"] === "string";
+      const body = JSON.stringify(proxied
+          ? { webtransport: false, port: advertisement.port, path: advertisement.path }
+          : advertisement);
       response.writeHead(200, {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
