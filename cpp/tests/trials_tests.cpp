@@ -65,10 +65,18 @@ TEST(timed_trial_limits_scale_with_floor_difficulty) {
     CHECK(trialFailureSeconds(18, 2) > trialOneStarSeconds(18, 2));
 }
 
-TEST(trial_arena_grows_with_enemy_rarity) {
-    CHECK_EQ(trialArenaRadius(1), kTrialArenaRadius);
-    CHECK(trialArenaRadius(17) > trialArenaRadius(9));
-    CHECK(trialArenaRadius(19) > trialArenaRadius(17));
+TEST(trial_chamber_fits_its_mobs) {
+    // A Common-sized body fights in a room about a screen across; bigger bodies and more of them
+    // grow it, and the spawn ring always stays inside the disc.
+    CHECK(trialChamberRadius(30.0, 1) <= 1200.0);
+    CHECK(trialChamberRadius(300.0, 1) > trialChamberRadius(30.0, 1));
+    CHECK(trialChamberRadius(1500.0, 2) > trialChamberRadius(300.0, 2));
+    CHECK(trialChamberRadius(30.0, 12) > trialChamberRadius(30.0, 1));
+    for (double r : {10.0, 100.0, 1000.0}) {
+        for (int n : {1, 2, 5, 9}) {
+            CHECK(trialSpawnRadius(r, n) + r < trialChamberRadius(r, n));
+        }
+    }
 }
 
 TEST(only_unique_and_apex_trials_refresh) {

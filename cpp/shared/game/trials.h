@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -17,7 +18,12 @@ inline constexpr int kTrialFloorCount = kTrialRarityCount * kTrialFloorsPerRarit
 inline constexpr int kTrialPermanentFloorCount = 16; // Common through Super.
 inline constexpr double kTrialReviveMillis = 5000.0;
 inline constexpr double kTrialIntermissionMillis = 2500.0;
-inline constexpr double kTrialArenaRadius = 3600.0;
+/// The waiting room's disc, before a floor starts and after it ends. A running
+/// chamber is sized from its wave (trialChamberRadius) instead.
+inline constexpr double kTrialArenaRadius = 1200.0;
+/// The smallest a running chamber gets: a Common wave keeps its fight about
+/// one screen across rather than leaving the flower in a huge empty disc.
+inline constexpr double kTrialMinArenaRadius = 1000.0;
 inline constexpr const char* kTrialsSpawnChoice = "trials";
 
 enum class TrialPhase : std::uint8_t { Idle = 0, Active, Intermission, Complete, Failed };
@@ -33,10 +39,22 @@ inline int trialRarityIndex(int floor) {
     return std::clamp((floor - 1) / kTrialFloorsPerRarity, 0, kTrialRarityCount - 1);
 }
 inline Rarity trialRarity(int floor) { return static_cast<Rarity>(trialRarityIndex(floor)); }
-inline double trialArenaRadius(int floor) {
-    // High-tier bodies grow dramatically. Give each rarity more room before
-    // the selected mob's exact radius adds any further per-wave expansion.
-    return kTrialArenaRadius + trialRarityIndex(floor) * 500.0;
+/// How far from the centre a wave's mobs spawn: clear of the flower and its
+/// loadout, and far enough round the ring that `count` of them do not touch.
+inline double trialSpawnRadius(double mobRadius, int count) {
+    const double clearance = 25.0 /* kPlayerBaseRadius */ + mobRadius + 500.0;
+    constexpr double kPi = 3.14159265358979323846;
+    const double spacing = count > 1
+                               ? (mobRadius + 200.0) / std::sin(kPi / (2.0 * (count - 1)))
+                               : 0.0;
+    return std::max(clearance, spacing);
+}
+/// The chamber's disc for a wave: sized from the mobs actually in it, so small
+/// Common bodies fight in a small room and Apex bodies get room to turn. The
+/// space behind the ring grows with the body (two radii) for the big ones.
+inline double trialChamberRadius(double mobRadius, int count) {
+    return std::max(kTrialMinArenaRadius,
+                    trialSpawnRadius(mobRadius, count) + mobRadius + 500.0 + 2.0 * mobRadius);
 }
 inline double trialRewardPower(double base, int floor) {
     double result = 1.0;

@@ -166,7 +166,6 @@ void GameServer::startTrial(Session& session, int floor) {
     trial.chamber = 1;
     trial.buff = seasonBuff(season);
     trial.biome = static_cast<WaveBiome>((season + floor) % static_cast<int>(WaveBiome::Count));
-    terrain_->trialRadii[static_cast<std::size_t>(slot)] = trialArenaRadius(floor);
     world_.add<TrialBuff>(session.entity,
                           TrialBuff{static_cast<std::uint8_t>(trial.buff), clockMillis_});
     spawnTrialChamber(trial, clockMillis_);
@@ -204,18 +203,11 @@ void GameServer::spawnTrialWave(TrialRun& trial, double nowMillis) {
                                  ? 0.0
                                  : content().mobStats(mob, rarity).radius *
                                        content().mob(mob).maxRandomSize();
-    // Keep every mob outside the flower/loadout area, and keep simultaneous
-    // mobs apart on their ring. Expand the disc again when an unusually large
-    // archetype needs more than the floor's normal rarity-scaled arena.
-    const double playerClearance = kPlayerBaseRadius + mobRadius + 800.0;
-    const double spacingRadius = count > 1
-                                     ? (mobRadius + 200.0) /
-                                           std::sin(kPi / (2.0 * (count - 1)))
-                                     : 0.0;
-    const double spawnRadius = std::max(playerClearance, spacingRadius);
+    // Keep every mob outside the flower/loadout area, keep simultaneous mobs
+    // apart on their ring, and size the chamber from those mobs.
+    const double spawnRadius = trialSpawnRadius(mobRadius, count);
     const std::size_t realmSlot = static_cast<std::size_t>(trialRealmIndex(trial.realm));
-    terrain_->trialRadii[realmSlot] = std::max(
-        trialArenaRadius(trial.floor), spawnRadius + mobRadius + 800.0);
+    terrain_->trialRadii[realmSlot] = trialChamberRadius(mobRadius, count);
     double awayFromPlayer = 0.0;
     if (const auto owner = sessions_.find(trial.owner); owner != sessions_.end()) {
         if (const Transform* flower = world_.tryGet<Transform>(owner->second.entity)) {
