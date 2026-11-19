@@ -1256,6 +1256,7 @@ void NetClient::onDisconnect(net::Connection&, const std::string& reason) {
     status_ = Status::Failed;
     lastError_ = reason;
     view_.clear();
+    guildmateIds_.clear();
     chatBubbles_.clear();
     // Every connection id the dashboard holds belongs to the socket that just
     // went, and so does any control: the server lets go of it when the socket
@@ -1984,7 +1985,6 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     dead_ = false;
     revived = false;
     view_.clear();
-    guildmateIds_.clear();
     chatBubbles_.clear();
     // After the clear, which resets it: the realm is the one thing about the
     // new body the snapshot stream never restates. The maze is built from the
