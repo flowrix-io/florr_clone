@@ -787,6 +787,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     }
     if (verb == "/guild-invite") { guildInvite(session, connection, argument); return true; }
     if (verb == "/guild-kick")   { guildKick(session, connection, argument); return true; }
+    if (verb == "/guild-promote") { guildSetOfficer(session, connection, argument, true); return true; }
+    if (verb == "/guild-demote")  { guildSetOfficer(session, connection, argument, false); return true; }
     if (verb == "/guild-accept") { handleGuildAccept(session, connection); return true; }
     if (verb == "/guild-decline"){ handleGuildDecline(session, connection); return true; }
     if (verb == "/guild-leave")  { handleGuildLeave(session, connection); return true; }
@@ -814,6 +816,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             lines += " @" + member;
             if (lowerCase(member) == leader) {
                 lines += " <span style=\"color: #ffd54f;\">(Leader)</span>";
+            } else if (isGuildOfficer(guild, member)) {
+                lines += " <span style=\"color: #b39ddb;\">(Officer)</span>";
             }
         }
         const std::string description = guild["description"].asString();
@@ -850,6 +854,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         out("Guild commands: /guild-create &lt;tag&gt; [name], /guild-invite &lt;username&gt;, "
             "/guild-accept, /guild-decline, /guild-leave, /guild-kick &lt;username&gt;, "
             "/guild-rename &lt;name&gt;, /guild-description [text], "
+            "/guild-promote &lt;username&gt;, /guild-demote &lt;username&gt;, "
             "/guild-info, /guild-squad, /guild-list");
         return true;
     }
@@ -972,12 +977,14 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                 " members, persistent):</b><br/>";
         help += "/guild-create &lt;tag&gt; [name] - Create a new guild (5-char alphanumeric "
                 "tag, optional display name)<br/>";
-        help += "/guild-invite &lt;username&gt; - Invite a player (leader only)<br/>";
+        help += "/guild-invite &lt;username&gt; - Invite a player (leader or officer)<br/>";
         help += "/guild-accept / /guild-decline - Respond to a guild invite<br/>";
         help += "/guild-leave - Leave your guild<br/>";
         help += "/guild-kick &lt;username&gt; - Kick a member (leader only)<br/>";
         help += "/guild-rename &lt;name&gt; - Rename the guild (leader only)<br/>";
-        help += "/guild-description [text] - Set or clear the description (leader only)<br/>";
+        help += "/guild-description [text] - Set or clear the description (leader or officer)<br/>";
+        help += "/guild-promote &lt;username&gt; - Make a member an officer (leader only)<br/>";
+        help += "/guild-demote &lt;username&gt; - Remove an officer (leader only)<br/>";
         help += "/guild-info - Show guild info<br/>";
         help += "/guild-squad - Invite online guildmates into a squad<br/>";
         help += "/guild-list - List all guilds<br/>";
