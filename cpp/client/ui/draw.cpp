@@ -174,9 +174,7 @@ void button(Canvas& canvas, Rect r, const std::string& label, bool hovered, bool
 
     // The outline is derived from the BASE colour, not the hover/press shade,
     // so a button's edge holds still while its face lights up.
-    const std::uint32_t outline = style.outline == 0xFFFFFFFFu
-        ? hsvScale(style.fill, 0.8)
-        : style.outline;
+    const std::uint32_t outline = borderOf(style.fill);
     strokedBox(canvas, r, style.radius, fill, 1.0, outline, style.outlineWidth, 1.0);
 
     TextStyle ts;
@@ -466,7 +464,7 @@ void inputField(Canvas& canvas, Rect r, const std::string& value, const std::str
             // The outline is CENTRED on the box, as `ctx.stroke()` draws it,
             // so the plate is half its width larger than `r` on every side --
             // and it widens rather than recolours when focused.
-            strokedBox(canvas, r, 3.0, kField, 1.0, hsvScale(kField, 0.8), focused ? 5.0 : 4.0,
+            strokedBox(canvas, r, 3.0, kField, 1.0, borderOf(kField), focused ? 5.0 : 4.0,
                        1.0);
             style.fill = kPaper;
             // The browser's drawInput leaves `lineJoin = 'round'` ambient

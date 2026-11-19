@@ -202,7 +202,7 @@ bool GameServer::splitSession(Session& session) {
     if (session.arena || session.realm == Realm::Arena) return false;
     // Nor in the waves: a flower there is one life until the next wave, and
     // game over is decided by who is still standing.
-    if (session.realm == kWavesRealm) return false;
+    if (session.realm == kWavesRealm || isTrialRealm(session.realm)) return false;
     const Transform* origin = world_.tryGet<Transform>(session.entity);
     if (origin == nullptr) return false;
 

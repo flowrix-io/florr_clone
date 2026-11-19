@@ -57,15 +57,18 @@ void fillStar(Canvas&, Vec2 centre, double radius, std::uint32_t rgb);
 /// Panels only. A button's face stays rounded (`inlaid` below): the reference
 /// gives its controls one filled round_rect and a stroke, so nothing about
 /// them has a square shoulder to match.
-void cardFrame(Canvas&, Rect, std::uint32_t fill, std::uint32_t border, double borderWidth,
-               double radius);
+/// The frame is borderOf(fill).
+void cardFrame(Canvas&, Rect, std::uint32_t fill, double borderWidth, double radius);
 
 /// The two-fill treatment at an arbitrary size, for slots and buttons. Unlike
 /// `cardFrame` the inner corner is ROUNDED, derived as `radius - 2`: this is
 /// the controls' shape, and a square-shouldered chip at 20px tall reads as a
 /// mis-drawn panel rather than as a button.
-void inlaid(Canvas&, Rect, std::uint32_t fill, std::uint32_t border, double borderWidth,
-            double radius, double alpha = 1.0);
+///
+/// The rim is borderOf(fill). `face`, when given, paints the inside instead of
+/// `fill` -- a hovered control lights its face while its rim holds still.
+void inlaid(Canvas&, Rect, std::uint32_t fill, double borderWidth, double radius,
+            double alpha = 1.0, std::uint32_t face = 0xFFFFFFFFu);
 
 /// THE panel frame: `cardFrame` at the inventory's border width and radius.
 /// The tall list panels and the corner panels (settings, changelog,
@@ -139,9 +142,9 @@ void pillButton(Canvas&, Rect, const std::string& label, std::uint32_t fill,
 void closeCross(Canvas&, Rect, double arm, double width, bool roundCap);
 
 /// A small labelled button: the panel chrome's Switch, Craft, Reset, Refresh.
+/// Its border is always borderOf(fill).
 struct ChipStyle {
     std::uint32_t fill = kControlMid;
-    std::uint32_t border = kControlDark;
     std::uint32_t hoverFill = 0xFFFFFFFFu;   ///< sentinel: lighten `fill` by 15%
     double radius = 5.0;
     double textSize = 13.0;

@@ -361,6 +361,7 @@ void App::drawMinimap(Canvas& canvas) {
     // ALT does two things here: it reveals the other players' dots, and it
     // picks the bake with the spawn bands under the walls.
     const bool altHeld = window_.keyDown(Key::LeftAlt) || window_.keyDown(Key::RightAlt);
+    if (isTrialRealm(net_.view().realm())) return;
     switch (net_.view().realm()) {
         case Realm::Maze:
             drawMazeMinimap(canvas, altHeld);

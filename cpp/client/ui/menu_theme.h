@@ -13,14 +13,20 @@
 
 namespace flix::ui {
 
-/// The fill/border pair a panel is built from, plus the colours of the chrome
-/// that sits on it.
+/// The fill a panel is built from, its border, and the colours of the chrome
+/// that sits on it. The border is always borderOf(fill) -- it cannot be given.
 struct PanelSkin {
     std::uint32_t fill = kPanel;
     std::uint32_t border = kPanelDark;
     /// Divider rules and the scrollbar thumb. Defaults to the border colour,
     /// which is what makes both read as part of the frame rather than content.
     std::uint32_t accent = kPanelDark;
+
+    constexpr PanelSkin() = default;
+    constexpr explicit PanelSkin(std::uint32_t f)
+        : fill(f), border(borderOf(f)), accent(borderOf(f)) {}
+    constexpr PanelSkin(std::uint32_t f, std::uint32_t a)
+        : fill(f), border(borderOf(f)), accent(a) {}
 };
 
 /// The close button's face and rim, shared by EVERY panel rather than carried
@@ -32,60 +38,61 @@ struct PanelSkin {
 /// each time. These are the inventory's, which is what the rest were dragged
 /// to match.
 inline constexpr std::uint32_t kCloseFace = 0xAE5B58u;
-inline constexpr std::uint32_t kCloseRim = 0x8D4A47u;
+inline constexpr std::uint32_t kCloseRim = borderOf(kCloseFace);
 
-inline constexpr PanelSkin kInventorySkin{0x6B9DD6u, 0x5680ADu, 0x5680ADu};
+inline constexpr PanelSkin kInventorySkin{0x6B9DD6u};
 /// The craft key's four windows are florr's, in florr's themes: each is the
-/// colour its controller answers with, and its border, its empty slots and
-/// its empty cells are that colour's 0.81 shade (slotCardShade, menus.h).
+/// colour its controller answers with. Its border is borderOf(theme), like
+/// every menu's; its empty slots and cells are slotCardShade(theme).
 /// Forge tan, oracle slate, trader yellow, the titan's charcoal and the
-/// assembler's machine grey (florr's capture: #999999 under a #7C7C7C stroke).
-inline constexpr PanelSkin kCraftingSkin{0xDB9D5Au, 0xB17F49u, 0xB17F49u};
+/// assembler's machine grey.
+inline constexpr PanelSkin kCraftingSkin{0xDB9D5Au};
 /// The forge's other side, Absorb: florr's old client's purple (its absorb
-/// controller's theme), under the same 0.81 shade.
-inline constexpr PanelSkin kAbsorbSkin{0x895ADBu, 0x6F49B1u, 0x6F49B1u};
-inline constexpr PanelSkin kOracleSkin{0x66869Eu, 0x536D80u, 0x536D80u};
-inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCFBB50u};
-inline constexpr PanelSkin kTitanSkin{0x333333u, 0x292929u, 0x292929u};
-inline constexpr PanelSkin kAssemblerSkin{0x999999u, 0x7C7C7Cu, 0x7C7C7Cu};
-inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xA89D36u};
-/// florr's Talents window: its theme and the theme's 0.81 shade. The shade
-/// doubles as the tree's own ink -- every connector, the flower's hub and the
-/// TP badge are drawn in it.
-inline constexpr PanelSkin kTalentsSkin{0xDB5A5Au, 0xB14949u, 0xB14949u};
+/// controller's theme), under the same border shade.
+inline constexpr PanelSkin kAbsorbSkin{0x895ADBu};
+inline constexpr PanelSkin kOracleSkin{0x66869Eu};
+inline constexpr PanelSkin kTraderSkin{0xFFE763u};
+inline constexpr PanelSkin kTitanSkin{0x333333u};
+inline constexpr PanelSkin kAssemblerSkin{0x999999u};
+inline constexpr PanelSkin kGallerySkin{0xE6D64Cu};
+/// florr's Talents window. The tree's own ink -- every connector, the node
+/// rims, the flower's hub and the TP badge -- is slotCardShade of its theme.
+inline constexpr PanelSkin kTalentsSkin{0xDB5A5Au};
 /// The Account card wears the purple of the talents STRIP button (not the
 /// talent card's red above), and so does its own button on the top row.
-inline constexpr PanelSkin kAccountSkin{0x9D4EDDu, 0x7E3EB1u, 0x7E3EB1u};
+inline constexpr PanelSkin kAccountSkin{0x9D4EDDu};
 /// The shop is drawn against a reference screenshot rather than against the
 /// browser build's CSS, so its greens are that shot's. Its frame
 /// is NOT in that shot -- the shot's card runs to its own edge -- but a shop
 /// with no frame is the one menu in the game that is not a card, so it wears
-/// the same border every other panel does: its own green at 0.8 value.
-inline constexpr PanelSkin kShopSkin{0x65c359u, 0x519C47u, 0x7DC065u};
-/// The skin studio is the one panel whose border is LIGHTER than its body --
-/// it borrows the strip button's own purple as the frame.
-inline constexpr PanelSkin kSkinsSkin{0x8737B6u, 0x9A3FD0u, 0x9A3FD0u};
-inline constexpr PanelSkin kLeaderboardSkin{0xE8A023u, 0xC4871Au, 0xC4871Au};
-/// Settings and the debug panel share one grey card, its border the same grey
-/// at 0.8 HSV value.
-inline constexpr PanelSkin kSettingsSkin{0xAAAAAAu, 0x888888u, 0x888888u};
+/// the same border every other panel does.
+inline constexpr PanelSkin kShopSkin{0x65c359u, 0x7DC065u};
+inline constexpr PanelSkin kSkinsSkin{0x8737B6u};
+inline constexpr PanelSkin kLeaderboardSkin{0xE8A023u};
+/// Settings and the debug panel share one grey card.
+inline constexpr PanelSkin kSettingsSkin{0xAAAAAAu};
 inline constexpr PanelSkin kDebugSkin = kSettingsSkin;
-inline constexpr PanelSkin kChangelogSkin{0x49C46Fu, 0x4CAF50u, 0x4CAF50u};
-inline constexpr PanelSkin kNotificationsSkin{0x4A90E2u, 0x357ABDu, 0x357ABDu};
+inline constexpr PanelSkin kChangelogSkin{0x49C46Fu};
+inline constexpr PanelSkin kNotificationsSkin{0x4A90E2u};
 /// The guild card is the mythic cyan, its frame -- which is also the roster
-/// band and the description box -- that cyan at 0.81, and the scroll thumb one
-/// step darker again.
-inline constexpr PanelSkin kGuildSkin{0x1FDBDEu, 0x19B1B4u, 0x148E90u};
+/// band and the description box -- that cyan's border shade, and the scroll
+/// thumb one step darker again.
+inline constexpr PanelSkin kGuildSkin{0x1FDBDEu, borderOf(borderOf(0x1FDBDEu))};
 /// The database editor: a slate no player-facing panel wears, because it is not
 /// one -- an admin should never mistake it for the settings card beside it.
-inline constexpr PanelSkin kAdminDbSkin{0x55606Bu, 0x434C55u, 0x7A8794u};
+inline constexpr PanelSkin kAdminDbSkin{0x55606Bu, 0x7A8794u};
 /// The admin dashboard: an indigo no player-facing panel wears either, for the
 /// editor's reason. Its strip button and the Release chip wear it too, so both
 /// say which card they belong to.
-inline constexpr PanelSkin kAdminDashboardSkin{0x5C5B9Cu, 0x48477Au, 0x7F7EBFu};
+inline constexpr PanelSkin kAdminDashboardSkin{0x5C5B9Cu, 0x7F7EBFu};
 /// The asset browser: the teal of the debug panel's Assets button, which is
 /// the one way in, so the card it opens reads as that button's.
-inline constexpr PanelSkin kAssetsSkin{0x3E7C74u, 0x30625Bu, 0x63A89Eu};
+inline constexpr PanelSkin kAssetsSkin{0x3E7C74u, 0x63A89Eu};
+/// The Trial Grounds floor picker: the purple of its tab in the spawn picker,
+/// which is the one way in. Its Refreshing page a deeper violet, so the two
+/// pages read as two rooms of the same card.
+inline constexpr PanelSkin kTrialsSkin{0x8A63D2u};
+inline constexpr PanelSkin kRefreshingTrialsSkin{0x6A4AAEu};
 
 // --- shared panel metrics ---------------------------------------------------
 

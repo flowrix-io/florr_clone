@@ -66,6 +66,29 @@ Bump `kProtocolVersion` in `cpp/shared/net/protocol.h` whenever any message
 layout changes, wherever it is written (`cpp/shared/net/`, `writeMapGrid`, the
 skin format), and ship client and server together.
 
+## Menus use the design tokens
+
+Every menu, panel, card and window — including new ones — is built from the
+shared UI tokens instead of hand-picked colours and hand-drawn frames:
+
+- Theme: give the menu a `PanelSkin` in `cpp/client/ui/menu_theme.h`, set
+  from its fill alone (`PanelSkin{0xRRGGBBu}`). Its border is always
+  `borderOf(fill)` (`cpp/client/ui/theme.h`); never write a border colour
+  by hand, for a frame, a button, a chip, a slot or an inset box.
+- Frame and chrome: `panelCard`, `panelTitle` / `panelHeading`,
+  `closeButtonRect` + `closeButtonHit` + `panelClose`, `chip`, `inlaid`
+  and `labelStyle` from `cpp/client/ui/menu_style.h`, and the `kMenu*`
+  metrics. `ui::button` already derives its outline from its fill.
+- Inset boxes on a card are filled with the skin's `border` (or `accent`).
+- Florr-ported windows (craft key, talents, shop) keep `drawFlorrPanel`,
+  still fed a `PanelSkin`.
+- Not covered: item tiles, craft slots/cells, loadout slots, the talent
+  tree's ink (`slotCardShade`), black `kInk` outlines and text inputs keep
+  their own shades.
+
+The Trial Grounds picker (`App::drawTrialPicker`, `kTrialsSkin`) is a small
+example to copy.
+
 ## Admin rights
 
 Admin rights come only from server-held state: the account's `admin` flag in

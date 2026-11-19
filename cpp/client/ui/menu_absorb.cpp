@@ -376,7 +376,7 @@ bool AbsorbPanel::render(MenuContext& ctx) {
                       kAbsorbSkin);
     }
     if (disc_ > 0.0001) {
-        setFill(canvas, kAbsorbSkin.border);
+        setFill(canvas, slotCardShade(kAbsorbSkin.fill));
         canvas.beginPath();
         canvas.arc(static_cast<float>(slot.x), static_cast<float>(slot.y),
                    static_cast<float>(kDiscRadius * disc_), 0.0f, static_cast<float>(kTau));

@@ -566,6 +566,10 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
     const std::uint16_t glitchOrb = content.petalIndex("glitch_orb");
     corpses_->collect(corpseList_);
     for (const Entity corpse : corpseList_) {
+        if (world.has<TrialMob>(corpse)) {
+            world.add<LootAwarded>(corpse);
+            continue;
+        }
         const MobType* type = world.tryGet<MobType>(corpse);
         const Transform* transform = world.tryGet<Transform>(corpse);
         if (type == nullptr || transform == nullptr) continue;

@@ -322,6 +322,11 @@ answer every one (the grammar lives in `cpp/server/account_search.h`):
 | `active<7d` | signed in less than 7 days ago; `m`, `h`, `d` and `w` all work |
 | `created>30d` | made more than 30 days ago |
 | `is:guest`, `not:muted` | by a flag: `admin`, `mod` (chat moderator), `muted` or `guest` |
+| `createdFromHash:ab12` | by any field of the account record, named as the file spells it (case, `_` and `-` ignored): `field:text` contains it |
+| `mutedBy=bob` | `field=text` is it exactly; `field=` is empty or unset |
+| `createdFromHash:` | `field:` alone has it set at all (non-empty, true or non-zero), and shows its value |
+| `muted=true`, `passwordChosen=false` | a flag field (`yes`/`no`, `1`/`0` too) |
+| `adminTier>=2`, `mutedAt>=2026-11`, `adminBannedAt<7d` | a number field compares; a time field also takes a date or a time ago |
 | `petals>=5000` | owning 5,000 petals or more in all |
 | `mythic>=100` | owning 100 or more mythic petals |
 | `rose>10` | owning more than 10 roses, any rarity |
@@ -336,6 +341,13 @@ first when it is a `<`), and each row shows what it was found by: a count, a
 date, or how long ago. Counts come from the stored inventory (which includes
 worn petals) and the saved loadout. A word the server cannot read lists nobody
 and says why above the list.
+
+The fields are `id`, `username`, `isPlainText`, `admin`, `owner`, `adminTier`,
+`adminBanned`, `adminBannedAt`, `adminBannedBy`, `lastActiveAt`, `muted`,
+`mutedAt`, `mutedBy`, `chatModerator`, `chatModeratorBy`, `createdAt`,
+`createdFromHash`, `guest` and `passwordChosen` -- every one the file stores
+but the password hash. An unset field reads its default (`passwordChosen`
+true, `adminTier` 1, flags false, times unset).
 
 `created` and `active` take either a date or a time ago, and each reads as it
 is said: `active>=2026-10-20` is on or after the 20th, and `active<7d` is less

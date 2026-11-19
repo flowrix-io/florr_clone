@@ -129,10 +129,6 @@ bool Fonts::init(const std::string& dataDir, std::string& errorOut) {
     // whatever else is true. Its metrics come from the compiled-in table when
     // the file is the one the table was made from -- which the staged face
     // always is -- and from the file otherwise.
-    // Unkerned, as the compiled-in table is: every run is laid out from the
-    // sum of its advances, and the glyphs drawn here have to land where that
-    // layout put them. cpp_canvas's Font kerns by default.
-    s.face.setKerning(false);
     std::vector<std::uint8_t> bytes;
     const std::string staged = dataDir + "/Ubuntu-Bold.ttf";
     if (readFile(staged, bytes)) {

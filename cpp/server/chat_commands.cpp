@@ -428,7 +428,8 @@ void GameServer::setMuted(const Session& session, const std::string& username, b
            (holder != nullptr ? "." : " (offline).");
 }
 
-bool GameServer::grantAdmin(const std::string& sessionToken) {
+bool GameServer::grantAdmin(const std::string& sessionToken,
+                            const std::string& requiredUsername) {
     // Which account this is, the database says, from a credential the server
     // issued: the token the page's own client holds. Never a name, which is a
     // string a player chose and anyone can type.
@@ -439,31 +440,53 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
     const std::string userId = record->userId;
     Account* account = database_.findUserById(userId);
     if (account == nullptr) return false;
-    if (!account->adminActive() || account->adminTier > kTopAdminTier) {
-        // The top tier, and no ban: this is the player's own server, in their
-        // own page. An owner is left the owner.
+    if (!requiredUsername.empty() &&
+        lowerCase(account->username) != lowerCase(requiredUsername)) {
+        return false;
+    }
+    return setLocalAdmin(sessionToken, true);
+}
+
+bool GameServer::setLocalAdmin(const std::string& sessionToken, bool enabled) {
+    // This is an in-process hook for the single-file offline build, not a wire
+    // handler. The credential was issued by this server and identifies the
+    // current account; no username, nameplate or client-supplied target can
+    // aim the change at somebody else.
+    if (sessionToken.empty()) return false;
+    const Database::Session* record = database_.resolveSession(sessionToken);
+    if (record == nullptr) return false;
+    const std::string userId = record->userId;
+    Account* account = database_.findUserById(userId);
+    if (account == nullptr) return false;
+
+    if (enabled) {
         account->admin = true;
         account->adminTier = std::min(account->adminTier, kTopAdminTier);
         account->adminBanned = false;
         account->adminBannedAtMillis = 0;
         account->adminBannedBy.clear();
-        // In memory until the database is next written: the periodic save half
-        // a minute out, or sooner when the page goes away -- the offline
-        // page's pagehide handler flushes every account and the database into
-        // browser storage (persistAll), which is what keeps a grant made just
-        // before the tab closes. Only a page that dies without that event (a
-        // crash, a killed browser) can lose it.
-        database_.markDirty();
+    } else {
+        account->admin = false;
     }
+    // In memory until the next periodic save, or sooner when the page goes
+    // away and its pagehide handler flushes the embedded database to browser
+    // storage.
+    database_.markDirty();
 
     // The session carries its own copy of the flag, taken at login: without
-    // this the grant would not be real until the player logged in again. Every
+    // this the toggle would not be real until the player logged in again. Every
     // connection signed into the account, by its id -- one account has one
     // live session (replaceOtherSessions), so this is that one.
     for (auto& [id, session] : sessions_) {
         if (!session.authenticated() || session.userId != userId) continue;
-        session.admin = true;
+        session.admin = enabled;
         session.adminTier = account->adminTier;
+        if (!enabled) {
+            if (session.controlling != 0) {
+                endControl(session, "Control ended: local admin access was disabled.", true);
+            }
+            session.adminDbUnlockedFor.clear();
+        }
         net::Connection* connection = listener_.find(id);
         if (connection == nullptr) continue;
         // The same resend a temporary grant does, and for the same reason: the
@@ -474,14 +497,20 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
         // offline page's, the one caller of this, and the one place a player
         // has no file to read it out of. `/admin db` says it too; the key in a
         // server's file is never said (see the editor's branch of the console).
-        const std::string editor =
-            config_.fixedAdminDbKey.empty()
-                ? std::string()
-                : " The database editor's key here is " + escapedMarkup(config_.fixedAdminDbKey) +
-                      ": /admin db " + escapedMarkup(config_.fixedAdminDbKey) + ".";
-        sendSystem(*connection, "<span style=\"color: #ffb74d;\">You are now an admin. Use "
-                                "/admin &lt;command&gt; or /help." +
-                                    editor + "</span>");
+        if (enabled) {
+            const std::string editor =
+                config_.fixedAdminDbKey.empty()
+                    ? std::string()
+                    : " The database editor's key here is " +
+                          escapedMarkup(config_.fixedAdminDbKey) + ": /admin db " +
+                          escapedMarkup(config_.fixedAdminDbKey) + ".";
+            sendSystem(*connection, "<span style=\"color: #ffb74d;\">Admin enabled for this "
+                                    "local account. Use /admin &lt;command&gt; or /help." +
+                                        editor + "</span>");
+        } else {
+            sendSystem(*connection, "<span style=\"color: #ffb74d;\">Admin disabled for this "
+                                    "local account.</span>");
+        }
     }
     return true;
 }
@@ -1982,6 +2011,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         Query<MobTag> mobs{world_};
         mobs.without<Pet>();
         mobs.each([&](Entity entity, MobTag&) {
+            if (world_.has<TrialMob>(entity)) return;
             // Removed outright rather than killed, so there is no death for
             // bankKills() to announce -- each boss gets its line here instead,
             // with nobody to credit.

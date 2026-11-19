@@ -24,13 +24,12 @@ constexpr double kDividerWidth = 2.0;
 constexpr double kDividerInset = 6.0;
 
 /// The shop BUTTON's green -- the stars icon in the top strip -- not the shop
-/// card's, which is a duller shade of it. Both literals are that button's own
-/// fill/border pair from MenuSystem::strip() in menus.cpp and have to stay in
-/// step with it; the strip keeps its rows as one literal table, so there is
-/// nowhere better for these two to live than beside the thing that borrows
-/// them.
+/// card's, which is a duller shade of it. The literal is that button's fill
+/// from MenuSystem::strip() in menus.cpp and has to stay in step with it; the
+/// strip keeps its rows as one literal table, so there is nowhere better for it
+/// to live than beside the thing that borrows it.
 constexpr std::uint32_t kBody = 0x7EF16Bu;
-constexpr std::uint32_t kFrame = 0x64C156u;
+constexpr std::uint32_t kFrame = borderOf(kBody);
 constexpr std::uint32_t kHover = lighten(kBody, 0.15);
 
 /// How far a menu that would run off the screen is pulled back inside it.
@@ -94,7 +93,7 @@ ContextAction ContextMenu::update(Canvas& canvas, Window& window) {
     // The rows are painted here rather than in a separate pass: this card is
     // the last thing drawn in the frame, so there is nothing left for its own
     // hit test to be a frame behind.
-    cardFrame(canvas, card, kBody, kFrame, kBorder, kRadius);
+    cardFrame(canvas, card, kBody, kBorder, kRadius);
     if (inside) window.setCursorShape(CursorShape::Arrow);
 
     ContextAction chosen = ContextAction::None;

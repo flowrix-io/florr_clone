@@ -134,7 +134,7 @@
   // that is the keyboard's own scroll, still in use.
   const settleScroll = () => {
     const active = document.activeElement;
-    if (active && active.id === '__cpp_canvas_soft_keyboard') return;
+    if (active && active.id === '__flix_soft_keyboard') return;
     if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
   };
   window.addEventListener('resize', settleScroll);

@@ -59,7 +59,6 @@ constexpr double kCloseRimOut = 2.0;
 constexpr double kCloseFaceRadius = 4.0;
 constexpr double kCloseArm = 6.25;
 constexpr double kCloseCrossWidth = 3.75;
-constexpr std::uint32_t kCloseRimInk = 0x974545u;
 constexpr std::uint32_t kCloseFaceInk = 0xBB5555u;
 constexpr std::uint32_t kCloseCrossInk = 0xCCCCCCu;
 /// The forge's Switch button, florr's old client's: 80 x 25, 129 in from the
@@ -97,7 +96,6 @@ constexpr double kButtonRim = 5.0;
 constexpr double kButtonFaceRadius = 5.0;
 constexpr double kButtonLabelSize = 16.0;
 constexpr std::uint32_t kButtonIdleFace = 0x777777u;
-constexpr std::uint32_t kButtonIdleRim = 0x606060u;
 
 /// The grid: 60-unit cells on a 70-unit pitch, in a list 16 wider than its
 /// columns, centred under the body and 10 below it. The first row is 10 down
@@ -162,8 +160,7 @@ std::uint32_t slotCardShade(std::uint32_t theme) {
 }
 
 PanelSkin slotCardSkin(std::uint32_t theme) {
-    const std::uint32_t shade = slotCardShade(theme);
-    return PanelSkin{theme, shade, shade};
+    return PanelSkin{theme};
 }
 
 void fillQuadRound(Canvas& canvas, Rect r, double radius, std::uint32_t rgb) {
@@ -184,16 +181,16 @@ void drawFlorrRim(Canvas& canvas, Rect panel, std::uint32_t rim) {
     canvas.restore();
 }
 
-void drawFlorrPanel(Canvas& canvas, Rect panel, std::uint32_t fill, std::uint32_t rim) {
+void drawFlorrPanel(Canvas& canvas, Rect panel, std::uint32_t fill) {
     setFill(canvas, fill);
     canvas.fillRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
                     static_cast<float>(panel.w), static_cast<float>(panel.h));
-    drawFlorrRim(canvas, panel, rim);
+    drawFlorrRim(canvas, panel, borderOf(fill));
 }
 
 void drawFlorrButton(Canvas& canvas, Rect rect, std::uint32_t face, double border, double radius,
-                     bool hovered, bool pressed, std::optional<std::uint32_t> rim) {
-    const std::uint32_t edge = rim ? *rim : slotCardShade(face);
+                     bool hovered, bool pressed) {
+    const std::uint32_t edge = borderOf(face);
     if (hovered || pressed) {
         // Per channel and truncated: c * 0.9, plus 25.5 hovered.
         const double lift = pressed ? 0.0 : 25.5;
@@ -212,7 +209,7 @@ void drawFlorrButton(Canvas& canvas, Rect rect, std::uint32_t face, double borde
 
 void drawFlorrClose(Canvas& canvas, Rect square, bool hovered, bool pressed) {
     drawFlorrButton(canvas, square, kCloseFaceInk, kCloseRimOut * 2.0, kCloseFaceRadius, hovered,
-                    pressed, kCloseRimInk);
+                    pressed);
     const double cx = square.x + square.w * 0.5;
     const double cy = square.y + square.h * 0.5;
     canvas.save();
@@ -266,7 +263,7 @@ SlotCardLayout drawSlotCard(Canvas& canvas, Rect panel, const PanelSkin& skin, c
                             const char* button, Vec2 mouse) {
     // The panel: the theme, under a stroke of its shade whose round joins are
     // the window's corners.
-    drawFlorrPanel(canvas, panel, skin.fill, skin.border);
+    drawFlorrPanel(canvas, panel, skin.fill);
 
     SlotCardLayout layout;
     layout.panel = panel;
@@ -306,8 +303,8 @@ SlotCardLayout drawSlotCard(Canvas& canvas, Rect panel, const PanelSkin& skin, c
 void drawSlotPlate(Canvas& canvas, const SpriteCache& sprites, Rect rect, const PanelSkin& skin) {
     ItemTile plate;
     plate.empty = true;
-    plate.emptyFill = skin.border;
-    plate.emptyBorder = skin.border;
+    plate.emptyFill = slotCardShade(skin.fill);
+    plate.emptyBorder = slotCardShade(skin.fill);
     drawItemTile(canvas, sprites, rect, plate);
 }
 
@@ -327,8 +324,7 @@ void drawSlotButton(Canvas& canvas, Rect rect, const char* label,
     const double half = kButtonRim * 0.5;
     drawFlorrButton(canvas, {rect.x + half, rect.y + half, rect.w - kButtonRim, rect.h - kButtonRim},
                     tint ? *tint : kButtonIdleFace, kButtonRim, kButtonFaceRadius,
-                    tint && hovered, tint && pressed,
-                    tint ? std::nullopt : std::optional<std::uint32_t>(kButtonIdleRim));
+                    tint && hovered, tint && pressed);
     outlinedText(canvas, label, rect.x + rect.w * 0.5, rect.y + rect.h * 0.5,
                  panelLabel(kButtonLabelSize, Align::Centre, Baseline::Middle),
                  kSlotCardLabelStroke);

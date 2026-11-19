@@ -292,6 +292,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     listener_.certPath = config.certPath;
     listener_.keyPath = config.keyPath;
     listener_.webRoot = config.webRoot;
+    listener_.bindHost = config.bindHost;
     if (!listener_.start(config.port, errorOut)) return false;
 
     // Seeded before the first tick can set it: a message may be serviced ahead
@@ -838,8 +839,9 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // admitted rather than announcing them.
     announceBossSpawns();
     markTickPhase("banking");
+    stepTrials(nowMillis);
     stepWaves(nowMillis);
-    markTickPhase("waves");
+    markTickPhase("waves+trials");
 }
 
 void GameServer::reapDead() {

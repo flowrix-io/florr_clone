@@ -76,6 +76,7 @@ void GameServer::welcomeSignedIn(Session& session, net::Connection& connection) 
     sendSkinCatalog(session, connection);
     sendGuildState(session, connection);
     sendChatHistory(connection);
+    sendTrialProgress(session, &connection);
 }
 
 void GameServer::handleRegister(Session& session, net::Connection& connection, ByteReader& reader) {

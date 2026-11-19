@@ -30,7 +30,7 @@ void field(MenuContext& ctx,Field& f,Rect r,const std::string& placeholder,std::
     if(!ctx.pointerBlocked)trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);
     if(f.state.focused){ctx.wantsText=true;TextEditOptions options;options.maxBytes=max;options.asciiOnly=false;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}
 }
-bool button(MenuContext& ctx,Rect r,const std::string& label) {chip(ctx.canvas,r,label,r.contains(ctx.mouse()),ChipStyle{0x7473B0u,0x48477Au});return ctx.clicked(r);}
+bool button(MenuContext& ctx,Rect r,const std::string& label) {chip(ctx.canvas,r,label,r.contains(ctx.mouse()),ChipStyle{0x7473B0u});return ctx.clicked(r);}
 int number(const std::string& s) {if(s.empty()||s.size()>9||s.find_first_not_of("0123456789")!=std::string::npos)return -1;try{return std::stoi(s);}catch(...){return -1;}}
 void send(MenuContext& ctx,const char* kind,const char* action,Json q=Json::object()) {q["kind"]=kind;q["action"]=action;ctx.net.requestAdminTools(q);}
 void result(MenuContext& ctx,const char* kind,Rect r) {const auto& reply=ctx.net.adminTools(kind);text(ctx.canvas,ellipsize(reply["message"].asString(),12,r.w),r.x,r.y+r.h/2,style(12,reply["ok"].asBool(true)?0xF1E8FFu:0xFFAAAAu));}

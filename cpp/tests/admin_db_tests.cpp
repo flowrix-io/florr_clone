@@ -1307,6 +1307,71 @@ TEST(an_account_search_reads_when_an_account_was_made_and_seen) {
     CHECK_EQ(account_search::valueText(q.terms[1], 48.0 * hour), std::string("2d ago"));
 }
 
+TEST(an_account_search_reads_any_field_of_the_account_record) {
+    const std::int64_t hour = 3600000;
+    const std::int64_t day = 24 * hour;
+    const std::int64_t now = daysFromCivil(2026, 11, 18) * day;
+    Account account;
+    account.id = "f78zsg7ns23v";
+    account.username = "Bob";
+    account.createdFromHash = "AbCdEf0123";
+    account.muted = true;
+    account.mutedAtMillis = now - 2 * day;
+    account.mutedBy = "boss";
+    account.adminTier = 3;
+    account.passwordChosen = false;
+    const account_search::Subject seen{&account, nullptr, now};
+    const Account blank;
+    const account_search::Subject plain{&blank, nullptr, now};
+
+    const ContentRegistry& content = shippedContent();
+    const auto matches = [&](const account_search::Subject& subject, const std::string& text) {
+        account_search::Query q;
+        std::string error;
+        std::vector<double> values;
+        return account_search::parse(text, content, q, error) &&
+               account_search::termsMatch(q, subject, values);
+    };
+    // Text: contains, exactly, set at all, empty -- in any case and spelling.
+    CHECK(matches(seen, "createdFromHash:cdef0"));
+    CHECK(matches(seen, "created_from_hash=abcdef0123"));
+    CHECK(!matches(seen, "createdfromhash=abcdef"));
+    CHECK(!matches(seen, "createdfromhash:zz"));
+    CHECK(matches(seen, "createdfromhash:"));
+    CHECK(!matches(plain, "createdfromhash:"));
+    CHECK(matches(plain, "createdfromhash="));
+    CHECK(matches(seen, "mutedby=boss username:bo"));
+    // Flags, with their defaults when unset.
+    CHECK(matches(seen, "muted=true muted:yes passwordchosen=false muted:"));
+    CHECK(!matches(plain, "muted=true"));
+    CHECK(matches(plain, "muted=false passwordchosen=true admintier=1"));
+    // Numbers and times.
+    CHECK(matches(seen, "admintier>=2 admintier:3"));
+    CHECK(matches(seen, "mutedat<7d mutedat>=2026-11 mutedat=2026-11-16"));
+    CHECK(!matches(plain, "mutedat<7d"));
+    CHECK(matches(plain, "mutedat>3650d"));
+
+    account_search::Query q;
+    std::string error;
+    CHECK(!account_search::parse("muted=maybe", content, q, error));
+    CHECK(error.find("muted=maybe") != std::string::npos);
+    CHECK(!account_search::parse("createdfromhash>ab", content, q, error));
+    CHECK(!account_search::parse("admintier>=lots", content, q, error));
+    // The password hash is not a field a search reads.
+    CHECK(!account_search::parse("password:x", content, q, error));
+
+    // A row shows what the field holds.
+    CHECK(account_search::parse("createdfromhash: muted=true mutedat<7d", content, q, error));
+    const auto shown = [&](std::size_t t, const account_search::Subject& subject) {
+        return account_search::valueText(q.terms[t], account_search::valueOf(q.terms[t], subject, 0),
+                                         subject.account);
+    };
+    CHECK_EQ(shown(0, seen), std::string("AbCdEf0123"));
+    CHECK_EQ(shown(0, plain), std::string("unset"));
+    CHECK_EQ(shown(1, seen), std::string());
+    CHECK_EQ(shown(2, seen), std::string("2d ago"));
+}
+
 TEST(the_database_editor_finds_accounts_by_what_they_own_and_wear) {
     Harness h("admindb-search-values", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);

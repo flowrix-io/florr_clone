@@ -57,7 +57,6 @@ int main(int argc, char** argv) {
     const std::size_t size = bytes.size();
 
     Font face;
-    face.setKerning(false);   // the table is the unkerned face, as text.cpp sets it
     if (!face.loadFromMemory(std::move(bytes))) return fail(input + " is not a face Font can read");
 
     // The ASCII rows are indexed by codepoint, so the common case is one array

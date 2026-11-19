@@ -56,6 +56,7 @@
 #include "shared/net/bytebuffer.h"
 #include "shared/game/constants.h"
 #include "shared/game/realm.h"
+#include "shared/game/trials.h"
 
 namespace flix {
 
@@ -292,11 +293,20 @@ public:
     /// How far the waves disc reaches now: it grows with each wave. Set by the
     /// server's game of waves, and by the client from its WaveState.
     double wavesRadius = kWavesStartRadius;
+    std::array<double, kTrialRealmCount> trialRadii = [] {
+        std::array<double, kTrialRealmCount> radii{};
+        radii.fill(kTrialArenaRadius);
+        return radii;
+    }();
     /// The disc of a disc realm (isDiscRealm): the arena's ring, or the waves'
     /// disc as big as it is now.
     RealmDisc disc(Realm realm) const {
-        return realm == kWavesRealm ? RealmDisc{kWavesCentre, wavesRadius}
-                                    : RealmDisc{kArenaCentre, kArenaRadius};
+        if (realm == kWavesRealm) return RealmDisc{kWavesCentre, wavesRadius};
+        if (isTrialRealm(realm)) {
+            return RealmDisc{kWavesCentre,
+                             trialRadii[static_cast<std::size_t>(trialRealmIndex(realm))]};
+        }
+        return RealmDisc{kArenaCentre, kArenaRadius};
     }
 
     /// Segments the reference's sight test cuts the ray into. Every call site

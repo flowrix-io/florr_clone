@@ -56,6 +56,8 @@ void usage(const char* program) {
         "                     mobgallery, shop, skins, leaderboard, settings, or\n"
         "                     admin (the dashboard, for an admin account)\n"
         "  --lobby            log in but stay on the title screen\n"
+        "  --trial-picker <permanent|refreshing>\n"
+        "                     open that Trial Grounds page after login\n"
         "  --spawn <where>    where to join: a spawn-point id from the picker\n"
         "                     (garden, ...), or pvp / maze. A door a map marks\n"
         "                     not pickable needs an admin account; anyone else\n"
@@ -127,6 +129,15 @@ int main(int argc, char** argv) {
             }
         }
         else if (arg == "--lobby") config.autoJoin = false;
+        else if (arg == "--trial-picker") {
+            const std::string page = next("--trial-picker");
+            if (page == "permanent") config.autoTrialPickerPage = 1;
+            else if (page == "refreshing") config.autoTrialPickerPage = 2;
+            else {
+                std::fprintf(stderr, "unknown Trial Grounds page: %s\n", page.c_str());
+                return 2;
+            }
+        }
         else if (arg == "--spawn") config.autoSpawn = next("--spawn");
         else if (arg == "--prestige") config.autoPrestige = true;
         else if (arg == "--login") config.forceLogin = true;

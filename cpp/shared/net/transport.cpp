@@ -314,7 +314,7 @@ Listener::~Listener() { stop(); }
 
 bool Listener::start(std::uint16_t port, std::string& errorOut) {
     stop();
-    listenFd_ = web::listen(port, certPath, keyPath, webRoot);
+    listenFd_ = web::listen(port, bindHost, certPath, keyPath, webRoot);
     if (listenFd_ < 0) {
         // Node binds a real port; a page keeps an in-page listener per port
         // for connections made from the same page. Either way one port is
@@ -359,7 +359,13 @@ bool Listener::start(std::uint16_t port, std::string& errorOut) {
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bindHost.empty()) {
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    } else if (::inet_pton(AF_INET, bindHost.c_str(), &addr.sin_addr) != 1) {
+        errorOut = "invalid IPv4 bind address: " + bindHost;
+        stop();
+        return false;
+    }
     addr.sin_port = htons(port);
 
     if (::bind(listenFd_, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0) {

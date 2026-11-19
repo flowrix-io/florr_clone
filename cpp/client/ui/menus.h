@@ -437,10 +437,10 @@ struct MenuContext {
     /// panel only says that it was asked for.
     bool logoutRequested = false;
     /// Whether this build can make its own player an admin, which is true of
-    /// the offline page and nothing else -- see AppConfig::grantAdmin. The
-    /// settings panel draws its Grant Admin row only when this is set.
+    /// the offline page and nothing else -- see AppConfig::setAdmin. The
+    /// settings panel draws its local Admin toggle only when this is set.
     bool adminGrantOffered = false;
-    /// Set by that row, and read the way the logout request is: the grant
+    /// Set by that row, and read the way the logout request is: the toggle
     /// itself belongs to whoever owns the server, which is never a panel.
     bool adminGrantRequested = false;
     /// The debug panel's Profiling tab reads this. Null on a build that does
@@ -541,16 +541,18 @@ inline bool knownPetal(std::uint16_t petalIndex) {
     return petalIndex != kNoPetal && petalIndex < content().petalCount();
 }
 
-/// The window's dark shade: its theme with every channel scaled by 0.81
-/// (0.9 in square-root space), which florr paints the border, the empty slots
-/// and the empty cells in.
-std::uint32_t slotCardShade(std::uint32_t theme);
 /// A card's skin from its theme alone, the way florr derives one.
 ui::PanelSkin slotCardSkin(std::uint32_t theme);
 
-/// florr's window: `fill`, under a 7-wide round-joined stroke of `rim`
+/// The craft windows' slot shade: `theme` with every channel scaled by 0.81
+/// (0.9 in square-root space), which florr paints the empty slots, the empty
+/// cells and the talent tree's nodes in. Slots only -- a window's own border
+/// is borderOf(fill), like every other menu's.
+std::uint32_t slotCardShade(std::uint32_t theme);
+
+/// florr's window: `fill`, under a 7-wide round-joined stroke of borderOf(fill)
 /// centred on the edge -- which is what rounds the corners.
-void drawFlorrPanel(Canvas&, Rect, std::uint32_t fill, std::uint32_t rim);
+void drawFlorrPanel(Canvas&, Rect, std::uint32_t fill);
 /// The stroke alone. florr paints it a second time once the content is down,
 /// so nothing drawn inside the window overruns its edge.
 void drawFlorrRim(Canvas&, Rect, std::uint32_t rim);
@@ -558,15 +560,14 @@ void drawFlorrRim(Canvas&, Rect, std::uint32_t rim);
 /// arcs -- how every florr widget rounds a corner.
 void fillQuadRound(Canvas&, Rect, double radius, std::uint32_t rgb);
 /// florr's bordered button (0x1007ab640). Its rim is `rect` grown by
-/// border/2 and rounded radius + border, in the 0.81 shade of the BASE face;
-/// its face is `rect` shrunk by border/2 and rounded `radius`. Hovered the
-/// face goes c * 0.9 + 25.5 a channel, pressed (held, or forced -- an open
-/// tab) c * 0.9; the rim never changes. `rim` overrides the derived shade.
+/// border/2 and rounded radius + border, in borderOf(the BASE face); its face
+/// is `rect` shrunk by border/2 and rounded `radius`. Hovered the face goes
+/// c * 0.9 + 25.5 a channel, pressed (held, or forced -- an open tab) c * 0.9;
+/// the rim never changes.
 void drawFlorrButton(Canvas&, Rect rect, std::uint32_t face, double border, double radius,
-                     bool hovered, bool pressed,
-                     std::optional<std::uint32_t> rim = std::nullopt);
+                     bool hovered, bool pressed);
 /// florr's close button in the 25-square `square`: a b4 r4 button of
-/// #BB5555 on #974545 with a #CCCCCC cross.
+/// #BB5555 on its borderOf rim with a #CCCCCC cross.
 void drawFlorrClose(Canvas&, Rect square, bool hovered, bool pressed);
 
 /// Where everything on a slot card is this frame. Derived from the card's rect,
@@ -622,7 +623,7 @@ void drawSlotTile(Canvas&, const SpriteCache&, Vec2 centre, double side, double 
 /// The action button: florr's grey button while it cannot be used, and
 /// `tint` -- a rarity's colour -- once it can. Only a usable button answers
 /// the cursor, florr's way: hovered, its face is 10% toward white; pressed,
-/// 10% toward black. The rim is the face's 0.81 shade either way.
+/// 10% toward black. The rim is borderOf(face) either way.
 void drawSlotButton(Canvas&, Rect, const char* label, std::optional<std::uint32_t> tint,
                     bool hovered, bool pressed = false);
 /// The odds under the button.
@@ -1619,7 +1620,7 @@ public:
         return requested;
     }
 
-    /// Whether Settings offers its Grant Admin row. Off unless the app says
+    /// Whether Settings offers its local Admin row. Off unless the app says
     /// otherwise, so a client with no way to grant one draws no button.
     void setAdminGrantOffered(bool offered) { adminGrantOffered_ = offered; }
 
@@ -1755,8 +1756,7 @@ private:
         StripAction action;
         const char* icon;
         bool topRow;
-        std::uint32_t fill;
-        std::uint32_t border;
+        std::uint32_t fill;   ///< its border is borderOf(fill)
     };
 
     /// The strip's slots, in the browser build's order. That order is at once

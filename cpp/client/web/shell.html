@@ -122,6 +122,9 @@
     if (value !== null) args.push('--' + name, value);
   }
   if (query.get('lobby') !== null) args.push('--lobby');
+  if (local && ['permanent', 'refreshing'].includes(query.get('trial'))) {
+    args.push('--trial-picker', query.get('trial'));
+  }
   if (query.get('stats') !== null) args.push('--stats');
   // Forces the touch controls up on a desktop browser, which reports a mouse
   // and would otherwise never show them. For looking at them, not for playing.
@@ -175,7 +178,7 @@
   // that is the keyboard's own scroll, still in use.
   const settleScroll = () => {
     const active = document.activeElement;
-    if (active && active.id === '__cpp_canvas_soft_keyboard') return;
+    if (active && active.id === '__flix_soft_keyboard') return;
     if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
   };
   window.addEventListener('resize', settleScroll);

@@ -46,7 +46,12 @@ inline constexpr int kMaxRealms = 64;
 
 /// How many world MAPS can be staged: every realm that is not the arena, the
 /// maze, the waves or a hosted game.
-inline constexpr int kMaxWorldMaps = kMaxRealms - 4;
+// Trial Grounds use private generated realms. Reserving a pool keeps every
+// run structurally isolated: replication, collision, AI targeting and loot
+// can never cross from one player's chamber into another's.
+inline constexpr int kTrialRealmCount = 24;
+inline constexpr int kMaxWorldMaps = kMaxRealms - 4 - kTrialRealmCount;
+inline constexpr Realm kFirstTrialRealm = static_cast<Realm>(kMaxWorldMaps + 2);
 // Last realm is reserved for admin-hosted games, never a manifest slot.
 inline constexpr Realm kAdminArenaRealm = static_cast<Realm>(kMaxRealms - 1);
 inline constexpr const char* kAdminArenaSpawnChoice = "admin_arena";
@@ -64,6 +69,18 @@ inline constexpr Realm realmFromByte(std::uint8_t value) {
 
 inline constexpr std::size_t realmIndex(Realm realm) { return static_cast<std::size_t>(realm); }
 
+inline constexpr bool isTrialRealm(Realm realm) {
+    const int value = static_cast<int>(realm);
+    return value >= static_cast<int>(kFirstTrialRealm) &&
+           value < static_cast<int>(kFirstTrialRealm) + kTrialRealmCount;
+}
+inline constexpr int trialRealmIndex(Realm realm) {
+    return isTrialRealm(realm) ? static_cast<int>(realm) - static_cast<int>(kFirstTrialRealm) : -1;
+}
+inline constexpr Realm trialRealm(int index) {
+    return static_cast<Realm>(static_cast<int>(kFirstTrialRealm) + index);
+}
+
 /// The realm a world map occupies, by the slot WorldMaps loaded it into.
 ///
 /// Slot 0 is the overworld and keeps realm 0, because that is the default a
@@ -77,7 +94,8 @@ inline constexpr Realm worldRealm(int mapSlot) {
 /// realms that are generated rather than authored and have no map file.
 inline constexpr int worldMapSlot(Realm realm) {
     if (realm == Realm::Overworld) return 0;
-    if (realm == Realm::Arena || realm == Realm::Maze || realm == kWavesRealm) return -1;
+    if (realm == Realm::Arena || realm == Realm::Maze || realm == kWavesRealm ||
+        realm == kAdminArenaRealm || isTrialRealm(realm)) return -1;
     return static_cast<int>(realm) - 2;
 }
 
@@ -141,7 +159,7 @@ struct RealmDisc {
     double radius = 0.0;
 };
 inline constexpr bool isDiscRealm(Realm realm) {
-    return realm == Realm::Arena || realm == kWavesRealm;
+    return realm == Realm::Arena || realm == kWavesRealm || isTrialRealm(realm);
 }
 
 /// The reference's PVP rules that are numbers: a flat 100 max health for

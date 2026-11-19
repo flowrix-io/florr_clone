@@ -536,7 +536,7 @@ void GameServer::adminDbList(net::Connection& connection, const std::string& sea
         // One count is named by the search box above it; several need names.
         std::string note;
         for (std::size_t t = 0; t < query.terms.size(); ++t) {
-            const std::string text = account_search::valueText(query.terms[t], rows[i].values[t]);
+            const std::string text = account_search::valueText(query.terms[t], rows[i].values[t], &account);
             if (text.empty()) continue;
             if (!note.empty()) note += ", ";
             if (query.terms.size() > 1) note += query.terms[t].label + " ";

@@ -79,6 +79,9 @@ struct AppConfig {
     /// which is the only way to photograph the title screen of a client that
     /// has credentials -- otherwise it joins before the first frame is drawn.
     bool autoJoin = true;
+    /// Test/screenshot route: 1 opens permanent trials and 2 opens refreshing
+    /// trials after login. Zero leaves the lobby alone.
+    int autoTrialPickerPage = 0;
     /// Where a scripted join lands: a spawn-picker id -- a door such as
     /// `garden`, or a qualified `<map>:<door>` -- or "pvp"/"maze" for the two
     /// realms that are destinations rather than places on the map. Empty means
@@ -141,17 +144,18 @@ struct AppConfig {
     /// dispatched events are untouched.
     bool inputGuard = false;
 
-    /// Makes this account an admin, for a build that can do that locally.
+    /// Enables or disables admin for this account in a build that owns its
+    /// server locally.
     ///
     /// Set only by the single-file offline build, where the server object is
     /// in this very process and the call reaches it directly. Its presence is
-    /// also what puts the Grant Admin button in Settings > Advanced: a client
+    /// also what puts the Admin toggle in Settings > Advanced: a client
     /// dialling a real server has no hook, so it offers no button, and there
     /// is nothing on the wire for one to press anyway. Takes this client's
     /// session token -- which account that is, the server works out for
-    /// itself, so no name is ever what aims the grant -- and reports whether
-    /// the grant landed.
-    std::function<bool(const std::string& sessionToken)> grantAdmin;
+    /// itself, so no name is ever what aims the change -- plus the desired
+    /// state, and reports whether the change landed.
+    std::function<bool(const std::string& sessionToken, bool enabled)> setAdmin;
 };
 
 class App {
@@ -196,6 +200,8 @@ private:
 
     void drawLogin(Canvas&, double time);
     void drawLobby(Canvas&, double time);
+    void updateTrialPicker();
+    void drawTrialPicker(Canvas&);
     /// What the lobby becomes between Ready and the server's answer: the
     /// connecting screen's layout with "Loading..." under the title.
     void drawLoading(Canvas&, double time);
@@ -341,6 +347,7 @@ private:
     void drawDeathCard(Canvas&, double time);
     /// The waves' top of the screen, and what a dead flower is told.
     void drawWaveHud(Canvas&, double time);
+    void drawTrialHud(Canvas&, double time);
     /// What the gauge is showing, eased after the server's few reports a second.
     double waveGaugeTimer_ = 0.0;
     double waveGaugeRed_ = 0.0;
@@ -531,6 +538,16 @@ private:
     /// saved spawn choice when the client starts and only changes by clicking,
     /// so the settings file keeps naming a door and never a row.
     std::string pickerTab_ = "default";
+    bool trialPickerOpen_ = false;
+    /// The monthly Unique/Apex route is a second page, like Spiral Abyss's
+    /// later challenge area, rather than four cells mixed into the permanent
+    /// progression grid.
+    bool trialRefreshingPicker_ = false;
+    int selectedTrialFloor_ = 1;
+    int trialRewardPreviewFloor_ = 0;
+    int trialStartFloor_ = 0;
+    bool adminTogglePending_ = false;
+    bool adminToggleTarget_ = false;
 
     Screen screen_ = Screen::Connecting;
     double timeSeconds_ = 0;

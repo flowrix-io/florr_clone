@@ -149,7 +149,7 @@ constexpr double kRowButtonTextSize = 13.0;
 constexpr double kRowButtonRight = 34.0;
 
 constexpr std::uint32_t kAcceptFace = 0x6CBF5Eu;
-constexpr std::uint32_t kAcceptRim = 0x56994Bu;
+constexpr std::uint32_t kAcceptRim = borderOf(kAcceptFace);
 
 /// How far below the true middle a `Baseline::Middle` line is set. At the
 /// card's 13-16 unit bold sizes this rasterizer's 'middle' seats the letters a

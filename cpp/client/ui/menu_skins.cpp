@@ -57,9 +57,9 @@ namespace {
 // private swatch table. kSkinsSkin is what the strip's skins button is painted
 // in, so the panel a player opens is visibly the button they pressed.
 
-/// The selection colour: the strip button's purple, which is also the skin's
-/// border. Bright enough to read against the body it sits on.
-constexpr std::uint32_t kAccentPurple = kSkinsSkin.border;
+/// The selection colour: a purple brighter than the body, so it reads against
+/// the body it sits on.
+constexpr std::uint32_t kAccentPurple = 0x9A3FD0u;
 /// Sunken surfaces -- the shape list, a browse card.
 constexpr std::uint32_t kWell = hsvScale(kSkinsSkin.fill, 0.66);
 /// One row on a sunken surface.
@@ -795,7 +795,6 @@ void Studio::actionChip(Canvas& canvas, Rect r, const std::string& caption, cons
                         std::uint32_t fill, double textSize) {
     ChipStyle style;
     style.fill = fill;
-    style.border = kWell;
     style.textSize = textSize;
     ui::chip(canvas, r, caption, hovering && hover == action, style);
     addRegion(r, action);
@@ -806,7 +805,7 @@ void Studio::actionChip(Canvas& canvas, Rect r, const std::string& caption, cons
 void Studio::iconBtn(Canvas& canvas, Rect r, int kind, const Action& action) {
     const bool hovered = hovering && hover == action;
     const std::uint32_t fill = kind == 2 ? kDangerFill : kRowFill;
-    inlaid(canvas, r, hovered ? lighten(fill, 0.15) : fill, kWell, 2.0, 4.0);
+    inlaid(canvas, r, fill, 2.0, 4.0, 1.0, hovered ? lighten(fill, 0.15) : fill);
 
     const double cx = r.x + r.w / 2, cy = r.y + r.h / 2;
     canvas.save();
@@ -841,7 +840,7 @@ void Studio::votePill(Canvas& canvas, Rect r, int glyph, const std::string& coun
     std::uint32_t fill = kRowFill;
     if (active && glyph == 0) fill = kAccent;
     if (active && glyph == 1) fill = kDangerFill;
-    inlaid(canvas, r, hovered ? lighten(fill, 0.15) : fill, kWell, 2.0, 4.0);
+    inlaid(canvas, r, fill, 2.0, 4.0, 1.0, hovered ? lighten(fill, 0.15) : fill);
 
     const double cy = r.y + r.h / 2;
     const double gx = count.empty() ? r.x + r.w / 2 : r.x + 11.0;
@@ -1016,7 +1015,7 @@ void Studio::drawPreview(Canvas& canvas) {
     canvas.save();
     // Sunk into the card the way every other surface on it is: the well's
     // colour as a frame, the board inside it.
-    inlaid(canvas, pr, kBoard, kWell, 3.0, 6.0);
+    inlaid(canvas, pr, kBoard, 3.0, 6.0);
     canvas.save();
     clipRound(canvas, {pr.x + 3, pr.y + 3, pr.w - 6, pr.h - 6}, 4.0);
     canvas.translate(static_cast<float>(pr.x + pr.w / 2), static_cast<float>(pr.y + pr.h / 2));
@@ -1081,7 +1080,7 @@ void Studio::drawPreview(Canvas& canvas) {
 
 void Studio::drawShapeList(Canvas& canvas, Rect view) {
     if (view.h <= 0) return;
-    inlaid(canvas, view, kWell, kSkinsSkin.border, 2.0, 6.0);
+    inlaid(canvas, view, kWell, 2.0, 6.0);
 
     shapeScroll.contentHeight = static_cast<double>(shapes.size()) * kRowPitch + 8.0;
     shapeScroll.viewHeight = view.h;
@@ -1103,7 +1102,7 @@ void Studio::drawShapeList(Canvas& canvas, Rect view) {
         if (ry + kRowCard > view.y && ry < view.bottom()) {
             const bool sel = static_cast<int>(i) == selected;
             const Rect row{view.x + 6.0, ry, rowW, kRowCard};
-            if (sel) inlaid(canvas, row, kAccentPurple, kSkinsSkin.border, 2.0, 4.0);
+            if (sel) inlaid(canvas, row, kAccentPurple, 2.0, 4.0);
 
             // The shape's own colour, as the swatch that identifies its row.
             const Rect swatch{row.x + 7.0, row.y + (kRowCard - 12.0) * 0.5, 12.0, 12.0};
@@ -1506,11 +1505,11 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me, double timeSecond
                         cardW, kCardH};
         if (card.bottom() < view.y || card.y > view.bottom()) continue;
         const bool equipped = skin.id == equippedId();
-        inlaid(canvas, card, kWell, equipped ? kAccentPurple : kSkinsSkin.border, 2.0, 6.0);
+        inlaid(canvas, card, equipped ? kAccentPurple : kWell, 2.0, 6.0);
 
         const Rect board{card.x + (cardW - preview) * 0.5, card.y + 10.0, preview, preview};
         canvas.save();
-        inlaid(canvas, board, kBoard, kWell, 2.0, 4.0);
+        inlaid(canvas, board, kBoard, 2.0, 4.0);
         clipRound(canvas, {board.x + 2, board.y + 2, board.w - 4, board.h - 4}, 3.0);
         canvas.translate(static_cast<float>(board.x + board.w / 2),
                          static_cast<float>(board.y + board.h / 2));

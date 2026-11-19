@@ -6,7 +6,7 @@
 // change what the simulation does -- which is why hitboxes can be switched on
 // without it being a cheat. The account's own controls -- its password, Log
 // Out -- used to sit on the Advanced tab; they are the Account card's now
-// (menu_account.cpp), and the offline build's Grant Admin is the one request
+// (menu_account.cpp), and the offline build's Admin toggle is the one request
 // to a server left here.
 //
 // The panel keeps more between frames than SettingsPanel has members for: a
@@ -703,24 +703,21 @@ bool SettingsPanel::render(MenuContext& ctx) {
 
             p.cy += 14.0;
             // Offline only: the row is there when this build has a server of
-            // its own to ask (see AppConfig::grantAdmin), which is the
+            // its own to ask (see AppConfig::setAdmin), which is the
             // single-file page and nothing else. A client dialling a real
             // server has no hook, draws no row, and has nothing to send.
             if (ctx.adminGrantOffered) {
                 const Rect grant{contentX, p.cy, 160.0, 32.0};
                 if (ctx.net.isSkinAdmin()) {
-                    // Painted, not laid out as a button: there is nothing left
-                    // to press, and a row that lit up under the cursor would
-                    // say there is. The row stays so the panel goes on
-                    // answering "am I an admin?" -- `isSkinAdmin` is the same
-                    // flag the chat autocomplete hides its /admin rows behind.
-                    ui::button(canvas, grant, "Admin Granted", false, false,
-                               gardnStyle(kNeutralFill, 14.0));
-                } else if (p.button(grant, "Grant Admin", kActionFill, 14.0, kGrantAdmin)) {
+                    if (p.button(grant, "Disable Admin", kDangerFill, 14.0, kGrantAdmin)) {
+                        ctx.adminGrantRequested = true;
+                    }
+                } else if (p.button(grant, "Enable Admin", kActionFill, 14.0, kGrantAdmin)) {
                     // The app owns the server object in that build; the panel
                     // only says it was asked, exactly as the Account card's Log
                     // Out does. The label flips on its own once the server's
-                    // answer lands.
+                    // answer lands. The app derives the desired state from
+                    // the same server-held flag that chose this label.
                     ctx.adminGrantRequested = true;
                 }
                 p.cy += 42.0;
