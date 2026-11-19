@@ -176,6 +176,14 @@ void GameServer::spawnTrialChamber(TrialRun& trial, double nowMillis) {
     auto found = sessions_.find(trial.owner);
     if (found == sessions_.end() || !found->second.playing()) return;
     clearTrialMobs(trial);
+    // A new room: every chamber after the first starts with the flower back
+    // in the middle, behind the iris cued in stepTrial. The first chamber
+    // starts where the floor was picked, so it needs neither.
+    if (trial.chamber > 1) {
+        if (!trial.teleportCued) sendTeleported(found->second.entity);
+        teleportEntity(found->second.entity, kWavesCentre, false);
+    }
+    trial.teleportCued = false;
     trial.phase = TrialPhase::Active;
     trial.deaths = 0;
     trial.deathCounted = false;
@@ -264,6 +272,11 @@ void GameServer::stepTrial(TrialRun& trial, double nowMillis) {
     }
     Session& session = found->second;
     if (trial.phase == TrialPhase::Intermission) {
+        if (!trial.teleportCued &&
+            nowMillis >= trial.nextChamberAtMillis - kTrialTeleportLeadMillis) {
+            trial.teleportCued = true;
+            sendTeleported(session.entity);
+        }
         if (nowMillis >= trial.nextChamberAtMillis) spawnTrialChamber(trial, nowMillis);
         if (nowMillis >= trial.nextStateMillis) {
             trial.nextStateMillis = nowMillis + 200.0;

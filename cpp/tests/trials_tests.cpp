@@ -115,3 +115,62 @@ TEST(trial_reward_petals_are_an_explicit_safe_allowlist) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Moving between chambers
+// ---------------------------------------------------------------------------
+
+#include "server_harness.h"
+
+TEST(a_new_trial_chamber_plays_the_teleport_iris_and_recentres_the_flower) {
+    using namespace flix::testsupport;
+    Harness h("trial-teleport",
+              [](const std::string& path) { seedUser(path, "trialist", "password7"); },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "trialist", "password7"));
+    client.joinGame(1920, 1080, std::string(kTrialsSpawnChoice) + ":1", "trialist", false);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; },
+                      200));
+    Session* session = GameServerPeer::sessionOf(h.server, "trialist");
+    if (session == nullptr) { CHECK(false); return; }
+    std::remove_reference_t<decltype(GameServerPeer::trials(h.server)[0])>* run = nullptr;
+    for (auto& trial : GameServerPeer::trials(h.server)) {
+        if (trial.owner == session->connection) run = &trial;
+    }
+    if (run == nullptr) { CHECK(false); return; }
+    CHECK(run->phase == TrialPhase::Active);
+    CHECK_EQ(run->chamber, 1);
+    // Starting the first chamber is no teleport.
+    CHECK(!client.takeTeleported());
+
+    // Chamber one cleared, standing off-centre, as stepTrial leaves it.
+    World& world = h.server.world();
+    run->chamber = 2;
+    run->phase = TrialPhase::Intermission;
+    run->nextChamberAtMillis = GameServerPeer::clockMillis(h.server) + 1500.0;
+    const Vec2 offCentre = kWavesCentre + Vec2{400.0, 0.0};
+    world.get<Transform>(session->entity).position = offCentre;
+
+    // The iris is cued while the old room is still up, ahead of the swap by
+    // about the time it takes to shut.
+    double cuedAt = -1.0;
+    CHECK(h.stepUntil({&client}, [&] {
+        if (client.takeTeleported()) {
+            cuedAt = GameServerPeer::clockMillis(h.server);
+            return true;
+        }
+        return false;
+    }, 400));
+    CHECK(run->phase == TrialPhase::Intermission);
+    CHECK(cuedAt >= run->nextChamberAtMillis - kTrialTeleportLeadMillis - 100.0);
+
+    // Then the new chamber opens with the flower back in the middle, and the
+    // client hears no second teleport for it.
+    CHECK(h.stepUntil({&client}, [&] { return run->phase == TrialPhase::Active; }, 400));
+    CHECK_EQ(run->chamber, 2);
+    CHECK(distance(world.get<Transform>(session->entity).position, kWavesCentre) < 50.0);
+    h.step(5, {&client});
+    CHECK(!client.takeTeleported());
+}

@@ -907,6 +907,9 @@ inline Entity onlyPlayer(World& world) {
 struct GameServerPeer {
     /// The one game of waves.
     static auto& waves(GameServer& server) { return server.waves_; }
+    /// The Trial Grounds runs, one per trial realm, and the clock they run on.
+    static auto& trials(GameServer& server) { return server.trials_; }
+    static double clockMillis(const GameServer& server) { return server.clockMillis_; }
     static SpawnSystem& spawning(GameServer& server) { return *server.spawning_; }
     /// The tick's three broadphases: the shared one, separation's, and the
     /// petals' attraction grid.

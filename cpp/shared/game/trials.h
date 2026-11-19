@@ -18,6 +18,12 @@ inline constexpr int kTrialFloorCount = kTrialRarityCount * kTrialFloorsPerRarit
 inline constexpr int kTrialPermanentFloorCount = 16; // Common through Super.
 inline constexpr double kTrialReviveMillis = 5000.0;
 inline constexpr double kTrialIntermissionMillis = 2500.0;
+/// How long before the next chamber spawns the server tells the client it is
+/// being teleported. The client's iris takes 0.8 s to shut over a snapshot of
+/// the old room; cueing a little less than that ahead means the room swap lands
+/// while the snapshot still covers the screen, and the iris opens on the new
+/// chamber.
+inline constexpr double kTrialTeleportLeadMillis = 650.0;
 /// The waiting room's disc, before a floor starts and after it ends. A running
 /// chamber is sized from its wave (trialChamberRadius) instead.
 inline constexpr double kTrialArenaRadius = 1200.0;

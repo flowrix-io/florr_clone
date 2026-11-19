@@ -680,6 +680,8 @@ private:
         int deaths = 0;
         bool deathCounted = false;
         bool awaitingWave = false;
+        /// The iris for the next chamber has been cued (sendTeleported).
+        bool teleportCued = false;
         int wave = 0;
         int waveCount = 1;
         double chamberStartedMillis = 0.0;
