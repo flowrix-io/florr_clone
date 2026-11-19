@@ -206,6 +206,10 @@ public:
     std::string certPath;
     std::string keyPath;
 
+    /// Address to bind, or empty for every interface. A localhost development
+    /// server sets this to 127.0.0.1; production keeps the empty default.
+    std::string bindHost;
+
     /// Directory the web backend serves the client from over the same HTTP(S)
     /// listener: the web build's own files, by name, and nothing else in it
     /// (see web::listen). Empty means the directory the program was loaded

@@ -65,6 +65,7 @@ void usage(const char* program) {
     std::printf(
         "usage: %s [options]\n"
         "  --port <number>    listen port (default 3000)\n"
+        "  --host <address>   bind address (default: all interfaces)\n"
         "  --data <dir>       the staged content: mobs.json, petals.json,\n"
         "                     mob_drops.json and the maps (default data)\n"
         "  --db <path>        account database (default inventory.json)\n"
@@ -244,6 +245,7 @@ int main(int argc, char** argv) {
             return argv[++i];
         };
         if (arg == "--port") config.port = static_cast<std::uint16_t>(std::atoi(next("--port")));
+        else if (arg == "--host") config.bindHost = next("--host");
         else if (arg == "--data") config.dataDir = next("--data");
         else if (arg == "--db") config.databasePath = next("--db");
         else if (arg == "--seed") config.worldSeed = std::strtoull(next("--seed"), nullptr, 10);

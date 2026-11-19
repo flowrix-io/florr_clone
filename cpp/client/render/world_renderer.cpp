@@ -161,7 +161,7 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                 // In the waves a dead flower is a camera: the server walks its
                 // body after whatever it is watching (GameServer::spectateWaves),
                 // so there is no corpse to show.
-                if (realm_ == kWavesRealm) break;
+                if (realm_ == kWavesRealm || isTrialRealm(realm_)) break;
                 // A corpse carries none of the living furniture: no plate, no
                 // bar, no level, no petals.
                 drawCorpse(canvas, entity, camera, at, timeSeconds);
@@ -401,7 +401,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
 #endif
 
     if (realm_ == Realm::Maze || realm_ == Realm::Arena || realm_ == kAdminArenaRealm ||
-        realm_ == kWavesRealm) {
+        realm_ == kWavesRealm || isTrialRealm(realm_)) {
         // Neither has a map for the chunk cache to hold, and the one it holds
         // is a realm the player has left: tens of megabytes of bitmaps.
         if (!terrainChunks_.chunks.empty()) terrainChunks_ = TerrainChunks{};
@@ -410,7 +410,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         drawMaze(canvas, camera);
     } else if (realm_ == Realm::Arena) {
         drawArena(canvas, camera);
-    } else if (realm_ == kWavesRealm) {
+    } else if (realm_ == kWavesRealm || isTrialRealm(realm_)) {
         drawWaves(canvas, camera, timeSeconds);
     } else {
         drawTerrain(canvas, camera, realm_);

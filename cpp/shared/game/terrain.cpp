@@ -1381,7 +1381,7 @@ Vec2 Terrain::realmExtent(Realm realm) const {
         return {side, side};
     }
     if (realm == Realm::Arena) return {kArenaWorldSize, kArenaWorldSize};
-    if (realm == kWavesRealm) return {kWavesWorldSize, kWavesWorldSize};
+    if (realm == kWavesRealm || isTrialRealm(realm)) return {kWavesWorldSize, kWavesWorldSize};
     const Grid& g = grid(realm);
     // A realm with no map staged still has to answer with something finite --
     // a clamp against zero would collapse every coordinate onto the origin.

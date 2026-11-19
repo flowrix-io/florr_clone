@@ -1807,7 +1807,7 @@ TEST(the_server_owner_is_tier_one_that_manages_tier_one) {
     CHECK_EQ(tierOf("owner"), kOwnerAdminTier);
     CHECK(!h.server.database().findUser("owner")->adminBanned);
 
-    // The offline page's Grant Admin button leaves an owner the owner.
+    // The permanent grant helper leaves an owner the owner.
     CHECK(h.server.grantAdmin(owner.sessionToken()));
     CHECK_EQ(tierOf("owner"), kOwnerAdminTier);
     CHECK(h.stepUntil(all, [&] { return sawText(owner, "You are now an admin."); }, 60));
@@ -1825,9 +1825,8 @@ TEST(the_server_owner_is_tier_one_that_manages_tier_one) {
 }
 
 TEST(a_local_grant_makes_an_admin_the_respawn_does_not_take_back) {
-    // GameServer::grantAdmin is what the offline page's Grant Admin button
-    // calls: the server is in the player's own page, so the grant is a direct
-    // call rather than anything on a wire. It is the PERMANENT flag, which is
+    // GameServer::grantAdmin is a direct server call rather than anything on
+    // a wire. It is the PERMANENT flag, which is
     // the whole difference from `/admin grant_admin` -- a console lent for one
     // life would be gone the first time that page's player died.
     Harness h("cmd-local-grant", [](const std::string& path) {
@@ -1863,6 +1862,13 @@ TEST(a_local_grant_makes_an_admin_the_respawn_does_not_take_back) {
     CHECK(before != nullptr);
     if (before != nullptr) CHECK(!before->admin);
 
+    // A trusted in-process caller can optionally require one resolved account
+    // username without ever accepting a username as the target credential.
+    CHECK(!h.server.grantAdmin(client.sessionToken(), "cookerylocal"));
+    before = h.server.database().findUser("solo");
+    CHECK(before != nullptr);
+    if (before != nullptr) CHECK(!before->admin);
+
     // Keyed on the session token the client was issued, as the offline page
     // hands it over -- never on the account's name.
     CHECK(h.server.grantAdmin(client.sessionToken()));
@@ -1892,6 +1898,37 @@ TEST(a_local_grant_makes_an_admin_the_respawn_does_not_take_back) {
 
     // Granting it twice is a no-op that still reports the standing.
     CHECK(h.server.grantAdmin(client.sessionToken()));
+}
+
+TEST(the_offline_admin_toggle_works_for_every_local_account_and_can_be_reversed) {
+    Harness h("cmd-local-admin-toggle", [](const std::string& path) {
+        seedUser(path, "localtester", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "localtester", "password7"));
+    CHECK(!client.isSkinAdmin());
+
+    // Only the server-issued token can aim the change. No reserved username
+    // is needed, and a typed account name is not accepted as a substitute.
+    CHECK(!h.server.setLocalAdmin("localtester", true));
+    CHECK(h.server.setLocalAdmin(client.sessionToken(), true));
+    CHECK(h.stepUntil({&client}, [&] { return client.isSkinAdmin(); }, 120));
+
+    const Account* enabled = h.server.database().findUser("localtester");
+    CHECK(enabled != nullptr);
+    if (enabled != nullptr) CHECK(enabled->adminActive());
+
+    CHECK(h.server.setLocalAdmin(client.sessionToken(), false));
+    CHECK(h.stepUntil({&client}, [&] { return !client.isSkinAdmin(); }, 120));
+    const Account* disabled = h.server.database().findUser("localtester");
+    CHECK(disabled != nullptr);
+    if (disabled != nullptr) CHECK(!disabled->admin);
+
+    // It remains a true toggle rather than a one-way grant.
+    CHECK(h.server.setLocalAdmin(client.sessionToken(), true));
+    CHECK(h.stepUntil({&client}, [&] { return client.isSkinAdmin(); }, 120));
 }
 
 TEST(a_command_never_takes_a_nameplate_for_the_player_it_names) {

@@ -420,7 +420,8 @@ void App::updateDead(double dt) {
         chatOpen_ = true;
     }
     if (!deathCardVisible_) return;
-    const bool inWaves = net_.view().realm() == kWavesRealm;
+    const bool inWaves = net_.view().realm() == kWavesRealm ||
+                         isTrialRealm(net_.view().realm());
 
     // The reference acts on the press, not the release, so the card is gone by
     // the time the button comes back up and a pressed state is never seen.
@@ -451,7 +452,7 @@ void App::updateDead(double dt) {
 
 void App::drawWaveHud(Canvas& canvas, double time) {
     const NetClient::WaveView& wave = net_.wave();
-    if (net_.view().realm() != kWavesRealm || !wave.known) return;
+    if (net_.view().realm() != kWavesRealm || !wave.known || net_.trial().known) return;
     const double width = canvas.width();
     const double height = canvas.height();
     const double middle = width * 0.5;
@@ -579,6 +580,43 @@ void App::drawWaveHud(Canvas& canvas, double time) {
                      static_cast<float>(pillHeight), static_cast<float>(3.0 * kWaveUi));
     canvas.fill();
     text(canvas, line, middle, pillY, waiting);
+}
+
+void App::drawTrialHud(Canvas& canvas) {
+    const NetClient::TrialView& trial = net_.trial();
+    if (!isTrialRealm(net_.view().realm()) || !trial.known) return;
+    const double middle = canvas.width() * 0.5;
+    const Rect panel{middle - 205.0, 18.0, 410.0, 106.0};
+    setFill(canvas, 0x15121Fu, 0.78);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
+                     static_cast<float>(panel.w), static_cast<float>(panel.h), 10.0f);
+    canvas.fill();
+    TextStyle heading;
+    heading.align = Align::Centre;
+    heading.size = 19.0;
+    text(canvas, "Floor " + std::to_string(trial.floor) + " - " +
+                     trialFloorLabel(trial.floor) + "  |  Chamber " +
+                     std::to_string(trial.chamber) + "/3",
+         middle, panel.y + 22.0, heading);
+    TextStyle line = heading;
+    line.size = 14.0;
+    const std::string challenge = trial.challenge == TrialChallenge::Defeat
+                                      ? "Defeat all enemies - deaths: " +
+                                            std::to_string(trial.deaths) + "/4"
+                                      : "Timed clear - " + std::to_string(static_cast<int>(std::ceil(trial.elapsed))) +
+                                            "s / " + std::to_string(static_cast<int>(trial.failure)) + "s";
+    text(canvas, challenge + "  |  Stars: " + std::to_string(trial.stars) + "/9",
+         middle, panel.y + 48.0, line);
+    line.size = 12.0;
+    text(canvas, trialBuffLabel(trial.buff), middle, panel.y + 71.0, line);
+    if (trial.reviveRemaining > 0.0) {
+        line.size = 15.0;
+        text(canvas, "Reviving in " + std::to_string(static_cast<int>(std::ceil(trial.reviveRemaining))) + "...",
+             middle, panel.y + 94.0, line);
+    } else if (trial.phase == TrialPhase::Intermission) {
+        text(canvas, "Chamber cleared - next chamber incoming", middle, panel.y + 94.0, line);
+    }
 }
 
 void App::drawDeathCard(Canvas& canvas, double time) {

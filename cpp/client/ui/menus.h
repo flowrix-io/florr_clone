@@ -437,10 +437,10 @@ struct MenuContext {
     /// panel only says that it was asked for.
     bool logoutRequested = false;
     /// Whether this build can make its own player an admin, which is true of
-    /// the offline page and nothing else -- see AppConfig::grantAdmin. The
-    /// settings panel draws its Grant Admin row only when this is set.
+    /// the offline page and nothing else -- see AppConfig::setAdmin. The
+    /// settings panel draws its local Admin toggle only when this is set.
     bool adminGrantOffered = false;
-    /// Set by that row, and read the way the logout request is: the grant
+    /// Set by that row, and read the way the logout request is: the toggle
     /// itself belongs to whoever owns the server, which is never a panel.
     bool adminGrantRequested = false;
     /// The debug panel's Profiling tab reads this. Null on a build that does
@@ -1619,7 +1619,7 @@ public:
         return requested;
     }
 
-    /// Whether Settings offers its Grant Admin row. Off unless the app says
+    /// Whether Settings offers its local Admin row. Off unless the app says
     /// otherwise, so a client with no way to grant one draws no button.
     void setAdminGrantOffered(bool offered) { adminGrantOffered_ = offered; }
 

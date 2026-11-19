@@ -31,7 +31,6 @@ std::vector<std::uint8_t> stagedFace() {
 const Font& face() {
     static const Font font = [] {
         Font f;
-        f.setKerning(false);   // as client/ui/text.cpp loads it
         f.loadFromMemory(stagedFace());
         return f;
     }();

@@ -135,6 +135,7 @@ std::string GameServer::biomeOfRealm(Realm realm) const {
     if (realm == Realm::Arena) return kArenaSpawnChoice;
     if (realm == Realm::Maze) return kMazeSpawnChoice;
     if (realm == kWavesRealm) return kWavesBiomeId;
+    if (isTrialRealm(realm)) return kTrialsSpawnChoice;
     const MapData* map = worldMaps_.forRealm(realm);
     if (map == nullptr) return std::string();
     // A twin is a biome of its own: nobody in the garden can see a flower in
@@ -173,6 +174,7 @@ const SpawnChoice* GameServer::chosenDoor(const Session& session) const {
 }
 
 Realm GameServer::spawnRealmFor(const Session& session) const {
+    if (session.trialFloor > 0 && isTrialRealm(session.trialRealm)) return session.trialRealm;
     if (session.spawnChoice == kAdminArenaSpawnChoice && (effectiveAdmin(session) || session.adminArenaAdmitted))
         return kAdminArenaRealm;
     if (session.spawnChoice == kMazeSpawnChoice) return Realm::Maze;

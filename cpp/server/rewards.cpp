@@ -35,6 +35,10 @@ std::string creditedPlayerMarkup(const Session& session) {
 
 void GameServer::announceBossSpawns() {
     for (const SpawnSystem::BossSpawn& boss : spawning_->bossSpawns) {
+        // Trial Grounds are private challenges. Their Super+ mobs still
+        // replicate to the owner (and therefore keep their boss bars), but a
+        // private chamber must never become global spawn news.
+        if (world_.has<TrialMob>(boss.entity)) continue;
         // The bots hear about it too, from the same event and in the same
         // breath. Every path that can put a boss in the world queues one of
         // these -- a band stocking itself in a corner nobody has visited, a
@@ -117,6 +121,7 @@ void GameServer::bankKills() {
     std::vector<net::ConnectionId> paidAccounts;
     for (const CombatSystem::DeathRecord& death : combat_->deaths()) {
         if (death.wasPlayer) continue;
+        if (world_.has<TrialMob>(death.entity)) continue;
         const MobType* type = world_.tryGet<MobType>(death.entity);
         if (type == nullptr) continue;
 
