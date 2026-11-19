@@ -2022,6 +2022,54 @@ TEST(pollen_hits_each_mob_at_most_once_per_half_second) {
     CHECK_NEAR(a.health(mob), 86.0, 1e-9);
 }
 
+TEST(dropped_pollen_is_worn_down_by_the_mobs_it_bites_and_breaks) {
+    Arena a;
+    const Entity player = a.player({5000, 5000});
+    const auto puff = [&](double health) {
+        const Entity field = a.world.create();
+        a.world.add<GroundEffectTag>(field);
+        GroundEffect effect{GroundEffectKind::Poison, player, 100.0,
+                            0.0, 1.0, Rarity::Common, 7.0, 5000.0};
+        effect.health = health;
+        a.world.add<GroundEffect>(field, effect);
+        a.world.add<Transform>(field, Transform{{1000, 1000}, 0.0});
+        return field;
+    };
+    const auto biter = [&](Vec2 at) {
+        const Entity mob = a.mob(at, 100.0);
+        a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
+        return mob;
+    };
+
+    // Two 10-damage bites off 25 leave it standing on 5.
+    const Entity sturdy = puff(25.0);
+    biter({1000, 1000});
+    biter({1010, 1000});
+    a.step(1000.0);
+    CHECK(!a.world.has<Dead>(sturdy));
+    CHECK_NEAR(a.world.get<GroundEffect>(sturdy).health, 5.0, 1e-9);
+
+    // A third biter breaks it.
+    biter({990, 1000});
+    a.step(1100.0);
+    CHECK(a.world.has<Dead>(sturdy));
+
+    // A field with no health (a web, a bumble bee's trail) cannot be broken.
+    Arena b;
+    const Entity owner = b.player({5000, 5000});
+    const Entity trail = b.world.create();
+    b.world.add<GroundEffectTag>(trail);
+    b.world.add<GroundEffect>(trail, GroundEffect{GroundEffectKind::Poison, owner, 100.0,
+                                                  0.0, 1.0, Rarity::Common, 7.0, 5000.0});
+    b.world.add<Transform>(trail, Transform{{1000, 1000}, 0.0});
+    for (int i = 0; i < 5; ++i) {
+        const Entity mob = b.mob({1000.0 + i, 1000}, 100.0);
+        b.world.add<ContactDamage>(mob, ContactDamage{1000.0, 500.0});
+    }
+    b.step(1000.0);
+    CHECK(!b.world.has<Dead>(trail));
+}
+
 // ---------------------------------------------------------------------------
 // Petals, against real config
 // ---------------------------------------------------------------------------

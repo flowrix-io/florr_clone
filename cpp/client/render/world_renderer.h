@@ -175,6 +175,16 @@ struct DyingPetal {
     double ageSeconds = 0;
 };
 
+/// One baked picture the terrain keeps while the view's zoom is animating,
+/// and draws scaled rather than rebaking at every frame's new size: what it
+/// shows, and the device pixels across it was baked at.
+struct HeldTerrainPicture {
+    const void* owner = nullptr;
+    int cells = 0;
+    double deviceSide = 0.0;
+    std::unique_ptr<Canvas> bitmap;
+};
+
 class WorldRenderer {
 public:
     void setContent(const ContentRegistry* content) { content_ = content; }
@@ -381,6 +391,15 @@ public:
         terrainCache_ = on;
         if (!on) terrainChunks_ = TerrainChunks{};
     }
+    /// Whether the view's zoom is animating (antennae going on or off). While
+    /// it is, the terrain keeps the chunks it has baked and draws them scaled
+    /// instead of throwing them all away every frame, fills what is not baked
+    /// yet from one small picture of the whole map rather than tile by tile,
+    /// and the wall past the map's edge reuses one patch the same way. Every
+    /// frame of the zoom used to be a new size, and so a full repaint of the
+    /// map and its edge, which is what made the antennae animation lag.
+    void setTerrainZoomAnimating(bool on) { terrainZoomAnimating_ = on; }
+
     /// Forgets every picture it keeps on a canvas -- the terrain chunks and the
     /// glitch surfaces -- and they are made again as they are next drawn. For
     /// when the page has lost their pixels: see App::dropCanvasCaches.
@@ -410,6 +429,9 @@ private:
     /// tile, every frame, and at the antennae's zoom tens of thousands of
     /// calls. False, having drawn nothing, when the canvas transform is not
     /// one the chunks can be blitted through texel for pixel.
+    /// The whole map baked small (terrainOverview_), made on first use.
+    const Canvas* terrainOverview(const MapData& map,
+                                  const std::vector<const SvgDocument*>& art) const;
     bool drawTerrainChunks(Canvas&, const Camera&, const MapData& map,
                            const std::vector<const SvgDocument*>& art, int x0, int y0, int x1,
                            int y1) const;
@@ -922,6 +944,22 @@ private:
         std::size_t bytes = 0;
     };
     mutable TerrainChunks terrainChunks_;
+    /// See setTerrainZoomAnimating. `terrainSettling_` carries the cheap fill
+    /// on past the animation's last frame until the chunks at the final zoom
+    /// have all baked, so the zoom does not end on a frame of tile-by-tile
+    /// painting.
+    bool terrainZoomAnimating_ = false;
+    mutable bool terrainSettling_ = false;
+    /// The whole map at a few pixels a cell, baked once per map, for the
+    /// chunks a zooming frame has not baked yet.
+    struct TerrainOverview {
+        const MapData* map = nullptr;
+        int cellPixels = 0;
+        std::unique_ptr<Canvas> bitmap;
+    };
+    mutable TerrainOverview terrainOverview_;
+    /// The wall patch past the map's edge, held while the zoom animates.
+    mutable HeldTerrainPicture boundaryHold_;
 
     /// Every web's strands at radius one, built on first use. Geometry only,
     /// so a lost GPU context does not take it with it.

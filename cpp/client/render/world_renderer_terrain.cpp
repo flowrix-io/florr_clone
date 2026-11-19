@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -475,15 +476,32 @@ constexpr int kChunkBakeCellsPerFrame = 1024;
 // The one tile grid still drawn oversized: its cells sit on the patch's own
 // fractional pitch, not on device pixels, and its art is the opaque centre
 // tiles the admin arena walls with, where the overlap has nothing to double.
-void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* art,int cols,int rows) {
+//
+// `hold` is non-null while the view's zoom animates: the patch is then baked
+// once into it and blitted scaled, and only rebaked once the zoom has moved
+// it 2x away from the size it was baked at. Through the art cache, every
+// frame of the animation was a new size and so a fresh bake of every patch.
+void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* art,int cols,int rows,
+                        HeldTerrainPicture* hold=nullptr) {
     constexpr double kPatchTileOverlap=1.5;
     if(cols<=0||rows<=0)return;
     const Rect view=camera.visibleWorld(kPatchTileOverlap);
     const double width=cols*kTileSize,height=rows*kTileSize;
-    const int cells=std::clamp(int(512/(kTileSize*camera.zoom())),1,16);
-    const double worldSide=cells*kTileSize,side=worldSide*camera.zoom();
+    int cells=std::clamp(int(512/(kTileSize*camera.zoom())),1,16);
     static const int fallbackIdentity=0;
     const void* owner=art?static_cast<const void*>(art):&fallbackIdentity;
+    const double toPixels=devicePixelsPerUnit(canvas);
+    bool bakeHold=false;
+    if(hold) {
+        bool reuse=hold->bitmap&&hold->owner==owner&&hold->cells>0&&hold->deviceSide>0.0;
+        if(reuse) {
+            const double ratio=hold->cells*kTileSize*camera.zoom()*toPixels/hold->deviceSide;
+            reuse=ratio>=0.5&&ratio<=2.0;
+        }
+        if(reuse)cells=hold->cells;
+        else bakeHold=true;
+    }
+    const double worldSide=cells*kTileSize,side=worldSide*camera.zoom();
     const auto patch=[&](Canvas& c) {
         const float step=float(side/cells),overlap=float(kPatchTileOverlap*camera.zoom());
         for(int y=0;y<cells;++y)for(int x=0;x<cells;++x) {
@@ -491,6 +509,18 @@ void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* a
             else {ui::setFill(c,0x555555u);c.fillRect(x*step,y*step,step,step);}
         }
     };
+    if(bakeHold) {
+        const int device=std::clamp(int(std::ceil(side*toPixels)),1,4096);
+        hold->bitmap=std::make_unique<Canvas>(Canvas::createVirtual(device,device));
+        hold->bitmap->scale(float(device/side),float(device/side));
+        patch(*hold->bitmap);
+        hold->owner=owner;
+        hold->cells=cells;
+        hold->deviceSide=device;
+    }
+    // A held patch lands on fractional pixels, so each one reaches a device
+    // pixel into the next to leave no hairline between them.
+    const double heldPad=1.0/std::max(toPixels,1e-6);
     const auto strip=[&](double left,double top,double right,double bottom) {
         left=std::max(left,view.left());top=std::max(top,view.top());
         right=std::min(right,view.right());bottom=std::min(bottom,view.bottom());
@@ -500,16 +530,27 @@ void drawBoundaryBlocks(Canvas& canvas,const Camera& camera,const SvgDocument* a
         for(int y=int(std::floor(top/worldSide));y<int(std::ceil(bottom/worldSide));++y)
             for(int x=int(std::floor(left/worldSide));x<int(std::ceil(right/worldSide));++x) {
                 const Vec2 at=camera.worldToScreen({x*worldSide,y*worldSide});
+                if(hold) {
+                    const float b=float(hold->deviceSide);
+                    canvas.drawCanvas(*hold->bitmap,0,0,b,b,float(at.x),float(at.y),
+                                      float(side+heldPad),float(side+heldPad));
+                    continue;
+                }
                 if(!drawCachedPicture(canvas,owner,0xB10C0000u+cells,at.x,at.y,side,side,patch)) {
                     canvas.save();canvas.translate(at.x,at.y);patch(canvas);canvas.restore();
                 }
             }
         canvas.restore();
     };
-    strip(view.left(),view.top(),view.right(),0);
-    strip(view.left(),height,view.right(),view.bottom());
-    strip(view.left(),0,0,height);
-    strip(width,0,view.right(),height);
+    // Each strip reaches a device pixel past its edges, into its neighbours
+    // and under the map, which is painted over it: strips that met exactly
+    // left a hairline down every seam, where both antialiased edges let the
+    // backdrop through.
+    const double e=1.0/std::max(camera.zoom()*toPixels,1e-6);
+    strip(view.left(),view.top(),view.right(),e);
+    strip(view.left(),height-e,view.right(),view.bottom());
+    strip(view.left(),-e,e,height+e);
+    strip(width-e,-e,view.right(),height+e);
 }
 
 /// The wall a map is walled in with, to carry on past its edge: the commonest
@@ -657,7 +698,8 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
         const int y1 = std::min(terrain_->tileRows(realm)-1,int(std::floor(visible.bottom()/kTileSize)));
         const auto* floorArt = sprites_ ? sprites_->tileArt(floor.floor) : nullptr;
         const auto* wallArt = sprites_ ? sprites_->tileArt(wall.wall) : nullptr;
-        drawBoundaryBlocks(canvas,camera,wallArt,terrain_->tileCols(realm),terrain_->tileRows(realm));
+        drawBoundaryBlocks(canvas,camera,wallArt,terrain_->tileCols(realm),terrain_->tileRows(realm),
+                           terrainZoomAnimating_?&boundaryHold_:nullptr);
         // Each cell in exactly its own box on whole device pixels, as the
         // map's are (paintTerrainCells).
         const double toPixels = devicePixelsPerUnit(canvas);
@@ -715,7 +757,8 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     // beside a wall the flower cannot cross anyway. Painted before the map,
     // and only outside it, so it is drawn whether or not the view reaches any
     // of the map's own cells.
-    drawBoundaryBlocks(canvas, camera, boundaryArt(*map, art), cols, rows);
+    drawBoundaryBlocks(canvas, camera, boundaryArt(*map, art), cols, rows,
+                       terrainZoomAnimating_ ? &boundaryHold_ : nullptr);
 
     // The cells whose artwork can reach the screen, and NOT ONE MORE. A cell
     // is drawn over exactly its own square, so the view itself is the whole
@@ -757,6 +800,8 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
 
 void WorldRenderer::dropCanvasCaches() {
     terrainChunks_ = TerrainChunks{};
+    terrainOverview_ = TerrainOverview{};
+    boundaryHold_ = HeldTerrainPicture{};
     radiationSprite_.reset();
     radiationLayer_.reset();
 #ifdef __EMSCRIPTEN__
@@ -783,22 +828,35 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
         return false;
     }
     const double zoom = camera.zoom();
-    // Device pixels per WORLD unit: what a chunk is baked at, and the one
-    // number every chunk in the cache shares.
-    const double scale = zoom * toPixels;
-    if (!(scale > 0.0) || !std::isfinite(scale)) return false;
-    const double side = tileBakePixels(kTileSize * scale);
-    int cells = 1;
-    while (cells < kMaxChunkCells && kTileSize * scale * cells * 2.0 <= kChunkPixels) cells *= 2;
+    // Device pixels per WORLD unit the frame wants.
+    const double wanted = zoom * toPixels;
+    if (!(wanted > 0.0) || !std::isfinite(wanted)) return false;
 
-    // A new map, zoom or display scale makes every chunk the wrong picture.
+    // A new map, zoom or display scale makes every chunk the wrong picture --
+    // except while the zoom is animating (setTerrainZoomAnimating), when the
+    // chunks already baked are drawn scaled until the zoom has moved 2x away
+    // from them. Thrown away, every frame of the animation repainted the map.
+    const bool animating = terrainZoomAnimating_;
     TerrainChunks& cache = terrainChunks_;
-    if (cache.map != &map || cache.scale != scale || cache.cells != cells) {
+    bool keep = cache.map == &map && cache.scale > 0.0 && cache.cells > 0;
+    if (keep && cache.scale != wanted) {
+        const double ratio = wanted / cache.scale;
+        keep = animating && ratio >= 0.5 && ratio <= 2.0;
+    }
+    if (!keep) {
+        int fresh = 1;
+        while (fresh < kMaxChunkCells && kTileSize * wanted * fresh * 2.0 <= kChunkPixels) fresh *= 2;
         cache = TerrainChunks{};
         cache.map = &map;
-        cache.scale = scale;
-        cache.cells = cells;
+        cache.scale = wanted;
+        cache.cells = fresh;
     }
+    // What every chunk in the cache is baked at, and how much it is scaled
+    // by to land on this frame: 1 except while the zoom animates.
+    const double scale = cache.scale;
+    const int cells = cache.cells;
+    const double stretch = wanted / scale;
+    const double side = tileBakePixels(kTileSize * scale);
 
     // Everything below is in device pixels, on one grid fixed to the WORLD
     // rather than to the camera: cell t's box runs from cornerAt(t) to
@@ -811,8 +869,8 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     const auto cornerAt = [&](int t) { return std::round(t * kTileSize * scale); };
     const auto grid = [&](int k) { return cornerAt(k * cells); };
     const Vec2 origin = camera.worldToScreen({0.0, 0.0});
-    const double ox = std::round(toPixels * origin.x + m[4]);
-    const double oy = std::round(toPixels * origin.y + m[5]);
+    double ox = std::round(toPixels * origin.x + m[4]);
+    double oy = std::round(toPixels * origin.y + m[5]);
 
     // Least recently drawn first, and never one drawn this frame: the set on
     // screen is what the cache is for, and evicting part of it to bake the
@@ -837,7 +895,38 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     const int cols = map.width();
     const int rows = map.height();
     canvas.save();
-    canvas.setTransform(1, 0, 0, 1, 0, 0);
+    if (stretch == 1.0) {
+        canvas.setTransform(1, 0, 0, 1, 0, 0);
+    } else {
+        // Scaled: everything below is laid out in the baked chunks' own
+        // pixels, from the world origin, and this one transform puts it on
+        // the screen. Not snapped -- the picture is in motion anyway.
+        canvas.setTransform(static_cast<float>(stretch), 0, 0, static_cast<float>(stretch),
+                            static_cast<float>(toPixels * origin.x + m[4]),
+                            static_cast<float>(toPixels * origin.y + m[5]));
+        ox = 0.0;
+        oy = 0.0;
+    }
+    // While the zoom animates, and after it until every chunk at the final
+    // zoom has baked, the whole-map overview goes down first, under every
+    // chunk. It fills the chunks not baked yet -- a blurry picture for a frame
+    // or two, against painting thousands of tiles one at a time every frame
+    // of the animation -- and it is what shows in any hairline the scaled
+    // chunks leave between them, rather than the black under the map.
+    const bool cheapFill = animating || terrainSettling_;
+    if (cheapFill) {
+        if (const Canvas* overview = terrainOverview(map, art)) {
+            canvas.drawCanvas(*overview, 0, 0, static_cast<float>(overview->pixelWidth()),
+                              static_cast<float>(overview->pixelHeight()),
+                              static_cast<float>(ox), static_cast<float>(oy),
+                              static_cast<float>(cornerAt(cols)),
+                              static_cast<float>(cornerAt(rows)));
+        }
+    }
+    // Scaled, a chunk's edges fall between device pixels and the seam
+    // between two of them lets the backdrop through. Each is drawn a device
+    // pixel larger, over the edge of the next.
+    const float overlap = stretch == 1.0 ? 0.0f : static_cast<float>(1.0 / stretch);
     int bakes = 0;
     int bakedCells = 0;
     // The chunks with no bitmap this frame, and the cells that reach them.
@@ -885,8 +974,15 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
             }
             if (found != cache.chunks.end()) {
                 found->second.usedFrame = frame_;
-                canvas.drawCanvas(found->second.bitmap, static_cast<float>(ox + left),
-                                  static_cast<float>(oy + top));
+                if (overlap > 0.0f) {
+                    canvas.drawCanvas(found->second.bitmap, static_cast<float>(ox + left),
+                                      static_cast<float>(oy + top),
+                                      static_cast<float>(width) + overlap,
+                                      static_cast<float>(height) + overlap);
+                } else {
+                    canvas.drawCanvas(found->second.bitmap, static_cast<float>(ox + left),
+                                      static_cast<float>(oy + top));
+                }
                 continue;
             }
             holes.push_back(Rect{ox + left, oy + top, static_cast<double>(width),
@@ -900,7 +996,9 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     // The chunks still waiting for a bake, in one straight paint clipped to
     // them. On the same grid and through the same painter as a bake, so a
     // chunk looks the same the frame before its bitmap arrives as after.
-    if (!holes.empty()) {
+    // Under the cheap fill the overview already lies under them.
+    terrainSettling_ = animating || (terrainSettling_ && !holes.empty());
+    if (!holes.empty() && !(cheapFill && terrainOverview(map, art) != nullptr)) {
         canvas.beginPath();
         for (const Rect& hole : holes) {
             canvas.rect(static_cast<float>(hole.x), static_cast<float>(hole.y),
@@ -913,6 +1011,27 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     }
     canvas.restore();
     return true;
+}
+
+const Canvas* WorldRenderer::terrainOverview(const MapData& map,
+                                             const std::vector<const SvgDocument*>& art) const {
+    TerrainOverview& overview = terrainOverview_;
+    if (overview.map == &map && overview.bitmap) return overview.bitmap.get();
+    const int cols = map.width();
+    const int rows = map.height();
+    if (cols <= 0 || rows <= 0) return nullptr;
+    // A few pixels a cell, and never more than 2048 across: one bake of the
+    // whole map, once, small enough to blit every frame.
+    const int px = std::clamp(2048 / std::max(cols, rows), 2, 16);
+    overview = TerrainOverview{};
+    overview.map = &map;
+    overview.cellPixels = px;
+    overview.bitmap = std::make_unique<Canvas>(Canvas::createVirtual(cols * px, rows * px));
+    paintTerrainCells(*overview.bitmap, map, art, CellSpan{0, 0, cols - 1, rows - 1},
+                      static_cast<double>(px), [&](int tx, int ty) {
+                          return Vec2{static_cast<double>(tx * px), static_cast<double>(ty * px)};
+                      });
+    return overview.bitmap.get();
 }
 
 void WorldRenderer::terrainCacheStats(std::size_t& chunks, std::size_t& bytes) const {

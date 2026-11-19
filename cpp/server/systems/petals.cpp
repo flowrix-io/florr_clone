@@ -2406,11 +2406,19 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 // reload stacked under the flower, a mob on it took ~7x the
                 // listed damage per grain.
                 const double lifetimeSeconds = kPollenLifetimeSeconds * adminReachScale(instance->rarity);
-                emitGroundEffect(world, player, transform->position,
-                                 GroundEffectKind::Poison,
-                                 stats.size * kPollenRadiusPerSize * adminReachScale(instance->rarity),
-                                 0.0, 1.0, instance->rarity, lifetimeSeconds, damage,
-                                 lifetimeSeconds * 1000.0);
+                // It lands with the health the grain had in orbit -- its tier's
+                // and the Petal Health talent's, less anything already taken
+                // -- and the mobs it bites wear that down (CombatSystem's
+                // field pass). It used to be a field nothing could touch.
+                const Health* grain = world.tryGet<Health>(petal);
+                const double health = grain != nullptr ? grain->current : stats.health;
+                const Entity puff = emitGroundEffect(
+                    world, player, transform->position, GroundEffectKind::Poison,
+                    stats.size * kPollenRadiusPerSize * adminReachScale(instance->rarity), 0.0,
+                    1.0, instance->rarity, lifetimeSeconds, damage, lifetimeSeconds * 1000.0);
+                if (puff != NULL_ENTITY && health > 0.0) {
+                    world.get<GroundEffect>(puff).health = health;
+                }
                 world.add<Dead>(petal, Dead{player});
                 continue;
             }
