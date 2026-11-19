@@ -26,7 +26,7 @@ void field(MenuContext& ctx,Field& f,Rect r,const char* placeholder,std::size_t 
     if(!ctx.pointerBlocked)trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);
     if(f.state.focused){ctx.wantsText=true;TextEditOptions options;options.maxBytes=max;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}
 }
-bool click(MenuContext& ctx,Rect r,const std::string& label){chip(ctx.canvas,r,label,ctx.over(r),ChipStyle{0x7473B0u,0x48477Au});return ctx.clicked(r);}
+bool click(MenuContext& ctx,Rect r,const std::string& label){chip(ctx.canvas,r,label,ctx.over(r),ChipStyle{0x7473B0u});return ctx.clicked(r);}
 void request(NetClient& net,const char* action,Json q=Json::object()){q["kind"]="poll";q["action"]=action;net.requestAdminTools(q);}
 struct Overlay {std::string id;double offset=0,pendingAt=0,pendingRevision=0;bool pending=false;} overlay;
 double contentHeight(const Json& poll,double width) {

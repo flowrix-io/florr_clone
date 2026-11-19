@@ -16,7 +16,6 @@ namespace flix::ui {
 inline constexpr std::uint32_t kInk        = 0x000000u;  ///< every outline
 inline constexpr std::uint32_t kPaper      = 0xFFFFFFu;  ///< text and highlights
 inline constexpr std::uint32_t kPanel      = 0x599FDCu;  ///< inventory-blue panel body
-inline constexpr std::uint32_t kPanelDark  = 0x4A8BC2u;  ///< matching panel border
 inline constexpr std::uint32_t kAccent     = 0x1DD129u;  ///< Ready / primary action
 inline constexpr std::uint32_t kDanger     = 0xFF4444u;
 inline constexpr std::uint32_t kWarning    = 0xFFE65Du;
@@ -168,6 +167,29 @@ inline constexpr std::uint32_t lighten(std::uint32_t rgb, double amount = 0.25) 
            (channel((rgb >> 8) & 0xFF) << 8) |
            channel(rgb & 0xFF);
 }
+
+/// How much darker a UI border is than the fill it surrounds: gardn's
+/// `Ui::Element::Style::stroke_hsv` default (Client/Ui/Element.hh), which every
+/// gardn panel, button and slot is stroked with via `Renderer::HSV`.
+inline constexpr double kBorderShade = 0.8;
+
+/// The border of a UI element filled `fill` -- EVERY one: panels, buttons,
+/// chips, slots, strip icons, windows. Never pick a border by hand; derive it
+/// here so every edge in the game is the same step darker than its face.
+///
+/// gardn's `Renderer::HSV(c, v)` exactly: `MIX(black, c, v)`, each channel
+/// scaled and truncated to a byte.
+inline constexpr std::uint32_t borderOf(std::uint32_t fill) {
+    const auto channel = [](std::uint32_t c) -> std::uint32_t {
+        return static_cast<std::uint32_t>(static_cast<double>(c) * kBorderShade);
+    };
+    return (channel((fill >> 16) & 0xFF) << 16) |
+           (channel((fill >> 8) & 0xFF) << 8) |
+           channel(fill & 0xFF);
+}
+
+/// The panel border that goes with kPanel.
+inline constexpr std::uint32_t kPanelDark = borderOf(kPanel);
 
 /// Outline width for an element of the given size, kept within sane bounds so
 /// a tiny icon is not swallowed by its own border.

@@ -54,9 +54,9 @@ namespace {
 constexpr double kWindowWidth = 746.0;
 constexpr double kWindowHeight = 541.4;
 constexpr double kWindowPad = 13.0;
-/// The window and its rim -- the fill's 0.81 shade -- and every plate on it.
+/// The window and its rim -- borderOf(fill) -- and every plate on it.
 constexpr std::uint32_t kWindowFill = 0x7EEF6Du;
-constexpr std::uint32_t kWindowRim = 0x66C258u;
+constexpr std::uint32_t kWindowRim = borderOf(kWindowFill);
 
 /// Every label is white over a black outline 0.12 of its size.
 constexpr double kLineHeight = 1.4;
@@ -179,7 +179,7 @@ constexpr double kScrimMax = 100.0;
 
 /// The Bonus tab's code box is the one highlighted thing on the window, in
 /// Apex's colour and drawn the way florr draws a window: the colour under a
-/// 7-wide rim of its 0.81 shade. Its Redeem button is the shade on the
+/// 7-wide rim of its border shade. Its Redeem button is the shade on the
 /// shade's own shade, as florr's tabs sit on their strip -- grey, florr's
 /// unusable button, until there is a code to send.
 constexpr std::uint32_t kHighlight = 0xFF00FFu;   // rarityColor(Rarity::Apex)
@@ -187,7 +187,6 @@ constexpr double kCodeBoxWidth = 520.0;
 constexpr double kCodeFieldHeight = 40.0;
 constexpr double kRedeemWidth = 110.0;
 constexpr std::uint32_t kButtonIdle = 0x777777u;
-constexpr std::uint32_t kButtonIdleRim = 0x606060u;
 
 /// The challenge tiers and what a kill at each pays (starsForKill). Each card
 /// wears its tier's own colour from the rarity palette.
@@ -652,7 +651,7 @@ bool ShopPanel::render(MenuContext& ctx) {
     const auto at = [&](double x, double y) { return Vec2{panel.x + x, panel.y + y}; };
 
     // --- window -------------------------------------------------------------
-    drawFlorrPanel(canvas, panel, kWindowFill, kWindowRim);
+    drawFlorrPanel(canvas, panel, kWindowFill);
 
     text(canvas, marketMode_?"Mr. Bee's Market":"Shop", panel.x + panel.w * 0.5, panel.y + kTitleMiddle, shopText(kTitleSize));
 
@@ -831,7 +830,7 @@ bool ShopPanel::render(MenuContext& ctx) {
         const Rect box{panel.x + (panel.w - kCodeBoxWidth) * 0.5,
                        panel.y + kHeaderTop + kHeaderHeight + kDialogGap, kCodeBoxWidth,
                        kCodeFieldHeight + 2.0 * kDialogPad};
-        drawFlorrPanel(canvas, box, kHighlight, slotCardShade(kHighlight));
+        drawFlorrPanel(canvas, box, kHighlight);
 
         codeField = Rect{box.x + kDialogPad, box.y + kDialogPad,
                          box.w - 2.0 * kDialogPad - 10.0 - kRedeemWidth, kCodeFieldHeight};
@@ -847,13 +846,12 @@ bool ShopPanel::render(MenuContext& ctx) {
         const bool redeemHover = usable && redeemButton.contains(under);
         if (redeemHover) cursor = CursorShape::Hand;
         const double half = kButtonBorder * 0.5;
-        const std::uint32_t face = slotCardShade(kHighlight);
+        const std::uint32_t face = borderOf(kHighlight);
         drawFlorrButton(canvas,
                         {redeemButton.x + half, redeemButton.y + half,
                          redeemButton.w - kButtonBorder, redeemButton.h - kButtonBorder},
                         usable ? face : kButtonIdle, kButtonBorder, kButtonRadius, redeemHover,
-                        usable && !modalUp && pressing(redeemButton),
-                        usable ? std::nullopt : std::optional<std::uint32_t>(kButtonIdleRim));
+                        usable && !modalUp && pressing(redeemButton));
         text(canvas, "Redeem", redeemButton.x + redeemButton.w * 0.5,
              redeemButton.y + redeemButton.h * 0.5, shopText(kTabSize));
     } else {
@@ -943,7 +941,7 @@ bool ShopPanel::render(MenuContext& ctx) {
             canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
             canvas.translate(static_cast<float>(-centre.x), static_cast<float>(-centre.y));
 
-            drawFlorrPanel(canvas, box, kWindowFill, kWindowRim);
+            drawFlorrPanel(canvas, box, kWindowFill);
             text(canvas, title, centre.x, y + titleRow * 0.5, shopText(kDialogTitleSize));
             y += titleRow + kDialogGap;
             for (std::size_t i = 0; i < lines.size(); ++i) {

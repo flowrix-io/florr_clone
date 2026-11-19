@@ -82,10 +82,10 @@ constexpr std::uint32_t kStringInk = 0xFFE9A8u;
 constexpr std::uint32_t kNumberInk = 0xA8E6FFu;
 constexpr std::uint32_t kAttributeInk = 0xB9F6A6u;
 
-constexpr ChipStyle kChip{0x5D7A76u, 0x445C59u};
-constexpr ChipStyle kOnChip{0x8FC2BAu, 0x5D7A76u};
-constexpr ChipStyle kGoChip{0x4CAF50u, 0x2E7D32u};
-constexpr ChipStyle kDangerChip{0xC0504Du, 0x8E3A38u};
+constexpr ChipStyle kChip{0x5D7A76u};
+constexpr ChipStyle kOnChip{0x8FC2BAu};
+constexpr ChipStyle kGoChip{0x4CAF50u};
+constexpr ChipStyle kDangerChip{0xC0504Du};
 
 /// What a click landed on.
 enum class Act : std::uint8_t {

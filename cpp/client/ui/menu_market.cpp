@@ -18,7 +18,7 @@ struct Forms {std::string account;bool marketLoaded=false,orders=false;int rarit
 void account(MenuContext& ctx){if(forms.account!=ctx.net.profile().username){forms=Forms{};forms.account=ctx.net.profile().username;}}
 TextStyle style(double size=13,unsigned color=0xFFFFFF){TextStyle t;t.size=size;t.fill=color;t.baseline=Baseline::Middle;return t;}
 void field(MenuContext& ctx,Field& f,Rect r,const std::string& placeholder,std::size_t max=32){inputField(ctx.canvas,r,f.text,placeholder,f.state.focused,ctx.timeSeconds,&f.state);if(!ctx.pointerBlocked)trackTextMouse(ctx.window,f.state,r,inputFieldRun(r,f.text,f.state),f.text,ctx.timeSeconds);if(f.state.focused){ctx.wantsText=true;if(!forms.pendingAction.empty())return;TextEditOptions options;options.maxBytes=max;options.asciiOnly=true;editText(ctx.window,f.text,f.state,ctx.timeSeconds,options);}}
-bool button(MenuContext& ctx,Rect r,const std::string& label){chip(ctx.canvas,r,label,r.contains(ctx.mouse()),ChipStyle{0x7473B0u,0x48477Au});return ctx.clicked(r);}
+bool button(MenuContext& ctx,Rect r,const std::string& label){chip(ctx.canvas,r,label,r.contains(ctx.mouse()),ChipStyle{0x7473B0u});return ctx.clicked(r);}
 double number(const std::string& s){if(s.empty()||s.size()>13||s.find_first_not_of("0123456789")!=std::string::npos)return -1;try{const double value=std::stod(s);return validMoney(value)?value:-1;}catch(...){return -1;}}
 void send(MenuContext& ctx,const char* kind,const char* action,Json q=Json::object()){q["kind"]=kind;q["action"]=action;ctx.net.requestAdminTools(q);}
 

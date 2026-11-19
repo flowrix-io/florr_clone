@@ -1075,26 +1075,24 @@ const SvgDocument* MenuSystem::icon(int index) {
 const std::array<MenuSystem::StripSlot, kStripSlotCount>& MenuSystem::strip() {
     using A = StripAction;
     static const std::array<StripSlot, kStripSlotCount> kSlots = {{
-        {MenuId::Settings,      A::OpenMenu, "settings",      true,  0xB3B3B3u, 0x8F8F8Fu},
-        {MenuId::Changelog,     A::OpenMenu, "changelog",     true,  0x00DB3Eu, 0x00AF32u},
-        {MenuId::Notifications, A::OpenMenu, "notifications", true,  0x4A90E2u, 0x3B73B5u},
-        {MenuId::Leaderboard,   A::OpenMenu, "leaderboard",   true,  0xE8A023u, 0xBA801Cu},
-        {MenuId::Guild,         A::OpenMenu, "guild",         true,  0x27DADEu, 0x1FB3B0u},
-        {MenuId::Skins,         A::OpenMenu, "skins",         true,  0xC45CFFu, 0x9A3FD0u},
-        {MenuId::Gallery,       A::OpenMenu, "mob_gallery",   true,  0xD6C206u, 0xAB9B05u},
-        {MenuId::Shop,          A::OpenMenu, "stars",         true,  0x7EF16Bu, 0x64C156u},
+        {MenuId::Settings,      A::OpenMenu, "settings",      true,  0xB3B3B3u},
+        {MenuId::Changelog,     A::OpenMenu, "changelog",     true,  0x00DB3Eu},
+        {MenuId::Notifications, A::OpenMenu, "notifications", true,  0x4A90E2u},
+        {MenuId::Leaderboard,   A::OpenMenu, "leaderboard",   true,  0xE8A023u},
+        {MenuId::Guild,         A::OpenMenu, "guild",         true,  0x27DADEu},
+        {MenuId::Skins,         A::OpenMenu, "skins",         true,  0xC45CFFu},
+        {MenuId::Gallery,       A::OpenMenu, "mob_gallery",   true,  0xD6C206u},
+        {MenuId::Shop,          A::OpenMenu, "stars",         true,  0x7EF16Bu},
         // The talents button's purple, which is also the card's (kAccountSkin).
-        {MenuId::Account,       A::OpenMenu, "account",       true,  kAccountSkin.fill,
-         kAccountSkin.border},
-        {MenuId::None,          A::Discord,  "discord",       true,  0x5865F2u, 0x4752C4u},
-        {MenuId::Debug,         A::OpenMenu, "debug",         true,  0x666666u, 0x4D4D4Du},
+        {MenuId::Account,       A::OpenMenu, "account",       true,  kAccountSkin.fill},
+        {MenuId::None,          A::Discord,  "discord",       true,  0x5865F2u},
+        {MenuId::Debug,         A::OpenMenu, "debug",         true,  0x666666u},
         // The panel's own card colours, so the button says which card it opens.
-        {MenuId::AdminDashboard, A::OpenMenu, "admin",        true,  kAdminDashboardSkin.fill,
-         kAdminDashboardSkin.border},
-        {MenuId::None,          A::Exit,     "exit_button",   true,  0xFF0000u, 0xCC0000u},
-        {MenuId::Inventory,     A::OpenMenu, "inventory",     false, 0x00B3FFu, 0x008FCCu},
-        {MenuId::Talents,       A::OpenMenu, "skills",        false, 0x9D4EDDu, 0x7E3EB1u},
-        {MenuId::Crafting,      A::OpenMenu, "craft",         false, 0xFF9D00u, 0xCC7E00u},
+        {MenuId::AdminDashboard, A::OpenMenu, "admin",        true,  kAdminDashboardSkin.fill},
+        {MenuId::None,          A::Exit,     "exit_button",   true,  0xFF0000u},
+        {MenuId::Inventory,     A::OpenMenu, "inventory",     false, 0x00B3FFu},
+        {MenuId::Talents,       A::OpenMenu, "skills",        false, 0x9D4EDDu},
+        {MenuId::Crafting,      A::OpenMenu, "craft",         false, 0xFF9D00u},
     }};
     return kSlots;
 }
@@ -1240,22 +1238,18 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         // its forge's charcoal: the button says which panel it will open
         // before the player presses it.
         std::uint32_t face = slot.fill;
-        std::uint32_t rim = slot.border;
         if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Oracle) {
             face = kOracleSkin.fill;
-            rim = kOracleSkin.border;
         } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Trader) {
             face = kTraderSkin.fill;
-            rim = kTraderSkin.border;
         } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Titan) {
             face = kTitanSkin.fill;
-            rim = kTitanSkin.border;
         } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Market) {
-            face = 0xFFCA50u; rim = 0xB58D30u;
+            face = 0xFFCA50u;
         } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Assembler) {
             face = kAssemblerSkin.fill;
-            rim = kAssemblerSkin.border;
         }
+        const std::uint32_t rim = borderOf(face);
 
         // Two filled rects rather than a stroke: the face keeps the frame's own
         // rounding one step tighter, where a centred stroke would blow the
@@ -3045,7 +3039,6 @@ void MenuSystem::drawReleaseChip(Canvas& canvas, Window& window, NetClient& net)
     const std::string label = "Release @" + control.username;
     ChipStyle style;
     style.fill = kAdminDashboardSkin.fill;
-    style.border = kAdminDashboardSkin.border;
     style.textSize = kReleaseChipTextSize;
     const double width = measure(label, kReleaseChipTextSize) + kReleaseChipPadding * 2.0;
     const Rect chipRect{reservedLeft(), stripBottom(), width, kReleaseChipHeight};

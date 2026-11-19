@@ -97,9 +97,7 @@ void plate(Canvas&, Rect r, std::uint32_t fill, double radius = kPanelRadius,
 /// stroke in the fill's own darker shade, and chunky outlined white text.
 /// Hover and press are brightness changes on the fill, never a different hue.
 struct ButtonStyle {
-    std::uint32_t fill = kAccent;
-    /// 0xffffffff derives the outline as the fill at 0.8 HSV value.
-    std::uint32_t outline = 0xFFFFFFFFu;
+    std::uint32_t fill = kAccent;   ///< outlined in borderOf(fill)
     double outlineWidth = 5.0;
     /// The browser build's buttons are nearly square-cornered; a rounder one
     /// reads as a different control.
