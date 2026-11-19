@@ -774,6 +774,7 @@ private:
     void handleGuildLeave(Session&, net::Connection&);
     void handleGuildSquadAll(Session&, net::Connection&);
     void handleGuildInviteToSquad(Session&, net::Connection&, ByteReader&);
+    void handleGuildSetOfficer(Session&, net::Connection&, ByteReader&);
 
     // The argument-taking cores behind the four guild messages that carry one.
     //
@@ -790,6 +791,8 @@ private:
     void guildInvite(Session&, net::Connection&, const std::string& target);
     void guildKick(Session&, net::Connection&, const std::string& target);
     void guildInviteToSquad(Session&, net::Connection&, const std::string& target);
+    /// Leader only. Makes `target` an officer, or takes it away.
+    void guildSetOfficer(Session&, net::Connection&, const std::string& target, bool officer);
 
     // -- squads ------------------------------------------------------------
     //
@@ -1133,6 +1136,8 @@ private:
     /// told they are in none, or that only the leader may `action` ("kick
     /// players").
     std::string guildLedBy(const Session&, net::Connection&, const char* action);
+    /// As guildLedBy, but the leader or an officer will do.
+    std::string guildManagedBy(const Session&, net::Connection&, const char* action);
     Session* sessionForUser(const std::string& username);
     net::Connection* connectionForUser(const std::string& username);
     /// One roster message: the guild as it stands, each member flagged online
@@ -1148,6 +1153,13 @@ private:
     /// dozen places and a disconnect in several, and none of them should have
     /// to know a guild is watching.
     void serviceGuildPresence(double nowMillis);
+    /// Once per snapshot pass: which bodies belong to which guild.
+    void refreshGuildBodies();
+    /// The viewer's online guildmates' bodies (never its own), for the
+    /// replicator's alwaysVisible list and the minimap.
+    void collectGuildBodies(const Session&, std::vector<Entity>& out) const;
+    /// Sends GuildMapUpdate when the set of guildmate ids changed.
+    void syncGuildMap(Session&, net::Connection&, const std::vector<Entity>& bodies);
     /// The biome boss clocks live in the database's `bossClocks` table as
     /// wall-clock ready times, so a restart neither resets a cooldown nor
     /// re-deals one. restoreBossClocks hands the spawner what the table holds,
@@ -1741,6 +1753,9 @@ private:
     /// by lower-cased username, mapped to its guildLocation().
     std::unordered_map<std::string, std::string> guildPresence_;
     double nextGuildPresenceMillis_ = 0;
+    /// Rebuilt by refreshGuildBodies each snapshot pass.
+    std::unordered_map<std::string, std::vector<Entity>> guildBodies_;
+    std::unordered_map<std::string, std::string> guildOfUser_;
 
     SquadRoster squads_;
     /// The flattened form the loot and XP rules read, rebuilt each tick.
