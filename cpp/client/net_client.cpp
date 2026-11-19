@@ -85,6 +85,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::EditSkin:            return "editSkin";
         case net::ClientMessage::BrowseSkins:         return "browseSkins";
         case net::ClientMessage::FetchSkins:          return "fetchSkins";
+        case net::ClientMessage::GuildSetOfficer:     return "guildSetOfficer";
     }
     return "unknown";
 }
@@ -110,6 +111,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::SkinCatalog:         return "skinCatalog";
         case net::ServerMessage::SkinPage:            return "skinPage";
         case net::ServerMessage::SkinsFetched:        return "skinsFetched";
+        case net::ServerMessage::GuildMapUpdate:      return "guildMapUpdate";
         case net::ServerMessage::SkinPublished:       return "skinPublished";
         case net::ServerMessage::SkinDeleted:         return "skinDeleted";
         case net::ServerMessage::Notifications:       return "notifications";
@@ -704,6 +706,14 @@ void NetClient::requestGuildSquadAll() {
     send(w);
 }
 
+void NetClient::requestGuildSetOfficer(const std::string& username, bool officer) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildSetOfficer);
+    w.str(username);
+    w.u8(officer ? 1 : 0);
+    send(w);
+}
+
 void NetClient::requestGuildInviteToSquad(const std::string& username) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::GuildInviteToSquad);
@@ -1205,6 +1215,7 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::SkinCatalog:   handleSkinCatalog(reader); break;
         case net::ServerMessage::SkinPage:      handleSkinPage(reader); break;
         case net::ServerMessage::SkinsFetched:  handleSkinsFetched(reader); break;
+        case net::ServerMessage::GuildMapUpdate: handleGuildMapUpdate(reader); break;
         case net::ServerMessage::SkinPublished: handleSkinPublished(reader); break;
         case net::ServerMessage::SkinDeleted:   handleSkinDeleted(reader); break;
         case net::ServerMessage::SkinVotes:     handleSkinVotes(reader); break;
@@ -1870,6 +1881,7 @@ void NetClient::handleGuildUpdate(ByteReader& reader) {
             member.name = reader.str();
             member.online = reader.boolean();
             member.location = reader.str();
+            member.officer = reader.u8() != 0;
             next.members.push_back(std::move(member));
         }
     }
@@ -1878,6 +1890,15 @@ void NetClient::handleGuildUpdate(ByteReader& reader) {
     // Joining answers whatever invitation was outstanding, exactly as
     // applyGuildUpdate drops `pendingInvite` when it is handed a guild.
     if (guild_.joined) guildInvite_ = {};
+}
+
+void NetClient::handleGuildMapUpdate(ByteReader& reader) {
+    const std::uint16_t count = reader.u16();
+    std::vector<std::uint32_t> ids;
+    ids.reserve(count);
+    for (std::uint16_t i = 0; i < count; ++i) ids.push_back(reader.u32());
+    if (!reader.ok()) return;
+    guildmateIds_ = std::move(ids);
 }
 
 void NetClient::handleGuildInviteReceived(ByteReader& reader) {
@@ -1963,6 +1984,7 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     dead_ = false;
     revived = false;
     view_.clear();
+    guildmateIds_.clear();
     chatBubbles_.clear();
     // After the clear, which resets it: the realm is the one thing about the
     // new body the snapshot stream never restates. The maze is built from the
