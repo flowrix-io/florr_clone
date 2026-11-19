@@ -26,6 +26,7 @@
 #include "client/ease.h"
 #include "client/render/art_cache.h"
 #include "client/ui/draw.h"
+#include "client/ui/menu_style.h"
 #include "client/ui/text_input.h"
 #include "shared/game/prestige.h"
 #include "shared/game/constants.h"
@@ -117,7 +118,7 @@ TrialPickerLayout trialPickerLayout(double viewWidth, double viewHeight, bool re
     const double height = std::max(430.0, std::min(maxHeight, viewHeight - 24.0));
     out.panel = {viewWidth * 0.5 - width * 0.5, viewHeight * 0.5 - height * 0.5,
                  width, height};
-    out.close = {out.panel.right() - 53.0, out.panel.y + 17.0, 36.0, 36.0};
+    out.close = closeButtonRect(out.panel);
     out.route = {out.panel.x + 28.0, out.panel.y + 126.0,
                  refreshing ? 230.0 : out.panel.w - 56.0, 50.0};
     out.start = {out.panel.x + out.panel.w * 0.5 - 112.0,
@@ -885,7 +886,7 @@ void App::updateTrialPicker() {
     const TrialPickerLayout layout = trialPickerLayout(
         window_.width(), window_.height(), trialRefreshingPicker_);
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
-    if (hit(layout.close, mouse)) {
+    if (hit(closeButtonHit(layout.panel, window_), mouse)) {
         trialPickerOpen_ = false;
         return;
     }
@@ -926,51 +927,32 @@ void App::updateTrialPicker() {
 
 void App::drawTrialPicker(Canvas& canvas) {
     canvas.save();
-    setFill(canvas, 0x080611u, 0.72);
+    setFill(canvas, kInk, 0.72);
     canvas.fillRect(0, 0, static_cast<float>(canvas.width()), static_cast<float>(canvas.height()));
     const TrialPickerLayout layout = trialPickerLayout(
         canvas.width(), canvas.height(), trialRefreshingPicker_);
     const Rect& panel = layout.panel;
 
-    // A dark violet rim and a lighter inner face give the selector its own
-    // place instead of looking like a debug grid laid over the title screen.
-    setFill(canvas, trialRefreshingPicker_ ? 0x7560B7u : 0x544273u, 0.98);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
-                     static_cast<float>(panel.w), static_cast<float>(panel.h), 18.0f);
-    canvas.fill();
-    setFill(canvas, trialRefreshingPicker_ ? 0x211B38u : 0x29233Bu, 1.0);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(panel.x + 5.0), static_cast<float>(panel.y + 5.0),
-                     static_cast<float>(panel.w - 10.0), static_cast<float>(panel.h - 10.0),
-                     14.0f);
-    canvas.fill();
+    // A menu card like every other: its frame, the inset boxes on it and the
+    // controls' rims are all borderOf(the skin's fill) -- see menu_theme.h.
+    const PanelSkin& skin = trialRefreshingPicker_ ? kRefreshingTrialsSkin : kTrialsSkin;
+    panelCard(canvas, panel, skin);
+    panelTitle(canvas, panel, trialRefreshingPicker_ ? "Refreshing Trials" : "Trial Grounds");
 
-    TextStyle title;
-    title.size = 34.0;
-    title.align = Align::Centre;
-    text(canvas, trialRefreshingPicker_ ? "Refreshing Trials" : "Trial Grounds",
-         panel.x + panel.w * 0.5, panel.y + 37.0, title);
-    TextStyle small = title;
-    small.size = 13.0;
-    small.fill = 0xDCD4F2u;
+    TextStyle small = labelStyle(13.0, kPaper);
+    small.align = Align::Centre;
     const Rect blessing{panel.x + 28.0, panel.y + 62.0, panel.w - 56.0, 52.0};
-    setFill(canvas, trialRefreshingPicker_ ? 0x332952u : 0x3B3150u, 1.0);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(blessing.x), static_cast<float>(blessing.y),
-                     static_cast<float>(blessing.w), static_cast<float>(blessing.h), 10.0f);
-    canvas.fill();
+    fillRound(canvas, blessing, kMenuRadius, skin.border);
     text(canvas, "Blessing: Purger of the Corruption",
          blessing.x + blessing.w * 0.5, blessing.y + 17.0, small);
     TextStyle caption = small;
     caption.size = 11.0;
-    caption.fill = 0xAAA0C7u;
     text(canvas, trialBuffLabel(net_.trialProgress().buff),
          blessing.x + blessing.w * 0.5, blessing.y + 38.0, caption);
 
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
     ButtonStyle routeStyle;
-    routeStyle.fill = trialRefreshingPicker_ ? 0x4B3F68u : 0x6B50A8u;
+    routeStyle.fill = skin.border;
     routeStyle.textSize = 14.0;
     const std::string routeLabel = trialRefreshingPicker_
                                        ? "<  Permanent Trials"
@@ -982,7 +964,6 @@ void App::drawTrialPicker(Canvas& canvas) {
     if (trialRefreshingPicker_) {
         TextStyle reset = small;
         reset.align = Align::Right;
-        reset.fill = 0xC8BEDFu;
         text(canvas, "Rotation resets in " +
                          formatDuration(static_cast<std::int64_t>(
                                             net_.trialProgress().refreshSeconds) *
@@ -1026,7 +1007,6 @@ void App::drawTrialPicker(Canvas& canvas) {
     TextStyle section = small;
     section.align = Align::Left;
     section.size = 12.0;
-    section.fill = 0xC8BEDFu;
     text(canvas, trialRefreshingPicker_ ? "UNIQUE & APEX - MONTHLY ROTATION"
                                         : "PERMANENT PROGRESSION - TWO FLOORS PER RARITY",
          panel.x + 30.0, panel.y + 198.0, section);
@@ -1071,9 +1051,7 @@ void App::drawTrialPicker(Canvas& canvas) {
     startStyle.textSize = 16.0;
     button(canvas, layout.start, canStart ? "Start Floor" : "Floor Locked",
            canStart && hit(layout.start, mouse), false, startStyle);
-    ButtonStyle closeStyle;
-    closeStyle.fill = 0xA34A55u;
-    button(canvas, layout.close, "X", hit(layout.close, mouse), false, closeStyle);
+    panelClose(canvas, layout.close, hit(closeButtonHit(panel, window_), mouse));
     canvas.restore();
 }
 
