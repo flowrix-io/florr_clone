@@ -1,0 +1,3235 @@
+#include "canvas.h"
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <fstream>
+#include <unordered_map>
+#include <memory>
+#include <utility>
+#ifndef __EMSCRIPTEN__
+#include "font.h"
+#include <SDL.h>
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <thread>
+static const Font* uiFont(unsigned char family);
+#endif
+
+// Path2D itself is in path2d.cpp, shared with canvas_skia.cpp.
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// One registry makes each C++ Canvas an independent CanvasRenderingContext2D.
+//
+// Only the element on the page gets context options. An offscreen surface is
+// never shown, so there is nothing to desynchronise, and it has to keep its
+// alpha: every layer, bake and the text atlas is cleared to transparent and
+// composited, and an opaque one would blit as a black box. The element is
+// opaque because the frame covers it and the page behind it is black anyway.
+//
+// `desynchronized` is the low-latency path: the canvas skips the compositor
+// and is scanned out from a single buffer. Anything the browser flushes
+// mid-frame -- a canvas-to-canvas blit, a long op stream -- can then reach the
+// screen half drawn, which is a flicker, so it is opt-in (Window::
+// setDesynchronized). A context's options are fixed by the element's FIRST
+// getContext, which is why changing it means a fresh element, not a fresh
+// context.
+//
+// Every surface reports its own contextlost (see c2d_loss_check). The handler
+// is one function, so a second Canvas on the element -- which is every resize
+// -- does not add it twice.
+EM_JS(int, c2d_create, (const char* element, int width, int height, int virtualCanvas, int desynchronized), {
+  Module.cppCanvasContexts ||= [];
+  Module.cppCanvasLoss ||= {seen: false, note: () => { Module.cppCanvasLoss.seen = true; }, waited: 0, checkedAt: 0, probe: null, probedAt: 0, probeBroken: false};
+  let surface, options;
+  if (virtualCanvas) surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
+  else { const id = UTF8ToString(element); surface = document.getElementById(id) || Object.assign(document.createElement('canvas'), {id}); if (!surface.parentNode) document.body.appendChild(surface); options = {alpha: false, desynchronized: !!desynchronized}; }
+  surface.width = width; surface.height = height;
+  surface.addEventListener('contextlost', Module.cppCanvasLoss.note);
+  const entry = {surface, ctx: surface.getContext('2d', options), main: !virtualCanvas};
+  if (entry.main) Module.cppCanvasMain = entry;
+  Module.cppCanvasContexts.push(entry);
+  return Module.cppCanvasContexts.length - 1;
+});
+EM_JS(void, c2d_destroy, (int id), {
+  const C = Module.cppCanvasContexts, entry = C && C[id];
+  if (!entry) return;
+  // Not the element's: it outlives this Canvas, and the Canvas replacing this
+  // one has just added the same handler.
+  if (!entry.main) entry.surface.removeEventListener('contextlost', Module.cppCanvasLoss.note);
+  C[id] = null;
+});
+// Where the page's canvases stand after a GPU process has died under them, for
+// canvasCheckContexts: 0 fine, 1 lost, 2 lost for too long, 3 ready to rebuild.
+//
+// There are three ways to find out, because no one of them covers everybody.
+// The contextlost event is per surface, and Chrome and Firefox send it to each
+// one. isContextLost() on the window's canvas is what says when it is back --
+// the offscreen ones can take seconds longer to come back, and they are
+// replaced rather than waited for. And Safari has neither: its canvases are
+// emptied with nothing said, so anything but Blink also keeps a surface of its
+// own with a known pixel on it and looks every couple of seconds, which comes
+// to the first frame after the tab was hidden. It is large enough to count as
+// accelerated (WebKit's line has been about 257x256) because a small one might
+// not be emptied with the rest. Blink does not need it, and would respond to
+// the repeated read-backs by taking the surface off the GPU, which defeats it.
+//
+// The pixel is read back as soon as it is painted, because a browser scrambling
+// read-backs against fingerprinting would otherwise look like a wipe for ever.
+// After that only the alpha is asked about: noise moves the colours, and an
+// emptied surface is the one thing that is transparent.
+//
+// Time waiting counts in frames shown, capped per frame: a phone unlocked after
+// an hour has not been waiting for an hour, and the browser's own restore,
+// which has not had its timers run either, is due any moment.
+EM_JS(int, c2d_loss_check, (int useProbe), {
+  const L = Module.cppCanvasLoss;
+  if (!L) return 0;
+  const now = performance.now(), main = Module.cppCanvasMain, x = main && main.ctx;
+  const step = Math.min(now - L.checkedAt, 100);
+  L.checkedAt = now;
+  const mainLost = !!(x && x.isContextLost && x.isContextLost());
+  if (mainLost) L.seen = true;
+  if (!L.seen && useProbe && !L.probeBroken && now - L.probedAt >= 2000) {
+    L.probedAt = now;
+    try {
+      if (!L.probe) {
+        const side = 300;
+        const surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(side, side) : Object.assign(document.createElement('canvas'), {width: side, height: side});
+        const p = surface.getContext('2d');
+        p.fillStyle = '#ff00ff';
+        p.fillRect(0, 0, side, side);
+        const d = p.getImageData(0, 0, 1, 1).data;
+        if (d[0] > 200 && d[1] < 55 && d[2] > 200 && d[3] > 200) L.probe = p;
+        else L.probeBroken = true;
+      } else if (L.probe.getImageData(0, 0, 1, 1).data[3] < 128) {
+        L.seen = true;
+      }
+    } catch (e) {
+      L.probeBroken = true;
+    }
+  }
+  if (!L.seen) { L.waited = 0; return 0; }
+  if (!mainLost) return 3;
+  L.waited += step;
+  return L.waited >= 4000 ? 2 : 1;
+});
+// Puts every surface back in the state its Canvas will assume: empty, with the
+// context's default state.
+//
+// An offscreen surface is replaced rather than waited for. Some of them come
+// back seconds after the window's canvas does, one Chrome has not noticed yet
+// may not report anything until it is next used, and a Safari one never says.
+// A new one is good now. The window's element cannot be replaced that lightly
+// (Window::Impl::replaceElement), and does not need to be: assigning its width
+// is the one reset every browser has.
+//
+// Returns how many surfaces were replaced.
+EM_JS(int, c2d_recover, (), {
+  const L = Module.cppCanvasLoss;
+  L.seen = false;
+  L.waited = 0;
+  L.probe = null;
+  L.probedAt = 0;
+  if (Module.cppCanvasImages) Module.cppCanvasImages.clear();
+  let replaced = 0;
+  for (const entry of Module.cppCanvasContexts) {
+    if (!entry) continue;
+    const old = entry.surface, width = old.width, height = old.height;
+    if (entry.main) { old.width = width; continue; }
+    old.removeEventListener('contextlost', L.note);
+    const surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), {width, height});
+    surface.addEventListener('contextlost', L.note);
+    entry.surface = surface;
+    entry.ctx = surface.getContext('2d');
+    ++replaced;
+  }
+  return replaced;
+});
+EM_JS(void, c2d_present, (int id, const char* target), {
+  const item = Module.cppCanvasContexts[id], name = UTF8ToString(target);
+  let canvas = document.getElementById(name);
+  if (!canvas) { canvas = document.createElement('canvas'); canvas.id = name; document.body.appendChild(canvas); }
+  canvas.width = item.surface.width; canvas.height = item.surface.height; canvas.getContext('2d').drawImage(item.surface, 0, 0);
+});
+// The drawing calls do not cross into the page one at a time. Each one used
+// to be its own c2d_op -- ten arguments widened to doubles and a UTF8ToString
+// of its text, five thousand times a frame -- and a CPU profile put about a
+// third of the client's main-thread time in that crossing and the garbage it
+// made, with none of it in the drawing itself. So a call is written into a
+// buffer in wasm memory and the whole frame's worth is handed over at once.
+//
+// A record is ten 32-bit slots: the opcode, eight arguments, and a string
+// reference. The two integer slots are read through HEAP32 and the arguments
+// through HEAPF32 -- every argument was a float before c2d_op widened it, so
+// carrying them as floats loses nothing.
+//
+// Strings do not cross per call either. A STYLE string -- a colour, a font, a
+// line cap -- is interned: sent once, kept in a JS array, and named by its
+// index from then on, which is what takes UTF8ToString off the hot path
+// entirely. TEXT is the exception, because fillText carries whatever the game
+// has to say and interning that would grow without bound; it is copied into a
+// per-frame arena that is handed over with the buffer and decoded there.
+EM_JS(void, c2d_intern, (int id, const char* text), {
+  (Module.cppCanvasStrings || (Module.cppCanvasStrings = [""]))[id] = UTF8ToString(text);
+});
+EM_JS(void, c2d_intern_reset, (), { Module.cppCanvasStrings = [""]; });
+// A call that throws is skipped on its own, and the calls after it still run.
+// An exception let out of here would cross the wasm frames and end the
+// requestAnimationFrame callback before it schedules the next one, which is the
+// whole game frozen for good over one picture; and stopping at it would leave
+// the page short of state changes that `applied_` says it has. A canvas whose
+// context could not be made at all -- what a page over Safari's canvas memory
+// limit gets from getContext -- draws nothing.
+EM_JS(void, c2d_flush, (int id, const int* ops, int count, const char* text, const float* paths), {
+  const x = Module.cppCanvasContexts[id].ctx, S = Module.cppCanvasStrings || [""];
+  if (!x) return;
+  // Read here, not hoisted: ALLOW_MEMORY_GROWTH detaches the views on a grow.
+  const F = HEAPF32, I = HEAP32;
+  for (let n = 0, p = ops >> 2; n < count; n++, p += 10) {
+    const s = S[I[p+9]];
+    try {
+    switch(I[p]) {
+      case 0:x.save();break; case 1:x.restore();break; case 2: x.reset ? x.reset() : (x.setTransform(1,0,0,1,0,0),x.clearRect(0,0,x.canvas.width,x.canvas.height));break;
+      case 3:x.scale(F[p+1],F[p+2]);break; case 4:x.rotate(F[p+1]);break; case 5:x.translate(F[p+1],F[p+2]);break; case 6:x.transform(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6]);break; case 7:x.setTransform(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6]);break; case 8:x.resetTransform();break;
+      case 9:x.fillStyle=s;break; case 10:x.strokeStyle=s;break; case 11:x.globalAlpha=F[p+1];break; case 12:x.globalCompositeOperation=s;break; case 13:x.filter=s;break;
+      case 14:x.lineWidth=F[p+1];break; case 15:x.lineCap=s;break; case 16:x.lineJoin=s;break; case 17:x.miterLimit=F[p+1];break; case 18:x.lineDashOffset=F[p+1];break;
+      case 19:x.shadowColor=s;x.shadowBlur=F[p+1];x.shadowOffsetX=F[p+2];x.shadowOffsetY=F[p+3];break; case 20:x.font=s;break; case 21:x.textAlign=s;break; case 22:x.textBaseline=s;break; case 23:x.direction=s;break; case 24:x.imageSmoothingEnabled=!!F[p+1];break; case 25:x.imageSmoothingQuality=s;break;
+      case 30:x.clearRect(F[p+1],F[p+2],F[p+3],F[p+4]);break; case 31:x.fillRect(F[p+1],F[p+2],F[p+3],F[p+4]);break; case 32:x.strokeRect(F[p+1],F[p+2],F[p+3],F[p+4]);break;
+      case 33:x.beginPath();break; case 34:x.closePath();break; case 35:x.moveTo(F[p+1],F[p+2]);break; case 36:x.lineTo(F[p+1],F[p+2]);break; case 37:x.quadraticCurveTo(F[p+1],F[p+2],F[p+3],F[p+4]);break; case 38:x.bezierCurveTo(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6]);break; case 39:x.arc(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],!!F[p+6]);break; case 40:x.arcTo(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5]);break; case 41:x.ellipse(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6],F[p+7],!!F[p+8]);break; case 42:x.rect(F[p+1],F[p+2],F[p+3],F[p+4]);break; case 43:x.roundRect(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5]);break;
+      case 44:x.fill(s || 'nonzero');break; case 45:x.stroke();break; case 46:x.clip(s || 'nonzero');break;
+      case 47:{const t=UTF8ToString(text+I[p+9]);F[p+1] < 0 ? x.fillText(t,F[p+2],F[p+3]) : x.fillText(t,F[p+2],F[p+3],F[p+1]);break;}
+      case 48:{const t=UTF8ToString(text+I[p+9]);F[p+1] < 0 ? x.strokeText(t,F[p+2],F[p+3]) : x.strokeText(t,F[p+2],F[p+3],F[p+1]);break;}
+      // A retained path the page already holds, named by its key alone. Only
+      // geometry it has NOT seen goes over immediately (c2d_path), because
+      // only that carries a payload; the redraws are most of them and stay in
+      // the buffer with everything else.
+      case 50:{const P=Module.cppCanvasPaths.get(I[p+9]);if(P){const r=F[p+2]?'evenodd':'nonzero';F[p+1]===0?x.fill(P,r):F[p+1]===1?x.stroke(P):x.clip(P,r);}break;}
+      case 51:{const im=Module.cppCanvasContexts[I[p+9]].surface;F[p+5]?x.drawImage(im,F[p+1],F[p+2],F[p+3],F[p+4]):x.drawImage(im,F[p+1],F[p+2]);break;}
+      case 52:x.drawImage(Module.cppCanvasContexts[I[p+9]].surface,F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6],F[p+7],F[p+8]);break;
+      // Geometry the page has not seen. It rides in the path arena rather
+      // than going over on its own, so a path built fresh each frame -- a
+      // health bar, a minimap run -- costs no crossing of its own. A key of
+      // zero means "draw it and forget it": only geometry worth keeping is
+      // put in the map, which is what stops the single-use paths churning it.
+      case 53:{
+        const n=F[p+4],q=(paths>>2)+F[p+3],P=new Path2D();
+        for(let i=0;i<n;i++){const o=q+i*10,cc=!!F[o+1],a=o+2;
+          switch(F[o]){case 0:P.moveTo(F[a],F[a+1]);break;case 1:P.lineTo(F[a],F[a+1]);break;case 2:P.quadraticCurveTo(F[a],F[a+1],F[a+2],F[a+3]);break;case 3:P.bezierCurveTo(F[a],F[a+1],F[a+2],F[a+3],F[a+4],F[a+5]);break;case 4:P.arc(F[a],F[a+1],F[a+2],F[a+3],F[a+4],cc);break;case 5:P.arcTo(F[a],F[a+1],F[a+2],F[a+3],F[a+4]);break;case 6:P.ellipse(F[a],F[a+1],F[a+2],F[a+3],F[a+4],F[a+5],F[a+6],cc);break;case 7:P.rect(F[a],F[a+1],F[a+2],F[a+3]);break;case 8:P.roundRect(F[a],F[a+1],F[a+2],F[a+3],F[a+4]);break;case 9:P.closePath();break;}}
+        if(I[p+9]) (Module.cppCanvasPaths||(Module.cppCanvasPaths=new Map())).set(I[p+9],P);
+        const r=F[p+2]?'evenodd':'nonzero';F[p+1]===0?x.fill(P,r):F[p+1]===1?x.stroke(P):x.clip(P,r);
+        break;}
+      // An image the page fetched by URL (c2d_remote_request), by handle. One
+      // still loading -- or gone -- draws nothing rather than throwing. An
+      // animated one draws its current decoded frame, and being drawn is what
+      // keeps it animating (see cppRemoteAnimate).
+      case 54:{const R=Module.cppRemoteImages,e=R&&R.get(I[p+9]);if(e){e.drawnAt=performance.now();if(e.parked)e.resume();const im=e.frame||(e.state===1?e.img:null);if(im)x.drawImage(im,F[p+1],F[p+2],F[p+3],F[p+4]);}break;}
+    }
+    } catch (e) {
+      if (!Module.cppCanvasThrew) { Module.cppCanvasThrew = true; console.warn('[canvas] a drawing call threw and was skipped (reported once):', e); }
+    }
+  }
+});
+EM_JS(void, c2d_dash, (int id, const float* data, int length), { const x=Module.cppCanvasContexts[id].ctx; if (x) x.setLineDash(Array.from(HEAPF32.subarray(data>>2,(data>>2)+length))); });
+EM_JS(void, c2d_path_drop, (int key), { if (Module.cppCanvasPaths) Module.cppCanvasPaths.delete(key); });
+// Whether the page runs on Blink -- Chrome, Edge, Opera, Brave -- whose canvas
+// has the full-turn arc bug segmentNeed() works around.
+//
+// No regex literals in an EM_JS body: it goes through the C preprocessor,
+// which reads a `//` in one as a comment and drops its backslashes. The
+// `/Chrome\/|Chromium\//` this used to have came out as `/Chrome/|Chromium`,
+// a ReferenceError on every browser without userAgentData (Safari, Firefox).
+EM_JS(int, c2d_blink, (), {
+  if (typeof navigator === 'undefined') return 0;
+  const d = navigator.userAgentData;
+  if (d && d.brands) {
+    return d.brands.some(b => b.brand.includes('Chromium') || b.brand.includes('Google Chrome')) ? 1 : 0;
+  }
+  const ua = navigator.userAgent;
+  return ua.includes('Chrome/') || ua.includes('Chromium/') ? 1 : 0;
+});
+EM_JS(void, c2d_warn, (const char* text), { console.warn(UTF8ToString(text)); });
+EM_JS(int, c2d_hit, (int id,double a,double b,int stroke,const char* rule), { const x=Module.cppCanvasContexts[id].ctx; if (!x) return 0; return stroke ? x.isPointInStroke(a,b) : x.isPointInPath(a,b,UTF8ToString(rule)); });
+EM_JS(double, c2d_measure, (int id,const char* text), { const x=Module.cppCanvasContexts[id].ctx; return x ? x.measureText(UTF8ToString(text)).width : 0; });
+EM_JS(int, c2d_get_pixels, (int id,int x,int y,int w,int h,std::uint8_t* out), { const c=Module.cppCanvasContexts[id].ctx; if (!c) return 0; const d=c.getImageData(x,y,w,h).data; HEAPU8.set(d,out); return d.length; });
+EM_JS(void, c2d_put_pixels, (int id,const std::uint8_t* data,int sw,int sh,int dx,int dy), { const c=Module.cppCanvasContexts[id].ctx; if (!c) return; const d=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+sw*sh*4)),sw,sh); c.putImageData(d,dx,dy); });
+EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,double dx,double dy,double dw,double dh,double alpha), {
+  // putImageData ignores the transform, so the pixels go to a scratch surface
+  // first and reach the destination through drawImage, which does not.
+  //
+  // That surface is KEPT. Built per call, an embedded sprite cost a copy of
+  // its whole bitmap out of the wasm heap plus a new canvas every time it was
+  // drawn -- and a glitch flower draws five of them, every frame, per mob on
+  // screen. Keyed by the decoded raster's own id, the upload happens once and
+  // every later frame is one drawImage of a surface the browser already holds.
+  let cache = Module.cppCanvasImages;
+  if (!cache) { cache = new Map(); Module.cppCanvasImages = cache; }
+  let scratch = key ? cache.get(key) : undefined;
+  if (scratch === undefined) {
+    const pixels=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+iw*ih*4)),iw,ih);
+    scratch = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(iw,ih) : document.createElement('canvas');
+    scratch.width=iw; scratch.height=ih;
+    const scratchContext=scratch.getContext('2d');
+    if (!scratchContext) return;
+    scratchContext.putImageData(pixels,0,0);
+    if (key) {
+      // Bounded, oldest-first: a Map iterates in insertion order, and a client
+      // that draws thousands of distinct bitmaps must not grow the page's
+      // memory without limit. Sized well above the sprite sheet a frame
+      // touches, so an image drawn every frame is never the one evicted.
+      if (cache.size >= 512) cache.delete(cache.keys().next().value);
+      cache.set(key, scratch);
+    }
+  }
+  const ctx=Module.cppCanvasContexts[id].ctx;
+  if (!ctx) return;
+  const was=ctx.globalAlpha;
+  ctx.globalAlpha=was*alpha;
+  try { ctx.drawImage(scratch,dx,dy,dw,dh); } catch (e) {}
+  ctx.globalAlpha=was;
+});
+// Remote images live on the page as <img> elements, named by a handle.
+//
+// No crossOrigin: that would make every host without CORS headers fail to
+// load at all, and nothing here ever reads the pixels back -- the image is
+// only drawn. No referrer either, so posting a picture does not tell its host
+// which page every reader was on.
+EM_JS(int, c2d_remote_request, (const char* url), {
+  const R = Module.cppRemoteImages || (Module.cppRemoteImages = new Map());
+  Module.cppRemoteImageNext = (Module.cppRemoteImageNext || 0) + 1;
+  const id = Module.cppRemoteImageNext, img = new Image();
+  const e = {img, state: 0, frame: null, decoder: null, timer: 0, drawnAt: 0, parked: false, dead: false, resume: () => {}};
+  img.decoding = 'async';
+  img.referrerPolicy = 'no-referrer';
+  img.onload = () => { e.state = img.naturalWidth > 0 && img.naturalHeight > 0 ? 1 : -1; };
+  img.onerror = () => { e.state = -1; };
+  img.src = UTF8ToString(url);
+  R.set(id, e);
+
+  // Animated pictures -- a GIF, an animated WebP -- are decoded here, a frame
+  // at a time. Drawing an <img> onto a canvas copies the frame the browser
+  // last PAINTED it at, and an element that is never displayed is never
+  // painted: drawn that way a GIF is its first frame for ever.
+  //
+  // The decoder needs the bytes, which a cross-origin fetch only gets from a
+  // host that sends CORS headers. The image hosts chat allows all do; one that
+  // does not keeps the still <img> above, which is no worse than before.
+  //
+  // Only the frame on show is held, never the whole animation: a long GIF is
+  // hundreds of full-size frames. And only while somebody is looking: a
+  // picture not drawn for a second -- scrolled away, chat hidden -- parks,
+  // and its next draw starts it again.
+  Module.cppRemoteAnimate ||= async (e, src) => {
+    let decoder = null;
+    try {
+      const response = await fetch(src, {mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer'});
+      if (!response.ok || e.dead) return;
+      const type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (!type.startsWith('image/') || !(await ImageDecoder.isTypeSupported(type))) return;
+      decoder = new ImageDecoder({data: response.body, type});
+      await decoder.completed;
+      const track = decoder.tracks.selectedTrack;
+      if (e.dead || !track || !track.animated || track.frameCount < 2) { decoder.close(); return; }
+      e.decoder = decoder;
+      let index = 0;
+      const step = async () => {
+        e.timer = 0;
+        if (e.dead) return;
+        if (performance.now() - e.drawnAt > 1000) { e.parked = true; return; }
+        const { image } = await decoder.decode({frameIndex: index});
+        if (e.dead) { image.close(); return; }
+        if (e.frame) e.frame.close();
+        e.frame = image;
+        index = (index + 1) % track.frameCount;
+        // Microseconds. A delay of 10 ms or less is played at 100, which is
+        // what every browser does with the zero-delay GIFs that are common.
+        const ms = (image.duration || 0) / 1000;
+        e.timer = setTimeout(() => step().catch(() => {}), ms > 10 ? ms : 100);
+      };
+      e.resume = () => { e.parked = false; step().catch(() => {}); };
+      e.drawnAt = performance.now();
+      await step();
+    } catch (err) {
+      // A frame that will not decode leaves whatever was last shown.
+      if (decoder && !e.decoder) { try { decoder.close(); } catch (_) {} }
+    }
+  };
+  if (typeof ImageDecoder !== 'undefined') Module.cppRemoteAnimate(e, img.src);
+  return id;
+});
+EM_JS(int, c2d_remote_status, (int id, int* size), {
+  const e = Module.cppRemoteImages && Module.cppRemoteImages.get(id);
+  if (!e) return -1;
+  if (e.state === 1) { HEAP32[size>>2] = e.img.naturalWidth; HEAP32[(size>>2)+1] = e.img.naturalHeight; }
+  return e.state;
+});
+EM_JS(void, c2d_remote_release, (int id), {
+  const e = Module.cppRemoteImages && Module.cppRemoteImages.get(id);
+  if (!e) return;
+  e.img.onload = e.img.onerror = null;
+  e.img.removeAttribute('src');
+  e.dead = true;
+  if (e.timer) clearTimeout(e.timer);
+  if (e.frame) e.frame.close();
+  if (e.decoder) { try { e.decoder.close(); } catch (_) {} }
+  Module.cppRemoteImages.delete(id);
+});
+namespace {
+// One record per call: opcode, eight arguments, string reference. A union
+// rather than two buffers, so the writes stay one linear walk.
+union OpSlot { float f; std::int32_t i; };
+constexpr int kOpSlots = 10;
+// A bound on how far a call can lag the page, not on how big a frame may be:
+// filling the buffer flushes it and carries on.
+constexpr int kOpCapacity = 8192;
+OpSlot gOps[kOpCapacity * kOpSlots];
+int gOpCount = 0;
+// Which context the buffered calls belong to. There is ONE buffer, so a canvas
+// switching to another (an offscreen render target) has to flush: that is what
+// keeps the two streams in the order they were issued.
+int gOpContext = -1;
+// fillText/strokeText text for the calls in the buffer, NUL-separated. Each
+// text op records its byte offset into this.
+std::string gOpText;
+// Path geometry for the calls in the buffer, ten floats a segment. A path op
+// records its offset into this and its segment count. Emptied by the flush
+// that hands it over; the capacity is kept, so a steady frame allocates
+// nothing. Its offsets travel as floats, so it is also flushed once it grows
+// past what a float still counts exactly -- see opRecord.
+std::vector<float> gOpPath;
+
+// Style strings and the indices the page knows them by. Bounded, and dropped
+// whole rather than one at a time: a client that interpolates a colour makes
+// new ones for as long as it runs, and the records already in the buffer name
+// their strings by index, so the table can only be reset with the buffer
+// empty. Index 0 is the empty string, on both sides, from the start.
+constexpr std::size_t kMaxInternedStrings = 4096;
+std::unordered_map<std::string, std::int32_t> gInterned{{std::string(), 0}};
+} // namespace
+
+namespace {
+CanvasFrameStats gFrameStats;
+int gOpTypeCounts[kCanvasOpCodes] = {};
+} // namespace
+
+const int* canvasOpTypeCounts() { return gOpTypeCounts; }
+
+
+
+int canvasOpsEmitted() { return gFrameStats.ops + gOpCount; }
+
+CanvasFrameStats canvasTakeFrameStats() {
+  const CanvasFrameStats taken = gFrameStats;
+  gFrameStats = CanvasFrameStats{};
+  for (int& count : gOpTypeCounts) count = 0;
+  return taken;
+}
+
+namespace {
+/// Every Canvas alive, by its context: what a lost context has to reach. Never
+/// destroyed, so a Canvas outliving this at exit has something to leave.
+std::unordered_map<int, Canvas*>& liveCanvases() {
+  static auto* live = new std::unordered_map<int, Canvas*>();
+  return *live;
+}
+} // namespace
+
+CanvasContexts canvasCheckContexts() {
+  static const int useProbe = c2d_blink() ? 0 : 1;
+  switch (c2d_loss_check(useProbe)) {
+    case 1: return CanvasContexts::Lost;
+    case 2: return CanvasContexts::LostTooLong;
+    case 3: return CanvasContexts::Recoverable;
+    default: return CanvasContexts::Fine;
+  }
+}
+
+void canvasRecoverContexts() {
+  // Whatever is still buffered was drawn for the surfaces being thrown away,
+  // and names its strings and contexts as they stand now.
+  canvasFlushOps();
+  const int replaced = c2d_recover();
+  for (auto& [context, canvas] : liveCanvases()) canvas->forgetPageState();
+  // Anything but zero is a holder missing from the owner's list of what to drop.
+  const std::string note = "[canvas] the GPU lost this page's canvases: bakes dropped, " +
+                           std::to_string(replaced) + " kept surface(s) replaced";
+  c2d_warn(note.c_str());
+}
+
+void canvasFlushOps() {
+  if (gOpCount == 0) return;
+  // Timed because this is the one call that hands the whole frame's drawing to
+  // the browser: what it costs is what the browser charges for the op stream,
+  // as against what the client spent building it.
+  const double started = emscripten_get_now();
+  c2d_flush(gOpContext, reinterpret_cast<const int*>(gOps), gOpCount,
+            gOpText.empty() ? nullptr : gOpText.c_str(),
+            gOpPath.empty() ? nullptr : gOpPath.data());
+  gFrameStats.flushMillis += emscripten_get_now() - started;
+  gFrameStats.ops += gOpCount;
+  ++gFrameStats.batches;
+  gOpCount = 0;
+  gOpText.clear();
+  gOpPath.clear();
+}
+
+namespace {
+/// The slots for one call, with the opcode already written.
+// How much geometry may wait in the arena before it is handed over. Well
+// under 2^24, which is where a float stops counting arena offsets exactly.
+constexpr std::size_t kMaxArenaFloats = 1u << 20;
+
+OpSlot* opRecord(int context, int code) {
+  if (context != gOpContext || gOpCount >= kOpCapacity ||
+      gOpPath.size() >= kMaxArenaFloats) {
+    canvasFlushOps();
+    gOpContext = context;
+  }
+  OpSlot* record = gOps + gOpCount * kOpSlots;
+  ++gOpCount;
+  if (code >= 0 && code < kCanvasOpCodes) ++gOpTypeCounts[code];
+  record[0].i = code;
+  record[9].i = 0;
+  return record;
+}
+
+std::int32_t internStyle(const char* text) {
+  if (!text || !*text) return 0;
+  const std::string key(text);
+  const auto found = gInterned.find(key);
+  if (found != gInterned.end()) return found->second;
+  if (gInterned.size() >= kMaxInternedStrings) {
+    canvasFlushOps();
+    gInterned.clear();
+    gInterned.emplace(std::string(), 0);
+    c2d_intern_reset();
+  }
+  const std::int32_t id = static_cast<std::int32_t>(gInterned.size());
+  gInterned.emplace(key, id);
+  c2d_intern(id, key.c_str());
+  return id;
+}
+
+void pushOp(int context, int code, float a, float b, float c, float d,
+            float e, float f, float g, float h, const char* text) {
+  // Before the record is reserved: interning can flush, and a reserved record
+  // would be left pointing into the buffer that flush emptied.
+  const std::int32_t style = internStyle(text);
+  OpSlot* r = opRecord(context, code);
+  r[1].f=a; r[2].f=b; r[3].f=c; r[4].f=d; r[5].f=e; r[6].f=f; r[7].f=g; r[8].f=h;
+  r[9].i = style;
+}
+
+/// A call that names something the page holds -- a retained path, another
+/// canvas -- rather than carrying a string. The reference goes in the slot the
+/// string index would have used, which is already an integer.
+void pushRef(int context, int code, std::int32_t ref, float a, float b, float c,
+             float d, float e, float f, float g, float h) {
+  OpSlot* r = opRecord(context, code);
+  r[1].f=a; r[2].f=b; r[3].f=c; r[4].f=d; r[5].f=e; r[6].f=f; r[7].f=g; r[8].f=h;
+  r[9].i = ref;
+}
+
+/// A path, with its geometry in the frame's arena.
+///
+/// `key` is what the page will remember the geometry under, or zero for
+/// "draw it and forget it".
+void pushPath(int context, std::int32_t key, const Path2D& path, int action, bool evenOdd) {
+  // The record first, for the same reason pushText takes it first: reserving
+  // it is what may flush, and a flush empties the arena -- so an offset taken
+  // before it would name geometry that is no longer there.
+  OpSlot* r = opRecord(context, 53);
+  const std::size_t at = gOpPath.size();
+  gOpPath.reserve(at + path.segments().size() * 10);
+  for (const auto& q : path.segments()) {
+    gOpPath.push_back(static_cast<float>(q.command));
+    gOpPath.push_back(q.counterClockwise);
+    for (const float v : q.v) gOpPath.push_back(v);
+  }
+  r[1].f = static_cast<float>(action);
+  r[2].f = evenOdd ? 1.f : 0.f;
+  r[3].f = static_cast<float>(at);
+  r[4].f = static_cast<float>(path.segments().size());
+  r[5].f = r[6].f = r[7].f = r[8].f = 0;
+  r[9].i = key;
+}
+
+void pushText(int context, int code, float maxWidth, float x, float y,
+              const std::string& text) {
+  // The record first: reserving it is what may flush, and the flush empties
+  // the arena, so the offset has to be taken after it and not before.
+  OpSlot* r = opRecord(context, code);
+  const std::int32_t offset = static_cast<std::int32_t>(gOpText.size());
+  gOpText.append(text);
+  gOpText.push_back('\0');
+  r[1].f=maxWidth; r[2].f=x; r[3].f=y;
+  r[4].f=r[5].f=r[6].f=r[7].f=r[8].f=0;
+  r[9].i = offset;
+}
+} // namespace
+
+#define OP(code,a,b,c,d,e,f,g,h,s) pushOp(contextId_,code,a,b,c,d,e,f,g,h,s)
+#else
+#define OP(code,a,b,c,d,e,f,g,h,s) ((void)0)
+#endif
+
+#ifndef __EMSCRIPTEN__
+// ---------------------------------------------------------------------------
+// Software backend: flatten -> scanline coverage -> blend. Curves are really
+// flattened (not endpoint-approximated), fills honour both winding rules,
+// strokes are expanded to outlines, and clips are coverage masks.
+// ---------------------------------------------------------------------------
+namespace {
+constexpr int kSub = 5;
+constexpr float kTau = 6.28318530718f;
+using Matrix = std::array<float,6>;
+
+struct Poly {
+    std::vector<float> pts; std::vector<int> ends; std::vector<char> closed;
+    void reset() { pts.clear(); ends.clear(); closed.clear(); }
+    int begin() const { return ends.empty() ? 0 : ends.back(); }
+    void finish(bool isClosed) {
+        const int n = static_cast<int>(pts.size()/2);
+        if (n - begin() < 1) { pts.resize(static_cast<size_t>(begin())*2); return; }
+        ends.push_back(n); closed.push_back(isClosed ? 1 : 0);
+    }
+};
+
+Poly gFlat, gDash, gOutline, gDevice;
+
+float matrixScale(const Matrix& m) { const float d = std::abs(m[0]*m[3]-m[1]*m[2]); return d > 0 ? std::sqrt(d) : 1e-3f; }
+
+void flatten(const Path2D& path, const Matrix& m, float scale, Poly& out) {
+    out.reset();
+    float cx=0, cy=0, sx=0, sy=0; bool open=false;
+    const auto emit=[&](float x,float y){ out.pts.push_back(m[0]*x+m[2]*y+m[4]); out.pts.push_back(m[1]*x+m[3]*y+m[5]); };
+    const auto start=[&](float x,float y){ if(open) out.finish(false); emit(x,y); open=true; cx=sx=x; cy=sy=y; };
+    const auto steps=[&](float length){ return std::clamp(static_cast<int>(std::ceil(std::sqrt(std::max(0.f,length)*scale)*1.8f)),2,192); };
+    const auto point=[&](float x,float y){ if(!open) start(x,y); else emit(x,y); cx=x; cy=y; };
+    for (const Path2D::Segment& s : path.segments()) {
+        const float* v = s.v;
+        switch (s.command) {
+        case Path2D::Command::Move: start(v[0],v[1]); break;
+        case Path2D::Command::Line: point(v[0],v[1]); break;
+        case Path2D::Command::Quadratic: {
+            if (!open) start(cx,cy);
+            const float x0=cx,y0=cy; const int n=steps(std::hypot(v[0]-x0,v[1]-y0)+std::hypot(v[2]-v[0],v[3]-v[1]));
+            for(int i=1;i<=n;++i){ const float t=float(i)/n,u=1-t;
+                emit(u*u*x0+2*u*t*v[0]+t*t*v[2], u*u*y0+2*u*t*v[1]+t*t*v[3]); }
+            cx=v[2]; cy=v[3]; break; }
+        case Path2D::Command::Bezier: {
+            if (!open) start(cx,cy);
+            const float x0=cx,y0=cy;
+            const int n=steps(std::hypot(v[0]-x0,v[1]-y0)+std::hypot(v[2]-v[0],v[3]-v[1])+std::hypot(v[4]-v[2],v[5]-v[3]));
+            for(int i=1;i<=n;++i){ const float t=float(i)/n,u=1-t, a=u*u*u,b=3*u*u*t,c=3*u*t*t,d=t*t*t;
+                emit(a*x0+b*v[0]+c*v[2]+d*v[4], a*y0+b*v[1]+c*v[3]+d*v[5]); }
+            cx=v[4]; cy=v[5]; break; }
+        case Path2D::Command::Arc:
+        case Path2D::Command::Ellipse: {
+            const bool circle = s.command==Path2D::Command::Arc;
+            const float ex=v[0], ey=v[1], rx=std::abs(v[2]), ry=circle?std::abs(v[2]):std::abs(v[3]);
+            const float rot=circle?0.f:v[4], a0=circle?v[3]:v[5], a1=circle?v[4]:v[6];
+            float sweep=a1-a0;
+            if (!s.counterClockwise) { if (sweep>=kTau) sweep=kTau; else { sweep=std::fmod(sweep,kTau); if(sweep<0) sweep+=kTau; } }
+            else { if (sweep<=-kTau) sweep=-kTau; else { sweep=std::fmod(sweep,kTau); if(sweep>0) sweep-=kTau; } }
+            const float cs=std::cos(rot), sn=std::sin(rot);
+            const auto at=[&](float t,float& ox,float& oy){ const float px=rx*std::cos(t), py=ry*std::sin(t); ox=ex+px*cs-py*sn; oy=ey+px*sn+py*cs; };
+            const int n=std::clamp(static_cast<int>(std::ceil(std::abs(sweep)*(1.5f+std::sqrt(std::max(rx,ry)*scale)))),4,512);
+            float px,py; at(a0,px,py); point(px,py);
+            for(int i=1;i<=n;++i){ at(a0+sweep*i/n,px,py); emit(px,py); }
+            cx=px; cy=py; break; }
+        case Path2D::Command::ArcTo: {
+            const float x0=cx,y0=cy, x1=v[0],y1=v[1], x2=v[2],y2=v[3], r=std::abs(v[4]);
+            const float ux=x0-x1, uy=y0-y1, wx=x2-x1, wy=y2-y1;
+            const float lu=std::hypot(ux,uy), lw=std::hypot(wx,wy);
+            if (lu<1e-6f || lw<1e-6f || r<1e-6f) { point(x1,y1); break; }
+            const float a0x=ux/lu, a0y=uy/lu, a1x=wx/lw, a1y=wy/lw;
+            const float cosA=std::clamp(a0x*a1x+a0y*a1y,-1.f,1.f), half=std::acos(cosA)/2;
+            if (std::abs(std::sin(half))<1e-6f) { point(x1,y1); break; }
+            const float dist=r/std::tan(half);
+            point(x1+a0x*dist, y1+a0y*dist); point(x1+a1x*dist, y1+a1y*dist); break; }
+        case Path2D::Command::Rect: {
+            if(open){ out.finish(false); open=false; }
+            emit(v[0],v[1]); emit(v[0]+v[2],v[1]); emit(v[0]+v[2],v[1]+v[3]); emit(v[0],v[1]+v[3]);
+            out.finish(true); cx=sx=v[0]; cy=sy=v[1]; break; }
+        case Path2D::Command::RoundRect: {
+            if(open){ out.finish(false); open=false; }
+            const float x=std::min(v[0],v[0]+v[2]), y=std::min(v[1],v[1]+v[3]);
+            const float w=std::abs(v[2]), h=std::abs(v[3]), r=std::clamp(v[4],0.f,std::min(w,h)/2);
+            const int n=std::clamp(static_cast<int>(std::ceil(std::sqrt(r*scale)*2.2f)),2,48);
+            const float cxs[4]={x+w-r,x+w-r,x+r,x+r}, cys[4]={y+r,y+h-r,y+h-r,y+r};
+            for(int corner=0;corner<4;++corner){ const float a=-1.5707963f+corner*1.5707963f;
+                for(int i=0;i<=n;++i){ const float t=a+i*1.5707963f/n; emit(cxs[corner]+std::cos(t)*r, cys[corner]+std::sin(t)*r); } }
+            out.finish(true); cx=sx=x; cy=sy=y; break; }
+        case Path2D::Command::Close:
+            if(open){ out.finish(true); open=false; } cx=sx; cy=sy; break;
+        }
+    }
+    if (open) out.finish(false);
+}
+
+// The pixel box a polygon can touch, intersected with the box the caller is
+// allowed to write. That second box is the CLIP's, not just the surface's:
+// scan converting a shape and then discarding it a pixel at a time against the
+// clip is work with no output, and a full-screen fill under a small clip is
+// exactly the shape this loop takes. SkDraw narrows the same way before it
+// hands anything to SkScan.
+bool polyBounds(const Poly& p, int cx0, int cy0, int cx1, int cy1, int& x0, int& y0, int& x1, int& y1) {
+    if (p.pts.empty()) return false;
+    float lo=1e30f, hi=-1e30f, top=1e30f, bottom=-1e30f;
+    for (size_t i=0;i<p.pts.size();i+=2) {
+        const float x=p.pts[i], y=p.pts[i+1];
+        if (!(std::isfinite(x)&&std::isfinite(y))) continue;
+        lo=std::min(lo,x); hi=std::max(hi,x); top=std::min(top,y); bottom=std::max(bottom,y);
+    }
+    if (hi<lo) return false;
+    x0=std::max(cx0,static_cast<int>(std::floor(lo))); x1=std::min(cx1,static_cast<int>(std::ceil(hi))+1);
+    y0=std::max(cy0,static_cast<int>(std::floor(top))); y1=std::min(cy1,static_cast<int>(std::ceil(bottom))+1);
+    return x0<x1 && y0<y1;
+}
+
+// One edge, in the form the scanline walk reads it: the y span it covers, a
+// point on it, and dx/dy so a crossing is a multiply. The slope is divided out
+// once here rather than once per crossing -- an edge is crossed five times per
+// scanline it touches -- and ylo/yhi are hoisted out of the inner loop, where
+// they used to be a min and a max per subsample.
+struct Edge { float ylo,yhi,x0,y0,slope,dir; };
+struct Cross { float x,dir; };
+
+// Ordering the crossings of one subsample line.
+//
+// Ordering among EQUAL x is not preserved, and does not need to be: the spans
+// between equal crossings are zero-width, and both the winding total and the
+// crossing parity after such a group are the same whichever way the group is
+// walked. Sorting on x alone is therefore exact, and half the comparison.
+inline void insertionSortByX(Cross* xs, size_t n) {
+    for (size_t i=1;i<n;++i) {
+        const Cross v=xs[i]; size_t j=i;
+        while (j>0 && xs[j-1].x>v.x) { xs[j]=xs[j-1]; --j; }
+        xs[j]=v;
+    }
+}
+
+// A long run is bucketed by whole-pixel column rather than compared. The
+// column a crossing falls in is an index into the same coverage buffer the
+// scanline is already sized for, so the histogram costs nothing to address,
+// and one insertion pass afterwards settles the order inside each column --
+// which is cheap because a column holds one or two crossings. This is the
+// case that matters: a stroked outline is thousands of one-pixel-tall edges,
+// so a single scanline can carry a hundred crossings across a span of pixels
+// no wider than that, and paying n log n unpredictable branches for it was
+// most of what a text label cost.
+//
+// `hist` is all zeroes on entry and left that way on exit. When the crossings
+// turn out to be spread far wider than they are numerous the histogram would
+// cost more than it saves, so the run falls back to a comparison sort.
+inline void sortCrossings(Cross* xs, size_t n, int bx0, int width,
+                          std::vector<int>& hist, std::vector<Cross>& tmp) {
+    const auto byX=[](const Cross& a,const Cross& b){ return a.x<b.x; };
+    if (n<=40) { insertionSortByX(xs,n); return; }
+    // Clamped in float space, before the cast: a crossing can legitimately
+    // land far outside the box (the winding walk needs it, even though the
+    // span it opens is clipped away), and converting 1e20f to int is not
+    // something the standard defines. The first test also catches NaN.
+    const float leftEdge=static_cast<float>(bx0), rightEdge=static_cast<float>(bx0+width);
+    const auto column=[&](float x)->int {
+        if (!(x>leftEdge)) return 0;
+        if (x>=rightEdge) return width-1;
+        return static_cast<int>(std::floor(x))-bx0;
+    };
+    int lo=width, hi=-1;
+    for (size_t i=0;i<n;++i) {
+        const int b=column(xs[i].x);
+        ++hist[static_cast<size_t>(b)];
+        if (b<lo) lo=b;
+        if (b>hi) hi=b;
+    }
+    if (static_cast<size_t>(hi-lo) > 8*n) {
+        for (size_t i=0;i<n;++i) hist[static_cast<size_t>(column(xs[i].x))]=0;
+        std::sort(xs,xs+n,byX);
+        return;
+    }
+    int running=0;
+    for (int b=lo;b<=hi;++b) { const int c=hist[static_cast<size_t>(b)]; hist[static_cast<size_t>(b)]=running; running+=c; }
+    if (tmp.size()<n) tmp.resize(n);
+    for (size_t i=0;i<n;++i) tmp[static_cast<size_t>(hist[static_cast<size_t>(column(xs[i].x))]++)]=xs[i];
+    for (int b=lo;b<=hi;++b) hist[static_cast<size_t>(b)]=0;
+    std::copy(tmp.begin(),tmp.begin()+static_cast<std::ptrdiff_t>(n),xs);
+    insertionSortByX(xs,n);
+}
+
+// --- scanline bands ---------------------------------------------------------
+// A large fill is split across threads by SCANLINE BAND. Every emit callback in
+// this file writes to storage indexed by [y*stride + x] and reads nothing that
+// another band writes, so two bands can never touch the same pixel: the split
+// is exact rather than an approximation, and the result is bit-identical to the
+// sequential walk. Coverage for a row depends only on that row's crossings, so
+// a band needs no state from the band above it beyond the edges still open at
+// its first scanline, which it rebuilds itself.
+//
+// Only BIG paths are split. Measured over a frame of the game, ~740 fills a
+// frame carry 14M bbox pixels, but 83% of that area is in the ~36 fills bigger
+// than 256x256 -- and the thousands of small ones (glyphs, HUD boxes) are a
+// twelfth of the pixels, where waking a thread costs more than the fill.
+struct FillScratch {
+    std::vector<Edge> active;
+    std::vector<float> acc, run;
+    std::vector<int> hist;
+    std::vector<Cross> xs, sorted;
+};
+
+// Threads are created once and kept. A fill this size happens dozens of times a
+// frame, and std::thread's construction alone costs more than one band's work.
+class BandPool {
+public:
+    static BandPool& instance() { static BandPool pool; return pool; }
+    int maxBands() const { return bands_; }
+    FillScratch& scratch(int band) { return scratch_[static_cast<std::size_t>(band)]; }
+
+    // Runs job(0) on the calling thread and job(1..bands-1) on the workers,
+    // returning once every band is done. Not reentrant, and does not need to
+    // be: nothing inside a fill starts another one.
+    void run(int bands, const std::function<void(int)>& job) {
+        if (bands <= 1) { job(0); return; }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            job_ = &job;
+            bandCount_ = bands;
+            next_.store(1, std::memory_order_relaxed);
+            remaining_.store(bands - 1, std::memory_order_relaxed);
+            ++generation_;
+        }
+        wake_.notify_all();
+        job(0);
+        std::unique_lock<std::mutex> lock(mutex_);
+        // BOTH conditions, and the second is not redundant: a worker decrements
+        // remaining_ when its band is done but is still inside the claim loop
+        // for a moment afterwards. Returning on remaining_ alone let the NEXT
+        // fill reset next_ under that worker, which then claimed a band from a
+        // job whose std::function had already been destroyed with the frame
+        // that made it -- a dangling call, and a crash a few seconds into a
+        // scene busy enough to thread two fills back to back.
+        idle_.wait(lock, [this] {
+            return remaining_.load(std::memory_order_acquire) == 0 && inLoop_ == 0;
+        });
+        // Nothing may call through this again until run() publishes a new one.
+        job_ = nullptr;
+    }
+
+private:
+    BandPool() {
+        const unsigned hardware = std::thread::hardware_concurrency();
+        // Capped: past a handful of bands the fill is memory-bound and the
+        // extra threads only add wake-up latency to every call.
+        bands_ = static_cast<int>(std::min(hardware ? hardware : 1u, 8u));
+        if (bands_ < 1) bands_ = 1;
+        scratch_.resize(static_cast<std::size_t>(bands_));
+        for (int i = 1; i < bands_; ++i) workers_.emplace_back([this] { loop(); });
+    }
+    ~BandPool() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_ = true;
+            ++generation_;
+        }
+        wake_.notify_all();
+        for (std::thread& worker : workers_) if (worker.joinable()) worker.join();
+    }
+
+    void loop() {
+        std::uint64_t seen = 0;
+        std::unique_lock<std::mutex> lock(mutex_);
+        for (;;) {
+            wake_.wait(lock, [this, seen] { return stop_ || generation_ != seen; });
+            if (stop_) return;
+            seen = generation_;
+            const std::function<void(int)>* const job = job_;
+            const int bands = bandCount_;
+            // Woke after the fill it was meant for had already finished. There
+            // is nothing to run and, more to the point, nothing valid to run.
+            if (!job) continue;
+
+            // Counted while the lock is held, so run() cannot observe zero
+            // bands outstanding and start reusing next_ while this worker is
+            // still claiming from it.
+            ++inLoop_;
+            lock.unlock();
+            // Claimed rather than assigned, so a worker that woke late does not
+            // leave its band unrun -- whoever is free takes the next one.
+            for (;;) {
+                const int band = next_.fetch_add(1, std::memory_order_relaxed);
+                if (band >= bands) break;
+                (*job)(band);
+                remaining_.fetch_sub(1, std::memory_order_acq_rel);
+            }
+            lock.lock();
+            --inLoop_;
+            // Taking the lock above is also what publishes this band's pixels
+            // to the thread waiting in run().
+            idle_.notify_all();
+        }
+    }
+
+    std::vector<std::thread> workers_;
+    std::vector<FillScratch> scratch_;
+    std::mutex mutex_;
+    std::condition_variable wake_, idle_;
+    const std::function<void(int)>* job_ = nullptr;
+    std::atomic<int> next_{0}, remaining_{0};
+    std::uint64_t generation_ = 0;
+    int bands_ = 1, bandCount_ = 0;
+    // Workers currently inside the claim loop, which is not the same as bands
+    // outstanding -- see run().
+    int inLoop_ = 0;
+    bool stop_ = false;
+};
+
+// Below these a fill stays on the calling thread. Rows, because a band thinner
+// than this rebuilds more open edges than it rasterises; area, because a tall
+// thin sliver is not worth waking anyone for.
+constexpr int kMinBandRows = 32;
+constexpr long long kMinThreadedArea = 1 << 15;
+
+// Coverage comes out of the walk below in two shapes, and they are worth
+// telling apart. A shape's EDGE gives partial coverage, one pixel at a time --
+// that is `emit`. Its INTERIOR gives coverage of exactly 1 over a run of
+// pixels, and feeding that through a per-pixel callback throws the run away:
+// the caller ends up re-deriving a constant colour and re-blending it for
+// every pixel of a flat fill, which is most of the pixels in a frame of this
+// game (ground tiles, walls, panels). `emitSpan(x0, x1, y)` hands the run over
+// whole instead, so the caller can memset it -- which is the split Skia draws
+// between SkBlitter::blitH and blitAntiH, and the reason its solid fills cost
+// what a memcpy costs.
+//
+// emitSpan(x0, x1, y) MUST be exactly equivalent to emit(x, y, 1.0f) for every
+// x in [x0, x1).
+template <class Emit, class EmitSpan>
+void scanFill(const Poly& poly, bool evenOdd, int cx0, int cy0, int cx1, int cy1, Emit emit,
+              EmitSpan emitSpan) {
+    // Shared by every band and built once, on the calling thread.
+    static std::vector<Edge> edges, byRow; static std::vector<int> rowStart, cursor;
+    int bx0,by0,bx1,by1; if (!polyBounds(poly,cx0,cy0,cx1,cy1,bx0,by0,bx1,by1)) return;
+    edges.clear();
+    int first=0;
+    for (size_t c=0;c<poly.ends.size();++c) {
+        const int last=poly.ends[c];
+        for (int i=first;i<last;++i) {
+            const int j=(i+1==last)?first:i+1;
+            const float ax=poly.pts[2*i], ay=poly.pts[2*i+1], bx=poly.pts[2*j], by=poly.pts[2*j+1];
+            if (ay==by || !(std::isfinite(ax)&&std::isfinite(ay)&&std::isfinite(bx)&&std::isfinite(by))) continue;
+            edges.push_back({std::min(ay,by),std::max(ay,by),ax,ay,(bx-ax)/(by-ay), by>ay?1.f:-1.f});
+        }
+        first=last;
+    }
+    if (edges.empty()) return;
+
+    // Edges bucketed by the first scanline that can see them. This used to be
+    // a sort of every edge by its top y, which is O(n log n) over a polygon
+    // that -- once a stroke has been expanded to an outline -- runs to
+    // thousands of edges. The bucket is an integer, so counting them lands
+    // them in the same order for one pass each way.
+    const int rows=by1-by0;
+    const float boxTop=static_cast<float>(by0), boxBottom=static_cast<float>(by1);
+    // The two range tests come before the cast, not after: an edge's y can be
+    // any finite float, and converting one of those to int is not something
+    // the standard defines. Past them, floor(ylo) is provably a row index.
+    const auto firstRow=[&](const Edge& e)->int {
+        if (e.yhi<=boxTop) return -1;              // wholly above the box
+        if (!(e.ylo<boxBottom)) return -1;         // starts below it, or is NaN
+        if (e.ylo<=boxTop) return 0;
+        return static_cast<int>(std::floor(e.ylo))-by0;
+    };
+    rowStart.assign(static_cast<size_t>(rows)+1,0);
+    for (const Edge& e : edges) { const int r=firstRow(e); if (r>=0) ++rowStart[static_cast<size_t>(r)]; }
+    int total=0;
+    for (int r=0;r<=rows;++r) { const int n=rowStart[static_cast<size_t>(r)]; rowStart[static_cast<size_t>(r)]=total; total+=n; }
+    if (total==0) return;
+    byRow.resize(static_cast<size_t>(total));
+    cursor.assign(rowStart.begin(),rowStart.end());
+    for (const Edge& e : edges) { const int r=firstRow(e); if (r>=0) byRow[static_cast<size_t>(cursor[static_cast<size_t>(r)]++)]=e; }
+
+    const size_t span_count=static_cast<size_t>(bx1-bx0);
+    const float weight=1.f/kSub;
+
+    // One band unless the path is big enough to pay for the hand-off.
+    BandPool& pool=BandPool::instance();
+    const long long area=static_cast<long long>(rows)*static_cast<long long>(bx1-bx0);
+    int bandCount=1;
+    if (area>=kMinThreadedArea && rows>=2*kMinBandRows)
+        bandCount=std::max(1,std::min(pool.maxBands(),rows/kMinBandRows));
+
+    const auto runBand=[&](int band){
+        FillScratch& sc=pool.scratch(band);
+        std::vector<Edge>& active=sc.active;
+        std::vector<float>& acc=sc.acc; std::vector<float>& run=sc.run;
+        std::vector<int>& hist=sc.hist;
+        std::vector<Cross>& xs=sc.xs; std::vector<Cross>& sorted=sc.sorted;
+        const int ys=by0+static_cast<int>((static_cast<long long>(rows)*band)/bandCount);
+        const int ye=by0+static_cast<int>((static_cast<long long>(rows)*(band+1))/bandCount);
+        if (ys>=ye) return;
+        acc.assign(span_count,0.f);
+        run.assign(span_count,0.f);
+        hist.assign(span_count,0);
+        active.clear();
+        // What this band inherits: edges opened on a row above it and not yet
+        // retired at its first scanline. Walked in bucket order, which is the
+        // order the sequential fill holds them in -- it appends in that order
+        // and retires in place -- so the active list is identical either way.
+        for (int r=0;r<ys-by0;++r)
+            for (int k=rowStart[static_cast<size_t>(r)];k<rowStart[static_cast<size_t>(r)+1];++k)
+                if (byRow[static_cast<size_t>(k)].yhi>static_cast<float>(ys))
+                    active.push_back(byRow[static_cast<size_t>(k)]);
+        for (int y=ys;y<ye;++y) {
+            const float top=static_cast<float>(y);
+            // Retire the edges this scanline has passed, in place and in order:
+            // what survives is what remove_if used to leave behind.
+            size_t keep=0;
+            for (size_t i=0;i<active.size();++i) if (active[i].yhi>top) active[keep++]=active[i];
+            active.resize(keep);
+            for (int k=rowStart[static_cast<size_t>(y-by0)];k<rowStart[static_cast<size_t>(y-by0)+1];++k)
+                active.push_back(byRow[static_cast<size_t>(k)]);
+            if (active.empty()) continue;
+            int lo=bx1, hi=bx0-1;      // the x range any span touched, so the pass below walks only that
+            const auto span=[&](float a,float b){
+                a=std::max(a,static_cast<float>(bx0)); b=std::min(b,static_cast<float>(bx1));
+                if (b<=a) return;
+                int ia=static_cast<int>(std::floor(a)), ib=static_cast<int>(std::floor(b));
+                ia=std::clamp(ia,bx0,bx1-1); ib=std::clamp(ib,bx0,bx1-1);
+                if (ia==ib) acc[static_cast<size_t>(ia-bx0)]+=(b-a)*weight;
+                else {
+                    // The whole-pixel interior used to be one write per pixel,
+                    // which is what made a full-screen rect five passes over the
+                    // width. Two difference-array entries carry it instead, summed
+                    // by the running total in the emit pass below.
+                    acc[static_cast<size_t>(ia-bx0)]+=(ia+1-a)*weight;
+                    run[static_cast<size_t>(ia+1-bx0)]+=weight;
+                    run[static_cast<size_t>(ib-bx0)]-=weight;
+                    acc[static_cast<size_t>(ib-bx0)]+=(b-ib)*weight;
+                }
+                if (ia<lo) lo=ia;
+                if (ib>hi) hi=ib;
+            };
+            if (xs.size()<active.size()) xs.resize(active.size());
+            Cross* const cross=xs.data();
+            for (int s=0;s<kSub;++s) {
+                const float sy=y+(s+0.5f)/kSub;
+                // Branchless on purpose: whether a given edge reaches this
+                // subsample line is data the predictor cannot learn, and a
+                // mispredict costs more than the crossing does. Every slot is
+                // written and the cursor only advances for the ones that count,
+                // which is safe because `xs` is sized for the whole active list.
+                size_t nx=0;
+                for (const Edge& ed : active) {
+                    cross[nx].x=ed.x0+(sy-ed.y0)*ed.slope;
+                    cross[nx].dir=ed.dir;
+                    nx += (sy>=ed.ylo && sy<ed.yhi) ? 1u : 0u;
+                }
+                if (nx<2) continue;
+                sortCrossings(cross,nx,bx0,bx1-bx0,hist,sorted);
+                float winding=0; int crossings=0;
+                for (size_t i=0;i+1<nx;++i) {
+                    winding+=cross[i].dir; ++crossings;
+                    if (evenOdd ? (crossings&1) : (winding!=0)) span(cross[i].x, cross[i+1].x);
+                }
+            }
+            if (lo>hi) continue;
+            float carry=0;
+            // The interior is saturated rather than merely large: the run
+            // array takes one `weight` per subsample line and there are kSub
+            // of them, so a wholly covered pixel accumulates to 1 (a hair over
+            // it, in float, which is what the old min() was trimming).
+            int runStart=-1;
+            for (int x=lo;x<=hi;++x) {
+                const size_t k=static_cast<size_t>(x-bx0);
+                carry+=run[k]; run[k]=0;
+                const float a=acc[k]+carry; acc[k]=0;
+                if (a>=1.f) { if (runStart<0) runStart=x; continue; }
+                if (runStart>=0) { emitSpan(runStart,x,y); runStart=-1; }
+                if (a>0.002f) emit(x,y,a);
+            }
+            if (runStart>=0) emitSpan(runStart,hi+1,y);
+        }
+
+    };
+    if (bandCount>1) pool.run(bandCount,runBand); else runBand(0);
+}
+
+// Source-over onto one pixel, split so the two cases that carry a frame stay
+// inline at the call site. Out of line the whole thing was the single most
+// expensive symbol in a frame: it runs once per covered pixel and every caller
+// is in this file.
+//
+// Both fast paths are the general form with the divide by the output alpha
+// cancelling exactly, not an approximation of it -- an opaque source at full
+// coverage (the interior of every rect, wall and sprite body) and a pixel that
+// is already opaque (which, once a frame has laid its background down, is
+// every pixel on screen). What is left is a partly transparent source landing
+// on a partly transparent pixel, which is rare enough to pay for a call.
+void blendOntoTranslucent(Color& d, Color c, float sa) {
+    if (d.a==0) { d=Color{c.r,c.g,c.b,static_cast<std::uint8_t>(std::lround(sa*255))}; return; }
+    const float da=d.a/255.f, oa=sa+da*(1-sa);
+    if (oa<=0) { d=Color{0,0,0,0}; return; }
+    d=Color{static_cast<std::uint8_t>(std::lround((c.r*sa+d.r*da*(1-sa))/oa)),
+            static_cast<std::uint8_t>(std::lround((c.g*sa+d.g*da*(1-sa))/oa)),
+            static_cast<std::uint8_t>(std::lround((c.b*sa+d.b*da*(1-sa))/oa)),
+            static_cast<std::uint8_t>(std::lround(oa*255))};
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+// Not a hint: at -O2 the inliner decides the emit lambdas are already big
+// enough and leaves this out of line, which puts a call on every covered pixel
+// and makes it the top symbol in a frame.
+__attribute__((always_inline)) inline
+#else
+inline
+#endif
+void blend(Color& d, Color c, float coverage) {
+    const float sa=std::clamp(coverage,0.f,1.f)*(c.a/255.f);
+    if (sa<=0.0005f) return;
+    if (sa>=1.f) { d=Color{c.r,c.g,c.b,255}; return; }
+    if (d.a==255) {
+        const float keep=1.f-sa;
+        d=Color{static_cast<std::uint8_t>(std::lround(c.r*sa+d.r*keep)),
+                static_cast<std::uint8_t>(std::lround(c.g*sa+d.g*keep)),
+                static_cast<std::uint8_t>(std::lround(c.b*sa+d.b*keep)),
+                255};
+        return;
+    }
+    blendOntoTranslucent(d,c,sa);
+}
+
+void pushContour(Poly& out, const std::vector<float>& pts) {
+    const size_t n=pts.size()/2;
+    if (n<3) return;
+    double area=0;
+    for (size_t i=0,j=n-1;i<n;j=i++) area += static_cast<double>(pts[2*j])*pts[2*i+1] - static_cast<double>(pts[2*i])*pts[2*j+1];
+    if (area>0) for (size_t i=n;i-->0;) { out.pts.push_back(pts[2*i]); out.pts.push_back(pts[2*i+1]); }
+    else for (size_t i=0;i<n;++i) { out.pts.push_back(pts[2*i]); out.pts.push_back(pts[2*i+1]); }
+    out.finish(true);
+}
+
+void pushDisc(Poly& out, float x, float y, float r, float scale) {
+    const int n=std::clamp(static_cast<int>(std::ceil(std::sqrt(r*scale)*4.f)),8,72);
+    static std::vector<float> pts; pts.clear(); pts.reserve(n*2);
+    for (int i=0;i<n;++i) { const float t=kTau*i/n; pts.push_back(x+std::cos(t)*r); pts.push_back(y+std::sin(t)*r); }
+    pushContour(out,pts);
+}
+
+// Segment quads, join wedges and caps are emitted as separately closed, equally
+// wound contours; a nonzero fill of the lot is exactly their union.
+void strokeOutline(const Poly& src, float hw, int cap, int join, float miterLimit, float scale, Poly& out) {
+    out.reset();
+    if (hw<=0) return;
+    // Scratch kept between calls: stroking runs once per path per frame and a
+    // fresh pair of vectors here was the library's largest per-frame allocation.
+    static std::vector<float> pts, quad;
+    int first=0;
+    for (size_t c=0;c<src.ends.size();++c) {
+        const int last=src.ends[c]; const bool closed=src.closed[c]!=0;
+        pts.clear();
+        for (int i=first;i<last;++i) {
+            const float x=src.pts[2*i], y=src.pts[2*i+1];
+            if (!(std::isfinite(x)&&std::isfinite(y))) continue;
+            if (pts.size()>=2 && std::abs(pts[pts.size()-2]-x)<1e-6f && std::abs(pts.back()-y)<1e-6f) continue;
+            pts.push_back(x); pts.push_back(y);
+        }
+        first=last;
+        if (closed && pts.size()>=4 && std::abs(pts[0]-pts[pts.size()-2])<1e-6f && std::abs(pts[1]-pts.back())<1e-6f) pts.resize(pts.size()-2);
+        const int n=static_cast<int>(pts.size()/2);
+        if (n==0) continue;
+        if (n==1) {
+            if (cap==1) pushDisc(out,pts[0],pts[1],hw,scale);
+            else if (cap==2) { quad={pts[0]-hw,pts[1]-hw,pts[0]+hw,pts[1]-hw,pts[0]+hw,pts[1]+hw,pts[0]-hw,pts[1]+hw}; pushContour(out,quad); }
+            continue;
+        }
+        const int segments = closed ? n : n-1;
+        for (int i=0;i<segments;++i) {
+            const int j=(i+1)%n;
+            const float ax=pts[2*i], ay=pts[2*i+1], bx=pts[2*j], by=pts[2*j+1];
+            const float dx=bx-ax, dy=by-ay, len=std::hypot(dx,dy);
+            if (len<1e-9f) continue;
+            const float nx=-dy/len*hw, ny=dx/len*hw;
+            quad={ax+nx,ay+ny,bx+nx,by+ny,bx-nx,by-ny,ax-nx,ay-ny};
+            pushContour(out,quad);
+        }
+        const int joins = closed ? n : n-1;
+        for (int k = closed?0:1; k<joins; ++k) {
+            const int prev=(k-1+n)%n, cur=k, nxt=(k+1)%n;
+            const float px=pts[2*cur], py=pts[2*cur+1];
+            float d0x=px-pts[2*prev], d0y=py-pts[2*prev+1], d1x=pts[2*nxt]-px, d1y=pts[2*nxt+1]-py;
+            const float l0=std::hypot(d0x,d0y), l1=std::hypot(d1x,d1y);
+            if (l0<1e-9f||l1<1e-9f) continue;
+            d0x/=l0; d0y/=l0; d1x/=l1; d1y/=l1;
+            const float cross=d0x*d1y-d0y*d1x;
+            if (std::abs(cross)<1e-6f && d0x*d1x+d0y*d1y>0) continue;
+            if (join==1) { pushDisc(out,px,py,hw,scale); continue; }
+            const float side = cross>0 ? -1.f : 1.f;
+            const float o0x=-d0y*hw*side, o0y=d0x*hw*side, o1x=-d1y*hw*side, o1y=d1x*hw*side;
+            // Only the OUTER wedge is emitted, and only when no miter quad
+            // takes its place. The inner one -- {p, p-o0, p-o1} -- lies inside
+            // the overlap of the two segment quads that meet here, and the
+            // outer one lies inside the miter quad, so both are contours whose
+            // region the union already contains: dropping them leaves the
+            // filled shape identical and takes 40% of the edges out of a
+            // stroke. That matters because a stroked glyph run is thousands of
+            // these, and scanFill's cost is per edge per scanline.
+            bool mitered=false;
+            if (join==0) {
+                const float denom=-cross;
+                if (std::abs(denom)>=1e-9f) {
+                    const float rx=o1x-o0x, ry=o1y-o0y;
+                    const float t=(rx*(-d1y)-ry*(-d1x))/denom;
+                    const float qx=px+o0x+t*d0x, qy=py+o0y+t*d0y;
+                    if (std::hypot(qx-px,qy-py) <= miterLimit*hw) {
+                        quad={px,py,px+o0x,py+o0y,qx,qy,px+o1x,py+o1y};
+                        pushContour(out,quad);
+                        mitered=true;
+                    }
+                }
+            }
+            if (!mitered) { quad={px,py,px+o0x,py+o0y,px+o1x,py+o1y}; pushContour(out,quad); }
+        }
+        if (closed || cap==0) continue;
+        for (int e=0;e<2;++e) {
+            const int at = e==0 ? 0 : n-1;
+            const int other = e==0 ? 1 : n-2;
+            float dx=pts[2*at]-pts[2*other], dy=pts[2*at+1]-pts[2*other+1];
+            const float len=std::hypot(dx,dy); if (len<1e-9f) continue;
+            dx/=len; dy/=len;
+            const float ex=pts[2*at], ey=pts[2*at+1];
+            if (cap==1) { pushDisc(out,ex,ey,hw,scale); continue; }
+            const float nx=-dy*hw, ny=dx*hw;
+            quad={ex+nx,ey+ny,ex+nx+dx*hw,ey+ny+dy*hw,ex-nx+dx*hw,ey-ny+dy*hw,ex-nx,ey-ny};
+            pushContour(out,quad);
+        }
+    }
+}
+
+void applyDash(const Poly& src, const std::vector<float>& dash, float offset, Poly& out) {
+    out.reset();
+    float total=0; for (float d : dash) total += std::max(0.f,d);
+    if (total<=1e-6f) { out=src; return; }
+    const size_t count=dash.size();
+    int first=0;
+    for (size_t c=0;c<src.ends.size();++c) {
+        const int last=src.ends[c]; const bool closed=src.closed[c]!=0;
+        size_t index=0; float remaining=0; bool on=true;
+        float carry=std::fmod(offset,total*((count&1)?2:1)); if (carry<0) carry+=total*((count&1)?2:1);
+        while (carry>0) { const float d=std::max(0.f,dash[index%count]); if (carry<d) { remaining=d-carry; carry=0; } else { carry-=d; ++index; on=!on; } }
+        if (remaining<=0) { remaining=std::max(0.f,dash[index%count]); }
+        bool started=false;
+        const int total_points = closed ? (last-first+1) : (last-first);
+        for (int i=1;i<total_points;++i) {
+            const int a=first+((i-1)%(last-first)), b=first+(i%(last-first));
+            float ax=src.pts[2*a], ay=src.pts[2*a+1];
+            const float bx=src.pts[2*b], by=src.pts[2*b+1];
+            float segment=std::hypot(bx-ax,by-ay);
+            while (segment>1e-9f) {
+                if (on && !started) { out.pts.push_back(ax); out.pts.push_back(ay); started=true; }
+                if (remaining>=segment) {
+                    remaining-=segment;
+                    if (on) { out.pts.push_back(bx); out.pts.push_back(by); }
+                    segment=0;
+                } else {
+                    const float t=remaining/segment;
+                    const float mx=ax+(bx-ax)*t, my=ay+(by-ay)*t;
+                    if (on) { out.pts.push_back(mx); out.pts.push_back(my); out.finish(false); started=false; }
+                    ax=mx; ay=my; segment-=remaining;
+                    ++index; on=!on; remaining=std::max(1e-6f,dash[index%count]);
+                }
+            }
+        }
+        if (started) out.finish(false);
+        first=last;
+    }
+}
+
+void transformPoly(const Poly& in, const Matrix& m, Poly& out) {
+    out.reset();
+    out.pts.resize(in.pts.size());
+    for (size_t i=0;i<in.pts.size();i+=2) {
+        const float x=in.pts[i], y=in.pts[i+1];
+        out.pts[i]=m[0]*x+m[2]*y+m[4]; out.pts[i+1]=m[1]*x+m[3]*y+m[5];
+    }
+    out.ends=in.ends; out.closed=in.closed;
+}
+
+// 5x7 cell font, column-major bits, ASCII 32..126.
+const unsigned char kFont[95][5] = {
+    {0x00,0x00,0x00,0x00,0x00}, {0x00,0x00,0x5f,0x00,0x00}, {0x00,0x03,0x00,0x03,0x00}, {0x14,0x7f,0x14,0x7f,0x14}, {0x24,0x2a,0x7f,0x2a,0x12},
+    {0x63,0x13,0x08,0x64,0x63}, {0x36,0x49,0x55,0x22,0x50}, {0x00,0x00,0x03,0x00,0x00}, {0x00,0x1c,0x22,0x41,0x00}, {0x00,0x41,0x22,0x1c,0x00},
+    {0x2a,0x1c,0x3e,0x1c,0x2a}, {0x08,0x08,0x3e,0x08,0x08}, {0x00,0x40,0x30,0x10,0x00}, {0x08,0x08,0x08,0x08,0x08}, {0x00,0x60,0x60,0x00,0x00},
+    {0x60,0x10,0x08,0x04,0x03}, {0x3e,0x51,0x49,0x45,0x3e}, {0x00,0x42,0x7f,0x40,0x00}, {0x62,0x51,0x49,0x49,0x46}, {0x41,0x49,0x49,0x49,0x36},
+    {0x18,0x14,0x12,0x7f,0x10}, {0x27,0x45,0x45,0x45,0x39}, {0x3c,0x4a,0x49,0x49,0x30}, {0x01,0x71,0x09,0x05,0x03}, {0x36,0x49,0x49,0x49,0x36},
+    {0x06,0x49,0x49,0x29,0x1e}, {0x00,0x36,0x36,0x00,0x00}, {0x40,0x36,0x16,0x00,0x00}, {0x08,0x14,0x22,0x41,0x00}, {0x14,0x14,0x14,0x14,0x14},
+    {0x00,0x41,0x22,0x14,0x08}, {0x02,0x01,0x59,0x09,0x06}, {0x3e,0x41,0x5d,0x55,0x1e}, {0x7c,0x12,0x11,0x12,0x7c}, {0x7f,0x49,0x49,0x49,0x36},
+    {0x3e,0x41,0x41,0x41,0x22}, {0x7f,0x41,0x41,0x22,0x1c}, {0x7f,0x49,0x49,0x49,0x41}, {0x7f,0x09,0x09,0x09,0x01}, {0x3e,0x41,0x49,0x49,0x3a},
+    {0x7f,0x08,0x08,0x08,0x7f}, {0x00,0x41,0x7f,0x41,0x00}, {0x30,0x40,0x40,0x41,0x3f}, {0x7f,0x08,0x14,0x22,0x41}, {0x7f,0x40,0x40,0x40,0x40},
+    {0x7f,0x02,0x0c,0x02,0x7f}, {0x7f,0x06,0x08,0x30,0x7f}, {0x3e,0x41,0x41,0x41,0x3e}, {0x7f,0x09,0x09,0x09,0x06}, {0x3e,0x41,0x51,0x21,0x5e},
+    {0x7f,0x09,0x19,0x29,0x46}, {0x46,0x49,0x49,0x49,0x31}, {0x01,0x01,0x7f,0x01,0x01}, {0x3f,0x40,0x40,0x40,0x3f}, {0x1f,0x20,0x40,0x20,0x1f},
+    {0x7f,0x20,0x18,0x20,0x7f}, {0x63,0x14,0x08,0x14,0x63}, {0x03,0x04,0x78,0x04,0x03}, {0x61,0x51,0x49,0x45,0x43}, {0x00,0x00,0x7f,0x41,0x41},
+    {0x03,0x04,0x08,0x10,0x60}, {0x41,0x41,0x7f,0x00,0x00}, {0x04,0x02,0x01,0x02,0x04}, {0x40,0x40,0x40,0x40,0x40}, {0x00,0x01,0x02,0x00,0x00},
+    {0x20,0x54,0x54,0x54,0x78}, {0x7f,0x44,0x44,0x44,0x38}, {0x38,0x44,0x44,0x44,0x20}, {0x38,0x44,0x44,0x44,0x7f}, {0x38,0x54,0x54,0x54,0x18},
+    {0x08,0x7e,0x09,0x09,0x02}, {0x0c,0x52,0x52,0x52,0x3e}, {0x7f,0x04,0x04,0x04,0x78}, {0x00,0x44,0x7d,0x40,0x00}, {0x20,0x40,0x44,0x3d,0x00},
+    {0x7f,0x10,0x28,0x44,0x00}, {0x00,0x41,0x7f,0x40,0x00}, {0x7c,0x04,0x38,0x04,0x78}, {0x7c,0x04,0x04,0x04,0x78}, {0x38,0x44,0x44,0x44,0x38},
+    {0x7e,0x12,0x12,0x12,0x0c}, {0x0c,0x12,0x12,0x12,0x7e}, {0x7c,0x08,0x04,0x04,0x08}, {0x48,0x4c,0x54,0x74,0x24}, {0x04,0x3f,0x44,0x44,0x20},
+    {0x3c,0x40,0x40,0x40,0x7c}, {0x1c,0x20,0x40,0x20,0x1c}, {0x3c,0x40,0x38,0x40,0x3c}, {0x44,0x28,0x10,0x28,0x44}, {0x0e,0x50,0x50,0x50,0x3e},
+    {0x44,0x64,0x54,0x4c,0x44}, {0x00,0x08,0x36,0x41,0x41}, {0x00,0x00,0x7f,0x00,0x00}, {0x41,0x41,0x36,0x08,0x00}, {0x18,0x04,0x08,0x10,0x0c},
+};
+} // namespace
+#endif
+
+Canvas::Canvas(int w,int h,std::string id,bool desynchronized) : width_(std::max(1,w)),height_(std::max(1,h)),elementId_(std::move(id)),logicalWidth_(width_),logicalHeight_(height_) {
+#ifdef __EMSCRIPTEN__
+  contextId_=c2d_create(elementId_.c_str(),width_,height_,0,desynchronized?1:0);
+  liveCanvases()[contextId_]=this;
+#else
+  (void)desynchronized;
+  pixels_.assign(static_cast<size_t>(width_)*height_,Color{255,255,255});
+#endif
+}
+Canvas::Canvas(int w,int h,bool virtualCanvas) : width_(std::max(1,w)),height_(std::max(1,h)),virtual_(virtualCanvas),logicalWidth_(width_),logicalHeight_(height_) {
+#ifdef __EMSCRIPTEN__
+  contextId_=c2d_create("",width_,height_,1,0);
+  liveCanvases()[contextId_]=this;
+#else
+  pixels_.assign(static_cast<size_t>(width_)*height_,Color{0,0,0,0});
+#endif
+}
+Canvas Canvas::createVirtual(int w,int h) { return Canvas(w,h,true); }
+void Canvas::setLogicalSize(int w,int h) {
+  logicalWidth_ = w > 0 ? w : width_;
+  logicalHeight_ = h > 0 ? h : height_;
+}
+Canvas::Canvas(Canvas&& other) noexcept
+    : width_(other.width_), height_(other.height_), contextId_(other.contextId_), virtual_(other.virtual_),
+      elementId_(std::move(other.elementId_)),
+      logicalWidth_(other.logicalWidth_), logicalHeight_(other.logicalHeight_),
+      fill_(other.fill_), stroke_(other.stroke_),
+      lineWidth_(other.lineWidth_), currentPath_(std::move(other.currentPath_)), tint_(other.tint_) {
+  other.contextId_ = -1;
+#ifdef __EMSCRIPTEN__
+  if (contextId_ >= 0) liveCanvases()[contextId_] = this;
+  web_ = std::move(other.web_); webStack_ = std::move(other.webStack_);
+  applied_ = std::move(other.applied_); appliedStack_ = std::move(other.appliedStack_);
+  dirty_ = other.dirty_; other.dirty_ = 0;
+  pathMode_ = other.pathMode_; pagePathDirty_ = other.pagePathDirty_;
+  pagePathSegments_ = other.pagePathSegments_; pathMatrix_ = other.pathMatrix_;
+#else
+  pixels_ = std::move(other.pixels_);
+  state_ = std::move(other.state_); stack_ = std::move(other.stack_);
+#endif
+}
+Canvas& Canvas::operator=(Canvas&& other) noexcept {
+  if (this == &other) return *this;
+#ifdef __EMSCRIPTEN__
+  // Buffered calls name their context by index, so anything still owed to the
+  // one being dropped has to happen before it is.
+  if (contextId_ >= 0) { canvasFlushOps(); c2d_destroy(contextId_); liveCanvases().erase(contextId_); }
+#endif
+  width_=other.width_; height_=other.height_; contextId_=other.contextId_; virtual_=other.virtual_;
+  elementId_=std::move(other.elementId_); fill_=other.fill_; stroke_=other.stroke_; lineWidth_=other.lineWidth_;
+  currentPath_=std::move(other.currentPath_); other.contextId_=-1; tint_=other.tint_;
+  logicalWidth_=other.logicalWidth_; logicalHeight_=other.logicalHeight_;
+#ifdef __EMSCRIPTEN__
+  if (contextId_ >= 0) liveCanvases()[contextId_] = this;
+  web_=std::move(other.web_); webStack_=std::move(other.webStack_);
+  applied_=std::move(other.applied_); appliedStack_=std::move(other.appliedStack_);
+  dirty_=other.dirty_; other.dirty_=0;
+  pathMode_=other.pathMode_; pagePathDirty_=other.pagePathDirty_;
+  pagePathSegments_=other.pagePathSegments_; pathMatrix_=other.pathMatrix_;
+#else
+  pixels_=std::move(other.pixels_);
+  state_=std::move(other.state_); stack_=std::move(other.stack_);
+#endif
+  return *this;
+}
+Canvas::~Canvas() {
+#ifdef __EMSCRIPTEN__
+  if (contextId_ >= 0) { canvasFlushOps(); c2d_destroy(contextId_); liveCanvases().erase(contextId_); }
+#endif
+}
+void Canvas::present(const std::string& id) {
+#ifdef __EMSCRIPTEN__
+  canvasFlushOps();
+  c2d_present(contextId_, id.c_str());
+#else
+  (void)id;
+#endif
+}
+// Hex, not rgba(): the alpha channel is already an 8-bit integer, so
+// `#rrggbbaa` names exactly the same colour, and it costs one fixed-size
+// buffer instead of four std::to_string allocations -- one of which formats a
+// float -- on every colour change of every frame. The browser parses it faster
+// too, which is what the count of these actually pays for.
+static std::string css(Color c) {
+  static constexpr char kHex[] = "0123456789abcdef";
+  char buf[9] = {'#',
+                 kHex[c.r >> 4], kHex[c.r & 15],
+                 kHex[c.g >> 4], kHex[c.g & 15],
+                 kHex[c.b >> 4], kHex[c.b & 15],
+                 kHex[c.a >> 4], kHex[c.a & 15]};
+  return std::string(buf, c.a == 255 ? 7 : 9);
+}
+#ifdef __EMSCRIPTEN__
+namespace {
+// The fields of Canvas::WebState, one bit each, for Canvas::dirty_.
+enum : unsigned {
+  kTransformBit = 1u << 0, kFillBit = 1u << 1, kStrokeBit = 1u << 2, kAlphaBit = 1u << 3,
+  kCompositeBit = 1u << 4, kFilterBit = 1u << 5, kShadowBit = 1u << 6, kLineWidthBit = 1u << 7,
+  kLineCapBit = 1u << 8, kLineJoinBit = 1u << 9, kMiterBit = 1u << 10, kDashBit = 1u << 11,
+  kDashOffsetBit = 1u << 12, kFontBit = 1u << 13, kTextAlignBit = 1u << 14,
+  kTextBaselineBit = 1u << 15, kDirectionBit = 1u << 16, kSmoothingBit = 1u << 17,
+  kSmoothingQualityBit = 1u << 18,
+  kAllStateBits = (1u << 19) - 1,
+};
+// What each kind of call reads, which is all a call brings across before it
+// is issued. Everything that paints pixels reads the compositing fields. The
+// transform is not among them: each call that takes coordinates settles it
+// for itself through frameFor() -- path segments included, since a segment is
+// fixed in device space by the transform current when it is ADDED, not when
+// the path is filled.
+constexpr unsigned kPaintBits = kAlphaBit | kCompositeBit | kFilterBit | kShadowBit;
+constexpr unsigned kFillBits = kPaintBits | kFillBit;
+constexpr unsigned kStrokeBits = kPaintBits | kStrokeBit | kLineWidthBit | kLineCapBit |
+                                 kLineJoinBit | kMiterBit | kDashBit | kDashOffsetBit;
+constexpr unsigned kTextBits = kFontBit | kTextAlignBit | kTextBaselineBit | kDirectionBit;
+constexpr unsigned kImageBits = kPaintBits | kSmoothingBit | kSmoothingQualityBit;
+
+// The kinds of map R = P^-1 * M can be (CanvasPageFrame), and so what a call
+// asks of it in frameFor(). Each is a map some call survives exactly.
+enum : unsigned {
+  kFitAffine = 1u << 0,      // invertible: lines, curves, fills
+  kFitSimilar = 1u << 1,     // uniform scale, rotation, mirroring: arcs, ellipses
+  kFitAxis = 1u << 2,        // no rotation or shear: rects
+  kFitPositive = 1u << 3,    // with kFitAxis, no mirroring either: images
+  kFitTranslate = 1u << 4,   // nothing but a shift: live text
+};
+// A uniform, upright scale: a rounded rect stays a rounded rect.
+constexpr unsigned kFitUpright = kFitAffine | kFitSimilar | kFitAxis | kFitPositive;
+
+// Blink's 2pi, which it compares sweeps against in float.
+constexpr float kTwoPiFloat = 6.2831853071795864f;
+
+/// Whether an arc or ellipse is a whole turn, as Blink decides it
+/// (CanvasPath::arc, AdjustEndAngle): end - start against 2pi, in float.
+bool wholeTurn(float start, float end, bool ccw) {
+  return ccw ? start - end >= kTwoPiFloat : end - start >= kTwoPiFloat;
+}
+bool wholeTurn(const Path2D::Segment& g) {
+  if (g.command == Path2D::Command::Arc) return wholeTurn(g.v[3], g.v[4], g.counterClockwise);
+  if (g.command == Path2D::Command::Ellipse) return wholeTurn(g.v[5], g.v[6], g.counterClockwise);
+  return false;
+}
+
+/// Whether segment `i` is a whole turn whose start point a FILL never sees:
+/// the first segment of the path, so no line runs into it, and followed by
+/// nothing that runs on from where it ends -- the end of the path, or a
+/// segment that starts a subpath of its own, after at most a closePath (which
+/// only goes back to the turn's own start). Filled, such a turn is the same
+/// disc whatever angle it starts at, pixel for pixel: measured in Chrome, a
+/// full circle or ellipse sent from 0 in the page's frame fills exactly as the
+/// program's own did under its matrix, rotated or mirrored (0 of 1200 differ).
+/// That start, 0, is also the one Chrome never draws as half a disc. A
+/// stroke would show the start -- the seam, caps and dash phase -- so it is
+/// only ever used for a fill, a clip or a hit test (pageSeamMoved_).
+///
+/// Not after a moveTo, even one on the circle: the line from it to a moved
+/// start and back is zero area, but Chrome antialiases it (up to 128/255).
+bool looseTurn(const std::vector<Path2D::Segment>& segs, std::size_t i) {
+  if (i != 0 || segs.empty() || !wholeTurn(segs[0])) return false;
+  const auto opens = [&](std::size_t j) {
+    if (j >= segs.size()) return true;
+    const Path2D::Command c = segs[j].command;
+    return c == Path2D::Command::Move || c == Path2D::Command::Rect ||
+           c == Path2D::Command::RoundRect;
+  };
+  if (segs.size() > 1 && segs[1].command == Path2D::Command::Close) return opens(2);
+  return opens(1);
+}
+
+/// What a segment asks of the frame it is mapped into.
+unsigned segmentNeed(const Path2D::Segment& g) {
+  switch (g.command) {
+    // A whole turn only where its angles go over exactly as they were given:
+    // no rotation, no mirror. Chrome draws a full circle as HALF a disc when
+    // its own float arithmetic on the start and end leaves the sweep an ulp
+    // short of 2pi -- which depends on the start, its magnitude and the
+    // matrix, and which the angles a program writes (0 to 2pi) under the
+    // rotation it draws at have never hit. A turned start did: measured, the
+    // player's flower and 9 more of the 304 circles in a game frame, in
+    // Chrome only. A part of a turn is nowhere near that sweep. A LOOSE whole
+    // turn is the exception (looseTurn): it goes over from angle 0, which
+    // never trips the bug in any frame.
+    case Path2D::Command::Arc:
+    case Path2D::Command::Ellipse: return wholeTurn(g) ? kFitUpright : (kFitAffine | kFitSimilar);
+    case Path2D::Command::ArcTo: return kFitAffine | kFitSimilar;
+    // Not rotated: a rect under a rotation is four lines and a closePath,
+    // and Chrome's closePath costs time in proportion to the path so far.
+    case Path2D::Command::Rect: return kFitAffine | kFitAxis;
+    case Path2D::Command::RoundRect: return kFitUpright;
+    case Path2D::Command::Close: return 0;
+    default: return kFitAffine;
+  }
+}
+} // namespace
+
+// Brings the page's context up to date with the fields in `need` -- only
+// those, and only where they differ. A field is compared only while its bit
+// is in dirty_, so a frame of draws that changes nothing costs one test each.
+void Canvas::sync(unsigned need) const {
+  const unsigned todo = dirty_ & need;
+  if (todo == 0) return;
+  dirty_ &= ~todo;
+  const WebState& w = web_;
+  WebState& a = applied_;
+  if ((todo & kFillBit) && w.fill != a.fill) { a.fill = w.fill; OP(9,0,0,0,0,0,0,0,0,a.fill.c_str()); }
+  if ((todo & kStrokeBit) && w.stroke != a.stroke) { a.stroke = w.stroke; OP(10,0,0,0,0,0,0,0,0,a.stroke.c_str()); }
+  if ((todo & kAlphaBit) && w.alpha != a.alpha) { a.alpha = w.alpha; OP(11,a.alpha,0,0,0,0,0,0,0,""); }
+  if ((todo & kCompositeBit) && w.composite != a.composite) { a.composite = w.composite; OP(12,0,0,0,0,0,0,0,0,a.composite.c_str()); }
+  if ((todo & kFilterBit) && w.filter != a.filter) { a.filter = w.filter; OP(13,0,0,0,0,0,0,0,0,a.filter.c_str()); }
+  if ((todo & kShadowBit) &&
+      (w.shadowColour != a.shadowColour || w.shadowBlur != a.shadowBlur ||
+       w.shadowOffsetX != a.shadowOffsetX || w.shadowOffsetY != a.shadowOffsetY)) {
+    a.shadowColour = w.shadowColour; a.shadowBlur = w.shadowBlur;
+    a.shadowOffsetX = w.shadowOffsetX; a.shadowOffsetY = w.shadowOffsetY;
+    OP(19,a.shadowBlur,a.shadowOffsetX,a.shadowOffsetY,0,0,0,0,0,a.shadowColour.c_str());
+  }
+  if ((todo & kLineWidthBit) && w.lineWidth != a.lineWidth) { a.lineWidth = w.lineWidth; OP(14,a.lineWidth,0,0,0,0,0,0,0,""); }
+  if ((todo & kLineCapBit) && w.lineCap != a.lineCap) { a.lineCap = w.lineCap; OP(15,0,0,0,0,0,0,0,0,a.lineCap.c_str()); }
+  if ((todo & kLineJoinBit) && w.lineJoin != a.lineJoin) { a.lineJoin = w.lineJoin; OP(16,0,0,0,0,0,0,0,0,a.lineJoin.c_str()); }
+  if ((todo & kMiterBit) && w.miterLimit != a.miterLimit) { a.miterLimit = w.miterLimit; OP(17,a.miterLimit,0,0,0,0,0,0,0,""); }
+  if ((todo & kDashBit) && w.dash != a.dash) {
+    // Not an op: setLineDash takes an array, so it goes over directly, after
+    // everything queued ahead of it.
+    a.dash = w.dash;
+    canvasFlushOps();
+    c2d_dash(contextId_, a.dash.data(), static_cast<int>(a.dash.size()));
+  }
+  if ((todo & kDashOffsetBit) && w.dashOffset != a.dashOffset) { a.dashOffset = w.dashOffset; OP(18,a.dashOffset,0,0,0,0,0,0,0,""); }
+  if ((todo & kFontBit) && w.font != a.font) { a.font = w.font; OP(20,0,0,0,0,0,0,0,0,a.font.c_str()); }
+  if ((todo & kTextAlignBit) && w.textAlign != a.textAlign) { a.textAlign = w.textAlign; OP(21,0,0,0,0,0,0,0,0,a.textAlign.c_str()); }
+  if ((todo & kTextBaselineBit) && w.textBaseline != a.textBaseline) { a.textBaseline = w.textBaseline; OP(22,0,0,0,0,0,0,0,0,a.textBaseline.c_str()); }
+  if ((todo & kDirectionBit) && w.direction != a.direction) { a.direction = w.direction; OP(23,0,0,0,0,0,0,0,0,a.direction.c_str()); }
+  if ((todo & kSmoothingBit) && w.smoothing != a.smoothing) { a.smoothing = w.smoothing; OP(24,a.smoothing?1.f:0.f,0,0,0,0,0,0,0,""); }
+  if ((todo & kSmoothingQualityBit) && w.smoothingQuality != a.smoothingQuality) { a.smoothingQuality = w.smoothingQuality; OP(25,0,0,0,0,0,0,0,0,a.smoothingQuality.c_str()); }
+}
+// The real browser save a clip needs, for the innermost frame, once. Taken
+// at the clip rather than at the save() because most frames never clip, and
+// the snapshot is of what the page holds at this moment -- which is exactly
+// what the browser will put back when the matching restore() emits its own.
+void Canvas::realSave() {
+  if (webStack_.empty() || webStack_.back().real) return;
+  webStack_.back().real = true;
+  appliedStack_.push_back(applied_);
+  OP(0,0,0,0,0,0,0,0,0,"");
+}
+// The page holds the context's defaults again, and nothing else: no save, no
+// clip and no path. `web_` is the program's and stays. A save frame that had a
+// real browser save has nothing to restore any more, so it must not emit one.
+void Canvas::forgetPageState() {
+  applied_ = WebState{};
+  appliedStack_.clear();
+  for (WebFrame& frame : webStack_) frame.real = false;
+  dirty_ = kAllStateBits;
+  frameKnown_ = false;
+  currentPath_ = Path2D{}; pathMode_ = PathMode::Empty;
+  pagePathDirty_ = false; pagePathSegments_ = 0; pathHasSubpath_ = false;
+  pageSeamMoved_ = false; pathUniform_ = true;
+}
+
+namespace {
+void emitSegment(int context, const Path2D::Segment& g);   // below, with the shape cache
+
+bool finiteMatrix(const std::array<double, 6>& m) {
+  return std::isfinite(m[0]) && std::isfinite(m[1]) && std::isfinite(m[2]) &&
+         std::isfinite(m[3]) && std::isfinite(m[4]) && std::isfinite(m[5]);
+}
+
+/// R = P^-1 * M and what kinds of map it is, or no fits at all when P cannot
+/// be inverted well enough for coordinates to survive the trip through it.
+CanvasPageFrame relativeFrame(const std::array<double, 6>& p, const std::array<double, 6>& m) {
+  CanvasPageFrame r;
+  r.fits = 0;
+  if (!finiteMatrix(p) || !finiteMatrix(m)) return r;
+  const double pNorm = std::max(std::max(std::abs(p[0]), std::abs(p[1])),
+                                std::max(std::abs(p[2]), std::abs(p[3])));
+  const double pDet = p[0] * p[3] - p[1] * p[2];
+  // Nearly singular -- a collapsed scale, a shear to a line -- and the
+  // inverse blows the coordinates up past what a float carries back.
+  if (!(pNorm > 0) || !(std::abs(pDet) > 1e-9 * pNorm * pNorm)) return r;
+  const double ia = p[3] / pDet, ib = -p[1] / pDet, ic = -p[2] / pDet, id = p[0] / pDet;
+  const double ie = (p[2] * p[5] - p[3] * p[4]) / pDet, jf = (p[1] * p[4] - p[0] * p[5]) / pDet;
+  r.a = ia * m[0] + ic * m[1];
+  r.b = ib * m[0] + id * m[1];
+  r.c = ia * m[2] + ic * m[3];
+  r.d = ib * m[2] + id * m[3];
+  r.e = ia * m[4] + ic * m[5] + ie;
+  r.f = ib * m[4] + id * m[5] + jf;
+  const double det = r.a * r.d - r.b * r.c;
+  const double norm = std::max(std::max(std::abs(r.a), std::abs(r.b)),
+                               std::max(std::abs(r.c), std::abs(r.d)));
+  if (!std::isfinite(det) || !(norm > 0) || !(std::abs(det) > 1e-9 * norm * norm)) return r;
+  r.fits = kFitAffine;
+  // Relative to R's own size: what composing two matrices in double leaves
+  // behind is a few ulps of it, and a map within that of exact moves a
+  // coordinate by nothing a pixel can show.
+  const double eps = 1e-9 * norm;
+  r.sigma = det < 0 ? -1 : 1;
+  const bool similar = r.sigma > 0 ? std::abs(r.a - r.d) <= eps && std::abs(r.b + r.c) <= eps
+                                   : std::abs(r.a + r.d) <= eps && std::abs(r.b - r.c) <= eps;
+  if (similar) {
+    r.fits |= kFitSimilar;
+    r.scale = std::sqrt(std::abs(det));
+    r.rotation = std::atan2(r.b, r.a);
+  }
+  if (std::abs(r.b) <= eps && std::abs(r.c) <= eps) {
+    r.fits |= kFitAxis;
+    if (r.a > 0 && r.d > 0) r.fits |= kFitPositive;
+    if (std::abs(r.a - 1) <= 1e-9 && std::abs(r.d - 1) <= 1e-9) r.fits |= kFitTranslate;
+  }
+  return r;
+}
+
+float mapX(const CanvasPageFrame& r, float x, float y) { return static_cast<float>(r.a * x + r.c * y + r.e); }
+float mapY(const CanvasPageFrame& r, float x, float y) { return static_cast<float>(r.b * x + r.d * y + r.f); }
+
+/// The box (x, y, w, h) under an axis-aligned R. Its corners map in order,
+/// so a negative width or height stands for the same corners it did before.
+void mapBox(const CanvasPageFrame& r, float& x, float& y, float& w, float& h) {
+  const double nx = r.a * x + r.e, ny = r.d * y + r.f;
+  w = static_cast<float>(w * r.a);
+  h = static_cast<float>(h * r.d);
+  x = static_cast<float>(nx);
+  y = static_cast<float>(ny);
+}
+
+/// The start and end of an arc whose angles turn by `rotation` and run the
+/// other way when `sigma` is -1, as floats that the browser still sorts into
+/// the same case: a whole turn stays a whole turn, a part stays a part.
+/// Only ever a part, in fact: a whole turn is mapped only by an upright R,
+/// whose angles go over untouched (segmentNeed, mapSegment).
+void mapAngles(float start, float end, bool ccw, double rotation, int sigma, float& outStart,
+               float& outEnd) {
+  const bool wasWhole = wholeTurn(start, end, ccw);
+  const bool nowCcw = sigma < 0 ? !ccw : ccw;
+  outStart = static_cast<float>(rotation + sigma * static_cast<double>(start));
+  outEnd = static_cast<float>(static_cast<double>(outStart) +
+                              sigma * (static_cast<double>(end) - static_cast<double>(start)));
+  // Rounding can put a sweep of exactly 2pi either side of the line; one or
+  // two ulps of the end put it back on the side it started.
+  for (int step = 0; step < 4 && wholeTurn(outStart, outEnd, nowCcw) != wasWhole; ++step) {
+    const bool longer = wasWhole;
+    const bool up = nowCcw ? !longer : longer;
+    outEnd = std::nextafter(outEnd, up ? INFINITY : -INFINITY);
+  }
+}
+
+/// A segment added at M, as R maps it into the page's frame. R meets the
+/// segment's segmentNeed().
+Path2D::Segment mapSegment(const Path2D::Segment& g, const CanvasPageFrame& r,
+                           bool loose = false) {
+  Path2D::Segment o = g;
+  const float* v = g.v;
+  // No rotation, no mirror: angles and an ellipse's tilt carry over as they are.
+  const bool upright = (r.fits & kFitAxis) && (r.fits & kFitPositive);
+  const auto point = [&](int at) { o.v[at] = mapX(r, v[at], v[at + 1]); o.v[at + 1] = mapY(r, v[at], v[at + 1]); };
+  if (loose && !upright && wholeTurn(g)) {
+    // A loose whole turn (looseTurn): the same disc, from angle 0 of the
+    // page's frame, round the way R turns it.
+    const bool ccw = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+    const float end = ccw ? -kTwoPiFloat : kTwoPiFloat;
+    o.counterClockwise = ccw;
+    point(0);
+    o.v[2] = static_cast<float>(v[2] * r.scale);
+    if (g.command == Path2D::Command::Arc) {
+      o.v[3] = 0.0f;
+      o.v[4] = end;
+    } else {
+      o.v[3] = static_cast<float>(v[3] * r.scale);
+      o.v[4] = static_cast<float>(r.rotation + r.sigma * static_cast<double>(v[4]));
+      o.v[5] = 0.0f;
+      o.v[6] = end;
+    }
+    return o;
+  }
+  switch (g.command) {
+    case Path2D::Command::Move:
+    case Path2D::Command::Line: point(0); break;
+    case Path2D::Command::Quadratic: point(0); point(2); break;
+    case Path2D::Command::Bezier: point(0); point(2); point(4); break;
+    case Path2D::Command::Arc:
+      // A point at angle t lands at angle rotation + sigma*t of the mapped
+      // circle, so the angles shift and, mirrored, run the other way. Upright,
+      // they are left exactly as given.
+      point(0);
+      o.v[2] = static_cast<float>(v[2] * r.scale);
+      if (!upright) {
+        mapAngles(v[3], v[4], g.counterClockwise, r.rotation, r.sigma, o.v[3], o.v[4]);
+        o.counterClockwise = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+      }
+      break;
+    case Path2D::Command::ArcTo:
+      point(0); point(2);
+      o.v[4] = static_cast<float>(v[4] * r.scale);
+      break;
+    case Path2D::Command::Ellipse:
+      // The axes turn with R; a parameter angle is measured from them, so it
+      // only changes direction, when R mirrors.
+      point(0);
+      o.v[2] = static_cast<float>(v[2] * r.scale);
+      o.v[3] = static_cast<float>(v[3] * r.scale);
+      if (!upright) {
+        o.v[4] = static_cast<float>(r.rotation + r.sigma * static_cast<double>(v[4]));
+        mapAngles(v[5], v[6], g.counterClockwise, 0.0, r.sigma, o.v[5], o.v[6]);
+        o.counterClockwise = r.sigma < 0 ? !g.counterClockwise : g.counterClockwise;
+      }
+      break;
+    case Path2D::Command::Rect:
+      mapBox(r, o.v[0], o.v[1], o.v[2], o.v[3]);
+      break;
+    case Path2D::Command::RoundRect:
+      mapBox(r, o.v[0], o.v[1], o.v[2], o.v[3]);
+      o.v[4] = static_cast<float>(v[4] * r.a);
+      break;
+    case Path2D::Command::Close: break;
+  }
+  return o;
+}
+} // namespace
+
+const Canvas::PageFrame& Canvas::frameFor(const std::array<double, 6>& m, unsigned need) const {
+  static const PageFrame kSame{};
+  if (applied_.matrix == m) return kSame;
+  if (!frameKnown_ || framePage_ != applied_.matrix || frameCall_ != m) {
+    frame_ = relativeFrame(applied_.matrix, m);
+    framePage_ = applied_.matrix;
+    frameCall_ = m;
+    frameKnown_ = true;
+  }
+  if ((frame_.fits & need) == need && frame_.fits != 0) return frame_;
+  movePageTo(m);
+  return kSame;
+}
+
+void Canvas::movePageTo(const std::array<double, 6>& m) const {
+  // A non-finite transform is one the browser ignores, so the page keeps the
+  // matrix it had and the call goes over as it is, into that.
+  if (applied_.matrix == m || !finiteMatrix(m)) return;
+  applied_.matrix = m;
+  OP(7,static_cast<float>(m[0]),static_cast<float>(m[1]),static_cast<float>(m[2]),
+     static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5]),0,0,"");
+}
+
+namespace {
+/// Says once, in the console of a Blink browser, that a full circle has been
+/// sent differently for Chrome's sake (segmentNeed, looseTurn). Called with R
+/// before frameFor() may move the page; says nothing elsewhere.
+void noteBlinkFullTurn(const CanvasPageFrame& r) {
+  static int blink = -1;
+  static bool said = false;
+  if (said) return;
+  if (blink < 0) blink = c2d_blink();
+  if (!blink) { said = true; return; }
+  // Only where the workaround is what decided it: a frame the turn would
+  // otherwise have been mapped into.
+  if (!(r.fits & kFitSimilar) || ((r.fits & kFitAxis) && (r.fits & kFitPositive))) return;
+  said = true;
+  c2d_warn("[canvas] Chrome draws some full-circle arcs as half discs: when float rounding "
+           "leaves a whole turn's sweep just short of 2pi, which depends on the start angle "
+           "and the rotation it is drawn under (Safari does not show it). A "
+           "slightly longer sweep does not avoid it -- Blink clamps it back to start + 2pi. "
+           "Filled full circles are sent starting at angle 0, which it always draws whole; "
+           "others keep their own transform.");
+}
+} // namespace
+
+void Canvas::emitSegmentAt(const std::array<double, 6>& m, const Path2D::Segment& g,
+                           bool loose) const {
+  const unsigned need = loose ? (kFitAffine | kFitSimilar) : segmentNeed(g);
+  if (need == 0) { emitSegment(contextId_, g); return; }
+  if (wholeTurn(g) && applied_.matrix != m) noteBlinkFullTurn(relativeFrame(applied_.matrix, m));
+  const PageFrame& f = frameFor(m, need);
+  if (f.same()) { emitSegment(contextId_, g); return; }
+  if (loose && !((f.fits & kFitAxis) && (f.fits & kFitPositive))) pageSeamMoved_ = true;
+  emitSegment(contextId_, mapSegment(g, f, loose));
+}
+namespace {
+bool pathAlreadySent(const Path2D& path);   // the retained-path cache, further down
+
+/// A held segment, as the call that adds it to the page's current path.
+void emitSegment(int context, const Path2D::Segment& g) {
+  const float* v = g.v;
+  const float ccw = g.counterClockwise ? 1.f : 0.f;
+  switch (g.command) {
+    case Path2D::Command::Move:      pushOp(context,35,v[0],v[1],0,0,0,0,0,0,""); break;
+    case Path2D::Command::Line:      pushOp(context,36,v[0],v[1],0,0,0,0,0,0,""); break;
+    case Path2D::Command::Quadratic: pushOp(context,37,v[0],v[1],v[2],v[3],0,0,0,0,""); break;
+    case Path2D::Command::Bezier:    pushOp(context,38,v[0],v[1],v[2],v[3],v[4],v[5],0,0,""); break;
+    case Path2D::Command::Arc:       pushOp(context,39,v[0],v[1],v[2],v[3],v[4],ccw,0,0,""); break;
+    case Path2D::Command::ArcTo:     pushOp(context,40,v[0],v[1],v[2],v[3],v[4],0,0,0,""); break;
+    case Path2D::Command::Ellipse:   pushOp(context,41,v[0],v[1],v[2],v[3],v[4],v[5],v[6],ccw,""); break;
+    case Path2D::Command::Rect:      pushOp(context,42,v[0],v[1],v[2],v[3],0,0,0,0,""); break;
+    case Path2D::Command::RoundRect: pushOp(context,43,v[0],v[1],v[2],v[3],v[4],0,0,0,""); break;
+    case Path2D::Command::Close:     pushOp(context,34,0,0,0,0,0,0,0,0,""); break;
+  }
+}
+
+// Current paths whose exact geometry has been painted before, kept as
+// retained Path2Ds the page holds. Measured in a game frame, 75-85% of the
+// shapes a frame builds -- tile plates, faces, bars, mob parts, under their
+// own transforms -- repeat geometry from the same frame or the one before,
+// and painting one out of a retained path costs the page a single call where
+// beginPath, the segments and the paint cost three or more: about a third
+// less page-thread time for a rounded rect, and no more GPU time.
+constexpr std::size_t kMaxCachedShapes = 1024;
+constexpr std::size_t kMaxCachedShapeSegments = 64;
+// Geometry is only kept on its SECOND sighting, so the shapes that never
+// repeat -- the shimmer grains, a health bar mid-drain -- cost a slot in this
+// table rather than a Path2D on the page.
+constexpr std::size_t kShapeSightings = 4096;
+
+struct ShapeCache {
+  std::array<std::uint64_t, kShapeSightings> sighted{};
+  std::unordered_map<std::uint64_t, std::unique_ptr<Path2D>> paths;
+};
+
+ShapeCache& shapeCache() {
+  static ShapeCache cache;
+  return cache;
+}
+
+std::uint64_t shapeHash(const Path2D& path) {
+  std::uint64_t h = 1469598103934665603ull;
+  const auto mix = [&h](std::uint32_t value) { h ^= value; h *= 1099511628211ull; };
+  for (const Path2D::Segment& g : path.segments()) {
+    mix(static_cast<std::uint32_t>(g.command) | (g.counterClockwise ? 0x100u : 0u));
+    for (const float f : g.v) { std::uint32_t bits; std::memcpy(&bits, &f, sizeof bits); mix(bits); }
+  }
+  return h | 1;   // never 0, which is what an unused sighting slot holds
+}
+
+bool sameShape(const Path2D& a, const Path2D& b) {
+  const auto& x = a.segments();
+  const auto& y = b.segments();
+  if (x.size() != y.size()) return false;
+  for (std::size_t i = 0; i < x.size(); ++i) {
+    if (x[i].command != y[i].command || x[i].counterClockwise != y[i].counterClockwise ||
+        std::memcmp(x[i].v, y[i].v, sizeof x[i].v) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool worthCaching(const Path2D& path) {
+  const auto& segments = path.segments();
+  if (segments.empty() || segments.size() > kMaxCachedShapeSegments) return false;
+  // A lone circle or ellipse stays on the page's own path. Measured, Chrome
+  // draws one built afresh faster on the GPU than the same circle out of a
+  // retained Path2D (~15% more GPU time), and the page-thread saving is small.
+  int curves = 0, others = 0;
+  for (const Path2D::Segment& g : segments) {
+    if (g.command == Path2D::Command::Arc || g.command == Path2D::Command::Ellipse) ++curves;
+    else if (g.command != Path2D::Command::Move && g.command != Path2D::Command::Close) ++others;
+  }
+  return !(curves == 1 && others == 0);
+}
+
+/// The retained copy of this geometry, or null on its first sighting.
+const Path2D* cachedShape(const Path2D& path) {
+  ShapeCache& cache = shapeCache();
+  const std::uint64_t h = shapeHash(path);
+  if (const auto found = cache.paths.find(h); found != cache.paths.end()) {
+    return sameShape(*found->second, path) ? found->second.get() : nullptr;
+  }
+  std::uint64_t& slot = cache.sighted[h & (kShapeSightings - 1)];
+  if (slot != h) { slot = h; return nullptr; }
+  // Dropped whole when full. The page's copies are not: they are named in
+  // the retained-path cache, whose own bound evicts them in time.
+  if (cache.paths.size() >= kMaxCachedShapes) cache.paths.clear();
+  return cache.paths.emplace(h, std::make_unique<Path2D>(path)).first->second.get();
+}
+} // namespace
+
+void Canvas::pathSegmentAdded() {
+  const Path2D& path = currentPath_;
+  switch (pathMode_) {
+    case PathMode::Empty:
+      pathMatrix_ = web_.matrix;
+      pathMode_ = PathMode::Deferred;
+      pathUniform_ = true;
+      return;
+    case PathMode::Deferred:
+      if (web_.matrix == pathMatrix_) return;
+      pathUniform_ = false;
+      // The transform moved while the path was being built. What is held goes
+      // over under the transform it was added under, and from here the path
+      // is sent as it is built, the way every path used to be.
+      sendHeldPath(path.segments().size() - 1);
+      break;
+    case PathMode::Sent:
+      if (web_.matrix != pathMatrix_) pathUniform_ = false;
+      break;
+  }
+  emitSegmentAt(web_.matrix, path.segments().back());
+  ++pagePathSegments_;
+  pagePathDirty_ = true;
+}
+
+void Canvas::sendHeldPath(std::size_t count, bool fillOnly) const {
+  OP(33,0,0,0,0,0,0,0,0,"");
+  pageSeamMoved_ = false;
+  // Each segment into the page's frame, under the transform it was added at.
+  const std::vector<Path2D::Segment>& segs = currentPath_.segments();
+  for (std::size_t i = 0; i < count; ++i) {
+    emitSegmentAt(pathMatrix_, segs[i], fillOnly && looseTurn(segs, i));
+  }
+  pagePathSegments_ = static_cast<int>(count);
+  pagePathDirty_ = count > 0;
+  pathMode_ = PathMode::Sent;
+}
+
+// Puts our current path in the page's, for a paint or a query that is about
+// to use the page's.
+void Canvas::preparePagePath(bool fillOnly) const {
+  if (pathMode_ == PathMode::Deferred) {
+    sendHeldPath(currentPath_.segments().size(), fillOnly);
+  } else if (pathMode_ == PathMode::Empty && pagePathDirty_) {
+    OP(33,0,0,0,0,0,0,0,0,"");
+    pageSeamMoved_ = false;
+    pagePathDirty_ = false;
+    pagePathSegments_ = 0;
+  }
+}
+
+// action: 0 fill, 1 stroke, 2 clip. Paints the held path out of a retained
+// copy when it can, and says so. Only under the transform it was built in:
+// a retained path is mapped by the transform current at the PAINT, where the
+// segments it stands for were each mapped when they were added.
+bool Canvas::paintCachedPath(int action, bool evenOdd) {
+  if (pathMode_ != PathMode::Deferred || web_.matrix != pathMatrix_) return false;
+  const Path2D& path = currentPath_;
+  if (!worthCaching(path)) return false;
+  const Path2D* cached = cachedShape(path);
+  if (!cached) return false;
+  // A retained path is the page's to transform: it has to hold the matrix.
+  movePageTo(pathMatrix_);
+  const std::int32_t key = static_cast<std::int32_t>(cached->cacheKey());
+  if (pathAlreadySent(*cached)) {
+    pushRef(contextId_, 50, key, static_cast<float>(action), evenOdd ? 1.f : 0.f, 0,0,0,0,0,0);
+  } else {
+    pushPath(contextId_, key, *cached, action, evenOdd);
+  }
+  return true;
+}
+
+// A setter only records the value; the drawing call that reads it sends it.
+#define STATE(bit, field, value) \
+  do { if (web_.field != (value)) { web_.field = (value); dirty_ |= (bit); } } while (0)
+#define SYNC(bits) sync(bits)
+// Which state holds the current transform. The browser owns the real one, but
+// the client has to be able to ASK what it is -- a cache that bakes a picture
+// at device resolution has to know how many device pixels a user unit is, and
+// the frame's base scale is not the answer when the caller is inside a
+// transform of its own. Mirrored on both builds so there is one answer.
+#define MATRIX web_.matrix
+// Nothing to mark: each call compares the matrix it is drawn at with the
+// page's for itself (frameFor).
+#define TRANSFORM_CHANGED() ((void)0)
+using MatrixScalar = double;
+#else
+#define STATE(bit, field, value) do { } while (0)
+#define SYNC(bits) do { } while (0)
+#define MATRIX state_.matrix
+#define TRANSFORM_CHANGED() ((void)0)
+using MatrixScalar = float;
+#endif
+
+void Canvas::save() {
+#ifdef __EMSCRIPTEN__
+  webStack_.push_back(WebFrame{web_, false});
+#else
+  OP(0,0,0,0,0,0,0,0,0,"");
+  stack_.push_back(state_);
+#endif
+}
+void Canvas::restore() {
+#ifdef __EMSCRIPTEN__
+  if (webStack_.empty()) return;
+  WebFrame& frame = webStack_.back();
+  if (frame.real) {
+    OP(1,0,0,0,0,0,0,0,0,"");
+    applied_ = std::move(appliedStack_.back());
+    appliedStack_.pop_back();
+  }
+  web_ = std::move(frame.state);
+  webStack_.pop_back();
+  // Anything may differ now; sync() compares before it sends.
+  dirty_ = kAllStateBits;
+#else
+  OP(1,0,0,0,0,0,0,0,0,"");
+  if (!stack_.empty()) { state_=std::move(stack_.back()); stack_.pop_back(); fill_=state_.fill; stroke_=state_.stroke; lineWidth_=state_.lineWidth; }
+#endif
+}
+void Canvas::reset() {
+#ifdef __EMSCRIPTEN__
+  // reset() empties the context's own save stack and returns every field to
+  // its default, so the mirror does the same on both sides of it.
+  webStack_.clear(); appliedStack_.clear();
+  web_ = WebState{}; applied_ = WebState{}; dirty_ = 0;
+  // ...and empties the page's current path, which ours mirrors.
+  currentPath_ = Path2D{}; pathMode_ = PathMode::Empty;
+  pagePathDirty_ = false; pagePathSegments_ = 0; pathHasSubpath_ = false;
+  pageSeamMoved_ = false; pathUniform_ = true;
+#endif
+  OP(2,0,0,0,0,0,0,0,0,""); resetTransform();
+#ifndef __EMSCRIPTEN__
+  state_=State{}; stack_.clear();
+#endif
+}
+void Canvas::scale(float a,float b) {
+  { auto& m=MATRIX; m[0]*=a; m[1]*=a; m[2]*=b; m[3]*=b; }
+  TRANSFORM_CHANGED();
+}
+void Canvas::rotate(float a) {
+  { auto& m=MATRIX; const MatrixScalar c=std::cos(static_cast<MatrixScalar>(a)), s=std::sin(static_cast<MatrixScalar>(a));
+    const MatrixScalar m0=m[0],m1=m[1],m2=m[2],m3=m[3];
+    m[0]=m0*c+m2*s; m[1]=m1*c+m3*s; m[2]=m2*c-m0*s; m[3]=m3*c-m1*s; }
+  TRANSFORM_CHANGED();
+}
+void Canvas::translate(float a,float b) {
+  { auto& m=MATRIX; m[4]+=m[0]*a+m[2]*b; m[5]+=m[1]*a+m[3]*b; }
+  TRANSFORM_CHANGED();
+}
+void Canvas::transform(float a,float b,float c,float d,float e,float f) {
+  { const auto m=MATRIX; auto& o=MATRIX;
+    o[0]=m[0]*a+m[2]*b; o[1]=m[1]*a+m[3]*b; o[2]=m[0]*c+m[2]*d; o[3]=m[1]*c+m[3]*d;
+    o[4]=m[0]*e+m[2]*f+m[4]; o[5]=m[1]*e+m[3]*f+m[5]; }
+  TRANSFORM_CHANGED();
+}
+void Canvas::setTransform(float a,float b,float c,float d,float e,float f) {
+  MATRIX={a,b,c,d,e,f};
+  TRANSFORM_CHANGED();
+}
+void Canvas::resetTransform() {
+  MATRIX={1,0,0,1,0,0};
+  TRANSFORM_CHANGED();
+}
+bool Canvas::isPlainComposite() const {
+#ifdef __EMSCRIPTEN__
+  // A shadow shows only when its colour has alpha and it is blurred or moved.
+  const bool shadowless = web_.shadowColour.size() == 9 && web_.shadowColour.compare(7, 2, "00") == 0;
+  const bool shadowStill = web_.shadowBlur == 0 && web_.shadowOffsetX == 0 && web_.shadowOffsetY == 0;
+  return web_.composite == "source-over" && web_.filter == "none" && (shadowless || shadowStill);
+#else
+  // The software backend has no blend modes, filters or shadows.
+  return true;
+#endif
+}
+float Canvas::globalAlpha() const {
+#ifdef __EMSCRIPTEN__
+  return web_.alpha;
+#else
+  return state_.alpha;
+#endif
+}
+std::array<float,6> Canvas::currentTransform() const {
+  const auto& m=MATRIX;
+  return {static_cast<float>(m[0]),static_cast<float>(m[1]),static_cast<float>(m[2]),
+          static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5])};
+}
+#ifndef __EMSCRIPTEN__
+void Canvas::blitDevice(const std::uint8_t* rgba,int iw,int ih,int dx,int dy) {
+  if (!rgba || iw<=0 || ih<=0 || state_.alpha<=0) return;
+  const int x0=std::max(0,dx), x1=std::min(width_,dx+iw);
+  const int y0=std::max(0,dy), y1=std::min(height_,dy+ih);
+  if (x0>=x1||y0>=y1) return;
+  const bool clipped=state_.clip!=nullptr;
+  const float alpha=state_.alpha;
+  for (int y=y0;y<y1;++y) {
+    const std::uint8_t* src=rgba+(static_cast<std::size_t>(y-dy)*iw+(x0-dx))*4;
+    Color* dst=pixels_.data()+static_cast<std::size_t>(y)*width_+x0;
+    for (int x=x0;x<x1;++x,src+=4,++dst) {
+      // Fully transparent is the common case over a run's bounding box -- a
+      // glyph covers a fraction of the box it is baked into -- so it is the
+      // first thing tested and the cheapest thing to skip.
+      if (src[3]==0) continue;
+      float a=src[3]*(1.f/255.f)*alpha;
+      if (clipped) a*=clipAt(x,y);
+      if (a<=0.f) continue;
+      blend(*dst,Color{src[0],src[1],src[2],255},a);
+    }
+  }
+}
+void Canvas::darkenDevice(const std::uint8_t* mask,int mw,int mh,int dx,int dy) {
+  if (!mask || mw<=0 || mh<=0 || state_.alpha<=0) return;
+  const int x0=std::max(0,dx), x1=std::min(width_,dx+mw);
+  const int y0=std::max(0,dy), y1=std::min(height_,dy+mh);
+  if (x0>=x1||y0>=y1) return;
+  const bool clipped=state_.clip!=nullptr;
+  const float alpha=state_.alpha;
+  // What survives of a pixel under each mask value, in 0..255, folded with
+  // the global alpha once rather than per pixel.
+  std::array<std::uint16_t,256> keep{};
+  for (int m=0;m<256;++m) keep[m]=static_cast<std::uint16_t>(255-std::lround(m*alpha));
+  // Rows are independent, so a whole screen of them is split across the
+  // fill's own band threads the way a big path is.
+  const auto rows=[&](int ya,int yb) {
+  for (int y=ya;y<yb;++y) {
+    const std::uint8_t* src=mask+static_cast<std::size_t>(y-dy)*mw+(x0-dx);
+    Color* dst=pixels_.data()+static_cast<std::size_t>(y)*width_+x0;
+    for (int x=x0;x<x1;) {
+      // A vignette's mask is empty over most of the middle of the screen, so
+      // empty runs are stepped over eight bytes at a time.
+      if (x+8<=x1) {
+        std::uint64_t word;
+        std::memcpy(&word,src,8);
+        if (word==0) { x+=8; src+=8; dst+=8; continue; }
+      }
+      const unsigned m=*src;
+      if (m!=0) {
+        if (clipped || dst->a!=255) {
+          float a=m*(1.f/255.f)*alpha;
+          if (clipped) a*=clipAt(x,y);
+          blend(*dst,Color{0,0,0,255},a);
+        } else {
+          // Two channels per multiply: c * k / 255, rounded, without the
+          // divide, on r|b and on g with the alpha byte riding along and then
+          // put back.
+          const std::uint32_t k=keep[m];
+          std::uint32_t p;
+          std::memcpy(&p,dst,4);
+          std::uint32_t rb=(p&0x00FF00FFu)*k+0x00800080u;
+          rb=((rb+((rb>>8)&0x00FF00FFu))>>8)&0x00FF00FFu;
+          std::uint32_t g=((p>>8)&0xFFu)*k+0x80u;
+          g=((g+(g>>8))>>8)&0xFFu;
+          p=(p&0xFF000000u)|rb|(g<<8);
+          std::memcpy(dst,&p,4);
+        }
+      }
+      ++x; ++src; ++dst;
+    }
+  }
+  };
+  BandPool& pool=BandPool::instance();
+  const int height=y1-y0;
+  const int bands=std::min(pool.maxBands(),std::max(1,height/kMinBandRows));
+  if (bands<=1 || static_cast<long long>(height)*(x1-x0)<kMinThreadedArea) { rows(y0,y1); return; }
+  pool.run(bands,[&](int band) {
+    rows(y0+height*band/bands,y0+height*(band+1)/bands);
+  });
+}
+void Canvas::multiplyDevice(const std::uint8_t* mask,int mw,int mh,int dx,int dy,Color floor) {
+  if (!mask || mw<=0 || mh<=0 || state_.alpha<=0) return;
+  const int x0=std::max(0,dx), x1=std::min(width_,dx+mw);
+  const int y0=std::max(0,dy), y1=std::min(height_,dy+mh);
+  if (x0>=x1||y0>=y1) return;
+  const bool clipped=state_.clip!=nullptr;
+  const float alpha=state_.alpha;
+  // What survives of each channel under each mask value, 0..255.
+  const std::uint8_t floors[3]={floor.r,floor.g,floor.b};
+  std::array<std::array<std::uint16_t,256>,3> keep{};
+  for (int c=0;c<3;++c)
+    for (int m=0;m<256;++m)
+      keep[c][m]=static_cast<std::uint16_t>(255-std::lround(m*alpha*(255-floors[c])/255.f));
+  const auto scale=[](std::uint8_t v,std::uint32_t k) {
+    std::uint32_t t=v*k+0x80u;
+    return static_cast<std::uint8_t>((t+(t>>8))>>8);
+  };
+  const auto rows=[&](int ya,int yb) {
+  for (int y=ya;y<yb;++y) {
+    const std::uint8_t* src=mask+static_cast<std::size_t>(y-dy)*mw+(x0-dx);
+    Color* dst=pixels_.data()+static_cast<std::size_t>(y)*width_+x0;
+    for (int x=x0;x<x1;++x,++src,++dst) {
+      const unsigned m=*src;
+      if (m==0) continue;
+      if (clipped) {
+        const float a=m*(1.f/255.f)*alpha*clipAt(x,y);
+        if (a<=0.f) continue;
+        dst->r=static_cast<std::uint8_t>(std::lround(dst->r*(1.f-a*(255-floor.r)/255.f)));
+        dst->g=static_cast<std::uint8_t>(std::lround(dst->g*(1.f-a*(255-floor.g)/255.f)));
+        dst->b=static_cast<std::uint8_t>(std::lround(dst->b*(1.f-a*(255-floor.b)/255.f)));
+        continue;
+      }
+      dst->r=scale(dst->r,keep[0][m]);
+      dst->g=scale(dst->g,keep[1][m]);
+      dst->b=scale(dst->b,keep[2][m]);
+    }
+  }
+  };
+  BandPool& pool=BandPool::instance();
+  const int height=y1-y0;
+  const int bands=std::min(pool.maxBands(),std::max(1,height/kMinBandRows));
+  if (bands<=1 || static_cast<long long>(height)*(x1-x0)<kMinThreadedArea) { rows(y0,y1); return; }
+  pool.run(bands,[&](int band) {
+    rows(y0+height*band/bands,y0+height*(band+1)/bands);
+  });
+}
+#endif
+// The css() string is only ever read by the browser context, so building it on
+// the native path was one heap allocation per colour change per frame.
+// Truncating at both steps, as the client the tint is taken from does: the
+// colour is scaled to [0,1], blended, and cut back to a byte.
+Color Canvas::tinted(Color c) const {
+  if (tint_.a==0) return c;
+  const float keep=1.f-tint_.a/255.f;
+  const auto mix=[keep](std::uint8_t base,std::uint8_t add) {
+    const float v=(base/255.f*keep+add/255.f)*255.f;
+    return static_cast<std::uint8_t>(std::clamp(v,0.f,255.f));
+  };
+  return Color{mix(c.r,tint_.r),mix(c.g,tint_.g),mix(c.b,tint_.b),c.a};
+}
+void Canvas::setFillStyle(Color c){c=tinted(c);fill_=c;
+#ifdef __EMSCRIPTEN__
+  setFillStyle(css(c));
+#else
+  state_.fill=c;
+#endif
+}
+void Canvas::setStrokeStyle(Color c){c=tinted(c);stroke_=c;
+#ifdef __EMSCRIPTEN__
+  setStrokeStyle(css(c));
+#else
+  state_.stroke=c;
+#endif
+}
+void Canvas::setFillStyle(const std::string&s){STATE(kFillBit,fill,s);}
+void Canvas::setStrokeStyle(const std::string&s){STATE(kStrokeBit,stroke,s);}
+void Canvas::setGlobalAlpha(float a){STATE(kAlphaBit,alpha,a);
+#ifndef __EMSCRIPTEN__
+  state_.alpha=std::clamp(a,0.f,1.f);
+#endif
+}
+void Canvas::setGlobalCompositeOperation(const std::string&s){STATE(kCompositeBit,composite,s);}
+void Canvas::setFilter(const std::string&s){STATE(kFilterBit,filter,s);}
+void Canvas::setLineWidth(float a){lineWidth_=std::max(0.f,a);STATE(kLineWidthBit,lineWidth,lineWidth_);
+#ifndef __EMSCRIPTEN__
+  state_.lineWidth=lineWidth_;
+#endif
+}
+void Canvas::setLineCap(const std::string&s){STATE(kLineCapBit,lineCap,s);
+#ifndef __EMSCRIPTEN__
+  state_.lineCap = s=="round"?1 : s=="square"?2 : 0;
+#endif
+}
+void Canvas::setLineJoin(const std::string&s){STATE(kLineJoinBit,lineJoin,s);
+#ifndef __EMSCRIPTEN__
+  state_.lineJoin = s=="round"?1 : s=="bevel"?2 : 0;
+#endif
+}
+void Canvas::setMiterLimit(float a){STATE(kMiterBit,miterLimit,a);
+#ifndef __EMSCRIPTEN__
+  state_.miterLimit=std::max(1.f,a);
+#endif
+}
+void Canvas::setLineDash(const std::vector<float>&v) {
+#ifdef __EMSCRIPTEN__
+  STATE(kDashBit,dash,v);
+#else
+  state_.dash=v;
+#endif
+}
+void Canvas::setLineDashOffset(float a){STATE(kDashOffsetBit,dashOffset,a);
+#ifndef __EMSCRIPTEN__
+  state_.dashOffset=a;
+#endif
+}
+void Canvas::setShadow(Color c,float a,float b,float d){
+#ifdef __EMSCRIPTEN__
+  const std::string s=css(c);
+  if (web_.shadowColour==s && web_.shadowBlur==a && web_.shadowOffsetX==b && web_.shadowOffsetY==d) return;
+  web_.shadowColour=s; web_.shadowBlur=a; web_.shadowOffsetX=b; web_.shadowOffsetY=d;
+  dirty_ |= kShadowBit;
+#else
+  (void)c;(void)a;(void)b;(void)d;
+#endif
+}
+void Canvas::setFont(const std::string&s){STATE(kFontBit,font,s);
+#ifndef __EMSCRIPTEN__
+  for (size_t i=0;i<s.size();++i) if (std::isdigit(static_cast<unsigned char>(s[i]))) { state_.fontSize=std::max(1.f,std::strtof(s.c_str()+i,nullptr)); break; }
+  std::string f=s; for (char& c : f) c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  state_.fontFamily = f.find("mono")!=std::string::npos||f.find("courier")!=std::string::npos ? 2
+                    : f.find("sans")!=std::string::npos ? 0
+                    : f.find("serif")!=std::string::npos||f.find("times")!=std::string::npos||f.find("georgia")!=std::string::npos ? 1 : 0;
+#endif
+}
+void Canvas::setTextAlign(const std::string&s){STATE(kTextAlignBit,textAlign,s);
+#ifndef __EMSCRIPTEN__
+  state_.textAlign = (s=="center")?1 : (s=="right"||s=="end")?2 : 0;
+#endif
+}
+void Canvas::setTextBaseline(const std::string&s){STATE(kTextBaselineBit,textBaseline,s);
+#ifndef __EMSCRIPTEN__
+  state_.textBaseline = (s=="top"||s=="hanging")?0 : (s=="middle")?1 : (s=="bottom"||s=="ideographic")?2 : 3;
+#endif
+}
+void Canvas::setDirection(const std::string&s){STATE(kDirectionBit,direction,s);}
+void Canvas::setImageSmoothingEnabled(bool a){STATE(kSmoothingBit,smoothing,a);}
+void Canvas::setImageSmoothingQuality(const std::string&s){STATE(kSmoothingQualityBit,smoothingQuality,s);}
+void Canvas::clear(Color c) {
+#ifdef __EMSCRIPTEN__
+  save(); resetTransform(); setFillStyle(c); fillRect(0,0,width_,height_); restore();
+#else
+  std::fill(pixels_.begin(), pixels_.end(), c);
+#endif
+}
+void Canvas::clearRect(float a,float b,float c,float d) {
+  // The transform and the clip, and nothing else: clearRect ignores alpha,
+  // compositing, shadows and filters.
+#ifdef __EMSCRIPTEN__
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis);
+    if (!f.same()) mapBox(f, a, b, c, d);
+  }
+#endif
+  OP(30,a,b,c,d,0,0,0,0,"");
+#ifndef __EMSCRIPTEN__
+  Path2D box; box.rect(a,b,c,d);
+  flatten(box, state_.matrix, matrixScale(state_.matrix), gFlat);
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  const bool clippedClear=state_.clip!=nullptr;
+  scanFill(gFlat,false,cx0,cy0,cx1,cy1,[&](int x,int y,float cov){
+    const float keep=1.f-cov*clipAt(x,y);
+    Color& p=pixels_[static_cast<size_t>(y)*width_+x];
+    p.a=static_cast<std::uint8_t>(std::lround(p.a*keep));
+    if (p.a==0) p=Color{0,0,0,0};
+  }, [&](int x0,int x1,int y){
+    Color* const row=pixels_.data()+static_cast<size_t>(y)*width_;
+    // keep == 0 for the whole run, and a pixel whose alpha reaches zero is
+    // cleared outright -- the same two lines the per-pixel form ends on.
+    if (!clippedClear) { std::fill(row+x0,row+x1,Color{0,0,0,0}); return; }
+    for (int x=x0;x<x1;++x) {
+      const float keep=1.f-clipAt(x,y);
+      Color& p=row[x];
+      p.a=static_cast<std::uint8_t>(std::lround(p.a*keep));
+      if (p.a==0) p=Color{0,0,0,0};
+    }
+  });
+#endif
+}
+void Canvas::fillRect(float a,float b,float c,float d) {
+  SYNC(kFillBits);
+#ifdef __EMSCRIPTEN__
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis);
+    if (!f.same()) mapBox(f, a, b, c, d);
+  }
+#endif
+  OP(31,a,b,c,d,0,0,0,0,"");
+#ifndef __EMSCRIPTEN__
+  Path2D box; box.rect(a,b,c,d); fillDevice(box,false,state_.fill);
+#endif
+}
+void Canvas::strokeRect(float a,float b,float c,float d) {
+  SYNC(kStrokeBits);
+#ifdef __EMSCRIPTEN__
+  movePageTo(web_.matrix);   // see stroke()
+#endif
+  OP(32,a,b,c,d,0,0,0,0,"");
+#ifndef __EMSCRIPTEN__
+  Path2D box; box.rect(a,b,c,d); strokeDevice(box);
+#endif
+}
+#ifdef __EMSCRIPTEN__
+// A segment is only recorded here; pathSegmentAdded() decides when it reaches
+// the page. See the PathMode comment in canvas.h.
+#define SEGMENT() (pathHasSubpath_ = true, pathSegmentAdded())
+#else
+#define SEGMENT() ((void)0)
+#endif
+void Canvas::beginPath(){
+  currentPath_=Path2D{};
+#ifdef __EMSCRIPTEN__
+  // The page's path is left as it is: whatever is painted next either names a
+  // retained path or clears it first. Except a big one, which the page would
+  // otherwise re-map through every transform change until something clears it.
+  if (pathMode_==PathMode::Sent && pagePathSegments_>32) { OP(33,0,0,0,0,0,0,0,0,""); pageSeamMoved_=false; pagePathDirty_=false; pagePathSegments_=0; }
+  pathMode_=PathMode::Empty;
+  pathHasSubpath_=false;
+#else
+  OP(33,0,0,0,0,0,0,0,0,"");
+#endif
+}
+#ifdef __EMSCRIPTEN__
+// A closePath makes no subpath of its own, so it leaves the flag alone.
+void Canvas::closePath(){currentPath_.closePath();pathSegmentAdded();}
+void Canvas::lineTo(float a,float b){ if (pathHasSubpath_) currentPath_.lineTo(a,b); else currentPath_.moveTo(a,b); SEGMENT(); }
+#else
+void Canvas::closePath(){currentPath_.closePath();SEGMENT();}
+void Canvas::lineTo(float a,float b){currentPath_.lineTo(a,b);SEGMENT();}
+#endif
+void Canvas::moveTo(float a,float b){currentPath_.moveTo(a,b);SEGMENT();}
+#ifdef __EMSCRIPTEN__
+// A curve into a path with no subpath first "ensures a subpath" at its first
+// point, which is a moveTo there: said outright, for the reason lineTo above
+// says it (pathHasSubpath_).
+#define ENSURE_SUBPATH(x,y) do { if (!pathHasSubpath_) { currentPath_.moveTo(x,y); SEGMENT(); } } while (0)
+#else
+#define ENSURE_SUBPATH(x,y) ((void)0)
+#endif
+void Canvas::quadraticCurveTo(float a,float b,float c,float d){ENSURE_SUBPATH(a,b);currentPath_.quadraticCurveTo(a,b,c,d);SEGMENT();} void Canvas::bezierCurveTo(float a,float b,float c,float d,float e,float f){ENSURE_SUBPATH(a,b);currentPath_.bezierCurveTo(a,b,c,d,e,f);SEGMENT();} void Canvas::arc(float a,float b,float c,float d,float e,bool f){currentPath_.arc(a,b,c,d,e,f);SEGMENT();} void Canvas::arcTo(float a,float b,float c,float d,float e){
+#ifdef __EMSCRIPTEN__
+  // Into a path with no subpath an arcTo is a moveTo to its first point and
+  // nothing more -- Blink's own reading of it. Followed by the arcTo itself,
+  // the page would have to find that point equal to the current one to treat
+  // the arc as degenerate, and once the two went over in different frames it
+  // need not, by an ulp.
+  if (!pathHasSubpath_) { currentPath_.moveTo(a,b); SEGMENT(); return; }
+#endif
+  currentPath_.arcTo(a,b,c,d,e);SEGMENT();} void Canvas::ellipse(float a,float b,float c,float d,float e,float f,float g,bool h){currentPath_.ellipse(a,b,c,d,e,f,g,h);SEGMENT();} void Canvas::rect(float a,float b,float c,float d){currentPath_.rect(a,b,c,d);SEGMENT();} void Canvas::roundRect(float a,float b,float c,float d,float e){currentPath_.roundRect(a,b,c,d,e);SEGMENT();}
+void Canvas::fill(const std::string&s){
+#ifdef __EMSCRIPTEN__
+  // No transform: every segment was fixed in device space as it reached the
+  // page's path, and a fill reads nothing else of the matrix.
+  sync(kFillBits);
+  if (paintCachedPath(0, s=="evenodd")) return;
+  preparePagePath(true);
+#endif
+  OP(44,0,0,0,0,0,0,0,0,s.c_str());
+#ifndef __EMSCRIPTEN__
+  fillDevice(currentPath_, s=="evenodd", state_.fill);
+#endif
+}
+void Canvas::desaturate(const std::string& s) {
+#ifdef __EMSCRIPTEN__
+  // `saturation` with a grey source: the result takes the source's saturation
+  // (none) and keeps the backdrop's hue and luminosity, which is grey at the
+  // backdrop's brightness.
+  save();
+  setGlobalCompositeOperation("saturation");
+  setFillStyle(Color{128,128,128,255});
+  fill(s);
+  restore();
+#else
+  desaturateDevice(currentPath_, s=="evenodd");
+#endif
+}
+void Canvas::stroke() {
+#ifdef __EMSCRIPTEN__
+  sync(kStrokeBits);
+  if (paintCachedPath(1, false)) return;
+  // A stroke is never mapped: it goes over under the very matrix it was asked
+  // for, the segments it outlines too when they were all added under one. A
+  // fill only needs its path in the right place; a stroke is offset from the
+  // path by Skia in the matrix's own space, to a tolerance that depends on
+  // where the path lies in it and how big a unit is, so the same stroke in
+  // any other frame comes out a fraction of a pixel different -- measured,
+  // whole small circles re-shaded by up to a third, and dashes drifting.
+  if (pathMode_ == PathMode::Deferred) movePageTo(pathMatrix_);
+  // Filled already from a moved start: sent again as the program drew it.
+  if (pathMode_ == PathMode::Sent && pageSeamMoved_ && pathUniform_) {
+    movePageTo(pathMatrix_);
+    sendHeldPath(currentPath_.segments().size());
+  }
+  preparePagePath();
+  // The line width is in the units of the transform current NOW.
+  movePageTo(web_.matrix);
+#endif
+  OP(45,0,0,0,0,0,0,0,0,"");
+#ifndef __EMSCRIPTEN__
+  strokeDevice(currentPath_);
+#endif
+}
+void Canvas::clip(const std::string&s){
+#ifdef __EMSCRIPTEN__
+  // The clip region is the one piece of state that cannot be put back by
+  // writing values, so a clip inside a save() needs the real thing.
+  realSave();
+  // Like a fill, the clip reads the path and nothing of the matrix.
+  if (paintCachedPath(2, s=="evenodd")) return;
+  preparePagePath(true);
+#endif
+  OP(46,0,0,0,0,0,0,0,0,s.c_str());
+#ifndef __EMSCRIPTEN__
+  clip(currentPath_, s);
+#endif
+}
+#ifdef __EMSCRIPTEN__
+
+namespace {
+// The C++ half of the retained-path cache: what the page is known to hold, and
+// in what order it was told. Bounded, and evicted oldest-first, so a client
+// that draws thousands of distinct paths cannot grow the page's map without
+// limit. Sized well above the ~350 paths a busy frame touches, so a path drawn
+// every frame is never the one evicted.
+constexpr std::size_t kMaxCachedPaths = 2048;
+std::unordered_map<std::uint32_t,std::uint32_t> gCachedRevision;
+std::deque<std::uint32_t> gCacheOrder;
+
+// True when the page already holds this exact geometry under this key, in
+// which case the caller sends the key alone. Records the geometry as sent
+// either way, because the caller sends it when this returns false.
+bool pathAlreadySent(const Path2D& path) {
+    const std::uint32_t key = path.cacheKey();
+    const auto it = gCachedRevision.find(key);
+    if (it != gCachedRevision.end()) {
+        if (it->second == path.revision()) return true;
+        it->second = path.revision();
+        return false;
+    }
+    gCacheOrder.push_back(key);
+    if (gCacheOrder.size() > kMaxCachedPaths) {
+        const std::uint32_t evicted = gCacheOrder.front();
+        gCacheOrder.pop_front();
+        gCachedRevision.erase(evicted);
+        // Before the drop, not after: buffered calls name a path by key, and
+        // one of them may name this key. Evictions are rare enough that
+        // flushing for them costs nothing.
+        canvasFlushOps();
+        c2d_path_drop(evicted);
+    }
+    gCachedRevision.emplace(key, path.revision());
+    return false;
+}
+} // namespace
+
+// action: 0 fill, 1 stroke, 2 clip.
+// Small enough that sending the geometry again costs less than a map entry.
+// A health bar, a minimap run and a rounded plate are one or two segments and
+// are rebuilt every frame, so they would otherwise take a cache slot each,
+// evict something that IS reused, and never be looked up again. A sprite's
+// path is orders of magnitude bigger than this and still goes in the cache.
+constexpr std::size_t kMaxInlinePathSegments = 8;
+
+// action: 0 fill, 1 stroke, 2 clip. A path too big to send whole each time,
+// under the transform the page already holds.
+static void emitPath(int contextId, const Path2D& path, int action, bool evenOdd) {
+    const std::uint32_t key = path.cacheKey();
+    if (pathAlreadySent(path)) {
+        pushRef(contextId, 50, static_cast<std::int32_t>(key),
+                static_cast<float>(action), evenOdd ? 1.f : 0.f, 0,0,0,0,0,0);
+        return;
+    }
+    pushPath(contextId, static_cast<std::int32_t>(key), path, action, evenOdd);
+}
+
+// A Path2D drawn at the current transform. One small enough to go whole each
+// time is mapped into the page's frame when its segments allow, like the
+// current path's; a retained one is the page's to transform, so the page is
+// moved to the matrix.
+void Canvas::emitPathAt(const Path2D& p, int action, bool evenOdd) const {
+  // A stroke never is (see stroke()).
+  if (p.segments().size() <= kMaxInlinePathSegments && action != 1) {
+    const std::vector<Path2D::Segment>& segs = p.segments();
+    unsigned need = kFitAffine;
+    for (std::size_t i = 0; i < segs.size(); ++i) {
+      need |= looseTurn(segs, i) ? (kFitAffine | kFitSimilar) : segmentNeed(segs[i]);
+    }
+    const PageFrame& f = frameFor(web_.matrix, need);
+    if (f.same()) { pushPath(contextId_, 0, p, action, evenOdd); return; }
+    Path2D mapped;
+    std::vector<Path2D::Segment>& out = mapped.segments();
+    out.reserve(segs.size());
+    for (std::size_t i = 0; i < segs.size(); ++i) out.push_back(mapSegment(segs[i], f, looseTurn(segs, i)));
+    pushPath(contextId_, 0, mapped, action, evenOdd);
+    return;
+  }
+  movePageTo(web_.matrix);
+  if (p.segments().size() <= kMaxInlinePathSegments) pushPath(contextId_, 0, p, action, evenOdd);
+  else emitPath(contextId_, p, action, evenOdd);
+}
+#endif
+void Canvas::fill(const Path2D&p,const std::string&s) {
+#ifdef __EMSCRIPTEN__
+  sync(kFillBits);
+  emitPathAt(p, 0, s=="evenodd");
+#else
+  fillDevice(p, s=="evenodd", state_.fill);
+#endif
+}
+void Canvas::stroke(const Path2D&p) {
+#ifdef __EMSCRIPTEN__
+  sync(kStrokeBits);
+  emitPathAt(p, 1, false);
+#else
+  strokeDevice(p);
+#endif
+}
+void Canvas::clip(const Path2D&p,const std::string&s) {
+#ifdef __EMSCRIPTEN__
+  realSave();
+  emitPathAt(p, 2, s=="evenodd");
+#else
+  flatten(p, state_.matrix, matrixScale(state_.matrix), gFlat);
+  auto mask=std::make_shared<ClipMask>();
+  int x0,y0,x1,y1;
+  // Narrowed by the clip already in force: a nested clip can only ever shrink
+  // the region, so the outer one bounds the rasterisation of the inner.
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  if (!polyBounds(gFlat,cx0,cy0,cx1,cy1,x0,y0,x1,y1)) { mask->x0=mask->y0=mask->x1=mask->y1=0; state_.clip=mask; return; }
+  if (x1<=x0||y1<=y0) { mask->x0=mask->y0=mask->x1=mask->y1=0; state_.clip=mask; return; }
+  mask->x0=x0; mask->y0=y0; mask->x1=x1; mask->y1=y1;
+  mask->alpha.assign(static_cast<size_t>(x1-x0)*(y1-y0),0);
+  const bool evenOdd = s=="evenodd";
+  std::uint8_t* const cells=mask->alpha.data();
+  const int maskStride=x1-x0;
+  const bool nested=state_.clip!=nullptr;
+  scanFill(gFlat,evenOdd,x0,y0,x1,y1,[&](int x,int y,float cov){
+    // scanFill only emits coverage in (0,1], so the clamp is only needed
+    // once an outer mask has been multiplied in.
+    const float v=nested ? std::clamp(cov*clipAt(x,y),0.f,1.f) : cov;
+    cells[static_cast<size_t>(y-y0)*maskStride+(x-x0)]=static_cast<std::uint8_t>(std::lround(v*255));
+  }, [&](int sx0,int sx1,int y){
+    std::uint8_t* const row=cells+static_cast<size_t>(y-y0)*maskStride-x0;
+    // Unnested, the interior of a clip is simply opaque -- which is what most
+    // clips in this client are, being one rectangle over nothing.
+    if (!nested) { std::memset(row+sx0,255,static_cast<size_t>(sx1-sx0)); return; }
+    for (int x=sx0;x<sx1;++x)
+      row[x]=static_cast<std::uint8_t>(std::lround(std::clamp(clipAt(x,y),0.f,1.f)*255));
+  });
+  state_.clip=mask;
+#endif
+}
+bool Canvas::isPointInPath(float a,float b,const std::string&s)const {
+#ifdef __EMSCRIPTEN__
+  // The page answers about ITS path, so ours has to be there.
+  preparePagePath(true);
+  canvasFlushOps();
+  return c2d_hit(contextId_,a,b,0,s.c_str());
+#else
+  flatten(currentPath_, state_.matrix, matrixScale(state_.matrix), gFlat);
+  const bool evenOdd = s=="evenodd";
+  int winding=0, crossings=0, first=0;
+  for (size_t c=0;c<gFlat.ends.size();++c) {
+    const int last=gFlat.ends[c];
+    for (int i=first;i<last;++i) {
+      const int j=(i+1==last)?first:i+1;
+      const float ax=gFlat.pts[2*i],ay=gFlat.pts[2*i+1],bx=gFlat.pts[2*j],by=gFlat.pts[2*j+1];
+      if ((ay>b)==(by>b)) continue;
+      if (a < ax+(b-ay)*(bx-ax)/(by-ay)) { ++crossings; winding += by>ay ? 1 : -1; }
+    }
+    first=last;
+  }
+  return evenOdd ? (crossings&1)!=0 : winding!=0;
+#endif
+}
+bool Canvas::isPointInStroke(float a,float b)const {
+#ifdef __EMSCRIPTEN__
+  if (pathMode_ == PathMode::Deferred) movePageTo(pathMatrix_);
+  if (pathMode_ == PathMode::Sent && pageSeamMoved_ && pathUniform_) {
+    movePageTo(pathMatrix_);
+    sendHeldPath(currentPath_.segments().size());
+  }
+  preparePagePath();
+  sync(kStrokeBits);
+  movePageTo(web_.matrix);
+  canvasFlushOps();
+  return c2d_hit(contextId_,a,b,1,"");
+#else
+  (void)a;(void)b; return false;
+#endif
+}
+void Canvas::fillText(const std::string&s,float a,float b,float c){
+#ifdef __EMSCRIPTEN__
+  sync(kFillBits|kTextBits);
+  // Only shifted: the browser does not draw a glyph scaled by its transform
+  // the way it draws the same glyph at the scaled size, so the page keeps the
+  // run's own scale and rotation and only a translation is taken out of it.
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitTranslate);
+    if (!f.same()) { a = static_cast<float>(a + f.e); b = static_cast<float>(b + f.f); }
+  }
+  pushText(contextId_,47,c,a,b,s);
+#else
+  glyphs(s,a,b,c,state_.fill);
+#endif
+}
+void Canvas::strokeText(const std::string&s,float a,float b,float c){
+#ifdef __EMSCRIPTEN__
+  sync(kStrokeBits|kTextBits);
+  {
+    // Shifted like fillText. The browser strokes glyphs in its glyph cache,
+    // keyed by the matrix's scale and the pen's subpixel phase, which a shift
+    // leaves alone.
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitTranslate);
+    if (!f.same()) { a = static_cast<float>(a + f.e); b = static_cast<float>(b + f.f); }
+  }
+  pushText(contextId_,48,c,a,b,s);
+#else
+  glyphs(s,a,b,c,state_.stroke);
+#endif
+}
+float Canvas::measureText(const std::string&s)const {
+#ifdef __EMSCRIPTEN__
+  sync(kFontBit|kDirectionBit);
+  canvasFlushOps();
+  return c2d_measure(contextId_,s.c_str());
+#else
+  if (const Font* font=uiFont(state_.fontFamily)) return font->measure(s,state_.fontSize);
+  return static_cast<float>(s.size())*6.f*(state_.fontSize/8.f);
+#endif
+}
+void Canvas::drawCanvas(const Canvas&s,float a,float b) {
+#ifdef __EMSCRIPTEN__
+  sync(kImageBits);
+  {
+    // Upright and unmirrored: drawImage normalises a negative box rather
+    // than flipping the picture, so a mirror needs the page's own matrix.
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) {
+      // At its natural size, which is its backing store's.
+      float w = static_cast<float>(s.width_), h = static_cast<float>(s.height_);
+      mapBox(f, a, b, w, h);
+      pushRef(contextId_,51,s.contextId_,a,b,w,h,1,0,0,0);
+      return;
+    }
+  }
+  pushRef(contextId_,51,s.contextId_,a,b,0,0,0,0,0,0);
+#else
+  drawCanvas(s, a, b, static_cast<float>(s.width_), static_cast<float>(s.height_));
+#endif
+}
+void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
+#ifdef __EMSCRIPTEN__
+  sync(kImageBits);
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) mapBox(f, a, b, c, d);
+  }
+  pushRef(contextId_,51,s.contextId_,a,b,c,d,1,0,0,0);
+#else
+  if (c <= 0 || d <= 0) return;
+  const auto topLeft=mapPoint(a,b), bottomRight=mapPoint(a+c,b+d);
+  const float dx0=std::min(topLeft.first,bottomRight.first), dx1=std::max(topLeft.first,bottomRight.first);
+  const float dy0=std::min(topLeft.second,bottomRight.second), dy1=std::max(topLeft.second,bottomRight.second);
+  // Narrowed by the clip before the walk, not per pixel: a clipped blit used to
+  // visit its whole destination box and throw away everything the mask zeroed,
+  // which for the nine band copies of the glitch effect meant nine full-buffer
+  // walks to paint nine ninths of one. clipAt() is zero outside the mask, so
+  // skipping those rows and columns writes exactly the same pixels.
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  const int bx0=std::max(cx0, static_cast<int>(std::floor(dx0))), bx1=std::min(cx1, static_cast<int>(std::ceil(dx1)));
+  const int by0=std::max(cy0, static_cast<int>(std::floor(dy0))), by1=std::min(cy1, static_cast<int>(std::ceil(dy1)));
+  if (bx0>=bx1 || by0>=by1) return;
+  // Which source column each destination column samples, worked out once
+  // for the whole blit rather than once per pixel: the same expression, so
+  // the same texels. A screen-sized upscale paid a divide, two clamps and a
+  // bounds test per pixel for an answer that only changes along one axis.
+  static thread_local std::vector<int> columns;
+  columns.resize(static_cast<size_t>(bx1-bx0));
+  for (int x = bx0; x < bx1; ++x)
+    columns[static_cast<size_t>(x-bx0)] = std::clamp(static_cast<int>((x + 0.5f - dx0) * s.width_ / std::max(1e-3f, dx1-dx0)), 0, s.width_ - 1);
+  const bool clipped = state_.clip != nullptr;
+  const float alpha = state_.alpha;
+  for (int y = by0; y < by1; ++y) {
+    const int sy = std::clamp(static_cast<int>((y + 0.5f - dy0) * s.height_ / std::max(1e-3f, dy1-dy0)), 0, s.height_ - 1);
+    const Color* row = s.pixels_.data() + static_cast<size_t>(sy) * s.width_;
+    Color* dst = pixels_.data() + static_cast<size_t>(y) * width_;
+    for (int x = bx0; x < bx1; ++x) {
+      const Color texel = row[columns[static_cast<size_t>(x-bx0)]];
+      // blend() would return at once for these.
+      if (texel.a == 0) continue;
+      blend(dst[x], texel, clipped ? alpha * clipAt(x,y) : alpha);
+    }
+  }
+#endif
+}
+void Canvas::drawCanvas(const Canvas&s,float sx,float sy,float sw,float sh,float a,float b,float c,float d) {
+#ifdef __EMSCRIPTEN__
+  sync(kImageBits);
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) mapBox(f, a, b, c, d);
+  }
+  pushRef(contextId_,52,s.contextId_,sx,sy,sw,sh,a,b,c,d);
+#else
+  blitRegion(s,sx,sy,sw,sh,a,b,c,d,nullptr);
+#endif
+}
+#ifndef __EMSCRIPTEN__
+void Canvas::drawCanvasTinted(const Canvas&s,float sx,float sy,float sw,float sh,float a,float b,Color tint) {
+  blitRegion(s,sx,sy,sw,sh,a,b,sw,sh,&tint);
+}
+// One walk shared by the plain sub-rect blit and the tinted one: the only
+// difference between them is what the sampled colour becomes on the way out,
+// and duplicating the mapping to say that twice is how the two drift.
+void Canvas::blitRegion(const Canvas&s,float sx,float sy,float sw,float sh,float a,float b,float c,float d,const Color* tint) {
+  if (c <= 0 || d <= 0 || sw <= 0 || sh <= 0) return;
+  const auto topLeft=mapPoint(a,b), bottomRight=mapPoint(a+c,b+d);
+  const float dx0=std::min(topLeft.first,bottomRight.first), dx1=std::max(topLeft.first,bottomRight.first);
+  const float dy0=std::min(topLeft.second,bottomRight.second), dy1=std::max(topLeft.second,bottomRight.second);
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  const int bx0=std::max(cx0,static_cast<int>(std::floor(dx0))), bx1=std::min(cx1,static_cast<int>(std::ceil(dx1)));
+  const int by0=std::max(cy0,static_cast<int>(std::floor(dy0))), by1=std::min(cy1,static_cast<int>(std::ceil(dy1)));
+  // One texel to one pixel on whole-pixel edges -- a scratch layer laid back
+  // exactly where it was painted from. The walk below would pick the very
+  // same texel for every pixel ((x+0.5-dx0)*sw/sw truncates to x-dx0), but
+  // pays a divide, four clamps and a bounds test per pixel to find it, which
+  // made compositing a HUD-sized layer cost three times painting it.
+  if (!tint && dx1-dx0==sw && dy1-dy0==sh && dx0==std::floor(dx0) && dy0==std::floor(dy0) &&
+      sx==std::floor(sx) && sy==std::floor(sy) && sx>=0 && sy>=0 &&
+      sx+sw<=static_cast<float>(s.width_) && sy+sh<=static_cast<float>(s.height_)) {
+    const int offX=static_cast<int>(sx)-static_cast<int>(dx0), offY=static_cast<int>(sy)-static_cast<int>(dy0);
+    const bool clipped=state_.clip!=nullptr;
+    const float alpha=state_.alpha;
+    for (int y=by0;y<by1;++y) {
+      const Color* src=s.pixels_.data()+static_cast<size_t>(y+offY)*s.width_+(bx0+offX);
+      Color* dst=pixels_.data()+static_cast<size_t>(y)*width_+bx0;
+      for (int x=bx0;x<bx1;++x,++src,++dst) {
+        if (src->a==0) continue;
+        blend(*dst,*src,clipped ? alpha*clipAt(x,y) : alpha);
+      }
+    }
+    return;
+  }
+  for (int y=by0;y<by1;++y) for (int x=bx0;x<bx1;++x) {
+    const int ox=std::clamp(static_cast<int>((x+0.5f-dx0)*sw/std::max(1e-3f,dx1-dx0)),0,static_cast<int>(sw)-1);
+    const int oy=std::clamp(static_cast<int>((y+0.5f-dy0)*sh/std::max(1e-3f,dy1-dy0)),0,static_cast<int>(sh)-1);
+    const int px=std::clamp(static_cast<int>(sx)+ox,0,s.width_-1), py=std::clamp(static_cast<int>(sy)+oy,0,s.height_-1);
+    Color texel=s.pixels_[static_cast<size_t>(py)*s.width_+px];
+    if (tint) {
+      texel.r=static_cast<std::uint8_t>(texel.r*tint->r/255);
+      texel.g=static_cast<std::uint8_t>(texel.g*tint->g/255);
+      texel.b=static_cast<std::uint8_t>(texel.b*tint->b/255);
+    }
+    paint(x,y,texel,state_.alpha*clipAt(x,y));
+  }
+}
+#endif
+void Canvas::drawImage(const ImageLevel* levels,int levelCount,float dx,float dy,float dw,float dh,float alpha,std::uint32_t cacheKey) {
+  if (!levels || levelCount <= 0) return;
+#ifdef __EMSCRIPTEN__
+  drawImage(levels[0].rgba,levels[0].width,levels[0].height,dx,dy,dw,dh,alpha,cacheKey);
+#else
+  // How many image pixels land under one device pixel, measured off level 0,
+  // and then the level whose own texels are nearest one-to-one with them. The
+  // sampler below still supersamples whatever is left over, so a half-step
+  // between levels costs a 2x2 grid rather than the 4x4 a raw minification of
+  // eight or sixteen would have needed.
+  const auto& t=state_.matrix;
+  const float ux=dw/std::max(1,levels[0].width), uy=dh/std::max(1,levels[0].height);
+  const float stepX=std::hypot(t[0]*ux,t[1]*ux), stepY=std::hypot(t[2]*uy,t[3]*uy);
+  float shrink=std::max(stepX>1e-6f?1.f/stepX:1.f, stepY>1e-6f?1.f/stepY:1.f);
+  int level=0;
+  while (level+1<levelCount && shrink>=2.f) { shrink*=0.5f; ++level; }
+  drawImage(levels[level].rgba,levels[level].width,levels[level].height,dx,dy,dw,dh,alpha,cacheKey);
+#endif
+}
+#ifdef __EMSCRIPTEN__
+int canvasRequestRemoteImage(const std::string& url) {
+  return c2d_remote_request(url.c_str());
+}
+int canvasRemoteImageStatus(int handle, int& width, int& height) {
+  int size[2] = {0, 0};
+  const int state = c2d_remote_status(handle, size);
+  width = size[0];
+  height = size[1];
+  return state;
+}
+void canvasReleaseRemoteImage(int handle) {
+  // A draw of it may still be sitting in the buffer, and the page has to see
+  // that before the element goes.
+  canvasFlushOps();
+  c2d_remote_release(handle);
+}
+void Canvas::drawRemoteImage(int handle,float dx,float dy,float dw,float dh) {
+  if (handle <= 0 || dw <= 0 || dh <= 0) return;
+  sync(kImageBits);
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) mapBox(f, dx, dy, dw, dh);
+  }
+  pushRef(contextId_,54,handle,dx,dy,dw,dh,0,0,0,0);
+}
+#endif
+void Canvas::drawImage(const std::uint8_t* rgba,int iw,int ih,float dx,float dy,float dw,float dh,float alpha,std::uint32_t cacheKey) {
+#ifdef __EMSCRIPTEN__
+  // Drawn directly rather than queued, so the state it reads has to be
+  // queued and then flushed ahead of it.
+  sync(kImageBits);
+  {
+    const PageFrame& f = frameFor(web_.matrix, kFitAffine | kFitAxis | kFitPositive);
+    if (!f.same()) mapBox(f, dx, dy, dw, dh);
+  }
+  canvasFlushOps();
+  c2d_image(contextId_,static_cast<int>(cacheKey),rgba,iw,ih,dx,dy,dw,dh,alpha);
+#else
+  (void)cacheKey;   // the software path samples the heap pixels directly
+  if (!rgba || iw<=0 || ih<=0 || dw==0 || dh==0 || state_.alpha<=0 || alpha<=0) return;
+  // One matrix from image pixels straight to device pixels: the image->box
+  // scale folded into the current transform. Inverting THAT (rather than
+  // mapping the box's corners forward) is what keeps a rotated image sampled
+  // along its own axes.
+  const auto& t=state_.matrix;
+  const float ux=dw/iw, uy=dh/ih;
+  const float ma=t[0]*ux, mb=t[1]*ux, mc=t[2]*uy, md=t[3]*uy;
+  const float me=t[0]*dx+t[2]*dy+t[4], mf=t[1]*dx+t[3]*dy+t[5];
+  const float det=ma*md-mb*mc;
+  if (!(std::abs(det)>1e-12f)) return;
+  const float ia=md/det, ib=-mb/det, ic=-mc/det, id=ma/det;
+  const float ie=(mc*mf-md*me)/det, iff=(mb*me-ma*mf)/det;
+  float lo=1e30f,hi=-1e30f,top=1e30f,bottom=-1e30f;
+  const float cw=static_cast<float>(iw), ch=static_cast<float>(ih);
+  const float corners[4][2]={{0,0},{cw,0},{cw,ch},{0,ch}};
+  for (const auto& c : corners) {
+    const float px=ma*c[0]+mc*c[1]+me, py=mb*c[0]+md*c[1]+mf;
+    if (!(std::isfinite(px)&&std::isfinite(py))) return;
+    lo=std::min(lo,px); hi=std::max(hi,px); top=std::min(top,py); bottom=std::max(bottom,py);
+  }
+  // Same narrowing as drawCanvas: the clip bounds the walk, rather than every
+  // pixel outside the mask being sampled and then discarded.
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  const int x0=std::max(cx0,static_cast<int>(std::floor(lo))), x1=std::min(cx1,static_cast<int>(std::ceil(hi))+1);
+  const int y0=std::max(cy0,static_cast<int>(std::floor(top))), y1=std::min(cy1,static_cast<int>(std::ceil(bottom))+1);
+  if (x0>=x1||y0>=y1) return;
+  // Minification is where a point sample turns detailed artwork into noise, so
+  // the subsample grid tracks how many image pixels land under one device
+  // pixel; magnification needs none, and the bilinear fetch below carries it.
+  const float stepX=std::hypot(ma,mb), stepY=std::hypot(mc,md);
+  const float shrink=std::max(stepX>1e-6f?1.f/stepX:1.f, stepY>1e-6f?1.f/stepY:1.f);
+  const int grid=std::clamp(static_cast<int>(std::ceil(shrink)),1,4);
+  const float slice=1.f/grid;
+  const int samples=grid*grid;
+  for (int y=y0;y<y1;++y) for (int x=x0;x<x1;++x) {
+    const float clip=clipAt(x,y);
+    if (clip<=0.f) continue;
+    float sumR=0,sumG=0,sumB=0,sumA=0;
+    for (int sy=0;sy<grid;++sy) for (int sx=0;sx<grid;++sx) {
+      const float px=x+(sx+0.5f)*slice, py=y+(sy+0.5f)*slice;
+      const float u=ia*px+ic*py+ie, v=ib*px+id*py+iff;
+      if (u<0||v<0||u>=cw||v>=ch) continue;
+      // Texel centres sit at +0.5, so the bilinear weights are measured from
+      // there; sampling at u,v directly shifts the whole image half a pixel.
+      const float fu=u-0.5f, fv=v-0.5f;
+      const int bx=static_cast<int>(std::floor(fu)), by=static_cast<int>(std::floor(fv));
+      const float tx=fu-bx, ty=fv-by;
+      const int lx=std::clamp(bx,0,iw-1), rx=std::clamp(bx+1,0,iw-1);
+      const int ty0=std::clamp(by,0,ih-1), ty1=std::clamp(by+1,0,ih-1);
+      const std::uint8_t* p00=rgba+(static_cast<std::size_t>(ty0)*iw+lx)*4;
+      const std::uint8_t* p10=rgba+(static_cast<std::size_t>(ty0)*iw+rx)*4;
+      const std::uint8_t* p01=rgba+(static_cast<std::size_t>(ty1)*iw+lx)*4;
+      const std::uint8_t* p11=rgba+(static_cast<std::size_t>(ty1)*iw+rx)*4;
+      const float w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
+      // Interpolated PREMULTIPLIED: blending straight colour across a
+      // transparent texel drags its (undefined) rgb into the visible edge.
+      const float a00=p00[3]*(1.f/255.f), a10=p10[3]*(1.f/255.f), a01=p01[3]*(1.f/255.f), a11=p11[3]*(1.f/255.f);
+      sumR+=w00*p00[0]*a00+w10*p10[0]*a10+w01*p01[0]*a01+w11*p11[0]*a11;
+      sumG+=w00*p00[1]*a00+w10*p10[1]*a10+w01*p01[1]*a01+w11*p11[1]*a11;
+      sumB+=w00*p00[2]*a00+w10*p10[2]*a10+w01*p01[2]*a01+w11*p11[2]*a11;
+      sumA+=w00*a00+w10*a10+w01*a01+w11*a11;
+    }
+    if (sumA<=1e-4f) continue;
+    const Color color{static_cast<std::uint8_t>(std::clamp(std::lround(sumR/sumA),0L,255L)),
+                      static_cast<std::uint8_t>(std::clamp(std::lround(sumG/sumA),0L,255L)),
+                      static_cast<std::uint8_t>(std::clamp(std::lround(sumB/sumA),0L,255L)), 255};
+    paint(x,y,color,(sumA/samples)*alpha*state_.alpha*clip);
+  }
+#endif
+}
+std::vector<std::uint8_t> Canvas::getImageData(int a,int b,int c,int d)const {
+  std::vector<std::uint8_t>r(std::max(0,c)*std::max(0,d)*4);
+#ifdef __EMSCRIPTEN__
+  canvasFlushOps();
+  c2d_get_pixels(contextId_,a,b,c,d,r.data());
+#else
+  // Row at a time: Color is exactly the RGBA byte quartet this returns, so
+  // the in-range part of a row is a straight copy. Per pixel, with the bounds
+  // test inside the loop, this was a measurable slice of every frame -- the
+  // window reads the whole surface back once to present it.
+  const int sx0=std::max(0,-a), sx1=std::min(c,width_-a);
+  for(int y=0;y<d;y++){
+    const int sy=b+y;
+    if(sy<0||sy>=height_||sx1<=sx0) continue;
+    std::memcpy(&r[(size_t(y)*c+sx0)*4], &pixels_[size_t(sy)*width_+a+sx0], size_t(sx1-sx0)*4);
+  }
+#endif
+  return r;
+}
+void Canvas::putImageData(const std::vector<std::uint8_t>&r,int a,int b,int c,int d) {
+  if(r.size() < size_t(a)*b*4) return;
+#ifdef __EMSCRIPTEN__
+  canvasFlushOps();
+  c2d_put_pixels(contextId_,r.data(),a,b,c,d);
+#else
+  for(int y=0;y<b;y++)for(int x=0;x<a;x++){auto i=(size_t(y)*a+x)*4;blendPixel(c+x,d+y,Color{r[i],r[i+1],r[i+2],r[i+3]});}
+#endif
+}
+void Canvas::fillCircle(float a,float b,float c){beginPath();arc(a,b,c,0,6.283185307f);fill();}void Canvas::strokeCircle(float a,float b,float c){beginPath();arc(a,b,c,0,6.283185307f);stroke();}
+bool Canvas::savePPM(const std::string& path)const {
+#ifdef __EMSCRIPTEN__
+  (void)path; return true;
+#else
+  std::ofstream f(path,std::ios::binary); if(!f)return false;
+  f<<"P6\n"<<width_<<" "<<height_<<"\n255\n";
+  for(auto&p:pixels_){ const float a=p.a/255.f;
+    f.put(static_cast<char>(std::lround(p.r*a+255*(1-a)))); f.put(static_cast<char>(std::lround(p.g*a+255*(1-a)))); f.put(static_cast<char>(std::lround(p.b*a+255*(1-a)))); }
+  return !!f;
+#endif
+}
+
+bool Canvas::showWindow(const std::string& title, const std::function<void(Canvas&, float)>& drawFrame) {
+#ifdef __EMSCRIPTEN__
+  (void)title; (void)drawFrame;
+  return true;
+#else
+  if (SDL_Init(SDL_INIT_VIDEO) != 0) return false;
+  SDL_Window* window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                        width_, height_, SDL_WINDOW_SHOWN);
+  SDL_Renderer* renderer = window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : nullptr;
+  SDL_Texture* texture = renderer ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, width_, height_) : nullptr;
+  if (!texture) { if(renderer) SDL_DestroyRenderer(renderer); if(window) SDL_DestroyWindow(window); SDL_Quit(); return false; }
+  std::vector<std::uint8_t> rgba(static_cast<size_t>(width_) * height_ * 4);
+  const Uint64 start=SDL_GetPerformanceCounter(), frequency=SDL_GetPerformanceFrequency();
+  bool running=true; while(running) { const Uint64 frameStart=SDL_GetPerformanceCounter(); SDL_Event event; while(SDL_PollEvent(&event)) if(event.type==SDL_QUIT) running=false;
+    if (drawFrame) drawFrame(*this, static_cast<float>(SDL_GetPerformanceCounter()-start)/frequency);
+    for (size_t i=0;i<pixels_.size();++i) {
+      const Color& p=pixels_[i]; const float a=p.a/255.f;
+      rgba[i*4]=static_cast<std::uint8_t>(p.r*a+255*(1-a)); rgba[i*4+1]=static_cast<std::uint8_t>(p.g*a+255*(1-a));
+      rgba[i*4+2]=static_cast<std::uint8_t>(p.b*a+255*(1-a)); rgba[i*4+3]=255;
+    }
+    SDL_UpdateTexture(texture, nullptr, rgba.data(), width_ * 4);
+    SDL_RenderClear(renderer); SDL_RenderCopy(renderer, texture, nullptr, nullptr); SDL_RenderPresent(renderer);
+    const Uint32 elapsed=static_cast<Uint32>((SDL_GetPerformanceCounter()-frameStart)*1000/frequency);
+    if (elapsed < 16) SDL_Delay(16-elapsed);
+  }
+  SDL_DestroyTexture(texture); SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit(); return true;
+#endif
+}
+#ifndef __EMSCRIPTEN__
+std::pair<float,float> Canvas::mapPoint(float x,float y) const { const auto& m=state_.matrix; return {m[0]*x+m[2]*y+m[4], m[1]*x+m[3]*y+m[5]}; }
+// The box any draw on this canvas may write: the surface, narrowed by the clip
+// if there is one. Empty when the clip has already excluded everything.
+void Canvas::drawBounds(int& x0,int& y0,int& x1,int& y1) const {
+  x0=0; y0=0; x1=width_; y1=height_;
+  if (const ClipMask* c=state_.clip.get()) {
+    x0=std::max(x0,c->x0); y0=std::max(y0,c->y0);
+    x1=std::min(x1,c->x1); y1=std::min(y1,c->y1);
+  }
+}
+float Canvas::clipAt(int x,int y) const {
+  const ClipMask* c=state_.clip.get(); if (!c) return 1.f;
+  if (x<c->x0||x>=c->x1||y<c->y0||y>=c->y1) return 0.f;
+  return c->alpha[static_cast<size_t>(y-c->y0)*(c->x1-c->x0)+(x-c->x0)]*(1.f/255.f);
+}
+void Canvas::paint(int x,int y,Color c,float coverage) {
+  if(x<0||y<0||x>=width_||y>=height_) return;
+  blend(pixels_[size_t(y)*width_+x], c, coverage);
+}
+void Canvas::blendPixel(int x,int y,Color c) { paint(x,y,c,1.f); }
+namespace {
+// The browser blends a SHAPE's coverage linearly -- a rect straddling a pixel
+// at 0.7 coverage lands on 179, dead on the ladder -- but it does not blend a
+// FILLED GLYPH's that way: its mask rasterizer pushes partial coverage up a
+// ramp (a stroked glyph is a path, and stays linear -- see strokeDevice), so
+// the edge of a white stem reaches full brightness instead of stopping at
+// mid-grey. Rasterizing the bundled Ubuntu faces in Chrome and here, then
+// pairing the two bitmaps pixel for pixel, puts that ramp at coverage^(1/3.2)
+// (linear rasterizing is 21.8 rms off Chrome across four glyph sizes, 1/2.2 is
+// 11.8 off, 1/3.2 is 10.1). Applying it to shapes too would fatten every
+// petal, wall and button edge in the client away from the reference.
+constexpr float kTextGamma = 3.2f;
+inline float textCoverage(float cov, bool glyph) {
+  if (!(glyph && cov > 0.f && cov < 1.f)) return cov;
+  // cov^(1/3.2) is cov^(5/16), which is three multiplies and four square
+  // roots -- all single instructions -- instead of a call into powf. The two
+  // agree to a few ULP, orders below the 1/255 the result is quantised to,
+  // and this runs once per partially-covered pixel of every glyph on screen.
+  const float square=cov*cov, fifth=square*square*cov;
+  return std::sqrt(std::sqrt(std::sqrt(std::sqrt(fifth))));
+}
+} // namespace
+void Canvas::fillDevice(const Path2D& path, bool evenOdd, Color color) {
+  if (color.a==0 || state_.alpha<=0 || path.segments().empty()) return;
+  const bool glyph=path.glyphOutlines();
+  flatten(path, state_.matrix, matrixScale(state_.matrix), gFlat);
+  // Hoisted: scanFill guarantees x and y are inside the surface, so the
+  // per-pixel path is a blend and nothing else -- no bounds test, no reload of
+  // the alpha, and no shared_ptr dereference for a clip that usually is not set.
+  Color* const surface=pixels_.data();
+  const int stride=width_;
+  const float alpha=state_.alpha;
+  const bool clipped=state_.clip!=nullptr;
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  // textCoverage(1,..) is 1 whichever ramp applies, so an interior run's source
+  // alpha is just the global alpha -- hoisted out of the run entirely.
+  const float solid=alpha;
+  const bool memsettable = !clipped && solid>=1.f && color.a==255;
+  const Color opaque{color.r,color.g,color.b,255};
+  scanFill(gFlat, evenOdd, cx0,cy0,cx1,cy1, [&](int x,int y,float cov){
+    const float a=textCoverage(cov,glyph)*alpha;
+    blend(surface[static_cast<size_t>(y)*stride+x], color, clipped ? a*clipAt(x,y) : a);
+  }, [&](int x0,int x1,int y){
+    Color* const row=surface+static_cast<size_t>(y)*stride;
+    // An opaque colour at full coverage IS the destination -- blend's own
+    // sa>=1 case writes exactly this -- so the run is a store, not a blend.
+    if (memsettable) { std::fill(row+x0,row+x1,opaque); return; }
+    if (!clipped) { for (int x=x0;x<x1;++x) blend(row[x],color,solid); return; }
+    for (int x=x0;x<x1;++x) blend(row[x],color,solid*clipAt(x,y));
+  });
+}
+void Canvas::desaturateDevice(const Path2D& path, bool evenOdd) {
+  if (state_.alpha<=0 || path.segments().empty()) return;
+  flatten(path, state_.matrix, matrixScale(state_.matrix), gFlat);
+  Color* const surface=pixels_.data();
+  const int stride=width_;
+  const float alpha=state_.alpha;
+  const bool clipped=state_.clip!=nullptr;
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  // The browser's non-separable `saturation` blend with a grey source:
+  // SetLum(grey, Lum(backdrop)), which is the backdrop's luminosity in every
+  // channel, laid over the backdrop at the coverage.
+  const auto grey=[&](Color& d, float a){
+    if (a<=0.0005f) return;
+    const auto lum=static_cast<std::uint8_t>(std::clamp(
+        std::lround(0.3f*d.r+0.59f*d.g+0.11f*d.b), 0L, 255L));
+    const float t=std::min(a,1.f), keep=1.f-t;
+    d=Color{static_cast<std::uint8_t>(std::lround(lum*t+d.r*keep)),
+            static_cast<std::uint8_t>(std::lround(lum*t+d.g*keep)),
+            static_cast<std::uint8_t>(std::lround(lum*t+d.b*keep)),
+            d.a};
+  };
+  scanFill(gFlat, evenOdd, cx0,cy0,cx1,cy1, [&](int x,int y,float cov){
+    const float a=cov*alpha;
+    grey(surface[static_cast<size_t>(y)*stride+x], clipped ? a*clipAt(x,y) : a);
+  }, [&](int x0,int x1,int y){
+    Color* const row=surface+static_cast<size_t>(y)*stride;
+    for (int x=x0;x<x1;++x) grey(row[x], clipped ? alpha*clipAt(x,y) : alpha);
+  });
+}
+void Canvas::strokeDevice(const Path2D& path) {
+  if (state_.stroke.a==0 || state_.alpha<=0 || state_.lineWidth<=0 || path.segments().empty()) return;
+  const float scale=matrixScale(state_.matrix);
+  // No text gamma here, even for glyph outlines. The browser rasterizes a
+  // FILLED glyph through its mask pipeline, where coverage goes up the ramp
+  // kTextGamma models -- but a STROKED one is converted to a path and stroked
+  // like any other shape, with plain linear coverage. Ramping it here made a
+  // 12px outline rasterize as if it were several times wider: every
+  // partial-coverage pixel along both edges of the outline jumped most of the
+  // way to opaque, so the outline both spread outward and ate into the white
+  // core the fill puts back on top. Measured against Chrome on the bundled
+  // Ubuntu Bold -- 'o'/'H'/'S'/'e'/'A'/'n' at 12..40px and lineWidth 2..8 --
+  // the ramp overshot total outline ink by 5% at lineWidth 8 and 28% at
+  // lineWidth 2 (the excess tracks edge length, not area, which is what makes
+  // it worse the thinner the line); dropping it lands every case within 1%
+  // and halves per-pixel rms, 17.4 -> 7.0, level with a plain shape stroke's
+  // 8.5 against the same reference.
+  flatten(path, Matrix{1,0,0,1,0,0}, scale, gFlat);
+  const Poly* source=&gFlat;
+  if (!state_.dash.empty()) { applyDash(gFlat, state_.dash, state_.dashOffset, gDash); source=&gDash; }
+  strokeOutline(*source, state_.lineWidth/2, state_.lineCap, state_.lineJoin, state_.miterLimit, scale, gOutline);
+  transformPoly(gOutline, state_.matrix, gDevice);
+  const Color color=state_.stroke;
+  Color* const surface=pixels_.data();
+  const int stride=width_;
+  const float alpha=state_.alpha;
+  const bool clipped=state_.clip!=nullptr;
+  int cx0,cy0,cx1,cy1; drawBounds(cx0,cy0,cx1,cy1);
+  const bool memsettable = !clipped && alpha>=1.f && color.a==255;
+  const Color opaque{color.r,color.g,color.b,255};
+  scanFill(gDevice, false, cx0,cy0,cx1,cy1, [&](int x,int y,float cov){
+    const float a=cov*alpha;
+    blend(surface[static_cast<size_t>(y)*stride+x], color, clipped ? a*clipAt(x,y) : a);
+  }, [&](int x0,int x1,int y){
+    Color* const row=surface+static_cast<size_t>(y)*stride;
+    if (memsettable) { std::fill(row+x0,row+x1,opaque); return; }
+    if (!clipped) { for (int x=x0;x<x1;++x) blend(row[x],color,alpha); return; }
+    for (int x=x0;x<x1;++x) blend(row[x],color,alpha*clipAt(x,y));
+  });
+}
+// The system face for each generic family, loaded once on first use. A missing
+// face falls back to the 5x7 bitmap below, which has no descenders.
+static const Font* uiFont(unsigned char family) {
+  struct Face { Font font; bool tried=false; };
+  static Face faces[3];
+  if (family>2) family=0;
+  Face& face=faces[family];
+  if (!face.tried) {
+    face.tried=true;
+    static const std::vector<std::string> kPreferred[3]={
+      {"Helvetica","Arial","Verdana","DejaVuSans","LiberationSans-Regular"},
+      {"Georgia","Times New Roman","Times","DejaVuSerif","LiberationSerif-Regular"},
+      {"Menlo","Courier New","DejaVuSansMono","LiberationMono-Regular"},
+    };
+    std::string path;
+    if (Font::findSystemFont(kPreferred[family],path)) face.font.loadFromFile(path);
+  }
+  return face.font.valid() ? &face.font : nullptr;
+}
+
+void Canvas::glyphs(const std::string& text, float x, float y, float maxWidth, Color color) {
+  if (text.empty() || color.a==0) return;
+  if (const Font* font=uiFont(state_.fontFamily)) {
+    const float size=state_.fontSize, width=font->measure(text,size);
+    const float squeeze=(maxWidth>0 && width>maxWidth && width>0) ? maxWidth/width : 1.f;
+    const float ascent=font->ascent(size), descent=font->descent(size);
+    const float penX=x-(state_.textAlign==1 ? width*squeeze/2 : state_.textAlign==2 ? width*squeeze : 0.f);
+    const float baseline=y+(state_.textBaseline==0 ? ascent : state_.textBaseline==1 ? (ascent+descent)/2
+                          : state_.textBaseline==2 ? descent : 0.f);
+    Path2D shaped;
+    font->appendText(shaped,text,penX,baseline,size);
+    if (squeeze!=1.f)
+      for (Path2D::Segment& s : shaped.segments()) {
+        const int pairs = s.command==Path2D::Command::Move||s.command==Path2D::Command::Line ? 1
+                        : s.command==Path2D::Command::Quadratic ? 2
+                        : s.command==Path2D::Command::Bezier ? 3 : 0;
+        for (int k=0;k<pairs;++k) s.v[k*2]=penX+(s.v[k*2]-penX)*squeeze;
+      }
+    fillDevice(shaped,false,color);
+    return;
+  }
+  const float unit=state_.fontSize/8.f;
+  float advance=6*unit, height=7*unit;
+  const float full=static_cast<float>(text.size())*advance;
+  float squeeze=1.f;
+  if (maxWidth>0 && full>maxWidth) squeeze=maxWidth/full;
+  float penX = x - (state_.textAlign==1 ? full*squeeze/2 : state_.textAlign==2 ? full*squeeze : 0.f);
+  const float penY = y - (state_.textBaseline==0 ? 0.f : state_.textBaseline==1 ? height/2 : height);
+  Path2D glyph;
+  for (unsigned char ch : text) {
+    if (ch>=32 && ch<127) {
+      const unsigned char* columns=kFont[ch-32];
+      for (int c=0;c<5;++c) for (int r=0;r<7;++r)
+        if (columns[c]>>r & 1) glyph.rect(penX+c*unit*squeeze, penY+r*unit, unit*squeeze+0.01f, unit+0.01f);
+    }
+    penX += advance*squeeze;
+  }
+  fillDevice(glyph, false, color);
+}
+#endif
+
+const char* canvasOpName(int code) {
+  switch (code) {
+    case 0: return "save";           case 1: return "restore";
+    case 2: return "reset";          case 3: return "scale";
+    case 4: return "rotate";         case 5: return "translate";
+    case 6: return "transform";      case 7: return "setTransform";
+    case 8: return "resetTransform"; case 9: return "fillStyle";
+    case 10: return "strokeStyle";   case 11: return "globalAlpha";
+    case 12: return "composite";     case 13: return "filter";
+    case 14: return "lineWidth";     case 15: return "lineCap";
+    case 16: return "lineJoin";      case 17: return "miterLimit";
+    case 18: return "lineDashOffset";case 19: return "shadow";
+    case 20: return "font";          case 21: return "textAlign";
+    case 22: return "textBaseline";  case 23: return "direction";
+    case 24: return "smoothing";     case 25: return "smoothingQuality";
+    case 30: return "clearRect";     case 31: return "fillRect";
+    case 32: return "strokeRect";    case 33: return "beginPath";
+    case 34: return "closePath";     case 35: return "moveTo";
+    case 36: return "lineTo";        case 37: return "quadraticCurveTo";
+    case 38: return "bezierCurveTo"; case 39: return "arc";
+    case 40: return "arcTo";         case 41: return "ellipse";
+    case 42: return "rect";          case 43: return "roundRect";
+    case 44: return "fill";          case 45: return "stroke";
+    case 46: return "clip";          case 47: return "fillText";
+    case 48: return "strokeText";    case 50: return "fill(cached path)";
+    case 51: return "drawImage";     case 52: return "drawImage(sub)";
+    case 53: return "fill(new path)"; case 54: return "drawImage(remote)";
+    default: return nullptr;
+  }
+}
+
+#ifndef __EMSCRIPTEN__
+// The software path draws straight into its own framebuffer: there is no op
+// stream to count, and nothing that reads these has anything to report.
+namespace { int gNoOpTypeCounts[kCanvasOpCodes] = {}; }
+const int* canvasOpTypeCounts() { return gNoOpTypeCounts; }
+int canvasOpsEmitted() { return 0; }
+CanvasFrameStats canvasTakeFrameStats() { return CanvasFrameStats{}; }
+#endif

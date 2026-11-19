@@ -294,7 +294,7 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
 // --- server ----------------------------------------------------------------
 
 EM_JS(int, flix_ch_listen,
-      (int port, const char* certPtr, const char* keyPtr, const char* rootPtr), {
+      (int port, const char* hostPtr, const char* certPtr, const char* keyPtr, const char* rootPtr), {
   const net = Module.flixNet;
 
   if (!net.isNode) {
@@ -314,6 +314,7 @@ EM_JS(int, flix_ch_listen,
 
   const path = require("path");
   const crypto = require("crypto");
+  const bindHost = UTF8ToString(hostPtr);
 
   // Where the client build sits, unless told otherwise: the emitted server
   // module and the client's page land in the same build directory, so the
@@ -834,7 +835,7 @@ EM_JS(int, flix_ch_listen,
     if (held.length) { try { consume(null); } catch (e) { drop(e, 1011); } }
   });
 
-  server.listen(port);
+  server.listen(port, bindHost || undefined);
   listener.closer = () => {
     for (const socket of open) { try { socket.destroy(); } catch (e) { } }
     open.clear();
@@ -850,7 +851,7 @@ EM_JS(int, flix_ch_listen,
     esmImport("@fails-components/webtransport").then((module) => {
       const quic = new module.Http3Server({
         port: port,
-        host: "::",
+        host: bindHost || "::",
         // Signs the QUIC stack's address-validation tokens, which is what
         // stops a spoofed source address from getting a session. It never
         // leaves the process, so a fresh value per boot is right.
@@ -1036,11 +1037,11 @@ int connect(const std::string& host, std::uint16_t port) {
     return flix_ch_connect(host.c_str(), static_cast<int>(port));
 }
 
-int listen(std::uint16_t port, const std::string& certPath, const std::string& keyPath,
-           const std::string& webRoot) {
+int listen(std::uint16_t port, const std::string& bindHost, const std::string& certPath,
+           const std::string& keyPath, const std::string& webRoot) {
     ensureInit();
-    return flix_ch_listen(static_cast<int>(port), certPath.c_str(), keyPath.c_str(),
-                         webRoot.c_str());
+    return flix_ch_listen(static_cast<int>(port), bindHost.c_str(), certPath.c_str(),
+                         keyPath.c_str(), webRoot.c_str());
 }
 
 int accept(int listener) { return flix_ch_accept(listener); }
@@ -1083,7 +1084,8 @@ namespace flix::net::web {
 // these exist so the API links on both builds and a caller can use it without
 // an #ifdef of its own. Every one of them fails.
 int connect(const std::string&, std::uint16_t) { return kInvalid; }
-int listen(std::uint16_t, const std::string&, const std::string&, const std::string&) {
+int listen(std::uint16_t, const std::string&, const std::string&, const std::string&,
+           const std::string&) {
     return kInvalid;
 }
 int accept(int) { return kInvalid; }

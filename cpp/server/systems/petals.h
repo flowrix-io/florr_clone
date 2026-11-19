@@ -508,33 +508,19 @@ private:
     /// about who it hits -- only the colour of the number combat reports for
     /// it, and, with `glitch`, that each victim's hit is rolled
     /// (rollGlitchDamage) and green.
-    /// `targets`, when not empty, is the only victims the burst may land on
-    /// (LightningBurst::targets); it needs `lightning`.
     void emitDamageBurst(World& world, Entity player, Vec2 at, double radius, double damage,
-                         bool lightning = false, bool glitch = false,
-                         std::vector<Entity> targets = {});
+                         bool lightning = false, bool glitch = false);
     /// One strike. `damage` is the petal's own stat, already up the rarity
     /// ladder; `rarity` is the tier it came from, which is what puts the
     /// fallback on that same ladder for a petal whose `damage` is 0. `glitch`
     /// is a glitch form's strike: rolled, green hits and green bolts.
-    /// `maxTargets` above 0 lands it on only that many mobs, the nearest
-    /// (collectStrikeTargets); 0 strikes everything in reach.
     void strikeLightning(World& world, Entity player, Vec2 at, double damage, Rarity rarity,
-                         bool glitch = false, int maxTargets = 0);
+                         bool glitch = false);
     /// The strike's visual half: one event carrying the bolts' endpoints. The
     /// damage half is a field, and a field has nothing on the wire the client
     /// could draw a strike from. `glitch` sets DamageGlitch on the event's
-    /// flag byte, which the client draws as green bolts. `chosen`, when not
-    /// null, is a capped strike's own victims, drawn instead of everything in
-    /// reach.
-    void reportLightning(World& world, Entity player, Vec2 at, double radius, bool glitch,
-                         const std::vector<Entity>* chosen = nullptr);
-    /// A capped strike's victims: the `count` hittable mobs and hostile NPCs
-    /// whose bodies reach into the disc, nearest EDGE first, so the mob the
-    /// petal touched is always one of them however big it is. Pets are left
-    /// out -- the field would refuse them, and a pet must not use up a slot.
-    void collectStrikeTargets(World& world, Realm realm, Vec2 at, double radius, int count,
-                              std::vector<Entity>& out);
+    /// flag byte, which the client draws as green bolts.
+    void reportLightning(World& world, Entity player, Vec2 at, double radius, bool glitch);
     void explodePetal(World& world, Entity player, Vec2 at, double petalSize, double damage,
                       double nowMillis);
     /// The scripted heal, which is a different curve from a burst petal's:
@@ -732,8 +718,6 @@ private:
     /// Where a strike's bolts end, rebuilt per strike so the report allocates
     /// nothing once the vector has grown.
     std::vector<Vec2> lightningTargets_;
-    /// collectStrikeTargets' candidates, edge gap first.
-    std::vector<std::pair<double, Entity>> strikeRanking_;
 
     /// This tick's event queue, installed by run(). Null outside a tick and in
     /// a test that does not care about the wire.

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 90;
+inline constexpr std::uint16_t kProtocolVersion = 93;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -261,6 +261,9 @@ enum class ClientMessage : std::uint8_t {
                         ///< skins by id: the ones on flowers this client sees
                         ///< and has not been sent. Answered with SkinsFetched.
                         ///< (Version 90.)
+    ClaimTrialReward,   ///< u8 floor -- claims its first-clear reward and, once
+                        ///< earned, its 9-star bonus. Answered with
+                        ///< TrialRewardClaimed. (Version 92.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -519,6 +522,14 @@ enum class ServerMessage : std::uint8_t {
     SkinsFetched,   ///< u16 count, { CustomSkin }*, u16 missing, { str skinId }*
                     ///< -- the answer to FetchSkins: the skins asked for that
                     ///< exist, and the ids that do not. (Version 90.)
+    TrialProgress, ///< u32 season, u32 refreshSeconds, u8 unlocked, u8 buff,
+                   ///< then 20 * { u8 cleared, u8 bestStars, u8 claimable }.
+                   ///< (Version 91; claimable, version 92.)
+    TrialState,    ///< u8 phase/floor/chamber/challenge/stars/deaths/biome/buff,
+                   ///< f32 elapsed/threeStar/failure/reviveRemaining. (Version 91.)
+    TrialRewardClaimed, ///< u8 ok/floor, u32 stars, f64 xp, str petalName,
+                        ///< u32 petalCount, u8 includedFullBonus, str reason.
+                        ///< (Version 92.)
 };
 
 // ---------------------------------------------------------------------------

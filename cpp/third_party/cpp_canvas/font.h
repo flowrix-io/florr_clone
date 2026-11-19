@@ -1,0 +1,96 @@
+#pragma once
+
+// TrueType glyph outlines, decoded to Path2D.
+//
+// Text is produced as PATHS rather than as a rasterized bitmap cache. That is
+// what makes fillText and strokeText fall out of the code that already exists:
+// a glyph is filled and stroked by the same routines as any other path, so
+// outlined text, transforms, clipping and alpha all work with no extra machinery.
+
+#include <cstdint>
+#include <map>
+#include <string>
+#include <vector>
+
+#include "canvas.h"
+
+class Font {
+public:
+    // Parses a .ttf / .otf-with-glyf file. Returns false on anything it cannot
+    // read; fonts are user-supplied data and a malformed one must not crash.
+    bool loadFromFile(const std::string& path);
+    bool loadFromMemory(std::vector<std::uint8_t> data);
+    bool valid() const { return valid_; }
+
+    // Searches the platform's usual font directories for the first family in
+    // `preferred` that exists, then any usable fallback. Names are matched
+    // case-insensitively against the file name.
+    static bool findSystemFont(const std::vector<std::string>& preferred, std::string& pathOut);
+
+    // Appends `text` to `path`, laid out left to right starting at the text
+    // origin (x, baseline y), scaled so that em == pixelSize.
+    void appendText(Path2D& path, const std::string& utf8, float x, float y, float pixelSize) const;
+
+    float measure(const std::string& utf8, float pixelSize) const;
+
+    // Whether every character of `utf8` has a glyph of its own in this face.
+    // One that does not is drawn as .notdef here -- and by a browser in some
+    // other font entirely, at a width this face knows nothing about.
+    bool covers(const std::string& utf8) const;
+
+    // Vertical metrics scaled to pixelSize, for baseline placement.
+    float ascent(float pixelSize) const;
+    float descent(float pixelSize) const;   // negative, as in the font
+    float lineHeight(float pixelSize) const;
+
+    // The face's raw numbers, in font units, for a tool that writes them out
+    // ahead of time rather than reading the file at run time. What measure(),
+    // covers(), ascent() and descent() compute is a function of exactly these.
+    struct GlyphMetrics {
+        std::uint16_t advance = 0;
+        // The glyf header's box, y up. All zero for a blank glyph (a space).
+        std::int16_t xMin = 0, yMin = 0, xMax = 0, yMax = 0;
+    };
+    std::uint16_t unitsPerEm() const { return unitsPerEm_; }
+    // The em box's split at the baseline, which ascent() and descent() scale.
+    std::int16_t emAscent() const { return ascent_; }
+    std::int16_t emDescent() const { return descent_; }
+    // Every codepoint the face maps to a glyph of its own, ascending.
+    std::vector<std::uint32_t> mappedCodepoints() const;
+    // The glyph `codepoint` is set in -- .notdef for one the face lacks.
+    GlyphMetrics metrics(std::uint32_t codepoint) const;
+    // The codepoint at `i`, advancing past it: how measure() and covers() read
+    // a string. Invalid bytes come out as U+FFFD, one byte at a time.
+    static std::uint32_t nextCodepoint(const std::string& utf8, std::size_t& i);
+
+private:
+    struct Glyph {
+        Path2D path;          // in font units, y already flipped to screen down
+        float advance = 0;    // font units
+        bool loaded = false;
+    };
+
+    bool parse();
+    std::uint32_t tableOffset(const char* tag) const;
+    std::uint16_t glyphIndex(std::uint32_t codepoint) const;
+    const Glyph& glyph(std::uint16_t index) const;
+    void buildGlyph(std::uint16_t index, Glyph& out) const;
+    void buildSimpleGlyph(std::uint32_t offset, std::uint32_t length, Glyph& out) const;
+    void buildCompositeGlyph(std::uint32_t offset, std::uint32_t length, Glyph& out, int depth) const;
+    std::uint32_t glyphOffset(std::uint16_t index) const;
+    std::uint16_t advanceWidth(std::uint16_t index) const;
+
+    std::vector<std::uint8_t> data_;
+    bool valid_ = false;
+
+    std::map<std::string, std::pair<std::uint32_t, std::uint32_t>> tables_;
+    std::uint16_t unitsPerEm_ = 1000;
+    std::int16_t indexToLocFormat_ = 0;
+    std::uint16_t numGlyphs_ = 0;
+    std::uint16_t numberOfHMetrics_ = 0;
+    std::int16_t ascent_ = 800, descent_ = -200, lineGap_ = 0;
+    std::uint32_t cmapOffset_ = 0;
+    std::uint16_t cmapFormat_ = 0;
+
+    mutable std::map<std::uint16_t, Glyph> cache_;
+};

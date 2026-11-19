@@ -1606,10 +1606,6 @@ struct LightningClock {
 /// rolled as a glitch petal's is and reported green instead of cyan.
 struct LightningBurst {
     bool glitch = false;
-    /// The only victims this strike may land on, picked when it was thrown
-    /// (the plain lightning petal's tier + 2 nearest). Empty is the uncapped
-    /// strike: everything the field's reach covers, as before.
-    std::vector<Entity> targets;
 };
 
 struct GroundEffect {
@@ -1619,8 +1615,7 @@ struct GroundEffect {
     double damagePerSecond = 0;
     double slowFactor = 1.0;
     Rarity rarity = Rarity::Common;
-    /// A field with an interval deals one discrete hit per victim on that
-    /// cadence; pollen sets it to its whole lifetime, so once each. A uranium
+    /// Pollen deals one discrete hit per victim on a fixed cadence. A uranium
     /// cloud deals it once, the tick it is laid, scaled down with each
     /// victim's distance from the petal, and then zeroes it (see
     /// CombatSystem::tickGroundEffects).
@@ -1661,6 +1656,15 @@ struct WebClock {
 /// DropProjectileSpec; its own component for the reason WebClock is.
 struct DropClock {
     double nextMillis = 0;
+};
+
+/// A Trial Grounds enemy. Its only payout is the controlled floor reward.
+struct TrialMob {};
+
+/// The rotating Trial Grounds blessing attached to its participant.
+struct TrialBuff {
+    std::uint8_t kind = 0;
+    double projectileCritReadyAtMillis = 0.0;
 };
 
 // ---------------------------------------------------------------------------
@@ -1764,6 +1768,8 @@ FLIX_COMPONENT(flix::LightningBurst);
 FLIX_COMPONENT(flix::LightningClock);
 FLIX_COMPONENT(flix::WebClock);
 FLIX_COMPONENT(flix::DropClock);
+FLIX_COMPONENT(flix::TrialMob);
+FLIX_COMPONENT(flix::TrialBuff);
 FLIX_COMPONENT(flix::NetId);
 FLIX_COMPONENT(flix::Replicated);
 

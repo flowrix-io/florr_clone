@@ -5,6 +5,7 @@
 #include "server/game_server.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 
 #include "server/chat_moderation.h"
@@ -96,7 +97,36 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     // ground. A choice no staged map defines is dropped here, once, with a
     // notice -- rather than silently every time they die.
     session.spawnChoice.clear();
-    if (where == kAdminArenaSpawnChoice) {
+    session.trialFloor = 0;
+    session.trialRealm = Realm::Overworld;
+    if (where.rfind(std::string(kTrialsSpawnChoice) + ":", 0) == 0) {
+        char* end = nullptr;
+        const long requested = std::strtol(where.c_str() + std::char_traits<char>::length(kTrialsSpawnChoice) + 1,
+                                           &end, 10);
+        if (end == nullptr || *end != '\0' || requested < 1 || requested > kTrialFloorCount) {
+            sendNotice(connection, net::NoticeSeverity::Bad, "That Trial Grounds floor does not exist.");
+            return;
+        }
+        int available = -1;
+        for (int i = 0; i < kTrialRealmCount; ++i) {
+            if (trials_[static_cast<std::size_t>(i)].phase == TrialPhase::Idle) {
+                available = i;
+                break;
+            }
+        }
+        if (available < 0) {
+            sendNotice(connection, net::NoticeSeverity::Bad,
+                       "Every Trial Grounds instance is currently in use. Please try again.");
+            return;
+        }
+        if (requested > unlockedTrialFloor(session)) {
+            sendNotice(connection, net::NoticeSeverity::Bad, "Clear every previous floor to unlock that trial.");
+            return;
+        }
+        session.trialFloor = static_cast<int>(requested);
+        session.trialRealm = trialRealm(available);
+        session.spawnChoice = kTrialsSpawnChoice;
+    } else if (where == kAdminArenaSpawnChoice) {
         if (!effectiveAdmin(session)) {
             sendNotice(connection, net::NoticeSeverity::Bad, "Only admins may select the hosted arena. A host can bring you in.");
             return;
@@ -132,7 +162,7 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     // arena and the maze have no twin, so the flag means nothing there and is
     // dropped rather than refused: the picker hides both while it is set.
     session.prestige = false;
-    if (wantsPrestige && session.spawnChoice != kAdminArenaSpawnChoice && session.spawnChoice != kArenaSpawnChoice &&
+    if (wantsPrestige && session.trialFloor == 0 && session.spawnChoice != kAdminArenaSpawnChoice && session.spawnChoice != kArenaSpawnChoice &&
         session.spawnChoice != kMazeSpawnChoice) {
         if (database_.progress(session.userId).skills.prestigeUnlocked()) {
             session.prestige = true;
@@ -171,6 +201,7 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     // the arena kit instead; the maze body is on its own track. Restated here
     // so the panels show what the flower actually has from the first frame.
     sendProfile(session, connection);
+    if (session.trialFloor > 0) startTrial(session, session.trialFloor);
 }
 
 void GameServer::handleLeave(Session& session, net::Connection& connection) {
@@ -186,6 +217,7 @@ void GameServer::leaveWorld(Session& session) {
     // saves only a Playing session's, so a body the stage had stopped
     // vouching for is taken out unsaved -- see spawnPlayer for why.
     if (session.entity == NULL_ENTITY) return;
+    abandonTrial(session);
     persistPlayer(session);
     // The body first, then the grant: a grantee steering somebody else's
     // flower lets go of it on the way out of the world, and taking the grant
@@ -366,6 +398,8 @@ Entity GameServer::spawnPlayer(Session& session) {
         // point (src/server/playerManager.ts:168-179), and on floor whatever
         // the jitter did.
         spawn = terrain_->findOpenSpawn(rng_, activeMaze().spawn(), kMazeCellSize * 0.3, realm);
+    } else if (isTrialRealm(realm) && session.trialFloor > 0) {
+        spawn = kWavesCentre;
     } else {
         std::vector<MobDisc> blockers;
         collectSpawnBlockers(realm, blockers);

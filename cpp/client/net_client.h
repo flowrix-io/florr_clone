@@ -18,6 +18,7 @@
 #include "shared/game/skin_format.h"
 #include "shared/game/skills.h"
 #include "shared/game/terrain.h"
+#include "shared/game/trials.h"
 #include "shared/game/waves.h"
 #include "shared/net/admin_dashboard.h"
 #include "shared/net/admin_db.h"
@@ -601,6 +602,7 @@ public:
     /// placed the body by then, and that is the truth either way.
     void cancelJoin() { joinPending_ = false; }
     void leaveGame();
+    void claimTrialReward(int floor);
     void sendInput(const net::InputFrame&);
     void sendChat(const std::string& text);
     void setLoadoutSlot(int slot, std::uint16_t petalIndex, Rarity rarity);
@@ -1069,6 +1071,49 @@ public:
         std::vector<Group> groups;
     };
     const WaveView& wave() const { return wave_; }
+
+    struct TrialProgressView {
+        bool known = false;
+        std::uint32_t season = 0;
+        std::uint32_t refreshSeconds = 0;
+        int unlockedFloor = 1;
+        TrialBuffKind buff = TrialBuffKind::ProjectileDamage;
+        std::array<bool, kTrialFloorCount> cleared{};
+        std::array<int, kTrialFloorCount> bestStars{};
+        std::array<bool, kTrialFloorCount> claimable{};
+    };
+    const TrialProgressView& trialProgress() const { return trialProgress_; }
+
+    struct TrialRewardReceipt {
+        bool known = false;
+        bool ok = false;
+        int floor = 0;
+        std::uint32_t stars = 0;
+        double xp = 0.0;
+        std::string petal;
+        std::uint32_t petals = 0;
+        bool fullBonus = false;
+        std::string reason;
+    };
+    const TrialRewardReceipt& trialReward() const { return trialReward_; }
+
+    struct TrialView {
+        bool known = false;
+        TrialPhase phase = TrialPhase::Idle;
+        int floor = 0;
+        int chamber = 0;
+        TrialChallenge challenge = TrialChallenge::Defeat;
+        int stars = 0;
+        int deaths = 0;
+        WaveBiome biome = WaveBiome::Garden;
+        TrialBuffKind buff = TrialBuffKind::ProjectileDamage;
+        double elapsed = 0.0;
+        double threeStar = 0.0;
+        double failure = 0.0;
+        double reviveRemaining = 0.0;
+        double radius = kTrialArenaRadius;
+    };
+    const TrialView& trial() const { return trial_; }
     const std::string& killerName() const { return killerName_; }
 
     /// Set once each time a yggdrasil raised this body. Cleared by whoever
@@ -1107,9 +1152,15 @@ private:
     void handleJoinAccepted(ByteReader&);
     RiftView rift_;
     WaveView wave_;
+    TrialProgressView trialProgress_;
+    TrialView trial_;
+    TrialRewardReceipt trialReward_;
     void handleRealmChange(ByteReader&, bool preserveView = false);
     void handleRiftState(ByteReader&);
     void handleWaveState(ByteReader&);
+    void handleTrialProgress(ByteReader&);
+    void handleTrialState(ByteReader&);
+    void handleTrialRewardClaimed(ByteReader&);
     void handleMazeInfo(ByteReader&);
     void handleChat(ByteReader&);
     /// The conversation already in progress when this account signed in, put

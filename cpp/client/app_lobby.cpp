@@ -100,6 +100,51 @@ const double kTitleXpEaseSeconds = easeTimeConstant(0.05);
 /// "Loading..." with no way off it.
 constexpr double kJoinTimeoutSeconds = 10.0;
 
+struct TrialPickerLayout {
+    Rect panel;
+    Rect close;
+    Rect route;
+    Rect start;
+    std::vector<Rect> floors;
+    std::vector<Rect> claims;
+};
+
+TrialPickerLayout trialPickerLayout(double viewWidth, double viewHeight, bool refreshing) {
+    TrialPickerLayout out;
+    const double width = std::max(320.0, std::min(1120.0, viewWidth - 24.0));
+    const bool narrow = viewWidth < 700.0;
+    const double maxHeight = narrow ? 820.0 : 720.0;
+    const double height = std::max(430.0, std::min(maxHeight, viewHeight - 24.0));
+    out.panel = {viewWidth * 0.5 - width * 0.5, viewHeight * 0.5 - height * 0.5,
+                 width, height};
+    out.close = {out.panel.right() - 53.0, out.panel.y + 17.0, 36.0, 36.0};
+    out.route = {out.panel.x + 28.0, out.panel.y + 126.0,
+                 refreshing ? 230.0 : out.panel.w - 56.0, 50.0};
+    out.start = {out.panel.x + out.panel.w * 0.5 - 112.0,
+                 out.panel.bottom() - 57.0, 224.0, 42.0};
+
+    const int count = refreshing ? kTrialFloorCount - kTrialPermanentFloorCount
+                                 : kTrialPermanentFloorCount;
+    const int columns = refreshing ? (narrow ? 1 : 2) : (narrow ? 2 : 4);
+    const int rows = (count + columns - 1) / columns;
+    const double gap = narrow ? 8.0 : (refreshing ? 16.0 : 12.0);
+    const double gridTop = out.panel.y + 210.0;
+    const double gridBottom = out.panel.bottom() - 126.0;
+    const double cellH = std::max(44.0, (gridBottom - gridTop - (rows - 1) * gap) / rows);
+    const double cellW = (out.panel.w - 56.0 - (columns - 1) * gap) / columns;
+    out.floors.reserve(static_cast<std::size_t>(count));
+    out.claims.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        const Rect cell{out.panel.x + 28.0 + (i % columns) * (cellW + gap),
+                        gridTop + (i / columns) * (cellH + gap), cellW, cellH};
+        out.floors.push_back(cell);
+        const double claimH = std::min(30.0, std::max(20.0, cellH * 0.36));
+        out.claims.push_back({cell.x + 10.0, cell.bottom() - claimH - 8.0,
+                              cell.w - 20.0, claimH});
+    }
+    return out;
+}
+
 /// The daily-login card's body; its border is the same colour at 0.7 value.
 constexpr std::uint32_t kStreakPanel = 0x66FFFFu;
 /// How long its star wobbles after a fresh claim.
@@ -201,10 +246,26 @@ void App::updateLobby() {
         return;
     }
 
-    if (config_.autoJoin && !config_.autoUsername.empty()) startGame();
+    if (config_.autoTrialPickerPage != 0) {
+        trialPickerOpen_ = true;
+        trialRefreshingPicker_ = config_.autoTrialPickerPage == 2;
+        selectedTrialFloor_ = trialRefreshingPicker_
+                                  ? std::clamp(net_.trialProgress().unlockedFloor,
+                                               kTrialPermanentFloorCount + 1, kTrialFloorCount)
+                                  : std::clamp(net_.trialProgress().unlockedFloor,
+                                               1, kTrialPermanentFloorCount);
+        config_.autoTrialPickerPage = 0;
+    } else if (config_.autoJoin && !config_.autoUsername.empty()) {
+        startGame();
+    }
 
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
     const LobbyLayout layout = lobbyLayout(window_.width(), window_.height());
+
+    if (trialPickerOpen_) {
+        updateTrialPicker();
+        return;
+    }
 
     // Exactly one thing owns the keyboard at a time. A panel's own search box
     // outranks the chat line, which outranks the name field, which outranks
@@ -265,6 +326,7 @@ void App::updateLobby() {
             // touches the picker is not pinned to a door that may be edited
             // out of the map later.
             const auto choose = [&](std::size_t choice) {
+                if (spawnChoices_[choice].id == kTrialsSpawnChoice) return;
                 menus_.settings().spawnChoice =
                     spawnChoices_[choice].id == "default" ? std::string() : spawnChoices_[choice].id;
             };
@@ -274,6 +336,13 @@ void App::updateLobby() {
                 if (!insideInclusive(layout.tabs[i], mouse)) continue;
                 onPicker = true;
                 pickerTab_ = tabs[i].id;
+                if (tabs[i].id == kTrialsSpawnChoice) {
+                    trialPickerOpen_ = true;
+                    trialRefreshingPicker_ = false;
+                    selectedTrialFloor_ = std::clamp(net_.trialProgress().unlockedFloor,
+                                                     1, kTrialPermanentFloorCount);
+                    continue;
+                }
                 // A tab with one door IS that door -- Default, the arena, the
                 // maze, a biome with a single entrance -- so one click picks
                 // it rather than opening a row of one to click again.
@@ -365,10 +434,17 @@ void App::startGame() {
     // deliberately NOT written back to the settings: the file is the player's,
     // and a screenshot run that left "maze" in it would send their next
     // ordinary game to the maze.
-    const std::string& where =
-        config_.autoSpawn.empty() ? menus_.settings().spawnChoice : config_.autoSpawn;
+    const std::string chosenTrial = trialStartFloor_ > 0
+                                        ? std::string(kTrialsSpawnChoice) + ":" +
+                                              std::to_string(trialStartFloor_)
+                                        : std::string();
+    const std::string where = !chosenTrial.empty()
+                                  ? chosenTrial
+                                  : (config_.autoSpawn.empty() ? menus_.settings().spawnChoice
+                                                               : config_.autoSpawn);
     const bool prestige = config_.autoPrestige || (config_.autoSpawn.empty() && prestigeOn());
     net_.joinGame(window_.width(), window_.height(), where, playerName_, prestige);
+    trialStartFloor_ = 0;
     joinStartedSeconds_ = timeSeconds_;
     // The lobby is about to give way to the loading screen, which has no
     // field: a caret left in the name box would keep a phone's keyboard up
@@ -556,6 +632,7 @@ std::vector<App::PickerTab> App::pickerTabs() const {
     tabs.push_back(PickerTab{"default", "Default", 0x00BE4Fu, {}});
     PickerTab arena{kArenaSpawnChoice, "PVP Arena", 0xDC3C3Cu, {}};
     PickerTab maze{kMazeSpawnChoice, "Maze", 0x573D80u, {}};
+    PickerTab trials{kTrialsSpawnChoice, "Trial Grounds", 0x8A63D2u, {}};
     for (std::size_t i = 0; i < spawnChoices_.size(); ++i) {
         const SpawnChoice& choice = spawnChoices_[i];
         if (choice.id == kAdminArenaSpawnChoice && !net_.isSkinAdmin()) continue;
@@ -572,6 +649,11 @@ std::vector<App::PickerTab> App::pickerTabs() const {
         if (choice.id == kMazeSpawnChoice) {
             maze.color = choice.color;
             maze.choices.push_back(i);
+            continue;
+        }
+        if (choice.id == kTrialsSpawnChoice) {
+            trials.color = choice.color;
+            trials.choices.push_back(i);
             continue;
         }
         // A door with no biome at all files under its own id, so it is still
@@ -594,6 +676,7 @@ std::vector<App::PickerTab> App::pickerTabs() const {
     if (!prestigeOn()) {
         tabs.push_back(std::move(arena));
         tabs.push_back(std::move(maze));
+        tabs.push_back(std::move(trials));
     }
     return tabs;
 }
@@ -799,6 +882,207 @@ void App::drawLobby(Canvas& canvas, double time) {
 
     drawTitleChat(canvas, time);
     if (statsVisible()) drawStatsCounters(canvas, true);
+}
+
+void App::updateTrialPicker() {
+    if (window_.keyPressed(Key::Escape)) {
+        trialPickerOpen_ = false;
+        return;
+    }
+    if (!window_.mouseReleased(MouseButton::Left)) return;
+    const TrialPickerLayout layout = trialPickerLayout(
+        window_.width(), window_.height(), trialRefreshingPicker_);
+    const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+    if (hit(layout.close, mouse)) {
+        trialPickerOpen_ = false;
+        return;
+    }
+    if (hit(layout.route, mouse)) {
+        trialRefreshingPicker_ = !trialRefreshingPicker_;
+        selectedTrialFloor_ = trialRefreshingPicker_
+                                  ? std::clamp(net_.trialProgress().unlockedFloor,
+                                               kTrialPermanentFloorCount + 1, kTrialFloorCount)
+                                  : std::clamp(net_.trialProgress().unlockedFloor,
+                                               1, kTrialPermanentFloorCount);
+        return;
+    }
+    if (hit(layout.start, mouse) &&
+        selectedTrialFloor_ <= net_.trialProgress().unlockedFloor) {
+        trialStartFloor_ = selectedTrialFloor_;
+        trialPickerOpen_ = false;
+        startGame();
+        return;
+    }
+    const int firstFloor = trialRefreshingPicker_ ? kTrialPermanentFloorCount + 1 : 1;
+    for (std::size_t i = 0; i < layout.floors.size(); ++i) {
+        const int floor = firstFloor + static_cast<int>(i);
+        if (hit(layout.claims[i], mouse)) {
+            if (net_.trialProgress().claimable[static_cast<std::size_t>(floor - 1)]) {
+                trialRewardPreviewFloor_ = 0;
+                net_.claimTrialReward(floor);
+            } else {
+                trialRewardPreviewFloor_ = floor;
+                selectedTrialFloor_ = floor;
+            }
+            return;
+        }
+        if (hit(layout.floors[i], mouse) && floor <= net_.trialProgress().unlockedFloor) {
+            selectedTrialFloor_ = floor;
+        }
+    }
+}
+
+void App::drawTrialPicker(Canvas& canvas) {
+    canvas.save();
+    setFill(canvas, 0x080611u, 0.72);
+    canvas.fillRect(0, 0, static_cast<float>(canvas.width()), static_cast<float>(canvas.height()));
+    const TrialPickerLayout layout = trialPickerLayout(
+        canvas.width(), canvas.height(), trialRefreshingPicker_);
+    const Rect& panel = layout.panel;
+
+    // A dark violet rim and a lighter inner face give the selector its own
+    // place instead of looking like a debug grid laid over the title screen.
+    setFill(canvas, trialRefreshingPicker_ ? 0x7560B7u : 0x544273u, 0.98);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
+                     static_cast<float>(panel.w), static_cast<float>(panel.h), 18.0f);
+    canvas.fill();
+    setFill(canvas, trialRefreshingPicker_ ? 0x211B38u : 0x29233Bu, 1.0);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(panel.x + 5.0), static_cast<float>(panel.y + 5.0),
+                     static_cast<float>(panel.w - 10.0), static_cast<float>(panel.h - 10.0),
+                     14.0f);
+    canvas.fill();
+
+    TextStyle title;
+    title.size = 34.0;
+    title.align = Align::Centre;
+    text(canvas, trialRefreshingPicker_ ? "Refreshing Trials" : "Trial Grounds",
+         panel.x + panel.w * 0.5, panel.y + 37.0, title);
+    TextStyle small = title;
+    small.size = 13.0;
+    small.fill = 0xDCD4F2u;
+    const Rect blessing{panel.x + 28.0, panel.y + 62.0, panel.w - 56.0, 52.0};
+    setFill(canvas, trialRefreshingPicker_ ? 0x332952u : 0x3B3150u, 1.0);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(blessing.x), static_cast<float>(blessing.y),
+                     static_cast<float>(blessing.w), static_cast<float>(blessing.h), 10.0f);
+    canvas.fill();
+    text(canvas, "Blessing: Purger of the Corruption",
+         blessing.x + blessing.w * 0.5, blessing.y + 17.0, small);
+    TextStyle caption = small;
+    caption.size = 11.0;
+    caption.fill = 0xAAA0C7u;
+    text(canvas, trialBuffLabel(net_.trialProgress().buff),
+         blessing.x + blessing.w * 0.5, blessing.y + 38.0, caption);
+
+    const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+    ButtonStyle routeStyle;
+    routeStyle.fill = trialRefreshingPicker_ ? 0x4B3F68u : 0x6B50A8u;
+    routeStyle.textSize = 14.0;
+    const std::string routeLabel = trialRefreshingPicker_
+                                       ? "<  Permanent Trials"
+                                       : "Enter Refreshing Trials  >    Resets in " +
+                                             formatDuration(static_cast<std::int64_t>(
+                                                                net_.trialProgress().refreshSeconds) *
+                                                            1000);
+    button(canvas, layout.route, routeLabel, hit(layout.route, mouse), false, routeStyle);
+    if (trialRefreshingPicker_) {
+        TextStyle reset = small;
+        reset.align = Align::Right;
+        reset.fill = 0xC8BEDFu;
+        text(canvas, "Rotation resets in " +
+                         formatDuration(static_cast<std::int64_t>(
+                                            net_.trialProgress().refreshSeconds) *
+                                        1000),
+             panel.right() - 26.0, layout.route.y + 15.0, reset);
+    }
+
+    const int firstFloor = trialRefreshingPicker_ ? kTrialPermanentFloorCount + 1 : 1;
+    for (std::size_t i = 0; i < layout.floors.size(); ++i) {
+        const int floor = firstFloor + static_cast<int>(i);
+        const Rect& cell = layout.floors[i];
+        const bool locked = floor > net_.trialProgress().unlockedFloor;
+        ButtonStyle style;
+        style.fill = locked ? 0x464250u : rarityColor(trialRarity(floor));
+        style.outlineWidth = selectedTrialFloor_ == floor ? 5.0 : 3.0;
+        style.textSize = trialRefreshingPicker_ ? 17.0 : 14.0;
+        const bool compact = cell.w < 180.0;
+        const std::string label = locked
+                                      ? "Floor " + std::to_string(floor) + "  -  Locked"
+                                      : (compact ? "F" : "Floor ") + std::to_string(floor) +
+                                            (compact ? "  " : "  |  ") + trialFloorLabel(floor) +
+                                            (compact ? "  " : "  |  ") +
+                                            std::to_string(net_.trialProgress().bestStars[
+                                                static_cast<std::size_t>(floor - 1)]) +
+                                            (compact ? "/9" : "/9 stars");
+        button(canvas, cell, "", !locked && hit(cell, mouse), false, style);
+        TextStyle floorText = small;
+        floorText.size = compact ? 10.5 : (trialRefreshingPicker_ ? 17.0 : 13.0);
+        floorText.fill = locked ? 0xC4C0CAu : 0xFFFFFFu;
+        text(canvas, label, cell.x + cell.w * 0.5,
+             cell.y + std::max(16.0, (cell.h - layout.claims[i].h - 8.0) * 0.5), floorText);
+
+        ButtonStyle claimStyle;
+        const bool claimable = net_.trialProgress().claimable[static_cast<std::size_t>(floor - 1)];
+        claimStyle.fill = claimable ? 0x45B85Au : 0x5A5861u;
+        claimStyle.textSize = 13.0;
+        button(canvas, layout.claims[i], "Claim Rewards", hit(layout.claims[i], mouse), false,
+               claimStyle);
+    }
+
+    TextStyle section = small;
+    section.align = Align::Left;
+    section.size = 12.0;
+    section.fill = 0xC8BEDFu;
+    text(canvas, trialRefreshingPicker_ ? "UNIQUE & APEX - MONTHLY ROTATION"
+                                        : "PERMANENT PROGRESSION - TWO FLOORS PER RARITY",
+         panel.x + 30.0, panel.y + 198.0, section);
+
+    const std::string description =
+        std::string(trialIsWaveFloor(selectedTrialFloor_) ? "Wave floor" : "Introduction floor") +
+        "  |  3 chambers  |  Final chamber: " +
+        std::to_string(trialMobCount(selectedTrialFloor_, 3)) + " enemies across " +
+        std::to_string(trialWaveCount(selectedTrialFloor_, 3)) + " wave" +
+        (trialWaveCount(selectedTrialFloor_, 3) == 1 ? "" : "s");
+    const NetClient::TrialRewardReceipt& receipt = net_.trialReward();
+    std::string footer = description;
+    if (trialRewardPreviewFloor_ > 0) {
+        const int floor = trialRewardPreviewFloor_;
+        const auto stars = trialBaseRewardStars(floor) + trialFullRewardStars(floor);
+        const auto xp = trialBaseRewardXp(floor) + trialFullRewardXp(floor);
+        const auto petals = trialBaseRewardPetals(floor) + trialFullRewardPetals(floor);
+        footer = "Floor " + std::to_string(floor) + " 9-star rewards: " +
+                 std::to_string(stars) + " stars  |  " +
+                 std::to_string(static_cast<std::uint64_t>(xp)) + " XP  |  " +
+                 std::to_string(petals) + " " +
+                 std::string(rarityLabel(trialRewardRarity(floor))) + " " +
+                 titleCaseId(std::string(
+                     trialRewardPetal(floor, net_.trialProgress().season))) + " petals";
+    } else if (receipt.known) {
+        if (receipt.ok) {
+            footer = "Floor " + std::to_string(receipt.floor) + " claimed: " +
+                     std::to_string(receipt.stars) + " stars  |  " +
+                     std::to_string(static_cast<std::uint32_t>(receipt.xp)) + " XP  |  " +
+                     std::to_string(receipt.petals) + " " +
+                     std::string(rarityLabel(trialRewardRarity(receipt.floor))) + " " +
+                     titleCaseId(receipt.petal) +
+                     " petals" + (receipt.fullBonus ? "  |  Includes 9-star bonus" : "");
+        } else {
+            footer = receipt.reason;
+        }
+    }
+    text(canvas, footer, panel.x + panel.w * 0.5, panel.bottom() - 87.0, small);
+    ButtonStyle startStyle;
+    const bool canStart = selectedTrialFloor_ <= net_.trialProgress().unlockedFloor;
+    startStyle.fill = canStart ? 0x45B85Au : 0x514E58u;
+    startStyle.textSize = 16.0;
+    button(canvas, layout.start, canStart ? "Start Floor" : "Floor Locked",
+           canStart && hit(layout.start, mouse), false, startStyle);
+    ButtonStyle closeStyle;
+    closeStyle.fill = 0xA34A55u;
+    button(canvas, layout.close, "X", hit(layout.close, mouse), false, closeStyle);
+    canvas.restore();
 }
 
 void App::drawPrestigeButton(Canvas& canvas, const Rect& box, bool hovered, bool pressed) {

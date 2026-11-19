@@ -43,7 +43,7 @@
     },
     "light": {
         "name": "Light",
-        "damage": 5,
+        "damage": 7,
         "health": 5,
         "size": 1,
         "cooldown": 800,
@@ -200,9 +200,9 @@
     },
     "lightning": {
         "name": "Lightning",
-        "damage": 12,
+        "damage": 25,
         "health": 10,
-        "cooldown": 2500,
+        "cooldown": 700,
         "price": 25,
         "size": 1,
         "visual_scale": 1.05,
@@ -2014,7 +2014,7 @@
     },
     "glitch_lightning": {
         "name": "Glitch Lightning",
-        "damage": 13,
+        "damage": 10,
         "health": 10,
         "size": 0.9,
         "cooldown": 1200,
@@ -2045,10 +2045,10 @@
     },
     "glitch_light": {
         "name": "Glitch Light",
-        "damage": 8,
+        "damage": 5,
         "health": 5,
         "size": 1,
-        "cooldown": 800,
+        "cooldown": 400,
         "price": 12,
         "description": "Weaker than most petals, but recharges very quickly.",
         "color": "#00ff00",

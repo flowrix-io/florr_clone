@@ -85,6 +85,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::EditSkin:            return "editSkin";
         case net::ClientMessage::BrowseSkins:         return "browseSkins";
         case net::ClientMessage::FetchSkins:          return "fetchSkins";
+        case net::ClientMessage::ClaimTrialReward:    return "claimTrialReward";
     }
     return "unknown";
 }
@@ -139,6 +140,9 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::ProfileDelta:        return "profileDelta";
         case net::ServerMessage::SkinVotes:           return "skinVotes";
         case net::ServerMessage::SkinOpinion:         return "skinOpinion";
+        case net::ServerMessage::TrialProgress:       return "trialProgress";
+        case net::ServerMessage::TrialState:          return "trialState";
+        case net::ServerMessage::TrialRewardClaimed:  return "trialRewardClaimed";
     }
     return "unknown";
 }
@@ -172,6 +176,7 @@ void NetClient::disconnect() {
     view_.clear();
     chatBubbles_.clear();
     wave_ = WaveView{};
+    trial_ = TrialView{};
     dead_ = false;
     revived = false;
     // An explicit disconnect is a decision, not an accident: nothing redials
@@ -341,6 +346,9 @@ void NetClient::forgetAccount() {
     squad_ = SquadState{};
     guild_ = GuildState{};
     guildInvite_ = GuildInvite{};
+    trialProgress_ = TrialProgressView{};
+    trial_ = TrialView{};
+    trialReward_ = TrialRewardReceipt{};
     craftOutcome_ = CraftOutcome{};
     oracleOutcome_ = OracleOutcome{};
     oracleReadyAtMillis_ = 0;
@@ -397,6 +405,13 @@ void NetClient::leaveGame() {
     beginMessage(w, net::ClientMessage::LeaveGame);
     send(w);
     forgetWorld();
+}
+
+void NetClient::claimTrialReward(int floor) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::ClaimTrialReward);
+    w.u8(static_cast<std::uint8_t>(std::clamp(floor, 1, kTrialFloorCount)));
+    send(w);
 }
 
 void NetClient::forgetWorld() {
@@ -1219,6 +1234,9 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::ArenaMapUpdate: handleRealmChange(reader,true); break;
         case net::ServerMessage::RiftState:     handleRiftState(reader); break;
         case net::ServerMessage::WaveState:     handleWaveState(reader); break;
+        case net::ServerMessage::TrialProgress: handleTrialProgress(reader); break;
+        case net::ServerMessage::TrialState:    handleTrialState(reader); break;
+        case net::ServerMessage::TrialRewardClaimed: handleTrialRewardClaimed(reader); break;
         case net::ServerMessage::Teleported:    teleported_ = true; break;
         case net::ServerMessage::ChangePasswordResult: handleChangePasswordResult(reader); break;
         case net::ServerMessage::SetUsernameResult: handleSetUsernameResult(reader); break;
@@ -1935,6 +1953,7 @@ void NetClient::installLocalCollision(Realm realm) {
 }
 
 void NetClient::handleJoinAccepted(ByteReader& reader) {
+    trial_ = TrialView{};
     reader.u32();   // the body's net id: the first snapshot names it (SpawnIsSelf)
     const Vec2 spawn = reader.position();
     reader.u32();   // tick, informational
@@ -2046,6 +2065,71 @@ void NetClient::handleWaveState(ByteReader& reader) {
         terrain_.wavesRadius = wave.radius;
     }
     wave_ = std::move(wave);
+}
+
+void NetClient::handleTrialProgress(ByteReader& reader) {
+    TrialProgressView progress;
+    progress.known = true;
+    progress.season = reader.u32();
+    progress.refreshSeconds = reader.u32();
+    progress.unlockedFloor = reader.u8();
+    const std::uint8_t buff = reader.u8();
+    if (buff >= static_cast<std::uint8_t>(TrialBuffKind::Count)) return;
+    progress.buff = static_cast<TrialBuffKind>(buff);
+    for (int i = 0; i < kTrialFloorCount; ++i) {
+        progress.cleared[i] = reader.u8() != 0;
+        progress.bestStars[i] = std::min<int>(reader.u8(), 9);
+        progress.claimable[i] = reader.u8() != 0;
+    }
+    if (reader.ok()) trialProgress_ = progress;
+}
+
+void NetClient::handleTrialRewardClaimed(ByteReader& reader) {
+    TrialRewardReceipt receipt;
+    receipt.known = true;
+    receipt.ok = reader.u8() != 0;
+    receipt.floor = reader.u8();
+    receipt.stars = reader.u32();
+    receipt.xp = reader.f64();
+    receipt.petal = reader.str();
+    receipt.petals = reader.u32();
+    receipt.fullBonus = reader.u8() != 0;
+    receipt.reason = reader.str();
+    if (reader.ok()) trialReward_ = std::move(receipt);
+}
+
+void NetClient::handleTrialState(ByteReader& reader) {
+    TrialView trial;
+    trial.known = true;
+    const std::uint8_t phase = reader.u8();
+    trial.floor = reader.u8();
+    trial.chamber = reader.u8();
+    const std::uint8_t challenge = reader.u8();
+    trial.stars = reader.u8();
+    trial.deaths = reader.u8();
+    const std::uint8_t biome = reader.u8();
+    const std::uint8_t buff = reader.u8();
+    trial.elapsed = reader.f32();
+    trial.threeStar = reader.f32();
+    trial.failure = reader.f32();
+    trial.reviveRemaining = reader.f32();
+    trial.radius = reader.f32();
+    if (!reader.ok() || phase > static_cast<std::uint8_t>(TrialPhase::Failed) ||
+        challenge > static_cast<std::uint8_t>(TrialChallenge::Timed) ||
+        biome >= static_cast<std::uint8_t>(WaveBiome::Count) ||
+        buff >= static_cast<std::uint8_t>(TrialBuffKind::Count) || trial.floor < 1 ||
+        trial.floor > kTrialFloorCount || trial.chamber < 1 ||
+        trial.chamber > kTrialChambersPerFloor || !std::isfinite(trial.radius) ||
+        trial.radius <= 0.0) {
+        return;
+    }
+    trial.phase = static_cast<TrialPhase>(phase);
+    trial.challenge = static_cast<TrialChallenge>(challenge);
+    trial.biome = static_cast<WaveBiome>(biome);
+    trial.buff = static_cast<TrialBuffKind>(buff);
+    const int slot = trialRealmIndex(view_.realm());
+    if (slot >= 0) terrain_.trialRadii[static_cast<std::size_t>(slot)] = trial.radius;
+    trial_ = trial;
 }
 
 void NetClient::handleMazeInfo(ByteReader& reader) {

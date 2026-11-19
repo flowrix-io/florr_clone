@@ -87,14 +87,40 @@ if(FLIX_RENDERER STREQUAL "skia")
   # The libraries: rust-skia's prebuilt binaries for wasm32-unknown-emscripten,
   # release 0.153.3 (Skia m153; features gl, svg, textlayout, webp, pdf; built
   # with emscripten 4.0.6, -msimd128 and wasm longjmp), unpacked as they come.
-  # They are not part of the repository. cpp_canvas links them and fetches the
-  # matching headers into its own build tree (see its CMakeLists.txt).
+  # They are not part of the repository.
   set(FLIX_SKIA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../skia-wasm" CACHE PATH
       "Directory holding the prebuilt Skia static libraries for wasm")
   if(NOT EXISTS "${FLIX_SKIA_DIR}/libskia.wasm.a")
     message(FATAL_ERROR
       "FLIX_RENDERER=skia needs the prebuilt Skia: no libskia.wasm.a in ${FLIX_SKIA_DIR}. "
       "Point -DFLIX_SKIA_DIR at the unpacked rust-skia wasm32-unknown-emscripten binaries.")
+  endif()
+
+  # The headers. The prebuilt carries none, and they have to be the ones it was
+  # compiled from: rust-skia's fork of Skia at the tag its skia-bindings 0.153.3
+  # names in [package.metadata]. Fetched once into the build tree, pinned like
+  # the font, and only the two directories a program compiling against Skia
+  # reads are kept.
+  set(FLIX_SKIA_TAG m153-0.101.2)
+  set(FLIX_SKIA_HEADERS ${CMAKE_CURRENT_BINARY_DIR}/skia-${FLIX_SKIA_TAG})
+  if(NOT EXISTS "${FLIX_SKIA_HEADERS}/include/core/SkCanvas.h")
+    if(CMAKE_VERSION VERSION_LESS 3.18)
+      message(FATAL_ERROR "FLIX_RENDERER=skia needs CMake 3.18 or newer to unpack the Skia headers")
+    endif()
+    set(skia_archive ${CMAKE_CURRENT_BINARY_DIR}/skia-${FLIX_SKIA_TAG}.tar.gz)
+    message(STATUS "flowrix: fetching the Skia ${FLIX_SKIA_TAG} headers (about 70MB, once)")
+    file(DOWNLOAD "https://codeload.github.com/rust-skia/skia/tar.gz/${FLIX_SKIA_TAG}" "${skia_archive}"
+         EXPECTED_HASH SHA256=30c8b51a0a32fae63562c303bdc91605519a9598951422610e3fb8685b3c4f6f
+         TLS_VERIFY ON STATUS skia_status)
+    list(GET skia_status 0 skia_code)
+    list(GET skia_status 1 skia_message)
+    if(NOT skia_code EQUAL 0)
+      file(REMOVE "${skia_archive}")
+      message(FATAL_ERROR "Could not fetch the Skia ${FLIX_SKIA_TAG} headers: ${skia_message}")
+    endif()
+    file(ARCHIVE_EXTRACT INPUT "${skia_archive}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+         PATTERNS "skia-${FLIX_SKIA_TAG}/include" "skia-${FLIX_SKIA_TAG}/modules/skcms")
+    file(REMOVE "${skia_archive}")
   endif()
 
   # The prebuilt's setjmp/longjmp is wasm's own, which emscripten will not
@@ -109,37 +135,69 @@ if(FLIX_RENDERER STREQUAL "skia")
   add_link_options(-fno-exceptions)
 endif()
 
-# --- cpp_canvas: the Canvas2D-alike renderer ---------------------------------
-# A git submodule (https://github.com/sussybite8888/cpp_canvas), built through
-# its own CMakeLists.txt as the static library `cpp_canvas`: canvas.cpp (or
-# canvas_skia.cpp with CPP_CANVAS_SKIA), font.cpp, svg.cpp, window.cpp and
-# touch_gesture.cpp. Natively it links SDL2 and Threads itself; the web build
-# links neither. Its demo and its own tests are not built here.
-set(FLIX_CANVAS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp_canvas)
-if(NOT EXISTS "${FLIX_CANVAS_DIR}/CMakeLists.txt")
-  # A clone made without --recursive has the directory but not its contents.
-  find_package(Git QUIET)
-  if(GIT_FOUND)
-    message(STATUS "flowrix: fetching the cpp_canvas submodule")
-    execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init third_party/cpp_canvas
-                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-  endif()
-  if(NOT EXISTS "${FLIX_CANVAS_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR "cpp/third_party/cpp_canvas is empty: run `git submodule update --init`")
-  endif()
-endif()
-set(CPP_CANVAS_BUILD_DEMO OFF)
-set(CPP_CANVAS_BUILD_TESTS OFF)
+# --- cpp_canvas: the vendored Canvas2D-alike renderer ------------------------
+# Upstream ships it as a demo executable, whose build files are not vendored;
+# built as a library here, straight from its sources, so both the client and
+# the render tools can link it.
 if(FLIX_RENDERER STREQUAL "skia")
-  set(CPP_CANVAS_SKIA ON)
-  # A cache entry, not a plain variable: the subproject declares it with
-  # set(CACHE), which under its policy version drops a plain one.
-  set(CPP_CANVAS_SKIA_DIR "${FLIX_SKIA_DIR}" CACHE PATH "Follows FLIX_SKIA_DIR" FORCE)
+  set(FLIX_CANVAS_BACKEND third_party/cpp_canvas/canvas_skia.cpp)
 else()
-  set(CPP_CANVAS_SKIA OFF)
+  set(FLIX_CANVAS_BACKEND third_party/cpp_canvas/canvas.cpp)
 endif()
-add_subdirectory(third_party/cpp_canvas)
+add_library(cpp_canvas STATIC
+  ${FLIX_CANVAS_BACKEND}
+  third_party/cpp_canvas/path2d.cpp
+  third_party/cpp_canvas/svg.cpp
+  third_party/cpp_canvas/font.cpp
+  third_party/cpp_canvas/window.cpp
+  third_party/cpp_canvas/touch_gesture.cpp
+)
+target_include_directories(cpp_canvas PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp_canvas)
 target_compile_options(cpp_canvas PRIVATE -w)   # third-party: not ours to lint
+if(FLIX_RENDERER STREQUAL "skia")
+  # PUBLIC: canvas.h and the client both branch on it.
+  target_compile_definitions(cpp_canvas PUBLIC CPP_CANVAS_SKIA)
+  # The headers are only ever read by canvas_skia.cpp -- nothing of Skia is in
+  # canvas.h -- and they must see what the prebuilt was compiled with: the
+  # public defines of a release (is_official_build) wasm build with WebGL
+  # Ganesh. SK_RELEASE outright, because a dev build here takes NDEBUG off and
+  # Skia would otherwise read that as a debug build, which lays some of its
+  # classes out differently.
+  target_include_directories(cpp_canvas PRIVATE ${FLIX_SKIA_HEADERS})
+  target_compile_definitions(cpp_canvas PRIVATE
+    SK_RELEASE SK_GANESH SK_GL SK_ASSUME_WEBGL=1 SKVX_DISABLE_SIMD SK_FORCE_8_BYTE_ALIGNMENT
+    SK_DISABLE_TRACING SK_CODEC_DECODES_BMP SK_CODEC_DECODES_WBMP)
+  target_compile_options(cpp_canvas PRIVATE "-msimd128")
+  # Link order: Skia, then what it calls into. A static archive only gives up
+  # the objects something asks for, so the codecs nothing here uses cost
+  # nothing.
+  target_link_libraries(cpp_canvas PUBLIC
+    ${FLIX_SKIA_DIR}/libskia.wasm.a
+    ${FLIX_SKIA_DIR}/libfreetype2.wasm.a
+    ${FLIX_SKIA_DIR}/libpng.wasm.a
+    ${FLIX_SKIA_DIR}/libjpeg.wasm.a
+    ${FLIX_SKIA_DIR}/libwebp.wasm.a
+    ${FLIX_SKIA_DIR}/libwuffs.wasm.a
+    ${FLIX_SKIA_DIR}/libskcms.wasm.a
+    ${FLIX_SKIA_DIR}/libexpat.wasm.a
+    ${FLIX_SKIA_DIR}/libzlib.wasm.a)
+  # WebGL 2 with a WebGL 1 fallback, and the longjmp the prebuilt was compiled
+  # for (FreeType's rasterizer and the image codecs use setjmp).
+  target_link_options(cpp_canvas PUBLIC "-sMAX_WEBGL_VERSION=2" "-sSUPPORT_LONGJMP=wasm")
+endif()
+# SDL is desktop-only and attached here rather than to the whole directory.
+# PUBLIC lets it reach the native client sources that open links through SDL.
+# Browser rendering and input use Canvas2D and DOM APIs directly, so the web
+# artifact does not link Emscripten's SDL/WebGL compatibility layer at all.
+if(NOT EMSCRIPTEN)
+  target_link_libraries(cpp_canvas PUBLIC PkgConfig::SDL2)
+  # The software rasterizer splits a large fill across scanline bands on a
+  # small thread pool. Only the native build has that code at all -- the web
+  # build draws through the browser's own context -- so the dependency is
+  # attached on the same terms SDL is.
+  find_package(Threads REQUIRED)
+  target_link_libraries(cpp_canvas PUBLIC Threads::Threads)
+endif()
 
 # --- shared: engine core linked by both binaries -----------------------------
 add_library(flix_shared STATIC
@@ -206,6 +264,7 @@ add_library(flix_server STATIC
   server/splitter.cpp
   server/squads.cpp
   server/waves.cpp
+  server/trials.cpp
   server/db.cpp
   server/crypto.cpp
   server/systems/movement.cpp

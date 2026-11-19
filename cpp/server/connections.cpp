@@ -147,6 +147,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::Assemble:
         case net::ClientMessage::Absorb:
         case net::ClientMessage::BuyPetal:
+        case net::ClientMessage::ClaimTrialReward:
         case net::ClientMessage::UpgradeSkill:
         case net::ClientMessage::ResetSkills:
         case net::ClientMessage::RedeemCode:
@@ -187,7 +188,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
             case net::ClientMessage::Craft: case net::ClientMessage::OracleCraft:
             case net::ClientMessage::Trade: case net::ClientMessage::TitanForge:
             case net::ClientMessage::Assemble: case net::ClientMessage::Absorb:
-            case net::ClientMessage::BuyPetal:
+            case net::ClientMessage::BuyPetal: case net::ClientMessage::ClaimTrialReward:
                 sendNotice(connection,net::NoticeSeverity::Warning,"Economy changes are disabled during hosted events.");return;
             default:break;
         }
@@ -255,6 +256,9 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::FavoriteSkin:  handleFavoriteSkin(*session, connection, reader); break;
         case net::ClientMessage::BrowseSkins:   handleBrowseSkins(*session, connection, reader); break;
         case net::ClientMessage::FetchSkins:    handleFetchSkins(*session, connection, reader); break;
+        case net::ClientMessage::ClaimTrialReward:
+            handleClaimTrialReward(*session, connection, reader);
+            break;
         case net::ClientMessage::Logout:        handleLogout(*session); break;
         case net::ClientMessage::AdminDb:       handleAdminDb(*session, connection, reader); break;
         case net::ClientMessage::AdminDashboard:

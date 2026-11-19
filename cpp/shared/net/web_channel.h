@@ -83,8 +83,8 @@ int connect(const std::string& host, std::uint16_t port);
 ///
 /// Returns a listener handle, or kInvalid when the port is already listened
 /// on in this runtime.
-int listen(std::uint16_t port, const std::string& certPath, const std::string& keyPath,
-           const std::string& webRoot);
+int listen(std::uint16_t port, const std::string& bindHost, const std::string& certPath,
+           const std::string& keyPath, const std::string& webRoot);
 
 /// The next accepted channel, or kInvalid when none is waiting.
 int accept(int listener);

@@ -104,11 +104,11 @@ cpp/
   cmake/          prune_staged_content.cmake
   docs/           this file, admin-dashboard.md
   third_party/
-    cpp_canvas/   the Canvas2D-alike renderer, a git submodule
+    cpp_canvas/   the vendored Canvas2D-alike renderer, locally modified
 ```
 
 Includes are repo-relative from `cpp/` — `#include "shared/core/world.h"` —
-except the canvas headers, which are included by bare name
+except the vendored canvas headers, which are included by bare name
 (`"canvas.h"`). Build directories (`cpp/build`, `cpp/build-web`, ...) are
 gitignored.
 
@@ -634,15 +634,11 @@ frame, and the touch and click handlers answer from it.
 
 `third_party/cpp_canvas`, a Canvas2D-shaped API (`save`/`restore`,
 `translate`/`rotate`/`scale`, paths, `fill`/`stroke`, `fillText`,
-`drawCanvas`). It is a git submodule of
-[sussybite8888/cpp_canvas](https://github.com/sussybite8888/cpp_canvas), built
-through its own `CMakeLists.txt`; a change to it is made in that repository and
-reaches the game as a bump of the submodule commit. A frame is one draw list
-issued against it, and the two builds consume that list differently:
+`drawCanvas`), vendored and locally modified. A frame is one draw list issued
+against it, and the two builds consume that list differently:
 
-* **Natively** it is a software rasterizer — calls are recorded, culled where
-  later opaque drawing covers them, and a large fill is split across scanline
-  bands on a small thread pool — presented through an SDL2 window. The
+* **Natively** it is a software rasterizer — a large fill is split across
+  scanline bands on a small thread pool — presented through an SDL2 window. The
   native client is CPU-bound by it, which is why even the dev flavour is
   optimised.
 * **On the web** nothing is rasterised in wasm and no framebuffer is
@@ -1041,26 +1037,25 @@ page reloads, which is "the same build, started fresh". `update` answers that
 there is nothing to install into. Without storage (a private window) both
 halves still run and simply forget, as the online client does.
 
-One thing this page has that no other build does: **Grant Admin**, in
+One thing this page has that no other build does: an **Admin toggle**, in
 Settings > Advanced. The server is in the player's own tab and the world is
-nobody else's, so the console is theirs to take; the alternative is editing an
-account out of browser storage by hand. The button calls
-`GameServer::grantAdmin` directly, in-process, through `AppConfig::grantAdmin`
-— a hook only `offline/main.cpp` sets — and hands it the session token the
-page's own client was issued, never a name: the server resolves the account
-from that token (`Database::resolveSession`), so the grant lands on whichever
-account the client is signed into and nothing a player types can aim it.
-Nothing on the wire carries the grant, so a client dialling a real server
-draws no button and the shipping server gains no way to hand itself the
-console. What it sets is the permanent `Account::admin` flag (not the one-life
-loan `/admin grant_admin` lends), and the server answers by resending the skin
+nobody else's, so every account created in that local database may enable or
+disable its own console. The button calls `GameServer::setLocalAdmin` directly,
+in-process, through `AppConfig::setAdmin` — a hook only `offline/main.cpp` sets
+— and hands it the session token the page's own client was issued, never a
+name: the server resolves the account from that token
+(`Database::resolveSession`), so the change lands on whichever account the
+client is signed into and nothing a player types can aim it. Nothing on the
+wire carries the toggle, so a client dialling a real server draws no button and
+the shipping server gains no way to hand itself the console. What it changes
+is the permanent `Account::admin` flag (not the one-life loan
+`/admin grant_admin` lends), and the server answers by resending the skin
 catalog, whose leading flag is where a client learns its own standing. The
 page's database editor key is fixed (`ServerConfig::fixedAdminDbKey`, set by
 `offline/main.cpp` and by nothing else) rather than read from a key file, and
-since this page has no file anybody opens, the server says it: in the Grant
-Admin confirmation, and in `/admin db`'s usage line and wrong-key refusal. The
-key in a server's file (`admin_db_key.txt`, every other server) is never said
-at all.
+since this page has no file anybody opens, the server says it when admin is
+enabled and in `/admin db`'s usage line and wrong-key refusal. The key in a
+server's file (`admin_db_key.txt`, every other server) is never said at all.
 
 ### Without WebAssembly
 
