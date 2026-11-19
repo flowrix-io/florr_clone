@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 93;
+inline constexpr std::uint16_t kProtocolVersion = 94;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -527,6 +527,8 @@ enum class ServerMessage : std::uint8_t {
                    ///< (Version 91; claimable, version 92.)
     TrialState,    ///< u8 phase/floor/chamber/challenge/stars/deaths/biome/buff,
                    ///< f32 elapsed/threeStar/failure/reviveRemaining. (Version 91.)
+                   ///< f32 radius, u8 killed, u8 total (the chamber's mobs
+                   ///< down so far and in all). (killed/total, version 94.)
     TrialRewardClaimed, ///< u8 ok/floor, u32 stars, f64 xp, str petalName,
                         ///< u32 petalCount, u8 includedFullBonus, str reason.
                         ///< (Version 92.)

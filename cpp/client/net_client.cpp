@@ -2114,6 +2114,8 @@ void NetClient::handleTrialState(ByteReader& reader) {
     trial.failure = reader.f32();
     trial.reviveRemaining = reader.f32();
     trial.radius = reader.f32();
+    trial.killed = reader.u8();
+    trial.total = reader.u8();
     if (!reader.ok() || phase > static_cast<std::uint8_t>(TrialPhase::Failed) ||
         challenge > static_cast<std::uint8_t>(TrialChallenge::Timed) ||
         biome >= static_cast<std::uint8_t>(WaveBiome::Count) ||

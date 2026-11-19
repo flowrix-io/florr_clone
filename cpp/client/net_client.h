@@ -1112,6 +1112,8 @@ public:
         double failure = 0.0;
         double reviveRemaining = 0.0;
         double radius = kTrialArenaRadius;
+        int killed = 0; ///< The chamber's mobs down so far, every wave counted.
+        int total = 0;  ///< The chamber's mobs in all.
     };
     const TrialView& trial() const { return trial_; }
     const std::string& killerName() const { return killerName_; }

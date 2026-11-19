@@ -347,7 +347,7 @@ private:
     void drawDeathCard(Canvas&, double time);
     /// The waves' top of the screen, and what a dead flower is told.
     void drawWaveHud(Canvas&, double time);
-    void drawTrialHud(Canvas&);
+    void drawTrialHud(Canvas&, double time);
     /// What the gauge is showing, eased after the server's few reports a second.
     double waveGaugeTimer_ = 0.0;
     double waveGaugeRed_ = 0.0;

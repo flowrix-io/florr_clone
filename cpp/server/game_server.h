@@ -684,6 +684,8 @@ private:
         bool teleportCued = false;
         int wave = 0;
         int waveCount = 1;
+        /// The chamber's mobs down so far, every wave counted, for the gauge.
+        int killed = 0;
         double chamberStartedMillis = 0.0;
         double reviveAtMillis = 0.0;
         double nextWaveAtMillis = 0.0;

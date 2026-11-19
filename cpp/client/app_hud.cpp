@@ -198,6 +198,8 @@ void squadArrow(Canvas& canvas, double centreX, double centreY, double angle, do
     canvas.restore();
 }
 
+} // namespace
+
 /// The reference's `drawFlower` with its default face, in a space whose origin
 /// is the flower's centre.
 ///
@@ -260,7 +262,6 @@ void drawFlowerFace(Canvas& canvas, std::uint32_t colour, double radius, double 
     canvas.restore();
 }
 
-} // namespace
 
 void App::drawHud(Canvas& canvas, double time) {
     const SelfState& self = net_.view().self();
@@ -359,7 +360,7 @@ void App::drawHud(Canvas& canvas, double time) {
     // Under the boss bars, which share the top of the screen with it and are
     // what the player is fighting.
     drawAdminAnnouncement(canvas, bossBarsBottom);
-    drawTrialHud(canvas);
+    drawTrialHud(canvas, time);
     drawWaveHud(canvas, time);
 
     // Over the HUD and under everything the menu system paints. A panel is the

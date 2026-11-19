@@ -189,6 +189,7 @@ void GameServer::spawnTrialChamber(TrialRun& trial, double nowMillis) {
     trial.deathCounted = false;
     trial.awaitingWave = false;
     trial.wave = 0;
+    trial.killed = 0;
     trial.waveCount = trialWaveCount(trial.floor, trial.chamber);
     trial.reviveAtMillis = 0.0;
     trial.nextWaveAtMillis = 0.0;
@@ -326,6 +327,14 @@ void GameServer::stepTrial(TrialRun& trial, double nowMillis) {
         const Transform* at = world_.tryGet<Transform>(mob);
         if (at != nullptr && at->realm == trial.realm && !world_.has<Dead>(mob)) ++living;
     });
+    // One TrialMob per spawned mob (safeTrialMob keeps out the multi-body
+    // ones), so the earlier waves plus this wave's missing are the kills.
+    int before = 0;
+    for (int wave = 1; wave < trial.wave; ++wave) {
+        before += trialMobsInWave(trial.floor, trial.chamber, wave);
+    }
+    trial.killed = before + std::max(0, trialMobsInWave(trial.floor, trial.chamber, trial.wave) -
+                                            living);
     if (living == 0) {
         if (trial.wave < trial.waveCount) {
             clearTrialMobs(trial);
@@ -507,6 +516,9 @@ void GameServer::sendTrialState(Session& session, const TrialRun& trial) {
     const double radius = slot >= 0 ? terrain_->trialRadii[static_cast<std::size_t>(slot)]
                                     : kTrialArenaRadius;
     w.f32(static_cast<float>(radius));
+    w.u8(static_cast<std::uint8_t>(std::clamp(trial.killed, 0, 255)));
+    w.u8(static_cast<std::uint8_t>(
+        std::clamp(trialMobCount(trial.floor, trial.chamber), 0, 255)));
     connection->send(w);
 }
 
