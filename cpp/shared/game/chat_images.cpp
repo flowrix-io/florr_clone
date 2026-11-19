@@ -13,20 +13,26 @@ namespace {
 /// Matched as a whole host or as its parent domain, never as a bare suffix:
 /// "eviltenor.com" is not "tenor.com".
 constexpr const char* kImageHosts[] = {
-    "tenor.com",            // media.tenor.com, c.tenor.com
-    "giphy.com",            // media.giphy.com, i.giphy.com
-    "imgur.com",            // i.imgur.com
-    "redd.it",              // i.redd.it, preview.redd.it
-    "redditmedia.com",
-    "githubusercontent.com",
-    "wikimedia.org",        // upload.wikimedia.org
-    "ibb.co",               // i.ibb.co
-    "postimg.cc",           // i.postimg.cc
-    "gyazo.com",            // i.gyazo.com
-    "steamstatic.com",
-    "steamusercontent.com",
-    "florr.io",
+    // Moderated GIF & Reaction Keyboards (Built for Chat Apps)
+    "tenor.com",          // ://tenor.com, ://tenor.com
+    "giphy.com",          // ://giphy.com, ://giphy.com
+    "klipy.com",          // ://klipy.com, ://klipy.com, ://klipy.com
+    "heypster.com",       // Manually curated family-friendly GIFs
+
+    // Pre-Approved Gaming & Stream Emote CDNs
+    "jtvnw.net",          // static-cdn.jtvnw.net (Twitch approved emotes)
+    "7tv.app",            // cdn.7tv.app (Moderated global/public emotes)
+    "betterttv.net",      // cdn.betterttv.net (Human-reviewed BTTV emotes)
+    "frankerfacez.com",   // ://frankerfacez.com (Human-reviewed FFZ emotes)
+    "steamstatic.com",    // Official Valve store/game assets (curated)
+
+    // Strictly SFW Curated Stock Media (Zero Adult/Graphic Policy)
+    "unsplash.com",       // ://unsplash.com
+    "pexels.com",         // ://pexels.com
+    "pixabay.com",        // ://pixabay.com
 };
+
+
 
 bool hostListed(const std::string& host) {
     for (const char* entry : kImageHosts) {
