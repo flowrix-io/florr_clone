@@ -603,6 +603,7 @@ public:
     void cancelJoin() { joinPending_ = false; }
     void leaveGame();
     void claimTrialReward(int floor);
+    void startTrialChamber();
     void sendInput(const net::InputFrame&);
     void sendChat(const std::string& text);
     void setLoadoutSlot(int slot, std::uint16_t petalIndex, Rarity rarity);

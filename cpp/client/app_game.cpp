@@ -362,6 +362,17 @@ void App::updatePlaying(double dt) {
     // keystroke being typed into the chat line.
     if (mobile_.takeRowSwap()) menus_.requestLoadoutRowSwap();
 
+    const NetClient::TrialView& trial = net_.trial();
+    if (isTrialRealm(net_.view().realm()) && trial.known &&
+        trial.phase == TrialPhase::Preparing && window_.mouseReleased(MouseButton::Left)) {
+        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+        const Rect start{window_.width() * 0.5 - 90.0, 109.0, 180.0, 38.0};
+        if (hit(start, mouse) && !menus_.capturesMouse(mouse) &&
+            !tutorial_.capturesMouse(mouse)) {
+            net_.startTrialChamber();
+        }
+    }
+
     // Chat swallows the keyboard while open, or typing would also drive the
     // flower and trip every hotkey.
     if (chatOpen_ && !menus_.wantsText()) {
@@ -586,7 +597,8 @@ void App::drawTrialHud(Canvas& canvas) {
     const NetClient::TrialView& trial = net_.trial();
     if (!isTrialRealm(net_.view().realm()) || !trial.known) return;
     const double middle = canvas.width() * 0.5;
-    const Rect panel{middle - 205.0, 18.0, 410.0, 106.0};
+    const bool preparing = trial.phase == TrialPhase::Preparing;
+    const Rect panel{middle - 205.0, 18.0, 410.0, preparing ? 140.0 : 106.0};
     setFill(canvas, 0x15121Fu, 0.78);
     canvas.beginPath();
     canvas.roundRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
@@ -601,7 +613,9 @@ void App::drawTrialHud(Canvas& canvas) {
          middle, panel.y + 22.0, heading);
     TextStyle line = heading;
     line.size = 14.0;
-    const std::string challenge = trial.challenge == TrialChallenge::Defeat
+    const std::string challenge = preparing
+                                      ? "Prepare your loadout, then begin when ready"
+                                      : trial.challenge == TrialChallenge::Defeat
                                       ? "Defeat all enemies - deaths: " +
                                             std::to_string(trial.deaths) + "/4"
                                       : "Timed clear - " + std::to_string(static_cast<int>(std::ceil(trial.elapsed))) +
@@ -610,7 +624,15 @@ void App::drawTrialHud(Canvas& canvas) {
          middle, panel.y + 48.0, line);
     line.size = 12.0;
     text(canvas, trialBuffLabel(trial.buff), middle, panel.y + 71.0, line);
-    if (trial.reviveRemaining > 0.0) {
+    if (preparing) {
+        const Rect start{middle - 90.0, 109.0, 180.0, 38.0};
+        ButtonStyle style;
+        style.fill = 0x45B85Au;
+        style.textSize = 16.0;
+        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+        button(canvas, start, "Start Chamber " + std::to_string(trial.chamber),
+               hit(start, mouse), false, style);
+    } else if (trial.reviveRemaining > 0.0) {
         line.size = 15.0;
         text(canvas, "Reviving in " + std::to_string(static_cast<int>(std::ceil(trial.reviveRemaining))) + "...",
              middle, panel.y + 94.0, line);

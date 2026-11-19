@@ -174,6 +174,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::GuildLeave:
         case net::ClientMessage::GuildSquadAll:
         case net::ClientMessage::GuildInviteToSquad:
+        case net::ClientMessage::StartTrialChamber:
             if (!spend(session->requestAllowance)) return;
             break;
         // PublishSkin and EditSkin are billed too, but by their handler, which
@@ -258,6 +259,9 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::FetchSkins:    handleFetchSkins(*session, connection, reader); break;
         case net::ClientMessage::ClaimTrialReward:
             handleClaimTrialReward(*session, connection, reader);
+            break;
+        case net::ClientMessage::StartTrialChamber:
+            handleStartTrialChamber(*session);
             break;
         case net::ClientMessage::Logout:        handleLogout(*session); break;
         case net::ClientMessage::AdminDb:       handleAdminDb(*session, connection, reader); break;

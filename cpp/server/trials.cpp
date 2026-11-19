@@ -160,7 +160,7 @@ void GameServer::startTrial(Session& session, int floor) {
     const int season = static_cast<int>(database_.nowMillis() / kTrialSeasonMillis);
     trial = TrialRun{};
     trial.realm = session.trialRealm;
-    trial.phase = TrialPhase::Active;
+    trial.phase = TrialPhase::Preparing;
     trial.owner = session.connection;
     trial.floor = floor;
     trial.chamber = 1;
@@ -169,7 +169,29 @@ void GameServer::startTrial(Session& session, int floor) {
     terrain_->trialRadii[static_cast<std::size_t>(slot)] = trialArenaRadius(floor);
     world_.add<TrialBuff>(session.entity,
                           TrialBuff{static_cast<std::uint8_t>(trial.buff), clockMillis_});
-    spawnTrialChamber(trial, clockMillis_);
+    prepareTrialChamber(trial, clockMillis_, false);
+}
+
+void GameServer::prepareTrialChamber(TrialRun& trial, double nowMillis, bool playTransition) {
+    auto found = sessions_.find(trial.owner);
+    if (found == sessions_.end() || !found->second.playing()) return;
+    Session& session = found->second;
+    clearTrialMobs(trial);
+    trial.phase = TrialPhase::Preparing;
+    trial.deaths = 0;
+    trial.deathCounted = false;
+    trial.awaitingWave = false;
+    trial.wave = 0;
+    trial.waveCount = trialWaveCount(trial.floor, trial.chamber);
+    trial.reviveAtMillis = 0.0;
+    trial.nextWaveAtMillis = 0.0;
+    trial.chamberStartedMillis = 0.0;
+    const int slot = trialRealmIndex(trial.realm);
+    if (slot >= 0) {
+        terrain_->trialRadii[static_cast<std::size_t>(slot)] = trialArenaRadius(trial.floor);
+    }
+    standUpWaveFlower(session, nowMillis);
+    teleportEntity(session.entity, kWavesCentre, playTransition);
     sendTrialState(session, trial);
 }
 
@@ -187,6 +209,15 @@ void GameServer::spawnTrialChamber(TrialRun& trial, double nowMillis) {
     trial.nextWaveAtMillis = 0.0;
     trial.chamberStartedMillis = nowMillis;
     spawnTrialWave(trial, nowMillis);
+    sendTrialState(found->second, trial);
+}
+
+void GameServer::handleStartTrialChamber(Session& session) {
+    const int slot = trialRealmIndex(session.trialRealm);
+    if (slot < 0 || !session.playing()) return;
+    TrialRun& trial = trials_[static_cast<std::size_t>(slot)];
+    if (trial.owner != session.connection || trial.phase != TrialPhase::Preparing) return;
+    spawnTrialChamber(trial, clockMillis_);
 }
 
 void GameServer::spawnTrialWave(TrialRun& trial, double nowMillis) {
@@ -240,17 +271,8 @@ void GameServer::spawnTrialWave(TrialRun& trial, double nowMillis) {
                                                     trial.realm, nowMillis, rng_);
         if (spawned == NULL_ENTITY) continue;
         world_.add<TrialMob>(spawned);
-        // The Waves realm normally makes its roaming Eternal and Apex bosses
-        // 10x/50x healthier. Trial floors already choose their own difficulty
-        // through rarity, count and wave layout, so remove that unrelated
-        // survival-mode multiplier here.
-        const double realmScale = waveHealthScale(rarity);
-        if (realmScale > 1.0) {
-            if (Health* health = world_.tryGet<Health>(spawned)) {
-                health->current /= realmScale;
-                health->max /= realmScale;
-            }
-        }
+        // A private Trial realm gets the mob's ordinary rarity-scaled health.
+        // The Waves-only boss multiplier is not applied by spawnMob here.
         if (MobAi* ai = world_.tryGet<MobAi>(spawned)) ai->aggroRange = kMobTargetRetainRadius;
     }
 }
@@ -271,6 +293,7 @@ void GameServer::stepTrial(TrialRun& trial, double nowMillis) {
         return;
     }
     Session& session = found->second;
+    if (trial.phase == TrialPhase::Preparing) return;
     if (trial.phase == TrialPhase::Intermission) {
         if (nowMillis >= trial.nextChamberAtMillis) spawnTrialChamber(trial, nowMillis);
         if (nowMillis >= trial.nextStateMillis) {
@@ -334,10 +357,8 @@ void GameServer::stepTrial(TrialRun& trial, double nowMillis) {
             return;
         }
         ++trial.chamber;
-        trial.phase = TrialPhase::Intermission;
-        trial.nextChamberAtMillis = nowMillis + kTrialIntermissionMillis;
-        standUpWaveFlower(session, nowMillis);
-        trial.deathCounted = false;
+        prepareTrialChamber(trial, nowMillis, true);
+        return;
     }
     if (nowMillis >= trial.nextStateMillis) {
         trial.nextStateMillis = nowMillis + 200.0;

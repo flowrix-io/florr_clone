@@ -656,6 +656,7 @@ private:
     void startTrial(Session&, int floor);
     void stepTrials(double nowMillis);
     void stepTrial(TrialRun&, double nowMillis);
+    void prepareTrialChamber(TrialRun&, double nowMillis, bool playTransition);
     void spawnTrialChamber(TrialRun&, double nowMillis);
     void spawnTrialWave(TrialRun&, double nowMillis);
     void finishTrial(TrialRun&, bool success, const std::string& reason);
@@ -664,6 +665,7 @@ private:
     void sendTrialProgress(Session&, net::Connection* = nullptr);
     void sendTrialState(Session&, const TrialRun&);
     void handleClaimTrialReward(Session&, net::Connection&, ByteReader&);
+    void handleStartTrialChamber(Session&);
     int unlockedTrialFloor(Session&);
     struct TrialRun {
         TrialPhase phase = TrialPhase::Idle;
