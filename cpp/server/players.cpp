@@ -100,6 +100,11 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     session.trialFloor = 0;
     session.trialRealm = Realm::Overworld;
     if (where.rfind(std::string(kTrialsSpawnChoice) + ":", 0) == 0) {
+        if (!trialGroundsUnlocked(session)) {
+            sendNotice(connection, net::NoticeSeverity::Bad,
+                       "The Trial Grounds have not been discovered on this account.");
+            return;
+        }
         char* end = nullptr;
         const long requested = std::strtol(where.c_str() + std::char_traits<char>::length(kTrialsSpawnChoice) + 1,
                                            &end, 10);

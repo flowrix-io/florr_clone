@@ -2079,6 +2079,7 @@ void NetClient::handleTrialProgress(ByteReader& reader) {
     progress.known = true;
     progress.season = reader.u32();
     progress.refreshSeconds = reader.u32();
+    progress.discovered = reader.u8() != 0;
     progress.unlockedFloor = reader.u8();
     const std::uint8_t buff = reader.u8();
     if (buff >= static_cast<std::uint8_t>(TrialBuffKind::Count)) return;

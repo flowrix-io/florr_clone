@@ -17,6 +17,7 @@ constexpr std::int64_t kTrialSeasonMillis = 30ll * 24ll * 60ll * 60ll * 1000ll;
 
 struct TrialProgressData {
     int season = 0;
+    bool unlocked = false;
     std::array<bool, kTrialFloorCount> cleared{};
     std::array<int, kTrialFloorCount> best{};
     /// 0: nothing claimed, 1: first-clear bundle, 2: 9-star bonus too.
@@ -28,6 +29,7 @@ TrialProgressData readProgress(const PlayerRecord& record, int season) {
     out.season = season;
     const Json& root = record.extra["trialGrounds"];
     if (!root.isObject()) return out;
+    out.unlocked = root["unlocked"].asBool(false);
     const int storedSeason = root["season"].asInt(-1);
     const Json& cleared = root["cleared"];
     const Json& best = root["bestStars"];
@@ -59,6 +61,7 @@ TrialProgressData readProgress(const PlayerRecord& record, int season) {
 void writeProgress(PlayerRecord& record, const TrialProgressData& data) {
     Json root = Json::object();
     root["season"] = data.season;
+    root["unlocked"] = data.unlocked;
     Json cleared = Json::array();
     Json best = Json::array();
     Json claimed = Json::array();
@@ -125,6 +128,49 @@ int GameServer::unlockedTrialFloor(Session& session) {
     return unlockedFloor(progress);
 }
 
+bool GameServer::trialGroundsUnlocked(Session& session) {
+    if (!session.authenticated()) return false;
+    return database_.progress(session.userId).extra["trialGrounds"]["unlocked"].asBool(false);
+}
+
+void GameServer::stepTrialSecretDiscovery() {
+    bool gardenFound = false;
+    bool roomFound = false;
+    const Realm garden = worldMaps_.realmOfId("garden", gardenFound);
+    const Realm room = worldMaps_.realmOfId("trial_secret", roomFound);
+    if (!gardenFound || !roomFound) return;
+
+    constexpr double kPassageRowTop = 3.0 * kTileSize;
+    constexpr double kPassageRowBottom = 4.0 * kTileSize;
+    constexpr double kDiscoveryX = 0.5 * kTileSize;
+    const Vec2 kRoomCentre{1.5 * kTileSize, 1.5 * kTileSize};
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        if (!session.playing() || !session.authenticated()) continue;
+        Transform* transform = world_.tryGet<Transform>(session.entity);
+        if (transform == nullptr || transform->realm != garden) continue;
+        if (transform->position.x > kDiscoveryX ||
+            transform->position.y < kPassageRowTop ||
+            transform->position.y >= kPassageRowBottom) {
+            continue;
+        }
+
+        PlayerRecord& record = database_.progress(session.userId);
+        Json& progress = record.extra["trialGrounds"];
+        if (!progress.isObject()) progress = Json::object();
+        if (!progress["unlocked"].asBool(false)) {
+            progress["unlocked"] = true;
+            database_.markDirty();
+        }
+        moveEntityToRealm(session.entity, room, kRoomCentre);
+        if (net::Connection* connection = listener_.find(session.connection)) {
+            sendNotice(*connection, net::NoticeSeverity::Good,
+                       "You have unlocked the Trial Grounds. Head to the home screen to view.");
+            sendTrialProgress(session, connection);
+        }
+    }
+}
+
 void GameServer::sendTrialProgress(Session& session, net::Connection* connection) {
     if (!session.authenticated()) return;
     if (connection == nullptr) connection = listener_.find(session.connection);
@@ -139,6 +185,7 @@ void GameServer::sendTrialProgress(Session& session, net::Connection* connection
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::TrialProgress));
     w.u32(static_cast<std::uint32_t>(season));
     w.u32(remaining);
+    w.u8(progress.unlocked ? 1 : 0);
     w.u8(static_cast<std::uint8_t>(unlockedFloor(progress)));
     w.u8(static_cast<std::uint8_t>(seasonBuff(season)));
     for (int i = 0; i < kTrialFloorCount; ++i) {

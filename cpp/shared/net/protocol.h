@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 93;
+inline constexpr std::uint16_t kProtocolVersion = 94;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:

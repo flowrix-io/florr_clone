@@ -1075,6 +1075,7 @@ public:
 
     struct TrialProgressView {
         bool known = false;
+        bool discovered = false;
         std::uint32_t season = 0;
         std::uint32_t refreshSeconds = 0;
         int unlockedFloor = 1;

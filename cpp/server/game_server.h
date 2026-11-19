@@ -667,6 +667,8 @@ private:
     void handleClaimTrialReward(Session&, net::Connection&, ByteReader&);
     void handleStartTrialChamber(Session&);
     int unlockedTrialFloor(Session&);
+    bool trialGroundsUnlocked(Session&);
+    void stepTrialSecretDiscovery();
     struct TrialRun {
         TrialPhase phase = TrialPhase::Idle;
         net::ConnectionId owner = 0;
