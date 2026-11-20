@@ -1097,7 +1097,10 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "&lt;username&gt; (make a chat moderator: /mod mute, unmute and the filter's "
                     "terms; full admins only), revoke_mod &lt;username&gt;, list_mods, "
                     "notification &lt;type&gt; "
-                    "&lt;message&gt;, clear_notifications, delete_guests, list_today_logins, "
+                    "&lt;message&gt;, clear_notifications, delete_guests, block_guests &lt;ip hash|username&gt; "
+                    "(no new guest accounts from that address; a username means the hash it "
+                    "was made from; tier 1 only), unblock_guests &lt;ip hash|username&gt;, list_guest_blocks, "
+                    "list_today_logins, "
                     "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
                     "name&gt; &lt;username&gt;, fixnpc, restart [&lt;biome&gt; ...|&lt;N&gt;(s|m|h)|cancel|status|list], "
                     "backup_db [list], db [username] (open the database editor; full admins "
@@ -1812,6 +1815,62 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         if (!doomed.empty()) skinTalliesStale_ = true;
         out("Deleted " + std::to_string(doomed.size()) +
             " guest account(s) and their player data.");
+        return;
+    }
+
+    if (verb == "block_guests" || verb == "unblock_guests") {
+        if (lacks(AdminPower::BlockGuests)) return;
+        const bool blocking = verb == "block_guests";
+        if (words.size() != 2) {
+            out("Usage: " + verb + " <ip hash|username>");
+            return;
+        }
+        // An address hash as accounts carry it (createdFromHash, 24 hex
+        // digits), or a username, which stands for the hash that account was
+        // made from: admins see names, not hashes.
+        std::string hash = words[1];
+        const bool looksLikeHash =
+            hash.size() == 24 && std::all_of(hash.begin(), hash.end(), [](char c) {
+                return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+            });
+        if (!looksLikeHash) {
+            const Account* account = std::as_const(database_).findUser(words[1]);
+            if (account == nullptr) {
+                out("No account or ip hash \"" + words[1] + "\".");
+                return;
+            }
+            if (account->createdFromHash.empty()) {
+                out(account->username + " has no recorded ip hash.");
+                return;
+            }
+            hash = account->createdFromHash;
+        }
+        if (blocking) {
+            out(database_.blockGuestCreation(hash, session.username)
+                    ? "Guest accounts can no longer be made from ip hash " + hash + "."
+                    : "Ip hash " + hash + " is already blocked from making guests.");
+        } else {
+            out(database_.unblockGuestCreation(hash)
+                    ? "Ip hash " + hash + " may make guest accounts again."
+                    : "Ip hash " + hash + " was not blocked.");
+        }
+        return;
+    }
+
+    if (verb == "list_guest_blocks") {
+        if (lacks(AdminPower::BlockGuests)) return;
+        const std::vector<Database::GuestBlock> blocks = database_.guestBlocks();
+        if (blocks.empty()) {
+            out("No ip hashes are blocked from making guests.");
+            return;
+        }
+        const std::int64_t now = database_.nowMillis();
+        out("Blocked from making guests (" + std::to_string(blocks.size()) + "):");
+        for (const Database::GuestBlock& block : blocks) {
+            out("  " + block.hash + " \xE2\x80\x94 by " +
+                (block.by.empty() ? std::string("Unknown") : block.by) +
+                (block.atMillis != 0 ? ", " + agoLabel(now - block.atMillis) : std::string()));
+        }
         return;
     }
 

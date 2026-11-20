@@ -751,6 +751,43 @@ void Database::setChatTermEdits(const ChatTermEdits& edits) {
 
 void Database::reloadChatTerms() { chatTerms_ = chatTermEdits().applied(); }
 
+bool Database::guestCreationBlocked(const std::string& addressHash) const {
+    if (addressHash.empty()) return false;
+    // The const read: the table's cached text stays good.
+    const Json& table = otherTop_["guestBlocks"];
+    return table.isObject() && table.contains(addressHash);
+}
+
+bool Database::blockGuestCreation(const std::string& addressHash, const std::string& by) {
+    if (addressHash.empty() || guestCreationBlocked(addressHash)) return false;
+    Json entry = Json::object();
+    entry["by"] = Json(by);
+    entry["at"] = millisJson(nowMillis());
+    rawTable("guestBlocks")[addressHash] = std::move(entry);
+    markDirty();
+    return true;
+}
+
+bool Database::unblockGuestCreation(const std::string& addressHash) {
+    if (!guestCreationBlocked(addressHash)) return false;
+    rawTable("guestBlocks").erase(addressHash);
+    markDirty();
+    return true;
+}
+
+std::vector<Database::GuestBlock> Database::guestBlocks() const {
+    std::vector<GuestBlock> blocks;
+    const Json& table = otherTop_["guestBlocks"];
+    if (!table.isObject()) return blocks;
+    for (const std::string& hash : table.keys()) {
+        const Json& entry = table[hash];
+        blocks.push_back({hash, entry["by"].asString(), entry["at"].asInt64()});
+    }
+    std::stable_sort(blocks.begin(), blocks.end(),
+                     [](const GuestBlock& a, const GuestBlock& b) { return a.atMillis < b.atMillis; });
+    return blocks;
+}
+
 Json playerRecordJson(const PlayerRecord& record) { return playerToJson(record); }
 PlayerRecord parsePlayerRecord(const Json& value) { return playerFromJson(value); }
 Json accountRecordJson(const Account& account) { return accountToJson(account); }

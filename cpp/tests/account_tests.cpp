@@ -531,3 +531,80 @@ TEST(a_guest_in_a_guild_takes_its_new_name_into_the_roster) {
     CHECK_EQ(guildMemberIndex(guild, "Recruit") >= 0, true);
     CHECK_EQ(guildMemberIndex(guild, guestName), -1);
 }
+
+// ---------------------------------------------------------------------------
+// Guest blocks
+// ---------------------------------------------------------------------------
+
+TEST(a_guest_block_is_kept_in_the_file_and_lifted_by_unblock) {
+    std::string path;
+    {
+        Fixture f;
+        path = f.file.path + ".blocks";
+        CHECK(!f.db.guestCreationBlocked("abc"));
+        CHECK(f.db.blockGuestCreation("abc", "boss"));
+        CHECK(!f.db.blockGuestCreation("abc", "boss"));
+        CHECK(!f.db.guestCreationBlocked(""));
+        f.db.toJson().writeFile(path, 0);
+    }
+    Database reread;
+    std::string error;
+    CHECK(reread.load(path, error));
+    CHECK(reread.guestCreationBlocked("abc"));
+    CHECK_EQ(reread.guestBlocks().size(), std::size_t(1));
+    CHECK_EQ(reread.guestBlocks()[0].by, std::string("boss"));
+    CHECK(reread.unblockGuestCreation("abc"));
+    CHECK(!reread.unblockGuestCreation("abc"));
+    CHECK(!reread.guestCreationBlocked("abc"));
+    std::remove(path.c_str());
+}
+
+TEST(an_admin_blocks_an_address_from_making_guests_by_one_of_its_accounts) {
+    Harness h("guest-block", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient first;
+    CHECK(joinAsGuest(h, first));
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(say(h, boss, "/admin block_guests " + first.profile().username));
+    CHECK(sawText(boss, "Guest accounts can no longer be made from ip hash"));
+
+    // Same (loopback) address: refused, and the refusal says why.
+    NetClient second;
+    CHECK(connectClient(h, second));
+    second.authAnswered = false;
+    second.requestGuest();
+    CHECK(waitForAuth(h, second));
+    CHECK_EQ(static_cast<int>(second.authStatus), static_cast<int>(net::AuthStatus::RateLimited));
+
+    CHECK(say(h, boss, "/admin list_guest_blocks"));
+    CHECK(sawText(boss, "Blocked from making guests (1):"));
+    CHECK(say(h, boss, "/admin unblock_guests " + first.profile().username));
+    CHECK(sawText(boss, "may make guest accounts again."));
+
+    NetClient third;
+    CHECK(joinAsGuest(h, third));
+}
+
+TEST(only_tier_1_admins_block_guests) {
+    Harness h("guest-block-tier", [](const std::string& path) {
+        seedUser(path, "second", "password7", true, 2);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient guest;
+    CHECK(joinAsGuest(h, guest));
+    NetClient second;
+    CHECK(loginAs(h, second, "second", "password7"));
+    CHECK(say(h, second, "/admin block_guests " + guest.profile().username));
+    CHECK(sawText(second, "Tier 2 admins cannot block guest accounts"));
+    CHECK(say(h, second, "/admin list_guest_blocks"));
+    CHECK(!sawText(second, "No ip hashes are blocked"));
+
+    // Still open to guests.
+    NetClient another;
+    CHECK(joinAsGuest(h, another));
+}
