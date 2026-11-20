@@ -341,7 +341,8 @@ enum class ServerMessage : std::uint8_t {
                         ///< limit, which is the TypeScript build's `hasMore`.
     GuildUpdate,        ///< u8 joined, str tag, str displayName, str description,
                         ///< str leader, u16 memberCount,
-                        ///< { str username, u8 online, str location }*.
+                        ///< { str username, u8 online, str location, u8 role }*.
+                        ///< `role` 0 is a member, 1 an officer. (Version 91.)
                         ///< `joined` 0 is the TypeScript build's
                         ///< `guildUpdate null` and carries no rest.
                         ///< `location` names the biome an online member's

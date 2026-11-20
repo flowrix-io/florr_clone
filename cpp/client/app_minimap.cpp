@@ -438,8 +438,12 @@ void App::drawMinimap(Canvas& canvas) {
         const RemoteEntity& entity = entry.second;
         if (entity.kind != net::EntityKind::Player || entity.isSelf()) continue;
         const bool squadmate = squad.contains(entry.first);
-        if (!squadmate && !altHeld) continue;
+        // Guildmates ride the map like squadmates do, in orange; a player
+        // who is both shows pink.
+        const bool guildmate = !squadmate && net_.isGuildmate(entry.first);
+        if (!squadmate && !guildmate && !altHeld) continue;
         if (squadmate) dot(entity.position, 4.0, 0xFF69B4u, true);
+        else if (guildmate) dot(entity.position, 4.0, 0xFFA726u, true);
         else dot(entity.position, 4.0, kInk, false);
     }
     // An open rift, because the chat line says only that one has opened.
@@ -615,8 +619,10 @@ void App::drawMazeMinimap(Canvas& canvas, bool altHeld) {
         const RemoteEntity& entity = entry.second;
         if (entity.kind != net::EntityKind::Player || entity.isSelf()) continue;
         const bool squadmate = squad.contains(entry.first);
-        if (!squadmate && !altHeld) continue;
+        const bool guildmate = !squadmate && net_.isGuildmate(entry.first);
+        if (!squadmate && !guildmate && !altHeld) continue;
         if (squadmate) dot(entity.position, 4.0, 0xFF69B4u, true);
+        else if (guildmate) dot(entity.position, 4.0, 0xFFA726u, true);
         else dot(entity.position, 4.0, kInk, false);
     }
     dot(net_.view().selfDrawnPosition(), 3.0, 0x0000FFu, true);
