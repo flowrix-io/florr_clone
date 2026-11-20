@@ -337,7 +337,11 @@ void App::updateLobby() {
             for (std::size_t i = 0; i < layout.tabs.size() && i < tabs.size(); ++i) {
                 if (!insideInclusive(layout.tabs[i], mouse)) continue;
                 onPicker = true;
-                pickerTab_ = tabs[i].id;
+                // The Trial Grounds tab opens its floor picker rather than a
+                // row of doors, so it never becomes the chosen tab: a chosen
+                // tab is drawn darker, and this one must stay the exact purple
+                // of the card it opens (kTrialsSkin).
+                if (tabs[i].id != kTrialsSpawnChoice) pickerTab_ = tabs[i].id;
                 if (tabs[i].id == kTrialsSpawnChoice) {
                     trialPickerOpen_ = true;
                     trialRefreshingPicker_ = false;
