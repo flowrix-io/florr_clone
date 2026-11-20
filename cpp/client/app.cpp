@@ -70,10 +70,6 @@ const double kLowHealthVignetteEaseSeconds = easeTimeConstant(0.1);
 /// 0.3 s, so the zoom is mostly there in half a second and settled in about
 /// one. Slow enough to read as a zoom rather than a cut.
 constexpr double kLoadoutZoomEaseSeconds = 0.3;
-/// The factor between the zooms the world is drawn at while that ease runs:
-/// a step every 1.41x, so a picture is never stretched further than that and
-/// even unique antennae's tenfold zoom redraws the map only seven times.
-const double kDrawZoomStep = std::sqrt(2.0);
 
 /// The on-screen keyboard's lift (see the base transform in frame()): the air
 /// left between the focused field and the top of the keyboard, and how fast the
@@ -812,7 +808,9 @@ void App::frame(double dt) {
     // loadout's view rather than zooming on its first frame.
     const bool inWorld = screen_ == Screen::Playing || screen_ == Screen::Dead;
     const double loadoutZoomTarget = loadoutCameraZoom(net_.profile(), content());
-    if (!inWorld || !(camera_.loadoutZoom > 0.0) || !(loadoutZoomTarget > 0.0)) {
+    // Snapped as well when the player has turned the animation off.
+    if (!inWorld || !menus_.settings().antennaeZoomAnimation || !(camera_.loadoutZoom > 0.0) ||
+        !(loadoutZoomTarget > 0.0)) {
         camera_.loadoutZoom = loadoutZoomTarget;
     } else {
         double logZoom = std::log(camera_.loadoutZoom);
@@ -897,62 +895,12 @@ void App::frame(double dt) {
                           net_.rift().radius);
         renderer_.setWaveBiome(net_.wave().biome);
         renderer_.setWaveRadius(net_.wave().radius);
-        // While antennae zoom the view, the world is DRAWN at a zoom that
-        // moves in steps, and the finished picture is scaled smoothly between
-        // them. Drawn at the eased zoom itself, every frame of the animation
-        // was a new zoom -- and a new zoom empties the terrain's baked chunks
-        // and resizes every cached sprite, so the whole map was painted from
-        // scratch each frame. The steps sit on a grid anchored at the zoom the
-        // animation is heading for, kDrawZoomStep apart, so the caches are
-        // rebuilt a handful of times rather than sixty, the last step is the
-        // final zoom exactly, and the picture is never magnified by more than
-        // one step. Rounded toward the WIDER view, so a step always covers
-        // the whole screen once it is scaled.
-        //
-        // The step is painted into a layer under the frame's own transform,
-        // not onto the screen under a stretched one: the terrain keys its
-        // chunks on the canvas's scale as well as the zoom, so a stretched
-        // transform would empty them every frame all the same.
-        Camera drawn = camera_;
-        double stretch = 1.0;
-        {
-            const double target = loadoutCameraZoom(net_.profile(), content());
-            const double shown = camera_.loadoutZoom;
-            if (target > 0.0 && shown > 0.0 && std::fabs(shown / target - 1.0) > 1e-9) {
-                const double steps =
-                    std::floor(std::log(shown / target) / std::log(kDrawZoomStep) + 1e-9);
-                drawn.loadoutZoom = target * std::pow(kDrawZoomStep, steps);
-                stretch = shown / drawn.loadoutZoom;
-            }
-        }
-        Canvas* worldTarget = &canvas;
-        const std::array<float, 6> base = canvas.currentTransform();
-        if (stretch != 1.0) {
-            const int pw = canvas.pixelWidth(), ph = canvas.pixelHeight();
-            if (!zoomLayer_ || zoomLayer_->pixelWidth() != pw || zoomLayer_->pixelHeight() != ph) {
-                zoomLayer_ = std::make_unique<Canvas>(Canvas::createVirtual(pw, ph));
-            }
-            zoomLayer_->setLogicalSize(canvas.width(), canvas.height());
-            zoomLayer_->resetTransform();
-            zoomLayer_->clearRect(0, 0, static_cast<float>(pw), static_cast<float>(ph));
-            zoomLayer_->setTransform(base);
-            worldTarget = zoomLayer_.get();
-        }
-        renderer_.draw(*worldTarget, net_.view(), drawn, selfDrawn, timeSeconds_);
-        if (stretch != 1.0) {
-            // Scaled about the screen's centre -- the flower -- in device
-            // pixels, where the layer and the screen are one to one.
-            const double cx = base[0] * camera_.viewportWidth() * 0.5 + base[4];
-            const double cy = base[3] * camera_.viewportHeight() * 0.5 + base[5];
-            const double pw = zoomLayer_->pixelWidth(), ph = zoomLayer_->pixelHeight();
-            canvas.save();
-            canvas.resetTransform();
-            canvas.drawCanvas(*zoomLayer_, 0, 0, static_cast<float>(pw), static_cast<float>(ph),
-                              static_cast<float>(cx - cx * stretch),
-                              static_cast<float>(cy - cy * stretch),
-                              static_cast<float>(pw * stretch), static_cast<float>(ph * stretch));
-            canvas.restore();
-        }
+        // While antennae zoom the view, the terrain keeps what it has baked
+        // and draws it scaled rather than repainting the map at every frame's
+        // new zoom (WorldRenderer::setTerrainZoomAnimating).
+        renderer_.setTerrainZoomAnimating(camera_.loadoutZoom !=
+                                          loadoutCameraZoom(net_.profile(), content()));
+        renderer_.draw(canvas, net_.view(), camera_, selfDrawn, timeSeconds_);
         // A dark map's dark, over the world only, like the wash below.
         drawDarkness(canvas);
         // Dead: the WORLD goes dim, and only the world. The reference's wash

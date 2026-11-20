@@ -1647,6 +1647,11 @@ struct GroundEffect {
     /// Uranium poisons its wearer as well: `owner` at this rate, for
     /// poisonDurationMillis, every tick the field stands, anywhere in its realm.
     double ownerPoisonPerSecond = 0;
+    /// What a dropped pollen has left to take: every mob it bites hits it
+    /// back for its own damage, as any petal pays to land a hit, and the puff
+    /// is gone once this runs out. Zero for a field nothing can break -- a
+    /// web, a uranium cloud, a bumble bee's trail.
+    double health = 0;
 };
 
 /// The share of a uranium pulse that lands `gap` from the petal in a cloud of

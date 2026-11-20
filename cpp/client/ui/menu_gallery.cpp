@@ -864,16 +864,6 @@ bool GalleryPanel::render(MenuContext& ctx) {
             text(canvas, tally, 0.0, 0.0, count);
             canvas.restore();
         }
-
-        if (hovered == static_cast<int>(i)) {
-            setStroke(canvas, kPaper);
-            canvas.setLineWidth(2.0f);
-            canvas.beginPath();
-            canvas.roundRect(static_cast<float>(rect.x), static_cast<float>(rect.y),
-                             static_cast<float>(rect.w), static_cast<float>(rect.h),
-                             static_cast<float>(kCellRadius));
-            canvas.stroke();
-        }
     }
     canvas.restore();
 

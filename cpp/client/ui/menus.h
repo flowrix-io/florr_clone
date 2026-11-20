@@ -316,6 +316,10 @@ struct ClientSettings {
     /// top row. Off by default -- the bar's own shape now follows the
     /// reference game's, which is bigger, tighter and captioned underneath.
     bool classicLoadoutBar = false;
+    /// Whether putting antennae on or taking them off zooms the view smoothly.
+    /// Off, the view cuts straight to the new zoom, for a device that finds
+    /// the animation heavy.
+    bool antennaeZoomAnimation = true;
     /// Whether the on-screen touch controls are up: the stick, and the two
     /// buttons that stand in for the extend/retract keys. The TypeScript
     /// client kept the same flag in `localStorage.requestMobile` and resolved

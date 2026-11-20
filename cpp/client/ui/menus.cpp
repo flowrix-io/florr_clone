@@ -662,6 +662,7 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "prestige") prestige = number != 0;
         else if (key == "mouseControls") useMouseControls = number != 0;
         else if (key == "classicLoadout") classicLoadoutBar = number != 0;
+        else if (key == "antennaeZoomAnim") antennaeZoomAnimation = number != 0;
         // The key being on disk at all is the choice: an absent one leaves the
         // device to answer, which is what touchControlsWanted does with it.
         else if (key == "requestMobile") { requestMobile = number != 0; requestMobileChosen = true; }
@@ -720,6 +721,7 @@ bool ClientSettings::save(const std::string& path) const {
          << "prestige " << (prestige ? 1 : 0) << '\n'
          << "mouseControls " << (useMouseControls ? 1 : 0) << '\n'
          << "classicLoadout " << (classicLoadoutBar ? 1 : 0) << '\n'
+         << "antennaeZoomAnim " << (antennaeZoomAnimation ? 1 : 0) << '\n'
          << "tutorialDone " << (tutorialCompleted ? 1 : 0) << '\n'
          << "tutorialStep " << tutorialStep << '\n';
     // Written only once the player has actually chosen. Writing the resolved

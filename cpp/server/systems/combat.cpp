@@ -2212,6 +2212,17 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                     if (!hit.refused) {
                         world.ensure<HitCooldowns>(field.effect)
                             .arm(victim, nowMillis + field.damageIntervalMillis);
+                        // A dropped pollen pays for the bite as a petal pays
+                        // to land a hit: the mob's own damage. Re-read after
+                        // the arm above, which can move the effect's row.
+                        GroundEffect* effect = world.tryGet<GroundEffect>(field.effect);
+                        if (effect != nullptr && effect->health > 0.0) {
+                            effect->health -= contactDamageOf(world, victim);
+                            if (effect->health <= 0.0) {
+                                world.add<Dead>(field.effect);
+                                break;
+                            }
+                        }
                     }
                 }
             } else if (field.damagePerSecond > 0.0) {

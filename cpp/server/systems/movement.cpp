@@ -1,5 +1,4 @@
 #include "server/systems/movement.h"
-#include "server/systems/shot_range.h"
 
 #include <algorithm>
 #include <cmath>
@@ -856,10 +855,11 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
                 const double into = velocity.x * normal.x + velocity.y * normal.y;
                 if (into < 0.0) {
                     velocity -= normal * (2.0 * into);
-                    // Every wall a carrot comes off gives it its whole flight
-                    // back, so it keeps ricocheting round a room rather than
-                    // dying a bounce or two in.
-                    refillShotFlight(projectile, world.tryGet<Lifetime>(e));
+                    // A wall gives a carrot no flight back: it bounces on the
+                    // range it has left. Refilling here let a carrot ricochet
+                    // round a room for as long as the player liked, and a few
+                    // of those at once lagged the server. A mob hit still
+                    // refills it (combat.cpp).
                 }
             }
         } else if (out.blocked) {

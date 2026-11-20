@@ -502,10 +502,6 @@ private:
     Window window_;
     NetClient net_;
     Camera camera_;
-    /// What the world is painted into while antennae zoom the view: the
-    /// screen's size, scaled onto it each frame (see the world draw in
-    /// App::frame). Allocated on the first zoom and kept.
-    std::unique_ptr<Canvas> zoomLayer_;
     SpriteCache sprites_;
     /// The title backdrop, one document per biome, compiled on first use. The
     /// picker changes which one tiles behind the menu, exactly as choosing a

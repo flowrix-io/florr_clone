@@ -610,6 +610,15 @@ constexpr ChangelogEntry kChangelog[] = {
         "New players now start with 10 Basics",
         "Buffed Leaf",
       }
+    },
+    {"November 19, 2026",
+      {
+        "Carrots no longer refresh their flight time when bouncing off walls",
+        "Fixed lag when equipping antennae",
+        "Added a setting to turn off the antennae zoom animation",
+        "Dropped pollen can now be destroyed by mobs",
+        "Removed the white outline when hovering mobs in the mob gallery",
+      }
     }
 };
 
