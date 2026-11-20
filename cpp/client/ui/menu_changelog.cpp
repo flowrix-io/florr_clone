@@ -618,6 +618,7 @@ constexpr ChangelogEntry kChangelog[] = {
         "Added a setting to turn off the antennae zoom animation",
         "Dropped pollen can now be destroyed by mobs",
         "Removed the white outline when hovering mobs in the mob gallery",
+        "Added Secret Trials"
       }
     }
 };
