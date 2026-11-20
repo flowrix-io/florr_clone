@@ -149,7 +149,7 @@ constexpr double kRowButtonTextSize = 13.0;
 constexpr double kRowButtonRight = 34.0;
 
 constexpr std::uint32_t kAcceptFace = 0x6CBF5Eu;
-constexpr std::uint32_t kAcceptRim = 0x56994Bu;
+constexpr std::uint32_t kAcceptRim = borderOf(kAcceptFace);
 
 /// How far below the true middle a `Baseline::Middle` line is set. At the
 /// card's 13-16 unit bold sizes this rasterizer's 'middle' seats the letters a
@@ -228,6 +228,8 @@ enum class GuildAction : std::uint8_t {
     DeclineInvite,
     Kick,
     SquadOne,
+    Promote,
+    Demote,
 };
 
 struct HitRegion {
@@ -375,6 +377,14 @@ bool GuildPanel::render(MenuContext& ctx) {
     Form& f = form();
     const std::string me = ctx.net.profile().username;
     const bool leaderIsMe = guild.joined && sameName(guild.leader, me);
+    bool officerIsMe = false;
+    if (guild.joined) {
+        for (const GuildState::Member& m : guild.members) {
+            if (m.officer && sameName(m.name, me)) officerIsMe = true;
+        }
+    }
+    // Leader or officer: may invite and edit the description.
+    const bool canManage = leaderIsMe || officerIsMe;
     const double centreX = panel.x + panel.w * 0.5;
 
     // A mode can outlive what it was about: kicked mid-edit, or the leader
@@ -386,8 +396,8 @@ bool GuildPanel::render(MenuContext& ctx) {
         f.createName = {};
         f.createTag = {};
     }
-    if (f.mode == Mode::Edit && !leaderIsMe) f.view();
-    if (f.mode == Mode::Invite && !leaderIsMe) f.view();
+    if (f.mode == Mode::Edit && !canManage) f.view();
+    if (f.mode == Mode::Invite && !canManage) f.view();
 
     std::vector<HitRegion> regions;
     std::vector<LiveField> fields;
@@ -406,7 +416,7 @@ bool GuildPanel::render(MenuContext& ctx) {
     const bool editing = f.mode == Mode::Edit;
     std::vector<std::string> aboutLines;
     if (guild.joined) {
-        if (editing) {
+        if (editing && leaderIsMe) {
             const Rect nameField{centreX - kNameFieldWidth * 0.5, panel.y + kNameFieldTop,
                                  kNameFieldWidth, kFieldHeight};
             inputField(canvas, nameField, f.editName.value, "Guild name",
@@ -463,7 +473,7 @@ bool GuildPanel::render(MenuContext& ctx) {
         fields.push_back({&f.editAbout, aboutField, kDescriptionLimit, false});
     } else if (aboutLines.empty()) {
         textAtAlpha(canvas,
-                    leaderIsMe ? "No description yet. Edit to add one." : "No description.",
+                    canManage ? "No description yet. Edit to add one." : "No description.",
                     aboutBox.x + kAboutInset,
                     aboutBox.y + kAboutPad + kAboutLine * 0.5 + kMiddleNudge,
                     cardText(kAboutTextSize), 0.6);
@@ -585,6 +595,7 @@ bool GuildPanel::render(MenuContext& ctx) {
                              const bool aLead = sameName(a->name, guild.leader);
                              const bool bLead = sameName(b->name, guild.leader);
                              if (aLead != bLead) return aLead;
+                             if (a->officer != b->officer) return a->officer;
                              if (a->online != b->online) return a->online;
                              const std::string al = lowerCase(a->name);
                              const std::string bl = lowerCase(b->name);
@@ -615,6 +626,9 @@ bool GuildPanel::render(MenuContext& ctx) {
                 text(canvas, member.location, panel.x + kLocationX, textY,
                      cardText(kDetailTextSize));
             }
+            if (member.officer && !hovered) {
+                text(canvas, "(Officer)", panel.x + kLeaderX, midY, cardText(kDetailTextSize));
+            }
             if (isLeader) {
                 // On the true middle: parentheses reach below the baseline,
                 // so the label already looks centred there and the nudge that
@@ -634,6 +648,16 @@ bool GuildPanel::render(MenuContext& ctx) {
                            kRowButtonTextSize);
                 regions.push_back({kick, GuildAction::Kick, member.name});
                 buttonRight = kick.x - 6.0;
+            }
+            if (leaderIsMe && !isSelf) {
+                const char* label = member.officer ? "Demote" : "Promote";
+                const double w = buttonWidth(label, kRowButtonTextSize, 52.0);
+                const Rect role{buttonRight - w, buttonY, w, kRowButtonHeight};
+                cardButton(canvas, role, label, kAcceptFace, kAcceptRim, role.contains(mouse),
+                           kRowButtonTextSize);
+                regions.push_back({role, member.officer ? GuildAction::Demote : GuildAction::Promote,
+                                   member.name});
+                buttonRight = role.x - 6.0;
             }
             if (canSquad) {
                 const double w = buttonWidth("Squad", kRowButtonTextSize, 52.0);
@@ -703,7 +727,7 @@ bool GuildPanel::render(MenuContext& ctx) {
                 x = footerButton(x, "Squad up", kGuildFrame, kGuildThumb, GuildAction::SquadAll)
                         .right() +
                     kButtonGap;
-                if (leaderIsMe) {
+                if (canManage) {
                     x = footerButton(x, "Invite", kGuildFrame, kGuildThumb, GuildAction::Invite)
                             .right() +
                         kButtonGap;
@@ -859,7 +883,8 @@ bool GuildPanel::render(MenuContext& ctx) {
                 f.mode = Mode::Edit;
                 f.editName.value = guild.name.substr(0, kNameLimit);
                 f.editAbout.value = guild.description.substr(0, kDescriptionLimit);
-                f.editName.state.focusAtEnd(f.editName.value, ctx.timeSeconds);
+                if (leaderIsMe) f.editName.state.focusAtEnd(f.editName.value, ctx.timeSeconds);
+                else f.editAbout.state.focusAtEnd(f.editAbout.value, ctx.timeSeconds);
                 break;
             case GuildAction::Save:
                 saveEdit();
@@ -892,6 +917,12 @@ bool GuildPanel::render(MenuContext& ctx) {
                 break;
             case GuildAction::SquadOne:
                 ctx.net.requestGuildInviteToSquad(region.member);
+                break;
+            case GuildAction::Promote:
+                ctx.net.requestGuildSetOfficer(region.member, true);
+                break;
+            case GuildAction::Demote:
+                ctx.net.requestGuildSetOfficer(region.member, false);
                 break;
             case GuildAction::AcceptInvite:
                 ctx.net.requestGuildAccept();

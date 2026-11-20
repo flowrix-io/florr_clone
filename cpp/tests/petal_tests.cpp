@@ -1306,9 +1306,7 @@ const WireEvent* firstStrike(const Rig& rig) {
 TEST(a_strike_reports_a_bolt_to_every_mob_it_hit) {
     if (!contentLoaded()) return;
     Rig rig;
-    // Rare: four targets (lightningStrikeTargets), so the cap is not what
-    // decides how many of the three below are struck.
-    rig.equip(0, "lightning", Rarity::Rare);
+    rig.equip(0, "lightning");
     rig.settleEquips();
     rig.settleRing();
 
@@ -1357,21 +1355,16 @@ TEST(a_glitch_lightning_strikes_like_lightning_and_its_strike_is_marked_glitch) 
     rig.settleRing();
 
     // The same arming and the same reach as the lightning's own strike: the
-    // mob on the ring arms it, the ones well away from the petal are struck
-    // too -- all of them, three where a common plain lightning lands on two.
-    const Entity glitchPetal = rig.petals(0).front();
-    const Vec2 orbit = rig.world.get<Transform>(glitchPetal).position;
+    // mob on the ring arms it, the one well away from the petal is struck too.
+    const Vec2 orbit = rig.world.get<Transform>(rig.petals(0).front()).position;
     addMob(rig, orbit);
     addMob(rig, {1400.0, 1000.0});
-    addMob(rig, {1000.0, 1300.0});
 
     CHECK(rig.tickUntil([&] { return firstStrike(rig) != nullptr; }, 120));
     const WireEvent* strike = firstStrike(rig);
     CHECK(strike != nullptr);
     if (strike == nullptr) return;
-    CHECK_EQ(strike->points.size(), std::size_t(3));
-    // And it is not used up by it, as the plain one is.
-    CHECK(!rig.world.has<Dead>(glitchPetal));
+    CHECK_EQ(strike->points.size(), std::size_t(2));
     // Green bolts on the client, and rolled, green hits in combat.
     CHECK((strike->flag & net::DamageGlitch) != 0);
     CHECK_EQ(strikeBurstIsGlitch(rig), 1);
@@ -1392,9 +1385,7 @@ TEST(a_glitch_lightning_strikes_like_lightning_and_its_strike_is_marked_glitch) 
 TEST(a_strike_into_a_pile_keeps_the_nearest_bolts) {
     if (!contentLoaded()) return;
     Rig rig;
-    // The glitch form: an uncapped strike, so it is the event queue's trim
-    // under test here and not the plain petal's tier + 2.
-    rig.equip(0, "glitch_lightning");
+    rig.equip(0, "lightning");
     rig.settleEquips();
 
     const Vec2 orbit = rig.world.get<Transform>(rig.petals(0).front()).position;
@@ -1417,86 +1408,6 @@ TEST(a_strike_into_a_pile_keeps_the_nearest_bolts) {
     for (const Vec2& point : strike->points) {
         CHECK((point - strike->position).length() < 600.0);
     }
-}
-
-TEST(a_lightning_strikes_tier_plus_two_mobs) {
-    CHECK_EQ(lightningStrikeTargets(Rarity::Common), 2);
-    CHECK_EQ(lightningStrikeTargets(Rarity::Uncommon), 3);
-    CHECK_EQ(lightningStrikeTargets(Rarity::Ultra), 8);
-    CHECK_EQ(lightningStrikeTargets(Rarity::Apex), 11);
-    // Above the ladder it reads apex's, as every non-strength figure does.
-    CHECK_EQ(lightningStrikeTargets(Rarity::Universal), 11);
-    CHECK_EQ(lightningStrikeTargets(Rarity::Admin), 11);
-}
-
-TEST(a_lightning_lands_only_on_its_nearest_targets) {
-    if (!contentLoaded()) return;
-    Rig rig;
-    rig.equip(0, "lightning");
-    rig.settleEquips();
-    rig.settleRing();
-
-    // All four inside the reach. A common lightning lands on two: the mob it
-    // touched and the nearest of the rest. Made far-first, so a strike that
-    // took whatever order the archetype holds would pick exactly the wrong ones.
-    const Vec2 orbit = rig.world.get<Transform>(rig.petals(0).front()).position;
-    const Entity farthest = addMob(rig, orbit + Vec2{700.0, 0.0});
-    const Entity further = addMob(rig, orbit + Vec2{0.0, 500.0});
-    const Entity near = addMob(rig, orbit + Vec2{-200.0, 0.0});
-    const Entity touched = addMob(rig, orbit);
-
-    CHECK(rig.tickUntil([&] { return firstStrike(rig) != nullptr; }, 120));
-    const WireEvent* strike = firstStrike(rig);
-    CHECK(strike != nullptr);
-    if (strike == nullptr) return;
-    CHECK_EQ(strike->points.size(), std::size_t(2));
-
-    std::vector<Entity> named;
-    Query<LightningBurst> bursts{rig.world};
-    bursts.each([&](Entity, LightningBurst& burst) { named = burst.targets; });
-    const auto names = [&](Entity mob) {
-        return std::find(named.begin(), named.end(), mob) != named.end();
-    };
-    CHECK_EQ(named.size(), std::size_t(2));
-    CHECK(names(touched));
-    CHECK(names(near));
-
-    // And combat holds the burst to that list: the two further mobs are well
-    // inside its reach and keep every point of health.
-    CombatSystem combat;
-    ricochetCombatTick(rig, combat);
-    const auto hurt = [&](Entity mob) {
-        return rig.world.get<Health>(mob).current < rig.world.get<Health>(mob).max;
-    };
-    CHECK(hurt(touched));
-    CHECK(hurt(near));
-    CHECK(!hurt(further));
-    CHECK(!hurt(farthest));
-}
-
-TEST(a_lightning_is_spent_by_its_one_strike) {
-    if (!contentLoaded()) return;
-    Rig rig;
-    rig.equip(0, "lightning");
-    rig.settleEquips();
-    rig.settleRing();
-    const Entity petal = rig.petals(0).front();
-    addMob(rig, rig.world.get<Transform>(petal).position);
-    const auto strikes = [&] {
-        std::size_t count = 0;
-        for (const WireEvent& e : rig.events.events()) {
-            if (e.kind == net::EventKind::Lightning) ++count;
-        }
-        return count;
-    };
-
-    CHECK(rig.tickUntil([&] { return strikes() > 0; }, 120));
-    // Used up by the strike, so its body lands nothing on top of it...
-    CHECK(rig.world.has<Dead>(petal));
-    // ...and its death is not a second strike. A second of ticks, well inside
-    // the fixture's 2.5 s reload, with the mob still in reach.
-    rig.tick(30);
-    CHECK_EQ(strikes(), std::size_t(1));
 }
 
 // ---------------------------------------------------------------------------
@@ -3895,8 +3806,7 @@ TEST(defending_drops_pollen_with_discrete_damage_and_consumes_it) {
     fields.each([&](Entity, GroundEffect& field, Lifetime& lifetime) {
         CHECK_EQ(field.kind, GroundEffectKind::Poison);
         CHECK_NEAR(field.damagePerHit, 10.0 * petalStatScale(Rarity::Rare), 1e-9);
-        // Once per mob: the re-bite never comes round before the puff is gone.
-        CHECK(field.damageIntervalMillis >= lifetime.remainingSeconds * 1000.0);
+        CHECK_NEAR(field.damageIntervalMillis, 500.0, 1e-9);
         CHECK_NEAR(lifetime.remainingSeconds, 5.0, 1e-12);
     });
     CHECK(rig.world.has<Dead>(rig.petals(0).front()));
@@ -7044,37 +6954,4 @@ TEST(a_starfish_stops_once_the_flower_is_back_over_three_quarters) {
     rig.world.get<Health>(rig.player).current = rig.max() * 0.74;
     const auto [regained, _] = rig.gainOver(30 * 2);
     CHECK_NEAR(regained, 2.0 * (kBaseRegenPerSecond + 2.25), 0.01);
-}
-
-// A mob standing on the flower sits in every puff the grains lay, and used to
-// be bitten by each one every 500 ms for its five seconds: ~7x the listed
-// damage per grain. Each puff now hits it once, so the total is bounded by the
-// grain's damage times the puffs laid.
-TEST(a_mob_under_the_flower_takes_one_hit_per_pollen_puff) {
-    if (!contentLoaded()) return;
-    for (Rarity rarity : {Rarity::Common, Rarity::Rare, Rarity::Mythic}) {
-        Rig rig;
-        rig.equip(0, "pollen", rarity);
-        rig.settleEquips();
-        const Entity mob = addMob(rig, {1000.0, 1000.0});
-        rig.world.get<Health>(mob) = Health{1e15, 1e15, 0.0, 0.0};
-        rig.setFlags(net::InputDefend);
-        CombatSystem combat;
-        std::vector<Entity> puffs;
-        const int ticks = static_cast<int>(10000.0 / net::kTickMillis);
-        for (int i = 0; i < ticks; ++i) {
-            rig.tick();
-            Query<GroundEffect> fields{rig.world};
-            fields.each([&](Entity e, GroundEffect&) {
-                if (std::find(puffs.begin(), puffs.end(), e) == puffs.end()) puffs.push_back(e);
-            });
-            ricochetCombatTick(rig, combat);
-            rig.reap();
-        }
-        const double perGrain = fixture().registry.petalStats(petalId("pollen"), rarity).damage;
-        const double taken = 1e15 - rig.world.get<Health>(mob).current;
-        CHECK(puffs.size() > 1u);
-        CHECK(taken >= perGrain);
-        CHECK(taken <= perGrain * static_cast<double>(puffs.size()) + 1e-6);
-    }
 }

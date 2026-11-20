@@ -362,6 +362,17 @@ void App::updatePlaying(double dt) {
     // keystroke being typed into the chat line.
     if (mobile_.takeRowSwap()) menus_.requestLoadoutRowSwap();
 
+    const NetClient::TrialView& trial = net_.trial();
+    if (isTrialRealm(net_.view().realm()) && trial.known &&
+        trial.phase == TrialPhase::Preparing && window_.mouseReleased(MouseButton::Left)) {
+        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+        if (trialStartButton_.w > 0.0 && hit(trialStartButton_, mouse) &&
+            !menus_.capturesMouse(mouse) &&
+            !tutorial_.capturesMouse(mouse)) {
+            net_.startTrialChamber();
+        }
+    }
+
     // Chat swallows the keyboard while open, or typing would also drive the
     // flower and trip every hotkey.
     if (chatOpen_ && !menus_.wantsText()) {
@@ -420,7 +431,8 @@ void App::updateDead(double dt) {
         chatOpen_ = true;
     }
     if (!deathCardVisible_) return;
-    const bool inWaves = net_.view().realm() == kWavesRealm;
+    const bool inWaves = net_.view().realm() == kWavesRealm ||
+                         isTrialRealm(net_.view().realm());
 
     // The reference acts on the press, not the release, so the card is gone by
     // the time the button comes back up and a pressed state is never seen.
@@ -449,29 +461,10 @@ void App::updateDead(double dt) {
 // Drawing
 // ---------------------------------------------------------------------------
 
-void App::drawWaveHud(Canvas& canvas, double time) {
-    const NetClient::WaveView& wave = net_.wave();
-    if (net_.view().realm() != kWavesRealm || !wave.known) return;
-    const double width = canvas.width();
-    const double height = canvas.height();
-    const double middle = width * 0.5;
-
-    // The biome over the gauge: UIGame's waveInformationContainer.
-    double y = 30.0 * kWaveUi;
-    TextStyle biomeStyle;
-    biomeStyle.size = 16.0 * kWaveUi;
-    biomeStyle.align = Align::Centre;
-    text(canvas, waveBiomeInfo(wave.biome).label, middle, y + biomeStyle.size * 0.5, biomeStyle);
-    y += biomeStyle.size + 4.0 * kWaveUi;
-
-    // The server reports five times a second and the bar moves a few pixels a
-    // second, so this is only to slide it down when a new wave resets it.
-    const double dt = std::clamp(time - waveGaugeAt_, 0.0, 0.25);
-    waveGaugeAt_ = time;
-    const double ease = 1.0 - std::exp(-dt * 6.0);
-    waveGaugeTimer_ += (wave.timer - waveGaugeTimer_) * ease;
-    waveGaugeRed_ += (wave.redTimer - waveGaugeRed_) * ease;
-
+/// The waves' gauge: an ink track with a coloured fill (and an optional red
+/// one over it) and its label in the middle. Returns the gauge's height.
+static double drawWaveGauge(Canvas& canvas, double middle, double y, double fill,
+                            std::uint32_t fillColour, double red, const std::string& label) {
     const double gaugeWidth = 140.0 * kWaveUi;
     const double gaugeHeight = 12.0 * kWaveUi;
     const double left = middle - gaugeWidth * 0.5;
@@ -495,16 +488,44 @@ void App::drawWaveHud(Canvas& canvas, double time) {
     canvas.moveTo(static_cast<float>(left), static_cast<float>(lineY));
     canvas.lineTo(static_cast<float>(left + gaugeWidth), static_cast<float>(lineY));
     canvas.stroke();
-    const double length = waveLength(wave.wave);
-    if (waveGaugeTimer_ > 0.0) {
-        bar(waveGaugeTimer_ / length, 0.75, waveBiomeInfo(wave.biome).gaugeColor);
-    }
-    if (waveGaugeRed_ > 0.0) bar(waveGaugeRed_ / length, 0.6, 0xE32933u);
+    if (fill > 0.0) bar(fill, 0.75, fillColour);
+    if (red > 0.0) bar(red, 0.6, 0xE32933u);
     canvas.restore();
     TextStyle gaugeStyle;
     gaugeStyle.size = gaugeHeight * 0.65;
     gaugeStyle.align = Align::Centre;
-    text(canvas, "Wave " + std::to_string(wave.wave), middle, lineY, gaugeStyle);
+    text(canvas, label, middle, lineY, gaugeStyle);
+    return gaugeHeight;
+}
+
+void App::drawWaveHud(Canvas& canvas, double time) {
+    const NetClient::WaveView& wave = net_.wave();
+    if (net_.view().realm() != kWavesRealm || !wave.known || net_.trial().known) return;
+    const double width = canvas.width();
+    const double height = canvas.height();
+    const double middle = width * 0.5;
+
+    // The biome over the gauge: UIGame's waveInformationContainer.
+    double y = 30.0 * kWaveUi;
+    TextStyle biomeStyle;
+    biomeStyle.size = 16.0 * kWaveUi;
+    biomeStyle.align = Align::Centre;
+    text(canvas, waveBiomeInfo(wave.biome).label, middle, y + biomeStyle.size * 0.5, biomeStyle);
+    y += biomeStyle.size + 4.0 * kWaveUi;
+
+    // The server reports five times a second and the bar moves a few pixels a
+    // second, so this is only to slide it down when a new wave resets it.
+    const double dt = std::clamp(time - waveGaugeAt_, 0.0, 0.25);
+    waveGaugeAt_ = time;
+    const double ease = 1.0 - std::exp(-dt * 6.0);
+    waveGaugeTimer_ += (wave.timer - waveGaugeTimer_) * ease;
+    waveGaugeRed_ += (wave.redTimer - waveGaugeRed_) * ease;
+
+    const double length = waveLength(wave.wave);
+    const double gaugeHeight = drawWaveGauge(canvas, middle, y, waveGaugeTimer_ / length,
+                                             waveBiomeInfo(wave.biome).gaugeColor,
+                                             waveGaugeRed_ / length,
+                                             "Wave " + std::to_string(wave.wave));
     y += gaugeHeight + 8.0 * kWaveUi;
 
     // The mobs still up, one column per kind: UIGameWaveMobIcons, counted by
@@ -579,6 +600,111 @@ void App::drawWaveHud(Canvas& canvas, double time) {
                      static_cast<float>(pillHeight), static_cast<float>(3.0 * kWaveUi));
     canvas.fill();
     text(canvas, line, middle, pillY, waiting);
+}
+
+void drawFlowerFace(Canvas& canvas, std::uint32_t colour, double radius, double eyeX,
+                    double eyeY, double mouth); // app_hud.cpp
+
+void App::drawTrialHud(Canvas& canvas, double time) {
+    trialStartButton_ = Rect{};
+    const NetClient::TrialView& trial = net_.trial();
+    if (!isTrialRealm(net_.view().realm()) || !trial.known) return;
+    const double middle = canvas.width() * 0.5;
+
+    // The waves' gauge, in yellow, with no mob icons under it. In a timed
+    // room the yellow fills up to the three-star time and the red, drawn
+    // over it, fills up to the failure time, so both are running from the
+    // first second and the room fails when the red is full. A defeat room
+    // fills the yellow one step per mob killed, across all its waves.
+    double y = 30.0 * kWaveUi;
+    // Between rooms the server has already moved on to the next room's
+    // count, so a cleared room just shows full.
+    double fill = trial.phase != TrialPhase::Active ? 1.0
+                  : trial.total > 0 ? static_cast<double>(trial.killed) / trial.total
+                                    : 0.0;
+    double red = 0.0;
+    if (trial.challenge == TrialChallenge::Timed && trial.threeStar > 0.0 &&
+        trial.failure > 0.0) {
+        fill = trial.elapsed / trial.threeStar;
+        red = trial.elapsed / trial.failure;
+    }
+    y += drawWaveGauge(canvas, middle, y, fill, 0xFFFF00u, red,
+                       "Floor " + std::to_string(trial.floor) + ", Room " +
+                           std::to_string(trial.chamber)) +
+         8.0 * kWaveUi;
+
+    TextStyle line;
+    line.align = Align::Left;
+    line.size = 8.0 * kWaveUi;
+    const double lineY = y + line.size * 0.5;
+    const std::string stars = "  |  Stars: " + std::to_string(trial.stars) + "/9";
+    if (trial.challenge == TrialChallenge::Defeat) {
+        // Four lives as four flowers, one grayed out per death, each as tall
+        // as the line's text so the row keeps its old height.
+        const std::string lead = "Defeat all enemies - ";
+        const double icon = line.size;
+        const double gap = 2.0 * kWaveUi;
+        const double iconsWidth = 4.0 * icon + 3.0 * gap;
+        const double leadWidth = textWidth(canvas, lead, line.size);
+        const double total = leadWidth + iconsWidth + textWidth(canvas, stars, line.size);
+        double x = middle - total * 0.5;
+        text(canvas, lead, x, lineY, line);
+        x += leadWidth;
+        const int lives = std::clamp(4 - trial.deaths, 0, 4);
+        for (int i = 0; i < 4; ++i) {
+            const double r = icon * 0.5;
+            canvas.save();
+            canvas.translate(static_cast<float>(x + r), static_cast<float>(lineY));
+            drawFlowerFace(canvas, i < lives ? 0xFFE763u : 0x9A9A9Au, r, 2.0 * (r / 25.0), 0.0,
+                           14.5 * (r / 25.0));
+            canvas.restore();
+            x += icon + gap;
+        }
+        text(canvas, stars, x - gap, lineY, line);
+    } else {
+        line.align = Align::Centre;
+        text(canvas, "Timed clear" + stars, middle, lineY, line);
+    }
+    y += line.size + 4.0 * kWaveUi;
+    const double buffY = y + line.size * 0.5;
+    if (trial.buff == TrialBuffKind::ProjectileCritical) {
+        // The crit blessing as the dice petal turned 45 degrees and its rate.
+        const std::string rate = "1.5x/4s";
+        const double die = line.size * 1.1;
+        const double gap = 4.0 * kWaveUi;
+        const double total = die + gap + textWidth(canvas, rate, line.size);
+        const double left = middle - total * 0.5;
+        sprites_.drawPetal(canvas, content().petalIndex("dice"), Rarity::Common,
+                           left + die * 0.5, buffY, die, kPi * 0.25, time);
+        line.align = Align::Left;
+        text(canvas, rate, left + die + gap, buffY, line);
+    } else {
+        line.align = Align::Centre;
+        text(canvas, trialBuffLabel(trial.buff), middle, buffY, line);
+    }
+    line.align = Align::Centre;
+    y += line.size + 6.0 * kWaveUi;
+    line.size = 10.0 * kWaveUi;
+    if (trial.reviveRemaining > 0.0) {
+        text(canvas,
+             "Reviving in " +
+                 std::to_string(static_cast<int>(std::ceil(trial.reviveRemaining))) + "...",
+             middle, y + line.size * 0.5, line);
+    } else if (trial.phase == TrialPhase::Intermission) {
+        text(canvas, "Room cleared - next room incoming", middle, y + line.size * 0.5, line);
+    } else if (trial.phase == TrialPhase::Preparing) {
+        // Nothing spawns until the player says so: time to fix the loadout.
+        const double width = 110.0 * kWaveUi;
+        const double height = 24.0 * kWaveUi;
+        trialStartButton_ = Rect{middle - width * 0.5, y, width, height};
+        ButtonStyle style;
+        style.fill = 0x45B85Au;
+        style.textSize = 12.0 * kWaveUi;
+        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+        button(canvas, trialStartButton_, "Start Room " + std::to_string(trial.chamber),
+               hit(trialStartButton_, mouse), window_.mouseDown(MouseButton::Left) &&
+                   hit(trialStartButton_, mouse), style);
+    }
 }
 
 void App::drawDeathCard(Canvas& canvas, double time) {

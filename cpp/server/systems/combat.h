@@ -628,9 +628,6 @@ private:
         Entity owner = NULL_ENTITY;
         double poisonDurationMillis = 0;
         double ownerPoisonPerSecond = 0;
-        /// A capped strike's burst: it lands only on the victims its
-        /// LightningBurst names, which the resolve reads back off the effect.
-        bool listedVictims = false;
     };
 
     struct ShotSource {

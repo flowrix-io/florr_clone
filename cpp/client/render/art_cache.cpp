@@ -74,6 +74,14 @@ struct Cache {
     std::uint64_t clock = 0;
 };
 
+bool zoomEasing = false;
+
+/// `scale` rounded up to the next quarter octave: four bakes per doubling of
+/// the zoom, each drawn at most 19% smaller than it was baked.
+double quantiseScaleUp(double scale) {
+    return std::exp2(std::ceil(std::log2(scale) * 4.0 - 1e-9) / 4.0);
+}
+
 Cache& cache() {
     static Cache instance;
     return instance;
@@ -127,9 +135,16 @@ bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double
     // have the browser stretch the result, which is visible as a soft edge on
     // every shape in it.
     const std::array<float, 6> m = canvas.currentTransform();
-    const double scaleX = std::hypot(m[0], m[1]);
-    const double scaleY = std::hypot(m[2], m[3]);
+    double scaleX = std::hypot(m[0], m[1]);
+    double scaleY = std::hypot(m[2], m[3]);
     if (!(scaleX > 0.0) || !(scaleY > 0.0)) return false;
+    // A zoom in motion: a quantised bake drawn down into the box, unsnapped
+    // (see setArtCacheZoomEasing). Downscaled, so nothing is magnified.
+    if (zoomEasing) {
+        snapToDevice = false;
+        scaleX = quantiseScaleUp(scaleX);
+        scaleY = quantiseScaleUp(scaleY);
+    }
     // A rotated, skewed or mirrored blit resamples the bake. Refused rather
     // than accepted with a quality loss: the whole point of baking at device
     // resolution is that the picture does not change. A quarter turn or a
@@ -295,6 +310,8 @@ void resetArtCache() {
     cache().bytes = 0;
 }
 
+void setArtCacheZoomEasing(bool easing) { zoomEasing = easing; }
+
 #else
 
 bool drawCachedArt(Canvas&, const SvgDocument&, double, double, double, double) { return false; }
@@ -311,6 +328,8 @@ bool drawCachedPicture(Canvas&, const void*, std::uint64_t, double, double, doub
 void artCacheStats(std::size_t& entries, std::size_t& bytes) { entries = 0; bytes = 0; }
 
 void resetArtCache() {}
+
+void setArtCacheZoomEasing(bool) {}
 
 #endif   // __EMSCRIPTEN__
 

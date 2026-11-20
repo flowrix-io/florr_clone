@@ -74,9 +74,9 @@ constexpr std::uint32_t kOfflineDot = 0x8A8A8Au;
 constexpr std::uint32_t kOkInk = 0xB9F6A6u;
 constexpr std::uint32_t kBadInk = 0xFFB0B0u;
 
-constexpr ChipStyle kChip{0x6C7884u, 0x48515Au};
-constexpr ChipStyle kDangerChip{0xC0504Du, 0x8E3A38u};
-constexpr ChipStyle kGoChip{0x4CAF50u, 0x2E7D32u};
+constexpr ChipStyle kChip{0x6C7884u};
+constexpr ChipStyle kDangerChip{0xC0504Du};
+constexpr ChipStyle kGoChip{0x4CAF50u};
 
 /// What a click landed on.
 enum class Act : std::uint8_t {

@@ -207,6 +207,8 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
         SpawnChoice{"default", "Default", 0x00BE4Fu, Realm::Overworld, -1, {}, {}});
     spawnChoices_.push_back(
         SpawnChoice{kMazeSpawnChoice, "Maze", 0x573D80u, Realm::Maze, -1, {}, {}});
+    spawnChoices_.push_back(
+        SpawnChoice{kTrialsSpawnChoice, "Trial Grounds", 0x8A63D2u, kWavesRealm, -1, {}, {}});
     spawnChoices_.push_back(SpawnChoice{kAdminArenaSpawnChoice, "Admin Arena", 0xFFB020u, kAdminArenaRealm, -1, {}, "admin_arena"});
     for (const SpawnChoice& choice : worldMaps_.spawnChoices()) spawnChoices_.push_back(choice);
 
@@ -231,10 +233,10 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     titleRng_.reseed(static_cast<std::uint64_t>(wallClockMillis()));
 
     loadSession();
-    // Whether Settings offers a Grant Admin row at all. A hook is the only way
+    // Whether Settings offers a local Admin row at all. A hook is the only way
     // this client can make anybody an admin, so a build without one -- every
     // build that dials a real server -- draws no button.
-    menus_.setAdminGrantOffered(static_cast<bool>(config_.grantAdmin));
+    menus_.setAdminGrantOffered(static_cast<bool>(config_.setAdmin));
     // A missing settings file is a first run, not a failure: the defaults in
     // ClientSettings are already the shipped configuration.
     menus_.settings().load(settingsPath());
@@ -410,7 +412,18 @@ void App::pollNetwork() {
     // biome): the same screen a Continue leads to, minus the LeaveGame.
     if (net_.leftWorld) {
         net_.leftWorld = false;
-        if (screen_ == Screen::Playing || screen_ == Screen::Dead) returnToTitle();
+        if (screen_ == Screen::Playing || screen_ == Screen::Dead) {
+            const NetClient::TrialView trial = net_.trial();
+            const bool finishedTrial = trial.known &&
+                                       (trial.phase == TrialPhase::Complete ||
+                                        trial.phase == TrialPhase::Failed);
+            returnToTitle();
+            if (finishedTrial) {
+                trialPickerOpen_ = true;
+                trialRefreshingPicker_ = trialIsRefreshing(trial.floor);
+                selectedTrialFloor_ = std::clamp(trial.floor, 1, kTrialFloorCount);
+            }
+        }
     }
     // A drop does NOT take the screen away while a redial is coming. In a
     // game the world, the HUD and the panels keep drawing; on the title screen
@@ -842,13 +855,21 @@ void App::frame(double dt) {
     // No inWorld guard: Settings' Log Out is offered on the title screen too,
     // and it is the one action that has to work from either of them.
     if (menus_.takeLogoutRequest()) logout();
-    // Nor here: the offline page's Grant Admin row is drawn wherever the panel
+    // Nor here: the offline page's Admin toggle is drawn wherever the panel
     // is, and a signed-in session is all the grant needs. Nothing is sent --
     // the hook hands this client's session token to the server object in this
     // same process, which resolves the account from it (never from a name),
     // and the server answers by resending the catalog that carries the flag.
-    if (menus_.takeAdminGrantRequest() && config_.grantAdmin) {
-        config_.grantAdmin(net_.sessionToken());
+    if (menus_.takeAdminGrantRequest() && config_.setAdmin) {
+        adminToggleTarget_ = !net_.isSkinAdmin();
+        adminTogglePending_ = true;
+    }
+    if (adminTogglePending_ && config_.setAdmin && !net_.sessionToken().empty()) {
+        const bool changed = config_.setAdmin(net_.sessionToken(), adminToggleTarget_);
+        adminTogglePending_ = false;
+        if (!changed) {
+            net_.addSystemMessage("Local admin could not be changed. Sign in and try again.");
+        }
     }
 
     // What this frame's update sent -- the input frame, a ping, a click's
@@ -893,14 +914,26 @@ void App::frame(double dt) {
         prepareDarkness(selfDrawn);
         renderer_.setRift(net_.rift().open, net_.rift().realm, net_.rift().position,
                           net_.rift().radius);
-        renderer_.setWaveBiome(net_.wave().biome);
-        renderer_.setWaveRadius(net_.wave().radius);
-        // While antennae zoom the view, the terrain keeps what it has baked
-        // and draws it scaled rather than repainting the map at every frame's
-        // new zoom (WorldRenderer::setTerrainZoomAnimating).
-        renderer_.setTerrainZoomAnimating(camera_.loadoutZoom !=
-                                          loadoutCameraZoom(net_.profile(), content()));
+        renderer_.setWaveBiome(net_.trial().known ? net_.trial().biome : net_.wave().biome);
+        renderer_.setWaveRadius(net_.trial().known ? net_.trial().radius : net_.wave().radius);
+        // While antennae zoom the view, the world is drawn at the eased zoom
+        // itself, every frame -- not at a stepped zoom stretched up to it,
+        // which magnified a raster of the world by up to 1.41x and read as the
+        // screen pixelating, and still rebuilt every cache at each step. What
+        // made a new zoom every frame expensive was the caches keyed on it,
+        // and they are told the zoom is in motion instead: the terrain keeps
+        // one bake across a whole octave of it, drawn a little SMALLER than it
+        // was baked (never magnified), with the previous bake standing in for
+        // chunks not baked yet; flower skins bake at a quantised size. Only
+        // the world's draw, so the HUD's cached tiles keep their exact bakes.
+        {
+            const double target = loadoutCameraZoom(net_.profile(), content());
+            const bool easing = target > 0.0 && camera_.loadoutZoom != target;
+            renderer_.setZoomEasingTarget(easing ? camera_.userZoom * target : 0.0);
+            setArtCacheZoomEasing(easing);
+        }
         renderer_.draw(canvas, net_.view(), camera_, selfDrawn, timeSeconds_);
+        setArtCacheZoomEasing(false);
         // A dark map's dark, over the world only, like the wash below.
         drawDarkness(canvas);
         // Dead: the WORLD goes dim, and only the world. The reference's wash
@@ -981,11 +1014,19 @@ void App::frame(double dt) {
             // Under the panels, as the game's HUD puts it: a player picking a
             // door is still somebody an announcement is for.
             drawAdminAnnouncement(canvas);
-            // The same menus, on the title screen. The panels read the account
-            // rather than the world, so there is nothing for them to miss here.
-            menus_.render(canvas, window_, net_, sprites_, renderer_, timeSeconds_, dt);
-            // Over the panels, as the reference's own always-on-top widget is.
-            drawDailyStreak(canvas, timeSeconds_);
+            if (trialPickerOpen_) {
+                // A route picker is a real modal. Painting it after the menu
+                // system would only fix the visible overlap: the loadout bar
+                // would still answer clicks through it. Do not run that layer
+                // at all until the picker closes.
+                drawTrialPicker(canvas);
+            } else {
+                // The same menus, on the title screen. The panels read the account
+                // rather than the world, so there is nothing for them to miss here.
+                menus_.render(canvas, window_, net_, sprites_, renderer_, timeSeconds_, dt);
+                // Over the panels, as the reference's own always-on-top widget is.
+                drawDailyStreak(canvas, timeSeconds_);
+            }
         }
         else if (screen_ == Screen::Replaced) drawSessionReplaced(canvas, timeSeconds_);
         else drawConnectionState(canvas, timeSeconds_);

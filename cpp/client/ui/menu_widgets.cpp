@@ -103,7 +103,8 @@ constexpr double kBadgeIcon = 15.0;
 /// its own widget tree, whose spacing was not read.
 constexpr double kBadgeGap = 16.0;
 
-/// The reload icon: florr's own path, a 512 box centred on (256, 256).
+/// The reload icon: florr's own path, which is game-icons.net
+/// delapouite/clockwise-rotation (CC BY 3.0), a 512 box centred on (256, 256).
 constexpr const char* kReloadIconPath =
     "M263.09 50c-11.882-.007-23.875 1.018-35.857 3.13C142.026 68.156 75.156 135.026 60.13 "
     "220.233 45.108 305.44 85.075 391.15 160.005 434.41c32.782 18.927 69.254 27.996 105.463 "

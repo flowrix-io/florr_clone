@@ -416,14 +416,6 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         // it; florr's card has no HP row for it, and neither does this one.
         if (stats.health > 0.0 && !petalSpentOnHit(config)) lines.push_back(hp);
         if (stats.damage != 0.0) lines.push_back(hit);
-        // The plain lightning's strike lands on this many mobs, its nearest
-        // (florr's Petal/Attribute/Bounces). Its glitch form is uncapped.
-        if (config.id == "lightning") {
-            TooltipLine reach{"Targets: " + std::to_string(lightningStrikeTargets(rarity)), 12.0};
-            reach.alpha = 0.56;
-            reach.labelColor = kStatGeneric;
-            lines.push_back(reach);
-        }
     } else {
         // A nazar has neither a health pool nor a hit: florr's card shows its
         // charges in their place. An admin petal holds three times as many.

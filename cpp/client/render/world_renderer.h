@@ -389,17 +389,15 @@ public:
     /// switch it on natively to hold the cache to the direct path's picture.
     void setTerrainCache(bool on) {
         terrainCache_ = on;
-        if (!on) terrainChunks_ = TerrainChunks{};
+        if (!on) {
+            terrainChunks_ = TerrainChunks{};
+            terrainStale_ = TerrainChunks{};
+        }
     }
-    /// Whether the view's zoom is animating (antennae going on or off). While
-    /// it is, the terrain keeps the chunks it has baked and draws them scaled
-    /// instead of throwing them all away every frame, fills what is not baked
-    /// yet from one small picture of the whole map rather than tile by tile,
-    /// and the wall past the map's edge reuses one patch the same way. Every
-    /// frame of the zoom used to be a new size, and so a full repaint of the
-    /// map and its edge, which is what made the antennae animation lag.
-    void setTerrainZoomAnimating(bool on) { terrainZoomAnimating_ = on; }
-
+    /// The camera zoom an ease is heading for while one runs (antennae going
+    /// on or off), or 0 when the zoom is still. Lets the terrain cache keep
+    /// one bake across the ease instead of a new one per frame.
+    void setZoomEasingTarget(double zoom) { zoomEasingTarget_ = zoom; }
     /// Forgets every picture it keeps on a canvas -- the terrain chunks and the
     /// glitch surfaces -- and they are made again as they are next drawn. For
     /// when the page has lost their pixels: see App::dropCanvasCaches.
@@ -944,22 +942,14 @@ private:
         std::size_t bytes = 0;
     };
     mutable TerrainChunks terrainChunks_;
-    /// See setTerrainZoomAnimating. `terrainSettling_` carries the cheap fill
-    /// on past the animation's last frame until the chunks at the final zoom
-    /// have all baked, so the zoom does not end on a frame of tile-by-tile
-    /// painting.
-    bool terrainZoomAnimating_ = false;
-    mutable bool terrainSettling_ = false;
-    /// The whole map at a few pixels a cell, baked once per map, for the
-    /// chunks a zooming frame has not baked yet.
-    struct TerrainOverview {
-        const MapData* map = nullptr;
-        int cellPixels = 0;
-        std::unique_ptr<Canvas> bitmap;
-    };
-    mutable TerrainOverview terrainOverview_;
-    /// The wall patch past the map's edge, held while the zoom animates.
-    mutable HeldTerrainPicture boundaryHold_;
+    /// The generation before terrainChunks_, kept when the scale changes so a
+    /// chunk of the new one not baked yet is drawn from it, rescaled, rather
+    /// than painted straight -- which at the antennae's zoom is tens of
+    /// thousands of fills, the hitch every zoom change used to be. Evicted
+    /// first when the budget is reached.
+    mutable TerrainChunks terrainStale_;
+    /// See setZoomEasingTarget.
+    double zoomEasingTarget_ = 0.0;
 
     /// Every web's strands at radius one, built on first use. Geometry only,
     /// so a lost GPU context does not take it with it.

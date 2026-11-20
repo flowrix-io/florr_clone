@@ -292,6 +292,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     listener_.certPath = config.certPath;
     listener_.keyPath = config.keyPath;
     listener_.webRoot = config.webRoot;
+    listener_.bindHost = config.bindHost;
     if (!listener_.start(config.port, errorOut)) return false;
 
     // Seeded before the first tick can set it: a message may be serviced ahead
@@ -706,6 +707,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
 
     serviceAdminPhase();
     movement_->runPlayerPhase(world_, *terrain_, nowMillis, dt);
+    stepTrialSecretDiscovery();
     markTickPhase("players");
     petals_->run(world_, content(), nowMillis, dt, commands_, terrain_.get(), &events_);
     markTickPhase("petals");
@@ -838,8 +840,9 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // admitted rather than announcing them.
     announceBossSpawns();
     markTickPhase("banking");
+    stepTrials(nowMillis);
     stepWaves(nowMillis);
-    markTickPhase("waves");
+    markTickPhase("waves+trials");
 }
 
 void GameServer::reapDead() {
@@ -929,8 +932,10 @@ void GameServer::replicate(double nowMillis) {
     // Reused across recipients rather than allocated per session: it is at
     // most three entities and almost always none.
     std::vector<Entity> squadBodies;
+    std::vector<Entity> guildMapBodies;
     // Every client's gather reads one listing of the world, taken here: no
     // build changes the world, so it holds for the whole loop.
+    refreshGuildBodies();
     replicator_.beginPass(world_);
     for (auto& entry : sessions_) {
         Session& session = entry.second;
@@ -946,6 +951,14 @@ void GameServer::replicate(double nowMillis) {
         }
 
         collectSquadBodies(session, squadBodies);
+        collectGuildBodies(session, guildMapBodies);
+        syncGuildMap(session, *connection, guildMapBodies);
+        // Guildmates are streamed from any distance, exactly as squadmates are.
+        for (const Entity body : guildMapBodies) {
+            if (std::find(squadBodies.begin(), squadBodies.end(), body) == squadBodies.end()) {
+                squadBodies.push_back(body);
+            }
+        }
         frame.alwaysVisible = squadBodies.empty() ? nullptr : &squadBodies;
 
         // Built around the flower this client is WATCHING, which is another

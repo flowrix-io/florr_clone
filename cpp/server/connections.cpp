@@ -147,6 +147,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::Assemble:
         case net::ClientMessage::Absorb:
         case net::ClientMessage::BuyPetal:
+        case net::ClientMessage::ClaimTrialReward:
         case net::ClientMessage::UpgradeSkill:
         case net::ClientMessage::ResetSkills:
         case net::ClientMessage::RedeemCode:
@@ -173,6 +174,8 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::GuildLeave:
         case net::ClientMessage::GuildSquadAll:
         case net::ClientMessage::GuildInviteToSquad:
+        case net::ClientMessage::StartTrialChamber:
+        case net::ClientMessage::GuildSetOfficer:
             if (!spend(session->requestAllowance)) return;
             break;
         // PublishSkin and EditSkin are billed too, but by their handler, which
@@ -187,7 +190,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
             case net::ClientMessage::Craft: case net::ClientMessage::OracleCraft:
             case net::ClientMessage::Trade: case net::ClientMessage::TitanForge:
             case net::ClientMessage::Assemble: case net::ClientMessage::Absorb:
-            case net::ClientMessage::BuyPetal:
+            case net::ClientMessage::BuyPetal: case net::ClientMessage::ClaimTrialReward:
                 sendNotice(connection,net::NoticeSeverity::Warning,"Economy changes are disabled during hosted events.");return;
             default:break;
         }
@@ -246,6 +249,9 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::GuildInviteToSquad:
             handleGuildInviteToSquad(*session, connection, reader);
             break;
+        case net::ClientMessage::GuildSetOfficer:
+            handleGuildSetOfficer(*session, connection, reader);
+            break;
         case net::ClientMessage::AdminTools: handleAdminTools(*session, connection, reader); break;
         case net::ClientMessage::PublishSkin:   handlePublishSkin(*session, connection, reader); break;
         case net::ClientMessage::EditSkin:      handleEditSkin(*session, connection, reader); break;
@@ -255,6 +261,12 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::FavoriteSkin:  handleFavoriteSkin(*session, connection, reader); break;
         case net::ClientMessage::BrowseSkins:   handleBrowseSkins(*session, connection, reader); break;
         case net::ClientMessage::FetchSkins:    handleFetchSkins(*session, connection, reader); break;
+        case net::ClientMessage::ClaimTrialReward:
+            handleClaimTrialReward(*session, connection, reader);
+            break;
+        case net::ClientMessage::StartTrialChamber:
+            handleStartTrialChamber(*session);
+            break;
         case net::ClientMessage::Logout:        handleLogout(*session); break;
         case net::ClientMessage::AdminDb:       handleAdminDb(*session, connection, reader); break;
         case net::ClientMessage::AdminDashboard:

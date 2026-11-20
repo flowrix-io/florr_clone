@@ -32,6 +32,7 @@
 #include "shared/game/skin_likeness.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
+#include "shared/game/trials.h"
 #include "shared/game/waves.h"
 #include "shared/net/admin_db.h"
 #include "shared/net/transport.h"
@@ -99,6 +100,10 @@ inline constexpr int kMaxBots = 100;
 
 struct ServerConfig {
     std::uint16_t port = 3000;
+    /// Empty keeps the deployed server's existing all-interface bind. Local
+    /// testing passes 127.0.0.1 so an admin-enabled test database is never
+    /// exposed to another machine on the LAN.
+    std::string bindHost;
     std::string dataDir = "data";
     std::string databasePath = "inventory.json";
     std::uint64_t worldSeed = 0x5EED10;
@@ -186,9 +191,9 @@ public:
     std::size_t persistAll();
 
     /// Makes the account signed in with `sessionToken` a permanent admin, and
-    /// tells its live session so. False when the token resolves to no account
-    /// -- empty, unknown, expired or orphaned; granting one that already has
-    /// the flag is a no-op that still reports true.
+    /// tells its live session so. When `requiredUsername` is nonempty, the
+    /// resolved account must have that username. The offline build does not
+    /// use that optional gate; every local account owns its isolated world.
     ///
     /// Keyed on the token the client was ISSUED, never on a name: the account
     /// the grant lands on is the database's answer for a credential the server
@@ -196,13 +201,13 @@ public:
     /// account name, a nameplate -- can aim it. See CLAUDE.md, "Admin rights".
     ///
     /// Deliberately not reachable from a socket: no message carries it and no
-    /// chat command calls it. The one caller is the single-file offline build,
-    /// where the server runs inside the player's own page and the page's own
-    /// client hands it its token -- there "give me the console" is a button on
-    /// a world only they can reach, not an escalation. A network build links
-    /// this and never calls it, which is what keeps `/admin grant_admin` the
-    /// only way in from outside.
-    bool grantAdmin(const std::string& sessionToken);
+    /// chat command calls it.
+    bool grantAdmin(const std::string& sessionToken,
+                    const std::string& requiredUsername = {});
+    /// Offline-build hook: changes only the account identified by the
+    /// server-issued session token. The embedded page is its sole caller; no
+    /// client message exposes this method in a network build.
+    bool setLocalAdmin(const std::string& sessionToken, bool enabled);
 
     /// Safe to call from a signal handler: it only stores to an atomic flag,
     /// and the shutdown work itself happens on the main thread.
@@ -653,6 +658,48 @@ private:
         Vec2 riftPosition;
     };
     WaveRun waves_;
+    struct TrialRun;
+    void startTrial(Session&, int floor);
+    void stepTrials(double nowMillis);
+    void stepTrial(TrialRun&, double nowMillis);
+    void prepareTrialChamber(TrialRun&, double nowMillis, bool playTransition);
+    void spawnTrialChamber(TrialRun&, double nowMillis);
+    void spawnTrialWave(TrialRun&, double nowMillis);
+    void finishTrial(TrialRun&, bool success, const std::string& reason);
+    void abandonTrial(Session&);
+    void clearTrialMobs(TrialRun&);
+    void sendTrialProgress(Session&, net::Connection* = nullptr);
+    void sendTrialState(Session&, const TrialRun&);
+    void handleClaimTrialReward(Session&, net::Connection&, ByteReader&);
+    void handleStartTrialChamber(Session&);
+    int unlockedTrialFloor(Session&);
+    bool trialGroundsUnlocked(Session&);
+    void stepTrialSecretDiscovery();
+    struct TrialRun {
+        TrialPhase phase = TrialPhase::Idle;
+        net::ConnectionId owner = 0;
+        int floor = 0;
+        int chamber = 1;
+        int stars = 0;
+        int deaths = 0;
+        bool deathCounted = false;
+        bool awaitingWave = false;
+        /// The iris for the next chamber has been cued (sendTeleported).
+        bool teleportCued = false;
+        int wave = 0;
+        int waveCount = 1;
+        /// The chamber's mobs down so far, every wave counted, for the gauge.
+        int killed = 0;
+        double chamberStartedMillis = 0.0;
+        double reviveAtMillis = 0.0;
+        double nextWaveAtMillis = 0.0;
+        double nextChamberAtMillis = 0.0;
+        double nextStateMillis = 0.0;
+        WaveBiome biome = WaveBiome::Garden;
+        TrialBuffKind buff = TrialBuffKind::ProjectileDamage;
+        Realm realm = Realm::Overworld;
+    };
+    std::array<TrialRun, kTrialRealmCount> trials_{};
     /// The wall-clock hour (Unix milliseconds / one hour) the hourly rift last
     /// rolled for. -1 until the first tick, which records the hour the server
     /// came up in without rolling: a restart is not the top of an hour.
@@ -774,6 +821,7 @@ private:
     void handleGuildLeave(Session&, net::Connection&);
     void handleGuildSquadAll(Session&, net::Connection&);
     void handleGuildInviteToSquad(Session&, net::Connection&, ByteReader&);
+    void handleGuildSetOfficer(Session&, net::Connection&, ByteReader&);
 
     // The argument-taking cores behind the four guild messages that carry one.
     //
@@ -790,6 +838,8 @@ private:
     void guildInvite(Session&, net::Connection&, const std::string& target);
     void guildKick(Session&, net::Connection&, const std::string& target);
     void guildInviteToSquad(Session&, net::Connection&, const std::string& target);
+    /// Leader only. Makes `target` an officer, or takes it away.
+    void guildSetOfficer(Session&, net::Connection&, const std::string& target, bool officer);
 
     // -- squads ------------------------------------------------------------
     //
@@ -1133,6 +1183,8 @@ private:
     /// told they are in none, or that only the leader may `action` ("kick
     /// players").
     std::string guildLedBy(const Session&, net::Connection&, const char* action);
+    /// As guildLedBy, but the leader or an officer will do.
+    std::string guildManagedBy(const Session&, net::Connection&, const char* action);
     Session* sessionForUser(const std::string& username);
     net::Connection* connectionForUser(const std::string& username);
     /// One roster message: the guild as it stands, each member flagged online
@@ -1148,6 +1200,13 @@ private:
     /// dozen places and a disconnect in several, and none of them should have
     /// to know a guild is watching.
     void serviceGuildPresence(double nowMillis);
+    /// Once per snapshot pass: which bodies belong to which guild.
+    void refreshGuildBodies();
+    /// The viewer's online guildmates' bodies (never its own), for the
+    /// replicator's alwaysVisible list and the minimap.
+    void collectGuildBodies(const Session&, std::vector<Entity>& out) const;
+    /// Sends GuildMapUpdate when the set of guildmate ids changed.
+    void syncGuildMap(Session&, net::Connection&, const std::vector<Entity>& bodies);
     /// The biome boss clocks live in the database's `bossClocks` table as
     /// wall-clock ready times, so a restart neither resets a cooldown nor
     /// re-deals one. restoreBossClocks hands the spawner what the table holds,
@@ -1741,6 +1800,9 @@ private:
     /// by lower-cased username, mapped to its guildLocation().
     std::unordered_map<std::string, std::string> guildPresence_;
     double nextGuildPresenceMillis_ = 0;
+    /// Rebuilt by refreshGuildBodies each snapshot pass.
+    std::unordered_map<std::string, std::vector<Entity>> guildBodies_;
+    std::unordered_map<std::string, std::string> guildOfUser_;
 
     SquadRoster squads_;
     /// The flattened form the loot and XP rules read, rebuilt each tick.

@@ -147,6 +147,14 @@ TEST(every_shipped_biome_has_an_prestige_twin_after_every_plain_realm) {
             CHECK(!found);
             continue;
         }
+        // Neither does a room with no spawn bands (the secret Trial Grounds
+        // room): no mobs live there, so it is no biome.
+        bool spawns = false;
+        for (const MapElement& element : map.elements()) spawns = spawns || element.isSpawnBand();
+        if (!spawns) {
+            CHECK(!found);
+            continue;
+        }
         ++plain;
         CHECK(found);
         if (!found) continue;

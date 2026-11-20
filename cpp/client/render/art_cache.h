@@ -94,4 +94,12 @@ void artCacheStats(std::size_t& entries, std::size_t& bytes);
 /// is lost looks the same as what is there, under the same key.
 void resetArtCache();
 
+/// While the camera's zoom is easing (antennae going on or off), a picture --
+/// a flower skin, a tile painted straight -- is baked at a device
+/// scale rounded UP to the next quarter octave and drawn down into its box,
+/// instead of at the exact scale: every frame of the ease is a new scale, and
+/// an exact bake would be a new bitmap (and a GPU flush) per picture per
+/// frame. Set only around the world's draw.
+void setArtCacheZoomEasing(bool easing);
+
 } // namespace flix

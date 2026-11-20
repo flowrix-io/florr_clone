@@ -462,6 +462,8 @@ bool CraftingPanel::render(MenuContext& ctx) {
             if (petalIndex == stagedPetal_ && rarity == stagedRarity_) {
                 cell.count = owned > held ? owned - held : 0;
             }
+            // Short of a batch, the stack cannot go in: grey and unclickable.
+            cell.greyed = cell.count < static_cast<std::uint32_t>(kBatch);
             // A lone petal carries no badge; "x1" is noise on every cell of a
             // fresh account.
             if (cell.count > 1) cell.badge = "x" + stackCountText(cell.count);

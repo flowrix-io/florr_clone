@@ -11,6 +11,7 @@
 #include "shared/game/difficulty.h"
 #include "shared/game/npc.h"
 #include "shared/game/admin_arena.h"
+#include "shared/game/trials.h"
 
 namespace flix {
 
@@ -644,6 +645,28 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         return result;
     }
 
+    // Trial blessings only apply inside their challenge. Resolve a shot or
+    // petal back to its flower, but test projectile-ness on the actual source.
+    if (amount > 0.0 && world.has<TrialMob>(victim) && !sharingColonyHit_ &&
+        !sharingRelicHit_) {
+        const Entity player = creditedPlayer(world, source);
+        TrialBuff* blessing = world.tryGet<TrialBuff>(player);
+        if (blessing != nullptr) {
+            const auto buff = static_cast<TrialBuffKind>(blessing->kind);
+            if (buff == TrialBuffKind::ProjectileDamage && world.has<Projectile>(source)) {
+                amount *= 1.2;
+            } else if (buff == TrialBuffKind::LightningDamage &&
+                       kind == DamageKind::Lightning) {
+                amount *= 1.2;
+            } else if (buff == TrialBuffKind::ProjectileCritical &&
+                       world.has<Projectile>(source) &&
+                       nowMillis >= blessing->projectileCritReadyAtMillis) {
+                amount *= 1.5;
+                blessing->projectileCritReadyAtMillis = nowMillis + 4000.0;
+            }
+        }
+    }
+
     // A colony shares the hit. Whatever one termite is struck for is split
     // evenly over every colony mob CONNECTED to it (see below) that this
     // source could hit right now, the struck one included, and each share
@@ -1224,6 +1247,7 @@ void CombatSystem::popBubbles(World& world, const ContentRegistry& content) {
 }
 
 void CombatSystem::awardBounty(World& world, Entity victim) {
+    if (world.has<TrialMob>(victim)) return;
     const Bounty* bounty = world.tryGet<Bounty>(victim);
     if (bounty == nullptr || bounty->xp <= 0.0) return;
 
@@ -2114,8 +2138,7 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                            effect.damagePerSecond, effect.slowFactor, effect.rarity,
                            effect.damagePerHit, effect.damageIntervalMillis, transform.realm,
                            effect.slowsFlowers, effect.owner, effect.poisonDurationMillis,
-                           effect.ownerPoisonPerSecond,
-                           strike != nullptr && !strike->targets.empty()});
+                           effect.ownerPoisonPerSecond});
     });
 
     for (const FieldSource& field : fields_) {
@@ -2154,17 +2177,6 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                                     ? gapSq <= reach * reach
                                     : gapSq < reach * reach;
             if (!inside) continue;
-            // A capped strike picked its victims when it was thrown. Read back
-            // per victim rather than held from the gather: arming a cooldown
-            // below adds a component to the effect and moves it.
-            if (field.listedVictims) {
-                const LightningBurst* strike = world.tryGet<LightningBurst>(field.effect);
-                if (strike == nullptr ||
-                    std::find(strike->targets.begin(), strike->targets.end(), victim) ==
-                        strike->targets.end()) {
-                    continue;
-                }
-            }
             if (!canHit(world, victim, field.effect, nowMillis)) continue;
 
             // A uranium pulse: one blow to every mob, NPC and flower canHit
@@ -2195,8 +2207,8 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                 !world.has<Pet>(victim)) {
                 const HitCooldowns* cooldowns = world.tryGet<HitCooldowns>(field.effect);
                 if (cooldowns == nullptr || cooldowns->ready(victim, nowMillis)) {
-                    // A discrete chip, not a drip: a pollen puff bites each
-                    // mob once and a lightning burst exactly once. The reference
+                    // A discrete chip, not a drip: a puff bites once every
+                    // 500 ms and a lightning burst exactly once. The reference
                     // reports both through markEnemyDamaged(), the ordinary
                     // hit channel, and credits them through creditDamage(),
                     // which provokes a neutral mob. Direct is how a C++ chip

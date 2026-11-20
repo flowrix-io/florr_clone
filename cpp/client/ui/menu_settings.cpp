@@ -6,7 +6,7 @@
 // change what the simulation does -- which is why hitboxes can be switched on
 // without it being a cheat. The account's own controls -- its password, Log
 // Out -- used to sit on the Advanced tab; they are the Account card's now
-// (menu_account.cpp), and the offline build's Grant Admin is the one request
+// (menu_account.cpp), and the offline build's Admin toggle is the one request
 // to a server left here.
 //
 // The panel keeps more between frames than SettingsPanel has members for: a
@@ -440,14 +440,20 @@ constexpr std::array<CreditLine, 16> kCredits = {{
     {"Inspired By", 14.0, kGoldHeading, false, 10.0, 24.0},
     {"• florr.io by M28", 12.0, kPaper, false, 8.0, 28.0},
     {"Assets & Libraries", 14.0, kGoldHeading, false, 10.0, 24.0},
-    {"• Icons from game-icons.net and svgrepo.com", 12.0, kPaper, false, 8.0, 20.0},
-    {"• Ubuntu font by Canonical", 12.0, kPaper, false, 8.0, 28.0},
-    {"• Assets extracted by Bismuth(https://github.com/trigonal-bacon/gardn)",
+    // CC BY 3.0 wants the authors and the licence named, not only the site.
+    // Every game-icons.net glyph in the client and its author is listed in
+    // menu_icons.h; a new one from a new author adds a name here.
+    {"• Icons from game-icons.net (CC BY 3.0) and svgrepo.com", 12.0, kPaper, false, 8.0,
+     20.0},
+    {"• game-icons.net art by Lorc, Delapouite, Skoll and sbed", 12.0, kPaper, false, 8.0,
+     20.0},
+    {"• Ubuntu font by Canonical", 12.0, kPaper, false, 8.0, 20.0},
+    {"• Assets extracted by Bismuth (github.com/trigonal-bacon/gardn)",
      12.0, kPaper, false, 8.0, 20.0},
-    {"• UI style by Bismuth(https://github.com/trigonal-bacon/gardn)",
+    {"• UI style by Bismuth (github.com/trigonal-bacon/gardn)",
      12.0, kPaper, false, 8.0, 20.0},
-    {"• Some SVG images from FreeSVG.org(https://freesvg.org)",
-     12.0, kPaper, false, 8.0, 20.0},
+    {"• Some SVG images from FreeSVG.org (freesvg.org)",
+     12.0, kPaper, false, 8.0, 28.0},
     {"Thanks for playing!", 13.0, kFooterGrey, true, 8.0, 20.0},
 }};
 
@@ -707,24 +713,21 @@ bool SettingsPanel::render(MenuContext& ctx) {
 
             p.cy += 14.0;
             // Offline only: the row is there when this build has a server of
-            // its own to ask (see AppConfig::grantAdmin), which is the
+            // its own to ask (see AppConfig::setAdmin), which is the
             // single-file page and nothing else. A client dialling a real
             // server has no hook, draws no row, and has nothing to send.
             if (ctx.adminGrantOffered) {
                 const Rect grant{contentX, p.cy, 160.0, 32.0};
                 if (ctx.net.isSkinAdmin()) {
-                    // Painted, not laid out as a button: there is nothing left
-                    // to press, and a row that lit up under the cursor would
-                    // say there is. The row stays so the panel goes on
-                    // answering "am I an admin?" -- `isSkinAdmin` is the same
-                    // flag the chat autocomplete hides its /admin rows behind.
-                    ui::button(canvas, grant, "Admin Granted", false, false,
-                               gardnStyle(kNeutralFill, 14.0));
-                } else if (p.button(grant, "Grant Admin", kActionFill, 14.0, kGrantAdmin)) {
+                    if (p.button(grant, "Disable Admin", kDangerFill, 14.0, kGrantAdmin)) {
+                        ctx.adminGrantRequested = true;
+                    }
+                } else if (p.button(grant, "Enable Admin", kActionFill, 14.0, kGrantAdmin)) {
                     // The app owns the server object in that build; the panel
                     // only says it was asked, exactly as the Account card's Log
                     // Out does. The label flips on its own once the server's
-                    // answer lands.
+                    // answer lands. The app derives the desired state from
+                    // the same server-held flag that chose this label.
                     ctx.adminGrantRequested = true;
                 }
                 p.cy += 42.0;

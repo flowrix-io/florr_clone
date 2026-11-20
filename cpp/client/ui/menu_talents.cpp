@@ -1075,7 +1075,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
     canvas.save();
     // The whole window fades in with its open progress, florr's way.
     canvas.setGlobalAlpha(static_cast<float>(std::clamp(open_, 0.0, 1.0)));
-    drawFlorrPanel(canvas, panel, kTalentsSkin.fill, kTalentsSkin.border);
+    drawFlorrPanel(canvas, panel, kTalentsSkin.fill);
 
     canvas.save();
     canvas.beginPath();
@@ -1085,7 +1085,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
 
     // The TP badge.
     const Vec2 badge{inner.x + kBadgeCentre, inner.y + kBadgeCentre};
-    setFill(canvas, kTalentsSkin.border);
+    setFill(canvas, slotCardShade(kTalentsSkin.fill));
     canvas.fillCircle(static_cast<float>(badge.x), static_cast<float>(badge.y),
                       static_cast<float>(kBadgeRadius));
     text(canvas, pointsText, badge.x, badge.y, florrLabel(kBadgeTextSize, kPaper, Align::Centre));
@@ -1093,7 +1093,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
 
     // The connectors, all under the nodes: each tier from the one below it,
     // a fork's first from the node it hangs off, a root from the flower.
-    setStroke(canvas, kTalentsSkin.border);
+    setStroke(canvas, slotCardShade(kTalentsSkin.fill));
     canvas.setLineWidth(static_cast<float>(kLinkWidth));
     canvas.setLineCap("round");
     canvas.setLineJoin("round");
@@ -1118,7 +1118,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
     }
 
     // The flower on its hub, bulging after a purchase.
-    setFill(canvas, kTalentsSkin.border);
+    setFill(canvas, slotCardShade(kTalentsSkin.fill));
     canvas.fillCircle(static_cast<float>(flower.x), static_cast<float>(flower.y),
                       static_cast<float>(kHubRadius));
     const double bulge = flash_ > 1e-4 ? kFlashBulge * std::sin(kPi * (1.0 - flash_)) : 0.0;

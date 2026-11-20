@@ -122,10 +122,10 @@ constexpr std::uint32_t kSelfInk = 0x9FE7FFu;
 constexpr std::uint32_t kOkInk = 0xB9F6A6u;
 constexpr std::uint32_t kBadInk = 0xFFB0B0u;
 
-constexpr ChipStyle kChip{0x7473B0u, 0x48477Au};
-constexpr ChipStyle kOnChip{0x9897D2u, 0x48477Au};
-constexpr ChipStyle kGoChip{0x4CAF50u, 0x2E7D32u};
-constexpr ChipStyle kDangerChip{0xC0504Du, 0x8E3A38u};
+constexpr ChipStyle kChip{0x7473B0u};
+constexpr ChipStyle kOnChip{0x9897D2u};
+constexpr ChipStyle kGoChip{0x4CAF50u};
+constexpr ChipStyle kDangerChip{0xC0504Du};
 
 enum class Tab : std::uint8_t { Players, Spawn, Give, Announce, Arena, Codes, Events };
 constexpr int kTabCount = 7;

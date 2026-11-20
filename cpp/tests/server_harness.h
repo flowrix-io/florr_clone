@@ -907,6 +907,16 @@ inline Entity onlyPlayer(World& world) {
 struct GameServerPeer {
     /// The one game of waves.
     static auto& waves(GameServer& server) { return server.waves_; }
+    /// The Trial Grounds runs, one per trial realm, and the clock they run on.
+    static auto& trials(GameServer& server) { return server.trials_; }
+    static double clockMillis(const GameServer& server) { return server.clockMillis_; }
+    /// Whether this account has found the secret Trial Grounds room.
+    static bool trialGroundsUnlocked(GameServer& server, Session& session) {
+        return server.trialGroundsUnlocked(session);
+    }
+    static int unlockedTrialFloor(GameServer& server, Session& session) {
+        return server.unlockedTrialFloor(session);
+    }
     static SpawnSystem& spawning(GameServer& server) { return *server.spawning_; }
     /// The tick's three broadphases: the shared one, separation's, and the
     /// petals' attraction grid.

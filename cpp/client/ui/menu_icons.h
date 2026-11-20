@@ -8,6 +8,24 @@
 // rather than staged as files because they are a few hundred bytes each and
 // because a missing icon file would leave the only way into the menus blank.
 //
+// Sources, for the Credits tab (game-icons.net is CC BY 3.0, which wants
+// each author named there -- see kCredits in menu_settings.cpp):
+//   settings       game-icons.net lorc/cog
+//   exit_button    game-icons.net sbed/cancel
+//   inventory      game-icons.net delapouite/stack
+//   skills         game-icons.net delapouite/upgrade
+//   mob_gallery    game-icons.net delapouite/flower-star
+//   stars          game-icons.net delapouite/round-star
+//   changelog      game-icons.net delapouite/spell-book
+//   craft          game-icons.net skoll/molecule
+//   notifications  game-icons.net skoll/smartphone
+//   guild          game-icons.net skoll/chess-rook
+//   leaderboard    not game-icons.net (a podium; source not recorded)
+//   discord        the Discord logo (source not recorded)
+//   skins, debug, admin, account   drawn for this build
+// Elsewhere: the Trial Grounds trophy (app_lobby.cpp) is lorc/trophy and the
+// reload badge (menu_widgets.cpp) is delapouite/clockwise-rotation.
+//
 // Each is compiled once, on first use (MenuSystem::icon), by SvgDocument,
 // exactly as mob and petal artwork is; the inline `style` that pins them to
 // 512px is stripped, because renderFitted maps the viewBox onto the button

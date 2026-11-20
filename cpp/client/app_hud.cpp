@@ -198,6 +198,8 @@ void squadArrow(Canvas& canvas, double centreX, double centreY, double angle, do
     canvas.restore();
 }
 
+} // namespace
+
 /// The reference's `drawFlower` with its default face, in a space whose origin
 /// is the flower's centre.
 ///
@@ -260,7 +262,6 @@ void drawFlowerFace(Canvas& canvas, std::uint32_t colour, double radius, double 
     canvas.restore();
 }
 
-} // namespace
 
 void App::drawHud(Canvas& canvas, double time) {
     const SelfState& self = net_.view().self();
@@ -359,6 +360,7 @@ void App::drawHud(Canvas& canvas, double time) {
     // Under the boss bars, which share the top of the screen with it and are
     // what the player is fighting.
     drawAdminAnnouncement(canvas, bossBarsBottom);
+    drawTrialHud(canvas, time);
     drawWaveHud(canvas, time);
 
     // Over the HUD and under everything the menu system paints. A panel is the
@@ -505,8 +507,12 @@ double App::drawBossBars(Canvas& canvas, bool altHeld) {
     // In a prestige biome a super is ordinary stock, not a boss
     // (shared/game/prestige.h), and keeps only the bar under its body.
     const bool prestige = worldMaps_.isPrestige(net_.view().realm());
-    // The waves raise supers by the dozen from wave 200; none of them is a boss.
-    if (net_.view().realm() == kWavesRealm) return 0.0;
+    // The waves raise supers by the dozen from wave 200; none of them is a
+    // boss. Trial Grounds share that otherwise-unused realm, but their Super+
+    // enemies are deliberate bosses and keep the normal screen-top bars.
+    if (net_.view().realm() == kWavesRealm && net_.trial().phase == TrialPhase::Idle) {
+        return 0.0;
+    }
     std::vector<const RemoteEntity*> bosses;
     const Rect view = camera_.visibleWorld();
     for (const auto& entry : net_.view().entities()) {

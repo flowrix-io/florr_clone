@@ -102,14 +102,10 @@ TEST(text_cache_bakes_a_rotated_run_where_the_rasterizer_would_put_it) {
         const Diff d = compare(direct, cached);
         // The run really did draw -- otherwise two blank surfaces would agree.
         CHECK(d.inkPixels > 100);
-        // Measured 0.55-0.72% of pixels, all of it on glyph edges. The worst
-        // channel delta was 11 with the old vendored rasterizer and is 34 with
-        // cpp_canvas's exact-area one (2026-11-14): the subpixel bucket the
-        // bake is keyed by shows more on an edge pixel, while the share of
-        // pixels that differ -- what a misplaced or cropped bake moves -- did
-        // not change. The bounds are round numbers above those.
+        // Measured 0.55-0.72% of pixels at a worst channel delta of 11, all of
+        // it on glyph edges. The bounds are the nearest round numbers above.
         CHECK(d.differingFraction < 0.015);
-        CHECK(d.maxDelta <= 48);
+        CHECK(d.maxDelta <= 32);
     }
 }
 

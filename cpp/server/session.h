@@ -176,6 +176,11 @@ struct Session {
     /// default.
     std::string spawnChoice;
 
+    /// Non-zero while the body was started from the Trial Grounds floor picker.
+    int trialFloor = 0;
+    /// The private generated realm reserved for this Trial Grounds run.
+    Realm trialRealm = Realm::Overworld;
+
     /// Whether that door's PRESTIGE twin was asked for and granted
     /// (shared/game/prestige.h). Kept beside spawnChoice so a respawn goes
     /// back to the prestige biome; never set for the arena or the maze, which
@@ -276,6 +281,10 @@ struct Session {
         double atMillis = 0;
     };
     std::deque<SaidLine> recentLines;
+
+    /// The guildmate wire ids last sent to this client (GuildMapUpdate),
+    /// sorted, so an unchanged set is not sent again.
+    std::vector<std::uint32_t> guildMapIds;
 
     bool authenticated() const {
         return stage == SessionStage::Authenticated || stage == SessionStage::Playing;

@@ -428,7 +428,8 @@ void GameServer::setMuted(const Session& session, const std::string& username, b
            (holder != nullptr ? "." : " (offline).");
 }
 
-bool GameServer::grantAdmin(const std::string& sessionToken) {
+bool GameServer::grantAdmin(const std::string& sessionToken,
+                            const std::string& requiredUsername) {
     // Which account this is, the database says, from a credential the server
     // issued: the token the page's own client holds. Never a name, which is a
     // string a player chose and anyone can type.
@@ -439,31 +440,53 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
     const std::string userId = record->userId;
     Account* account = database_.findUserById(userId);
     if (account == nullptr) return false;
-    if (!account->adminActive() || account->adminTier > kTopAdminTier) {
-        // The top tier, and no ban: this is the player's own server, in their
-        // own page. An owner is left the owner.
+    if (!requiredUsername.empty() &&
+        lowerCase(account->username) != lowerCase(requiredUsername)) {
+        return false;
+    }
+    return setLocalAdmin(sessionToken, true);
+}
+
+bool GameServer::setLocalAdmin(const std::string& sessionToken, bool enabled) {
+    // This is an in-process hook for the single-file offline build, not a wire
+    // handler. The credential was issued by this server and identifies the
+    // current account; no username, nameplate or client-supplied target can
+    // aim the change at somebody else.
+    if (sessionToken.empty()) return false;
+    const Database::Session* record = database_.resolveSession(sessionToken);
+    if (record == nullptr) return false;
+    const std::string userId = record->userId;
+    Account* account = database_.findUserById(userId);
+    if (account == nullptr) return false;
+
+    if (enabled) {
         account->admin = true;
         account->adminTier = std::min(account->adminTier, kTopAdminTier);
         account->adminBanned = false;
         account->adminBannedAtMillis = 0;
         account->adminBannedBy.clear();
-        // In memory until the database is next written: the periodic save half
-        // a minute out, or sooner when the page goes away -- the offline
-        // page's pagehide handler flushes every account and the database into
-        // browser storage (persistAll), which is what keeps a grant made just
-        // before the tab closes. Only a page that dies without that event (a
-        // crash, a killed browser) can lose it.
-        database_.markDirty();
+    } else {
+        account->admin = false;
     }
+    // In memory until the next periodic save, or sooner when the page goes
+    // away and its pagehide handler flushes the embedded database to browser
+    // storage.
+    database_.markDirty();
 
     // The session carries its own copy of the flag, taken at login: without
-    // this the grant would not be real until the player logged in again. Every
+    // this the toggle would not be real until the player logged in again. Every
     // connection signed into the account, by its id -- one account has one
     // live session (replaceOtherSessions), so this is that one.
     for (auto& [id, session] : sessions_) {
         if (!session.authenticated() || session.userId != userId) continue;
-        session.admin = true;
+        session.admin = enabled;
         session.adminTier = account->adminTier;
+        if (!enabled) {
+            if (session.controlling != 0) {
+                endControl(session, "Control ended: local admin access was disabled.", true);
+            }
+            session.adminDbUnlockedFor.clear();
+        }
         net::Connection* connection = listener_.find(id);
         if (connection == nullptr) continue;
         // The same resend a temporary grant does, and for the same reason: the
@@ -474,14 +497,20 @@ bool GameServer::grantAdmin(const std::string& sessionToken) {
         // offline page's, the one caller of this, and the one place a player
         // has no file to read it out of. `/admin db` says it too; the key in a
         // server's file is never said (see the editor's branch of the console).
-        const std::string editor =
-            config_.fixedAdminDbKey.empty()
-                ? std::string()
-                : " The database editor's key here is " + escapedMarkup(config_.fixedAdminDbKey) +
-                      ": /admin db " + escapedMarkup(config_.fixedAdminDbKey) + ".";
-        sendSystem(*connection, "<span style=\"color: #ffb74d;\">You are now an admin. Use "
-                                "/admin &lt;command&gt; or /help." +
-                                    editor + "</span>");
+        if (enabled) {
+            const std::string editor =
+                config_.fixedAdminDbKey.empty()
+                    ? std::string()
+                    : " The database editor's key here is " +
+                          escapedMarkup(config_.fixedAdminDbKey) + ": /admin db " +
+                          escapedMarkup(config_.fixedAdminDbKey) + ".";
+            sendSystem(*connection, "<span style=\"color: #ffb74d;\">Admin enabled for this "
+                                    "local account. Use /admin &lt;command&gt; or /help." +
+                                        editor + "</span>");
+        } else {
+            sendSystem(*connection, "<span style=\"color: #ffb74d;\">Admin disabled for this "
+                                    "local account.</span>");
+        }
     }
     return true;
 }
@@ -787,6 +816,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     }
     if (verb == "/guild-invite") { guildInvite(session, connection, argument); return true; }
     if (verb == "/guild-kick")   { guildKick(session, connection, argument); return true; }
+    if (verb == "/guild-promote") { guildSetOfficer(session, connection, argument, true); return true; }
+    if (verb == "/guild-demote")  { guildSetOfficer(session, connection, argument, false); return true; }
     if (verb == "/guild-accept") { handleGuildAccept(session, connection); return true; }
     if (verb == "/guild-decline"){ handleGuildDecline(session, connection); return true; }
     if (verb == "/guild-leave")  { handleGuildLeave(session, connection); return true; }
@@ -814,6 +845,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             lines += " @" + member;
             if (lowerCase(member) == leader) {
                 lines += " <span style=\"color: #ffd54f;\">(Leader)</span>";
+            } else if (isGuildOfficer(guild, member)) {
+                lines += " <span style=\"color: #b39ddb;\">(Officer)</span>";
             }
         }
         const std::string description = guild["description"].asString();
@@ -850,6 +883,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         out("Guild commands: /guild-create &lt;tag&gt; [name], /guild-invite &lt;username&gt;, "
             "/guild-accept, /guild-decline, /guild-leave, /guild-kick &lt;username&gt;, "
             "/guild-rename &lt;name&gt;, /guild-description [text], "
+            "/guild-promote &lt;username&gt;, /guild-demote &lt;username&gt;, "
             "/guild-info, /guild-squad, /guild-list");
         return true;
     }
@@ -972,12 +1006,14 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                 " members, persistent):</b><br/>";
         help += "/guild-create &lt;tag&gt; [name] - Create a new guild (5-char alphanumeric "
                 "tag, optional display name)<br/>";
-        help += "/guild-invite &lt;username&gt; - Invite a player (leader only)<br/>";
+        help += "/guild-invite &lt;username&gt; - Invite a player (leader or officer)<br/>";
         help += "/guild-accept / /guild-decline - Respond to a guild invite<br/>";
         help += "/guild-leave - Leave your guild<br/>";
         help += "/guild-kick &lt;username&gt; - Kick a member (leader only)<br/>";
         help += "/guild-rename &lt;name&gt; - Rename the guild (leader only)<br/>";
-        help += "/guild-description [text] - Set or clear the description (leader only)<br/>";
+        help += "/guild-description [text] - Set or clear the description (leader or officer)<br/>";
+        help += "/guild-promote &lt;username&gt; - Make a member an officer (leader only)<br/>";
+        help += "/guild-demote &lt;username&gt; - Remove an officer (leader only)<br/>";
         help += "/guild-info - Show guild info<br/>";
         help += "/guild-squad - Invite online guildmates into a squad<br/>";
         help += "/guild-list - List all guilds<br/>";
@@ -1975,6 +2011,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         Query<MobTag> mobs{world_};
         mobs.without<Pet>();
         mobs.each([&](Entity entity, MobTag&) {
+            if (world_.has<TrialMob>(entity)) return;
             // Removed outright rather than killed, so there is no death for
             // bankKills() to announce -- each boss gets its line here instead,
             // with nobody to credit.

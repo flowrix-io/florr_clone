@@ -83,26 +83,25 @@ void fillStar(Canvas& canvas, Vec2 centre, double radius, std::uint32_t rgb) {
 // The card
 // ---------------------------------------------------------------------------
 
-void cardFrame(Canvas& canvas, Rect r, std::uint32_t fill, std::uint32_t border,
-               double borderWidth, double radius) {
+void cardFrame(Canvas& canvas, Rect r, std::uint32_t fill, double borderWidth, double radius) {
     if (r.w <= 0 || r.h <= 0) return;
-    fillRound(canvas, r, radius, border);
+    fillRound(canvas, r, radius, borderOf(fill));
     const double inset = std::min(borderWidth, std::min(r.w, r.h) * 0.5);
     setFill(canvas, fill);
     canvas.fillRect(static_cast<float>(r.x + inset), static_cast<float>(r.y + inset),
                     static_cast<float>(r.w - inset * 2), static_cast<float>(r.h - inset * 2));
 }
 
-void inlaid(Canvas& canvas, Rect r, std::uint32_t fill, std::uint32_t border, double borderWidth,
-            double radius, double alpha) {
+void inlaid(Canvas& canvas, Rect r, std::uint32_t fill, double borderWidth, double radius,
+            double alpha, std::uint32_t face) {
     if (r.w <= 0 || r.h <= 0) return;
     canvas.setGlobalAlpha(static_cast<float>(clamp(alpha, 0.0, 1.0)));
-    setFill(canvas, border);
+    setFill(canvas, borderOf(fill));
     roundPath(canvas, r, radius);
     canvas.fill();
 
     const double inset = std::min(borderWidth, std::min(r.w, r.h) * 0.5);
-    setFill(canvas, fill);
+    setFill(canvas, face == 0xFFFFFFFFu ? fill : face);
     roundPath(canvas, Rect{r.x + inset, r.y + inset, r.w - inset * 2, r.h - inset * 2},
               std::max(0.0, radius - 2.0));
     canvas.fill();
@@ -110,7 +109,7 @@ void inlaid(Canvas& canvas, Rect r, std::uint32_t fill, std::uint32_t border, do
 }
 
 void panelCard(Canvas& canvas, Rect r, const PanelSkin& skin, double borderWidth, double radius) {
-    cardFrame(canvas, r, skin.fill, skin.border, borderWidth, radius);
+    cardFrame(canvas, r, skin.fill, borderWidth, radius);
 }
 
 void panelTitle(Canvas& canvas, Rect panel, const std::string& title,
@@ -202,9 +201,9 @@ void chip(Canvas& canvas, Rect r, const std::string& label, bool hovered, const 
     TextCaptureScope off(false);
     const std::uint32_t hoverFill =
         style.hoverFill == 0xFFFFFFFFu ? lighten(style.fill, 0.15) : style.hoverFill;
-    const std::uint32_t fill = style.enabled ? (hovered ? hoverFill : style.fill) : 0x8A8A8Au;
-    const std::uint32_t border = style.enabled ? style.border : 0x5A5A5Au;
-    inlaid(canvas, r, fill, border, 2.0, style.radius, style.enabled ? 1.0 : 0.45);
+    const std::uint32_t base = style.enabled ? style.fill : 0x8A8A8Au;
+    const std::uint32_t face = style.enabled && hovered ? hoverFill : base;
+    inlaid(canvas, r, base, 2.0, style.radius, style.enabled ? 1.0 : 0.45, face);
 
     TextStyle caption = labelStyle(style.textSize, kPaper);
     caption.align = Align::Centre;

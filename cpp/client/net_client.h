@@ -18,6 +18,7 @@
 #include "shared/game/skin_format.h"
 #include "shared/game/skills.h"
 #include "shared/game/terrain.h"
+#include "shared/game/trials.h"
 #include "shared/game/waves.h"
 #include "shared/net/admin_dashboard.h"
 #include "shared/net/admin_db.h"
@@ -134,6 +135,8 @@ struct GuildState {
         /// The biome an online member's body is in, as the spawn picker labels
         /// it. Empty for anyone offline or without a body just now.
         std::string location;
+        /// True for an officer. The leader is named by GuildState::leader.
+        bool officer = false;
     };
 
     bool joined = false;
@@ -601,6 +604,8 @@ public:
     /// placed the body by then, and that is the truth either way.
     void cancelJoin() { joinPending_ = false; }
     void leaveGame();
+    void claimTrialReward(int floor);
+    void startTrialChamber();
     void sendInput(const net::InputFrame&);
     void sendChat(const std::string& text);
     void setLoadoutSlot(int slot, std::uint16_t petalIndex, Rarity rarity);
@@ -724,6 +729,7 @@ public:
     void requestGuildLeave();
     void requestGuildSquadAll();
     void requestGuildInviteToSquad(const std::string& username);
+    void requestGuildSetOfficer(const std::string& username, bool officer);
 
     // -- the admin database editor -------------------------------------------
     //
@@ -982,6 +988,14 @@ public:
     const SquadState& squad() const { return squad_; }
 
     const GuildState& guild() const { return guild_; }
+    /// True when `netId` is the body of one of this player's online guildmates.
+    bool isGuildmate(std::uint32_t netId) const {
+        if (netId == 0) return false;
+        for (const std::uint32_t id : guildmateIds_) {
+            if (id == netId) return true;
+        }
+        return false;
+    }
     /// Mutable because the panel answers an invite locally the moment it sends
     /// the reply, exactly as the reference clears `pendingInvite` on click.
     GuildInvite& guildInvite() { return guildInvite_; }
@@ -1069,6 +1083,52 @@ public:
         std::vector<Group> groups;
     };
     const WaveView& wave() const { return wave_; }
+
+    struct TrialProgressView {
+        bool known = false;
+        bool discovered = false;
+        std::uint32_t season = 0;
+        std::uint32_t refreshSeconds = 0;
+        int unlockedFloor = 1;
+        TrialBuffKind buff = TrialBuffKind::ProjectileDamage;
+        std::array<bool, kTrialFloorCount> cleared{};
+        std::array<int, kTrialFloorCount> bestStars{};
+        std::array<bool, kTrialFloorCount> claimable{};
+    };
+    const TrialProgressView& trialProgress() const { return trialProgress_; }
+
+    struct TrialRewardReceipt {
+        bool known = false;
+        bool ok = false;
+        int floor = 0;
+        std::uint32_t stars = 0;
+        double xp = 0.0;
+        std::string petal;
+        std::uint32_t petals = 0;
+        bool fullBonus = false;
+        std::string reason;
+    };
+    const TrialRewardReceipt& trialReward() const { return trialReward_; }
+
+    struct TrialView {
+        bool known = false;
+        TrialPhase phase = TrialPhase::Idle;
+        int floor = 0;
+        int chamber = 0;
+        TrialChallenge challenge = TrialChallenge::Defeat;
+        int stars = 0;
+        int deaths = 0;
+        WaveBiome biome = WaveBiome::Garden;
+        TrialBuffKind buff = TrialBuffKind::ProjectileDamage;
+        double elapsed = 0.0;
+        double threeStar = 0.0;
+        double failure = 0.0;
+        double reviveRemaining = 0.0;
+        double radius = kTrialArenaRadius;
+        int killed = 0; ///< The chamber's mobs down so far, every wave counted.
+        int total = 0;  ///< The chamber's mobs in all.
+    };
+    const TrialView& trial() const { return trial_; }
     const std::string& killerName() const { return killerName_; }
 
     /// Set once each time a yggdrasil raised this body. Cleared by whoever
@@ -1107,9 +1167,15 @@ private:
     void handleJoinAccepted(ByteReader&);
     RiftView rift_;
     WaveView wave_;
+    TrialProgressView trialProgress_;
+    TrialView trial_;
+    TrialRewardReceipt trialReward_;
     void handleRealmChange(ByteReader&, bool preserveView = false);
     void handleRiftState(ByteReader&);
     void handleWaveState(ByteReader&);
+    void handleTrialProgress(ByteReader&);
+    void handleTrialState(ByteReader&);
+    void handleTrialRewardClaimed(ByteReader&);
     void handleMazeInfo(ByteReader&);
     void handleChat(ByteReader&);
     /// The conversation already in progress when this account signed in, put
@@ -1154,6 +1220,7 @@ private:
     void handleSkinCatalog(ByteReader&);
     void handleSkinPage(ByteReader&);
     void handleSkinsFetched(ByteReader&);
+    void handleGuildMapUpdate(ByteReader&);
     /// Puts each skin in skinCatalog_, over any copy of it there.
     void rememberSkins(std::vector<CustomSkin> skins);
     /// Asks for the skins on flowers in view that skinCatalog_ lacks. Run
@@ -1258,6 +1325,7 @@ private:
 
     SquadState squad_;
     GuildState guild_;
+    std::vector<std::uint32_t> guildmateIds_;
     GuildInvite guildInvite_;
     CraftOutcome craftOutcome_;
     OracleOutcome oracleOutcome_;

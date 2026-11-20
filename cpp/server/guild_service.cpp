@@ -26,6 +26,14 @@ void removeGuildMember(Json& guild, int at) {
     members.erase(members.begin() + at);
 }
 
+/// Takes `username` off the officer list, if they are on it.
+void removeGuildOfficer(Json& guild, const std::string& username) {
+    const int at = guildOfficerIndex(guild, username);
+    if (at < 0) return;
+    std::vector<Json>& officers = guild["officerUsernames"].items();
+    officers.erase(officers.begin() + at);
+}
+
 /// The line a guildmate is invited into `inviter`'s squad with.
 std::string guildSquadInviteLine(const std::string& inviter) {
     return "<span style=\"color: #4fc3f7;\">@" + inviter +
@@ -61,6 +69,17 @@ std::string GameServer::guildLedBy(const Session& session, net::Connection& conn
     }
     return name;
 }
+std::string GameServer::guildManagedBy(const Session& session, net::Connection& connection,
+                                       const char* action) {
+    std::string name = guildOf(session, connection);
+    if (name.empty()) return name;
+    if (!canManageGuild(database_.storedTable("guilds")[name], session.username)) {
+        sendNotice(connection, net::NoticeSeverity::Warning,
+                   std::string("Only the guild leader or an officer can ") + action + ".");
+        return {};
+    }
+    return name;
+}
 
 ByteWriter GameServer::guildRosterMessage(const Json& guild) {
     const Json& members = guild["memberUsernames"];
@@ -88,6 +107,7 @@ ByteWriter GameServer::guildRosterMessage(const Json& guild) {
         w.str(member);
         w.boolean(session != nullptr);
         w.str(session != nullptr ? guildLocation(*session) : std::string());
+        w.u8(isGuildOfficer(guild, member) ? 1 : 0);
     }
     return w;
 }
@@ -247,9 +267,10 @@ void GameServer::guildEdit(Session& session, net::Connection& connection,
                            const std::optional<std::string>& rawDescription) {
     if (!session.authenticated()) return;
 
-    const std::string guildName = guildLedBy(session, connection, "edit the guild");
+    const std::string guildName = guildManagedBy(session, connection, "edit the guild");
     if (guildName.empty()) return;
     Json& guild = database_.rawTable("guilds")[guildName];
+    const bool isLeader = isGuildLeader(guild, session.username);
 
     // Both checked before either is written, so a refusal changes nothing.
     std::string displayName;
@@ -257,6 +278,13 @@ void GameServer::guildEdit(Session& session, net::Connection& connection,
         displayName = trimmed(*rawDisplayName);
         if (!validGuildDisplayName(displayName)) {
             sendNotice(connection, net::NoticeSeverity::Warning, guildDisplayNameRule());
+            return;
+        }
+        // The panel sends an officer's unchanged name along with the new
+        // description; only an actual rename is leader-only.
+        if (!isLeader && displayName != guildDisplayName(guild)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "Only the guild leader can rename the guild.");
             return;
         }
     }
@@ -295,7 +323,7 @@ void GameServer::guildInvite(Session& session, net::Connection& connection,
                              const std::string& raw) {
     if (!session.authenticated()) return;
 
-    const std::string guildName = guildLedBy(session, connection, "invite players");
+    const std::string guildName = guildManagedBy(session, connection, "invite players");
     if (guildName.empty()) return;
     const Json& guild = database_.storedTable("guilds")[guildName];
     if (guild["memberUsernames"].size() >= kMaxGuildSize) {
@@ -409,6 +437,7 @@ void GameServer::handleGuildLeave(Session& session, net::Connection& connection)
     Json& guild = guilds[guildName];
     const int at = guildMemberIndex(guild, session.username);
     if (at >= 0) removeGuildMember(guild, at);
+    removeGuildOfficer(guild, session.username);
 
     // The client is told it has no guild before anything else, so the panel
     // flips to the no-guild view on the same frame the confirmation lands.
@@ -425,8 +454,14 @@ void GameServer::handleGuildLeave(Session& session, net::Connection& connection)
 
     std::string promoted;
     if (isGuildLeader(guild, session.username)) {
-        promoted = guild["memberUsernames"][std::size_t{0}].asString();
+        // The first officer inherits the guild if there is one; otherwise
+        // the first member does, as before.
+        const Json& readOnly = guild;
+        const Json& officers = readOnly["officerUsernames"];
+        promoted = officers.size() > 0 ? officers[std::size_t{0}].asString()
+                                       : guild["memberUsernames"][std::size_t{0}].asString();
         guild["leaderUsername"] = promoted;
+        removeGuildOfficer(guild, promoted);
     }
     database_.markDirty();
 
@@ -465,6 +500,7 @@ void GameServer::guildKick(Session& session, net::Connection& connection,
     Json& guild = database_.rawTable("guilds")[guildName];
     const std::string member = guild["memberUsernames"][static_cast<std::size_t>(at)].asString();
     removeGuildMember(guild, at);
+    removeGuildOfficer(guild, member);
     database_.markDirty();
 
     sendGuildSystem(guild, member + " was kicked from the guild by " + session.username + ".");
@@ -473,6 +509,60 @@ void GameServer::guildKick(Session& session, net::Connection& connection,
         sendNotice(*peer, net::NoticeSeverity::Bad,
                    "You were kicked from guild \"" + guildName + "\".");
     }
+    broadcastGuildRoster(guild);
+}
+
+void GameServer::handleGuildSetOfficer(Session& session, net::Connection& connection,
+                                       ByteReader& reader) {
+    const std::string raw = reader.str();
+    const bool officer = reader.u8() != 0;
+    if (!reader.ok() || !session.authenticated()) return;
+    guildSetOfficer(session, connection, raw, officer);
+}
+
+void GameServer::guildSetOfficer(Session& session, net::Connection& connection,
+                                 const std::string& raw, bool officer) {
+    if (!session.authenticated()) return;
+
+    const std::string guildName =
+        guildLedBy(session, connection, officer ? "promote members" : "demote officers");
+    if (guildName.empty()) return;
+    Json& guild = database_.rawTable("guilds")[guildName];
+
+    const std::string target = trimmed(raw);
+    const int at = guildMemberIndex(guild, target);
+    if (at < 0) {
+        sendNotice(connection, net::NoticeSeverity::Warning, target + " is not in your guild.");
+        return;
+    }
+    // The stored spelling, as a kick uses.
+    const std::string member = guild["memberUsernames"][static_cast<std::size_t>(at)].asString();
+    if (isGuildLeader(guild, member)) {
+        sendNotice(connection, net::NoticeSeverity::Warning,
+                   "The guild leader cannot be made an officer.");
+        return;
+    }
+    const bool already = isGuildOfficer(guild, member);
+    if (officer == already) {
+        sendNotice(connection, net::NoticeSeverity::Warning,
+                   member + (officer ? " is already an officer." : " is not an officer."));
+        return;
+    }
+    if (officer) {
+        if (guild["officerUsernames"].size() >= kMaxGuildOfficers) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "A guild can have at most " + std::to_string(kMaxGuildOfficers) +
+                           " officers.");
+            return;
+        }
+        guild["officerUsernames"].push(member);
+    } else {
+        removeGuildOfficer(guild, member);
+    }
+    database_.markDirty();
+
+    sendGuildSystem(guild, officer ? member + " was promoted to officer by " + session.username + "."
+                                   : member + " is no longer an officer.");
     broadcastGuildRoster(guild);
 }
 
@@ -578,6 +668,66 @@ void GameServer::guildInviteToSquad(Session& session, net::Connection& connectio
     if (net::Connection* peer = listener_.find(peerSession->connection)) {
         sendSystem(*peer, guildSquadInviteLine(session.username));
     }
+}
+
+void GameServer::refreshGuildBodies() {
+    guildBodies_.clear();
+    guildOfUser_.clear();
+    const Json& guilds = database_.storedTable("guilds");
+    if (!guilds.isObject()) return;
+
+    // Everyone with a body, once per pass, rather than a walk of every
+    // session per guild.
+    std::unordered_map<std::string, const Session*> playing;
+    for (const auto& [id, session] : sessions_) {
+        if (session.playing() && !session.username.empty()) {
+            playing[lowerCase(session.username)] = &session;
+        }
+    }
+    if (playing.empty()) return;
+
+    for (const std::string& key : guilds.keys()) {
+        const Json& members = guilds[key]["memberUsernames"];
+        std::vector<Entity> bodies;
+        for (std::size_t i = 0; i < members.size(); ++i) {
+            const std::string lower = lowerCase(members[i].asString());
+            const auto found = playing.find(lower);
+            if (found == playing.end()) continue;
+            guildOfUser_[lower] = key;
+            bodies.push_back(found->second->entity);
+        }
+        if (!bodies.empty()) guildBodies_[key] = std::move(bodies);
+    }
+}
+
+void GameServer::collectGuildBodies(const Session& session, std::vector<Entity>& out) const {
+    out.clear();
+    const auto key = guildOfUser_.find(lowerCase(session.username));
+    if (key == guildOfUser_.end()) return;
+    const auto bodies = guildBodies_.find(key->second);
+    if (bodies == guildBodies_.end()) return;
+    for (const Entity body : bodies->second) {
+        if (body != session.entity) out.push_back(body);
+    }
+}
+
+void GameServer::syncGuildMap(Session& session, net::Connection& connection,
+                              const std::vector<Entity>& bodies) {
+    std::vector<std::uint32_t> ids;
+    ids.reserve(bodies.size());
+    for (const Entity body : bodies) {
+        if (const NetId* id = world_.tryGet<NetId>(body)) ids.push_back(id->value);
+    }
+    std::sort(ids.begin(), ids.end());
+    // Only when the set changed: a respawn or a join, not every snapshot.
+    if (ids == session.guildMapIds) return;
+    session.guildMapIds = ids;
+
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::GuildMapUpdate));
+    w.u16(static_cast<std::uint16_t>(ids.size()));
+    for (const std::uint32_t id : ids) w.u32(id);
+    connection.send(w);
 }
 
 } // namespace flix

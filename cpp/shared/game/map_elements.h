@@ -411,6 +411,11 @@ public:
     /// tooling and mean nothing to the game.
     const std::vector<TiledLayer>& layers() const { return layers_; }
 
+    /// The collision shapes of the tile a cell's `type` names, UNTURNED (see
+    /// orientTileShapes), or none for an empty cell. What the minimap paints a
+    /// `minimap_solid` layer's tiles with.
+    const std::vector<TiledShape>& tileShapes(std::int32_t type) const;
+
     /// The cell at a tile coordinate on one layer, or an empty cell when the
     /// coordinate is off the map. Bounds-checked because the renderer walks a
     /// viewport, not a grid, and a camera past the edge is normal.
@@ -525,6 +530,7 @@ private:
     /// the renderer reads these every frame.
     std::vector<std::string> artFiles_;
     std::vector<TiledLayer> layers_;
+    std::vector<std::vector<TiledShape>> tileShapes_;
     int width_ = 0;
     int height_ = 0;
 };

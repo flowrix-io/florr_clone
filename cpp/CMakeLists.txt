@@ -206,6 +206,7 @@ add_library(flix_server STATIC
   server/splitter.cpp
   server/squads.cpp
   server/waves.cpp
+  server/trials.cpp
   server/db.cpp
   server/crypto.cpp
   server/systems/movement.cpp
