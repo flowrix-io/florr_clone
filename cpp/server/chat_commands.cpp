@@ -988,7 +988,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // One message, laid out with the reference's own markup: the client
         // parses this subset, so the listing arrives looking the way it looks
         // in the browser rather than as a wall of tags.
-        std::string help = "Available commands:\n";
+        std::string help = "<b>Available commands:</b><br/>";
         help += "/biome - Show the most populated biome <br/>";
         help += "/boss-timers - Show each biome's unique/apex cooldown <br/>";
         help += "/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would "
@@ -1050,7 +1050,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             // The reference leaves its own angle brackets unescaped here, which
             // its sanitiser then eats along with the rest of the line. Escaped,
             // so the same words survive to the screen.
-            help += "<br/><br/>Admin commands:<br/>";
+            help += "<br/><br/><b>Admin commands:</b><br/>";
             help += "/admin &lt;command&gt; - Execute server command<br/>";
             help += "/cmd &lt;command&gt; - Execute server command (alternative)<br/>";
             // There is no lookup by id: a player is named by account, and a
@@ -1062,58 +1062,87 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                          ? std::string("You are the server owner.")
                          : "You are a tier " + std::to_string(adminTier(session)) + " admin.") +
                     " Tier 1 can do everything; tier 2 cannot update the server or manage "
-                    "wave rooms; tier 3 also "
-                    "cannot give petals except to themselves; tier 4 also cannot spawn mobs. "
-                    "The server owner is tier "
-                    "1 that can also manage tier 1 admins.<br/>";
-            help += "Available server commands: save, list-players, list-sockets, "
-                    "set_max_enemies, set_bot_count &lt;0-" + std::to_string(kMaxBots) +
-                    "|default&gt;, bots (what the bot population is doing), squads (who the "
-                    "loot rule pools), spawn &lt;mobType&gt; &lt;rarity&gt; "
-                    "[x] [y] [amount] [stack|unstack] (tiers 1-3), spawn_npc &lt;mobType&gt; "
-                    "[rarity] [players|hostile|neutral] (any mob, as an NPC where you stand; "
-                    "tiers 1-3), "
-                    "arena (hosted games: bring/return/map/empty/build/wall/floor/pvp), "
-                    "start_waves [garden|desert|ocean|jungle|computer|hel|sewers|pyramid] [starting "
-                    "wave] (open a rift to the wave "
-                    "survival mode; tier 1 only), stop_waves (close it and bring everyone back; tier 1 "
-                    "only), clear_npcs, killall (kill all wild "
-                    "mobs), teleport "
-                    "&lt;username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
-                    "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
-                    "(move every bot only), give &lt;username&gt; &lt;itemType&gt; "
-                    "&lt;rarity&gt; [amount] or give all &lt;rarity&gt; &lt;amount&gt; [username] [--exclude &lt;petal&gt; ...] (tiers 1-2; tiers 3-4 to themselves only), give_xp &lt;amount&gt; [username] (same give permissions), set_skin &lt;username&gt; "
-                    "&lt;skin|none&gt;, corrupt &lt;username&gt; [on|off|toggle] "
-                    "(corrupted flowers fight players anywhere, not just in PVP), god "
-                    "[on|off|toggle] (make yourself invulnerable), phase [on|off|toggle] (pass through walls), control &lt;username&gt; "
-                    "(steer another player's flower with your own controls), release (give "
-                    "it back), announce &lt;message&gt; (a banner for every player; full "
-                    "admins only), gui (open the admin dashboard), grant_admin "
-                    "&lt;username&gt; [tier] (lend the admin console until they respawn, at "
-                    "your own tier or below), "
-                    "revoke_admin &lt;username&gt;, list_admins (temporary grants and banned "
-                    "admins), ban_admin &lt;username&gt; (bar a lower-tier admin from every "
-                    "admin power until unbanned), unban_admin &lt;username&gt;, promote_admin "
-                    "&lt;username&gt; [tier] (raise a lower-tier admin, up to your own tier; "
-                    "default one tier up), demote_admin &lt;username&gt; [tier] (lower a "
-                    "lower-tier admin; default one tier down), mute "
-                    "&lt;username&gt; (bar an account from chat, persists across "
-                    "sessions), unmute &lt;username&gt;, unmute_all (lift every mute), grant_mod "
-                    "&lt;username&gt; (make a chat moderator: /mod mute, unmute and the filter's "
-                    "terms; full admins only), revoke_mod &lt;username&gt;, list_mods, "
-                    "notification &lt;type&gt; "
-                    "&lt;message&gt;, clear_notifications, delete_guests, block_guests &lt;ip hash|username&gt; "
-                    "(no new guest accounts from that address; a username means the hash it "
-                    "was made from; tier 1 only), unblock_guests &lt;ip hash|username&gt;, list_guest_blocks, "
-                    "list_today_logins, "
-                    "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
-                    "name&gt; &lt;username&gt;, fixnpc, restart [&lt;biome&gt; ...|&lt;N&gt;(s|m|h)|cancel|status|list], "
-                    "backup_db [list], db [username] (open the database editor; full admins "
-                    "only, tiers 1-2), update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
-                    "DB first, then installs latest build + restarts; tier 1 only), change-maze "
-                    "[next|garden|desert|ocean|&lt;dayNumber&gt;], sacrifice (lay Hel's "
-                    "Apex Sacrifice now; tiers 1-2), generate_code &lt;stars&gt; [maxUses], "
-                    "list_codes, delete_code &lt;code&gt; (star codes; tiers 1-2)";
+                    "wave rooms; tier 3 also cannot give petals except to themselves; tier 4 "
+                    "also cannot spawn mobs. The server owner is tier 1 that can also manage "
+                    "tier 1 admins.<br/>";
+            // One server command a line, as the player commands above are: the
+            // list used to be a single comma-separated paragraph.
+            help += "<br/><b>Server commands (after /admin or /cmd):</b>";
+            const auto command = [&](const std::string& line) { help += "<br/>" + line; };
+            command("save - Save the database now");
+            command("list-players, list-sockets - Who is connected");
+            command("set_max_enemies");
+            command("set_bot_count &lt;0-" + std::to_string(kMaxBots) +
+                    "|default&gt; - Set the bot population");
+            command("bots - What the bot population is doing");
+            command("squads - Who the loot rule pools");
+            command("spawn &lt;mobType&gt; &lt;rarity&gt; [x] [y] [amount] [stack|unstack] - "
+                    "Spawn mobs (tiers 1-3)");
+            command("spawn_npc &lt;mobType&gt; [rarity] [players|hostile|neutral] - Any mob, as "
+                    "an NPC where you stand (tiers 1-3)");
+            command("arena - Hosted games: bring/return/map/empty/build/wall/floor/pvp");
+            command("start_waves [garden|desert|ocean|jungle|computer|hel|sewers|pyramid] "
+                    "[starting wave] - Open a rift to the wave survival mode (tier 1 only)");
+            command("stop_waves - Close it and bring everyone back (tier 1 only)");
+            command("clear_npcs");
+            command("killall - Kill all wild mobs");
+            command("teleport &lt;username&gt; &lt;x&gt; &lt;y&gt;");
+            command("teleport_all &lt;x&gt; &lt;y&gt; - Move every player and bot");
+            command("teleport_bots &lt;x&gt; &lt;y&gt; - Move every bot only");
+            command("give &lt;username&gt; &lt;itemType&gt; &lt;rarity&gt; [amount] - Give "
+                    "petals (tiers 1-2; tiers 3-4 to themselves only)");
+            command("give all &lt;rarity&gt; &lt;amount&gt; [username] [--exclude &lt;petal&gt; "
+                    "...] - Every petal (same give permissions)");
+            command("give_xp &lt;amount&gt; [username] - (same give permissions)");
+            command("set_skin &lt;username&gt; &lt;skin|none&gt;");
+            command("corrupt &lt;username&gt; [on|off|toggle] - Corrupted flowers fight players "
+                    "anywhere, not just in PVP");
+            command("god [on|off|toggle] - Make yourself invulnerable");
+            command("phase [on|off|toggle] - Pass through walls");
+            command("control &lt;username&gt; - Steer another player's flower with your own "
+                    "controls");
+            command("release - Give it back");
+            command("announce &lt;message&gt; - A banner for every player (full admins only)");
+            command("gui - Open the admin dashboard");
+            command("grant_admin &lt;username&gt; [tier] - Lend the admin console until they "
+                    "respawn, at your own tier or below");
+            command("revoke_admin &lt;username&gt;");
+            command("list_admins - Temporary grants and banned admins");
+            command("ban_admin &lt;username&gt; - Bar a lower-tier admin from every admin power "
+                    "until unbanned");
+            command("unban_admin &lt;username&gt;");
+            command("promote_admin &lt;username&gt; [tier] - Raise a lower-tier admin, up to "
+                    "your own tier (default one tier up)");
+            command("demote_admin &lt;username&gt; [tier] - Lower a lower-tier admin (default "
+                    "one tier down)");
+            command("mute &lt;username&gt; - Bar an account from chat, persists across sessions");
+            command("unmute &lt;username&gt;");
+            command("unmute_all - Lift every mute");
+            command("grant_mod &lt;username&gt; - Make a chat moderator: /mod mute, unmute and "
+                    "the filter's terms (full admins only)");
+            command("revoke_mod &lt;username&gt;");
+            command("list_mods");
+            command("notification &lt;type&gt; &lt;message&gt;");
+            command("clear_notifications");
+            command("delete_guests");
+            command("block_guests &lt;ip hash|username&gt; - No new guest accounts from that "
+                    "address; a username means the hash it was made from (tier 1 only)");
+            command("unblock_guests &lt;ip hash|username&gt;");
+            command("list_guest_blocks");
+            command("list_today_logins");
+            command("guild_list");
+            command("guild_info &lt;guild name&gt;");
+            command("guild_force_join &lt;guild name&gt; &lt;username&gt;");
+            command("fixnpc");
+            command("restart [&lt;biome&gt; ...|&lt;N&gt;(s|m|h)|cancel|status|list]");
+            command("backup_db [list]");
+            command("db [username] - Open the database editor (full admins only, tiers 1-2)");
+            command("update [now|&lt;N&gt;(s|m|h)|status|cancel] - Backs up DB first, then "
+                    "installs latest build + restarts (tier 1 only)");
+            command("change-maze [next|garden|desert|ocean|&lt;dayNumber&gt;]");
+            command("sacrifice - Lay Hel's Apex Sacrifice now (tiers 1-2)");
+            command("generate_code &lt;stars&gt; [maxUses] - Make a star code (tiers 1-2)");
+            command("list_codes, delete_code &lt;code&gt; - Star codes (tiers 1-2)");
         }
         out(help);
         return true;
