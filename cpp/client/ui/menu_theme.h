@@ -88,7 +88,7 @@ inline constexpr PanelSkin kAdminDashboardSkin{0x5C5B9Cu, 0x7F7EBFu};
 /// The asset browser: the teal of the debug panel's Assets button, which is
 /// the one way in, so the card it opens reads as that button's.
 inline constexpr PanelSkin kAssetsSkin{0x3E7C74u, 0x63A89Eu};
-/// The Trial Grounds floor picker: the purple of its tab in the spawn picker,
+/// The Trial Grounds floor picker: the purple of its trophy button on the spawn picker,
 /// which is the one way in. Its Refreshing page a deeper violet, so the two
 /// pages read as two rooms of the same card.
 inline constexpr PanelSkin kTrialsSkin{0x8A63D2u};

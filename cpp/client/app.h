@@ -223,6 +223,9 @@ private:
         Rect xp;
         /// The yellow Prestige arrow at the left end of the tab row.
         Rect prestige;
+        /// The Trial Grounds trophy at the right end of the tab row, its
+        /// mirror: empty until the account has discovered the trials.
+        Rect trials;
     };
     LobbyLayout lobbyLayout(int viewWidth, int viewHeight) const;
     /// One button of the picker's first row: a biome, or one of the three
@@ -256,6 +259,7 @@ private:
     /// the prestige biomes, down to come back. Not shown until the talent is
     /// bought.
     void drawPrestigeButton(Canvas&, const Rect& box, bool hovered, bool pressed);
+    void drawTrialsButton(Canvas&, const Rect& box, bool hovered, bool pressed);
     /// The frame/ping/position readout in the bottom-right corner. On the
     /// title screens it is the frame counter alone: there is no world behind
     /// them for the other lines to report on.

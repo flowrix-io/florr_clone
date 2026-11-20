@@ -322,6 +322,7 @@ void App::updateLobby() {
                 }
             }
             if (insideInclusive(layout.prestige, mouse)) pressedControl_ = "prestige";
+            if (insideInclusive(layout.trials, mouse)) pressedControl_ = "trials";
         }
         if (window_.mouseReleased(MouseButton::Left)) {
             // "default" is stored as no choice at all, so a player who never
@@ -337,18 +338,7 @@ void App::updateLobby() {
             for (std::size_t i = 0; i < layout.tabs.size() && i < tabs.size(); ++i) {
                 if (!insideInclusive(layout.tabs[i], mouse)) continue;
                 onPicker = true;
-                // The Trial Grounds tab opens its floor picker rather than a
-                // row of doors, so it never becomes the chosen tab: a chosen
-                // tab is drawn darker, and this one must stay the exact purple
-                // of the card it opens (kTrialsSkin).
-                if (tabs[i].id != kTrialsSpawnChoice) pickerTab_ = tabs[i].id;
-                if (tabs[i].id == kTrialsSpawnChoice) {
-                    trialPickerOpen_ = true;
-                    trialRefreshingPicker_ = false;
-                    selectedTrialFloor_ = std::clamp(net_.trialProgress().unlockedFloor,
-                                                     1, kTrialPermanentFloorCount);
-                    continue;
-                }
+                pickerTab_ = tabs[i].id;
                 // A tab with one door IS that door -- Default, the arena, the
                 // maze, a biome with a single entrance -- so one click picks
                 // it rather than opening a row of one to click again.
@@ -362,6 +352,13 @@ void App::updateLobby() {
                 if (!insideInclusive(layout.doors[i], mouse)) continue;
                 onPicker = true;
                 if (open != nullptr && i < open->choices.size()) choose(open->choices[i]);
+            }
+            if (insideInclusive(layout.trials, mouse)) {
+                onPicker = true;
+                trialPickerOpen_ = true;
+                trialRefreshingPicker_ = false;
+                selectedTrialFloor_ = std::clamp(net_.trialProgress().unlockedFloor, 1,
+                                                 kTrialPermanentFloorCount);
             }
             if (insideInclusive(layout.prestige, mouse)) {
                 onPicker = true;
@@ -637,7 +634,6 @@ std::vector<App::PickerTab> App::pickerTabs() const {
     std::vector<PickerTab> tabs;
     tabs.push_back(PickerTab{"default", "Default", 0x00BE4Fu, {}});
     PickerTab maze{kMazeSpawnChoice, "Maze", 0x573D80u, {}};
-    PickerTab trials{kTrialsSpawnChoice, "Trial Grounds", 0x8A63D2u, {}};
     for (std::size_t i = 0; i < spawnChoices_.size(); ++i) {
         const SpawnChoice& choice = spawnChoices_[i];
         if (choice.id == kAdminArenaSpawnChoice && !net_.isSkinAdmin()) continue;
@@ -651,13 +647,9 @@ std::vector<App::PickerTab> App::pickerTabs() const {
             maze.choices.push_back(i);
             continue;
         }
-        if (choice.id == kTrialsSpawnChoice) {
-            if (net_.trialProgress().discovered) {
-                trials.color = choice.color;
-                trials.choices.push_back(i);
-            }
-            continue;
-        }
+        // The Trial Grounds are the trophy button at the row's right end,
+        // not a tab.
+        if (choice.id == kTrialsSpawnChoice) continue;
         // A door with no biome at all files under its own id, so it is still
         // reachable rather than silently dropped from the picker.
         const std::string& biome = choice.biome.empty() ? choice.id : choice.biome;
@@ -683,13 +675,6 @@ std::vector<App::PickerTab> App::pickerTabs() const {
     // The maze has no prestige version.
     if (!prestigeOn()) {
         tabs.push_back(std::move(maze));
-        if (!trials.choices.empty()) {
-            const auto sewers = std::find_if(tabs.begin(), tabs.end(), [](const PickerTab& tab) {
-                return tab.id == "sewers";
-            });
-            tabs.insert(sewers == tabs.end() ? tabs.end() : std::next(sewers),
-                        std::move(trials));
-        }
     }
     return tabs;
 }
@@ -757,6 +742,13 @@ App::LobbyLayout App::lobbyLayout(int viewWidth, int viewHeight) const {
     if (!layout.tabs.empty() && net_.profile().skills.prestigeUnlocked()) {
         const Rect& first = layout.tabs.front();
         layout.prestige = {first.x - kPickerGap - first.h, first.y, first.h, first.h};
+    }
+    // The Trial Grounds trophy mirrors it at the row's other end: the same
+    // square, a gap right of the last tab. Like the maze it has no prestige
+    // version, so it goes while the arrow is up.
+    if (!layout.tabs.empty() && net_.trialProgress().discovered && !prestigeOn()) {
+        const Rect& last = layout.tabs.back();
+        layout.trials = {last.right() + kPickerGap, last.y, last.h, last.h};
     }
 
     // The XP gauge takes the middle of whatever the picker leaves above the
@@ -860,6 +852,8 @@ void App::drawLobby(Canvas& canvas, double time) {
     drawPrestigeButton(canvas, layout.prestige,
                        freeMouse && insideInclusive(layout.prestige, mouse),
                        freeMouse && pressedControl_ == "prestige");
+    drawTrialsButton(canvas, layout.trials, freeMouse && insideInclusive(layout.trials, mouse),
+                     freeMouse && pressedControl_ == "trials");
 
     // Not until the profile is here, or a returning player's first frame reads
     // "Lvl 1".
@@ -1104,6 +1098,35 @@ void App::drawPrestigeButton(Canvas& canvas, const Rect& box, bool hovered, bool
     canvas.lineTo(static_cast<float>(cx - shaftW * 0.5), static_cast<float>(cy));
     canvas.lineTo(static_cast<float>(cx - half), static_cast<float>(cy));
     canvas.fill();
+}
+
+namespace {
+
+/// game-icons.net lorc/trophy (CC BY 3.0, credited on the Credits tab), on a
+/// 512-unit square.
+constexpr const char* kTrophyIconPath =
+    "M256.156 21.625c-45.605 0-86.876 2.852-117.22 7.563-15.17 2.355-27.554 5.11-36.874 8.53-4.66 1.71-8.568 3.515-11.968 6.094-3.238 2.457-6.65 6.36-6.97 11.75h-.75c0 10.08.362 20.022 1.064 29.813H57.53c-.12-7.952.003-15.922.376-23.875l-26.812-6.28C22.55 161.892 64.1 265.716 140.564 339.655l15.655-29.594a250.817 250.817 0 0 1-12.157-10.75 143.483 143.483 0 0 1 19.28-16.843c13.468 13.172 28.182 23.565 43.813 30.655 22.114 17.744 8.053 29.368-23.5 36.25 58.863 10.6 38.948 62.267-14.125 92.313-2.14.27-4.256.523-6.28.812-12.047 1.718-21.876 3.71-29.406 6.25-3.765 1.27-6.958 2.6-9.906 4.656-2.95 2.055-6.626 5.705-6.626 11.406 0 5.702 3.677 9.32 6.626 11.375 2.948 2.055 6.14 3.387 9.906 4.657 7.53 2.54 17.36 4.532 29.406 6.25 24.094 3.436 56.784 5.53 92.906 5.53 36.123 0 68.812-2.094 92.906-5.53 12.048-1.718 21.877-3.71 29.407-6.25 3.764-1.27 6.957-2.602 9.905-4.656 2.948-2.055 6.625-5.674 6.625-11.375 0-5.702-3.677-9.352-6.625-11.407-2.948-2.055-6.14-3.387-9.906-4.656-7.53-2.54-17.36-4.532-29.408-6.25-2.013-.287-4.12-.544-6.25-.813-53.076-30.045-72.99-81.71-14.125-92.312-31.568-6.886-45.63-18.522-23.468-36.28 15.74-7.15 30.547-17.655 44.092-30.97 6.648 4.773 12.84 10.038 18.47 15.72a300.791 300.791 0 0 1-12.72 12.217l16.188 29.594c79.118-71.955 116.195-179.53 110.03-285l-27.342 7.97c.45 7.61.64 15.19.562 22.75h-25.594a416.913 416.913 0 0 0 1.063-29.814h-.75c-.323-5.39-3.763-9.293-7-11.75-3.402-2.58-7.31-4.383-11.97-6.093-9.32-3.422-21.704-6.177-36.875-8.532-30.342-4.71-71.613-7.563-117.22-7.563zm0 18.688c44.822 0 85.426 2.854 114.344 7.343 14.46 2.245 26.06 4.932 33.313 7.594 1.04.382 1.775.75 2.625 1.125-.85.375-1.58.742-2.625 1.125-7.252 2.662-18.854 5.38-33.313 7.625-28.918 4.49-69.522 7.344-114.344 7.344-44.82 0-85.425-2.855-114.344-7.345-14.46-2.245-26.06-4.963-33.312-7.625-1.05-.386-1.77-.748-2.625-1.125.853-.376 1.577-.74 2.625-1.125 7.252-2.662 18.853-5.35 33.313-7.594 28.918-4.49 69.522-7.343 114.343-7.343zm-197.25 71.874H86.25c8.057 57.878 28.23 108.83 56.188 146.25-6.974 5.74-13.407 11.968-19.188 18.688-38.648-46.456-59.042-104.647-64.344-164.938zm367.188 0h27C447.51 171.82 425.336 228.34 388.03 275a158.506 158.506 0 0 0-17.842-16.97c27.81-37.38 47.873-88.175 55.906-145.842z";
+
+}  // namespace
+
+void App::drawTrialsButton(Canvas& canvas, const Rect& box, bool hovered, bool pressed) {
+    if (box.w <= 0.0) return;
+    // The Trial Grounds card's own purple, so the button reads as the card
+    // it opens.
+    ButtonStyle style;
+    style.fill = kTrialsSkin.fill;
+    button(canvas, box, "", hovered, pressed, style);
+
+    static const Path2D trophy = svgPathData(kTrophyIconPath);
+    const double size = box.h * 0.62;
+    canvas.save();
+    canvas.translate(static_cast<float>(box.x + box.w * 0.5),
+                     static_cast<float>(box.y + box.h * 0.5));
+    canvas.scale(static_cast<float>(size / 512.0), static_cast<float>(size / 512.0));
+    canvas.translate(-256.0f, -256.0f);
+    setFill(canvas, kPaper);
+    canvas.fill(trophy);
+    canvas.restore();
 }
 
 void App::drawTitleXpBar(Canvas& canvas, const Rect& track) {

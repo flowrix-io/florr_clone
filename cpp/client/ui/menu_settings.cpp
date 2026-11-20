@@ -427,24 +427,33 @@ struct CreditLine {
     double advance;  ///< how far the cursor moves afterwards
 };
 
-constexpr std::array<CreditLine, 15> kCredits = {{
+// Every section's last line advances 28 rather than 20: the gap before the
+// next heading. Lines must fit the card's 420 width at 12 px, so links are
+// written without their scheme.
+constexpr std::array<CreditLine, 16> kCredits = {{
     {"flowrix.sussybite.dev", 18.0, kPaper, true, 10.0, 30.0},
     {"Developers", 14.0, kGoldHeading, false, 10.0, 24.0},
     {"• sussybite8888 — Game Owner / Head Developer", 12.0, kPaper, false, 8.0, 20.0},
     {"• cookery", 12.0, kPaper, false, 8.0, 20.0},
     {"• 19kisme", 12.0, kPaper, false, 8.0, 20.0},
-    {"• Arras Guard YT", 12.0, kPaper, false, 8.0, 20.0},
+    {"• Arras Guard YT", 12.0, kPaper, false, 8.0, 28.0},
     {"Inspired By", 14.0, kGoldHeading, false, 10.0, 24.0},
     {"• florr.io by M28", 12.0, kPaper, false, 8.0, 28.0},
     {"Assets & Libraries", 14.0, kGoldHeading, false, 10.0, 24.0},
-    {"• Icons from game-icons.net and svgrepo.com", 12.0, kPaper, false, 8.0, 20.0},
-    {"• Ubuntu font by Canonical", 12.0, kPaper, false, 8.0, 28.0},
-    {"• Assets extracted by Bismuth(https://github.com/trigonal-bacon/gardn)",
+    // CC BY 3.0 wants the authors and the licence named, not only the site.
+    // Every game-icons.net glyph in the client and its author is listed in
+    // menu_icons.h; a new one from a new author adds a name here.
+    {"• Icons from game-icons.net (CC BY 3.0) and svgrepo.com", 12.0, kPaper, false, 8.0,
+     20.0},
+    {"• game-icons.net art by Lorc, Delapouite, Skoll and sbed", 12.0, kPaper, false, 8.0,
+     20.0},
+    {"• Ubuntu font by Canonical", 12.0, kPaper, false, 8.0, 20.0},
+    {"• Assets extracted by Bismuth (github.com/trigonal-bacon/gardn)",
      12.0, kPaper, false, 8.0, 20.0},
-    {"• UI style by Bismuth(https://github.com/trigonal-bacon/gardn)",
+    {"• UI style by Bismuth (github.com/trigonal-bacon/gardn)",
      12.0, kPaper, false, 8.0, 20.0},
-    {"• Some SVG images from FreeSVG.org(https://freesvg.org)",
-     12.0, kPaper, false, 8.0, 20.0},
+    {"• Some SVG images from FreeSVG.org (freesvg.org)",
+     12.0, kPaper, false, 8.0, 28.0},
     {"Thanks for playing!", 13.0, kFooterGrey, true, 8.0, 20.0},
 }};
 
