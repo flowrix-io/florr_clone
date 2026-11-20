@@ -1081,7 +1081,8 @@ const std::array<MenuSystem::StripSlot, kStripSlotCount>& MenuSystem::strip() {
         {MenuId::Leaderboard,   A::OpenMenu, "leaderboard",   true,  0xE8A023u},
         {MenuId::Guild,         A::OpenMenu, "guild",         true,  0x27DADEu},
         {MenuId::Skins,         A::OpenMenu, "skins",         true,  0xC45CFFu},
-        {MenuId::Gallery,       A::OpenMenu, "mob_gallery",   true,  0xD6C206u},
+        // The gallery card's own yellow (kGallerySkin).
+        {MenuId::Gallery,       A::OpenMenu, "mob_gallery",   true,  kGallerySkin.fill},
         {MenuId::Shop,          A::OpenMenu, "stars",         true,  0x7EF16Bu},
         // The talents button's purple, which is also the card's (kAccountSkin).
         {MenuId::Account,       A::OpenMenu, "account",       true,  kAccountSkin.fill},
