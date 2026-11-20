@@ -32,7 +32,14 @@ inline constexpr double kTrialArenaRadius = 1200.0;
 inline constexpr double kTrialMinArenaRadius = 1000.0;
 inline constexpr const char* kTrialsSpawnChoice = "trials";
 
-enum class TrialPhase : std::uint8_t { Idle = 0, Active, Intermission, Complete, Failed };
+enum class TrialPhase : std::uint8_t {
+    Idle = 0,
+    Active,
+    Intermission,
+    Preparing,
+    Complete,
+    Failed
+};
 enum class TrialChallenge : std::uint8_t { Defeat = 0, Timed };
 enum class TrialBuffKind : std::uint8_t {
     ProjectileDamage = 0,

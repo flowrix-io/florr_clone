@@ -264,6 +264,8 @@ enum class ClientMessage : std::uint8_t {
     ClaimTrialReward,   ///< u8 floor -- claims its first-clear reward and, once
                         ///< earned, its 9-star bonus. Answered with
                         ///< TrialRewardClaimed. (Version 92.)
+    StartTrialChamber,  ///< (empty) -- starts the prepared chamber belonging to
+                        ///< this session's private Trial Grounds run.
 };
 
 enum class ServerMessage : std::uint8_t {

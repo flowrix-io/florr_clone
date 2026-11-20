@@ -707,6 +707,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
 
     serviceAdminPhase();
     movement_->runPlayerPhase(world_, *terrain_, nowMillis, dt);
+    stepTrialSecretDiscovery();
     markTickPhase("players");
     petals_->run(world_, content(), nowMillis, dt, commands_, terrain_.get(), &events_);
     markTickPhase("petals");

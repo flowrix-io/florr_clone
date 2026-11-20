@@ -362,6 +362,17 @@ void App::updatePlaying(double dt) {
     // keystroke being typed into the chat line.
     if (mobile_.takeRowSwap()) menus_.requestLoadoutRowSwap();
 
+    const NetClient::TrialView& trial = net_.trial();
+    if (isTrialRealm(net_.view().realm()) && trial.known &&
+        trial.phase == TrialPhase::Preparing && window_.mouseReleased(MouseButton::Left)) {
+        const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+        const Rect start{window_.width() * 0.5 - 90.0, 109.0, 180.0, 38.0};
+        if (hit(start, mouse) && !menus_.capturesMouse(mouse) &&
+            !tutorial_.capturesMouse(mouse)) {
+            net_.startTrialChamber();
+        }
+    }
+
     // Chat swallows the keyboard while open, or typing would also drive the
     // flower and trip every hotkey.
     if (chatOpen_ && !menus_.wantsText()) {

@@ -408,7 +408,7 @@ TEST(give_rejects_an_unknown_petal_and_an_unknown_rarity) {
     CHECK(sawText(client, "Invalid amount \"4294967297\""));
 }
 
-TEST(spawn_places_a_mob_and_killall_clears_it) {
+TEST(spawn_places_a_mob_and_killall_clears_only_non_trial_mobs) {
     Harness h("cmd-spawn", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
     });
@@ -431,11 +431,20 @@ TEST(spawn_places_a_mob_and_killall_clears_it) {
     CHECK(sawText(client, "rare bee"));
     CHECK(liveMobs() > before);
 
+    Entity protectedTrialMob = NULL_ENTITY;
+    Query<MobTag> spawned{h.server.world()};
+    spawned.each([&](Entity entity, MobTag&) {
+        if (protectedTrialMob == NULL_ENTITY) protectedTrialMob = entity;
+    });
+    CHECK(protectedTrialMob != NULL_ENTITY);
+    h.server.world().add<TrialMob>(protectedTrialMob);
+
     CHECK(say(h, client, "/admin killall"));
     // The destroy runs through the command buffer, so it lands on the tick
     // after the command rather than inside it.
     h.step(2, {&client});
-    CHECK_EQ(liveMobs(), 0);
+    CHECK_EQ(liveMobs(), 1);
+    CHECK(h.server.world().isAlive(protectedTrialMob));
     CHECK(sawText(client, "pets left intact"));
 }
 

@@ -15,6 +15,18 @@ TEST(trials_have_two_floors_for_every_rarity_through_apex) {
     CHECK_EQ(trialRarity(20), Rarity::Apex);
 }
 
+TEST(trial_realms_are_private_generated_discs) {
+    CHECK_EQ(kTrialRealmCount, 24);
+    for (int i = 0; i < kTrialRealmCount; ++i) {
+        const Realm realm = trialRealm(i);
+        CHECK(isTrialRealm(realm));
+        CHECK(isDiscRealm(realm));
+        CHECK(!isWorldRealm(realm));
+        CHECK_EQ(trialRealmIndex(realm), i);
+        CHECK(realm != kWavesRealm);
+    }
+}
+
 TEST(trial_introduction_floors_are_smaller_than_wave_floors) {
     for (int chamber = 1; chamber <= kTrialChambersPerFloor; ++chamber) {
         CHECK(trialMobCount(1, chamber) < trialMobCount(2, chamber));

@@ -603,6 +603,7 @@ public:
     void cancelJoin() { joinPending_ = false; }
     void leaveGame();
     void claimTrialReward(int floor);
+    void startTrialChamber();
     void sendInput(const net::InputFrame&);
     void sendChat(const std::string& text);
     void setLoadoutSlot(int slot, std::uint16_t petalIndex, Rarity rarity);
@@ -1074,6 +1075,7 @@ public:
 
     struct TrialProgressView {
         bool known = false;
+        bool discovered = false;
         std::uint32_t season = 0;
         std::uint32_t refreshSeconds = 0;
         int unlockedFloor = 1;

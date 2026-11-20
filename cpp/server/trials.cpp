@@ -17,6 +17,7 @@ constexpr std::int64_t kTrialSeasonMillis = 30ll * 24ll * 60ll * 60ll * 1000ll;
 
 struct TrialProgressData {
     int season = 0;
+    bool unlocked = false;
     std::array<bool, kTrialFloorCount> cleared{};
     std::array<int, kTrialFloorCount> best{};
     /// 0: nothing claimed, 1: first-clear bundle, 2: 9-star bonus too.
@@ -28,6 +29,7 @@ TrialProgressData readProgress(const PlayerRecord& record, int season) {
     out.season = season;
     const Json& root = record.extra["trialGrounds"];
     if (!root.isObject()) return out;
+    out.unlocked = root["unlocked"].asBool(false);
     const int storedSeason = root["season"].asInt(-1);
     const Json& cleared = root["cleared"];
     const Json& best = root["bestStars"];
@@ -59,6 +61,7 @@ TrialProgressData readProgress(const PlayerRecord& record, int season) {
 void writeProgress(PlayerRecord& record, const TrialProgressData& data) {
     Json root = Json::object();
     root["season"] = data.season;
+    root["unlocked"] = data.unlocked;
     Json cleared = Json::array();
     Json best = Json::array();
     Json claimed = Json::array();
@@ -125,6 +128,49 @@ int GameServer::unlockedTrialFloor(Session& session) {
     return unlockedFloor(progress);
 }
 
+bool GameServer::trialGroundsUnlocked(Session& session) {
+    if (!session.authenticated()) return false;
+    return database_.progress(session.userId).extra["trialGrounds"]["unlocked"].asBool(false);
+}
+
+void GameServer::stepTrialSecretDiscovery() {
+    bool gardenFound = false;
+    bool roomFound = false;
+    const Realm garden = worldMaps_.realmOfId("garden", gardenFound);
+    const Realm room = worldMaps_.realmOfId("trial_secret", roomFound);
+    if (!gardenFound || !roomFound) return;
+
+    constexpr double kPassageRowTop = 3.0 * kTileSize;
+    constexpr double kPassageRowBottom = 4.0 * kTileSize;
+    constexpr double kDiscoveryX = 0.5 * kTileSize;
+    const Vec2 kRoomCentre{1.5 * kTileSize, 1.5 * kTileSize};
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        if (!session.playing() || !session.authenticated()) continue;
+        Transform* transform = world_.tryGet<Transform>(session.entity);
+        if (transform == nullptr || transform->realm != garden) continue;
+        if (transform->position.x > kDiscoveryX ||
+            transform->position.y < kPassageRowTop ||
+            transform->position.y >= kPassageRowBottom) {
+            continue;
+        }
+
+        PlayerRecord& record = database_.progress(session.userId);
+        Json& progress = record.extra["trialGrounds"];
+        if (!progress.isObject()) progress = Json::object();
+        if (!progress["unlocked"].asBool(false)) {
+            progress["unlocked"] = true;
+            database_.markDirty();
+        }
+        moveEntityToRealm(session.entity, room, kRoomCentre);
+        if (net::Connection* connection = listener_.find(session.connection)) {
+            sendNotice(*connection, net::NoticeSeverity::Good,
+                       "You have unlocked the Trial Grounds. Head to the home screen to view.");
+            sendTrialProgress(session, connection);
+        }
+    }
+}
+
 void GameServer::sendTrialProgress(Session& session, net::Connection* connection) {
     if (!session.authenticated()) return;
     if (connection == nullptr) connection = listener_.find(session.connection);
@@ -139,6 +185,7 @@ void GameServer::sendTrialProgress(Session& session, net::Connection* connection
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::TrialProgress));
     w.u32(static_cast<std::uint32_t>(season));
     w.u32(remaining);
+    w.u8(progress.unlocked ? 1 : 0);
     w.u8(static_cast<std::uint8_t>(unlockedFloor(progress)));
     w.u8(static_cast<std::uint8_t>(seasonBuff(season)));
     for (int i = 0; i < kTrialFloorCount; ++i) {
@@ -160,7 +207,7 @@ void GameServer::startTrial(Session& session, int floor) {
     const int season = static_cast<int>(database_.nowMillis() / kTrialSeasonMillis);
     trial = TrialRun{};
     trial.realm = session.trialRealm;
-    trial.phase = TrialPhase::Active;
+    trial.phase = TrialPhase::Preparing;
     trial.owner = session.connection;
     trial.floor = floor;
     trial.chamber = 1;
@@ -168,7 +215,29 @@ void GameServer::startTrial(Session& session, int floor) {
     trial.biome = static_cast<WaveBiome>((season + floor) % static_cast<int>(WaveBiome::Count));
     world_.add<TrialBuff>(session.entity,
                           TrialBuff{static_cast<std::uint8_t>(trial.buff), clockMillis_});
-    spawnTrialChamber(trial, clockMillis_);
+    prepareTrialChamber(trial, clockMillis_, false);
+}
+
+void GameServer::prepareTrialChamber(TrialRun& trial, double nowMillis, bool playTransition) {
+    auto found = sessions_.find(trial.owner);
+    if (found == sessions_.end() || !found->second.playing()) return;
+    Session& session = found->second;
+    clearTrialMobs(trial);
+    trial.phase = TrialPhase::Preparing;
+    trial.deaths = 0;
+    trial.deathCounted = false;
+    trial.awaitingWave = false;
+    trial.wave = 0;
+    trial.waveCount = trialWaveCount(trial.floor, trial.chamber);
+    trial.reviveAtMillis = 0.0;
+    trial.nextWaveAtMillis = 0.0;
+    trial.chamberStartedMillis = 0.0;
+    const int slot = trialRealmIndex(trial.realm);
+    if (slot >= 0) {
+        terrain_->trialRadii[static_cast<std::size_t>(slot)] = trialArenaRadius(trial.floor);
+    }
+    standUpWaveFlower(session, nowMillis);
+    teleportEntity(session.entity, kWavesCentre, playTransition);
     sendTrialState(session, trial);
 }
 
@@ -195,6 +264,15 @@ void GameServer::spawnTrialChamber(TrialRun& trial, double nowMillis) {
     trial.nextWaveAtMillis = 0.0;
     trial.chamberStartedMillis = nowMillis;
     spawnTrialWave(trial, nowMillis);
+    sendTrialState(found->second, trial);
+}
+
+void GameServer::handleStartTrialChamber(Session& session) {
+    const int slot = trialRealmIndex(session.trialRealm);
+    if (slot < 0 || !session.playing()) return;
+    TrialRun& trial = trials_[static_cast<std::size_t>(slot)];
+    if (trial.owner != session.connection || trial.phase != TrialPhase::Preparing) return;
+    spawnTrialChamber(trial, clockMillis_);
 }
 
 void GameServer::spawnTrialWave(TrialRun& trial, double nowMillis) {
@@ -241,17 +319,8 @@ void GameServer::spawnTrialWave(TrialRun& trial, double nowMillis) {
                                                     trial.realm, nowMillis, rng_);
         if (spawned == NULL_ENTITY) continue;
         world_.add<TrialMob>(spawned);
-        // The Waves realm normally makes its roaming Eternal and Apex bosses
-        // 10x/50x healthier. Trial floors already choose their own difficulty
-        // through rarity, count and wave layout, so remove that unrelated
-        // survival-mode multiplier here.
-        const double realmScale = waveHealthScale(rarity);
-        if (realmScale > 1.0) {
-            if (Health* health = world_.tryGet<Health>(spawned)) {
-                health->current /= realmScale;
-                health->max /= realmScale;
-            }
-        }
+        // A private Trial realm gets the mob's ordinary rarity-scaled health.
+        // The Waves-only boss multiplier is not applied by spawnMob here.
         if (MobAi* ai = world_.tryGet<MobAi>(spawned)) ai->aggroRange = kMobTargetRetainRadius;
     }
 }
@@ -272,6 +341,7 @@ void GameServer::stepTrial(TrialRun& trial, double nowMillis) {
         return;
     }
     Session& session = found->second;
+    if (trial.phase == TrialPhase::Preparing) return;
     if (trial.phase == TrialPhase::Intermission) {
         if (!trial.teleportCued &&
             nowMillis >= trial.nextChamberAtMillis - kTrialTeleportLeadMillis) {
@@ -348,10 +418,8 @@ void GameServer::stepTrial(TrialRun& trial, double nowMillis) {
             return;
         }
         ++trial.chamber;
-        trial.phase = TrialPhase::Intermission;
-        trial.nextChamberAtMillis = nowMillis + kTrialIntermissionMillis;
-        standUpWaveFlower(session, nowMillis);
-        trial.deathCounted = false;
+        prepareTrialChamber(trial, nowMillis, true);
+        return;
     }
     if (nowMillis >= trial.nextStateMillis) {
         trial.nextStateMillis = nowMillis + 200.0;

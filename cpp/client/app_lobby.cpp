@@ -20,6 +20,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <utility>
 
 #include "client/app_internal.h"
@@ -647,8 +648,10 @@ std::vector<App::PickerTab> App::pickerTabs() const {
             continue;
         }
         if (choice.id == kTrialsSpawnChoice) {
-            trials.color = choice.color;
-            trials.choices.push_back(i);
+            if (net_.trialProgress().discovered) {
+                trials.color = choice.color;
+                trials.choices.push_back(i);
+            }
             continue;
         }
         // A door with no biome at all files under its own id, so it is still
@@ -669,7 +672,13 @@ std::vector<App::PickerTab> App::pickerTabs() const {
     // The maze has no prestige version.
     if (!prestigeOn()) {
         tabs.push_back(std::move(maze));
-        tabs.push_back(std::move(trials));
+        if (!trials.choices.empty()) {
+            const auto sewers = std::find_if(tabs.begin(), tabs.end(), [](const PickerTab& tab) {
+                return tab.id == "sewers";
+            });
+            tabs.insert(sewers == tabs.end() ? tabs.end() : std::next(sewers),
+                        std::move(trials));
+        }
     }
     return tabs;
 }

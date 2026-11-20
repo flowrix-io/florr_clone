@@ -86,6 +86,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::BrowseSkins:         return "browseSkins";
         case net::ClientMessage::FetchSkins:          return "fetchSkins";
         case net::ClientMessage::ClaimTrialReward:    return "claimTrialReward";
+        case net::ClientMessage::StartTrialChamber:   return "startTrialChamber";
     }
     return "unknown";
 }
@@ -411,6 +412,12 @@ void NetClient::claimTrialReward(int floor) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::ClaimTrialReward);
     w.u8(static_cast<std::uint8_t>(std::clamp(floor, 1, kTrialFloorCount)));
+    send(w);
+}
+
+void NetClient::startTrialChamber() {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::StartTrialChamber);
     send(w);
 }
 
@@ -2072,6 +2079,7 @@ void NetClient::handleTrialProgress(ByteReader& reader) {
     progress.known = true;
     progress.season = reader.u32();
     progress.refreshSeconds = reader.u32();
+    progress.discovered = reader.u8() != 0;
     progress.unlockedFloor = reader.u8();
     const std::uint8_t buff = reader.u8();
     if (buff >= static_cast<std::uint8_t>(TrialBuffKind::Count)) return;
