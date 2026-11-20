@@ -178,7 +178,7 @@ Vec2 CraftingPanel::size(const Profile& profile) {
 void CraftingPanel::reset() {
     grid_.reset();
     stagedPetal_ = kNoPetal;
-    batches_ = 0;
+    stagedCount_ = 0;
     phase_ = Phase::Idle;
     resultPending_ = false;
     spin_ = phaseAngle_ = shake_ = show_ = 0;
@@ -191,15 +191,27 @@ void CraftingPanel::reset() {
 
 void CraftingPanel::stage(const Profile& profile, std::uint16_t petalIndex, Rarity rarity,
                           bool wholeStack) {
-    const int possible = ownedCount(profile, petalIndex, rarity) / kBatch;
-    if (possible <= 0 || !craftsOutOf(rarity)) return;
-
-    if (stagedPetal_ != petalIndex || stagedRarity_ != rarity) {
+    const int owned = ownedCount(profile, petalIndex, rarity);
+    if (!craftsOutOf(rarity)) return;
+    const bool same = stagedPetal_ == petalIndex && stagedRarity_ == rarity;
+    // A fresh petal needs a whole first batch; once one is in, the rest of
+    // the stack can follow it however many are left, four included.
+    if (!same && owned < kBatch) return;
+    if (!same) {
         stagedPetal_ = petalIndex;
         stagedRarity_ = rarity;
-        batches_ = 0;
+        stagedCount_ = 0;
     }
-    batches_ = wholeStack ? possible : std::min(possible, batches_ + 1);
+    // A click adds five, or the whole stack under shift; the last click takes
+    // whatever is left, so 14 goes in as 5, 5 and 4.
+    stagedCount_ = wholeStack ? owned : std::min(owned, stagedCount_ + kBatch);
+}
+
+/// How many of the staged petals the ring's slot `i` shows: the count spread
+/// round the five, the first slots taking the remainder -- 14 reads 3 3 3 3 2.
+int CraftingPanel::slotCount(int i) const {
+    const int base = stagedCount_ / kBatch;
+    return base + (i < stagedCount_ % kBatch ? 1 : 0);
 }
 
 void CraftingPanel::animate(double dtMs) {
@@ -219,11 +231,12 @@ bool CraftingPanel::render(MenuContext& ctx) {
     const Vec2 mouse = ctx.mouse();
     const double nowMs = ctx.timeSeconds * 1000.0;
 
-    // One click of the ring hands back one batch of five, not the whole
-    // staging area, so the slot badge counts down instead of vanishing.
+    // One click of the ring hands back five, not the whole staging area, so
+    // the slot badges count down instead of vanishing.
     const auto removeBatch = [this]() {
-        if (--batches_ <= 0) {
-            batches_ = 0;
+        stagedCount_ -= kBatch;
+        if (stagedCount_ <= 0) {
+            stagedCount_ = 0;
             stagedPetal_ = kNoPetal;
         }
     };
@@ -278,9 +291,9 @@ bool CraftingPanel::render(MenuContext& ctx) {
     // profile that lands a frame ahead of the result would empty the ring
     // half-way through its own animation.
     if (phase_ != Phase::Spinning && stagedPetal_ != kNoPetal &&
-        ownedCount(profile, stagedPetal_, stagedRarity_) / kBatch < batches_) {
-        batches_ = ownedCount(profile, stagedPetal_, stagedRarity_) / kBatch;
-        if (batches_ <= 0) stagedPetal_ = kNoPetal;
+        ownedCount(profile, stagedPetal_, stagedRarity_) < stagedCount_) {
+        stagedCount_ = ownedCount(profile, stagedPetal_, stagedRarity_);
+        if (stagedCount_ <= 0) stagedPetal_ = kNoPetal;
     }
 
     animate(ctx.dt * 1000.0);
@@ -364,7 +377,11 @@ bool CraftingPanel::render(MenuContext& ctx) {
         tile.petalIndex = ringPetal;
         tile.rarity = ringRarity;
         tile.timeSeconds = ctx.timeSeconds;
-        const bool occupied = ringFilled && (!inResult || (!lastSuccess_ && survives_[at]));
+        // Idle, a slot holds its share of what is staged, so four staged
+        // petals fill four slots. The roll and the outcome show all five.
+        const bool occupied =
+            ringFilled && (!inResult || (!lastSuccess_ && survives_[at])) &&
+            (phase_ != Phase::Idle || slotCount(i) > 0);
         double& grow = grow_[at];
         const std::uint32_t key = occupied ? tileKey(ringPetal, ringRarity) : kNothing;
         if (key != slotKey_[at]) {
@@ -386,8 +403,8 @@ bool CraftingPanel::render(MenuContext& ctx) {
         if (!occupied) continue;
         grow += (1.0 - grow) * (1.0 - std::exp(-kGrowRate * ctx.dt * 1000.0));
         const bool growing = grow < kGrowDone;
-        if (phase_ == Phase::Idle && batches_ > 1) {
-            tile.badge = "x" + stackCountText(static_cast<std::uint64_t>(batches_));
+        if (phase_ == Phase::Idle && slotCount(i) > 1) {
+            tile.badge = "x" + stackCountText(static_cast<std::uint64_t>(slotCount(i)));
         }
         slotTile_[at] = tile;
         // drawItemTile SETS the canvas's alpha rather than multiplying it, so
@@ -425,7 +442,7 @@ bool CraftingPanel::render(MenuContext& ctx) {
 
     // --- craft button, the odds and the lines ---------------------------------
     const Rect craftRect = card.button;
-    const bool canCraft = phase_ == Phase::Idle && stagedPetal_ != kNoPetal && batches_ > 0;
+    const bool canCraft = phase_ == Phase::Idle && stagedPetal_ != kNoPetal && stagedCount_ >= kBatch;
     drawSlotButton(canvas, craftRect, "Craft",
                    canCraft ? std::optional<std::uint32_t>(rarityColor(upgradeRarity(stagedRarity_)))
                             : std::nullopt,
@@ -449,8 +466,7 @@ bool CraftingPanel::render(MenuContext& ctx) {
     }
 
     // --- the grid ----------------------------------------------------------
-    const std::uint32_t held =
-        static_cast<std::uint32_t>(std::max(0, batches_)) * static_cast<std::uint32_t>(kBatch);
+    const std::uint32_t held = static_cast<std::uint32_t>(std::max(0, stagedCount_));
     const std::optional<SlotGrid::Pick> hovered = grid_.render(
         ctx, card, kCraftingSkin, false,
         [&](std::uint16_t petalIndex, Rarity rarity, std::uint32_t owned) {
@@ -463,7 +479,10 @@ bool CraftingPanel::render(MenuContext& ctx) {
                 cell.count = owned > held ? owned - held : 0;
             }
             // Short of a batch, the stack cannot go in: grey and unclickable.
-            cell.greyed = cell.count < static_cast<std::uint32_t>(kBatch);
+            // Except the staged petal's own leftovers, which can follow the
+            // batches already in the ring whatever their number.
+            const bool staged = petalIndex == stagedPetal_ && rarity == stagedRarity_;
+            cell.greyed = staged ? cell.count == 0 : cell.count < static_cast<std::uint32_t>(kBatch);
             // A lone petal carries no badge; "x1" is noise on every cell of a
             // fresh account.
             if (cell.count > 1) cell.badge = "x" + stackCountText(cell.count);
@@ -492,6 +511,34 @@ bool CraftingPanel::render(MenuContext& ctx) {
     // the upgrade until it is clicked, the survivors of a failure until a
     // slot is. Picking a petal from the grid goes straight on -- the same
     // petal refills only the slots the failure emptied.
+    // Everything staged goes in ONE request, which the server crafts as a
+    // pool -- five an attempt, a failure's survivors straight back in, until
+    // fewer than five are left -- and answers with a single result.
+    const auto startCraft = [&]() {
+        if (!(phase_ == Phase::Idle && stagedPetal_ != kNoPetal && stagedCount_ >= kBatch)) {
+            return;
+        }
+        phase_ = Phase::Spinning;
+        phaseStarted_ = ctx.timeSeconds;
+        spinPetal_ = stagedPetal_;
+        spinRarity_ = stagedRarity_;
+        // From the account as it stands before the craft lands.
+        rollBaseMillis_ = rollBaseMillis(profile, stagedPetal_, stagedRarity_);
+        rollMillis_ = rollBaseMillis_;
+        ctx.net.requestCraft(stagedPetal_, stagedRarity_, stagedCount_);
+        // Handed over, so the staging area is empty from here: the ring is
+        // drawing the roll's copy, not something still takeable back.
+        stagedPetal_ = kNoPetal;
+        stagedCount_ = 0;
+    };
+    // A petal clicked with Alt (Option on a Mac) is staged and crafted in one
+    // go: Alt alone stages five more and crafts, Alt with Shift the whole
+    // stack.
+    const auto pick = [&](const SlotGrid::Pick& at) {
+        stage(profile, at.petalIndex, at.rarity, ctx.window.shiftHeld());
+        if (ctx.window.altHeld()) startCraft();
+    };
+
     if (phase_ == Phase::Result) {
         const Rect upgradeRect{card.slot.x - kResultSlot * 0.5, card.slot.y - kResultSlot * 0.5,
                                kResultSlot, kResultSlot};
@@ -503,28 +550,13 @@ bool CraftingPanel::render(MenuContext& ctx) {
         }
         if (hovered) {
             phase_ = Phase::Idle;
-            stage(profile, hovered->petalIndex, hovered->rarity, ctx.window.shiftHeld());
+            pick(*hovered);
         }
         return true;
     }
 
     if (craftRect.contains(mouse)) {
-        if (canCraft) {
-            phase_ = Phase::Spinning;
-            phaseStarted_ = ctx.timeSeconds;
-            // Everything staged goes in ONE request, which the server crafts as
-            // a pool and answers with a single result.
-            spinPetal_ = stagedPetal_;
-            spinRarity_ = stagedRarity_;
-            // From the account as it stands before the craft lands.
-            rollBaseMillis_ = rollBaseMillis(profile, stagedPetal_, stagedRarity_);
-            rollMillis_ = rollBaseMillis_;
-            ctx.net.requestCraft(stagedPetal_, stagedRarity_, batches_ * kBatch);
-            // Handed over, so the staging area is empty from here: the ring is
-            // drawing the roll's copy, not something still takeable back.
-            stagedPetal_ = kNoPetal;
-            batches_ = 0;
-        }
+        startCraft();
         return true;
     }
 
@@ -536,9 +568,7 @@ bool CraftingPanel::render(MenuContext& ctx) {
         }
     }
 
-    if (hovered && phase_ == Phase::Idle) {
-        stage(profile, hovered->petalIndex, hovered->rarity, ctx.window.shiftHeld());
-    }
+    if (hovered && phase_ == Phase::Idle) pick(*hovered);
     return true;
 }
 

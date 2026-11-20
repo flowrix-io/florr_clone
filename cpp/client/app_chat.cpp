@@ -830,6 +830,19 @@ bool App::scrollChat() {
     return true;
 }
 
+bool App::chatSlashPressed() const { return window_.keyPressed(Key::Slash); }
+
+void App::openChatWithSlash() {
+    chatOpen_ = true;
+    chatDraft_ = "/";
+    chatField_.focusAtEnd(chatDraft_, timeSeconds_);
+    // Open the command list at once, exactly as typing a `/` into an
+    // already-open line does (see editChatLine, which only re-selects the
+    // top row when the draft CHANGES -- and the draft does not change on
+    // the frames after this one, so the list would otherwise stay hidden).
+    chatSuggestion_ = 0;
+}
+
 void App::editChatLine() {
     if (!chatTabSendable(chatSendTab_, net_.isSkinAdmin())) chatSendTab_ = kTabLocal;
     const std::string before = chatDraft_;

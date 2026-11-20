@@ -3408,9 +3408,10 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // Through it and still flying: the hit cost it, so it flashes.
             const double share = health->max > 0.0 ? cost / health->max : 0.0;
             flashStruck(world, shot.entity, cost, share, false);
-            // A carrot that passes through a mob gets its whole flight back,
-            // as it does off a wall. Only a value written: the loop may not
-            // change the world's shape, and this does not.
+            // A carrot that passes through a mob gets its whole flight back.
+            // A wall does NOT refill it (movement.cpp): that let one carrot
+            // ricochet round a room forever. Only a value written: the loop
+            // may not change the world's shape, and this does not.
             if (victimIsMob) {
                 if (Projectile* flight = world.tryGet<Projectile>(shot.entity);
                     flight != nullptr && flight->bouncesOffWalls) {

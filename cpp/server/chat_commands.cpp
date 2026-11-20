@@ -892,45 +892,50 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
 
     if (verb == "/biome") {
         // Every flower counts, bots included: the question is where the world
-        // is busy, and a section full of bots is a section full of fights.
-        // The OVERWORLD's flowers, that is: the nine biomes are that map's
-        // sections, and a flower in the arena, the maze or a biome sublevel
-        // is not standing in any of them whatever its numbers say.
-        std::array<int, kSectionCount> counts{};
+        // is busy, and a biome full of bots is a biome full of fights.
+        //
+        // By the MAP a flower stands on. Each biome is its own map now, in a
+        // realm of its own; this used to cut the first map into the old
+        // overworld's nine sections and count only flowers in that realm, so
+        // everyone in any other biome was missed and the answer was wrong or
+        // "nobody". A prestige twin is its own entry ("Prestige Desert"), as
+        // biomeLabel names it everywhere else.
+        std::vector<std::pair<std::string, int>> counts;
         int total = 0;
         Query<PlayerTag, Transform> flowers{world_};
-        flowers.each([&](Entity entity, PlayerTag&, Transform& transform) {
+        flowers.each([&](Entity entity, PlayerTag&, Transform&) {
             if (world_.has<Dead>(entity)) return;
-            if (transform.realm != Realm::Overworld) return;
-            const int section = sectionAt(transform.position);
-            if (section < 0) return;
-            ++counts[static_cast<std::size_t>(section)];
+            const std::string biome = biomeOfEntity(entity);
+            if (biome.empty()) return;
+            const std::string label = biomeLabel(biome);
+            if (label.empty()) return;
+            auto it = std::find_if(counts.begin(), counts.end(),
+                                   [&](const auto& entry) { return entry.first == label; });
+            if (it == counts.end()) {
+                counts.emplace_back(label, 1);
+            } else {
+                ++it->second;
+            }
             ++total;
         });
         if (total == 0) {
-            out("No players are currently in any section.");
+            out("No players are currently in any biome.");
             return true;
         }
-        // Busiest first, which is the order the reference sorts its breakdown
-        // into and where it reads the headline off.
-        std::vector<int> populated;
-        for (int i = 0; i < kSectionCount; ++i) {
-            if (counts[static_cast<std::size_t>(i)] > 0) populated.push_back(i);
-        }
-        std::stable_sort(populated.begin(), populated.end(), [&](int a, int b) {
-            return counts[static_cast<std::size_t>(a)] > counts[static_cast<std::size_t>(b)];
+        // Busiest first, ties by name so the order does not shuffle between
+        // asks.
+        std::sort(counts.begin(), counts.end(), [](const auto& a, const auto& b) {
+            if (a.second != b.second) return a.second > b.second;
+            return a.first < b.first;
         });
         std::string breakdown;
-        for (int section : populated) {
+        for (const auto& [label, count] : counts) {
             if (!breakdown.empty()) breakdown += "<br/>";
-            breakdown += std::string(biomeOf(section).name) + ": " +
-                         std::to_string(counts[static_cast<std::size_t>(section)]);
+            breakdown += escapedMarkup(label) + ": " + std::to_string(count);
         }
-        const int best = populated.front();
         out(std::string("<span style=\"color: #4fc3f7;\">Most populated biome: <b>") +
-            biomeOf(best).name + "</b> (" +
-            plural(counts[static_cast<std::size_t>(best)], "player", "players") + ")</span><br/>" +
-            breakdown);
+            escapedMarkup(counts.front().first) + "</b> (" +
+            plural(counts.front().second, "player", "players") + ")</span><br/>" + breakdown);
         return true;
     }
 

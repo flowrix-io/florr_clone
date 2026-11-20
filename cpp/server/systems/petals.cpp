@@ -24,7 +24,6 @@ constexpr double kPollenRadiusPerSize = 6.0;
 constexpr double kWebThrowDistance = 620.0;
 constexpr double kWebLifetimeSeconds = 10.0;
 constexpr double kPollenLifetimeSeconds = 5.0;
-constexpr double kPollenHitIntervalMillis = 500.0;
 
 /// How long the ring takes to fly across when what it is laid out around
 /// changes -- a moon coming out, or breaking and handing the ring back to the
@@ -2395,12 +2394,25 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player)) {
                     damage *= modifiers->petalDamageScale;
                 }
-                emitGroundEffect(world, player, transform->position,
-                                 GroundEffectKind::Poison,
-                                 stats.size * kPollenRadiusPerSize * adminReachScale(instance->rarity),
-                                 0.0, 1.0, instance->rarity,
-                                 kPollenLifetimeSeconds * adminReachScale(instance->rarity), damage,
-                                 kPollenHitIntervalMillis);
+                // One hit per mob for the puff's whole life, so a grain is
+                // worth its listed damage. The old 500 ms re-bite made each
+                // grain hit up to ten times, and with a fresh puff every
+                // reload stacked under the flower, a mob on it took ~7x the
+                // listed damage per grain.
+                const double lifetimeSeconds = kPollenLifetimeSeconds * adminReachScale(instance->rarity);
+                // It lands with the health the grain had in orbit -- its tier's
+                // and the Petal Health talent's, less anything already taken
+                // -- and the mobs it bites wear that down (CombatSystem's
+                // field pass). It used to be a field nothing could touch.
+                const Health* grain = world.tryGet<Health>(petal);
+                const double health = grain != nullptr ? grain->current : stats.health;
+                const Entity puff = emitGroundEffect(
+                    world, player, transform->position, GroundEffectKind::Poison,
+                    stats.size * kPollenRadiusPerSize * adminReachScale(instance->rarity), 0.0,
+                    1.0, instance->rarity, lifetimeSeconds, damage, lifetimeSeconds * 1000.0);
+                if (puff != NULL_ENTITY && health > 0.0) {
+                    world.get<GroundEffect>(puff).health = health;
+                }
                 world.add<Dead>(petal, Dead{player});
                 continue;
             }
