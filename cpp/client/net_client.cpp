@@ -87,6 +87,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::FetchSkins:          return "fetchSkins";
         case net::ClientMessage::ClaimTrialReward:    return "claimTrialReward";
         case net::ClientMessage::StartTrialChamber:   return "startTrialChamber";
+        case net::ClientMessage::GuildSetOfficer:     return "guildSetOfficer";
     }
     return "unknown";
 }

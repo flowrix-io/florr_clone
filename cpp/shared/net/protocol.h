@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 94;
+inline constexpr std::uint16_t kProtocolVersion = 95;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -266,6 +266,8 @@ enum class ClientMessage : std::uint8_t {
                         ///< TrialRewardClaimed. (Version 92.)
     StartTrialChamber,  ///< (empty) -- starts the prepared chamber belonging to
                         ///< this session's private Trial Grounds run.
+    GuildSetOfficer,    ///< str username, u8 officer -- 1 makes the member an
+                        ///< officer, 0 takes it away. Leader only. (Version 95.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -535,6 +537,9 @@ enum class ServerMessage : std::uint8_t {
     TrialRewardClaimed, ///< u8 ok/floor, u32 stars, f64 xp, str petalName,
                         ///< u32 petalCount, u8 includedFullBonus, str reason.
                         ///< (Version 92.)
+    GuildMapUpdate,     ///< u16 count, { u32 netId }* -- the wire ids of the bodies
+                        ///< of the viewer's online guildmates, for the minimap.
+                        ///< (Version 95.)
 };
 
 // ---------------------------------------------------------------------------

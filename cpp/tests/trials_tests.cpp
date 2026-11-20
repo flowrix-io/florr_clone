@@ -1,3 +1,4 @@
+#include "shared/game/realm.h"
 #include "shared/game/trials.h"
 #include "test.h"
 
@@ -137,7 +138,18 @@ TEST(trial_reward_petals_are_an_explicit_safe_allowlist) {
 TEST(a_new_trial_chamber_plays_the_teleport_iris_and_recentres_the_flower) {
     using namespace flix::testsupport;
     Harness h("trial-teleport",
-              [](const std::string& path) { seedUser(path, "trialist", "password7"); },
+              [](const std::string& path) {
+                  seedUser(path, "trialist", "password7");
+                  // The Trial Grounds open only once the secret room is found.
+                  Database db;
+                  std::string error;
+                  db.load(path, error);
+                  const Account* account = db.findUser("trialist");
+                  if (account == nullptr) return;
+                  db.progress(account->id).extra["trialGrounds"]["unlocked"] = true;
+                  db.markDirty();
+                  db.save();
+              },
               dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
     NetClient client;
@@ -152,7 +164,10 @@ TEST(a_new_trial_chamber_plays_the_teleport_iris_and_recentres_the_flower) {
         if (trial.owner == session->connection) run = &trial;
     }
     if (run == nullptr) { CHECK(false); return; }
-    CHECK(run->phase == TrialPhase::Active);
+    // A chamber waits in Preparing until the player presses Start.
+    CHECK(run->phase == TrialPhase::Preparing);
+    client.startTrialChamber();
+    CHECK(h.stepUntil({&client}, [&] { return run->phase == TrialPhase::Active; }, 200));
     CHECK_EQ(run->chamber, 1);
     // Starting the first chamber is no teleport.
     CHECK(!client.takeTeleported());

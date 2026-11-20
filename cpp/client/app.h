@@ -727,6 +727,9 @@ private:
     /// container animation, which translates the whole stack down from above
     /// the screen and eases it back up again when the card goes away.
     double deathCardSlide_ = 0.0;
+    /// The trial HUD's "Start Room" button as last drawn, empty when the run
+    /// is not waiting in Preparing. The click is tested against the same box.
+    Rect trialStartButton_{};
     /// Everything the flower has picked up since it joined, one entry per
     /// petal and tier, for the death card's "Collected this run" panel.
     /// Counted off the PickedUp cues -- each of the viewer's own is one item

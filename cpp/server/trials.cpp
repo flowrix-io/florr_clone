@@ -234,7 +234,7 @@ void GameServer::prepareTrialChamber(TrialRun& trial, double nowMillis, bool pla
     trial.chamberStartedMillis = 0.0;
     const int slot = trialRealmIndex(trial.realm);
     if (slot >= 0) {
-        terrain_->trialRadii[static_cast<std::size_t>(slot)] = trialArenaRadius(trial.floor);
+        terrain_->trialRadii[static_cast<std::size_t>(slot)] = kTrialArenaRadius;
     }
     standUpWaveFlower(session, nowMillis);
     teleportEntity(session.entity, kWavesCentre, playTransition);

@@ -1016,8 +1016,8 @@ void App::drawTrialPicker(Canvas& canvas) {
     TextStyle section = small;
     section.align = Align::Left;
     section.size = 12.0;
-    text(canvas, trialRefreshingPicker_ ? "UNIQUE & APEX - MONTHLY ROTATION"
-                                        : "PERMANENT PROGRESSION - TWO FLOORS PER RARITY",
+    text(canvas, trialRefreshingPicker_ ? "Unique/Apex, changes every month"
+                                        : "Common to Super, permanent",
          panel.x + 30.0, panel.y + 198.0, section);
 
     const std::string description =
