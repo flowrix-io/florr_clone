@@ -26,6 +26,7 @@
 namespace flix {
 
 inline constexpr std::size_t kMaxGuildSize = 200;
+inline constexpr std::size_t kMaxGuildOfficers = 10;
 /// A guild invitation lapses after a minute, as the reference's does.
 inline constexpr std::int64_t kGuildInviteMillis = 60000;
 
@@ -93,6 +94,26 @@ inline int guildMemberIndex(const Json& guild, const std::string& username) {
 /// Whether `username` leads `guild`. Case-blind, as every name match is.
 inline bool isGuildLeader(const Json& guild, const std::string& username) {
     return lowerCase(guild["leaderUsername"].asString()) == lowerCase(username);
+}
+
+/// Position of `username` in the guild's officer array, or -1. A record
+/// written before officers existed has no array, which reads as none.
+inline int guildOfficerIndex(const Json& guild, const std::string& username) {
+    const Json& officers = guild["officerUsernames"];
+    const std::string key = lowerCase(username);
+    for (std::size_t i = 0; i < officers.size(); ++i) {
+        if (lowerCase(officers[i].asString()) == key) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+inline bool isGuildOfficer(const Json& guild, const std::string& username) {
+    return guildOfficerIndex(guild, username) >= 0;
+}
+
+/// Leader or officer: who may invite and edit the description.
+inline bool canManageGuild(const Json& guild, const std::string& username) {
+    return isGuildLeader(guild, username) || isGuildOfficer(guild, username);
 }
 
 } // namespace flix

@@ -931,8 +931,10 @@ void GameServer::replicate(double nowMillis) {
     // Reused across recipients rather than allocated per session: it is at
     // most three entities and almost always none.
     std::vector<Entity> squadBodies;
+    std::vector<Entity> guildMapBodies;
     // Every client's gather reads one listing of the world, taken here: no
     // build changes the world, so it holds for the whole loop.
+    refreshGuildBodies();
     replicator_.beginPass(world_);
     for (auto& entry : sessions_) {
         Session& session = entry.second;
@@ -948,6 +950,14 @@ void GameServer::replicate(double nowMillis) {
         }
 
         collectSquadBodies(session, squadBodies);
+        collectGuildBodies(session, guildMapBodies);
+        syncGuildMap(session, *connection, guildMapBodies);
+        // Guildmates are streamed from any distance, exactly as squadmates are.
+        for (const Entity body : guildMapBodies) {
+            if (std::find(squadBodies.begin(), squadBodies.end(), body) == squadBodies.end()) {
+                squadBodies.push_back(body);
+            }
+        }
         frame.alwaysVisible = squadBodies.empty() ? nullptr : &squadBodies;
 
         // Built around the flower this client is WATCHING, which is another

@@ -282,6 +282,10 @@ struct Session {
     };
     std::deque<SaidLine> recentLines;
 
+    /// The guildmate wire ids last sent to this client (GuildMapUpdate),
+    /// sorted, so an unchanged set is not sent again.
+    std::vector<std::uint32_t> guildMapIds;
+
     bool authenticated() const {
         return stage == SessionStage::Authenticated || stage == SessionStage::Playing;
     }

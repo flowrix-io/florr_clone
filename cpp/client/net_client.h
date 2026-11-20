@@ -135,6 +135,8 @@ struct GuildState {
         /// The biome an online member's body is in, as the spawn picker labels
         /// it. Empty for anyone offline or without a body just now.
         std::string location;
+        /// True for an officer. The leader is named by GuildState::leader.
+        bool officer = false;
     };
 
     bool joined = false;
@@ -726,6 +728,7 @@ public:
     void requestGuildLeave();
     void requestGuildSquadAll();
     void requestGuildInviteToSquad(const std::string& username);
+    void requestGuildSetOfficer(const std::string& username, bool officer);
 
     // -- the admin database editor -------------------------------------------
     //
@@ -984,6 +987,14 @@ public:
     const SquadState& squad() const { return squad_; }
 
     const GuildState& guild() const { return guild_; }
+    /// True when `netId` is the body of one of this player's online guildmates.
+    bool isGuildmate(std::uint32_t netId) const {
+        if (netId == 0) return false;
+        for (const std::uint32_t id : guildmateIds_) {
+            if (id == netId) return true;
+        }
+        return false;
+    }
     /// Mutable because the panel answers an invite locally the moment it sends
     /// the reply, exactly as the reference clears `pendingInvite` on click.
     GuildInvite& guildInvite() { return guildInvite_; }
@@ -1207,6 +1218,7 @@ private:
     void handleSkinCatalog(ByteReader&);
     void handleSkinPage(ByteReader&);
     void handleSkinsFetched(ByteReader&);
+    void handleGuildMapUpdate(ByteReader&);
     /// Puts each skin in skinCatalog_, over any copy of it there.
     void rememberSkins(std::vector<CustomSkin> skins);
     /// Asks for the skins on flowers in view that skinCatalog_ lacks. Run
@@ -1311,6 +1323,7 @@ private:
 
     SquadState squad_;
     GuildState guild_;
+    std::vector<std::uint32_t> guildmateIds_;
     GuildInvite guildInvite_;
     CraftOutcome craftOutcome_;
     OracleOutcome oracleOutcome_;
