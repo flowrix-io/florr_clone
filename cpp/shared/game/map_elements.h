@@ -87,6 +87,7 @@ enum class MapElementKind : std::uint8_t {
     Teleporter,    ///< a pad, which leads to another map
     Npc,           ///< where a friendly NPC stands -- a point, or an area it
                    ///< stands somewhere in
+    MinimapMask,   ///< solid-looking minimap cover over deliberately hidden ground
 };
 
 /// One annotation, in world coordinates. The numbers are already world units --

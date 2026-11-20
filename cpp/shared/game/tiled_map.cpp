@@ -24,6 +24,7 @@ constexpr struct { const char* layer; const char* kind; } kObjectLayers[] = {
     {"player_spawns", "player_spawn"},
     {"teleporters", "teleporter"},
     {"npcs", "npc"},
+    {"minimap_masks", "minimap_mask"},
 };
 
 /// The custom properties each kind of object carries through verbatim.
@@ -744,6 +745,8 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
         const Json layerProperties = propertiesOf(*layer);
         const bool ticked = layerProperties[kLayerCollisionProperty].asBool();
         out.negates = layerProperties[kLayerNegateProperty].asBool();
+        out.negatesFullCell = out.negates &&
+                              layerProperties[kLayerNegateFullCellProperty].asBool();
         // The two properties are opposites. A layer carrying both is incoherent
         // and NEGATION WINS -- it is the property an author has to go looking
         // for, so it is the one they meant -- but the choice is recorded rather
@@ -785,7 +788,7 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
                 // whose shapes COVER the cell is the same whole-cell deck said
                 // explicitly (tileDecksWholeCell), and is resolved here so that
                 // the two spellings behave identically everywhere.
-                if (tileDecksWholeCell(type.shapes, cell.flags)) {
+                if (out.negatesFullCell || tileDecksWholeCell(type.shapes, cell.flags)) {
                     // Counted from what was CANCELLED, not from what was
                     // there: a deck over open ground clears nothing, and the
                     // load report's whole job is to say so.

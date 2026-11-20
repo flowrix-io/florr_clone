@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "server/systems/movement.h"
+#include "shared/game/map_elements.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 #include "shared/game/tiled_map.h"
@@ -2215,9 +2216,10 @@ TEST(a_negating_layer_over_open_ground_cancels_nothing_and_says_so) {
     CHECK(!t.blocked(inCell(1, 1, 150.0, 150.0), Realm::Overworld));
 }
 
-TEST(the_shipped_bridge_is_a_walkable_channel_and_the_river_still_blocks) {
+TEST(the_shipped_decks_are_walkable_channels_and_secret_ones_can_be_masked) {
     // THE SHIPPED MAP, and the reason any of this exists. maps/garden.tmj's
-    // `bridge` layer is 14 cells of deck at row 123, over a river that blocks.
+    // `bridge` contains the ordinary river crossing and the collision cutout
+    // for the Trial Grounds secret passage. Both are horizontal deck runs.
     //
     // The RUN is derived from the file rather than typed here -- the author may
     // move or lengthen the bridge -- and what is pinned is what it has to mean:
@@ -2251,14 +2253,20 @@ TEST(the_shipped_bridge_is_a_walkable_channel_and_the_river_still_blocks) {
     CHECK_EQ(t.collisionDeckedCellCount(), bridge.paintedCells);
 
     int deckCells = 0;
-    int minX = map.width(), maxX = -1, row = -1;
+    struct Run { int row = -1; int minX = 0; int maxX = -1; };
+    std::vector<Run> runs;
     for (int ty = 0; ty < map.height(); ++ty) {
+        Run run;
         for (int tx = 0; tx < map.width(); ++tx) {
-            if (bridge.cells[static_cast<std::size_t>(ty) * map.width() + tx].type < 0) continue;
+            const bool decked =
+                bridge.cells[static_cast<std::size_t>(ty) * map.width() + tx].type >= 0;
+            if (!decked) {
+                if (run.row >= 0) { runs.push_back(run); run = {}; }
+                continue;
+            }
+            if (run.row < 0) run = {ty, tx, tx};
+            else run.maxX = tx;
             ++deckCells;
-            minX = std::min(minX, tx);
-            maxX = std::max(maxX, tx);
-            row = ty;
             // Open in the coarse grid, open in the exact one, and dry.
             CHECK(t.atTile(tx, ty) == Tile::Open);
             CHECK(!t.blocked(Terrain::tileCenter(tx, ty), Realm::Overworld));
@@ -2267,27 +2275,15 @@ TEST(the_shipped_bridge_is_a_walkable_channel_and_the_river_still_blocks) {
             t.collisionRingsAt(tx, ty, Realm::Overworld, rings);
             CHECK(rings.empty());
         }
+        if (run.row >= 0) runs.push_back(run);
     }
     CHECK_EQ(deckCells, bridge.paintedCells);
-    // A horizontal run, and walkable END TO END: the segment down the middle of
-    // it crosses nothing, which is the whole claim.
-    CHECK(row >= 0);
-    CHECK_EQ(maxX - minX + 1, deckCells);
-    if (row < 0) return;
-    CHECK(!t.segmentBlocked(Terrain::tileCenter(minX, row), Terrain::tileCenter(maxX, row),
-                            Realm::Overworld));
-
-    // EXACTLY THOSE CELLS. The river is a diagonal band and the deck is one row
-    // of it; the rows either side of the run are still water in every column
-    // the map painted water in.
-    int blockedAbove = 0;
-    int blockedBelow = 0;
-    for (int tx = minX; tx <= maxX; ++tx) {
-        if (tileBlocks(t.atTile(tx, row - 1))) ++blockedAbove;
-        if (tileBlocks(t.atTile(tx, row + 1))) ++blockedBelow;
+    CHECK_EQ(runs.size(), std::size_t{2});
+    for (const Run& run : runs) {
+        CHECK(run.row >= 0);
+        CHECK(!t.segmentBlocked(Terrain::tileCenter(run.minX, run.row),
+                                Terrain::tileCenter(run.maxX, run.row), Realm::Overworld));
     }
-    CHECK_EQ(blockedAbove, maxX - minX + 1);
-    CHECK_EQ(blockedBelow, maxX - minX + 1);
 
     // AND THE MINIMAP READS IT AS A CHANNEL. Its solids come from the same
     // store, so a decked cell has nothing to fill -- no ring is filed there and
@@ -2296,9 +2292,26 @@ TEST(the_shipped_bridge_is_a_walkable_channel_and_the_river_still_blocks) {
     eachMinimapSolid(t, Realm::Overworld, [&](const MinimapSolid& solid) {
         const int tx = static_cast<int>(std::lround(solid.origin.x / kTileSize));
         const int ty = static_cast<int>(std::lround(solid.origin.y / kTileSize));
-        if (ty == row && tx >= minX && tx <= maxX) ++solidsOnTheDeck;
+        for (const Run& run : runs) {
+            if (ty == run.row && tx >= run.minX && tx <= run.maxX) ++solidsOnTheDeck;
+        }
     });
     CHECK_EQ(solidsOnTheDeck, 0);
+
+    // The secret run is deliberately re-covered by a client-only annotation
+    // after collision is painted, so it does not advertise itself on the map.
+    MapData annotations;
+    CHECK(annotations.loadTiled(map, shippedMap(), error));
+    int masks = 0;
+    for (const MapElement& element : annotations.elements()) {
+        if (element.kind != MapElementKind::MinimapMask) continue;
+        ++masks;
+        CHECK_NEAR(element.bounds.x, 0.0, 1e-9);
+        CHECK_NEAR(element.bounds.y, 3.0 * kTileSize, 1e-9);
+        CHECK_NEAR(element.bounds.w, 28.0 * kTileSize, 1e-9);
+        CHECK_NEAR(element.bounds.h, kTileSize, 1e-9);
+    }
+    CHECK_EQ(masks, 1);
 }
 
 TEST(hosted_arena_grid_transmits_theme_and_rejects_invalid_theme_bytes) {

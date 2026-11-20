@@ -484,6 +484,7 @@ void MapData::adopt(const Json& array) {
         else if (kind == "player_spawn") element.kind = MapElementKind::PlayerSpawn;
         else if (kind == "teleporter") element.kind = MapElementKind::Teleporter;
         else if (kind == "npc") element.kind = MapElementKind::Npc;
+        else if (kind == "minimap_mask") element.kind = MapElementKind::MinimapMask;
         else continue;   // an annotation this build has no meaning for
         element.bounds = {value["x"].asDouble(), value["y"].asDouble(), value["width"].asDouble(),
                           value["height"].asDouble()};

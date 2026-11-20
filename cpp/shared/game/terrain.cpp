@@ -752,13 +752,11 @@ bool Terrain::setCollisionShapes(const TiledMap& map, Realm realm) {
     // NEGATION IS RESOLVED HERE, ONCE, WHEN THE STORE IS BUILT.
     //
     // `deckedBelow[cell]` is the highest layer that decks that cell over
-    // completely -- a `negate_collision` layer whose tile there covers the
-    // whole cell, which is a tile with no shapes at all (what a bridge deck
-    // is; tiled_map.h says why an unshaped NEGATING tile means the whole cell
-    // where an unshaped BLOCKING one means nothing) or one whose own shapes
-    // cover the cell, which is the same deck drawn out. tileDecksWholeCell()
-    // is the one place those two are recognised, and the coarse grid in
-    // TiledMap::load asks it the same question, so the two views cannot drift.
+    // completely -- either because its layer says `negate_full_cell`, or
+    // because the tile has no shapes at all (what a bridge deck is; tiled_map.h
+    // says why an unshaped NEGATING tile means the whole cell where an unshaped
+    // BLOCKING one means nothing), or because its shapes cover the cell.
+    // TiledMap::load asks the same questions, so the two views cannot drift.
     // Every contribution from a lower layer is then simply never filed, so
     // nothing downstream -- not a query, not the minimap, not collisionRingsAt
     // -- has a second rule to keep in step with the first, and a map with no
@@ -782,8 +780,12 @@ bool Terrain::setCollisionShapes(const TiledMap& map, Realm realm) {
                 if (cell.type < 0) continue;
                 const std::size_t typeIndex = static_cast<std::size_t>(cell.type);
                 if (typeIndex >= map.palette().size()) continue;
-                // Partial deck; see above. It goes in as a negating ref below.
-                if (!tileDecksWholeCell(map.palette()[typeIndex].shapes, cell.flags)) continue;
+                // Partial deck unless its layer explicitly promotes every
+                // painted tile to a whole-cell cutout. See above.
+                if (!layer.negatesFullCell &&
+                    !tileDecksWholeCell(map.palette()[typeIndex].shapes, cell.flags)) {
+                    continue;
+                }
                 deckedBelow[i] = static_cast<std::int16_t>(thisLayer);
             }
         }
@@ -824,7 +826,10 @@ bool Terrain::setCollisionShapes(const TiledMap& map, Realm realm) {
                 // filing the whole-cell deck's own rectangle as a negating ref
                 // as well would leave two rules describing one cell.
                 if (type.shapes.empty()) continue;
-                if (negating && tileDecksWholeCell(type.shapes, cell.flags)) continue;
+                if (negating &&
+                    (layer.negatesFullCell || tileDecksWholeCell(type.shapes, cell.flags))) {
+                    continue;
+                }
                 const std::uint32_t set = setFor(cell, type);
                 const ShapeReach& reach = reachOfSet[set];
                 // A deck above this layer cancels what it puts in THAT cell --

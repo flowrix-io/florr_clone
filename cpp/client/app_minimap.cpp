@@ -295,6 +295,37 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
     });
     fillRun();
 
+    // A deliberately hidden passage must keep the silhouette it replaced.
+    // Collision cannot provide that silhouette -- the whole point of the
+    // passage is that it removed collision -- so maps may place rectangles or
+    // polygons on their `minimap_masks` object layer. They affect this cached
+    // picture only: world rendering, movement and spawning still see the real
+    // authored terrain.
+    if (annotations != nullptr) {
+        setFill(walls, 0x000000u);
+        for (const MapElement& element : annotations->elements()) {
+            if (element.kind != MapElementKind::MinimapMask) continue;
+            if (element.polygon.size() >= 3) {
+                walls.beginPath();
+                for (std::size_t i = 0; i < element.polygon.size(); ++i) {
+                    const Vec2 point = toBox(element.polygon[i]);
+                    if (i == 0) {
+                        walls.moveTo(static_cast<float>(point.x), static_cast<float>(point.y));
+                    } else {
+                        walls.lineTo(static_cast<float>(point.x), static_cast<float>(point.y));
+                    }
+                }
+                walls.closePath();
+                walls.fill();
+                continue;
+            }
+            const Vec2 corner = toBox({element.bounds.x, element.bounds.y});
+            walls.fillRect(static_cast<float>(corner.x), static_cast<float>(corner.y),
+                           static_cast<float>(element.bounds.w * fit.scale),
+                           static_cast<float>(element.bounds.h * fit.scale));
+        }
+    }
+
     static const std::vector<MapElement> kNoElements;
     for (const MapElement& element :
          annotations != nullptr ? annotations->elements() : kNoElements) {

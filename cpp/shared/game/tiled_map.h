@@ -59,6 +59,12 @@
 //     bridge tile in the tileset to carry a 256-square rectangle nobody would
 //     ever draw differently would be ceremony, not safety.
 //
+//     A rare invisible passage needs a different spelling: it must reuse the
+//     wall tile's exact art, including a partial edge shape, while clearing
+//     the whole square behind that art. `negate_full_cell` on the negating
+//     layer says exactly that. It is explicit because using it on an ordinary
+//     partial bridge would open more ground than the bridge draws.
+//
 //     BELOW IT, NOT EVERYWHERE. The layers are a stack: a wall layer added
 //     ABOVE a bridge still blocks on it. The shipped garden's `bridge` layer
 //     happens to be the topmost one, so today it cancels water, dirt and
@@ -69,10 +75,10 @@
 //     properties and a layer carrying BOTH is incoherent -- the load report
 //     says so loudly and negation wins for that layer's cells.
 //
-//     WHOLE-CELL NEGATION IS THE SUPPORTED CASE, and tileDecksWholeCell()
-//     below is what decides whether a deck tile is one: no shapes at all, or
-//     shapes that cover the cell (Tiled's "whole tile" rectangle). Either of
-//     those is resolved away when the map loads, so the coarse grid, the
+//     WHOLE-CELL NEGATION IS THE SUPPORTED CASE. A layer may request it with
+//     `negate_full_cell`; otherwise tileDecksWholeCell() below decides whether
+//     a deck tile is one: no shapes at all, or shapes that cover the cell
+//     (Tiled's "whole tile" rectangle). Either case is resolved away when the map loads, so the coarse grid, the
 //     shapes, the minimap, the wire and every query agree without any of them
 //     knowing negation exists. A deck tile whose shapes cover only PART of its
 //     cell cannot be: cancelling half a cell means subtracting one authored
@@ -156,6 +162,12 @@ inline constexpr const char* kLayerCollisionProperty = "has_collision";
 /// Named here for the same reason as its opposite: a mistyped property is a
 /// bridge you cannot walk on, and the load report prints what it resolved to.
 inline constexpr const char* kLayerNegateProperty = "negate_collision";
+
+/// Optional companion to `negate_collision`: every painted tile clears its
+/// whole cell even when that tile carries a partial collision shape. This is
+/// for invisible passages that reuse the wall's exact artwork; an ordinary
+/// bridge should keep relying on its shapeless deck tile instead.
+inline constexpr const char* kLayerNegateFullCellProperty = "negate_full_cell";
 
 /// One map cell's artwork orientation: the rotation to apply about the cell's
 /// centre, and whether the result is then mirrored across its own vertical
@@ -339,6 +351,9 @@ struct TiledLayer {
     /// The layer's `negate_collision` property: where this layer has a tile,
     /// the collision from the layers below it is cancelled. See the header.
     bool negates = false;
+    /// The layer's `negate_full_cell` property. Meaningful only with
+    /// `negate_collision`; see kLayerNegateFullCellProperty.
+    bool negatesFullCell = false;
     /// The file ticked BOTH properties on this layer. They are opposites, so
     /// `collides` was forced false and `negates` kept; carried so the load
     /// report can name the layer rather than silently picking one.
