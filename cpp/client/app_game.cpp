@@ -384,8 +384,11 @@ void App::updatePlaying(double dt) {
         // button in the top strip's job alone.
         const bool consumed = menus_.handleKeys(window_, adminCursorEquipped());
         if (!consumed) {
-            if (boundKeyPressed(window_, menus_.settings().controlKey(ControlAction::Chat)) ||
-                pressedChatBox()) {
+            if (chatSlashPressed()) {
+                openChatWithSlash();
+            } else if (boundKeyPressed(window_,
+                                       menus_.settings().controlKey(ControlAction::Chat)) ||
+                       pressedChatBox()) {
                 chatOpen_ = true;
             }
         }
@@ -425,6 +428,8 @@ void App::updateDead(double dt) {
     // AND presses the button, which is one click, not two.
     if (chatOpen_ && !menus_.wantsText()) {
         editChatLine();
+    } else if (chatSlashPressed()) {
+        openChatWithSlash();
     } else if (pressedChatBox() || window_.keyPressed(Key::Enter)) {
         // Enter is chat's, card or no card: Continue has no key, and the slot
         // under the dimmed world still says "Press Enter to chat...".

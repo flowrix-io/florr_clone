@@ -290,7 +290,11 @@ void App::updateLobby() {
             nameField_.blur();
         }
     } else if (!menus_.handleKeys(window_)) {
-        if (window_.keyPressed(Key::Enter) || pressedChatBox()) chatOpen_ = true;
+        if (chatSlashPressed()) {
+            openChatWithSlash();
+        } else if (window_.keyPressed(Key::Enter) || pressedChatBox()) {
+            chatOpen_ = true;
+        }
     }
     // The transcript is on this screen too, and there is no zoom here for the
     // wheel to go to instead.

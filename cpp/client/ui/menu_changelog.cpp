@@ -620,6 +620,15 @@ constexpr ChangelogEntry kChangelog[] = {
         "Removed the white outline when hovering mobs in the mob gallery",
         "Added Secret Trials"
       }
+    },
+    {"November 20, 2026",
+      {
+        "Fixed /biome showing the wrong player counts",
+        "Crafting now accepts every petal you own, not just multiples of 5",
+        "Hold Alt (Option) and click a petal in crafting to craft it right away",
+        "Buffed Yucca to heal twice as much as Leaf of the same rarity",
+        "Pressing / now opens chat with a / already typed"
+      }
     }
 };
 

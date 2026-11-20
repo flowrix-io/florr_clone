@@ -833,15 +833,19 @@ private:
 
     /// Adds up to one more batch of this petal to the staging area.
     void stage(const Profile&, std::uint16_t petalIndex, Rarity rarity, bool wholeStack);
+    /// How many staged petals ring slot `i` shows.
+    int slotCount(int i) const;
     /// Steps the ring's eases by `dtMs`.
     void animate(double dtMs);
 
     SlotGrid grid_;
-    /// What is staged. A craft consumes five at a time; `batches` is how many
-    /// fives are queued, which is what the slot badge counts.
+    /// What is staged, and how many of it: any count, not only fives. The
+    /// server crafts the whole lot as one pool -- five an attempt, a failure's
+    /// survivors straight back in -- until fewer than five are left, so a
+    /// stack that is not a multiple of five no longer leaves its tail behind.
     std::uint16_t stagedPetal_ = kNoPetal;
     Rarity stagedRarity_ = Rarity::Common;
-    int batches_ = 0;
+    int stagedCount_ = 0;
 
     Phase phase_ = Phase::Idle;
     double phaseStarted_ = 0;

@@ -401,6 +401,15 @@ private:
     /// used to be -- which left the chat unreachable on a device with no
     /// keyboard to press Enter on.
     bool pressedChatBox() const;
+    /// Whether the `/` key was pressed this frame: it opens the chat line
+    /// the way most games with a chat do.
+    bool chatSlashPressed() const;
+    /// Opens the chat line with a single `/` already in the draft, caret
+    /// after it -- ready to type a command. Used when `/` opened the line;
+    /// the key's own typed character does not also land, because chat is
+    /// closed on the frame that opens it and editChatLine() first runs the
+    /// frame after, by when that character is gone.
+    void openChatWithSlash();
 
     /// Takes this frame's wheel for the transcript, and says whether it did.
     /// The wheel is the camera's zoom everywhere else, and reading back
