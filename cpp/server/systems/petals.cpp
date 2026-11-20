@@ -181,10 +181,16 @@ struct PetalBehaviour {
 /// `test_explosive` is the repeating version of the same blast. The glitch
 /// lightning is the lightning's strike; what makes it a glitch strike (green
 /// bolts, rolled hits) is asked of the registry, not of this table.
+///
+/// The two lightnings part on one point. The plain petal is florr's: its
+/// strike is spent on the first mob it touches, so it strikes once a reload
+/// and lands on its tier + 2 nearest mobs (lightningStrikeTargets) -- the
+/// `breaksSelfOnCollision` below is what tells runBehaviour so. The glitch form
+/// keeps the older strike: it stays out after striking, strikes again when it
+/// breaks, and lands on everything in reach.
 PetalBehaviour behaviourOf(const std::string& id) {
-    if (id == "lightning" || id == "glitch_lightning") {
-        return {PetalBehaviourKind::Lightning, true, false, 0.0};
-    }
+    if (id == "lightning") return {PetalBehaviourKind::Lightning, true, true, 0.0};
+    if (id == "glitch_lightning") return {PetalBehaviourKind::Lightning, true, false, 0.0};
     if (id == "blood_leaf") return {PetalBehaviourKind::BloodLeaf, false, false, 0.0};
     if (id == "blood_stinger") return {PetalBehaviourKind::BloodStinger, false, false, 0.0};
     if (id == "bomb" || id == "explosive") return {PetalBehaviourKind::Bomb, true, true, 0.0};
@@ -2910,15 +2916,27 @@ void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, En
         case PetalBehaviourKind::None:
             return;
 
-        case PetalBehaviourKind::Lightning:
+        case PetalBehaviourKind::Lightning: {
             // Parked at spawn, so only a contact or a break strikes.
             if (trigger == PetalTrigger::Spawn || trigger == PetalTrigger::Interval) return;
+            // The plain lightning (see behaviourOf): capped at its tier + 2
+            // nearest mobs, and used up by the strike, as a bomb is by its
+            // blast -- which is what puts the slot on its reload, keeps its
+            // body from also landing a hit, and (queueBreakBehaviour) stops
+            // the break from striking a second time. A plain one that breaks
+            // before it ever touched a mob still strikes once, on the way out.
+            const bool spent = behaviour.breaksSelfOnCollision;
             // A glitch form's strike is a glitch petal's hit: each mob it
             // lands on rolls its own amount and shows it green, and the bolts
             // are drawn green.
             strikeLightning(world, player, at, stats.damage, rarity,
-                            registry.isGlitchForm(configIndex));
+                            registry.isGlitchForm(configIndex),
+                            spent ? lightningStrikeTargets(rarity) : 0);
+            if (spent && trigger == PetalTrigger::Collision && world.isAlive(petal)) {
+                world.add<Dead>(petal, Dead{player});
+            }
             return;
+        }
 
         case PetalBehaviourKind::BloodLeaf: {
             if (trigger == PetalTrigger::Collision || trigger == PetalTrigger::Interval) return;
@@ -2988,7 +3006,8 @@ void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, En
 }
 
 void PetalSystem::emitDamageBurst(World& world, Entity player, Vec2 at, double radius,
-                                  double damage, bool lightning, bool glitch) {
+                                  double damage, bool lightning, bool glitch,
+                                  std::vector<Entity> targets) {
     if (radius <= 0.0 || damage <= 0.0) return;
     // An instantaneous area hit, expressed as a damage field that lives for a
     // single tick.
@@ -3018,12 +3037,13 @@ void PetalSystem::emitDamageBurst(World& world, Entity player, Vec2 at, double r
     // Nothing about the field changes -- same reach rule, same rim rule, same
     // one chip per victim. The tag says only that the number combat reports for
     // it is a strike's cyan rather than an ordinary hit's red -- or, for a
-    // glitch strike, that each victim's hit is rolled and green.
-    if (lightning) world.add<LightningBurst>(burst, LightningBurst{glitch});
+    // glitch strike, that each victim's hit is rolled and green. A capped
+    // strike also names the only victims it may land on.
+    if (lightning) world.add<LightningBurst>(burst, LightningBurst{glitch, std::move(targets)});
 }
 
 void PetalSystem::strikeLightning(World& world, Entity player, Vec2 at, double damage,
-                                  Rarity rarity, bool glitch) {
+                                  Rarity rarity, bool glitch, int maxTargets) {
     // A strike is a petal hitting something, so it is paid at the PETAL rate --
     // the steep effect table getDamageMultiplier() puts a puff, a pulse and a
     // shot on, not the gentle stat table a body slam takes. The reference hands
@@ -3041,13 +3061,61 @@ void PetalSystem::strikeLightning(World& world, Entity player, Vec2 at, double d
     // apex petal.
     const double base =
         damage > 0.0 ? damage : kLightningFallbackDamage * petalStrengthScale(rarity);
-    emitDamageBurst(world, player, at, kLightningRadius * adminReachScale(rarity), base * scale,
-                    true, glitch);
-    reportLightning(world, player, at, kLightningRadius * adminReachScale(rarity), glitch);
+    const double radius = kLightningRadius * adminReachScale(rarity);
+    if (maxTargets <= 0) {
+        emitDamageBurst(world, player, at, radius, base * scale, true, glitch);
+        reportLightning(world, player, at, radius, glitch);
+        return;
+    }
+
+    // Capped: the victims are picked once, here, and the burst and the bolts
+    // both take that one list -- so what is drawn is exactly what is hit. An
+    // empty pick throws nothing: an empty list on the burst means "uncapped".
+    const Transform* ownerAt = world.tryGet<Transform>(player);
+    const Realm realm = ownerAt != nullptr ? ownerAt->realm : Realm::Overworld;
+    std::vector<Entity> chosen;
+    collectStrikeTargets(world, realm, at, radius, maxTargets, chosen);
+    if (chosen.empty()) return;
+    reportLightning(world, player, at, radius, glitch, &chosen);
+    emitDamageBurst(world, player, at, radius, base * scale, true, glitch, std::move(chosen));
+}
+
+void PetalSystem::collectStrikeTargets(World& world, Realm realm, Vec2 at, double radius,
+                                       int count, std::vector<Entity>& out) {
+    bindTo(world);
+    out.clear();
+    strikeRanking_.clear();
+    // The field's own reach rule (CombatSystem::tickGroundEffects): the body
+    // overlaps the disc, strictly. Ranked by the gap to the body's EDGE, so a
+    // boss the petal is touching outranks a small mob whose centre is nearer.
+    const auto consider = [&](Entity e, const Transform& transform, const Body& body) {
+        if (transform.realm != realm || world.has<Dead>(e)) return;
+        const double reach = radius + body.radius;
+        const double gapSq = distanceSq(transform.position, at);
+        if (gapSq >= reach * reach) return;
+        strikeRanking_.emplace_back(std::sqrt(gapSq) - body.radius, e);
+    };
+    mobs_->each([&](Entity e, MobTag&, Transform& transform, Body& body) {
+        if (world.has<Pet>(e)) return;
+        consider(e, transform, body);
+    });
+    npcs_->each([&](Entity e, NpcTag&, Transform& transform, Body& body, Faction& faction) {
+        if (faction.team == Team::Players) return;
+        consider(e, transform, body);
+    });
+    const std::size_t keep =
+        std::min(strikeRanking_.size(), static_cast<std::size_t>(std::max(count, 0)));
+    // Ties broken on the entity, so two mobs at one distance always resolve
+    // the same way rather than in whatever order the archetypes hold.
+    std::partial_sort(strikeRanking_.begin(),
+                      strikeRanking_.begin() + static_cast<std::ptrdiff_t>(keep),
+                      strikeRanking_.end());
+    out.reserve(keep);
+    for (std::size_t i = 0; i < keep; ++i) out.push_back(strikeRanking_[i].second);
 }
 
 void PetalSystem::reportLightning(World& world, Entity player, Vec2 at, double radius,
-                                  bool glitch) {
+                                  bool glitch, const std::vector<Entity>* chosen) {
     if (events_ == nullptr) return;
     const Transform* ownerAt = world.tryGet<Transform>(player);
     const Realm realm = ownerAt != nullptr ? ownerAt->realm : Realm::Overworld;
@@ -3064,10 +3132,14 @@ void PetalSystem::reportLightning(World& world, Entity player, Vec2 at, double r
     // edge alone is in reach. Erring this way means every arm drawn belongs to
     // a mob that was certainly hit, and the one it can miss is a body already
     // wider than the flash.
-    collectMobsNear(world, realm, at, radius, mobScratch_);
+    //
+    // A capped strike hands its own victims over instead: those are exactly
+    // the mobs it lands on.
+    if (chosen == nullptr) collectMobsNear(world, realm, at, radius, mobScratch_);
+    const std::vector<Entity>& struck = chosen != nullptr ? *chosen : mobScratch_;
     lightningTargets_.clear();
-    lightningTargets_.reserve(mobScratch_.size());
-    for (const Entity mob : mobScratch_) {
+    lightningTargets_.reserve(struck.size());
+    for (const Entity mob : struck) {
         const Transform* transform = world.tryGet<Transform>(mob);
         if (transform == nullptr) continue;
         lightningTargets_.push_back(transform->position);
