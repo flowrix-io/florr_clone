@@ -9,7 +9,6 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <memory>
 #include <utility>
 #include <vector>
 
@@ -829,8 +828,8 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     const auto grid = [&](int k) { return cornerAt(k * cells); };
     const auto screenCorner = [&](int t) { return std::round(t * kTileSize * scale); };
     const Vec2 origin = camera.worldToScreen({0.0, 0.0});
-    double ox = std::round(toPixels * origin.x + m[4]);
-    double oy = std::round(toPixels * origin.y + m[5]);
+    const double ox = std::round(toPixels * origin.x + m[4]);
+    const double oy = std::round(toPixels * origin.y + m[5]);
 
     // The stale generation goes first, any chunk of it; then the current
     // one's least recently drawn, and never one drawn this frame: the set on
@@ -862,38 +861,7 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     const int cols = map.width();
     const int rows = map.height();
     canvas.save();
-    if (stretch == 1.0) {
-        canvas.setTransform(1, 0, 0, 1, 0, 0);
-    } else {
-        // Scaled: everything below is laid out in the baked chunks' own
-        // pixels, from the world origin, and this one transform puts it on
-        // the screen. Not snapped -- the picture is in motion anyway.
-        canvas.setTransform(static_cast<float>(stretch), 0, 0, static_cast<float>(stretch),
-                            static_cast<float>(toPixels * origin.x + m[4]),
-                            static_cast<float>(toPixels * origin.y + m[5]));
-        ox = 0.0;
-        oy = 0.0;
-    }
-    // While the zoom animates, and after it until every chunk at the final
-    // zoom has baked, the whole-map overview goes down first, under every
-    // chunk. It fills the chunks not baked yet -- a blurry picture for a frame
-    // or two, against painting thousands of tiles one at a time every frame
-    // of the animation -- and it is what shows in any hairline the scaled
-    // chunks leave between them, rather than the black under the map.
-    const bool cheapFill = animating || terrainSettling_;
-    if (cheapFill) {
-        if (const Canvas* overview = terrainOverview(map, art)) {
-            canvas.drawCanvas(*overview, 0, 0, static_cast<float>(overview->pixelWidth()),
-                              static_cast<float>(overview->pixelHeight()),
-                              static_cast<float>(ox), static_cast<float>(oy),
-                              static_cast<float>(cornerAt(cols)),
-                              static_cast<float>(cornerAt(rows)));
-        }
-    }
-    // Scaled, a chunk's edges fall between device pixels and the seam
-    // between two of them lets the backdrop through. Each is drawn a device
-    // pixel larger, over the edge of the next.
-    const float overlap = stretch == 1.0 ? 0.0f : static_cast<float>(1.0 / stretch);
+    canvas.setTransform(1, 0, 0, 1, 0, 0);
     int bakes = 0;
     int bakedCells = 0;
     // The chunks with no bitmap this frame, and the cells that reach them.
@@ -1038,9 +1006,7 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     // The chunks still waiting for a bake, in one straight paint clipped to
     // them. On the same grid and through the same painter as a bake, so a
     // chunk looks the same the frame before its bitmap arrives as after.
-    // Under the cheap fill the overview already lies under them.
-    terrainSettling_ = animating || (terrainSettling_ && !holes.empty());
-    if (!holes.empty() && !(cheapFill && terrainOverview(map, art) != nullptr)) {
+    if (!holes.empty()) {
         canvas.beginPath();
         for (const Rect& hole : holes) {
             canvas.rect(static_cast<float>(hole.x), static_cast<float>(hole.y),
@@ -1054,27 +1020,6 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     }
     canvas.restore();
     return true;
-}
-
-const Canvas* WorldRenderer::terrainOverview(const MapData& map,
-                                             const std::vector<const SvgDocument*>& art) const {
-    TerrainOverview& overview = terrainOverview_;
-    if (overview.map == &map && overview.bitmap) return overview.bitmap.get();
-    const int cols = map.width();
-    const int rows = map.height();
-    if (cols <= 0 || rows <= 0) return nullptr;
-    // A few pixels a cell, and never more than 2048 across: one bake of the
-    // whole map, once, small enough to blit every frame.
-    const int px = std::clamp(2048 / std::max(cols, rows), 2, 16);
-    overview = TerrainOverview{};
-    overview.map = &map;
-    overview.cellPixels = px;
-    overview.bitmap = std::make_unique<Canvas>(Canvas::createVirtual(cols * px, rows * px));
-    paintTerrainCells(*overview.bitmap, map, art, CellSpan{0, 0, cols - 1, rows - 1},
-                      static_cast<double>(px), [&](int tx, int ty) {
-                          return Vec2{static_cast<double>(tx * px), static_cast<double>(ty * px)};
-                      });
-    return overview.bitmap.get();
 }
 
 void WorldRenderer::terrainCacheStats(std::size_t& chunks, std::size_t& bytes) const {

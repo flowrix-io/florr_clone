@@ -175,16 +175,6 @@ struct DyingPetal {
     double ageSeconds = 0;
 };
 
-/// One baked picture the terrain keeps while the view's zoom is animating,
-/// and draws scaled rather than rebaking at every frame's new size: what it
-/// shows, and the device pixels across it was baked at.
-struct HeldTerrainPicture {
-    const void* owner = nullptr;
-    int cells = 0;
-    double deviceSide = 0.0;
-    std::unique_ptr<Canvas> bitmap;
-};
-
 class WorldRenderer {
 public:
     void setContent(const ContentRegistry* content) { content_ = content; }
@@ -427,9 +417,6 @@ private:
     /// tile, every frame, and at the antennae's zoom tens of thousands of
     /// calls. False, having drawn nothing, when the canvas transform is not
     /// one the chunks can be blitted through texel for pixel.
-    /// The whole map baked small (terrainOverview_), made on first use.
-    const Canvas* terrainOverview(const MapData& map,
-                                  const std::vector<const SvgDocument*>& art) const;
     bool drawTerrainChunks(Canvas&, const Camera&, const MapData& map,
                            const std::vector<const SvgDocument*>& art, int x0, int y0, int x1,
                            int y1) const;
