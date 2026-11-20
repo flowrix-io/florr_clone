@@ -293,6 +293,38 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
             else run.lineTo(static_cast<float>(point.x), static_cast<float>(point.y));
         }
     });
+    // Fake walls: a `minimap_solid` layer's tiles, painted as the wall they
+    // look like in the world -- their own shapes, turned as the cell turns
+    // them -- so a secret passage does not show up here as an open channel.
+    // Wall black, on top of everything above, which is the colour a solid
+    // there would have had. See kLayerMinimapSolidProperty.
+    if (annotations != nullptr) {
+        const int mapCols = annotations->width();
+        const int mapRows = annotations->height();
+        for (const TiledLayer& layer : annotations->layers()) {
+            if (!layer.minimapSolid) continue;
+            for (int ty = 0; ty < mapRows; ++ty) {
+                for (int tx = 0; tx < mapCols; ++tx) {
+                    const std::size_t index = static_cast<std::size_t>(ty) *
+                                                  static_cast<std::size_t>(mapCols) +
+                                              static_cast<std::size_t>(tx);
+                    if (index >= layer.cells.size() || layer.cells[index].type < 0) continue;
+                    const TiledCell& cell = layer.cells[index];
+                    if (runWater) fillRun();
+                    runWater = false;
+                    const Vec2 origin{tx * kTileSize, ty * kTileSize};
+                    for (const TiledShape& shape :
+                         orientTileShapes(annotations->tileShapes(cell.type), cell.flags)) {
+                        for (std::size_t i = 0; i < shape.points.size(); ++i) {
+                            const Vec2 point = toBox(shape.points[i] + origin);
+                            if (i == 0) run.moveTo(static_cast<float>(point.x), static_cast<float>(point.y));
+                            else run.lineTo(static_cast<float>(point.x), static_cast<float>(point.y));
+                        }
+                    }
+                }
+            }
+        }
+    }
     fillRun();
 
     static const std::vector<MapElement> kNoElements;

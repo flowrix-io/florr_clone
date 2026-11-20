@@ -364,6 +364,9 @@ bool MapData::loadTiled(const TiledMap& map, const std::string& path, std::strin
 
     artFiles_ = map.artFiles();
     layers_ = map.layers();
+    tileShapes_.clear();
+    tileShapes_.reserve(map.palette().size());
+    for (const TiledTileType& type : map.palette()) tileShapes_.push_back(type.shapes);
     width_ = map.width();
     height_ = map.height();
 
@@ -461,6 +464,12 @@ std::string MapData::bandSummary() const {
                   rarityName(dominantTierForDifficulty(softest)), hardest,
                   rarityName(dominantTierForDifficulty(hardest)), randomText, singularText);
     return text;
+}
+
+const std::vector<TiledShape>& MapData::tileShapes(std::int32_t type) const {
+    static const std::vector<TiledShape> kNone;
+    if (type < 0 || static_cast<std::size_t>(type) >= tileShapes_.size()) return kNone;
+    return tileShapes_[static_cast<std::size_t>(type)];
 }
 
 TiledCell MapData::cellAt(std::size_t layer, int tx, int ty) const {

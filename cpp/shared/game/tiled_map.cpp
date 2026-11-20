@@ -744,6 +744,7 @@ bool TiledMap::load(const std::string& path, std::string& errorOut) {
         const Json layerProperties = propertiesOf(*layer);
         const bool ticked = layerProperties[kLayerCollisionProperty].asBool();
         out.negates = layerProperties[kLayerNegateProperty].asBool();
+        out.minimapSolid = layerProperties[kLayerMinimapSolidProperty].asBool();
         // The two properties are opposites. A layer carrying both is incoherent
         // and NEGATION WINS -- it is the property an author has to go looking
         // for, so it is the one they meant -- but the choice is recorded rather

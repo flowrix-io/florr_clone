@@ -24,6 +24,18 @@ struct TrialProgressData {
     std::array<std::uint8_t, kTrialFloorCount> claimed{};
 };
 
+// Per-floor flags are stored as bitmasks (bit i = floor i + 1): "cleared",
+// "claimedReward" (first-clear bundle paid) and "fullReward" (9-star bonus
+// paid too). Json numbers are doubles, so any mask
+// up to 53 bits round-trips exactly. bestStars (0-9 per floor) stays an array.
+static_assert(kTrialFloorCount <= 32, "trial floor masks are stored as u32");
+
+bool maskBit(const Json& mask, int i) {
+    const double value = mask.asDouble(0.0);
+    if (value <= 0.0) return false;
+    return ((static_cast<std::uint32_t>(value) >> i) & 1u) != 0;
+}
+
 TrialProgressData readProgress(const PlayerRecord& record, int season) {
     TrialProgressData out;
     out.season = season;
@@ -37,23 +49,12 @@ TrialProgressData readProgress(const PlayerRecord& record, int season) {
     const Json& full = root["fullReward"];
     for (int i = 0; i < kTrialFloorCount; ++i) {
         const bool seasonal = i >= kTrialPermanentFloorCount;
-        const bool keep = !seasonal || storedSeason == season;
-        if (keep && cleared.isArray() && i < static_cast<int>(cleared.size())) {
-            out.cleared[i] = cleared[static_cast<std::size_t>(i)].asBool();
-        }
-        if (keep && best.isArray() && i < static_cast<int>(best.size())) {
+        if (seasonal && storedSeason != season) continue;
+        out.cleared[i] = maskBit(cleared, i);
+        if (best.isArray() && i < static_cast<int>(best.size())) {
             out.best[i] = std::clamp(best[static_cast<std::size_t>(i)].asInt(), 0, 9);
         }
-        if (keep && claimed.isArray() && i < static_cast<int>(claimed.size())) {
-            out.claimed[i] = static_cast<std::uint8_t>(
-                std::clamp(claimed[static_cast<std::size_t>(i)].asInt(), 0, 2));
-        } else if (keep && out.cleared[i]) {
-            // Version 91 paid rewards immediately. Treat an old clear as
-            // claimed so this update cannot duplicate its economy.
-            const bool fullPaid = full.isArray() && i < static_cast<int>(full.size()) &&
-                                  full[static_cast<std::size_t>(i)].asBool();
-            out.claimed[i] = fullPaid ? 2 : 1;
-        }
+        out.claimed[i] = maskBit(full, i) ? 2 : maskBit(claimed, i) ? 1 : 0;
     }
     return out;
 }
@@ -62,20 +63,21 @@ void writeProgress(PlayerRecord& record, const TrialProgressData& data) {
     Json root = Json::object();
     root["season"] = data.season;
     root["unlocked"] = data.unlocked;
-    Json cleared = Json::array();
+    std::uint32_t cleared = 0;
+    std::uint32_t claimed = 0;
+    std::uint32_t full = 0;
     Json best = Json::array();
-    Json claimed = Json::array();
-    Json full = Json::array();
     for (int i = 0; i < kTrialFloorCount; ++i) {
-        cleared.push(data.cleared[i]);
+        const std::uint32_t bit = 1u << i;
+        if (data.cleared[i]) cleared |= bit;
+        if (data.claimed[i] >= 1) claimed |= bit;
+        if (data.claimed[i] >= 2) full |= bit;
         best.push(data.best[i]);
-        claimed.push(static_cast<int>(data.claimed[i]));
-        full.push(data.claimed[i] >= 2);
     }
-    root["cleared"] = std::move(cleared);
+    root["cleared"] = static_cast<double>(cleared);
     root["bestStars"] = std::move(best);
-    root["claimedReward"] = std::move(claimed);
-    root["fullReward"] = std::move(full);
+    root["claimedReward"] = static_cast<double>(claimed);
+    root["fullReward"] = static_cast<double>(full);
     record.extra["trialGrounds"] = std::move(root);
 }
 
@@ -140,16 +142,23 @@ void GameServer::stepTrialSecretDiscovery() {
     const Realm room = worldMaps_.realmOfId("trial_secret", roomFound);
     if (!gardenFound || !roomFound) return;
 
+    // The passage is garden.tmj's row 3, a fake wall (the `secret_passage`
+    // layer: drawn, never colliding) running from the ladybug pocket's border
+    // to the map's west edge. Only the far end opens the room: the flower
+    // has to TOUCH the edge of the map (out of bounds is wall, so it stops
+    // with its rim at x = 0), not merely walk into the passage.
     constexpr double kPassageRowTop = 3.0 * kTileSize;
     constexpr double kPassageRowBottom = 4.0 * kTileSize;
-    constexpr double kDiscoveryX = 0.5 * kTileSize;
+    constexpr double kEdgeTouchSlack = 4.0;
     const Vec2 kRoomCentre{1.5 * kTileSize, 1.5 * kTileSize};
     for (auto& entry : sessions_) {
         Session& session = entry.second;
         if (!session.playing() || !session.authenticated()) continue;
         Transform* transform = world_.tryGet<Transform>(session.entity);
         if (transform == nullptr || transform->realm != garden) continue;
-        if (transform->position.x > kDiscoveryX ||
+        const Body* body = world_.tryGet<Body>(session.entity);
+        const double rim = transform->position.x - (body != nullptr ? body->radius : 0.0);
+        if (rim > kEdgeTouchSlack ||
             transform->position.y < kPassageRowTop ||
             transform->position.y >= kPassageRowBottom) {
             continue;

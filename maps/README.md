@@ -107,6 +107,7 @@ layer may carry one custom boolean in Tiled, under *Layer → Custom Properties*
 | --- | --- |
 | `has_collision` | tiles painted on this layer block movement, in the shapes they draw |
 | `negate_collision` | tiles painted on this layer *cancel* the collision the layers **below** contributed — see below |
+| `minimap_solid` | the minimap paints this layer's tiles as wall (their own collision shapes), whatever the layer does to movement. For a fake wall: `garden.tmj`'s `secret_passage` is drawn dirt with no collision, and this keeps it off the minimap |
 
 They are opposites. A layer carrying **both** says nothing coherent: negation
 wins for that layer's cells, the layer blocks nothing of its own, and the load

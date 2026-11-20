@@ -157,6 +157,14 @@ inline constexpr const char* kLayerCollisionProperty = "has_collision";
 /// bridge you cannot walk on, and the load report prints what it resolved to.
 inline constexpr const char* kLayerNegateProperty = "negate_collision";
 
+/// The layer property that hides a layer's openings from the minimap: where
+/// the layer has a tile, the minimap paints that tile's own collision shapes
+/// as wall, whether or not the layer collides. A fake wall -- art on a layer
+/// that does not block, such as garden.tmj's `secret_passage` -- would
+/// otherwise read on the minimap as the walkable channel it is. Changes
+/// nothing but the minimap.
+inline constexpr const char* kLayerMinimapSolidProperty = "minimap_solid";
+
 /// One map cell's artwork orientation: the rotation to apply about the cell's
 /// centre, and whether the result is then mirrored across its own vertical
 /// axis. A canvas composes translate * rotate * scale, so this pair IS the
@@ -343,6 +351,10 @@ struct TiledLayer {
     /// `collides` was forced false and `negates` kept; carried so the load
     /// report can name the layer rather than silently picking one.
     bool conflicting = false;
+    /// The layer's `minimap_solid` property: the minimap paints this layer's
+    /// tiles as wall (their own shapes, turned by the cell's flags). See
+    /// kLayerMinimapSolidProperty.
+    bool minimapSolid = false;
     /// How many of this layer's cells hold a tile at all.
     int paintedCells = 0;
     /// For a negating layer: how many of its painted cells it ACTUALLY took

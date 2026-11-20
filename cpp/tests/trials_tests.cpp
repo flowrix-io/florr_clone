@@ -201,3 +201,121 @@ TEST(a_new_trial_chamber_plays_the_teleport_iris_and_recentres_the_flower) {
     h.step(5, {&client});
     CHECK(!client.takeTeleported());
 }
+
+TEST(trial_progress_flags_are_stored_as_bitmasks) {
+    using namespace flix::testsupport;
+    // Floors 1-3 are cleared with 9 stars; floor 1 had everything paid,
+    // floor 3 has only its first-clear bundle and the 9-star bonus to come.
+    Harness h("trial-masks",
+              [](const std::string& path) {
+                  seedUser(path, "packer", "password7");
+                  Database db;
+                  std::string error;
+                  db.load(path, error);
+                  const Account* account = db.findUser("packer");
+                  if (account == nullptr) return;
+                  Json root = Json::object();
+                  root["season"] = 0;
+                  root["unlocked"] = true;
+                  root["cleared"] = 0b111;
+                  root["claimedReward"] = 0b101;
+                  root["fullReward"] = 0b001;
+                  Json best = Json::array();
+                  for (int i = 0; i < kTrialFloorCount; ++i) best.push(i < 3 ? 9 : 0);
+                  root["bestStars"] = std::move(best);
+                  db.progress(account->id).extra["trialGrounds"] = std::move(root);
+                  db.markDirty();
+                  db.save();
+              },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "packer", "password7"));
+    CHECK(h.stepUntil({&client}, [&] { return client.trialProgress().known; }, 200));
+    CHECK_EQ(client.trialProgress().unlockedFloor, 4);
+    CHECK(!client.trialProgress().claimable[0]);
+    CHECK(client.trialProgress().claimable[1]);
+    CHECK(client.trialProgress().claimable[2]);
+
+    // Claiming floor 3's bonus sets its fullReward bit and nothing else.
+    client.claimTrialReward(3);
+    CHECK(h.stepUntil({&client}, [&] { return client.trialReward().known; }, 200));
+    CHECK(client.trialReward().ok);
+    CHECK(client.trialReward().fullBonus);
+    Session* session = GameServerPeer::sessionOf(h.server, "packer");
+    if (session == nullptr) { CHECK(false); return; }
+    const PlayerRecord* record = h.server.database().findProgress(session->userId);
+    if (record == nullptr) { CHECK(false); return; }
+    const Json& stored = record->extra["trialGrounds"];
+    CHECK_EQ(stored["cleared"].asInt(), 0b111);
+    CHECK_EQ(stored["claimedReward"].asInt(), 0b101);
+    CHECK_EQ(stored["fullReward"].asInt(), 0b101);
+
+    // And it reads back: floor 3 is now fully paid.
+    client.claimTrialReward(3);
+    CHECK(h.stepUntil({&client}, [&] { return client.trialReward().floor == 3 &&
+                                              !client.trialReward().ok; }, 200));
+    CHECK_EQ(GameServerPeer::unlockedTrialFloor(h.server, *session), 4);
+}
+
+TEST(the_secret_passage_opens_the_trial_room_only_at_the_map_edge) {
+    using namespace flix::testsupport;
+    Harness h("trial-secret-passage",
+              [](const std::string& path) { seedUser(path, "explorer", "password7"); },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "explorer", "password7"));
+    client.joinGame(1920, 1080, {}, "explorer");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; },
+                      200));
+    Session* session = GameServerPeer::sessionOf(h.server, "explorer");
+    if (session == nullptr) { CHECK(false); return; }
+    World& world = h.server.world();
+    Transform& transform = world.get<Transform>(session->entity);
+    const Realm garden = transform.realm;
+
+    // The passage is row 3, open from the map's west edge to the ladybug
+    // pocket's border; the wall above and below it still blocks.
+    const Terrain& terrain = h.server.terrain();
+    for (int tx = 0; tx <= 23; ++tx) {
+        CHECK(terrain.atTile(tx, 3, garden) == Tile::Open);
+        CHECK(terrain.atTile(tx, 2, garden) == Tile::Solid);
+    }
+    for (int tx = 0; tx <= 20; ++tx) CHECK(terrain.atTile(tx, 4, garden) == Tile::Solid);
+
+    // Walk in from the pocket, through its border, and west to the edge.
+    world.get<Health>(session->entity).current = 1e12;
+    transform.position = {25.5 * kTileSize, 4.6 * kTileSize};
+    std::uint32_t sequence = 0;
+    double westmostInGarden = transform.position.x;
+    bool teleported = false;
+    for (int i = 0; i < 4000 && !teleported; ++i) {
+        const Vec2 at = world.get<Transform>(session->entity).position;
+        const Vec2 goal = at.x > 23.2 * kTileSize ? Vec2{22.5 * kTileSize, 3.5 * kTileSize}
+                                                  : Vec2{-kTileSize, 3.5 * kTileSize};
+        net::InputFrame input;
+        input.sequence = ++sequence;
+        input.moveAngle = std::atan2(goal.y - at.y, goal.x - at.x);
+        input.moveStrength = 1.0;
+        client.sendInput(input);
+        h.step(1, {&client});
+        const Transform& now = world.get<Transform>(session->entity);
+        if (now.realm != garden) {
+            teleported = true;
+            CHECK(westmostInGarden < world.get<Body>(session->entity).radius + 16.0);
+        } else {
+            westmostInGarden = std::min(westmostInGarden, now.position.x);
+            // Only the edge opens the room: the passage's last tile is not
+            // enough, the flower's rim must reach x = 0.
+            if (now.position.x > world.get<Body>(session->entity).radius + 16.0) {
+                CHECK(!GameServerPeer::trialGroundsUnlocked(h.server, *session));
+            }
+        }
+    }
+    CHECK(teleported);
+    CHECK(westmostInGarden < world.get<Body>(session->entity).radius + 8.0);
+    CHECK(GameServerPeer::trialGroundsUnlocked(h.server, *session));
+    CHECK(distance(world.get<Transform>(session->entity).position,
+                   Vec2{1.5 * kTileSize, 1.5 * kTileSize}) < 50.0);
+}
