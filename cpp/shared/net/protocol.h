@@ -374,7 +374,7 @@ enum class ServerMessage : std::uint8_t {
                         ///< payload also carried heapTotal; nothing draws it,
                         ///< so it is not on this wire.
     MazeInfo,           ///< i64 dayNumber -- the maze the server is playing now.
-                        ///< Sent when it rotates; JoinAccepted carries the same
+                        ///< Sent at sign-in and when it rotates; JoinAccepted carries the same
                         ///< number for a client that has just arrived. The
                         ///< TypeScript build's `mazeInfo {day}`.
     RealmChange,        ///< f32 x, f32 y, MapGrid. The body moved to another

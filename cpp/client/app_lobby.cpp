@@ -669,6 +669,13 @@ std::vector<App::PickerTab> App::pickerTabs() const {
         }
         tab->choices.push_back(i);
     }
+    // The maze wears the colour of the biome it is today, as that biome's own
+    // tab does; the purple stays for a biome with no tab of its own.
+    const char* mazeBiome =
+        kMazeBiomeGroups[static_cast<std::size_t>(activeMaze().biome())];
+    for (const PickerTab& tab : tabs) {
+        if (tab.id == mazeBiome) maze.color = tab.color;
+    }
     // The maze has no prestige version.
     if (!prestigeOn()) {
         tabs.push_back(std::move(maze));
@@ -840,7 +847,9 @@ void App::drawLobby(Canvas& canvas, double time) {
         const SpawnChoice& choice = spawnChoices_[open->choices[i]];
         const bool chosen = choice.id == menus_.settings().spawnChoice ||
                             (choice.id == "default" && menus_.settings().spawnChoice.empty());
-        pickerButton(layout.doors[i], choice.label, choice.color, chosen,
+        // The maze's one door is its tab's colour: today's biome.
+        pickerButton(layout.doors[i], choice.label,
+                     choice.id == kMazeSpawnChoice ? open->color : choice.color, chosen,
                      "door_" + std::to_string(i));
     }
 

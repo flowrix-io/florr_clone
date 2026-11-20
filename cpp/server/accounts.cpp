@@ -77,6 +77,10 @@ void GameServer::welcomeSignedIn(Session& session, net::Connection& connection) 
     sendGuildState(session, connection);
     sendChatHistory(connection);
     sendTrialProgress(session, &connection);
+    // The maze the server is playing, which the title screen's picker colours
+    // its Maze button by. The server picked it at boot (plus any admin
+    // change), so the client's own clock can disagree.
+    sendMazeInfo(connection);
 }
 
 void GameServer::handleRegister(Session& session, net::Connection& connection, ByteReader& reader) {
