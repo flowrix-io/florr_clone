@@ -149,20 +149,54 @@ void WorldRenderer::drawMaze(Canvas& canvas, const Camera& camera) const {
     const Rect visible = camera.visibleWorld(0);
     if (!visible.intersects(square)) return;
 
-    // 1. Ground: the flat floor colour of the biome this maze borrows, over
-    //    the maze's square. The maze is not authored in Tiled and has no map
-    //    file, so it has no tile artwork to paint with -- terrain.h's kBiomes
-    //    is the whole palette it has ever had a claim on, and one colour is
-    //    right for it anyway: every cell of a maze is the same biome.
+    // 1. Ground: the floor tile of the biome this maze borrows, paved over the
+    //    maze's square on the overworld's own tile grid, so a garden maze
+    //    reads as garden ground. The maze has no map file, so the tile is the
+    //    one the waves disc paves that biome with (waves.h). The biome's flat
+    //    colour goes under it: what shows if the art is missing.
     const int section = kMazeBiomeSections[static_cast<std::size_t>(maze.biome())];
-    {
-        const Rect floor = intersection(visible, square);
-        if (floor.w > 0 && floor.h > 0) {
-            const Vec2 at = camera.worldToScreen({floor.x, floor.y});
-            ui::setFill(canvas, biomeOf(section).ground);
-            canvas.fillRect(static_cast<float>(at.x), static_cast<float>(at.y),
-                            static_cast<float>(floor.w * camera.zoom()),
-                            static_cast<float>(floor.h * camera.zoom()));
+    const Rect floor = intersection(visible, square);
+    if (floor.w > 0 && floor.h > 0) {
+        const Vec2 at = camera.worldToScreen({floor.x, floor.y});
+        ui::setFill(canvas, biomeOf(section).ground);
+        canvas.fillRect(static_cast<float>(at.x), static_cast<float>(at.y),
+                        static_cast<float>(floor.w * camera.zoom()),
+                        static_cast<float>(floor.h * camera.zoom()));
+
+        WaveBiome tileBiome = WaveBiome::Garden;
+        switch (maze.biome()) {
+            case MazeBiome::Garden: tileBiome = WaveBiome::Garden; break;
+            case MazeBiome::Desert: tileBiome = WaveBiome::Desert; break;
+            case MazeBiome::Ocean: tileBiome = WaveBiome::Ocean; break;
+        }
+        const SvgDocument* art =
+            sprites_ != nullptr ? sprites_->tileArt(waveBiomeInfo(tileBiome).tile) : nullptr;
+        if (art != nullptr) {
+            const int x0 = static_cast<int>(std::floor((floor.left() - kMazeOriginX) / kTileSize));
+            const int y0 = static_cast<int>(std::floor((floor.top() - kMazeOriginY) / kTileSize));
+            const int x1 = static_cast<int>(std::floor((floor.right() - kMazeOriginX) / kTileSize));
+            const int y1 = static_cast<int>(std::floor((floor.bottom() - kMazeOriginY) / kTileSize));
+            // Each cell in exactly its own box on whole device pixels, as the
+            // map's are (paintTerrainCells), clipped to the maze's square.
+            const double toPixels = devicePixelsPerUnit(canvas);
+            const double side = tileBakePixels(kTileSize * camera.zoom() * toPixels) / toPixels;
+            const auto cornerAt = [&](int x, int y) {
+                const Vec2 c = camera.worldToScreen(
+                    {kMazeOriginX + x * kTileSize, kMazeOriginY + y * kTileSize});
+                return Vec2{snapToPixel(c.x, toPixels), snapToPixel(c.y, toPixels)};
+            };
+            canvas.save();
+            clipWorldRect(canvas, camera, square);
+            for (int y = y0; y <= y1; ++y) {
+                for (int x = x0; x <= x1; ++x) {
+                    const Vec2 a = cornerAt(x, y);
+                    const Vec2 b = cornerAt(x + 1, y + 1);
+                    if (b.x > a.x && b.y > a.y) {
+                        drawTileArt(canvas, *art, a.x, a.y, b.x - a.x, b.y - a.y, side);
+                    }
+                }
+            }
+            canvas.restore();
         }
     }
 
