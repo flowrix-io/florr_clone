@@ -379,8 +379,15 @@ public:
     /// switch it on natively to hold the cache to the direct path's picture.
     void setTerrainCache(bool on) {
         terrainCache_ = on;
-        if (!on) terrainChunks_ = TerrainChunks{};
+        if (!on) {
+            terrainChunks_ = TerrainChunks{};
+            terrainStale_ = TerrainChunks{};
+        }
     }
+    /// The camera zoom an ease is heading for while one runs (antennae going
+    /// on or off), or 0 when the zoom is still. Lets the terrain cache keep
+    /// one bake across the ease instead of a new one per frame.
+    void setZoomEasingTarget(double zoom) { zoomEasingTarget_ = zoom; }
     /// Forgets every picture it keeps on a canvas -- the terrain chunks and the
     /// glitch surfaces -- and they are made again as they are next drawn. For
     /// when the page has lost their pixels: see App::dropCanvasCaches.
@@ -922,6 +929,14 @@ private:
         std::size_t bytes = 0;
     };
     mutable TerrainChunks terrainChunks_;
+    /// The generation before terrainChunks_, kept when the scale changes so a
+    /// chunk of the new one not baked yet is drawn from it, rescaled, rather
+    /// than painted straight -- which at the antennae's zoom is tens of
+    /// thousands of fills, the hitch every zoom change used to be. Evicted
+    /// first when the budget is reached.
+    mutable TerrainChunks terrainStale_;
+    /// See setZoomEasingTarget.
+    double zoomEasingTarget_ = 0.0;
 
     /// Every web's strands at radius one, built on first use. Geometry only,
     /// so a lost GPU context does not take it with it.

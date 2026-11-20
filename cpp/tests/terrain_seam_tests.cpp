@@ -17,7 +17,11 @@
 #include "shared/game/map_elements.h"
 #include "test_data.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <utility>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -143,6 +147,64 @@ TEST(terrain_chunks_leave_no_seam_when_antennae_zoom_the_camera_far_out) {
         for (int i = 0; i < kFramesToBakeAll; ++i) pixels = scene.frame(centre, zoom);
         CHECK(blackLines(pixels, true) == 0);
         CHECK(blackLines(pixels, false) == 0);
+    }
+}
+
+TEST(terrain_chunks_keep_one_bake_per_octave_while_antennae_ease_the_zoom) {
+    // Antennae going on or off ease the zoom over most of a second, so every
+    // frame of it is a new scale. The cache is told the zoom is moving and
+    // keeps a bake for as long as it is within twice the frame's scale,
+    // drawn down onto it -- never magnified, which is what pixelated the
+    // screen -- and stands the last bake in for chunks not baked yet rather
+    // than painting them straight, which was the lag. Checked both ways: no
+    // seam on any frame, a handful of bakes for the whole tenfold ease, every
+    // frame close to the exact picture at its zoom, and the exact picture
+    // itself once the ease ends.
+    TerrainScene scene;
+    CHECK(scene.load());
+    scene.renderer.setTerrainCache(true);
+    const Vec2 walls{22272.3, 13440.7};
+    constexpr int kEaseFrames = 50;
+    for (const auto& [from, to] : {std::pair{1.0, 0.1}, std::pair{0.1, 1.0}}) {
+        for (int i = 0; i < kFramesToBakeAll; ++i) scene.frame(walls, from);
+        int generations = 0;
+        std::size_t lastChunks = 0, bytes = 0;
+        scene.renderer.terrainCacheStats(lastChunks, bytes);
+        int worstFrameDiff = 0;
+        for (int f = 1; f <= kEaseFrames; ++f) {
+            const double zoom = from * std::pow(to / from, static_cast<double>(f) / kEaseFrames);
+            scene.renderer.setZoomEasingTarget(f < kEaseFrames ? to : 0.0);
+            const std::vector<std::uint8_t> eased = scene.frame(walls, zoom);
+            std::size_t chunks = 0;
+            scene.renderer.terrainCacheStats(chunks, bytes);
+            if (chunks < lastChunks) ++generations;
+            lastChunks = chunks;
+            CHECK(blackLines(eased, true) == 0);
+            CHECK(blackLines(eased, false) == 0);
+            if (f % 10 == 5) {
+                // The same zoom drawn exactly, on a scene of its own.
+                TerrainScene exact;
+                CHECK(exact.load());
+                exact.renderer.setTerrainCache(true);
+                const std::vector<std::uint8_t> sharp = exact.frame(walls, zoom);
+                worstFrameDiff = std::max(worstFrameDiff, differingPixels(eased, sharp, 48));
+            }
+        }
+        scene.renderer.setZoomEasingTarget(0.0);
+        std::vector<std::uint8_t> settled;
+        for (int i = 0; i < kFramesToBakeAll; ++i) settled = scene.frame(walls, to);
+        TerrainScene exact;
+        CHECK(exact.load());
+        exact.renderer.setTerrainCache(true);
+        std::vector<std::uint8_t> sharp;
+        for (int i = 0; i < kFramesToBakeAll; ++i) sharp = exact.frame(walls, to);
+        // Four octaves' worth of rotation at most, against one per frame.
+        std::printf("ease %.1f -> %.1f: %d generations, worst frame %d px off\n", from, to,
+                    generations, worstFrameDiff);
+        CHECK(generations <= 6);
+        // Blurred by a downscale, not displaced: a few percent of the frame.
+        CHECK(worstFrameDiff < kPixelWidth * kPixelHeight / 20);
+        CHECK(differingPixels(settled, sharp, 1) == 0);
     }
 }
 
