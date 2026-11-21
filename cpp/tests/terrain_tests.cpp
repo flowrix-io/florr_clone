@@ -478,6 +478,38 @@ TEST(spatial_grid_answers_a_one_cell_query_in_filing_order_and_once_each) {
     CHECK(out == (std::vector<Entity>{a}));
 }
 
+TEST(spatial_grid_remembers_the_circle_each_body_was_filed_as) {
+    // Contact rejects a far candidate off this circle instead of looking its
+    // components up, so it has to be exactly what insert() was handed --
+    // including a radius insert() itself clamps for the cells it files under.
+    SpatialGrid grid(600.0);
+    const Entity a = makeEntity(5, 1);
+    const Entity b = makeEntity(2, 1);
+    const Entity never = makeEntity(8, 1);
+    grid.insert(a, Realm::Overworld, Vec2{700.25, 650.5}, 12.5);
+    grid.insert(b, Realm::Overworld, Vec2{1000, 1100}, -3.0);
+    const SpatialGrid::FiledCircle* filedA = grid.filedCircle(a);
+    CHECK(filedA != nullptr);
+    if (filedA != nullptr) {
+        CHECK_EQ(filedA->position.x, 700.25);
+        CHECK_EQ(filedA->position.y, 650.5);
+        CHECK_EQ(filedA->radius, 12.5);
+    }
+    const SpatialGrid::FiledCircle* filedB = grid.filedCircle(b);
+    CHECK(filedB != nullptr && filedB->radius == -3.0);
+    CHECK(grid.filedCircle(never) == nullptr);
+
+    // A new tick forgets every circle until the body is filed again.
+    grid.clear();
+    CHECK(grid.filedCircle(a) == nullptr);
+    grid.insert(a, Realm::Overworld, Vec2{10, 20}, 4.0);
+    CHECK(grid.filedCircle(a) != nullptr && grid.filedCircle(a)->position.x == 10.0);
+
+    // Filed twice in one tick, no single circle is the answer.
+    grid.insert(a, Realm::Overworld, Vec2{30, 40}, 4.0);
+    CHECK(grid.filedCircle(a) == nullptr);
+}
+
 TEST(spatial_grid_clear_retires_the_previous_tick) {
     SpatialGrid grid;
     std::vector<Entity> out;

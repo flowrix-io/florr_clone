@@ -1057,6 +1057,24 @@ private:
     /// TypeScript stops after the first legitimate mob body-contact for a
     /// player each tick. Reused rather than allocated in resolveMelee().
     std::vector<Entity> mobContactedPlayers_;
+
+    /// Which bodies the contact phase has moved since the grid filed them
+    /// (bounceOffMob, yieldToFlower, shoveFlower), by entity index, stamped
+    /// with movedEpoch_. resolveMelee rejects a far candidate off the grid's
+    /// filed circle instead of looking its Transform and Body up -- exact for
+    /// every body NOT stamped here, whose filed circle is still where it is.
+    std::vector<std::uint32_t> movedStamp_;
+    std::uint32_t movedEpoch_ = 0;
+    void markMoved(Entity e) {
+        if (e == NULL_ENTITY) return;
+        const std::uint32_t idx = entityIndex(e);
+        if (idx >= movedStamp_.size()) movedStamp_.resize(std::max<std::size_t>(idx + 1, movedStamp_.size() * 2), 0);
+        movedStamp_[idx] = movedEpoch_;
+    }
+    bool movedThisPhase(Entity e) const {
+        const std::uint32_t idx = entityIndex(e);
+        return idx < movedStamp_.size() && movedStamp_[idx] == movedEpoch_;
+    }
     std::vector<DeathRecord> deaths_;
     std::vector<ShotLanding> shotLandings_;
     std::vector<MobConversion> conversions_;

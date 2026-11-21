@@ -99,6 +99,7 @@ void SpatialGrid::insert(Entity e, Realm realm, Vec2 position, double radius) {
     // A NaN position cannot be found by any query, so filing it would only
     // give a later reader a corrupt candidate to trip over.
     if (!std::isfinite(position.x) || !std::isfinite(position.y)) return;
+    const double filedRadius = radius;
     if (!std::isfinite(radius) || radius < 0.0) radius = 0.0;
 
     const std::uint32_t idx = entityIndex(e);
@@ -106,9 +107,11 @@ void SpatialGrid::insert(Entity e, Realm realm, Vec2 position, double radius) {
         // Grown here rather than in query(), so the read path never allocates.
         stamp_.resize(std::max<std::size_t>(static_cast<std::size_t>(idx) + 1, stamp_.size() * 2), 0);
         filed_.resize(stamp_.size(), 0);
+        filedCircles_.resize(stamp_.size());
     }
     if (filed_[idx] == epoch_) refiled_ = true;
     filed_[idx] = epoch_;
+    filedCircles_[idx] = FiledCircle{position, filedRadius};
 
     Layer& target = layer(realm);
     const int x0 = cellX(realm, position.x - radius);

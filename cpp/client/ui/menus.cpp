@@ -454,6 +454,28 @@ void drawPresetSlot(Canvas& canvas, const SpriteCache& sprites, Rect r, const st
     canvas.restore();
 }
 
+/// Folds what a kept layer shows into one key (see ui::beginKeptLayer). Not a
+/// hash anyone stores: it only has to change when its inputs do.
+struct LayerKey {
+    std::uint64_t value = 1469598103934665603ull;
+    void fold(std::uint64_t v) {
+        value = (value ^ v) * 1099511628211ull;
+        value ^= value >> 29;
+    }
+    template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+    void add(T v) { fold(static_cast<std::uint64_t>(static_cast<std::int64_t>(v))); }
+    /// A real number, to 1/steps of a unit: an ease that creeps by a
+    /// thousandth of a pixel forever must not repaint forever.
+    void add(double v, double steps) { add(static_cast<std::int64_t>(std::llround(v * steps))); }
+    void add(const Rect& r) {
+        add(r.x, 256.0);
+        add(r.y, 256.0);
+        add(r.w, 256.0);
+        add(r.h, 256.0);
+    }
+    void add(const std::string& s) { add(std::hash<std::string>{}(s)); }
+};
+
 /// Advances the secondary selection to the next non-empty slot in `step`'s
 /// direction, or -1 when the whole row is empty. Takes the loadout the bar is
 /// SHOWING, which for a few frames after an edit is not the profile's.
@@ -1779,8 +1801,42 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     // The petal in hand stays out of it and is painted opaque over the top: it
     // is on the cursor rather than on the bar, and it can be anywhere on the
     // screen, all of which the layer would then have to cover.
+    // What one tile on the bar shows. Built ahead of the layer, because the
+    // layer's key is made of it.
+    const auto makeTile = [&](const TileDraw& entry) {
+        const LoadoutTileAnim& anim = loadoutTiles_[static_cast<std::size_t>(entry.slot)];
+        ItemTile tile;
+        tile.petalIndex = anim.petalIndex;
+        tile.rarity = anim.rarity;
+        tile.timeSeconds = timeSeconds;
+        // An outranked petal wears the wedge whole, as a petal that has just
+        // broken does, for as long as the better one is on the bar -- not a
+        // sweep, because it is not on its way back.
+        tile.reload = inGame_ && slotOutranked(net, entry.slot)
+                          ? 0.0
+                          : slotReloadProgress(net, entry.slot);
+        tile.health = slotHealthFraction(net, entry.slot);
+        tile.counter = slotCounterLabel(net, entry.slot);
+        // The petal in the slot being struck, on the field. Only in game: on
+        // the title screen nothing is out there to be hit.
+        if (inGame_) tile.flash = renderer.slotHitTint(entry.slot);
+        tile.tooltip = false;
+        return tile;
+    };
+    // In game the bar is painted through a scratch layer, which the tile
+    // cannot place on the screen by itself, so the bar names it: the box,
+    // carried down by however much of the bar's rise is still to run. Every
+    // frame, whether the layer is repainted or kept.
+    const auto noteTile = [&](const TileDraw& entry) {
+        const LoadoutTileAnim& anim = loadoutTiles_[static_cast<std::size_t>(entry.slot)];
+        notePetalHoverAt({anim.cx - anim.w * 0.5, anim.cy - anim.h * 0.5 + (1.0 - loadoutSlide_) * 120.0,
+                          anim.w, anim.h},
+                         anim.petalIndex, anim.rarity);
+    };
+
     Canvas* layer = nullptr;
     LayerBox layerBox;
+    bool keptLayer = false;
     if (inGame_) {
         Rect extent{};
         const auto take = [&extent](Rect r) {
@@ -1820,9 +1876,73 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         }
         // And a unit all round for the antialiased edges.
         extent = {extent.x - 1.0, extent.y - 1.0, extent.w + 2.0, extent.h + 2.0};
-        if (beginLayer(canvas, loadoutLayer_, extent, layerBox)) layer = loadoutLayer_.get();
+
+        // The bar is the same picture on almost every frame, and on the web
+        // repainting the layer is a GPU flush plus ~300 drawing calls, where
+        // laying an unchanged one down is a single blit. So everything below
+        // that paints into it is folded into one key, and the layer is only
+        // repainted when that key moves (ui::beginKeptLayer adds the
+        // transform and the box). Whatever paints into the layer and reads
+        // something new must be added here, or the bar will not show it.
+        LayerKey key;
+        key.add(presetBank);
+        key.add(hovered);
+        key.add(selectedSecondary_);
+        key.add(metrics.secondaryPicker);
+        key.add(metrics.capsBelow);
+        key.add(drag_.active());
+        key.add(showRowSwap);
+        key.add(rowSwapCaption);
+        for (const Rect& slot : layout.slots) key.add(slot);
+        key.add(layout.trash);
+        // A picture that moves on its own clock has to be painted every frame,
+        // as it always was.
+        bool moving = false;
+        if (secondaryHidden) {
+            for (int i = kLoadoutBarPrimary; i < kLoadoutBarSlots; ++i) {
+                const int preset = presetBank * kLoadoutPresetsPerBank + (i - kLoadoutBarPrimary);
+                const std::vector<Profile::Slot>& saved =
+                    profile.presets[static_cast<std::size_t>(preset)];
+                key.add(sameLoadout(saved, shown));
+                for (const Profile::Slot& slot : saved) {
+                    key.add(slot.petalIndex);
+                    key.add(static_cast<int>(slot.rarity));
+                    if (!slot.empty() && sprites.petalAnimated(slot.petalIndex)) moving = true;
+                }
+            }
+        }
+        for (std::size_t drawn = 0; drawn < queued; ++drawn) {
+            const TileDraw& entry = order[drawn];
+            if (secondaryHidden && entry.slot >= kLoadoutBarPrimary) continue;
+            const LoadoutTileAnim& anim = loadoutTiles_[static_cast<std::size_t>(entry.slot)];
+            const ItemTile tile = makeTile(entry);
+            key.add(entry.slot);
+            key.add(entry.rock);
+            if (entry.rock) key.add(wobble, 4096.0);
+            key.add(Rect{anim.cx, anim.cy, anim.w, anim.h});
+            key.add(tile.petalIndex);
+            key.add(static_cast<int>(tile.rarity));
+            key.add(tile.reload, 4096.0);
+            key.add(tile.health, 4096.0);
+            key.add(tile.counter);
+            key.add(static_cast<int>(tile.flash.r) << 24 | static_cast<int>(tile.flash.g) << 16 |
+                    static_cast<int>(tile.flash.b) << 8 | static_cast<int>(tile.flash.a));
+            if (sprites.petalAnimated(tile.petalIndex)) moving = true;
+        }
+        if (moving) key.add(timeSeconds, 1e6);
+        // And nothing is kept longer than half a second, for what the key
+        // cannot see: the viewer's talents (a tile's icon count), a font or a
+        // sprite bake landing after the layer was painted.
+        key.add(std::floor(timeSeconds * 2.0), 1.0);
+
+        const LayerStart start =
+            beginKeptLayer(canvas, loadoutLayer_, extent, layerBox, key.value, loadoutLayerKey_);
+        if (start != LayerStart::Off) layer = loadoutLayer_.get();
+        keptLayer = start == LayerStart::Keep;
     }
     Canvas& bar = layer != nullptr ? *layer : canvas;
+    // Painting happens unless the layer is being kept as it is.
+    if (!keptLayer) {
 
     // The modern bar has no trash: a petal is thrown away by dragging it off
     // the bar, which is what a drop anywhere but a slot already does.
@@ -1865,31 +1985,14 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         }
     }
 
+    }  // !keptLayer
+
     const auto drawTile = [&](Canvas& target, const TileDraw& entry) {
         const auto at = static_cast<std::size_t>(entry.slot);
         const LoadoutTileAnim& anim = loadoutTiles_[at];
-        ItemTile tile;
-        tile.petalIndex = anim.petalIndex;
-        tile.rarity = anim.rarity;
-        tile.timeSeconds = timeSeconds;
-        // An outranked petal wears the wedge whole, as a petal that has just
-        // broken does, for as long as the better one is on the bar -- not a
-        // sweep, because it is not on its way back.
-        tile.reload = inGame_ && slotOutranked(net, entry.slot)
-                          ? 0.0
-                          : slotReloadProgress(net, entry.slot);
-        tile.health = slotHealthFraction(net, entry.slot);
-        tile.counter = slotCounterLabel(net, entry.slot);
-        // The petal in the slot being struck, on the field. Only in game: on
-        // the title screen nothing is out there to be hit.
-        if (inGame_) tile.flash = renderer.slotHitTint(entry.slot);
+        const ItemTile tile = makeTile(entry);
         const Rect box{anim.cx - anim.w * 0.5, anim.cy - anim.h * 0.5, anim.w, anim.h};
-        // In game the bar is painted through a scratch layer, which the tile
-        // cannot place on the screen by itself, so the bar names it: the box,
-        // carried down by however much of the bar's rise is still to run.
-        tile.tooltip = false;
-        notePetalHoverAt({box.x, box.y + (1.0 - loadoutSlide_) * 120.0, box.w, box.h},
-                         anim.petalIndex, anim.rarity);
+        noteTile(entry);
         if (!entry.rock) {
             drawItemTile(target, sprites, box, tile);
             return;
@@ -1902,10 +2005,12 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     };
     for (std::size_t drawn = 0; drawn < queued; ++drawn) {
         if (secondaryHidden && order[drawn].slot >= kLoadoutBarPrimary) continue;
-        drawTile(bar, order[drawn]);
+        if (keptLayer) noteTile(order[drawn]);
+        else drawTile(bar, order[drawn]);
     }
 
-    if (layer != nullptr) endLayer(canvas, *layer, layerBox, kOverlayPlateAlpha);
+    if (keptLayer) blitLayer(canvas, *layer, layerBox, kOverlayPlateAlpha);
+    else if (layer != nullptr) endLayer(canvas, *layer, layerBox, kOverlayPlateAlpha);
     if (onTop >= 0) drawTile(canvas, inHand);
     canvas.restore();
 }

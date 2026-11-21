@@ -944,7 +944,7 @@ void GameServer::replicate(double nowMillis) {
     // Every client's gather reads one listing of the world, taken here: no
     // build changes the world, so it holds for the whole loop.
     refreshGuildBodies();
-    replicator_.beginPass(world_);
+    replicator_.beginPass(world_, nowMillis);
     for (auto& entry : sessions_) {
         Session& session = entry.second;
         if (!session.playing()) continue;

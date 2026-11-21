@@ -87,6 +87,26 @@ public:
     std::size_t size() const { return inserted_; }
     bool empty() const { return inserted_ == 0; }
 
+    /// The circle `e` was filed as this epoch: position and radius exactly as
+    /// insert() was handed them.
+    struct FiledCircle {
+        Vec2 position;
+        double radius = 0;
+    };
+
+    /// Where `e` was filed, or null when it was not filed this epoch -- or
+    /// when anything was filed twice, after which no one circle is the answer.
+    /// For a caller that would otherwise look the entity's components up only
+    /// to find it far away: one dense load instead of an archetype chase. It
+    /// is the position at FILING time; a caller that moves bodies after that
+    /// must not trust it for those.
+    const FiledCircle* filedCircle(Entity e) const {
+        if (refiled_ || e == NULL_ENTITY) return nullptr;
+        const std::uint32_t idx = entityIndex(e);
+        if (idx >= filed_.size() || filed_[idx] != epoch_) return nullptr;
+        return &filedCircles_[idx];
+    }
+
     int cols(Realm realm) const { return layer(realm).cols; }
     int rows(Realm realm) const { return layer(realm).rows; }
     double cellSize() const { return cellSize_; }
@@ -152,6 +172,8 @@ private:
     /// petal attraction ask one for every body in the world each tick.
     std::vector<std::uint32_t> filed_;
     bool refiled_ = false;
+    /// Parallel to filed_: see filedCircle().
+    std::vector<FiledCircle> filedCircles_;
 };
 
 } // namespace flix

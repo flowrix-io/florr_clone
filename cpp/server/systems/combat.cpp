@@ -2011,6 +2011,10 @@ void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
     melee_.clear();
     auras_.clear();
     mobContactedPlayers_.clear();
+    if (++movedEpoch_ == 0) {
+        std::fill(movedStamp_.begin(), movedStamp_.end(), 0);
+        movedEpoch_ = 1;
+    }
     // The raindrop field runs in updatePlayerPreMovement, ahead of the movement
     // window and therefore ahead of the flower's own body and ring contact. It
     // matters: a mob the field finishes off is already Dead when the ring
@@ -2660,6 +2664,18 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                     if (verdict == 1) continue;
                 }
             }
+            // The same widest-reach rejection as below, read off the circle the
+            // grid filed this body as -- one dense load rather than the
+            // entity's components -- for every body nothing in this phase has
+            // moved since, whose filed circle is exactly its Transform and Body.
+            if (const SpatialGrid::FiledCircle* filed = grid.filedCircle(victim);
+                filed != nullptr && !movedThisPhase(victim)) {
+                const double radii = source.radius + filed->radius;
+                if (radii >= 0.0) {
+                    const double widest = radii + kMobCollisionBuffer + kNpcTouchSlack;
+                    if ((filed->position - source.position).lengthSq() > widest * widest) continue;
+                }
+            }
             const auto [transform, body] = world.tryGetPair<Transform, Body>(victim);
             if (transform == nullptr || body == nullptr) continue;
 
@@ -2767,6 +2783,8 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 // -- a ladybug shoved across the map by a flower leaning on it.
                 if (firstBump) {
                     mobContactedPlayers_.push_back(victim);
+                    markMoved(victim);
+                    if (source.givesWay) markMoved(source.attacker);
                     bounceOffMob(world, terrain, victim, source.attacker, source.givesWay, offset,
                                  source.radius + body->radius - offset.length());
                 }
@@ -2775,6 +2793,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 // the FLOWER, and each mob in the pile still hit it.
                 if (source.gardnRecoil) recoilOffFlower(world, source.attacker, victim, offset);
                 if (source.yieldsToFlower) {
+                    markMoved(source.attacker);
                     yieldToFlower(world, terrain, source.attacker, victim, offset,
                                   source.radius + body->radius - offset.length());
                 }
@@ -3213,6 +3232,7 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     // above its knockback.
     if (!hit.refused && !hit.dodged && world.isAlive(owner)) {
         if (const Transform* attacker = world.tryGet<Transform>(owner)) {
+            markMoved(victim);
             shoveFlower(world, victim, victimPosition - attacker->position);
         }
     }
@@ -3875,6 +3895,7 @@ void CombatSystem::pushFromImpact(World& world, Entity victim, Vec2 offset, doub
         kb->carry += direction * push;
         return;
     }
+    markMoved(victim);
     transform->position += direction * push;
 }
 

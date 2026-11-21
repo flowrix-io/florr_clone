@@ -3681,6 +3681,30 @@ TEST(a_gardn_mob_recoils_off_a_flower_it_touches) {
     CHECK_NEAR(velocityAfterTouch(f.plodder).x, 300.0, 1e-9);
 }
 
+TEST(a_mob_reaches_a_flower_another_mob_bounced_into_it_this_tick) {
+    const RecoilFixture& f = recoilFixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    // Contact rejects far candidates off the circle the grid filed each body
+    // as, which goes stale the moment the phase moves a body. The flower here
+    // is filed 47 units from the walker -- past every reach the pair could
+    // have -- and the plodder's bounce (half its 20-unit overlap) carries it
+    // to 37, inside the walker's 40. The walker must see where the flower IS:
+    // it recoils off it, as every mob touching a flower does.
+    Arena a;
+    const Entity plodder = a.mob({980, 1000}, 100.0);
+    a.world.add<MobType>(plodder, MobType{f.plodder, Rarity::Common, 1.0});
+    a.world.add<ContactDamage>(plodder, ContactDamage{5.0, kMobHitIntervalMillis});
+    const Entity walker = a.mob({1047, 1000}, 100.0);
+    a.world.add<MobType>(walker, MobType{f.walker, Rarity::Common, 1.0});
+    a.world.add<ContactDamage>(walker, ContactDamage{5.0, kMobHitIntervalMillis});
+    const Entity player = a.player({1000, 1000});
+    a.step(1000.0, f.registry);
+    CHECK_NEAR(a.world.get<Transform>(player).position.x, 1010.0, 1e-9);
+    CHECK(a.world.get<Motion>(walker).velocity.x > 0.0);
+}
+
 TEST(a_flower_bounces_off_a_gardn_mob_rather_than_walking_it_along) {
     const RecoilFixture& f = recoilFixture();
     CHECK(f.ok);

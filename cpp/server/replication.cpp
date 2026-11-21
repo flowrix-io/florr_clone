@@ -214,7 +214,7 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
     return out;
 }
 
-void Replicator::indexWorld(World& world) {
+void Replicator::indexWorld(World& world, double nowMillis) {
     index_.clear();
     Query<NetId, Replicated, Transform> replicated{world};
     replicated.each([&](Entity e, NetId& id, Replicated&, Transform& transform) {
@@ -227,11 +227,38 @@ void Replicator::indexWorld(World& world) {
         if (a.realm != b.realm) return static_cast<int>(a.realm) < static_cast<int>(b.realm);
         return a.netId < b.netId;
     });
+    facts_.assign(index_.size(), Facts{});
+    indexedAtMillis_ = nowMillis;
 }
 
-void Replicator::beginPass(World& world) {
-    indexWorld(world);
+void Replicator::beginPass(World& world, double nowMillis) {
+    indexWorld(world, nowMillis);
     passIndexed_ = true;
+}
+
+const Replicator::Facts& Replicator::factsOf(World& world, std::uint32_t at) {
+    Facts& facts = facts_[at];
+    if (facts.ready) return facts;
+    const Entity e = index_[at].entity;
+    const double nowMillis = indexedAtMillis_;
+    facts.ready = true;
+    facts.kind = world.get<Replicated>(e).kind;
+    facts.angle = replicatedAngle(world, e, world.get<Transform>(e));
+    facts.radius = replicatedRadius(world, e);
+    if (const Body* body = world.tryGet<Body>(e)) {
+        facts.hasBody = true;
+        facts.bodyRadius = body->radius;
+    }
+    if (const Health* health = world.tryGet<Health>(e)) {
+        facts.hasHealth = true;
+        facts.healthWide = net::healthFieldIsWide(health->max);
+        facts.healthFraction = health->fraction();
+        facts.healthSent = net::quantizeHealthFraction(facts.healthFraction, facts.healthWide);
+    }
+    facts.state = computeEntityState(world, e, nowMillis);
+    facts.visuals = computePlayerVisuals(world, e, nowMillis);
+    facts.skinHash = skinIdHash(skinIdOf(facts.visuals));
+    return facts;
 }
 
 void Replicator::build(World& world, Entity viewer, ClientView& view,
@@ -316,7 +343,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     const PlayerAccount* viewerAccount = world.tryGet<PlayerAccount>(viewer);
     const net::ConnectionId viewerOwner =
         viewerAccount != nullptr ? viewerAccount->connection : 0;
-    if (!passIndexed_) indexWorld(world);
+    // Outside a pass the listing is this build's own, and so are its facts.
+    if (!passIndexed_) indexWorld(world, frame.nowMillis);
     const auto runBegin = std::partition_point(index_.begin(), index_.end(), [&](const Indexed& x) {
         return static_cast<int>(x.realm) < static_cast<int>(realm);
     });
@@ -345,7 +373,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
                   frame.alwaysVisible->end())) {
             continue;
         }
-        candidates_.push_back({e, entry.netId, flix::distanceSq(entry.position, centre)});
+        candidates_.push_back({e, entry.netId, flix::distanceSq(entry.position, centre),
+                               static_cast<std::uint32_t>(it - index_.begin())});
     }
 
     if (candidates_.size() > maxEntities) {
@@ -364,8 +393,6 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         std::sort(candidates_.begin(), candidates_.end(),
                   [](const Candidate& a, const Candidate& b) { return a.netId < b.netId; });
     }
-
-    for (auto& tracked : view.tracked) tracked.second.seenThisTick = false;
 
     // --- header -----------------------------------------------------------
     out.u8(static_cast<std::uint8_t>(net::ServerMessage::Snapshot));
@@ -513,17 +540,33 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // Two passes over the same candidate list rather than two gathers: the
     // client must create an entity before it can be updated, and interleaving
     // the two record types would force it to tolerate either order.
+    //
+    // Both lists are in net id order, so this pass is a merge: a candidate the
+    // view does not hold is spawned, one it holds is carried over, and a held
+    // entry no candidate matches has left view or died -- a removal, found
+    // already in the order it is written in. nextTracked_ ends up exactly one
+    // entry per candidate, in the same order, for the update pass to walk.
+    removals_.clear();
+    nextTracked_.clear();
+    nextTracked_.reserve(candidates_.size());
+    auto held = view.tracked.begin();
+    const auto heldEnd = view.tracked.end();
     std::uint32_t previousSpawnId = 0;
     for (const Candidate& candidate : candidates_) {
-        auto it = view.tracked.find(candidate.netId);
-        if (it != view.tracked.end()) {
-            it->second.seenThisTick = true;
+        while (held != heldEnd && held->netId < candidate.netId) {
+            removals_.push_back(held->netId);
+            ++held;
+        }
+        if (held != heldEnd && held->netId == candidate.netId) {
+            nextTracked_.push_back(*held);
+            ++held;
             continue;
         }
 
         const Replicated& info = world.get<Replicated>(candidate.entity);
-        const Transform& transform = world.get<Transform>(candidate.entity);
-        const double radius = replicatedRadius(world, candidate.entity);
+        const Facts& facts = factsOf(world, candidate.at);
+        const Vec2 position = index_[candidate.at].position;
+        const double radius = facts.radius;
 
         std::uint8_t flags = info.spawnFlags;
         if (candidate.entity == viewer) flags |= net::SpawnIsSelf;
@@ -531,8 +574,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // Decided here rather than beside the field itself: `flags` is written
         // near the top of the record and the health fraction near the bottom,
         // and the flag is what tells the reader how many bytes the latter is.
-        const Health* preHealth = world.tryGet<Health>(candidate.entity);
-        const bool spawnWide = net::healthFieldIsWide(preHealth ? preHealth->max : 1.0);
+        const bool spawnWide = facts.hasHealth && facts.healthWide;
         if (spawnWide) flags |= net::SpawnHealthWide;
         const PlayerAccount* account = world.tryGet<PlayerAccount>(candidate.entity);
         if (account && !account->username.empty()) flags |= net::SpawnHasName;
@@ -543,19 +585,17 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         out.u16(info.typeIndex);
         out.u8(static_cast<std::uint8_t>(info.rarity));
         out.u8(flags);
-        const double angle = replicatedAngle(world, candidate.entity, transform);
-        out.position(transform.position);
+        const double angle = facts.angle;
+        out.position(position);
         out.angle(angle);
         out.f32(static_cast<float>(radius));
         // Current health and state travel WITH the spawn. Without them an
         // entity that enters view already hurt draws a full health bar until
         // it next changes, which for a fleeing mob may be never.
-        const Health* spawnHealth = world.tryGet<Health>(candidate.entity);
-        const double spawnFraction = spawnHealth ? spawnHealth->fraction() : 1.0;
+        const double spawnFraction = facts.hasHealth ? facts.healthFraction : 1.0;
         const double spawnSent = net::writeHealthFraction(out, spawnFraction, spawnWide);
-        out.u8(computeEntityState(world, candidate.entity, frame.nowMillis));
-        const PlayerVisualState visuals =
-            computePlayerVisuals(world, candidate.entity, frame.nowMillis);
+        out.u8(facts.state);
+        const PlayerVisualState& visuals = facts.visuals;
         if (info.kind == net::EntityKind::Player) {
             out.u8(visuals.faceFlags);
             out.u16(visuals.equipFlags);
@@ -595,12 +635,11 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // Seed the tracked values from what the spawn record just carried, so
         // this tick's update pass has nothing left to say about it.
         ClientView::Tracked tracked;
-        tracked.position = wirePosition(transform.position);
+        tracked.position = wirePosition(position);
         tracked.angle = angle;
         tracked.radius = radius;
-        tracked.seenThisTick = true;
         tracked.healthFraction = spawnSent;
-        tracked.state = computeEntityState(world, candidate.entity, frame.nowMillis);
+        tracked.state = facts.state;
         tracked.faceFlags = visuals.faceFlags;
         tracked.equipFlags = visuals.equipFlags;
         tracked.renderFlags = visuals.renderFlags;
@@ -608,19 +647,19 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         tracked.bestRarity = static_cast<std::uint8_t>(visuals.bestRarity);
         tracked.arenaScore = visuals.arenaScore;
         tracked.shield = visuals.shield;
-        tracked.skinIdHash = skinIdHash(skinIdOf(visuals));
-        view.tracked.emplace(candidate.netId, tracked);
+        tracked.skinIdHash = facts.skinHash;
+        nextTracked_.push_back({candidate.netId, tracked});
     }
+    for (; held != heldEnd; ++held) removals_.push_back(held->netId);
     out.patchU16(spawnCountAt, spawnCount);
 
     const int farStride = std::max(1, farSnapshotStride);
     std::uint32_t previousUpdateId = 0;
-    for (const Candidate& candidate : candidates_) {
-        auto it = view.tracked.find(candidate.netId);
-        if (it == view.tracked.end()) continue;
-        ClientView::Tracked& tracked = it->second;
+    for (std::size_t i = 0; i < candidates_.size(); ++i) {
+        const Candidate& candidate = candidates_[i];
+        ClientView::Tracked& tracked = nextTracked_[i].value;
 
-        const Transform& transform = world.get<Transform>(candidate.entity);
+        const Vec2 position = index_[candidate.at].position;
         // Off-screen and not due this snapshot: say nothing about it at all.
         //
         // Skipping the whole record rather than trimming its fields is the
@@ -628,30 +667,32 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // field is named, at a hundred-odd entities a snapshot. `tracked` is
         // left exactly as it was, so whenever this entity IS described the
         // diff is still measured against what the client actually holds, and
-        // the spawn pass has already marked it seen, so skipping it never
+        // the spawn pass has already carried it over, so skipping it never
         // reads as a removal.
         //
         // The viewer is exempt for the obvious reason, and a squadmate because
         // it is streamed from any distance precisely so the HUD can point at
         // it (see Frame::alwaysVisible). The radius is the one the client
         // holds, which is the size it draws the body at.
-        if (candidate.entity != viewer && !exempt(candidate.entity) &&
-            outsideNearBox(transform.position, tracked.radius) &&
+        // The market flag is the index's reading of exempt()'s own NPC test.
+        if (candidate.entity != viewer && !index_[candidate.at].market &&
+            !(frame.alwaysVisible != nullptr &&
+              std::find(frame.alwaysVisible->begin(), frame.alwaysVisible->end(),
+                        candidate.entity) != frame.alwaysVisible->end()) &&
+            outsideNearBox(position, tracked.radius) &&
             (frame.snapshotIndex + candidate.netId) % static_cast<std::uint32_t>(farStride) != 0) {
             continue;
         }
-        const Health* health = world.tryGet<Health>(candidate.entity);
-        const Body* body = world.tryGet<Body>(candidate.entity);
-        const std::uint8_t state = computeEntityState(world, candidate.entity, frame.nowMillis);
-        const PlayerVisualState visuals =
-            computePlayerVisuals(world, candidate.entity, frame.nowMillis);
+        const Facts& facts = factsOf(world, candidate.at);
+        const std::uint8_t state = facts.state;
+        const PlayerVisualState& visuals = facts.visuals;
 
         std::uint8_t mask = 0;
-        if (distanceSq(transform.position, tracked.position) >
+        if (distanceSq(position, tracked.position) >
             tolerances.position * tolerances.position) {
             mask |= net::FieldPosition;
         }
-        const double angle = replicatedAngle(world, candidate.entity, transform);
+        const double angle = facts.angle;
         if (std::fabs(wrapAngle(angle - tracked.angle)) > tolerances.angle) {
             mask |= net::FieldAngle;
         }
@@ -662,34 +703,33 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // Judged against a fixed threshold -- as a 1/255 tolerance once was --
         // a petal taking a millionth of an apex mob reads as no change at all,
         // and the bar sits still through the whole fight.
-        const bool healthWide = health != nullptr && net::healthFieldIsWide(health->max);
-        const double healthFraction =
-            health ? net::quantizeHealthFraction(health->fraction(), healthWide) : -1.0;
-        if (health && healthFraction != tracked.healthFraction) {
+        const bool healthWide = facts.hasHealth && facts.healthWide;
+        const double healthFraction = facts.hasHealth ? facts.healthSent : -1.0;
+        if (facts.hasHealth && healthFraction != tracked.healthFraction) {
             mask |= net::FieldHealth;
             if (healthWide) mask |= net::FieldHealthWide;
         }
         if (state != tracked.state) mask |= net::FieldState;
-        if (body && std::fabs(body->radius - tracked.radius) > tolerances.radius) {
+        if (facts.hasBody && std::fabs(facts.bodyRadius - tracked.radius) > tolerances.radius) {
             mask |= net::FieldSize;
         }
-        if (world.get<Replicated>(candidate.entity).kind == net::EntityKind::Player &&
+        if (facts.kind == net::EntityKind::Player &&
             (visuals.faceFlags != tracked.faceFlags ||
              visuals.equipFlags != tracked.equipFlags ||
              visuals.renderFlags != tracked.renderFlags ||
              visuals.level != tracked.level ||
              static_cast<std::uint8_t>(visuals.bestRarity) != tracked.bestRarity ||
              visuals.arenaScore != tracked.arenaScore || visuals.shield != tracked.shield ||
-             skinIdHash(skinIdOf(visuals)) != tracked.skinIdHash)) {
+             facts.skinHash != tracked.skinIdHash)) {
             mask |= net::FieldPlayerVisuals;
         }
         // The move as FieldPositionDelta would carry it, rounded to its step.
         // `tracked` advances by exactly what the client will add, so the two
         // stay in step however many deltas are chained.
         const double deltaX =
-            std::round((transform.position.x - tracked.position.x) * net::kPositionDeltaScale);
+            std::round((position.x - tracked.position.x) * net::kPositionDeltaScale);
         const double deltaY =
-            std::round((transform.position.y - tracked.position.y) * net::kPositionDeltaScale);
+            std::round((position.y - tracked.position.y) * net::kPositionDeltaScale);
         if ((mask & net::FieldPosition) && std::fabs(deltaX) <= 32767.0 &&
             std::fabs(deltaY) <= 32767.0) {
             mask |= net::FieldPositionDelta;
@@ -705,15 +745,15 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tracked.position.x += deltaX / net::kPositionDeltaScale;
             tracked.position.y += deltaY / net::kPositionDeltaScale;
         } else if (mask & net::FieldPosition) {
-            out.position(transform.position);
-            tracked.position = wirePosition(transform.position);
+            out.position(position);
+            tracked.position = wirePosition(position);
         }
         if (mask & net::FieldAngle) {
             out.angle(angle);
             tracked.angle = angle;
         }
         if (mask & net::FieldHealth) {
-            net::writeHealthFraction(out, health->fraction(), healthWide);
+            net::writeHealthFraction(out, facts.healthFraction, healthWide);
             tracked.healthFraction = healthFraction;
         }
         if (mask & net::FieldState) {
@@ -721,8 +761,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tracked.state = state;
         }
         if (mask & net::FieldSize) {
-            out.f32(static_cast<float>(body->radius));
-            tracked.radius = body->radius;
+            out.f32(static_cast<float>(facts.bodyRadius));
+            tracked.radius = facts.bodyRadius;
         }
         if (mask & net::FieldPlayerVisuals) {
             out.u8(visuals.faceFlags);
@@ -740,7 +780,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tracked.bestRarity = static_cast<std::uint8_t>(visuals.bestRarity);
             tracked.arenaScore = visuals.arenaScore;
             tracked.shield = visuals.shield;
-            tracked.skinIdHash = skinIdHash(skinIdOf(visuals));
+            tracked.skinIdHash = facts.skinHash;
         }
         ++updateCount;
     }
@@ -752,18 +792,15 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // erase happens only after the removal is written, and the transport is
     // ordered and reliable, so the client cannot be left believing in an
     // entity the server has forgotten.
-    removals_.clear();
-    for (const auto& entry : view.tracked) {
-        if (!entry.second.seenThisTick) removals_.push_back(entry.first);
-    }
-    std::sort(removals_.begin(), removals_.end());
+    // removals_ was filled, in order, by the spawn pass's merge.
     out.u16(static_cast<std::uint16_t>(std::min<std::size_t>(removals_.size(), 0xFFFF)));
     std::uint32_t previousRemovalId = 0;
     for (const std::uint32_t netId : removals_) {
         out.varU32(netId - previousRemovalId);
         previousRemovalId = netId;
-        view.tracked.erase(netId);
     }
+    // The old list's storage becomes next build's scratch.
+    view.tracked.swap(nextTracked_);
 
     // --- events -----------------------------------------------------------
     const std::size_t eventCountAt = out.reserveU16();
