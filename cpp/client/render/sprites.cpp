@@ -748,6 +748,24 @@ void SpriteCache::drawMob(Canvas& canvas, std::uint16_t index, Rarity rarity, do
                           double diameter, double rotation, double timeSeconds, bool mirrored,
                           double worldRadius, Vec2 gaze, const MobMotion* motion) const {
     if (index >= mobs_.size()) return;
+    drawMobSprite(canvas, index, rarity, x, y, diameter, rotation, timeSeconds, mirrored,
+                  worldRadius, gaze, motion);
+}
+
+void SpriteCache::drawMobSprite(Canvas& canvas, std::uint16_t index, Rarity rarity, double x,
+                                double y, double diameter, double rotation, double timeSeconds,
+                                bool mirrored, double worldRadius, Vec2 gaze,
+                                const MobMotion* motion) const {
+    if (rendererDrawn(mobs_[index].art) && rendererPainter_) {
+        if (diameter <= 0.5) return;
+        canvas.save();
+        canvas.translate(static_cast<float>(x), static_cast<float>(y));
+        if (rotation != 0.0) canvas.rotate(static_cast<float>(rotation));
+        if (mirrored) canvas.scale(-1.0f, 1.0f);
+        rendererPainter_(canvas, index, rarity, diameter * 0.5, timeSeconds);
+        canvas.restore();
+        return;
+    }
     draw(canvas, mobSprite(index, rarity), x, y, diameter, rotation, timeSeconds, mirrored,
          worldRadius, gaze, motion);
 }
@@ -765,8 +783,8 @@ const SpriteCache::PictureBounds& SpriteCache::pictureBounds(std::uint16_t index
     const double centre = side * 0.5;
     Canvas probe = Canvas::createVirtual(side, side);
     for (const double t : kProbeTimes) {
-        draw(probe, mobSprite(index, Rarity::Common), centre, centre, kProbeRadius * 2.0,
-             mobPictureTilt(index), t, false, worldRadius);
+        drawMobSprite(probe, index, Rarity::Common, centre, centre, kProbeRadius * 2.0,
+                      mobPictureTilt(index), t, false, worldRadius);
     }
     const std::vector<std::uint8_t> rgba = probe.getImageData(0, 0, side, side);
     if (rgba.size() != static_cast<std::size_t>(side) * side * 4) return bounds;
@@ -799,15 +817,17 @@ void SpriteCache::drawMobPicture(Canvas& canvas, std::uint16_t index, Rarity rar
     double radius = diameter * 0.5;
     const double reach = std::max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * radius;
     if (reach > box) radius *= box / reach;
-    draw(canvas, mobSprite(index, rarity), x - (bounds.minX + bounds.maxX) * 0.5 * radius,
-         y - (bounds.minY + bounds.maxY) * 0.5 * radius, radius * 2.0, mobPictureTilt(index),
-         timeSeconds, false, worldRadius);
+    drawMobSprite(canvas, index, rarity, x - (bounds.minX + bounds.maxX) * 0.5 * radius,
+                  y - (bounds.minY + bounds.maxY) * 0.5 * radius, radius * 2.0,
+                  mobPictureTilt(index), timeSeconds, false, worldRadius);
 }
 
 double SpriteCache::mobPictureTilt(std::uint16_t index) const {
     if (index >= mobs_.size()) return 0.0;
     // A `$petal:` mob carries no painter of its own: it is the petal's document.
-    return mobs_[index].art != MobArt::None ? kMobPictureTilt : 0.0;
+    // A flower stands upright, and a garbage pile was an upright SVG.
+    const MobArt art = mobs_[index].art;
+    return art != MobArt::None && !rendererDrawn(art) ? kMobPictureTilt : 0.0;
 }
 
 double SpriteCache::mobPictureSpan(std::uint16_t index, double worldRadius) const {

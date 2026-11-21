@@ -23,6 +23,7 @@
 // terrain brush and is in the map file already.
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -55,6 +56,28 @@ public:
     /// recorded as a warning and drawn as a coloured disc instead, so one bad
     /// document never takes the game down.
     bool build(const ContentRegistry& content, const std::string& dataDir = "data");
+
+    /// Paints a mob whose picture the WORLD RENDERER owns -- a `$flower`
+    /// (drawn by the flower renderer: a face, its ring, a digger's cutter) or
+    /// `$garbage` (a pile of petals) -- about the origin at drawn radius
+    /// `radius`, already turned and mirrored. The world renderer installs it
+    /// (WorldRenderer::setSprites) so a bestiary tile, a wave icon or a boss
+    /// bar shows exactly what the world does. With none installed,
+    /// paintMobArt's stand-in is drawn (a plain face; nothing for garbage).
+    using RendererPainter = std::function<void(Canvas&, std::uint16_t mobIndex, Rarity rarity,
+                                               double radius, double timeSeconds)>;
+    /// `owner` is who installed it; clearRendererPainter(owner) removes it only
+    /// if it is still theirs, so one of two renderers sharing a cache going
+    /// away does not unhook the other.
+    void setRendererPainter(RendererPainter painter, const void* owner) const {
+        rendererPainter_ = std::move(painter);
+        rendererPainterOwner_ = owner;
+    }
+    void clearRendererPainter(const void* owner) const {
+        if (rendererPainterOwner_ != owner) return;
+        rendererPainter_ = nullptr;
+        rendererPainterOwner_ = nullptr;
+    }
 
     /// Draws mob `index` centred at (x, y), fitted to `diameter` pixels, with
     /// `rotation` radians applied about its centre. `mirrored` flips the art
@@ -112,7 +135,8 @@ public:
 
     /// The turn drawMobPicture draws mob `index` at: kMobPictureTilt for a
     /// painted mob (gardn's code), none for one drawn from an SVG document --
-    /// its own or a petal's (`$petal:<id>`).
+    /// its own or a petal's (`$petal:<id>`) -- nor for one the world renderer
+    /// paints (a flower stands upright; a garbage pile was an SVG).
     double mobPictureTilt(std::uint16_t index) const;
 
     /// Which painter draws mob `index`, or MobArt::None for a document. The
@@ -235,6 +259,18 @@ private:
         double minX = -1.0, minY = -1.0, maxX = 1.0, maxY = 1.0;
     };
     const PictureBounds& pictureBounds(std::uint16_t index, double worldRadius) const;
+
+    /// draw() for mob `index` at `rarity`, except that a mob the world
+    /// renderer paints (rendererDrawn) goes to the installed RendererPainter.
+    void drawMobSprite(Canvas&, std::uint16_t index, Rarity rarity, double x, double y,
+                       double diameter, double rotation, double timeSeconds, bool mirrored,
+                       double worldRadius, Vec2 gaze = {1.0, 0.0},
+                       const MobMotion* motion = nullptr) const;
+
+    /// Set by the world renderer, which owns the flower drawing; mutable
+    /// because installing it changes no picture this cache holds.
+    mutable RendererPainter rendererPainter_;
+    mutable const void* rendererPainterOwner_ = nullptr;
 
     std::vector<Sprite> mobs_;
     /// Per mob, filled on first use by pictureBounds(). Mutable for the

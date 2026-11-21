@@ -37,6 +37,21 @@
 
 namespace flix {
 
+void WorldRenderer::setSprites(const SpriteCache* sprites) {
+    if (sprites_ && sprites_ != sprites) sprites_->clearRendererPainter(this);
+    sprites_ = sprites;
+    if (!sprites_) return;
+    sprites_->setRendererPainter([this](Canvas& canvas, std::uint16_t mobIndex, Rarity rarity,
+                                      double radius, double timeSeconds) {
+        drawRendererMobPicture(canvas, mobIndex, rarity, radius, timeSeconds);
+    }, this);
+}
+
+WorldRenderer::~WorldRenderer() {
+    // The cache may outlive this renderer; it must not call back into it.
+    if (sprites_) sprites_->clearRendererPainter(this);
+}
+
 using namespace world_render;
 
 namespace {

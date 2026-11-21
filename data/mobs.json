@@ -1314,7 +1314,7 @@
         },
         "description": "Someone left this here",
         "color": "#000000",
-        "image": "<svg></svg>",
+        "image": "$garbage",
         "ai_type": "passive",
         "range": 100,
         "groups": [
@@ -1558,7 +1558,7 @@
             "unique": 15000000
         },
         "description": "A flower the Computer wrote itself. It came with petals.",
-        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-58 -58 116 116\" xmlns=\"http://www.w3.org/2000/svg\">\n  <g>\n    <animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; 360\" dur=\"4s\" repeatCount=\"indefinite\" />\n    <g fill=\"#2b2b2b\" stroke=\"#111111\" stroke-width=\"3\">\n      <g transform=\"rotate(0)\"><rect x=\"-9\" y=\"-52\" width=\"18\" height=\"18\" /></g>\n      <g transform=\"rotate(72)\"><rect x=\"-9\" y=\"-52\" width=\"18\" height=\"18\" /></g>\n      <g transform=\"rotate(144)\"><rect x=\"-9\" y=\"-52\" width=\"18\" height=\"18\" /></g>\n      <g transform=\"rotate(216)\"><rect x=\"-9\" y=\"-52\" width=\"18\" height=\"18\" /></g>\n      <g transform=\"rotate(288)\"><rect x=\"-9\" y=\"-52\" width=\"18\" height=\"18\" /></g>\n    </g>\n    <g fill=\"#7d7d7d\">\n      <g transform=\"rotate(0)\"><rect x=\"-4\" y=\"-47\" width=\"8\" height=\"8\" /></g>\n      <g transform=\"rotate(72)\"><rect x=\"-4\" y=\"-47\" width=\"8\" height=\"8\" /></g>\n      <g transform=\"rotate(144)\"><rect x=\"-4\" y=\"-47\" width=\"8\" height=\"8\" /></g>\n      <g transform=\"rotate(216)\"><rect x=\"-4\" y=\"-47\" width=\"8\" height=\"8\" /></g>\n      <g transform=\"rotate(288)\"><rect x=\"-4\" y=\"-47\" width=\"8\" height=\"8\" /></g>\n    </g>\n  </g>\n\n  <circle cx=\"0\" cy=\"0\" r=\"26.5\" fill=\"#cfbb50\" />\n  <circle cx=\"0\" cy=\"0\" r=\"23.5\" fill=\"#ffe763\" />\n\n  <g fill=\"#000000\">\n    <rect x=\"-10\" y=\"-11.3\" width=\"6\" height=\"13\" />\n    <rect x=\"4\" y=\"-11.3\" width=\"6\" height=\"13\" />\n  </g>\n  <g fill=\"#ffffff\">\n    <rect x=\"-10\" y=\"-7.8\" width=\"6\" height=\"6\" />\n    <rect x=\"4\" y=\"-7.8\" width=\"6\" height=\"6\" />\n  </g>\n  <path d=\"M -6 10 Q 0 14.5 6 10\" fill=\"none\" stroke=\"#222222\" stroke-width=\"1.5\" stroke-linecap=\"round\" />\n\n  <g>\n    <animateTransform attributeName=\"transform\" type=\"translate\" values=\"0,0; -5,3; 4,-4; 0,0; 6,2; 0,0\" dur=\"0.5s\" repeatCount=\"indefinite\" />\n    <rect x=\"-27\" y=\"-14\" width=\"54\" height=\"9\" fill=\"#ff0000\" fill-opacity=\"0.35\" />\n    <rect x=\"-27\" y=\"6\" width=\"54\" height=\"7\" fill=\"#00ffff\" fill-opacity=\"0.35\" />\n  </g>\n</svg>",
+        "image": "$flower",
         "ai_type": "hostile",
         "range": 700,
         "groups": {
@@ -2004,7 +2004,7 @@
         },
         "description": "Friend or foe? You'll never know...",
         "color": "#999999",
-        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-40 -40 80 80\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path fill=\"#111111\" fill-rule=\"evenodd\" d=\"\n    M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0\n    M 24.749 24.749\n    Q 9.899 23.899 0 35\n    Q -9.899 23.899 -24.749 24.749\n    Q -23.899 9.899 -35 0\n    Q -23.899 -9.899 -24.749 -24.749\n    Q -9.899 -23.899 0 -35\n    Q 9.899 -23.899 24.749 -24.749\n    Q 23.899 -9.899 35 0\n    Q 23.899 9.899 24.749 24.749\n    Z\" />\n\n  <circle cx=\"0\" cy=\"0\" r=\"26.5\" fill=\"#7a7a7a\" />\n  <circle cx=\"0\" cy=\"0\" r=\"23.5\" fill=\"#999999\" />\n\n  <g fill=\"#000000\">\n    <rect x=\"-10\" y=\"-11.3\" width=\"6\" height=\"13\" />\n    <rect x=\"4\" y=\"-11.3\" width=\"6\" height=\"13\" />\n  </g>\n  <g fill=\"#ffffff\">\n    <rect x=\"-10\" y=\"-7.8\" width=\"6\" height=\"6\" />\n    <rect x=\"4\" y=\"-7.8\" width=\"6\" height=\"6\" />\n  </g>\n\n  <path d=\"M -6 10 Q 0 14.5 6 10\" fill=\"none\" stroke=\"#222222\" stroke-width=\"1.5\" stroke-linecap=\"round\" />\n</svg>",
+        "image": "$flower",
         "ai_type": "hostile",
         "digger_ai": true,
         "range": 600,
@@ -2666,7 +2666,7 @@
             "unique": 15000000
         },
         "description": "Five wands, and every one of them works.",
-        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-58 -58 116 116\" xmlns=\"http://www.w3.org/2000/svg\">\n  <g>\n    <animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; 360\" dur=\"4s\" repeatCount=\"indefinite\" />\n    <g transform=\"rotate(0)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n    <g transform=\"rotate(72)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n    <g transform=\"rotate(144)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n    <g transform=\"rotate(216)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n    <g transform=\"rotate(288)\">\n      <path d=\"M -7 -36 L 7 -50\" fill=\"none\" stroke=\"#884233\" stroke-width=\"4\" stroke-linecap=\"round\" />\n      <path d=\"M 7 -56 L 12 -50 L 7 -44 L 2 -50 Z\" fill=\"#04bdf7\" stroke=\"#0161fe\" stroke-width=\"1.5\" />\n    </g>\n  </g>\n\n  <circle cx=\"0\" cy=\"0\" r=\"26.5\" fill=\"#7c3eb3\" />\n  <circle cx=\"0\" cy=\"0\" r=\"23.5\" fill=\"#9b4de0\" />\n\n  <g fill=\"#000000\">\n    <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n    <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n  </g>\n  <g fill=\"#ffffff\">\n    <circle cx=\"-7\" cy=\"-4.8\" r=\"3\" />\n    <circle cx=\"7\" cy=\"-4.8\" r=\"3\" />\n  </g>\n  <path d=\"M -6 10 Q 0 14.5 6 10\" fill=\"none\" stroke=\"#222222\" stroke-width=\"1.5\" stroke-linecap=\"round\" />\n</svg>",
+        "image": "$flower",
         "ai_type": "hostile",
         "range": 700,
         "color": "#9b4de0",

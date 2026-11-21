@@ -625,7 +625,9 @@ double galleryMobDiameter(const ContentRegistry& content, const SpriteCache& spr
     if (config.id == "digger") {
         return 2.0 * std::min(kGardnDiggerRadius, kGardnMobRadiusCap) * kGardnMobScale;
     }
-    if (sprites.mobArt(mobIndex) == MobArt::None) {
+    // A mob the world renderer paints (glitch flower, magician, garbage) was
+    // an SVG until 2026-11-21 and keeps the size it had then, upright like one.
+    if (sprites.mobArt(mobIndex) == MobArt::None || rendererDrawn(sprites.mobArt(mobIndex))) {
         return std::min(kIconCap, radius * 2.0 * kIconZoom);
     }
     for (const GardnMobPicture& row : kGardnMobPicture) {
