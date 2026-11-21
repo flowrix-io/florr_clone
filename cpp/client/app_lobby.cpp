@@ -406,8 +406,8 @@ void App::enterGame() {
     // The join's spawn point: the first snapshot has not placed the body
     // yet, and the view's own self position is still zero.
     camera_.snapTo(net_.selfPlaced() ? net_.view().selfDrawnPosition() : net_.arrival());
-    // What it photographs is the loading screen, the last frame drawn, and it
-    // holds that up until the body arrives -- see wipeReadyToReveal().
+    // The live title screen (backdrop and Loading...) stays over the world
+    // until the body arrives -- see wipeReadyToReveal() -- then the hole opens.
     beginSceneWipe(true);
     // --dead is the only route a scripted run has to the death card: being
     // killed for real is not something `--frames` can arrange.

@@ -1449,14 +1449,44 @@ std::unique_ptr<Canvas> App::snapshotWindow() {
     return snapshot;
 }
 
+namespace {
+
+/// gardn's MAX_TRANSITION_CIRCLE (Client/Game.cc). gardn counts it in canvas
+/// pixels at Ui::scale 1, which is our design unit. Raised to the half
+/// diagonal on a window wide enough that 2500 would leave the corners.
+double irisMaxRadius(double width, double height) {
+    return std::max(2500.0, 0.5 * std::sqrt(width * width + height * height));
+}
+
+/// One frame of gardn's transition_circle (Game::tick): growing multiplies by
+/// 1.05 per 60 Hz frame and adds dt/5; shrinking divides and subtracts. dt is
+/// in milliseconds, as gardn's Ui::dt is.
+double gardnIrisStep(double radius, double dtMs, bool grow, double maxRadius) {
+    const double factor = std::pow(1.05, dtMs * 60.0 / 1000.0);
+    const double next = grow ? radius * factor + dtMs / 5.0 : radius / factor - dtMs / 5.0;
+    return std::clamp(next, 0.0, maxRadius);
+}
+
+/// gardn strokes the circle 0xff222222, Ui::scale * 10 wide.
+constexpr std::uint32_t kIrisRim = 0x222222u;
+constexpr float kIrisRimWidth = 10.0f;
+
+}  // namespace
+
 void App::beginSceneWipe(bool toGame) {
-    // Snapshot BEFORE the scene commits. Nothing has painted yet this frame, so
-    // the window still holds the outgoing scene whole -- which is exactly the
-    // still the wipe has to hold up while the incoming one builds itself.
-    wipe_.snapshot = snapshotWindow();
+    // Going out, snapshot BEFORE the scene commits. Nothing has painted yet
+    // this frame, so the window still holds the last frame of the world, which
+    // is what shrinks over the live title screen. Going in needs no still:
+    // the title outside the hole is painted live, as gardn's is.
+    if (toGame) wipe_.snapshot.reset();
+    else wipe_.snapshot = snapshotWindow();
     wipe_.holeGrows = toGame;
     wipe_.phase = SceneWipe::Phase::Covered;
     wipe_.phaseStartSeconds = timeSeconds_;
+    wipe_.lastSeconds = timeSeconds_;
+    // Going in, the hole starts shut; going out, the still starts as the whole
+    // screen and shrinks, as gardn's circle does when the game is left.
+    wipe_.radius = toGame ? 0.0 : irisMaxRadius(window_.canvas().width(), window_.canvas().height());
 }
 
 bool App::wipeReadyToReveal() const {
@@ -1470,42 +1500,33 @@ bool App::wipeReadyToReveal() const {
 
 void App::drawSceneWipe(Canvas& canvas) {
     if (wipe_.phase == SceneWipe::Phase::Idle) return;
-    // A scripted capture wants the finished scene, not the eight hundred
-    // milliseconds of transition on the way into it. Skipped rather than
-    // shortened, so a run that lands mid-wipe still photographs the screen the
-    // flags asked for.
+    // A scripted capture wants the finished scene, not the second or so of
+    // transition on the way into it. Skipped rather than shortened, so a run
+    // that lands mid-wipe still photographs the screen the flags asked for.
     if (config_.screenshotAfterFrames > 0) {
         wipe_.phase = SceneWipe::Phase::Idle;
         wipe_.snapshot.reset();
         return;
     }
 
-    /// Long enough to read as a deliberate transition, short enough not to be
-    /// in the way. The reference's IRIS_DURATION_MS.
-    constexpr double kWipeSeconds = 0.8;
     /// A stall must not leave the screen covered forever, so the hold gives up.
     constexpr double kCoveredTimeoutSeconds = 8.0;
 
-    const double elapsed = timeSeconds_ - wipe_.phaseStartSeconds;
-    double progress = 0;
-    if (wipe_.phase == SceneWipe::Phase::Covered) {
-        if (wipeReadyToReveal() || elapsed > kCoveredTimeoutSeconds) {
-            wipe_.phase = SceneWipe::Phase::Wiping;
-            wipe_.phaseStartSeconds = timeSeconds_;
-        }
-    } else {
-        progress = std::min(elapsed / kWipeSeconds, 1.0);
-    }
+    const double dtMs = std::max(0.0, (timeSeconds_ - wipe_.lastSeconds) * 1000.0);
+    wipe_.lastSeconds = timeSeconds_;
 
-    const double centreX = canvas.width() * 0.5;
-    const double centreY = canvas.height() * 0.5;
-    // The circle circumscribes the viewport, so a fully open hole clears the
-    // corners rather than leaving four dark wedges.
-    const double maxRadius = std::sqrt(centreX * centreX + centreY * centreY);
-    const double inverse = 1.0 - progress;
-    const double eased =
-        wipe_.holeGrows ? 1.0 - inverse * inverse * inverse : inverse * inverse * inverse;
-    const double radius = std::max(0.0, eased * maxRadius);
+    const double width = canvas.width();
+    const double height = canvas.height();
+    const double maxRadius = irisMaxRadius(width, height);
+    if (wipe_.phase == SceneWipe::Phase::Covered) {
+        if (wipeReadyToReveal() || timeSeconds_ - wipe_.phaseStartSeconds > kCoveredTimeoutSeconds)
+            wipe_.phase = SceneWipe::Phase::Wiping;
+    } else {
+        wipe_.radius = gardnIrisStep(wipe_.radius, dtMs, wipe_.holeGrows, maxRadius);
+    }
+    const double radius = wipe_.radius;
+    const double centreX = width * 0.5;
+    const double centreY = height * 0.5;
 
     canvas.save();
     canvas.beginPath();
@@ -1518,7 +1539,7 @@ void App::drawSceneWipe(Canvas& canvas) {
         // normalised with fmod unless it is already a whole turn NEGATIVE, so
         // asking for (0, +kTau) counter-clockwise degenerates to a zero-length
         // arc and the hole never appears.
-        canvas.rect(0, 0, static_cast<float>(canvas.width()), static_cast<float>(canvas.height()));
+        canvas.rect(0, 0, static_cast<float>(width), static_cast<float>(height));
         canvas.arc(static_cast<float>(centreX), static_cast<float>(centreY),
                    static_cast<float>(radius), static_cast<float>(kTau), 0.0f, true);
     } else {
@@ -1526,27 +1547,33 @@ void App::drawSceneWipe(Canvas& canvas) {
                    static_cast<float>(radius), 0, static_cast<float>(kTau));
     }
     canvas.clip();
-    if (wipe_.snapshot) {
-        canvas.drawCanvas(*wipe_.snapshot, 0, 0, static_cast<float>(canvas.width()),
-                          static_cast<float>(canvas.height()));
+    if (wipe_.holeGrows) {
+        // The live title screen outside the hole, as gardn keeps rendering
+        // its title UI until transition_circle reaches its cap: the moving
+        // backdrop and the Loading... line the join was showing.
+        drawTitleBackground(canvas, timeSeconds_);
+        drawLoading(canvas, timeSeconds_);
+    } else if (wipe_.snapshot) {
+        canvas.drawCanvas(*wipe_.snapshot, 0, 0, static_cast<float>(width),
+                          static_cast<float>(height));
     } else {
         // No still to hold up, so the wipe falls through black instead.
         setFill(canvas, kInk);
-        canvas.fillRect(0, 0, static_cast<float>(canvas.width()),
-                        static_cast<float>(canvas.height()));
+        canvas.fillRect(0, 0, static_cast<float>(width), static_cast<float>(height));
     }
     canvas.restore();
 
     if (radius > 0) {
         canvas.save();
-        setStroke(canvas, kInk);
-        canvas.setLineWidth(6.0f);
+        setStroke(canvas, kIrisRim);
+        canvas.setLineWidth(kIrisRimWidth);
         canvas.strokeCircle(static_cast<float>(centreX), static_cast<float>(centreY),
                             static_cast<float>(radius));
         canvas.restore();
     }
 
-    if (wipe_.phase == SceneWipe::Phase::Wiping && progress >= 1.0) {
+    const bool done = wipe_.holeGrows ? radius >= maxRadius : radius <= 0;
+    if (wipe_.phase == SceneWipe::Phase::Wiping && done) {
         wipe_.phase = SceneWipe::Phase::Idle;
         wipe_.snapshot.reset();
     }
@@ -1557,7 +1584,8 @@ void App::beginTeleportIris() {
     // frame from before the jump, which is what the iris closes over.
     teleportIris_.snapshot = snapshotWindow();
     teleportIris_.phase = TeleportIris::Phase::Closing;
-    teleportIris_.phaseStartSeconds = timeSeconds_;
+    teleportIris_.lastSeconds = timeSeconds_;
+    teleportIris_.radius = irisMaxRadius(window_.canvas().width(), window_.canvas().height());
 }
 
 void App::drawTeleportIris(Canvas& canvas) {
@@ -1572,22 +1600,19 @@ void App::drawTeleportIris(Canvas& canvas) {
         return;
     }
 
-    /// Each way. The reference's IRIS_TRANSITION_DURATION.
-    constexpr double kIrisSeconds = 0.8;
-    const double progress =
-        std::min((timeSeconds_ - teleportIris_.phaseStartSeconds) / kIrisSeconds, 1.0);
+    const double dtMs = std::max(0.0, (timeSeconds_ - teleportIris_.lastSeconds) * 1000.0);
+    teleportIris_.lastSeconds = timeSeconds_;
     const bool closing = teleportIris_.phase == TeleportIris::Phase::Closing;
 
     const float width = static_cast<float>(canvas.width());
     const float height = static_cast<float>(canvas.height());
     const double centreX = width * 0.5;
     const double centreY = height * 0.5;
-    const double maxRadius = std::sqrt(centreX * centreX + centreY * centreY);
-    // Closing eases in, from the whole screen down to nothing; opening eases
-    // out, from nothing to the whole screen.
-    const double inverse = 1.0 - progress;
-    const double eased = closing ? inverse * inverse * inverse : 1.0 - inverse * inverse * inverse;
-    const double radius = std::max(0.0, eased * maxRadius);
+    const double maxRadius = irisMaxRadius(width, height);
+    // gardn's circle: shrinking while the jump is under way, growing once the
+    // far end is there.
+    teleportIris_.radius = gardnIrisStep(teleportIris_.radius, dtMs, !closing, maxRadius);
+    const double radius = teleportIris_.radius;
 
     canvas.save();
     canvas.beginPath();
@@ -1615,22 +1640,19 @@ void App::drawTeleportIris(Canvas& canvas) {
 
     if (radius > 0) {
         canvas.save();
-        setStroke(canvas, kInk);
-        canvas.setLineWidth(6.0f);
+        setStroke(canvas, kIrisRim);
+        canvas.setLineWidth(kIrisRimWidth);
         canvas.strokeCircle(static_cast<float>(centreX), static_cast<float>(centreY),
                             static_cast<float>(radius));
         canvas.restore();
     }
 
-    if (progress >= 1.0) {
+    if (closing && radius <= 0) {
         // Shut: the next frame starts opening on the far end of the jump.
-        if (closing) {
-            teleportIris_.phase = TeleportIris::Phase::Opening;
-            teleportIris_.phaseStartSeconds = timeSeconds_;
-            teleportIris_.snapshot.reset();
-        } else {
-            teleportIris_.phase = TeleportIris::Phase::Idle;
-        }
+        teleportIris_.phase = TeleportIris::Phase::Opening;
+        teleportIris_.snapshot.reset();
+    } else if (!closing && radius >= maxRadius) {
+        teleportIris_.phase = TeleportIris::Phase::Idle;
     }
 }
 

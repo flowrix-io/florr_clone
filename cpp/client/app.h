@@ -821,16 +821,22 @@ private:
     // -- scene wipe ----------------------------------------------------------
     /// The iris that covers a scene change. `Covered` holds the outgoing frame
     /// whole until the incoming scene has something to show; `Wiping` opens or
-    /// closes the hole over IRIS_DURATION_MS.
+    /// closes the hole at gardn's transition_circle rate (gardnIrisStep).
     struct SceneWipe {
         enum class Phase : std::uint8_t { Idle, Covered, Wiping };
         Phase phase = Phase::Idle;
-        /// True going INTO the game: the hole grows and the outgoing still is
-        /// what is left outside it. False going back to the title, where the
+        /// True going INTO the game: the hole grows and the live title screen
+        /// is what is left outside it. False going back to the title, where the
         /// still shrinks to a point instead.
         bool holeGrows = false;
         double phaseStartSeconds = 0;
-        /// A frozen copy of the outgoing scene. Null means the copy failed, in
+        /// gardn's transition_circle, in design units, and the clock it was
+        /// last stepped at.
+        double radius = 0;
+        double lastSeconds = 0;
+        /// A frozen copy of the outgoing world, going back to the title only
+        /// (going in, the title outside the hole is drawn live). Null means
+        /// the copy failed, in
         /// which case the wipe falls through black exactly as the reference's
         /// snapshot-less path does.
         std::unique_ptr<Canvas> snapshot;
@@ -854,14 +860,17 @@ private:
     // -- teleport iris -------------------------------------------------------
     /// The wipe a teleport plays, as the reference's iris-transition.ts did:
     /// the frame from before the jump shrinks to a point in black, then the
-    /// world at the far end opens back out of it, each over IRIS_TRANSITION_
-    /// DURATION. Kept apart from the scene wipe as the reference kept the two
+    /// world at the far end opens back out of it, each way at gardn's
+    /// transition_circle rate (gardnIrisStep). Kept apart from the scene wipe as the reference kept the two
     /// apart: this one never changes screens, and the scene wipe never shows
     /// black.
     struct TeleportIris {
         enum class Phase : std::uint8_t { Idle, Closing, Opening };
         Phase phase = Phase::Idle;
-        double phaseStartSeconds = 0;
+        /// gardn's transition_circle, in design units, and the clock it was
+        /// last stepped at.
+        double radius = 0;
+        double lastSeconds = 0;
         /// The frame from before the jump. Null means the copy failed, and the
         /// closing iris shows the live world inside it instead, as the
         /// reference's does without a screenshot.
