@@ -38,6 +38,9 @@ constexpr double kScrollbarWidth = 10.0;
 constexpr double kDatePitch = 25.0;
 constexpr double kBulletPitch = 24.0;
 constexpr double kEntryGap = 15.0;
+/// A change too wide for the panel wraps; each line after its first sits this
+/// far below the one above it, closer than a new bullet would.
+constexpr double kWrapPitch = 18.0;
 constexpr double kChangeSize = 14.0;
 /// Bullet glyph to change text.
 constexpr double kBulletIndent = 20.0;
@@ -632,7 +635,7 @@ constexpr ChangelogEntry kChangelog[] = {
     },
     {"November 21, 2026",
       {
-        "Buffed Sponge: Mythic spreads damage over 18 seconds, 3 seconds less for each lower rarity and 3 more for each higher one",
+        "Buffed Sponge",
         "Sponge no longer has damage or health and can't be destroyed by mobs",
         "Moving Sponge to your second row or removing it now deals all its stored damage at once",
         "Fixed Sponge's stored damage getting stuck at 65,534",
@@ -649,8 +652,47 @@ int changeCount(const ChangelogEntry& entry) {
     return count;
 }
 
-double entryHeight(const ChangelogEntry& entry) {
-    return kDatePitch + kBulletPitch * changeCount(entry) + kEntryGap;
+/// Splits a change into lines no wider than `maxWidth`, breaking between
+/// words. A line carrying a link is left whole, since its link's underline and
+/// hit box are laid out along one row; a single word wider than the line is
+/// left to overhang rather than be cut.
+std::vector<std::string> wrapChange(const std::string& change, double maxWidth) {
+    if (maxWidth <= 0.0 || change.find("link:") != std::string::npos ||
+        measure(change, kChangeSize) <= maxWidth) {
+        return {change};
+    }
+    std::vector<std::string> lines;
+    std::string line;
+    std::size_t at = 0;
+    while (at < change.size()) {
+        const std::size_t space = change.find(' ', at);
+        const std::size_t end = space == std::string::npos ? change.size() : space;
+        const std::string word = change.substr(at, end - at);
+        at = end == change.size() ? end : end + 1;
+        if (word.empty()) continue;
+        const std::string candidate = line.empty() ? word : line + " " + word;
+        if (!line.empty() && measure(candidate, kChangeSize) > maxWidth) {
+            lines.push_back(line);
+            line = word;
+        } else {
+            line = candidate;
+        }
+    }
+    if (!line.empty()) lines.push_back(line);
+    if (lines.empty()) lines.push_back(change);
+    return lines;
+}
+
+double changeHeight(const std::string& change, double maxWidth) {
+    return kBulletPitch +
+           kWrapPitch * static_cast<double>(wrapChange(change, maxWidth).size() - 1);
+}
+
+double entryHeight(const ChangelogEntry& entry, double maxWidth) {
+    double height = kDatePitch + kEntryGap;
+    const int changes = changeCount(entry);
+    for (int c = 0; c < changes; ++c) height += changeHeight(entry.changes[c], maxWidth);
+    return height;
 }
 
 /// One clickable link, recorded while painting so the click pass has the same
@@ -808,8 +850,12 @@ bool ChangelogPanel::render(MenuContext& ctx) {
     const Vec2 mouse = ctx.mouse();
 
     const double viewport = panel.h - kHeaderHeight;
+    // The widest a change line may run: the body, less the bullet column and
+    // the scrollbar's lane (the list is always long enough to scroll).
+    const double wrapWidth =
+        panel.w - kPadding * 2 - kBulletIndent - kScrollbarWidth - 5.0;
     double contentHeight = 0;
-    for (const ChangelogEntry& entry : kChangelog) contentHeight += entryHeight(entry);
+    for (const ChangelogEntry& entry : kChangelog) contentHeight += entryHeight(entry, wrapWidth);
     scroll_.contentHeight = contentHeight;
     scroll_.viewHeight = viewport;
     const double maxScroll = scroll_.maxOffset();
@@ -869,7 +915,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
     // Newest first: the table is stored oldest-first and read backwards.
     for (int i = kEntryCount - 1; i >= 0; --i) {
         const ChangelogEntry& entry = kChangelog[i];
-        const double height = entryHeight(entry);
+        const double height = entryHeight(entry, wrapWidth);
         // A row's glyphs reach past its pitch, so the cull keeps a line of
         // slack on each side rather than trusting the box.
         if (contentY + height < view.y - kBulletPitch || contentY > view.bottom() + kBulletPitch) {
@@ -894,9 +940,12 @@ bool ChangelogPanel::render(MenuContext& ctx) {
         for (int c = 0; c < changes; ++c) {
             drawBullet(canvas, view.x, contentY, strokeWidth);
             strokeWidth = 0.5;
-            drawChange(canvas, entry.changes[c], view.x + kBulletIndent, contentY, strokeWidth,
-                       links);
-            contentY += kBulletPitch;
+            const std::vector<std::string> lines = wrapChange(entry.changes[c], wrapWidth);
+            for (std::size_t l = 0; l < lines.size(); ++l) {
+                drawChange(canvas, lines[l], view.x + kBulletIndent,
+                           contentY + kWrapPitch * static_cast<double>(l), strokeWidth, links);
+            }
+            contentY += kBulletPitch + kWrapPitch * static_cast<double>(lines.size() - 1);
         }
         contentY += kEntryGap;
     }
