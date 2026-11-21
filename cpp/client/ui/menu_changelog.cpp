@@ -632,8 +632,7 @@ constexpr ChangelogEntry kChangelog[] = {
         "Sponge no longer has damage or health and can't be destroyed by mobs",
         "Moving Sponge to your second row or removing it now deals all its stored damage at once",
         "Fixed Sponge's stored damage getting stuck at 65,534",
-        "Fixed healing petals like Azalea, Dahlia and Rose sometimes not getting eaten",
-        "Shop lock now lasts until you unlock it instead of 24 hours"
+        "Fixed healing petals like Azalea, Dahlia and Rose sometimes not getting eaten"
       }
     }
 };
