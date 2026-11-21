@@ -703,6 +703,27 @@ public:
     /// Reads the table into chatTerms again.
     void reloadChatTerms();
 
+    // -- guest blocks ---------------------------------------------------------
+    //
+    // Address hashes (accountAddressHash, the createdFromHash an account is
+    // stamped with) that may not make guest accounts: the `guestBlocks` table,
+    // hash -> {by, at}, kept with the unmodelled ones so it outlives a restart
+    // and the admin editor can read it. Named-account Register is not held to
+    // it, and nor are logins.
+
+    struct GuestBlock {
+        std::string hash;
+        std::string by;
+        std::int64_t atMillis = 0;
+    };
+    bool guestCreationBlocked(const std::string& addressHash) const;
+    /// False when it was already blocked (the entry is left as it was).
+    bool blockGuestCreation(const std::string& addressHash, const std::string& by);
+    /// False when it was not blocked.
+    bool unblockGuestCreation(const std::string& addressHash);
+    /// Oldest first.
+    std::vector<GuestBlock> guestBlocks() const;
+
 private:
     void reset();
     bool parseRoot(Json& root, std::string& errorOut);

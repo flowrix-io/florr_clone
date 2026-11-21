@@ -125,6 +125,14 @@ void GameServer::handleRegisterGuest(Session& session, net::Connection& connecti
     // would only move the nine thousand spam accounts to this door.
     if (!spendLoginBudget(session, connection)) return;
     const std::string addressHash = database_.accountAddressHash(addressKey(session.clientAddress));
+    // An admin's block (`/admin block_guests`), before the limits so a
+    // blocked address does not also spend their buckets. The client falls
+    // back to its login form on any guest refusal.
+    if (database_.guestCreationBlocked(addressHash)) {
+        sendAuthResult(connection, net::AuthStatus::RateLimited, "", "",
+                       "Guest accounts cannot be made from this network. Log in instead.");
+        return;
+    }
     if (!spendRegistration(session, connection, addressHash)) return;
 
     const CreateResult result = database_.createGuest(addressHash);

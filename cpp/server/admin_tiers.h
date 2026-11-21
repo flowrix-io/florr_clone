@@ -6,7 +6,8 @@
 //
 //   owner   everything, and reaches tier 1 admins (below)
 //   tier 1  everything
-//   tier 2  cannot update the server or manage wave rooms
+//   tier 2  cannot update the server, manage wave rooms or block addresses
+//           from making guests
 //   tier 3  cannot update the server, manage wave rooms or give petals to
 //           anyone but themselves
 //   tier 4  cannot update the server, manage wave rooms, give petals to anyone
@@ -61,6 +62,7 @@ enum class AdminPower {
                     ///< can write any bag, and everything that becomes petals
                     ///< in somebody's bag: the star code verbs and `sacrifice`
     SpawnMobs,      ///< `spawn` and `spawn_npc`
+    BlockGuests,    ///< `block_guests`, `unblock_guests`, `list_guest_blocks`
 };
 
 /// The lowest tier (the largest number) that still holds `power`.
@@ -70,6 +72,7 @@ constexpr int lowestTierWith(AdminPower power) {
         case AdminPower::ManageWaves: return 1;
         case AdminPower::GivePetals: return 2;
         case AdminPower::SpawnMobs: return 3;
+        case AdminPower::BlockGuests: return 1;
     }
     return kTopAdminTier;
 }
@@ -100,6 +103,7 @@ inline const char* adminPowerVerb(AdminPower power) {
         case AdminPower::ManageWaves: return "manage wave rooms";
         case AdminPower::GivePetals: return "give petals";
         case AdminPower::SpawnMobs: return "spawn mobs";
+        case AdminPower::BlockGuests: return "block guest accounts";
     }
     return "do that";
 }

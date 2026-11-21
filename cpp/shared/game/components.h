@@ -1622,6 +1622,10 @@ struct LightningClock {
 /// rolled as a glitch petal's is and reported green instead of cyan.
 struct LightningBurst {
     bool glitch = false;
+    /// The only victims this strike may land on, picked when it was thrown
+    /// (the plain lightning petal's tier + 2 nearest). Empty is the uncapped
+    /// strike: everything the field's reach covers, as before.
+    std::vector<Entity> targets;
 };
 
 struct GroundEffect {
@@ -1631,7 +1635,8 @@ struct GroundEffect {
     double damagePerSecond = 0;
     double slowFactor = 1.0;
     Rarity rarity = Rarity::Common;
-    /// Pollen deals one discrete hit per victim on a fixed cadence. A uranium
+    /// A field with an interval deals one discrete hit per victim on that
+    /// cadence; pollen sets it to its whole lifetime, so once each. A uranium
     /// cloud deals it once, the tick it is laid, scaled down with each
     /// victim's distance from the petal, and then zeroes it (see
     /// CombatSystem::tickGroundEffects).
