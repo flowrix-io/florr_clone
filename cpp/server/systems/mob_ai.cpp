@@ -58,22 +58,6 @@ bool petPointer(World& world, Entity owner, Rarity petRarity, Vec2 ownerPosition
     return true;
 }
 
-/// Whether a mob is close enough to a player to be worth simulating fully.
-///
-/// An EMPTY list is the permissive case, as it is in the reference: with
-/// nobody connected there is nothing to save the work for, and a caller that
-/// forgot to pass its players gets unmodified behaviour rather than a world
-/// silently running at a fifth speed.
-bool mobActive(Vec2 position, Realm realm, const std::vector<RealmPoint>& activePlayers) {
-    if (activePlayers.empty()) return true;
-    const double reachSq = kMobActiveRadius * kMobActiveRadius;
-    for (const RealmPoint& player : activePlayers) {
-        if (player.realm != realm) continue;
-        if (distanceSq(position, player.position) <= reachSq) return true;
-    }
-    return false;
-}
-
 /// What a web, a honey pool or a pincer leaves of a mob's speed this tick.
 ///
 /// A slow changes what the mob ASKS for, not how physics answers it, so it is
@@ -83,27 +67,6 @@ double slowFactorOf(World& world, Entity self, double nowMillis) {
     const Afflictions* afflictions = world.tryGet<Afflictions>(self);
     if (afflictions == nullptr || !afflictions->slowed(nowMillis)) return 1.0;
     return clamp(afflictions->slowFactor, 0.0, 1.0);
-}
-
-/// Whether a mob's last decision left it drifting rather than doing something.
-///
-/// The reference keeps this as a tag its AI maintains and its passive
-/// integrator reads, which is exactly what lets that integrator run with no
-/// distance gate. Here it is derived from the same facts the tag is written
-/// from: what the mob is, whether it is holding a target, and whether it walks
-/// to a point instead of hopping.
-bool idleDrifting(World& world, Entity self, const MobAi& ai) {
-    if (ai.kind == AiKind::Stationary || ai.kind == AiKind::Sandstorm) return false;
-    // Chasing something.
-    if (ai.target != NULL_ENTITY) return false;
-    // Marching home to its nest: it has somewhere to be, and the reference
-    // clears the idle tag for exactly this case, so a tethered mob dragged out
-    // of range walks back a stride at a time rather than hopping at full rate.
-    const HoleTether* tether = world.tryGet<HoleTether>(self);
-    if (tether != nullptr && tether->returning) return false;
-    // A chain head crawls or strolls to a point; the reference does not tag it
-    // idle either, so it stops when its stride does.
-    return !world.has<BodySegment>(self);
 }
 
 /// Whether a stinger shooter has its tail on the bearing closely enough to let
@@ -488,9 +451,9 @@ void MobAiSystem::layWeb(World& world, Entity self, double nowMillis,
     const WebSpec& spec = content().mob(type->configIndex).web;
     if (!spec.present) return;
 
-    // Stepped from the deadline rather than from now, so a mob whose turns
-    // arrive on the far stride still lays one a second on average; resynced
-    // when it falls a whole interval behind rather than laying a burst.
+    // Stepped from the deadline rather than from now, so a steady layer keeps
+    // to one a second; resynced when it falls a whole interval behind (a mob
+    // that sat unseen) rather than laying a burst.
     clock->nextMillis += spec.intervalMillis;
     if (clock->nextMillis <= nowMillis) clock->nextMillis = nowMillis + spec.intervalMillis;
 
@@ -1479,7 +1442,7 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     // rays, and is much the more expensive -- but the reference pays it per
     // mob per tick, and a mob that only looks on a clock ignores a player who
     // walks up to it for as long as the clock says, which reads as the whole
-    // field lagging behind the flower. The LOD stride is what bounds this.
+    // field lagging behind the flower. The seen gate is what bounds this.
     if (ai.target != NULL_ENTITY &&
         !holdTarget(world, terrain, transform.position, transform.realm, ai, range, nowMillis)) {
         ai.target = NULL_ENTITY;
@@ -1725,59 +1688,20 @@ Vec2 MobAiSystem::stingerVolley(World& world, Entity self, const MobType& type, 
 // Level of detail
 // ---------------------------------------------------------------------------
 
-bool MobAiSystem::stepsThisTick(Entity self, Vec2 position, Realm realm, Rarity rarity,
-                                const std::vector<RealmPoint>& activePlayers) const {
-    // A boss is never off: see the header. It is a few mobs' worth of full-rate
-    // AI in exchange for the one class of mob whose behaviour anybody watches
-    // from a distance.
+bool MobAiSystem::stepsThisTick(Vec2 position, double radius, Realm realm, Rarity rarity,
+                                const std::vector<ViewBox>& views) const {
+    // A boss (super and up) is always loaded: announced to the whole server,
+    // raided, and sent bots at, it keeps living wherever it stands.
     if (isBossRarity(rarity)) return true;
-    // Nor is anything on the waves disc. A wave ends when its disc is clear, so
-    // every mob on it is somebody's business, and the disc grows past this
-    // radius: at a fifth of the rate the far side's hunters never arrive.
+    // Nor anything on the waves disc. A wave ends when its disc is clear, so
+    // every mob on it is somebody's business, and its hunters spawn spread
+    // over the whole disc: frozen until seen, the far side never arrives.
     if (realm == kWavesRealm) return true;
-    if (mobActive(position, realm, activePlayers)) return true;
-    return (tick_ + entityIndex(self)) % static_cast<std::uint64_t>(kMobFarStride) == 0;
+    return seenByAny(position, radius, realm, views);
 }
 
-void MobAiSystem::driftUnwatched(World& world, const Terrain& terrain, Entity self,
-                                 double nowMillis, double dt) {
-    Motion* motion = world.tryGet<Motion>(self);
-    if (motion == nullptr) return;
-
-    MobAi* ai = world.tryGet<MobAi>(self);
-    const MobType* type = world.tryGet<MobType>(self);
-    if (ai == nullptr || type == nullptr || !idleDrifting(world, self, *ai)) {
-        // Nothing decided this tick means nothing travelled this tick.
-        motion->velocity = Vec2{0, 0};
-        return;
-    }
-
-    // A mob that has never thought has never been handed the drift machine
-    // either; driftPassive() holds it still until its first step equips it.
-    const Drive drive = driveFor(type->configIndex, type->rarity);
-    // A jumper has no drift, and turning it to the drift's heading would be
-    // the one rotation it never makes.
-    if (drive.jumps) {
-        motion->velocity = Vec2{0, 0};
-        return;
-    }
-    const double slow = slowFactorOf(world, self, nowMillis);
-    Transform* transform = world.tryGet<Transform>(self);
-    // A roamer keeps roaming rather than dropping into a hop it never makes.
-    // No pet comes through here, so this one is always a wild digger.
-    if (drive.diggerAi && transform != nullptr) {
-        roam(terrain, *transform, *motion, *ai, drive, drive.speed * slow, nowMillis, dt);
-    } else {
-        driftPassive(world, self, *motion, *ai, drive, slow, nowMillis, dt);
-    }
-
-    // The drift's heading IS the mob's facing over there -- the same ungated
-    // integrator writes both -- so the angle keeps full rate as well, rather
-    // than trailing the heading by up to a stride's worth of ticks.
-    if (transform != nullptr) {
-        transform->angle = steerFacing(transform->angle, Vec2::fromAngle(ai->wanderAngle),
-                                       drive.hideRotation, drive.reversed, kPi);
-    }
+void MobAiSystem::holdUnseen(World& world, Entity self) {
+    if (Motion* motion = world.tryGet<Motion>(self)) motion->velocity = Vec2{0, 0};
 }
 
 // ---------------------------------------------------------------------------
@@ -2219,7 +2143,7 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
 
 void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialGrid& grid,
                             double nowMillis, double dt, CommandBuffer& commands) {
-    // Deliberately not LOD-gated: a pet belongs to a player, and a player is by
+    // Deliberately not gated on being seen: a pet belongs to a player, and a player is by
     // definition somewhere someone is looking.
     pets_.collect(stepList_);
     for (const Entity self : stepList_) {
@@ -2323,24 +2247,23 @@ void MobAiSystem::repairChains(World& world) {
 }
 
 void MobAiSystem::followChains(World& world, const Terrain& terrain,
-                               const std::vector<RealmPoint>& activePlayers) {
+                               const std::vector<ViewBox>& views) {
     visited_.clear();
 
     for (const Entity head : chainHeads_) {
         const Transform* headTransform = world.tryGet<Transform>(head);
-        // The chain is still WALKED when nobody is near -- only the placement
+        // The chain is still WALKED when nobody sees it -- only the placement
         // is skipped. Walking is what marks the segments visited, and a segment
         // the walk never reached is indistinguishable from one in a cycle.
         //
-        // Placement rides the HEAD's stride, so the body moves on exactly the
-        // ticks the head did. The reference places every segment every tick and
-        // gets the same positions out of it, because a follower re-placed
-        // against a head that has not moved lands where it already was.
+        // Placement rides the HEAD's verdict, so the body moves on exactly the
+        // ticks the head did: an unseen head stands still and its body with it.
+        const Body* headBody = world.tryGet<Body>(head);
         const MobType* headType = world.tryGet<MobType>(head);
         const bool active =
             headTransform != nullptr && headType != nullptr &&
-            stepsThisTick(head, headTransform->position, headTransform->realm, headType->rarity,
-                          activePlayers);
+            stepsThisTick(headTransform->position, headBody != nullptr ? headBody->radius : 0.0,
+                          headTransform->realm, headType->rarity, views);
 
         visited_.insert(head);
         Entity ahead = head;
@@ -2422,7 +2345,7 @@ void MobAiSystem::placeFollower(World& world, const Terrain& terrain, Entity sel
 // ---------------------------------------------------------------------------
 
 void MobAiSystem::pruneBroods(World& world) {
-    // Deliberately not LOD-gated: SpawnSystem::runNests, which is what spawns
+    // Deliberately not gated on being seen: SpawnSystem::runNests, which is what spawns
     // escorts, counts this list against maxAlive wherever the nest stands.
     nests_.each([&](Entity self, Spawner& nest, Transform&, MobType&) {
         // Pruned unconditionally, and of corpses as well as of the gone: a
@@ -2620,7 +2543,7 @@ void MobAiSystem::tickPetalRings(World& world, CommandBuffer& commands) {
 // ---------------------------------------------------------------------------
 
 void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& grid,
-                      const std::vector<RealmPoint>& activePlayers,
+                      const std::vector<ViewBox>& views,
                       double nowMillis, double dt, CommandBuffer& commands) {
     stats_ = Stats{};
     // Written as a failed > so a NaN step takes this branch too. A zero step
@@ -2685,11 +2608,13 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
         const MobType* type = world.tryGet<MobType>(self);
         if (at == nullptr || type == nullptr) continue;
         const Drive drive = driveFor(type->configIndex, type->rarity);
-        // Ahead of the stride, which it is not subject to; see recover().
+        // Ahead of the seen gate, which it is not subject to; see recover().
         if (drive.recovers) recover(world, self, drive, nowMillis, dt);
-        if (!stepsThisTick(self, at->position, at->realm, type->rarity, activePlayers)) {
+        const Body* atBody = world.tryGet<Body>(self);
+        if (!stepsThisTick(at->position, atBody != nullptr ? atBody->radius : 0.0, at->realm,
+                           type->rarity, views)) {
             ++stats_.skipped;
-            driftUnwatched(world, terrain, self, nowMillis, dt);
+            holdUnseen(world, self);
             continue;
         }
 
@@ -2717,8 +2642,8 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
 }
 
 void MobAiSystem::placeChains(World& world, const Terrain& terrain,
-                              const std::vector<RealmPoint>& activePlayers) {
-    followChains(world, terrain, activePlayers);
+                              const std::vector<ViewBox>& views) {
+    followChains(world, terrain, views);
 }
 
 } // namespace flix

@@ -1,4 +1,5 @@
 #include "server/replication.h"
+#include "server/systems/observers.h"
 
 #include <algorithm>
 #include <cmath>
@@ -263,11 +264,11 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // world units however far out the camera is. A ten-screen antennae view
     // still has to stream every entity it draws (all of the drawn half), but
     // not a margin ten screens wide: that would be the whole map.
-    const auto halfExtent = [&](double axis, double defaultAxis, double multiple) {
-        return axis * 0.5 + std::min(axis, defaultAxis) * (multiple - 0.5);
-    };
-    const double reachX = halfExtent(viewport.x, kViewportWidth, viewportReach);
-    const double reachY = halfExtent(viewport.y, kViewportHeight, viewportReach);
+    // streamedHalfExtent (observers.h) is the same box the mob simulation
+    // calls "seen": a mob is simulated exactly while some client is sent it.
+    const Vec2 reach = streamedHalfExtent(viewport, viewportReach);
+    const double reachX = reach.x;
+    const double reachY = reach.y;
 
     const auto outsideView = [&](Vec2 at) {
         const double dx = at.x - centre.x;
@@ -278,8 +279,9 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // enough to being drawn that it has to be current. Built the same way, so
     // everything on a big screen is updated every snapshot and the margin
     // around it stays the default screen's.
-    const double nearX = halfExtent(viewport.x, kViewportWidth, nearReach);
-    const double nearY = halfExtent(viewport.y, kViewportHeight, nearReach);
+    const Vec2 nearHalf = streamedHalfExtent(viewport, nearReach);
+    const double nearX = nearHalf.x;
+    const double nearY = nearHalf.y;
     // Measured to the nearest edge of the BODY, not its centre. The margin is
     // a quarter screen, 270 units top and bottom, and an ultra is a radius of
     // 300 and more: tested on its centre, one can stand half on screen while

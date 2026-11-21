@@ -26,6 +26,7 @@
 #include "server/replication.h"
 #include "server/session.h"
 #include "server/squads.h"
+#include "server/systems/observers.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/map_elements.h"
@@ -1879,12 +1880,16 @@ private:
     std::unordered_map<std::uint16_t, HolderMemo> universalHolders_;
 
     /// Positions of every live flower, bots included, each with the realm it
-    /// stands in, rebuilt each tick. The mob LOD counts a bot as an observer,
-    /// so this is the list it gets.
+    /// stands in, rebuilt each tick: what the band spawner wakes and sleeps
+    /// records for, and what the NPCs turn to look at.
     std::vector<RealmPoint> activePlayers_;
+    /// Every flower's streamed box, bots included, rebuilt each tick. A mob
+    /// none of them reaches is unseen: it does not think, move, separate or
+    /// enter the broadphase (observers.h).
+    std::vector<ViewBox> observerViews_;
     /// The same, restricted to real connections: what ModeSpawner fills the
     /// arena and the maze for, which a bot has no business keeping populated.
-    /// The band spawner, the mob LOD and the NPCs take activePlayers_, bots
+    /// The band spawner and the NPCs take activePlayers_, bots
     /// included (see runSystems).
     std::vector<RealmPoint> humanPlayers_;
     /// humanPlayers_ less the AFK flowers (kAfkMillis): the ones ModeSpawner

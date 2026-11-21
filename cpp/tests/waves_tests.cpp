@@ -10,6 +10,7 @@
 
 #include "client/render/world_renderer.h"
 #include "client/ui/text.h"
+#include "server/systems/observers.h"
 #include "server/systems/spawning.h"
 #include "render_rig.h"
 #include "server_harness.h"
@@ -1003,7 +1004,8 @@ TEST(a_hostile_wave_mob_hunts_a_flower_from_across_a_grown_disc) {
     world.get<Transform>(hunter).position = far;
     world.get<MobAi>(hunter).target = NULL_ENTITY;
     const double before = distance(far, me);
-    CHECK(before > kMobActiveRadius);
+    // Further than any default screen's streamed box: nobody sees it yet.
+    CHECK(before > ViewBox{}.half.x);
 
     h.step(static_cast<int>(3000.0 / net::kTickMillis), {&boss});
     CHECK(world.isAlive(hunter));
