@@ -236,16 +236,18 @@ private:
         std::uint32_t color = 0xCCCCCCu;
         std::vector<std::size_t> choices;
     };
-    /// The first row, in order: Default, every distinct biome the doors are
-    /// filed under (in spawnChoices_ order), then the maze.
+    /// The first row, in order: every distinct biome the doors are filed
+    /// under (in spawnChoices_ order), then the maze.
     std::vector<PickerTab> pickerTabs() const;
     /// Whether the next join goes to the prestige biomes: the arrow is up AND
     /// the profile holds the talent. The arrow alone is a preference that
     /// outlives a talent reset; this is what the picker and the join act on.
     bool prestigeOn() const;
-    /// The tab a spawn choice id is filed under -- "default" for the empty
-    /// choice and for any id no staged map defines.
+    /// The tab a spawn choice id is filed under -- the first tab for the
+    /// empty choice and for any id no staged map defines.
     std::string pickerTabOf(const std::string& choiceId) const;
+    /// What an empty spawn choice becomes: the first tab's first door.
+    std::string defaultSpawnChoice() const;
     /// The title screen's chat line, bottom-left, under the icon column.
     static Rect titleChatBox(int viewWidth, int viewHeight);
     void drawTitleChat(Canvas&, double time);
@@ -546,7 +548,7 @@ private:
     /// Which tab of the picker is open. Not persisted: it is derived from the
     /// saved spawn choice when the client starts and only changes by clicking,
     /// so the settings file keeps naming a door and never a row.
-    std::string pickerTab_ = "default";
+    std::string pickerTab_;
     bool trialPickerOpen_ = false;
     /// The monthly Unique/Apex route is a second page, like Spiral Abyss's
     /// later challenge area, rather than four cells mixed into the permanent

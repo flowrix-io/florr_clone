@@ -329,13 +329,9 @@ void App::updateLobby() {
             if (insideInclusive(layout.trials, mouse)) pressedControl_ = "trials";
         }
         if (window_.mouseReleased(MouseButton::Left)) {
-            // "default" is stored as no choice at all, so a player who never
-            // touches the picker is not pinned to a door that may be edited
-            // out of the map later.
             const auto choose = [&](std::size_t choice) {
                 if (spawnChoices_[choice].id == kTrialsSpawnChoice) return;
-                menus_.settings().spawnChoice =
-                    spawnChoices_[choice].id == "default" ? std::string() : spawnChoices_[choice].id;
+                menus_.settings().spawnChoice = spawnChoices_[choice].id;
             };
             bool onPicker = false;
             const std::vector<PickerTab> tabs = pickerTabs();
@@ -343,7 +339,7 @@ void App::updateLobby() {
                 if (!insideInclusive(layout.tabs[i], mouse)) continue;
                 onPicker = true;
                 pickerTab_ = tabs[i].id;
-                // A tab with one door IS that door -- Default, the arena, the
+                // A tab with one door IS that door -- the arena, the
                 // maze, a biome with a single entrance -- so one click picks
                 // it rather than opening a row of one to click again.
                 if (tabs[i].choices.size() == 1) choose(tabs[i].choices.front());
@@ -374,7 +370,7 @@ void App::updateLobby() {
                 // tab that is not there.
                 if (settings.prestige && (settings.spawnChoice == kArenaSpawnChoice ||
                                           settings.spawnChoice == kMazeSpawnChoice)) {
-                    settings.spawnChoice.clear();
+                    settings.spawnChoice = defaultSpawnChoice();
                 }
                 pickerTab_ = pickerTabOf(settings.spawnChoice);
             }
@@ -631,21 +627,15 @@ void App::drawTitlePetals(Canvas& canvas, double time) {
 // ---------------------------------------------------------------------------
 
 std::vector<App::PickerTab> App::pickerTabs() const {
-    // Default first and the maze last, with every biome the
-    // doors are filed under between them in the order the doors were loaded
-    // -- which is the order maps.json lists the maps, so the overworld's own
-    // doors decide the row and a temporary map never reorders it.
+    // Every biome the doors are filed under, in the order the doors were
+    // loaded -- which is the order maps.json lists the maps, so the
+    // overworld's own doors decide the row and a temporary map never
+    // reorders it -- and the maze last.
     std::vector<PickerTab> tabs;
-    tabs.push_back(PickerTab{"default", "Default", 0x00BE4Fu, {}});
     PickerTab maze{kMazeSpawnChoice, "Maze", 0x573D80u, {}};
     for (std::size_t i = 0; i < spawnChoices_.size(); ++i) {
         const SpawnChoice& choice = spawnChoices_[i];
         if (choice.id == kAdminArenaSpawnChoice && !net_.isSkinAdmin()) continue;
-        if (choice.id == "default") {
-            tabs.front().color = choice.color;
-            tabs.front().choices.push_back(i);
-            continue;
-        }
         if (choice.id == kMazeSpawnChoice) {
             maze.color = choice.color;
             maze.choices.push_back(i);
@@ -688,13 +678,22 @@ bool App::prestigeOn() const {
 }
 
 std::string App::pickerTabOf(const std::string& choiceId) const {
-    if (choiceId.empty()) return "default";
-    for (const PickerTab& tab : pickerTabs()) {
+    const std::vector<PickerTab> tabs = pickerTabs();
+    for (const PickerTab& tab : tabs) {
         for (std::size_t i : tab.choices) {
             if (spawnChoices_[i].id == choiceId) return tab.id;
         }
     }
-    return "default";
+    return tabs.empty() ? std::string() : tabs.front().id;
+}
+
+std::string App::defaultSpawnChoice() const {
+    // There is no Default button any more: no choice means the first tab's
+    // first door, so the picker always has something lit.
+    for (const PickerTab& tab : pickerTabs()) {
+        if (!tab.choices.empty()) return spawnChoices_[tab.choices.front()].id;
+    }
+    return {};
 }
 
 App::LobbyLayout App::lobbyLayout(int viewWidth, int viewHeight) const {
@@ -845,8 +844,7 @@ void App::drawLobby(Canvas& canvas, double time) {
     for (std::size_t i = 0; open != nullptr && i < layout.doors.size() &&
                             i < open->choices.size(); ++i) {
         const SpawnChoice& choice = spawnChoices_[open->choices[i]];
-        const bool chosen = choice.id == menus_.settings().spawnChoice ||
-                            (choice.id == "default" && menus_.settings().spawnChoice.empty());
+        const bool chosen = choice.id == menus_.settings().spawnChoice;
         // The maze's one door is its tab's colour: today's biome.
         pickerButton(layout.doors[i], choice.label,
                      choice.id == kMazeSpawnChoice ? open->color : choice.color, chosen,

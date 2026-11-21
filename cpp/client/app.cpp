@@ -199,12 +199,10 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
         std::fprintf(stderr, "[map] %s; the spawn picker will offer the default only\n",
                      mapWarning.c_str());
     }
-    // Everything the picker can name: the default, the generated realms that have
+    // Everything the picker can name: the generated realms that have
     // no map file, and then every pickable player spawn rectangle a map
     // draws -- which is how a second map is reachable without walking to a
     // teleporter first. pickerTabs() files these under one tab per biome.
-    spawnChoices_.push_back(
-        SpawnChoice{"default", "Default", 0x00BE4Fu, Realm::Overworld, -1, {}, {}});
     spawnChoices_.push_back(
         SpawnChoice{kMazeSpawnChoice, "Maze", 0x573D80u, Realm::Maze, -1, {}, {}});
     spawnChoices_.push_back(
@@ -256,6 +254,11 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
                                  "maps; starting at the default\n", saved.c_str());
             menus_.settings().spawnChoice.clear();
         }
+    }
+    // No choice saved (or the one saved was dropped above): the first door
+    // on the picker, since there is no Default button to light.
+    if (menus_.settings().spawnChoice.empty()) {
+        menus_.settings().spawnChoice = defaultSpawnChoice();
     }
     // The picker opens on the tab the saved door is filed under, so the row a
     // returning player sees is the one their choice is on.
