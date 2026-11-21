@@ -1169,7 +1169,7 @@ TEST(a_mythic_kill_is_worth_stars_and_a_common_one_is_not) {
     CHECK_EQ(starsForKill(Rarity::Common), 0);
     CHECK_EQ(starsForKill(Rarity::Legendary), 0);
     CHECK_EQ(starsForKill(Rarity::Mythic), 1);
-    CHECK_EQ(starsForKill(Rarity::Apex), 250);
+    CHECK_EQ(starsForKill(Rarity::Apex), 3000);
 }
 
 // ---------------------------------------------------------------------------
