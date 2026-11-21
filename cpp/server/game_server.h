@@ -786,7 +786,8 @@ private:
     /// and a universal forged at a titan. Silent for every tier below, which
     /// is where the reference draws the line too -- an ultra is crafted often
     /// enough to be noise.
-    void announceRareCraft(const Session&, std::uint16_t petalIndex, Rarity made);
+    void announceRareCraft(const Session&, std::uint16_t petalIndex, Rarity made,
+                           std::int64_t count = 1);
     /// The NPC offering `service` that the session's living body is standing
     /// at -- of `tier`, when one is given -- or NULL_ENTITY once `refuse` has
     /// been handed why not: no body to stand with, or none in reach. `npc`
