@@ -2144,6 +2144,31 @@ void CombatSystem::tickSpongeDamage(World& world, double nowMillis, double dt) {
     Query<SpongeDamageState, Health> deferred{world};
     deferred.without<Dead>();
     deferred.each([&](Entity player, SpongeDamageState& state, Health& health) {
+        if (state.effects.empty()) return;
+
+        // Destroyed, not merely reloading: the sponge has left the active row
+        // -- swapped to the second row or taken off -- so the whole pile it was
+        // spreading out lands at once. `hasSponge` stays true for a broken body
+        // (it is still worn), so a reloading sponge keeps dripping; only an
+        // unequip trips this. The lump can be lethal, which is the point: with a
+        // second chance on the bar a player can swap the sponge to dump a big
+        // pile, die, revive, and come back with the pile reset to nothing.
+        const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(player);
+        if (mods == nullptr || !mods->hasSponge) {
+            double lump = 0.0;
+            Entity source = NULL_ENTITY;
+            for (const SpongeDamageEffect& effect : state.effects) {
+                if (effect.remainingDamage <= 0.0) continue;
+                lump += effect.remainingDamage;
+                if (source == NULL_ENTITY) source = effect.source;
+            }
+            state.effects.clear();
+            // Queued like a drip rather than applied here: applyDamage mutates
+            // the world (Dead, shields), and this is still inside the query.
+            if (lump > 0.0) spongeTicks_.push_back({player, source, lump});
+            return;
+        }
+
         // TypeScript pauses the repayment while any invulnerability is live;
         // it does not silently consume that portion of the stored hit.
         if (health.shielded(nowMillis)) return;
