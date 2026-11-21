@@ -1725,6 +1725,13 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
                 }
                 out.controlsPets = true;
             }
+            // Counted worn, broken or not, unlike the duration just below: a
+            // sponge reloading its body is still equipped, and must not read as
+            // destroyed and dump its stored damage. Only leaving the active row
+            // -- swapped to the second row or taken off -- clears this.
+            if (stats.spongeDamageDurationMillis > 0.0) {
+                aggregate.modifiers.hasSponge = true;
+            }
             if (!slot.broken) {
                 aggregate.modifiers.spongeDamageDurationMillis =
                     std::max(aggregate.modifiers.spongeDamageDurationMillis,
@@ -2465,7 +2472,18 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             if (instance->homing) {
                 const Transform* owner = world.tryGet<Transform>(player);
                 const Body* ownerBody = world.tryGet<Body>(player);
-                const double contact = ownerBody ? ownerBody->radius : kPlayerBaseRadius;
+                // Body to body, so the petal's own radius counts -- measuring
+                // only to the flower's centre left the dive a petal-radius
+                // short of contact. A homing petal chasing a running flower
+                // settles at a standing lag (a first-order glide never quite
+                // arrives at a moving target), and that shortfall put the
+                // flower's edge just outside the test: the burst then never
+                // landed on contact and had to wait out the timeout below, so
+                // every heal on the move came a beat late or, if the bar
+                // filled in that beat, not at all. Counting the petal's body
+                // closes the gap and it lands the moment the two touch.
+                const double contact =
+                    (ownerBody ? ownerBody->radius : kPlayerBaseRadius) + stats.radius;
                 const bool touched =
                     owner && distanceSq(transform->position, owner->position) <= contact * contact;
                 // Absorbed anyway. Contact is the normal way a burst is

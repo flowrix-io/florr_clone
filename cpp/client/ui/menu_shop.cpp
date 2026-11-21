@@ -505,19 +505,6 @@ std::string rotationCaption(std::int64_t secondsLeft) {
     return "Store will change in " + time;
 }
 
-/// The same line while the store is locked: how long the lock still holds.
-std::string lockCaption(std::int64_t secondsLeft) {
-    const std::int64_t s = std::max<std::int64_t>(0, secondsLeft);
-    const auto unit = [](std::int64_t n, const char* one, const char* many) {
-        return std::to_string(n) + " " + (n == 1 ? one : many);
-    };
-    std::string time;
-    if (s >= 3600) time = unit(s / 3600, "hour", "hours");
-    else if (s >= 60) time = unit(s / 60, "minute", "minutes");
-    else time = unit(s, "second", "seconds");
-    return "Offers locked for " + time;
-}
-
 /// The discount tag, centred on `corner` and tipped clockwise: a black rounded
 /// rect with the saving on it, stuck over the tile's top-right corner.
 void drawDiscountBadge(Canvas& canvas, Vec2 corner, int percent) {
@@ -730,9 +717,9 @@ bool ShopPanel::render(MenuContext& ctx) {
     const Json& lockReply = ctx.net.adminTools("shop");
     const bool lockAnswered = lockReply["kind"].asString() == "shop";
     const std::int64_t now = shopClockNow();
-    const auto lockedUntil = static_cast<std::int64_t>(lockReply["until"].asDouble(0));
+    // A lock has no expiry: it holds until the account presses Unlock.
     const bool storeLocked =
-        lockAnswered && lockReply["ok"].asBool() && lockReply["locked"].asBool() && now < lockedUntil;
+        lockAnswered && lockReply["ok"].asBool() && lockReply["locked"].asBool();
     if (lockAnswered && !lockReply["ok"].asBool() &&
         lockReply["revision"].asDouble(0) != state.lockRevisionSeen) {
         state.lockRevisionSeen = lockReply["revision"].asDouble(0);
@@ -761,12 +748,12 @@ bool ShopPanel::render(MenuContext& ctx) {
         text(canvas, "Today's offers:", panel.x + panel.w * 0.5, panel.y + kHeadingMiddle,
              shopText(kOffersHeadingSize));
         const std::string caption = storeLocked
-                                        ? lockCaption(lockedUntil - now)
+                                        ? std::string("Offers locked until you unlock")
                                         : rotationCaption(shopRotationEnd(rotation) - now);
         text(canvas, caption, panel.x + panel.w * 0.5, panel.y + kSubMiddle, shopText(kSubSize));
 
-        // Lock keeps these ten cards through the hourly change, for up to a
-        // day; Unlock goes back to the live store. Held by the server against
+        // Lock keeps these ten cards through the hourly change until the
+        // account unlocks; Unlock goes back to the live store. Held by the server against
         // the account (server/shop.cpp), which prices a purchase from the
         // same rotation the cards were drawn from. Not offered until the
         // server has said where the store stands, so the label never lies.

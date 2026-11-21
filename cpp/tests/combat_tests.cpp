@@ -169,6 +169,7 @@ TEST(a_sponge_queues_a_direct_hit_and_repays_it_after_invulnerability) {
     const Entity mob = arena.mob({100, 0}, 100);
     PlayerModifiers modifiers;
     modifiers.spongeDamageDurationMillis = 1000.0;
+    modifiers.hasSponge = true;
     arena.world.add<PlayerModifiers>(player, modifiers);
 
     const DamageResult hit = arena.combat.applyDamage(arena.world, player, mob, 10.0, 1000.0);
@@ -2991,6 +2992,7 @@ TEST(root_armour_lands_ahead_of_a_shell_shield_and_a_sponge) {
     a.world.add<ShieldState>(player, ShieldState{5.0});
     PlayerModifiers modifiers;
     modifiers.spongeDamageDurationMillis = 1000.0;
+    modifiers.hasSponge = true;
     a.world.add<PlayerModifiers>(player, modifiers);
 
     // 30 - 12 (stack) - 5 (shield) = 13, and what is left is what the sponge
@@ -4388,6 +4390,7 @@ TEST(a_cotton_sits_behind_the_sponge_and_catches_its_repayment) {
     const Entity mob = a.mob({4000, 1000}, 100.0);
     PlayerModifiers modifiers;
     modifiers.spongeDamageDurationMillis = 1000.0;
+    modifiers.hasSponge = true;
     a.world.add<PlayerModifiers>(player, modifiers);
     const Entity cotton = wearCotton(a, player, 20.0);
 

@@ -192,7 +192,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         const std::uint8_t slot = reader.u8();
         const double remaining = reader.u16();
         const double health = reader.unitByte();
-        const std::uint16_t counter = reader.u16();
+        const std::uint32_t counter = reader.u32();
         if (slot >= kLoadoutActiveSlots) continue;
         slotReload[slot] = remaining;
         slotHealth[slot] = health;

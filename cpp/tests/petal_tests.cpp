@@ -37,7 +37,7 @@ const char* const kPetalsJson = R"JSON({
   "web":      {"name":"Web","damage":5,"health":10,"size":1.2,"cooldown":3000,"count":1,"defendOnly":true,"webRadius":90,"color":"#FFFFFF"},
   "pollen":   {"name":"Pollen","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"color":"#FFE763"},
   "uranium":  {"name":"Uranium","damage":4,"health":10,"size":1,"cooldown":2500,"count":1,"radiation":{"radius":160,"intervalMs":1000,"poisonDurationMs":2000,"selfPoisonScale":1},"color":"#63bf2e"},
-  "sponge":   {"name":"Sponge","damage":10,"health":10,"size":1,"cooldown":2000,"count":1,"spongeDamageDuration":1000,"color":"#FF96E0"},
+  "sponge":   {"name":"Sponge","damage":0,"size":1,"cooldown":2000,"count":1,"spongeDamageDuration":3000,"color":"#FF96E0"},
   "root":     {"name":"Root","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"armorPerStack":12,"defendOnly":true,"color":"#B86C32"},
   "peas":     {"name":"Peas","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"projectile":{"count":3,"spreadAngle":0.5,"speed":800,"distance":1000},"color":"#00FF00"},
   "pod":      {"name":"Pod","damage":2.5,"health":10,"size":1,"cooldown":1000,"count":4,"clumped":true,"defendOnly":true,"projectile":{"count":1,"spreadAngle":1.5708,"speed":800,"distance":1000},"color":"#8AC255"},
@@ -2523,17 +2523,21 @@ TEST(a_broken_petal_keeps_its_equipment_modifier_while_reloading) {
     CHECK_NEAR(rig.modifiers().luck, 3.0, 1e-9);
 }
 
-TEST(a_sponge_defers_damage_only_while_its_body_is_alive) {
+TEST(a_sponge_is_unbreakable_and_keeps_its_deferral) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "sponge", Rarity::Rare);
     rig.settleEquips();
-    CHECK_NEAR(rig.modifiers().spongeDamageDurationMillis, 2000.0, 1e-9);
+    // 3 s base, +3 s per rarity step: Rare (index 2) spreads over 9 s.
+    CHECK_NEAR(rig.modifiers().spongeDamageDurationMillis, 9000.0, 1e-9);
 
-    rig.damage(rig.petals(0).front(), 10.0 * petalStatScale(Rarity::Rare));
-    rig.tick();
-    CHECK(rig.slot(0).broken);
-    CHECK_NEAR(rig.modifiers().spongeDamageDurationMillis, 0.0, 1e-12);
+    // No health pool, so there is no body for a mob to break: the slot stays
+    // out and the deferral holds for as long as the petal is on the bar. The
+    // only way to end it is to take the sponge off (see the dump on unequip).
+    CHECK(!rig.slot(0).broken);
+    rig.tick(20);
+    CHECK(!rig.slot(0).broken);
+    CHECK_NEAR(rig.modifiers().spongeDamageDurationMillis, 9000.0, 1e-9);
 }
 
 TEST(salt_reflects_only_while_out_and_a_second_one_never_adds) {
@@ -2918,10 +2922,9 @@ TEST(a_sponge_publishes_the_damage_it_is_holding_for_the_bar) {
     CHECK(rig.slotCounter(0) < 0.0);
 }
 
-TEST(a_broken_sponge_goes_on_printing_what_it_absorbed) {
-    // The stored hits drain whether or not the body that took them survived,
-    // so the number stays up while the slot reloads. A number that vanished at
-    // the moment it mattered most would read as the damage being cancelled.
+TEST(a_sponge_prints_what_it_is_holding_and_cannot_be_broken) {
+    // The slot's number tracks the stored hits. The sponge is unbreakable, so
+    // nothing cuts the number short: it stays out and goes on printing.
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "sponge");
@@ -2929,10 +2932,9 @@ TEST(a_broken_sponge_goes_on_printing_what_it_absorbed) {
 
     rig.world.ensure<SpongeDamageState>(rig.player)
         .effects.push_back(SpongeDamageEffect{11.0, 11.0, NULL_ENTITY});
-    rig.damage(rig.petals(0).front(), 10.0);
     rig.tick();
 
-    CHECK(rig.slot(0).broken);
+    CHECK(!rig.slot(0).broken);
     CHECK_NEAR(rig.slotCounter(0), 11.0, 1e-9);
 }
 
@@ -3037,9 +3039,8 @@ TEST(taking_the_root_off_empties_the_bank) {
 }
 
 TEST(a_broken_root_goes_on_banking) {
-    // Unlike a sponge, which has to be out to catch a hit: root banks on a
-    // timer the FLOWER runs, and a petal that stopped earning the moment it
-    // broke would stop exactly while the flower is being hit.
+    // Root banks on a timer the FLOWER runs, and a petal that stopped earning
+    // the moment it broke would stop exactly while the flower is being hit.
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "root");
@@ -3170,10 +3171,10 @@ TEST(a_burst_heal_charges_homes_consumes_and_reloads) {
 ///
 /// A homing petal closes on the flower with a first-order glide, and a glide
 /// toward a MOVING target settles at a standing lag rather than arriving: at
-/// top speed that gap is some 28 units, wider than the flower's own 20-unit
-/// body, so the rose trails it and is never touched. It is the dive's landing
-/// window that delivers the burst here, not contact -- without one the petal
-/// chases a sprinting player forever, healing nothing and never reloading.
+/// top speed that gap is some 28 units. The flower's body is ~25 and the
+/// petal's another ~10, so body meets body at ~35 and the lagging petal is
+/// still touching -- it lands on contact here, promptly, rather than chasing
+/// the player until the timeout gives up and pays the burst out anyway.
 TEST(a_burst_heal_lands_on_a_flower_running_at_top_speed) {
     if (!contentLoaded()) return;
     Rig rig;
