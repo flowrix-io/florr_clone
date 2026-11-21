@@ -1052,6 +1052,8 @@ void App::frame(double dt) {
     // Last of all, over every other layer: the wipe is what hides the seam
     // between two scenes, so nothing may paint on top of it.
     drawSceneWipe(canvas);
+    // Over even the wipe: it is the whole game coming out of black.
+    drawBootFade(canvas);
     // After every field has been hit-tested, which is the only point at which
     // the set is complete.
     publishKeyboardRegions();
@@ -1577,6 +1579,26 @@ void App::drawSceneWipe(Canvas& canvas) {
         wipe_.phase = SceneWipe::Phase::Idle;
         wipe_.snapshot.reset();
     }
+}
+
+void App::drawBootFade(Canvas& canvas) {
+    constexpr double kBootFadeSeconds = 1.0;
+    /// How steep the curve is: the cover is exp(-k t), rescaled so it lands on
+    /// exactly zero at kBootFadeSeconds instead of trailing off forever.
+    constexpr double kBootFadeSteepness = 5.0;
+    if (bootFadeStartSeconds_ < 0) bootFadeStartSeconds_ = timeSeconds_;
+    // A scripted capture wants the screen, not a fade, as with the wipe.
+    if (config_.screenshotAfterFrames > 0) return;
+    const double t = (timeSeconds_ - bootFadeStartSeconds_) / kBootFadeSeconds;
+    if (t >= 1.0) return;
+    const double floor = std::exp(-kBootFadeSteepness);
+    const double cover =
+        std::clamp((std::exp(-kBootFadeSteepness * std::max(t, 0.0)) - floor) / (1.0 - floor), 0.0, 1.0);
+    if (cover <= 0) return;
+    canvas.save();
+    setFill(canvas, kInk, cover);
+    canvas.fillRect(0, 0, static_cast<float>(canvas.width()), static_cast<float>(canvas.height()));
+    canvas.restore();
 }
 
 void App::beginTeleportIris() {

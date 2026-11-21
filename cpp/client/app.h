@@ -877,6 +877,14 @@ private:
         std::unique_ptr<Canvas> snapshot;
     };
     TeleportIris teleportIris_;
+
+    // -- boot fade -----------------------------------------------------------
+    /// The game fades in out of black once it has loaded: the page's own
+    /// Loading... sits on black until the first frame, and from that frame a
+    /// black cover thins out exponentially over kBootFadeSeconds.
+    /// Negative until the first frame stamps it.
+    double bootFadeStartSeconds_ = -1;
+    void drawBootFade(Canvas&);
     void beginTeleportIris();
     void drawTeleportIris(Canvas&);
 
