@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 95;
+inline constexpr std::uint16_t kProtocolVersion = 96;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -751,7 +751,7 @@ struct InputFrame {
 /// How many of the viewer's own slots a snapshot can report on.
 ///
 /// The block is written as
-/// `u8 count, { u8 slot, u16 reloadRemainingMillis, u8 healthFraction, u16 counter }*`
+/// `u8 count, { u8 slot, u16 reloadRemainingMillis, u8 healthFraction, u32 counter }*`
 /// rather than a fixed entry per slot, because a bar of untouched petals is by
 /// far the common case and costs one byte that way. A slot appears when it is
 /// reloading, when it is damaged, when it has a counter to print, or any
@@ -774,7 +774,11 @@ inline constexpr std::uint8_t kMaxReportedSlots = 10;
 /// A slot entry's `counter` when the petal in it has no number to print.
 /// Sentinel rather than zero, because zero is a number a sponge really does
 /// hold. A counter at the sentinel's own value is clamped one below it.
-inline constexpr std::uint16_t kNoSlotCounter = 0xFFFFu;
+///
+/// A full 32 bits: a high-rarity sponge spreading a big hit can bank far more
+/// than the old 16-bit field's 65,534, and a gauge that froze there read as a
+/// cap the sponge had hit rather than the number it was really holding.
+inline constexpr std::uint32_t kNoSlotCounter = 0xFFFFFFFFu;
 
 /// Which of the viewer's own figures a snapshot restates. Each is sent when it
 /// differs from what this viewer was last sent, and in full on the first

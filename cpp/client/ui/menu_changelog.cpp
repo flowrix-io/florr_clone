@@ -621,13 +621,19 @@ constexpr ChangelogEntry kChangelog[] = {
         "Added Secret Trials"
       }
     },
-    {"November 20, 2026",
+    {"November 21, 2026",
       {
         "Fixed /biome showing the wrong player counts",
         "Crafting now accepts every petal you own, not just multiples of 5",
         "Hold Alt (Option) and click a petal in crafting to craft it right away",
         "Buffed Yucca to heal twice as much as Leaf of the same rarity",
-        "Pressing / now opens chat with a / already typed"
+        "Pressing / now opens chat with a / already typed",
+        "Buffed Sponge: Mythic spreads damage over 18 seconds, 3 seconds less for each lower rarity and 3 more for each higher one",
+        "Sponge no longer has damage or health and can't be destroyed by mobs",
+        "Moving Sponge to your second row or removing it now deals all its stored damage at once",
+        "Fixed Sponge's stored damage getting stuck at 65,534",
+        "Fixed healing petals like Azalea, Dahlia and Rose sometimes not getting eaten",
+        "Shop lock now lasts until you unlock it instead of 24 hours"
       }
     }
 };
