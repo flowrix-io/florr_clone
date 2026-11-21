@@ -1339,8 +1339,8 @@ TEST(an_untouched_loadout_costs_the_snapshot_one_byte) {
     WorldView other;
     const std::size_t withOne = g.tick(other, 1, 1000);
 
-    // slot, reload, health, counter.
-    CHECK_EQ(withOne - bare, std::size_t(6));
+    // slot (u8), reload (u16), health (u8), counter (u32).
+    CHECK_EQ(withOne - bare, std::size_t(8));
 }
 
 TEST(a_sponge_reports_the_damage_it_is_still_holding) {

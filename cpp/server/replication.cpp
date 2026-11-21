@@ -473,7 +473,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         /// net::kNoSlotCounter for a petal that has none. Rounded UP, so a
         /// sponge still holding a sliver of a hit reads as 1 rather than
         /// dropping to 0 a moment early.
-        std::uint16_t counter = net::kNoSlotCounter;
+        std::uint32_t counter = net::kNoSlotCounter;
     };
     const auto report = [&](int i, SlotReport& out) {
         if (viewerLoadout == nullptr) return false;
@@ -501,7 +501,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         out.reloadRemaining = std::max(0.0, out.reloadRemaining);
         if (live != nullptr) out.health = live->healthFraction;
         if (live != nullptr && live->counter >= 0.0) {
-            out.counter = static_cast<std::uint16_t>(
+            out.counter = static_cast<std::uint32_t>(
                 std::clamp(std::ceil(live->counter), 0.0,
                            static_cast<double>(net::kNoSlotCounter - 1)));
         }
@@ -528,7 +528,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // anyway; clamping keeps the field two bytes.
         out.u16(static_cast<std::uint16_t>(std::min(slotReport.reloadRemaining, 65535.0)));
         out.unitByte(slotReport.health);
-        out.u16(slotReport.counter);
+        out.u32(slotReport.counter);
     }
 
     // --- spawns and updates ----------------------------------------------

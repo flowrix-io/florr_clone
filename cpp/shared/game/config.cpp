@@ -2061,8 +2061,10 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.slowDurationMillis = c.slowDurationMillis * (1.0 + rarityIndex(tier) * 0.375);
     }
     s.webRadius = c.webRadius * (1.0 + (rarityIndex(tier) / 8.0) * 1.2);
+    // 3 s per rarity step off a 3000 ms base: Common spreads over 3 s, Mythic
+    // over 18 s, Apex over 30 s (3000 * (rarityIndex + 1)).
     s.spongeDamageDurationMillis =
-        c.spongeDamageDurationMillis * (1.0 + rarityIndex(tier) * 0.5);
+        c.spongeDamageDurationMillis * (1.0 + rarityIndex(tier));
     s.attractionForce = c.attractionForce;
     s.radius = c.size * kPetalRadiusPerSize;
     // The loose petals -- wax, the moon -- are the ones whose bodies grow with

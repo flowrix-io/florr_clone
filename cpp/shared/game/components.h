@@ -698,6 +698,11 @@ struct PlayerModifiers {
     /// roots are one bank of stacks, at the better petal's strength.
     double armorPerStack = 0.0;
     double spongeDamageDurationMillis = 0.0;
+    /// Whether a sponge is worn in the active row at all -- broken body or not,
+    /// which `spongeDamageDurationMillis` is not (that drops to zero while the
+    /// body reloads). The moment this goes false with damage still stored, the
+    /// sponge counts as destroyed and the pile is paid all at once.
+    bool hasSponge = false;
     /// What the knockback this flower TAKES is multiplied by: 1 plus every
     /// worn rubber's figure. A mob's bounce and a duellist's shove both.
     double knockbackTakenScale = 1.0;

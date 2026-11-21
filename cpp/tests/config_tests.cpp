@@ -734,8 +734,9 @@ TEST(special_petal_geometry_and_timers_follow_rarity_overrides) {
     CHECK_NEAR(r.petalStats(web, Rarity::Unique).webRadius, 198.0, 1e-12);
 
     const std::uint16_t sponge = r.petalIndex("sponge");
+    // +1 base per rarity step: Common holds at the base, Mythic (index 5) is 6x.
     CHECK_NEAR(r.petalStats(sponge, Rarity::Common).spongeDamageDurationMillis, 1000.0, 1e-12);
-    CHECK_NEAR(r.petalStats(sponge, Rarity::Mythic).spongeDamageDurationMillis, 3500.0, 1e-12);
+    CHECK_NEAR(r.petalStats(sponge, Rarity::Mythic).spongeDamageDurationMillis, 6000.0, 1e-12);
 
     const std::uint16_t lentil = r.petalIndex("lentil");
     CHECK_NEAR(r.petalStats(lentil, Rarity::Uncommon).attractionForce, 2889.0, 1e-12);
