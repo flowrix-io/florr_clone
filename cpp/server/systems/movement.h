@@ -126,6 +126,22 @@ inline constexpr int kMaxSubstepCount = 16;
 /// a percent, so the same reach spent through shoveSpeed glides the same way.
 inline constexpr double kBubblePopDistance = 175.0;
 
+/// How far past a popping bubble MOB's skin its blast reaches, edge to edge.
+/// Everything within it takes the full kBubblePopDistance (over its mass);
+/// nothing past it is touched.
+inline constexpr double kBubblePopReach = 100.0;
+
+/// A flower is also caught when its own petal ring reaches the bubble: the
+/// ring's radius past the flower's edge plus this much for the petal's own
+/// size and its lag behind the ring point. Without it a petal swung on the
+/// attacking ring (gap 100, more with a third eye) pops a bubble that sits
+/// just past kBubblePopReach of the flower, and nothing happens.
+inline constexpr double kBubblePopRingSlack = 40.0;
+
+/// How far a popping bubble MOB's blast shoves a mass-1 flower in reach (a
+/// heavier body goes this over its mass): what a bubble petal throws one.
+inline constexpr double kBubbleMobPopDistance = kBubblePopDistance;
+
 /// The most ground one tick of a pop may cover, however many bubbles went off
 /// at once.
 ///

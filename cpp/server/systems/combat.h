@@ -807,10 +807,11 @@ private:
     /// else. Adds Dead, so not safe against iteration either.
     void collapseClearedNest(World& world, Entity fallen, Entity killer);
 
-    /// Every bubble mob that died this tick pops: the flower credited with it
-    /// is thrown clear of it, as far as a bubble petal throws one
-    /// (kBubblePopDistance). Run once the tick's deaths are all in.
-    void popBubbles(World& world, const ContentRegistry& content);
+    /// Every bubble mob that died this tick pops: a blast from its skin shoves
+    /// every flower and mob within kBubblePopReach of it away, at full
+    /// strength, divided by mass (kBubbleMobPopDistance for a flower).
+    /// Run once the tick's deaths are all in.
+    void popBubbles(World& world, const SpatialGrid& grid, const ContentRegistry& content);
 
     void awardBounty(World& world, Entity victim);
 
