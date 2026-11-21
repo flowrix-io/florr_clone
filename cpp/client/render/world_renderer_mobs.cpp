@@ -283,6 +283,32 @@ void WorldRenderer::drawDiggerPicture(Canvas& canvas, double radius, double time
     canvas.restore();
 }
 
+void WorldRenderer::drawRendererMobPicture(Canvas& canvas, std::uint16_t mobIndex, Rarity rarity,
+                                         double radius, double timeSeconds) const {
+    if (!content_ || mobIndex >= content_->mobCount()) return;
+    const MobConfig& config = content_->mob(mobIndex);
+    if (config.id == "digger") {
+        drawDiggerPicture(canvas, radius, timeSeconds);
+        return;
+    }
+    if (sprites_ && sprites_->mobArt(mobIndex) == MobArt::Garbage) {
+        // The pile the world lays out off the body's diameter. Seed 0: a
+        // picture is the same pile every time it is drawn.
+        drawGarbagePile(canvas, 0, radius * 2.0, timeSeconds);
+        return;
+    }
+    const double scale = radius / kFlowerArtRadius;
+    canvas.save();
+    canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
+    // gardn's still face, as drawDiggerPicture's: eyes 3 forward, a 15 smile.
+    // A ring flower's face is its ring's, else the mob's own colour.
+    const bool ring = config.petalRing.present;
+    drawFace(canvas, !ring || config.petalRing.squareEyes ? FaceSquareEyes : 0, EquipNone, 3.0,
+             0.0, 15.0, timeSeconds, ring ? config.petalRing.faceColor : (config.colorRgba >> 8));
+    canvas.restore();
+    if (ring) drawDecorativeRing(canvas, config, rarity, radius, timeSeconds);
+}
+
 void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, const MobDraw& mob,
                                      double radius, double rotation, bool mirrored,
                                      Vec2 bodyShift, double timeSeconds,
@@ -321,6 +347,11 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
     }
     canvas.restore();
 
+    drawDecorativeRing(canvas, config, mob.rarity, radius, timeSeconds);
+}
+
+void WorldRenderer::drawDecorativeRing(Canvas& canvas, const MobConfig& config, Rarity rarity,
+                                       double radius, double timeSeconds) const {
     const std::uint16_t index = config.petalRing.petalIndex;
     if (!sprites_ || !content_ || index == kInvalidIndex) return;
     const PetalConfig& petal = content_->petal(index);
@@ -363,7 +394,7 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
         // stem -- points back into the body. An upright petal is what the
         // glitch flower's squares want, so this is per ring.
         const double facing = config.petalRing.followRotation ? angle : 0.0;
-        sprites_->drawPetal(canvas, index, mob.rarity, std::cos(angle) * orbit,
+        sprites_->drawPetal(canvas, index, rarity, std::cos(angle) * orbit,
                             std::sin(angle) * orbit, size, facing, timeSeconds);
     }
 }
@@ -475,7 +506,7 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
     static const std::string kNoId;
     const std::string& id = config ? config->id : kNoId;
     if (id == "garbage") {
-        // Its entry in mobs.json is an empty document: the pile IS the artwork,
+        // Its entry in mobs.json is `$garbage`: the pile IS the artwork,
         // laid out in world units off the mob's COLLISION size -- the browser
         // build sizes the pile from that and never from the death scale.
         canvas.save();

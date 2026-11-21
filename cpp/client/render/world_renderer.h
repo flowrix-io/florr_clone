@@ -194,7 +194,11 @@ public:
     /// Which biome the waves disc is paved with, and how far it reaches.
     void setWaveBiome(WaveBiome biome) { waveBiome_ = biome; }
     void setWaveRadius(double radius) { waveRadius_ = radius; }
-    void setSprites(const SpriteCache* sprites) { sprites_ = sprites; }
+    /// Also installs this renderer as the cache's RendererPainter, so the
+    /// picture of a `$flower` or `$garbage` mob anywhere is
+    /// drawRendererMobPicture's.
+    void setSprites(const SpriteCache* sprites);
+    ~WorldRenderer();
 
     /// Turns this frame's server events into effects. Drains `view.events()`.
     void ingestEvents(WorldView& view);
@@ -270,6 +274,14 @@ public:
     /// looking where gardn's still face looks. Public for the mob gallery,
     /// whose digger is this flower and not the mob's SVG.
     void drawDiggerPicture(Canvas&, double radius, double timeSeconds) const;
+
+    /// The still picture of a mob this renderer draws in code
+    /// (SpriteCache::RendererPainter): the digger's, a ring flower's face with
+    /// its ring round it, or a garbage pile -- the same code the world draws
+    /// them with. Centred on the origin, upright, its body `radius` across,
+    /// a face's eyes where gardn's still face looks.
+    void drawRendererMobPicture(Canvas&, std::uint16_t mobIndex, Rarity rarity, double radius,
+                                double timeSeconds) const;
 
     /// What every flower on screen has been heard saying, borrowed from
     /// NetClient. Optional: without it -- a tool, a test, a preview -- nobody
@@ -527,6 +539,10 @@ private:
     /// ordinary artwork path, passed in rather than re-derived: a mob drawn
     /// here has to face the way the same mob would if it had no ring.
     /// `bodyShift` is the resolved `visualOffsetX/Y`, and moves the body only.
+    /// A ring mob's DECORATIVE ring of petals about the origin, laid out off
+    /// its drawn `radius`; nothing for an ammunition ring.
+    void drawDecorativeRing(Canvas&, const MobConfig&, Rarity rarity, double radius,
+                            double timeSeconds) const;
     void drawPetalRingMob(Canvas&, const MobConfig&, const MobDraw&, double radius,
                           double rotation, bool mirrored, Vec2 bodyShift,
                           double timeSeconds, const MobMotion* motion = nullptr) const;

@@ -280,6 +280,10 @@ namespace flix
             return MobArt::Moon;
         if (name == "assembler")
             return MobArt::Assembler;
+        if (name == "flower")
+            return MobArt::Flower;
+        if (name == "garbage")
+            return MobArt::Garbage;
         // florr's ports, under florr's own names.
         static const std::pair<const char *, MobArt> kFlorr[] = {
             {"scorpion", MobArt::Scorpion},
@@ -3662,6 +3666,31 @@ namespace flix
             break;
         }
 
+        case MobArt::Flower:
+        {
+            // Only the stand-in: with a world renderer present its flower
+            // code paints these (SpriteCache::setRendererPainter). A flower at
+            // rest in the mob's own colour, in the radius-25 art space.
+            const double s = attr.radius / 25.0;
+            canvas.save();
+            canvas.scale(static_cast<float>(s), static_cast<float>(s));
+            ui::setFill(canvas, outlineOf(attr.baseColor));
+            canvas.fillCircle(0.0f, 0.0f, 26.5f);
+            ui::setFill(canvas, attr.baseColor);
+            canvas.fillCircle(0.0f, 0.0f, 23.5f);
+            paintFlowerEyes(canvas, 0.0, 0.0);
+            ui::setStroke(canvas, 0x222222u);
+            canvas.setLineWidth(1.5f);
+            canvas.setLineCap("round");
+            canvas.beginPath();
+            canvas.moveTo(-6.0f, 10.0f);
+            canvas.quadraticCurveTo(0.0f, 14.5f, 6.0f, 10.0f);
+            canvas.stroke();
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::Garbage: // the world renderer's pile; no stand-in
         case MobArt::None:
             break;
         default:

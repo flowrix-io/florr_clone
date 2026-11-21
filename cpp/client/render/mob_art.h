@@ -99,6 +99,15 @@ enum class MobArt : std::uint8_t {
     /// florr's nazar beetle: a blue shell with the nazar petal's eye on it.
     BeetleNazar,
     MrBee, // Original Garden marketplace host.
+    /// A mob the world draws with the FLOWER renderer -- the digger, the ring
+    /// flowers (glitch flower, magician). Its pictures come from the world
+    /// renderer's own flower code (SpriteCache::setRendererPainter); this case
+    /// only paints the plain face that stands in when nothing installed one.
+    Flower,
+    /// florr's garbage: a pile of random droppable petals, seeded on the
+    /// mob's id. The world renderer paints it (WorldRenderer::drawGarbagePile)
+    /// through the same hook as Flower; this case paints nothing.
+    Garbage,
 };
 
 /// How fast a walk cycle runs, in radians of phase per second.
@@ -229,6 +238,10 @@ struct MobMotion {
     double health = 1.0;
     bool pet = false;
 };
+
+/// True for the arts whose picture the world renderer paints
+/// (SpriteCache::RendererPainter) rather than paintMobArt.
+inline bool rendererDrawn(MobArt art) { return art == MobArt::Flower || art == MobArt::Garbage; }
 
 /// Paints `art` about the origin. `None` draws nothing.
 void paintMobArt(Canvas&, MobArt art, const MobArtAttributes&);
