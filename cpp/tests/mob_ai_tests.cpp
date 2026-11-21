@@ -64,7 +64,7 @@ struct Sim {
     Query<Transform> placed;
     Query<PlayerTag, Transform> players;
 
-    std::vector<RealmPoint> active;
+    std::vector<ViewBox> active;
     /// The clock starts well after zero on purpose: MobAi::lastAttackMillis
     /// defaults to 0, and a clock that also starts at 0 would make "never
     /// attacked" indistinguishable from "attacked just now".
@@ -469,6 +469,10 @@ TEST(hostile_mob_never_notices_a_flower_standing_on_its_spot_in_another_realm) {
     const Entity mob = sim.spawnMob("soldier_ant", kOrigin);    // range 300
     const Entity elsewhere = sim.spawnPlayer(kOrigin + Vec2{100, 0});
     sim.world.get<Transform>(elsewhere).realm = Realm::Maze;
+    // Somebody in the overworld has to be looking, or the mob is unseen and
+    // does not think at all -- which would pass this test for the wrong reason.
+    sim.autoActive = false;
+    sim.active = {ViewBox{kOrigin, Realm::Overworld}};
     sim.tickIntent(5);
     CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
     CHECK(sim.totalScans > 0);
@@ -718,6 +722,10 @@ TEST(an_aggro_range_past_the_retain_radius_acquires_only_what_it_can_hold) {
     sim.world.get<MobAi>(mob).aggroRange = kMobTargetRetainRadius * 2.0;
     const Entity player =
         sim.spawnPlayer(kOrigin + Vec2{kMobTargetRetainRadius + 200.0, 0}, 500.0);
+    // A flower zoomed out far enough to keep the mob seen at these distances:
+    // what is under test is the retain radius, not the seen gate.
+    sim.autoActive = false;
+    sim.active = {ViewBox{kOrigin, Realm::Overworld, Vec2{1e5, 1e5}}};
     sim.tickIntent(10);
     CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
 
@@ -917,6 +925,9 @@ TEST(neutral_mob_loses_interest_when_its_target_runs_far_enough) {
     const Entity mob = sim.spawnMob("worker_ant", kOrigin);
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{150, 0});
     sim.hurt(mob, player);
+    // Kept seen however far the flower runs: the retain radius is under test.
+    sim.autoActive = false;
+    sim.active = {ViewBox{kOrigin, Realm::Overworld, Vec2{1e5, 1e5}}};
     sim.tickIntent();
     CHECK_EQ(sim.brainOf(mob).target, player);
 
@@ -1106,45 +1117,56 @@ TEST(the_combat_hit_ledger_gates_the_attack_the_ai_intends) {
 // Level of detail
 // ---------------------------------------------------------------------------
 
-TEST(mobs_further_than_the_active_radius_think_one_tick_in_five) {
+/// Just past the default screen's streamed box, on x: what no default flower
+/// at kOrigin sees.
+const double kUnseenReach = ViewBox{}.half.x;
+
+TEST(a_mob_no_flower_sees_neither_thinks_nor_moves) {
     CHECK(contentReady());
     Sim sim;
     const Entity near = sim.spawnMob("soldier_ant", kOrigin + Vec2{100, 0});
-    const Entity far = sim.spawnMob("soldier_ant", kOrigin + Vec2{kMobActiveRadius + 500.0, 0});
+    const Vec2 farAt = kOrigin + Vec2{kUnseenReach + 500.0, 0};
+    const Entity far = sim.spawnMob("soldier_ant", farAt);
     sim.spawnPlayer(kOrigin);
 
     sim.tick(10);
     CHECK_EQ(sim.totalConsidered, std::uint64_t(20));
-    // Not frozen: a distant mob simulates at a FIFTH of the rate, which is
-    // what stops the far world draining into wall lines while nobody is
-    // looking at it. Ten ticks buy the far mob two of them.
-    CHECK_EQ(sim.totalSkipped, std::uint64_t(10 - 10 / kMobFarStride));
+    // Every tick of the far one's, and none of the near one's.
+    CHECK_EQ(sim.totalSkipped, std::uint64_t(10));
     CHECK(sim.velocityOf(near).length() > 0.0);
-    // The near mob has a player to chase; the far one has nothing in range and
-    // stays near where it was put.
-    CHECK(distance(sim.positionOf(far), kOrigin + Vec2{kMobActiveRadius + 500.0, 0}) <
-          kEnemyWanderRange);
+    // Not slowed: held exactly where it was put.
+    CHECK_NEAR(sim.velocityOf(far).length(), 0.0, 1e-12);
+    CHECK_NEAR(distance(sim.positionOf(far), farAt), 0.0, 1e-12);
+}
+
+TEST(a_mob_whose_body_reaches_into_a_streamed_box_is_seen) {
+    CHECK(contentReady());
+    Sim sim;
+    // Centre outside the box, edge of the body inside it.
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
+    const double radius = sim.world.get<Body>(mob).radius;
+    CHECK(radius > 2.0);
+    sim.world.get<Transform>(mob).position = kOrigin + Vec2{kUnseenReach + radius * 0.5, 0};
+    sim.spawnPlayer(kOrigin);
+
+    sim.tick(5);
+    CHECK_EQ(sim.totalSkipped, std::uint64_t(0));
 }
 
 TEST(a_boss_thinks_every_tick_however_far_from_everybody_it_stands) {
-    // The one exception to the level of detail, and the reason it is worth
-    // making: a boss is placed live wherever its band rolled it, announced to
-    // the whole server and raided. There are a handful in the world at once,
-    // and one of them stuttering at a fifth speed until somebody gets within
-    // five thousand units is a boss visibly asleep in front of the raid
-    // walking up to it.
+    // Super and up is always loaded: announced to the whole server and
+    // raided, it keeps living wherever it stands.
     CHECK(contentReady());
     Sim sim;
-    const Vec2 away = kOrigin + Vec2{kMobActiveRadius + 500.0, 0};
+    const Vec2 away = kOrigin + Vec2{kUnseenReach + 500.0, 0};
     sim.spawnMob("soldier_ant", away);                    // scenery, at the same spot
     sim.spawnMob("soldier_ant", away + Vec2{200, 0}, Rarity::Super);
     sim.spawnPlayer(kOrigin);
 
     sim.tick(10);
     CHECK_EQ(sim.totalConsidered, std::uint64_t(20));
-    // Ten skipped ticks from the ordinary mob (all but its two strided ones),
-    // and not one from the boss.
-    CHECK_EQ(sim.totalSkipped, std::uint64_t(10 - 10 / kMobFarStride));
+    // Every tick of the ordinary mob's, and not one of the boss's.
+    CHECK_EQ(sim.totalSkipped, std::uint64_t(10));
 }
 
 TEST(an_empty_activity_field_is_permissive_not_a_freeze) {
@@ -1306,7 +1328,7 @@ TEST(two_segments_claiming_one_leader_do_not_make_the_chain_a_tree) {
 TEST(a_distant_chain_is_still_walked_so_it_is_never_mistaken_for_a_cycle) {
     CHECK(contentReady());
     Sim sim;
-    const Vec2 away = kOrigin + Vec2{kMobActiveRadius + 1000.0, 0};
+    const Vec2 away = kOrigin + Vec2{kUnseenReach + 1000.0, 0};
     const Entity head = sim.spawnMob("centipede", away);
     const Entity first = sim.spawnMob("centipede_body", away + Vec2{40, 0});
     link(sim, head, NULL_ENTITY, 40.0);
@@ -3595,9 +3617,9 @@ TEST(a_starfish_under_forty_percent_mends_to_full_in_ten_seconds) {
     const auto hp = [&] { return sim.world.get<Health>(mob).current; };
     const double max = sim.world.get<Health>(mob).max;
     sim.world.get<Health>(mob).current = 0.39 * max;
-    // The only flower is far off, so the mob is on the far stride the whole
-    // time -- and the mend runs at full rate anyway.
-    sim.spawnPlayer(kOrigin + Vec2{kMobActiveRadius * 2.0, 0});
+    // The only flower is far off, so nobody sees the mob the whole time --
+    // and the mend runs at full rate anyway.
+    sim.spawnPlayer(kOrigin + Vec2{kUnseenReach * 2.0, 0});
 
     const int ticks = static_cast<int>(std::lround(10.0 / sim.dt));
     sim.tick(ticks - 1);

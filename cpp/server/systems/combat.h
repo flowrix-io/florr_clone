@@ -807,10 +807,11 @@ private:
     /// else. Adds Dead, so not safe against iteration either.
     void collapseClearedNest(World& world, Entity fallen, Entity killer);
 
-    /// Every bubble mob that died this tick pops: the flower credited with it
-    /// is thrown clear of it, as far as a bubble petal throws one
-    /// (kBubblePopDistance). Run once the tick's deaths are all in.
-    void popBubbles(World& world, const ContentRegistry& content);
+    /// Every bubble mob that died this tick pops: a blast from its skin shoves
+    /// every flower and mob within kBubblePopReach of it away, at full
+    /// strength, divided by mass (kBubbleMobPopDistance for a flower).
+    /// Run once the tick's deaths are all in.
+    void popBubbles(World& world, const SpatialGrid& grid, const ContentRegistry& content);
 
     void awardBounty(World& world, Entity victim);
 
@@ -1056,6 +1057,24 @@ private:
     /// TypeScript stops after the first legitimate mob body-contact for a
     /// player each tick. Reused rather than allocated in resolveMelee().
     std::vector<Entity> mobContactedPlayers_;
+
+    /// Which bodies the contact phase has moved since the grid filed them
+    /// (bounceOffMob, yieldToFlower, shoveFlower), by entity index, stamped
+    /// with movedEpoch_. resolveMelee rejects a far candidate off the grid's
+    /// filed circle instead of looking its Transform and Body up -- exact for
+    /// every body NOT stamped here, whose filed circle is still where it is.
+    std::vector<std::uint32_t> movedStamp_;
+    std::uint32_t movedEpoch_ = 0;
+    void markMoved(Entity e) {
+        if (e == NULL_ENTITY) return;
+        const std::uint32_t idx = entityIndex(e);
+        if (idx >= movedStamp_.size()) movedStamp_.resize(std::max<std::size_t>(idx + 1, movedStamp_.size() * 2), 0);
+        movedStamp_[idx] = movedEpoch_;
+    }
+    bool movedThisPhase(Entity e) const {
+        const std::uint32_t idx = entityIndex(e);
+        return idx < movedStamp_.size() && movedStamp_[idx] == movedEpoch_;
+    }
     std::vector<DeathRecord> deaths_;
     std::vector<ShotLanding> shotLandings_;
     std::vector<MobConversion> conversions_;

@@ -542,16 +542,6 @@ inline double stingerMuzzleDistance(double shooterRadius, double shotRadius) {
 /// Contact damage cannot land more often than this on the same victim.
 inline constexpr double kMobHitIntervalMillis = 500.0;
 
-/// Mobs within this distance of a player think every tick. Set well beyond the
-/// furthest thing the broadcast will ever carry, so a mob's brain is never off
-/// while a client can see it.
-inline constexpr double kMobActiveRadius = 5000.0;
-
-/// Beyond kMobActiveRadius a mob is not frozen -- it decides once every this
-/// many ticks, offset by its own index so the far world does not decide in
-/// lockstep. Freezing instead leaves the far map to drain into wall lines.
-inline constexpr int kMobFarStride = 5;
-
 /// The furthest any mob holds a target, and so the furthest any acquires one.
 /// A neutral mob keeps what provoked it out to here (gardn has no lose clause
 /// for neutrals; its culling is what ends their chase); a hostile one lets go

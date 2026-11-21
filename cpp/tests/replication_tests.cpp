@@ -516,8 +516,8 @@ TEST(chained_position_deltas_land_where_the_server_thinks_they_did) {
         transform.position.y = 1000.7 + 200.0 * std::cos(0.07 * t) - t / 3.0;
         f.tick(client, t, 1000 + 40.0 * t);
         const Vec2 held = client.entities().at(id).targetPosition;
-        CHECK(held.x == f.view.tracked.at(id).position.x);
-        CHECK(held.y == f.view.tracked.at(id).position.y);
+        CHECK(held.x == f.view.find(id)->position.x);
+        CHECK(held.y == f.view.find(id)->position.y);
         CHECK_NEAR(held.x, transform.position.x, 0.5 / net::kPositionDeltaScale + 1e-9);
         CHECK_NEAR(held.y, transform.position.y, 0.5 / net::kPositionDeltaScale + 1e-9);
     }
@@ -1721,5 +1721,71 @@ TEST(huge_damage_events_do_not_overflow_float32_on_the_wire) {
     if (!client.events().empty()) {
         CHECK(std::isfinite(client.events()[0].amount));
         CHECK_NEAR(client.events()[0].amount, 1e57, 1e42);
+    }
+}
+
+TEST(a_pass_builds_every_viewer_the_bytes_it_would_build_alone) {
+    // A pass works out what an entity looks like once for every viewer, and
+    // lists the world once. Neither may change a byte: two viewers built in a
+    // pass get exactly the snapshots the same builds outside one produce, tick
+    // after tick, as the world under them moves, hurts, dies and spawns.
+    Fixture f;
+    const Entity other = f.addPlayer("amy", {1200, 1000});
+    std::vector<Entity> mobs;
+    for (int i = 0; i < 6; ++i) mobs.push_back(f.addMob({900.0 + 60.0 * i, 950.0 + 20.0 * i}));
+
+    Replicator alone;
+    Replicator passed;
+    ClientView aloneViews[2];
+    ClientView passedViews[2];
+    WorldView clients[2];
+    const Entity viewers[2] = {f.viewer, other};
+    for (std::uint32_t t = 1; t <= 12; ++t) {
+        const double now = 1000.0 + 50.0 * t;
+        for (std::size_t i = 0; i < mobs.size(); ++i) {
+            if (!f.world.isAlive(mobs[i])) continue;
+            Transform& transform = f.world.get<Transform>(mobs[i]);
+            transform.position.x += 7.0 * static_cast<double>(i + 1);
+            transform.angle += 0.3;
+            f.world.get<Health>(mobs[i]).current -= 3.0;
+            f.world.get<Health>(mobs[i]).flashUntilMillis = (t + i) % 3 == 0 ? now + 100.0 : 0.0;
+        }
+        if (t == 4) f.world.destroy(mobs[1]);
+        if (t == 6) mobs.push_back(f.addMob({1100, 1000}));
+        if (t == 8) f.world.get<Body>(mobs[2]).radius = 45.0;
+
+        Replicator::Frame frame;
+        frame.tick = t;
+        frame.snapshotIndex = t;
+        frame.nowMillis = now;
+        frame.events = &f.events;
+        std::vector<std::vector<std::byte>> expected;
+        for (int v = 0; v < 2; ++v) {
+            ByteWriter out;
+            alone.build(f.world, viewers[v], aloneViews[v], frame, out);
+            expected.push_back(out.buffer());
+        }
+        passed.beginPass(f.world, now);
+        for (int v = 0; v < 2; ++v) {
+            ByteWriter out;
+            passed.build(f.world, viewers[v], passedViews[v], frame, out);
+            CHECK(out.buffer() == expected[v]);
+            // And what it says is this tick's world, not a pass before it.
+            ByteReader reader(out.data(), out.size());
+            reader.u8();
+            CHECK(clients[v].applySnapshot(reader));
+            for (const Entity mob : mobs) {
+                if (!f.world.isAlive(mob)) continue;
+                const auto held = clients[v].entities().find(netIdOf(f.world, mob));
+                CHECK(held != clients[v].entities().end());
+                if (held == clients[v].entities().end()) continue;
+                CHECK_NEAR(held->second.healthFraction, f.world.get<Health>(mob).fraction(), 1e-4);
+                CHECK_NEAR(std::fabs(wrapAngle(held->second.targetAngle -
+                                               f.world.get<Transform>(mob).angle)),
+                           0.0, 0.02);
+                CHECK_NEAR(held->second.radius, f.world.get<Body>(mob).radius, 1e-3);
+            }
+        }
+        passed.endPass();
     }
 }

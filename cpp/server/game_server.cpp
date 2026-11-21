@@ -104,12 +104,17 @@ std::string killerLabel(const World& world, Entity killer) {
 ///
 /// Nor an intangible mob: what nothing may touch is simply not in the grid
 /// anything touches through, so no contact, petal, aura, strike, pet or bot
-/// ever finds it to ask.
-void fileBodies(World& world, SpatialGrid& grid) {
+/// ever finds it to ask. Nor an UNSEEN mob (observers.h), for the same
+/// reason: nobody sees it, so nothing collides with it this tick.
+void fileBodies(World& world, SpatialGrid& grid, const std::vector<ViewBox>& views) {
     grid.clear();
     Query<Transform, Body> bodies{world};
     bodies.without<ProjectileTag, Intangible>();
     bodies.each([&](Entity e, Transform& transform, Body& body) {
+        if (world.has<MobTag>(e) &&
+            !mobSimulated(world, e, transform.position, body.radius, transform.realm, views)) {
+            return;
+        }
         grid.insert(e, transform.realm, transform.position, body.radius);
     });
 }
@@ -727,6 +732,8 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // The HUMAN list is what the arena and the maze are filled for: those are
     // generated realms with no bands, ModeSpawner stocks each one whole while
     // somebody is in it, and a bot has no business keeping one populated.
+    collectViewBoxes(world_, replicator_.viewportReach, observerViews_);
+    movement_->observerReach = replicator_.viewportReach;
     activePlayers_.clear();
     Query<PlayerTag, Transform> players{world_};
     players.each([&](Entity, PlayerTag&, Transform& transform) {
@@ -744,7 +751,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
             }
         }
     }
-    fileBodies(world_, grid_);
+    fileBodies(world_, grid_, observerViews_);
     markTickPhase("broadphase");
 
     // The reference server resolves flower bodies and the petal ring inside
@@ -755,7 +762,8 @@ void GameServer::runSystems(double nowMillis, double dt) {
     combat_->runContactPhase(world_, grid_, content(), nowMillis);
     markTickPhase("contact");
 
-    mobAi_->run(world_, *terrain_, grid_, activePlayers_, nowMillis, net::kTickSeconds, commands_);
+    mobAi_->run(world_, *terrain_, grid_, observerViews_, nowMillis, net::kTickSeconds,
+                commands_);
     markTickPhase("mob ai");
     movement_->runWorldPhase(world_, *terrain_, nowMillis, net::kTickSeconds);
     markTickPhase("mob movement");
@@ -763,7 +771,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     serviceAdminCursor();
     // After the bodies have moved, as gardn places its segments: whatever
     // pushed a bead this tick swings the chain rather than being undone.
-    mobAi_->placeChains(world_, *terrain_, activePlayers_);
+    mobAi_->placeChains(world_, *terrain_, observerViews_);
     // AFTER the mobs have moved, for the reason a flower's ring is placed
     // after its own movement: a seat is a rigid offset from the body, and a
     // ring carried before the body moves trails it by a tick.
@@ -772,7 +780,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // Combat exact-tests current transforms, but its candidate set comes from
     // this grid. Rebuild after mob/projectile flight so a cell crossing cannot
     // make a real overlap invisible for one tick.
-    fileBodies(world_, grid_);
+    fileBodies(world_, grid_, observerViews_);
     markTickPhase("regrid");
     combat_->runWorldPhase(world_, grid_, content(), nowMillis, dt);
     // A summoning shot -- the spaceship's -- is only SEEN landing by combat;
@@ -936,7 +944,7 @@ void GameServer::replicate(double nowMillis) {
     // Every client's gather reads one listing of the world, taken here: no
     // build changes the world, so it holds for the whole loop.
     refreshGuildBodies();
-    replicator_.beginPass(world_);
+    replicator_.beginPass(world_, nowMillis);
     for (auto& entry : sessions_) {
         Session& session = entry.second;
         if (!session.playing()) continue;

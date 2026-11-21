@@ -284,4 +284,22 @@ bool beginLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent, Laye
 /// Lays what beginLayer readied onto the frame at `alpha`, pixel for pixel.
 void endLayer(Canvas& frame, Canvas& layer, const LayerBox& box, double alpha);
 
+/// beginLayer for a picture that is usually the same as last frame's.
+///
+/// On the web every offscreen surface REDRAWN in a frame costs a GPU flush of
+/// its own, on top of the calls that paint it; blitting one that has not
+/// changed is close to free. So the caller folds everything its picture is
+/// made of into `contentKey`, and while that key -- together with the frame's
+/// transform and the box, which this adds itself -- matches `paintedKey`, the
+/// layer keeps what it holds: Keep, and the caller paints nothing and calls
+/// blitLayer. Otherwise the layer is readied exactly as beginLayer readies it:
+/// Paint, then the caller paints and calls endLayer. Off when the box is off
+/// the frame. A layer the GPU-loss path dropped (null) is always repainted.
+enum class LayerStart { Off, Paint, Keep };
+LayerStart beginKeptLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent,
+                          LayerBox& box, std::uint64_t contentKey, std::uint64_t& paintedKey);
+
+/// endLayer without the restore: lays a kept layer down as it stands.
+void blitLayer(Canvas& frame, Canvas& layer, const LayerBox& box, double alpha);
+
 } // namespace flix::ui

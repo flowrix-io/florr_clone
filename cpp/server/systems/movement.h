@@ -25,6 +25,7 @@
 #include "shared/game/spatial.h"
 #include "shared/game/map_elements.h"
 #include "shared/game/terrain.h"
+#include "server/systems/observers.h"
 
 namespace flix {
 
@@ -125,6 +126,22 @@ inline constexpr int kMaxSubstepCount = 16;
 /// millisecond, an e-fold every 0.125 s) is this server's friction to within
 /// a percent, so the same reach spent through shoveSpeed glides the same way.
 inline constexpr double kBubblePopDistance = 175.0;
+
+/// How far past a popping bubble MOB's skin its blast reaches, edge to edge.
+/// Everything within it takes the full kBubblePopDistance (over its mass);
+/// nothing past it is touched.
+inline constexpr double kBubblePopReach = 100.0;
+
+/// A flower is also caught when its own petal ring reaches the bubble: the
+/// ring's radius past the flower's edge plus this much for the petal's own
+/// size and its lag behind the ring point. Without it a petal swung on the
+/// attacking ring (gap 100, more with a third eye) pops a bubble that sits
+/// just past kBubblePopReach of the flower, and nothing happens.
+inline constexpr double kBubblePopRingSlack = 40.0;
+
+/// How far a popping bubble MOB's blast shoves a mass-1 flower in reach (a
+/// heavier body goes this over its mass): what a bubble petal throws one.
+inline constexpr double kBubbleMobPopDistance = kBubblePopDistance;
 
 /// The most ground one tick of a pop may cover, however many bubbles went off
 /// at once.
@@ -241,6 +258,10 @@ public:
     void runPlayerPhase(World& world, const Terrain& terrain, double nowMillis, double dt);
     void runWorldPhase(World& world, const Terrain& terrain, double nowMillis, double dt);
 
+    /// Replicator::viewportReach: how far past the drawn screen a flower's
+    /// streamed box -- and so what it "sees" -- extends. See observers.h.
+    double observerReach = kObserverViewportReach;
+
     /// Fits the separation grid to the maps, as GameServer fits its own (see
     /// SpatialGrid::sizeToRealms). Until then every map realm but the
     /// overworld is ONE cell, and each mob's neighbour query returns every mob
@@ -267,12 +288,7 @@ private:
         Query<NpcTag, Transform, Faction> npcTargets;
         /// The separation pass wants every mob that has a place and a size,
         /// whether or not it is a mover: a nest still occupies its ground.
-        /// MobType rides along for the level of detail: a boss is
-        /// simulated wherever it stands, separation included.
         Query<MobTag, Transform, Body, MobType> mobBodies;
-        /// LOD is measured against every flower, dead ones included -- a
-        /// player about to respawn is still standing there watching.
-        Query<PlayerTag, Transform> playerPositions;
         /// The NPCs a flower cannot walk through.
         Query<NpcTag, Transform, Body> npcBodies;
         /// The petals that are solid bodies on the ground -- wax, the moon.
@@ -392,9 +408,9 @@ private:
     /// Flattens the eligible mobs into `separationSet_` and files them in
     /// `separationGrid_`.
     void buildSeparationSet(World& world);
-    /// The LOD gate: false for a mob too far from every flower to be worth
-    /// colliding this tick.
-    bool activeForSeparation(Vec2 position, Realm realm, Rarity rarity) const;
+    /// The seen gate (observers.h): false for a mob no flower's streamed box
+    /// reaches. Such a mob neither moves nor collides this tick.
+    bool mobSeen(World& world, Entity e, Vec2 position, double radius, Realm realm) const;
 
     /// Collected lazily: a tick with no seeking projectile pays nothing.
     void collectSeekTargets();
@@ -438,7 +454,8 @@ private:
     /// Separation scratch, reused every tick so a steady state allocates
     /// nothing. `separationSlot_` is keyed by entity INDEX, which is how a
     /// grid candidate gets back to its entry in O(1).
-    std::vector<RealmPoint> separationPlayers_;
+    /// Every flower's streamed box, rebuilt at the top of each world phase.
+    std::vector<ViewBox> observers_;
     std::vector<SeparationEntry> separationSet_;
     std::vector<std::uint32_t> separationSlot_;
     std::vector<Entity> separationCandidates_;

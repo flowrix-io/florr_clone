@@ -1215,34 +1215,91 @@ void CombatSystem::collapseClearedNest(World& world, Entity fallen, Entity kille
     awardBounty(world, nest);
 }
 
-void CombatSystem::popBubbles(World& world, const ContentRegistry& content) {
+namespace {
+double knockbackTakenScale(const World& world, Entity e);
+}  // namespace
+
+void CombatSystem::popBubbles(World& world, const SpatialGrid& grid,
+                              const ContentRegistry& content) {
+    // Gathered first, pushed after: adding Knockback moves a body between
+    // archetypes, and a bubble's own death record must not dangle meanwhile.
+    struct Pop {
+        Vec2 at;
+        double radius;
+        Realm realm;
+        Entity bubble;
+    };
+    std::vector<Pop> pops;
     for (const DeathRecord& death : deaths_) {
         if (death.wasPlayer || !world.isAlive(death.entity)) continue;
         const MobType* type = world.tryGet<MobType>(death.entity);
         if (type == nullptr || content.mob(type->configIndex).id != "bubble") continue;
-        // The flower that popped it, whether by body, petal, shot or pet --
-        // combat has already walked the credit back to the flower. A bubble
-        // finished by a mob, or by a flower that fell the same tick, throws
-        // nobody.
-        const Entity flower = death.killer;
-        if (flower == NULL_ENTITY || !world.isAlive(flower) || !world.has<PlayerTag>(flower) ||
-            !isStanding(world, flower)) {
-            continue;
+        const Transform* at = world.tryGet<Transform>(death.entity);
+        if (at == nullptr) continue;
+        const Body* body = world.tryGet<Body>(death.entity);
+        pops.push_back({at->position, body != nullptr ? body->radius : 0.0, at->realm,
+                        death.entity});
+    }
+
+    // A blast from the bubble's skin, not a throw handed to its killer: every
+    // flower and mob whose edge is within kBubblePopReach of the bubble's --
+    // or, for a flower, whose petal ring reaches it -- is shoved straight away
+    // from its centre, whoever popped it. The full kBubbleMobPopDistance
+    // anywhere in reach, divided by the body's mass (a boss barely rocks) and
+    // by worn rubbers, and delivered through Knockback like any
+    // other shove -- momentum for a flower, a spent carry for a mob -- so
+    // walls stop it as they stop everything else.
+    // A shove of `reach` covers reach * (1 - decay) on its first tick and
+    // less after, so this is the most one may owe and still not outrun the
+    // substeps or the client's snap distance.
+    const double tickDecay =
+        std::pow(1.0 - kMoveFriction, net::kTickSeconds * kFrictionReferenceRate);
+    const double ceiling = kMaxPopTickTravel / (1.0 - tickDecay);
+    if (pops.empty()) return;
+    // The farthest any flower's ring reaches past its edge, so the grid query
+    // finds a flower whose petals are held out further than the blast alone.
+    double farthest = kBubblePopReach;
+    queries_->auras.each([&](Entity e, PlayerTag&, Loadout&, Transform&) {
+        const PetalRing* ring = world.tryGet<PetalRing>(e);
+        const Body* body = world.tryGet<Body>(e);
+        if (ring == nullptr) return;
+        farthest = std::max(farthest, ring->radius - (body != nullptr ? body->radius : 0.0) +
+                                          kBubblePopRingSlack);
+    });
+    for (const Pop& pop : pops) {
+        candidates_.clear();
+        grid.query(pop.realm, pop.at, pop.radius + farthest + kBroadphasePad, candidates_);
+        for (const Entity e : candidates_) {
+            if (e == pop.bubble || !world.isAlive(e) || world.has<Dead>(e)) continue;
+            const bool flower = world.has<PlayerTag>(e);
+            if (flower ? !isStanding(world, e) : !world.has<MobTag>(e)) continue;
+            if (world.has<NpcTag>(e) || !world.has<Motion>(e)) continue;
+            const Transform* transform = world.tryGet<Transform>(e);
+            if (transform == nullptr || transform->realm != pop.realm) continue;
+            const Body* body = world.tryGet<Body>(e);
+            const Vec2 offset = transform->position - pop.at;
+            const double distance = offset.length();
+            if (distance < 1e-6) continue;   // dead centre: no direction to push along
+            const double gap = std::max(
+                0.0, distance - pop.radius - (body != nullptr ? body->radius : 0.0));
+            double reach = kBubblePopReach;
+            if (flower) {
+                // Wherever its petals swing: a ring that popped the bubble is
+                // in the blast however far out it is held.
+                if (const PetalRing* ring = world.tryGet<PetalRing>(e)) {
+                    const double flowerRadius = body != nullptr ? body->radius : 0.0;
+                    reach = std::max(reach, ring->radius - flowerRadius + kBubblePopRingSlack);
+                }
+            }
+            if (gap > reach) continue;
+            const double shove =
+                kBubbleMobPopDistance * knockbackTakenScale(world, e) / bodyMass(body);
+            if (!(shove > 0.0)) continue;
+            Knockback& kb = world.ensure<Knockback>(e);
+            // Stacked from a cluster popped at once, under the ceiling that
+            // keeps the shove's first and fastest tick within kMaxPopTickTravel.
+            kb.impulse = (kb.impulse + offset * (shove / distance)).clampedLength(ceiling);
         }
-        const Transform* bubble = world.tryGet<Transform>(death.entity);
-        const Transform* at = world.tryGet<Transform>(flower);
-        Motion* motion = world.tryGet<Motion>(flower);
-        if (bubble == nullptr || at == nullptr || motion == nullptr || at->realm != bubble->realm) {
-            continue;
-        }
-        // Clear of the bubble, as a petal's pop throws the flower clear of the
-        // petal, and added to whatever the flower was already doing.
-        const Vec2 bearing = (at->position - bubble->position).normalized();
-        if (bearing.lengthSq() < 1e-12) continue;
-        motion->velocity +=
-            bearing * shoveSpeed(kBubblePopDistance, net::kTickSeconds, /*decaysFirst=*/true);
-        // A cluster popped at once stacks, under the petal's ceiling.
-        motion->velocity = motion->velocity.clampedLength(kMaxPopTickTravel / net::kTickSeconds);
     }
 }
 
@@ -1954,6 +2011,10 @@ void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
     melee_.clear();
     auras_.clear();
     mobContactedPlayers_.clear();
+    if (++movedEpoch_ == 0) {
+        std::fill(movedStamp_.begin(), movedStamp_.end(), 0);
+        movedEpoch_ = 1;
+    }
     // The raindrop field runs in updatePlayerPreMovement, ahead of the movement
     // window and therefore ahead of the flower's own body and ring contact. It
     // matters: a mob the field finishes off is already Dead when the ring
@@ -1992,7 +2053,7 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
     tickGroundEffects(world, grid, content, nowMillis, dt);
     // Last, so a bubble that went down to poison, a petal or a shot this tick
     // -- in any phase -- pops all the same.
-    popBubbles(world, content);
+    popBubbles(world, grid, content);
 
     if (tick_ % kCooldownPruneTicks == 0) {
         queries_->cooldowns.each([&](Entity, HitCooldowns& cooldowns) { cooldowns.prune(nowMillis); });
@@ -2628,6 +2689,18 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                     if (verdict == 1) continue;
                 }
             }
+            // The same widest-reach rejection as below, read off the circle the
+            // grid filed this body as -- one dense load rather than the
+            // entity's components -- for every body nothing in this phase has
+            // moved since, whose filed circle is exactly its Transform and Body.
+            if (const SpatialGrid::FiledCircle* filed = grid.filedCircle(victim);
+                filed != nullptr && !movedThisPhase(victim)) {
+                const double radii = source.radius + filed->radius;
+                if (radii >= 0.0) {
+                    const double widest = radii + kMobCollisionBuffer + kNpcTouchSlack;
+                    if ((filed->position - source.position).lengthSq() > widest * widest) continue;
+                }
+            }
             const auto [transform, body] = world.tryGetPair<Transform, Body>(victim);
             if (transform == nullptr || body == nullptr) continue;
 
@@ -2735,6 +2808,8 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 // -- a ladybug shoved across the map by a flower leaning on it.
                 if (firstBump) {
                     mobContactedPlayers_.push_back(victim);
+                    markMoved(victim);
+                    if (source.givesWay) markMoved(source.attacker);
                     bounceOffMob(world, terrain, victim, source.attacker, source.givesWay, offset,
                                  source.radius + body->radius - offset.length());
                 }
@@ -2743,6 +2818,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 // the FLOWER, and each mob in the pile still hit it.
                 if (source.gardnRecoil) recoilOffFlower(world, source.attacker, victim, offset);
                 if (source.yieldsToFlower) {
+                    markMoved(source.attacker);
                     yieldToFlower(world, terrain, source.attacker, victim, offset,
                                   source.radius + body->radius - offset.length());
                 }
@@ -3181,6 +3257,7 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     // above its knockback.
     if (!hit.refused && !hit.dodged && world.isAlive(owner)) {
         if (const Transform* attacker = world.tryGet<Transform>(owner)) {
+            markMoved(victim);
             shoveFlower(world, victim, victimPosition - attacker->position);
         }
     }
@@ -3843,6 +3920,7 @@ void CombatSystem::pushFromImpact(World& world, Entity victim, Vec2 offset, doub
         kb->carry += direction * push;
         return;
     }
+    markMoved(victim);
     transform->position += direction * push;
 }
 

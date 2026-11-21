@@ -580,8 +580,11 @@ void inputField(Canvas& canvas, Rect r, const std::string& value, const std::str
     canvas.restore();
 }
 
-bool beginLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent, LayerBox& box) {
-    const std::array<float, 6> m = frame.currentTransform();
+namespace {
+
+/// The device box `extent` covers under `m`, clipped to the frame. False when
+/// nothing of it is on the frame.
+bool layerBoxFor(const Canvas& frame, const std::array<float, 6>& m, Rect extent, LayerBox& box) {
     const std::array<Vec2, 4> corners = {Vec2{extent.x, extent.y}, Vec2{extent.right(), extent.y},
                                          Vec2{extent.x, extent.bottom()},
                                          Vec2{extent.right(), extent.bottom()}};
@@ -600,6 +603,16 @@ bool beginLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent, Laye
     const int bottom = std::min(frame.pixelHeight(), static_cast<int>(std::ceil(y1)));
     if (right <= left || bottom <= top) return false;
     box = {left, top, right - left, bottom - top};
+    return true;
+}
+
+} // namespace
+
+bool beginLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent, LayerBox& box) {
+    const std::array<float, 6> m = frame.currentTransform();
+    if (!layerBoxFor(frame, m, extent, box)) return false;
+    const int left = box.x;
+    const int top = box.y;
 
     // The surface only ever grows, in steps of 64 as the glitch buffer does,
     // so a box that widens by a pixel -- a tile rocking, a window being
@@ -619,6 +632,37 @@ bool beginLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent, Laye
 /// Lays what beginLayer readied onto the frame at `alpha`, pixel for pixel.
 void endLayer(Canvas& frame, Canvas& layer, const LayerBox& box, double alpha) {
     layer.restore();
+    blitLayer(frame, layer, box, alpha);
+}
+
+LayerStart beginKeptLayer(Canvas& frame, std::unique_ptr<Canvas>& layer, Rect extent,
+                          LayerBox& box, std::uint64_t contentKey, std::uint64_t& paintedKey) {
+    const std::array<float, 6> m = frame.currentTransform();
+    LayerBox at;
+    if (!layerBoxFor(frame, m, extent, at)) return LayerStart::Off;
+    // The layer paints in the frame's units less the box's corner, so the
+    // transform's subpixel part and the box are both part of the picture.
+    std::uint64_t key = contentKey;
+    const auto fold = [&key](std::int64_t v) {
+        key = (key ^ static_cast<std::uint64_t>(v)) * 1099511628211ull;
+        key ^= key >> 29;
+    };
+    for (const float v : m) fold(std::llround(static_cast<double>(v) * 1024.0));
+    fold(at.x);
+    fold(at.y);
+    fold(at.w);
+    fold(at.h);
+    if (layer && key == paintedKey && layer->pixelWidth() >= at.w &&
+        layer->pixelHeight() >= at.h) {
+        box = at;
+        return LayerStart::Keep;
+    }
+    if (!beginLayer(frame, layer, extent, box)) return LayerStart::Off;
+    paintedKey = key;
+    return LayerStart::Paint;
+}
+
+void blitLayer(Canvas& frame, Canvas& layer, const LayerBox& box, double alpha) {
     const auto w = static_cast<float>(box.w);
     const auto h = static_cast<float>(box.h);
     frame.save();

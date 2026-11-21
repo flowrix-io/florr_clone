@@ -236,16 +236,18 @@ private:
         std::uint32_t color = 0xCCCCCCu;
         std::vector<std::size_t> choices;
     };
-    /// The first row, in order: Default, every distinct biome the doors are
-    /// filed under (in spawnChoices_ order), then the maze.
+    /// The first row, in order: every distinct biome the doors are filed
+    /// under (in spawnChoices_ order), then the maze.
     std::vector<PickerTab> pickerTabs() const;
     /// Whether the next join goes to the prestige biomes: the arrow is up AND
     /// the profile holds the talent. The arrow alone is a preference that
     /// outlives a talent reset; this is what the picker and the join act on.
     bool prestigeOn() const;
-    /// The tab a spawn choice id is filed under -- "default" for the empty
-    /// choice and for any id no staged map defines.
+    /// The tab a spawn choice id is filed under -- the first tab for the
+    /// empty choice and for any id no staged map defines.
     std::string pickerTabOf(const std::string& choiceId) const;
+    /// What an empty spawn choice becomes: the first tab's first door.
+    std::string defaultSpawnChoice() const;
     /// The title screen's chat line, bottom-left, under the icon column.
     static Rect titleChatBox(int viewWidth, int viewHeight);
     void drawTitleChat(Canvas&, double time);
@@ -546,7 +548,7 @@ private:
     /// Which tab of the picker is open. Not persisted: it is derived from the
     /// saved spawn choice when the client starts and only changes by clicking,
     /// so the settings file keeps naming a door and never a row.
-    std::string pickerTab_ = "default";
+    std::string pickerTab_;
     bool trialPickerOpen_ = false;
     /// The monthly Unique/Apex route is a second page, like Spiral Abyss's
     /// later challenge area, rather than four cells mixed into the permanent
@@ -819,16 +821,22 @@ private:
     // -- scene wipe ----------------------------------------------------------
     /// The iris that covers a scene change. `Covered` holds the outgoing frame
     /// whole until the incoming scene has something to show; `Wiping` opens or
-    /// closes the hole over IRIS_DURATION_MS.
+    /// closes the hole at gardn's transition_circle rate (gardnIrisStep).
     struct SceneWipe {
         enum class Phase : std::uint8_t { Idle, Covered, Wiping };
         Phase phase = Phase::Idle;
-        /// True going INTO the game: the hole grows and the outgoing still is
-        /// what is left outside it. False going back to the title, where the
+        /// True going INTO the game: the hole grows and the live title screen
+        /// is what is left outside it. False going back to the title, where the
         /// still shrinks to a point instead.
         bool holeGrows = false;
         double phaseStartSeconds = 0;
-        /// A frozen copy of the outgoing scene. Null means the copy failed, in
+        /// gardn's transition_circle, in design units, and the clock it was
+        /// last stepped at.
+        double radius = 0;
+        double lastSeconds = 0;
+        /// A frozen copy of the outgoing world, going back to the title only
+        /// (going in, the title outside the hole is drawn live). Null means
+        /// the copy failed, in
         /// which case the wipe falls through black exactly as the reference's
         /// snapshot-less path does.
         std::unique_ptr<Canvas> snapshot;
@@ -852,20 +860,31 @@ private:
     // -- teleport iris -------------------------------------------------------
     /// The wipe a teleport plays, as the reference's iris-transition.ts did:
     /// the frame from before the jump shrinks to a point in black, then the
-    /// world at the far end opens back out of it, each over IRIS_TRANSITION_
-    /// DURATION. Kept apart from the scene wipe as the reference kept the two
+    /// world at the far end opens back out of it, each way at gardn's
+    /// transition_circle rate (gardnIrisStep). Kept apart from the scene wipe as the reference kept the two
     /// apart: this one never changes screens, and the scene wipe never shows
     /// black.
     struct TeleportIris {
         enum class Phase : std::uint8_t { Idle, Closing, Opening };
         Phase phase = Phase::Idle;
-        double phaseStartSeconds = 0;
+        /// gardn's transition_circle, in design units, and the clock it was
+        /// last stepped at.
+        double radius = 0;
+        double lastSeconds = 0;
         /// The frame from before the jump. Null means the copy failed, and the
         /// closing iris shows the live world inside it instead, as the
         /// reference's does without a screenshot.
         std::unique_ptr<Canvas> snapshot;
     };
     TeleportIris teleportIris_;
+
+    // -- boot fade -----------------------------------------------------------
+    /// The game fades in out of black once it has loaded: the page's own
+    /// Loading... sits on black until the first frame, and from that frame a
+    /// black cover thins out exponentially over kBootFadeSeconds.
+    /// Negative until the first frame stamps it.
+    double bootFadeStartSeconds_ = -1;
+    void drawBootFade(Canvas&);
     void beginTeleportIris();
     void drawTeleportIris(Canvas&);
 

@@ -1082,8 +1082,10 @@ TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
     CHECK(client.craftOutcome().crafted > 0);
     client.craftOutcome().pending = false;
 
-    // ONE line however many the pool produced: the craft is announced, not
-    // each petal it yielded.
+    // ONE line however many the pool produced, naming the count: the craft is
+    // announced, not each petal it yielded.
+    const int count = client.craftOutcome().crafted;
+    const std::string made = count > 1 ? name + " x" + std::to_string(count) : name;
     CHECK(h.stepUntil({&client}, [&] { return client.chat().size() > chatBefore; }, 200));
     CHECK_EQ(client.chat().size(), chatBefore + 1);
     // Marked up, as the TypeScript build's line was: the tier's own palette
@@ -1091,7 +1093,7 @@ TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
     // separately coloured inside it -- which is why the handle is not
     // contiguous with the words before it.
     const std::string line = client.chat().back().text;
-    CHECK(line.find("<b style=\"color: #2bffa3;\">A Super " + name + " has been crafted by ") == 0);
+    CHECK(line.find("<b style=\"color: #2bffa3;\">A Super " + made + " has been crafted by ") == 0);
     CHECK(line.find("<b style=\"color: #00ff00;\">@smith</b>") != std::string::npos);
     CHECK(line.find("<b style=\"color: yellow;\">smith</b>") != std::string::npos);
 
@@ -1100,7 +1102,7 @@ TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
     CHECK_EQ(client.notifications().size(), static_cast<std::size_t>(1));
     const NotificationEntry& notice = client.notifications().front();
     CHECK_EQ(static_cast<int>(notice.kind), static_cast<int>(net::NotificationKind::SuperCraft));
-    CHECK_EQ(notice.message, "A Super " + name + " has been crafted by @smith [smith]");
+    CHECK_EQ(notice.message, "A Super " + made + " has been crafted by @smith [smith]");
     CHECK(notice.message.find('<') == std::string::npos);
 }
 

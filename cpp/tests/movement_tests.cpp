@@ -632,6 +632,49 @@ TEST(separation_cannot_shove_a_mob_into_a_wall) {
     CHECK(fx.positionOf(a).x - fx.positionOf(b).x > 20.0);
 }
 
+TEST(a_mob_no_flower_sees_neither_moves_nor_collides) {
+    // The seen gate (observers.h): outside every flower's streamed box a mob
+    // is not integrated, not shoved and not separated -- and one inside it is.
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    if (!error.empty()) return;
+    const std::uint16_t ladybug = content().mobIndex("ladybug");
+
+    Fixture fx;
+    fx.spawnPlayer({5000, 5000});
+    const double outside = ViewBox{}.half.x + 500.0;
+    const Vec2 farA{5000 + outside, 5000};
+    const Vec2 farB{5000 + outside + 10.0, 5000};
+    const Entity a = fx.spawnMob(farA, 40.0);
+    const Entity b = fx.spawnMob(farB, 40.0);
+    const Entity near1 = fx.spawnMob({5300, 5000}, 40.0);
+    const Entity near2 = fx.spawnMob({5310, 5000}, 40.0);
+    for (const Entity e : {a, b, near1, near2}) {
+        fx.world.add<MobType>(e, MobType{ladybug, Rarity::Common, 1.0});
+    }
+    fx.world.get<Motion>(a).velocity = {300, 0};
+    fx.world.get<Knockback>(b).impulse = {200, 0};
+    fx.step(3);
+
+    CHECK_NEAR(distance(fx.positionOf(a), farA), 0.0, 1e-12);
+    CHECK_NEAR(distance(fx.positionOf(b), farB), 0.0, 1e-12);
+    CHECK_NEAR(fx.velocityOf(a).length(), 0.0, 1e-12);
+    // The pair in view was pulled apart.
+    CHECK(distance(fx.positionOf(near1), fx.positionOf(near2)) > 20.0);
+
+    // A boss (super and up) is always loaded: the same far pair, one of them
+    // a super, is separated and the super moves under its own velocity.
+    Fixture boss;
+    boss.spawnPlayer({5000, 5000});
+    const Entity super = boss.spawnMob(farA, 40.0);
+    const Entity escort = boss.spawnMob(farB, 40.0);
+    boss.world.add<MobType>(super, MobType{ladybug, Rarity::Super, 1.0});
+    boss.world.add<MobType>(escort, MobType{ladybug, Rarity::Common, 1.0});
+    boss.world.get<Motion>(super).velocity = {0, 300};
+    boss.step(3);
+    CHECK(boss.positionOf(super).y > farA.y + 20.0);
+}
+
 TEST(a_centipede_collides_with_its_own_beads_everywhere_but_its_joints) {
     // gardn's segments are ordinary bodies: a centipede curled round on itself
     // is pushed back out of its own beads. The two a bead is joined to are the

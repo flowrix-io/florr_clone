@@ -78,10 +78,24 @@ public:
         /// the hash of "", so the sentinel for "never sent" has to be
         /// something else.
         std::uint32_t skinIdHash = 0xFFFFFFFFu;
-        bool seenThisTick = false;
     };
 
-    std::unordered_map<std::uint32_t, Tracked> tracked;
+    /// What this client is believed to hold, sorted by net id -- the order
+    /// the snapshot names entities in -- so a build is one merge walk over it
+    /// and the in-view list rather than a hash lookup per entity per viewer.
+    struct Entry {
+        std::uint32_t netId;
+        Tracked value;
+    };
+    std::vector<Entry> tracked;
+
+    /// The tracked entry for `netId`, or null.
+    const Tracked* find(std::uint32_t netId) const {
+        const auto it = std::lower_bound(
+            tracked.begin(), tracked.end(), netId,
+            [](const Entry& entry, std::uint32_t id) { return entry.netId < id; });
+        return it != tracked.end() && it->netId == netId ? &it->value : nullptr;
+    }
 
     /// The viewer's own figures as last sent (net::SelfFields), at the width
     /// they went out in. Meaningless until `selfSent`.
@@ -280,6 +294,40 @@ private:
     std::vector<WireEvent> events_;
 };
 
+/// The player-specific flag families that define the flower sprite. Keeping
+/// these separate from EntityState lets ordinary entities retain their compact
+/// generic state while players carry the sprite's own flag families, as the
+/// TypeScript renderer they were ported from drew them.
+struct PlayerVisualState {
+    std::uint8_t faceFlags = FaceNone;
+    std::uint16_t equipFlags = EquipNone;
+    std::uint32_t renderFlags = PlayerRenderNone;
+    /// The plate under every flower reads its own level and tints itself with
+    /// the best rarity anywhere in that flower's loadout, so both belong to
+    /// the viewer of a player rather than to the player being viewed.
+    std::uint16_t level = 1;
+    Rarity bestRarity = Rarity::Common;
+    /// The arena leaderboard's number; zero for anyone not in the ring.
+    std::uint32_t arenaScore = 0;
+    /// The live shield, as 255ths of this flower's MAX health -- which is the
+    /// scale the bar it is drawn on is measured in. Zero when none is up, so
+    /// a flower with no Shell in its loadout sends nothing but zeroes here.
+    std::uint8_t shield = 0;
+    /// Borrowed from PlayerVisuals, never owned: this is rebuilt for every
+    /// player in every viewer's snapshot, and copying a ~20-character id that
+    /// many times a second is a heap allocation per player per viewer for a
+    /// string that has not changed since login. Null is "no custom skin", and
+    /// the pointee outlives the snapshot it is written into -- the world is
+    /// not mutated while one is being built.
+    const std::string* equippedSkinId = nullptr;
+};
+
+/// The id a visual state names, or "" when it names none.
+inline const std::string& skinIdOf(const PlayerVisualState& visuals) {
+    static const std::string none;
+    return visuals.equippedSkinId ? *visuals.equippedSkinId : none;
+}
+
 /// Builds the Snapshot message for one client.
 class Replicator {
 public:
@@ -319,7 +367,7 @@ public:
     /// them instead of once per client. Between the two the world must not
     /// change: nothing a build does touches it. A build outside a pass lists
     /// them itself, through the same code.
-    void beginPass(World& world);
+    void beginPass(World& world, double nowMillis);
     void endPass() { passIndexed_ = false; }
 
     ReplicationTolerances tolerances;
@@ -384,6 +432,9 @@ private:
         Entity entity;
         std::uint32_t netId;
         double distanceSq;
+        /// Where the entity sits in index_, so its Facts are found without a
+        /// lookup.
+        std::uint32_t at;
     };
 
     /// One replicated entity, as the gather reads it: everything the in-view
@@ -398,51 +449,43 @@ private:
         bool drop;     ///< carries a DropItem, whose claims are per viewer
         bool market;   ///< a market NPC, streamed from any distance
     };
-    void indexWorld(World& world);
+    void indexWorld(World& world, double nowMillis);
+
+    /// What an update or spawn record says about an entity that does not
+    /// depend on who is looking: the same for every viewer in a pass. Worked
+    /// out the first time any viewer of the pass needs it -- rather than once
+    /// per viewer, which with a crowd of flowers in one place was most of the
+    /// pass -- and never for an entity nobody sees. Parallel to index_.
+    struct Facts {
+        bool ready = false;
+        bool hasHealth = false;
+        bool healthWide = false;
+        bool hasBody = false;
+        net::EntityKind kind = net::EntityKind::Mob;
+        std::uint8_t state = 0;
+        double angle = 0;
+        double radius = 10;         ///< replicatedRadius: what a spawn says
+        double bodyRadius = 0;      ///< the Body's, when hasBody: what an update compares
+        double healthFraction = 1;  ///< raw, as written
+        double healthSent = -1;     ///< quantized at its width, as compared
+        PlayerVisualState visuals;
+        std::uint32_t skinHash = 0;
+    };
+    const Facts& factsOf(World& world, std::uint32_t at);
 
     std::vector<Indexed> index_;
+    std::vector<Facts> facts_;
+    double indexedAtMillis_ = 0;
     bool passIndexed_ = false;
     std::vector<Candidate> candidates_;
     std::vector<std::uint32_t> removals_;
+    /// The view's next tracked list, built beside the old one and swapped in.
+    std::vector<ClientView::Entry> nextTracked_;
 };
 
 /// Derives the EntityState bits the client draws from. Called once per
 /// replicated entity per tick.
 std::uint8_t computeEntityState(World& world, Entity e, double nowMillis);
-
-/// The player-specific flag families that define the flower sprite. Keeping
-/// these separate from EntityState lets ordinary entities retain their compact
-/// generic state while players carry the sprite's own flag families, as the
-/// TypeScript renderer they were ported from drew them.
-struct PlayerVisualState {
-    std::uint8_t faceFlags = FaceNone;
-    std::uint16_t equipFlags = EquipNone;
-    std::uint32_t renderFlags = PlayerRenderNone;
-    /// The plate under every flower reads its own level and tints itself with
-    /// the best rarity anywhere in that flower's loadout, so both belong to
-    /// the viewer of a player rather than to the player being viewed.
-    std::uint16_t level = 1;
-    Rarity bestRarity = Rarity::Common;
-    /// The arena leaderboard's number; zero for anyone not in the ring.
-    std::uint32_t arenaScore = 0;
-    /// The live shield, as 255ths of this flower's MAX health -- which is the
-    /// scale the bar it is drawn on is measured in. Zero when none is up, so
-    /// a flower with no Shell in its loadout sends nothing but zeroes here.
-    std::uint8_t shield = 0;
-    /// Borrowed from PlayerVisuals, never owned: this is rebuilt for every
-    /// player in every viewer's snapshot, and copying a ~20-character id that
-    /// many times a second is a heap allocation per player per viewer for a
-    /// string that has not changed since login. Null is "no custom skin", and
-    /// the pointee outlives the snapshot it is written into -- the world is
-    /// not mutated while one is being built.
-    const std::string* equippedSkinId = nullptr;
-};
-
-/// The id a visual state names, or "" when it names none.
-inline const std::string& skinIdOf(const PlayerVisualState& visuals) {
-    static const std::string none;
-    return visuals.equippedSkinId ? *visuals.equippedSkinId : none;
-}
 
 PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis);
 

@@ -39,19 +39,16 @@
 // of mobs and a few dozen players, so the two gates below are not tuning, they
 // are the reason the tick fits its budget:
 //
-//   LOD      a mob further than kMobActiveRadius from every active player
-//            thinks once every kMobFarStride ticks instead of every tick, and
-//            holds still on the ticks in between. It is not frozen: it
-//            simulates at a fifth of the rate, which is what stops the far
-//            world draining into wall lines while nobody is looking at it. The
-//            one thing that keeps full rate out there is the idle drift, which
-//            carries no gate in the reference either. The caller supplies the
-//            player positions, so a region with nobody in it costs one
-//            distance test per mob. Bosses and the waves disc are never gated.
+//   SEEN     a mob that no flower's streamed box reaches (observers.h) does
+//            not think, does not move and is not collided with at all; it
+//            stands exactly where it was until a flower comes near enough
+//            for its client to be sent it. The caller supplies the boxes, so
+//            a region with nobody in it costs one box test per mob. Bosses
+//            (super+), pets and the waves disc are never gated.
 //   CADENCE  every mob near a player runs its whole brain every tick,
 //            acquisition included -- that is what the reference pays, and a
 //            mob that scans on a timer ignores a player who walked into its
-//            range for as long as the timer says. LOD, not a clock, is what
+//            range for as long as the timer says. SEEN, not a clock, is what
 //            bounds the cost. The one genuinely periodic heading left, a
 //            sandstorm's, keeps a clock of its own rather than a shared one:
 //            it re-rolls three times a second, which is far faster than
@@ -76,6 +73,7 @@
 #include "shared/game/components.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
+#include "server/systems/observers.h"
 
 namespace flix {
 
@@ -667,18 +665,18 @@ public:
     /// One tick of mob intent.
     ///
     /// `grid` must already hold this tick's players -- it is the only way a mob
-    /// finds one. `activePlayers` are the positions LOD is measured against; an
-    /// EMPTY list means EVERYTHING is active, exactly as it does in the
-    /// reference: with nobody connected there is no one to save the work for,
-    /// and a test or a bench that forgets to pass players sees unmodified
-    /// behaviour rather than a world running at a fifth speed. Pets are steered
-    /// regardless: they belong to a player who is by definition present. `dt`
-    /// is in seconds.
+    /// finds one. `views` are the flowers' streamed boxes (observers.h): a mob
+    /// none of them reaches is unseen, and an unseen mob does not think or
+    /// move this tick. An EMPTY list means EVERYTHING is seen: with nobody
+    /// connected there is no one to save the work for, and a test or a bench
+    /// that forgets to pass players sees unmodified behaviour. Pets are
+    /// steered regardless: they belong to a player who is by definition
+    /// present. `dt` is in seconds.
     ///
     /// A volley, a web and a dropped shot all land as deferred commands:
     /// nothing this pass creates exists until `commands` is flushed.
     void run(World& world, const Terrain& terrain, const SpatialGrid& grid,
-             const std::vector<RealmPoint>& activePlayers,
+             const std::vector<ViewBox>& views,
              double nowMillis, double dt, CommandBuffer& commands);
 
     /// Carries a mob's ring seeds on their seats, retires the ones that have
@@ -689,10 +687,9 @@ public:
     /// create() and the damage path is walked by every system that deals any.
     /// This is where the bill is settled.
     ///
-    /// Deliberately NOT LOD-gated: the seeds are real bodies that a flower can
-    /// be standing in whether or not their mob is taking a turn in the stride,
-    /// and a ring left un-carried would be a hitbox sitting where the mob used
-    /// to be.
+    /// Deliberately NOT gated on being seen: the seeds are real bodies, and a
+    /// ring left un-carried would be a hitbox sitting where the mob used to
+    /// be.
     void tickPetalRings(World& world, CommandBuffer& commands);
 
     /// Pulls every chain segment back to its spacing behind the one ahead of
@@ -705,9 +702,9 @@ public:
     /// segment trailed a tick of the head's travel behind its spacing.
     ///
     /// Reads the chains run() repaired this tick, so it belongs to the same
-    /// tick as that run(). `activePlayers` is the LOD list run() was given.
-    void placeChains(World& world, const Terrain& terrain,
-                     const std::vector<RealmPoint>& activePlayers);
+    /// tick as that run(). `views` is the list run() was given; a chain whose
+    /// head is unseen is not placed.
+    void placeChains(World& world, const Terrain& terrain, const std::vector<ViewBox>& views);
 
 
     /// Per-run counters. Reset at the top of every run(), so they describe the
@@ -716,7 +713,7 @@ public:
     /// test that target caching is actually caching.
     struct Stats {
         std::uint64_t considered = 0;    ///< mobs the query produced
-        std::uint64_t skipped = 0;       ///< mobs the far stride held back
+        std::uint64_t skipped = 0;       ///< mobs held still because nobody saw them
         std::uint64_t targetScans = 0;   ///< broadphase acquisitions run
         std::uint64_t attacks = 0;       ///< contact attacks intended
         std::uint64_t promotions = 0;    ///< segments promoted to chain heads
@@ -812,37 +809,27 @@ private:
 
     /// A `recover` mob's mending: starts it once health falls under the line,
     /// lands this tick's share through the heal gate, and ends it at full.
-    /// Every tick, LOD stride or not -- a heal that ran at a fifth of its rate
-    /// whenever the mob was far from a flower would take as long as the stride
-    /// says rather than as long as the config does.
+    /// Every tick, seen or not -- a heal that paused whenever nobody was
+    /// looking would take as long as the players' wandering says rather than
+    /// as long as the config does.
     void recover(World& world, Entity self, const Drive& drive, double nowMillis, double dt);
 
-    /// Whether this mob runs its brain on this tick.
+    /// Whether this mob runs its brain on this tick: whenever some flower's
+    /// streamed box reaches its body (observers.h), and never otherwise.
     ///
-    /// Always, within the active radius. Beyond it, one tick in kMobFarStride,
-    /// offset by the mob's own slot so the far world does not decide in
-    /// lockstep -- a shared stride would move the spike rather than remove it.
-    ///
-    /// A BOSS is the exception and thinks wherever it stands. There are a
-    /// handful of them in the world at once, the server announced every one of
-    /// them by name and sent the bots at it, and a boss that stutters at a
-    /// fifth speed until somebody gets within five thousand units is a boss
-    /// that is visibly asleep in front of the raid walking up to it.
-    bool stepsThisTick(Entity self, Vec2 position, Realm realm, Rarity rarity,
-                       const std::vector<RealmPoint>& activePlayers) const;
+    /// Two exceptions think wherever they stand. A BOSS (super and up,
+    /// isBossRarity) is always loaded: the server announced it by name and
+    /// sent the bots at it. And the waves disc: a wave ends when its disc is
+    /// clear and its hunters spawn spread over the whole disc, so every mob
+    /// on it has to walk in whether anyone can see it yet or not.
+    bool stepsThisTick(Vec2 position, double radius, Realm realm, Rarity rarity,
+                       const std::vector<ViewBox>& views) const;
 
-    /// What a far mob does on a tick it did not think.
-    ///
-    /// The reference has no mob velocity integrator -- its AI writes position
-    /// directly -- so a mob whose step is skipped simply does not advance.
-    /// Here the movement phase integrates Motion::velocity whatever the AI
-    /// did, so the velocity has to be dropped, or a mob that went out of range
-    /// mid-chase keeps flying on that heading at five times the reference's
-    /// travel until something stops it. The exception is the idle drift: the
-    /// reference's passive integrator carries no distance gate at all, so a
-    /// mob left idling keeps hopping at full rate however far away it is.
-    void driftUnwatched(World& world, const Terrain& terrain, Entity self, double nowMillis,
-                        double dt);
+    /// What an unseen mob does on a tick it did not think: nothing. Its
+    /// velocity is dropped, because the movement phase integrates
+    /// Motion::velocity and a mob that went unseen mid-chase would otherwise
+    /// carry on along that heading.
+    void holdUnseen(World& world, Entity self);
 
     void steerMob(World& world, const Terrain& terrain, const SpatialGrid& grid,
                   Entity self, Transform& transform, Motion& motion, const Body& body,
@@ -1011,8 +998,7 @@ private:
     bool teleportPetToOwner(const Terrain& terrain, Transform& transform, Vec2 ownerPosition);
 
     void repairChains(World& world);
-    void followChains(World& world, const Terrain& terrain,
-                      const std::vector<RealmPoint>& activePlayers);
+    void followChains(World& world, const Terrain& terrain, const std::vector<ViewBox>& views);
     void placeFollower(World& world, const Terrain& terrain, Entity self, Entity ahead);
     /// Keeps every nest's brood list (Spawner::children) to the escorts still
     /// standing, and releases a dying nest's. Spawning them is not this
@@ -1050,7 +1036,7 @@ private:
     Rng rng_;
     Stats stats_;
 
-    /// Ticks run, which is the phase the far stride is measured against.
+    /// Ticks run.
     std::uint64_t tick_ = 0;
 
     /// Whether any live player's aggro is raised this tick -- the gate on a

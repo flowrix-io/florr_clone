@@ -1978,6 +1978,9 @@ private:
     /// ever grows; each frame uses the top-left corner its box needs. See
     /// drawLoadoutBar.
     std::unique_ptr<Canvas> loadoutLayer_;
+    /// The key loadoutLayer_ was last painted under (ui::beginKeptLayer): the
+    /// bar is repainted only when something it shows has changed.
+    std::uint64_t loadoutLayerKey_ = 0;
 
     /// What the bar draws while the server catches up.
     ///

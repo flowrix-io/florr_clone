@@ -2174,26 +2174,68 @@ TEST(a_petal_without_a_knockback_field_uses_the_game_default) {
     CHECK(a.world.get<Knockback>(mob).impulse.x > 0.0);
 }
 
-TEST(a_popped_bubble_mob_throws_its_flower_as_far_as_a_bubble_petal) {
+TEST(a_popped_bubble_mob_blasts_everything_near_its_skin) {
     const Fixture& f = fixture();
     CHECK(f.ok);
     if (!f.ok) return;
 
-    // Popped by a petal on its near side, out of the flower's own reach: the
-    // flower is thrown clear of the bubble with the impulse a bubble petal's
-    // pop hands it, whatever the bubble's tier.
+    const auto pushOf = [](Arena& a, Entity e) {
+        const Knockback* kb = a.world.tryGet<Knockback>(e);
+        return kb != nullptr ? kb->impulse : Vec2{0, 0};
+    };
+
+    // Popped by a petal: the flower 20 past the skin, a heavy mob 20 past the
+    // other side, a light one out of reach. Whatever the bubble's tier, each
+    // in reach is shoved straight away from it, kBubbleMobPopDistance over
+    // its mass.
     for (const Rarity tier : {Rarity::Common, Rarity::Mythic}) {
         Arena a;
         const Entity player = a.player({1000, 1000});
         const Entity bubble = a.mob({1060, 1000}, 1.0);
         a.world.add<MobType>(bubble, MobType{f.bubble, tier});
+        const Entity heavy = a.mob({1120, 1000}, 1000.0);
+        a.world.get<Body>(heavy).mass = 4.0;
+        const Entity far = a.mob({1060, 1200}, 1000.0);
         equipPetal(a, player, f.plain, Rarity::Common, {1035, 1000});
 
         a.step(0.0, f.registry);
         CHECK(a.world.has<Dead>(bubble));
-        const Vec2 thrown = a.world.get<Motion>(player).velocity;
-        CHECK_NEAR(thrown.x, -shoveSpeed(kBubblePopDistance, net::kTickSeconds, true), 1e-9);
-        CHECK_NEAR(thrown.y, 0.0, 1e-9);
+        CHECK_NEAR(pushOf(a, player).x, -kBubbleMobPopDistance, 1e-9);
+        CHECK_NEAR(pushOf(a, player).y, 0.0, 1e-9);
+        CHECK_NEAR(pushOf(a, heavy).x, kBubbleMobPopDistance / 4.0, 1e-9);
+        CHECK_NEAR(pushOf(a, heavy).y, 0.0, 1e-9);
+        CHECK_NEAR(pushOf(a, far).length(), 0.0, 1e-12);
+    }
+
+    // Popped by the attacking ring, its petals held out past the blast's own
+    // reach: the flower is caught all the same, and only with that ring.
+    for (const bool attacking : {true, false}) {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        a.world.add<PetalRing>(player, PetalRing{20.0 + (attacking ? kPetalOrbitAttackGap
+                                                                   : kPetalOrbitRestGap)});
+        // 155 apart, radius 20 each: 115 edge to edge, past kBubblePopReach.
+        const Entity bubble = a.mob({1155, 1000}, 1.0);
+        a.world.add<MobType>(bubble, MobType{f.bubble, Rarity::Common});
+        equipPetal(a, player, f.plain, Rarity::Common, {1130, 1000});
+
+        a.step(0.0, f.registry);
+        CHECK(a.world.has<Dead>(bubble));
+        CHECK_NEAR(pushOf(a, player).x, attacking ? -kBubbleMobPopDistance : 0.0, 1e-9);
+    }
+
+    // Popped from well outside its reach -- a petal far from its flower
+    // stands in for a shot, a pet or poison: the killer is not thrown.
+    {
+        Arena a;
+        const Entity player = a.player({400, 1000});
+        const Entity bubble = a.mob({1060, 1000}, 1.0);
+        a.world.add<MobType>(bubble, MobType{f.bubble, Rarity::Common});
+        equipPetal(a, player, f.plain, Rarity::Common, {1035, 1000});
+
+        a.step(0.0, f.registry);
+        CHECK(a.world.has<Dead>(bubble));
+        CHECK_NEAR(pushOf(a, player).length(), 0.0, 1e-12);
     }
 
     // Any other mob just dies.
@@ -2204,7 +2246,7 @@ TEST(a_popped_bubble_mob_throws_its_flower_as_far_as_a_bubble_petal) {
     equipPetal(a, player, f.plain, Rarity::Common, {1035, 1000});
     a.step(0.0, f.registry);
     CHECK(a.world.has<Dead>(grunt));
-    CHECK_NEAR(a.world.get<Motion>(player).velocity.length(), 0.0, 1e-12);
+    CHECK_NEAR(pushOf(a, player).length(), 0.0, 1e-12);
 }
 
 TEST(rarity_scales_a_petals_damage_off_the_config) {
@@ -3639,6 +3681,30 @@ TEST(a_gardn_mob_recoils_off_a_flower_it_touches) {
     // Without the flag the mob's velocity is published raw by the AI every
     // tick, and combat leaves it alone.
     CHECK_NEAR(velocityAfterTouch(f.plodder).x, 300.0, 1e-9);
+}
+
+TEST(a_mob_reaches_a_flower_another_mob_bounced_into_it_this_tick) {
+    const RecoilFixture& f = recoilFixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    // Contact rejects far candidates off the circle the grid filed each body
+    // as, which goes stale the moment the phase moves a body. The flower here
+    // is filed 47 units from the walker -- past every reach the pair could
+    // have -- and the plodder's bounce (half its 20-unit overlap) carries it
+    // to 37, inside the walker's 40. The walker must see where the flower IS:
+    // it recoils off it, as every mob touching a flower does.
+    Arena a;
+    const Entity plodder = a.mob({980, 1000}, 100.0);
+    a.world.add<MobType>(plodder, MobType{f.plodder, Rarity::Common, 1.0});
+    a.world.add<ContactDamage>(plodder, ContactDamage{5.0, kMobHitIntervalMillis});
+    const Entity walker = a.mob({1047, 1000}, 100.0);
+    a.world.add<MobType>(walker, MobType{f.walker, Rarity::Common, 1.0});
+    a.world.add<ContactDamage>(walker, ContactDamage{5.0, kMobHitIntervalMillis});
+    const Entity player = a.player({1000, 1000});
+    a.step(1000.0, f.registry);
+    CHECK_NEAR(a.world.get<Transform>(player).position.x, 1010.0, 1e-9);
+    CHECK(a.world.get<Motion>(walker).velocity.x > 0.0);
 }
 
 TEST(a_flower_bounces_off_a_gardn_mob_rather_than_walking_it_along) {

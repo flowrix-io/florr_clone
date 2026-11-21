@@ -292,7 +292,7 @@ StepOutcome stepCollide(const Terrain& terrain, Realm realm, Vec2& position, Vec
 
 MovementSystem::Queries::Queries(World& world)
     : players(world), mobs(world), projectiles(world),
-      mobTargets(world), npcTargets(world), mobBodies(world), playerPositions(world),
+      mobTargets(world), npcTargets(world), mobBodies(world),
       npcBodies(world), looseBodies(world), ringAnchors(world) {
     // A body marked Dead is still in the world so later systems can see it die,
     // but a corpse must not keep walking.
@@ -307,9 +307,6 @@ MovementSystem::Queries::Queries(World& world)
     // for the rest of the tick while it waits for the reaper.
     looseBodies.without<Dead>();
     ringAnchors.without<Dead>();
-    // playerPositions deliberately keeps corpses: a dead flower is about to
-    // respawn where it stands, and letting the mobs around it coast for those
-    // few ticks is the artefact the LOD gate exists to avoid.
 }
 
 void MovementSystem::bind(World& world) {
@@ -344,6 +341,7 @@ void MovementSystem::runWorldPhase(World& world, const Terrain& terrain,
                                    double nowMillis, double dt) {
     bind(world);
     seekTargetsReady_ = false;
+    collectViewBoxes(world, observerReach, observers_);
     moveMobs(world, terrain, nowMillis, dt);
     // Projectiles after mobs: a shot fired this tick takes its launch bearing
     // from where the mobs ended up, not from where they were.
@@ -682,7 +680,19 @@ void MovementSystem::stepTeleporters(World& world, double nowMillis, double dt) 
 void MovementSystem::moveMobs(World& world, const Terrain& terrain,
                               double nowMillis, double dt) {
     const ContentRegistry& registry = content();
-    queries_->mobs.each([&](Entity e, MobTag&, Transform& transform, Motion& motion, Body&) {
+    queries_->mobs.each([&](Entity e, MobTag&, Transform& transform, Motion& motion, Body& body) {
+        // Unseen: it does not move at all, under its own power or anything
+        // else's. A shove queued against it is dropped rather than owed --
+        // delivered on waking it would teleport the mob as it came on screen.
+        if (!mobSeen(world, e, transform.position, body.radius, transform.realm)) {
+            motion.velocity = Vec2{0, 0};
+            if (Knockback* kb = world.tryGet<Knockback>(e)) {
+                takeKnockback(world, e);
+                kb->carry = Vec2{0, 0};
+            }
+            return;
+        }
+
         // The shove a petal or a blast queued. The TypeScript server wrote
         // this vector on every hit and then never read it back, so a mob
         // walked straight through a ring; that was a bug, not a design.
@@ -980,31 +990,12 @@ Vec2 MovementSystem::aimAtLaunch(World& world, Entity self, Vec2 position,
 // Mob separation
 // ---------------------------------------------------------------------------
 
-bool MovementSystem::activeForSeparation(Vec2 position, Realm realm, Rarity rarity) const {
-    // A boss is never off, the same exception the AI phase makes: it is an
-    // announced event standing where the server said it would be, and a raid
-    // arriving to find its escorts sitting inside each other is the visible
-    // half of "asleep".
-    if (isBossRarity(rarity)) return true;
-    // Nobody connected is the PERMISSIVE case, as it is in the reference's
-    // activity field: with no observer there is nothing to save the work for,
-    // and a bench or a test that never adds a player sees the unmodified rule.
-    if (separationPlayers_.empty()) return true;
-    const double reachSq = kMobActiveRadius * kMobActiveRadius;
-    for (const RealmPoint& player : separationPlayers_) {
-        if (player.realm != realm) continue;
-        if (distanceSq(position, player.position) <= reachSq) return true;
-    }
-    return false;
+bool MovementSystem::mobSeen(World& world, Entity e, Vec2 position, double radius,
+                             Realm realm) const {
+    return mobSimulated(world, e, position, radius, realm, observers_);
 }
 
 void MovementSystem::buildSeparationSet(World& world) {
-    separationPlayers_.clear();
-    queries_->playerPositions.each([&](Entity, PlayerTag&, Transform& transform) {
-        if (!std::isfinite(transform.position.x) || !std::isfinite(transform.position.y)) return;
-        separationPlayers_.push_back({transform.position, transform.realm});
-    });
-
     // Retire last pass's slots before the set they index is dropped. The table
     // is keyed by entity INDEX, which the world recycles.
     for (const SeparationEntry& entry : separationSet_) {
@@ -1016,7 +1007,7 @@ void MovementSystem::buildSeparationSet(World& world) {
 
     const ContentRegistry& registry = content();
     queries_->mobBodies.each([&](Entity e, MobTag&, Transform& transform, Body& body,
-                                 MobType& type) {
+                                 MobType&) {
         const Vec2 position = transform.position;
         // A degenerate coordinate makes the cell walks non-terminating and
         // would put a NaN into every push the mob takes part in. Such a mob
@@ -1025,10 +1016,9 @@ void MovementSystem::buildSeparationSet(World& world) {
         if (!std::isfinite(position.x) || !std::isfinite(position.y)) return;
         if (std::fabs(position.x) > kMaxSaneWorldCoord) return;
         if (std::fabs(position.y) > kMaxSaneWorldCoord) return;
-        // Far from every flower: sit this tick out, the same LOD rule the AI
-        // phase applies. A shove nobody is near enough to see is missed
-        // outright rather than applied one-sided.
-        if (!activeForSeparation(position, transform.realm, type.rarity)) return;
+        // Unseen: sit this tick out, the same rule the AI and the mover apply.
+        // Never entering the set, it is neither a pusher nor a push target.
+        if (!mobSeen(world, e, position, body.radius, transform.realm)) return;
 
         SeparationEntry entry;
         entry.entity = e;

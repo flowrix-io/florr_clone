@@ -168,7 +168,7 @@ void GameServer::handleCraft(Session& session, net::Connection& connection, Byte
     if (upgrades > 0) giveToInventory(record, petalIndex, upgradeRarity(rarity), upgrades);
     database_.markDirty();
 
-    if (upgrades > 0) announceRareCraft(session, petalIndex, upgradeRarity(rarity));
+    if (upgrades > 0) announceRareCraft(session, petalIndex, upgradeRarity(rarity), upgrades);
 
     w.boolean(upgrades > 0);
     w.u16(petalIndex);
@@ -408,7 +408,9 @@ void GameServer::handleAssemble(Session& session, net::Connection& connection,
     // The profile carries the new stacks, which is what refills the window's
     // seats and greys whatever is now short.
     sendProfile(session, connection);
-    announceRareCraft(session, recipe.outputs.front().petal, rarity);
+    announceRareCraft(session, recipe.outputs.front().petal, rarity,
+                      std::min<std::int64_t>(recipe.outputs.front().count * count,
+                                             kMaxStackCount));
 }
 
 void GameServer::handleAbsorb(Session& session, net::Connection& connection,
@@ -700,9 +702,9 @@ int GameServer::takeUniversals(std::uint16_t petalIndex, const std::string& keep
 }
 
 void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIndex,
-                                   Rarity made) {
-    // The top three tiers only, and ONE line however many the batch produced:
-    // the reference announces the craft, not each petal it yielded. A
+                                   Rarity made, std::int64_t count) {
+    // The top three tiers only, and ONE line however many the batch produced,
+    // naming the count ("xN") when it made more than one. A
     // universal is never crafted -- it is forged at a titan, one at a time --
     // and says so.
     const bool forged = made == Rarity::Universal;
@@ -719,7 +721,8 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
     const std::string article =
         forged ? "The"
                : std::string("AEIOUaeiou").find(tier[0]) != std::string::npos ? "An" : "A";
-    const std::string petal = content().petal(petalIndex).name;
+    const std::string petal = content().petal(petalIndex).name +
+                              (count > 1 ? " x" + std::to_string(count) : std::string());
     const std::string& playerName = session.nameplate();
 
     // Two renderings of one sentence: chat gets the marked-up one, and the
