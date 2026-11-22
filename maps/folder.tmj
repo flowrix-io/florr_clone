@@ -88,6 +88,12 @@
  "nextlayerid":4,
  "nextobjectid":2,
  "orientation":"orthogonal",
+ "properties":[
+        {
+         "name":"glitchDamagePerSecond",
+         "type":"float",
+         "value":2
+        }],
  "renderorder":"right-down",
  "tiledversion":"1.12.2",
  "tileheight":256,

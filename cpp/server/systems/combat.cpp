@@ -9,6 +9,7 @@
 #include "server/loot_eligibility.h"
 #include "server/systems/movement.h"
 #include "shared/game/difficulty.h"
+#include "shared/game/map_elements.h"
 #include "shared/game/npc.h"
 #include "shared/game/admin_arena.h"
 #include "shared/game/trials.h"
@@ -1005,7 +1006,9 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
             // touch alike -- so the cyan is decided once, where the number is
             // reported, rather than at each of the three triggers.
             if (kind == DamageKind::Lightning) flags |= net::DamageLightning;
-            if (kind == DamageKind::Glitch) flags |= net::DamageGlitch;
+            if (kind == DamageKind::Glitch || kind == DamageKind::GlitchDrip) {
+                flags |= net::DamageGlitch;
+            }
             // Whose hit it was, for the one viewer it belongs to (see
             // net::DamageByViewer). Resolved now, while the source still
             // exists: a petal that breaks on this very swing is gone by the
@@ -2002,6 +2005,7 @@ void CombatSystem::beginTick(World& world, double nowMillis, double dt, EventQue
     // melee pass"). Do not move it behind contact.
     tickAfflictions(world, nowMillis, dt);
     tickSpongeDamage(world, nowMillis, dt);
+    tickRealmDamage(world, nowMillis, dt);
     tickShieldDecay(world, dt);
     tickUndead(world, nowMillis);
 }
@@ -2189,6 +2193,31 @@ void CombatSystem::tickSpongeDamage(World& world, double nowMillis, double dt) {
     for (const PoisonTick& tick : spongeTicks_) {
         const Entity source = world.isAlive(tick.source) ? tick.source : NULL_ENTITY;
         applyDamage(world, tick.victim, source, tick.amount, nowMillis, DamageKind::Periodic);
+    }
+}
+
+void CombatSystem::tickRealmDamage(World& world, double nowMillis, double dt) {
+    realmTicks_.clear();
+    if (worldMaps == nullptr || dt <= 0.0) return;
+    Query<PlayerTag, Transform, Health> flowers{world};
+    flowers.without<Dead>();
+    flowers.each([&](Entity player, PlayerTag&, Transform& transform, Health&) {
+        const MapData* map = worldMaps->forRealm(transform.realm);
+        if (map == nullptr) return;
+        double perSecond = map->glitchDamagePerSecond();
+        if (perSecond <= 0.0) return;
+        // Scaled like a mob's touch by the folder the flower walked into: the
+        // map's figure is the common folder's.
+        Rarity rarity = Rarity::Common;
+        if (realmRarity && realmRarity(transform.realm, rarity)) {
+            perSecond *= mobDamageScale(rarity);
+        }
+        if (perSecond > 0.0) realmTicks_.push_back({player, NULL_ENTITY, perSecond * dt});
+    });
+    // Applied after the query, like a poison tick: applyDamage adds Dead.
+    for (const PoisonTick& tick : realmTicks_) {
+        applyDamage(world, tick.victim, NULL_ENTITY, tick.amount, nowMillis,
+                    DamageKind::GlitchDrip);
     }
 }
 

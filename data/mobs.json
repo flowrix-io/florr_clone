@@ -2037,7 +2037,7 @@
         "npc": {
             "service": "oracle"
         },
-        "noEggDrop": true
+        "noEggDrop": false
     },
     "trader": {
         "name": "Trader",
@@ -2066,7 +2066,7 @@
         "npc": {
             "service": "trader"
         },
-        "noEggDrop": true
+        "noEggDrop": false
     },
     "titan": {
         "name": "Titan",
@@ -2103,7 +2103,7 @@
         "name": "Assembler",
         "damage": 0,
         "health": 100,
-        "size": 1.2939,
+        "size": 0.8,
         "speed": 0,
         "cooldown": 2000,
         "xp": {
@@ -2634,7 +2634,7 @@
             "unique": 0
         },
         "description": "Hel, a visitor from the underworld.",
-        "color": "#B375E8",
+        "color": "#ff0000",
         "image": "$trader",
         "ai_type": "passive",
         "range": 100,
@@ -2643,7 +2643,7 @@
             "service": "none",
             "still": true
         },
-        "noEggDrop": true,
+        "noEggDrop": false,
         "neverAmbient": true
     },
     "magician": {
@@ -2712,9 +2712,9 @@
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><path fill=\"#ffd400\" stroke=\"#ca0\" stroke-width=\".98\" stroke-linejoin=\"bevel\" d=\"M5.49 7.49h10.02v6.02H5.49z\" transform=\"translate(-4.454 -3.796)scale(1.2784)\"/><g fill=\"#fff\" stroke=\"#ccc\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M-.851-26.51h11v7h-11z\" transform=\"translate(-4.454 -3.796)scale(1.2784) rotate(110)\"/><path d=\"M1.346-24.489h11v7h-11z\" transform=\"translate(-4.454 -3.796)scale(1.2784) rotate(110)\"/></g><path fill=\"#ffd400\" stroke=\"#ca0\" stroke-width=\"1.966\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4.983 10.983h22.034v16.034H4.983z\" transform=\"translate(-4.454 -3.796)scale(1.2784)\"/></svg>",
         "ai_type": "passive",
         "range": 700,
-        "color": "#9b4de0",
+        "color": "#000000",
         "hideRotation": true,
-        "min_rarity": "super",
+        "min_rarity": "unique",
         "noEggDrop": true,
         "replace_chance": {
             "unique": 0.08

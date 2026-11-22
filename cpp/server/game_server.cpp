@@ -270,6 +270,10 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
         moveEntityToRealm(entity, realm, position);
     };
     dungeons_->worldMaps = &worldMaps_;
+    combat_->worldMaps = &worldMaps_;
+    combat_->realmRarity = [this](Realm realm, Rarity& out) {
+        return dungeons_->rarityOf(realm, out);
+    };
     dungeons_->moveToRealm = [this](Entity entity, Realm realm, Vec2 position) {
         moveEntityToRealm(entity, realm, position);
     };

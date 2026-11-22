@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -37,6 +38,7 @@
 namespace flix {
 
 class Terrain;
+class WorldMaps;
 
 /// How long a hit keeps the client's white flash lit. Short: it reads as an
 /// impact rather than a status, and it is refreshed by every landed hit, so a
@@ -160,6 +162,9 @@ enum class DamageKind : std::uint8_t {
     /// respect the simulation can see, whose floating number is green. The
     /// amount is rolled before it gets here (rollGlitchDamage).
     Glitch = 6,
+    /// A map's standing glitch drain (MapData::glitchDamagePerSecond): a drip
+    /// in every respect, exactly as Periodic is, whose number is green.
+    GlitchDrip = 7,
 };
 
 /// Whether this kind is a landed hit rather than a drip. Everything in
@@ -252,6 +257,14 @@ public:
     /// into a flower that stands against a wall pushes it into the wall --
     /// through a thin one, and into a thick one deep enough to be stuck there.
     const Terrain* terrain = nullptr;
+
+    /// The maps, for a realm's standing damage (tickRealmDamage). Null in a
+    /// focused simulation, where no realm drains anyone.
+    const WorldMaps* worldMaps = nullptr;
+    /// The rarity a realm's standing damage scales by, as a mob's damage does
+    /// (mobDamageScale): a dungeon copy's is its nest's. False -- and unset,
+    /// in a focused simulation -- leaves the map's figure as it is.
+    std::function<bool(Realm, Rarity&)> realmRarity;
 
     /// One complete combat tick. Kept for focused simulations; GameServer uses
     /// the three phase methods below so flower/petal contact can happen before
@@ -678,6 +691,10 @@ private:
 
     void tickAfflictions(World& world, double nowMillis, double dt);
     void tickSpongeDamage(World& world, double nowMillis, double dt);
+    /// Every living flower in a map with a glitchDamagePerSecond loses that
+    /// much a second -- times mobDamageScale of the realm's rarity, when it
+    /// has one -- as a green drip with no source.
+    void tickRealmDamage(World& world, double nowMillis, double dt);
     /// Every shield shrinks by the same share of itself each second.
     void tickShieldDecay(World& world, double dt);
     /// Ends every Undead whose time is up: the flower dies to the blow it was
@@ -887,6 +904,7 @@ private:
     std::vector<ShotImpact> impacts_;
     std::vector<PoisonTick> poison_;
     std::vector<PoisonTick> spongeTicks_;
+    std::vector<PoisonTick> realmTicks_;
 
     std::vector<Entity> candidates_;
 

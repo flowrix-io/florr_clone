@@ -75,12 +75,19 @@ public:
     /// when `realm` is not a copy somebody's nest has claimed.
     bool exitFor(Realm realm, Rng& rng, double bodyRadius, Realm& outRealm, Vec2& out) const;
 
+    /// The rarity of the nest whose copy `realm` is. False for a realm that is
+    /// not a copy, or a copy nobody's nest has claimed.
+    bool rarityOf(Realm realm, Rarity& out) const;
+
 private:
     struct Instance {
         Realm realm = Realm::Overworld;
         std::string mapId;
         bool live = false;
         Entity entrance = NULL_ENTITY;
+        /// The nest's own tier, kept for as long as the copy is live: the
+        /// nest itself can die while flowers are still inside.
+        Rarity rarity = Rarity::Common;
         Realm returnRealm = Realm::Overworld;
         Vec2 returnAt;
         double returnRadius = 0;

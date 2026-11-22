@@ -154,6 +154,12 @@ inline constexpr std::array<double, kLadderRarityCount> kMobDamageScale = {
     1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0, 1968300.0,
 };
 
+/// kMobDamageScale for any rarity: universal and Admin read apex's, as a mob
+/// asked for at those tiers is built (buildMobStats).
+inline constexpr double mobDamageScale(Rarity r) {
+    return kMobDamageScale[static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(r))))];
+}
+
 /// Mob armour per tier: a flat amount subtracted from every DIRECT hit.
 ///
 /// The same 3x ladder as damage, but it STOPS AT ULTRA and repeats that figure
