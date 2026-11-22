@@ -223,10 +223,29 @@ void Replicator::indexWorld(World& world, double nowMillis) {
                                  world.has<DropItem>(e),
                                  npc != nullptr && npc->service == NpcService::Market});
     });
-    std::sort(index_.begin(), index_.end(), [](const Indexed& a, const Indexed& b) {
-        if (a.realm != b.realm) return static_cast<int>(a.realm) < static_cast<int>(b.realm);
-        return a.netId < b.netId;
-    });
+    // By (realm, netId), sorted as one packed integer per entity -- realm,
+    // net id, then where the entry sits -- and gathered after: the sort was a
+    // large share of the pass when it moved whole entries through a two-field
+    // comparison. Net ids are unique, so the order is the same total order.
+    static_assert(kMaxRealms <= 256, "the realm takes the top byte of the key");
+    if (index_.size() < (std::size_t{1} << 24)) {
+        sortKeys_.resize(index_.size());
+        for (std::size_t i = 0; i < index_.size(); ++i) {
+            sortKeys_[i] = (static_cast<std::uint64_t>(index_[i].realm) << 56) |
+                           (static_cast<std::uint64_t>(index_[i].netId) << 24) | i;
+        }
+        std::sort(sortKeys_.begin(), sortKeys_.end());
+        sorted_.resize(index_.size());
+        for (std::size_t i = 0; i < sortKeys_.size(); ++i) {
+            sorted_[i] = index_[sortKeys_[i] & 0xFFFFFFu];
+        }
+        index_.swap(sorted_);
+    } else {
+        std::sort(index_.begin(), index_.end(), [](const Indexed& a, const Indexed& b) {
+            if (a.realm != b.realm) return static_cast<int>(a.realm) < static_cast<int>(b.realm);
+            return a.netId < b.netId;
+        });
+    }
     facts_.assign(index_.size(), Facts{});
     indexedAtMillis_ = nowMillis;
 }

@@ -767,6 +767,14 @@ private:
     /// filed shots' answers are: nothing in a combat phase destroys an entity,
     /// tags a flower or hands anything to a new owner.
     Entity phaseCredit(const World& world, Entity e);
+    /// Whether canDamage(source, victim) is certain to refuse on its side
+    /// rules alone -- one flower behind both, or one side with no friendly
+    /// fire and no corruption -- read off the phase's memo rather than walked.
+    /// Every rule canDamage() has above those only ever refuses, so a `true`
+    /// here is a refusal canDamage() would give; `false` decides nothing.
+    /// The memo is exact for phaseCredit()'s reason, and a side changes only
+    /// on an admin command or a respawn, neither of which runs inside a phase.
+    bool phaseSidesRefuse(const World& world, Entity source, Entity victim);
     /// Every body a pass that may hit a PROJECTILE has to consider: the main
     /// broadphase's candidates plus combat's own shots. The passes that only
     /// ever want flowers or mobs query the main grid directly and never pay
@@ -1057,7 +1065,14 @@ private:
         Entity entity = NULL_ENTITY;
         Entity player = NULL_ENTITY;
         std::uint64_t phase = 0;
+        /// teamOf(), filled with the rest only when phaseSide() asks.
+        Team team = Team::Neutral;
+        bool friendlyFire = false;
+        bool known = false;
+        bool sided = false;
     };
+    PhaseCredit& phaseEntry(const World& world, Entity e);
+    const PhaseCredit& phaseSide(const World& world, Entity e);
     std::vector<PhaseCredit> phaseCredits_;
     std::uint64_t creditPhase_ = 0;
 

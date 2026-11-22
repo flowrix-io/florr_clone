@@ -2730,6 +2730,18 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                     if ((filed->position - source.position).lengthSq() > widest * widest) continue;
                 }
             }
+            // A pair canDamage() refuses on sides alone -- a petal against the
+            // rest of its own ring, a wild mob against the mob it is piled on --
+            // is nearly every pair that gets this far, and canHit() would only
+            // turn each one away after the lookups below. Skipped here only
+            // where nothing below acts before canHit(): never for a flower
+            // victim (the PvP gate, the mob bump) and never for a firefly pet,
+            // which discharges on contact first.
+            if (!(source.isPet && source.lightningRadius > 0.0) &&
+                phaseCredit(world, victim) != victim &&
+                phaseSidesRefuse(world, source.attacker, victim)) {
+                continue;
+            }
             const auto [transform, body] = world.tryGetPair<Transform, Body>(victim);
             if (transform == nullptr || body == nullptr) continue;
 
@@ -3895,7 +3907,7 @@ Entity CombatSystem::filedShotPlayer(Entity e) const {
     return shot != nullptr ? shot->player : NULL_ENTITY;
 }
 
-Entity CombatSystem::phaseCredit(const World& world, Entity e) {
+CombatSystem::PhaseCredit& CombatSystem::phaseEntry(const World& world, Entity e) {
     const std::uint32_t index = entityIndex(e);
     if (index >= phaseCredits_.size()) {
         phaseCredits_.resize(std::max<std::size_t>(static_cast<std::size_t>(index) + 1,
@@ -3905,7 +3917,35 @@ Entity CombatSystem::phaseCredit(const World& world, Entity e) {
     if (credit.entity != e || credit.phase != creditPhase_) {
         credit = PhaseCredit{e, creditedPlayer(world, e), creditPhase_};
     }
-    return credit.player;
+    return credit;
+}
+
+Entity CombatSystem::phaseCredit(const World& world, Entity e) {
+    return phaseEntry(world, e).player;
+}
+
+const CombatSystem::PhaseCredit& CombatSystem::phaseSide(const World& world, Entity e) {
+    PhaseCredit& credit = phaseEntry(world, e);
+    if (!credit.sided) {
+        const TeamInfo side = teamOf(world, e);
+        credit.team = side.team;
+        credit.friendlyFire = side.friendlyFire;
+        credit.known = side.known;
+        credit.sided = true;
+    }
+    return credit;
+}
+
+bool CombatSystem::phaseSidesRefuse(const World& world, Entity source, Entity victim) {
+    // Copied, not held: the second lookup may grow the memo under the first.
+    const PhaseCredit attacker = phaseSide(world, source);
+    const PhaseCredit& defender = phaseSide(world, victim);
+    // canDamage()'s first rule: one flower behind both.
+    if (attacker.player != NULL_ENTITY && attacker.player == defender.player) return true;
+    // Its last: one side, nobody duelling. Corruption is read live, as there.
+    return attacker.known && defender.known && attacker.team == defender.team &&
+           !attacker.friendlyFire && !defender.friendlyFire &&
+           !isCorrupted(world, attacker.player) && !isCorrupted(world, defender.player);
 }
 
 void CombatSystem::queryBodies(const SpatialGrid& grid, Realm realm, Vec2 center, double radius,
