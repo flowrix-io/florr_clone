@@ -1450,7 +1450,7 @@
         "size": 0.6667,
         "visual_scale": 1.1898,
         "visualOffsetX": -0.0033,
-        "speed": 0.2,
+        "speed": 1.0,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -1544,7 +1544,7 @@
         "damage": 30,
         "size": 0.6667,
         "visual_scale": 1,
-        "speed": 0.48,
+        "speed": 1.0,
         "cooldown": 2000,
         "xp": {
             "common": 2,
@@ -2593,7 +2593,7 @@
         "size": 0.6667,
         "visual_scale": 1.1898,
         "visualOffsetX": -0.0033,
-        "speed": 0.2,
+        "speed": 1.0,
         "cooldown": 2000,
         "xp": {
             "common": 1,
@@ -2732,6 +2732,11 @@
                 {
                     "mobType": "glitch",
                     "count": 10,
+                    "door": "folder"
+                },
+                {
+                    "mobType": "glitch_flower",
+                    "count": 1,
                     "door": "folder"
                 }
             ]
