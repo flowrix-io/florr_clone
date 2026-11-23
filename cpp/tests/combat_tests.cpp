@@ -1,4 +1,5 @@
 #include "test.h"
+#include "shared/game/petal_effects.h"
 
 #include "server/replication.h"
 #include "server/squads.h"
@@ -221,6 +222,7 @@ struct Fixture {
     std::uint16_t divider = kInvalidIndex;
     std::uint16_t cpp = kInvalidIndex;
     std::uint16_t cMinus = kInvalidIndex;
+    std::uint16_t triangle = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -257,7 +259,8 @@ const Fixture& fixture() {
               "basil":{"name":"Basil","damage":5,"health":15,"size":1.3,"defendOnly":true,"ignoresMobs":true},
               "saucer":{"name":"Saucer","damage":10,"health":5,"size":1,"projectile":{"speed":300,"distance":500,"summonMobType":"grunt","summonMax":3}},
               "yin_yang":{"name":"Yin Yang","damage":10,"health":10,"size":1},
-              "divider":{"name":"Divider","damage":0,"health":null,"size":1}
+              "divider":{"name":"Divider","damage":0,"health":null,"size":1},
+              "triangle":{"name":"Triangle","damage":10,"health":1000,"size":1}
             })",
             f.error);
         f.sting = f.registry.petalIndex("sting");
@@ -287,6 +290,7 @@ const Fixture& fixture() {
         f.divider = f.registry.petalIndex("divider");
         f.cpp = f.registry.mobIndex("c++");
         f.cMinus = f.registry.mobIndex("c--");
+        f.triangle = f.registry.petalIndex("triangle");
         return f;
     }();
     return state;
@@ -721,6 +725,32 @@ TEST(contact_reaches_across_the_pet_gap_and_the_npc_slack) {
     CHECK(a.health(wild) < 100.0);
     CHECK(a.health(pet) < 50.0);
     CHECK(a.health(flower) < 100.0);
+}
+
+TEST(a_pet_bites_a_hostile_npc_every_tick_as_it_does_a_wild_mob) {
+    // The target dummies are NPCs, not mobs. A pet on one used to be held to
+    // its body's 500 ms window -- two bites a second where a wild mob takes
+    // one every tick -- so the dummy read a fifteenth of a stick's damage.
+    Arena a;
+    const Entity owner = a.player({5000, 5000});
+    const Entity pet = a.actor({1000, 1000}, 15.0, 50.0, Team::Players);
+    a.world.add<MobTag>(pet);
+    a.world.add<Pet>(pet, Pet{owner, 0});
+    a.world.add<ContactDamage>(pet, ContactDamage{10.0, 500.0});
+    const Entity dummy = a.actor({1000, 1000}, 30.0, 1e9, Team::Hostiles);
+    a.world.add<NpcTag>(dummy);
+    a.world.add<NetId>(dummy, NetId{4242});
+
+    constexpr int kTicks = 15;
+    int bites = 0;
+    for (int i = 0; i < kTicks; ++i) {
+        a.events.clear();
+        a.step(i * net::kTickMillis);
+        for (const WireEvent& event : a.events.events()) {
+            if (event.kind == net::EventKind::Damage && event.netId == 4242) ++bites;
+        }
+    }
+    CHECK(bites >= kTicks - 1);
 }
 
 TEST(mob_contact_is_paced_by_the_flowers_post_hit_window_alone) {
@@ -2094,6 +2124,31 @@ Entity equipPetal(Arena& a, Entity owner, std::uint16_t configIndex, Rarity rari
 }
 
 } // namespace
+
+TEST(a_triangle_hits_harder_for_every_other_triangle_worn) {
+    // Each OTHER triangle on the active row adds half of the petal's own
+    // damage: one hits for 10, two for 15 each, three for 20 each.
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    for (int worn = 1; worn <= 3; ++worn) {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        if (!a.world.has<Loadout>(player)) a.world.add<Loadout>(player);
+        Loadout& loadout = a.world.get<Loadout>(player);
+        for (int i = 0; i < worn; ++i) {
+            loadout.slots[static_cast<std::size_t>(i)].configIndex = f.triangle;
+            loadout.slots[static_cast<std::size_t>(i)].rarity = Rarity::Common;
+        }
+        const Entity mob = a.mob({1040, 1000}, 1000.0);
+        equipPetal(a, player, f.triangle, Rarity::Common, {1025, 1000});
+        a.step(0.0, f.registry);
+        CHECK_NEAR(a.health(mob), 1000.0 - 10.0 * triangleStackScale(worn), 1e-9);
+    }
+    CHECK_NEAR(triangleStackScale(1), 1.0, 1e-12);
+    CHECK_NEAR(triangleStackScale(2), 1.5, 1e-12);
+    CHECK_NEAR(triangleStackScale(3), 2.0, 1e-12);
+}
 
 TEST(a_petal_hits_with_its_config_stats_and_its_own_cooldown) {
     const Fixture& f = fixture();

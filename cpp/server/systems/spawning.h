@@ -401,7 +401,7 @@ struct QuietBoss {};
 /// ANIMAL: a centipede's body segments share its tier and are not more of it,
 /// and a player's pets are not wild at all.
 inline constexpr double kUniqueSpawnCooldownMillis = 20.0 * 60.0 * 1000.0;
-inline constexpr double kApexSpawnCooldownMillis = 2.0 * 60.0 * 60.0 * 1000.0;
+inline constexpr double kApexSpawnCooldownMillis = 4.0 * 60.0 * 60.0 * 1000.0;
 inline constexpr double kBossUpgradeChance = 0.10;
 
 /// The sacrifice (petalIsSacrifice): what a flower that dies wearing one

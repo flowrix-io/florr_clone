@@ -21,6 +21,7 @@
 #include "client/ui/text_input.h"
 #include "shared/core/text.h"
 #include "shared/game/config.h"
+#include "shared/game/petal_effects.h"
 
 namespace flix {
 
@@ -326,8 +327,12 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
             title.badges.push_back({" +"});
         }
         std::string reload = reloadSeconds(stats.reloadMillis * reloadScale);
+        // An egg or a stick waits out its reload a SECOND time once it is on
+        // the ring before the pet comes out (PetalSystem's actionIntervalMillis,
+        // which is the petal's own unscaled reload), so it reads "4s + 4s".
         const double charge = stats.mana > 0.0                         ? stats.manaChargeMillis
                               : (stats.heal > 0.0 || stats.shield > 0.0) ? stats.healChargeMillis
+                              : config.hatchesPets()                     ? stats.reloadMillis
                                                                          : 0.0;
         if (charge > 0.0) reload += " + " + reloadSeconds(charge);
         title.badges.push_back({reload, kPaper, TooltipIcon::Reload});
@@ -348,6 +353,14 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
             else if (config.id == "faster") description = "Rapidly spins petals in a stable orbit.";
             else if (config.id == "pincer") description = "Slows mobs to 5% movement speed for an extended duration.";
             else if (config.id == "web") description = "Creates a huge, long-lasting web that slows mobs to 5% movement speed.";
+        }
+        // The triangle's description is its numbers: what each other one
+        // worn adds to it at this tier (triangleStackScale).
+        if (petalStacksWithCopies(config)) {
+            const double bonus = damage * kTriangleStackBonus;
+            description = "Each other Triangle equipped adds +" +
+                          (bonus < 1000.0 ? oneDecimal(bonus) : abbreviate(bonus)) +
+                          " damage to every Triangle.";
         }
         if (config.id == "icosahedron") {
             description += "\nRicochets through up to " + std::to_string(icosahedronMaxHits(rarity)) +
@@ -401,6 +414,22 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         hit.altText = label + " " + exactNumber(damage) + note;
         hit.markup = true;
     }
+    // A glitch form rolls every hit (glitchDamageScale): half, the plain
+    // figure, or +76.25%. The card gives that range rather than one number.
+    if (content().isGlitchForm(petalIndex) && !config.lightningDamage) {
+        const double low = std::round(damage * 0.5);
+        const double high = std::round(damage * 1.7625);
+        hit.text = damageLabel + abbreviate(low) + " ~ " + abbreviate(high);
+        hit.altText = damageLabel + exactNumber(low) + " ~ " + exactNumber(high);
+    }
+    // A worn lightning cutter's damage is a strike round the flower twice a
+    // second, not a hit with its body.
+    if (config.id == "lightning_cutter") {
+        hit.text = "Lightning: " + abbreviate(damage) + " every " +
+                   oneDecimal(kLightningCutterIntervalMillis / 1000.0) + "s";
+        hit.altText = "Lightning: " + exactNumber(damage) + " every " +
+                      oneDecimal(kLightningCutterIntervalMillis / 1000.0) + "s";
+    }
     if (rarity == Rarity::Admin && config.id == "glitch") {
         hit.text = "Healing: Full mob health";
         hit.altText = hit.text;
@@ -420,6 +449,17 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         // (florr's Petal/Attribute/Bounces). Its glitch form is uncapped.
         if (config.id == "lightning") {
             TooltipLine reach{"Targets: " + std::to_string(lightningStrikeTargets(rarity)), 12.0};
+            reach.alpha = 0.56;
+            reach.labelColor = kStatGeneric;
+            lines.push_back(reach);
+        }
+        // Every other strike -- the glitch lightning's, a battery's, a
+        // capacitor's, a lightning cutter's -- lands on everything in reach.
+        if (config.id == "glitch_lightning" || config.id == "battery" ||
+            config.id == "capacitor" || config.id == "lightning_cutter") {
+            TooltipLine reach{"Targets: All within " +
+                                  abbreviate(kLightningRadius * adminReachScale(rarity)),
+                              12.0};
             reach.alpha = 0.56;
             reach.labelColor = kStatGeneric;
             lines.push_back(reach);
@@ -807,6 +847,154 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         static const double kDefaultKnockback = PetalConfig{}.knockback;
         if (stats.knockback > 0.0 && config.knockback != kDefaultKnockback) {
             statLine("Knockback: " + fineNumber(stats.knockback), kStatGeneric);
+        }
+    }
+
+    // What the petals whose effect is code rather than a stat actually do:
+    // their strikes, blasts, self-costs, volleys and summons, at this tier,
+    // from the same figures PetalSystem runs on (petal_effects.h).
+    {
+        const auto effectLine = [&](const std::string& body, std::uint32_t colour,
+                                    const std::string& alt = std::string()) {
+            TooltipLine line{body, 12.0};
+            line.alpha = 0.56;
+            line.labelColor = colour;
+            if (!alt.empty()) line.altText = alt;
+            lines.push_back(line);
+        };
+        const double talentDamage = skills.effectScale(SkillId::Damage);
+        const double strength = petalStrengthScale(rarity);
+        const double reach = adminReachScale(rarity);
+        const auto secs = [](double millis) {
+            char buffer[32];
+            std::snprintf(buffer, sizeof buffer, "%gs", std::round(millis / 100.0) / 10.0);
+            return std::string(buffer);
+        };
+
+        if (config.id == "bomb" || config.id == "explosive") {
+            const double blast = std::round(kBombBlastDamage * strength * talentDamage);
+            effectLine("Blast Damage: " + abbreviate(blast), kStatDamage,
+                       "Blast Damage: " + exactNumber(blast));
+            effectLine("Blast Radius: " + abbreviate(stats.size * reach * kExplosionRadiusPerSize),
+                       kStatGeneric);
+        }
+        if (config.id == "battery") {
+            const double base = stats.damage > 0.0 ? stats.damage
+                                                   : kLightningFallbackDamage * strength;
+            const double strike = std::round(base * talentDamage);
+            effectLine("Lightning: " + abbreviate(strike), kStatLightning,
+                       "Lightning: " + exactNumber(strike));
+            effectLine("Charges: " + std::to_string(kBatteryCharges), kStatGeneric);
+        }
+        if (config.id == "capacitor") {
+            const double strike = std::round(kCapacitorMaxCharge * strength * talentDamage);
+            effectLine("Lightning: up to " + abbreviate(strike), kStatLightning,
+                       "Lightning: up to " + exactNumber(strike));
+        }
+        if (config.id == "raindrop") {
+            const double radius = (kRaindropAuraBaseRadius +
+                                   ladderIndex(rarity) * kRaindropAuraRadiusPerRarity) * reach;
+            effectLine("Aura: every " + secs(kRaindropAuraDamageIntervalMillis) + ", radius " +
+                           abbreviate(radius),
+                       kStatGeneric);
+        }
+        if (config.radiation.present) {
+            const double interval = config.radiation.intervalMillis *
+                                    (rarity == Rarity::Admin ? 0.5 : 1.0);
+            effectLine("Pulse: every " + secs(interval) + ", radius " +
+                           abbreviate(config.radiation.radius * reach),
+                       kStatGeneric);
+            const double bite = damage * config.radiation.selfPoisonScale;
+            if (rarity != Rarity::Admin && bite > 0.0 &&
+                config.radiation.poisonDurationMillis > 0.0) {
+                effectLine("Self Poison: " + fineNumber(bite) + "/s for " +
+                               secs(config.radiation.poisonDurationMillis),
+                           kStatDanger);
+            }
+        }
+        if (config.id == "blood_leaf") {
+            const double blast =
+                kBloodLeafBlastDamage * (rarity == Rarity::Admin ? strength : 1.0);
+            effectLine("Explosion: " + abbreviate(blast) + ", radius " +
+                           abbreviate(stats.size * reach * kExplosionRadiusPerSize),
+                       kStatDamage);
+            if (rarity != Rarity::Admin) {
+                const double cost = std::pow(std::sqrt(3.0), ladderIndex(rarity)) *
+                                    skills.effectScale(SkillId::Healing) * kBehaviourHealScale;
+                effectLine("Self Damage: " + oneDecimal(cost), kStatDanger);
+            }
+        }
+        if (config.id == "blood_stinger" && rarity != Rarity::Admin) {
+            effectLine("Self Damage: " + abbreviate(kBloodStingerSelfDamage * strength),
+                       kStatDanger);
+        }
+        if (stats.webRadius > 0.0) {
+            const double slow =
+                rarity == Rarity::Admin ? kAdminWebSlowFactor : kWebSlowFactor;
+            effectLine("Web Slow: -" + exactNumber((1.0 - slow) * 100.0) + "% for " +
+                           secs(kWebLifetimeSeconds * 1000.0 * reach),
+                       kStatDuration);
+        }
+        if (stats.damageIntervalMillis > 0.0) {
+            effectLine("Hit Interval: " + secs(stats.damageIntervalMillis), kStatGeneric);
+        }
+        if (stats.attractionForce > 0.0) {
+            effectLine("Attraction Force: " + abbreviate(stats.attractionForce), kStatGeneric);
+        }
+        if (petalDividesMobs(config)) {
+            effectLine(std::string("Divides: ") + rarityLabel(rarity) + " mobs and below into " +
+                           std::to_string(dividerPieces(rarity)),
+                       kStatGeneric);
+        }
+        if (config.projectile.present) {
+            const int shots = rarity == Rarity::Admin
+                                  ? std::min(32, std::max(1, config.projectile.count) * 3)
+                                  : std::max(1, config.projectile.count);
+            if (shots > 1) effectLine("Shots: " + std::to_string(shots), kStatGeneric);
+            if (config.projectile.summonMax > 0) {
+                effectLine("Max Summons: " + std::to_string(config.projectile.summonMax),
+                           kStatGeneric);
+            }
+        }
+
+        // Summons: what comes out, how many, and how hard. A pet climbs the
+        // PETAL ladder from its mob's base (PetalSystem::hatchPetBody), at the
+        // petal's tier -- an apex one is three unique pets instead.
+        const auto petLines = [&](std::uint16_t mobIndex, int count, bool scaled) {
+            if (mobIndex == kInvalidIndex) return;
+            const MobConfig& mob = content().mob(mobIndex);
+            const bool apex = ladderRarity(rarity) == Rarity::Apex;
+            const Rarity petTier = apex ? Rarity::Unique : rarity;
+            // A squad hatches three at apex and three times over at Admin;
+            // the flower's crack is always its fixed three.
+            const int multiple =
+                scaled ? (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1) : 1;
+            effectLine("Pets: " + std::to_string(count * multiple) + "x " +
+                           rarityLabel(petTier) + " " + mob.name,
+                       kStatGeneric);
+            const double ladder = petalStatScale(petTier) * strengthBoost(rarity);
+            const double hp = mob.health * ladder * mob.petHealthScale *
+                              skills.healthScale(SkillId::PetHealth);
+            const double bite = mob.damage * ladder * mob.petDamageScale;
+            effectLine("Pet HP: " + abbreviate(hp), kStatHealth, "Pet HP: " + exactNumber(hp));
+            effectLine("Pet Damage: " + abbreviate(bite), kStatDamage,
+                       "Pet Damage: " + exactNumber(bite));
+        };
+        if (config.petMobRandom) {
+            const bool apex = ladderRarity(rarity) == Rarity::Apex;
+            const int multiple = (apex ? kApexPetCount : 1) * (rarity == Rarity::Admin ? 3 : 1);
+            const int least = std::max(0, config.petCount);
+            effectLine("Pets: " + std::to_string(least * multiple) + "-" +
+                           std::to_string(std::max(least, config.petCountMax) * multiple) +
+                           " random",
+                       kStatGeneric);
+        } else if (config.petMobIndex != kInvalidIndex) {
+            petLines(config.petMobIndex, std::max(0, config.petCount), true);
+        }
+        if (config.id == "flower") {
+            petLines(content().mobIndex(kFlowerPetMobId), kFlowerPetCount, false);
+            effectLine("Corrupt Chance: " + exactNumber(kFlowerCorruptChance * 100.0) + "%",
+                       kStatDanger);
         }
     }
 

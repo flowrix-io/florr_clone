@@ -66,6 +66,7 @@ TEST(a_rebound_control_survives_the_settings_file) {
     // A row can be left bound to nothing, and must not come back as a default.
     written.bindControl(ControlAction::ToggleMouseControls, Key::Unknown);
     written.useMouseControls = false;
+    written.invertAttack = true;
     CHECK(written.save(path));
 
     ClientSettings read;
@@ -76,6 +77,8 @@ TEST(a_rebound_control_survives_the_settings_file) {
     CHECK(read.controlKey(ControlAction::Skills) == Key::Y);
     CHECK(read.controlKey(ControlAction::ToggleMouseControls) == Key::Unknown);
     CHECK(!read.useMouseControls);
+    CHECK(read.invertAttack);
+    CHECK(!read.invertDefend);
     // Untouched rows are still their defaults, not whatever the file's last
     // line happened to leave behind.
     CHECK(read.controlKey(ControlAction::MoveDown) == Key::S);

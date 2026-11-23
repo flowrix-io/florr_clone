@@ -284,9 +284,18 @@ Rarity LootSystem::chaffDropRarity(Rarity mobRarity) {
 }
 
 Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng) {
+    // An apex grades off its own table, not the split below: see
+    // kApexEternalDropChance.
+    if (mobRarity == Rarity::Apex) {
+        const double roll = rng.unit();
+        if (roll < kApexEternalDropChance) return Rarity::Unique;
+        if (roll < kApexEternalDropChance + kApexUltraDropChance) return Rarity::Ultra;
+        return Rarity::Super;
+    }
     Rarity base = baseRarity;
     const double upgrade =
-        clamp(dropUpgradeChance(base) * dropUpgradeMultiplier(mobRarity), 0.0, 1.0);
+        clamp(dropUpgradeChance(base) * dropUpgradeMultiplier(mobRarity), 0.0,
+              kMaxDropUpgradeChance);
     if (rng.chance(upgrade)) {
         base = upgradeRarity(base);
     } else if (rng.chance(dropDowngradeChance(base))) {
@@ -299,8 +308,6 @@ Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rn
         const int floor = mobTier >= rarityIndex(Rarity::Epic) ? mobTier - 2 : mobTier - 1;
         if (rarityIndex(base) < floor) base = clampRarity(floor);
     }
-    // Apex mobs explicitly cap item rarity at unique.
-    if (mobRarity == Rarity::Apex && base == Rarity::Apex) base = Rarity::Unique;
     return base;
 }
 
@@ -648,111 +655,113 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         // have dropped into a common magic leaf and nothing else -- no
         // ordinary leaf, and no magic leaf above common -- so the way to farm
         // better magic petals is to carry a better orb. A worn glitch orb does
-        // exactly the same with glitch forms.
+        // exactly the same with glitch forms. Read off each flower and applied
+        // to that flower's own roll: an orb is a bonus its wearer carries, not
+        // a rule for the whole kill.
         //
-        // Read off EACH eligible flower, and applied to that flower's copy
-        // alone: an orb is a bonus its wearer carries, not a rule for the whole
-        // kill. So a petal with a form splits into one drop per distinct
-        // outcome among the eligible -- the flowers it does not convert for
-        // share the ordinary one -- each reserved for its own group, which
-        // replication already hides from everybody else. kRarityCount is "no
-        // orb worn", which is almost every flower in the game, and then nothing
-        // splits.
-        eligibleOrbs_.clear();
-        bool anyMagicOrb = false;
-        bool anyGlitchOrb = false;
-        for (const Entity claimant : eligible_) {
-            const WornOrbs worn = wornOrbs(world, content, claimant, magicOrb, glitchOrb);
-            eligibleOrbs_.push_back(worn);
-            anyMagicOrb = anyMagicOrb || worn.magic != kRarityCount;
-            anyGlitchOrb = anyGlitchOrb || worn.glitch != kRarityCount;
-        }
-
-        selected_.clear();
-        rollTable(table, mobRarity, rng);
-
-        // Which of the rows is the mob's REAL drop.
+        // Every eligible flower ROLLS the table on its own, so one lucky roll
+        // no longer hands the same rare petal to everybody who hit the mob:
+        // each flower faces the odds a shared roll gave, but separately.
         //
-        // Above unusual a kill used to hand out exactly one item, picked out
-        // of the table by a probability-weighted draw. It still is, and that
-        // item is still graded by the same pipeline it always was -- the rate
-        // at which a mob of a given rarity leaves an item of that rarity is
-        // what it was before the table started paying out in full. What
-        // changed is everything ELSE the mob has: those rows drop too now,
-        // flat at two tiers below the mob. More loot per kill, at the bottom
-        // of the mob's band, where it cannot move progression.
+        // Rolled per flower, PLACED per outcome. Flowers whose rolls came out
+        // the same share one drop on the ground, reserved for all of them --
+        // which is what every drop was before -- and replication still hides
+        // each drop from everyone it is not reserved for. Most of what a mob
+        // leaves is chaff at a fixed tier, so most rolls agree, and a kill
+        // paid to twenty-five flowers puts barely more on the ground than a
+        // kill paid to one: the count is bounded by how many DIFFERENT
+        // outcomes came up, not by how many flowers were paid.
         //
-        // A common or unusual mob grades every row it hands out, which is
-        // what both have always done -- neither has a weighted draw to
-        // reproduce.
+        // Which row is the mob's REAL drop: above unusual a kill hands out
+        // exactly one graded item, picked out of the table by a
+        // probability-weighted draw, and every OTHER row drops flat at two
+        // tiers below the mob -- more loot per kill, at the bottom of the
+        // mob's band, where it cannot move progression. A common or unusual
+        // mob grades every row it hands out; neither has a weighted draw.
         const bool gradeEveryRow = rarityIndex(mobRarity) <= rarityIndex(Rarity::Uncommon);
-        const std::size_t featured = gradeEveryRow ? 0 : pickFeatured(rng);
-
         const int copies = mobRarity == Rarity::Apex ? 10 : 1;
-        for (std::size_t row = 0; row < selected_.size(); ++row) {
-            const DropTables::Entry* entry = selected_[row];
-            const bool graded = gradeEveryRow || row == featured;
-            // The mob's tier scale is rolled ONCE per graded row, upstream of
-            // the copies: an apex batch shares one base rarity and its ten
-            // items differ only by their own upgrade rolls.
-            const Rarity base = graded
-                                    ? scaleDropRarity(clampRarity(entry->rarityOffset), mobRarity,
-                                                      rng)
-                                    : chaffDropRarity(mobRarity);
-            for (int i = 0; i < copies; ++i) {
-                if (dropShare < 1.0 && !rng.chance(dropShare)) continue;
-                Rarity rarity = graded ? finishDropRarity(base, mobRarity, rng) : base;
-                // The Random sentinel resolves per COPY, not per row.
-                std::uint16_t petalIndex = entry->kind == DropTables::Kind::RandomPetal
-                                               ? tables_.randomPetal(rng, rarity)
-                                               : entry->petalIndex;
-                // A petal that does not come at the tier this copy rolled is
-                // not dropped at all -- not lifted to its floor, which would
-                // turn a common spider's third eye into a legendary one.
-                if (!petalComesAt(content.petal(petalIndex), rarity)) continue;
-                const std::uint16_t magic =
-                    anyMagicOrb ? content.magicFormOf(petalIndex) : kInvalidIndex;
-                const std::uint16_t glitch =
-                    anyGlitchOrb ? content.glitchFormOf(petalIndex) : kInvalidIndex;
-                const Vec2 scatter{rng.range(-50.0, 50.0), rng.range(-50.0, 50.0)};
-                // Unresolved on purpose, as in the reference: the per-tick pass
-                // is what pushes a drop out of the geometry it landed in. Noted
-                // so the sweep below tests the scattered position, as the
-                // reference's same-step pickup does.
-                if (magic == kInvalidIndex && glitch == kInvalidIndex) {
-                    const Entity dropped =
-                        spawnDrop(world, petalIndex, rarity, at + scatter, realm, eligible_);
-                    if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
-                    continue;
-                }
-                eligibleForms_.clear();
-                for (const WornOrbs& worn : eligibleOrbs_) {
-                    eligibleForms_.push_back(orbFormFor(worn, petalIndex, magic, glitch));
-                }
-                for (std::size_t first = 0; first < eligible_.size(); ++first) {
-                    const OrbForm form = eligibleForms_[first];
-                    // One drop per outcome, placed when its first member comes up.
-                    if (std::find(eligibleForms_.begin(),
-                                  eligibleForms_.begin() + static_cast<std::ptrdiff_t>(first),
-                                  form) != eligibleForms_.begin() +
-                                               static_cast<std::ptrdiff_t>(first)) {
-                        continue;
+        outcomes_.clear();
+        for (std::size_t who = 0; who < eligible_.size(); ++who) {
+            const WornOrbs worn = wornOrbs(world, content, eligible_[who], magicOrb, glitchOrb);
+            const bool wearsOrb = worn.magic != kRarityCount || worn.glitch != kRarityCount;
+
+            selected_.clear();
+            rollTable(table, mobRarity, rng);
+            const std::size_t featured = gradeEveryRow ? 0 : pickFeatured(rng);
+
+            for (std::size_t row = 0; row < selected_.size(); ++row) {
+                const DropTables::Entry* entry = selected_[row];
+                const bool graded = gradeEveryRow || row == featured;
+                // The mob's tier scale is rolled ONCE per graded row, upstream
+                // of the copies: an apex batch shares one base rarity and its
+                // ten items differ only by their own upgrade rolls.
+                const Rarity base =
+                    graded ? scaleDropRarity(clampRarity(entry->rarityOffset), mobRarity, rng)
+                           : chaffDropRarity(mobRarity);
+                for (int i = 0; i < copies; ++i) {
+                    if (dropShare < 1.0 && !rng.chance(dropShare)) continue;
+                    Rarity rarity = graded ? finishDropRarity(base, mobRarity, rng) : base;
+                    // The Random sentinel resolves per COPY, not per row.
+                    const std::uint16_t petalIndex =
+                        entry->kind == DropTables::Kind::RandomPetal
+                            ? tables_.randomPetal(rng, rarity)
+                            : entry->petalIndex;
+                    // A petal that does not come at the tier this copy rolled
+                    // is not dropped at all -- not lifted to its floor, which
+                    // would turn a common spider's third eye into a legendary
+                    // one.
+                    if (!petalComesAt(content.petal(petalIndex), rarity)) continue;
+                    OrbForm form{petalIndex, kRarityCount};
+                    if (wearsOrb) {
+                        form = orbFormFor(worn, petalIndex, content.magicFormOf(petalIndex),
+                                          content.glitchFormOf(petalIndex));
                     }
-                    orbGroup_.clear();
-                    for (std::size_t j = first; j < eligible_.size(); ++j) {
-                        if (eligibleForms_[j] == form) orbGroup_.push_back(eligible_[j]);
-                    }
-                    Rarity groupRarity = rarity;
-                    // The gate. Applied AFTER the ordinary roll rather than
-                    // instead of it, so a low orb does not also flatten the
-                    // odds -- it caps what those odds can produce. No orb is a
-                    // cap of kRarityCount, above every tier.
-                    if (rarityIndex(groupRarity) > form.cap) groupRarity = clampRarity(form.cap);
-                    const Entity dropped =
-                        spawnDrop(world, form.petal, groupRarity, at + scatter, realm, orbGroup_);
-                    if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
+                    // The orb's gate. Applied AFTER the ordinary roll rather
+                    // than instead of it, so a low orb does not also flatten
+                    // the odds -- it caps what those odds can produce.
+                    if (rarityIndex(rarity) > form.cap) rarity = clampRarity(form.cap);
+                    outcomes_.push_back({form.petal, rarity, static_cast<std::uint32_t>(who)});
                 }
             }
+        }
+
+        // Equal outcomes side by side, and within one outcome each flower's
+        // copies in a run of their own.
+        std::sort(outcomes_.begin(), outcomes_.end(),
+                  [](const RolledDrop& a, const RolledDrop& b) {
+                      if (a.petal != b.petal) return a.petal < b.petal;
+                      if (a.rarity != b.rarity) return rarityIndex(a.rarity) < rarityIndex(b.rarity);
+                      return a.who < b.who;
+                  });
+        for (std::size_t begin = 0; begin < outcomes_.size();) {
+            std::size_t end = begin;
+            while (end < outcomes_.size() && outcomes_[end].petal == outcomes_[begin].petal &&
+                   outcomes_[end].rarity == outcomes_[begin].rarity) {
+                ++end;
+            }
+            // A flower that rolled this outcome k times is owed k copies, so
+            // the group is laid down in layers: the j-th drop is reserved for
+            // every flower that rolled it more than j times.
+            for (std::size_t layer = 0;; ++layer) {
+                claimants_.clear();
+                for (std::size_t i = begin; i < end;) {
+                    std::size_t run = i;
+                    while (run < end && outcomes_[run].who == outcomes_[i].who) ++run;
+                    if (run - i > layer) claimants_.push_back(eligible_[outcomes_[i].who]);
+                    i = run;
+                }
+                if (claimants_.empty()) break;
+                // Unresolved on purpose, as in the reference: the per-tick
+                // pass is what pushes a drop out of the geometry it landed in.
+                // Noted so the sweep tests the scattered position, as the
+                // reference's same-step pickup does.
+                const Vec2 scatter{rng.range(-50.0, 50.0), rng.range(-50.0, 50.0)};
+                const Entity dropped = spawnDrop(world, outcomes_[begin].petal,
+                                                 outcomes_[begin].rarity, at + scatter, realm,
+                                                 claimants_);
+                if (dropped != NULL_ENTITY) fresh_.push_back(dropped);
+            }
+            begin = end;
         }
     }
 }

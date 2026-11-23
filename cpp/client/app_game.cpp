@@ -319,6 +319,9 @@ void App::sendInputFrame(double dt) {
     const bool textDrag = selectable.dragging() ||
                           (window_.mousePressed(MouseButton::Left) &&
                            selectable.overTextLastFrame(pointer));
+    // What the player is HOLDING, before the invert settings flip it.
+    bool attackHeld = false;
+    bool defendHeld = false;
     if (!chatOpen_ && !menuOpen && !textDrag && !menus_.capturesMouse(pointer) &&
         !tutorial_.capturesMouse(pointer)) {
         // Pointer actions and explicit admin chords are rechecked against
@@ -330,12 +333,12 @@ void App::sendInputFrame(double dt) {
         if ((!adminCursor && window_.mouseDown(MouseButton::Left)) ||
             (adminChord == AdminCursorChord::None &&
              boundKeyDown(window_, settings.controlKey(ControlAction::ExtendPetals)))) {
-            input.flags |= net::InputAttack;
+            attackHeld = true;
         }
         if (window_.mouseDown(MouseButton::Right) ||
             (adminChord == AdminCursorChord::None &&
              boundKeyDown(window_, settings.controlKey(ControlAction::RetractPetals)))) {
-            input.flags |= net::InputDefend;
+            defendHeld = true;
         }
     }
     // Outside that guard on purpose: the two on-screen buttons are their own
@@ -348,10 +351,18 @@ void App::sendInputFrame(double dt) {
             if (adminTouch_.hasPointer() && mobile_.attackPressed()) input.flags |= net::InputAdminKill;
             if (adminTouch_.hasPointer() && mobile_.retractPressed()) input.flags |= net::InputAdminTeleport;
         } else {
-            if (mobile_.attackPressed()) input.flags |= net::InputAttack;
-            if (mobile_.retractPressed()) input.flags |= net::InputDefend;
+            if (mobile_.attackPressed()) attackHeld = true;
+            if (mobile_.retractPressed()) defendHeld = true;
         }
     }
+    // Invert Attack / Invert Defend: the action is on until it is held. Not
+    // while an admin chord is down -- those keys are the chord's, not a swing.
+    if (adminChord == AdminCursorChord::None) {
+        if (settings.invertAttack) attackHeld = !attackHeld;
+        if (settings.invertDefend) defendHeld = !defendHeld;
+    }
+    if (attackHeld) input.flags |= net::InputAttack;
+    if (defendHeld) input.flags |= net::InputDefend;
 
     net_.sendInput(input);
 }

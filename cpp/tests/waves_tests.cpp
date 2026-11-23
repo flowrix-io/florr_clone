@@ -983,6 +983,12 @@ TEST(a_hostile_wave_mob_hunts_a_flower_from_across_a_grown_disc) {
     CHECK(h.stepUntil({&boss}, [&] { return boss.rift().open; }));
     CHECK(throughTheRift(h, {&boss}, boss, "boss"));
     immortal(h, "boss");
+    // An ordinary wave, not whichever special one the server's stream rolls:
+    // a swarm of rare-or-better bees is all neutral, with no hunter in it.
+    auto& run = GameServerPeer::waves(h.server);
+    Rng ordinary(60);
+    run.spawner.next(run.biome, run.wave, ordinary, WaveSpawner::kOrdinaryWave);
+    killMobsLeaving(h, 0);
     World& world = h.server.world();
     Entity hunter = NULL_ENTITY;
     CHECK(h.stepUntil({&boss}, [&] {

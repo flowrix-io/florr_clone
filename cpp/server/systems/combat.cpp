@@ -1,4 +1,5 @@
 #include "server/systems/combat.h"
+#include "shared/game/petal_effects.h"
 #include "server/systems/shot_range.h"
 
 #include <algorithm>
@@ -2686,6 +2687,13 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
             source.convertsInto = content.mobIndex(kCMinusMobId);
         }
         if (petalDividesMobs(config)) source.dividesInto = dividerPieces(petal.rarity);
+        // A triangle hits harder for every other one its flower wears.
+        if (petalStacksWithCopies(config)) {
+            if (const Loadout* loadout = world.tryGet<Loadout>(petal.owner)) {
+                source.damage *=
+                    triangleStackScale(equippedCopiesOf(content, *loadout, petal.configIndex));
+            }
+        }
         // The flower's damage bonus is a property of the flower, not of the
         // petal entity, so it is read here rather than baked in at spawn --
         // swapping a damage petal in must affect the ring on the same tick.
@@ -2840,8 +2848,16 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // A pet and a wild mob meet in the separation kernel's contact
             // list, which is built with the same gap the kernel keeps between
             // bodies rather than at exact circle overlap.
-            const bool petPair = source.isMobBody && world.has<MobTag>(victim) &&
-                                 source.isPet != world.has<Pet>(victim);
+            //
+            // A pet on a hostile NPC -- the target dummies -- counts as the
+            // same pair. Without it a pet bit a dummy on the body's 500 ms
+            // window instead of every tick, and the dummy read a fifteenth of
+            // what the same pet deals to a mob. canHit still turns away the
+            // friendly NPCs.
+            const bool petPair = source.isMobBody &&
+                                 ((world.has<MobTag>(victim) &&
+                                   source.isPet != world.has<Pet>(victim)) ||
+                                  (source.isPet && world.has<NpcTag>(victim)));
 
             // A flower and an NPC meet flush, never overlapping: the flower
             // was put back out against the NPC's skin before this pass ran,

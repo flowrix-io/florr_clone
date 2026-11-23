@@ -194,6 +194,39 @@ TEST(equipping_a_splitter_cuts_the_flower_along_the_petals_line) {
     CHECK(world.get<Loadout>(original).slots[0].broken);
 }
 
+TEST(a_split_flower_counts_once_in_biome) {
+    Harness h("splitter-biome", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    const std::uint16_t splitter = content().petalIndex(kSplitterPetalId);
+    CHECK(splitter != kInvalidIndex);
+    if (splitter == kInvalidIndex) return;
+    CHECK(equipSplitter(h, alice, "alice", splitter));
+    CHECK(h.stepUntil({&alice}, [&] { return bodiesNamed(world, "alice").size() == 2; }, 5));
+
+    // Two bodies, one person: /biome is asking where PEOPLE are.
+    alice.sendChat("/biome");
+    const auto answered = [&] {
+        for (const auto& line : alice.chat()) {
+            if (line.text.find("Most populated biome") != std::string::npos) return true;
+        }
+        return false;
+    };
+    CHECK(h.stepUntil({&alice}, answered, 60));
+    bool once = false;
+    for (const auto& line : alice.chat()) {
+        if (line.text.find("Most populated biome") == std::string::npos) continue;
+        once = line.text.find("(1 player)") != std::string::npos;
+    }
+    CHECK(once);
+}
+
 TEST(a_split_flowers_two_halves_are_one_persons) {
     Harness h("splitter-one-person", {}, flix::testsupport::dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }

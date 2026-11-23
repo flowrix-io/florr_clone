@@ -142,6 +142,8 @@ enum Toggle : int {
     kNumberKeysUseItems,
     kClassicLoadoutBar,
     kUseMouseControls,
+    kInvertAttack,
+    kInvertDefend,
     kRequestMobile,
     kHideOtherPetals,
     kHideOtherPets,
@@ -243,6 +245,8 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kDebugMenuEnabled: return &settings.showDebugButton;
         case kClassicLoadoutBar: return &settings.classicLoadoutBar;
         case kUseMouseControls: return &settings.useMouseControls;
+        case kInvertAttack: return &settings.invertAttack;
+        case kInvertDefend: return &settings.invertDefend;
         case kRequestMobile: return &settings.requestMobile;
         case kHideOtherPetals: return &settings.render.hideOtherPetals;
         case kHideOtherPets: return &settings.render.hideOtherPets;
@@ -635,6 +639,8 @@ bool SettingsPanel::render(MenuContext& ctx) {
 
             p.checkbox(kNumberKeysUseItems, "Number Keys Use Items (off = swap loadout)");
             p.checkbox(kUseMouseControls, "Use Mouse Controls (K toggles in-game)");
+            p.checkbox(kInvertAttack, "Invert Attack Button (attack unless held)");
+            p.checkbox(kInvertDefend, "Invert Defend Button (defend unless held)");
             p.checkbox(kRequestMobile, "Request Mobile (touch joystick & attack/retract buttons)");
             break;
         }

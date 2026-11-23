@@ -117,12 +117,12 @@ constexpr bool isRandomDifficulty(double difficulty) { return difficulty < 0.0; 
 /// event a band asks for by difficulty, never something random ground hands
 /// out.
 inline constexpr std::array<double, kLadderRarityCount> kNaturalRaritySpread = {{
-    0.40,  // common
+    0.39,  // common   (gave mythic its extra point)
     0.30,  // uncommon
     0.15,  // rare
     0.10,  // epic
     0.04,  // legendary
-    0.01,  // mythic
+    0.02,  // mythic   (twice the reference's 1%)
     0.0,   // ultra
     0.0,   // super
     0.0,   // unique
@@ -257,14 +257,30 @@ struct TierMix {
     double upperChance = 0.0;
 };
 
+/// How much more often a tier spawns than the curve's plain blend says: mythic
+/// twice as often and ultra four times, against whichever tier they share a
+/// band with. A weight, not a chance -- a band that is ALL ultra stays all ultra.
+inline constexpr double spawnTierWeight(Rarity r) {
+    if (r == Rarity::Ultra) return 4.0;
+    return r == Rarity::Mythic ? 2.0 : 1.0;
+}
+
 /// The blend at a tier value. Pure, so the distribution can be asserted on
 /// without an Rng.
+///
+/// The fractional part of the tier value is the upper tier's share, and then
+/// spawnTierWeight leans the blend toward mythic and ultra.
 inline TierMix tierMixForTierValue(double tier) {
     const double clamped = clamp(tier, 0.0, kMaxTierValue);
     const int lower = static_cast<int>(std::floor(clamped));
     if (lower >= kLadderRarityCount - 1) return TierMix{Rarity::Apex, Rarity::Apex, 0.0};
-    return TierMix{clampLadderRarity(lower), clampLadderRarity(lower + 1),
-                   clamped - static_cast<double>(lower)};
+    const Rarity low = clampLadderRarity(lower);
+    const Rarity high = clampLadderRarity(lower + 1);
+    const double fraction = clamped - static_cast<double>(lower);
+    const double lowWeight = (1.0 - fraction) * spawnTierWeight(low);
+    const double highWeight = fraction * spawnTierWeight(high);
+    const double total = lowWeight + highWeight;
+    return TierMix{low, high, total > 0.0 ? highWeight / total : 0.0};
 }
 
 /// The blend a difficulty spawns, at neutral luck.
