@@ -641,6 +641,13 @@ constexpr ChangelogEntry kChangelog[] = {
         "Fixed Sponge's stored damage getting stuck at 65,534",
         "Fixed healing petals like Azalea, Dahlia and Rose sometimes not getting eaten"
       }
+    },
+    {"November 22, 2026",
+      {
+        "New petal: Shovel",
+        "New petal: Bean",
+        "New mob: Folder"
+      }
     }
 };
 
