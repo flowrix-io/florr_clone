@@ -673,14 +673,14 @@ void App::drawTrialHud(Canvas& canvas, double time) {
     y += line.size + 4.0 * kWaveUi;
     const double buffY = y + line.size * 0.5;
     if (trial.buff == TrialBuffKind::ProjectileCritical) {
-        // The crit blessing as the dice petal turned 45 degrees and its rate.
+        // The crit blessing as the dice petal (it draws itself tilted) and its rate.
         const std::string rate = "1.5x/4s";
         const double die = line.size * 1.1;
         const double gap = 4.0 * kWaveUi;
         const double total = die + gap + textWidth(canvas, rate, line.size);
         const double left = middle - total * 0.5;
         sprites_.drawPetal(canvas, content().petalIndex("dice"), Rarity::Common,
-                           left + die * 0.5, buffY, die, kPi * 0.25, time);
+                           left + die * 0.5, buffY, die, 0.0, time);
         line.align = Align::Left;
         text(canvas, rate, left + die + gap, buffY, line);
     } else {

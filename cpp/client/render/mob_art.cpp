@@ -278,6 +278,8 @@ namespace flix
             return MobArt::Titan;
         if (name == "moon")
             return MobArt::Moon;
+        if (name == "dice")
+            return MobArt::Dice;
         if (name == "assembler")
             return MobArt::Assembler;
         if (name == "flower")
@@ -3498,6 +3500,98 @@ namespace flix
                            0.0f, static_cast<float>(kTau));
             }
             canvas.stroke();
+            canvas.fill();
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::Dice:
+        {
+            // florr's dice petal (render 0x1006f4530, petal id 67): a white
+            // 20-unit square, its outline the same square stroked 3 wide with
+            // round joins in the body's 0.9 shade (#CFCFCF), then the face's
+            // pips, #777777 discs of radius 2.2 on a 4-unit grid -- florr's
+            // face table, copied pip for pip. Turned 0.9 rad (florr's
+            // 51.5662 degrees) on top of whatever turn the caller gives it.
+            //
+            // A picture (no entity) is florr's icon: face five, still. In the
+            // world florr re-rolls the face every 700 ms and, when the roll
+            // lands on a different face, sets a spin of 2 pi that decays by
+            // e^(-0.013388613 dt) per ms -- the dice tumbles onto it. florr
+            // keeps that as per-petal state; here it is a pure function of
+            // the clock: the roll for each 700 ms window is a hash of the
+            // window and the petal's id (offset by the id so a ring of dice
+            // does not tumble in step), and the spin is how long ago the
+            // current window began, if its face differs from the last one.
+            //
+            // Sized so the square spans 20 of 24 units across the radius --
+            // the size of the SVG it replaced.
+            constexpr double kDesign = 12.0;
+            constexpr double kHalf = 10.0;
+            constexpr double kPip = 2.2;
+            constexpr double kTurn = 0.9;
+            constexpr double kRollMs = 700.0;
+            constexpr double kSpinDecayPerMs = 0.013388613078852581;
+            struct Pip
+            {
+                float x, y;
+            };
+            struct Face
+            {
+                int count;
+                Pip pips[6];
+            };
+            static constexpr Face kFaces[6] = {
+                {1, {{0, 0}}},
+                {2, {{-4, -4}, {4, 4}}},
+                {3, {{-4, -4}, {0, 0}, {4, 4}}},
+                {4, {{-4, -4}, {-4, 4}, {4, 4}, {4, -4}}},
+                {5, {{0, 0}, {-4, -4}, {-4, 4}, {4, 4}, {4, -4}}},
+                {6, {{-4, 0}, {4, 0}, {-4, -4}, {-4, 4}, {4, 4}, {4, -4}}},
+            };
+
+            int face = 4;
+            double spin = 0.0;
+            if (attr.inWorld)
+            {
+                const auto roll = [&](std::int64_t window) {
+                    std::uint64_t h = static_cast<std::uint64_t>(window) * 0x9E3779B97F4A7C15ull ^
+                                      (static_cast<std::uint64_t>(attr.seed) << 32);
+                    h ^= h >> 31;
+                    h *= 0xBF58476D1CE4E5B9ull;
+                    h ^= h >> 29;
+                    return static_cast<int>(h % 6u);
+                };
+                const double t = attr.clockMs + (attr.seed % 997u) * (kRollMs / 997.0);
+                const double windowStart = std::floor(t / kRollMs);
+                const auto window = static_cast<std::int64_t>(windowStart);
+                face = roll(window);
+                if (face != roll(window - 1))
+                    spin = kTau * std::exp(-kSpinDecayPerMs * (t - windowStart * kRollMs));
+            }
+
+            canvas.save();
+            const float scale = static_cast<float>(attr.radius / kDesign);
+            canvas.scale(scale, scale);
+            canvas.rotate(static_cast<float>(kTurn + spin));
+
+            ui::setFill(canvas, 0xFFFFFFu);
+            canvas.fillRect(static_cast<float>(-kHalf), static_cast<float>(-kHalf),
+                            static_cast<float>(2 * kHalf), static_cast<float>(2 * kHalf));
+            ui::setStroke(canvas, shadeOf(0xFFFFFFu, 0.9));
+            roundStrokes(canvas, 3.0);
+            canvas.strokeRect(static_cast<float>(-kHalf), static_cast<float>(-kHalf),
+                              static_cast<float>(2 * kHalf), static_cast<float>(2 * kHalf));
+
+            ui::setFill(canvas, 0x777777u);
+            canvas.beginPath();
+            const Face &pips = kFaces[face];
+            for (int i = 0; i < pips.count; ++i)
+            {
+                const Pip &p = pips.pips[i];
+                canvas.moveTo(p.x + static_cast<float>(kPip), p.y);
+                canvas.arc(p.x, p.y, static_cast<float>(kPip), 0.0f, static_cast<float>(kTau));
+            }
             canvas.fill();
             canvas.restore();
             break;

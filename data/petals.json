@@ -207,7 +207,7 @@
         "description": "Has a 5% chance of dealing 35x damage. Chance increases by 4% per point in luck.",
         "color": "#CFCFCF",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-12 -12 24 24\"><rect x=\"-10\" y=\"-10\" width=\"20\" height=\"20\" fill=\"#CFCFCF\"/><rect x=\"-7.6\" y=\"-7.6\" width=\"15.2\" height=\"15.2\" fill=\"#FFFFFF\"/><circle cx=\"-4\" cy=\"-4\" r=\"2.2\" fill=\"#777777\"/><circle cx=\"4\" cy=\"4\" r=\"2.2\" fill=\"#777777\"/></svg>",
+        "image": "$dice",
         "isAdminPetal": false
     },
     "privet": {

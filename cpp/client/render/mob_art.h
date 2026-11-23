@@ -90,6 +90,10 @@ enum class MobArt : std::uint8_t {
     /// The one PETAL drawn by code (petals.json `$moon`): gardn's seeded
     /// crater scatter, clipped to the disc, magnified to the moon's radius.
     Moon,
+    /// The dice petal (petals.json `$dice`), florr's drawing: a white square
+    /// with a shaded outline and one of six faces. A picture rests on florr's
+    /// icon face (five); a dice in the world re-rolls its face and tumbles.
+    Dice,
     /// florr's assembler NPC: a machine on a tread, its gears turning on the
     /// mob's clock and its dial needles twitching.
     Assembler,

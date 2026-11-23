@@ -146,8 +146,11 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
     if (sprites_) {
         // The sprite cache falls back to a disc in the petal's own colour when
         // its artwork failed to compile, which is the useful fallback here.
+        MobMotion motion;
+        motion.clockMs = timeSeconds * 1000.0;
+        motion.seed = entity.netId;
         sprites_->drawPetal(canvas, entity.typeIndex, entity.rarity, 0, 0, diameter, 0,
-                            timeSeconds);
+                            timeSeconds, &motion);
     } else {
         ui::disc(canvas, {0, 0}, diameter * 0.5,
                  config ? static_cast<std::uint32_t>(config->colorRgba >> 8) : 0xFFFFFFu,

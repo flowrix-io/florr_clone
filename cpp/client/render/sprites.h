@@ -147,8 +147,13 @@ public:
     /// tier unless petals.json repaints it from one up (`rarityFills`). A call
     /// site with no tier behind it -- the title screen's drift, a flower's
     /// cutter -- passes Common.
+    ///
+    /// `motion` is a petal IN THE WORLD (its clock and its id as the seed);
+    /// only a painted petal reads it -- the dice rolls its face from it.
+    /// Null is a picture: an icon, a drop, a card.
     void drawPetal(Canvas&, std::uint16_t index, Rarity rarity, double x, double y,
-                   double diameter, double rotation, double timeSeconds) const;
+                   double diameter, double rotation, double timeSeconds,
+                   const MobMotion* motion = nullptr) const;
 
     /// True when the sprite compiled; false when the fallback disc is used.
     bool mobDrawable(std::uint16_t index) const;
