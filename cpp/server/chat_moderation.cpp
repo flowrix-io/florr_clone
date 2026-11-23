@@ -100,6 +100,8 @@ constexpr Listed kAllowed[] = {
     {"fuku", Fit::Start},           // Fukushima, Fukuoka
     {"retardant", Fit::Inside},     // flame retardant
     {"retardation", Fit::Inside},
+    {"film", Fit::Inside},          // read backwards with 'l' as 'i', "milf"
+    {"darkle", Fit::Inside},        // 'l' as 'i', "darkie"
 };
 
 /// Two ordinary words that spell a listed one when the space between them is
@@ -282,6 +284,10 @@ Kind read(std::uint32_t codePoint, Cell& cell) {
         cell.letters = letter(static_cast<char>(codePoint));
         // A 'v' is a 'u' with a point on it: "fvck".
         if (codePoint == 'v') cell.letters |= letter('u');
+        // A lowercase 'l' and a capital 'I' are the same upright stroke in a
+        // sans-serif font, so "nlgger" and "cIit" read as what they show.
+        if (codePoint == 'l') cell.letters |= letter('i');
+        if (codePoint == 'i') cell.letters |= letter('l');
         return Kind::Letter;
     }
     for (const StandIn& standIn : kStandIns) {
