@@ -933,6 +933,12 @@ struct PetalConfig {
     /// dandelion locks healing for exactly as long as a common one.
     double noHealDurationMillis = 0;
 
+    /// How long popping this petal keeps its flower underground (Burrowed):
+    /// florr's shovel, "Becomes untargetable but unable to use petals for a
+    /// limited time". Flat across the ladder; the shovel climbs on its reload.
+    /// The petal pops on defend once it has been on the ring this long too.
+    double burrowMillis = 0;
+
     double speed = 0;           ///< orbit speed for the petals that override it
     bool noPhysics = false;     ///< no body, no collision: a pure modifier
     bool defendOnly = false;    ///< only acts while the ring is pulled in
@@ -1182,6 +1188,8 @@ struct PetalStats {
     double extraPoisonMillis = 0;
     /// Flat across the ladder; see PetalConfig::noHealDurationMillis.
     double noHealDurationMillis = 0;
+    /// Flat across the ladder; see PetalConfig::burrowMillis.
+    double burrowMillis = 0;
     double heal = 0;                    ///< burst heal per charge
     double healChargeMillis = 0;
     double passiveHealPerSecond = 0;
@@ -1417,6 +1425,11 @@ inline bool petalWardsHits(const PetalConfig& config) { return config.id == "naz
 /// a flat 1-point pool, so anything that touches it breaks it, and its
 /// landing charges it the rest (CombatSystem::resolveMelee).
 inline bool petalSpentOnHit(const PetalConfig& config) { return config.id == "privet"; }
+/// A shovel puts its flower underground (Burrowed) when popped. florr's
+/// slot 14 runs 15 s at common down to 2 s at tier 8, 1.625 s a tier.
+inline bool petalBurrows(const PetalConfig& config) { return config.burrowMillis > 0.0; }
+inline constexpr double kShovelReloadMillis = 15000.0;
+inline constexpr double kShovelReloadStepMillis = 1625.0;
 /// florr's Petal/Attribute/Charges, flat at every tier.
 inline constexpr std::uint8_t kNazarCharges = 3;
 /// What a warded hit still costs: florr's 98% off.

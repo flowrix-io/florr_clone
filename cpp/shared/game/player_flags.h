@@ -43,6 +43,10 @@ enum EquipFlag : std::uint16_t {
     /// A bandage, drawn wrapped round the flower for as long as it is worn
     /// (user, 2026-10-22) -- not only while it holds the flower Undead.
     EquipBandage = 1 << 8,
+    /// Not equipment: the flower is underground (a popped shovel), drawn
+    /// faded with its ring. Rides this word because it is per flower, sent in
+    /// every Player record and had bits free; the face byte is full.
+    EquipUnderground = 1 << 9,
 };
 
 enum PlayerRenderFlag : std::uint32_t {

@@ -1313,6 +1313,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.poisonDurationMillis = ctx.range(src, "poisonDuration", 0.0, 0.0, kMaxDurationMillis);
     p.extraPoisonMillis = ctx.range(src, "extraPoisonDuration", 0.0, 0.0, kMaxDurationMillis);
     p.noHealDurationMillis = ctx.range(src, "noHealDuration", 0.0, 0.0, kMaxDurationMillis);
+    p.burrowMillis = ctx.range(src, "burrowDuration", 0.0, 0.0, kMaxDurationMillis);
 
     p.speed = ctx.range(src, "speed", 0.0, -kMaxSpeedUnits, kMaxSpeedUnits);
     p.noPhysics = ctx.boolean(src, "noPhysics");
@@ -1990,6 +1991,11 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         // it meets should be able to hit it and leave it standing.
         s.reloadMillis *= std::pow(0.7, std::min(rarityIndex(tier), 8));
         s.health = c.health;
+    } else if (petalBurrows(c)) {
+        // florr's shovel slot 14: a straight line from 15 s to 2 s over
+        // tiers 0..8, held at 2 s above.
+        s.reloadMillis = kShovelReloadMillis -
+                         kShovelReloadStepMillis * std::min(rarityIndex(tier), 8);
     }
     // The petal damage ladder, not the gentler passive-modifier curve: what a
     // cutter grants IS damage, so it keeps pace with petal damage and with the
@@ -2004,6 +2010,8 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // Flat, on purpose: gardn's dandelion locks healing for ten seconds at
     // every tier. See PetalConfig::noHealDurationMillis.
     s.noHealDurationMillis = c.noHealDurationMillis;
+    // Flat: florr's secondary figure is 2 s at every tier.
+    s.burrowMillis = c.burrowMillis;
     s.heal = c.burstHeal * heal;
     s.healChargeMillis = c.burstHealChargeMillis;
     s.passiveHealPerSecond = c.passiveHeal * heal;
@@ -2210,6 +2218,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.poisonDurationMillis *= boost;
         s.extraPoisonMillis *= boost;
         s.noHealDurationMillis *= boost;
+        s.burrowMillis *= boost;
         s.killHealDurationMillis *= boost;
         s.slowDurationMillis *= boost;
         if (s.slowFactor < 1.0) s.slowFactor = std::min(0.05, s.slowFactor);

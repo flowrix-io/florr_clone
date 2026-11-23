@@ -460,6 +460,17 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(extra);
     }
 
+    // Shovel: how long a pop keeps the flower underground. florr prints this
+    // as the "+2.0s" beside its reload instead.
+    if (stats.burrowMillis > 0.0) {
+        char span[32];
+        std::snprintf(span, sizeof span, "%g", std::round(stats.burrowMillis / 10.0) / 100.0);
+        TooltipLine duration{"Duration: " + std::string(span) + "s", 12.0};
+        duration.alpha = 0.56;
+        duration.labelColor = kStatDuration;
+        lines.push_back(duration);
+    }
+
     // Lotus, florr's Petal/Attribute/PoisonResistance: the poison the flower
     // shrugs off each second, and the whole of what the petal does.
     if (stats.modifiers.poisonArmor > 0.0) {

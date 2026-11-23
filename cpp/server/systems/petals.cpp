@@ -644,6 +644,10 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         pendingBreaks_.clear();
         if (playerIsDown(world, player)) {
             clearRing(world, player);
+            // A corpse is not underground: it comes back up with the flower.
+            if (Afflictions* afflictions = world.tryGet<Afflictions>(player)) {
+                afflictions->burrowed = false;
+            }
             // The bank dies with the flower. It is armour a standing flower
             // accumulated, not a possession like the loadout, and carrying it
             // through the death card would hand a respawn ten free hits'
@@ -659,6 +663,29 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         }
         // Before the slot pass, because retiring a pet puts the petal that
         // hatched it back on cooldown and the slot pass is what serves that.
+        // Back up once the shovel's time is out.
+        if (Afflictions* afflictions = world.tryGet<Afflictions>(player);
+            afflictions != nullptr && afflictions->burrowed &&
+            nowMillis >= afflictions->burrowedUntilMillis) {
+            afflictions->burrowed = false;
+        }
+        if (CombatSystem::burrowed(world, player)) {
+            // Underground (a popped shovel): the whole ring goes, pets and
+            // all, and comes back when the flower does. Once, on the first
+            // tick down: reconcileSlots first, so the shovel spent last tick
+            // is charged its reload, then the field is cleared as a corpse's
+            // is -- every other slot keeps its state and is back out the tick
+            // the flower surfaces. Nothing else on the ring runs meanwhile.
+            if (const Loadout* loadout = world.tryGet<Loadout>(player);
+                loadout != nullptr && !loadout->spawned.empty()) {
+                reconcileSlots(world, registry, player, nowMillis);
+                clearRing(world, player);
+            }
+            const Aggregate aggregate = recomputeModifiers(world, registry, player);
+            applyPassiveHeal(world, player, aggregate, nowMillis, dt);
+            updateManaPool(world, player, aggregate, dt);
+            continue;
+        }
         retireDistantPets(world, registry, player, nowMillis);
         expireTimedPets(world, player, nowMillis);
         runPetBroods(world, registry, player, nowMillis);
@@ -1841,6 +1868,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     }
     if (PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(player)) {
         visuals->equipFlags = equipFlags;
+        if (CombatSystem::burrowed(world, player)) visuals->equipFlags |= EquipUnderground;
     }
     return aggregate;
 }
@@ -2514,6 +2542,23 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 }
                 continue;
             }
+        }
+
+        // A shovel goes off as soon as the ring is pulled in, as a bubble
+        // does, and takes its flower underground for its (flat) time: florr's
+        // "Becomes untargetable but unable to use petals for a limited time".
+        // Spent into the ordinary reload.
+        if (petalBurrows(config) && defending) {
+            if (Afflictions* afflictions = world.tryGet<Afflictions>(player)) {
+                afflictions->burrowed = true;
+                afflictions->burrowedUntilMillis =
+                    std::max(afflictions->burrowedUntilMillis, nowMillis + stats.burrowMillis);
+                world.add<Dead>(petal, Dead{player});
+                // The rest of the ring goes underground with the flower: it
+                // is cleared next tick (run), so nothing else acts now.
+                break;
+            }
+            continue;
         }
 
         // Bubble pops as soon as the ring is pulled in and propels the flower,

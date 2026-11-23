@@ -3162,6 +3162,38 @@ TEST(extra_poison_stretches_every_live_stack_and_never_poisons) {
     CHECK_NEAR(a.world.get<Afflictions>(flower).poisonUntilMillis, 1200.0, 1e-9);
 }
 
+TEST(an_underground_flower_and_its_petals_neither_take_nor_deal_damage) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    a.world.ensure<Afflictions>(player);
+    const Entity mob = a.mob({1000, 1000}, 200.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 0.0});
+    const Entity petal = equipPetal(a, player, f.plain, Rarity::Common, {1015, 1000});
+    CHECK(CombatSystem::canDamage(a.world, mob, player));
+    CHECK(CombatSystem::canDamage(a.world, petal, mob));
+
+    a.world.get<Afflictions>(player).burrowed = true;
+    CHECK(CombatSystem::burrowed(a.world, player));
+    CHECK(!CombatSystem::canDamage(a.world, mob, player));
+    CHECK(!CombatSystem::canDamage(a.world, petal, mob));
+    CHECK(!CombatSystem::canDamage(a.world, mob, petal));
+
+    // Standing in the mob, a tick of contact costs either side nothing.
+    const double flowerBefore = a.health(player);
+    const double mobBefore = a.health(mob);
+    a.step(1000.0, f.registry);
+    CHECK_NEAR(a.health(player), flowerBefore, 1e-9);
+    CHECK_NEAR(a.health(mob), mobBefore, 1e-9);
+
+    // Back up, the same contact bites.
+    a.world.get<Afflictions>(player).burrowed = false;
+    CHECK(CombatSystem::canDamage(a.world, mob, player));
+    a.step(2000.0, f.registry);
+    CHECK(a.health(player) < flowerBefore);
+}
+
 TEST(a_privet_hit_stretches_the_victims_poison_and_spends_the_petal) {
     const Fixture& f = fixture();
     CHECK(f.ok);

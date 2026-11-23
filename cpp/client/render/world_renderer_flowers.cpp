@@ -101,6 +101,23 @@ void WorldRenderer::drawFlower(Canvas& canvas, const RemoteEntity& entity, const
         drawFlowerBody(target, entity, timeSeconds);
     };
 
+    // Underground (a popped shovel): a dark, slightly see-through silhouette
+    // with clods of dirt kicked up round it. No hit flash and no glitch show
+    // through it.
+    if (entity.equipFlags & EquipUnderground) {
+        {
+            const ScopedColorTint shadow(canvas, kUndergroundSilhouette);
+            canvas.save();
+            canvas.setGlobalAlpha(
+                static_cast<float>(canvas.globalAlpha() * kUndergroundAlpha));
+            canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
+            paintBody(canvas);
+            canvas.restore();
+        }
+        drawDirtClods(canvas, screen, radius, entity.netId, timeSeconds);
+        return;
+    }
+
     // A glitched flower flashes as well: drawGlitched paints its buffer under
     // whatever tint the canvas has on.
     const ScopedColorTint flash(canvas, hitTint(entity.netId));
@@ -112,6 +129,40 @@ void WorldRenderer::drawFlower(Canvas& canvas, const RemoteEntity& entity, const
     canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
     paintBody(canvas);
     canvas.restore();
+}
+
+void WorldRenderer::drawDirtClods(Canvas& canvas, Vec2 screen, double radius, std::uint32_t seed,
+                                  double timeSeconds) const {
+    // Each clod is thrown out of the rim on its own bearing, arcs up and
+    // falls back, fading as it lands, then goes again from a new bearing.
+    // Stateless: a pure function of the clock and the flower, so every
+    // client draws the same dirt and nothing is kept between frames.
+    const auto hash = [](std::uint32_t x) {
+        x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
+        return x;
+    };
+    const auto unit = [&](std::uint32_t x) { return (hash(x) & 0xFFFFu) / 65535.0; };
+    for (int i = 0; i < kDirtClodCount; ++i) {
+        const double offset = static_cast<double>(i) / kDirtClodCount;
+        const double cycle = timeSeconds / kDirtClodSeconds + offset;
+        const auto lap = static_cast<std::uint32_t>(std::floor(cycle));
+        const double t = cycle - std::floor(cycle);
+        const std::uint32_t key = seed * 131u + static_cast<std::uint32_t>(i) * 977u + lap * 7919u;
+        const double bearing = unit(key) * kTau;
+        // Out from the rim, up and back down: a parabola in screen y.
+        const double reach = radius * (1.0 + 0.55 * t * (0.6 + 0.4 * unit(key + 1)));
+        const double lift = radius * 0.6 * 4.0 * t * (1.0 - t);
+        const double x = screen.x + std::cos(bearing) * reach;
+        const double y = screen.y + std::sin(bearing) * reach - lift;
+        const double size = radius * (0.1 + 0.06 * unit(key + 2)) * (1.0 - 0.4 * t);
+        const double alpha = 1.0 - t * t;
+        const std::uint32_t colour = unit(key + 3) < 0.5 ? kDirtClodDark : kDirtClodLight;
+        ui::setFill(canvas, ui::shade(colour, 0.8), alpha);
+        canvas.fillCircle(static_cast<float>(x), static_cast<float>(y),
+                          static_cast<float>(size + std::max(1.0, radius * 0.03)));
+        ui::setFill(canvas, colour, alpha);
+        canvas.fillCircle(static_cast<float>(x), static_cast<float>(y), static_cast<float>(size));
+    }
 }
 
 double WorldRenderer::playerSizeMultiplier(const RemoteEntity& entity) const {
@@ -193,6 +244,21 @@ const CustomSkin* WorldRenderer::wornSkin(const RemoteEntity& entity) const {
 
 void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
                                    double timeSeconds) const {
+    // Underground (a popped shovel): a silhouette, painted under the
+    // caller's kUndergroundSilhouette tint. Only the shapes, never a cached
+    // bitmap or a worn sprite -- a blit is not tinted, and would show the
+    // flower's colours through its own shadow.
+    if (entity.equipFlags & EquipUnderground) {
+        if (const CustomSkin* skin = wornSkin(entity)) {
+            renderSkinShapes(canvas, skin->shapes, kFlowerArtRadius);
+        } else {
+            // One fill, the outline's outer edge: the face's layers would
+            // stack the see-through alpha into a near-solid body.
+            ui::setFill(canvas, 0x000000u);
+            canvas.fillCircle(0.0f, 0.0f, static_cast<float>(kFlowerArtRadius + 1.5));
+        }
+        return;
+    }
     // A user-created skin is drawn in place of the default flower.
     if (const CustomSkin* skin = wornSkin(entity)) {
         // kFlowerArtRadius, not the flower's grown radius: the caller has

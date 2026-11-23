@@ -394,6 +394,12 @@ public:
     /// does not cover.
     static bool healingBlocked(const World& world, Entity entity, double nowMillis);
 
+    /// Whether `player` is a flower a shovel has put underground. Nothing a
+    /// mob does reaches it and no mob picks it as a target, and nothing it
+    /// owns -- ring, shots, pets' work credited to it -- deals or takes
+    /// damage until it comes back up.
+    static bool burrowed(const World& world, Entity player);
+
     /// Puts `amount`, grown by a worn basil's bonus (PlayerModifiers::
     /// healBonus), onto `health` -- `entity`'s own -- never past its max, and
     /// turns the share of whatever spilled past it that a worn amulet names

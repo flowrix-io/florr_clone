@@ -85,6 +85,7 @@ const char* const kPetalsJson = R"JSON({
   "yuccaish": {"name":"Yuccaish","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveHeal":1,"passiveHealDefendOnly":true,"color":"#74B53F"},
   "totem":    {"name":"Totem","damage":10,"health":10,"size":1.3,"cooldown":2500,"count":1,"killHeal":1,"killHealDuration":10000,"color":"#A88642"},
   "magicmissile":{"name":"Magic Missile","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"requiredMana":30,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#42E3F5"},
+  "spade":    {"name":"Spade","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"burrowDuration":2000,"color":"#7D5B1F"},
   "magic_bubble":{"name":"Magic Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"requiredMana":40,"color":"#42E3F5"},
   "mimic":    {"name":"Mimic","damage":0,"health":0,"size":1,"cooldown":10000,"count":1,"color":"#FFA500"},
   "berries":  {"name":"Berries","damage":8,"health":10,"size":1,"cooldown":50,"count":4,"clumped":true,"defendOnly":true,"requiredMana":10,"lightningDamage":true,"projectile":{"count":1,"spreadAngle":1.5708,"speed":800,"distance":1000},"color":"#42E3F5"},
@@ -3601,6 +3602,57 @@ TEST(a_berry_reloads_on_its_own_short_cooldown_when_the_pool_can_pay) {
     rig.tick(6);
     CHECK(rig.countOf(net::EntityKind::Projectile) >= 8);
     CHECK(rig.world.get<ManaPool>(rig.player).current <= 100.0 - 40.0 + 1e-9);
+}
+
+TEST(a_popped_shovel_takes_the_flower_underground_for_its_flat_time) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.world.add<PlayerVisuals>(rig.player);
+    rig.equip(0, "spade");
+    rig.equip(1, "bone");
+    rig.settleEquips(2000);
+    rig.tick();
+    const auto under = [&] { return rig.world.get<Afflictions>(rig.player).burrowed; };
+    CHECK(!under());
+    CHECK_EQ(rig.petals(1).size(), std::size_t(1));
+
+    rig.setFlags(net::InputDefend);
+    rig.tick();
+    CHECK(under());
+    rig.reap();
+    rig.tick();
+    // The whole ring is gone, the spent shovel on its reload and the rest
+    // merely off the field.
+    CHECK(rig.petals().empty());
+    CHECK(rig.slot(0).broken);
+    CHECK(!rig.slot(1).broken);
+    CHECK((rig.world.get<PlayerVisuals>(rig.player).equipFlags & EquipUnderground) != 0);
+    // Held underground: nothing comes back while it lasts.
+    rig.tick(10);
+    CHECK(rig.petals().empty());
+
+    const double until = rig.world.get<Afflictions>(rig.player).burrowedUntilMillis;
+    const PetalStats stats = fixture().registry.petalStats(petalId("spade"), Rarity::Common);
+    CHECK(until > rig.now && until <= rig.now + stats.burrowMillis);
+    CHECK(rig.tickUntil([&] { return !under(); }));
+    CHECK(rig.now >= until);
+    // Surfaced: the untouched slot is straight back out, the shovel is not.
+    rig.tick();
+    CHECK_EQ(rig.petals(1).size(), std::size_t(1));
+    CHECK(rig.petals(0).empty());
+    CHECK((rig.world.get<PlayerVisuals>(rig.player).equipFlags & EquipUnderground) == 0);
+}
+
+TEST(a_shovels_time_is_flat_and_its_reload_runs_florrs_line) {
+    if (!contentLoaded()) return;
+    const std::uint16_t spade = petalId("spade");
+    const PetalConfig& config = fixture().registry.petal(spade);
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        const PetalStats s = fixture().registry.petalStats(spade, clampRarity(t));
+        CHECK_NEAR(s.burrowMillis, config.burrowMillis, 1e-9);
+        CHECK_NEAR(s.reloadMillis,
+                   kShovelReloadMillis - kShovelReloadStepMillis * std::min(t, 8), 1e-6);
+    }
 }
 
 TEST(a_magic_bubble_is_paid_for_when_it_spawns_not_when_it_pops) {

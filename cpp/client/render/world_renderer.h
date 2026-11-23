@@ -44,6 +44,15 @@ inline constexpr std::uint32_t kPetLabelColor = 0xD2EB34u;
 /// Spawn-shield yellow: what a flower's health bar turns while respawn
 /// protection holds, and what an NPC's bar always is. One value for every bar
 /// that wears it -- the plates in the world and the HUD's own bars alike.
+/// An underground flower (a popped shovel) is drawn as a flat silhouette in
+/// this colour -- a tint that replaces every colour it paints -- at this
+/// alpha, with dirt clods kicked up round it.
+inline constexpr Color kUndergroundSilhouette{0, 0, 0, 255};
+inline constexpr double kUndergroundAlpha = 0.6;
+inline constexpr int kDirtClodCount = 7;
+inline constexpr double kDirtClodSeconds = 0.6;
+inline constexpr std::uint32_t kDirtClodDark = 0x6B4A23u;
+inline constexpr std::uint32_t kDirtClodLight = 0x8C6A3Cu;
 inline constexpr std::uint32_t kInvulnerableHealth = 0xFAFFC9u;
 /// How long a health bar takes to bleed from kInvulnerableHealth back to
 /// ui::kHealth once the shield drops.
@@ -408,6 +417,10 @@ public:
     /// Chunks the terrain cache holds, and the bytes their bitmaps occupy.
     void terrainCacheStats(std::size_t& chunks, std::size_t& bytes) const;
 
+    /// One flower's body, nothing else -- no plate, no ring. Public so a
+    /// test can paint it alone onto a transparent canvas.
+    void drawFlower(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
+
 private:
     /// A world realm, painted from its map's tile LAYERS: the bottom layer
     /// across every visible cell, then the one above it, and so on, each
@@ -466,7 +479,8 @@ private:
     /// end of the ground-effect pass.
     void queueRadiation(Vec2 screen, double radius) const;
     void drawRadiation(Canvas&, const Camera&) const;
-    void drawFlower(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
+    void drawDirtClods(Canvas&, Vec2 screen, double radius, std::uint32_t seed,
+                       double timeSeconds) const;
     void drawDefaultFlower(Canvas&, const RemoteEntity&, double timeSeconds) const;
     void drawHitbox(Canvas&, const RemoteEntity&, const Camera&, Vec2 at) const;
     void drawEffects(Canvas&, const Camera&) const;

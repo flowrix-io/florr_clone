@@ -188,6 +188,14 @@
         "probability": 0.4,
         "minQuantity": 1,
         "maxQuantity": 10
+      },
+      {
+        "type": "petal",
+        "itemType": "shovel",
+        "rarity": "common",
+        "probability": 0.2,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },

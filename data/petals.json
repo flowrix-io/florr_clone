@@ -197,6 +197,21 @@
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ce76db\" stroke-width=\"4\" stroke=\"#a760b1\"/>\n</svg>",
         "isAdminPetal": false
     },
+    "shovel": {
+        "name": "Shovel",
+        "damage": 10,
+        "health": 10,
+        "size": 1,
+        "visual_scale": 1.85,
+        "cooldown": 15000,
+        "price": 20,
+        "burrowDuration": 2000,
+        "description": "Becomes untargetable but unable to use petals for a limited time.",
+        "color": "#7D5B1F",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-21.5 -21.5 43 43\"><g stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M-12-3 7-3 7 3-12 3Z\" fill=\"#7D5B1F\" stroke=\"#654A19\"/><path d=\"M12-9A8.5 8.5 0 0 1 12 8L7 8 7-9Z\" fill=\"#555555\" stroke=\"#454545\"/><path d=\"M-12-4-12 4-15 4-15-4Z\" fill=\"#555555\" stroke=\"#454545\"/></g></svg>",
+        "isAdminPetal": false
+    },
     "dice": {
         "name": "Dice",
         "damage": 10,

@@ -528,6 +528,9 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
         (ignoresMobs(world, victim) && mobsDoing(world, source))) {
         return false;
     }
+    // Underground (a popped shovel): the flower and everything credited to it
+    // neither deal nor take damage, from anyone, until it comes back up.
+    if (burrowed(world, sourcePlayer) || burrowed(world, victimPlayer)) return false;
 
     const TeamInfo attacker = teamOf(world, source);
     const TeamInfo defender = teamOf(world, victim);
@@ -1826,6 +1829,12 @@ bool CombatSystem::healingBlocked(const World& world, Entity entity, double nowM
     if (world.has<Undead>(entity)) return true;
     const Afflictions* afflictions = world.tryGet<Afflictions>(entity);
     return afflictions != nullptr && afflictions->healBlocked(nowMillis);
+}
+
+bool CombatSystem::burrowed(const World& world, Entity player) {
+    if (player == NULL_ENTITY) return false;
+    const Afflictions* afflictions = world.tryGet<Afflictions>(player);
+    return afflictions != nullptr && afflictions->burrowed;
 }
 
 void CombatSystem::landHeal(World& world, Entity entity, Health& health, double amount) {
