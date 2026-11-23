@@ -911,6 +911,11 @@ private:
     EventQueue* events_ = nullptr;
 
     std::vector<MeleeSource> melee_;
+    /// Which flowers stand alone this tick (no other player inside their
+    /// view), asked only for a flower wearing a bean and kept for
+    /// the rest of the gather. Cleared at the top of gatherPetals.
+    std::vector<std::pair<Entity, bool>> standsAlone_;
+    bool standsAlone(World& world, Entity flower);
     std::vector<AuraSource> auras_;
     std::vector<LightningSource> strikers_;
     std::vector<FieldSource> fields_;

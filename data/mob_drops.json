@@ -491,6 +491,14 @@
         "probability": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "bean",
+        "rarity": "uncommon",
+        "probability": 0.2,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
@@ -702,6 +710,14 @@
         "itemType": "raindrop",
         "rarity": "common",
         "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "bean",
+        "rarity": "common",
+        "probability": 0.2,
         "minQuantity": 1,
         "maxQuantity": 1
       }

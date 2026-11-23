@@ -424,7 +424,7 @@ void stealLife(World& world, Entity player, double amount, double nowMillis) {
 
 struct CombatSystem::Queries {
     explicit Queries(World& world)
-        : afflicted(world), auras(world), contact(world), strikers(world), petals(world),
+        : afflicted(world), auras(world), flowers(world), contact(world), strikers(world), petals(world),
           projectiles(world), filedShots(world), fields(world), cooldowns(world),
           auraCooldowns(world), colony(world) {
         // A dead flower projects nothing, which is the same guard the
@@ -443,6 +443,7 @@ struct CombatSystem::Queries {
         fields.without<Dead>();
         strikers.without<Dead>();
         colony.without<Dead>();
+        flowers.without<Dead>();
     }
 
     Query<Afflictions, Health> afflicted;
@@ -451,6 +452,8 @@ struct CombatSystem::Queries {
     /// under the ring pipeline, and ten array reads are cheaper than keeping a
     /// second copy of them honest.
     Query<PlayerTag, Loadout, Transform> auras;
+    /// Every flower, for a bean asking whether another is in its owner's view.
+    Query<PlayerTag, Transform> flowers;
     /// Petals are excluded and handled separately: their damage, reload and
     /// riders all come out of the petal config, and reading it once beats
     /// mirroring six numbers onto every petal entity every tick.
@@ -2594,7 +2597,34 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
     });
 }
 
+bool CombatSystem::standsAlone(World& world, Entity flower) {
+    for (const auto& [entity, alone] : standsAlone_) {
+        if (entity == flower) return alone;
+    }
+    bool alone = true;
+    if (const Transform* at = world.tryGet<Transform>(flower)) {
+        // Half the flower's own view, per axis; the edge of it counts.
+        const PlayerLocation* location = world.tryGet<PlayerLocation>(flower);
+        const Vec2 view = location != nullptr ? location->viewport
+                                              : Vec2{kViewportWidth, kViewportHeight};
+        const double halfWidth = view.x * 0.5;
+        const double halfHeight = view.y * 0.5;
+        queries_->flowers.each([&](Entity other, PlayerTag&, Transform& there) {
+            if (!alone || other == flower || there.realm != at->realm) return;
+            if (!isStanding(world, other) || oneConnection(world, flower, other)) return;
+            if (std::abs(there.position.x - at->position.x) > halfWidth ||
+                std::abs(there.position.y - at->position.y) > halfHeight) {
+                return;
+            }
+            alone = false;
+        });
+    }
+    standsAlone_.emplace_back(flower, alone);
+    return alone;
+}
+
 void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, double nowMillis) {
+    standsAlone_.clear();
     queries_->petals.each([&](Entity e, PetalInstance& petal, Transform& transform, Body& body) {
         const PetalConfig& config = content.petal(petal.configIndex);
         if (config.noPhysics) return;   // a pure modifier has no body to hit with
@@ -2647,6 +2677,9 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
             const double luck = modifiers != nullptr ? modifiers->luck : kNeutralSpawnLuck;
             source.diceChance =
                 kDiceChance + kDiceChancePerLuck * std::max(0.0, luck - kNeutralSpawnLuck);
+        }
+        if (petalHitsHarderAlone(config) && standsAlone(world, petal.owner)) {
+            source.damage *= kBeanAloneDamageScale;
         }
         if (petalInvertsCpp(config)) {
             source.convertsFrom = content.mobIndex(kCppMobId);

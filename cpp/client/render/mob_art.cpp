@@ -280,6 +280,8 @@ namespace flix
             return MobArt::Moon;
         if (name == "dice")
             return MobArt::Dice;
+        if (name == "bean")
+            return MobArt::Bean;
         if (name == "assembler")
             return MobArt::Assembler;
         if (name == "flower")
@@ -3593,6 +3595,72 @@ namespace flix
                 canvas.arc(p.x, p.y, static_cast<float>(kPip), 0.0f, static_cast<float>(kTau));
             }
             canvas.fill();
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::Bean:
+        {
+            // florr's bean petal (client.wasm render func 6135, petal id 117;
+            // the native client predates it). One SVG path for the bean; two
+            // discs centred (-5.5, 0), r 5 and r 3.5, each intersected with
+            // the bean (a hilum cut off by the bean's inner edge); the bean
+            // outlined 2.5 wide with round joins in the body's 0.9 shade.
+            // Fills: body #F5D9B5, hilum #675633, its spot #FFF0E3.
+            //
+            // A picture is florr's icon, turned 1 rad. In the world florr
+            // spins the bean 0.3 rad/s from a random start angle kept on the
+            // petal; here the start is a hash of the petal's id.
+            //
+            // The dice's scale (kDesign 12 per unit of size; the bean is size
+            // 0.7, florr's radius 7 against basic's 10), so the two keep
+            // florr's proportions to each other in the world and on a tile.
+            // The art is about 26 tall, so it overhangs the hit circle, as it
+            // does in florr.
+            constexpr double kDesign = 12.0 * 0.7;
+            constexpr double kIconTurn = 1.0;
+            constexpr double kSpinPerMs = 0.3 / 1000.0;
+            constexpr std::uint32_t kBody = 0xF5D9B5u;
+            constexpr std::uint32_t kHilum = 0x675633u;
+            constexpr std::uint32_t kSpot = 0xFFF0E3u;
+            static const Path2D bean = svgPathData(
+                "M4.99 9.23c-.85 1.12-1.86 2-3.1 2.58-1.66.78-3.38.97-5.17.54-.65-.16-1.25-.43-1.82-.78"
+                "-.33-.2-.66-.41-.96-.66-.7-.58-1.27-1.26-1.57-2.14-.27-.8-.26-1.6-.1-2.42.17-.88.51-1.7"
+                ".92-2.49.36-.7.72-1.4.97-2.16.23-.69.36-1.38.28-2.11-.05-.48-.19-.94-.37-1.39-.21-.52"
+                "-.45-1.02-.69-1.52-.4-.82-.68-1.67-.77-2.59-.12-1.17.08-2.27.67-3.3.46-.81 1.1-1.44 1.87"
+                "-1.95.85-.56 1.77-.96 2.77-1.15 1.49-.28 2.91-.05 4.26.64.49.25.95.55 1.38.9.79.65 1.46"
+                " 1.41 2.02 2.27.86 1.31 1.4 2.75 1.77 4.27.31 1.27.47 2.57.49 3.88.03 1.99-.24 3.94-.89"
+                " 5.83-.32.94-.73 1.84-1.25 2.69-.22.37-.46.72-.69 1.04Z");
+
+            double turn = kIconTurn;
+            if (attr.inWorld)
+            {
+                std::uint64_t h = static_cast<std::uint64_t>(attr.seed) * 0x9E3779B97F4A7C15ull;
+                h ^= h >> 29;
+                turn = static_cast<double>(h % 6283u) / 1000.0 + attr.clockMs * kSpinPerMs;
+            }
+
+            canvas.save();
+            const float scale = static_cast<float>(attr.radius / kDesign);
+            canvas.scale(scale, scale);
+            canvas.rotate(static_cast<float>(turn));
+
+            ui::setFill(canvas, kBody);
+            canvas.fill(bean);
+            canvas.save();
+            canvas.clip(bean);
+            ui::setFill(canvas, kHilum);
+            canvas.beginPath();
+            canvas.arc(-5.5f, 0.0f, 5.0f, 0.0f, static_cast<float>(kTau));
+            canvas.fill();
+            ui::setFill(canvas, kSpot);
+            canvas.beginPath();
+            canvas.arc(-5.5f, 0.0f, 3.5f, 0.0f, static_cast<float>(kTau));
+            canvas.fill();
+            canvas.restore();
+            ui::setStroke(canvas, shadeOf(kBody, 0.9));
+            roundStrokes(canvas, 2.5);
+            canvas.stroke(bean);
             canvas.restore();
             break;
         }

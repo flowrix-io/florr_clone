@@ -210,6 +210,7 @@ struct Fixture {
     std::uint16_t boney = kInvalidIndex;
     std::uint16_t clawy = kInvalidIndex;
     std::uint16_t dice = kInvalidIndex;
+    std::uint16_t bean = kInvalidIndex;
     std::uint16_t fangy = kInvalidIndex;
     std::uint16_t moon = kInvalidIndex;
     std::uint16_t plank = kInvalidIndex;
@@ -248,6 +249,7 @@ const Fixture& fixture() {
               "boney":{"name":"Boney","damage":14,"health":10,"size":1,"petalArmor":10},
               "clawy":{"name":"Clawy","damage":5,"health":10,"size":1,"clawCritDamage":100},
               "dice":{"name":"Dice","damage":5,"health":10,"size":1},
+              "bean":{"name":"Bean","damage":5,"health":10,"size":1},
               "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35},
               "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6},
               "plank":{"name":"Plank","damage":18,"health":15,"size":3},
@@ -274,6 +276,7 @@ const Fixture& fixture() {
         f.boney = f.registry.petalIndex("boney");
         f.clawy = f.registry.petalIndex("clawy");
         f.dice = f.registry.petalIndex("dice");
+        f.bean = f.registry.petalIndex("bean");
         f.fangy = f.registry.petalIndex("fangy");
         f.moon = f.registry.petalIndex("moon");
         f.plank = f.registry.petalIndex("plank");
@@ -4125,6 +4128,54 @@ TEST(a_dice_with_enough_luck_always_lands_its_multiplier) {
     equipPetal(a, player, f.dice, Rarity::Common, {1025, 1000});
     a.step(0.0, f.registry);
     CHECK_NEAR(a.health(mob), 500.0 - 5.0 * kDiceDamageScale, 1e-9);
+}
+
+TEST(a_bean_hits_harder_only_while_no_other_player_is_in_view) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.bean == kInvalidIndex) return;
+    const auto hitTaken = [&](auto setup) {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1040, 1000}, 500.0);
+        equipPetal(a, player, f.bean, Rarity::Common, {1025, 1000});
+        setup(a, player);
+        a.step(0.0, f.registry);
+        return 500.0 - a.health(mob);
+    };
+    const double alone = hitTaken([](Arena&, Entity) {});
+    // The view is a rectangle centred on the flower, its edge included: a
+    // player at the corner is in view, one a unit past the side is not.
+    const double halfW = kViewportWidth * 0.5;
+    const double halfH = kViewportHeight * 0.5;
+    const double company = hitTaken([&](Arena& a, Entity) { a.player({1000 + halfW, 1000 + halfH}); });
+    const double outOfView = hitTaken([&](Arena& a, Entity) { a.player({1001 + halfW, 1000}); });
+    // The flower's own reported view, not the default one.
+    const double narrowView = hitTaken([&](Arena& a, Entity player) {
+        a.world.add<PlayerLocation>(player, PlayerLocation{Vec2{400.0, 400.0}});
+        a.player({1000, 1300});
+    });
+    const double otherRealm = hitTaken([](Arena& a, Entity) {
+        const Entity other = a.player({1000, 1100});
+        a.world.get<Transform>(other).realm = Realm::Arena;
+    });
+    // Any other player counts, a PvP opponent too.
+    const double duellist = hitTaken([](Arena& a, Entity player) {
+        const Entity other = a.player({1000, 1100});
+        a.world.get<Faction>(other).friendlyFireEnabled = true;
+        a.world.get<Faction>(player).friendlyFireEnabled = true;
+    });
+    const double downed = hitTaken([](Arena& a, Entity) {
+        const Entity other = a.player({1000, 1100});
+        a.world.add<Dead>(other);
+    });
+    CHECK_NEAR(alone, 5.0 * kBeanAloneDamageScale, 1e-9);
+    CHECK_NEAR(company, 5.0, 1e-9);
+    CHECK_NEAR(outOfView, alone, 1e-9);
+    CHECK_NEAR(narrowView, alone, 1e-9);
+    CHECK_NEAR(otherRealm, alone, 1e-9);
+    CHECK_NEAR(duellist, 5.0, 1e-9);
+    CHECK_NEAR(downed, alone, 1e-9);
 }
 
 TEST(a_claw_adds_its_bonus_only_while_the_victim_is_above_eighty_percent) {

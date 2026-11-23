@@ -94,6 +94,9 @@ enum class MobArt : std::uint8_t {
     /// with a shaded outline and one of six faces. A picture rests on florr's
     /// icon face (five); a dice in the world re-rolls its face and tumbles.
     Dice,
+    /// The bean petal (petals.json `$bean`), florr's drawing: a beige bean
+    /// with a dark hilum on its inner curve and a pale spot in it.
+    Bean,
     /// florr's assembler NPC: a machine on a tread, its gears turning on the
     /// mob's clock and its dial needles twitching.
     Assembler,

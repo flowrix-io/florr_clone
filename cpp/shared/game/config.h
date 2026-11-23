@@ -1342,6 +1342,17 @@ inline constexpr double kDiceChancePerLuck = 0.04;
 inline constexpr double kDiceDamageScale = 35.0;
 inline bool petalRollsDice(const PetalConfig& config) { return config.id == "dice"; }
 
+/// florr's bean: "Deals more damage if there are no allied flowers around
+/// you." An allied flower is another player within your view distance (the
+/// user's rule, 2026-11-22): any other standing flower in your realm inside
+/// the view rectangle your client reports (PlayerLocation::viewport, clamped
+/// by the server), centred on you. Your own splitter half is you, not another
+/// player. The x2 is a guess: florr settles the bonus on its server, so it is
+/// not in its client (which gives the bean radius 7, health 12, a flat 2 s
+/// reload -- and a client-side damage of 0).
+inline constexpr double kBeanAloneDamageScale = 2.0;
+inline bool petalHitsHarderAlone(const PetalConfig& config) { return config.id == "bean"; }
+
 inline bool petalShredsShots(const PetalConfig& config) { return config.id == "plank"; }
 
 /// A carrot is a missile whose shot bounces off walls instead of flying over

@@ -225,6 +225,19 @@
         "image": "$dice",
         "isAdminPetal": false
     },
+    "bean": {
+        "name": "Bean",
+        "damage": 10,
+        "health": 12,
+        "size": 0.7,
+        "cooldown": 2000,
+        "price": 20,
+        "description": "Deals more damage if there are no allied flowers around you.",
+        "color": "#F5D9B5",
+        "count": 1,
+        "image": "$bean",
+        "isAdminPetal": false
+    },
     "privet": {
         "name": "Privet",
         "damage": 0,

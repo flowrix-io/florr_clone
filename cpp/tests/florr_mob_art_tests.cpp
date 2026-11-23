@@ -750,6 +750,41 @@ TEST(a_dice_picture_rests_on_five_and_a_world_dice_rolls) {
     CHECK(seenA != seenB);
 }
 
+TEST(a_bean_picture_holds_still_and_a_world_bean_turns) {
+    // florr's bean: beige body, dark hilum, pale spot, shaded outline. Its
+    // picture never moves; in the world it spins slowly from a per-petal start.
+    CHECK(mobArtFor("$bean") == MobArt::Bean);
+    const auto beanAt = [](double clockMs, std::uint32_t seed, bool inWorld) {
+        Canvas canvas = Canvas::createVirtual(kSide, kSide);
+        canvas.clear(Color{kBackground, kBackground, kBackground});
+        canvas.translate(kSide * 0.5f, kSide * 0.5f);
+        MobArtAttributes at;
+        at.radius = 30.0;
+        at.clockMs = clockMs;
+        at.seed = seed;
+        at.inWorld = inWorld;
+        paintMobArt(canvas, MobArt::Bean, at);
+        return canvas.getImageData(0, 0, kSide, kSide);
+    };
+    const auto count = [](const std::vector<std::uint8_t>& rgba, std::uint32_t rgb) {
+        int n = 0;
+        for (std::size_t i = 0; i + 3 < rgba.size(); i += 4)
+            if (rgba[i] == ((rgb >> 16) & 0xFF) && rgba[i + 1] == ((rgb >> 8) & 0xFF) &&
+                rgba[i + 2] == (rgb & 0xFF))
+                ++n;
+        return n;
+    };
+    const std::vector<std::uint8_t> icon = beanAt(0.0, 0, false);
+    CHECK(differingPixels(icon, beanAt(9999.0, 5, false)) == 0);
+    CHECK(count(icon, 0xF5D9B5u) > 200);
+    CHECK(count(icon, 0x675633u) > 20);
+    CHECK(count(icon, 0xFFF0E3u) > 20);
+    // The body outnumbers the hilum: the discs are cut to the bean.
+    CHECK(count(icon, 0xF5D9B5u) > 2 * count(icon, 0x675633u));
+    CHECK(differingPixels(beanAt(0.0, 3, true), beanAt(2000.0, 3, true)) > 50);
+    CHECK(differingPixels(beanAt(0.0, 3, true), beanAt(0.0, 4, true)) > 50);
+}
+
 TEST(a_ring_mobs_face_and_petals_are_the_ones_its_config_names) {
     // Through WorldRenderer, on a fixture of the test's own: a face named by the
     // ring, drawn by the painter a player's flower is drawn by, and its petals
