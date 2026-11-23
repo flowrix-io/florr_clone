@@ -302,7 +302,8 @@ void WaveSpawner::next(WaveBiome biome, int wave, Rng& rng, int forcedGroup) {
     group_ = -1;
     if (forcedGroup >= 0 && forcedGroup < static_cast<int>(groups.size())) {
         group_ = forcedGroup;
-    } else if (forcedGroup < 0 && wave >= kSpecialWaveFrom && rng.unit() < kSpecialWaveChance) {
+    } else if (forcedGroup != kOrdinaryWave && forcedGroup < 0 && wave >= kSpecialWaveFrom &&
+               rng.unit() < kSpecialWaveChance) {
         group_ = static_cast<int>(rng.below(static_cast<std::uint32_t>(groups.size())));
     }
     points_ = wave * kPointsPerWave + (group_ >= 0 ? kSpecialWavePoints : 0);

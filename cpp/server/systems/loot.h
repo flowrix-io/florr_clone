@@ -8,7 +8,8 @@
 // left with nothing to animate.
 //
 // Eligibility exists so that killing a mob is worth doing. Only the ranked
-// contributors see a normal mob drop, and each of them may collect it once.
+// contributors are paid for a normal mob, and each of them rolls its table on
+// their own; flowers whose rolls agree share one drop, each collecting it once.
 
 #include <cstddef>
 #include <cstdint>
@@ -309,12 +310,17 @@ private:
     std::vector<Entity> corpseList_;
     std::vector<Bounty::Share> ranked_;
     std::vector<Entity> eligible_;
-    /// eligible_[i]'s worn orbs.
-    std::vector<WornOrbs> eligibleOrbs_;
-    /// What eligible_[i]'s copy of the drop in hand becomes.
-    std::vector<OrbForm> eligibleForms_;
-    /// The eligible flowers sharing one outcome: one split drop's claimants.
-    std::vector<Entity> orbGroup_;
+    /// One item one flower's roll of a kill came out as. `who` indexes
+    /// eligible_.
+    struct RolledDrop {
+        std::uint16_t petal = kNoPetal;
+        Rarity rarity = Rarity::Common;
+        std::uint32_t who = 0;
+    };
+    /// Every eligible flower's roll of the corpse in hand.
+    std::vector<RolledDrop> outcomes_;
+    /// The flowers sharing one placed drop: those whose rolls agreed.
+    std::vector<Entity> claimants_;
     std::vector<const DropTables::Entry*> selected_;
 };
 

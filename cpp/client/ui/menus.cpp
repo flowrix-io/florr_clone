@@ -683,6 +683,8 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "biome") spawnChoice = (value == "-" ? std::string() : value);
         else if (key == "prestige") prestige = number != 0;
         else if (key == "mouseControls") useMouseControls = number != 0;
+        else if (key == "invertAttack") invertAttack = number != 0;
+        else if (key == "invertDefend") invertDefend = number != 0;
         else if (key == "classicLoadout") classicLoadoutBar = number != 0;
         else if (key == "antennaeZoomAnim") antennaeZoomAnimation = number != 0;
         // The key being on disk at all is the choice: an absent one leaves the
@@ -742,6 +744,8 @@ bool ClientSettings::save(const std::string& path) const {
          << "spawn " << (spawnChoice.empty() ? std::string("-") : spawnChoice) << '\n'
          << "prestige " << (prestige ? 1 : 0) << '\n'
          << "mouseControls " << (useMouseControls ? 1 : 0) << '\n'
+         << "invertAttack " << (invertAttack ? 1 : 0) << '\n'
+         << "invertDefend " << (invertDefend ? 1 : 0) << '\n'
          << "classicLoadout " << (classicLoadoutBar ? 1 : 0) << '\n'
          << "antennaeZoomAnim " << (antennaeZoomAnimation ? 1 : 0) << '\n'
          << "tutorialDone " << (tutorialCompleted ? 1 : 0) << '\n'

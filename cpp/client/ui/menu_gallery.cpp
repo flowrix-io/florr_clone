@@ -151,6 +151,8 @@ constexpr double kIconInset = kCellRim * 0.5 + 2.0;
 /// so an apex column there would always be empty.
 constexpr int kTierColumns = kLadderRarityCount;
 constexpr int kDropTiers = kLadderRarityCount - 1;
+/// What an apex kill drops of every row (LootSystem's `copies`).
+constexpr int kApexDropCopies = 10;
 
 constexpr double kGridWidth = kTierColumns * kCell + (kTierColumns - 1) * kGridGap;
 constexpr double kCardWidth = kGridWidth + kPad * 2.0 + kScrollbarWidth + 4.0 + kGridSlack;
@@ -450,19 +452,18 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         usedTiers[static_cast<std::size_t>(column)] = true;
     };
 
-    // An apex kill drops TEN of every row (LootSystem's `copies`): one base
-    // rarity per row, then each copy rolls its own upgrade/downgrade. So a
-    // graded square is the chance at least one of the ten lands on it -- at
-    // one copy, just the branch's own chance, as every other tier shows.
-    // Chaff needs nothing: its ten copies are all the same flat tier.
-    const int copies = mobRarity == Rarity::Apex ? 10 : 1;
+    // An apex kill drops TEN of every row (LootSystem's `copies`), each copy
+    // graded on its own. The squares quote ONE copy -- so a row still adds up
+    // to 100% like every other mob's -- and the tile carries an x10 badge
+    // (kApexDropCopies) for the rest.
 
     // One graded drop: the mutually exclusive upgrade/downgrade split around
     // its base, every branch held up to the mob's floor. Branches the floor
     // lifts onto one square are one outcome for a copy, so they are summed
     // before the copies are.
     const auto outcomes = [&](Rarity base, double baseProb, const DropDef& drop) {
-        const double up = std::min(100.0, upgradePercent(base) * upgradeMultiplier);
+        const double up =
+            std::min(kMaxDropUpgradeChance * 100.0, upgradePercent(base) * upgradeMultiplier);
         // The server only rolls the downgrade when the upgrade missed.
         const double down = downgradePercent(base) * (100.0 - up) / 100.0;
         const double same = std::max(0.0, 100.0 - up - down);
@@ -471,14 +472,27 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
             const int column = dropTier(rarity);
             if (column >= 0) perCopy[static_cast<std::size_t>(std::max(column, minTier))] += percent;
         };
-        land(tierBelow(base), down);
-        land(base, same);
-        land(tierAbove(base), up);
+        // An apex grades off its own fixed table (kApexEternalDropChance),
+        // and its ultra sits below the floor on purpose, so it is placed
+        // directly rather than through `land`.
+        const auto place = [&](Rarity rarity, double percent) {
+            const int column = dropTier(rarity);
+            if (column >= 0) perCopy[static_cast<std::size_t>(column)] += percent;
+        };
+        if (mobRarity == Rarity::Apex) {
+            place(Rarity::Unique, kApexEternalDropChance * 100.0);
+            place(Rarity::Ultra, kApexUltraDropChance * 100.0);
+            place(Rarity::Super,
+                  (1.0 - kApexEternalDropChance - kApexUltraDropChance) * 100.0);
+        } else {
+            land(tierBelow(base), down);
+            land(base, same);
+            land(tierAbove(base), up);
+        }
         for (int column = 0; column < kDropTiers; ++column) {
             const double chance = std::min(1.0, perCopy[static_cast<std::size_t>(column)] / 100.0);
             if (chance <= 0) continue;
-            push(drop, static_cast<Rarity>(column),
-                 baseProb * 100.0 * (1.0 - std::pow(1.0 - chance, copies)));
+            push(drop, static_cast<Rarity>(column), baseProb * 100.0 * chance);
         }
     };
 
@@ -548,7 +562,7 @@ void galleryScrollbar(Canvas& canvas, Rect track, double contentHeight, double s
 }
 
 void drawDropCard(Canvas& canvas, const SpriteCache& sprites, double cellX, double rowY,
-                  Rarity rarity, const DropCell& cell, double timeSeconds) {
+                  Rarity rarity, const DropCell& cell, int copies, double timeSeconds) {
     const double cardX = cellX + (kDropCellW - kCardSize) * 0.5;
 
     // Named, as gardn names every drop in its gallery: the tile lifts its
@@ -557,7 +571,8 @@ void drawDropCard(Canvas& canvas, const SpriteCache& sprites, double cellX, doub
     ItemTile tile;
     tile.petalIndex = cell.drop->petalIndex;
     tile.rarity = rarity;
-    if (cell.drop->maxQuantity > 1) tile.badge = "x" + std::to_string(cell.drop->maxQuantity);
+    const int count = std::max(1, cell.drop->maxQuantity) * copies;
+    if (count > 1) tile.badge = "x" + std::to_string(count);
     tile.timeSeconds = timeSeconds;
     // Inside the mob's own tooltip: a box over a box.
     tile.tooltip = false;
@@ -1018,6 +1033,7 @@ bool GalleryPanel::render(MenuContext& ctx) {
                     const DropCell& square = rows[r].cells[static_cast<std::size_t>(columns[i])];
                     if (square.drop == nullptr) continue;
                     drawDropCard(card, ctx.sprites, cellX, rowY, clampRarity(columns[i]), square,
+                                 cell.rarity == Rarity::Apex ? kApexDropCopies : 1,
                                  ctx.timeSeconds);
                 }
             }

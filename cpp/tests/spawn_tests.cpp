@@ -1769,8 +1769,11 @@ TEST(a_super_on_ground_thick_with_them_is_neither_announced_nor_mourned) {
     const double cell = kTileSize;
     // The ultra/super blend's super share, read off the curve.
     const auto groundWithBossChance = [](double chance) {
+        const double low = spawnTierWeight(clampRarity(rarityIndex(kAnnouncedRarity) - 1));
+        const double high = spawnTierWeight(kAnnouncedRarity);
+        const double fraction = chance * low / (chance * low + (1.0 - chance) * high);
         return difficultyForTierValue(static_cast<double>(rarityIndex(kAnnouncedRarity)) - 1.0 +
-                                      chance);
+                                      fraction);
     };
     const Rect rareBand{cell * 12, cell * 4, cell * 16, cell * 16};
     const Rect steepBand{cell * 30, cell * 4, cell * 16, cell * 16};

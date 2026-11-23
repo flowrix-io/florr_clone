@@ -1811,6 +1811,10 @@ EquippedPetal resolveEquippedPetal(const ContentRegistry& registry, int slot, Sl
     return EquippedPetal{copied, self.rarity, source.rarity};
 }
 
+/// The triangle, which grows with every copy of itself on the active row
+/// (triangleStackScale). Asked by id, as the other one-petal quirks are.
+inline bool petalStacksWithCopies(const PetalConfig& config) { return config.id == "triangle"; }
+
 /// Slot `slot` of a flower's `loadout` as it is actually equipped. Every gameplay
 /// read of the bar goes through this, so a mimic is the petal it copies to the
 /// ring, the modifiers, the auras and the camera alike.
@@ -1821,6 +1825,18 @@ inline EquippedPetal equippedPetal(const ContentRegistry& registry, const Loadou
         const LoadoutSlot& at = loadout.slots[static_cast<std::size_t>(i)];
         return EquippedPetal{at.configIndex, at.rarity, at.rarity};
     });
+}
+
+/// How many of the active row's slots field `configIndex`, as equipped -- a
+/// mimic copying it counts, and so does one still reloading: it is worn.
+inline int equippedCopiesOf(const ContentRegistry& registry, const Loadout& loadout,
+                            std::uint16_t configIndex) {
+    int copies = 0;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const EquippedPetal slot = equippedPetal(registry, loadout, i);
+        if (!slot.empty() && slot.configIndex == configIndex) ++copies;
+    }
+    return copies;
 }
 
 /// The stats a resolved slot fields: the petal's at its tier, with the reload

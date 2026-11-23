@@ -311,6 +311,12 @@ struct ClientSettings {
     /// the control scheme it has always shipped with, and defaulting to that
     /// value would take it away from every existing player.
     bool useMouseControls = true;
+    /// Inverted attack: the petals are out by default, and holding the attack
+    /// key (or left mouse, or the touch attack button) pulls them back in.
+    bool invertAttack = false;
+    /// Inverted defend: the petals are retracted by default, and holding the
+    /// defend key (or right mouse, or the touch retract button) lets them out.
+    bool invertDefend = false;
     /// Draws the loadout bar the way this client used to: three-quarter-size
     /// slots, the browser port's wide gaps, and the number captions above the
     /// top row. Off by default -- the bar's own shape now follows the

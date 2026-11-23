@@ -900,11 +900,21 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // everyone in any other biome was missed and the answer was wrong or
         // "nobody". A prestige twin is its own entry ("Prestige Desert"), as
         // biomeLabel names it everywhere else.
+        //
+        // One person, one count: a splitter's parked half is a whole body of
+        // its own, and counting it would put a split flower in twice.
+        std::vector<Entity> parkedHalves;
+        for (const auto& entry : sessions_) {
+            if (entry.second.splitOther != NULL_ENTITY) parkedHalves.push_back(entry.second.splitOther);
+        }
         std::vector<std::pair<std::string, int>> counts;
         int total = 0;
         Query<PlayerTag, Transform> flowers{world_};
         flowers.each([&](Entity entity, PlayerTag&, Transform&) {
             if (world_.has<Dead>(entity)) return;
+            if (std::find(parkedHalves.begin(), parkedHalves.end(), entity) != parkedHalves.end()) {
+                return;
+            }
             const std::string biome = biomeOfEntity(entity);
             if (biome.empty()) return;
             const std::string label = biomeLabel(biome);

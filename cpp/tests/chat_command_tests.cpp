@@ -2435,14 +2435,22 @@ TEST(a_squadmate_is_sent_the_drop_their_squad_earned) {
     CHECK(!dropped.empty());
     if (dropped.empty()) return;
 
-    // SERVER SIDE: the squadmate is on the reservation.
-    const DropItem& item = world.get<DropItem>(dropped.front());
-    CHECK(claimed(item.eligible, mateBody, 0));
+    // SERVER SIDE: the squadmate rolled the table too, and is on the
+    // reservation of whatever their roll came out as.
+    Entity mateDrop = NULL_ENTITY;
+    for (const Entity drop : dropped) {
+        if (claimed(world.get<DropItem>(drop).eligible, mateBody, 0)) {
+            mateDrop = drop;
+            break;
+        }
+    }
+    CHECK(mateDrop != NULL_ENTITY);
+    if (mateDrop == NULL_ENTITY) return;
     // ...and was paid the kill's XP without landing a hit.
     CHECK(world.get<PlayerProgress>(mateBody).totalXp > before);
 
     // CLIENT SIDE: the drop actually reached the squadmate's screen.
-    const NetId* dropId = world.tryGet<NetId>(dropped.front());
+    const NetId* dropId = world.tryGet<NetId>(mateDrop);
     CHECK(dropId != nullptr);
     if (dropId == nullptr) return;
     CHECK(h.stepUntil({&fighter, &mate}, [&] {
@@ -4532,4 +4540,39 @@ TEST(chat_cooldown_is_shared_by_global_whispers_and_admin_announcements) {
     CHECK(sawText(alice,"Wait 0.5 seconds between messages."));
     h.step(16,{&alice,&bob});alice.sendChat("/w bob after cooldown");
     CHECK(h.stepUntil({&alice,&bob},[&]{return sawText(bob,"after cooldown");}));
+}
+
+TEST(a_flower_inside_a_folder_counts_toward_the_computer_in_biome) {
+    // A folder is a room inside the computer, as a termite mound's dungeon is
+    // one inside the jungle: /biome must not list "folder" as a biome of its
+    // own beside the computer it is in.
+    Harness h("cmd-biome-folder", [](const std::string& path) {
+        seedUser(path, "inside", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "inside", "password7"));
+    client.joinGame(1280, 720, {}, "Inside");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    const std::vector<Realm> folders = h.server.worldMaps().copiesOf("folder");
+    CHECK(!folders.empty());
+    if (folders.empty()) return;
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    world.get<Transform>(body).realm = folders.back();
+
+    CHECK(say(h, client, "/biome"));
+    // Bots are counted too and stand in every biome, so the computer need
+    // not be the busiest -- but it is listed, and the folder is not.
+    CHECK(sawText(client, "<br/>Computer: "));
+    CHECK(!sawText(client, "folder"));
+    CHECK(!sawText(client, "Folder"));
 }

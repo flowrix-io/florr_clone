@@ -90,6 +90,16 @@
  "orientation":"orthogonal",
  "properties":[
         {
+         "name":"biome",
+         "type":"string",
+         "value":"computer"
+        }, 
+        {
+         "name":"displayName",
+         "type":"string",
+         "value":"Folder"
+        }, 
+        {
          "name":"glitchDamagePerSecond",
          "type":"float",
          "value":2
