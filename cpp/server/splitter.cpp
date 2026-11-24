@@ -422,6 +422,15 @@ void GameServer::serviceSplitters(double nowMillis) {
                 continue;
             }
             parkBody(session.splitOther);
+            // Invert Attack / Invert Defend reach the parked half too: with
+            // nobody steering it, it stands as an idle flower of this player's
+            // does, so both halves attack with Invert Attack on. Not while an
+            // admin is steering the session -- their buttons are not its own.
+            if (session.controlledBy == 0) {
+                if (PlayerInput* parked = world_.tryGet<PlayerInput>(session.splitOther)) {
+                    parked->current.flags = session.parkedInputFlags;
+                }
+            }
             syncSplitProgress(session);
             continue;
         }

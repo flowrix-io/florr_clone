@@ -255,6 +255,11 @@ void GameServer::handleInput(Session& session, ByteReader& reader) {
         steered = target != nullptr && target->playing() ? target->entity : NULL_ENTITY;
     }
     if (PlayerInput* state = world_.tryGet<PlayerInput>(steered)) state->current = input;
+    // What the other half of a split flower holds: the player's idle stance,
+    // which the splitter reconcile writes onto it every tick.
+    session.parkedInputFlags = static_cast<std::uint8_t>(
+        ((input.flags & net::InputInvertAttack) != 0 ? net::InputAttack : 0) |
+        ((input.flags & net::InputInvertDefend) != 0 ? net::InputDefend : 0));
 
     // The window the client is drawing rides every input packet, so a resize or
     // a zoom widens what is replicated on the next tick rather than at the next

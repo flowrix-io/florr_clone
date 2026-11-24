@@ -322,7 +322,9 @@ void App::sendInputFrame(double dt) {
     // What the player is HOLDING, before the invert settings flip it.
     bool attackHeld = false;
     bool defendHeld = false;
-    if (!chatOpen_ && !menuOpen && !textDrag && !menus_.capturesMouse(pointer) &&
+    // The squad invite card is a control, not a place to swing at.
+    const bool overInvite = squadInviteShown() && hit(squadInviteLayout().card, pointer);
+    if (!chatOpen_ && !menuOpen && !textDrag && !overInvite && !menus_.capturesMouse(pointer) &&
         !tutorial_.capturesMouse(pointer)) {
         // Pointer actions and explicit admin chords are rechecked against
         // server-held authority and the worn petal.
@@ -363,6 +365,10 @@ void App::sendInputFrame(double dt) {
     }
     if (attackHeld) input.flags |= net::InputAttack;
     if (defendHeld) input.flags |= net::InputDefend;
+    // Told to the server as well, for the half of a split flower that is not
+    // being steered: it stands as this flower would with nothing held.
+    if (settings.invertAttack) input.flags |= net::InputInvertAttack;
+    if (settings.invertDefend) input.flags |= net::InputInvertDefend;
 
     net_.sendInput(input);
 }
@@ -372,6 +378,7 @@ void App::updatePlaying(double dt) {
     // are outside sendInputFrame's guard: a finger on a button is not a
     // keystroke being typed into the chat line.
     if (mobile_.takeRowSwap()) menus_.requestLoadoutRowSwap();
+    pressSquadInvite();
 
     const NetClient::TrialView& trial = net_.trial();
     if (isTrialRealm(net_.view().realm()) && trial.known &&
@@ -430,6 +437,8 @@ void App::updatePlaying(double dt) {
 
 void App::updateDead(double dt) {
     (void)dt;
+    // The HUD, and the invite card under it, stay up behind the death card.
+    if (pressSquadInvite()) return;
     // The transcript keeps drawing over the dimmed world, so it keeps
     // scrolling. There is no camera zoom to lose the wheel to here, so nothing
     // hangs on the answer.

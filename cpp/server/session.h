@@ -95,6 +95,12 @@ struct Session {
     /// produced. What is genuinely per-body -- position, health, the ring --
     /// is exactly what a second body is for.
     Entity splitOther = NULL_ENTITY;
+    /// The attack/defend bits the half of a split flower that is NOT being
+    /// steered holds: what this player's flower does with no button held,
+    /// from the InputInvertAttack / InputInvertDefend bits of their last input
+    /// frame. Zero for a player without either setting, which is a parked
+    /// half with its petals at rest.
+    std::uint8_t parkedInputFlags = 0;
 
     /// The last body taken out of the world, and the account it was playing
     /// for, until spawnPlayer makes the next one.

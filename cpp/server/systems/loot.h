@@ -256,8 +256,9 @@ public:
     /// What every row that is NOT the graded drop lands at: two tiers below
     /// the mob, flat. These are the rows guaranteed drops added on top of the
     /// one item a kill used to hand out, so they sit at the bottom of the
-    /// mob's band where they cannot change how fast anyone progresses.
-    static Rarity chaffDropRarity(Rarity mobRarity);
+    /// mob's band where they cannot change how fast anyone progresses. A
+    /// super's comes out one tier higher at chaffUpgradeChance.
+    static Rarity chaffDropRarity(Rarity mobRarity, Rng& rng);
 
     /// Whether this flower may take a copy. `owner` is the connection behind
     /// the body (0 for a bot): a reservation follows the PLAYER, not the body

@@ -954,6 +954,22 @@ TEST(knockback_replaces_the_pending_displacement_and_is_scaled_by_mass) {
     CHECK_NEAR(a.world.get<Knockback>(other).impulse.x, 0.0, 1e-12);
 }
 
+TEST(a_weaker_hit_in_the_same_tick_does_not_erase_a_jellys_shove) {
+    // A lentil pulls the whole ring onto one mob, so a jelly and a plain petal
+    // (knockback 5) land in the same tick. Whichever came second used to
+    // replace the jelly's shove with its own nudge.
+    Arena a;
+    const Entity mob = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 1.0);
+    a.combat.applyKnockback(a.world, mob, Vec2{1, 0}, 350.0);
+    a.combat.applyKnockback(a.world, mob, Vec2{0, 1}, 5.0);
+    CHECK_NEAR(a.world.get<Knockback>(mob).impulse.x, 350.0, 1e-9);
+    CHECK_NEAR(a.world.get<Knockback>(mob).impulse.y, 0.0, 1e-12);
+    // A stronger one still takes over, and two do not add up.
+    a.combat.applyKnockback(a.world, mob, Vec2{0, 1}, 700.0);
+    CHECK_NEAR(a.world.get<Knockback>(mob).impulse.x, 0.0, 1e-12);
+    CHECK_NEAR(a.world.get<Knockback>(mob).impulse.y, 700.0, 1e-9);
+}
+
 TEST(knockback_preserves_the_typescript_magnitude_and_skips_static_entities) {
     Arena a;
     const Entity mover = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 0.001);
@@ -2222,8 +2238,9 @@ TEST(a_petal_without_a_knockback_field_uses_the_game_default) {
     CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Common).knockback, 5.0, 1e-9);
     // Unlike damage, ordinary knockback does not use the rarity multiplier.
     CHECK_NEAR(f.registry.petalStats(f.sting, Rarity::Mythic).knockback, 2.0, 1e-9);
-    // Jelly is the one TypeScript rarity-override table for this stat.
-    CHECK_NEAR(f.registry.petalStats(f.jelly, Rarity::Rare).knockback, 100.0, 1e-9);
+    // Jelly is the one TypeScript rarity-override table for this stat, at
+    // 70% of TypeScript's figures since the 30% knockback cut.
+    CHECK_NEAR(f.registry.petalStats(f.jelly, Rarity::Rare).knockback, 70.0, 1e-9);
 
     Arena a;
     const Entity player = a.player({1000, 1000});

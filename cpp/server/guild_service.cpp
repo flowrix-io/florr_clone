@@ -605,6 +605,7 @@ void GameServer::handleGuildSquadAll(Session& session, net::Connection& connecti
         ++invited;
         if (net::Connection* peer = listener_.find(target->connection)) {
             sendSystem(*peer, guildSquadInviteLine(session.username));
+            sendSquadInvite(*peer, session.username);
         }
     }
     if (invited == 0) {
@@ -667,6 +668,7 @@ void GameServer::guildInviteToSquad(Session& session, net::Connection& connectio
     sendNotice(connection, net::NoticeSeverity::Good, "Squad invite sent to " + target + ".");
     if (net::Connection* peer = listener_.find(peerSession->connection)) {
         sendSystem(*peer, guildSquadInviteLine(session.username));
+        sendSquadInvite(*peer, session.username);
     }
 }
 
