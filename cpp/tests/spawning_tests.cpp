@@ -7140,3 +7140,35 @@ TEST(a_neverambient_mob_never_comes_from_a_group_roll_however_hard_the_ground) {
         }
     }
 }
+
+TEST(a_dense_band_holds_its_density_times_the_mobs) {
+    // `density` on a band multiplies the population its area buys: the fire
+    // ant zones are drawn at 3, the termite zones at 2, the ladybug zones at 4.
+    const Rect band{kCentre.x - 1500.0, kCentre.y - 1500.0, 3000.0, 3000.0};
+    std::string object = spawnObject(1, band.x, band.y, band.w, band.h, true, 0.0, "bee 100%");
+    const std::string head = "\"properties\": [";
+    object.replace(object.find(head), head.size(),
+                   head + "{\"name\": \"density\", \"type\": \"float\", \"value\": 3},");
+    const std::string path = writeTiledFixture("flix_dense_world.tmj", fixtureMapBody(object));
+    MapData map;
+    map.setId("dense");
+    std::string error;
+    CHECK(map.loadTiled(path, error));
+    std::remove(path.c_str());
+    bool sawDensity = false;
+    for (const MapElement& element : map.elements()) {
+        if (element.isSpawnBand()) sawDensity = std::fabs(element.density - 3.0) < 1e-9;
+    }
+    CHECK(sawDensity);
+
+    WorldMaps maps;
+    maps.adoptSingle(map);
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{kCentre};
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+    const int expected = std::max(
+        1, static_cast<int>(std::ceil(kTargetMobDensity * 3.0 * (band.w * band.h))));
+    CHECK(expected > bandTarget(band) * 2);
+    CHECK_EQ(sim.populationIn(band), expected);
+}

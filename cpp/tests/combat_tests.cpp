@@ -970,6 +970,24 @@ TEST(a_weaker_hit_in_the_same_tick_does_not_erase_a_jellys_shove) {
     CHECK_NEAR(a.world.get<Knockback>(mob).impulse.y, 700.0, 1e-9);
 }
 
+TEST(a_carrot_bounces_off_a_mob_like_off_a_wall) {
+    // Head-on into a mob to its right: straight back.
+    Vec2 v = bounceOffBody(Vec2{600, 0}, Vec2{20, 0});
+    CHECK_NEAR(v.x, -600.0, 1e-9);
+    CHECK_NEAR(v.y, 0.0, 1e-9);
+    // A glancing hit on a mob below the path: the part into it turns round,
+    // the part along it is kept.
+    v = bounceOffBody(Vec2{400, 300}, Vec2{0, 20});
+    CHECK_NEAR(v.x, 400.0, 1e-9);
+    CHECK_NEAR(v.y, -300.0, 1e-9);
+    // Already moving away: untouched.
+    v = bounceOffBody(Vec2{-100, 0}, Vec2{20, 0});
+    CHECK_NEAR(v.x, -100.0, 1e-9);
+    // Dead centre: straight back.
+    v = bounceOffBody(Vec2{0, 500}, Vec2{0, 0});
+    CHECK_NEAR(v.y, -500.0, 1e-9);
+}
+
 TEST(knockback_preserves_the_typescript_magnitude_and_skips_static_entities) {
     Arena a;
     const Entity mover = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 0.001);

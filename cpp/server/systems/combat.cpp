@@ -1487,6 +1487,15 @@ double collisionDamageTakenScale(const World& world, Entity e) {
 
 } // namespace
 
+Vec2 bounceOffBody(Vec2 velocity, Vec2 toBody) {
+    // The surface normal points from the body back toward the shot.
+    const Vec2 normal = (toBody * -1.0).normalized();
+    if (normal.lengthSq() < 1e-12) return velocity * -1.0;   // dead centre: straight back
+    const double into = velocity.x * normal.x + velocity.y * normal.y;
+    if (into >= 0.0) return velocity;                        // already leaving it
+    return velocity - normal * (2.0 * into);
+}
+
 void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, double strength) {
     if (!std::isfinite(strength) || strength <= 0.0) return;
     if (!world.isAlive(victim)) return;
@@ -3645,14 +3654,25 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // Through it and still flying: the hit cost it, so it flashes.
             const double share = health->max > 0.0 ? cost / health->max : 0.0;
             flashStruck(world, shot.entity, cost, share, false);
-            // A carrot that passes through a mob gets its whole flight back.
-            // A wall does NOT refill it (movement.cpp): that let one carrot
-            // ricochet round a room forever. Only a value written: the loop
-            // may not change the world's shape, and this does not.
+            // A carrot that hits a mob BOUNCES off it, the way it comes off a
+            // wall: the part of its velocity into the mob is turned round, the
+            // part along it kept, about the line from the mob's centre to the
+            // point the shot met it. Head-on, it comes straight back. It gets
+            // its whole flight back too. A wall does NOT refill it
+            // (movement.cpp): that let one carrot ricochet round a room
+            // forever. Only values written: the loop may not change the
+            // world's shape, and this does not. Its own ledger keeps it from
+            // hitting the same mob again on the way out.
             if (victimIsMob) {
                 if (Projectile* flight = world.tryGet<Projectile>(shot.entity);
                     flight != nullptr && flight->bouncesOffWalls) {
                     refillShotFlight(*flight, world.tryGet<Lifetime>(shot.entity));
+                    if (Motion* motion = world.tryGet<Motion>(shot.entity)) {
+                        motion->velocity = bounceOffBody(motion->velocity, impact.offset);
+                    }
+                    // One bounce a tick: what it was heading for behind this
+                    // mob is no longer where it is heading.
+                    break;
                 }
             }
         }

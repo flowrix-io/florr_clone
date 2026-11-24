@@ -32,7 +32,7 @@ constexpr struct { const char* layer; const char* kind; } kObjectLayers[] = {
 /// object -- a `targetMap` on a spawn band, say -- is dropped here instead of
 /// reaching MapData and being acted on somewhere it means nothing.
 constexpr struct { const char* kind; const char* properties[9]; } kObjectProperties[] = {
-    {"spawn",        {"difficulty", "mobs", "singular", nullptr}},
+    {"spawn",        {"difficulty", "mobs", "singular", "density", nullptr}},
     {"player_spawn", {"spawnId", "label", "color", "order", "backdrop", "biome", "pickable", nullptr}},
     {"teleporter",   {"id", "to", "targetMap", "targetSpawn", "color", "radius", nullptr}},
     {"npc",          {"npc", "rarity", nullptr}},

@@ -2091,6 +2091,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_hell"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -2622,6 +2627,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_hell"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -3166,6 +3176,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_hell"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -3613,6 +3628,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_hell"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -3768,6 +3788,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_hell"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -3871,6 +3896,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_hell"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -4126,6 +4156,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -4285,6 +4320,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -4524,6 +4564,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -4627,6 +4672,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -4738,6 +4788,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -5129,6 +5184,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -5352,6 +5412,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -5631,6 +5696,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -6030,6 +6100,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -6349,6 +6424,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -6820,6 +6900,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"baby_termite worker_termite soldier_termite"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -11626,6 +11711,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"termite_egg"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",
@@ -13230,6 +13320,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_egg"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -13761,6 +13856,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_egg"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -14305,6 +14405,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_egg"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -14752,6 +14857,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_egg"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -14907,6 +15017,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_egg"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -15010,6 +15125,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"fire_ant_egg"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":3
                         }],
                  "rotation":0,
                  "type":"",
@@ -15201,6 +15321,11 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"termite_ant_hell"
+                        }, 
+                        {
+                         "name":"density",
+                         "type":"float",
+                         "value":2
                         }],
                  "rotation":0,
                  "type":"",

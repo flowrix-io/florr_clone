@@ -151,6 +151,13 @@ struct MapElement {
     /// mob's tier would tell a player the whole district is that dangerous.
     bool singular = false;
 
+    /// How crowded this band is next to an ordinary one of its size: its mob
+    /// cap is multiplied by this, and a replacement for a mob killed on
+    /// somebody's screen waits this many times less. 1 is an ordinary band;
+    /// 3 holds three times the mobs and refills three times as fast. Bands
+    /// only, and nothing to a singular one, which holds one mob whatever.
+    double density = 1.0;
+
     /// True when this `spawn` object owns a POPULATION: a difficulty band,
     /// stocked to a density of its own.
     ///

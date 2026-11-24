@@ -299,6 +299,14 @@ TEST(the_secret_passage_opens_the_trial_room_only_at_the_map_edge) {
         input.moveAngle = std::atan2(goal.y - at.y, goal.x - at.x);
         input.moveStrength = 1.0;
         client.sendInput(input);
+        // The ladybug pocket is stocked thick, and a mob in the passage would
+        // shove the flower off the line this walk is about. Out of the way.
+        Query<MobTag, Transform> mobs{world};
+        mobs.each([&](Entity, MobTag&, Transform& mob) {
+            if (mob.realm == garden && distance(mob.position, at) < 1500.0) {
+                mob.position = {16000.0, 16000.0};
+            }
+        });
         h.step(1, {&client});
         const Transform& now = world.get<Transform>(session->entity);
         if (now.realm != garden) {

@@ -812,6 +812,10 @@ private:
         /// than handing the slot back where it fell. See MapElement::singular:
         /// the shape is one creature's range, not a patch of ground.
         bool singular = false;
+        /// The band's `density` (MapElement::density): its cap is already
+        /// multiplied by it, and an in-view replacement waits this many times
+        /// less.
+        double density = 1.0;
         /// Index into bossClocks_: the biome of the map this band is drawn on.
         /// kInvalidIndex on a prestige twin, which keeps no clock.
         std::uint16_t biome = kInvalidIndex;

@@ -397,6 +397,7 @@ it carries decides which kind of object it is:
 | `difficulty` | **how dangerous** this ground is, a number from 0 up, or `-1` for the random spread. Makes this a **band**. |
 | `mobs` | the **distribution**: what actually appears here |
 | `singular` | a bool. This band holds **exactly one mob**, however large it is drawn. Bands only. |
+| `density` | a number, default 1. How **crowded** this band is next to an ordinary one of its size: its mob cap is multiplied by it, and a mob killed on somebody's screen comes back that many times sooner. `3` holds three times the mobs and refills three times as fast. Clamped to 0.1..10. Bands only; nothing to a singular band. |
 
 - A shape with `difficulty` is a **band**. It owns a population of its own,
   stocked to a density scaled by the outline's area. **Bands are the only thing

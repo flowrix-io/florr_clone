@@ -574,6 +574,24 @@ void MapData::adopt(const Json& array) {
                 }
             }
 
+            // A crowding factor for a band drawn over ground that should be
+            // busier than its area alone buys. Clamped so a typo cannot stock
+            // a band with a hundred times the mobs the server can hold.
+            if (properties.contains("density")) {
+                const Json& authored = properties["density"];
+                if (authored.isNumber() && authored.asDouble() > 0.0) {
+                    element.density = std::clamp(authored.asDouble(), 0.1, 10.0);
+                } else {
+                    contentWarning("[map] a spawn object's `density` is not a positive number; "
+                                   "it was read as 1\n");
+                }
+                if (!element.hasDifficulty) {
+                    contentWarning("[map] a spawn object has a `density` but no `difficulty`, so "
+                                   "it is a mob region and owns no population; the density does "
+                                   "nothing\n");
+                }
+            }
+
             element.spawnId = properties["spawnId"].asString();
             element.label = properties["label"].asString();
             element.backdrop = properties["backdrop"].asString();

@@ -239,6 +239,11 @@ struct MobDivision {
     std::uint8_t slot = 0;
 };
 
+/// A shot's velocity after bouncing off a round body, mirror-fashion: the
+/// part into the body turned round, the part along it kept. `toBody` points
+/// from where the shot met it to the body's centre. A carrot's.
+Vec2 bounceOffBody(Vec2 velocity, Vec2 toBody);
+
 class CombatSystem {
 public:
     CombatSystem();
