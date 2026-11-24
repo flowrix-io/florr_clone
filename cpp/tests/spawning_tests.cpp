@@ -2446,7 +2446,7 @@ TEST(every_biome_gets_its_own_boss_clocks_scattered_over_one_cooldown) {
         }
     };
     spacing(kUniqueSpawnCooldownMillis, false);
-    spacing(kApexSpawnCooldownMillis, true);
+    spacing(kApexSpawnCooldownMaxMillis, true);
 }
 
 TEST(a_cooling_biome_spawns_supers_and_nothing_above_them) {
@@ -2459,7 +2459,7 @@ TEST(a_cooling_biome_spawns_supers_and_nothing_above_them) {
         world.deal();
         SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
         clock.uniqueReadyMillis = world.sim.now + kUniqueSpawnCooldownMillis;
-        clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis;
+        clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
         world.fill();
 
         CHECK(mobsOfRarity(world.sim.world, Rarity::Super) > 20);
@@ -2477,7 +2477,7 @@ TEST(a_ready_clock_upgrades_one_super_and_then_cools_down) {
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
     clock.uniqueReadyMillis = 0.0;
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     const double apexWas = clock.apexReadyMillis;
     world.fill();
 
@@ -2508,7 +2508,7 @@ TEST(both_clocks_ready_gives_one_apex_and_one_unique) {
     CHECK_EQ(world.announced[rarityIndex(Rarity::Apex)], 1);
     CHECK_EQ(world.announced[rarityIndex(Rarity::Unique)], 1);
     const SpawnSystem::BiomeBossClock& after = onlyClock(world.sim);
-    CHECK(after.apexReadyMillis > world.sim.now + kApexSpawnCooldownMillis - 20000.0);
+    CHECK(after.apexReadyMillis > world.sim.now + kApexSpawnCooldownMinMillis - 20000.0);
     CHECK(after.uniqueReadyMillis > world.sim.now + kUniqueSpawnCooldownMillis - 20000.0);
 }
 
@@ -2769,7 +2769,7 @@ TEST(a_ready_clock_waits_while_its_tier_is_standing_in_the_biome) {
     // Ready BEFORE the unique is placed: a cooling clock would refuse it.
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
     clock.uniqueReadyMillis = 0.0;
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     const Entity standing = world.sim.spawner.spawnMob(
         world.sim.world, world.sim.terrain, shipped(), shipped().mobIndex("bee"), Rarity::Unique,
         Vec2{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5},
@@ -2794,7 +2794,7 @@ TEST(a_unique_or_apex_asked_for_during_its_cooldown_never_appears) {
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
     clock.uniqueReadyMillis = world.sim.now + kUniqueSpawnCooldownMillis;
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     world.sim.spawner.bossSpawns.clear();
 
     const std::uint16_t bee = shipped().mobIndex("bee");
@@ -2860,7 +2860,26 @@ TEST(charging_a_clock_restarts_only_that_tier_in_that_biome) {
     CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Overworld, now) > 0.0);
 
     world.sim.spawner.chargeBossClock(Rarity::Apex, Realm::Overworld, now);
-    CHECK_EQ(onlyClock(world.sim).apexReadyMillis, now + kApexSpawnCooldownMillis);
+    // An apex's cooldown is drawn afresh every time, anywhere from 1.5 to 2.5
+    // hours: never outside the two, and spread across the whole of them.
+    CHECK_NEAR(kApexSpawnCooldownMinMillis, 1.5 * 3600000.0, 1e-6);
+    CHECK_NEAR(kApexSpawnCooldownMaxMillis, 2.5 * 3600000.0, 1e-6);
+    double shortest = 1e300;
+    double longest = 0.0;
+    double total = 0.0;
+    constexpr int kCharges = 2000;
+    for (int i = 0; i < kCharges; ++i) {
+        world.sim.spawner.chargeBossClock(Rarity::Apex, Realm::Overworld, now);
+        const double wait = onlyClock(world.sim).apexReadyMillis - now;
+        shortest = std::min(shortest, wait);
+        longest = std::max(longest, wait);
+        total += wait;
+    }
+    CHECK(shortest >= kApexSpawnCooldownMinMillis);
+    CHECK(longest < kApexSpawnCooldownMaxMillis);
+    CHECK_NEAR(shortest, kApexSpawnCooldownMinMillis, 60000.0);
+    CHECK_NEAR(longest, kApexSpawnCooldownMaxMillis, 60000.0);
+    CHECK_NEAR(total / kCharges, 2.0 * 3600000.0, 120000.0);
 }
 
 TEST(a_biome_with_no_clock_refuses_no_unique) {
@@ -2894,7 +2913,7 @@ TEST(a_sacrifice_summons_a_mob_of_its_band_at_its_tier_past_a_cooling_clock) {
     SuperBand world;
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis * 0.5;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis * 0.5;
     world.sim.spawner.bossSpawns.clear();
 
     const Vec2 at{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5};
@@ -2909,7 +2928,8 @@ TEST(a_sacrifice_summons_a_mob_of_its_band_at_its_tier_past_a_cooling_clock) {
     CHECK_NEAR(distance(world.sim.world.get<Transform>(result.mob).position, at), 0.0, 1.0);
     // Announced like every boss, and the biome's apex clock starts over.
     CHECK_EQ(world.sim.spawner.bossSpawns.size(), std::size_t(1));
-    CHECK_EQ(onlyClock(world.sim).apexReadyMillis, world.sim.now + kApexSpawnCooldownMillis);
+    CHECK(onlyClock(world.sim).apexReadyMillis >= world.sim.now + kApexSpawnCooldownMinMillis);
+    CHECK(onlyClock(world.sim).apexReadyMillis < world.sim.now + kApexSpawnCooldownMaxMillis);
 
     // A universal sacrifice summons at the top of the ladder.
     SuperBand other;
@@ -4169,9 +4189,9 @@ TEST(drop_rarity_applies_mob_floors_and_the_apex_item_cap) {
     }
 }
 
-TEST(an_apex_grades_seven_and_a_half_percent_eternal_and_twenty_percent_ultra) {
-    // A quarter of the ~30% eternal the old split gave an apex, and a fifth of its
-    // graded drops come out ultra; the rest are super.
+TEST(an_apex_grades_thirty_percent_eternal_and_twenty_percent_ultra) {
+    // Of an apex's graded drops 30% come out eternal and a fifth ultra; the
+    // rest are super.
     Rng rng(909);
     constexpr int kRuns = 200000;
     std::array<int, kRarityCount> counts{};
@@ -4185,7 +4205,7 @@ TEST(an_apex_grades_seven_and_a_half_percent_eternal_and_twenty_percent_ultra) {
     CHECK_NEAR(share(Rarity::Unique), kApexEternalDropChance, 0.005);
     CHECK_NEAR(share(Rarity::Ultra), kApexUltraDropChance, 0.005);
     CHECK_NEAR(share(Rarity::Super), 1.0 - kApexEternalDropChance - kApexUltraDropChance, 0.005);
-    CHECK_NEAR(kApexEternalDropChance, 0.075, 1e-12);
+    CHECK_NEAR(kApexEternalDropChance, 0.30, 1e-12);
     CHECK_NEAR(kApexUltraDropChance, 0.20, 1e-12);
 }
 

@@ -2091,7 +2091,7 @@ void SpawnSystem::scatterBossClocks(double nowMillis) {
         }
     };
     deal(kUniqueSpawnCooldownMillis, false);
-    deal(kApexSpawnCooldownMillis, true);
+    deal(kApexSpawnCooldownMaxMillis, true);
     for (const std::size_t i : fresh) bossClocks_[i].scattered = true;
 }
 
@@ -2132,7 +2132,8 @@ void SpawnSystem::restartBossClock(std::uint16_t slot, Rarity rarity, double now
     if (slot >= bossClocks_.size()) return;
     BiomeBossClock& clock = bossClocks_[slot];
     if (rarity == Rarity::Apex) {
-        clock.apexReadyMillis = nowMillis + kApexSpawnCooldownMillis;
+        clock.apexReadyMillis =
+            nowMillis + bossRng_.range(kApexSpawnCooldownMinMillis, kApexSpawnCooldownMaxMillis);
     } else if (rarity == Rarity::Unique) {
         clock.uniqueReadyMillis = nowMillis + kUniqueSpawnCooldownMillis;
     }

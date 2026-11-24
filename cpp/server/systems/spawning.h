@@ -400,8 +400,12 @@ struct QuietBoss {};
 /// that appeared later is despawned on the next population pass. Counted per
 /// ANIMAL: a centipede's body segments share its tier and are not more of it,
 /// and a player's pets are not wild at all.
+///
+/// A unique's cooldown is fixed. An apex's is drawn afresh each time its clock
+/// starts, uniformly between the two bounds below.
 inline constexpr double kUniqueSpawnCooldownMillis = 20.0 * 60.0 * 1000.0;
-inline constexpr double kApexSpawnCooldownMillis = 4.0 * 60.0 * 60.0 * 1000.0;
+inline constexpr double kApexSpawnCooldownMinMillis = 1.5 * 60.0 * 60.0 * 1000.0;
+inline constexpr double kApexSpawnCooldownMaxMillis = 2.5 * 60.0 * 60.0 * 1000.0;
 inline constexpr double kBossUpgradeChance = 0.10;
 
 /// The sacrifice (petalIsSacrifice): what a flower that dies wearing one

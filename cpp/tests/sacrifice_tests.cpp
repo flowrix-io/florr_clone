@@ -235,7 +235,7 @@ TEST(a_restart_during_a_sacrifice_hands_the_apex_clock_back) {
     // Dead, the apex spent the clock for real.
     world.add<Dead>(apex, Dead{NULL_ENTITY});
     h.step(2, {&alice});
-    CHECK(savedWait() > kApexSpawnCooldownMillis - 60000.0);
+    CHECK(savedWait() > kApexSpawnCooldownMinMillis - 60000.0);
 }
 
 TEST(a_sacrifice_on_gentle_ground_is_turned_away_and_kept) {

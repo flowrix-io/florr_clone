@@ -456,10 +456,9 @@ inline double dropUpgradeMultiplier(Rarity mobRarity) {
 }
 
 /// An apex's graded drop does not run the upgrade/downgrade split: it is this
-/// table, per copy. Eternal is a QUARTER of what the split used to give an apex
-/// (about 30%), and ultra comes out of the rest -- across the ten copies that
-/// is about 0.75 eternals a kill rather than a fistful of them.
-inline constexpr double kApexEternalDropChance = 0.075;
+/// table, per copy: eternal, then ultra, and super for the rest. Across the ten
+/// copies of a row that always drops, that is about three eternals a kill.
+inline constexpr double kApexEternalDropChance = 0.30;
 inline constexpr double kApexUltraDropChance = 0.20;
 
 /// Chance a drop rolls one tier below the mob that dropped it.

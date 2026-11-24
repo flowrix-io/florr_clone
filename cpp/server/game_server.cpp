@@ -411,7 +411,8 @@ void GameServer::restoreBossClocks(double nowMillis) {
     // Stored on the wall clock, which is the only one two runs share; this
     // run's clock is whatever tick() is handed. A ready time further out than
     // a whole cooldown can only be a wall clock that has since been set back,
-    // and is pulled in to one cooldown rather than left to wait it out.
+    // or a cooldown that has since been shortened, and is pulled in to one
+    // cooldown (an apex's longest) rather than left to wait it out.
     const double offset = nowMillis - static_cast<double>(database_.nowMillis());
     for (const std::string& biome : table.keys()) {
         const Json& entry = table[biome];
@@ -419,7 +420,7 @@ void GameServer::restoreBossClocks(double nowMillis) {
         const double unique = std::min(entry["uniqueReadyAt"].asDouble() + offset,
                                        nowMillis + kUniqueSpawnCooldownMillis);
         const double apex = std::min(entry["apexReadyAt"].asDouble() + offset,
-                                     nowMillis + kApexSpawnCooldownMillis);
+                                     nowMillis + kApexSpawnCooldownMaxMillis);
         spawning_->restoreBossClock(biome, unique, apex);
         savedBossClocks_.push_back(SavedBossClock{biome, unique, apex});
     }
@@ -430,14 +431,17 @@ void GameServer::persistBossClocks() {
     for (const SpawnSystem::BiomeBossClock& clock : spawning_->bossClocks()) {
         if (!clock.scattered) continue;
         // A boss still standing is one a restart would take away unkilled, so
-        // the cooldown it started is handed back: its clock is saved as of the
-        // moment the boss spent it, which the next run reads as ready. Once it
-        // dies the real ready time goes back in.
+        // the cooldown it started is handed back: its clock is saved a whole
+        // cooldown earlier, which the next run reads as ready. An apex's is
+        // its LONGEST cooldown, since what it drew is not kept and anything
+        // less could still read as cooling. Once the boss dies the real ready
+        // time goes back in.
         const double unique = clock.uniqueStanding
                                   ? clock.uniqueReadyMillis - kUniqueSpawnCooldownMillis
                                   : clock.uniqueReadyMillis;
-        const double apex = clock.apexStanding ? clock.apexReadyMillis - kApexSpawnCooldownMillis
-                                               : clock.apexReadyMillis;
+        const double apex = clock.apexStanding
+                                ? clock.apexReadyMillis - kApexSpawnCooldownMaxMillis
+                                : clock.apexReadyMillis;
         SavedBossClock* saved = nullptr;
         for (SavedBossClock& candidate : savedBossClocks_) {
             if (candidate.biome == clock.biome) saved = &candidate;
