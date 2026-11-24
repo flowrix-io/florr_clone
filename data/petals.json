@@ -137,7 +137,7 @@
     },
     "bone": {
         "name": "Bone",
-        "health": 10,
+        "health": 200,
         "damage": 36,
         "petalArmor": 10,
         "size": 1,
