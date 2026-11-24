@@ -666,10 +666,8 @@ constexpr ChangelogEntry kChangelog[] = {
         "Buffed Wing: twice the damage and health",
         "Fixed Gas not doing anything; it now poisons every mob it drifts through",
         "Target dummies now show the real damage of pets like Stick's sandstorms",
-        "Fixed Ultra mobs never dropping Mythics",
-        "Fixed Splitter counting you twice in /biome",
-        "Fixed some petal descriptions that didn't match what the petal does",
-        "Improvements and bugfixes"
+          "Fixed Splitter counting you twice in /biome",
+          "Improvements and bugfixes"
       }
     }
 };

@@ -150,6 +150,7 @@ enum Toggle : int {
     kDesynchronizedCanvas,
     kScreenShake,
     kAntennaeZoomAnimation,
+    kShowSuperMessages,
     kToggleCount,
 };
 
@@ -252,6 +253,7 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kHideOtherPets: return &settings.render.hideOtherPets;
         case kScreenShake: return &settings.render.screenShake;
         case kAntennaeZoomAnimation: return &settings.antennaeZoomAnimation;
+        case kShowSuperMessages: return &settings.showSuperMessages;
         case kShowAdminsOnLeaderboard: return &settings.showAdminsOnLeaderboard;
         case kDesynchronizedCanvas: return &settings.desynchronizedCanvas;
         // Everything else lands in the panel's own copy, because ClientSettings
@@ -652,6 +654,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.checkbox(kHideOtherPets, "Hide Other Players' Pets");
             p.checkbox(kScreenShake, "Screen Shake");
             p.checkbox(kAntennaeZoomAnimation, "Antennae Zoom Animation");
+            p.checkbox(kShowSuperMessages, "Show Super Spawn/Kill Messages");
             p.checkbox(kShowStats, "Show Performance Stats");
             p.checkbox(kDynamicSkybox, "Dynamic Skybox");
             p.checkbox(kMobDeathAnimation, "Mob Death Animation");

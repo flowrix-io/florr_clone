@@ -145,13 +145,13 @@ inline constexpr Rarity minionRarity(Rarity asked) {
 /// wall, not a gentle step, so a common-tier loadout cannot chip down a
 /// legendary by patience alone.
 inline constexpr std::array<double, kLadderRarityCount> kMobHealthScale = {
-    1.0, 3.75, 13.5, 54.0, 324.0, 3159.0, 126830.0, 2374000.0, 1e7, 4e8,
+    1.0, 3.75, 13.5, 54.0, 324.0, 3159.0, 126830.0, 2374000.0, 1e7, 8e8,
 };
 
 /// Mob damage per tier -- a clean 3x ladder, so a tier above you roughly
-/// triples what one touch costs.
+/// triples what one touch costs. Apex is the one jump past it: 50x eternal's.
 inline constexpr std::array<double, kLadderRarityCount> kMobDamageScale = {
-    1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0, 3936600.0,
+    1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0, 328050.0,
 };
 
 /// kMobDamageScale for any rarity: universal and Admin read apex's, as a mob
@@ -369,11 +369,11 @@ inline double dropLadderChance(Rarity tier) {
 /// Probability that a craft from `from` to the next tier succeeds. Halves each
 /// tier from a base of 64% up to ultra -> super's 1%, so common->uncommon is
 /// routine; past ultra it stops halving: super -> eternal is 0.9%, and
-/// eternal -> apex is pinned at 0.25%, so apex crafts stay rare.
+/// eternal -> apex is pinned at 0.5%, so apex crafts stay rare.
 inline double craftSuccessChance(Rarity from) {
     const int i = rarityIndex(from);
     const int ultra = rarityIndex(Rarity::Ultra);
-    if (from == Rarity::Unique) return 0.0025;
+    if (from == Rarity::Unique) return 0.005;
     if (i > ultra) return std::max(0.0, dropLadderChance(Rarity::Ultra) - 0.001 * (i - ultra));
     return dropLadderChance(from);
 }
@@ -465,6 +465,14 @@ inline double dropUpgradeMultiplier(Rarity mobRarity) {
 /// Ultra comes out of the rest.
 inline constexpr double kApexEternalDropChance = 0.40;
 inline constexpr double kApexUltraDropChance = 0.20;
+
+/// What a mob's tier multiplies dropDowngradeChance by. A super's graded drop
+/// slips a tier a third as often as the plain chance says, so a super kill
+/// leaves more ultras and fewer mythics. Shared so the gallery tooltip quotes
+/// what the server rolls.
+inline double dropDowngradeMultiplier(Rarity mobRarity) {
+    return mobRarity == Rarity::Super ? 1.0 / 3.0 : 1.0;
+}
 
 /// Chance a drop rolls one tier below the mob that dropped it.
 inline double dropDowngradeChance(Rarity mobRarity) {

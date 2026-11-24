@@ -4225,24 +4225,45 @@ TEST(an_apex_copy_never_quotes_less_eternal_than_an_eternal_mob) {
 
 TEST(crafting_past_ultra_loses_a_tenth_of_a_point_a_tier) {
     // Halving up to ultra -> super's 1%, then 0.9% for super -> eternal and
-    // 0.25% for eternal -> apex.
+    // 0.5% for eternal -> apex.
     CHECK_NEAR(craftSuccessChance(Rarity::Common), 0.64, 1e-12);
     CHECK_NEAR(craftSuccessChance(Rarity::Mythic), 0.02, 1e-12);
     CHECK_NEAR(craftSuccessChance(Rarity::Ultra), 0.01, 1e-12);
     CHECK_NEAR(craftSuccessChance(Rarity::Super), 0.009, 1e-12);
-    CHECK_NEAR(craftSuccessChance(Rarity::Unique), 0.0025, 1e-12);
+    CHECK_NEAR(craftSuccessChance(Rarity::Unique), 0.005, 1e-12);
     // The drop rolls keep the halving ladder: retuning the forge does not
     // move a single drop rate.
     CHECK_NEAR(dropLadderChance(Rarity::Super), 0.005, 1e-12);
     CHECK_NEAR(dropLadderChance(Rarity::Unique), 0.0025, 1e-12);
 }
 
-TEST(an_apex_hits_twice_as_hard_and_lasts_twice_as_long_as_it_did) {
-    CHECK_NEAR(kMobHealthScale[rarityIndex(Rarity::Apex)], 4e8, 1e-3);
-    CHECK_NEAR(kMobDamageScale[rarityIndex(Rarity::Apex)], 3936600.0, 1e-6);
+TEST(an_apex_hits_fifty_times_an_eternal_and_lasts_eighty_times_as_long) {
+    CHECK_NEAR(kMobHealthScale[rarityIndex(Rarity::Apex)], 8e8, 1e-3);
+    CHECK_NEAR(kMobDamageScale[rarityIndex(Rarity::Apex)], 6561.0 * 50.0, 1e-6);
     // Unique is untouched.
     CHECK_NEAR(kMobHealthScale[rarityIndex(Rarity::Unique)], 1e7, 1e-6);
     CHECK_NEAR(kMobDamageScale[rarityIndex(Rarity::Unique)], 6561.0, 1e-9);
+}
+
+TEST(a_super_mob_leaves_more_ultras_and_fewer_mythics) {
+    // 90% of graded drops start at ultra; half of those climb to super, and a
+    // third of the downgrade chance (1/3 of 1/3) of the rest slips to mythic.
+    // The other 10% start at the authored common row and are floored at
+    // mythic. So: 45% super, 40% ultra, 15% mythic.
+    Rng rng(7272);
+    constexpr int kRuns = 200000;
+    int mythic = 0, ultra = 0, super = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Super, rng);
+        if (r == Rarity::Mythic) ++mythic;
+        if (r == Rarity::Ultra) ++ultra;
+        if (r == Rarity::Super) ++super;
+    }
+    CHECK_NEAR(super / double(kRuns), 0.45, 0.01);
+    CHECK_NEAR(ultra / double(kRuns), 0.40, 0.01);
+    CHECK_NEAR(mythic / double(kRuns), 0.15, 0.01);
+    CHECK_NEAR(dropDowngradeMultiplier(Rarity::Super), 1.0 / 3.0, 1e-12);
+    CHECK_NEAR(dropDowngradeMultiplier(Rarity::Ultra), 1.0, 1e-12);
 }
 
 TEST(an_ultra_mob_still_leaves_mythics) {

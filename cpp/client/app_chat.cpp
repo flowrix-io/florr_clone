@@ -49,6 +49,18 @@ using namespace flix::ui;
 
 namespace {
 
+/// Whether a line is the server's "A Super X has spawned" or "A Super X has
+/// been defeated" announcement (GameServer::announceBosses and its defeat
+/// counterpart), which the "Show Super Spawn/Kill Messages" setting hides.
+/// Only the System channel: nobody can type a line onto it.
+bool isSuperBossLine(const ChatLine& line) {
+    if (line.channel != net::ChatChannel::System) return false;
+    const std::string& text = line.text;
+    if (text.find(">A Super ") == std::string::npos) return false;
+    return text.find(" has spawned") != std::string::npos ||
+           text.find(" has been defeated") != std::string::npos;
+}
+
 // The box is pinned to the bottom-left corner, so every height here is
 // measured up from the BOTTOM of the window.
 //
@@ -215,6 +227,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/help", "Show available commands", kForAll},
     {"/biome", "Show the most populated biome", kForAll},
     {"/boss-timers", "Show each biome's unique/apex cooldown", kForAll},
+    {"/players-online", "Show how many players are online", kForAll},
     {"/admin createpoll", "Open the standalone poll creator", kForAdmins},
     {"/admin save", "Save player progress", kForAdmins},
     {"/admin list-players", "List online players", kForAdmins},
@@ -1251,7 +1264,9 @@ void App::drawChat(Canvas& canvas, double time) {
         // Only the channels whose boxes are ticked. The server's own lines are
         // on no tab and always pass.
         const std::uint8_t shown = menus_.settings().chatChannels;
-        const auto passes = [shown](const ChatLine& line) {
+        const bool hideSupers = !menus_.settings().showSuperMessages;
+        const auto passes = [shown, hideSupers](const ChatLine& line) {
+            if (hideSupers && isSuperBossLine(line)) return false;
             const int tab = chatTabOf(line.channel);
             return tab < 0 || ((shown >> tab) & 1u) != 0;
         };

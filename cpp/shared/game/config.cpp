@@ -2038,11 +2038,12 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // TypeScript keeps ordinary petal knockback flat across rarities. Jelly is
     // the one intentional exception: its per-rarity values are literal
     // overrides in petals.ts, not another copy of the damage multiplier.
+    // 70% of those figures: jelly's shove was cut by 30% at every tier.
     s.knockback = c.knockback;
     if (c.id == "jelly") {
         static constexpr std::array<double, kLadderRarityCount> kJellyKnockback = {
-            15.0, 50.0, 100.0, 250.0, 500.0,
-            1800.0, 10000.0, 25000.0, 50000.0, 100000.0,
+            10.5, 35.0, 70.0, 175.0, 350.0,
+            1260.0, 7000.0, 17500.0, 35000.0, 70000.0,
         };
         s.knockback = kJellyKnockback[static_cast<std::size_t>(rarityIndex(tier))];
     }

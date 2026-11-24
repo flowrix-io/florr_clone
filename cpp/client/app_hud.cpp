@@ -26,6 +26,8 @@
 
 #include "client/ease.h"
 #include "client/ui/draw.h"
+#include "client/ui/menu_style.h"
+#include "client/ui/menu_theme.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "shared/game/config.h"
@@ -354,6 +356,10 @@ void App::drawHud(Canvas& canvas, double time) {
 
     canvas.restore();
 
+    // Solid, over the see-through HUD layer: it is a thing to click, not a
+    // readout.
+    drawSquadInvite(canvas);
+
     drawMinimap(canvas);
 
     const double bossBarsBottom = drawBossBars(canvas, altHeld);
@@ -475,6 +481,79 @@ void App::drawSquadHud(Canvas& canvas, double time) {
 
         centreY += kRowPitch;
     }
+}
+
+App::SquadInviteLayout App::squadInviteLayout() {
+    // Under the HUD, left-aligned with the flower's rim: an invite can only
+    // reach a player in no squad (SquadRoster::invite), so no squad rows ever
+    // stand where it goes.
+    const double hudBottom =
+        std::max(kHudXpY + kHudXpHeight + kHudXpPad, kFlowerCentreY + kHudFlowerBody);
+    SquadInviteLayout layout;
+    layout.card = Rect{kFlowerCentreX - kHudFlowerRadius + 12.0, hudBottom + 18.0, 270.0, 116.0};
+    constexpr double kButtonW = 96.0;
+    constexpr double kButtonH = 30.0;
+    constexpr double kButtonGap = 24.0;
+    const double buttonsX = layout.card.x + (layout.card.w - (kButtonW * 2.0 + kButtonGap)) * 0.5;
+    const double buttonsY = layout.card.bottom() - kButtonH - 16.0;
+    layout.join = Rect{buttonsX, buttonsY, kButtonW, kButtonH};
+    layout.ignore = Rect{buttonsX + kButtonW + kButtonGap, buttonsY, kButtonW, kButtonH};
+    return layout;
+}
+
+bool App::squadInviteShown() const {
+    const SquadInvite& invite = net_.squadInvite();
+    return invite.waiting && wallClockMillis() < invite.expiresAtMillis &&
+           !net_.squad().inSquad;
+}
+
+void App::drawSquadInvite(Canvas& canvas) {
+    if (!squadInviteShown()) return;
+    const SquadInviteLayout layout = squadInviteLayout();
+    const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+
+    canvas.save();
+    panelCard(canvas, layout.card, kSquadInviteSkin, 4.0);
+    TextStyle title = labelStyle(17.0, kPaper);
+    title.align = Align::Centre;
+    text(canvas, "Squad Invite", layout.card.x + layout.card.w * 0.5, layout.card.y + 26.0,
+         title);
+    TextStyle from = labelStyle(13.0, kPaper);
+    from.align = Align::Centre;
+    text(canvas, "Invited by: " + net_.squadInvite().fromUsername,
+         layout.card.x + layout.card.w * 0.5, layout.card.y + 50.0, from);
+
+    ButtonStyle join;
+    join.fill = 0x45B85Au;
+    join.textSize = 14.0;
+    join.outlineWidth = 4.0;
+    button(canvas, layout.join, "Join", hit(layout.join, mouse), false, join);
+    ButtonStyle ignore;
+    ignore.fill = 0x5A5861u;
+    ignore.textSize = 14.0;
+    ignore.outlineWidth = 4.0;
+    button(canvas, layout.ignore, "Ignore", hit(layout.ignore, mouse), false, ignore);
+    canvas.restore();
+}
+
+bool App::pressSquadInvite() {
+    if (!squadInviteShown() || !window_.mousePressed(MouseButton::Left)) return false;
+    const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+    const SquadInviteLayout layout = squadInviteLayout();
+    if (!hit(layout.card, mouse)) return false;
+    // A panel or the tutorial over the card has the press.
+    if (menus_.capturesMouse(mouse) || tutorial_.capturesMouse(mouse)) return false;
+    // The same commands a typed answer sends, so the server's checks -- the
+    // squad still has room, the two of them still share a biome -- and its
+    // replies in chat are exactly the typed ones.
+    if (hit(layout.join, mouse)) {
+        net_.sendChat("/squad-accept");
+        net_.squadInvite() = SquadInvite{};
+    } else if (hit(layout.ignore, mouse)) {
+        net_.sendChat("/squad-decline");
+        net_.squadInvite() = SquadInvite{};
+    }
+    return true;
 }
 
 NearbyNpc App::nearbyNpc(Vec2 self) const {

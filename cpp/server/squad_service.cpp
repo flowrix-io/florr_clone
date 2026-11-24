@@ -47,6 +47,14 @@ net::Connection* GameServer::squadConnection(SquadMemberId member) {
     return member.bot() ? nullptr : listener_.find(member.connection);
 }
 
+void GameServer::sendSquadInvite(net::Connection& connection, const std::string& inviter) {
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::SquadInviteReceived));
+    w.str(inviter);
+    w.u32(static_cast<std::uint32_t>(kSquadInviteMillis));
+    connection.send(w);
+}
+
 void GameServer::sendSquadUpdate(net::Connection& connection, const Squad* squad) {
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::SquadUpdate));

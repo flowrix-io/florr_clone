@@ -762,3 +762,60 @@ TEST(a_split_flower_pays_for_what_it_buys) {
     for (const Entity half : halves) CHECK_EQ(world.get<PlayerProgress>(half).stars, left);
     CHECK_EQ(alice.view().self().stars, left);
 }
+
+TEST(invert_attack_holds_the_parked_half_out_too) {
+    Harness h("splitter-invert", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    const std::uint16_t splitter = content().petalIndex(kSplitterPetalId);
+    CHECK(splitter != kInvalidIndex);
+    if (splitter == kInvalidIndex) return;
+    CHECK(equipSplitter(h, alice, "alice", splitter));
+    CHECK(h.stepUntil({&alice}, [&] { return bodiesNamed(world, "alice").size() == 2; }, 5));
+
+    const auto parkedHalf = [&] {
+        const std::uint32_t steered = alice.view().self().netId;
+        for (const Entity half : bodiesNamed(world, "alice")) {
+            if (world.get<NetId>(half).value != steered) return half;
+        }
+        return NULL_ENTITY;
+    };
+    CHECK(h.stepUntil({&alice}, [&] { return parkedHalf() != NULL_ENTITY; }, 30));
+
+    // Invert Attack on, nothing held: the client sends attack (its own
+    // inversion) and the invert bit, and the half it is not steering stands
+    // with its petals out as well.
+    std::uint32_t sequence = 1000;
+    const auto send = [&](std::uint8_t flags) {
+        net::InputFrame frame;
+        frame.sequence = ++sequence;
+        frame.flags = flags;
+        alice.sendInput(frame);
+    };
+    send(net::InputAttack | net::InputInvertAttack);
+    CHECK(h.stepUntil({&alice}, [&] {
+        const Entity parked = parkedHalf();
+        return parked != NULL_ENTITY && world.get<PlayerInput>(parked).current.attacking();
+    }, 30));
+    CHECK(!world.get<PlayerInput>(parkedHalf()).current.defending());
+
+    // Invert Defend instead: the parked half retracts and stops attacking.
+    send(net::InputDefend | net::InputInvertDefend);
+    CHECK(h.stepUntil({&alice}, [&] {
+        const PlayerInput& parked = world.get<PlayerInput>(parkedHalf());
+        return parked.current.defending() && !parked.current.attacking();
+    }, 30));
+
+    // Neither setting: the parked half is at rest, as it always was.
+    send(0);
+    CHECK(h.stepUntil({&alice}, [&] {
+        const PlayerInput& parked = world.get<PlayerInput>(parkedHalf());
+        return !parked.current.defending() && !parked.current.attacking();
+    }, 30));
+}

@@ -325,6 +325,19 @@ private:
     /// case and is why the block starts where the main HUD ends rather than
     /// reserving room for itself.
     void drawSquadHud(Canvas&, double time);
+    /// The squad invite card under the HUD: the card and its two buttons.
+    struct SquadInviteLayout {
+        Rect card;
+        Rect join;
+        Rect ignore;
+    };
+    static SquadInviteLayout squadInviteLayout();
+    /// Whether the card is up: an invite is waiting and has not lapsed.
+    bool squadInviteShown() const;
+    void drawSquadInvite(Canvas&);
+    /// Answers a press on the card's buttons. True when the press landed on
+    /// the card at all, so it is not also a swing.
+    bool pressSquadInvite();
     /// One HUD avatar: the flower `netId` belongs to, drawn at `radius` around
     /// (`centreX`, `centreY`) with its own colour, face, equipment and skin.
     /// Falls back to the plain yellow face when that body is not in the stream

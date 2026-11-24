@@ -187,6 +187,17 @@ struct SquadState {
     }
 };
 
+/// A squad invitation waiting on an answer, for the Join / Ignore card under
+/// the HUD.
+struct SquadInvite {
+    bool waiting = false;
+    /// The account that sent it, as "Invited by:" names it.
+    std::string fromUsername;
+    /// When it lapses, on wallClockMillis(): the server forgets an invite
+    /// after kSquadInviteMillis, so the card is taken down when it does.
+    std::int64_t expiresAtMillis = 0;
+};
+
 /// A guild invitation waiting on an answer.
 struct GuildInvite {
     bool waiting = false;
@@ -1000,6 +1011,10 @@ public:
     /// the reply, exactly as the reference clears `pendingInvite` on click.
     GuildInvite& guildInvite() { return guildInvite_; }
     const GuildInvite& guildInvite() const { return guildInvite_; }
+    /// Mutable for the same reason: the card is taken down the moment it is
+    /// answered, without waiting for the server to say so.
+    SquadInvite& squadInvite() { return squadInvite_; }
+    const SquadInvite& squadInvite() const { return squadInvite_; }
 
     /// The last craft result. The panel clears `pending` once it has started
     /// the animation for it.
@@ -1221,6 +1236,7 @@ private:
     void handleSkinPage(ByteReader&);
     void handleSkinsFetched(ByteReader&);
     void handleGuildMapUpdate(ByteReader&);
+    void handleSquadInviteReceived(ByteReader&);
     /// Puts each skin in skinCatalog_, over any copy of it there.
     void rememberSkins(std::vector<CustomSkin> skins);
     /// Asks for the skins on flowers in view that skinCatalog_ lacks. Run
@@ -1327,6 +1343,7 @@ private:
     GuildState guild_;
     std::vector<std::uint32_t> guildmateIds_;
     GuildInvite guildInvite_;
+    SquadInvite squadInvite_;
     CraftOutcome craftOutcome_;
     OracleOutcome oracleOutcome_;
     /// When, on this client's steady clock, the oracle wait the last profile

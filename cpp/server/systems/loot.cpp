@@ -298,7 +298,7 @@ Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rn
               kMaxDropUpgradeChance);
     if (rng.chance(upgrade)) {
         base = upgradeRarity(base);
-    } else if (rng.chance(dropDowngradeChance(base))) {
+    } else if (rng.chance(dropDowngradeChance(base) * dropDowngradeMultiplier(mobRarity))) {
         base = downgradeRarity(base);
     }
 

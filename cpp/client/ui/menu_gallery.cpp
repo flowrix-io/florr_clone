@@ -465,7 +465,8 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         const double up =
             std::min(kMaxDropUpgradeChance * 100.0, upgradePercent(base) * upgradeMultiplier);
         // The server only rolls the downgrade when the upgrade missed.
-        const double down = downgradePercent(base) * (100.0 - up) / 100.0;
+        const double down = downgradePercent(base) * dropDowngradeMultiplier(mobRarity) *
+                            (100.0 - up) / 100.0;
         const double same = std::max(0.0, 100.0 - up - down);
         std::array<double, kDropTiers> perCopy{};
         const auto land = [&](Rarity rarity, double percent) {
