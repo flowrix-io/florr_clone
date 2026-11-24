@@ -223,6 +223,7 @@ struct Fixture {
     std::uint16_t cpp = kInvalidIndex;
     std::uint16_t cMinus = kInvalidIndex;
     std::uint16_t triangle = kInvalidIndex;
+    std::uint16_t clip = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -234,7 +235,7 @@ const Fixture& fixture() {
               "grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":0.2,"section":[0]},
               "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":0.5,"section":[7]},
               "bubble":{"name":"Bubble","health":1,"damage":5,"size":1,"speed":0},
-              "c++":{"name":"C++","health":175,"damage":22,"size":1,"speed":0.2},
+              "c++":{"name":"C++","health":175,"damage":22,"size":1,"speed":0.2,"groups":{"computer":0.01}},
               "c--":{"name":"C--","health":175,"damage":22,"size":1,"speed":0.2}
             })",
             R"({
@@ -260,7 +261,8 @@ const Fixture& fixture() {
               "saucer":{"name":"Saucer","damage":10,"health":5,"size":1,"projectile":{"speed":300,"distance":500,"summonMobType":"grunt","summonMax":3}},
               "yin_yang":{"name":"Yin Yang","damage":10,"health":10,"size":1},
               "divider":{"name":"Divider","damage":0,"health":null,"size":1},
-              "triangle":{"name":"Triangle","damage":10,"health":1000,"size":1}
+              "triangle":{"name":"Triangle","damage":10,"health":1000,"size":1},
+              "clip":{"name":"Clip","damage":10,"health":1000,"size":1,"bonusMobGroup":"computer","bonusMobGroupDamage":3}
             })",
             f.error);
         f.sting = f.registry.petalIndex("sting");
@@ -291,6 +293,7 @@ const Fixture& fixture() {
         f.cpp = f.registry.mobIndex("c++");
         f.cMinus = f.registry.mobIndex("c--");
         f.triangle = f.registry.petalIndex("triangle");
+        f.clip = f.registry.petalIndex("clip");
         return f;
     }();
     return state;
@@ -4231,6 +4234,40 @@ TEST(a_bean_hits_harder_only_while_no_other_player_is_in_view) {
     CHECK_NEAR(otherRealm, alone, 1e-9);
     CHECK_NEAR(duellist, 5.0, 1e-9);
     CHECK_NEAR(downed, alone, 1e-9);
+}
+
+TEST(a_group_bonus_petal_hits_only_its_groups_mobs_harder) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.clip == kInvalidIndex) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const auto mobOf = [&](Vec2 at, std::uint16_t type) {
+        const Entity e = a.mob(at, 500.0);
+        a.world.add<MobType>(e, MobType{type, Rarity::Common});
+        return e;
+    };
+    // In the group, however lightly it is weighted there: 10 x 3.
+    const Entity member = mobOf({1040, 1000}, f.cpp);
+    equipPetal(a, player, f.clip, Rarity::Common, {1025, 1000});
+    // Outside it: the plain 10.
+    const Entity outsider = mobOf({3040, 1000}, f.grunt);
+    equipPetal(a, player, f.clip, Rarity::Common, {3025, 1000});
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(member), 470.0, 1e-9);
+    CHECK_NEAR(a.health(outsider), 490.0, 1e-9);
+}
+
+TEST(a_bonus_group_no_mob_lists_refuses_the_load) {
+    ContentRegistry registry;
+    std::string error;
+    const bool ok = test::loadFixtureContent(registry, testsupport::tempDir("flix_bonus_group"),
+        R"({"grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":0.2,"groups":["garden"]}})",
+        R"({"clip":{"name":"Clip","damage":10,"health":10,"size":1,"bonusMobGroup":"computr"}})",
+        error);
+    CHECK(!ok);
+    CHECK(error.find("computr") != std::string::npos);
 }
 
 TEST(a_claw_adds_its_bonus_only_while_the_victim_is_above_eighty_percent) {

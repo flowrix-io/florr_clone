@@ -230,6 +230,7 @@ constexpr GardnIcon kGardnIcon[] = {
     // 38.3 across on florr's radius of 13. florr's tile adds no tilt and
     // leaves it lying on its side; this one is turned back -1 (user's choice).
     {"totem",            38.3,   13,  0,       -1, 0.955},   // art fills 96% of its box
+    {"paperclip",            38.3,   13,  0,       -1, 0.955},
 };
 
 /// What gardn draws basic at, per unit of `size`: the picture a petal on the

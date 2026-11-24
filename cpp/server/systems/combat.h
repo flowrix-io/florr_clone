@@ -578,6 +578,10 @@ private:
         /// A divider's: how many pieces a mob it lands on comes apart into
         /// (MobDivision). Zero for every other body.
         int dividesInto = 0;
+        /// A paperclip's: its hit on a mob in mob group `bonusGroup` is
+        /// multiplied by `bonusGroupScale`. kInvalidIndex for every other body.
+        std::uint16_t bonusGroup = kInvalidIndex;
+        double bonusGroupScale = 1.0;
         /// A mob whose touch throws lightning -- both fireflies. Zero radius
         /// means it does not, which is every other body in the game. Resolved
         /// in the gather beside the glitch flag and for the same reason.
@@ -744,7 +748,8 @@ private:
     void dischargeOnContact(World& world, const SpatialGrid& grid, const MeleeSource& source,
                             double nowMillis);
     void gatherPetals(World& world, const ContentRegistry& content, double nowMillis);
-    void resolveMelee(World& world, const SpatialGrid& grid, double nowMillis);
+    void resolveMelee(World& world, const SpatialGrid& grid, const ContentRegistry& content,
+                      double nowMillis);
     /// A petal swinging at another flower, which is a different collision from
     /// the petal-vs-mob one beside it: gated by the arena/corruption rule
     /// rather than by the faction alone, throttled per victim, costing the

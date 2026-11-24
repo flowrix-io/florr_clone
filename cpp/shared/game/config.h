@@ -905,6 +905,13 @@ struct PetalConfig {
     /// kClawCritHealthFraction of its health, before rarity. A flat figure
     /// on the petal damage ladder, added to `damage` rather than replacing it.
     double clawCritDamage = 0;
+    /// A mob group (mobs.json `groups`) this petal's ring hits harder, and by
+    /// how much: Paperclip's x against the computer mobs. The multiplier
+    /// lands on every direct ring hit on a mob in that group, whatever its
+    /// weight there. Empty -- every other petal -- changes nothing; a name no
+    /// mob lists is refused at load.
+    std::string bonusMobGroup;
+    double bonusMobGroupDamage = 1.0;
     /// The fraction of the damage this petal actually deals that comes back
     /// to its flower as health. Fang's. Flat across the ladder: the damage it
     /// is a fraction OF already climbs it.
