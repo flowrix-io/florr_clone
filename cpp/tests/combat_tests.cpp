@@ -4,6 +4,7 @@
 #include "server/replication.h"
 #include "server/squads.h"
 #include "server/systems/combat.h"
+#include "server/systems/petals.h"
 #include "server/systems/movement.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
@@ -3253,6 +3254,48 @@ TEST(an_underground_flower_and_its_petals_neither_take_nor_deal_damage) {
     CHECK(CombatSystem::canDamage(a.world, mob, player));
     a.step(2000.0, f.registry);
     CHECK(a.health(player) < flowerBefore);
+}
+
+TEST(a_newly_corrupted_flower_cannot_damage_other_players_but_they_can_damage_it) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity rival = a.player({1030, 1000});
+    const Entity mob = a.mob({1000, 1200}, 200.0);
+    const Entity petal = equipPetal(a, player, f.plain, Rarity::Common, {1025, 1000});
+    const Entity theirs = equipPetal(a, rival, f.plain, Rarity::Common, {5000, 5000});
+    a.world.add<Health>(petal, Health{50.0, 50.0, 0.0, 0.0});
+    a.world.add<PlayerVisuals>(player);
+    CHECK(!CombatSystem::canDamage(a.world, petal, rival));
+
+    PetalSystem::corruptFlower(a.world, player, 0.0);
+    CHECK(a.world.get<PlayerVisuals>(player).corrupted);
+    CHECK(!CombatSystem::canDamage(a.world, player, rival));
+    CHECK(!CombatSystem::canDamage(a.world, petal, rival));
+    CHECK(!CombatSystem::canDamage(a.world, petal, theirs));
+    // One way only, and only players: it can be fought, and it still farms.
+    CHECK(CombatSystem::canDamage(a.world, rival, player));
+    CHECK(CombatSystem::canDamage(a.world, theirs, player));
+    CHECK(CombatSystem::canDamage(a.world, petal, mob));
+    CHECK(CombatSystem::canDamage(a.world, mob, player));
+    // In a PvP region too.
+    a.world.get<Faction>(player).friendlyFireEnabled = true;
+    a.world.get<Faction>(rival).friendlyFireEnabled = true;
+    CHECK(!CombatSystem::canDamage(a.world, petal, rival));
+
+    // The swing costs the petal nothing while it can land nothing.
+    const double petalBefore = a.health(petal);
+    a.step(1000.0, f.registry);
+    CHECK_NEAR(a.health(rival), 100.0, 1e-9);
+    CHECK_NEAR(a.health(petal), petalBefore, 1e-9);
+
+    a.world.get<Faction>(player).friendlyFireEnabled = false;
+    a.world.get<Faction>(rival).friendlyFireEnabled = false;
+    a.world.get<PlayerVisuals>(player).corruptionHarmless = false;
+    CHECK(CombatSystem::canDamage(a.world, petal, rival));
+    a.step(2000.0, f.registry);
+    CHECK(a.health(rival) < 100.0);
 }
 
 TEST(a_privet_hit_stretches_the_victims_poison_and_spends_the_petal) {

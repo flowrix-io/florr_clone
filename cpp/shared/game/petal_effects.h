@@ -82,6 +82,9 @@ inline constexpr int kApexPetCount = 3;
 /// open onto a squad of glitch flowers, and the twentieth takes the flower
 /// that was carrying it.
 inline constexpr double kFlowerCorruptChance = 0.05;
+/// How long a flower its own petal has just corrupted cannot damage another
+/// player.
+inline constexpr double kCorruptionHarmlessMillis = 5000.0;
 inline constexpr int kFlowerPetCount = 3;
 inline constexpr const char* kFlowerPetMobId = "glitch_flower";
 

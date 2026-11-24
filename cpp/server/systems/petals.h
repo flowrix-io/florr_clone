@@ -323,6 +323,11 @@ public:
     /// so a stack is only ever earned with one on.
     void creditKill(World& world, Entity killer, double nowMillis);
 
+    /// The flower petal's corruption taking its own flower: hostile to every
+    /// other player from here, but unable to damage one for the first
+    /// kCorruptionHarmlessMillis. A flower already corrupted is left as it is.
+    static void corruptFlower(World& world, Entity player, double nowMillis);
+
     /// A yggdrasil raised `revived` off the ground.
     ///
     /// The world half of a revival is this system's -- the Dead tag comes off,
@@ -665,7 +670,8 @@ private:
     /// The flower petal opening on the mob it touched: it is spent, and either
     /// the flower is corrupted or a squad of glitch flowers lands on the mob.
     void crackFlowerPetal(World& world, const ContentRegistry& registry, Entity player,
-                          Entity petal, std::uint8_t slot, Rarity rarity, Vec2 at);
+                          Entity petal, std::uint8_t slot, Rarity rarity, Vec2 at,
+                          double nowMillis);
 
     /// A petal that broke this tick, held until its scripted break effect can
     /// safely run. The break is discovered while the player's columns are open

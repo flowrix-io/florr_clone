@@ -291,7 +291,10 @@ void App::drawHud(Canvas& canvas, double time) {
     wasInvulnerable_ = invulnerable;
 
     std::uint32_t healthColour = kHealth;
-    if (invulnerable) {
+    if (selfEntity != net_.view().entities().end() &&
+        (selfEntity->second.equipFlags & EquipCorruptionHarmless) != 0) {
+        healthColour = kCorruptionHarmlessHealth;
+    } else if (invulnerable) {
         healthColour = kInvulnerableHealth;
     } else if (invulEndedAt_ >= 0 && time - invulEndedAt_ < kInvulnerableFadeSeconds) {
         // Linear, per channel, and the in-world plate's own fade rather than a
@@ -454,8 +457,12 @@ void App::drawSquadHud(Canvas& canvas, double time) {
 
         const double barY = centreY - barHeight * 0.5;
         const bool invulnerable = (body.state & net::StateInvulnerable) != 0;
+        const bool harmless = (body.equipFlags & EquipCorruptionHarmless) != 0;
         flowerBar(canvas, barX, barY, barWidth, barHeight, body.healthBar,
-                  invulnerable ? kInvulnerableHealth : kHealth, kScale);
+                  harmless       ? kCorruptionHarmlessHealth
+                  : invulnerable ? kInvulnerableHealth
+                                 : kHealth,
+                  kScale);
         text(canvas, member.name.empty() ? std::string("Squadmate") : member.name,
              barX + barWidth * 0.5, centreY, label);
 

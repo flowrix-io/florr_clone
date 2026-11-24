@@ -287,6 +287,24 @@ TEST(attack_and_defend_reach_the_client) {
     CHECK((state & net::StateAttacking) == 0);
 }
 
+TEST(a_harmless_corruption_reaches_the_client_and_ends_there) {
+    Fixture f;
+    PlayerVisuals visuals;
+    visuals.corrupted = true;
+    visuals.corruptionHarmless = true;
+    f.world.add<PlayerVisuals>(f.viewer, visuals);
+    WorldView client;
+    f.tick(client, 1, 1000);
+    const auto body = [&]() -> const RemoteEntity& {
+        return client.entities().at(client.self().netId);
+    };
+    CHECK((body().equipFlags & EquipCorruptionHarmless) != 0);
+    f.world.get<PlayerVisuals>(f.viewer).corruptionHarmless = false;
+    f.tick(client, 2, 1040);
+    CHECK((body().equipFlags & EquipCorruptionHarmless) == 0);
+    CHECK((body().faceFlags & FaceHasCorruption) != 0);
+}
+
 TEST(player_visual_flags_round_trip_and_update_independently) {
     Fixture f;
     f.world.add<PlayerVisuals>(f.viewer, PlayerVisuals{

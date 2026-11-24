@@ -576,6 +576,12 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         // queued for one flower must not fire out of the next one's ring.
         pendingSpawns_.clear();
         pendingBreaks_.clear();
+        // Served standing, underground or down alike: it is a plain clock.
+        if (PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(player);
+            visuals != nullptr && visuals->corruptionHarmless &&
+            nowMillis >= visuals->corruptionHarmlessUntilMillis) {
+            visuals->corruptionHarmless = false;
+        }
         if (playerIsDown(world, player)) {
             clearRing(world, player);
             // A corpse is not underground: it comes back up with the flower.
@@ -2335,7 +2341,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             // the instance out from under this pointer.
             instance->collisionFired = true;
             crackFlowerPetal(world, registry, player, petal, instance->slot, instance->rarity,
-                             transform->position);
+                             transform->position, nowMillis);
             continue;
         }
 
@@ -4131,8 +4137,17 @@ void PetalSystem::runPetBroods(World& world, const ContentRegistry& registry, En
     }
 }
 
+void PetalSystem::corruptFlower(World& world, Entity player, double nowMillis) {
+    PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(player);
+    if (visuals == nullptr || visuals->corrupted) return;
+    visuals->corrupted = true;
+    visuals->corruptionHarmless = true;
+    visuals->corruptionHarmlessUntilMillis = nowMillis + kCorruptionHarmlessMillis;
+}
+
 void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry, Entity player,
-                                   Entity petal, std::uint8_t slot, Rarity rarity, Vec2 at) {
+                                   Entity petal, std::uint8_t slot, Rarity rarity, Vec2 at,
+                                   double nowMillis) {
     // Zeroed rather than destroyed, exactly as the reference zeroes the
     // instance: the slot's ordinary break path then pays the reload, so a
     // cracked flower comes back on its cooldown like any other spent petal.
@@ -4145,9 +4160,7 @@ void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry
         // server has a splitter too (server/splitter.cpp), but halves are a
         // session's business and this system has no view of sessions, so only
         // the half that cracked the petal is corrupted: a known gap, not a rule.
-        if (PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(player)) {
-            visuals->corrupted = true;
-        }
+        corruptFlower(world, player, nowMillis);
         return;
     }
 

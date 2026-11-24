@@ -3643,6 +3643,26 @@ TEST(a_popped_shovel_takes_the_flower_underground_for_its_flat_time) {
     CHECK((rig.world.get<PlayerVisuals>(rig.player).equipFlags & EquipUnderground) == 0);
 }
 
+TEST(a_corruption_is_harmless_for_its_first_five_seconds_only) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.world.add<PlayerVisuals>(rig.player);
+    const auto visuals = [&]() -> PlayerVisuals& {
+        return rig.world.get<PlayerVisuals>(rig.player);
+    };
+    const double start = rig.now;
+    PetalSystem::corruptFlower(rig.world, rig.player, start);
+    CHECK(visuals().corrupted && visuals().corruptionHarmless);
+    CHECK(rig.tickUntil([&] { return !visuals().corruptionHarmless; }));
+    CHECK(rig.now - start >= 5000.0);
+    CHECK(rig.now - start < 5000.0 + 2.0 * net::kTickMillis);
+    CHECK(visuals().corrupted);
+
+    // Cracking again while corrupted is not a second opening.
+    PetalSystem::corruptFlower(rig.world, rig.player, rig.now);
+    CHECK(!visuals().corruptionHarmless);
+}
+
 TEST(a_shovels_time_is_flat_and_its_reload_runs_florrs_line) {
     if (!contentLoaded()) return;
     const std::uint16_t spade = petalId("spade");

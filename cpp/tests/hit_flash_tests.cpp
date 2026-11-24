@@ -514,6 +514,43 @@ TEST(the_screen_shake_is_the_same_size_on_screen_at_any_zoom) {
     CHECK_NEAR(pushOnScreen(0.25), renderer.shakeOffset().length(), 1e-9);
 }
 
+TEST(a_harmless_corrupted_flowers_health_bar_is_pure_red) {
+    CHECK(testsupport::fontsReady());
+    const auto frame = [](std::uint16_t equipFlags, std::uint8_t state) {
+        RemoteEntity flower;
+        flower.netId = kVictim;
+        flower.kind = net::EntityKind::Player;
+        flower.position = flower.targetPosition = kAt;
+        flower.needsSnap = false;
+        flower.radius = playerRadiusForLevel(1);
+        flower.level = 1;
+        flower.healthFraction = 1.0;
+        flower.equipFlags = equipFlags;
+        flower.state = state;
+        WorldView view;
+        view.setRealm(Realm::Overworld);
+        view.seedForTest(flower);
+        WorldRenderer renderer;
+        renderer.options.names = false;
+        Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+        renderer.draw(canvas, view, testsupport::frameCamera(kFrameSize, kAt), kAt, 0.0);
+        return canvas.getImageData(0, 0, kFrameSize, kFrameSize);
+    };
+    // The plate is laid at kHudLayerAlpha, so full red over any ground keeps
+    // green and blue at most what little of the ground shows through.
+    const auto red = [](const std::vector<std::uint8_t>& px) {
+        int found = 0;
+        for (std::size_t i = 0; i + 3 < px.size(); i += 4) {
+            if (px[i] > 215 && px[i + 1] < 40 && px[i + 2] < 40) ++found;
+        }
+        return found;
+    };
+    CHECK_EQ(red(frame(EquipNone, 0)), 0);
+    CHECK(red(frame(EquipCorruptionHarmless, 0)) > 100);
+    // Over spawn protection's tint as well.
+    CHECK(red(frame(EquipCorruptionHarmless, net::StateInvulnerable)) > 100);
+}
+
 TEST(an_underground_flower_is_a_see_through_silhouette_with_dirt_round_it) {
     // A popped shovel: the body is a dark shadow the ground still shows
     // through, and clods of dirt are thrown out past its rim.

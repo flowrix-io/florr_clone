@@ -165,6 +165,7 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
         // petal open turns on everyone, and the face is the only warning the
         // players around it get before its ring starts biting them.
         if (visuals->corrupted) out.faceFlags |= FaceHasCorruption;
+        if (visuals->corruptionHarmless) out.equipFlags |= EquipCorruptionHarmless;
     }
     if (const Afflictions* afflictions = world.tryGet<Afflictions>(e)) {
         if (afflictions->poisoned(nowMillis)) out.faceFlags |= FacePoisoned;

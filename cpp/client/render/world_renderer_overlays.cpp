@@ -212,7 +212,10 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         health.health = entity.healthBar.health;
         health.lag = entity.healthBar.lag;
         health.shield = entity.healthBar.shield;
-        health.fill = healthBarColor(entity, timeSeconds);
+        // Asked either way: it is also what keeps the shield's fade in step.
+        const std::uint32_t tint = healthBarColor(entity, timeSeconds);
+        health.fill = (entity.equipFlags & EquipCorruptionHarmless) ? kCorruptionHarmlessHealth
+                                                                    : tint;
         canvas.save();
         canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
         ui::healthBar(canvas, health);

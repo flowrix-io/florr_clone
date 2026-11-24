@@ -84,6 +84,14 @@ bool isCorrupted(const World& world, Entity player) {
     return visuals != nullptr && visuals->corrupted;
 }
 
+/// Whether a flower is still in the harmless opening of its corruption, which
+/// stops it damaging other players -- and only it: they may hit it meanwhile.
+bool corruptionHarmless(const World& world, Entity player) {
+    if (player == NULL_ENTITY) return false;
+    const PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(player);
+    return visuals != nullptr && visuals->corruptionHarmless;
+}
+
 /// Whether two flowers are one person: the two bodies a splitter gives one
 /// connection (server/splitter.cpp). False for anything that is not a flower
 /// with an account, and for two bots, whose connection is 0.
@@ -127,6 +135,7 @@ bool mobsDoing(const World& world, Entity e) {
 /// reaches it after an overlap test, and the arena sits far enough from the
 /// world that no pair spanning the two could ever touch.
 bool canPetalsDamagePlayer(const World& world, Entity attacker, Entity victim) {
+    if (corruptionHarmless(world, attacker)) return false;
     if (isCorrupted(world, attacker) || isCorrupted(world, victim)) return true;
     const Faction* attackerFaction = world.tryGet<Faction>(attacker);
     const Faction* victimFaction = world.tryGet<Faction>(victim);
@@ -535,6 +544,9 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
     // Underground (a popped shovel): the flower and everything credited to it
     // neither deal nor take damage, from anyone, until it comes back up.
     if (burrowed(world, sourcePlayer) || burrowed(world, victimPlayer)) return false;
+    // Newly corrupted: nothing of this flower's harms another player or
+    // anything of theirs, in a PvP region either. Mobs are hit as ever.
+    if (victimPlayer != NULL_ENTITY && corruptionHarmless(world, sourcePlayer)) return false;
 
     const TeamInfo attacker = teamOf(world, source);
     const TeamInfo defender = teamOf(world, victim);

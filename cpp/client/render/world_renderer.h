@@ -54,6 +54,9 @@ inline constexpr double kDirtClodSeconds = 0.6;
 inline constexpr std::uint32_t kDirtClodDark = 0x6B4A23u;
 inline constexpr std::uint32_t kDirtClodLight = 0x8C6A3Cu;
 inline constexpr std::uint32_t kInvulnerableHealth = 0xFAFFC9u;
+/// A flower's health bar while EquipCorruptionHarmless is set. Over every
+/// other tint the bar can have.
+inline constexpr std::uint32_t kCorruptionHarmlessHealth = 0xFF0000u;
 /// How long a health bar takes to bleed from kInvulnerableHealth back to
 /// ui::kHealth once the shield drops.
 inline constexpr double kInvulnerableFadeSeconds = 0.5;

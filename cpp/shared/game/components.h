@@ -638,6 +638,12 @@ struct PlayerVisuals {
     /// corruption turns the flower hostile to everyone rather than only
     /// marking it, which is why it rides faceFlags and not renderFlags.
     bool corrupted = false;
+    /// The first kCorruptionHarmlessMillis of a Flower petal's corruption: the
+    /// flower, and everything credited to it, cannot damage another player,
+    /// and its health bar is red. The flag is what everything asks, so no rule
+    /// needs the clock; PetalSystem sets it and clears it when the time is out.
+    bool corruptionHarmless = false;
+    double corruptionHarmlessUntilMillis = 0;
 };
 
 /// Passive bonuses summed from equipped petals each tick.

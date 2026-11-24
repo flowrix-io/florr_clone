@@ -47,6 +47,9 @@ enum EquipFlag : std::uint16_t {
     /// faded with its ring. Rides this word because it is per flower, sent in
     /// every Player record and had bits free; the face byte is full.
     EquipUnderground = 1 << 9,
+    /// Not equipment either: newly corrupted and not yet able to damage other
+    /// players (PlayerVisuals::corruptionHarmless), drawn as a red health bar.
+    EquipCorruptionHarmless = 1 << 10,
 };
 
 enum PlayerRenderFlag : std::uint32_t {
