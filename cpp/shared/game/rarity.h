@@ -368,12 +368,12 @@ inline double dropLadderChance(Rarity tier) {
 
 /// Probability that a craft from `from` to the next tier succeeds. Halves each
 /// tier from a base of 64% up to ultra -> super's 1%, so common->uncommon is
-/// routine; past ultra it stops halving and drops a tenth of a point a tier
-/// instead -- super -> eternal 0.9%, eternal -> apex 0.8% -- so the top
-/// crafts stay a gamble without being hopeless.
+/// routine; past ultra it stops halving: super -> eternal is 0.9%, and
+/// eternal -> apex is pinned at 0.25%, so apex crafts stay rare.
 inline double craftSuccessChance(Rarity from) {
     const int i = rarityIndex(from);
     const int ultra = rarityIndex(Rarity::Ultra);
+    if (from == Rarity::Unique) return 0.0025;
     if (i > ultra) return std::max(0.0, dropLadderChance(Rarity::Ultra) - 0.001 * (i - ultra));
     return dropLadderChance(from);
 }

@@ -656,7 +656,7 @@ constexpr ChangelogEntry kChangelog[] = {
         "Apexes drop fewer Eternals and can now drop Ultras",
         "Mythics and Ultras spawn more often",
         "Mythic, Ultra, Super and Eternal mobs drop their own rarity much more often",
-        "Crafting Super and above is easier: Super to Eternal 0.9%, Eternal to Apex 0.8%",
+        "Crafting Super and above is easier: Super to Eternal 0.9%, Eternal to Apex 0.25%",
         "Mob gallery now shows apex drops per petal, with an x10 badge",
         "New settings: Invert Attack and Invert Defend in Controls",
         "Buffed Triangle: 1s reload, and each other Triangle equipped adds damage to every Triangle",

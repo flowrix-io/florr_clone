@@ -4190,13 +4190,13 @@ TEST(an_apex_grades_seven_and_a_half_percent_eternal_and_twenty_percent_ultra) {
 }
 
 TEST(crafting_past_ultra_loses_a_tenth_of_a_point_a_tier) {
-    // Halving up to ultra -> super's 1%, then 0.9% and 0.8% rather than the
-    // 0.5% and 0.25% halving would give.
+    // Halving up to ultra -> super's 1%, then 0.9% for super -> eternal and
+    // 0.25% for eternal -> apex.
     CHECK_NEAR(craftSuccessChance(Rarity::Common), 0.64, 1e-12);
     CHECK_NEAR(craftSuccessChance(Rarity::Mythic), 0.02, 1e-12);
     CHECK_NEAR(craftSuccessChance(Rarity::Ultra), 0.01, 1e-12);
     CHECK_NEAR(craftSuccessChance(Rarity::Super), 0.009, 1e-12);
-    CHECK_NEAR(craftSuccessChance(Rarity::Unique), 0.008, 1e-12);
+    CHECK_NEAR(craftSuccessChance(Rarity::Unique), 0.0025, 1e-12);
     // The drop rolls keep the halving ladder: retuning the forge does not
     // move a single drop rate.
     CHECK_NEAR(dropLadderChance(Rarity::Super), 0.005, 1e-12);
