@@ -517,8 +517,8 @@ void App::drawSquadInvite(Canvas& canvas) {
         squadInviteSlide_ = 0.0;
         return;
     }
-    // A new invite slides in from the left over a third of a second, with a
-    // small overshoot (ease-out-back) so it settles rather than stops.
+    // A new invite slides in from the left over a third of a second, slowing
+    // as it arrives (ease-out cubic) -- no overshoot.
     const SquadInvite& invite = net_.squadInvite();
     if (invite.expiresAtMillis != squadInviteSeen_) {
         squadInviteSeen_ = invite.expiresAtMillis;
@@ -526,9 +526,8 @@ void App::drawSquadInvite(Canvas& canvas) {
     }
     constexpr double kSlideSeconds = 0.35;
     const double t = std::clamp((timeSeconds_ - squadInviteShownAt_) / kSlideSeconds, 0.0, 1.0);
-    constexpr double kOvershoot = 1.4;
-    const double u = t - 1.0;
-    squadInviteSlide_ = 1.0 + (kOvershoot + 1.0) * u * u * u + kOvershoot * u * u;
+    const double u = 1.0 - t;
+    squadInviteSlide_ = 1.0 - u * u * u;
     const SquadInviteLayout layout = squadInviteLayout();
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
 

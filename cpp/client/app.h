@@ -758,7 +758,7 @@ private:
     /// the screen and eases it back up again when the card goes away.
     double deathCardSlide_ = 0.0;
     /// The squad invite card's slide in from the left edge: 0 off screen, 1
-    /// in place (it overshoots a little on the way). Started when a new
+    /// in place, slowing as it arrives. Started when a new
     /// invite -- one with an expiry not seen before -- first shows.
     double squadInviteSlide_ = 0.0;
     double squadInviteShownAt_ = 0.0;
