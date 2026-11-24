@@ -4108,20 +4108,18 @@ TEST(a_hit_books_a_seed_against_a_mobs_ammunition_ring) {
 // Bone: armour the petal itself wears
 // ---------------------------------------------------------------------------
 
-TEST(a_bones_armor_rides_the_mob_armor_ladder) {
+TEST(a_bones_armor_climbs_the_full_ladder_with_no_cap) {
     const Fixture& f = fixture();
     CHECK(f.ok);
     if (f.boney == kInvalidIndex) return;
 
-    // "Just like regular entity armour": the same 3x steps a mob's climbs, and
-    // the same flattening above ultra.
+    // 3x a tier all the way up: no flattening above ultra any more.
     static const double kExpected[kLadderRarityCount] = {
-        10.0, 30.0, 90.0, 270.0, 810.0, 2430.0, 7290.0, 7290.0, 7290.0, 7290.0,
+        10.0, 30.0, 90.0, 270.0, 810.0, 2430.0, 7290.0, 21870.0, 65610.0, 196830.0,
     };
     for (int t = 0; t < kLadderRarityCount; ++t) {
         const PetalStats s = f.registry.petalStats(f.boney, clampRarity(t));
         CHECK_NEAR(s.petalArmor, kExpected[t], 1e-9);
-        CHECK_NEAR(s.petalArmor, 10.0 * kMobArmorScale[static_cast<std::size_t>(t)], 1e-9);
     }
     CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Mythic).petalArmor, 0.0, 1e-12);
 }
