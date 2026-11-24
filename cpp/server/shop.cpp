@@ -7,6 +7,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <string>
+#include <vector>
 
 #include "server/game_server_internal.h"
 #include "shared/game/config.h"
@@ -28,12 +30,6 @@ std::string numberText(double value) {
     return buffer;
 }
 
-/// How long a lock holds the store, in rotations: a day. Long enough to come
-/// back for a card after a session away, and short enough that one good hour
-/// cannot be kept on sale for good -- a card can be bought any number of
-/// times, so a lock with no end would be a standing price on a unique.
-constexpr std::int64_t kShopLockRotations = 24;
-
 /// The table the locks live in: account id -> the rotation it locked. Its own
 /// top-level table, read and written as raw JSON the way the star codes are,
 /// because nothing but these two handlers ever looks at it.
@@ -50,6 +46,41 @@ std::int64_t liveLock(const Json& stored, std::int64_t current) {
     return rotation;
 }
 
+/// The petals each account's store locks itself on: account id -> an array of
+/// {petal, tier, since} (ShopWatch). Kept like the locks, and for the same
+/// reason.
+constexpr const char* kShopWatchTable = "shopWatches";
+
+/// The watches `stored` holds, less any this content no longer offers.
+std::vector<ShopWatch> watchesFrom(const Json& stored) {
+    std::vector<ShopWatch> watches;
+    if (!stored.isArray()) return watches;
+    for (const Json& row : stored.items()) {
+        const double since = row["since"].asDouble(-1);
+        if (!std::isfinite(since) || since < 0) continue;
+        ShopWatch watch;
+        watch.petalIndex = content().petalIndex(row["petal"].asString());
+        watch.tier = row["tier"].asInt(kShopWatchAnyTier);
+        watch.since = static_cast<std::int64_t>(since);
+        if (!shopMayOffer(watch.petalIndex, watch.tier)) continue;
+        watches.push_back(watch);
+        if (watches.size() >= kMaxShopWatches) break;
+    }
+    return watches;
+}
+
+Json watchesJson(const std::vector<ShopWatch>& watches) {
+    Json rows = Json::array();
+    for (const ShopWatch& watch : watches) {
+        Json row = Json::object();
+        row["petal"] = Json(content().petal(watch.petalIndex).id);
+        row["tier"] = Json(static_cast<double>(watch.tier));
+        row["since"] = Json(static_cast<double>(watch.since));
+        rows.push(std::move(row));
+    }
+    return rows;
+}
+
 } // namespace
 
 std::int64_t GameServer::shopRotationFor(const std::string& userId) const {
@@ -57,48 +88,124 @@ std::int64_t GameServer::shopRotationFor(const std::string& userId) const {
     // Read through storedTable, which does not invalidate the table's cached
     // text: a purchase is not an edit to the locks.
     const Json& locks = database_.storedTable(kShopLockTable);
-    if (!locks.isObject() || !locks.contains(userId)) return current;
-    const std::int64_t locked = liveLock(locks[userId], current);
-    return locked >= 0 ? locked : current;
+    if (locks.isObject() && locks.contains(userId)) {
+        const std::int64_t locked = liveLock(locks[userId], current);
+        if (locked >= 0) return locked;
+    }
+    // A watched petal locks the store the hour it appears, whether or not
+    // runShopLock has written that lock down yet.
+    const Json& watches = database_.storedTable(kShopWatchTable);
+    if (watches.isObject() && watches.contains(userId)) {
+        const std::int64_t found = watchedShopRotation(watchesFrom(watches[userId]), current);
+        if (found >= 0) return found;
+    }
+    return current;
 }
 
-/// The shop's Lock button: `status`, `lock` or `unlock`, answered with where
-/// the account's store stands -- `locked`, the `rotation` it is showing and,
-/// while locked, `until` (seconds since the epoch) when the lock runs out.
-/// Sent on the market's JSON channel, so no message layout changed for it.
+/// The shop's Lock button and the petals it locks on by itself: `status`,
+/// `lock`, `unlock`, `watch` (a `petal`, a `tier` and whether it is `on`) or
+/// `clear_watches`, answered with where the account's store stands --
+/// `locked`, the `rotation` it is showing, its `watches` and, while locked,
+/// `until` (seconds since the epoch) when the lock runs out. Sent on the
+/// market's JSON channel, so no message layout changed for it.
 void GameServer::runShopLock(Session& session, net::Connection& connection, const Json& q) {
     const std::string action = q["action"].asString();
-    if (action != "status" && action != "lock" && action != "unlock") {
+    if (action != "status" && action != "lock" && action != "unlock" && action != "watch" &&
+        action != "clear_watches") {
         sendAdminTools(session, connection, "shop", false, "Unknown shop action.");
         return;
     }
+    const std::string& userId = session.userId;
     const std::int64_t current = shopRotation(shopClockNow());
+
     std::int64_t locked = -1;
+    bool staleLock = false;
     {
         const Json& locks = database_.storedTable(kShopLockTable);
-        if (locks.isObject() && locks.contains(session.userId)) {
-            locked = liveLock(locks[session.userId], current);
-            // A lock that has run out is cleared on the way past, so the
-            // table does not keep every account that ever pressed the button.
-            if (locked < 0) {
-                database_.rawTable(kShopLockTable).erase(session.userId);
-                database_.markDirty();
-            }
+        if (locks.isObject() && locks.contains(userId)) {
+            locked = liveLock(locks[userId], current);
+            staleLock = locked < 0;
         }
     }
+    std::vector<ShopWatch> watches;
+    {
+        const Json& stored = database_.storedTable(kShopWatchTable);
+        if (stored.isObject() && stored.contains(userId)) watches = watchesFrom(stored[userId]);
+    }
+    const std::int64_t lockedBefore = locked;
+    bool watchesChanged = false;
+
+    // Every rotation before `next` has been looked at: none of them locks the
+    // store again.
+    const auto lookedUpTo = [&](std::int64_t next) {
+        for (ShopWatch& watch : watches) {
+            if (watch.since >= next) continue;
+            watch.since = next;
+            watchesChanged = true;
+        }
+    };
+    // Locks on the first rotation a watch was waiting for. Written down, so
+    // the lock outlives its watch being taken off and the rotations behind it
+    // are generated once, not on every request.
+    const auto lockOnWatched = [&] {
+        if (locked >= 0 || watches.empty()) return;
+        locked = watchedShopRotation(watches, current);
+        lookedUpTo((locked >= 0 ? locked : current) + 1);
+    };
+
+    // Whatever appeared while nobody was asking comes first.
+    lockOnWatched();
     if (action == "lock" && locked < 0) {
         locked = current;
-        database_.rawTable(kShopLockTable)[session.userId] = Json(static_cast<double>(current));
-        database_.markDirty();
-    } else if (action == "unlock" && locked >= 0) {
+    } else if (action == "unlock") {
+        // Back to the live store, so nothing already seen may lock it again.
         locked = -1;
-        database_.rawTable(kShopLockTable).erase(session.userId);
+        lookedUpTo(current + 1);
+    } else if (action == "watch") {
+        const std::uint16_t petal = content().petalIndex(q["petal"].asString());
+        const double wanted = q["tier"].asDouble(kShopWatchAnyTier);
+        const int tier = wanted >= kShopWatchAnyTier && wanted < kLadderRarityCount
+                             ? static_cast<int>(wanted)
+                             : kLadderRarityCount;
+        const auto at = std::find_if(watches.begin(), watches.end(), [&](const ShopWatch& w) {
+            return w.petalIndex == petal && w.tier == tier;
+        });
+        if (!q["on"].asBool()) {
+            if (at != watches.end()) {
+                watches.erase(at);
+                watchesChanged = true;
+            }
+        } else if (at == watches.end() && watches.size() < kMaxShopWatches &&
+                   shopMayOffer(petal, tier)) {
+            // From this hour on: a petal already in the store locks it now.
+            watches.push_back({petal, tier, current});
+            watchesChanged = true;
+            lockOnWatched();
+        }
+    } else if (action == "clear_watches" && !watches.empty()) {
+        watches.clear();
+        watchesChanged = true;
+    }
+
+    // A lock that has run out is cleared on the way past, so the table does
+    // not keep every account that ever pressed the button.
+    if (locked != lockedBefore || (staleLock && locked < 0)) {
+        Json& locks = database_.rawTable(kShopLockTable);
+        if (locked >= 0) locks[userId] = Json(static_cast<double>(locked));
+        else locks.erase(userId);
+        database_.markDirty();
+    }
+    if (watchesChanged) {
+        Json& stored = database_.rawTable(kShopWatchTable);
+        if (watches.empty()) stored.erase(userId);
+        else stored[userId] = watchesJson(watches);
         database_.markDirty();
     }
 
     Json data = Json::object();
     data["locked"] = Json(locked >= 0);
     data["rotation"] = Json(static_cast<double>(locked >= 0 ? locked : current));
+    data["watches"] = watchesJson(watches);
     if (locked >= 0) {
         data["until"] =
             Json(static_cast<double>(shopRotationEnd(locked + kShopLockRotations - 1)));

@@ -2932,6 +2932,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     // eating the chat box's keystrokes all the way down.
     if (open_ == MenuId::None) return;
     wantsText_ = ctx.wantsText;
+    rightPressTaken_ = ctx.rightPressTaken;
     // A hand-over replaces this card with the one it named, the way a click on
     // that card's own strip button would.
     if (ctx.openMenu != MenuId::None && ctx.openMenu != open_) {
@@ -2960,6 +2961,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
                         const WorldRenderer& renderer, double timeSeconds, double dt,
                         const OverlayFn& overStripUnderBar) {
     wantsText_ = false;
+    rightPressTaken_ = false;
     panelRect_ = Rect{};
     // Every petal tile this frame paints reports itself from here on, and the
     // one under the pointer gets its tooltip at the end (see petal_hover.h).
@@ -3177,6 +3179,7 @@ void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeco
     // screen left in the panel and bar state is cleared rather than carried
     // over, or a card nobody is painting would still be swallowing clicks.
     wantsText_ = false;
+    rightPressTaken_ = false;
     panelRect_ = Rect{};
     pollRect_ = Rect{};
     window.setClaimedShortcuts({});

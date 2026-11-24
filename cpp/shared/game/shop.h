@@ -171,6 +171,66 @@ inline std::vector<ShopOffer> shopOffers(std::int64_t rotation) {
     return offers;
 }
 
+/// How long a lock holds the store, in rotations: a day. Long enough to come
+/// back for a card after a session away, and short enough that one good hour
+/// cannot be kept on sale for good -- a card can be bought any number of
+/// times, so a lock with no end would be a standing price on a unique.
+inline constexpr std::int64_t kShopLockRotations = 24;
+
+// ---------------------------------------------------------------------------
+// Locking on a petal
+// ---------------------------------------------------------------------------
+
+/// The most petals one account may ask its store to lock on.
+inline constexpr std::size_t kMaxShopWatches = 20;
+
+/// A watch that any tier of its petal answers.
+inline constexpr int kShopWatchAnyTier = -1;
+
+/// A petal the account wants its store locked on, the hour it is offered.
+struct ShopWatch {
+    std::uint16_t petalIndex = kNoPetal;
+    /// rarityIndex of the one tier wanted, or kShopWatchAnyTier.
+    int tier = kShopWatchAnyTier;
+    /// The first rotation not looked at for it yet.
+    std::int64_t since = 0;
+
+    bool matches(const ShopOffer& offer) const {
+        return offer.petalIndex == petalIndex &&
+               (tier == kShopWatchAnyTier || tier == rarityIndex(offer.rarity));
+    }
+};
+
+/// Whether the store can ever show this petal at this tier, kShopWatchAnyTier
+/// meaning at any of them: what may be watched for at all.
+inline bool shopMayOffer(std::uint16_t petalIndex, int tier) {
+    if (!shopSellsPetal(petalIndex)) return false;
+    for (const Rarity offered : kShopOfferTiers) {
+        if (tier != kShopWatchAnyTier && tier != rarityIndex(offered)) continue;
+        if (petalComesAt(content().petal(petalIndex), offered)) return true;
+    }
+    return false;
+}
+
+/// The rotation these watches lock the store on at `current`, or -1: the
+/// earliest one a watch has not looked at that offers what it wants. Only the
+/// rotations a lock would still be holding are looked at, so the answer is
+/// the same whether or not anybody was signed in when the petal appeared.
+inline std::int64_t watchedShopRotation(const std::vector<ShopWatch>& watches,
+                                        std::int64_t current) {
+    std::int64_t first = current + 1;
+    for (const ShopWatch& watch : watches) first = std::min(first, watch.since);
+    first = std::max(first, current - kShopLockRotations + 1);
+    for (std::int64_t rotation = first; rotation <= current; ++rotation) {
+        for (const ShopOffer& offer : shopOffers(rotation)) {
+            for (const ShopWatch& watch : watches) {
+                if (watch.since <= rotation && watch.matches(offer)) return rotation;
+            }
+        }
+    }
+    return -1;
+}
+
 // ---------------------------------------------------------------------------
 // Star challenges
 // ---------------------------------------------------------------------------

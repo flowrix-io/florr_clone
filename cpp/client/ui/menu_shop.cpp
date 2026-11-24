@@ -37,6 +37,7 @@
 #include "client/ui/market_ui.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
+#include "shared/core/text.h"
 #include "shared/game/config.h"
 #include "shared/game/shop.h"
 
@@ -175,6 +176,29 @@ constexpr double kGrowRate = 0.0550;
 /// The scrim's darkest: floor(100 s) / 255 of black.
 constexpr double kScrimMax = 100.0;
 
+// --- what Lock locks on -----------------------------------------------------
+
+/// The picker a right click on Lock raises, as a dialog box on the window:
+/// title, one line, the tier buttons with the search field beside them, the
+/// grid of petals, and the count with Clear and Done under it.
+constexpr double kWatchWidth = 660.0;
+constexpr double kWatchHeight = 480.0;
+constexpr double kWatchControlsHeight = 30.0;
+constexpr double kWatchTierWidth = 66.0;
+constexpr double kWatchTierGap = 8.0;
+constexpr double kWatchTile = 64.0;
+constexpr double kWatchTileGap = 11.0;
+constexpr int kWatchColumns = 8;
+constexpr double kWatchBar = 8.0;
+constexpr double kWatchWheelStep = 40.0;
+constexpr std::size_t kWatchSearchLimit = 64;
+constexpr std::uint32_t kClearFace = 0xBB5555u;
+
+/// The picker's tabs: any tier, then each tier the store sells, cheap to dear.
+constexpr std::array<int, 5> kWatchTiers = {
+    kShopWatchAnyTier, rarityIndex(Rarity::Mythic), rarityIndex(Rarity::Ultra),
+    rarityIndex(Rarity::Super), rarityIndex(Rarity::Unique)};
+
 // --- this game's tabs -------------------------------------------------------
 
 /// The Bonus tab's code box is the one highlighted thing on the window, in
@@ -230,7 +254,7 @@ constexpr std::size_t kFallingStars = 20;
 /// Kept beside the panel and keyed on the instance rather than being a
 /// file-level singleton -- two shops would otherwise share one code field.
 struct ShopState {
-    enum class Modal : std::uint8_t { None, Confirm, Alert };
+    enum class Modal : std::uint8_t { None, Confirm, Alert, Watch };
 
     std::string code;
     /// Caret, selection, focus and the blink's phase. The phase is anchored to
@@ -267,9 +291,19 @@ struct ShopState {
     std::vector<ShopOffer> offers;
 
     /// Whether this opening has asked the server where the account's store
-    /// stands -- locked or not -- yet. Asked once each time the window opens;
-    /// the answer arrives as the "shop" reply on the tools channel.
+    /// stands -- locked or not -- yet. Asked each time the window opens and
+    /// again when the store changes under it; the answer arrives as the
+    /// "shop" reply on the tools channel.
     bool lockAsked = false;
+    /// When it was last asked, so a clock that disagrees with the server's
+    /// about the hour asks now and then rather than every frame.
+    double lockAskedAt = 0;
+
+    /// The picker: which tier it is showing, its search and its scroll.
+    int watchTier = kShopWatchAnyTier;
+    std::string watchSearch;
+    ui::TextFieldState watchField;
+    ui::Scroller watchScroll;
     /// The last reply whose refusal has been shown, so one is shown once.
     double lockRevisionSeen = -1;
 
@@ -481,14 +515,6 @@ std::vector<std::string> wrapMessage(const std::string& body, double size, doubl
     return lines;
 }
 
-std::string trimmed(const std::string& s) {
-    std::size_t first = 0;
-    while (first < s.size() && static_cast<unsigned char>(s[first]) <= ' ') ++first;
-    std::size_t last = s.size();
-    while (last > first && static_cast<unsigned char>(s[last - 1]) <= ' ') --last;
-    return s.substr(first, last - first);
-}
-
 /// The line under "Today's offers:", florr's `:time`: the seconds rounded up,
 /// then the largest whole unit -- 5 h 23 m is "5 hours".
 std::string rotationCaption(std::int64_t secondsLeft) {
@@ -577,6 +603,7 @@ void ShopPanel::reset() {
     // Asked again on the next opening: the lock may have run out, or been
     // pressed from another tab, while the window was shut.
     state.lockAsked = false;
+    state.watchField.blur();
     // The shower belongs to the moment a code was redeemed. It can only be
     // drawn while the window is up, and a shower that resumed mid-air an hour
     // later would be a ghost of a reward already given.
@@ -723,16 +750,35 @@ bool ShopPanel::render(MenuContext& ctx) {
         q["action"] = action;
         ctx.net.requestAdminTools(q);
     };
-    if (live && !state.lockAsked && ctx.net.haveSession()) {
-        state.lockAsked = true;
-        sendShop("status");
-    }
     const Json& lockReply = ctx.net.adminTools("shop");
     const bool lockAnswered = lockReply["kind"].asString() == "shop";
     const std::int64_t now = shopClockNow();
     const auto lockedUntil = static_cast<std::int64_t>(lockReply["until"].asDouble(0));
     const bool storeLocked =
         lockAnswered && lockReply["ok"].asBool() && lockReply["locked"].asBool() && now < lockedUntil;
+    // Asked again when the hour turns or the lock runs out: the store that
+    // comes up may hold a petal the account locks on.
+    const bool lockStale =
+        lockAnswered && lockReply["ok"].asBool() && !storeLocked &&
+        (lockReply["locked"].asBool() ||
+         static_cast<std::int64_t>(lockReply["rotation"].asDouble(0)) != shopRotation(now)) &&
+        ctx.timeSeconds - state.lockAskedAt >= 5.0;
+    if (live && (!state.lockAsked || lockStale) && ctx.net.haveSession()) {
+        state.lockAsked = true;
+        state.lockAskedAt = ctx.timeSeconds;
+        sendShop("status");
+    }
+    const Json& watches = lockReply["watches"];
+    const auto watched = [&](std::uint16_t petal, int tier) {
+        if (!watches.isArray()) return false;
+        const std::string& id = content().petal(petal).id;
+        for (const Json& row : watches.items()) {
+            if (row["tier"].asInt(kShopWatchAnyTier) == tier && row["petal"].asString() == id) {
+                return true;
+            }
+        }
+        return false;
+    };
     if (lockAnswered && !lockReply["ok"].asBool() &&
         lockReply["revision"].asDouble(0) != state.lockRevisionSeen) {
         state.lockRevisionSeen = lockReply["revision"].asDouble(0);
@@ -783,6 +829,19 @@ bool ShopPanel::render(MenuContext& ctx) {
                             kButtonBorder, kButtonRadius, hot, !modalUp && pressing(lockButton));
             text(canvas, label, lockButton.x + lockButton.w * 0.5,
                  lockButton.y + lockButton.h * 0.5, shopText(kLockSize));
+
+            // Across from it, what it locks on by itself -- and, under the
+            // pointer, how that is set.
+            const std::size_t count = watches.isArray() ? watches.size() : 0;
+            std::string note;
+            if (hot) note = "Right click to select a petal to lock on";
+            else if (count > 0) {
+                note = "Locks on " + std::to_string(count) + (count == 1 ? " petal" : " petals");
+            }
+            if (!note.empty()) {
+                text(canvas, note, panel.x + kGridLeft, lockButton.y + lockButton.h * 0.5,
+                     shopText(kLockSize, Align::Left));
+            }
         }
 
         std::array<Rect, kShopOfferCount> tiles{};
@@ -892,13 +951,182 @@ bool ShopPanel::render(MenuContext& ctx) {
     // window's centre: a title, the message, and what can be done about it.
     Rect confirmRect{};
     Rect cancelRect{};
+    // The picker's, laid out only while it is the box that is up.
+    Rect watchClose{};
+    Rect watchSearchRect{};
+    Rect watchClear{};
+    Rect watchDone{};
+    std::array<Rect, kWatchTiers.size()> watchTabs{};
+    std::uint16_t watchHovered = kNoPetal;
+    Rect watchHoveredRect{};
     if (state.shown != ShopState::Modal::None) {
         const double alpha = std::floor(kScrimMax * clamp(state.scrim, 0.0, 1.0)) / 255.0;
         if (alpha > 0) fillWindowRect(canvas, panel, kInk, alpha);
         // The cards under the scrim are not what the pointer is on: only the
         // petal in the dialog itself, painted after this, may show its stats.
         coverPetalHover(panel);
+    }
+    if (state.shown == ShopState::Modal::Watch) {
+        const Vec2 centre{panel.x + panel.w * 0.5, panel.y + panel.h * 0.5};
+        const Rect box{centre.x - kWatchWidth * 0.5, centre.y - kWatchHeight * 0.5, kWatchWidth,
+                       kWatchHeight};
+        const double left = box.x + kDialogPad;
+        const double right = box.right() - kDialogPad;
+        const bool answering = state.modal == ShopState::Modal::Watch;
 
+        double y = box.y + 10.0;
+        const double titleMiddle = y + kDialogTitleSize * kLineHeight * 0.5;
+        y += kDialogTitleSize * kLineHeight;
+        const double lineMiddle = y + kDialogLineSize * kLineHeight * 0.5;
+        y += kDialogLineSize * kLineHeight + 10.0;
+        watchClose = {right - kCloseSide, titleMiddle - kCloseSide * 0.5, kCloseSide, kCloseSide};
+        for (std::size_t i = 0; i < watchTabs.size(); ++i) {
+            watchTabs[i] = {left + 2.0 + static_cast<double>(i) * (kWatchTierWidth + kWatchTierGap),
+                            y + 2.0, kWatchTierWidth, kWatchControlsHeight - 4.0};
+        }
+        const double searchX = watchTabs.back().right() + 14.0;
+        watchSearchRect = {searchX, y, right - searchX, kWatchControlsHeight};
+        y += kWatchControlsHeight + 10.0;
+        const double footerY = box.bottom() - 16.0 - kDialogButtonHeight;
+        const Rect view{left, y, right - left, footerY - 12.0 - y};
+        const double doneWidth = measure("Done", kDialogCancelSize) +
+                                 textPad(kDialogCancelSize) + kDialogCancelExtra;
+        const double clearWidth = measure("Clear", kDialogCancelSize) +
+                                  textPad(kDialogCancelSize) + kDialogCancelExtra;
+        watchDone = {right - doneWidth, footerY, doneWidth, kDialogButtonHeight};
+        watchClear = {watchDone.x - kDialogButtonGap - clearWidth, footerY, clearWidth,
+                      kDialogButtonHeight};
+
+        // Every petal the store can show at this tier, in the order the rest
+        // of the game lists petals.
+        const std::string wanted = trimmed(lowerCase(state.watchSearch));
+        std::vector<std::uint16_t> petals;
+        for (const std::uint16_t index : content().petalDisplayOrder()) {
+            if (!shopMayOffer(index, state.watchTier)) continue;
+            const PetalConfig& petal = content().petal(index);
+            if (!wanted.empty() && lowerCase(petal.name).find(wanted) == std::string::npos &&
+                lowerCase(petal.id).find(wanted) == std::string::npos) {
+                continue;
+            }
+            petals.push_back(index);
+        }
+        constexpr double kPitch = kWatchTile + kWatchTileGap;
+        const std::size_t rows = (petals.size() + kWatchColumns - 1) / kWatchColumns;
+        state.watchScroll.contentHeight = static_cast<double>(rows) * kPitch - kWatchTileGap + 4.0;
+        state.watchScroll.viewHeight = view.h;
+        if (answering) {
+            if (box.contains(mouse)) state.watchScroll.offset -= ctx.wheel() * kWatchWheelStep;
+            state.watchScroll.offset -=
+                touchScroll(ctx.window, view, state.watchScroll.maxOffset() > 0);
+        }
+        state.watchScroll.offset =
+            clamp(state.watchScroll.offset, 0.0, state.watchScroll.maxOffset());
+
+        const double scale = clamp(state.grow, 0.0, 1.0);
+        if (scale > 1e-4) {
+            canvas.save();
+            canvas.translate(static_cast<float>(centre.x), static_cast<float>(centre.y));
+            canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
+            canvas.translate(static_cast<float>(-centre.x), static_cast<float>(-centre.y));
+
+            drawFlorrPanel(canvas, box, kWindowFill);
+            text(canvas, "Lock on a petal", centre.x, titleMiddle, shopText(kDialogTitleSize));
+            text(canvas, "The store locks itself for a day when a picked petal is on offer.",
+                 centre.x, lineMiddle, shopText(kDialogLineSize));
+            const bool closeHot = answering && watchClose.contains(mouse);
+            if (closeHot) cursor = CursorShape::Hand;
+            drawFlorrClose(canvas, watchClose, closeHot, answering && pressing(watchClose));
+
+            // What is chosen is ringed in ink: white is lost on the top tier's
+            // white plate.
+            const auto ring = [&](Rect r, double grow) {
+                setStroke(canvas, kInk);
+                canvas.setLineWidth(3.0f);
+                canvas.beginPath();
+                canvas.roundRect(static_cast<float>(r.x - grow), static_cast<float>(r.y - grow),
+                                 static_cast<float>(r.w + 2.0 * grow),
+                                 static_cast<float>(r.h + 2.0 * grow), 6.0f);
+                canvas.stroke();
+            };
+            for (std::size_t i = 0; i < watchTabs.size(); ++i) {
+                const int tier = kWatchTiers[i];
+                const bool hot = answering && watchTabs[i].contains(mouse);
+                if (hot) cursor = CursorShape::Hand;
+                const bool any = tier == kShopWatchAnyTier;
+                drawFlorrButton(canvas, watchTabs[i],
+                                any ? kButtonIdle : rarityColor(static_cast<Rarity>(tier)),
+                                kButtonBorder, kButtonRadius, hot,
+                                state.watchTier == tier || (answering && pressing(watchTabs[i])));
+                text(canvas, any ? "Any" : rarityLabel(static_cast<Rarity>(tier)),
+                     watchTabs[i].x + watchTabs[i].w * 0.5, watchTabs[i].y + watchTabs[i].h * 0.5,
+                     shopText(kDialogLineSize));
+                if (state.watchTier == tier) ring(watchTabs[i], 3.0);
+            }
+            if (answering && watchSearchRect.contains(mouse)) cursor = CursorShape::Text;
+            inputField(canvas, watchSearchRect, state.watchSearch, "Search...",
+                       state.watchField.focused, ctx.timeSeconds, &state.watchField);
+
+            canvas.save();
+            canvas.beginPath();
+            canvas.rect(static_cast<float>(view.x), static_cast<float>(view.y),
+                        static_cast<float>(view.w), static_cast<float>(view.h));
+            canvas.clip();
+            for (std::size_t i = 0; i < petals.size(); ++i) {
+                const Rect cell{view.x + 2.0 + static_cast<double>(i % kWatchColumns) * kPitch,
+                                view.y + 2.0 - state.watchScroll.offset +
+                                    static_cast<double>(i / kWatchColumns) * kPitch,
+                                kWatchTile, kWatchTile};
+                if (cell.bottom() <= view.y || cell.y >= view.bottom()) continue;
+                ItemTile tile;
+                tile.petalIndex = petals[i];
+                // Any tier is no tier's colour: the grey plate.
+                tile.greyed = state.watchTier == kShopWatchAnyTier;
+                tile.rarity = static_cast<Rarity>(
+                    tile.greyed ? std::max(rarityIndex(Rarity::Mythic),
+                                           rarityIndex(content().petal(petals[i]).minRarity))
+                                : state.watchTier);
+                // Already locked on whatever its tier.
+                if (!tile.greyed && watched(petals[i], kShopWatchAnyTier)) tile.badge = "Any";
+                tile.timeSeconds = ctx.timeSeconds;
+                tile.tooltip = false;
+                drawItemTile(canvas, ctx.sprites, cell, tile);
+                if (watched(petals[i], state.watchTier)) ring(cell, 0.0);
+                if (answering && view.contains(mouse) && cell.contains(mouse)) {
+                    watchHovered = petals[i];
+                    watchHoveredRect = cell;
+                    cursor = CursorShape::Hand;
+                    notePetalHoverAt(cell, petals[i], tile.rarity);
+                }
+            }
+            canvas.restore();
+            if (petals.empty()) {
+                text(canvas, "No petals found", centre.x, view.y + view.h * 0.5,
+                     shopText(kDialogLineSize));
+            }
+            scrollbar(canvas, view, state.watchScroll.contentHeight, state.watchScroll.offset,
+                      kWindowRim, kWatchBar);
+
+            const std::size_t count = watches.isArray() ? watches.size() : 0;
+            text(canvas,
+                 std::to_string(count) + " / " + std::to_string(kMaxShopWatches) + " picked", left,
+                 footerY + kDialogButtonHeight * 0.5, shopText(kDialogLineSize, Align::Left));
+            const auto footerButton = [&](Rect r, const char* label, std::uint32_t face,
+                                          bool usable) {
+                const bool hot = usable && answering && r.contains(mouse);
+                if (hot) cursor = CursorShape::Hand;
+                drawFlorrButton(canvas, r, usable ? face : kButtonIdle, kButtonBorder,
+                                kButtonRadius, hot, usable && answering && pressing(r));
+                text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, shopText(kDialogCancelSize));
+            };
+            footerButton(watchClear, "Clear", kClearFace, count > 0);
+            footerButton(watchDone, "Done", kLockFace, true);
+            canvas.restore();
+        }
+        if (!answering) {
+            watchClose = watchSearchRect = watchClear = watchDone = Rect{};
+            watchTabs.fill(Rect{});
+        }
+    } else if (state.shown != ShopState::Modal::None) {
         const bool confirming = state.shown == ShopState::Modal::Confirm;
         const std::string title = confirming ? "Confirm" : "Error";
         const std::vector<std::string> lines =
@@ -991,7 +1219,10 @@ bool ShopPanel::render(MenuContext& ctx) {
 
     // --- actions ------------------------------------------------------------
     // What the box says is left in place: it is still drawn on its way out.
-    const auto closeModal = [&state] { state.modal = ShopState::Modal::None; };
+    const auto closeModal = [&state] {
+        state.modal = ShopState::Modal::None;
+        state.watchField.blur();
+    };
     const auto resolveModal = [&](bool confirmed) {
         if (confirmed && state.modal == ShopState::Modal::Confirm &&
             state.pendingPetal != kNoPetal) {
@@ -1020,7 +1251,14 @@ bool ShopPanel::render(MenuContext& ctx) {
     if (!live) return true;
 
     // --- keyboard -----------------------------------------------------------
-    if (modalUp) {
+    if (state.modal == ShopState::Modal::Watch && state.watchField.focused) {
+        TextEditOptions typing;
+        typing.maxBytes = kWatchSearchLimit;
+        editText(ctx.window, state.watchSearch, state.watchField, ctx.timeSeconds, typing);
+        if (ctx.window.keyPressed(Key::Enter) || ctx.window.keyPressed(Key::Escape)) {
+            state.watchField.blur();
+        }
+    } else if (modalUp) {
         if (ctx.window.keyPressed(Key::Enter)) {
             resolveModal(state.modal == ShopState::Modal::Confirm);
         } else if (ctx.window.keyPressed(Key::Escape)) {
@@ -1045,12 +1283,56 @@ bool ShopPanel::render(MenuContext& ctx) {
                        ctx.timeSeconds);
     }
 
+    if (state.modal == ShopState::Modal::Watch) {
+        trackTextMouse(ctx.window, state.watchField, watchSearchRect,
+                       inputFieldRun(watchSearchRect, state.watchSearch, state.watchField),
+                       state.watchSearch, ctx.timeSeconds);
+    }
+
+    // Right on Lock picks what it locks on, on the press as every right click
+    // in the game does.
+    if (!modalUp && !ctx.pointerBlocked && ctx.window.mousePressed(MouseButton::Right) &&
+        lockButton.contains(mouse)) {
+        state.modal = ShopState::Modal::Watch;
+        state.watchScroll.offset = 0;
+        ctx.rightPressTaken = true;
+        return true;
+    }
+
     // --- mouse --------------------------------------------------------------
     // florr's buttons act on the RELEASE of a press that began on them -- the
     // pressed face is what shows while the button is held.
     if (!ctx.released()) return true;
 
     if (modalUp) {
+        if (state.modal == ShopState::Modal::Watch) {
+            if (clicked(watchClose) || clicked(watchDone)) {
+                closeModal();
+            } else if (clicked(watchClear)) {
+                if (watches.isArray() && watches.size() > 0) sendShop("clear_watches");
+            } else if (watchHovered != kNoPetal && clicked(watchHoveredRect)) {
+                const bool on = !watched(watchHovered, state.watchTier);
+                if (on && watches.isArray() && watches.size() >= kMaxShopWatches) {
+                    alert("The store can lock on " + std::to_string(kMaxShopWatches) +
+                          " petals at most");
+                } else {
+                    Json q = Json::object();
+                    q["kind"] = "shop";
+                    q["action"] = "watch";
+                    q["petal"] = content().petal(watchHovered).id;
+                    q["tier"] = static_cast<double>(state.watchTier);
+                    q["on"] = on;
+                    ctx.net.requestAdminTools(q);
+                }
+            } else {
+                for (std::size_t i = 0; i < watchTabs.size(); ++i) {
+                    if (!clicked(watchTabs[i])) continue;
+                    state.watchTier = kWatchTiers[i];
+                    state.watchScroll.offset = 0;
+                }
+            }
+            return true;
+        }
         if (clicked(confirmRect)) resolveModal(true);
         else if (clicked(cancelRect)) resolveModal(false);
         // The scrim swallows everything else, including the close button.

@@ -1199,7 +1199,8 @@ void App::updateTextSelection(Canvas& canvas) {
         selectable.selectAll();
     }
 
-    if (window_.mousePressed(MouseButton::Right) && !contextMenu_.isOpen()) {
+    if (window_.mousePressed(MouseButton::Right) && !contextMenu_.isOpen() &&
+        !menus_.rightPressTaken()) {
         // Only over something this client owns. Over the world the right
         // button is the defend control, and a card there would eat it.
         const bool overOwnUi = overField || menus_.capturesMouse(mouse) ||

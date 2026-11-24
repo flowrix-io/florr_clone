@@ -465,6 +465,10 @@ struct MenuContext {
     /// system's business, so the panel only names the one it wants.
     MenuId openMenu = MenuId::None;
 
+    /// Set by a panel that answered this frame's right press itself, so the
+    /// app does not raise its Copy menu on top of what that opened.
+    bool rightPressTaken = false;
+
     bool pointerBlocked = false;
     Vec2 mouse() const { return {window.mouseX(), window.mouseY()}; }
     bool over(Rect r) const { return r.contains(mouse()); }
@@ -1729,6 +1733,9 @@ public:
     /// while it is focused, and this reports it.
     bool wantsText() const { return wantsText_; }
 
+    /// Whether the open panel answered this frame's right press itself.
+    bool rightPressTaken() const { return rightPressTaken_; }
+
     /// Drawing calls the menu layer made since this was last called, split by
     /// which of its three unrelated jobs made them. One figure for the lot
     /// cannot say which to make quieter, and the bar is redrawn every frame
@@ -1851,6 +1858,7 @@ private:
     ClientSettings settings_;
     DragState drag_;
     bool wantsText_ = false;
+    bool rightPressTaken_ = false;
 
     bool inGame_ = false;
     bool exitRequested_ = false;

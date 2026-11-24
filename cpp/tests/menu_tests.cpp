@@ -607,6 +607,148 @@ TEST(the_store_rotates_hourly_and_both_sides_derive_the_same_ten_cards) {
     }
 }
 
+TEST(a_watched_petal_is_found_the_first_hour_it_is_offered) {
+    CHECK(ensureShippedContent());
+    const std::int64_t current = shopRotation(1'700'000'000);
+    const std::vector<ShopOffer> offers = shopOffers(current);
+    if (offers.empty()) { CHECK(false); return; }
+    const ShopOffer& card = offers.front();
+    const ShopWatch any{card.petalIndex, kShopWatchAnyTier, current};
+    const ShopWatch exact{card.petalIndex, rarityIndex(card.rarity), current};
+    const ShopWatch wrongTier{card.petalIndex, rarityIndex(Rarity::Unique), current};
+    CHECK_EQ(watchedShopRotation({any}, current), current);
+    CHECK_EQ(watchedShopRotation({exact}, current), current);
+    CHECK_EQ(watchedShopRotation({wrongTier}, current), std::int64_t(-1));
+    CHECK_EQ(watchedShopRotation({}, current), std::int64_t(-1));
+
+    // One that was away is told what a lock would still hold, and no more:
+    // not before its watch began, and not once the lock would have run out.
+    const ShopWatch old{card.petalIndex, rarityIndex(card.rarity), current - 5};
+    const std::int64_t found = watchedShopRotation({old}, current + 3);
+    CHECK(found >= current - 5);
+    CHECK(found <= current);
+    const ShopWatch later{card.petalIndex, rarityIndex(card.rarity), current + 1};
+    CHECK_EQ(watchedShopRotation({later}, current), std::int64_t(-1));
+    const std::int64_t gone = watchedShopRotation({exact}, current + kShopLockRotations);
+    CHECK(gone != current);
+
+    CHECK(shopMayOffer(card.petalIndex, kShopWatchAnyTier));
+    CHECK(!shopMayOffer(card.petalIndex, rarityIndex(Rarity::Common)));
+    CHECK(!shopMayOffer(kInvalidIndex, kShopWatchAnyTier));
+}
+
+TEST(the_store_locks_itself_on_a_watched_petal) {
+    CHECK(ensureShippedContent());
+    // The hour must not turn half way through.
+    const std::int64_t rotation = shopRotation(shopClockNow());
+    const std::vector<ShopOffer> offers = shopOffers(rotation);
+    if (offers.empty()) { CHECK(false); return; }
+    const ShopOffer& card = offers.front();
+    // A petal the store can show and is not showing.
+    std::uint16_t absent = kNoPetal;
+    for (const std::uint16_t index : content().petalDisplayOrder()) {
+        if (!shopMayOffer(index, kShopWatchAnyTier)) continue;
+        if (std::none_of(offers.begin(), offers.end(),
+                         [&](const ShopOffer& o) { return o.petalIndex == index; })) {
+            absent = index;
+            break;
+        }
+    }
+    if (absent == kNoPetal) { CHECK(false); return; }
+
+    Harness h("shop-watch", [&](const std::string& path) {
+        seedAccount(path, "wanda", "password7", 0, 0);
+        // Asked for three hours ago by somebody who has been away since.
+        seedAccount(path, "archie", "password7", 0, 0);
+        seedAccount(path, "fiona", "password7", 0, 0);
+        Database db;
+        std::string error;
+        CHECK(db.load(path, error));
+        Json row = Json::object();
+        row["petal"] = Json(content().petal(shopOffers(rotation - 3).front().petalIndex).id);
+        row["tier"] = Json(-1.0);
+        row["since"] = Json(static_cast<double>(rotation - 3));
+        Json rows = Json::array();
+        rows.push(row);
+        db.rawTable("shopWatches")[db.findUser("archie")->id] = rows;
+        // One asking for as many as it may, none of them due until next hour.
+        Json many = Json::array();
+        for (const std::uint16_t index : content().petalDisplayOrder()) {
+            if (many.size() >= kMaxShopWatches) break;
+            if (index == card.petalIndex || !shopMayOffer(index, kShopWatchAnyTier)) continue;
+            Json next = Json::object();
+            next["petal"] = Json(content().petal(index).id);
+            next["tier"] = Json(-1.0);
+            next["since"] = Json(static_cast<double>(rotation + 1));
+            many.push(next);
+        }
+        db.rawTable("shopWatches")[db.findUser("fiona")->id] = many;
+        db.markDirty();
+        CHECK(db.save());
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    const auto ask = [&](NetClient& client, const char* action, std::uint16_t petal, int tier,
+                         bool on) -> const Json& {
+        const double before = client.adminTools("shop")["revision"].asDouble(0);
+        Json q = Json::object();
+        q["kind"] = "shop";
+        q["action"] = action;
+        if (petal != kNoPetal) q["petal"] = content().petal(petal).id;
+        q["tier"] = static_cast<double>(tier);
+        q["on"] = on;
+        client.requestAdminTools(q);
+        CHECK(h.stepUntil({&client}, [&] {
+            return client.adminTools("shop")["revision"].asDouble(0) > before;
+        }));
+        return client.adminTools("shop");
+    };
+    const auto signIn = [&](NetClient& client, const char* name) {
+        CHECK(connectClient(h, client));
+        client.requestLogin(name, "password7");
+        CHECK(h.stepUntil({&client},
+                          [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    };
+
+    NetClient client;
+    signIn(client, "wanda");
+    // Not on offer: remembered, and the store stays live.
+    CHECK(!ask(client, "watch", absent, kShopWatchAnyTier, true)["locked"].asBool());
+    CHECK_EQ(client.adminTools("shop")["watches"].size(), std::size_t(1));
+    // Asked for twice is asked for once; a tier the store never sells, not at all.
+    CHECK_EQ(ask(client, "watch", absent, kShopWatchAnyTier, true)["watches"].size(), std::size_t(1));
+    CHECK_EQ(ask(client, "watch", absent, rarityIndex(Rarity::Common), true)["watches"].size(),
+             std::size_t(1));
+    CHECK_EQ(ask(client, "watch", absent, 4000, true)["watches"].size(), std::size_t(1));
+    // Not the tier on offer.
+    CHECK(!ask(client, "watch", card.petalIndex, rarityIndex(Rarity::Unique), true)["locked"].asBool());
+    // On offer: locked there and then, and still locked with the watch off.
+    const Json& hit = ask(client, "watch", card.petalIndex, rarityIndex(card.rarity), true);
+    CHECK(hit["locked"].asBool());
+    CHECK_EQ(hit["rotation"].asDouble(), static_cast<double>(rotation));
+    CHECK(ask(client, "watch", card.petalIndex, rarityIndex(card.rarity), false)["locked"].asBool());
+    ask(client, "watch", card.petalIndex, rarityIndex(card.rarity), true);
+    // Unlocked stays unlocked for the rest of the hour, watch and all.
+    CHECK(!ask(client, "unlock", kNoPetal, 0, false)["locked"].asBool());
+    CHECK(!ask(client, "status", kNoPetal, 0, false)["locked"].asBool());
+    CHECK_EQ(client.adminTools("shop")["watches"].size(), std::size_t(3));
+    CHECK_EQ(ask(client, "clear_watches", kNoPetal, 0, false)["watches"].size(), std::size_t(0));
+
+    // No more than the cap.
+    NetClient full;
+    signIn(full, "fiona");
+    CHECK_EQ(ask(full, "status", kNoPetal, 0, false)["watches"].size(), kMaxShopWatches);
+    CHECK_EQ(ask(full, "watch", card.petalIndex, kShopWatchAnyTier, true)["watches"].size(),
+             kMaxShopWatches);
+
+    // Away while it was on offer: the store is still at the hour it appeared.
+    NetClient back;
+    signIn(back, "archie");
+    const Json& away = ask(back, "status", kNoPetal, 0, false);
+    CHECK(away["locked"].asBool());
+    CHECK_EQ(away["rotation"].asDouble(), static_cast<double>(rotation - 3));
+}
+
 TEST(an_offer_is_charged_its_discounted_price_and_a_wrong_slot_is_refused) {
     CHECK(ensureShippedContent());
     const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
