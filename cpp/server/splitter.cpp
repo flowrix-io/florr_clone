@@ -71,12 +71,10 @@ int GameServer::splitterSlotOf(Entity body) const {
         // splitter as "not worn" would merge the flower back together the
         // instant it switched halves, which is the one moment it must not.
         if (slot.empty() || content().petal(slot.configIndex).id != kSplitterPetalId) continue;
-        // Held back by a bandage on the row (slotHeldBack), it is on the bar
-        // but not out: the flower does not split, and a split one merges back.
-        const bool heldBack = slotHeldBack(content(), i, [&](int j) {
-            return equippedPetal(content(), *loadout, j);
-        });
-        return heldBack ? -1 : i;
+        // Switched off while the flower is Undead (petalDisabledWhileUndead):
+        // on the bar but not out, so the flower does not split, a split one
+        // merges back, and a click switches nothing.
+        return world_.has<Undead>(body) ? -1 : i;
     }
     return -1;
 }
@@ -396,6 +394,18 @@ void GameServer::serviceSplitters(double nowMillis) {
                 // Only the spare is gone: the split simply ends, and the
                 // splitter pays a reload so the spare is not replaced on the
                 // next tick. Whoever killed it got a flower, not a free one.
+                endSplit(session, nowMillis, true);
+                continue;
+            }
+            // A BANDAGE'S UNDEAD ENDS THE SPLIT, on whichever half it fell
+            // (user, 2026-11-23). The half that is not steered is despawned
+            // outright -- endSplit always takes splitOther -- so the flower
+            // left is the one being steered: Undead and on its way down if
+            // the blow fell there, untouched if it fell on the parked half.
+            // Either way the bandage never leaves a spare body standing
+            // behind a dying one. The reload is paid as for a lost half, and
+            // the Undead flower itself cannot split again (splitterSlotOf).
+            if (world_.has<Undead>(session.entity) || world_.has<Undead>(session.splitOther)) {
                 endSplit(session, nowMillis, true);
                 continue;
             }

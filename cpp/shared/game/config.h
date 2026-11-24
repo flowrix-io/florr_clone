@@ -905,6 +905,13 @@ struct PetalConfig {
     /// kClawCritHealthFraction of its health, before rarity. A flat figure
     /// on the petal damage ladder, added to `damage` rather than replacing it.
     double clawCritDamage = 0;
+    /// A mob group (mobs.json `groups`) this petal's ring hits harder, and by
+    /// how much: Paperclip's x against the computer mobs. The multiplier
+    /// lands on every direct ring hit on a mob in that group, whatever its
+    /// weight there. Empty -- every other petal -- changes nothing; a name no
+    /// mob lists is refused at load.
+    std::string bonusMobGroup;
+    double bonusMobGroupDamage = 1.0;
     /// The fraction of the damage this petal actually deals that comes back
     /// to its flower as health. Fang's. Flat across the ladder: the damage it
     /// is a fraction OF already climbs it.
@@ -1412,13 +1419,15 @@ double mobUndeadMillis(const MobConfig& config, Rarity rarity);
 /// gives it no body on the ring.
 inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "bandage"; }
 
-/// Whether a `held` petal does nothing while `other` is worn on the active row
-/// with it. The user's rule (2026-11-11): a splitter worn with a bandage does
-/// not spawn, as a spare copy of a petal that does not stack does not
-/// (petalOnlyBestCopyCounts), and so does not split the flower either. Both
-/// stay equippable, and the bandage works as ever. See slotHeldBack.
-inline bool petalHeldBackBy(const PetalConfig& held, const PetalConfig& other) {
-    return held.id == kSplitterPetalId && petalDelaysDeath(other);
+/// Whether a petal is switched off while its flower is Undead (a bandage
+/// carrying it past a killing blow). The user's rule (2026-11-23, replacing
+/// the 2026-11-11 one that held a splitter back whenever a bandage was merely
+/// worn beside it): a splitter works beside a bandage as ever, but while the
+/// bandage's effect is running the splitter fields nothing, cannot be
+/// clicked, and a split flower is merged back -- the other half despawned --
+/// so a bandage can never leave a spare body standing behind a dying one.
+inline bool petalDisabledWhileUndead(const PetalConfig& config) {
+    return config.id == kSplitterPetalId;
 }
 
 /// A nazar takes most of a hit off its flower and pays a charge for it --
@@ -1905,29 +1914,6 @@ int bestCopySlot(std::uint16_t configIndex, EquippedAt&& equippedAt) {
         }
     }
     return best;
-}
-
-/// Whether active slot `index` is held back by another petal on the row
-/// (petalHeldBackBy). Such a slot serves its equip reload, then fields
-/// nothing, and the bar draws it as not loaded: the server's ring pass builds
-/// it with zero copies, as it builds a spare moon.
-///
-/// `equippedAt` as for bestCopySlot, so a mimic copying a bandage holds a
-/// splitter back as the bandage would.
-template <class EquippedAt>
-bool slotHeldBack(const ContentRegistry& registry, int index, EquippedAt&& equippedAt) {
-    if (index < 0 || index >= kLoadoutActiveSlots) return false;
-    const EquippedPetal held = equippedAt(index);
-    if (held.empty()) return false;
-    const PetalConfig& config = registry.petal(held.configIndex);
-    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        if (i == index) continue;
-        const EquippedPetal other = equippedAt(i);
-        if (!other.empty() && petalHeldBackBy(config, registry.petal(other.configIndex))) {
-            return true;
-        }
-    }
-    return false;
 }
 
 // ---------------------------------------------------------------------------

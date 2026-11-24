@@ -2041,7 +2041,7 @@ void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
     gatherContact(world, content);
     gatherPetals(world, content, nowMillis);
     fileShots(world);
-    resolveMelee(world, grid, nowMillis);
+    resolveMelee(world, grid, content, nowMillis);
 }
 
 void CombatSystem::tickMobLightning(World& world, const SpatialGrid& grid,
@@ -2687,6 +2687,10 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
             source.convertsInto = content.mobIndex(kCMinusMobId);
         }
         if (petalDividesMobs(config)) source.dividesInto = dividerPieces(petal.rarity);
+        if (!config.bonusMobGroup.empty()) {
+            source.bonusGroup = content.mobGroupIndex(config.bonusMobGroup);
+            source.bonusGroupScale = config.bonusMobGroupDamage;
+        }
         // A triangle hits harder for every other one its flower wears.
         if (petalStacksWithCopies(config)) {
             if (const Loadout* loadout = world.tryGet<Loadout>(petal.owner)) {
@@ -2713,7 +2717,8 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
     });
 }
 
-void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double nowMillis) {
+void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid,
+                                const ContentRegistry& content, double nowMillis) {
     for (const MeleeSource& source : melee_) {
         if (!world.isAlive(source.attacker) || world.has<Dead>(source.attacker)) continue;
 
@@ -2992,6 +2997,17 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // ring or a hostile NPC is every collision there is. A petal, a
             // shot, a field or a shock goes past it whole.
             if (mobTouchesPlayer) swing *= collisionDamageTakenScale(world, victim);
+            // A paperclip's bonus, on a mob of the group it is for.
+            if (source.bonusGroup != kInvalidIndex) {
+                if (const MobType* type = world.tryGet<MobType>(victim)) {
+                    const auto& groups = content.mob(type->configIndex).groups;
+                    if (std::any_of(groups.begin(), groups.end(), [&](const MobGroupMember& m) {
+                            return m.group == source.bonusGroup;
+                        })) {
+                        swing *= source.bonusGroupScale;
+                    }
+                }
+            }
             swing = rollDiceDamage(swing, source.diceChance);
             if (source.hitKind == DamageKind::Glitch) swing = rollGlitchDamage(swing);
             DamageResult hit =

@@ -1297,6 +1297,8 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.armorPerStack = ctx.range(src, "armorPerStack", 0.0, 0.0, kMaxBaseStat);
     p.petalArmor = ctx.range(src, "petalArmor", 0.0, 0.0, kMaxBaseStat);
     p.clawCritDamage = ctx.range(src, "clawCritDamage", 0.0, 0.0, kMaxBaseStat);
+    p.bonusMobGroup = ctx.text(src, "bonusMobGroup");
+    p.bonusMobGroupDamage = ctx.range(src, "bonusMobGroupDamage", 1.0, 0.0, kMaxBaseStat);
     // A FRACTION, not a percentage: 0.35 heals a third of the hit. Above one
     // is legal -- gardn's mythic fang heals three times what it deals -- and
     // the bound only keeps a typo from reading as a full heal on every graze.
@@ -1692,6 +1694,10 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
         if (std::binary_search(petalKeys.sorted.begin(), petalKeys.sorted.end(), key)) {
             ctx.subject = "petal '" + key + "'";
             petals.push_back(parsePetal(ctx, key, petalsRoot[key], mobIds));
+            const std::string& bonusGroup = petals.back().bonusMobGroup;
+            if (!bonusGroup.empty() && mobGroupIds.find(bonusGroup) == mobGroupIds.end()) {
+                ctx.fail("bonusMobGroup '" + bonusGroup + "' is no mob's group");
+            }
             continue;
         }
         // Generated: the id is `<mob>_egg` and the mob is one this build has,

@@ -704,7 +704,7 @@ TEST(a_unique_from_the_console_restarts_its_biome_clock) {
 
     // Every clock is dealt within one cooldown of the first spawner pass, so
     // one apex cooldown on, all of them stand ready.
-    h.clock += kApexSpawnCooldownMillis;
+    h.clock += kApexSpawnCooldownMaxMillis;
     h.step(1, {&client});
 
     CHECK(say(h, client, "/admin spawn bee unique"));
@@ -749,7 +749,7 @@ TEST(boss_clocks_are_kept_in_the_database_and_survive_a_restart) {
             const double unique = table[biome]["uniqueReadyAt"].asDouble();
             const double apex = table[biome]["apexReadyAt"].asDouble();
             CHECK(unique > now - 1000.0 && unique <= now + kUniqueSpawnCooldownMillis + 1000.0);
-            CHECK(apex > now - 1000.0 && apex <= now + kApexSpawnCooldownMillis + 1000.0);
+            CHECK(apex > now - 1000.0 && apex <= now + kApexSpawnCooldownMaxMillis + 1000.0);
         }
 
         // Anyone may ask, not only an admin.
@@ -808,7 +808,7 @@ TEST(a_boss_standing_at_a_restart_hands_its_clock_back) {
         client.joinGame(1920, 1080, {}, "Boss");
         CHECK(h.stepUntil({&client},
                           [&] { return client.status() == NetClient::Status::Playing; }, 200));
-        h.clock += kApexSpawnCooldownMillis;
+        h.clock += kApexSpawnCooldownMaxMillis;
         h.step(1, {&client});
 
         const std::uint16_t bee = content().mobIndex("bee");
@@ -885,7 +885,7 @@ TEST(a_boss_cleared_by_killall_is_saved_gone_by_a_save_straight_after) {
     CHECK(loginAs(h, client, "boss", "password7"));
     client.joinGame(1920, 1080, {}, "Boss");
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
-    h.clock += kApexSpawnCooldownMillis;
+    h.clock += kApexSpawnCooldownMaxMillis;
     h.step(1, {&client});
     CHECK(say(h, client, "/admin spawn bee unique"));
     CHECK(sawText(client, "Spawned unique bee"));

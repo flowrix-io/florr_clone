@@ -136,6 +136,12 @@
   var Module = {
     canvas,
     arguments: args,
+    // cpp_canvas draws a page canvas with WebGL2 by default. In this game it
+    // costs several times the GPU time of the browser's 2D canvas (about
+    // 10 ms a frame at devicePixelRatio 2 on an M2, against under 2), so the
+    // 2D canvas stays the default until that path is faster; ?canvas-gpu=1
+    // turns WebGL on to measure it.
+    cppCanvasGpu: /[?&]canvas-gpu=1(&|$)/.test(location.search) ? undefined : false,
     print: (text) => console.log(text),
     printErr: (text) => console.warn(text),
     setStatus: (text) => {
