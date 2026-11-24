@@ -64,6 +64,12 @@ namespace {
 
 /// How often account progress is written back from the live entity.
 constexpr double kPersistIntervalMillis = 30000.0;
+/// How soon after a failed or journal-forced save the next one is tried.
+constexpr double kUrgentSaveRetryMillis = 2000.0;
+/// How much of each tick a running save may take. The whole save is tens to
+/// hundreds of milliseconds of work; this is what keeps it out of the tick
+/// time, at the price of finishing a second or two later.
+constexpr double kSaveSliceMillis = 2.0;
 
 /// Ceiling on one simulation step, as a multiple of the nominal one. A long
 /// stall must not be paid back as a single giant integration step that walks
@@ -153,6 +159,18 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // with an empty one would serve every returning player a blank account and,
     // worse, save that over the file they still had.
     if (!database_.load(config.databasePath, errorOut)) return false;
+    if (database_.journalLinesReplayed() > 0) {
+        std::printf("[db] journal: replayed %d change batch(es) written after the last save\n",
+                    database_.journalLinesReplayed());
+    }
+    if (!database_.journalNote().empty()) {
+        std::fprintf(stderr, "[db] %s\n", database_.journalNote().c_str());
+    }
+    std::fflush(stdout);
+    // The journal is written before ANY byte leaves for a client, so nothing a
+    // player has been shown -- a drop, a craft, a level, a new account -- can
+    // be lost to this process dying, however it dies. See Database's journal.
+    listener_.beforeWrite = [this] { database_.flushJournal(); };
     if (config.passwordCost > 0) database_.setPasswordCost(config.passwordCost);
     foldLookAlikeSkins();
 
@@ -324,10 +342,35 @@ void GameServer::run() {
 }
 
 void GameServer::shutdown() {
-    // Flush account progress before exiting; an orderly shutdown must not cost
-    // anyone their session.
+    // Everybody in the world leaves it the way a disconnect would have them
+    // leave -- XP onto the account, a ring run banked, a split merged -- since
+    // a restart is exactly everybody disconnecting at once, and the listener
+    // stopping below tells nobody's onDisconnect. Then one save of all of it.
+    for (auto& entry : sessions_) {
+        if (entry.second.entity != NULL_ENTITY) dropBody(entry.second);
+    }
     persistAll();
     listener_.stop();
+}
+
+void GameServer::syncLiveProgress() {
+    // XP and stars are paid onto the live body (the HUD has to see them this
+    // tick); the record used to catch up only every thirty seconds, on death
+    // and on leave, which is the window a crash took with it. Brought across
+    // every tick instead, only where they actually moved: the row it touches
+    // is written to the journal before the snapshot showing the gain goes out.
+    for (const auto& entry : sessions_) {
+        const Session& session = entry.second;
+        if (session.eventKit || session.userId.empty() || !session.playing()) continue;
+        if (!world_.isAlive(session.entity)) continue;
+        const PlayerProgress* live = world_.tryGet<PlayerProgress>(session.entity);
+        if (live == nullptr) continue;
+        if (const PlayerRecord* record = database_.findProgress(session.userId)) {
+            const double stored = session.realm == Realm::Maze ? record->mazeTotalXp : record->totalXp;
+            if (stored == live->totalXp && record->stars == live->stars) continue;
+        }
+        persistPlayer(session);
+    }
 }
 
 std::size_t GameServer::persistAll() {
@@ -339,6 +382,15 @@ std::size_t GameServer::persistAll() {
     }
     saveDatabase();
     return saved;
+}
+
+bool GameServer::startBackgroundSave() {
+    // Same as saveDatabase: the boss clocks as they stand go in with it.
+    if (bossClocksRestored_) {
+        spawning_->noteStandingBosses(world_, commands_);
+        persistBossClocks();
+    }
+    return database_.backgroundSaveRunning() || database_.beginBackgroundSave();
 }
 
 void GameServer::saveDatabase() {
@@ -606,11 +658,41 @@ void GameServer::tick(double nowMillis) {
     // Housekeeping, ABOVE the idle gate: an account registered by somebody
     // sitting on the title screen is dirty in memory and would otherwise wait
     // for the next player to actually join before it reached the disk.
+    //
+    // The save itself is spread over the ticks that follow (see
+    // Database::beginBackgroundSave): written in one go it was a tick of a few
+    // hundred milliseconds on prod every thirty seconds.
+    bool saveBegan = false;
     if (nowMillis >= nextPersistMillis_) {
         nextPersistMillis_ = nowMillis + kPersistIntervalMillis;
+        nextUrgentSaveMillis_ = nowMillis + kUrgentSaveRetryMillis;
         database_.pruneExpiredSessions();
-        persistAll();
+        syncLiveProgress();
+        saveBegan = startBackgroundSave();
+    } else if (database_.wantsSaveNow() && nowMillis >= nextUrgentSaveMillis_ &&
+               !database_.backgroundSaveRunning()) {
+        // The journal is full, or cannot be written: a snapshot now, rather
+        // than in up to thirty seconds, is what takes over from it. Spaced
+        // out, because a disk refusing writes refuses the next one too.
+        nextUrgentSaveMillis_ = nowMillis + kUrgentSaveRetryMillis;
+        saveBegan = startBackgroundSave();
+        if (!saveBegan) {
+            // Not even begun -- the disk will not take the new journal. The
+            // whole save at once is the last thing left to try.
+            saveDatabase();
+            if (database_.wantsSaveNow()) {
+                std::fprintf(stderr, "[db] journal unavailable and the save failed; retrying\n");
+            }
+        }
     }
+    // Not on the tick that began it, which has paid for the beginning.
+    if (!saveBegan &&
+        database_.serviceBackgroundSave(kSaveSliceMillis) == Database::SaveProgress::Failed) {
+        std::fprintf(stderr, "[db] save failed (%s); the journal still has everything, retrying\n",
+                     database_.backgroundSaveError().c_str());
+        nextUrgentSaveMillis_ = nowMillis + kUrgentSaveRetryMillis;
+    }
+    database_.syncJournal(static_cast<std::int64_t>(nowMillis));
     markTickPhase("persist");
 
     // Bot population is maintained on every tick, INCLUDING the idle ones the
@@ -633,6 +715,9 @@ void GameServer::tick(double nowMillis) {
         events_.clear();
         commands_.flush();
         listener_.flush();
+        // Changes nobody is told about still belong on disk: a pruned session,
+        // a guest account made from the title screen with nothing yet sent.
+        database_.flushJournal();
         return;
     }
 
@@ -681,7 +766,13 @@ void GameServer::tick(double nowMillis) {
         // tick with no snapshot must still produce its number.
         events_.clear();
     }
+    // Before the flush below, which writes the journal on its way out: the
+    // XP the snapshot just told everybody about goes with it.
+    syncLiveProgress();
+    markTickPhase("progress");
     listener_.flush();
+    // Whatever changed this tick with nothing sent about it: see above.
+    database_.flushJournal();
     markTickPhase("send");
 }
 

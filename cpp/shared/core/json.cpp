@@ -30,7 +30,23 @@ void Json::erase(const std::string& key) {
 
 std::string jsonEscape(const std::string& in) {
     std::string out;
-    out.reserve(in.size() + 2);
+    jsonEscapeTo(out, in);
+    return out;
+}
+
+void jsonEscapeTo(std::string& out, const std::string& in) {
+    // Nearly every key and string in the database needs no escape at all,
+    // and appending it in one piece is most of what writing a row costs.
+    bool plain = true;
+    for (const unsigned char c : in) {
+        if (c < 0x20 || c == '"' || c == '\\') { plain = false; break; }
+    }
+    if (plain) {
+        out += '"';
+        out += in;
+        out += '"';
+        return;
+    }
     out += '"';
     for (const unsigned char c : in) {
         switch (c) {
@@ -54,7 +70,6 @@ std::string jsonEscape(const std::string& in) {
         }
     }
     out += '"';
-    return out;
 }
 
 namespace {
@@ -62,13 +77,18 @@ namespace {
 /// Shortest representation that round-trips exactly, and never in exponent
 /// form for values a game actually stores. Integers print without a ".0" tail
 /// so an XP total reads as `12500`, matching what the JS writer produced.
-std::string formatNumber(double v) {
-    if (std::isnan(v) || std::isinf(v)) return "0";
+/// Appended to `out` rather than returned: a dump writes one of these per
+/// number, and a string per number was most of what a large row cost.
+void formatNumberTo(std::string& out, double v) {
+    if (std::isnan(v) || std::isinf(v)) { out += '0'; return; }
     // Range first: casting a double outside int64 is undefined, and an XP
     // total passes 9.2e18 just after level 500.
     if (std::abs(v) < 9.2e18 &&
         v == static_cast<double>(static_cast<std::int64_t>(v))) {
-        return std::to_string(static_cast<std::int64_t>(v));
+        char digits[24];
+        const auto end = std::to_chars(digits, digits + sizeof digits, static_cast<std::int64_t>(v));
+        out.append(digits, end.ptr);
+        return;
     }
     // The text "%.*g" writes at the shortest precision, never below 6, that
     // reads back identically -- found by counting the digits of the shortest
@@ -85,7 +105,7 @@ std::string formatNumber(double v) {
     }
     const auto end =
         std::to_chars(buf, buf + sizeof buf, v, std::chars_format::general, std::max(6, digits));
-    return std::string(buf, end.ptr);
+    out.append(buf, end.ptr);
 }
 
 void writeIndent(std::string& out, int indent, int depth) {
@@ -100,8 +120,8 @@ void Json::dumpTo(std::string& out, int indent, int depth) const {
     switch (type_) {
         case Type::Null: out += "null"; return;
         case Type::Bool: out += bool_ ? "true" : "false"; return;
-        case Type::Number: out += formatNumber(number_); return;
-        case Type::String: out += jsonEscape(string_); return;
+        case Type::Number: formatNumberTo(out, number_); return;
+        case Type::String: jsonEscapeTo(out, string_); return;
 
         case Type::Array: {
             if (array_.empty()) { out += "[]"; return; }
@@ -126,7 +146,7 @@ void Json::dumpTo(std::string& out, int indent, int depth) const {
                 if (!first) out += ',';
                 first = false;
                 writeIndent(out, indent, depth + 1);
-                out += jsonEscape(key);
+                jsonEscapeTo(out, key);
                 out += ':';
                 if (indent > 0) out += ' ';
                 it->second.dumpTo(out, indent, depth + 1);

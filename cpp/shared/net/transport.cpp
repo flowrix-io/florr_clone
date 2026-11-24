@@ -452,6 +452,7 @@ void Listener::dropFailed(TransportHandler& handler) {
 
 bool Listener::service(Connection& c, bool readable, bool writable, TransportHandler& handler,
                       int& delivered, std::string& error) {
+    if (writable && c.wantsWrite() && beforeWrite) beforeWrite();
     if (writable && !c.writeAvailable(error)) return false;
 
     if (readable) {
@@ -610,6 +611,7 @@ void Listener::flush() {
     // next poll() hands it to drop() like every other way a connection ends.
     for (auto& c : connections_) {
         if (!c->open() || c->failed() || !c->wantsWrite()) continue;
+        if (beforeWrite) beforeWrite();
         std::string error;
         if (!c->writeAvailable(error)) c->markFailed(error);
     }

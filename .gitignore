@@ -5,12 +5,20 @@ node_modules
 # be committed, though, nor the temporary file every save is written to first:
 dist/inventory.json
 dist/inventory.json.tmp
+# The database's journal (every change since the last save; see cpp/server/db.h),
+# its staging file, and any journal a load had to set aside; and the second
+# names a background save keeps replaced files under until they are deleted.
+dist/inventory.json.journal*
+/inventory.json.retired-*
+dist/inventory.json.retired-*
 # ...and the same pair at the repo root, which is where a server started from
 # here without --db writes them: its default is a bare `inventory.json` in the
 # working directory. Password hashes and the salt behind the per-address
 # account hashes, either way.
 /inventory.json
 /inventory.json.tmp
+/inventory.json.journal*
+/inventory.json.retired-*
 # The database editor's key, which the server keeps beside the database.
 dist/admin_db_key.txt
 /admin_db_key.txt

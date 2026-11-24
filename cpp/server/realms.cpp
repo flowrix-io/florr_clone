@@ -196,6 +196,15 @@ PlayerRecord& GameServer::liveRecord(Session& session) {
     return database_.progress(session.userId);
 }
 
+const PlayerRecord& GameServer::viewRecord(const Session& session) const {
+    if (session.eventKit) return *session.eventKit;
+    if (session.arena) return *session.arena;
+    if (const PlayerRecord* record = database_.findProgress(session.userId)) return *record;
+    // What progress() would have created for it.
+    static const PlayerRecord kNoRecordYet;
+    return kNoRecordYet;
+}
+
 std::unique_ptr<PlayerRecord> GameServer::startArenaRun(const PlayerRecord& account) const {
     // The reference's enterPvpArena: five common basics and five empty slots,
     // nothing in the bag, and a fresh score. The level is the account's -- XP

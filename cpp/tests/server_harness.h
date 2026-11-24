@@ -79,11 +79,14 @@ struct HarnessFiles {
         ::mkdir((home + "/db").c_str(), 0755);
         // A run that crashed with this pid left its files behind.
         std::remove(dbPath.c_str());
+        std::remove((dbPath + ".journal").c_str());
         std::remove(admin_db::keyFileFor(dbPath).c_str());
     }
     ~HarnessFiles() {
         std::remove(dbPath.c_str());
         std::remove((dbPath + ".tmp").c_str());
+        std::remove((dbPath + ".journal").c_str());
+        std::remove((dbPath + ".journal.tmp").c_str());
         std::remove(admin_db::keyFileFor(dbPath).c_str());
         ::rmdir((home + "/db").c_str());
         ::rmdir((home + "/db_backups").c_str());

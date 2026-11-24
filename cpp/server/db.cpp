@@ -7,7 +7,9 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <dirent.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
@@ -287,18 +289,26 @@ PlayerRecord playerFromJson(const Json& value) {
     return record;
 }
 
-Json playerToJson(const PlayerRecord& record) {
+/// playerToJson's tree. With `placeholders`, `inventory` and `mobKills` are
+/// left null in their places, for playerToText to write from the record
+/// itself: they are most of a row, and copying them into a tree only to dump
+/// it was most of what writing one cost.
+Json playerTree(const PlayerRecord& record, bool placeholders) {
     Json out = Json::object();
     out["totalXP"] = record.totalXp;
     // Live, an equipped petal is out of the bag. Stored, it is still in it,
     // and the loadout only names which ones are worn: a loadout that is lost
     // or garbled in the file then costs a re-equip, not the petals.
-    PlayerRecord stored;
-    stored.inventory = record.inventory;
-    for (const std::optional<StoredItem>& slot : record.loadout) {
-        if (slot && !slot->petalType.empty()) stored.addItem(slot->rarity, "petal_" + slot->petalType, 1);
+    if (placeholders) {
+        out["inventory"] = Json();
+    } else {
+        PlayerRecord stored;
+        stored.inventory = record.inventory;
+        for (const std::optional<StoredItem>& slot : record.loadout) {
+            if (slot && !slot->petalType.empty()) stored.addItem(slot->rarity, "petal_" + slot->petalType, 1);
+        }
+        out["inventory"] = std::move(stored.inventory);
     }
-    out["inventory"] = std::move(stored.inventory);
     out["loadoutInInventory"] = true;
     const auto writeSlots = [](const std::vector<std::optional<StoredItem>>& slots) {
         Json out = Json::array();
@@ -313,7 +323,9 @@ Json playerToJson(const PlayerRecord& record) {
         for (const auto& [name, slots] : record.loadoutPresets) presets[name] = writeSlots(slots);
         out["loadoutPresets"] = presets;
     }
-    if (record.mobKills.isObject() && record.mobKills.size() > 0) out["mobKills"] = record.mobKills;
+    if (record.mobKills.isObject() && record.mobKills.size() > 0) {
+        out["mobKills"] = placeholders ? Json() : record.mobKills;
+    }
     const auto writeSkills = [](const SkillSet& set, Json skills) {
         for (int i = 0; i < kSkillCount; ++i) {
             const int tier = set.tier[static_cast<std::size_t>(i)];
@@ -361,6 +373,98 @@ Json playerToJson(const PlayerRecord& record) {
     if (record.dailyStreak != 0) out["dailyStreak"] = record.dailyStreak;
     if (!record.lastStreakDate.empty()) out["lastStreakDate"] = record.lastStreakDate;
     appendExtras(record.extra, out);
+    return out;
+}
+
+Json playerToJson(const PlayerRecord& record) { return playerTree(record, false); }
+
+/// The stored inventory (the bag with every worn petal added back, exactly as
+/// playerToJson builds it) written straight to `out`. Only the rarity tiers a
+/// worn petal lands in are copied; the rest are dumped where they stand.
+void writeStoredInventory(const PlayerRecord& record, std::string& out) {
+    std::vector<std::string> tiers;                     // first-touched order
+    for (const std::optional<StoredItem>& slot : record.loadout) {
+        if (!slot || slot->petalType.empty()) continue;
+        const std::string tier = rarityName(slot->rarity);
+        if (std::find(tiers.begin(), tiers.end(), tier) == tiers.end()) tiers.push_back(tier);
+    }
+    if (tiers.empty()) {
+        record.inventory.dumpTo(out, 0, 0);
+        return;
+    }
+    if (!record.inventory.isObject()) {
+        // A shape only a hand-edited file has; the tree path knows its rules.
+        PlayerRecord stored;
+        stored.inventory = record.inventory;
+        for (const std::optional<StoredItem>& slot : record.loadout) {
+            if (slot && !slot->petalType.empty()) stored.addItem(slot->rarity, "petal_" + slot->petalType, 1);
+        }
+        stored.inventory.dumpTo(out, 0, 0);
+        return;
+    }
+    // Each touched tier, with its worn petals added in slot order -- through
+    // addItem itself, on a record holding only that tier, which is everything
+    // addItem looks at.
+    std::vector<PlayerRecord> touched(tiers.size());
+    for (std::size_t i = 0; i < tiers.size(); ++i) {
+        touched[i].inventory = Json::object();
+        if (record.inventory.contains(tiers[i])) touched[i].inventory[tiers[i]] = record.inventory[tiers[i]];
+    }
+    for (const std::optional<StoredItem>& slot : record.loadout) {
+        if (!slot || slot->petalType.empty()) continue;
+        const std::string tier = rarityName(slot->rarity);
+        const std::size_t i = static_cast<std::size_t>(std::find(tiers.begin(), tiers.end(), tier) - tiers.begin());
+        touched[i].addItem(slot->rarity, "petal_" + slot->petalType, 1);
+    }
+    const auto tierText = [&](const std::string& tier) -> const Json& {
+        const std::size_t i = static_cast<std::size_t>(std::find(tiers.begin(), tiers.end(), tier) - tiers.begin());
+        return i < tiers.size() ? std::as_const(touched[i].inventory)[tier] : record.inventory[tier];
+    };
+    // Tiers already in the bag keep their places; new ones follow, in the
+    // order the first worn petal of each was met -- as addItem appends them.
+    char separator = '{';
+    for (const std::string& tier : record.inventory.keys()) {
+        out += separator;
+        separator = ',';
+        jsonEscapeTo(out, tier);
+        out += ':';
+        tierText(tier).dumpTo(out, 0, 0);
+    }
+    for (const std::string& tier : tiers) {
+        if (record.inventory.contains(tier)) continue;
+        out += separator;
+        separator = ',';
+        jsonEscapeTo(out, tier);
+        out += ':';
+        tierText(tier).dumpTo(out, 0, 0);
+    }
+    if (separator == '{') out += '{';
+    out += '}';
+}
+
+/// Byte for byte playerToJson(record).dump(0), without building the copies of
+/// the inventory and the kill counts that tree is mostly made of. What every
+/// save and every journal line writes a player row with.
+std::string playerToText(const PlayerRecord& record) {
+    // An unknown key of the same name would have replaced the placeholder.
+    if (record.extra.isObject() &&
+        (record.extra.contains("inventory") || record.extra.contains("mobKills"))) {
+        return playerToJson(record).dump(0);
+    }
+    const Json head = playerTree(record, true);
+    std::string out;
+    out.reserve(256 + record.inventory.size() * 64 + record.mobKills.size() * 48);
+    char separator = '{';
+    for (const std::string& key : head.keys()) {
+        out += separator;
+        separator = ',';
+        jsonEscapeTo(out, key);
+        out += ':';
+        if (key == "inventory") writeStoredInventory(record, out);
+        else if (key == "mobKills") record.mobKills.dumpTo(out, 0, 0);
+        else head[key].dumpTo(out, 0, 0);
+    }
+    out += '}';
     return out;
 }
 
@@ -578,10 +682,25 @@ Database::~Database() {
     // The rate limit means the last change of a session is usually still in
     // memory when the process is asked to stop. Flushing here is what turns
     // an orderly shutdown into a lossless one.
-    if (dirty_ && !loadFailed_ && !path_.empty()) save();
+    // A background save still running counts: its file is half-written.
+    if ((dirty_ || save_ != nullptr) && !loadFailed_ && !path_.empty()) save();
+    // A save that failed leaves the changes in the journal, if anywhere.
+    flushJournal();
+    closeJournal();
 }
 
 void Database::reset() {
+    abandonBackgroundSave();
+    closeJournal();
+    touchedTop_.clear();
+    journalId_.clear();
+    journalBytes_ = 0;
+    journalUnsynced_ = false;
+    lastJournalSyncMillis_ = 0;
+    journalBroken_ = false;
+    journalLinesReplayed_ = 0;
+    journalNote_.clear();
+    journalBacklog_.clear();
     users_.clear();
     players_.clear();
     sessions_.clear();
@@ -604,12 +723,12 @@ bool Database::load(const std::string& path, std::string& errorOut) {
     reset();
     path_ = path;
 
-    if (!fileExists(path)) {
-        // A first run, not a failure. Dirty so the file appears on the first
-        // save rather than only once a player happens to earn something.
-        dirty_ = true;
-        return true;
-    }
+    // A missing file is a first run, not a failure: dirty so the file appears
+    // on the first save rather than only once a player happens to earn
+    // something. It still has a journal to read -- a first run killed before
+    // its first save has nowhere else to have put the accounts it made.
+    const bool existed = fileExists(path);
+    if (!existed) dirty_ = true;
 
     // Each stage lets go of what the next one no longer needs. A wasm heap
     // only grows, so whatever the load holds at its peak stays resident for as
@@ -619,8 +738,8 @@ bool Database::load(const std::string& path, std::string& errorOut) {
     // values) to a 276 MB peak for 133 MB of records -- and the heap to 307 MB,
     // on a box with 909 MB and nothing else to give.
     {
-        Json root;
-        {
+        Json root = Json::object();
+        if (existed) {
             std::string text;
             if (!readWholeFile(path, text, errorOut)) {
                 loadFailed_ = true;
@@ -633,8 +752,20 @@ bool Database::load(const std::string& path, std::string& errorOut) {
                 return false;
             }
         }
+        // Which journal this snapshot is followed by. Not a table: it is
+        // taken out before anything else reads the root, and save() writes
+        // the next one.
+        if (root.isObject() && root.contains("journal")) {
+            journalId_ = root["journal"].asString();
+            root.erase("journal");
+        }
+        // Only past every check that could latch loadFailed_ on the file
+        // itself: a database that will never be saved must not have its
+        // journal moved, truncated or appended to either.
+        if (root.isObject()) replayJournal(root);
         if (!parseRoot(root, errorOut)) {
             loadFailed_ = true;
+            closeJournal();
             return false;
         }
     }
@@ -650,6 +781,15 @@ bool Database::load(const std::string& path, std::string& errorOut) {
                                     (right ? right->createdAtMillis : 0);
                          });
     }
+    // Every row was inserted by the parse, which counts as a change; what the
+    // tables hold now is exactly the snapshot plus the journal, both already
+    // on disk. Forgotten BEFORE the prune, whose erasures are real changes.
+    players_.forgetTouched();
+    users_.forgetTouched();
+    sessions_.forgetTouched();
+    touchedTop_.clear();
+    // Replayed lines are newer than the file: the next save has to happen.
+    if (journalLinesReplayed_ > 0) dirty_ = true;
     pruneExpiredSessions();
     // Every row is uncached straight off the parse. Paying for that here, at
     // boot, is what keeps the FIRST save -- thirty seconds in, with the
@@ -710,6 +850,7 @@ bool Database::parseRoot(Json& root, std::string& errorOut) {
 
 Json& Database::rawArrayTable(const std::string& key) {
     otherTopText_.erase(key);
+    touchTop(key);
     Json& table = otherTop_[key];
     if (!table.isArray()) table = Json::array();
     if (std::find(topKeyOrder_.begin(), topKeyOrder_.end(), key) == topKeyOrder_.end()) {
@@ -720,6 +861,7 @@ Json& Database::rawArrayTable(const std::string& key) {
 
 Json& Database::rawTable(const std::string& key) {
     otherTopText_.erase(key);
+    touchTop(key);
     Json& table = otherTop_[key];
     if (!table.isObject()) table = Json::object();
     if (std::find(topKeyOrder_.begin(), topKeyOrder_.end(), key) == topKeyOrder_.end()) {
@@ -788,7 +930,11 @@ std::vector<Database::GuestBlock> Database::guestBlocks() const {
     return blocks;
 }
 
+static std::string accountToText(const Account& account) { return accountToJson(account).dump(0); }
+static std::string sessionToText(const Database::Session& session) { return sessionToJson(session).dump(0); }
+
 Json playerRecordJson(const PlayerRecord& record) { return playerToJson(record); }
+std::string playerRecordText(const PlayerRecord& record) { return playerToText(record); }
 PlayerRecord parsePlayerRecord(const Json& value) { return playerFromJson(value); }
 Json accountRecordJson(const Account& account) { return accountToJson(account); }
 Account parseAccountRecord(const Json& value, const std::string& storedKey) {
@@ -827,7 +973,9 @@ Json Database::toJson() const {
     return root;
 }
 
-std::string Database::serialise() const {
+std::string Database::serialise() const { return serialiseWith({}); }
+
+std::string Database::serialiseWith(const std::string& journalId) const {
     // toJson()'s layout, written straight out. Building that tree copied every
     // inventory in the file twice before dump() walked it a third time, all on
     // the tick; here an untouched row is one append of text it already had.
@@ -837,7 +985,7 @@ std::string Database::serialise() const {
     const auto key = [&](const std::string& name) {
         out += firstKey ? '{' : ',';
         firstKey = false;
-        out += jsonEscape(name);
+        jsonEscapeTo(out, name);
         out += ':';
     };
     const auto table = [&](const auto& rows, const auto& toJson) {
@@ -846,15 +994,15 @@ std::string Database::serialise() const {
         for (const std::string& rowKey : rows.keys()) {
             out += separator;
             separator = ',';
-            out += jsonEscape(rowKey);
+            jsonEscapeTo(out, rowKey);
             out += ':';
             out += rows.text(rowKey, toJson);
         }
         out += '}';
     };
-    const auto players = [&] { key("players"); table(players_, playerToJson); };
-    const auto users = [&] { key("users"); table(users_, accountToJson); };
-    const auto sessions = [&] { key("sessions"); table(sessions_, sessionToJson); };
+    const auto players = [&] { key("players"); table(players_, playerToText); };
+    const auto users = [&] { key("users"); table(users_, accountToText); };
+    const auto sessions = [&] { key("sessions"); table(sessions_, sessionToText); };
 
     bool wrotePlayers = false, wroteUsers = false, wroteSessions = false;
     for (const std::string& name : topKeyOrder_) {
@@ -873,6 +1021,10 @@ std::string Database::serialise() const {
     if (!wrotePlayers) players();
     if (!wroteUsers) users();
     if (!wroteSessions && sessions_.size() > 0) sessions();
+    if (!journalId.empty()) {
+        key("journal");
+        out += jsonEscape(journalId);
+    }
     out += '}';
     return out;
 }
@@ -882,8 +1034,16 @@ bool Database::save() {
     // default when a load fails, and writing that out turns a file an operator
     // can still repair into total, permanent account loss.
     if (loadFailed_ || path_.empty()) return false;
+    // This one writes everything; a partial one in flight would only race it
+    // for the file.
+    abandonBackgroundSave();
 
-    const std::string text = serialise();
+    // Every snapshot names a journal of its own. Not flushed into the old one
+    // first, and it does not need to be: rows changed since the last line
+    // stay marked, so they reach whichever journal follows -- this snapshot's
+    // when the rename below lands, the old one's when it does not.
+    const std::string nextJournalId = crypto::secureRandom().hex(8);
+    const std::string text = serialiseWith(nextJournalId);
     lastSaveBytes_ = text.size();
     const std::string tmp = path_ + ".tmp";
 
@@ -917,7 +1077,721 @@ bool Database::save() {
         return false;
     }
     dirty_ = false;
+
+    // Everything the old journal held, and every line that could not be
+    // appended to it, is in the file now. A crash before startJournal lands
+    // leaves the old journal beside a snapshot naming a different id: load()
+    // sets it aside unread, which loses nothing, because it is all in here.
+    journalId_ = nextJournalId;
+    journalBacklog_.clear();
+    if (!startJournal(journalId_)) {
+        // Appending to the old file would put lines nothing will ever replay.
+        // With no journal open every change waits in the backlog and
+        // wantsSaveNow() asks for the snapshot that makes it moot.
+        closeJournal();
+        journalBroken_ = true;
+    }
     return true;
+}
+
+namespace {
+
+/// Asks the disk, not just the kernel, to hold what `fd` has been given.
+/// Under emscripten the filesystem layer's fsync is a no-op (NODEFS has no
+/// fsync in its stream_ops), so the real Node descriptor behind the wasm one
+/// is synced directly.
+void syncDescriptor(int fd) {
+#ifdef __EMSCRIPTEN__
+    EM_ASM({
+        try {
+            const stream = FS.getStream($0);
+            if (stream && stream.nfd !== undefined) require("fs").fdatasyncSync(stream.nfd);
+        } catch (e) {
+        }
+    }, fd);
+#else
+    ::fsync(fd);
+#endif
+}
+
+/// Starts syncing the file at `path` to the disk WITHOUT waiting for it: under
+/// Node the open, fdatasync and close run on libuv's thread pool, and the
+/// tick goes on. Returns a ticket for pollPathSync, or 0 when there is nothing
+/// to wait for -- natively (done here, synchronously: no native build is a
+/// production server) and in a page, which has no disk. Opens the file by
+/// path rather than borrowing a descriptor, so closing ours meanwhile is safe.
+int startPathSync(const std::string& path) {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        if (typeof require !== "function") return 0;
+        const g = globalThis;
+        if (!g.flixSyncs) { g.flixSyncs = new Map(); g.flixSyncNext = 0; }
+        const id = ++g.flixSyncNext;
+        g.flixSyncs.set(id, 0);
+        const fs = require("fs");
+        fs.open(UTF8ToString($0), "r", (openError, fd) => {
+            if (openError) { g.flixSyncs.set(id, 2); return; }
+            fs.fdatasync(fd, (syncError) => {
+                fs.close(fd, () => {});
+                g.flixSyncs.set(id, syncError ? 2 : 1);
+            });
+        });
+        return id;
+    }, path.c_str());
+#else
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd >= 0) {
+        ::fsync(fd);
+        ::close(fd);
+    }
+    return 0;
+#endif
+}
+
+/// 0 while the sync `ticket` is still running, 1 once it succeeded, 2 if it
+/// failed. A ticket of 0 is one that never had to wait.
+int pollPathSync(int ticket) {
+#ifdef __EMSCRIPTEN__
+    if (ticket == 0) return 1;
+    return EM_ASM_INT({
+        const g = globalThis;
+        if (!g.flixSyncs || !g.flixSyncs.has($0)) return 1;
+        const state = g.flixSyncs.get($0);
+        if (state !== 0) g.flixSyncs.delete($0);
+        return state;
+    }, ticket);
+#else
+    (void)ticket;
+    return 1;
+#endif
+}
+
+/// Readies `path` to be replaced by a rename without the rename freeing its
+/// blocks: a second name, `retired`, keeps the old file alive, and
+/// dropRetired() lets it go on Node's thread pool afterwards. Freeing fourteen
+/// megabytes inside rename(2) was the slowest thing left on the tick. True
+/// when `retired` exists and dropRetired must follow; false changes nothing
+/// (natively, in a page, or when the link fails) and the rename simply pays.
+bool retireForRename(const std::string& path, const std::string& retired) {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        if (typeof require !== "function") return 0;
+        const fs = require("fs");
+        try { fs.unlinkSync(UTF8ToString($1)); } catch (e) {}
+        try { fs.linkSync(UTF8ToString($0), UTF8ToString($1)); return 1; } catch (e) { return 0; }
+    }, path.c_str(), retired.c_str()) != 0;
+#else
+    (void)path;
+    (void)retired;
+    return false;
+#endif
+}
+
+void dropRetired(const std::string& retired) {
+#ifdef __EMSCRIPTEN__
+    EM_ASM({
+        try { require("fs").unlink(UTF8ToString($0), () => {}); } catch (e) {}
+    }, retired.c_str());
+#else
+    std::remove(retired.c_str());
+#endif
+}
+
+/// rename(from, to), with `to`'s old blocks freed off the tick (see above).
+bool renameRetiring(const std::string& from, const std::string& to, const std::string& retired) {
+    const bool kept = retireForRename(to, retired);
+    const bool renamed = std::rename(from.c_str(), to.c_str()) == 0;
+    if (kept) dropRetired(retired);
+    return renamed;
+}
+
+/// Writes all of `text` at the end of `fd`, whose length is `length`. On a
+/// short write the file is cut back to `length` -- half a line followed by
+/// the next whole one would read as one damaged line -- and false returned;
+/// `fdOut` is closed and set to -1 when even that fails.
+bool appendWhole(int& fd, std::uint64_t& length, const std::string& text) {
+    if (fd < 0) return false;
+    std::size_t done = 0;
+    while (done < text.size()) {
+        const ssize_t wrote = ::write(fd, text.data() + done, text.size() - done);
+        if (wrote < 0 && errno == EINTR) continue;
+        if (wrote <= 0) break;
+        done += static_cast<std::size_t>(wrote);
+    }
+    if (done == text.size()) {
+        length += done;
+        return true;
+    }
+    if (done > 0 && ::ftruncate(fd, static_cast<off_t>(length)) != 0) {
+        ::close(fd);
+        fd = -1;
+    }
+    return false;
+}
+
+/// Reads one '\n'-terminated line into `line` (without the '\n'). False at
+/// the end of the file; `complete` says whether the line had its '\n'.
+bool readJournalLine(std::FILE* file, std::string& line, bool& complete) {
+    line.clear();
+    complete = false;
+    char chunk[64 * 1024];
+    bool any = false;
+    while (std::fgets(chunk, sizeof chunk, file)) {
+        any = true;
+        const std::size_t length = std::strlen(chunk);
+        if (length > 0 && chunk[length - 1] == '\n') {
+            line.append(chunk, length - 1);
+            complete = true;
+            return true;
+        }
+        line.append(chunk, length);
+    }
+    return any;
+}
+
+/// One journal line onto the snapshot's tree. Each section is optional; a row
+/// of null is an erased one. A section the snapshot holds as something other
+/// than an object is left for parseRoot to refuse.
+void applyJournalLine(Json& root, Json& line) {
+    for (const char* name : {"players", "users", "sessions"}) {
+        if (!line.contains(name)) continue;
+        Json& rows = line[name];
+        if (!rows.isObject()) continue;
+        Json& table = root[name];
+        if (table.isNull()) table = Json::object();
+        if (!table.isObject()) continue;
+        for (const std::string& key : rows.keys()) {
+            Json& row = rows[key];
+            if (row.isNull()) table.erase(key);
+            else table[key] = std::move(row);
+        }
+    }
+    if (line.contains("tables") && line["tables"].isObject()) {
+        Json& tables = line["tables"];
+        for (const std::string& key : tables.keys()) {
+            // The three modelled collections and the id are never tables.
+            if (key == "players" || key == "users" || key == "sessions" || key == "journal") continue;
+            Json& value = tables[key];
+            if (value.isNull()) root.erase(key);
+            else root[key] = std::move(value);
+        }
+    }
+}
+
+std::string journalHeader(const std::string& id) {
+    return "{\"journal\":" + jsonEscape(id) + "}\n";
+}
+
+}  // namespace
+
+/// The size of `path` as this process's filesystem sees it, or -1.
+static double journalFileSize(const std::string& path) {
+    struct stat info {};
+    return ::stat(path.c_str(), &info) == 0 ? static_cast<double>(info.st_size) : -1.0;
+}
+
+void Database::touchTop(const std::string& key) {
+    if (std::find(touchedTop_.begin(), touchedTop_.end(), key) == touchedTop_.end()) {
+        touchedTop_.push_back(key);
+    }
+}
+
+void Database::closeJournal() {
+    // Not synced on the way out: whatever closes a journal either has a
+    // snapshot that supersedes it, or leaves the process -- and the page
+    // cache, which outlives the process, already has every line.
+    if (journalFd_ >= 0) ::close(journalFd_);
+    journalFd_ = -1;
+    journalUnsynced_ = false;
+}
+
+bool Database::startJournal(const std::string& id) {
+    const std::string path = journalPath();
+    const std::string tmp = path + ".tmp";
+    const std::string header = journalHeader(id);
+    std::FILE* file = std::fopen(tmp.c_str(), "wb");
+    if (!file) return false;
+    const bool written = std::fwrite(header.data(), 1, header.size(), file) == header.size();
+    const bool flushed = std::fflush(file) == 0;
+    if (written && flushed) syncDescriptor(::fileno(file));
+    const bool closed = std::fclose(file) == 0;
+    if (!written || !flushed || !closed || std::rename(tmp.c_str(), path.c_str()) != 0) {
+        std::remove(tmp.c_str());
+        return false;
+    }
+    closeJournal();
+    journalFd_ = ::open(path.c_str(), O_WRONLY | O_APPEND);
+    if (journalFd_ < 0) return false;
+    journalBytes_ = header.size();
+    journalBroken_ = false;
+    return true;
+}
+
+void Database::replayJournal(Json& root) {
+    const std::string path = journalPath();
+    const std::int64_t stamp = nowMillis();
+
+    // Second names a background save gave the files it replaced, whose
+    // deletion a restart got in ahead of (see retireForRename).
+    {
+        const std::size_t slash = path_.find_last_of('/');
+        const std::string directory = slash == std::string::npos ? "." : (slash == 0 ? "/" : path_.substr(0, slash));
+        const std::string base = slash == std::string::npos ? path_ : path_.substr(slash + 1);
+        if (DIR* dir = ::opendir(directory.c_str())) {
+            std::vector<std::string> doomed;
+            while (const dirent* entry = ::readdir(dir)) {
+                const std::string name = entry->d_name;
+                if (name.compare(0, base.size(), base) == 0 && name.find(".retired-", base.size()) != std::string::npos) {
+                    doomed.push_back(directory + "/" + name);
+                }
+            }
+            ::closedir(dir);
+            for (const std::string& file : doomed) std::remove(file.c_str());
+        }
+    }
+
+    // A background save that was cut short leaves `.next` behind. If the file
+    // names it, the snapshot's rename landed and only the journal's did not:
+    // `.next` IS this file's journal, and the old one holds nothing the file
+    // does not. Otherwise the save never got as far as the rename, and every
+    // line `.next` has was written to the old journal first.
+    const std::string next = path + ".next";
+    if (fileExists(next)) {
+        bool owns = false;
+        if (std::FILE* file = std::fopen(next.c_str(), "rb")) {
+            std::string header;
+            bool complete = false;
+            Json parsed;
+            std::string error;
+            owns = !journalId_.empty() && readJournalLine(file, header, complete) && complete &&
+                   Json::parse(header, parsed, error) && parsed.isObject() &&
+                   parsed["journal"].asString() == journalId_;
+            std::fclose(file);
+        }
+        if (owns && std::rename(next.c_str(), path.c_str()) == 0) {
+            journalNote_ = "journal: finished a save a restart interrupted";
+        } else {
+            std::remove(next.c_str());
+        }
+    }
+    const auto setAside = [&](const char* why) {
+        const std::string aside = path + "." + why + "-" + std::to_string(stamp);
+        if (std::rename(path.c_str(), aside.c_str()) == 0) {
+            journalNote_ = std::string("journal ") + why + ": moved to " + aside;
+        } else {
+            journalNote_ = std::string("journal ") + why + ": could not move it aside; replacing it";
+        }
+    };
+
+    std::FILE* file = fileExists(path) ? std::fopen(path.c_str(), "rb") : nullptr;
+    if (file == nullptr) {
+        if (fileExists(path)) setAside("unreadable");
+        if (!startJournal(journalId_)) journalBroken_ = true;
+        return;
+    }
+
+    std::string line;
+    bool complete = false;
+    // The header names the snapshot this journal follows. Any other --
+    // the journal of a snapshot that has since been replaced (a crash between
+    // a save and its startJournal), or the live journal next to an older file
+    // an operator restored -- describes changes the file in hand either
+    // already has or must not get. Moved aside rather than deleted: it is
+    // somebody's data, and nothing here is in a position to judge it.
+    bool headerMatches = false;
+    if (readJournalLine(file, line, complete) && complete) {
+        Json header;
+        std::string error;
+        headerMatches = Json::parse(line, header, error) && header.isObject() &&
+                        header.contains("journal") && header["journal"].isString() &&
+                        header["journal"].asString() == journalId_;
+    }
+    std::uint64_t goodBytes = line.size() + 1;
+    if (!headerMatches) {
+        // Nothing past a header -- what every clean stop leaves -- holds
+        // nothing to keep, so there is nothing to set aside either.
+        const bool empty = std::fgetc(file) == EOF;
+        std::fclose(file);
+        if (!empty) setAside("unused");
+        if (!startJournal(journalId_)) journalBroken_ = true;
+        return;
+    }
+
+    // Lines in order, stopping at the first that is not a whole, parseable
+    // one. The last line torn by a death mid-append is the expected case,
+    // and what it held was never acknowledged to anybody (flushJournal is
+    // called before any byte leaves for a client), so it is simply dropped.
+    bool damagedMidFile = false;
+    while (readJournalLine(file, line, complete)) {
+        Json parsed;
+        std::string error;
+        if (!complete || !Json::parse(line, parsed, error) || !parsed.isObject()) {
+            // Anything after a bad line is a bad line in the MIDDLE: not a
+            // torn append, and not something to truncate away.
+            damagedMidFile = std::fgetc(file) != EOF;
+            break;
+        }
+        applyJournalLine(root, parsed);
+        goodBytes += line.size() + 1;
+        ++journalLinesReplayed_;
+    }
+    std::fclose(file);
+
+    if (damagedMidFile) {
+        // What came before the damage is applied and will be in the next
+        // snapshot; the original stays beside it for whoever wants the rest.
+        setAside("damaged");
+        startJournal(journalId_);
+        // Broken either way: the lines replayed above are in memory and in the
+        // file set aside, not in the new journal, so a snapshot is due now.
+        journalBroken_ = true;
+        return;
+    }
+    const double onDisk = journalFileSize(path);
+    if (onDisk > static_cast<double>(goodBytes)) {
+        journalNote_ = "journal: dropped an unfinished last line (" +
+                       std::to_string(static_cast<long long>(onDisk) - static_cast<long long>(goodBytes)) +
+                       " bytes) -- the process died mid-append, before anything in it was sent";
+    }
+    if (::truncate(path.c_str(), static_cast<off_t>(goodBytes)) != 0) {
+        setAside("untruncatable");
+        startJournal(journalId_);
+        journalBroken_ = true;  // as above
+        return;
+    }
+    journalFd_ = ::open(path.c_str(), O_WRONLY | O_APPEND);
+    if (journalFd_ < 0) journalBroken_ = true;
+    journalBytes_ = goodBytes;
+}
+
+bool Database::appendJournal(const std::string& text) {
+    if (!appendWhole(journalFd_, journalBytes_, text)) return false;
+    journalUnsynced_ = true;
+    // While a background save runs, its journal gets every line as well: it
+    // is the one the new file will name. A line it cannot take ends that
+    // save, never this append -- the old journal, which did take it, is
+    // still the one that counts.
+    if (journalNextFd_ >= 0 && !appendWhole(journalNextFd_, journalNextBytes_, text)) {
+        saveError_ = "could not append to the new journal";
+        abandonBackgroundSave();
+    }
+    return true;
+}
+
+bool Database::journalPending() const {
+    return players_.anyTouched() || users_.anyTouched() || sessions_.anyTouched() ||
+           !touchedTop_.empty() || !journalBacklog_.empty();
+}
+
+bool Database::flushJournal() {
+    if (loadFailed_ || path_.empty()) {
+        // Nothing will ever be written: just do not let the lists grow.
+        players_.forgetTouched();
+        users_.forgetTouched();
+        sessions_.forgetTouched();
+        touchedTop_.clear();
+        return false;
+    }
+    if (!journalPending()) return true;
+
+    std::string& line = journalBacklog_;
+    const std::size_t lineStart = line.size();
+    line += '{';
+    bool any = false;
+    const auto section = [&](const char* name, auto& table, const auto& toJson) {
+        if (!table.anyTouched()) return;
+        if (any) line += ',';
+        any = true;
+        line += '"';
+        line += name;
+        line += "\":{";
+        table.takeTouched(line, toJson);
+        line += '}';
+    };
+    section("players", players_, playerToText);
+    section("users", users_, accountToText);
+    section("sessions", sessions_, sessionToText);
+    if (!touchedTop_.empty()) {
+        if (any) line += ',';
+        any = true;
+        line += "\"tables\":{";
+        bool first = true;
+        for (const std::string& key : touchedTop_) {
+            if (!first) line += ',';
+            first = false;
+            line += jsonEscape(key);
+            line += ':';
+            if (!std::as_const(otherTop_).contains(key)) {
+                line += "null";
+                continue;
+            }
+            auto it = otherTopText_.find(key);
+            if (it == otherTopText_.end()) {
+                it = otherTopText_.emplace(key, std::as_const(otherTop_)[key].dump(0)).first;
+            }
+            line += it->second;
+        }
+        line += '}';
+        touchedTop_.clear();
+    }
+    if (any) line += "}\n";
+    else line.resize(lineStart);
+
+    if (journalBacklog_.empty()) return true;
+    if (!appendJournal(journalBacklog_)) {
+        journalBroken_ = true;
+        return false;
+    }
+    journalBacklog_.clear();
+    return true;
+}
+
+void Database::syncJournal(std::int64_t nowMillis) {
+    if (!journalUnsynced_ || journalFd_ < 0) return;
+    if (nowMillis - lastJournalSyncMillis_ < kJournalSyncMillis) return;
+    // One at a time: on a disk slow enough to still be on the last one, a
+    // second would only queue behind it.
+    if (journalSyncTicket_ != 0 && pollPathSync(journalSyncTicket_) == 0) return;
+    journalSyncTicket_ = startPathSync(journalPath());
+    lastJournalSyncMillis_ = nowMillis;
+    journalUnsynced_ = false;
+}
+
+bool Database::wantsSaveNow() const {
+    if (loadFailed_ || path_.empty()) return false;
+    return journalBroken_ || journalFd_ < 0 || !journalBacklog_.empty() ||
+           journalBytes_ > kJournalSaveBytes;
+}
+
+// ---------------------------------------------------------------------------
+// Database: the background save
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// What a slice stages before handing it to the file: big enough that the
+/// write count stays small, small enough that no one write is a stall.
+constexpr std::size_t kStagedWriteBytes = 64 * 1024;
+
+double steadyMillisNow() {
+    return std::chrono::duration<double, std::milli>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+}  // namespace
+
+bool Database::beginBackgroundSave() {
+    if (save_ != nullptr || loadFailed_ || path_.empty()) return false;
+    // Everything up to now goes to the old journal, which the old file needs;
+    // the new journal starts empty, at this instant.
+    flushJournal();
+
+    auto job = std::make_unique<BackgroundSave>();
+    job->journalId = crypto::secureRandom().hex(8);
+    job->tmpPath = path_ + ".tmp";
+    const std::string next = journalPath() + ".next";
+    const int nextFd = ::open(next.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
+    if (nextFd < 0) {
+        saveError_ = "could not create " + next;
+        return false;
+    }
+    std::uint64_t nextBytes = 0;
+    int fd = nextFd;
+    if (!appendWhole(fd, nextBytes, journalHeader(job->journalId))) {
+        if (fd >= 0) ::close(fd);
+        std::remove(next.c_str());
+        saveError_ = "could not write " + next;
+        return false;
+    }
+    job->fd = ::open(job->tmpPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (job->fd < 0) {
+        ::close(fd);
+        std::remove(next.c_str());
+        saveError_ = "could not create " + job->tmpPath;
+        return false;
+    }
+    journalNextFd_ = fd;
+    journalNextBytes_ = nextBytes;
+
+    // serialiseWith's order: the file's own keys, then the three collections
+    // where the file never had them.
+    job->sections = topKeyOrder_;
+    const auto has = [&](const char* name) {
+        return std::find(job->sections.begin(), job->sections.end(), name) != job->sections.end();
+    };
+    if (!has("players")) job->sections.push_back("players");
+    if (!has("users")) job->sections.push_back("users");
+    if (!has("sessions") && sessions_.size() > 0) job->sections.push_back("sessions");
+    job->staged.reserve(2 * kStagedWriteBytes);
+    save_ = std::move(job);
+    // Anything from here on marks it again; a save that fails puts it back.
+    dirty_ = false;
+    return true;
+}
+
+void Database::abandonBackgroundSave() {
+    if (save_ == nullptr) return;
+    players_.watchCursor(nullptr);
+    users_.watchCursor(nullptr);
+    sessions_.watchCursor(nullptr);
+    if (save_->fd >= 0) ::close(save_->fd);
+    // A sync still running on Node's side holds its own descriptor to the
+    // staging file; removing the name under it is harmless.
+    std::remove(save_->tmpPath.c_str());
+    if (journalNextFd_ >= 0) ::close(journalNextFd_);
+    journalNextFd_ = -1;
+    journalNextBytes_ = 0;
+    std::remove((journalPath() + ".next").c_str());
+    save_.reset();
+    dirty_ = true;
+}
+
+Database::SaveProgress Database::failBackgroundSave(const std::string& why) {
+    saveError_ = why;
+    abandonBackgroundSave();
+    return SaveProgress::Failed;
+}
+
+bool Database::writeStaged() {
+    BackgroundSave& job = *save_;
+    if (job.staged.empty()) return true;
+    std::uint64_t length = job.written;
+    if (!appendWhole(job.fd, length, job.staged)) return false;
+    job.written = length;
+    job.staged.clear();
+    return true;
+}
+
+bool Database::assembleSlice(double budgetMillis) {
+    BackgroundSave& job = *save_;
+    const double started = steadyMillisNow();
+    const auto overBudget = [&] { return steadyMillisNow() - started >= budgetMillis; };
+    const auto key = [&](const std::string& name) {
+        job.staged += job.firstKey ? '{' : ',';
+        job.firstKey = false;
+        jsonEscapeTo(job.staged, name);
+        job.staged += ':';
+    };
+    // One collection, a row at a time, by index -- the table moves the index
+    // back for an erase ahead of it (watchCursor). Rows inserted since the
+    // start are appended, so they are reached too; a row is read as it is
+    // when the walk gets to it.
+    const auto walk = [&](auto& rows, const auto& toText) -> int {   // 1 done, 0 out of time, -1 failed
+        if (!job.inTable) {
+            key(job.sections[job.section]);
+            job.inTable = true;
+            job.rowSeparator = '{';
+            job.row = 0;
+            rows.watchCursor(&job.row);
+        }
+        int sinceClock = 0;
+        while (job.row < rows.keys().size()) {
+            const std::string& rowKey = rows.keys()[job.row];
+            job.staged += job.rowSeparator;
+            job.rowSeparator = ',';
+            jsonEscapeTo(job.staged, rowKey);
+            job.staged += ':';
+            job.staged += rows.text(rowKey, toText);
+            ++job.row;
+            if (job.staged.size() >= kStagedWriteBytes && !writeStaged()) return -1;
+            if (++sinceClock >= 4) {
+                sinceClock = 0;
+                if (overBudget()) return 0;
+            }
+        }
+        job.staged += job.rowSeparator == '{' ? "{}" : "}";
+        rows.watchCursor(nullptr);
+        job.inTable = false;
+        return 1;
+    };
+
+    while (job.section < job.sections.size()) {
+        const std::string& name = job.sections[job.section];
+        int state = 1;
+        if (name == "players") state = walk(players_, playerToText);
+        else if (name == "users") state = walk(users_, accountToText);
+        else if (name == "sessions") state = walk(sessions_, sessionToText);
+        else {
+            auto it = otherTopText_.find(name);
+            if (it == otherTopText_.end()) {
+                it = otherTopText_.emplace(name, std::as_const(otherTop_)[name].dump(0)).first;
+            }
+            key(name);
+            job.staged += it->second;
+        }
+        // What is staged and not yet written waits for the next slice: a
+        // write is only made once there is a worthwhile amount of it.
+        if (state < 0) return false;
+        if (state == 0) return true;
+        ++job.section;
+        if (job.staged.size() >= kStagedWriteBytes && !writeStaged()) return false;
+        if (overBudget()) return true;
+    }
+    key("journal");
+    jsonEscapeTo(job.staged, job.journalId);
+    job.staged += '}';
+    if (!writeStaged()) return false;
+    job.assembled = true;
+    return true;
+}
+
+Database::SaveProgress Database::serviceBackgroundSave(double budgetMillis) {
+    if (save_ == nullptr) return SaveProgress::Idle;
+    BackgroundSave& job = *save_;
+
+    if (!job.assembled) {
+        if (!assembleSlice(budgetMillis)) return failBackgroundSave("could not write " + job.tmpPath);
+        if (!job.assembled) return SaveProgress::Running;
+        // Checked before it counts, as save() checks: a short file is what a
+        // full disk leaves.
+        const bool closed = ::close(job.fd) == 0;
+        job.fd = -1;
+        struct stat info {};
+        if (!closed || ::stat(job.tmpPath.c_str(), &info) != 0 ||
+            static_cast<std::uint64_t>(info.st_size) != job.written) {
+            return failBackgroundSave("the staged file is not the size written");
+        }
+        job.syncTicket = startPathSync(job.tmpPath);
+    }
+
+    const int synced = pollPathSync(job.syncTicket);
+    if (synced == 0) return SaveProgress::Running;
+    if (synced != 1) return failBackgroundSave("could not sync " + job.tmpPath);
+    return finishBackgroundSave();
+}
+
+Database::SaveProgress Database::finishBackgroundSave() {
+    BackgroundSave& job = *save_;
+    // Its data already on the disk, and the old file kept alive under another
+    // name until Node's pool deletes it: a metadata change, and quick.
+    if (!renameRetiring(job.tmpPath, path_, path_ + ".retired-" + job.journalId)) {
+        return failBackgroundSave("could not rename " + job.tmpPath);
+    }
+    lastSaveBytes_ = static_cast<std::size_t>(job.written);
+    journalId_ = job.journalId;
+    // The file now names the new journal; its lines go on in it alone. The
+    // backlog stays: lines that could not be appended anywhere are still
+    // in order, and the new journal replays them as well as the old would.
+    const std::string next = journalPath() + ".next";
+    if (renameRetiring(next, journalPath(), journalPath() + ".retired-" + job.journalId)) {
+        closeJournal();
+        journalFd_ = journalNextFd_;
+        journalBytes_ = journalNextBytes_;
+        journalUnsynced_ = true;
+        journalBroken_ = false;
+    } else {
+        // load() still finds `.next` and takes it; but nothing may be appended
+        // to the old journal, which names the old file. Until a save makes it
+        // right, lines wait in the backlog.
+        closeJournal();
+        if (journalNextFd_ >= 0) ::close(journalNextFd_);
+        journalBroken_ = true;
+    }
+    journalNextFd_ = -1;
+    journalNextBytes_ = 0;
+    save_.reset();
+    return SaveProgress::Saved;
 }
 
 std::string Database::backupDirectoryFor(const std::string& databasePath) {
@@ -1253,6 +2127,7 @@ std::string Database::serverSecret() {
         salt = crypto::secureRandom().hex(16);
         otherTop_["ipSalt"] = Json(salt);
         otherTopText_.erase("ipSalt");
+        touchTop("ipSalt");
         if (std::find(topKeyOrder_.begin(), topKeyOrder_.end(), "ipSalt") == topKeyOrder_.end()) {
             topKeyOrder_.push_back("ipSalt");
         }

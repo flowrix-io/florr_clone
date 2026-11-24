@@ -21,9 +21,11 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "server/admin_tiers.h"
@@ -293,6 +295,7 @@ public:
             auto it = byKey_.find(key);
             if (it == byKey_.end()) return nullptr;
             it->second.cached = false;
+            touch(it->first, it->second);
             return &it->second.value;
         }
         const T* find(const std::string& key) const {
@@ -306,15 +309,16 @@ public:
                 it = byKey_.try_emplace(key).first;
             }
             it->second.cached = false;
+            touch(it->first, it->second);
             return it->second.value;
         }
-        /// The row as compact JSON, re-serialised with `toJson` only when it
+        /// The row as compact JSON, re-serialised with `toText` only when it
         /// was handed out mutably since the last call. `key` must exist.
-        template <class ToJson>
-        const std::string& text(const std::string& key, const ToJson& toJson) const {
+        template <class ToText>
+        const std::string& text(const std::string& key, const ToText& toText) const {
             const Row& row = byKey_.find(key)->second;
             if (!row.cached) {
-                row.text = toJson(row.value).dump(0);
+                row.text = toText(row.value);
                 row.cached = true;
             }
             return row.text;
@@ -327,8 +331,11 @@ public:
             if (it == byKey_.end() || byKey_.count(to) != 0) return false;
             Row row = std::move(it->second);
             row.cached = false;
+            row.touched = false;
             byKey_.erase(it);
-            byKey_.emplace(to, std::move(row));
+            touched_.push_back(from);
+            auto moved = byKey_.emplace(to, std::move(row)).first;
+            touch(moved->first, moved->second);
             for (std::string& key : order_) {
                 if (key == from) { key = to; break; }
             }
@@ -336,23 +343,89 @@ public:
         }
         bool erase(const std::string& key) {
             if (byKey_.erase(key) == 0) return false;
+            touched_.push_back(key);
             for (std::size_t i = 0; i < order_.size(); ++i) {
-                if (order_[i] == key) { order_.erase(order_.begin() + static_cast<long>(i)); break; }
+                if (order_[i] == key) {
+                    order_.erase(order_.begin() + static_cast<long>(i));
+                    // A save walking the table by index must not skip the row
+                    // that slid into the erased one's place.
+                    if (cursor_ != nullptr && i < *cursor_) --*cursor_;
+                    break;
+                }
             }
             return true;
         }
+        /// Registers the index a save spread over several ticks is walking
+        /// keys() with (null to stop), so an erase ahead of it moves it back.
+        /// Inserts append and renames keep their place, so neither moves it.
+        void watchCursor(std::size_t* cursor) { cursor_ = cursor; }
         const std::vector<std::string>& keys() const { return order_; }
         std::size_t size() const { return byKey_.size(); }
-        void clear() { order_.clear(); byKey_.clear(); }
+        void clear() { order_.clear(); byKey_.clear(); touched_.clear(); cursor_ = nullptr; }
+
+        /// Whether any row was handed out mutably, inserted, renamed or erased
+        /// since the last takeTouched(). The journal's question, asked before
+        /// every write to a client, so it must stay this cheap.
+        bool anyTouched() const { return !touched_.empty(); }
+        /// Appends `"key":<row text>` (or `"key":null` for a row that no longer
+        /// exists) to `out` for every row touched since the last call, once
+        /// each, comma-separated, and forgets them. The text is the same cached
+        /// text a save uses, so a row the journal has written costs the next
+        /// save nothing.
+        template <class ToText>
+        void takeTouched(std::string& out, const ToText& toText) {
+            bool first = true;
+            for (const std::string& key : touched_) {
+                auto it = byKey_.find(key);
+                if (it != byKey_.end()) {
+                    // Already written in this batch: a row touched twice, or
+                    // erased and inserted again, is written once, as it is now.
+                    if (!it->second.touched) continue;
+                    it->second.touched = false;
+                } else if (!erasedWritten_.insert(key).second) {
+                    continue;
+                }
+                if (!first) out += ',';
+                first = false;
+                out += jsonEscape(key);
+                out += ':';
+                if (it != byKey_.end()) out += text(key, toText);
+                else out += "null";
+            }
+            touched_.clear();
+            erasedWritten_.clear();
+        }
+        /// Forgets what changed without writing it: what load() does once the
+        /// tables hold exactly what is on disk.
+        void forgetTouched() {
+            for (const std::string& key : touched_) {
+                auto it = byKey_.find(key);
+                if (it != byKey_.end()) it->second.touched = false;
+            }
+            touched_.clear();
+        }
 
     private:
         struct Row {
             T value{};
             mutable std::string text;
             mutable bool cached = false;
+            /// Listed in touched_ and not yet written to the journal.
+            bool touched = false;
         };
+        void touch(const std::string& key, Row& row) {
+            if (row.touched) return;
+            row.touched = true;
+            touched_.push_back(key);
+        }
         std::vector<std::string> order_;
         std::unordered_map<std::string, Row> byKey_;
+        std::size_t* cursor_ = nullptr;
+        /// Keys changed since the journal last wrote this table, in the order
+        /// they were first changed; a key may repeat (see takeTouched).
+        std::vector<std::string> touched_;
+        /// Scratch for takeTouched: absent keys already written as null.
+        std::unordered_set<std::string> erasedWritten_;
     };
 
     /// Wall-clock source, in Unix milliseconds. Overridable so a test can age
@@ -385,8 +458,93 @@ public:
     /// renamed over the original. A crash at any point leaves the previous
     /// good file intact. Returns false without touching the live file if
     /// anything went wrong, and leaves the database dirty so the change is
-    /// retried rather than lost.
+    /// retried rather than lost. A successful save starts a new journal (see
+    /// below): everything the old one held is in the file now.
     bool save();
+
+    // -- saving without stopping the world -------------------------------------
+    //
+    // save() does all of it at once: fourteen megabytes assembled, written,
+    // synced and renamed inside one tick, which on the prod box is a tick of
+    // a few hundred milliseconds every thirty seconds. The periodic save is
+    // this instead. The text is assembled a slice at a time (rows read as
+    // they stand when the slice reaches them) and appended to the staging
+    // file as it goes; the disk sync runs on Node's thread pool; only the
+    // rename is on the tick.
+    //
+    // Rows read at different moments are not one instant's state, and do not
+    // need to be: the save starts a new journal (`<journal>.next`, named in
+    // the new file) at its first slice, and every line written from then on
+    // goes to BOTH journals. Replaying the new journal over the new file ends
+    // on each row's last journalled state whatever moment the file caught it
+    // at; until the rename lands the old file and old journal are complete on
+    // their own. load() finishes a rotation a restart interrupted.
+
+    enum class SaveProgress { Idle, Running, Saved, Failed };
+    /// Starts one, after flushing the journal. False when one is already
+    /// running, or the database cannot be saved, or the new journal could
+    /// not be created.
+    bool beginBackgroundSave();
+    /// Does at most about `budgetMillis` of it. Saved/Failed are reported by
+    /// the call that finished it; Idle when none is running.
+    SaveProgress serviceBackgroundSave(double budgetMillis);
+    bool backgroundSaveRunning() const { return save_ != nullptr; }
+    /// Drops a running one, leaving the file and journal as they were. save()
+    /// does this first: a whole save supersedes a partial one.
+    void abandonBackgroundSave();
+    /// Why the last background save failed.
+    const std::string& backgroundSaveError() const { return saveError_; }
+
+    // -- the journal ----------------------------------------------------------
+    //
+    // The file above is a snapshot, written every thirty seconds; between two
+    // of them every change lives in memory only, and a process that dies --
+    // the OOM killer, a crash, pm2 giving up on a slow stop -- takes the last
+    // half minute of every player's progress with it. The journal closes that.
+    //
+    // `<path>.journal` is one line per batch of changes: a header naming the
+    // snapshot it follows (the snapshot carries the same id under "journal"),
+    // then `{"players":{id:row|null},"users":..,"sessions":..,"tables":..}`
+    // lines, each the WHOLE current text of every row changed since the line
+    // before (null = erased). Whole rows rather than edits, so a line needs
+    // nothing but the rows it names and replaying any prefix of the file in
+    // order leaves every row as it was when the last of those lines was
+    // written. load() replays it onto the snapshot; a torn last line -- the
+    // process killed mid-write -- is dropped, and by construction nobody was
+    // told about what it held (see flushJournal).
+    //
+    // The write is a plain append that has returned before anything is sent:
+    // once write(2) returns the bytes are the kernel's, and no death of this
+    // process can take them back. syncJournal adds fdatasync on a timer for a
+    // death of the MACHINE, which is the one case a page cache does not cover.
+
+    /// Appends one line holding every row changed since the last call, if
+    /// any changed. The game server calls it before ANY byte leaves for a
+    /// client (net::Listener::beforeWrite), which is what makes "a player saw
+    /// it" imply "it is on disk". False when the write failed; the changes
+    /// are kept and retried, and wantsSaveNow() turns true.
+    bool flushJournal();
+    /// Whether a flushJournal() would write anything. O(1).
+    bool journalPending() const;
+    /// fdatasync()s the journal when something was appended since the last
+    /// sync and kJournalSyncMillis have passed. Real on Node too, where the
+    /// filesystem layer's own fsync is a no-op.
+    void syncJournal(std::int64_t nowMillis);
+    /// True when a full save should happen now rather than at the next
+    /// interval: the journal outgrew kJournalSaveBytes, or it cannot be
+    /// written and a snapshot is the only durable place left.
+    bool wantsSaveNow() const;
+
+    static constexpr std::int64_t kJournalSyncMillis = 1000;
+    static constexpr std::uint64_t kJournalSaveBytes = 24ull << 20;
+
+    std::string journalPath() const { return path_ + ".journal"; }
+    std::uint64_t journalBytes() const { return journalBytes_; }
+    /// How many journal lines the last load() replayed onto the snapshot.
+    int journalLinesReplayed() const { return journalLinesReplayed_; }
+    /// Set by load() when the journal could not be used as it was (another
+    /// snapshot's, damaged mid-file); says what was done with it.
+    const std::string& journalNote() const { return journalNote_; }
 
     /// The per-tick pump. Writes only when something changed and the rate
     /// limit allows it; because dirty state is only cleared by a successful
@@ -560,7 +718,9 @@ public:
 
     /// The record for `userId`, created empty if absent. Mutating the result
     /// does not mark the database dirty -- the caller knows whether it changed
-    /// anything and must call markDirty().
+    /// anything and must call markDirty(). Taking it at all marks the row
+    /// changed for the journal, which rewrites the whole row before the next
+    /// send: a path that only READS uses findProgress().
     PlayerRecord& progress(const std::string& userId);
     const PlayerRecord* findProgress(const std::string& userId) const;
 
@@ -727,6 +887,53 @@ public:
 private:
     void reset();
     bool parseRoot(Json& root, std::string& errorOut);
+    /// Applies the journal at journalPath() to `root` (the parsed snapshot),
+    /// and leaves the journal open for appending -- truncated after its last
+    /// good line, or moved aside and replaced when it is not this snapshot's.
+    void replayJournal(Json& root);
+    /// Replaces the journal with an empty one (just the header) for `id`,
+    /// staged and renamed so a crash leaves either the old or the new one.
+    bool startJournal(const std::string& id);
+    void closeJournal();
+    /// Appends `text` whole, or leaves the file as it was.
+    bool appendJournal(const std::string& text);
+    /// serialise() plus `"journal":id` when `id` is non-empty.
+    std::string serialiseWith(const std::string& journalId) const;
+    /// Records that the unmodelled table `key` changed.
+    void touchTop(const std::string& key);
+    /// The background save's slice: assembles until the budget is spent or
+    /// the file is complete. False on a write failure.
+    bool assembleSlice(double budgetMillis);
+    /// Appends the staged text to the staging file. False on failure.
+    bool writeStaged();
+    /// The background save's last step: the new file and journal in place.
+    SaveProgress finishBackgroundSave();
+    SaveProgress failBackgroundSave(const std::string& why);
+
+    struct BackgroundSave {
+        std::string journalId;
+        std::string tmpPath;
+        int fd = -1;
+        std::string staged;          ///< assembled, not yet written
+        std::uint64_t written = 0;
+        /// The top-level keys in the order serialiseWith writes them, fixed
+        /// at the start: a table made since is in the new journal.
+        std::vector<std::string> sections;
+        std::size_t section = 0;
+        bool firstKey = true;
+        bool inTable = false;
+        char rowSeparator = '{';
+        std::size_t row = 0;         ///< watched by the table being walked
+        bool assembled = false;
+        int syncTicket = 0;          ///< the staging file's async sync
+    };
+    std::unique_ptr<BackgroundSave> save_;
+    std::string saveError_;
+    /// The next journal while a background save runs (see above).
+    int journalNextFd_ = -1;
+    std::uint64_t journalNextBytes_ = 0;
+    /// The journal's own async sync (Node), so a slow disk never waits on one.
+    int journalSyncTicket_ = 0;
     std::string newUserId();
     void indexUser(const std::string& storedKey, const Account& account);
     CreateResult createAccount(const std::string& username, const std::string& password,
@@ -760,6 +967,25 @@ private:
     /// The `chatTerms` table, applied to the built-in lists.
     ChatTerms chatTerms_ = ChatTerms::builtIn();
 
+    /// Unmodelled tables changed since the journal last wrote, in order.
+    std::vector<std::string> touchedTop_;
+
+    /// The id the snapshot on disk names its journal by; empty for a file no
+    /// journalling build has saved yet.
+    std::string journalId_;
+    int journalFd_ = -1;
+    std::uint64_t journalBytes_ = 0;
+    bool journalUnsynced_ = false;
+    std::int64_t lastJournalSyncMillis_ = 0;
+    /// The last append or rotation failed: the journal is not trustworthy
+    /// until a snapshot has made it unnecessary.
+    bool journalBroken_ = false;
+    int journalLinesReplayed_ = 0;
+    std::string journalNote_;
+    /// Lines built but not yet on disk because an append failed; written
+    /// ahead of the next line, or made moot by the next snapshot.
+    std::string journalBacklog_;
+
     std::string path_;
     bool loadFailed_ = false;
     bool dirty_ = false;
@@ -779,6 +1005,8 @@ private:
 // than surviving in memory until the first restart quietly loses it.
 
 Json playerRecordJson(const PlayerRecord&);
+/// playerRecordJson(record).dump(0), byte for byte, written without the tree.
+std::string playerRecordText(const PlayerRecord&);
 PlayerRecord parsePlayerRecord(const Json&);
 Json accountRecordJson(const Account&);
 /// `storedKey` is the name the row is filed under, which the parse falls back

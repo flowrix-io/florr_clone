@@ -89,6 +89,26 @@ shared UI tokens instead of hand-picked colours and hand-drawn frames:
 The Trial Grounds picker (`App::drawTrialPicker`, `kTrialsSkin`) is a small
 example to copy.
 
+## Account database
+
+`dist/inventory.json` is a snapshot saved every 30 s; every change in between
+is appended to `inventory.json.journal` before any byte is sent to a client
+(`Database::flushJournal`, called from `net::Listener::beforeWrite`), and
+replayed on load. The periodic save is spread over ticks, ~2 ms each
+(`Database::beginBackgroundSave`); `Database::save()` does it all at once and
+is for shutdown and explicit commands only, never a per-tick path. So:
+
+- Change the database only through `Database` (`progress()`, `findUser()`,
+  `rawTable()`, ...): those are what mark a row for the journal. Never hold a
+  mutable row pointer across a send or a tick.
+- A path that only reads uses the const accessors (`findProgress`,
+  `storedTable`, `GameServer::viewRecord`). A mutable accessor marks the
+  whole row for rewriting, and on a timer that is every online player's row,
+  every time (`a_flower_doing_nothing_writes_nothing_to_the_journal`).
+- XP and stars live on the body (`PlayerProgress`); the record follows it
+  every tick (`syncLiveProgress`). Pay XP or stars to a playing flower on the
+  body, as crafting does, or the next tick puts the old figure back.
+
 ## Admin rights
 
 Admin rights come only from server-held state: the account's `admin` flag in

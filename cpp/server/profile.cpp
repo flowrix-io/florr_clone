@@ -207,7 +207,7 @@ void GameServer::gatherProfile(Session& session, ProfileParts& parts) {
     // ring), and the progression track it is on (the maze's, in the maze) --
     // so the panels show what the flower actually has and the talent menu
     // spends the points the body actually earned.
-    const PlayerRecord& record = liveRecord(session);
+    const PlayerRecord& record = viewRecord(session);
     parts.standing = standingOf(session, record);
     const SkillSet& skills = session.playingIn(Realm::Maze) ? record.mazeSkills : record.skills;
 
@@ -415,7 +415,7 @@ void GameServer::sendProfileDelta(Session& session, net::Connection& connection)
     // Read exactly as sendProfile reads them -- the same record, the same
     // track, the same walkers -- so a client that applies this holds what the
     // whole Profile would have given it, and the digests still agree.
-    const PlayerRecord& record = liveRecord(session);
+    const PlayerRecord& record = viewRecord(session);
 
     ByteWriter w;
     openProfileMessage(w, net::ServerMessage::ProfileDelta, session, standingOf(session, record));
@@ -494,7 +494,7 @@ void GameServer::resyncProfile(Session& session, net::Connection& connection) {
 }
 
 std::uint32_t GameServer::profileDigest(Session& session) {
-    const PlayerRecord& record = liveRecord(session);
+    const PlayerRecord& record = viewRecord(session);
     net::ProfileDigest digest;
     forEachProfileStack(record, [&](std::uint16_t index, Rarity rarity, std::uint32_t count) {
         digest.stack(index, static_cast<std::uint8_t>(rarity), count);
