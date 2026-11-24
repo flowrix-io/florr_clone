@@ -898,9 +898,10 @@ Vec2 SpriteCache::petalOrigin(std::uint16_t index) const {
 
 void SpriteCache::drawPetal(Canvas& canvas, std::uint16_t index, Rarity rarity, double x,
                             double y, double diameter, double rotation,
-                            double timeSeconds) const {
+                            double timeSeconds, const MobMotion* motion) const {
     if (index >= petals_.size()) return;
-    draw(canvas, petalSprite(index, rarity), x, y, diameter, rotation, timeSeconds, false, 0.0);
+    draw(canvas, petalSprite(index, rarity), x, y, diameter, rotation, timeSeconds, false, 0.0,
+         {1.0, 0.0}, motion);
 }
 
 } // namespace flix

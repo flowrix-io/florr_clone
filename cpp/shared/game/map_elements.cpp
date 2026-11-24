@@ -312,6 +312,7 @@ void MapData::reset(Realm realm) {
     minimap_ = true;
     dark_ = false;
     darkColor_ = 0;
+    glitchDamagePerSecond_ = 0.0;
     artFiles_.clear();
     layers_.clear();
     sourcePath_.clear();
@@ -355,6 +356,8 @@ bool MapData::loadTiled(const TiledMap& map, const std::string& path, std::strin
     // says otherwise.
     minimap_ = properties["minimap"].asBool(true);
     dark_ = parseColor(properties["darkness"], darkColor_);
+    glitchDamagePerSecond_ = std::max(0.0, properties["glitchDamagePerSecond"].asDouble());
+    if (!std::isfinite(glitchDamagePerSecond_)) glitchDamagePerSecond_ = 0.0;
     // There is deliberately NO map-wide difficulty property. Difficulty is a
     // band's, and a band is the only thing that spawns anything: a number for
     // "the ground no band covers" would configure nothing, because that ground

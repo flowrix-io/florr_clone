@@ -702,6 +702,89 @@ TEST(a_moon_is_one_picture_magnified_to_its_radius) {
     CHECK(differingPixels(common, apex) < 60);
 }
 
+TEST(a_dice_picture_rests_on_five_and_a_world_dice_rolls) {
+    // florr's dice: a picture always shows its icon face (five pips) and holds
+    // still; a dice in the world re-rolls every 700 ms, so over a few seconds
+    // it shows more than one face, and two dice with different ids do not
+    // show the same sequence.
+    CHECK(mobArtFor("$dice") == MobArt::Dice);
+    const auto diceAt = [](double clockMs, std::uint32_t seed, bool inWorld) {
+        Canvas canvas = Canvas::createVirtual(kSide, kSide);
+        canvas.clear(Color{kBackground, kBackground, kBackground});
+        canvas.translate(kSide * 0.5f, kSide * 0.5f);
+        MobArtAttributes at;
+        at.radius = 30.0;
+        at.clockMs = clockMs;
+        at.seed = seed;
+        at.inWorld = inWorld;
+        paintMobArt(canvas, MobArt::Dice, at);
+        return canvas.getImageData(0, 0, kSide, kSide);
+    };
+    const auto pipPixels = [](const std::vector<std::uint8_t>& rgba) {
+        int pips = 0;
+        for (std::size_t i = 0; i + 3 < rgba.size(); i += 4)
+            if (rgba[i] == 0x77 && rgba[i + 1] == 0x77 && rgba[i + 2] == 0x77) ++pips;
+        return pips;
+    };
+
+    const std::vector<std::uint8_t> icon = diceAt(0.0, 0, false);
+    CHECK(differingPixels(icon, diceAt(12345.0, 7, false)) == 0);
+    int white = 0;
+    for (std::size_t i = 0; i + 3 < icon.size(); i += 4)
+        if (icon[i] == 0xFF && icon[i + 1] == 0xFF && icon[i + 2] == 0xFF) ++white;
+    CHECK(white > 500);
+    const int five = pipPixels(icon);
+    CHECK(five > 0);
+
+    // Late in each window the tumble has settled; count distinct pip areas.
+    std::vector<int> seenA, seenB;
+    for (int w = 0; w < 12; ++w) {
+        const double t = w * 700.0 + 650.0;
+        seenA.push_back(pipPixels(diceAt(t, 1, true)));
+        seenB.push_back(pipPixels(diceAt(t, 2, true)));
+    }
+    std::vector<int> distinct = seenA;
+    std::sort(distinct.begin(), distinct.end());
+    distinct.erase(std::unique(distinct.begin(), distinct.end()), distinct.end());
+    CHECK(distinct.size() >= 3);
+    CHECK(seenA != seenB);
+}
+
+TEST(a_bean_picture_holds_still_and_a_world_bean_turns) {
+    // florr's bean: beige body, dark hilum, pale spot, shaded outline. Its
+    // picture never moves; in the world it spins slowly from a per-petal start.
+    CHECK(mobArtFor("$bean") == MobArt::Bean);
+    const auto beanAt = [](double clockMs, std::uint32_t seed, bool inWorld) {
+        Canvas canvas = Canvas::createVirtual(kSide, kSide);
+        canvas.clear(Color{kBackground, kBackground, kBackground});
+        canvas.translate(kSide * 0.5f, kSide * 0.5f);
+        MobArtAttributes at;
+        at.radius = 30.0;
+        at.clockMs = clockMs;
+        at.seed = seed;
+        at.inWorld = inWorld;
+        paintMobArt(canvas, MobArt::Bean, at);
+        return canvas.getImageData(0, 0, kSide, kSide);
+    };
+    const auto count = [](const std::vector<std::uint8_t>& rgba, std::uint32_t rgb) {
+        int n = 0;
+        for (std::size_t i = 0; i + 3 < rgba.size(); i += 4)
+            if (rgba[i] == ((rgb >> 16) & 0xFF) && rgba[i + 1] == ((rgb >> 8) & 0xFF) &&
+                rgba[i + 2] == (rgb & 0xFF))
+                ++n;
+        return n;
+    };
+    const std::vector<std::uint8_t> icon = beanAt(0.0, 0, false);
+    CHECK(differingPixels(icon, beanAt(9999.0, 5, false)) == 0);
+    CHECK(count(icon, 0xF5D9B5u) > 200);
+    CHECK(count(icon, 0x675633u) > 20);
+    CHECK(count(icon, 0xFFF0E3u) > 20);
+    // The body outnumbers the hilum: the discs are cut to the bean.
+    CHECK(count(icon, 0xF5D9B5u) > 2 * count(icon, 0x675633u));
+    CHECK(differingPixels(beanAt(0.0, 3, true), beanAt(2000.0, 3, true)) > 50);
+    CHECK(differingPixels(beanAt(0.0, 3, true), beanAt(0.0, 4, true)) > 50);
+}
+
 TEST(a_ring_mobs_face_and_petals_are_the_ones_its_config_names) {
     // Through WorldRenderer, on a fixture of the test's own: a face named by the
     // ring, drawn by the painter a player's flower is drawn by, and its petals

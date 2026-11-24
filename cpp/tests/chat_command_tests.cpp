@@ -704,7 +704,7 @@ TEST(a_unique_from_the_console_restarts_its_biome_clock) {
 
     // Every clock is dealt within one cooldown of the first spawner pass, so
     // one apex cooldown on, all of them stand ready.
-    h.clock += kApexSpawnCooldownMillis;
+    h.clock += kApexSpawnCooldownMaxMillis;
     h.step(1, {&client});
 
     CHECK(say(h, client, "/admin spawn bee unique"));
@@ -749,7 +749,7 @@ TEST(boss_clocks_are_kept_in_the_database_and_survive_a_restart) {
             const double unique = table[biome]["uniqueReadyAt"].asDouble();
             const double apex = table[biome]["apexReadyAt"].asDouble();
             CHECK(unique > now - 1000.0 && unique <= now + kUniqueSpawnCooldownMillis + 1000.0);
-            CHECK(apex > now - 1000.0 && apex <= now + kApexSpawnCooldownMillis + 1000.0);
+            CHECK(apex > now - 1000.0 && apex <= now + kApexSpawnCooldownMaxMillis + 1000.0);
         }
 
         // Anyone may ask, not only an admin.
@@ -808,7 +808,7 @@ TEST(a_boss_standing_at_a_restart_hands_its_clock_back) {
         client.joinGame(1920, 1080, {}, "Boss");
         CHECK(h.stepUntil({&client},
                           [&] { return client.status() == NetClient::Status::Playing; }, 200));
-        h.clock += kApexSpawnCooldownMillis;
+        h.clock += kApexSpawnCooldownMaxMillis;
         h.step(1, {&client});
 
         const std::uint16_t bee = content().mobIndex("bee");
@@ -885,7 +885,7 @@ TEST(a_boss_cleared_by_killall_is_saved_gone_by_a_save_straight_after) {
     CHECK(loginAs(h, client, "boss", "password7"));
     client.joinGame(1920, 1080, {}, "Boss");
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
-    h.clock += kApexSpawnCooldownMillis;
+    h.clock += kApexSpawnCooldownMaxMillis;
     h.step(1, {&client});
     CHECK(say(h, client, "/admin spawn bee unique"));
     CHECK(sawText(client, "Spawned unique bee"));
@@ -2435,14 +2435,22 @@ TEST(a_squadmate_is_sent_the_drop_their_squad_earned) {
     CHECK(!dropped.empty());
     if (dropped.empty()) return;
 
-    // SERVER SIDE: the squadmate is on the reservation.
-    const DropItem& item = world.get<DropItem>(dropped.front());
-    CHECK(claimed(item.eligible, mateBody, 0));
+    // SERVER SIDE: the squadmate rolled the table too, and is on the
+    // reservation of whatever their roll came out as.
+    Entity mateDrop = NULL_ENTITY;
+    for (const Entity drop : dropped) {
+        if (claimed(world.get<DropItem>(drop).eligible, mateBody, 0)) {
+            mateDrop = drop;
+            break;
+        }
+    }
+    CHECK(mateDrop != NULL_ENTITY);
+    if (mateDrop == NULL_ENTITY) return;
     // ...and was paid the kill's XP without landing a hit.
     CHECK(world.get<PlayerProgress>(mateBody).totalXp > before);
 
     // CLIENT SIDE: the drop actually reached the squadmate's screen.
-    const NetId* dropId = world.tryGet<NetId>(dropped.front());
+    const NetId* dropId = world.tryGet<NetId>(mateDrop);
     CHECK(dropId != nullptr);
     if (dropId == nullptr) return;
     CHECK(h.stepUntil({&fighter, &mate}, [&] {
@@ -4532,4 +4540,78 @@ TEST(chat_cooldown_is_shared_by_global_whispers_and_admin_announcements) {
     CHECK(sawText(alice,"Wait 0.5 seconds between messages."));
     h.step(16,{&alice,&bob});alice.sendChat("/w bob after cooldown");
     CHECK(h.stepUntil({&alice,&bob},[&]{return sawText(bob,"after cooldown");}));
+}
+
+TEST(a_flower_inside_a_folder_counts_toward_the_computer_in_biome) {
+    // A folder is a room inside the computer, as a termite mound's dungeon is
+    // one inside the jungle: /biome must not list "folder" as a biome of its
+    // own beside the computer it is in.
+    Harness h("cmd-biome-folder", [](const std::string& path) {
+        seedUser(path, "inside", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "inside", "password7"));
+    client.joinGame(1280, 720, {}, "Inside");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    const std::vector<Realm> folders = h.server.worldMaps().copiesOf("folder");
+    CHECK(!folders.empty());
+    if (folders.empty()) return;
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    world.get<Transform>(body).realm = folders.back();
+
+    CHECK(say(h, client, "/biome"));
+    // Bots are counted too and stand in every biome, so the computer need
+    // not be the busiest -- but it is listed, and the folder is not.
+    CHECK(sawText(client, "<br/>Computer: "));
+    CHECK(!sawText(client, "folder"));
+    CHECK(!sawText(client, "Folder"));
+}
+
+TEST(a_squad_invite_raises_the_card_and_joining_takes_it_down) {
+    Harness h("cmd-squad-card", [](const std::string& path) {
+        seedUser(path, "lead", "password7");
+        seedUser(path, "mate", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient lead;
+    NetClient mate;
+    CHECK(loginAs(h, lead, "lead", "password7"));
+    CHECK(loginAs(h, mate, "mate", "password7"));
+
+    CHECK(say(h, lead, "/squad-create"));
+    CHECK(say(h, lead, "/squad-invite mate"));
+    CHECK(h.stepUntil({&lead, &mate}, [&] { return mate.squadInvite().waiting; }));
+    CHECK(mate.squadInvite().fromUsername == "lead");
+    CHECK(mate.squadInvite().expiresAtMillis > 0);
+
+    // The card's Join button sends exactly this.
+    CHECK(say(h, mate, "/squad-accept"));
+    CHECK(h.stepUntil({&lead, &mate}, [&] { return mate.squad().inSquad; }));
+    CHECK(!mate.squadInvite().waiting);
+}
+
+TEST(players_online_counts_signed_in_people) {
+    Harness h("cmd-players-online", [](const std::string& path) {
+        seedUser(path, "one", "password7");
+        seedUser(path, "two", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient one;
+    NetClient two;
+    CHECK(loginAs(h, one, "one", "password7"));
+    CHECK(loginAs(h, two, "two", "password7"));
+    CHECK(say(h, one, "/players-online"));
+    CHECK(h.stepUntil({&one, &two}, [&] { return sawText(one, "Players online: <b>2</b>"); }));
 }

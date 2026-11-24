@@ -187,6 +187,7 @@ constexpr GardnIcon kGardnIcon[] = {
     {"salt",            25.75,   10,  0,       0,  0.99},   // art fills 99% of its box
     {"sand",               17,    7, 10,       0, 0.852},   // art fills 85% of its box
     {"shell",              31,   10,  0,       0, 0.973},   // art fills 97% of its box
+    {"shovel",           37.5,   10,  0,      -1, 0.872},   // florr's tile: rotate -1 rad; art 87% of its box
     {"soil",               24,   10,  0,       0, 0.488},   // art fills 49% of its box
     {"sponge",           34.5,   12,  0,       1, 0.983},   // art fills 98% of its box
     {"square",           23.5,   15,  0,  1.7854, 0.969},   // art fills 97% of its box
@@ -229,6 +230,7 @@ constexpr GardnIcon kGardnIcon[] = {
     // 38.3 across on florr's radius of 13. florr's tile adds no tilt and
     // leaves it lying on its side; this one is turned back -1 (user's choice).
     {"totem",            38.3,   13,  0,       -1, 0.955},   // art fills 96% of its box
+    {"paperclip",            38.3,   13,  0,       -1, 0.955},
 };
 
 /// What gardn draws basic at, per unit of `size`: the picture a petal on the

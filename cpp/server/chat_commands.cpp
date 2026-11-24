@@ -900,11 +900,21 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // everyone in any other biome was missed and the answer was wrong or
         // "nobody". A prestige twin is its own entry ("Prestige Desert"), as
         // biomeLabel names it everywhere else.
+        //
+        // One person, one count: a splitter's parked half is a whole body of
+        // its own, and counting it would put a split flower in twice.
+        std::vector<Entity> parkedHalves;
+        for (const auto& entry : sessions_) {
+            if (entry.second.splitOther != NULL_ENTITY) parkedHalves.push_back(entry.second.splitOther);
+        }
         std::vector<std::pair<std::string, int>> counts;
         int total = 0;
         Query<PlayerTag, Transform> flowers{world_};
         flowers.each([&](Entity entity, PlayerTag&, Transform&) {
             if (world_.has<Dead>(entity)) return;
+            if (std::find(parkedHalves.begin(), parkedHalves.end(), entity) != parkedHalves.end()) {
+                return;
+            }
             const std::string biome = biomeOfEntity(entity);
             if (biome.empty()) return;
             const std::string label = biomeLabel(biome);
@@ -936,6 +946,19 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         out(std::string("<span style=\"color: #4fc3f7;\">Most populated biome: <b>") +
             escapedMarkup(counts.front().first) + "</b> (" +
             plural(counts.front().second, "player", "players") + ")</span><br/>" + breakdown);
+        return true;
+    }
+
+    if (verb == "/players-online") {
+        // People, not bodies: every signed-in connection, in a world or on the
+        // title screen. A bot has no session, and a split flower is one
+        // session however many halves it walks around as.
+        int online = 0;
+        for (const auto& entry : sessions_) {
+            if (entry.second.authenticated()) ++online;
+        }
+        out(std::string("<span style=\"color: #4fc3f7;\">Players online: <b>") +
+            std::to_string(online) + "</b></span>");
         return true;
     }
 
@@ -991,6 +1014,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         std::string help = "<b>Available commands:</b><br/>";
         help += "/biome - Show the most populated biome <br/>";
         help += "/boss-timers - Show each biome's unique/apex cooldown <br/>";
+        help += "/players-online - Show how many players are online <br/>";
         help += "/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would "
                 "roll <br/>";
         help += "/loadout-from-string &lt;name&gt; - Show the loadout a bot named &lt;name&gt; "
@@ -1427,6 +1451,7 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
             sendSystem(*peer, "<span style=\"color: #4fc3f7;\">@" + session.username +
                                   " has invited you to their squad. Use /squad accept or "
                                   "/squad decline.</span>");
+            sendSquadInvite(*peer, session.username);
         }
         return;
     }

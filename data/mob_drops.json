@@ -188,6 +188,14 @@
         "probability": 0.4,
         "minQuantity": 1,
         "maxQuantity": 10
+      },
+      {
+        "type": "petal",
+        "itemType": "shovel",
+        "rarity": "common",
+        "probability": 0.2,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
@@ -483,6 +491,14 @@
         "probability": 0.01,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "bean",
+        "rarity": "uncommon",
+        "probability": 0.2,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
@@ -694,6 +710,14 @@
         "itemType": "raindrop",
         "rarity": "common",
         "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "bean",
+        "rarity": "common",
+        "probability": 0.2,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -1738,6 +1762,27 @@
         "itemType": "magic_wand",
         "rarity": "common",
         "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "folder": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "file",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "paperclip",
+        "rarity": "common",
+        "probability": 0.5,
         "minQuantity": 1,
         "maxQuantity": 1
       }

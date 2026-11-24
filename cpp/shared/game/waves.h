@@ -169,8 +169,13 @@ class WaveSpawner {
 public:
     /// Starts `wave`: a fresh budget and, from wave 15, a 15% chance of a
     /// special wave (one mob family in a swarm, on a 1000 point bonus).
-    /// `forcedGroup` picks the special wave, for a test.
+    /// `forcedGroup` picks the special wave, for a test; kOrdinaryWave rules
+    /// one out instead.
     void next(WaveBiome biome, int wave, Rng& rng, int forcedGroup = -1);
+
+    /// A `forcedGroup` asking for an ordinary wave, never a special one: for a
+    /// test that needs the biome's usual mix rather than one family's swarm.
+    static constexpr int kOrdinaryWave = -2;
 
     /// One step of the wave: the mobs to place now, into `out`.
     void step(WaveBiome biome, int wave, Rng& rng, std::vector<WaveMob>& out);

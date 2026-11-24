@@ -496,8 +496,9 @@ TEST(craft_and_drop_odds_stay_in_range) {
     CHECK_NEAR(dropDowngradeChance(Rarity::Common), 0.0, 1e-12);
     CHECK_NEAR(dropDowngradeChance(Rarity::Uncommon), 1.0 / 65.0, 1e-12);
     CHECK_NEAR(dropDowngradeChance(Rarity::Rare), 1.0 / 33.0, 1e-12);
-    // Crafting gets harder, never easier, as tiers climb.
-    for (int i = 1; i < kRarityCount; ++i) {
+    // Crafting gets harder, never easier, as tiers climb -- over the tiers
+    // anything crafts out of (craftsOutOf): apex and up have no rung above.
+    for (int i = 1; i < kRarityCount && craftsOutOf(static_cast<Rarity>(i)); ++i) {
         CHECK(craftSuccessChance(static_cast<Rarity>(i)) <
               craftSuccessChance(static_cast<Rarity>(i - 1)));
     }

@@ -108,10 +108,14 @@ void makeBandedWorld(WorldMaps& out, const std::vector<Rect>& bands, const std::
 
 /// The difficulty at which `chance` (0..1, exclusive) of a band's spawns come
 /// out a boss: the ultra/super blend, read off the curve rather than written
-/// down, so retuning the anchors moves it too.
+/// down, so retuning the anchors moves it too. spawnTierWeight leans the blend
+/// toward ultra, so the fraction is un-leaned first.
 double groundWithBossChance(double chance) {
+    const double low = spawnTierWeight(clampRarity(rarityIndex(kAnnouncedRarity) - 1));
+    const double high = spawnTierWeight(kAnnouncedRarity);
+    const double fraction = chance * low / (chance * low + (1.0 - chance) * high);
     return difficultyForTierValue(static_cast<double>(rarityIndex(kAnnouncedRarity)) - 1.0 +
-                                  chance);
+                                  fraction);
 }
 
 /// The same, with ONE band and the `singular` flag on it: a band that holds a
@@ -385,10 +389,11 @@ TEST(the_difficulty_curve_hits_the_four_authored_anchors) {
     const auto zero = rolledSpread(0.0, 200000);
     CHECK_NEAR(zero[rarityIndex(Rarity::Common)], 1.0, 1e-12);
 
-    // 100 -> 98% ultra, 2% super.
+    // 100 -> the curve's 98% ultra / 2% super, with ultra's quadrupled spawn
+    // weight leaning it to 3.92 : 0.02 -- about 99.5% ultra, 0.5% super.
     const auto hundred = rolledSpread(100.0, 200000);
-    CHECK_NEAR(hundred[rarityIndex(Rarity::Ultra)], 0.98, 0.005);
-    CHECK_NEAR(hundred[rarityIndex(Rarity::Super)], 0.02, 0.005);
+    CHECK_NEAR(hundred[rarityIndex(Rarity::Ultra)], 3.92 / 3.94, 0.005);
+    CHECK_NEAR(hundred[rarityIndex(Rarity::Super)], 0.02 / 3.94, 0.005);
 
     // 200 -> nothing but supers.
     const auto twoHundred = rolledSpread(200.0, 200000);
@@ -501,7 +506,7 @@ TEST(a_negative_difficulty_rolls_the_whole_natural_spread) {
     // Appraised at the spread's MEAN wherever one number is all there is room
     // for -- the minimap's colour, a bot sizing up a band. An average, not a
     // roll.
-    CHECK_NEAR(tierValueForDifficulty(kRandomDifficulty), 1.11, 1e-12);
+    CHECK_NEAR(tierValueForDifficulty(kRandomDifficulty), 1.16, 1e-12);
 
     // And it is never beginner ground, however far below zero it sorts: the
     // spread reaches mythic, so a door and a newborn bot both refuse it.
@@ -2441,7 +2446,7 @@ TEST(every_biome_gets_its_own_boss_clocks_scattered_over_one_cooldown) {
         }
     };
     spacing(kUniqueSpawnCooldownMillis, false);
-    spacing(kApexSpawnCooldownMillis, true);
+    spacing(kApexSpawnCooldownMaxMillis, true);
 }
 
 TEST(a_cooling_biome_spawns_supers_and_nothing_above_them) {
@@ -2454,7 +2459,7 @@ TEST(a_cooling_biome_spawns_supers_and_nothing_above_them) {
         world.deal();
         SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
         clock.uniqueReadyMillis = world.sim.now + kUniqueSpawnCooldownMillis;
-        clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis;
+        clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
         world.fill();
 
         CHECK(mobsOfRarity(world.sim.world, Rarity::Super) > 20);
@@ -2472,7 +2477,7 @@ TEST(a_ready_clock_upgrades_one_super_and_then_cools_down) {
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
     clock.uniqueReadyMillis = 0.0;
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     const double apexWas = clock.apexReadyMillis;
     world.fill();
 
@@ -2503,7 +2508,8 @@ TEST(both_clocks_ready_gives_one_apex_and_one_unique) {
     CHECK_EQ(world.announced[rarityIndex(Rarity::Apex)], 1);
     CHECK_EQ(world.announced[rarityIndex(Rarity::Unique)], 1);
     const SpawnSystem::BiomeBossClock& after = onlyClock(world.sim);
-    CHECK(after.apexReadyMillis > world.sim.now + kApexSpawnCooldownMillis - 20000.0);
+    CHECK(after.apexReadyMillis > world.sim.now + kApexSpawnCooldownMinMillis - 20000.0);
+    CHECK(after.apexReadyMillis <= world.sim.now + kApexSpawnCooldownMaxMillis);
     CHECK(after.uniqueReadyMillis > world.sim.now + kUniqueSpawnCooldownMillis - 20000.0);
 }
 
@@ -2764,7 +2770,7 @@ TEST(a_ready_clock_waits_while_its_tier_is_standing_in_the_biome) {
     // Ready BEFORE the unique is placed: a cooling clock would refuse it.
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
     clock.uniqueReadyMillis = 0.0;
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     const Entity standing = world.sim.spawner.spawnMob(
         world.sim.world, world.sim.terrain, shipped(), shipped().mobIndex("bee"), Rarity::Unique,
         Vec2{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5},
@@ -2789,7 +2795,7 @@ TEST(a_unique_or_apex_asked_for_during_its_cooldown_never_appears) {
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
     clock.uniqueReadyMillis = world.sim.now + kUniqueSpawnCooldownMillis;
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis;
     world.sim.spawner.bossSpawns.clear();
 
     const std::uint16_t bee = shipped().mobIndex("bee");
@@ -2855,7 +2861,29 @@ TEST(charging_a_clock_restarts_only_that_tier_in_that_biome) {
     CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Overworld, now) > 0.0);
 
     world.sim.spawner.chargeBossClock(Rarity::Apex, Realm::Overworld, now);
-    CHECK_EQ(onlyClock(world.sim).apexReadyMillis, now + kApexSpawnCooldownMillis);
+    CHECK(onlyClock(world.sim).apexReadyMillis >= now + kApexSpawnCooldownMinMillis);
+    CHECK(onlyClock(world.sim).apexReadyMillis <= now + kApexSpawnCooldownMaxMillis);
+    CHECK_EQ(onlyClock(world.sim).apexSpentMillis, now);
+}
+
+TEST(an_apex_clock_draws_its_wait_between_two_and_three_hours) {
+    // Every restart draws a fresh wait over the whole window, so an apex
+    // cannot be timed to the minute: across many restarts the waits reach
+    // both ends and never leave the window.
+    SuperBand world;
+    world.deal();
+    const double now = world.sim.now;
+    double shortest = 1e300, longest = 0.0;
+    for (int i = 0; i < 400; ++i) {
+        world.sim.spawner.chargeBossClock(Rarity::Apex, Realm::Overworld, now);
+        const double wait = onlyClock(world.sim).apexReadyMillis - now;
+        CHECK(wait >= kApexSpawnCooldownMinMillis && wait <= kApexSpawnCooldownMaxMillis);
+        shortest = std::min(shortest, wait);
+        longest = std::max(longest, wait);
+    }
+    const double span = kApexSpawnCooldownMaxMillis - kApexSpawnCooldownMinMillis;
+    CHECK(shortest < kApexSpawnCooldownMinMillis + span * 0.05);
+    CHECK(longest > kApexSpawnCooldownMaxMillis - span * 0.05);
 }
 
 TEST(a_biome_with_no_clock_refuses_no_unique) {
@@ -2889,7 +2917,7 @@ TEST(a_sacrifice_summons_a_mob_of_its_band_at_its_tier_past_a_cooling_clock) {
     SuperBand world;
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMillis * 0.5;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMinMillis * 0.5;
     world.sim.spawner.bossSpawns.clear();
 
     const Vec2 at{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5};
@@ -2904,7 +2932,8 @@ TEST(a_sacrifice_summons_a_mob_of_its_band_at_its_tier_past_a_cooling_clock) {
     CHECK_NEAR(distance(world.sim.world.get<Transform>(result.mob).position, at), 0.0, 1.0);
     // Announced like every boss, and the biome's apex clock starts over.
     CHECK_EQ(world.sim.spawner.bossSpawns.size(), std::size_t(1));
-    CHECK_EQ(onlyClock(world.sim).apexReadyMillis, world.sim.now + kApexSpawnCooldownMillis);
+    CHECK(onlyClock(world.sim).apexReadyMillis >= world.sim.now + kApexSpawnCooldownMinMillis);
+    CHECK(onlyClock(world.sim).apexReadyMillis <= world.sim.now + kApexSpawnCooldownMaxMillis);
 
     // A universal sacrifice summons at the top of the ladder.
     SuperBand other;
@@ -4156,10 +4185,99 @@ TEST(drop_rarity_applies_mob_floors_and_the_apex_item_cap) {
         CHECK(rarityIndex(rare) >= rarityIndex(Rarity::Uncommon));
         CHECK(rarityIndex(rare) <= rarityIndex(Rarity::Rare));
 
+        // An apex grades off its own table: ultra, super or eternal, never
+        // anything below ultra and never an apex petal.
         const Rarity apex = LootSystem::rollDropRarity(Rarity::Apex, Rarity::Apex, rng);
-        CHECK(rarityIndex(apex) >= rarityIndex(Rarity::Super));
+        CHECK(rarityIndex(apex) >= rarityIndex(Rarity::Ultra));
         CHECK(rarityIndex(apex) <= rarityIndex(Rarity::Unique));
     }
+}
+
+TEST(an_apex_grades_its_fixed_eternal_and_ultra_shares) {
+    // Each copy of an apex's graded drop reads its own table: eternal at
+    // kApexEternalDropChance, ultra at kApexUltraDropChance, the rest super.
+    Rng rng(909);
+    constexpr int kRuns = 200000;
+    std::array<int, kRarityCount> counts{};
+    for (int i = 0; i < kRuns; ++i) {
+        ++counts[static_cast<std::size_t>(
+            rarityIndex(LootSystem::rollDropRarity(Rarity::Common, Rarity::Apex, rng)))];
+    }
+    const auto share = [&](Rarity r) {
+        return counts[static_cast<std::size_t>(rarityIndex(r))] / double(kRuns);
+    };
+    CHECK_NEAR(share(Rarity::Unique), kApexEternalDropChance, 0.005);
+    CHECK_NEAR(share(Rarity::Ultra), kApexUltraDropChance, 0.005);
+    CHECK_NEAR(share(Rarity::Super), 1.0 - kApexEternalDropChance - kApexUltraDropChance, 0.005);
+}
+
+TEST(an_apex_copy_never_quotes_less_eternal_than_an_eternal_mob) {
+    // The gallery quotes one copy of an apex's graded drop beside an eternal
+    // mob's one graded drop; the apex's eternal share must not be the lower.
+    Rng rng(4242);
+    constexpr int kRuns = 200000;
+    int eternal = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Unique, rng) == Rarity::Unique) ++eternal;
+    }
+    CHECK(kApexEternalDropChance >= eternal / double(kRuns));
+}
+
+TEST(crafting_past_ultra_loses_a_tenth_of_a_point_a_tier) {
+    // Halving up to ultra -> super's 1%, then 0.9% for super -> eternal and
+    // 0.5% for eternal -> apex.
+    CHECK_NEAR(craftSuccessChance(Rarity::Common), 0.64, 1e-12);
+    CHECK_NEAR(craftSuccessChance(Rarity::Mythic), 0.02, 1e-12);
+    CHECK_NEAR(craftSuccessChance(Rarity::Ultra), 0.01, 1e-12);
+    CHECK_NEAR(craftSuccessChance(Rarity::Super), 0.009, 1e-12);
+    CHECK_NEAR(craftSuccessChance(Rarity::Unique), 0.005, 1e-12);
+    // The drop rolls keep the halving ladder: retuning the forge does not
+    // move a single drop rate.
+    CHECK_NEAR(dropLadderChance(Rarity::Super), 0.005, 1e-12);
+    CHECK_NEAR(dropLadderChance(Rarity::Unique), 0.0025, 1e-12);
+}
+
+TEST(an_apex_hits_fifty_times_an_eternal_and_lasts_eighty_times_as_long) {
+    CHECK_NEAR(kMobHealthScale[rarityIndex(Rarity::Apex)], 8e8, 1e-3);
+    CHECK_NEAR(kMobDamageScale[rarityIndex(Rarity::Apex)], 6561.0 * 50.0, 1e-6);
+    // Unique is untouched.
+    CHECK_NEAR(kMobHealthScale[rarityIndex(Rarity::Unique)], 1e7, 1e-6);
+    CHECK_NEAR(kMobDamageScale[rarityIndex(Rarity::Unique)], 6561.0, 1e-9);
+}
+
+TEST(a_super_mob_leaves_more_ultras_and_fewer_mythics) {
+    // 90% of graded drops start at ultra; half of those climb to super and the
+    // rest never slip. The other 10% start at the authored common row and are
+    // floored at ultra. So: 45% super, 55% ultra, no mythic.
+    Rng rng(7272);
+    constexpr int kRuns = 200000;
+    int mythic = 0, ultra = 0, super = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Super, rng);
+        if (r == Rarity::Mythic) ++mythic;
+        if (r == Rarity::Ultra) ++ultra;
+        if (r == Rarity::Super) ++super;
+    }
+    CHECK_NEAR(super / double(kRuns), 0.45, 0.01);
+    CHECK_NEAR(ultra / double(kRuns), 0.55, 0.01);
+    CHECK_EQ(mythic, 0);
+    CHECK_NEAR(dropDowngradeMultiplier(Rarity::Super), 0.0, 1e-12);
+    CHECK_NEAR(dropDowngradeMultiplier(Rarity::Ultra), 1.0, 1e-12);
+}
+
+TEST(an_ultra_mob_still_leaves_mythics) {
+    // The upgrade is capped (kMaxDropUpgradeChance) so the tier under a mob
+    // always drops too: 90% of graded drops start at mythic, 25% of those stay
+    // there, and 80% of what stays dodges the downgrade -- about 18%.
+    Rng rng(5150);
+    constexpr int kRuns = 200000;
+    int mythic = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Ultra, rng) == Rarity::Mythic) {
+            ++mythic;
+        }
+    }
+    CHECK_NEAR(mythic / double(kRuns), 0.9 * 0.25 * 0.8, 0.01);
 }
 
 TEST(a_mob_leaves_its_own_rarity_at_the_pre_guaranteed_drop_rate) {
@@ -4167,15 +4285,17 @@ TEST(a_mob_leaves_its_own_rarity_at_the_pre_guaranteed_drop_rate) {
     // pays out; grading exactly one row keeps the rate that decides how fast
     // anyone climbs the ladder at what it was before they existed. The
     // figures are 90% * the upgrade chance one tier under the mob, times the
-    // mob's upgrade multiplier (5x rare..mythic, 20x ultra) -- written
-    // out rather than recomputed, so a change to either half of the pipeline
-    // has to come and edit this list on purpose.
+    // mob's upgrade multiplier (5x rare..legendary, 51x mythic, 112.5x ultra,
+    // 150x super, 180x eternal) -- written out rather than recomputed, so a
+    // change
+    // to either half of the pipeline has to come and edit this list on
+    // purpose.
     struct Case { Rarity mob; double ownTier; };
     const Case cases[] = {
         {Rarity::Rare, 0.480},        {Rarity::Epic, 0.240},
-        {Rarity::Legendary, 0.120},   {Rarity::Mythic, 0.060},
-        {Rarity::Ultra, 0.120},       // the 20x lucky roll, which only ultra has
-        {Rarity::Super, 0.003},       {Rarity::Unique, 0.0015},
+        {Rarity::Legendary, 0.120},   {Rarity::Mythic, 0.612},
+        {Rarity::Ultra, 0.675},       {Rarity::Super, 0.450},
+        {Rarity::Unique, 0.270},
     };
 
     Rng rng(4242);
@@ -4216,10 +4336,21 @@ TEST(chaff_is_flat_two_tiers_below_the_mob) {
     // through finishDropRarity instead would let a rare mob's floor lift
     // them all back to uncommon, which is exactly the inflation the graded
     // row exists to hold back.
+    Rng rng(99);
     for (int tier = 0; tier < kLadderRarityCount; ++tier) {
         const Rarity mob = clampRarity(tier);
-        CHECK_EQ(rarityIndex(LootSystem::chaffDropRarity(mob)), std::max(0, tier - 2));
+        if (mob == Rarity::Super) continue;
+        CHECK_EQ(rarityIndex(LootSystem::chaffDropRarity(mob, rng)), std::max(0, tier - 2));
     }
+    // A super's is an ultra 60% of the time and a mythic otherwise.
+    constexpr int kRuns = 100000;
+    int ultra = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        const Rarity r = LootSystem::chaffDropRarity(Rarity::Super, rng);
+        CHECK(r == Rarity::Ultra || r == Rarity::Mythic);
+        if (r == Rarity::Ultra) ++ultra;
+    }
+    CHECK_NEAR(ultra / double(kRuns), 0.6, 0.01);
 }
 
 TEST(a_kill_above_unusual_grades_exactly_one_of_its_rows) {
@@ -4368,9 +4499,9 @@ TEST(which_row_is_graded_is_drawn_by_probability) {
 // ---------------------------------------------------------------------------
 
 TEST(a_squads_drops_are_reserved_for_every_member) {
-    // What a party is FOR. One member kills a starfish; the drop it leaves is
-    // reserved for the whole squad, including the member who never touched
-    // it, and every one of them may pick a copy up.
+    // What a party is FOR. One member kills a starfish; every member of the
+    // squad is paid, including the one who never touched it. Each paid
+    // flower rolls the table, and picks up whatever its roll came out as.
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
@@ -4398,11 +4529,97 @@ TEST(a_squads_drops_are_reserved_for_every_member) {
     const std::vector<Entity> drops = liveDrops(world);
     CHECK(!drops.empty());
     if (drops.empty()) return;
-    const DropItem& item = world.get<DropItem>(drops.front());
-    const auto reserved = [&](Entity who) { return claimed(item.eligible, who, 0); };
-    CHECK(reserved(fighter));
-    CHECK(reserved(passenger));   // the whole point: a squad shares
-    CHECK(reserved(stranger));    // and it does not take anyone else's slot
+    const auto paid = [&](Entity who) {
+        for (const Entity drop : drops) {
+            if (claimed(world.get<DropItem>(drop).eligible, who, 0)) return true;
+        }
+        return false;
+    };
+    CHECK(paid(fighter));
+    CHECK(paid(passenger));   // the whole point: a squad shares
+    CHECK(paid(stranger));    // and it does not take anyone else's slot
+}
+
+TEST(each_paid_flower_rolls_the_table_on_its_own) {
+    // Two flowers share forty kills. Each is paid every time, but from a roll
+    // of its own: what they walk away with is NOT one list handed to both.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(77);
+
+    const std::uint16_t starfish = shipped().mobIndex("starfish");
+    const Entity first = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity second = makePlayer(world, kCentre + Vec2{-5000, 0});
+    for (int i = 0; i < 40; ++i) {
+        makeCorpse(world, starfish, Rarity::Rare, kCentre, first, {first, second});
+    }
+    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    std::vector<std::pair<std::uint16_t, int>> firstGot;
+    std::vector<std::pair<std::uint16_t, int>> secondGot;
+    for (const Entity drop : liveDrops(world)) {
+        const DropItem& item = world.get<DropItem>(drop);
+        const std::pair<std::uint16_t, int> got{item.configIndex, rarityIndex(item.rarity)};
+        if (claimed(item.eligible, first, 0)) firstGot.push_back(got);
+        if (claimed(item.eligible, second, 0)) secondGot.push_back(got);
+    }
+    CHECK(!firstGot.empty());
+    CHECK(!secondGot.empty());
+    std::sort(firstGot.begin(), firstGot.end());
+    std::sort(secondGot.begin(), secondGot.end());
+    CHECK(firstGot != secondGot);
+}
+
+TEST(a_crowded_kill_shares_the_drops_its_rolls_agree_on) {
+    // Twenty-five flowers paid for one kill each roll the table, but rolls
+    // that came out the same are ONE drop on the ground: the server carries a
+    // handful more drops than a solo kill would, not twenty-five times as
+    // many.
+    const auto groundAfter = [](int flowers, Rarity mobRarity, int& claims) {
+        World world;
+        CommandBuffer commands{world};
+        SpatialGrid grid;
+        ShippedLoot loot;
+        EventQueue events;
+        Rng rng(2026);
+        std::vector<Entity> paid;
+        for (int i = 0; i < flowers; ++i) {
+            paid.push_back(makePlayer(world, kCentre + Vec2{5000.0 + i, 0}));
+        }
+        makeCorpse(world, shipped().mobIndex("starfish"), mobRarity, kCentre, paid.front(), paid);
+        loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+        commands.flush();
+        const std::vector<Entity> drops = liveDrops(world);
+        claims = 0;
+        for (const Entity drop : drops) {
+            claims += static_cast<int>(world.get<DropItem>(drop).eligible.size());
+        }
+        // Every flower was paid something.
+        for (const Entity flower : paid) {
+            bool any = false;
+            for (const Entity drop : drops) {
+                any = any || claimed(world.get<DropItem>(drop).eligible, flower, 0);
+            }
+            CHECK(any);
+        }
+        return static_cast<int>(drops.size());
+    };
+    for (const Rarity rarity : {Rarity::Unique, Rarity::Apex}) {
+        int soloClaims = 0;
+        int crowdClaims = 0;
+        const int solo = groundAfter(1, rarity, soloClaims);
+        const int crowd = groundAfter(25, rarity, crowdClaims);
+        std::printf("[loot] %s: solo %d drops, 25 flowers %d drops for %d claims\n",
+                    rarityName(rarity), solo, crowd, crowdClaims);
+        CHECK(solo > 0);
+        CHECK(crowdClaims >= 25 * solo / 2);
+        CHECK(crowd * 4 <= crowdClaims);
+        CHECK(crowd <= solo * 3);
+    }
 }
 
 TEST(a_killed_mob_drops_from_its_own_table) {
@@ -4855,7 +5072,8 @@ TEST(an_orb_converts_only_its_wearers_drops) {
     const std::uint16_t root = orbContent().petalIndex("root");
     int wearerMagic = 0;
     int plainLeaves = 0;
-    int sharedRoots = 0;
+    int wearerRoots = 0;
+    int plainRoots = 0;
     for (const Entity drop : liveDrops(world)) {
         const DropItem& item = world.get<DropItem>(drop);
         const bool forWearer = claimed(item.eligible, wearer, 0);
@@ -4869,15 +5087,17 @@ TEST(an_orb_converts_only_its_wearers_drops) {
             CHECK(forPlain && !forWearer);
             ++plainLeaves;
         }
-        // No magic form: one drop for both, exactly as before.
+        // No magic form: unconverted, each flower's root from its own roll,
+        // shared where the two rolls agreed.
         if (item.configIndex == root) {
-            CHECK(forWearer && forPlain);
-            ++sharedRoots;
+            if (forWearer) ++wearerRoots;
+            if (forPlain) ++plainRoots;
         }
     }
     CHECK_EQ(wearerMagic, 40);
     CHECK_EQ(plainLeaves, 40);
-    CHECK(sharedRoots > 0);
+    CHECK(wearerRoots > 0);
+    CHECK(plainRoots > 0);
 }
 
 namespace {
@@ -5061,11 +5281,27 @@ TEST(each_flower_gets_its_own_orbs_form_of_a_shared_kill) {
     CHECK_EQ(drops.of("magic_leaf"), 40);
     CHECK_EQ(drops.of("leaf"), 40);
     CHECK_EQ(drops.of("glitch_thorn"), 40);
+    // What each flower is owed, counted by claim: a drop two rolls agreed on
+    // is one drop, reserved for both.
+    const auto owed = [&](Entity who, const char* id) {
+        int count = 0;
+        for (const Entity drop : left) {
+            const DropItem& item = world.get<DropItem>(drop);
+            if (orbContent().petal(item.configIndex).id == id &&
+                claimed(item.eligible, who, 0)) {
+                ++count;
+            }
+        }
+        return count;
+    };
     // The thorn has no magic form, so the magic orb's wearer and the plain
-    // flower come out the same and share ONE ordinary thorn.
-    CHECK_EQ(drops.of("thorn"), 40);
-    // Nothing to convert: one root for all three, not a split.
-    CHECK_EQ(drops.of("root"), 40);
+    // flower each get an ordinary thorn.
+    CHECK_EQ(owed(magical, "thorn"), 40);
+    CHECK_EQ(owed(plain, "thorn"), 40);
+    // Nothing to convert: a root in every roll.
+    CHECK_EQ(owed(glitched, "root"), 40);
+    CHECK_EQ(owed(magical, "root"), 40);
+    CHECK_EQ(owed(plain, "root"), 40);
 
     for (const Entity drop : left) {
         const DropItem& item = world.get<DropItem>(drop);
@@ -5080,9 +5316,9 @@ TEST(each_flower_gets_its_own_orbs_form_of_a_shared_kill) {
         } else if (id == "leaf") {
             CHECK(!forGlitched && !forMagical && forPlain);
         } else if (id == "thorn") {
-            CHECK(!forGlitched && forMagical && forPlain);
+            CHECK(!forGlitched && (forMagical || forPlain));
         } else if (id == "root") {
-            CHECK(forGlitched && forMagical && forPlain);
+            CHECK(forGlitched || forMagical || forPlain);
         }
     }
 }

@@ -905,6 +905,13 @@ struct PetalConfig {
     /// kClawCritHealthFraction of its health, before rarity. A flat figure
     /// on the petal damage ladder, added to `damage` rather than replacing it.
     double clawCritDamage = 0;
+    /// A mob group (mobs.json `groups`) this petal's ring hits harder, and by
+    /// how much: Paperclip's x against the computer mobs. The multiplier
+    /// lands on every direct ring hit on a mob in that group, whatever its
+    /// weight there. Empty -- every other petal -- changes nothing; a name no
+    /// mob lists is refused at load.
+    std::string bonusMobGroup;
+    double bonusMobGroupDamage = 1.0;
     /// The fraction of the damage this petal actually deals that comes back
     /// to its flower as health. Fang's. Flat across the ladder: the damage it
     /// is a fraction OF already climbs it.
@@ -932,6 +939,12 @@ struct PetalConfig {
     /// every tier over there, so this is NOT on the rarity ladder -- an apex
     /// dandelion locks healing for exactly as long as a common one.
     double noHealDurationMillis = 0;
+
+    /// How long popping this petal keeps its flower underground (Burrowed):
+    /// florr's shovel, "Becomes untargetable but unable to use petals for a
+    /// limited time". Flat across the ladder; the shovel climbs on its reload.
+    /// The petal pops on defend once it has been on the ring this long too.
+    double burrowMillis = 0;
 
     double speed = 0;           ///< orbit speed for the petals that override it
     bool noPhysics = false;     ///< no body, no collision: a pure modifier
@@ -1182,6 +1195,8 @@ struct PetalStats {
     double extraPoisonMillis = 0;
     /// Flat across the ladder; see PetalConfig::noHealDurationMillis.
     double noHealDurationMillis = 0;
+    /// Flat across the ladder; see PetalConfig::burrowMillis.
+    double burrowMillis = 0;
     double heal = 0;                    ///< burst heal per charge
     double healChargeMillis = 0;
     double passiveHealPerSecond = 0;
@@ -1334,6 +1349,17 @@ inline constexpr double kDiceChancePerLuck = 0.04;
 inline constexpr double kDiceDamageScale = 35.0;
 inline bool petalRollsDice(const PetalConfig& config) { return config.id == "dice"; }
 
+/// florr's bean: "Deals more damage if there are no allied flowers around
+/// you." An allied flower is another player within your view distance (the
+/// user's rule, 2026-11-22): any other standing flower in your realm inside
+/// the view rectangle your client reports (PlayerLocation::viewport, clamped
+/// by the server), centred on you. Your own splitter half is you, not another
+/// player. The x2 is a guess: florr settles the bonus on its server, so it is
+/// not in its client (which gives the bean radius 7, health 12, a flat 2 s
+/// reload -- and a client-side damage of 0).
+inline constexpr double kBeanAloneDamageScale = 2.0;
+inline bool petalHitsHarderAlone(const PetalConfig& config) { return config.id == "bean"; }
+
 inline bool petalShredsShots(const PetalConfig& config) { return config.id == "plank"; }
 
 /// A carrot is a missile whose shot bounces off walls instead of flying over
@@ -1393,13 +1419,15 @@ double mobUndeadMillis(const MobConfig& config, Rarity rarity);
 /// gives it no body on the ring.
 inline bool petalDelaysDeath(const PetalConfig& config) { return config.id == "bandage"; }
 
-/// Whether a `held` petal does nothing while `other` is worn on the active row
-/// with it. The user's rule (2026-11-11): a splitter worn with a bandage does
-/// not spawn, as a spare copy of a petal that does not stack does not
-/// (petalOnlyBestCopyCounts), and so does not split the flower either. Both
-/// stay equippable, and the bandage works as ever. See slotHeldBack.
-inline bool petalHeldBackBy(const PetalConfig& held, const PetalConfig& other) {
-    return held.id == kSplitterPetalId && petalDelaysDeath(other);
+/// Whether a petal is switched off while its flower is Undead (a bandage
+/// carrying it past a killing blow). The user's rule (2026-11-23, replacing
+/// the 2026-11-11 one that held a splitter back whenever a bandage was merely
+/// worn beside it): a splitter works beside a bandage as ever, but while the
+/// bandage's effect is running the splitter fields nothing, cannot be
+/// clicked, and a split flower is merged back -- the other half despawned --
+/// so a bandage can never leave a spare body standing behind a dying one.
+inline bool petalDisabledWhileUndead(const PetalConfig& config) {
+    return config.id == kSplitterPetalId;
 }
 
 /// A nazar takes most of a hit off its flower and pays a charge for it --
@@ -1417,6 +1445,11 @@ inline bool petalWardsHits(const PetalConfig& config) { return config.id == "naz
 /// a flat 1-point pool, so anything that touches it breaks it, and its
 /// landing charges it the rest (CombatSystem::resolveMelee).
 inline bool petalSpentOnHit(const PetalConfig& config) { return config.id == "privet"; }
+/// A shovel puts its flower underground (Burrowed) when popped. florr's
+/// slot 14 runs 15 s at common down to 2 s at tier 8, 1.625 s a tier.
+inline bool petalBurrows(const PetalConfig& config) { return config.burrowMillis > 0.0; }
+inline constexpr double kShovelReloadMillis = 15000.0;
+inline constexpr double kShovelReloadStepMillis = 1625.0;
 /// florr's Petal/Attribute/Charges, flat at every tier.
 inline constexpr std::uint8_t kNazarCharges = 3;
 /// What a warded hit still costs: florr's 98% off.
@@ -1787,6 +1820,10 @@ EquippedPetal resolveEquippedPetal(const ContentRegistry& registry, int slot, Sl
     return EquippedPetal{copied, self.rarity, source.rarity};
 }
 
+/// The triangle, which grows with every copy of itself on the active row
+/// (triangleStackScale). Asked by id, as the other one-petal quirks are.
+inline bool petalStacksWithCopies(const PetalConfig& config) { return config.id == "triangle"; }
+
 /// Slot `slot` of a flower's `loadout` as it is actually equipped. Every gameplay
 /// read of the bar goes through this, so a mimic is the petal it copies to the
 /// ring, the modifiers, the auras and the camera alike.
@@ -1797,6 +1834,18 @@ inline EquippedPetal equippedPetal(const ContentRegistry& registry, const Loadou
         const LoadoutSlot& at = loadout.slots[static_cast<std::size_t>(i)];
         return EquippedPetal{at.configIndex, at.rarity, at.rarity};
     });
+}
+
+/// How many of the active row's slots field `configIndex`, as equipped -- a
+/// mimic copying it counts, and so does one still reloading: it is worn.
+inline int equippedCopiesOf(const ContentRegistry& registry, const Loadout& loadout,
+                            std::uint16_t configIndex) {
+    int copies = 0;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const EquippedPetal slot = equippedPetal(registry, loadout, i);
+        if (!slot.empty() && slot.configIndex == configIndex) ++copies;
+    }
+    return copies;
 }
 
 /// The stats a resolved slot fields: the petal's at its tier, with the reload
@@ -1865,29 +1914,6 @@ int bestCopySlot(std::uint16_t configIndex, EquippedAt&& equippedAt) {
         }
     }
     return best;
-}
-
-/// Whether active slot `index` is held back by another petal on the row
-/// (petalHeldBackBy). Such a slot serves its equip reload, then fields
-/// nothing, and the bar draws it as not loaded: the server's ring pass builds
-/// it with zero copies, as it builds a spare moon.
-///
-/// `equippedAt` as for bestCopySlot, so a mimic copying a bandage holds a
-/// splitter back as the bandage would.
-template <class EquippedAt>
-bool slotHeldBack(const ContentRegistry& registry, int index, EquippedAt&& equippedAt) {
-    if (index < 0 || index >= kLoadoutActiveSlots) return false;
-    const EquippedPetal held = equippedAt(index);
-    if (held.empty()) return false;
-    const PetalConfig& config = registry.petal(held.configIndex);
-    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        if (i == index) continue;
-        const EquippedPetal other = equippedAt(i);
-        if (!other.empty() && petalHeldBackBy(config, registry.petal(other.configIndex))) {
-            return true;
-        }
-    }
-    return false;
 }
 
 // ---------------------------------------------------------------------------

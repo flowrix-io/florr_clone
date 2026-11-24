@@ -1,0 +1,119 @@
+{ "compressionlevel":-1,
+ "height":10,
+ "infinite":false,
+ "layers":[
+        {
+         "data":[88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88,
+            88, 88, 88, 88, 88, 88, 88, 88, 88, 88],
+         "height":10,
+         "id":1,
+         "name":"bg",
+         "opacity":1,
+         "properties":[
+                {
+                 "name":"has_collision",
+                 "type":"bool",
+                 "value":false
+                }],
+         "type":"tilelayer",
+         "visible":true,
+         "width":10,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "data":[89, 89, 89, 89, 89, 89, 89, 89, 89, 89,
+            89, 0, 0, 0, 0, 0, 0, 0, 0, 89,
+            89, 0, 0, 0, 0, 0, 0, 0, 0, 89,
+            89, 0, 0, 0, 0, 0, 0, 0, 0, 89,
+            89, 0, 0, 0, 0, 0, 0, 0, 0, 89,
+            89, 0, 0, 0, 0, 0, 0, 0, 0, 89,
+            89, 0, 0, 0, 0, 0, 0, 0, 0, 89,
+            89, 0, 0, 0, 0, 0, 0, 0, 0, 89,
+            89, 0, 0, 0, 0, 0, 0, 0, 0, 89,
+            89, 89, 89, 89, 89, 89, 89, 89, 89, 89],
+         "height":10,
+         "id":2,
+         "name":"wall",
+         "opacity":1,
+         "properties":[
+                {
+                 "name":"has_collision",
+                 "type":"bool",
+                 "value":true
+                }],
+         "type":"tilelayer",
+         "visible":true,
+         "width":10,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":3,
+         "name":"player_spawns",
+         "objects":[
+                {
+                 "height":2005.71481242511,
+                 "id":1,
+                 "name":"folder",
+                 "opacity":1,
+                 "properties":[
+                        {
+                         "name":"pickable",
+                         "type":"bool",
+                         "value":false
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":2015.15347036593,
+                 "x":273.721080283897,
+                 "y":278.440409254309
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }],
+ "nextlayerid":4,
+ "nextobjectid":2,
+ "orientation":"orthogonal",
+ "properties":[
+        {
+         "name":"biome",
+         "type":"string",
+         "value":"computer"
+        }, 
+        {
+         "name":"displayName",
+         "type":"string",
+         "value":"Folder"
+        }, 
+        {
+         "name":"glitchDamagePerSecond",
+         "type":"float",
+         "value":2
+        }],
+ "renderorder":"right-down",
+ "tiledversion":"1.12.2",
+ "tileheight":256,
+ "tilesets":[
+        {
+         "firstgid":1,
+         "source":"tileset.tsj"
+        }],
+ "tilewidth":256,
+ "type":"map",
+ "version":"1.10",
+ "width":10
+}

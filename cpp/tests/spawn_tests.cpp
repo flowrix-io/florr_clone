@@ -1253,6 +1253,18 @@ TEST(an_authored_band_and_region_still_parse) {
 // Doors: safe ground, and who may use which
 // ---------------------------------------------------------------------------
 
+TEST(the_folder_drains_two_glitch_damage_a_second_and_nowhere_else_does) {
+    WorldMaps maps;
+    std::string error;
+    CHECK(maps.load(dataDir(), nullptr, error));
+    const std::vector<Realm> folders = maps.copiesOf("folder");
+    CHECK(!folders.empty());
+    for (const MapData& map : maps.maps()) {
+        const double expected = map.templateId() == "folder" ? 2.0 : 0.0;
+        CHECK_NEAR(map.glitchDamagePerSecond(), expected, 1e-9);
+    }
+}
+
 TEST(the_pyramid_is_reached_through_the_desert_portal) {
     WorldMaps maps;
     std::string error;
@@ -1757,8 +1769,11 @@ TEST(a_super_on_ground_thick_with_them_is_neither_announced_nor_mourned) {
     const double cell = kTileSize;
     // The ultra/super blend's super share, read off the curve.
     const auto groundWithBossChance = [](double chance) {
+        const double low = spawnTierWeight(clampRarity(rarityIndex(kAnnouncedRarity) - 1));
+        const double high = spawnTierWeight(kAnnouncedRarity);
+        const double fraction = chance * low / (chance * low + (1.0 - chance) * high);
         return difficultyForTierValue(static_cast<double>(rarityIndex(kAnnouncedRarity)) - 1.0 +
-                                      chance);
+                                      fraction);
     };
     const Rect rareBand{cell * 12, cell * 4, cell * 16, cell * 16};
     const Rect steepBand{cell * 30, cell * 4, cell * 16, cell * 16};

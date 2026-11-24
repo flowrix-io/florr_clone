@@ -325,6 +325,21 @@ private:
     /// case and is why the block starts where the main HUD ends rather than
     /// reserving room for itself.
     void drawSquadHud(Canvas&, double time);
+    /// The squad invite card under the HUD: the card and its two buttons.
+    struct SquadInviteLayout {
+        Rect card;
+        Rect join;
+        Rect ignore;
+    };
+    /// Where the card is drawn THIS frame -- partway in from the left while it
+    /// slides in -- so a press lands on the button where it is painted.
+    SquadInviteLayout squadInviteLayout() const;
+    /// Whether the card is up: an invite is waiting and has not lapsed.
+    bool squadInviteShown() const;
+    void drawSquadInvite(Canvas&);
+    /// Answers a press on the card's buttons. True when the press landed on
+    /// the card at all, so it is not also a swing.
+    bool pressSquadInvite();
     /// One HUD avatar: the flower `netId` belongs to, drawn at `radius` around
     /// (`centreX`, `centreY`) with its own colour, face, equipment and skin.
     /// Falls back to the plain yellow face when that body is not in the stream
@@ -742,6 +757,12 @@ private:
     /// container animation, which translates the whole stack down from above
     /// the screen and eases it back up again when the card goes away.
     double deathCardSlide_ = 0.0;
+    /// The squad invite card's slide in from the left edge: 0 off screen, 1
+    /// in place, slowing as it arrives. Started when a new
+    /// invite -- one with an expiry not seen before -- first shows.
+    double squadInviteSlide_ = 0.0;
+    double squadInviteShownAt_ = 0.0;
+    std::int64_t squadInviteSeen_ = 0;
     /// The trial HUD's "Start Room" button as last drawn, empty when the run
     /// is not waiting in Preparing. The click is tested against the same box.
     Rect trialStartButton_{};

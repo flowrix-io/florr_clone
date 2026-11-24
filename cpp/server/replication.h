@@ -474,6 +474,9 @@ private:
     const Facts& factsOf(World& world, std::uint32_t at);
 
     std::vector<Indexed> index_;
+    /// indexWorld()'s sort scratch, kept for its capacity.
+    std::vector<std::uint64_t> sortKeys_;
+    std::vector<Indexed> sorted_;
     std::vector<Facts> facts_;
     double indexedAtMillis_ = 0;
     bool passIndexed_ = false;

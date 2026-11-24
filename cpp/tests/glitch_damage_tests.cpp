@@ -7,6 +7,7 @@
 #include "shared/core/world.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
+#include "shared/game/map_elements.h"
 #include "shared/game/spatial.h"
 #include "shared/net/protocol.h"
 
@@ -524,4 +525,97 @@ TEST(a_glitch_lightnings_bolts_are_green_and_a_plain_strikes_stay_white) {
     CHECK(green.g > 1000.0);
     CHECK(green.r < green.g * 0.2);
     CHECK(green.b < green.g * 0.2);
+}
+
+namespace {
+
+/// A one-cell fixture map, with `properties` as its map properties, adopted as
+/// the overworld.
+bool drainWorld(WorldMaps& out, const std::string& name, const std::string& properties) {
+    const std::string dir = testsupport::tempDir("flix-glitch-drain-" + name);
+    testsupport::writeText(dir + "/fixture.tsj", R"({"name": "fixture", "type": "tileset", "version": "1.10",
+ "tilewidth": 300, "tileheight": 300, "tilecount": 1, "columns": 0,
+ "grid": {"orientation": "orthogonal", "width": 300, "height": 300},
+ "tiles": [{"id": 0, "image": "tiles/grass_c_0.svg", "imagewidth": 300, "imageheight": 300}]})");
+    std::string body = R"({"type": "map", "orientation": "orthogonal", "infinite": false,
+      "width": 1, "height": 1, "tilewidth": 256, "tileheight": 256,)";
+    if (!properties.empty()) body += "\"properties\": [" + properties + "],";
+    body += R"("tilesets": [{"firstgid": 1, "source": "fixture.tsj"}], "layers": [
+        {"type": "tilelayer", "name": "ground", "width": 1, "height": 1, "data": [0]}]})";
+    testsupport::writeText(dir + "/" + name + ".tmj", body);
+    MapData map;
+    std::string error;
+    if (!map.loadTiled(dir + "/" + name + ".tmj", error)) return false;
+    out.adoptSingle(std::move(map));
+    return true;
+}
+
+}  // namespace
+
+TEST(a_map_with_glitch_damage_drains_every_flower_in_it_green) {
+    CHECK(glitchContent().ok);
+    WorldMaps maps;
+    CHECK(drainWorld(maps, "drain",
+                     R"({"name": "glitchDamagePerSecond", "type": "float", "value": 2})"));
+    const MapData* map = maps.forRealm(Realm::Overworld);
+    CHECK(map != nullptr);
+    if (map == nullptr) return;
+    CHECK_NEAR(map->glitchDamagePerSecond(), 2.0, 1e-9);
+
+    Sim sim;
+    sim.combat.worldMaps = &maps;
+    const Entity flower = sim.player({0, 0});
+    const double before = sim.world.get<Health>(flower).current;
+    constexpr int kSteps = 50;
+    for (int i = 0; i < kSteps; ++i) {
+        sim.step();
+        const std::vector<WireEvent> numbers = sim.numbersOn(flower);
+        CHECK_EQ(numbers.size(), std::size_t(1));
+        if (numbers.empty()) continue;
+        CHECK(isGreen(numbers[0]));
+        CHECK_NEAR(numbers[0].amount, 2.0 * net::kTickSeconds, 1e-9);
+    }
+    // 2 a second, by the simulated clock: dt is what the drain is paid in.
+    // Loose: the flower's 1e9 pool rounds each drip in the seventh decimal.
+    CHECK_NEAR(before - sim.world.get<Health>(flower).current, 2.0 * net::kTickSeconds * kSteps,
+               1e-3);
+}
+
+TEST(a_map_without_glitch_damage_drains_nobody) {
+    CHECK(glitchContent().ok);
+    WorldMaps maps;
+    CHECK(drainWorld(maps, "calm", ""));
+    Sim sim;
+    sim.combat.worldMaps = &maps;
+    const Entity flower = sim.player({0, 0});
+    const double before = sim.world.get<Health>(flower).current;
+    for (int i = 0; i < 10; ++i) {
+        sim.step();
+        CHECK(sim.numbersOn(flower).empty());
+    }
+    CHECK_EQ(sim.world.get<Health>(flower).current, before);
+}
+
+TEST(a_glitch_drain_scales_with_the_realms_rarity_like_a_mobs_damage) {
+    CHECK(glitchContent().ok);
+    WorldMaps maps;
+    CHECK(drainWorld(maps, "scaled",
+                     R"({"name": "glitchDamagePerSecond", "type": "float", "value": 2})"));
+    // The 3x mob damage ladder, written out: rare is 9x, unique 6561x.
+    const std::pair<Rarity, double> cases[] = {{Rarity::Rare, 18.0}, {Rarity::Unique, 13122.0}};
+    for (const auto& [rarity, perSecond] : cases) {
+        Sim sim;
+        sim.combat.worldMaps = &maps;
+        sim.combat.realmRarity = [rarity = rarity](Realm, Rarity& out) {
+            out = rarity;
+            return true;
+        };
+        const Entity flower = sim.player({0, 0});
+        sim.step();
+        const std::vector<WireEvent> numbers = sim.numbersOn(flower);
+        CHECK_EQ(numbers.size(), std::size_t(1));
+        if (numbers.empty()) continue;
+        CHECK(isGreen(numbers[0]));
+        CHECK_NEAR(numbers[0].amount, perSecond * net::kTickSeconds, 1e-6);
+    }
 }

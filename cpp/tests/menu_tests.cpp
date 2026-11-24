@@ -2,12 +2,15 @@
 
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_widgets.h"
+#include "client/ui/petal_hover.h"
 #include "fixture_content.h"
 #include "server_harness.h"
 #include "shared/game/shop.h"
 #include "shared/game/skills.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 using namespace flix;
 using flix::testsupport::awaitProfile;
@@ -1432,3 +1435,74 @@ TEST(two_to_64_displays_without_signed_integer_overflow) {
     CHECK_EQ(ui::formatWhole(0x1p64), std::string("18446744073709551616"));
     CHECK_EQ(ui::withSeparators(0x1p64), std::string("18,446,744,073,709,551,616"));
 }
+
+TEST(an_egg_or_a_stick_card_shows_the_wait_before_its_pet_comes_out) {
+    // An egg or a stick reloads, then sits on the ring for its reload AGAIN
+    // before the pet hatches, so its card reads "reload + reload" the way a
+    // dahlia's reads "reload + charge". A plain petal still shows one figure.
+    CHECK(ensureShippedContent());
+    const auto badge = [](const char* id) {
+        const std::uint16_t index = content().petalIndex(id);
+        if (index == kInvalidIndex) return std::string("<missing>");
+        const auto lines = ui::petalTooltip(index, Rarity::Rare, SkillSet{}, 1.0, 100.0);
+        if (lines.empty() || lines.front().badges.empty()) return std::string("<none>");
+        return lines.front().badges.back().text;
+    };
+    const auto seconds = [](double millis) {
+        char buffer[32];
+        std::snprintf(buffer, sizeof buffer, "%.1fs", millis / 1000.0);
+        return std::string(buffer);
+    };
+    for (const char* id : {"stick", "magic_stick", "soldier_ant_egg"}) {
+        const std::uint16_t index = content().petalIndex(id);
+        CHECK(index != kInvalidIndex);
+        if (index == kInvalidIndex) continue;
+        const double reload = content().petalStats(index, Rarity::Rare).reloadMillis;
+        CHECK_EQ(badge(id), seconds(reload) + " + " + seconds(reload));
+    }
+    CHECK(badge("basic").find('+') == std::string::npos);
+}
+
+TEST(the_cards_show_what_scripted_petals_actually_do) {
+    // Petals whose effect is code rather than a stat still show their numbers:
+    // the glitch lightning's reach, a bomb's blast, a battery's charges, an
+    // egg's pets, a volley's shot count.
+    CHECK(ensureShippedContent());
+    const auto shows = [](const char* id, const std::string& needle) {
+        const std::uint16_t index = content().petalIndex(id);
+        if (index == kInvalidIndex) return false;
+        for (const auto& line : ui::petalTooltip(index, Rarity::Rare, SkillSet{}, 1.0, 100.0)) {
+            if (line.text.find(needle) != std::string::npos) return true;
+        }
+        return false;
+    };
+    CHECK(shows("glitch_lightning", "Targets: All within"));
+    CHECK(shows("glitch_lightning", " ~ "));
+    CHECK(shows("bomb", "Blast Damage: "));
+    CHECK(shows("bomb", "Blast Radius: "));
+    CHECK(shows("battery", "Charges: 3"));
+    CHECK(shows("capacitor", "Lightning: up to "));
+    CHECK(shows("stick", "Pets: 2x"));
+    CHECK(shows("stick", "Pet Damage: "));
+    CHECK(shows("rainbow", "Shots: "));
+    CHECK(shows("blood_stinger", "Self Damage: "));
+    CHECK(shows("divider", "Divides: "));
+    // Gas's poison used to have no duration, so it never landed (applyPoison
+    // turns a zero duration away) and its card showed nothing.
+    CHECK(shows("gas", "Poison: "));
+    CHECK(shows("gas", "Shots: 10"));
+    // The triangle's description is its own numbers at the card's tier: a rare
+    // one hits for 45, so each other one adds 22.5.
+    const std::uint16_t triangle = content().petalIndex("triangle");
+    CHECK(triangle != kInvalidIndex);
+    if (triangle != kInvalidIndex) {
+        bool said = false;
+        for (const auto& line : ui::petalTooltip(triangle, Rarity::Rare, SkillSet{}, 1.0, 100.0)) {
+            if (line.text.find("adds +22.5 damage to every Triangle") != std::string::npos) {
+                said = true;
+            }
+        }
+        CHECK(said);
+    }
+}
+

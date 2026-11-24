@@ -142,12 +142,15 @@ enum Toggle : int {
     kNumberKeysUseItems,
     kClassicLoadoutBar,
     kUseMouseControls,
+    kInvertAttack,
+    kInvertDefend,
     kRequestMobile,
     kHideOtherPetals,
     kHideOtherPets,
     kDesynchronizedCanvas,
     kScreenShake,
     kAntennaeZoomAnimation,
+    kShowSuperMessages,
     kToggleCount,
 };
 
@@ -243,11 +246,14 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kDebugMenuEnabled: return &settings.showDebugButton;
         case kClassicLoadoutBar: return &settings.classicLoadoutBar;
         case kUseMouseControls: return &settings.useMouseControls;
+        case kInvertAttack: return &settings.invertAttack;
+        case kInvertDefend: return &settings.invertDefend;
         case kRequestMobile: return &settings.requestMobile;
         case kHideOtherPetals: return &settings.render.hideOtherPetals;
         case kHideOtherPets: return &settings.render.hideOtherPets;
         case kScreenShake: return &settings.render.screenShake;
         case kAntennaeZoomAnimation: return &settings.antennaeZoomAnimation;
+        case kShowSuperMessages: return &settings.showSuperMessages;
         case kShowAdminsOnLeaderboard: return &settings.showAdminsOnLeaderboard;
         case kDesynchronizedCanvas: return &settings.desynchronizedCanvas;
         // Everything else lands in the panel's own copy, because ClientSettings
@@ -635,6 +641,8 @@ bool SettingsPanel::render(MenuContext& ctx) {
 
             p.checkbox(kNumberKeysUseItems, "Number Keys Use Items (off = swap loadout)");
             p.checkbox(kUseMouseControls, "Use Mouse Controls (K toggles in-game)");
+            p.checkbox(kInvertAttack, "Invert Attack Button (attack unless held)");
+            p.checkbox(kInvertDefend, "Invert Defend Button (defend unless held)");
             p.checkbox(kRequestMobile, "Request Mobile (touch joystick & attack/retract buttons)");
             break;
         }
@@ -646,6 +654,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.checkbox(kHideOtherPets, "Hide Other Players' Pets");
             p.checkbox(kScreenShake, "Screen Shake");
             p.checkbox(kAntennaeZoomAnimation, "Antennae Zoom Animation");
+            p.checkbox(kShowSuperMessages, "Show Super Spawn/Kill Messages");
             p.checkbox(kShowStats, "Show Performance Stats");
             p.checkbox(kDynamicSkybox, "Dynamic Skybox");
             p.checkbox(kMobDeathAnimation, "Mob Death Animation");

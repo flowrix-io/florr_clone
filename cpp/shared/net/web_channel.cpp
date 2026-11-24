@@ -377,8 +377,16 @@ EM_JS(int, flix_ch_listen,
                  "; browsers will refuse it. Run `npm run dev:cert` for a fresh " +
                  "localhost certificate.");
   }
-  console.log("[net] serving " + (credentials ? "https" : "http") + " from " + webRoot +
-              (credentials ? " (" + credentials.name + ")" : ""));
+  // FLIX_TCP_PLAIN=1: the TCP listener (pages and WebSocket) speaks plain
+  // http even with a certificate, which then serves WebTransport alone. For a
+  // box whose TCP traffic all arrives through a TLS-terminating proxy on the
+  // same host: encrypting every snapshot for a loopback hop, only for the
+  // proxy to decrypt it again, was a large share of the send path's CPU.
+  const tcpPlain = typeof process !== "undefined" && process.env &&
+                   process.env.FLIX_TCP_PLAIN === "1";
+  const tcpTls = credentials && !tcpPlain;
+  console.log("[net] serving " + (tcpTls ? "https" : "http") + " from " + webRoot +
+              (credentials ? " (" + credentials.name + (tcpTls ? "" : ", webtransport only") + ")" : ""));
 
   const listener = { listener: true, state: 1, pending: [], closer: null, error: "" };
   const id = net.alloc(listener);
@@ -576,8 +584,8 @@ EM_JS(int, flix_ch_listen,
     response.end(head ? undefined : "not found\n");
   };
 
-  const http = credentials ? require("https") : require("http");
-  const server = credentials ? http.createServer(credentials, onRequest) : http.createServer(onRequest);
+  const http = tcpTls ? require("https") : require("http");
+  const server = tcpTls ? http.createServer(credentials, onRequest) : http.createServer(onRequest);
 
   // --- the WebSocket server --------------------------------------------------
   // Written out rather than required from npm, because a dependency here is a

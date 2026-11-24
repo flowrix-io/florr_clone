@@ -46,6 +46,11 @@ TEST(the_ways_people_spell_round_a_filter_are_read_through) {
     CHECK(blocked("f u c k"));
     CHECK(blocked("fu\xE2\x80\x8B" "ck"));                              // U+200B
     CHECK(blocked("fvck"));
+    // A lowercase 'l' for an 'i' and a capital 'I' for an 'l': one stroke.
+    CHECK(blocked("shlt"));
+    CHECK(blocked("bltch"));
+    CHECK(blocked("cIit"));
+    CHECK(!blocked("a film night"));
     // Accents, a Cyrillic look-alike, fullwidth and mathematical letters, a
     // combining strike-through drawn over each letter.
     CHECK(blocked("F\xC3\xBC" "CK"));                                   // ü

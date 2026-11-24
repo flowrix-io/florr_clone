@@ -276,6 +276,14 @@ struct Afflictions {
     double webbedFactor = 1.0;
     double webbedUntilMillis = 0;
 
+    /// A popped shovel holding the flower underground until
+    /// `burrowedUntilMillis`: florr's "untargetable but unable to use petals".
+    /// The flag is what everything asks (CombatSystem::burrowed), so no rule
+    /// needs the clock; PetalSystem sets it and clears it when the time runs
+    /// out or the flower goes down.
+    bool burrowed = false;
+    double burrowedUntilMillis = 0;
+
     /// Armour a bur has stripped, and when it grows back. Subtracted from
     /// Armor::amount while live, which is what takes a mob's effective armour
     /// below zero when the bur out-tiers what it hit.

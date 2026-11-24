@@ -25,6 +25,7 @@
 #include "client/ui/petal_hover.h"
 #include "client/ui/text.h"
 #include "shared/game/config.h"
+#include "shared/game/player_flags.h"
 
 namespace flix {
 
@@ -683,8 +684,11 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "biome") spawnChoice = (value == "-" ? std::string() : value);
         else if (key == "prestige") prestige = number != 0;
         else if (key == "mouseControls") useMouseControls = number != 0;
+        else if (key == "invertAttack") invertAttack = number != 0;
+        else if (key == "invertDefend") invertDefend = number != 0;
         else if (key == "classicLoadout") classicLoadoutBar = number != 0;
         else if (key == "antennaeZoomAnim") antennaeZoomAnimation = number != 0;
+        else if (key == "superMessages") showSuperMessages = number != 0;
         // The key being on disk at all is the choice: an absent one leaves the
         // device to answer, which is what touchControlsWanted does with it.
         else if (key == "requestMobile") { requestMobile = number != 0; requestMobileChosen = true; }
@@ -742,8 +746,11 @@ bool ClientSettings::save(const std::string& path) const {
          << "spawn " << (spawnChoice.empty() ? std::string("-") : spawnChoice) << '\n'
          << "prestige " << (prestige ? 1 : 0) << '\n'
          << "mouseControls " << (useMouseControls ? 1 : 0) << '\n'
+         << "invertAttack " << (invertAttack ? 1 : 0) << '\n'
+         << "invertDefend " << (invertDefend ? 1 : 0) << '\n'
          << "classicLoadout " << (classicLoadoutBar ? 1 : 0) << '\n'
          << "antennaeZoomAnim " << (antennaeZoomAnimation ? 1 : 0) << '\n'
+         << "superMessages " << (showSuperMessages ? 1 : 0) << '\n'
          << "tutorialDone " << (tutorialCompleted ? 1 : 0) << '\n'
          << "tutorialStep " << tutorialStep << '\n';
     // Written only once the player has actually chosen. Writing the resolved
@@ -1401,9 +1408,9 @@ double slotReloadProgress(const NetClient& net, int index) {
 }
 
 /// Whether the flower's slot `index` holds a petal that does nothing because a
-/// better copy of it is on the bar (petalOnlyBestCopyCounts), or because
-/// another petal on the bar holds it back (slotHeldBack: a splitter beside a
-/// bandage). Nothing of it is out to break, so once its equip reload has run
+/// better copy of it is on the bar (petalOnlyBestCopyCounts), or because the
+/// flower is Undead and that switches it off (petalDisabledWhileUndead: a
+/// splitter while the bandage runs). Nothing of it is out to break, so once its equip reload has run
 /// out the server reports nothing about it, and it would read as loaded.
 bool slotOutranked(const NetClient& net, int index) {
     if (index < 0 || index >= kLoadoutActiveSlots) return false;
@@ -1411,7 +1418,14 @@ bool slotOutranked(const NetClient& net, int index) {
     const auto equippedAt = [&](int i) { return profile.equipped(content(), i); };
     const EquippedPetal equipped = equippedAt(index);
     if (equipped.empty()) return false;
-    if (slotHeldBack(content(), index, equippedAt)) return true;
+    // Switched off while the viewer's flower is Undead (a splitter while
+    // the bandage runs): the server fields nothing for it and acts on no click.
+    if (petalDisabledWhileUndead(content().petal(equipped.configIndex))) {
+        const auto self = net.view().entities().find(net.view().self().netId);
+        if (self != net.view().entities().end() && (self->second.faceFlags & FaceUndead) != 0) {
+            return true;
+        }
+    }
     return petalOnlyBestCopyCounts(content().petal(equipped.configIndex)) &&
            bestCopySlot(equipped.configIndex, equippedAt) != index;
 }
@@ -2069,8 +2083,8 @@ void MenuSystem::useLoadoutSlot(NetClient& net, int slot) {
     // one anyway -- it owns the cooldown -- but a click that flew off and did
     // nothing is a click the player would try again harder.
     if (slotReloadProgress(net, slot) < 1.0) return;
-    // Nor is one that is held back (a splitter beside a bandage): it is drawn
-    // as not loaded, and the server would not act on it.
+    // Nor is one that is switched off (a splitter while the flower is
+    // Undead): it is drawn as not loaded, and the server would not act on it.
     if (slotOutranked(net, slot)) return;
     net.usePetal(slot);
 }

@@ -311,6 +311,12 @@ struct ClientSettings {
     /// the control scheme it has always shipped with, and defaulting to that
     /// value would take it away from every existing player.
     bool useMouseControls = true;
+    /// Inverted attack: the petals are out by default, and holding the attack
+    /// key (or left mouse, or the touch attack button) pulls them back in.
+    bool invertAttack = false;
+    /// Inverted defend: the petals are retracted by default, and holding the
+    /// defend key (or right mouse, or the touch retract button) lets them out.
+    bool invertDefend = false;
     /// Draws the loadout bar the way this client used to: three-quarter-size
     /// slots, the browser port's wide gaps, and the number captions above the
     /// top row. Off by default -- the bar's own shape now follows the
@@ -320,6 +326,9 @@ struct ClientSettings {
     /// Off, the view cuts straight to the new zoom, for a device that finds
     /// the animation heavy.
     bool antennaeZoomAnimation = true;
+    /// Whether the chat shows the server's "A Super ... has spawned" and
+    /// "A Super ... has been defeated" lines. Unique and apex lines always show.
+    bool showSuperMessages = true;
     /// Whether the on-screen touch controls are up: the stick, and the two
     /// buttons that stand in for the extend/retract keys. The TypeScript
     /// client kept the same flag in `localStorage.requestMobile` and resolved

@@ -646,6 +646,7 @@ Entity MobAiSystem::nearestAttacker(World& world, Entity self, Vec2 from, Realm 
     for (const Bounty::Share& share : bounty->contributors) {
         if (share.damage <= 0.0) continue;
         if (!isStanding(world, share.player)) continue;
+        if (CombatSystem::burrowed(world, share.player)) continue;
         const Transform* transform = world.tryGet<Transform>(share.player);
         if (transform == nullptr) continue;
         if (transform->realm != realm) continue;
@@ -666,6 +667,8 @@ bool MobAiSystem::holdTarget(World& world, const Terrain& terrain, Vec2 from, Re
                              MobAi& ai, double range, double nowMillis) const {
     const Entity target = ai.target;
     if (!isStanding(world, target)) return false;
+    // A flower that has gone underground is let go of at once.
+    if (CombatSystem::burrowed(world, target)) return false;
     const Transform* transform = world.tryGet<Transform>(target);
     if (transform == nullptr) return false;
     // Another map is gone for good, as it is over there.
@@ -2562,6 +2565,8 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     flowerList_.clear();
     players_.each([&](Entity flower, PlayerTag&, Transform& transform, Body&) {
         if (!isStanding(world, flower)) return;
+        // Underground (a popped shovel): untargetable, so never noticed.
+        if (CombatSystem::burrowed(world, flower)) return;
         Flower entry{flower, transform.position, transform.realm};
         if (const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(flower)) {
             entry.raised = aggroRaised(*mods);

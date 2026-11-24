@@ -1,4 +1,5 @@
 #include "server/systems/combat.h"
+#include "shared/game/petal_effects.h"
 #include "server/systems/shot_range.h"
 
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include "server/loot_eligibility.h"
 #include "server/systems/movement.h"
 #include "shared/game/difficulty.h"
+#include "shared/game/map_elements.h"
 #include "shared/game/npc.h"
 #include "shared/game/admin_arena.h"
 #include "shared/game/trials.h"
@@ -423,7 +425,7 @@ void stealLife(World& world, Entity player, double amount, double nowMillis) {
 
 struct CombatSystem::Queries {
     explicit Queries(World& world)
-        : afflicted(world), auras(world), contact(world), strikers(world), petals(world),
+        : afflicted(world), auras(world), flowers(world), contact(world), strikers(world), petals(world),
           projectiles(world), filedShots(world), fields(world), cooldowns(world),
           auraCooldowns(world), colony(world) {
         // A dead flower projects nothing, which is the same guard the
@@ -442,6 +444,7 @@ struct CombatSystem::Queries {
         fields.without<Dead>();
         strikers.without<Dead>();
         colony.without<Dead>();
+        flowers.without<Dead>();
     }
 
     Query<Afflictions, Health> afflicted;
@@ -450,6 +453,8 @@ struct CombatSystem::Queries {
     /// under the ring pipeline, and ten array reads are cheaper than keeping a
     /// second copy of them honest.
     Query<PlayerTag, Loadout, Transform> auras;
+    /// Every flower, for a bean asking whether another is in its owner's view.
+    Query<PlayerTag, Transform> flowers;
     /// Petals are excluded and handled separately: their damage, reload and
     /// riders all come out of the petal config, and reading it once beats
     /// mirroring six numbers onto every petal entity every tick.
@@ -527,6 +532,9 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
         (ignoresMobs(world, victim) && mobsDoing(world, source))) {
         return false;
     }
+    // Underground (a popped shovel): the flower and everything credited to it
+    // neither deal nor take damage, from anyone, until it comes back up.
+    if (burrowed(world, sourcePlayer) || burrowed(world, victimPlayer)) return false;
 
     const TeamInfo attacker = teamOf(world, source);
     const TeamInfo defender = teamOf(world, victim);
@@ -1005,7 +1013,9 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
             // touch alike -- so the cyan is decided once, where the number is
             // reported, rather than at each of the three triggers.
             if (kind == DamageKind::Lightning) flags |= net::DamageLightning;
-            if (kind == DamageKind::Glitch) flags |= net::DamageGlitch;
+            if (kind == DamageKind::Glitch || kind == DamageKind::GlitchDrip) {
+                flags |= net::DamageGlitch;
+            }
             // Whose hit it was, for the one viewer it belongs to (see
             // net::DamageByViewer). Resolved now, while the source still
             // exists: a petal that breaks on this very swing is gone by the
@@ -1496,7 +1506,15 @@ void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, doub
     // spends (shoveSpeed), a mob's is spent over about a third of a second
     // (kKnockbackSpendDecay). Worn rubbers scale it (knockbackTakenScale,
     // above), and no second mass division is involved.
-    world.ensure<Knockback>(victim).impulse = direction * (strength / mass);
+    //
+    // Replaced only by a STRONGER shove within the tick. Every petal carries
+    // knockback 5 by default, and a lentil pulls a whole ring onto the same mob
+    // at once: a plain replace let whichever petal landed last in the tick
+    // overwrite a jelly's shove with its own nudge, so the jelly hit and the
+    // mob did not move. Not summed either, or a ring of jellies would stack.
+    Knockback& knockback = world.ensure<Knockback>(victim);
+    const Vec2 impulse = direction * (strength / mass);
+    if (impulse.lengthSq() >= knockback.impulse.lengthSq()) knockback.impulse = impulse;
 }
 
 namespace {
@@ -1825,6 +1843,12 @@ bool CombatSystem::healingBlocked(const World& world, Entity entity, double nowM
     return afflictions != nullptr && afflictions->healBlocked(nowMillis);
 }
 
+bool CombatSystem::burrowed(const World& world, Entity player) {
+    if (player == NULL_ENTITY) return false;
+    const Afflictions* afflictions = world.tryGet<Afflictions>(player);
+    return afflictions != nullptr && afflictions->burrowed;
+}
+
 void CombatSystem::landHeal(World& world, Entity entity, Health& health, double amount) {
     if (!(amount > 0.0)) return;
     const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(entity);
@@ -2002,6 +2026,7 @@ void CombatSystem::beginTick(World& world, double nowMillis, double dt, EventQue
     // melee pass"). Do not move it behind contact.
     tickAfflictions(world, nowMillis, dt);
     tickSpongeDamage(world, nowMillis, dt);
+    tickRealmDamage(world, nowMillis, dt);
     tickShieldDecay(world, dt);
     tickUndead(world, nowMillis);
 }
@@ -2024,7 +2049,7 @@ void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
     gatherContact(world, content);
     gatherPetals(world, content, nowMillis);
     fileShots(world);
-    resolveMelee(world, grid, nowMillis);
+    resolveMelee(world, grid, content, nowMillis);
 }
 
 void CombatSystem::tickMobLightning(World& world, const SpatialGrid& grid,
@@ -2189,6 +2214,31 @@ void CombatSystem::tickSpongeDamage(World& world, double nowMillis, double dt) {
     for (const PoisonTick& tick : spongeTicks_) {
         const Entity source = world.isAlive(tick.source) ? tick.source : NULL_ENTITY;
         applyDamage(world, tick.victim, source, tick.amount, nowMillis, DamageKind::Periodic);
+    }
+}
+
+void CombatSystem::tickRealmDamage(World& world, double nowMillis, double dt) {
+    realmTicks_.clear();
+    if (worldMaps == nullptr || dt <= 0.0) return;
+    Query<PlayerTag, Transform, Health> flowers{world};
+    flowers.without<Dead>();
+    flowers.each([&](Entity player, PlayerTag&, Transform& transform, Health&) {
+        const MapData* map = worldMaps->forRealm(transform.realm);
+        if (map == nullptr) return;
+        double perSecond = map->glitchDamagePerSecond();
+        if (perSecond <= 0.0) return;
+        // Scaled like a mob's touch by the folder the flower walked into: the
+        // map's figure is the common folder's.
+        Rarity rarity = Rarity::Common;
+        if (realmRarity && realmRarity(transform.realm, rarity)) {
+            perSecond *= mobDamageScale(rarity);
+        }
+        if (perSecond > 0.0) realmTicks_.push_back({player, NULL_ENTITY, perSecond * dt});
+    });
+    // Applied after the query, like a poison tick: applyDamage adds Dead.
+    for (const PoisonTick& tick : realmTicks_) {
+        applyDamage(world, tick.victim, NULL_ENTITY, tick.amount, nowMillis,
+                    DamageKind::GlitchDrip);
     }
 }
 
@@ -2556,7 +2606,34 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
     });
 }
 
+bool CombatSystem::standsAlone(World& world, Entity flower) {
+    for (const auto& [entity, alone] : standsAlone_) {
+        if (entity == flower) return alone;
+    }
+    bool alone = true;
+    if (const Transform* at = world.tryGet<Transform>(flower)) {
+        // Half the flower's own view, per axis; the edge of it counts.
+        const PlayerLocation* location = world.tryGet<PlayerLocation>(flower);
+        const Vec2 view = location != nullptr ? location->viewport
+                                              : Vec2{kViewportWidth, kViewportHeight};
+        const double halfWidth = view.x * 0.5;
+        const double halfHeight = view.y * 0.5;
+        queries_->flowers.each([&](Entity other, PlayerTag&, Transform& there) {
+            if (!alone || other == flower || there.realm != at->realm) return;
+            if (!isStanding(world, other) || oneConnection(world, flower, other)) return;
+            if (std::abs(there.position.x - at->position.x) > halfWidth ||
+                std::abs(there.position.y - at->position.y) > halfHeight) {
+                return;
+            }
+            alone = false;
+        });
+    }
+    standsAlone_.emplace_back(flower, alone);
+    return alone;
+}
+
 void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, double nowMillis) {
+    standsAlone_.clear();
     queries_->petals.each([&](Entity e, PetalInstance& petal, Transform& transform, Body& body) {
         const PetalConfig& config = content.petal(petal.configIndex);
         if (config.noPhysics) return;   // a pure modifier has no body to hit with
@@ -2610,11 +2687,25 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
             source.diceChance =
                 kDiceChance + kDiceChancePerLuck * std::max(0.0, luck - kNeutralSpawnLuck);
         }
+        if (petalHitsHarderAlone(config) && standsAlone(world, petal.owner)) {
+            source.damage *= kBeanAloneDamageScale;
+        }
         if (petalInvertsCpp(config)) {
             source.convertsFrom = content.mobIndex(kCppMobId);
             source.convertsInto = content.mobIndex(kCMinusMobId);
         }
         if (petalDividesMobs(config)) source.dividesInto = dividerPieces(petal.rarity);
+        if (!config.bonusMobGroup.empty()) {
+            source.bonusGroup = content.mobGroupIndex(config.bonusMobGroup);
+            source.bonusGroupScale = config.bonusMobGroupDamage;
+        }
+        // A triangle hits harder for every other one its flower wears.
+        if (petalStacksWithCopies(config)) {
+            if (const Loadout* loadout = world.tryGet<Loadout>(petal.owner)) {
+                source.damage *=
+                    triangleStackScale(equippedCopiesOf(content, *loadout, petal.configIndex));
+            }
+        }
         // The flower's damage bonus is a property of the flower, not of the
         // petal entity, so it is read here rather than baked in at spawn --
         // swapping a damage petal in must affect the ring on the same tick.
@@ -2634,7 +2725,8 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, do
     });
 }
 
-void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double nowMillis) {
+void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid,
+                                const ContentRegistry& content, double nowMillis) {
     for (const MeleeSource& source : melee_) {
         if (!world.isAlive(source.attacker) || world.has<Dead>(source.attacker)) continue;
 
@@ -2701,6 +2793,18 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                     if ((filed->position - source.position).lengthSq() > widest * widest) continue;
                 }
             }
+            // A pair canDamage() refuses on sides alone -- a petal against the
+            // rest of its own ring, a wild mob against the mob it is piled on --
+            // is nearly every pair that gets this far, and canHit() would only
+            // turn each one away after the lookups below. Skipped here only
+            // where nothing below acts before canHit(): never for a flower
+            // victim (the PvP gate, the mob bump) and never for a firefly pet,
+            // which discharges on contact first.
+            if (!(source.isPet && source.lightningRadius > 0.0) &&
+                phaseCredit(world, victim) != victim &&
+                phaseSidesRefuse(world, source.attacker, victim)) {
+                continue;
+            }
             const auto [transform, body] = world.tryGetPair<Transform, Body>(victim);
             if (transform == nullptr || body == nullptr) continue;
 
@@ -2757,8 +2861,16 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // A pet and a wild mob meet in the separation kernel's contact
             // list, which is built with the same gap the kernel keeps between
             // bodies rather than at exact circle overlap.
-            const bool petPair = source.isMobBody && world.has<MobTag>(victim) &&
-                                 source.isPet != world.has<Pet>(victim);
+            //
+            // A pet on a hostile NPC -- the target dummies -- counts as the
+            // same pair. Without it a pet bit a dummy on the body's 500 ms
+            // window instead of every tick, and the dummy read a fifteenth of
+            // what the same pet deals to a mob. canHit still turns away the
+            // friendly NPCs.
+            const bool petPair = source.isMobBody &&
+                                 ((world.has<MobTag>(victim) &&
+                                   source.isPet != world.has<Pet>(victim)) ||
+                                  (source.isPet && world.has<NpcTag>(victim)));
 
             // A flower and an NPC meet flush, never overlapping: the flower
             // was put back out against the NPC's skin before this pass ran,
@@ -2893,6 +3005,17 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // ring or a hostile NPC is every collision there is. A petal, a
             // shot, a field or a shock goes past it whole.
             if (mobTouchesPlayer) swing *= collisionDamageTakenScale(world, victim);
+            // A paperclip's bonus, on a mob of the group it is for.
+            if (source.bonusGroup != kInvalidIndex) {
+                if (const MobType* type = world.tryGet<MobType>(victim)) {
+                    const auto& groups = content.mob(type->configIndex).groups;
+                    if (std::any_of(groups.begin(), groups.end(), [&](const MobGroupMember& m) {
+                            return m.group == source.bonusGroup;
+                        })) {
+                        swing *= source.bonusGroupScale;
+                    }
+                }
+            }
             swing = rollDiceDamage(swing, source.diceChance);
             if (source.hitKind == DamageKind::Glitch) swing = rollGlitchDamage(swing);
             DamageResult hit =
@@ -3866,7 +3989,7 @@ Entity CombatSystem::filedShotPlayer(Entity e) const {
     return shot != nullptr ? shot->player : NULL_ENTITY;
 }
 
-Entity CombatSystem::phaseCredit(const World& world, Entity e) {
+CombatSystem::PhaseCredit& CombatSystem::phaseEntry(const World& world, Entity e) {
     const std::uint32_t index = entityIndex(e);
     if (index >= phaseCredits_.size()) {
         phaseCredits_.resize(std::max<std::size_t>(static_cast<std::size_t>(index) + 1,
@@ -3876,7 +3999,35 @@ Entity CombatSystem::phaseCredit(const World& world, Entity e) {
     if (credit.entity != e || credit.phase != creditPhase_) {
         credit = PhaseCredit{e, creditedPlayer(world, e), creditPhase_};
     }
-    return credit.player;
+    return credit;
+}
+
+Entity CombatSystem::phaseCredit(const World& world, Entity e) {
+    return phaseEntry(world, e).player;
+}
+
+const CombatSystem::PhaseCredit& CombatSystem::phaseSide(const World& world, Entity e) {
+    PhaseCredit& credit = phaseEntry(world, e);
+    if (!credit.sided) {
+        const TeamInfo side = teamOf(world, e);
+        credit.team = side.team;
+        credit.friendlyFire = side.friendlyFire;
+        credit.known = side.known;
+        credit.sided = true;
+    }
+    return credit;
+}
+
+bool CombatSystem::phaseSidesRefuse(const World& world, Entity source, Entity victim) {
+    // Copied, not held: the second lookup may grow the memo under the first.
+    const PhaseCredit attacker = phaseSide(world, source);
+    const PhaseCredit& defender = phaseSide(world, victim);
+    // canDamage()'s first rule: one flower behind both.
+    if (attacker.player != NULL_ENTITY && attacker.player == defender.player) return true;
+    // Its last: one side, nobody duelling. Corruption is read live, as there.
+    return attacker.known && defender.known && attacker.team == defender.team &&
+           !attacker.friendlyFire && !defender.friendlyFire &&
+           !isCorrupted(world, attacker.player) && !isCorrupted(world, defender.player);
 }
 
 void CombatSystem::queryBodies(const SpatialGrid& grid, Realm realm, Vec2 center, double radius,

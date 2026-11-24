@@ -8,7 +8,8 @@
 // left with nothing to animate.
 //
 // Eligibility exists so that killing a mob is worth doing. Only the ranked
-// contributors see a normal mob drop, and each of them may collect it once.
+// contributors are paid for a normal mob, and each of them rolls its table on
+// their own; flowers whose rolls agree share one drop, each collecting it once.
 
 #include <cstddef>
 #include <cstdint>
@@ -255,8 +256,9 @@ public:
     /// What every row that is NOT the graded drop lands at: two tiers below
     /// the mob, flat. These are the rows guaranteed drops added on top of the
     /// one item a kill used to hand out, so they sit at the bottom of the
-    /// mob's band where they cannot change how fast anyone progresses.
-    static Rarity chaffDropRarity(Rarity mobRarity);
+    /// mob's band where they cannot change how fast anyone progresses. A
+    /// super's comes out one tier higher at chaffUpgradeChance.
+    static Rarity chaffDropRarity(Rarity mobRarity, Rng& rng);
 
     /// Whether this flower may take a copy. `owner` is the connection behind
     /// the body (0 for a bot): a reservation follows the PLAYER, not the body
@@ -309,12 +311,17 @@ private:
     std::vector<Entity> corpseList_;
     std::vector<Bounty::Share> ranked_;
     std::vector<Entity> eligible_;
-    /// eligible_[i]'s worn orbs.
-    std::vector<WornOrbs> eligibleOrbs_;
-    /// What eligible_[i]'s copy of the drop in hand becomes.
-    std::vector<OrbForm> eligibleForms_;
-    /// The eligible flowers sharing one outcome: one split drop's claimants.
-    std::vector<Entity> orbGroup_;
+    /// One item one flower's roll of a kill came out as. `who` indexes
+    /// eligible_.
+    struct RolledDrop {
+        std::uint16_t petal = kNoPetal;
+        Rarity rarity = Rarity::Common;
+        std::uint32_t who = 0;
+    };
+    /// Every eligible flower's roll of the corpse in hand.
+    std::vector<RolledDrop> outcomes_;
+    /// The flowers sharing one placed drop: those whose rolls agreed.
+    std::vector<Entity> claimants_;
     std::vector<const DropTables::Entry*> selected_;
 };
 

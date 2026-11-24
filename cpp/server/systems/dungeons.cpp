@@ -44,6 +44,15 @@ bool DungeonSystem::isInstance(Realm realm) const {
     return indexed_ && byRealm_[realmIndex(realm)] >= 0;
 }
 
+bool DungeonSystem::rarityOf(Realm realm, Rarity& out) const {
+    if (!isInstance(realm)) return false;
+    const Instance& instance =
+        instances_[static_cast<std::size_t>(byRealm_[realmIndex(realm)])];
+    if (!instance.live) return false;
+    out = instance.rarity;
+    return true;
+}
+
 DungeonSystem::Instance* DungeonSystem::claim(const std::string& mapId) {
     for (Instance& instance : instances_) {
         if (!instance.live && instance.mapId == mapId) return &instance;
@@ -94,6 +103,7 @@ bool DungeonSystem::populate(World& world, const Terrain& terrain, const Content
 
     instance.live = true;
     instance.entrance = entrance;
+    instance.rarity = type->rarity;
     instance.returnRealm = at->realm;
     instance.returnAt = at->position;
     instance.returnRadius = body->radius;

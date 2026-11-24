@@ -145,14 +145,20 @@ inline constexpr Rarity minionRarity(Rarity asked) {
 /// wall, not a gentle step, so a common-tier loadout cannot chip down a
 /// legendary by patience alone.
 inline constexpr std::array<double, kLadderRarityCount> kMobHealthScale = {
-    1.0, 3.75, 13.5, 54.0, 324.0, 3159.0, 126830.0, 2374000.0, 1e7, 2e8,
+    1.0, 3.75, 13.5, 54.0, 324.0, 3159.0, 126830.0, 2374000.0, 1e7, 8e8,
 };
 
 /// Mob damage per tier -- a clean 3x ladder, so a tier above you roughly
-/// triples what one touch costs.
+/// triples what one touch costs. Apex is the one jump past it: 50x eternal's.
 inline constexpr std::array<double, kLadderRarityCount> kMobDamageScale = {
-    1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0, 1968300.0,
+    1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0, 328050.0,
 };
+
+/// kMobDamageScale for any rarity: universal and Admin read apex's, as a mob
+/// asked for at those tiers is built (buildMobStats).
+inline constexpr double mobDamageScale(Rarity r) {
+    return kMobDamageScale[static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(r))))];
+}
 
 /// Mob armour per tier: a flat amount subtracted from every DIRECT hit.
 ///
@@ -352,11 +358,24 @@ inline double petalEvasionScale(double authored, Rarity r) {
 // Crafting and drop rolls
 // ---------------------------------------------------------------------------
 
+/// The 64%-halving ladder: 64% at common, 32% at uncommon, ... 1% at ultra.
+/// What crafting began as, and still what the DROP rolls are built from (see
+/// dropUpgradeChance and dropDowngradeChance) -- so crafting can be retuned
+/// without moving a single drop rate.
+inline double dropLadderChance(Rarity tier) {
+    return 0.64 / std::pow(2.0, rarityIndex(tier));
+}
+
 /// Probability that a craft from `from` to the next tier succeeds. Halves each
-/// tier from a base of 64%, so common->uncommon is routine and the top tiers
-/// are a genuine gamble.
+/// tier from a base of 64% up to ultra -> super's 1%, so common->uncommon is
+/// routine; past ultra it stops halving: super -> eternal is 0.9%, and
+/// eternal -> apex is pinned at 0.5%, so apex crafts stay rare.
 inline double craftSuccessChance(Rarity from) {
-    return 0.64 / std::pow(2.0, rarityIndex(from));
+    const int i = rarityIndex(from);
+    const int ultra = rarityIndex(Rarity::Ultra);
+    if (from == Rarity::Unique) return 0.005;
+    if (i > ultra) return std::max(0.0, dropLadderChance(Rarity::Ultra) - 0.001 * (i - ultra));
+    return dropLadderChance(from);
 }
 
 /// Whether anything -- the forge or the oracle -- crafts out of this tier.
@@ -400,22 +419,77 @@ inline constexpr int oracleCraftCost(Rarity from) {
 /// are never promoted; they are flat chaff two tiers down.
 inline double dropUpgradeChance(Rarity mobRarity) {
     if (rarityIndex(mobRarity) >= kLadderRarityCount - 1) return 0.0;
-    return craftSuccessChance(mobRarity) / 3.0;
+    return dropLadderChance(mobRarity) / 3.0;
 }
 
-/// What a mob's tier multiplies dropUpgradeChance by: 5x from rare to mythic,
-/// ultra's 20x lucky roll, and the plain chance everywhere else. A better
-/// DISTRIBUTION, not more items -- the kill still leaves one graded drop.
-/// Shared so the gallery tooltip quotes what the server rolls.
+/// What a mob's tier multiplies dropUpgradeChance by: 5x from rare to
+/// legendary, and the plain chance below that. A better DISTRIBUTION, not more
+/// items -- the kill still leaves one graded drop. Shared so the gallery
+/// tooltip quotes what the server rolls.
+///
+/// Mythic and up are set by the own-tier drop they buy -- a kill's graded drop
+/// lands a tier below the mob 90% of the time, so about 0.9x the upgrade
+/// chance: a mythic mob ~61% mythic (51x), an ultra ~68% ultra (112.5x, right
+/// at kMaxDropUpgradeChance), a super ~45% super (150x) and an eternal ~27%
+/// eternal (180x). The high tiers are where a kill is hard won, and their
+/// own-tier drop has to feel like a reward.
 ///
 /// Uncommon only gets 2x: its common rows upgrade 21% of the time, so 5x
 /// would saturate at 100% and every drop would come out uncommon.
+/// The most a graded drop's upgrade can ever be. Below 1 so the tier under a
+/// mob always drops too: at 100% an ultra mob's drop would climb every time
+/// and it would never leave a mythic.
+inline constexpr double kMaxDropUpgradeChance = 0.75;
+
 inline double dropUpgradeMultiplier(Rarity mobRarity) {
-    if (mobRarity == Rarity::Ultra) return 20.0;
-    if (mobRarity == Rarity::Uncommon) return 2.0;
-    const int i = rarityIndex(mobRarity);
-    if (i >= rarityIndex(Rarity::Rare) && i <= rarityIndex(Rarity::Mythic)) return 5.0;
-    return 1.0;
+    switch (mobRarity) {
+        case Rarity::Uncommon: return 2.0;
+        case Rarity::Rare:
+        case Rarity::Epic:
+        case Rarity::Legendary: return 5.0;
+        case Rarity::Mythic: return 51.0;
+        case Rarity::Ultra: return 112.5;
+        case Rarity::Super: return 150.0;
+        case Rarity::Unique: return 180.0;
+        default: return 1.0;
+    }
+}
+
+/// An apex's graded drop does not run the upgrade/downgrade split: it is this
+/// table, per copy. Eternal is never below what an eternal mob's own graded
+/// drop gives (about 27%, see dropUpgradeMultiplier) -- the user's rule: an
+/// apex must not quote a worse eternal rate than the tier under it. 40%, a
+/// little over the ~30% the old split gave an apex, because the apex clock
+/// is slower than it was (kApexSpawnCooldownMinMillis) and each kill has to
+/// carry more (user); across the ten copies that is about four eternals a kill.
+/// Ultra comes out of the rest.
+inline constexpr double kApexEternalDropChance = 0.40;
+inline constexpr double kApexUltraDropChance = 0.20;
+
+/// What a mob's tier multiplies dropDowngradeChance by. A super's graded drop
+/// never slips a tier, so it is a super or an ultra. Shared so the gallery
+/// tooltip quotes what the server rolls.
+inline double dropDowngradeMultiplier(Rarity mobRarity) {
+    return mobRarity == Rarity::Super ? 0.0 : 1.0;
+}
+
+/// The lowest tier a mob's ONE graded drop may land at, as a rarity index:
+/// a rare mob's one tier under it, an epic or better two -- except a super,
+/// whose graded drop is held to ultra, one tier under it.
+inline int gradedDropFloor(Rarity mobRarity) {
+    const int tier = rarityIndex(mobRarity);
+    if (mobRarity == Rarity::Super) return tier - 1;
+    if (tier >= rarityIndex(Rarity::Epic)) return tier - 2;
+    if (tier >= rarityIndex(Rarity::Rare)) return tier - 1;
+    return 0;
+}
+
+/// The chance a mob's chaff -- every drop that is not its graded one, flat two
+/// tiers under it -- comes out one tier higher instead. Only a super's: its
+/// chaff is an ultra 60% of the time and a mythic otherwise, so a super kill
+/// leaves more ultras than mythics.
+inline double chaffUpgradeChance(Rarity mobRarity) {
+    return mobRarity == Rarity::Super ? 0.6 : 0.0;
 }
 
 /// Chance a drop rolls one tier below the mob that dropped it.
@@ -426,7 +500,7 @@ inline double dropDowngradeChance(Rarity mobRarity) {
     // 32, ...), then uses the result as a probability. craftSuccessChance()
     // is stored as a fraction for actual crafting, so restore that scale here.
     return 1.0 /
-           (1.0 + craftSuccessChance(static_cast<Rarity>(i - 1)) * 100.0);
+           (1.0 + dropLadderChance(static_cast<Rarity>(i - 1)) * 100.0);
 }
 
 /// How much of a slow lands on a mob: full at equal rarity, a third per tier

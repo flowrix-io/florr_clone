@@ -513,3 +513,51 @@ TEST(the_screen_shake_is_the_same_size_on_screen_at_any_zoom) {
     CHECK_NEAR(pushOnScreen(0.5), renderer.shakeOffset().length(), 1e-9);
     CHECK_NEAR(pushOnScreen(0.25), renderer.shakeOffset().length(), 1e-9);
 }
+
+TEST(an_underground_flower_is_a_see_through_silhouette_with_dirt_round_it) {
+    // A popped shovel: the body is a dark shadow the ground still shows
+    // through, and clods of dirt are thrown out past its rim.
+    CHECK(testsupport::fontsReady());
+    const auto frame = [&](std::uint16_t equipFlags, double time) {
+        RemoteEntity flower;
+        flower.netId = kVictim;
+        flower.kind = net::EntityKind::Player;
+        flower.position = flower.targetPosition = kAt;
+        flower.needsSnap = false;
+        flower.radius = playerRadiusForLevel(1);
+        flower.level = 1;
+        flower.equipFlags = equipFlags;
+        WorldRenderer renderer;
+        // The flower alone, on a transparent canvas, so how see-through it is
+        // can be read straight off the alpha.
+        Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+        renderer.drawFlower(canvas, flower, testsupport::frameCamera(kFrameSize, kAt), kAt, time);
+        return canvas.getImageData(0, 0, kFrameSize, kFrameSize);
+    };
+    const std::vector<std::uint8_t> plain = frame(EquipNone, 0.3);
+    const std::vector<std::uint8_t> under = frame(EquipUnderground, 0.3);
+    const auto at = [&](const std::vector<std::uint8_t>& px, int x, int y) {
+        return &px[static_cast<std::size_t>((y * kFrameSize + x) * 4)];
+    };
+    // Inside the body, clear of the eyes and the mouth.
+    const int x = kFrameSize / 2 - 15;
+    const int y = kFrameSize / 2;
+    const std::uint8_t* body = at(under, x, y);
+    const std::uint8_t* yellow = at(plain, x, y);
+    // Dark, not the flower's yellow...
+    CHECK(body[0] < yellow[0] / 2 && body[1] < yellow[1] / 2);
+    // ...and only partly opaque: the ground under it shows through.
+    CHECK(body[3] > 120 && body[3] < 180);
+    // Something is drawn outside the body that a plain flower does not draw.
+    int outside = 0;
+    for (int py = 0; py < kFrameSize; ++py) {
+        for (int px = 0; px < kFrameSize; ++px) {
+            const double dx = px - kFrameSize / 2.0, dy = py - kFrameSize / 2.0;
+            if (dx * dx + dy * dy < 30.0 * 30.0) continue;
+            const std::uint8_t* a = at(plain, px, py);
+            const std::uint8_t* b = at(under, px, py);
+            if (std::abs(a[0] - b[0]) + std::abs(a[1] - b[1]) + std::abs(a[2] - b[2]) > 24) ++outside;
+        }
+    }
+    CHECK(outside > 10);
+}

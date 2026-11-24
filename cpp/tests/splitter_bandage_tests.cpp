@@ -1,7 +1,8 @@
-// A splitter worn beside a bandage (user's rule, 2026-11-11): both stay
-// equipped, but the splitter is held back -- it never comes out on the ring
-// and never splits the flower, the way a spare copy of a petal that does not
-// stack sits on the bar doing nothing. The bandage works as ever.
+// A splitter worn beside a bandage (user's rule, 2026-11-23, replacing the
+// 2026-11-11 one that held the splitter back whenever a bandage was worn):
+// the two work together as any two petals do, but while the bandage's Undead
+// is running the splitter is switched off -- it fields nothing, splits
+// nothing, and a split flower is merged back, the other half despawned.
 //
 // End to end on a real server, with accounts seeded through the Database the
 // way loadout_preset_tests.cpp seeds them.
@@ -99,32 +100,27 @@ void skipReload(World& world, int slot) {
     }
 }
 
+/// Puts `body` under a bandage's Undead that will not run out during the
+/// test -- what CombatSystem::tryUndead leaves on a flower after a killing
+/// blow, without needing a mob to deal one.
+void makeUndead(World& world, Entity body) {
+    world.add<Undead>(body, Undead{1e12, NULL_ENTITY, 30000.0, 0.25});
+}
+
 } // namespace
 
-TEST(a_bandage_on_the_active_row_holds_a_splitter_back) {
+TEST(the_splitter_switch_is_off_only_on_an_undead_flower) {
     const ContentRegistry& shipped = shippedContent();
     const std::uint16_t splitter = shipped.petalIndex(kSplitterPetalId);
     const std::uint16_t bandage = shipped.petalIndex(kBandageId);
-    const std::uint16_t basic = shipped.petalIndex("basic");
-    CHECK(splitter != kInvalidIndex && bandage != kInvalidIndex && basic != kInvalidIndex);
-    if (splitter == kInvalidIndex || bandage == kInvalidIndex || basic == kInvalidIndex) return;
-
-    std::array<EquippedPetal, kLoadoutActiveSlots> row{};
-    const auto at = [&](int i) { return row[static_cast<std::size_t>(i)]; };
-    row[2] = EquippedPetal{splitter, Rarity::Common, Rarity::Common};
-    row[5] = EquippedPetal{basic, Rarity::Common, Rarity::Common};
-    CHECK(!slotHeldBack(shipped, 2, at));
-
-    row[7] = EquippedPetal{bandage, Rarity::Mythic, Rarity::Mythic};
-    CHECK(slotHeldBack(shipped, 2, at));
-    // The bandage is the one that counts, and the rest of the bar is untouched.
-    CHECK(!slotHeldBack(shipped, 7, at));
-    CHECK(!slotHeldBack(shipped, 5, at));
-    CHECK(!slotHeldBack(shipped, 0, at));
+    CHECK(splitter != kInvalidIndex && bandage != kInvalidIndex);
+    if (splitter == kInvalidIndex || bandage == kInvalidIndex) return;
+    CHECK(petalDisabledWhileUndead(shipped.petal(splitter)));
+    CHECK(!petalDisabledWhileUndead(shipped.petal(bandage)));
 }
 
-TEST(a_splitter_beside_a_bandage_stays_equipped_but_never_comes_out) {
-    Harness h("splitter-bandage-held", [](const std::string& path) {
+TEST(a_splitter_beside_a_bandage_splits_as_ever) {
+    Harness h("splitter-bandage-works", [](const std::string& path) {
         seedMender(path, [](PlayerRecord& record) {
             record.loadout[0] = petal(kBandageId, Rarity::Mythic);
             record.addItem(Rarity::Common, bagKey(kSplitterPetalId), 1);
@@ -137,32 +133,22 @@ TEST(a_splitter_beside_a_bandage_stays_equipped_but_never_comes_out) {
     World& world = h.server.world();
     CHECK_EQ(flowers(world).size(), std::size_t{1});
 
-    // Equipping it is allowed: nothing refuses the edit.
     client.setLoadoutSlot(1, content().petalIndex(kSplitterPetalId), Rarity::Common);
     CHECK(h.stepUntil({&client}, [&] { return slotIs(client, 1, kSplitterPetalId); }));
-
-    // Past its equip reload it still fields nothing, and the flower stays one.
-    skipReload(world, 1);
-    CHECK(!h.stepUntil({&client}, [&] {
-        return outOnRing(world, 1) > 0 || flowers(world).size() != 1;
-    }, 30));
-    // The bandage still works.
-    const std::vector<Entity> one = flowers(world);
-    CHECK(!one.empty() && world.get<PlayerModifiers>(one.front()).undeadMillis > 0.0);
-
-    // Taking the bandage off lets it out: the flower splits at once, and the
-    // petal comes out once its reload is served.
-    client.setLoadoutSlot(0, kNoPetal, Rarity::Common);
     CHECK(h.stepUntil({&client}, [&] { return flowers(world).size() == 2; }));
     skipReload(world, 1);
     CHECK(h.stepUntil({&client}, [&] { return outOnRing(world, 1) > 0; }, 30));
+    // And the bandage is worn on both halves.
+    for (const Entity body : flowers(world)) {
+        CHECK(world.get<PlayerModifiers>(body).undeadMillis > 0.0);
+    }
 }
 
-TEST(putting_a_bandage_on_merges_a_split_flower) {
-    Harness h("splitter-bandage-merge", [](const std::string& path) {
+TEST(an_undead_steered_half_despawns_the_other_and_cannot_split) {
+    Harness h("splitter-bandage-undead-active", [](const std::string& path) {
         seedMender(path, [](PlayerRecord& record) {
             record.loadout[0] = petal(kSplitterPetalId, Rarity::Common);
-            record.addItem(Rarity::Mythic, bagKey(kBandageId), 1);
+            record.loadout[3] = petal(kBandageId, Rarity::Mythic);
         });
     }, dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
@@ -172,12 +158,56 @@ TEST(putting_a_bandage_on_merges_a_split_flower) {
     World& world = h.server.world();
     CHECK(h.stepUntil({&client}, [&] { return flowers(world).size() == 2; }));
 
-    client.setLoadoutSlot(3, content().petalIndex(kBandageId), Rarity::Mythic);
+    Session* session = GameServerPeer::sessionOf(h.server, kName);
+    if (session == nullptr || !session->split()) { CHECK(false); return; }
+    const Entity steered = session->entity;
+    const Entity parked = session->splitOther;
+    makeUndead(world, steered);
+
     CHECK(h.stepUntil({&client}, [&] { return flowers(world).size() == 1; }));
+    CHECK(!world.isAlive(parked));
+    CHECK(!session->split());
+    CHECK(session->entity == steered);
+    CHECK(world.has<Undead>(steered));
+
+    // Switched off for as long as the Undead runs: nothing on the ring, no
+    // split, and a click switches nothing.
+    session->splitReadyAtMillis = 0.0;
+    skipReload(world, 0);
+    client.usePetal(0);
+    CHECK(!h.stepUntil({&client}, [&] {
+        return outOnRing(world, 0) > 0 || flowers(world).size() != 1;
+    }, 30));
+    // The bandage, and the rest of the bar, are untouched by it.
     CHECK(slotIs(client, 0, kSplitterPetalId));
     CHECK(slotIs(client, 3, kBandageId));
+}
 
-    // In storage the bandage is not worn, so it holds nothing back.
-    client.swapLoadoutSlots(3, 13);
+TEST(an_undead_parked_half_is_despawned_and_the_steered_one_carries_on) {
+    Harness h("splitter-bandage-undead-parked", [](const std::string& path) {
+        seedMender(path, [](PlayerRecord& record) {
+            record.loadout[0] = petal(kSplitterPetalId, Rarity::Common);
+            record.loadout[3] = petal(kBandageId, Rarity::Mythic);
+        });
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(play(h, client));
+    World& world = h.server.world();
     CHECK(h.stepUntil({&client}, [&] { return flowers(world).size() == 2; }));
+
+    Session* session = GameServerPeer::sessionOf(h.server, kName);
+    if (session == nullptr || !session->split()) { CHECK(false); return; }
+    const Entity steered = session->entity;
+    const Entity parked = session->splitOther;
+    makeUndead(world, parked);
+
+    CHECK(h.stepUntil({&client}, [&] { return flowers(world).size() == 1; }));
+    CHECK(!world.isAlive(parked));
+    CHECK(!session->split());
+    CHECK(session->entity == steered);
+    CHECK(!world.has<Undead>(steered));
+    // Paid as a lost half is: the split waits out the splitter's reload.
+    CHECK(session->splitReadyAtMillis > 0.0);
 }

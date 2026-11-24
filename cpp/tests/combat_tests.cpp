@@ -1,4 +1,5 @@
 #include "test.h"
+#include "shared/game/petal_effects.h"
 
 #include "server/replication.h"
 #include "server/squads.h"
@@ -210,6 +211,7 @@ struct Fixture {
     std::uint16_t boney = kInvalidIndex;
     std::uint16_t clawy = kInvalidIndex;
     std::uint16_t dice = kInvalidIndex;
+    std::uint16_t bean = kInvalidIndex;
     std::uint16_t fangy = kInvalidIndex;
     std::uint16_t moon = kInvalidIndex;
     std::uint16_t plank = kInvalidIndex;
@@ -220,6 +222,8 @@ struct Fixture {
     std::uint16_t divider = kInvalidIndex;
     std::uint16_t cpp = kInvalidIndex;
     std::uint16_t cMinus = kInvalidIndex;
+    std::uint16_t triangle = kInvalidIndex;
+    std::uint16_t clip = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -231,7 +235,7 @@ const Fixture& fixture() {
               "grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":0.2,"section":[0]},
               "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":0.5,"section":[7]},
               "bubble":{"name":"Bubble","health":1,"damage":5,"size":1,"speed":0},
-              "c++":{"name":"C++","health":175,"damage":22,"size":1,"speed":0.2},
+              "c++":{"name":"C++","health":175,"damage":22,"size":1,"speed":0.2,"groups":{"computer":0.01}},
               "c--":{"name":"C--","health":175,"damage":22,"size":1,"speed":0.2}
             })",
             R"({
@@ -248,6 +252,7 @@ const Fixture& fixture() {
               "boney":{"name":"Boney","damage":14,"health":10,"size":1,"petalArmor":10},
               "clawy":{"name":"Clawy","damage":5,"health":10,"size":1,"clawCritDamage":100},
               "dice":{"name":"Dice","damage":5,"health":10,"size":1},
+              "bean":{"name":"Bean","damage":5,"health":10,"size":1},
               "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35},
               "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6},
               "plank":{"name":"Plank","damage":18,"health":15,"size":3},
@@ -255,7 +260,9 @@ const Fixture& fixture() {
               "basil":{"name":"Basil","damage":5,"health":15,"size":1.3,"defendOnly":true,"ignoresMobs":true},
               "saucer":{"name":"Saucer","damage":10,"health":5,"size":1,"projectile":{"speed":300,"distance":500,"summonMobType":"grunt","summonMax":3}},
               "yin_yang":{"name":"Yin Yang","damage":10,"health":10,"size":1},
-              "divider":{"name":"Divider","damage":0,"health":null,"size":1}
+              "divider":{"name":"Divider","damage":0,"health":null,"size":1},
+              "triangle":{"name":"Triangle","damage":10,"health":1000,"size":1},
+              "clip":{"name":"Clip","damage":10,"health":1000,"size":1,"bonusMobGroup":"computer","bonusMobGroupDamage":3}
             })",
             f.error);
         f.sting = f.registry.petalIndex("sting");
@@ -274,6 +281,7 @@ const Fixture& fixture() {
         f.boney = f.registry.petalIndex("boney");
         f.clawy = f.registry.petalIndex("clawy");
         f.dice = f.registry.petalIndex("dice");
+        f.bean = f.registry.petalIndex("bean");
         f.fangy = f.registry.petalIndex("fangy");
         f.moon = f.registry.petalIndex("moon");
         f.plank = f.registry.petalIndex("plank");
@@ -284,6 +292,8 @@ const Fixture& fixture() {
         f.divider = f.registry.petalIndex("divider");
         f.cpp = f.registry.mobIndex("c++");
         f.cMinus = f.registry.mobIndex("c--");
+        f.triangle = f.registry.petalIndex("triangle");
+        f.clip = f.registry.petalIndex("clip");
         return f;
     }();
     return state;
@@ -720,6 +730,32 @@ TEST(contact_reaches_across_the_pet_gap_and_the_npc_slack) {
     CHECK(a.health(flower) < 100.0);
 }
 
+TEST(a_pet_bites_a_hostile_npc_every_tick_as_it_does_a_wild_mob) {
+    // The target dummies are NPCs, not mobs. A pet on one used to be held to
+    // its body's 500 ms window -- two bites a second where a wild mob takes
+    // one every tick -- so the dummy read a fifteenth of a stick's damage.
+    Arena a;
+    const Entity owner = a.player({5000, 5000});
+    const Entity pet = a.actor({1000, 1000}, 15.0, 50.0, Team::Players);
+    a.world.add<MobTag>(pet);
+    a.world.add<Pet>(pet, Pet{owner, 0});
+    a.world.add<ContactDamage>(pet, ContactDamage{10.0, 500.0});
+    const Entity dummy = a.actor({1000, 1000}, 30.0, 1e9, Team::Hostiles);
+    a.world.add<NpcTag>(dummy);
+    a.world.add<NetId>(dummy, NetId{4242});
+
+    constexpr int kTicks = 15;
+    int bites = 0;
+    for (int i = 0; i < kTicks; ++i) {
+        a.events.clear();
+        a.step(i * net::kTickMillis);
+        for (const WireEvent& event : a.events.events()) {
+            if (event.kind == net::EventKind::Damage && event.netId == 4242) ++bites;
+        }
+    }
+    CHECK(bites >= kTicks - 1);
+}
+
 TEST(mob_contact_is_paced_by_the_flowers_post_hit_window_alone) {
     Arena a;
     const Entity player = a.player({1000, 1000});
@@ -916,6 +952,22 @@ TEST(knockback_replaces_the_pending_displacement_and_is_scaled_by_mass) {
     a.combat.applyKnockback(a.world, other, Vec2{0, 400}, 5.0);
     CHECK_NEAR(a.world.get<Knockback>(other).impulse.y, 5.0, 1e-9);
     CHECK_NEAR(a.world.get<Knockback>(other).impulse.x, 0.0, 1e-12);
+}
+
+TEST(a_weaker_hit_in_the_same_tick_does_not_erase_a_jellys_shove) {
+    // A lentil pulls the whole ring onto one mob, so a jelly and a plain petal
+    // (knockback 5) land in the same tick. Whichever came second used to
+    // replace the jelly's shove with its own nudge.
+    Arena a;
+    const Entity mob = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 1.0);
+    a.combat.applyKnockback(a.world, mob, Vec2{1, 0}, 350.0);
+    a.combat.applyKnockback(a.world, mob, Vec2{0, 1}, 5.0);
+    CHECK_NEAR(a.world.get<Knockback>(mob).impulse.x, 350.0, 1e-9);
+    CHECK_NEAR(a.world.get<Knockback>(mob).impulse.y, 0.0, 1e-12);
+    // A stronger one still takes over, and two do not add up.
+    a.combat.applyKnockback(a.world, mob, Vec2{0, 1}, 700.0);
+    CHECK_NEAR(a.world.get<Knockback>(mob).impulse.x, 0.0, 1e-12);
+    CHECK_NEAR(a.world.get<Knockback>(mob).impulse.y, 700.0, 1e-9);
 }
 
 TEST(knockback_preserves_the_typescript_magnitude_and_skips_static_entities) {
@@ -2092,6 +2144,31 @@ Entity equipPetal(Arena& a, Entity owner, std::uint16_t configIndex, Rarity rari
 
 } // namespace
 
+TEST(a_triangle_hits_harder_for_every_other_triangle_worn) {
+    // Each OTHER triangle on the active row adds half of the petal's own
+    // damage: one hits for 10, two for 15 each, three for 20 each.
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    for (int worn = 1; worn <= 3; ++worn) {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        if (!a.world.has<Loadout>(player)) a.world.add<Loadout>(player);
+        Loadout& loadout = a.world.get<Loadout>(player);
+        for (int i = 0; i < worn; ++i) {
+            loadout.slots[static_cast<std::size_t>(i)].configIndex = f.triangle;
+            loadout.slots[static_cast<std::size_t>(i)].rarity = Rarity::Common;
+        }
+        const Entity mob = a.mob({1040, 1000}, 1000.0);
+        equipPetal(a, player, f.triangle, Rarity::Common, {1025, 1000});
+        a.step(0.0, f.registry);
+        CHECK_NEAR(a.health(mob), 1000.0 - 10.0 * triangleStackScale(worn), 1e-9);
+    }
+    CHECK_NEAR(triangleStackScale(1), 1.0, 1e-12);
+    CHECK_NEAR(triangleStackScale(2), 1.5, 1e-12);
+    CHECK_NEAR(triangleStackScale(3), 2.0, 1e-12);
+}
+
 TEST(a_petal_hits_with_its_config_stats_and_its_own_cooldown) {
     const Fixture& f = fixture();
     CHECK(f.ok);
@@ -2161,8 +2238,9 @@ TEST(a_petal_without_a_knockback_field_uses_the_game_default) {
     CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Common).knockback, 5.0, 1e-9);
     // Unlike damage, ordinary knockback does not use the rarity multiplier.
     CHECK_NEAR(f.registry.petalStats(f.sting, Rarity::Mythic).knockback, 2.0, 1e-9);
-    // Jelly is the one TypeScript rarity-override table for this stat.
-    CHECK_NEAR(f.registry.petalStats(f.jelly, Rarity::Rare).knockback, 100.0, 1e-9);
+    // Jelly is the one TypeScript rarity-override table for this stat, at
+    // 70% of TypeScript's figures since the 30% knockback cut.
+    CHECK_NEAR(f.registry.petalStats(f.jelly, Rarity::Rare).knockback, 70.0, 1e-9);
 
     Arena a;
     const Entity player = a.player({1000, 1000});
@@ -3162,6 +3240,38 @@ TEST(extra_poison_stretches_every_live_stack_and_never_poisons) {
     CHECK_NEAR(a.world.get<Afflictions>(flower).poisonUntilMillis, 1200.0, 1e-9);
 }
 
+TEST(an_underground_flower_and_its_petals_neither_take_nor_deal_damage) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    a.world.ensure<Afflictions>(player);
+    const Entity mob = a.mob({1000, 1000}, 200.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 0.0});
+    const Entity petal = equipPetal(a, player, f.plain, Rarity::Common, {1015, 1000});
+    CHECK(CombatSystem::canDamage(a.world, mob, player));
+    CHECK(CombatSystem::canDamage(a.world, petal, mob));
+
+    a.world.get<Afflictions>(player).burrowed = true;
+    CHECK(CombatSystem::burrowed(a.world, player));
+    CHECK(!CombatSystem::canDamage(a.world, mob, player));
+    CHECK(!CombatSystem::canDamage(a.world, petal, mob));
+    CHECK(!CombatSystem::canDamage(a.world, mob, petal));
+
+    // Standing in the mob, a tick of contact costs either side nothing.
+    const double flowerBefore = a.health(player);
+    const double mobBefore = a.health(mob);
+    a.step(1000.0, f.registry);
+    CHECK_NEAR(a.health(player), flowerBefore, 1e-9);
+    CHECK_NEAR(a.health(mob), mobBefore, 1e-9);
+
+    // Back up, the same contact bites.
+    a.world.get<Afflictions>(player).burrowed = false;
+    CHECK(CombatSystem::canDamage(a.world, mob, player));
+    a.step(2000.0, f.registry);
+    CHECK(a.health(player) < flowerBefore);
+}
+
 TEST(a_privet_hit_stretches_the_victims_poison_and_spends_the_petal) {
     const Fixture& f = fixture();
     CHECK(f.ok);
@@ -4093,6 +4203,88 @@ TEST(a_dice_with_enough_luck_always_lands_its_multiplier) {
     equipPetal(a, player, f.dice, Rarity::Common, {1025, 1000});
     a.step(0.0, f.registry);
     CHECK_NEAR(a.health(mob), 500.0 - 5.0 * kDiceDamageScale, 1e-9);
+}
+
+TEST(a_bean_hits_harder_only_while_no_other_player_is_in_view) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.bean == kInvalidIndex) return;
+    const auto hitTaken = [&](auto setup) {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1040, 1000}, 500.0);
+        equipPetal(a, player, f.bean, Rarity::Common, {1025, 1000});
+        setup(a, player);
+        a.step(0.0, f.registry);
+        return 500.0 - a.health(mob);
+    };
+    const double alone = hitTaken([](Arena&, Entity) {});
+    // The view is a rectangle centred on the flower, its edge included: a
+    // player at the corner is in view, one a unit past the side is not.
+    const double halfW = kViewportWidth * 0.5;
+    const double halfH = kViewportHeight * 0.5;
+    const double company = hitTaken([&](Arena& a, Entity) { a.player({1000 + halfW, 1000 + halfH}); });
+    const double outOfView = hitTaken([&](Arena& a, Entity) { a.player({1001 + halfW, 1000}); });
+    // The flower's own reported view, not the default one.
+    const double narrowView = hitTaken([&](Arena& a, Entity player) {
+        a.world.add<PlayerLocation>(player, PlayerLocation{Vec2{400.0, 400.0}});
+        a.player({1000, 1300});
+    });
+    const double otherRealm = hitTaken([](Arena& a, Entity) {
+        const Entity other = a.player({1000, 1100});
+        a.world.get<Transform>(other).realm = Realm::Arena;
+    });
+    // Any other player counts, a PvP opponent too.
+    const double duellist = hitTaken([](Arena& a, Entity player) {
+        const Entity other = a.player({1000, 1100});
+        a.world.get<Faction>(other).friendlyFireEnabled = true;
+        a.world.get<Faction>(player).friendlyFireEnabled = true;
+    });
+    const double downed = hitTaken([](Arena& a, Entity) {
+        const Entity other = a.player({1000, 1100});
+        a.world.add<Dead>(other);
+    });
+    CHECK_NEAR(alone, 5.0 * kBeanAloneDamageScale, 1e-9);
+    CHECK_NEAR(company, 5.0, 1e-9);
+    CHECK_NEAR(outOfView, alone, 1e-9);
+    CHECK_NEAR(narrowView, alone, 1e-9);
+    CHECK_NEAR(otherRealm, alone, 1e-9);
+    CHECK_NEAR(duellist, 5.0, 1e-9);
+    CHECK_NEAR(downed, alone, 1e-9);
+}
+
+TEST(a_group_bonus_petal_hits_only_its_groups_mobs_harder) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.clip == kInvalidIndex) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const auto mobOf = [&](Vec2 at, std::uint16_t type) {
+        const Entity e = a.mob(at, 500.0);
+        a.world.add<MobType>(e, MobType{type, Rarity::Common});
+        return e;
+    };
+    // In the group, however lightly it is weighted there: 10 x 3.
+    const Entity member = mobOf({1040, 1000}, f.cpp);
+    equipPetal(a, player, f.clip, Rarity::Common, {1025, 1000});
+    // Outside it: the plain 10.
+    const Entity outsider = mobOf({3040, 1000}, f.grunt);
+    equipPetal(a, player, f.clip, Rarity::Common, {3025, 1000});
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(member), 470.0, 1e-9);
+    CHECK_NEAR(a.health(outsider), 490.0, 1e-9);
+}
+
+TEST(a_bonus_group_no_mob_lists_refuses_the_load) {
+    ContentRegistry registry;
+    std::string error;
+    const bool ok = test::loadFixtureContent(registry, testsupport::tempDir("flix_bonus_group"),
+        R"({"grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":0.2,"groups":["garden"]}})",
+        R"({"clip":{"name":"Clip","damage":10,"health":10,"size":1,"bonusMobGroup":"computr"}})",
+        error);
+    CHECK(!ok);
+    CHECK(error.find("computr") != std::string::npos);
 }
 
 TEST(a_claw_adds_its_bonus_only_while_the_victim_is_above_eighty_percent) {

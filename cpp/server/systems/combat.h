@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -37,6 +38,7 @@
 namespace flix {
 
 class Terrain;
+class WorldMaps;
 
 /// How long a hit keeps the client's white flash lit. Short: it reads as an
 /// impact rather than a status, and it is refreshed by every landed hit, so a
@@ -160,6 +162,9 @@ enum class DamageKind : std::uint8_t {
     /// respect the simulation can see, whose floating number is green. The
     /// amount is rolled before it gets here (rollGlitchDamage).
     Glitch = 6,
+    /// A map's standing glitch drain (MapData::glitchDamagePerSecond): a drip
+    /// in every respect, exactly as Periodic is, whose number is green.
+    GlitchDrip = 7,
 };
 
 /// Whether this kind is a landed hit rather than a drip. Everything in
@@ -252,6 +257,14 @@ public:
     /// into a flower that stands against a wall pushes it into the wall --
     /// through a thin one, and into a thick one deep enough to be stuck there.
     const Terrain* terrain = nullptr;
+
+    /// The maps, for a realm's standing damage (tickRealmDamage). Null in a
+    /// focused simulation, where no realm drains anyone.
+    const WorldMaps* worldMaps = nullptr;
+    /// The rarity a realm's standing damage scales by, as a mob's damage does
+    /// (mobDamageScale): a dungeon copy's is its nest's. False -- and unset,
+    /// in a focused simulation -- leaves the map's figure as it is.
+    std::function<bool(Realm, Rarity&)> realmRarity;
 
     /// One complete combat tick. Kept for focused simulations; GameServer uses
     /// the three phase methods below so flower/petal contact can happen before
@@ -380,6 +393,12 @@ public:
     /// function so that a new heal cannot quietly become the one the lockout
     /// does not cover.
     static bool healingBlocked(const World& world, Entity entity, double nowMillis);
+
+    /// Whether `player` is a flower a shovel has put underground. Nothing a
+    /// mob does reaches it and no mob picks it as a target, and nothing it
+    /// owns -- ring, shots, pets' work credited to it -- deals or takes
+    /// damage until it comes back up.
+    static bool burrowed(const World& world, Entity player);
 
     /// Puts `amount`, grown by a worn basil's bonus (PlayerModifiers::
     /// healBonus), onto `health` -- `entity`'s own -- never past its max, and
@@ -559,6 +578,10 @@ private:
         /// A divider's: how many pieces a mob it lands on comes apart into
         /// (MobDivision). Zero for every other body.
         int dividesInto = 0;
+        /// A paperclip's: its hit on a mob in mob group `bonusGroup` is
+        /// multiplied by `bonusGroupScale`. kInvalidIndex for every other body.
+        std::uint16_t bonusGroup = kInvalidIndex;
+        double bonusGroupScale = 1.0;
         /// A mob whose touch throws lightning -- both fireflies. Zero radius
         /// means it does not, which is every other body in the game. Resolved
         /// in the gather beside the glitch flag and for the same reason.
@@ -678,6 +701,10 @@ private:
 
     void tickAfflictions(World& world, double nowMillis, double dt);
     void tickSpongeDamage(World& world, double nowMillis, double dt);
+    /// Every living flower in a map with a glitchDamagePerSecond loses that
+    /// much a second -- times mobDamageScale of the realm's rarity, when it
+    /// has one -- as a green drip with no source.
+    void tickRealmDamage(World& world, double nowMillis, double dt);
     /// Every shield shrinks by the same share of itself each second.
     void tickShieldDecay(World& world, double dt);
     /// Ends every Undead whose time is up: the flower dies to the blow it was
@@ -721,7 +748,8 @@ private:
     void dischargeOnContact(World& world, const SpatialGrid& grid, const MeleeSource& source,
                             double nowMillis);
     void gatherPetals(World& world, const ContentRegistry& content, double nowMillis);
-    void resolveMelee(World& world, const SpatialGrid& grid, double nowMillis);
+    void resolveMelee(World& world, const SpatialGrid& grid, const ContentRegistry& content,
+                      double nowMillis);
     /// A petal swinging at another flower, which is a different collision from
     /// the petal-vs-mob one beside it: gated by the arena/corruption rule
     /// rather than by the faction alone, throttled per victim, costing the
@@ -750,6 +778,14 @@ private:
     /// filed shots' answers are: nothing in a combat phase destroys an entity,
     /// tags a flower or hands anything to a new owner.
     Entity phaseCredit(const World& world, Entity e);
+    /// Whether canDamage(source, victim) is certain to refuse on its side
+    /// rules alone -- one flower behind both, or one side with no friendly
+    /// fire and no corruption -- read off the phase's memo rather than walked.
+    /// Every rule canDamage() has above those only ever refuses, so a `true`
+    /// here is a refusal canDamage() would give; `false` decides nothing.
+    /// The memo is exact for phaseCredit()'s reason, and a side changes only
+    /// on an admin command or a respawn, neither of which runs inside a phase.
+    bool phaseSidesRefuse(const World& world, Entity source, Entity victim);
     /// Every body a pass that may hit a PROJECTILE has to consider: the main
     /// broadphase's candidates plus combat's own shots. The passes that only
     /// ever want flowers or mobs query the main grid directly and never pay
@@ -880,6 +916,11 @@ private:
     EventQueue* events_ = nullptr;
 
     std::vector<MeleeSource> melee_;
+    /// Which flowers stand alone this tick (no other player inside their
+    /// view), asked only for a flower wearing a bean and kept for
+    /// the rest of the gather. Cleared at the top of gatherPetals.
+    std::vector<std::pair<Entity, bool>> standsAlone_;
+    bool standsAlone(World& world, Entity flower);
     std::vector<AuraSource> auras_;
     std::vector<LightningSource> strikers_;
     std::vector<FieldSource> fields_;
@@ -887,6 +928,7 @@ private:
     std::vector<ShotImpact> impacts_;
     std::vector<PoisonTick> poison_;
     std::vector<PoisonTick> spongeTicks_;
+    std::vector<PoisonTick> realmTicks_;
 
     std::vector<Entity> candidates_;
 
@@ -1039,7 +1081,14 @@ private:
         Entity entity = NULL_ENTITY;
         Entity player = NULL_ENTITY;
         std::uint64_t phase = 0;
+        /// teamOf(), filled with the rest only when phaseSide() asks.
+        Team team = Team::Neutral;
+        bool friendlyFire = false;
+        bool known = false;
+        bool sided = false;
     };
+    PhaseCredit& phaseEntry(const World& world, Entity e);
+    const PhaseCredit& phaseSide(const World& world, Entity e);
     std::vector<PhaseCredit> phaseCredits_;
     std::uint64_t creditPhase_ = 0;
 

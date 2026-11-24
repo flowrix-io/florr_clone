@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <utility>
 
+#include "client/ui/command_match.h"
 #include "client/ui/draw.h"
 #include "client/ui/remote_image.h"
 #include "client/ui/text.h"
@@ -47,6 +48,18 @@ namespace flix {
 using namespace flix::ui;
 
 namespace {
+
+/// Whether a line is the server's "A Super X has spawned" or "A Super X has
+/// been defeated" announcement (GameServer::announceBosses and its defeat
+/// counterpart), which the "Show Super Spawn/Kill Messages" setting hides.
+/// Only the System channel: nobody can type a line onto it.
+bool isSuperBossLine(const ChatLine& line) {
+    if (line.channel != net::ChatChannel::System) return false;
+    const std::string& text = line.text;
+    if (text.find(">A Super ") == std::string::npos) return false;
+    return text.find(" has spawned") != std::string::npos ||
+           text.find(" has been defeated") != std::string::npos;
+}
 
 // The box is pinned to the bottom-left corner, so every height here is
 // measured up from the BOTTOM of the window.
@@ -214,6 +227,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/help", "Show available commands", kForAll},
     {"/biome", "Show the most populated biome", kForAll},
     {"/boss-timers", "Show each biome's unique/apex cooldown", kForAll},
+    {"/players-online", "Show how many players are online", kForAll},
     {"/admin createpoll", "Open the standalone poll creator", kForAdmins},
     {"/admin save", "Save player progress", kForAdmins},
     {"/admin list-players", "List online players", kForAdmins},
@@ -222,6 +236,14 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin set_bot_count", "Set bot count (0-100, or \"default\")", kForAdmins},
     {"/admin spawn", "Spawn a mob: /admin spawn <mob> <rarity> [x y] [amount] [stack]", kForAdmins},
     {"/admin killall", "Kill all wild mobs (pets left intact)", kForAdmins},
+    {"/admin spawn_npc", "Any mob as an NPC where you stand: /admin spawn_npc <mob> [rarity] [players|hostile|neutral]", kForAdmins},
+    {"/admin clear_npcs", "Remove every NPC an admin spawned", kForAdmins},
+    {"/admin fixnpc", "Put the map's NPCs back where they belong", kForAdmins},
+    {"/admin bots", "What the bot population is doing", kForAdmins},
+    {"/admin squads", "Who the loot rule pools together", kForAdmins},
+    {"/admin start_waves", "Open a rift to wave survival: /admin start_waves [biome] [starting wave]", kForAdmins},
+    {"/admin stop_waves", "Close the wave rift and bring everyone back", kForAdmins},
+    {"/admin set_skin", "Set a player's skin: /admin set_skin <player> <skin|none>", kForAdmins},
     {"/admin teleport", "Teleport a player", kForAdmins},
     {"/admin tp", "Teleport a player (shorthand)", kForAdmins},
     {"/admin teleport_all", "Teleport every player and bot: /admin teleport_all <x> <y>", kForAdmins},
@@ -324,14 +346,15 @@ constexpr ChatCommand kChatCommands[] = {
     {"/loadout-from-string", "Show the loadout a player named <name> would roll", kForAll},
 };
 
-/// The commands whose names start with what has been typed, case-blind.
+/// The commands to offer for what has been typed, best first (see
+/// ui::rankCommandMatches): the one typed exactly, then those it starts,
+/// then those whose next word holds it, and only failing all of those, near
+/// misses -- so a typo still finds its command.
 /// Shared by the key handler and the draw pass so the highlighted row and the
 /// completed text can never come from two different lists.
 std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool admin,
                                                   bool moderator) {
-    const std::string needle = lowerCase(typed);
-
-    std::vector<const ChatCommand*> matches;
+    std::vector<const ChatCommand*> offered;
     for (const ChatCommand& command : kChatCommands) {
         // The browser gates the admin rows on a `showAdminCommands`
         // localStorage flag; this client has no such store, so it gates them
@@ -340,10 +363,14 @@ std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool
         // everyone would advertise a console most players cannot open.
         if (command.role == CommandRole::Admin && !admin) continue;
         if (command.role == CommandRole::Moderator && !admin && !moderator) continue;
-        const std::string name = lowerCase(command.command);
-        if (name.size() >= needle.size() && name.compare(0, needle.size(), needle) == 0) {
-            matches.push_back(&command);
-        }
+        offered.push_back(&command);
+    }
+    std::vector<std::string> names;
+    names.reserve(offered.size());
+    for (const ChatCommand* command : offered) names.emplace_back(command->command);
+    std::vector<const ChatCommand*> matches;
+    for (const std::size_t index : ui::rankCommandMatches(typed, names)) {
+        matches.push_back(offered[index]);
     }
     return matches;
 }
@@ -1237,7 +1264,9 @@ void App::drawChat(Canvas& canvas, double time) {
         // Only the channels whose boxes are ticked. The server's own lines are
         // on no tab and always pass.
         const std::uint8_t shown = menus_.settings().chatChannels;
-        const auto passes = [shown](const ChatLine& line) {
+        const bool hideSupers = !menus_.settings().showSuperMessages;
+        const auto passes = [shown, hideSupers](const ChatLine& line) {
+            if (hideSupers && isSuperBossLine(line)) return false;
             const int tab = chatTabOf(line.channel);
             return tab < 0 || ((shown >> tab) & 1u) != 0;
         };

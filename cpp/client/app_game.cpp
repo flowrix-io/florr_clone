@@ -319,7 +319,12 @@ void App::sendInputFrame(double dt) {
     const bool textDrag = selectable.dragging() ||
                           (window_.mousePressed(MouseButton::Left) &&
                            selectable.overTextLastFrame(pointer));
-    if (!chatOpen_ && !menuOpen && !textDrag && !menus_.capturesMouse(pointer) &&
+    // What the player is HOLDING, before the invert settings flip it.
+    bool attackHeld = false;
+    bool defendHeld = false;
+    // The squad invite card is a control, not a place to swing at.
+    const bool overInvite = squadInviteShown() && hit(squadInviteLayout().card, pointer);
+    if (!chatOpen_ && !menuOpen && !textDrag && !overInvite && !menus_.capturesMouse(pointer) &&
         !tutorial_.capturesMouse(pointer)) {
         // Pointer actions and explicit admin chords are rechecked against
         // server-held authority and the worn petal.
@@ -330,12 +335,12 @@ void App::sendInputFrame(double dt) {
         if ((!adminCursor && window_.mouseDown(MouseButton::Left)) ||
             (adminChord == AdminCursorChord::None &&
              boundKeyDown(window_, settings.controlKey(ControlAction::ExtendPetals)))) {
-            input.flags |= net::InputAttack;
+            attackHeld = true;
         }
         if (window_.mouseDown(MouseButton::Right) ||
             (adminChord == AdminCursorChord::None &&
              boundKeyDown(window_, settings.controlKey(ControlAction::RetractPetals)))) {
-            input.flags |= net::InputDefend;
+            defendHeld = true;
         }
     }
     // Outside that guard on purpose: the two on-screen buttons are their own
@@ -348,10 +353,22 @@ void App::sendInputFrame(double dt) {
             if (adminTouch_.hasPointer() && mobile_.attackPressed()) input.flags |= net::InputAdminKill;
             if (adminTouch_.hasPointer() && mobile_.retractPressed()) input.flags |= net::InputAdminTeleport;
         } else {
-            if (mobile_.attackPressed()) input.flags |= net::InputAttack;
-            if (mobile_.retractPressed()) input.flags |= net::InputDefend;
+            if (mobile_.attackPressed()) attackHeld = true;
+            if (mobile_.retractPressed()) defendHeld = true;
         }
     }
+    // Invert Attack / Invert Defend: the action is on until it is held. Not
+    // while an admin chord is down -- those keys are the chord's, not a swing.
+    if (adminChord == AdminCursorChord::None) {
+        if (settings.invertAttack) attackHeld = !attackHeld;
+        if (settings.invertDefend) defendHeld = !defendHeld;
+    }
+    if (attackHeld) input.flags |= net::InputAttack;
+    if (defendHeld) input.flags |= net::InputDefend;
+    // Told to the server as well, for the half of a split flower that is not
+    // being steered: it stands as this flower would with nothing held.
+    if (settings.invertAttack) input.flags |= net::InputInvertAttack;
+    if (settings.invertDefend) input.flags |= net::InputInvertDefend;
 
     net_.sendInput(input);
 }
@@ -361,6 +378,7 @@ void App::updatePlaying(double dt) {
     // are outside sendInputFrame's guard: a finger on a button is not a
     // keystroke being typed into the chat line.
     if (mobile_.takeRowSwap()) menus_.requestLoadoutRowSwap();
+    pressSquadInvite();
 
     const NetClient::TrialView& trial = net_.trial();
     if (isTrialRealm(net_.view().realm()) && trial.known &&
@@ -419,6 +437,8 @@ void App::updatePlaying(double dt) {
 
 void App::updateDead(double dt) {
     (void)dt;
+    // The HUD, and the invite card under it, stay up behind the death card.
+    if (pressSquadInvite()) return;
     // The transcript keeps drawing over the dimmed world, so it keeps
     // scrolling. There is no camera zoom to lose the wheel to here, so nothing
     // hangs on the answer.
@@ -673,14 +693,14 @@ void App::drawTrialHud(Canvas& canvas, double time) {
     y += line.size + 4.0 * kWaveUi;
     const double buffY = y + line.size * 0.5;
     if (trial.buff == TrialBuffKind::ProjectileCritical) {
-        // The crit blessing as the dice petal turned 45 degrees and its rate.
+        // The crit blessing as the dice petal (it draws itself tilted) and its rate.
         const std::string rate = "1.5x/4s";
         const double die = line.size * 1.1;
         const double gap = 4.0 * kWaveUi;
         const double total = die + gap + textWidth(canvas, rate, line.size);
         const double left = middle - total * 0.5;
         sprites_.drawPetal(canvas, content().petalIndex("dice"), Rarity::Common,
-                           left + die * 0.5, buffY, die, kPi * 0.25, time);
+                           left + die * 0.5, buffY, die, 0.0, time);
         line.align = Align::Left;
         text(canvas, rate, left + die + gap, buffY, line);
     } else {

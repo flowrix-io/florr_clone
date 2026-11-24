@@ -11,6 +11,7 @@
 #include "server/systems/combat.h"
 #include "server/systems/movement.h"
 #include "server/systems/spawning.h"
+#include "shared/game/petal_effects.h"
 #include "shared/game/terrain.h"
 
 namespace flix {
@@ -22,7 +23,6 @@ namespace {
 constexpr double kPollenRadiusPerSize = 6.0;
 
 constexpr double kWebThrowDistance = 620.0;
-constexpr double kWebLifetimeSeconds = 10.0;
 constexpr double kPollenLifetimeSeconds = 5.0;
 
 /// How long the ring takes to fly across when what it is laid out around
@@ -32,10 +32,6 @@ constexpr double kPollenLifetimeSeconds = 5.0;
 /// glide carries it over without the overshoot.
 constexpr double kRingAnchorSwitchGlideMillis = 300.0;
 
-/// An apex egg does not hatch an apex pet. The reference substitutes three
-/// unique ones, which is the top of the ladder a pet can actually reach. A
-/// universal egg hatches the same three, stronger (see summonPets).
-constexpr int kApexPetCount = 3;
 
 /// Live summons one player may hold, counting every slot's squad together --
 /// and every segment of a summoned centipede, which is a body in the world
@@ -47,12 +43,6 @@ constexpr int kApexPetCount = 3;
 /// until the proxy answered 502.
 constexpr int kMaxPetEntitiesPerPlayer = 30;
 
-/// The flower petal cracks on the mob it touches: nineteen breaks in twenty
-/// open onto a squad of glitch flowers, and the twentieth takes the flower
-/// that was carrying it.
-constexpr double kFlowerCorruptChance = 0.05;
-constexpr int kFlowerPetCount = 3;
-constexpr const char* kFlowerPetMobId = "glitch_flower";
 
 // -- scripted behaviours -----------------------------------------------------
 //
@@ -62,50 +52,7 @@ constexpr const char* kFlowerPetMobId = "glitch_flower";
 // they do is code and not a number, and because each of them fires at a
 // different moment in a petal's life.
 
-/// A strike reaches this far and, when the petal declares no damage of its own,
-/// lands this much AT COMMON.
-///
-/// The fallback is a base, not a figure: it goes up the same 3x-per-tier petal
-/// ladder `stats.damage` does (see petalStatScale). A flat one is how an apex
-/// battery ended up striking for a common battery's number -- `damage: 0` in
-/// petals.json means "this petal does not hit things with its body", not "this
-/// petal's shock ignores what tier it is".
-constexpr double kLightningRadius = 1000.0;
-constexpr double kLightningFallbackDamage = 25.0;
 
-/// The battery ships with three discharges and spends one per body slam, no
-/// faster than twice a second. It has no health pool -- petals.json gives it a
-/// null `health`, which is a petal nothing can break -- so running the charges
-/// out is the ONLY thing that ever takes it off the ring, and the slot's
-/// ordinary cooldown is what hands a full one back.
-constexpr std::uint8_t kBatteryCharges = 3;
-constexpr double kBatteryStrikeIntervalMillis = 500.0;
-
-/// How far apart a worn lightning cutter's strikes are: 500 ms, so at most
-/// twice a second. The limiter is per PLAYER rather than per petal, so a second
-/// blade shares the first one's cadence instead of doubling the strike rate.
-constexpr double kLightningCutterIntervalMillis = 500.0;
-
-/// The capacitor banks one point of shock per millisecond it spends against a
-/// mob, holds no more than 60, and throws all of it as one strike the moment
-/// the contact ends. A full second of unbroken contact discharges it too:
-/// without that, a capacitor that never LEAVES -- one latched onto a mob by
-/// attraction, one parked inside a boss -- would bank forever and never fire.
-///
-/// Common figures. The strike goes up the same 3x petal ladder a lightning
-/// petal's does, so an apex capacitor charges at 3^n points a millisecond.
-constexpr double kCapacitorChargePerMillis = 1.0;
-constexpr double kCapacitorMaxCharge = 60.0;
-constexpr double kCapacitorWindowMillis = 1000.0;
-
-/// Blast reach per unit of the petal's `size` stat: 120, so a size-2 bomb
-/// reaches 240 -- a couple of mobs' widths around where it went off.
-///
-/// The reference meant `size * 40 * 3` ("convert to pixels, make it 3x
-/// larger") but its caller had already multiplied by 40, so it shipped 4800 a
-/// unit: a bomb that went off 9600 units out, several screens past anything
-/// its owner could see. That doubled conversion is not carried over.
-constexpr double kExplosionRadiusPerSize = 120.0;
 /// A flat positional shove, undivided by the victim's mass: the reference
 /// writes it straight onto the mob rather than routing it through the
 /// mass-scaled push a petal's own knockback stat takes.
@@ -121,10 +68,6 @@ constexpr double kBehaviourShieldIntervalMillis = 10000.0;
 constexpr double kBehaviourHealIntervalMillis = 2000.0;
 constexpr double kBehaviourExplodeIntervalMillis = 3000.0;
 
-/// What one blast deals at common. The bomb's `damage` stat is 0 -- its body
-/// hits nothing, the blast is all of it -- so the figure lives here.
-constexpr double kBombBlastDamage = 30.0;
-constexpr double kTestExplosiveBlastDamage = 50.0;
 
 /// A blast is a petal hitting things, so it climbs the same ladder a petal's
 /// damage does and takes the Damage talent on top, as a lightning strike
@@ -135,15 +78,6 @@ double blastDamage(const World& world, Entity player, double common, Rarity rari
     return common * petalStrengthScale(rarity) * talent;
 }
 
-/// A scripted heal is a steeper curve than a burst petal's. `stats.heal`
-/// already carries its rarity; a script's literal does not, so the reference
-/// multiplies it by sqrt(3) per tier and by a flat 3 on top of the talent.
-constexpr double kBehaviourHealScale = 3.0;
-/// What a blood stinger costs its own flower each time it grows back, at
-/// common: it climbs the tiers on the petal strength ladder its damage does
-/// (petalStrengthScale), lands as a mob's hit would (applySelfDamage), and is
-/// never the blow that kills.
-constexpr double kBloodStingerSelfDamage = 5.0;
 
 /// How close a yggdrasil has to pass to a corpse to raise it.
 constexpr double kYggdrasilRevivalRange = 80.0;
@@ -644,6 +578,10 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         pendingBreaks_.clear();
         if (playerIsDown(world, player)) {
             clearRing(world, player);
+            // A corpse is not underground: it comes back up with the flower.
+            if (Afflictions* afflictions = world.tryGet<Afflictions>(player)) {
+                afflictions->burrowed = false;
+            }
             // The bank dies with the flower. It is armour a standing flower
             // accumulated, not a possession like the loadout, and carrying it
             // through the death card would hand a respawn ten free hits'
@@ -659,6 +597,29 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         }
         // Before the slot pass, because retiring a pet puts the petal that
         // hatched it back on cooldown and the slot pass is what serves that.
+        // Back up once the shovel's time is out.
+        if (Afflictions* afflictions = world.tryGet<Afflictions>(player);
+            afflictions != nullptr && afflictions->burrowed &&
+            nowMillis >= afflictions->burrowedUntilMillis) {
+            afflictions->burrowed = false;
+        }
+        if (CombatSystem::burrowed(world, player)) {
+            // Underground (a popped shovel): the whole ring goes, pets and
+            // all, and comes back when the flower does. Once, on the first
+            // tick down: reconcileSlots first, so the shovel spent last tick
+            // is charged its reload, then the field is cleared as a corpse's
+            // is -- every other slot keeps its state and is back out the tick
+            // the flower surfaces. Nothing else on the ring runs meanwhile.
+            if (const Loadout* loadout = world.tryGet<Loadout>(player);
+                loadout != nullptr && !loadout->spawned.empty()) {
+                reconcileSlots(world, registry, player, nowMillis);
+                clearRing(world, player);
+            }
+            const Aggregate aggregate = recomputeModifiers(world, registry, player);
+            applyPassiveHeal(world, player, aggregate, nowMillis, dt);
+            updateManaPool(world, player, aggregate, dt);
+            continue;
+        }
         retireDistantPets(world, registry, player, nowMillis);
         expireTimedPets(world, player, nowMillis);
         runPetBroods(world, registry, player, nowMillis);
@@ -814,6 +775,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     PetalSlotState& state = world.ensure<PetalSlotState>(player);
     Loadout& loadout = world.get<Loadout>(player);
     const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
+    const bool undead = world.has<Undead>(player);
     const double petalHealthScale =
         tree ? tree->skills.healthScale(SkillId::PetalHealth) : 1.0;
     const double reloadScale = reloadScaleOf(world, registry, player);
@@ -913,11 +875,10 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // a better one put on -- rebuilds the slot through the one path that
         // already knows how, full reload included.
         //
-        // A slot another petal on the row holds back (a splitter beside a
-        // bandage) is the same: zero copies, for the same reasons.
-        const bool heldBack = slotHeldBack(registry, i, [&](int j) {
-            return equippedPetal(registry, loadout, j);
-        });
+        // A petal its flower's Undead switches off (a splitter while the
+        // bandage is running, petalDisabledWhileUndead) is the same: zero
+        // copies, for the same reasons.
+        const bool heldBack = undead && petalDisabledWhileUndead(config);
         const int count = (petalAnchorsRing(config) && i != moonSlot) || heldBack
                               ? 0
                               : petalCopies(std::max(0, stats.count), skills);
@@ -1841,6 +1802,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     }
     if (PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(player)) {
         visuals->equipFlags = equipFlags;
+        if (CombatSystem::burrowed(world, player)) visuals->equipFlags |= EquipUnderground;
     }
     return aggregate;
 }
@@ -2397,7 +2359,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 Vec2 at = transform->position;
                 if (attacking) at += Vec2::fromAngle(transform->angle, kWebThrowDistance * adminReachScale(instance->rarity));
                 emitGroundEffect(world, player, at, GroundEffectKind::Web,
-                                 stats.webRadius, 0.0, instance->rarity == Rarity::Admin ? 0.05 : 0.5, instance->rarity,
+                                 stats.webRadius, 0.0, instance->rarity == Rarity::Admin ? kAdminWebSlowFactor : kWebSlowFactor, instance->rarity,
                                  kWebLifetimeSeconds * adminReachScale(instance->rarity));
                 world.add<Dead>(petal, Dead{player});
                 continue;
@@ -2514,6 +2476,23 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 }
                 continue;
             }
+        }
+
+        // A shovel goes off as soon as the ring is pulled in, as a bubble
+        // does, and takes its flower underground for its (flat) time: florr's
+        // "Becomes untargetable but unable to use petals for a limited time".
+        // Spent into the ordinary reload.
+        if (petalBurrows(config) && defending) {
+            if (Afflictions* afflictions = world.tryGet<Afflictions>(player)) {
+                afflictions->burrowed = true;
+                afflictions->burrowedUntilMillis =
+                    std::max(afflictions->burrowedUntilMillis, nowMillis + stats.burrowMillis);
+                world.add<Dead>(petal, Dead{player});
+                // The rest of the ring goes underground with the flower: it
+                // is cleared next tick (run), so nothing else acts now.
+                break;
+            }
+            continue;
         }
 
         // Bubble pops as soon as the ring is pulled in and propels the flower,
@@ -2967,7 +2946,7 @@ void PetalSystem::runBehaviour(World& world, const ContentRegistry& registry, En
                 if (!extended) return;
             }
             explodePetal(world, player, at, stats.size * adminReachScale(rarity),
-                         100.0 * (rarity == Rarity::Admin ? petalStrengthScale(rarity) : 1.0), nowMillis);
+                         kBloodLeafBlastDamage * (rarity == Rarity::Admin ? petalStrengthScale(rarity) : 1.0), nowMillis);
             healFromBehaviour(world, player, -1.0, rarity, nowMillis);
             return;
         }

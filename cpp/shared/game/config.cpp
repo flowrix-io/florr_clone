@@ -1297,6 +1297,8 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.armorPerStack = ctx.range(src, "armorPerStack", 0.0, 0.0, kMaxBaseStat);
     p.petalArmor = ctx.range(src, "petalArmor", 0.0, 0.0, kMaxBaseStat);
     p.clawCritDamage = ctx.range(src, "clawCritDamage", 0.0, 0.0, kMaxBaseStat);
+    p.bonusMobGroup = ctx.text(src, "bonusMobGroup");
+    p.bonusMobGroupDamage = ctx.range(src, "bonusMobGroupDamage", 1.0, 0.0, kMaxBaseStat);
     // A FRACTION, not a percentage: 0.35 heals a third of the hit. Above one
     // is legal -- gardn's mythic fang heals three times what it deals -- and
     // the bound only keeps a typo from reading as a full heal on every graze.
@@ -1313,6 +1315,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.poisonDurationMillis = ctx.range(src, "poisonDuration", 0.0, 0.0, kMaxDurationMillis);
     p.extraPoisonMillis = ctx.range(src, "extraPoisonDuration", 0.0, 0.0, kMaxDurationMillis);
     p.noHealDurationMillis = ctx.range(src, "noHealDuration", 0.0, 0.0, kMaxDurationMillis);
+    p.burrowMillis = ctx.range(src, "burrowDuration", 0.0, 0.0, kMaxDurationMillis);
 
     p.speed = ctx.range(src, "speed", 0.0, -kMaxSpeedUnits, kMaxSpeedUnits);
     p.noPhysics = ctx.boolean(src, "noPhysics");
@@ -1691,6 +1694,10 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
         if (std::binary_search(petalKeys.sorted.begin(), petalKeys.sorted.end(), key)) {
             ctx.subject = "petal '" + key + "'";
             petals.push_back(parsePetal(ctx, key, petalsRoot[key], mobIds));
+            const std::string& bonusGroup = petals.back().bonusMobGroup;
+            if (!bonusGroup.empty() && mobGroupIds.find(bonusGroup) == mobGroupIds.end()) {
+                ctx.fail("bonusMobGroup '" + bonusGroup + "' is no mob's group");
+            }
             continue;
         }
         // Generated: the id is `<mob>_egg` and the mob is one this build has,
@@ -1990,6 +1997,11 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         // it meets should be able to hit it and leave it standing.
         s.reloadMillis *= std::pow(0.7, std::min(rarityIndex(tier), 8));
         s.health = c.health;
+    } else if (petalBurrows(c)) {
+        // florr's shovel slot 14: a straight line from 15 s to 2 s over
+        // tiers 0..8, held at 2 s above.
+        s.reloadMillis = kShovelReloadMillis -
+                         kShovelReloadStepMillis * std::min(rarityIndex(tier), 8);
     }
     // The petal damage ladder, not the gentler passive-modifier curve: what a
     // cutter grants IS damage, so it keeps pace with petal damage and with the
@@ -2004,6 +2016,8 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // Flat, on purpose: gardn's dandelion locks healing for ten seconds at
     // every tier. See PetalConfig::noHealDurationMillis.
     s.noHealDurationMillis = c.noHealDurationMillis;
+    // Flat: florr's secondary figure is 2 s at every tier.
+    s.burrowMillis = c.burrowMillis;
     s.heal = c.burstHeal * heal;
     s.healChargeMillis = c.burstHealChargeMillis;
     s.passiveHealPerSecond = c.passiveHeal * heal;
@@ -2024,11 +2038,12 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // TypeScript keeps ordinary petal knockback flat across rarities. Jelly is
     // the one intentional exception: its per-rarity values are literal
     // overrides in petals.ts, not another copy of the damage multiplier.
+    // 70% of those figures: jelly's shove was cut by 30% at every tier.
     s.knockback = c.knockback;
     if (c.id == "jelly") {
         static constexpr std::array<double, kLadderRarityCount> kJellyKnockback = {
-            15.0, 50.0, 100.0, 250.0, 500.0,
-            1800.0, 10000.0, 25000.0, 50000.0, 100000.0,
+            10.5, 35.0, 70.0, 175.0, 350.0,
+            1260.0, 7000.0, 17500.0, 35000.0, 70000.0,
         };
         s.knockback = kJellyKnockback[static_cast<std::size_t>(rarityIndex(tier))];
     }
@@ -2210,6 +2225,7 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
         s.poisonDurationMillis *= boost;
         s.extraPoisonMillis *= boost;
         s.noHealDurationMillis *= boost;
+        s.burrowMillis *= boost;
         s.killHealDurationMillis *= boost;
         s.slowDurationMillis *= boost;
         if (s.slowFactor < 1.0) s.slowFactor = std::min(0.05, s.slowFactor);
