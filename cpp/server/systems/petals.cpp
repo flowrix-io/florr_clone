@@ -775,6 +775,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     PetalSlotState& state = world.ensure<PetalSlotState>(player);
     Loadout& loadout = world.get<Loadout>(player);
     const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
+    const bool undead = world.has<Undead>(player);
     const double petalHealthScale =
         tree ? tree->skills.healthScale(SkillId::PetalHealth) : 1.0;
     const double reloadScale = reloadScaleOf(world, registry, player);
@@ -874,11 +875,10 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // a better one put on -- rebuilds the slot through the one path that
         // already knows how, full reload included.
         //
-        // A slot another petal on the row holds back (a splitter beside a
-        // bandage) is the same: zero copies, for the same reasons.
-        const bool heldBack = slotHeldBack(registry, i, [&](int j) {
-            return equippedPetal(registry, loadout, j);
-        });
+        // A petal its flower's Undead switches off (a splitter while the
+        // bandage is running, petalDisabledWhileUndead) is the same: zero
+        // copies, for the same reasons.
+        const bool heldBack = undead && petalDisabledWhileUndead(config);
         const int count = (petalAnchorsRing(config) && i != moonSlot) || heldBack
                               ? 0
                               : petalCopies(std::max(0, stats.count), skills);
