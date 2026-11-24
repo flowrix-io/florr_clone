@@ -401,7 +401,11 @@ struct QuietBoss {};
 /// ANIMAL: a centipede's body segments share its tier and are not more of it,
 /// and a player's pets are not wild at all.
 inline constexpr double kUniqueSpawnCooldownMillis = 20.0 * 60.0 * 1000.0;
-inline constexpr double kApexSpawnCooldownMillis = 4.0 * 60.0 * 60.0 * 1000.0;
+/// The apex clock is not one figure: every restart draws its wait uniformly
+/// between these two, two to three hours (user), so a biome's apex cannot be
+/// timed to the minute. apexCooldownMillis draws one.
+inline constexpr double kApexSpawnCooldownMinMillis = 2.0 * 60.0 * 60.0 * 1000.0;
+inline constexpr double kApexSpawnCooldownMaxMillis = 3.0 * 60.0 * 60.0 * 1000.0;
 inline constexpr double kBossUpgradeChance = 0.10;
 
 /// The sacrifice (petalIsSacrifice): what a flower that dies wearing one
@@ -707,10 +711,15 @@ public:
     /// pentagram there, as of the last noteStandingBosses. What the save
     /// reads to hand a cooldown back when a restart is about to take that
     /// boss away unkilled.
+    ///
+    /// `apexSpentMillis`: when the apex clock last restarted. The apex wait is
+    /// drawn per restart, so the save cannot subtract a fixed cooldown from
+    /// the ready time to find it. Zero when this run never restarted it.
     struct BiomeBossClock {
         std::string biome;
         double uniqueReadyMillis = 0;
         double apexReadyMillis = 0;
+        double apexSpentMillis = 0;
         bool scattered = false;
         bool uniqueStanding = false;
         bool apexStanding = false;

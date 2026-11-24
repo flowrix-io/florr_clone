@@ -367,7 +367,7 @@ void GameServer::restoreBossClocks(double nowMillis) {
         const double unique = std::min(entry["uniqueReadyAt"].asDouble() + offset,
                                        nowMillis + kUniqueSpawnCooldownMillis);
         const double apex = std::min(entry["apexReadyAt"].asDouble() + offset,
-                                     nowMillis + kApexSpawnCooldownMillis);
+                                     nowMillis + kApexSpawnCooldownMaxMillis);
         spawning_->restoreBossClock(biome, unique, apex);
         savedBossClocks_.push_back(SavedBossClock{biome, unique, apex});
     }
@@ -384,8 +384,13 @@ void GameServer::persistBossClocks() {
         const double unique = clock.uniqueStanding
                                   ? clock.uniqueReadyMillis - kUniqueSpawnCooldownMillis
                                   : clock.uniqueReadyMillis;
-        const double apex = clock.apexStanding ? clock.apexReadyMillis - kApexSpawnCooldownMillis
-                                               : clock.apexReadyMillis;
+        // The apex wait is drawn per restart, so the moment it was spent is
+        // kept rather than worked back from a fixed cooldown. A clock this run
+        // never restarted falls back to the longest wait.
+        const double apexSpent = clock.apexSpentMillis > 0
+                                     ? clock.apexSpentMillis
+                                     : clock.apexReadyMillis - kApexSpawnCooldownMaxMillis;
+        const double apex = clock.apexStanding ? apexSpent : clock.apexReadyMillis;
         SavedBossClock* saved = nullptr;
         for (SavedBossClock& candidate : savedBossClocks_) {
             if (candidate.biome == clock.biome) saved = &candidate;
