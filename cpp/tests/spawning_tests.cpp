@@ -4246,10 +4246,9 @@ TEST(an_apex_hits_fifty_times_an_eternal_and_lasts_eighty_times_as_long) {
 }
 
 TEST(a_super_mob_leaves_more_ultras_and_fewer_mythics) {
-    // 90% of graded drops start at ultra; half of those climb to super, and a
-    // third of the downgrade chance (1/3 of 1/3) of the rest slips to mythic.
-    // The other 10% start at the authored common row and are floored at
-    // mythic. So: 45% super, 40% ultra, 15% mythic.
+    // 90% of graded drops start at ultra; half of those climb to super and the
+    // rest never slip. The other 10% start at the authored common row and are
+    // floored at ultra. So: 45% super, 55% ultra, no mythic.
     Rng rng(7272);
     constexpr int kRuns = 200000;
     int mythic = 0, ultra = 0, super = 0;
@@ -4260,9 +4259,9 @@ TEST(a_super_mob_leaves_more_ultras_and_fewer_mythics) {
         if (r == Rarity::Super) ++super;
     }
     CHECK_NEAR(super / double(kRuns), 0.45, 0.01);
-    CHECK_NEAR(ultra / double(kRuns), 0.40, 0.01);
-    CHECK_NEAR(mythic / double(kRuns), 0.15, 0.01);
-    CHECK_NEAR(dropDowngradeMultiplier(Rarity::Super), 1.0 / 3.0, 1e-12);
+    CHECK_NEAR(ultra / double(kRuns), 0.55, 0.01);
+    CHECK_EQ(mythic, 0);
+    CHECK_NEAR(dropDowngradeMultiplier(Rarity::Super), 0.0, 1e-12);
     CHECK_NEAR(dropDowngradeMultiplier(Rarity::Ultra), 1.0, 1e-12);
 }
 
@@ -4337,10 +4336,21 @@ TEST(chaff_is_flat_two_tiers_below_the_mob) {
     // through finishDropRarity instead would let a rare mob's floor lift
     // them all back to uncommon, which is exactly the inflation the graded
     // row exists to hold back.
+    Rng rng(99);
     for (int tier = 0; tier < kLadderRarityCount; ++tier) {
         const Rarity mob = clampRarity(tier);
-        CHECK_EQ(rarityIndex(LootSystem::chaffDropRarity(mob)), std::max(0, tier - 2));
+        if (mob == Rarity::Super) continue;
+        CHECK_EQ(rarityIndex(LootSystem::chaffDropRarity(mob, rng)), std::max(0, tier - 2));
     }
+    // A super's is an ultra 60% of the time and a mythic otherwise.
+    constexpr int kRuns = 100000;
+    int ultra = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        const Rarity r = LootSystem::chaffDropRarity(Rarity::Super, rng);
+        CHECK(r == Rarity::Ultra || r == Rarity::Mythic);
+        if (r == Rarity::Ultra) ++ultra;
+    }
+    CHECK_NEAR(ultra / double(kRuns), 0.6, 0.01);
 }
 
 TEST(a_kill_above_unusual_grades_exactly_one_of_its_rows) {

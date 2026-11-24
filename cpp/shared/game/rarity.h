@@ -467,11 +467,29 @@ inline constexpr double kApexEternalDropChance = 0.40;
 inline constexpr double kApexUltraDropChance = 0.20;
 
 /// What a mob's tier multiplies dropDowngradeChance by. A super's graded drop
-/// slips a tier a third as often as the plain chance says, so a super kill
-/// leaves more ultras and fewer mythics. Shared so the gallery tooltip quotes
-/// what the server rolls.
+/// never slips a tier, so it is a super or an ultra. Shared so the gallery
+/// tooltip quotes what the server rolls.
 inline double dropDowngradeMultiplier(Rarity mobRarity) {
-    return mobRarity == Rarity::Super ? 1.0 / 3.0 : 1.0;
+    return mobRarity == Rarity::Super ? 0.0 : 1.0;
+}
+
+/// The lowest tier a mob's ONE graded drop may land at, as a rarity index:
+/// a rare mob's one tier under it, an epic or better two -- except a super,
+/// whose graded drop is held to ultra, one tier under it.
+inline int gradedDropFloor(Rarity mobRarity) {
+    const int tier = rarityIndex(mobRarity);
+    if (mobRarity == Rarity::Super) return tier - 1;
+    if (tier >= rarityIndex(Rarity::Epic)) return tier - 2;
+    if (tier >= rarityIndex(Rarity::Rare)) return tier - 1;
+    return 0;
+}
+
+/// The chance a mob's chaff -- every drop that is not its graded one, flat two
+/// tiers under it -- comes out one tier higher instead. Only a super's: its
+/// chaff is an ultra 60% of the time and a mythic otherwise, so a super kill
+/// leaves more ultras than mythics.
+inline double chaffUpgradeChance(Rarity mobRarity) {
+    return mobRarity == Rarity::Super ? 0.6 : 0.0;
 }
 
 /// Chance a drop rolls one tier below the mob that dropped it.

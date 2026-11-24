@@ -483,7 +483,7 @@ void App::drawSquadHud(Canvas& canvas, double time) {
     }
 }
 
-App::SquadInviteLayout App::squadInviteLayout() {
+App::SquadInviteLayout App::squadInviteLayout() const {
     // Under the HUD, left-aligned with the flower's rim: an invite can only
     // reach a player in no squad (SquadRoster::invite), so no squad rows ever
     // stand where it goes.
@@ -498,6 +498,11 @@ App::SquadInviteLayout App::squadInviteLayout() {
     const double buttonsY = layout.card.bottom() - kButtonH - 16.0;
     layout.join = Rect{buttonsX, buttonsY, kButtonW, kButtonH};
     layout.ignore = Rect{buttonsX + kButtonW + kButtonGap, buttonsY, kButtonW, kButtonH};
+    // Slid in from past the left edge: the whole card, buttons with it.
+    const double shift = -(layout.card.right() + 8.0) * (1.0 - squadInviteSlide_);
+    layout.card.x += shift;
+    layout.join.x += shift;
+    layout.ignore.x += shift;
     return layout;
 }
 
@@ -508,7 +513,22 @@ bool App::squadInviteShown() const {
 }
 
 void App::drawSquadInvite(Canvas& canvas) {
-    if (!squadInviteShown()) return;
+    if (!squadInviteShown()) {
+        squadInviteSlide_ = 0.0;
+        return;
+    }
+    // A new invite slides in from the left over a third of a second, with a
+    // small overshoot (ease-out-back) so it settles rather than stops.
+    const SquadInvite& invite = net_.squadInvite();
+    if (invite.expiresAtMillis != squadInviteSeen_) {
+        squadInviteSeen_ = invite.expiresAtMillis;
+        squadInviteShownAt_ = timeSeconds_;
+    }
+    constexpr double kSlideSeconds = 0.35;
+    const double t = std::clamp((timeSeconds_ - squadInviteShownAt_) / kSlideSeconds, 0.0, 1.0);
+    constexpr double kOvershoot = 1.4;
+    const double u = t - 1.0;
+    squadInviteSlide_ = 1.0 + (kOvershoot + 1.0) * u * u * u + kOvershoot * u * u;
     const SquadInviteLayout layout = squadInviteLayout();
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
 

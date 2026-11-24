@@ -274,13 +274,16 @@ Rarity LootSystem::scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng&
     return authoredRarity;
 }
 
-Rarity LootSystem::chaffDropRarity(Rarity mobRarity) {
+Rarity LootSystem::chaffDropRarity(Rarity mobRarity, Rng& rng) {
     // Flat, and deliberately not run through finishDropRarity: the rarity
     // floor there exists to hold the mob's ONE graded drop up near its tier,
     // and applying it to the extra rows would undo the whole point of them
     // being chaff -- a rare mob's floor would lift every one of them back to
-    // uncommon.
-    return clampRarity(rarityIndex(mobRarity) - 2);
+    // uncommon. A super's is the one exception (chaffUpgradeChance).
+    const int tier = rarityIndex(mobRarity);
+    const double up = chaffUpgradeChance(mobRarity);
+    if (up > 0.0 && rng.chance(up)) return clampRarity(tier - 1);
+    return clampRarity(tier - 2);
 }
 
 Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng) {
@@ -302,12 +305,10 @@ Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rn
         base = downgradeRarity(base);
     }
 
-    // Rare mobs floor at tier-1; epic and above floor at tier-2.
-    const int mobTier = rarityIndex(mobRarity);
-    if (mobTier >= rarityIndex(Rarity::Rare)) {
-        const int floor = mobTier >= rarityIndex(Rarity::Epic) ? mobTier - 2 : mobTier - 1;
-        if (rarityIndex(base) < floor) base = clampRarity(floor);
-    }
+    // Rare mobs floor at tier-1; epic and above floor at tier-2, a super at
+    // tier-1 (gradedDropFloor).
+    const int floor = gradedDropFloor(mobRarity);
+    if (rarityIndex(base) < floor) base = clampRarity(floor);
     return base;
 }
 
@@ -379,7 +380,7 @@ void LootSystem::spawnPublicMobLoot(World& world,const ContentRegistry& content,
     const auto featured=pickFeatured(rng);
     for(std::size_t row=0;row<selected_.size();++row){
         const auto& entry=*selected_[row];
-        const Rarity rarity=row==featured?rollDropRarity(clampRarity(entry.rarityOffset),tier,rng):chaffDropRarity(tier);
+        const Rarity rarity=row==featured?rollDropRarity(clampRarity(entry.rarityOffset),tier,rng):chaffDropRarity(tier,rng);
         const auto index=entry.kind==DropTables::Kind::RandomPetal?tables_.randomPetal(rng,rarity):entry.petalIndex;
         if(index==kNoPetal||index>=content.petalCount()||rarityIndex(rarity)<rarityIndex(content.petal(index).minRarity))continue;
         const Vec2 scatter=Vec2::fromAngle(rng.angle())*(20+rng.unit()*45);
@@ -697,7 +698,7 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
                 // ten items differ only by their own upgrade rolls.
                 const Rarity base =
                     graded ? scaleDropRarity(clampRarity(entry->rarityOffset), mobRarity, rng)
-                           : chaffDropRarity(mobRarity);
+                           : chaffDropRarity(mobRarity, rng);
                 for (int i = 0; i < copies; ++i) {
                     if (dropShare < 1.0 && !rng.chance(dropShare)) continue;
                     Rarity rarity = graded ? finishDropRarity(base, mobRarity, rng) : base;

@@ -331,7 +331,9 @@ private:
         Rect join;
         Rect ignore;
     };
-    static SquadInviteLayout squadInviteLayout();
+    /// Where the card is drawn THIS frame -- partway in from the left while it
+    /// slides in -- so a press lands on the button where it is painted.
+    SquadInviteLayout squadInviteLayout() const;
     /// Whether the card is up: an invite is waiting and has not lapsed.
     bool squadInviteShown() const;
     void drawSquadInvite(Canvas&);
@@ -755,6 +757,12 @@ private:
     /// container animation, which translates the whole stack down from above
     /// the screen and eases it back up again when the card goes away.
     double deathCardSlide_ = 0.0;
+    /// The squad invite card's slide in from the left edge: 0 off screen, 1
+    /// in place (it overshoots a little on the way). Started when a new
+    /// invite -- one with an expiry not seen before -- first shows.
+    double squadInviteSlide_ = 0.0;
+    double squadInviteShownAt_ = 0.0;
+    std::int64_t squadInviteSeen_ = 0;
     /// The trial HUD's "Start Room" button as last drawn, empty when the run
     /// is not waiting in Preparing. The click is tested against the same box.
     Rect trialStartButton_{};
