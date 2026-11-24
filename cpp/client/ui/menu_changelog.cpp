@@ -651,23 +651,12 @@ constexpr ChangelogEntry kChangelog[] = {
     },
     {"November 23, 2026",
       {
-        "Each player now gets their own drops from mobs instead of everyone sharing one roll",
-        "Apexes have twice the health and damage and spawn half as often",
-        "Apexes drop fewer Eternals and can now drop Ultras",
-        "Mythics and Ultras spawn more often",
-        "Mythic, Ultra, Super and Eternal mobs drop their own rarity much more often",
-        "Crafting Super and above is easier: Super to Eternal 0.9%, Eternal to Apex 0.25%",
-        "Mob gallery now shows apex drops per petal, with an x10 badge",
-        "New settings: Invert Attack and Invert Defend in Controls",
-        "Buffed Triangle: 1s reload, and each other Triangle equipped adds damage to every Triangle",
-        "Buffed Wing: twice the damage and health",
-        "Fixed Gas not doing anything; it now poisons every mob it drifts through",
-        "Target dummies now show the real damage of pets like Stick's sandstorms",
-        "Petal cards now show more stats, like Glitch Lightning's targets, Bomb's blast and egg pets",
-        "Egg and Stick cards now show the wait before the pet comes out",
-        "Fixed Ultra mobs never dropping Mythics",
-        "Fixed Splitter counting you twice in /biome",
-        "Fixed some petal descriptions that didn't match what the petal does"
+        "Each player now gets their own drop rolls",
+        "Added some more info in petal tooltips",
+        "New petal: Paperclip",
+        "New petal: File",
+        "Increased Super to Eternal craft chance",
+        "Improvements and bugfixes"
       }
     }
 };
