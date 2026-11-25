@@ -2093,6 +2093,8 @@ void SpawnSystem::scatterBossClocks(double nowMillis) {
         }
     };
     deal(kUniqueSpawnCooldownMillis, false);
+    // Dealt over the longest apex wait, so no fresh biome waits longer for
+    // its first apex than a restarted clock could.
     deal(kApexSpawnCooldownMaxMillis, true);
     for (const std::size_t i : fresh) bossClocks_[i].scattered = true;
 }

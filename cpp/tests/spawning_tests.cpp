@@ -4291,6 +4291,18 @@ TEST(an_apex_grades_thirty_percent_eternal_and_twenty_percent_ultra) {
     CHECK_NEAR(kApexUltraDropChance, 0.20, 1e-12);
 }
 
+TEST(an_apex_copy_never_quotes_less_eternal_than_an_eternal_mob) {
+    // The gallery quotes one copy of an apex's graded drop beside an eternal
+    // mob's one graded drop; the apex's eternal share must not be the lower.
+    Rng rng(4242);
+    constexpr int kRuns = 200000;
+    int eternal = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Unique, rng) == Rarity::Unique) ++eternal;
+    }
+    CHECK(kApexEternalDropChance >= eternal / double(kRuns));
+}
+
 TEST(crafting_past_ultra_loses_a_tenth_of_a_point_a_tier) {
     // Halving up to ultra -> super's 1%, then 0.9% for super -> eternal and
     // 0.25% for eternal -> apex.
