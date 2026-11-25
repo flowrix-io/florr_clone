@@ -1203,7 +1203,8 @@ private:
     /// dozen places and a disconnect in several, and none of them should have
     /// to know a guild is watching.
     void serviceGuildPresence(double nowMillis);
-    /// Once per snapshot pass: which bodies belong to which guild.
+    /// Once per snapshot pass: which bodies belong to which guild, and the tag
+    /// each body's plate carries (PlayerVisuals::guildTag).
     void refreshGuildBodies();
     /// The viewer's online guildmates' bodies (never its own), for the
     /// replicator's alwaysVisible list and the minimap.

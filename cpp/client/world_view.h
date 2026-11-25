@@ -159,12 +159,8 @@ struct RemoteEntity {
     /// string, and a republished skin changes on this screen at once.
     std::string equippedSkinId;
 
-    /// The guild whose tag hangs under this flower's health bar. Nothing sets
-    /// it yet: the snapshot carries no guild tag -- GuildUpdate describes only
-    /// the viewer's own guild, see menu_guild.cpp -- so the tag draws for
-    /// nobody, which is what the reference draws for a player in no guild. The
-    /// plate reads the field rather than the transport so the wire lands in
-    /// one place when it exists.
+    /// Player-only: the tag of the guild this flower's player is in, empty for
+    /// none. The plate draws it in brackets under the health bar.
     std::string guildName;
 
     /// Petal-only: the flower this petal orbits, and the petal's DRAWN offset

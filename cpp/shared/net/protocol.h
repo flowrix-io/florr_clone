@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 96;
+inline constexpr std::uint16_t kProtocolVersion = 97;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -814,9 +814,9 @@ enum class EntityKind : std::uint8_t {
 /// A Player record additionally carries u8 face flags, u16 equipment flags,
 /// u32 render flags, u16 level, u8 best-loadout rarity, u32 arena score
 /// (zero outside the PVP ring, where nothing keeps one), u8 shield in 255ths
-/// of max health and the str id of the custom skin that flower is wearing,
-/// "" for none; a Petal record
-/// carries the u32 net id of the flower it orbits, which is what lets the
+/// of max health, the str id of the custom skin that flower is wearing, "" for
+/// none, and the str tag of its player's guild, "" for none (version 97); a
+/// Petal record carries the u32 net id of the flower it orbits, which is what lets the
 /// client anchor a ring to the DRAWN owner rather than to a snapshot-old one;
 /// an Npc record carries u8 recipe, the index into its mob's `npc.recipes` of
 /// the one recipe an assembler makes (0 for any other NPC). (Version 55.)
@@ -943,7 +943,8 @@ enum UpdateFields : std::uint8_t {
     /// u8 face flags, u16 equipment flags, u32 render/skin flags, u16 level,
     /// u8 best loadout rarity, u32 arena score, u8 shield (255ths of MAX
     /// health; the white pill rides the health bar, so that is the scale it
-    /// has to be measured in), str equipped custom-skin id ("" for none).
+    /// has to be measured in), str equipped custom-skin id ("" for none), str
+    /// guild tag ("" for none).
     /// Set only for players; the payload remains self-contained for decoding.
     FieldPlayerVisuals = 1 << 5,
     /// Modifies FieldHealth: the fraction is an f32, not a u16. Meaningless

@@ -78,6 +78,8 @@ public:
         /// the hash of "", so the sentinel for "never sent" has to be
         /// something else.
         std::uint32_t skinIdHash = 0xFFFFFFFFu;
+        /// The same for the guild tag.
+        std::uint32_t guildTagHash = 0xFFFFFFFFu;
     };
 
     /// What this client is believed to hold, sorted by net id -- the order
@@ -320,12 +322,20 @@ struct PlayerVisualState {
     /// the pointee outlives the snapshot it is written into -- the world is
     /// not mutated while one is being built.
     const std::string* equippedSkinId = nullptr;
+    /// Borrowed likewise. Null is "in no guild".
+    const std::string* guildTag = nullptr;
 };
 
 /// The id a visual state names, or "" when it names none.
 inline const std::string& skinIdOf(const PlayerVisualState& visuals) {
     static const std::string none;
     return visuals.equippedSkinId ? *visuals.equippedSkinId : none;
+}
+
+/// The guild tag a visual state carries, or "" when it carries none.
+inline const std::string& guildTagOf(const PlayerVisualState& visuals) {
+    static const std::string none;
+    return visuals.guildTag ? *visuals.guildTag : none;
 }
 
 /// Builds the Snapshot message for one client.
@@ -470,6 +480,7 @@ private:
         double healthSent = -1;     ///< quantized at its width, as compared
         PlayerVisualState visuals;
         std::uint32_t skinHash = 0;
+        std::uint32_t guildTagHash = 0;
     };
     const Facts& factsOf(World& world, std::uint32_t at);
 

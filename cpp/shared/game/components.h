@@ -644,6 +644,11 @@ struct PlayerVisuals {
     /// needs the clock; PetalSystem sets it and clears it when the time is out.
     bool corruptionHarmless = false;
     double corruptionHarmlessUntilMillis = 0;
+    /// The tag of the guild this body's player is in, without its brackets;
+    /// empty for none. Not account data copied on at spawn: the guild table is
+    /// the authority, and GameServer::refreshGuildBodies re-reads it onto every
+    /// playing body before each snapshot pass.
+    std::string guildTag;
 };
 
 /// Passive bonuses summed from equipped petals each tick.

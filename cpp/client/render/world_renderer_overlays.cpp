@@ -39,6 +39,9 @@ constexpr double kChatBubbleExitScale = 0.5;
 
 constexpr double kPetalHitSize = 10.0;
 
+/// The least room between a flower's guild tag and its level label.
+constexpr double kGuildTagGap = 4.0;
+
 /// A mob's plate, as florr draws it (~/florr_images/client: descriptor
 /// 0x10078c0e0, painter 0x10078cb60), in world units. The bar is a line
 /// 80 + 10 x tier long whatever the mob's size, stroked with round caps: a
@@ -266,19 +269,25 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         // Tinted with the best rarity anywhere in that flower's loadout, which
         // is how a passing flower advertises what it is carrying.
         level.fill = rarityColor(entity.bestRarity);
-        ui::text(canvas, "Lv. " + std::to_string(entity.level), right, barY + 20.0 * zoom,
-                 level);
+        const std::string levelLabel = "Lv. " + std::to_string(entity.level);
+        ui::text(canvas, levelLabel, right, barY + 20.0 * zoom, level);
 
         // The guild tag mirrors the level label on the other side of the bar,
-        // one point smaller so a five-character id and its brackets cannot
-        // collide with it.
+        // two points smaller. A five-character tag beside a three-digit level
+        // is still wider than the bar, so there it starts further left rather
+        // than running into the level.
         if (!entity.guildName.empty()) {
             ui::TextStyle tag;
             tag.size = 8.0 * zoom;
             tag.align = ui::Align::Left;
             tag.baseline = ui::Baseline::Alphabetic;
             tag.fill = 0x27DADEu;
-            ui::text(canvas, "[" + entity.guildName + "]", left, barY + 20.0 * zoom, tag);
+            const std::string tagLabel = "[" + entity.guildName + "]";
+            const double tagRight =
+                right - ui::textWidth(canvas, levelLabel, level.size) - kGuildTagGap * zoom;
+            const double tagLeft =
+                std::min(left, tagRight - ui::textWidth(canvas, tagLabel, tag.size));
+            ui::text(canvas, tagLabel, tagLeft, barY + 20.0 * zoom, tag);
         }
     }
 }

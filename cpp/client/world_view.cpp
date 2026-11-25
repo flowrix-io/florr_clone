@@ -242,6 +242,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint32_t arenaScore;
         double shieldFraction;
         std::string equippedSkinId;
+        std::string guildName;
         std::uint32_t ownerNetId;
         std::uint8_t npcRecipe;
         std::string name;
@@ -274,6 +275,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             s.arenaScore = reader.u32();
             s.shieldFraction = reader.u8() / 255.0;
             s.equippedSkinId = reader.str();
+            s.guildName = reader.str();
         }
         if (s.kind == net::EntityKind::Petal) s.ownerNetId = reader.u32();
         if (s.kind == net::EntityKind::Npc) s.npcRecipe = reader.u8();
@@ -302,6 +304,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint32_t arenaScore;
         double shieldFraction;
         std::string equippedSkinId;
+        std::string guildName;
     };
     std::vector<Update> updates;
     updates.reserve(updateCount);
@@ -332,6 +335,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             u.arenaScore = reader.u32();
             u.shieldFraction = reader.u8() / 255.0;
             u.equippedSkinId = reader.str();
+            u.guildName = reader.str();
         }
         updates.push_back(std::move(u));
         if (!reader.ok()) return false;
@@ -417,6 +421,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.shieldFraction = s.shieldFraction;
         e.healthBar.snap(e.healthFraction, e.shieldFraction);
         e.equippedSkinId = std::move(s.equippedSkinId);
+        e.guildName = std::move(s.guildName);
         e.ownerNetId = s.ownerNetId;
         e.npcRecipe = s.npcRecipe;
         if (s.flags & net::SpawnIsSelf) {
@@ -460,6 +465,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             e.arenaScore = u.arenaScore;
             e.shieldFraction = u.shieldFraction;
             e.equippedSkinId = u.equippedSkinId;
+            e.guildName = u.guildName;
         }
     }
 

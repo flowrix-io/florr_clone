@@ -379,6 +379,25 @@ TEST(equipped_custom_skin_id_reaches_the_client) {
     CHECK(client.entities().at(client.self().netId).equippedSkinId.empty());
 }
 
+TEST(guild_tag_reaches_the_client) {
+    Fixture f;
+    f.world.add<PlayerVisuals>(f.viewer, PlayerVisuals{});
+    f.world.get<PlayerVisuals>(f.viewer).guildTag = "ALPHA";
+
+    // On the spawn record, as a delta on its own, and cleared by "".
+    WorldView client;
+    f.tick(client, 1, 1000);
+    CHECK_EQ(client.entities().at(client.self().netId).guildName, std::string("ALPHA"));
+
+    f.world.get<PlayerVisuals>(f.viewer).guildTag = "BETA2";
+    f.tick(client, 2, 1040);
+    CHECK_EQ(client.entities().at(client.self().netId).guildName, std::string("BETA2"));
+
+    f.world.get<PlayerVisuals>(f.viewer).guildTag.clear();
+    f.tick(client, 3, 1080);
+    CHECK(client.entities().at(client.self().netId).guildName.empty());
+}
+
 TEST(entities_leaving_view_are_removed) {
     Fixture f;
     const Entity mob = f.addMob({1100, 1000});
