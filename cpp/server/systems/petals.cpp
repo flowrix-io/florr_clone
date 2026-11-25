@@ -1441,7 +1441,11 @@ void PetalSystem::removePetal(World& world, Entity petal) {
     // Outside a tick there is no queue to cue it on, and it simply goes.
     const NetId* id = world.tryGet<NetId>(petal);
     const Transform* transform = world.tryGet<Transform>(petal);
-    if (events_ != nullptr && id != nullptr && transform != nullptr) {
+    // A petal that was fired became its shot: it simply goes, with no death
+    // for the client to fade out on the ring.
+    const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+    const bool launched = instance != nullptr && instance->launched;
+    if (events_ != nullptr && id != nullptr && transform != nullptr && !launched) {
         events_->killed(id->value, transform->position, transform->realm);
     }
     world.destroy(petal);
@@ -2582,7 +2586,11 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                                 instance->rarity)) {
                 // The shot IS the petal leaving the ring: firing spends it, the
                 // same way being thrown spends web and pollen, and the
-                // reference launches the petal ITSELF as the missile.
+                // reference launches the petal ITSELF as the missile. So it
+                // leaves without a death fade (PetalInstance::launched).
+                if (PetalInstance* launched = world.tryGet<PetalInstance>(petal)) {
+                    launched->launched = true;
+                }
                 spendPetal(world, registry, player, petal, firedSlot, firedSub, stats, nowMillis);
                 continue;
             }

@@ -895,7 +895,10 @@ void GameServer::reapDead() {
             if (session != nullptr ? session->deathReported : bot->deathAnnounced) continue;
         }
 
-        if (world_.has<NetId>(e)) {
+        // A fired petal became its shot (PetalInstance::launched): no death
+        // for the client to fade out on the ring.
+        const PetalInstance* fired = world_.tryGet<PetalInstance>(e);
+        if (world_.has<NetId>(e) && (fired == nullptr || !fired->launched)) {
             const Transform* transform = world_.tryGet<Transform>(e);
             events_.killed(world_.get<NetId>(e).value, transform ? transform->position : Vec2{},
                            transform ? transform->realm : Realm::Overworld);

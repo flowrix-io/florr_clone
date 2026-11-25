@@ -1295,6 +1295,10 @@ struct PetalInstance {
     /// shared ring position.
     std::uint8_t subIndex = 0;
     std::uint8_t subCount = 1;
+    /// This petal was just fired as a shot: it leaves the ring by BECOMING the
+    /// shot, so it goes without a death -- no Killed cue, so the client does
+    /// not fade a copy of it out on the ring while the shot flies off.
+    bool launched = false;
     /// The direction this INSTANCE faces, refreshed by the ring step. It is the
     /// slot's bearing for a lone petal, and the outward sub-bearing that places
     /// the grain inside its cluster for a clumped one -- so a clump of four
