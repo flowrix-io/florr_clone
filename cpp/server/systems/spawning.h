@@ -337,8 +337,12 @@ inline constexpr double kRespawnScatter = 900.0;
 /// old band's 4..45 seconds that was half the screen permanently empty. Kept
 /// short enough that the dip is a dip rather than the normal state, and long
 /// enough that nothing appears in the hole the last kill left.
-inline constexpr double kInViewRespawnMinMillis = 3000.0;
-inline constexpr double kInViewRespawnMaxMillis = 12000.0;
+///
+/// Halved from 3..12 seconds: zones read as thin, and the wait is the one
+/// knob that refills a cleared screen faster without stocking a band past
+/// the density its area buys.
+inline constexpr double kInViewRespawnMinMillis = 1500.0;
+inline constexpr double kInViewRespawnMaxMillis = 6000.0;
 
 /// Attempts allowed per placement before it gives up on this pass. A point in
 /// a lake, in a wall or in somebody's lap is thrown away rather than nudged, so

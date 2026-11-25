@@ -469,7 +469,7 @@ void LootSystem::run(World& world, const SpatialGrid& grid, const ContentRegistr
     awardDeaths(world, content, rng);
     // Deaths pay out after the broadphase pass, but their loot is still
     // collectable this tick by a flower standing on it -- its own reach, not
-    // a magnet's, which waits a second (kMagnetPickupDelayMillis). The
+    // a magnet's, which waits half a second (kMagnetPickupDelayMillis). The
     // client is not left with nothing to animate -- the pickup cue carries the
     // drop's position and look for exactly this case.
     collectFresh(world, commands, events);
@@ -545,7 +545,7 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, Re
     // a flower standing at the same coordinates on another map, a contributor
     // who changed map on the tick of the kill, took its copy from there.
     if (at->realm != playerRealm) return;
-    // A magnet reaches only for loot that has lain a second: a fresh kill's
+    // A magnet reaches only for loot that has lain half a second: a fresh kill's
     // drops are seen on the ground first. Loot already lying there when the
     // magnet goes on is old enough, and comes in at once.
     const double reach = nowMillis_ >= drop->magnetReadyAtMillis ? reachSq : baseReachSq;

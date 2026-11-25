@@ -172,7 +172,7 @@ private:
 
 /// How long a fresh drop lies on the ground before a magnet may pull it in.
 /// A flower walking over it still takes it at once.
-inline constexpr double kMagnetPickupDelayMillis = 1000.0;
+inline constexpr double kMagnetPickupDelayMillis = 500.0;
 
 class LootSystem {
 public:
