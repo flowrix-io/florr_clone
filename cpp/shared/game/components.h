@@ -1306,6 +1306,10 @@ struct PetalInstance {
     /// shared ring position.
     std::uint8_t subIndex = 0;
     std::uint8_t subCount = 1;
+    /// This petal was just fired as a shot: it leaves the ring by BECOMING the
+    /// shot, so it goes without a death -- no Killed cue, so the client does
+    /// not fade a copy of it out on the ring while the shot flies off.
+    bool launched = false;
     /// The direction this INSTANCE faces, refreshed by the ring step. It is the
     /// slot's bearing for a lone petal, and the outward sub-bearing that places
     /// the grain inside its cluster for a clumped one -- so a clump of four
@@ -1538,6 +1542,11 @@ struct DropItem {
     /// Bots walk past it: a petal the whole server is racing for is not a
     /// bot's to take.
     bool humansOnly = false;
+    /// When a magnet may start pulling it in, on the loot clock: half a
+    /// second after it lands (kMagnetPickupDelayMillis), so a kill's loot is seen on
+    /// the ground before a magnet takes it. Until then only a flower's own
+    /// reach -- walking over it -- picks it up.
+    double magnetReadyAtMillis = 0.0;
 };
 
 /// `Sacrifice` is not a field at all -- nothing reads a GroundEffect for it --

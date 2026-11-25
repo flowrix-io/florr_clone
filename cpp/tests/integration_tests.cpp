@@ -1646,6 +1646,10 @@ TEST(a_dandelion_sheds_a_seed_through_the_real_server_loop) {
     // handle asserts -- which would take the whole test binary down with it
     // instead of failing this one case.
     const Rarity spawnedRarity = world.get<MobType>(dandelion).rarity;
+    // Whatever tier the spawner rolled, the flower's petals must be able to
+    // scratch it: a high-tier dandelion's armour would turn every hit away
+    // and no seed would ever be shed.
+    if (Armor* armor = world.tryGet<Armor>(dandelion)) armor->amount = 0.0;
 
     // Into the client's view first, but well clear of the flower's petals.
     // The client has to have seen the whole ring before a seed goes, or "one
@@ -1873,12 +1877,22 @@ TEST(spaceship_shots_bring_at_most_three_glitch_flowers_through_the_real_server_
         Query<MobTag, Transform, Health> mobs{world};
         mobs.without<Pet, BodySegment, Intangible>();
         mobs.each([&](Entity e, MobTag&, Transform& transform, Health&) {
+            // Plain bodies only: a dandelion's seed ring stands between it and
+            // a shot, and a boss is its own fight. Which mobs the spawner put
+            // down first is luck, so the test picks rather than takes.
+            if (world.has<MobPetalRing>(e)) return;
+            if (isBossRarity(world.get<MobType>(e).rarity)) return;
             if (transform.realm == realm && targets.size() < 8) targets.push_back(e);
         });
         return targets.size() >= 4;
     }, 400));
     if (targets.size() < 4) return;
-    for (const Entity target : targets) world.get<Health>(target) = Health{1e15, 1e15, 0.0, 0.0};
+    // And unarmoured: whichever mobs the spawner happened to put down first
+    // may be high-tier ones, whose armour would turn every shot away.
+    for (const Entity target : targets) {
+        world.get<Health>(target) = Health{1e15, 1e15, 0.0, 0.0};
+        if (Armor* armor = world.tryGet<Armor>(target)) armor->amount = 0.0;
+    }
     const auto pin = [&] {
         const Vec2 centre = world.get<Transform>(player).position;
         for (std::size_t i = 0; i < targets.size(); ++i) {

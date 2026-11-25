@@ -202,7 +202,12 @@ inline constexpr double kLatentSleepMargin = 500.0;
 ///
 /// It says nothing about how many mobs the world holds: the map is stocked to
 /// its own area whatever this is, and the rest of that population is latent.
-inline constexpr int kMaxLiveMobs = 3000;
+///
+/// 6000, up from 3000: at 3000 a busy server ran into it, and once it binds
+/// nothing new wakes anywhere -- the zones players were standing in (the fire
+/// ant and termite hells, the garden's ladybug pocket) read as empty. An
+/// operator can still lower it live with `/admin set_max_enemies`.
+inline constexpr int kMaxLiveMobs = 6000;
 
 /// Every escort -- a hole's or a server's guard and waves, a queen's soldiers
 /// -- comes up out of the CENTRE of whatever spawned it, this far off it on a
@@ -332,8 +337,12 @@ inline constexpr double kRespawnScatter = 900.0;
 /// old band's 4..45 seconds that was half the screen permanently empty. Kept
 /// short enough that the dip is a dip rather than the normal state, and long
 /// enough that nothing appears in the hole the last kill left.
-inline constexpr double kInViewRespawnMinMillis = 3000.0;
-inline constexpr double kInViewRespawnMaxMillis = 12000.0;
+///
+/// 1..4 seconds, a third of the old 3..12: zones read as thin, and the wait
+/// is the one knob that refills a cleared screen faster without stocking a
+/// band past the density its area buys.
+inline constexpr double kInViewRespawnMinMillis = 1000.0;
+inline constexpr double kInViewRespawnMaxMillis = 4000.0;
 
 /// Attempts allowed per placement before it gives up on this pass. A point in
 /// a lake, in a wall or in somebody's lap is thrown away rather than nudged, so

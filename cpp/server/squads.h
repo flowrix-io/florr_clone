@@ -163,6 +163,11 @@ struct SquadBody {
     Entity body = NULL_ENTITY;
     /// The connection behind it, or 0 for a bot.
     net::ConnectionId owner = 0;
+    /// A member between lives -- dead, on the title screen, loading back in
+    /// -- filed by the body they last played (Session::lastBody). Counted for
+    /// a mob only if that body actually hit it: a member who left before the
+    /// fight is not paid for it, and does not dilute the squad's score.
+    bool away = false;
 
     /// Whether a free share given to this member goes anywhere.
     bool banks() const { return owner != 0; }

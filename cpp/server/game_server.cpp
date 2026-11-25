@@ -283,6 +283,10 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // once a tick; the pointer never moves.
     loot_->squads = &squadIndex_;
     combat_->squads = &squadIndex_;
+    loot_->ownerOfGoneBody = [this](Entity body) -> net::ConnectionId {
+        const Session* session = creditedSession(body);
+        return session != nullptr ? session->connection : 0;
+    };
 
     // The annotation layer is a read-only service, so the systems that need it
     // hold a pointer rather than being handed it per call. Left null they fall
@@ -1074,7 +1078,10 @@ void GameServer::reapDead() {
             if (session != nullptr ? session->deathReported : bot->deathAnnounced) continue;
         }
 
-        if (world_.has<NetId>(e)) {
+        // A fired petal became its shot (PetalInstance::launched): no death
+        // for the client to fade out on the ring.
+        const PetalInstance* fired = world_.tryGet<PetalInstance>(e);
+        if (world_.has<NetId>(e) && (fired == nullptr || !fired->launched)) {
             const Transform* transform = world_.tryGet<Transform>(e);
             events_.killed(world_.get<NetId>(e).value, transform ? transform->position : Vec2{},
                            transform ? transform->realm : Realm::Overworld);

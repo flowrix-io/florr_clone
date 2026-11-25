@@ -539,6 +539,11 @@ TEST(a_magician_casts_its_wands_and_pays_only_for_itself_through_the_real_server
     CHECK(dropsOnGround().empty());
 
     // The magician itself pays out one of each, and takes the rest with it.
+    // The flower steps well away first: a drop that lands beside it is
+    // picked up within the five ticks below, and which of the two lands
+    // nearest is the luck of the scatter roll.
+    world.get<Transform>(player).position = world.get<Transform>(magician).position +
+                                            Vec2{3000.0, 0.0};
     Health& health = world.get<Health>(magician);
     world.get<Bounty>(magician).credit(player, health.max);
     health.current = 0.0;

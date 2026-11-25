@@ -2330,7 +2330,7 @@ TEST(admin_secondary_effects_are_stronger_without_changing_ordinary_petals) {
     CHECK_NEAR(admin.slowDurationMillis, ordinary.slowDurationMillis * 10.0, 1e-9);
     CHECK_NEAR(admin.reloadMillis, ordinary.reloadMillis * 0.5, 1e-9);
     const auto bone = registry.petalIndex("bone");
-    CHECK_NEAR(registry.petalStats(bone, Rarity::Apex).petalArmor, 7290.0, 1e-9);
+    CHECK_NEAR(registry.petalStats(bone, Rarity::Apex).petalArmor, 196830.0, 1e-9);
     const auto ico = registry.petalIndex("icosahedron");
     CHECK_NEAR(registry.petalStats(ico, Rarity::Apex).petalArmor, 196830.0, 1e-9);
 }
