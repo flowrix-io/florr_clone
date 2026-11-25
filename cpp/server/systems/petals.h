@@ -438,14 +438,11 @@ private:
     /// replace it with a glide: a recalled pearl and the ring changing hands,
     /// each a gap the step would cross in one lunge.
     ///
-    /// The ring is `ringRadius` round `ringCentre` and turns at `spin` radians a
-    /// second.
     /// `home` is where a homing petal dives: the flower, even while the ring
     /// is laid out around a moon.
     void stepPetalPhysics(World& world, const ContentRegistry& registry, PetalInstance& instance,
                           Transform& transform, Vec2 home, Vec2 orbit, double attractionRadius,
-                          Vec2 ringCentre, double ringRadius, double spin, double nowMillis,
-                          double dt);
+                          double spinSpeed, double nowMillis, double dt);
     void runActions(World& world, const ContentRegistry& registry, Entity player,
                     double nowMillis, double dt);
 
