@@ -3060,14 +3060,18 @@ TEST(a_crowd_of_players_cannot_exceed_the_global_cap) {
     makeBandedWorld(maps, bands, "garden 100%");
     Sim sim;
     sim.spawner.worldMaps = &maps;
-    // Between them the bands want several times what the server will allow.
-    CHECK(static_cast<int>(bands.size()) * bandTarget(bands.front()) > kMaxLiveMobs);
+    // The cap the spawner holds to, set the way `/admin set_max_enemies` sets
+    // it: what is under test is that the cap binds, not kMaxLiveMobs' value.
+    constexpr int kCap = 3000;
+    sim.spawner.mobCap = kCap;
+    // Between them the bands want more than the server will allow.
+    CHECK(static_cast<int>(bands.size()) * bandTarget(bands.front()) > kCap);
 
     for (int i = 0; i < 600; ++i) sim.tick(players);
 
-    CHECK(sim.mobCount() <= kMaxLiveMobs + kMaxNestChildren);
+    CHECK(sim.mobCount() <= kCap + kMaxNestChildren);
     // And the cap is what stopped it, not an empty world.
-    CHECK(sim.spawner.census().mobs > kMaxLiveMobs / 2);
+    CHECK(sim.spawner.census().mobs > kCap / 2);
 }
 
 TEST(mobs_nobody_has_been_near_stop_being_entities) {
@@ -5541,11 +5545,41 @@ TEST(magnetism_widens_the_pickup_radius_without_moving_the_drop) {
     CHECK(world.get<Transform>(drop).position == dropAt);
 
     world.get<PlayerModifiers>(player).magnetism = 400.0;
+    // A magnet waits a second after the drop landed before it reaches for it:
+    // a kill's loot is seen on the ground first.
     rebuildGrid(world, grid);
-    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    loot.run(world, grid, shipped(), rng, kMagnetPickupDelayMillis - 1.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+    CHECK(world.isAlive(drop));
+
+    // Then it comes in -- and loot that was already lying there when the
+    // magnet went on comes in at once, with no second wait of its own.
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, kMagnetPickupDelayMillis, 0.0, commands, events);
     // Still where it was dropped at the moment it was claimed -- the destroy is
     // deferred, so this reads the drop as the pickup left it.
     CHECK(world.get<Transform>(drop).position == dropAt);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK(!world.isAlive(drop));
+}
+
+TEST(a_fresh_drop_under_the_flower_is_taken_at_once_magnet_or_not) {
+    // The magnet's wait is about REACH: walking over a drop takes it at once.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(21);
+
+    const Entity player = makePlayer(world, kCentre, 0.0);
+    world.get<PlayerModifiers>(player).magnetism = 400.0;
+    const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common,
+                                       kCentre + Vec2{5.0, 0.0}, Realm::Overworld, {player});
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
     commands.flush();
     CHECK_EQ(loot.pickups().size(), std::size_t(1));
     CHECK(!world.isAlive(drop));
@@ -7139,36 +7173,4 @@ TEST(a_neverambient_mob_never_comes_from_a_group_roll_however_hard_the_ground) {
             }
         }
     }
-}
-
-TEST(a_dense_band_holds_its_density_times_the_mobs) {
-    // `density` on a band multiplies the population its area buys: the fire
-    // ant zones are drawn at 3, the termite zones at 2, the ladybug zones at 4.
-    const Rect band{kCentre.x - 1500.0, kCentre.y - 1500.0, 3000.0, 3000.0};
-    std::string object = spawnObject(1, band.x, band.y, band.w, band.h, true, 0.0, "bee 100%");
-    const std::string head = "\"properties\": [";
-    object.replace(object.find(head), head.size(),
-                   head + "{\"name\": \"density\", \"type\": \"float\", \"value\": 3},");
-    const std::string path = writeTiledFixture("flix_dense_world.tmj", fixtureMapBody(object));
-    MapData map;
-    map.setId("dense");
-    std::string error;
-    CHECK(map.loadTiled(path, error));
-    std::remove(path.c_str());
-    bool sawDensity = false;
-    for (const MapElement& element : map.elements()) {
-        if (element.isSpawnBand()) sawDensity = std::fabs(element.density - 3.0) < 1e-9;
-    }
-    CHECK(sawDensity);
-
-    WorldMaps maps;
-    maps.adoptSingle(map);
-    Sim sim;
-    sim.spawner.worldMaps = &maps;
-    const std::vector<Vec2> players{kCentre};
-    for (int i = 0; i < 400; ++i) sim.tick(players);
-    const int expected = std::max(
-        1, static_cast<int>(std::ceil(kTargetMobDensity * 3.0 * (band.w * band.h))));
-    CHECK(expected > bandTarget(band) * 2);
-    CHECK_EQ(sim.populationIn(band), expected);
 }

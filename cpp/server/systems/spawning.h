@@ -202,7 +202,12 @@ inline constexpr double kLatentSleepMargin = 500.0;
 ///
 /// It says nothing about how many mobs the world holds: the map is stocked to
 /// its own area whatever this is, and the rest of that population is latent.
-inline constexpr int kMaxLiveMobs = 3000;
+///
+/// 6000, up from 3000: at 3000 a busy server ran into it, and once it binds
+/// nothing new wakes anywhere -- the zones players were standing in (the fire
+/// ant and termite hells, the garden's ladybug pocket) read as empty. An
+/// operator can still lower it live with `/admin set_max_enemies`.
+inline constexpr int kMaxLiveMobs = 6000;
 
 /// Every escort -- a hole's or a server's guard and waves, a queen's soldiers
 /// -- comes up out of the CENTRE of whatever spawned it, this far off it on a
@@ -812,10 +817,6 @@ private:
         /// than handing the slot back where it fell. See MapElement::singular:
         /// the shape is one creature's range, not a patch of ground.
         bool singular = false;
-        /// The band's `density` (MapElement::density): its cap is already
-        /// multiplied by it, and an in-view replacement waits this many times
-        /// less.
-        double density = 1.0;
         /// Index into bossClocks_: the biome of the map this band is drawn on.
         /// kInvalidIndex on a prestige twin, which keeps no clock.
         std::uint16_t biome = kInvalidIndex;

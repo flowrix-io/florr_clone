@@ -1970,15 +1970,10 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             // Unless the band is SINGULAR, which is the one band whose size
             // says nothing about its population: it is drawn over everywhere
             // its one mob may be, so area buys reach, not numbers.
-            //
-            // A band's `density` multiplies it: ground drawn to be busier than
-            // its area alone would make it.
-            zone.density = element.density;
             zone.targetMobs =
                 element.singular
                     ? 1
-                    : std::max(1, static_cast<int>(std::ceil(kTargetMobDensity * element.density *
-                                                             element.area())));
+                    : std::max(1, static_cast<int>(std::ceil(kTargetMobDensity * element.area())));
             zones_.push_back(std::move(zone));
         }
 
@@ -2543,8 +2538,7 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
         // operator after a killall, sees the band full on the next pass, on
         // their own screen too.
         const double delay = slot == Slot::Killed && seenBy(viewers, zone.realm, at, 0.0)
-                                 ? rng.range(kInViewRespawnMinMillis, kInViewRespawnMaxMillis) /
-                                       std::max(zone.density, 0.1)
+                                 ? rng.range(kInViewRespawnMinMillis, kInViewRespawnMaxMillis)
                                  : 0.0;
         zone.latent.push_back(LatentMob{at, nowMillis + delay, type, rarity});
         return true;

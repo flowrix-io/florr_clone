@@ -170,6 +170,10 @@ private:
 // LootSystem
 // ---------------------------------------------------------------------------
 
+/// How long a fresh drop lies on the ground before a magnet may pull it in.
+/// A flower walking over it still takes it at once.
+inline constexpr double kMagnetPickupDelayMillis = 1000.0;
+
 class LootSystem {
 public:
     /// The tier of the best orb of each kind a flower wears, kRarityCount for
@@ -279,9 +283,12 @@ private:
     void collectFresh(World& world, CommandBuffer& commands, EventQueue& events);
     /// One flower against one drop: the shared body of both pickup passes.
     /// `playerRealm` is the flower's map, which the drop must be on too.
+    /// `reachSq` is the flower's whole reach, magnet included; `baseReachSq`
+    /// what it reaches without one, which is all a drop younger than its
+    /// magnetReadyAtMillis answers to.
     void tryCollect(World& world, Entity player, Vec2 playerPosition, Realm playerRealm,
-                    double reachSq, Entity candidate, CommandBuffer& commands,
-                    EventQueue& events);
+                    double reachSq, double baseReachSq, Entity candidate,
+                    CommandBuffer& commands, EventQueue& events);
     /// Per-tick item maintenance, in the reference's order: wall push, bounds,
     /// expiry. The push is not a nicety -- nothing resolves the spawn scatter.
     void maintainDrops(double dt, CommandBuffer& commands);
@@ -297,6 +304,9 @@ private:
     std::size_t pickFeatured(Rng& rng) const;
 
     World* boundWorld_ = nullptr;
+    /// The clock run() was last handed: what a drop's magnetReadyAtMillis is
+    /// stamped from and checked against.
+    double nowMillis_ = 0.0;
     std::optional<Query<PlayerTag, Transform, PlayerModifiers>> collectors_;
     std::optional<Query<DropTag, Transform, Lifetime>> drops_;
     std::optional<Query<MobTag, Dead, MobType, Transform>> corpses_;

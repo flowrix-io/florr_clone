@@ -2001,11 +2001,6 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"ladybug 95% garden 5%"
-                        }, 
-                        {
-                         "name":"density",
-                         "type":"float",
-                         "value":4
                         }],
                  "rotation":0,
                  "type":"",
@@ -2113,11 +2108,6 @@
                          "name":"mobs",
                          "type":"string",
                          "value":"ladybug 95% garden 5%"
-                        }, 
-                        {
-                         "name":"density",
-                         "type":"float",
-                         "value":4
                         }],
                  "rotation":0,
                  "type":"",

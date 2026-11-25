@@ -1527,6 +1527,11 @@ struct DropItem {
     /// Bots walk past it: a petal the whole server is racing for is not a
     /// bot's to take.
     bool humansOnly = false;
+    /// When a magnet may start pulling it in, on the loot clock: one second
+    /// after it lands (kMagnetPickupDelayMillis), so a kill's loot is seen on
+    /// the ground before a magnet takes it. Until then only a flower's own
+    /// reach -- walking over it -- picks it up.
+    double magnetReadyAtMillis = 0.0;
 };
 
 /// `Sacrifice` is not a field at all -- nothing reads a GroundEffect for it --
