@@ -34,8 +34,8 @@ namespace {
 /// handler takes.
 flix::App* g_app = nullptr;
 
-/// The name the session file is stored under. settingsPath() appends
-/// "-settings" to the path, so the settings file's name follows from it.
+/// The name the session file is stored under. App appends "-settings" and
+/// "-skin-draft" to the path, so those files' names follow from it.
 constexpr const char* kSessionName = "session";
 #endif
 
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
             sessionName += safe ? c : '_';
         }
     }
-    if (flix::web::mountStorage({sessionName, sessionName + "-settings",
+    if (flix::web::mountStorage({sessionName, sessionName + "-settings", sessionName + "-skin-draft",
                                  flix::web::kBootPathName, flix::web::kBootScriptName})) {
         config.sessionFile = std::string(flix::web::kStorageDirectory) + "/" + sessionName;
     }

@@ -271,6 +271,7 @@ add_library(flix_client STATIC
   client/ui/menu_talents.cpp
   client/ui/menu_shop.cpp
   client/ui/menu_skins.cpp
+  client/ui/skin_draft.cpp
   client/ui/menu_leaderboard.cpp
   client/ui/menu_notifications.cpp
   client/ui/menu_account.cpp

@@ -1348,6 +1348,13 @@ class SkinsPanel {
 public:
     bool render(MenuContext&);
     void reset();
+    /// Puts back the skin being made when the last page went away, and names
+    /// the file it is kept in from here on. Before the first frame.
+    static void loadDraft(const std::string& path);
+    /// Writes that file if the skin has changed since it was last written or
+    /// read -- never otherwise, so a tab that left the editor alone does not
+    /// write over what another tab drew.
+    static void saveDraft();
     static double preferredWidth();
     /// Taller than the other corner overlays: this is the only one that has to
     /// show a drawing board, a shape list and that shape's properties at once.
@@ -1760,6 +1767,10 @@ public:
     void setFilePaths(const std::string& dataDirectory, const std::string& settingsFile) {
         AssetsPanel::setPaths(dataDirectory, settingsFile);
     }
+
+    /// See SkinsPanel::loadDraft and saveDraft.
+    void loadSkinDraft(const std::string& path) { SkinsPanel::loadDraft(path); }
+    void saveSkinDraft() { SkinsPanel::saveDraft(); }
 
 private:
     const ProfilingStats* profiling_ = nullptr;

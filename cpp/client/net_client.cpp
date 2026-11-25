@@ -2399,29 +2399,42 @@ void NetClient::handleSkinsFetched(ByteReader& reader) {
 void NetClient::requestMissingSkins() {
     if (!haveSession()) return;
     const double now = renderClockMillis();
-    std::vector<const std::string*> wanted;
+    std::vector<std::string> wanted;
     for (const auto& entry : view_.entities()) {
         const std::string& id = entry.second.equippedSkinId;
-        if (id.empty() || findSkin(id) != nullptr) continue;
-        const auto asked = skinAskedAt_.find(id);
-        // Infinity, for a skin that is gone, never comes round again.
-        if (asked != skinAskedAt_.end() && !(now - asked->second >= kSkinRetryMillis)) continue;
-        if (std::any_of(wanted.begin(), wanted.end(),
-                        [&](const std::string* other) { return *other == id; })) {
-            continue;
-        }
-        wanted.push_back(&id);
+        if (id.empty() || findSkin(id) != nullptr || !skinFetchDue(id, now)) continue;
+        if (std::find(wanted.begin(), wanted.end(), id) != wanted.end()) continue;
+        wanted.push_back(id);
         if (static_cast<int>(wanted.size()) == kMaxSkinFetch) break;
     }
-    if (wanted.empty()) return;
+    if (!wanted.empty()) sendSkinFetch(wanted, now);
+}
+
+bool NetClient::skinFetchDue(const std::string& id, double now) const {
+    const auto asked = skinAskedAt_.find(id);
+    // Infinity, for a skin that is gone, never comes round again.
+    return asked == skinAskedAt_.end() || now - asked->second >= kSkinRetryMillis;
+}
+
+void NetClient::sendSkinFetch(const std::vector<std::string>& ids, double now) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::FetchSkins);
-    w.u8(static_cast<std::uint8_t>(wanted.size()));
-    for (const std::string* id : wanted) {
-        w.str(*id);
-        skinAskedAt_[*id] = now;
+    w.u8(static_cast<std::uint8_t>(ids.size()));
+    for (const std::string& id : ids) {
+        w.str(id);
+        skinAskedAt_[id] = now;
     }
     send(w);
+}
+
+NetClient::SkinPresence NetClient::requireSkin(const std::string& id) {
+    if (id.empty()) return SkinPresence::Gone;
+    if (findSkin(id) != nullptr) return SkinPresence::Held;
+    const auto asked = skinAskedAt_.find(id);
+    if (asked != skinAskedAt_.end() && std::isinf(asked->second)) return SkinPresence::Gone;
+    const double now = renderClockMillis();
+    if (haveSession() && skinFetchDue(id, now)) sendSkinFetch({id}, now);
+    return SkinPresence::Unknown;
 }
 
 void NetClient::handleSkinPublished(ByteReader& reader) {
