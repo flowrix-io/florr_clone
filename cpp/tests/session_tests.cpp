@@ -110,7 +110,7 @@ TEST(allowances_are_capped_so_idling_does_not_bank_a_flood) {
     // An hour of silence must not buy an hour's worth of messages at once.
     refillAllowances(session, 1000 + 3600000);
     CHECK(session.chatAllowance <= 4.0 + 1e-9);
-    CHECK(session.inputAllowance <= 60.0 + 1e-9);
+    CHECK(session.inputAllowance <= net::kInputsPerSecond * 2.0 + 1e-9);
     CHECK(session.loginAttemptsAllowed <= 5.0 + 1e-9);
 }
 
@@ -139,7 +139,7 @@ TEST(inventory_allowance_refills_without_banking_or_spending_movement) {
     session.lastRefillMillis = 1000;
     for (int i = 0; i < 20; ++i) CHECK(spend(session.inventoryAllowance));
     CHECK(!spend(session.inventoryAllowance));
-    CHECK_NEAR(session.inputAllowance, 60.0, 1e-9);
+    CHECK_NEAR(session.inputAllowance, net::kInputsPerSecond * 2.0, 1e-9);
     refillAllowances(session, 1050);
     CHECK(!spend(session.inventoryAllowance));
     refillAllowances(session, 1100);

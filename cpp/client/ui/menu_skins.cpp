@@ -38,9 +38,11 @@
 #include "client/ui/menu_theme.h"
 #include "client/ui/menu_widgets.h"
 #include "client/ui/menus.h"
+#include "client/ui/skin_draft.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/text_select.h"
+#include "shared/core/file.h"
 #include "shared/core/text.h"
 #include "shared/game/skin_format.h"
 #include "shared/game/skin_likeness.h"
@@ -167,6 +169,9 @@ constexpr double kCopiedSeconds = 1.5;
 /// How long a second click on Publish with nothing changed is only that: a
 /// double click, which would answer "Published" with a refusal of itself.
 constexpr double kPublishRepeatSeconds = 1.5;
+/// How often the open editor looks for a change to write to the draft file.
+/// The page going away writes it as well; this is for a tab that is killed.
+constexpr double kDraftSaveSeconds = 1.0;
 
 double round1(double v) { return std::round(v * 10.0) / 10.0; }
 
@@ -589,6 +594,12 @@ struct Studio {
     std::vector<Shape> draftShapes;
     std::string draftName;
 
+    /// Where the draft is kept across page loads, "" when nowhere, what that
+    /// file last held, and when the editor is next to be compared with it.
+    std::string draftPath;
+    std::string draftSaved;
+    double draftCheckAt = 0;
+
     /// What Publish sent last and when, to swallow a double click on it. The
     /// server is what stops a second copy: this only spares the reply.
     std::uint64_t sentShapes = 0;
@@ -740,6 +751,12 @@ struct Studio {
     void beginEdit(const CustomSkin&);
     /// Back to making a new skin, with the draft beginEdit set aside.
     void stopEdit();
+    /// The skin being edited has no place to be saved to any more: what is on
+    /// the board becomes a new skin.
+    void loseEdit(MenuContext&, const char* notice);
+    /// The part of all this that outlives the page, and putting it back.
+    SkinDraft draft() const;
+    void restore(const SkinDraft&);
     /// Puts a freshly loaded board in front of the player: first shape
     /// selected, no picker, the list and the Text editor showing it.
     void boardLoaded();
@@ -1830,6 +1847,45 @@ void Studio::stopEdit() {
     boardLoaded();
 }
 
+void Studio::loseEdit(MenuContext& ctx, const char* notice) {
+    editingId.clear();
+    draftShapes.clear();
+    draftName.clear();
+    ctx.net.addLocalChat("Skins", notice);
+}
+
+SkinDraft Studio::draft() const {
+    SkinDraft out;
+    out.shapes = shapes;
+    out.name = skinName;
+    out.selected = selected;
+    out.editingId = editingId;
+    out.asideShapes = draftShapes;
+    out.asideName = draftName;
+    out.textMode = textMode;
+    if (textMode) out.text = textBuffer;
+    return out;
+}
+
+void Studio::restore(const SkinDraft& saved) {
+    shapes = saved.shapes;
+    skinName = saved.name;
+    editingId = saved.editingId;
+    draftShapes = saved.asideShapes;
+    draftName = saved.asideName;
+    textMode = false;
+    boardLoaded();
+    selected = saved.selected;
+    if (saved.textMode) {
+        textMode = true;
+        textBuffer = saved.text.substr(0, kMaxSkinTextBytes);
+        textField.focusAtEnd(textBuffer, 0.0);
+        // Text that parses says what the shapes are; text that does not says
+        // why, over the shapes it last did.
+        applyTextBuffer();
+    }
+}
+
 std::string Studio::parseShapes(const std::string& source, std::vector<Shape>& out) const {
     out.clear();
     std::size_t at = 0;
@@ -2339,7 +2395,28 @@ void SkinsPanel::reset() {
     state.confirming = false;
     state.regions.clear();
     state.hovering = false;
-    if (state.textMode) state.enterTextMode();
+    // The text as it was left, half-typed lines and comments included: the
+    // shapes behind it have not moved while the panel was away.
+    if (state.textMode) state.textField.focusAtEnd(state.textBuffer, 0.0);
+}
+
+void SkinsPanel::loadDraft(const std::string& path) {
+    Studio& state = studio();
+    state.draftPath = path;
+    std::string text;
+    SkinDraft saved;
+    if (readFile(path, text) && parseSkinDraft(text, saved)) state.restore(saved);
+    // What is on the board now is what the file is taken to hold, so nothing
+    // is written until the player changes something.
+    state.draftSaved = skinDraftText(state.draft());
+}
+
+void SkinsPanel::saveDraft() {
+    Studio& state = studio();
+    if (state.draftPath.empty()) return;
+    std::string text = skinDraftText(state.draft());
+    if (text == state.draftSaved) return;
+    if (writeSkinDraftFile(state.draftPath, text)) state.draftSaved = std::move(text);
 }
 
 bool SkinsPanel::render(MenuContext& ctx) {
@@ -2349,15 +2426,21 @@ bool SkinsPanel::render(MenuContext& ctx) {
     // leave it pointed at a dead one.
     state.net = &ctx.net;
     state.window = &ctx.window;
-    // The skin being edited was taken down -- here, by an admin, or with the
-    // account it belonged to signed out. What is on the board stays, as a new
-    // skin: nothing is left to save it over.
-    if (!state.editingId.empty() && ctx.net.findSkin(state.editingId) == nullptr) {
-        state.editingId.clear();
-        state.draftShapes.clear();
-        state.draftName.clear();
-        ctx.net.addLocalChat("Skins", "The skin you were editing is gone. Publish makes what "
-                                      "you have a new skin.");
+    // The skin being edited was taken down, or another account has signed in
+    // since. What is on the board stays, as a new skin: nothing is left to
+    // save it over. A connection that has not been sent the skin -- a page
+    // just reloaded, or a reconnect -- asks, and the edit waits for the answer.
+    if (!state.editingId.empty()) {
+        const std::string& me = ctx.net.profile().username;
+        const NetClient::SkinPresence presence = ctx.net.requireSkin(state.editingId);
+        if (presence == NetClient::SkinPresence::Gone) {
+            state.loseEdit(ctx, "The skin you were editing is gone. Publish makes what you have "
+                                "a new skin.");
+        } else if (presence == NetClient::SkinPresence::Held && !me.empty() &&
+                   lowerCase(ctx.net.findSkin(state.editingId)->author) != lowerCase(me)) {
+            state.loseEdit(ctx, "The skin you were editing is another account's. Publish makes "
+                                "what you have a new skin.");
+        }
     }
     // From the shared anchor, so the card, its hit regions and the box
     // MenuSystem captures the mouse in are one rect.
@@ -2365,7 +2448,12 @@ bool SkinsPanel::render(MenuContext& ctx) {
     // Input runs first and against the previous frame's regions: the panel's
     // handlers fire between renders, and every button, tab, swatch and stepper
     // acts on PRESS rather than release.
-    if (!state.handleInput(ctx)) return false;
+    const bool keepOpen = state.handleInput(ctx);
+    if (!keepOpen || ctx.timeSeconds >= state.draftCheckAt) {
+        state.draftCheckAt = ctx.timeSeconds + kDraftSaveSeconds;
+        saveDraft();
+    }
+    if (!keepOpen) return false;
     state.draw(ctx);
     return true;
 }

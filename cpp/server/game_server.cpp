@@ -64,6 +64,12 @@ namespace {
 
 /// How often account progress is written back from the live entity.
 constexpr double kPersistIntervalMillis = 30000.0;
+/// How soon after a failed or journal-forced save the next one is tried.
+constexpr double kUrgentSaveRetryMillis = 2000.0;
+/// How much of each tick a running save may take. The whole save is tens to
+/// hundreds of milliseconds of work; this is what keeps it out of the tick
+/// time, at the price of finishing a second or two later.
+constexpr double kSaveSliceMillis = 2.0;
 
 /// Ceiling on one simulation step, as a multiple of the nominal one. A long
 /// stall must not be paid back as a single giant integration step that walks
@@ -153,6 +159,18 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // with an empty one would serve every returning player a blank account and,
     // worse, save that over the file they still had.
     if (!database_.load(config.databasePath, errorOut)) return false;
+    if (database_.journalLinesReplayed() > 0) {
+        std::printf("[db] journal: replayed %d change batch(es) written after the last save\n",
+                    database_.journalLinesReplayed());
+    }
+    if (!database_.journalNote().empty()) {
+        std::fprintf(stderr, "[db] %s\n", database_.journalNote().c_str());
+    }
+    std::fflush(stdout);
+    // The journal is written before ANY byte leaves for a client, so nothing a
+    // player has been shown -- a drop, a craft, a level, a new account -- can
+    // be lost to this process dying, however it dies. See Database's journal.
+    listener_.beforeWrite = [this] { database_.flushJournal(); };
     if (config.passwordCost > 0) database_.setPasswordCost(config.passwordCost);
     foldLookAlikeSkins();
 
@@ -328,10 +346,35 @@ void GameServer::run() {
 }
 
 void GameServer::shutdown() {
-    // Flush account progress before exiting; an orderly shutdown must not cost
-    // anyone their session.
+    // Everybody in the world leaves it the way a disconnect would have them
+    // leave -- XP onto the account, a ring run banked, a split merged -- since
+    // a restart is exactly everybody disconnecting at once, and the listener
+    // stopping below tells nobody's onDisconnect. Then one save of all of it.
+    for (auto& entry : sessions_) {
+        if (entry.second.entity != NULL_ENTITY) dropBody(entry.second);
+    }
     persistAll();
     listener_.stop();
+}
+
+void GameServer::syncLiveProgress() {
+    // XP and stars are paid onto the live body (the HUD has to see them this
+    // tick); the record used to catch up only every thirty seconds, on death
+    // and on leave, which is the window a crash took with it. Brought across
+    // every tick instead, only where they actually moved: the row it touches
+    // is written to the journal before the snapshot showing the gain goes out.
+    for (const auto& entry : sessions_) {
+        const Session& session = entry.second;
+        if (session.eventKit || session.userId.empty() || !session.playing()) continue;
+        if (!world_.isAlive(session.entity)) continue;
+        const PlayerProgress* live = world_.tryGet<PlayerProgress>(session.entity);
+        if (live == nullptr) continue;
+        if (const PlayerRecord* record = database_.findProgress(session.userId)) {
+            const double stored = session.realm == Realm::Maze ? record->mazeTotalXp : record->totalXp;
+            if (stored == live->totalXp && record->stars == live->stars) continue;
+        }
+        persistPlayer(session);
+    }
 }
 
 std::size_t GameServer::persistAll() {
@@ -343,6 +386,15 @@ std::size_t GameServer::persistAll() {
     }
     saveDatabase();
     return saved;
+}
+
+bool GameServer::startBackgroundSave() {
+    // Same as saveDatabase: the boss clocks as they stand go in with it.
+    if (bossClocksRestored_) {
+        spawning_->noteStandingBosses(world_, commands_);
+        persistBossClocks();
+    }
+    return database_.backgroundSaveRunning() || database_.beginBackgroundSave();
 }
 
 void GameServer::saveDatabase() {
@@ -363,7 +415,8 @@ void GameServer::restoreBossClocks(double nowMillis) {
     // Stored on the wall clock, which is the only one two runs share; this
     // run's clock is whatever tick() is handed. A ready time further out than
     // a whole cooldown can only be a wall clock that has since been set back,
-    // and is pulled in to one cooldown rather than left to wait it out.
+    // or a cooldown that has since been shortened, and is pulled in to one
+    // cooldown (an apex's longest) rather than left to wait it out.
     const double offset = nowMillis - static_cast<double>(database_.nowMillis());
     for (const std::string& biome : table.keys()) {
         const Json& entry = table[biome];
@@ -372,8 +425,16 @@ void GameServer::restoreBossClocks(double nowMillis) {
                                        nowMillis + kUniqueSpawnCooldownMillis);
         const double apex = std::min(entry["apexReadyAt"].asDouble() + offset,
                                      nowMillis + kApexSpawnCooldownMaxMillis);
-        spawning_->restoreBossClock(biome, unique, apex);
-        savedBossClocks_.push_back(SavedBossClock{biome, unique, apex});
+        // Absent while no window was open, and held to one window likewise.
+        // One that ran out while the server was down is due at once: never
+        // below 1, because zero means no window and this run's clock may be
+        // younger than the downtime.
+        const double due = entry["apexDueAt"].isNumber()
+                               ? std::max(1.0, std::min(entry["apexDueAt"].asDouble() + offset,
+                                                        nowMillis + kApexOverdueMaxMillis))
+                               : 0.0;
+        spawning_->restoreBossClock(biome, unique, apex, due);
+        savedBossClocks_.push_back(SavedBossClock{biome, unique, apex, due});
     }
 }
 
@@ -382,25 +443,23 @@ void GameServer::persistBossClocks() {
     for (const SpawnSystem::BiomeBossClock& clock : spawning_->bossClocks()) {
         if (!clock.scattered) continue;
         // A boss still standing is one a restart would take away unkilled, so
-        // the cooldown it started is handed back: its clock is saved as of the
-        // moment the boss spent it, which the next run reads as ready. Once it
-        // dies the real ready time goes back in.
+        // the cooldown it started is handed back: its clock is saved a whole
+        // cooldown earlier, which the next run reads as ready. An apex's is
+        // its LONGEST cooldown, since what it drew is not kept and anything
+        // less could still read as cooling. Once the boss dies the real ready
+        // time goes back in.
         const double unique = clock.uniqueStanding
                                   ? clock.uniqueReadyMillis - kUniqueSpawnCooldownMillis
                                   : clock.uniqueReadyMillis;
-        // The apex wait is drawn per restart, so the moment it was spent is
-        // kept rather than worked back from a fixed cooldown. A clock this run
-        // never restarted falls back to the longest wait.
-        const double apexSpent = clock.apexSpentMillis > 0
-                                     ? clock.apexSpentMillis
-                                     : clock.apexReadyMillis - kApexSpawnCooldownMaxMillis;
-        const double apex = clock.apexStanding ? apexSpent : clock.apexReadyMillis;
+        const double apex = clock.apexStanding
+                                ? clock.apexReadyMillis - kApexSpawnCooldownMaxMillis
+                                : clock.apexReadyMillis;
         SavedBossClock* saved = nullptr;
         for (SavedBossClock& candidate : savedBossClocks_) {
             if (candidate.biome == clock.biome) saved = &candidate;
         }
         if (saved != nullptr && saved->uniqueReadyMillis == unique &&
-            saved->apexReadyMillis == apex) {
+            saved->apexReadyMillis == apex && saved->apexDueMillis == clock.apexDueMillis) {
             continue;
         }
         if (saved == nullptr) {
@@ -409,12 +468,18 @@ void GameServer::persistBossClocks() {
         }
         saved->uniqueReadyMillis = unique;
         saved->apexReadyMillis = apex;
+        saved->apexDueMillis = clock.apexDueMillis;
         Json entry = Json::object();
         entry["uniqueReadyAt"] = std::round(unique + offset);
         entry["apexReadyAt"] = std::round(apex + offset);
+        if (clock.apexDueMillis > 0) entry["apexDueAt"] = std::round(clock.apexDueMillis + offset);
         database_.rawTable("bossClocks")[clock.biome] = std::move(entry);
         database_.markDirty();
     }
+}
+
+double GameServer::millisUntilTick() const {
+    return std::max(0.0, nextTickMillis_ - monotonicMillis());
 }
 
 bool GameServer::step() {
@@ -442,9 +507,11 @@ bool GameServer::step() {
         double raw = lastTickWallMillis_ > 0
                          ? (tickNow - lastTickWallMillis_) / 1000.0
                          : net::kTickSeconds;
+        const double wallMillis = raw * 1000.0;
         lastTickWallMillis_ = tickNow;
         if (raw > kMaxDeltaSeconds) raw = kMaxDeltaSeconds;
         smoothedDeltaSeconds_ += (raw - smoothedDeltaSeconds_) * kDeltaSmoothing;
+        motionLeadMillis_ += smoothedDeltaSeconds_ * 1000.0 - wallMillis;
 
         // The REAL clock, not the scheduled slot. Every absolute deadline
         // in the world -- poison, slows, reloads, hit cooldowns, despawn --
@@ -615,11 +682,41 @@ void GameServer::tick(double nowMillis) {
     // Housekeeping, ABOVE the idle gate: an account registered by somebody
     // sitting on the title screen is dirty in memory and would otherwise wait
     // for the next player to actually join before it reached the disk.
+    //
+    // The save itself is spread over the ticks that follow (see
+    // Database::beginBackgroundSave): written in one go it was a tick of a few
+    // hundred milliseconds on prod every thirty seconds.
+    bool saveBegan = false;
     if (nowMillis >= nextPersistMillis_) {
         nextPersistMillis_ = nowMillis + kPersistIntervalMillis;
+        nextUrgentSaveMillis_ = nowMillis + kUrgentSaveRetryMillis;
         database_.pruneExpiredSessions();
-        persistAll();
+        syncLiveProgress();
+        saveBegan = startBackgroundSave();
+    } else if (database_.wantsSaveNow() && nowMillis >= nextUrgentSaveMillis_ &&
+               !database_.backgroundSaveRunning()) {
+        // The journal is full, or cannot be written: a snapshot now, rather
+        // than in up to thirty seconds, is what takes over from it. Spaced
+        // out, because a disk refusing writes refuses the next one too.
+        nextUrgentSaveMillis_ = nowMillis + kUrgentSaveRetryMillis;
+        saveBegan = startBackgroundSave();
+        if (!saveBegan) {
+            // Not even begun -- the disk will not take the new journal. The
+            // whole save at once is the last thing left to try.
+            saveDatabase();
+            if (database_.wantsSaveNow()) {
+                std::fprintf(stderr, "[db] journal unavailable and the save failed; retrying\n");
+            }
+        }
     }
+    // Not on the tick that began it, which has paid for the beginning.
+    if (!saveBegan &&
+        database_.serviceBackgroundSave(kSaveSliceMillis) == Database::SaveProgress::Failed) {
+        std::fprintf(stderr, "[db] save failed (%s); the journal still has everything, retrying\n",
+                     database_.backgroundSaveError().c_str());
+        nextUrgentSaveMillis_ = nowMillis + kUrgentSaveRetryMillis;
+    }
+    database_.syncJournal(static_cast<std::int64_t>(nowMillis));
     markTickPhase("persist");
 
     // Bot population is maintained on every tick, INCLUDING the idle ones the
@@ -642,6 +739,9 @@ void GameServer::tick(double nowMillis) {
         events_.clear();
         commands_.flush();
         listener_.flush();
+        // Changes nobody is told about still belong on disk: a pruned session,
+        // a guest account made from the title screen with nothing yet sent.
+        database_.flushJournal();
         return;
     }
 
@@ -669,12 +769,11 @@ void GameServer::tick(double nowMillis) {
     commands_.flush();
     markTickPhase("reap");
 
-    // The wire runs slower than the simulation and on its own clock: physics
-    // and combat want 30 Hz, clients do not, and the per-recipient encode/cull/
-    // delta pass is the largest thing in the tick that nothing simulated
-    // depends on. Nothing about WHAT happens changes -- one-shot events are
-    // queued for the frame either way -- only how often it is described.
-    if (nowMillis >= nextSnapshotMillis_) {
+    // At the tick rate (net::kSnapshotsPerSecond) every tick is described, with
+    // no deadline of its own for a tick's jitter to miss. Below it the wire
+    // would run on its own clock; nothing about WHAT happens changes, as
+    // one-shot events are queued for the frame either way.
+    if (net::kSnapshotsPerSecond >= net::kTicksPerSecond || nowMillis >= nextSnapshotMillis_) {
         // Stepped from the deadline, not from now, so the send rate does not
         // slew with tick jitter; resynced when it falls a whole interval behind
         // rather than firing a burst of catch-up frames.
@@ -690,7 +789,13 @@ void GameServer::tick(double nowMillis) {
         // tick with no snapshot must still produce its number.
         events_.clear();
     }
+    // Before the flush below, which writes the journal on its way out: the
+    // XP the snapshot just told everybody about goes with it.
+    syncLiveProgress();
+    markTickPhase("progress");
     listener_.flush();
+    // Whatever changed this tick with nothing sent about it: see above.
+    database_.flushJournal();
     markTickPhase("send");
 }
 
@@ -951,6 +1056,7 @@ void GameServer::replicate(double nowMillis) {
     frame.tick = tick_;
     frame.snapshotIndex = ++snapshotIndex_;
     frame.nowMillis = nowMillis;
+    frame.motionLeadMillis = motionLeadMillis_;
     frame.events = &events_;
 
     // Reused across recipients rather than allocated per session: it is at

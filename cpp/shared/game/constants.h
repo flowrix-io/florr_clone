@@ -116,15 +116,18 @@ inline constexpr double kPlayerBaseRadius = 25.0;
 inline constexpr double kPlayerBaseHealth = 100.0;
 inline constexpr double kPlayerBaseDamage = 5.0;
 
-/// Top speed in units per second.
-inline constexpr double kPlayerMaxSpeed = 300.0;
+/// Top speed in units per second: gardn's PLAYER_ACCELERATION of 2.5 against
+/// its damping, where one unit of velocity travels 125 (Motion.cc). Mob speeds
+/// are stated as a share of it, so they keep their ratio to a flower's.
+inline constexpr double kPlayerMaxSpeed = 312.5;
 
-/// Velocity friction per 1/20s of simulated time.
+/// Velocity friction per 1/20s of simulated time: gardn's damping of 0.992 a
+/// millisecond over those 50 of them, 1 - 0.992^50.
 ///
 /// Movement converges to `target * (1/friction)` rather than snapping to it,
 /// which is what gives the flower its weight -- it drifts a little when you
 /// let go, and it takes a moment to reverse.
-inline constexpr double kMoveFriction = 1.0 / 3.0;
+inline constexpr double kMoveFriction = 0.330756;
 inline constexpr double kFrictionReferenceRate = 20.0;
 
 /// Cursor distance at which movement reaches full speed. Short, so a small
@@ -289,11 +292,11 @@ inline constexpr double kPetalOrbitAttackGap = 100.0;
 inline constexpr double kPetalOrbitDefendGap = 15.0;
 
 /// How fast a clump's grains turn round its centre, as a share of the ring's
-/// own spin: gardn lays grain j of n at `2 pi j / n + heading * 0.2`
+/// own spin: gardn lays grain j of n at `2 pi j / n + heading * 1.1`
 /// (Flower.cc), a bearing in the WORLD shared by every clump on the ring
 /// rather than one measured from each clump's place on it. Oranges keep their
 /// own hang off the ring (clumpOutsideRing), which gardn has no petal for.
-inline constexpr double kPetalClumpSpinShare = 0.2;
+inline constexpr double kPetalClumpSpinShare = 1.1;
 
 /// Ring spin, radians per second.
 inline constexpr double kPetalSpinRate = 2.5;
@@ -385,41 +388,53 @@ inline constexpr double kPetalHitIntervalMillis = 0.0;
 
 // -- ring physics ------------------------------------------------------------
 //
-// gardn's petal movement, and nothing else (the user's call): every tick a
-// petal's velocity loses a share to friction and gains a pull toward where it
-// should be, and the petal moves by its velocity. gardn writes it, per 20 Hz
-// tick (Server/Process/Flower.cc sets the acceleration, Motion.cc applies it
-// against the petal's friction of DEFAULT_FRICTION * 1.5), as
+// gardn's petal movement, and nothing else (the user's call). A petal is under
+// the flower's own damping, and is pulled toward where it should be by
 //
-//     velocity *= 1 - 0.5
-//     velocity += 0.5 * (target - position)
-//     position += velocity
+//     acceleration = 7 * clamp(gap^2 / 900, 0.01, 2)
 //
-// That one step is what makes the ring trail a running flower, overshoot when
-// it extends or a petal spawns, and settle. There is no ramp on the ring's
-// extension, no glide on the way out of the flower and no ease on its centre:
-// each of those is a second force, and stacked on the step they read as forces
-// fighting over the petal.
+// (Server/Process/Flower.cc sets it, Motion.cc applies it), 60 times a second.
+// Soft near its place and hard far from it, so the ring trails a running or
+// turning flower and runs past its place when it extends or a petal spawns.
+// There is no ramp on the ring's extension, no glide on the way out of the
+// flower and no ease on its centre: each of those is a second force, and
+// stacked on the step they read as forces fighting over the petal.
 //
-// The figures below are gardn's restated for this server's 30 Hz tick so the
-// motion is the same second for second: the friction is 0.5^(20/30), the same
-// decay per second, and the pull is the one that keeps the swing's frequency.
-// Every fifth of a second the two land on the same spot
-// (petal_tests: the_ring_step_moves_a_petal_as_gardns_does), and a flower
-// running flat out leaves its ring about 15 units behind, as gardn's does.
+// Stated as speeds rather than in gardn's units: one unit of acceleration is a
+// terminal speed of 125 units a second, so the pull names the speed a petal
+// held at that gap would settle to, and each step closes the damping's share
+// of the difference. The step is gardn's own 60 Hz, run as many times as a tick
+// holds, because the pull is not linear and does not restate to a longer one
+// (petal_tests: the_ring_step_moves_a_petal_as_gardns_does).
 
-/// The share of a petal's velocity it keeps from one tick to the next.
-/// gardn's 1 - 0.5 per 20 Hz tick.
-inline constexpr double kPetalFriction = 0.629961;
-/// The share of the gap to its target added to a petal's per-tick velocity.
-/// gardn's 0.5 per 20 Hz tick.
-inline constexpr double kPetalPull = 0.255231;
-/// What a homing petal -- rose, shell, orb -- is pushed toward its flower by,
-/// in units per tick per tick, in place of the pull: gardn's burst heal and
-/// shield set the acceleration to a flat `PLAYER_ACCELERATION * 4` toward the
-/// flower (Petal.cc), which against the same friction tops out at 800 units a
-/// second. Restated for our tick to keep that top speed and that friction.
-inline constexpr double kPetalHomingPush = 9.867719;
+inline constexpr double kPetalStepsPerSecond = 60.0;
+/// The share of a petal's velocity it keeps from one step to the next:
+/// 0.992^(1000/60).
+inline constexpr double kPetalFriction = 0.874704;
+/// Terminal speed of the pull at a gap of kPetalPullGap: 125 * 7.
+inline constexpr double kPetalPullSpeed = 875.0;
+inline constexpr double kPetalPullGap = 30.0;
+inline constexpr double kPetalPullLeast = 0.01;
+inline constexpr double kPetalPullMost = 2.0;
+/// Inside this gap the least pull falls off with it. gardn's does not, so its
+/// petals tremble a fiftieth of a unit about their place and never rest on it.
+inline constexpr double kPetalPullRestGap = 0.5;
+/// The fastest a ring of this radius can turn, in radians a second, and have
+/// the pull carry its petals round with it at no more than kPetalPullGap behind
+/// their places: where the pull there, kPetalPullSpeed, is all spent holding a
+/// petal on the circle and against its damping. 5.6 at a new flower's
+/// attacking ring, twice what it turns at.
+inline double petalCarriedSpin(double ringRadius) {
+    if (!(ringRadius > 0.0)) return 0.0;
+    const double damping = -std::log(kPetalFriction) * kPetalStepsPerSecond;
+    const double pull = kPetalPullSpeed / ringRadius;
+    return damping * std::sqrt(0.5 * (std::sqrt(1.0 + 4.0 * pull * pull / (damping * damping)) - 1.0));
+}
+
+/// Terminal speed of a homing petal -- rose, shell, orb -- in place of the
+/// pull: gardn's burst heal sets a flat `PLAYER_ACCELERATION * 4` toward the
+/// flower (Petal.cc), 125 * 10.
+inline constexpr double kPetalHomingSpeed = 1250.0;
 
 /// Rate of the first-order approach the two scripted flights still use -- a
 /// pearl recalled from the ground, and the ring changing hands to or from a

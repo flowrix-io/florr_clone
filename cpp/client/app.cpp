@@ -241,6 +241,7 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // Where the asset browser starts, and which file it reloads the settings
     // from when it saves one.
     menus_.setFilePaths(config.dataDir, settingsPath());
+    menus_.loadSkinDraft(skinDraftPath());
     // A saved door that no staged map offers any more -- renamed, removed,
     // or a sublevel door that stopped being pickable -- is dropped here,
     // once. Kept, it would send a choice the server refuses with a notice
@@ -324,6 +325,7 @@ void App::persist() {
     // switches, and a file write per click would be absurd. The flower's name
     // is remembered on the same terms.
     menus_.settings().save(settingsPath());
+    menus_.saveSkinDraft();
     saveSession();
 }
 
@@ -1199,7 +1201,8 @@ void App::updateTextSelection(Canvas& canvas) {
         selectable.selectAll();
     }
 
-    if (window_.mousePressed(MouseButton::Right) && !contextMenu_.isOpen()) {
+    if (window_.mousePressed(MouseButton::Right) && !contextMenu_.isOpen() &&
+        !menus_.rightPressTaken()) {
         // Only over something this client owns. Over the world the right
         // button is the defend control, and a card there would eat it.
         const bool overOwnUi = overField || menus_.capturesMouse(mouse) ||
@@ -1703,6 +1706,10 @@ std::string App::settingsPath() const {
     // Beside the session file, so one config directory holds both and a
     // portable install stays portable.
     return config_.sessionFile + "-settings";
+}
+
+std::string App::skinDraftPath() const {
+    return config_.sessionFile + "-skin-draft";
 }
 
 // ---------------------------------------------------------------------------

@@ -392,6 +392,13 @@ struct QuietBoss {};
 /// a schedule: a ready clock waits for the biome's next super, and a biome
 /// nobody is killing anything in spawns no supers to upgrade.
 ///
+/// An APEX's wait has an end, though. The pass that first finds its clock ready
+/// with no apex standing draws a window of kApexOverdueMin..MaxMillis, and a
+/// biome still without one when that runs out is given one outright
+/// (spawnOverdueApexes). An apex standing closes the window, so one that
+/// outlives its own cooldown is not replaced the moment it dies: a fresh window
+/// opens then. The window is kept in the database with the clock.
+///
 /// A mob placed any other way -- a console spawn, a nest's escorts -- is not a
 /// band's super and is never upgraded. It is still HELD to the clock, though:
 /// a unique or apex that would appear in a biome while that biome's clock for
@@ -409,13 +416,15 @@ struct QuietBoss {};
 /// that appeared later is despawned on the next population pass. Counted per
 /// ANIMAL: a centipede's body segments share its tier and are not more of it,
 /// and a player's pets are not wild at all.
+///
+/// A unique's cooldown is fixed. An apex's is drawn afresh each time its clock
+/// starts, uniformly between the two bounds below.
 inline constexpr double kUniqueSpawnCooldownMillis = 20.0 * 60.0 * 1000.0;
-/// The apex clock is not one figure: every restart draws its wait uniformly
-/// between these two, two to three hours (user), so a biome's apex cannot be
-/// timed to the minute. apexCooldownMillis draws one.
-inline constexpr double kApexSpawnCooldownMinMillis = 2.0 * 60.0 * 60.0 * 1000.0;
-inline constexpr double kApexSpawnCooldownMaxMillis = 3.0 * 60.0 * 60.0 * 1000.0;
+inline constexpr double kApexSpawnCooldownMinMillis = 1.5 * 60.0 * 60.0 * 1000.0;
+inline constexpr double kApexSpawnCooldownMaxMillis = 2.5 * 60.0 * 60.0 * 1000.0;
 inline constexpr double kBossUpgradeChance = 0.10;
+inline constexpr double kApexOverdueMinMillis = 3.0 * 60.0 * 60.0 * 1000.0;
+inline constexpr double kApexOverdueMaxMillis = 6.0 * 60.0 * 60.0 * 1000.0;
 
 /// The sacrifice (petalIsSacrifice): what a flower that dies wearing one
 /// summons, and where it will not.
@@ -721,14 +730,14 @@ public:
     /// reads to hand a cooldown back when a restart is about to take that
     /// boss away unkilled.
     ///
-    /// `apexSpentMillis`: when the apex clock last restarted. The apex wait is
-    /// drawn per restart, so the save cannot subtract a fixed cooldown from
-    /// the ready time to find it. Zero when this run never restarted it.
+    /// `apexDueMillis`: when a ready apex clock stops waiting for a super and
+    /// the biome is given its apex. Zero while no window is open -- the clock
+    /// is cooling, or an apex stands. See kApexOverdueMinMillis.
     struct BiomeBossClock {
         std::string biome;
         double uniqueReadyMillis = 0;
         double apexReadyMillis = 0;
-        double apexSpentMillis = 0;
+        double apexDueMillis = 0;
         bool scattered = false;
         bool uniqueStanding = false;
         bool apexStanding = false;
@@ -772,9 +781,10 @@ public:
     /// THIS run's server clock. Such a clock is never scattered: it carries on
     /// from where it stood, ready or cooling, rather than being dealt a fresh
     /// wait. Held until the biome's slot is made if no zone has asked for it
-    /// yet, so a biome no staged map names never gains a slot from here.
+    /// yet, so a biome no staged map names never gains a slot from here. A zero
+    /// `apexDueMillis` is no window: one opens on the first pass that wants it.
     void restoreBossClock(const std::string& biome, double uniqueReadyMillis,
-                          double apexReadyMillis);
+                          double apexReadyMillis, double apexDueMillis = 0);
 
 private:
     /// One `spawn` shape, its population, and the part of that population that
@@ -887,6 +897,10 @@ private:
         /// A mob was REMOVED at `lostAt` without dying -- a killall: back
         /// within kRespawnScatter of that point, ready at once.
         Vanished,
+        /// The biome's apex is overdue: an apex, anywhere in the outline, over
+        /// and above the band's population and the mob cap. It is no band's
+        /// mob, so its death is not a slot to refill.
+        OverdueApex,
     };
 
     /// One mob's worth of population added to `zone` -- a record, or an entity
@@ -971,6 +985,15 @@ private:
     /// evenly spaced in a random order from a random phase, so no two biomes
     /// come ready together and none is ready the moment the server starts.
     void scatterBossClocks(double nowMillis);
+    /// Opens, closes and serves every biome's apex window: places the apex of
+    /// each biome whose window has run out. A placement that finds no room is
+    /// tried again on the next pass.
+    void spawnOverdueApexes(World& world, const Terrain& terrain, const ContentRegistry& content,
+                            const std::vector<Viewer>& viewers, Rng& rng, double nowMillis);
+    /// The band clock `slot`'s overdue apex is placed in, or kInvalidIndex for
+    /// a biome with no band: drawn by how much of the biome's supers each band
+    /// spawns, or of its best tier in a biome too gentle for supers.
+    std::uint16_t overdueApexBand(std::uint16_t slot);
     /// Restarts clock `slot`'s `rarity` cooldown from `nowMillis`; a slot past
     /// the list, or a tier no clock owns, is left alone.
     void restartBossClock(std::uint16_t slot, Rarity rarity, double nowMillis);

@@ -9,11 +9,9 @@ namespace {
 /// Allowance refill rates, per second.
 constexpr double kLoginRefillPerSecond = 0.2;    // one attempt every 5s
 constexpr double kChatRefillPerSecond = 0.5;     // one message every 2s
-/// Inputs refill at the tick rate, which is the rate the client sends them at
-/// (one per simulation tick, client/app_game.cpp). This was set when the tick
-/// was 25 Hz, so it used to have room above it; at 30 Hz the only slack left
-/// is the bucket's depth below.
-constexpr double kInputRefillPerSecond = 30.0;
+/// Inputs refill at the rate the client sends them at, with a little room for
+/// the two clocks to disagree; the rest of the slack is the bucket's depth.
+constexpr double kInputRefillPerSecond = net::kInputsPerSecond * 1.1;
 /// Commands refill four times faster than chat, off a deeper bucket.
 ///
 /// The chat budget exists to stop one player flooding EVERYONE ELSE, and a
@@ -26,7 +24,7 @@ constexpr double kCommandRefillPerSecond = 2.0;
 constexpr double kMaxLoginAttempts = 5;
 constexpr double kMaxChatAllowance = 4;
 constexpr double kMaxCommandAllowance = 12;
-constexpr double kMaxInputAllowance = 60;
+constexpr double kMaxInputAllowance = net::kInputsPerSecond * 2.0;
 constexpr double kMaxInventoryAllowance = 20;
 constexpr double kInventoryRefillPerSecond = 10;
 constexpr double kMaxRequestAllowance = 10;

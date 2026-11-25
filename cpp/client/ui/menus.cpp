@@ -674,7 +674,16 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "adminsOnBoard") showAdminsOnLeaderboard = number != 0;
         else if (key == "changelogSeen") changelogSeen = number;
         else if (key == "zoom") zoom = clamp(std::atof(value.c_str()), kMinZoom, kMaxZoom);
-        else if (key == "interp") interpolation = clamp(std::atof(value.c_str()), 0.05, 0.5);
+        else if (key == "smoothing") interpolation = clamp(std::atof(value.c_str()), 0.05, 0.5);
+        // What `smoothing` was called while the default was the browser build's.
+        // The file always wrote it, so the old default here is a slider nobody
+        // moved and takes the new one. Never written again.
+        else if (key == "interp") {
+            const double saved = std::atof(value.c_str());
+            if (std::fabs(saved - kOldDefaultInterpolationAmount) > 1e-6) {
+                interpolation = clamp(saved, 0.05, 0.5);
+            }
+        }
         else if (key == "renderScale") renderScale = clamp(std::atof(value.c_str()), 0.25, 1.0);
         else if (key == "desynchronized") desynchronizedCanvas = number != 0;
         else if (key == "spawn") spawnChoice = (value == "-" ? std::string() : value);
@@ -738,7 +747,7 @@ bool ClientSettings::save(const std::string& path) const {
          << "adminsOnBoard " << (showAdminsOnLeaderboard ? 1 : 0) << '\n'
          << "changelogSeen " << changelogSeen << '\n'
          << "zoom " << zoom << '\n'
-         << "interp " << interpolation << '\n'
+         << "smoothing " << interpolation << '\n'
          << "renderScale " << renderScale << '\n'
          << "desynchronized " << (desynchronizedCanvas ? 1 : 0) << '\n'
          // A dash rather than an empty field: the reader splits on whitespace,
@@ -2934,6 +2943,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     // eating the chat box's keystrokes all the way down.
     if (open_ == MenuId::None) return;
     wantsText_ = ctx.wantsText;
+    rightPressTaken_ = ctx.rightPressTaken;
     // A hand-over replaces this card with the one it named, the way a click on
     // that card's own strip button would.
     if (ctx.openMenu != MenuId::None && ctx.openMenu != open_) {
@@ -2962,6 +2972,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
                         const WorldRenderer& renderer, double timeSeconds, double dt,
                         const OverlayFn& overStripUnderBar) {
     wantsText_ = false;
+    rightPressTaken_ = false;
     panelRect_ = Rect{};
     // Every petal tile this frame paints reports itself from here on, and the
     // one under the pointer gets its tooltip at the end (see petal_hover.h).
@@ -3179,6 +3190,7 @@ void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeco
     // screen left in the panel and bar state is cleared rather than carried
     // over, or a card nobody is painting would still be swallowing clicks.
     wantsText_ = false;
+    rightPressTaken_ = false;
     panelRect_ = Rect{};
     pollRect_ = Rect{};
     window.setClaimedShortcuts({});

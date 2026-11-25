@@ -171,6 +171,9 @@ public:
     /// and drives this from a timer callback instead.
     bool step();
 
+    /// How long until step() will tick.
+    double millisUntilTick() const;
+
     /// step()'s network half alone, with nothing ticked: every message that
     /// has arrived is handled and whatever that answered leaves now. The
     /// emscripten build calls it the moment bytes land, so a request is not
@@ -178,9 +181,10 @@ public:
     /// the server has stopped.
     void serviceArrivals();
 
-    /// Flushes every playing account and the database, then drops the
-    /// listener. run() does this on the way out; the emscripten build calls it
-    /// when step() first returns false.
+    /// Takes every body out of the world as a disconnect would (so XP, a ring
+    /// run and a split are settled onto the account), saves the database, then
+    /// drops the listener. run() does this on the way out; the emscripten
+    /// build calls it when step() first returns false.
     void shutdown();
 
     /// The flush without the stop: every playing account is written to the
@@ -1205,7 +1209,8 @@ private:
     /// dozen places and a disconnect in several, and none of them should have
     /// to know a guild is watching.
     void serviceGuildPresence(double nowMillis);
-    /// Once per snapshot pass: which bodies belong to which guild.
+    /// Once per snapshot pass: which bodies belong to which guild, and the tag
+    /// each body's plate carries (PlayerVisuals::guildTag).
     void refreshGuildBodies();
     /// The viewer's online guildmates' bodies (never its own), for the
     /// replicator's alwaysVisible list and the minimap.
@@ -1220,13 +1225,19 @@ private:
     /// a scatter, an upgrade, a console spawn charging a clock. While a unique
     /// or apex stands in a biome its clock is written as of the moment that
     /// boss spent it, so a restart that takes the boss away unkilled hands the
-    /// cooldown back and the clock comes up ready.
+    /// cooldown back and the clock comes up ready. An open apex window
+    /// (kApexOverdueMinMillis) is kept beside them, as `apexDueAt`.
     void restoreBossClocks(double nowMillis);
     void persistBossClocks();
     /// database_.save() behind a fresh look at which bosses stand, so the
-    /// boss clocks reach the disk exactly as they are. Every save goes
-    /// through here: the periodic one and persistAll.
+    /// boss clocks reach the disk exactly as they are. The whole save in one
+    /// call: persistAll (shutdown, the `save` command, the offline page's
+    /// unload) comes through here.
     void saveDatabase();
+    /// The periodic save's way in: the same boss-clock look, then a save the
+    /// ticks carry out a slice at a time (Database::beginBackgroundSave).
+    /// True when one is running.
+    bool startBackgroundSave();
 
     // --- the sacrifice (server/sacrifice.cpp) -------------------------------
     /// Puts one Apex Sacrifice on the ground somewhere in Hel whenever its
@@ -1367,6 +1378,11 @@ private:
     /// Every inventory and loadout handler goes through here, which is what
     /// keeps a run in the ring from ever touching what the player owns.
     PlayerRecord& liveRecord(Session&);
+    /// liveRecord for reading: the same record, but taken without marking the
+    /// account's row changed -- a row marked changed is rewritten into the
+    /// database journal before the next send, so a read on a timer (the
+    /// profile digest every two seconds) must come through here.
+    const PlayerRecord& viewRecord(const Session&) const;
     /// Builds the scratch account an arena run plays on: the fixed starter
     /// ring, nothing in the bag, no talents, the real level.
     std::unique_ptr<PlayerRecord> startArenaRun(const PlayerRecord& account) const;
@@ -1377,9 +1393,13 @@ private:
     /// flower that killed it, if that was another arena player.
     void settleArenaDeath(Session& victim, Entity killer);
     /// Copies the live entity's progress back onto the account record. Called
-    /// on leave, on death, and periodically -- a crash must not cost a session
-    /// of progress.
+    /// on leave, on death, and at the end of every tick the figures moved in
+    /// (syncLiveProgress) -- so the database journal holds them before the
+    /// snapshot showing them is sent, and a crash costs nobody anything.
     void persistPlayer(const Session&);
+    /// persistPlayer for every playing session whose live XP or stars moved
+    /// away from its record. Once per tick, before the tick's sends.
+    void syncLiveProgress();
     /// Takes the session's body out of the world for good -- a disconnect, a
     /// sign-out -- saved first if it is the one the session is playing.
     void dropBody(Session&);
@@ -2014,6 +2034,13 @@ private:
     double smoothedDeltaSeconds_ = net::kTickSeconds;
     double lastTickWallMillis_ = 0;
 
+    /// How far the time the world has been MOVED by (the smoothed deltas) runs
+    /// ahead of the wall clock. Snapshots are stamped with the first: a tick
+    /// that lands late moves everything by the smoothed step and not by its
+    /// lateness, so stamped with the wall clock a steady walk is played back
+    /// slow across a long gap and fast across the short one after it.
+    double motionLeadMillis_ = 0;
+
     /// How long tick() itself took, drained once a second into a DebugStats
     /// broadcast. The mean says what the server costs at rest; the worst
     /// single tick of the window is the one that shows up as a stutter, and
@@ -2085,6 +2112,9 @@ private:
 
     std::uint32_t tick_ = 0;
     double nextPersistMillis_ = 0;
+    /// When a save the journal asked for (Database::wantsSaveNow) may next
+    /// be tried.
+    double nextUrgentSaveMillis_ = 0;
     /// When reapSessionsWithoutSockets next runs; once a second is plenty for
     /// a check that should never find anything.
     double nextSocketAuditMillis_ = 0;
@@ -2095,6 +2125,7 @@ private:
         std::string biome;
         double uniqueReadyMillis = 0;
         double apexReadyMillis = 0;
+        double apexDueMillis = 0;
     };
     std::vector<SavedBossClock> savedBossClocks_;
     bool bossClocksRestored_ = false;

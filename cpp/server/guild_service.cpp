@@ -676,7 +676,6 @@ void GameServer::refreshGuildBodies() {
     guildBodies_.clear();
     guildOfUser_.clear();
     const Json& guilds = database_.storedTable("guilds");
-    if (!guilds.isObject()) return;
 
     // Everyone with a body, once per pass, rather than a walk of every
     // session per guild.
@@ -699,6 +698,19 @@ void GameServer::refreshGuildBodies() {
             bodies.push_back(found->second->entity);
         }
         if (!bodies.empty()) guildBodies_[key] = std::move(bodies);
+    }
+
+    // The tag under each nameplate. Every body is written, not only a member's:
+    // leaving, a kick and a disband all have to take the tag off again.
+    static const std::string kNoTag;
+    for (const auto& [lower, session] : playing) {
+        const auto guild = guildOfUser_.find(lower);
+        const std::string& tag = guild != guildOfUser_.end() ? guild->second : kNoTag;
+        for (const Entity body : {session->entity, session->splitOther}) {
+            if (body == NULL_ENTITY || !world_.isAlive(body)) continue;
+            PlayerVisuals* visuals = world_.tryGet<PlayerVisuals>(body);
+            if (visuals != nullptr && visuals->guildTag != tag) visuals->guildTag = tag;
+        }
     }
 }
 

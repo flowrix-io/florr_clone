@@ -21,7 +21,9 @@
 #include "server/chat_moderation.h"
 #include "server/db.h"
 #include "server/systems/spawning.h"
+#include "shared/game/map_elements.h"
 #include "shared/game/terrain.h"
+#include "test_data.h"
 
 using namespace flix;
 using namespace flix::testsupport;
@@ -793,6 +795,68 @@ TEST(boss_clocks_are_kept_in_the_database_and_survive_a_restart) {
     CHECK(sawText(client, "Spawned unique bee"));
     CHECK(say(h, client, "/admin spawn bee apex"));
     CHECK(sawText(client, "apex clock is cooling down"));
+}
+
+TEST(an_open_apex_window_survives_a_restart) {
+    // Every apex clock ready: the biomes' windows ran out while the server
+    // was down, all but the first's, which has an hour to go. Every biome with
+    // a band on it has somewhere to put its apex.
+    std::vector<std::string> biomes;
+    WorldMaps shipped;
+    std::string loadError;
+    CHECK(shipped.load(testsupport::dataDir(), nullptr, loadError));
+    for (const MapData& map : shipped.maps()) {
+        const bool banded = std::any_of(map.elements().begin(), map.elements().end(),
+                                        [](const MapElement& e) { return e.isSpawnBand(); });
+        if (!banded || map.prestige()) continue;
+        if (std::find(biomes.begin(), biomes.end(), map.biome()) != biomes.end()) continue;
+        biomes.push_back(map.biome());
+    }
+    CHECK(biomes.size() > 1);
+    Harness h("cmd-boss-clock-window", [&](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        Database db;
+        std::string error;
+        db.load(path, error);
+        const double now = static_cast<double>(db.nowMillis());
+        for (std::size_t i = 0; i < biomes.size(); ++i) {
+            Json entry = Json::object();
+            entry["uniqueReadyAt"] = now + 600000.0;
+            entry["apexReadyAt"] = now - 4.0 * 3600000.0;
+            entry["apexDueAt"] = i > 0 ? now - 60000.0 : now + 3600000.0;
+            db.rawTable("bossClocks")[biomes[i]] = std::move(entry);
+        }
+        db.markDirty();
+        db.save();
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+    h.step(net::kTicksPerSecond, {&client});
+
+    const Json& table = h.server.database().storedTable("bossClocks");
+    const double now = static_cast<double>(h.server.database().nowMillis());
+    for (std::size_t i = 0; i < biomes.size(); ++i) {
+        const Json& entry = table[biomes[i]];
+        if (i > 0) {
+            // Placed: the window is gone and the clock reads refunded while
+            // the apex stands.
+            CHECK(!entry["apexDueAt"].isNumber());
+            CHECK(entry["apexReadyAt"].asDouble() > now - 1.1 * 3600000.0);
+        } else {
+            CHECK_NEAR(entry["apexDueAt"].asDouble(), now + 3600000.0, 60000.0);
+        }
+    }
+    int apexes = 0;
+    Query<MobTag, MobType, AmbientMob> mobs{h.server.world()};
+    mobs.each([&](Entity e, MobTag&, MobType& type, AmbientMob&) {
+        const BodySegment* segment = h.server.world().tryGet<BodySegment>(e);
+        if (segment != nullptr && segment->chainHead != e) return;
+        apexes += type.rarity == Rarity::Apex ? 1 : 0;
+    });
+    CHECK_EQ(apexes, static_cast<int>(biomes.size()) - 1);
 }
 
 TEST(a_boss_standing_at_a_restart_hands_its_clock_back) {

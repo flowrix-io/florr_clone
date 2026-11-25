@@ -516,6 +516,7 @@ private:
 
     /// Where the display switches, the zoom and the menu keys are remembered.
     std::string settingsPath() const;
+    std::string skinDraftPath() const;
 
     /// A token read from disk at startup. Held rather than sent immediately:
     /// the socket is not up yet at load time, and the server refuses anything

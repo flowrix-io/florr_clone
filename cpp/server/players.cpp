@@ -527,8 +527,8 @@ void GameServer::applyAccountToEntity(const PlayerRecord& record, Entity entity)
 
     // XP is seeded from the account ONCE, when the body is built. After that
     // the body is the authority: kills pay the live component, and the record
-    // only catches up when persistPlayer runs -- every 30 seconds, on death
-    // and on leave. Re-seeding here, which every loadout edit and swap does,
+    // only catches up when persistPlayer runs -- at the end of every tick it
+    // moved in (syncLiveProgress), on death and on leave. Re-seeding here, which every loadout edit and swap does,
     // rewound the flower to its last save: a level gained since then was
     // shown for a few frames and taken back, and the next save wrote the
     // rewound figure over the XP for good.

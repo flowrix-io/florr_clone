@@ -638,6 +638,17 @@ struct PlayerVisuals {
     /// corruption turns the flower hostile to everyone rather than only
     /// marking it, which is why it rides faceFlags and not renderFlags.
     bool corrupted = false;
+    /// The first kCorruptionHarmlessMillis of a Flower petal's corruption: the
+    /// flower, and everything credited to it, cannot damage another player,
+    /// and its health bar is red. The flag is what everything asks, so no rule
+    /// needs the clock; PetalSystem sets it and clears it when the time is out.
+    bool corruptionHarmless = false;
+    double corruptionHarmlessUntilMillis = 0;
+    /// The tag of the guild this body's player is in, without its brackets;
+    /// empty for none. Not account data copied on at spawn: the guild table is
+    /// the authority, and GameServer::refreshGuildBodies re-reads it onto every
+    /// playing body before each snapshot pass.
+    std::string guildTag;
 };
 
 /// Passive bonuses summed from equipped petals each tick.

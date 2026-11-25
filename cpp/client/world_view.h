@@ -101,14 +101,15 @@ struct RemoteEntity {
     Vec2 position;
     double angle = 0;
 
-    /// Mob-only position history, stamped on the shared server timeline (see
-    /// WorldView::clockOffsetMillis_), one sample per snapshot whether or not
-    /// the snapshot mentioned it. Flowers deliberately have none: they
-    /// all ease at one rate so the viewer's flower and everyone else's move
-    /// alike, and a buffer on one side of that breaks it.
+    /// Where this entity has been, stamped on the shared
+    /// server timeline (see WorldView::clockOffsetMillis_), one sample per
+    /// snapshot whether or not the snapshot mentioned it. A mob is drawn on
+    /// it; everything else eases after it (flowerChase()), the viewer's own
+    /// flower the same way off WorldView::selfSamples_.
     struct Sample {
         double timeMillis = 0;
         Vec2 position;
+        double angle = 0;
     };
     std::vector<Sample> samples;
 
@@ -121,6 +122,11 @@ struct RemoteEntity {
     /// What the health bar draws: `healthFraction` and `shieldFraction`,
     /// eased, and the red trail behind them. Stepped by interpolate().
     HealthBarEase healthBar;
+    /// How far the bar under the VIEWER'S OWN flower is faded in: 1 while it
+    /// is hurt or shielded, 0 while it has nothing to say (see
+    /// WorldView::selfBarShows). Nothing else moves it, and no other body
+    /// reads it: every other flower's bar is always there.
+    double selfBarOpacity = 0;
     /// Mob and NPC only: what the plate under the body draws, eased as florr
     /// eases it. Stepped by interpolate().
     MobPlateEase plate;
@@ -154,12 +160,8 @@ struct RemoteEntity {
     /// string, and a republished skin changes on this screen at once.
     std::string equippedSkinId;
 
-    /// The guild whose tag hangs under this flower's health bar. Nothing sets
-    /// it yet: the snapshot carries no guild tag -- GuildUpdate describes only
-    /// the viewer's own guild, see menu_guild.cpp -- so the tag draws for
-    /// nobody, which is what the reference draws for a player in no guild. The
-    /// plate reads the field rather than the transport so the wire lands in
-    /// one place when it exists.
+    /// Player-only: the tag of the guild this flower's player is in, empty for
+    /// none. The plate draws it in brackets under the health bar.
     std::string guildName;
 
     /// Petal-only: the flower this petal orbits, and the petal's DRAWN offset
@@ -294,11 +296,15 @@ public:
     /// Consumes a Snapshot payload. The message id must already be read.
     /// Returns false when the frame was truncated, in which case nothing is
     /// applied -- a half-read snapshot is worse than a skipped one.
-    bool applySnapshot(ByteReader& reader);
+    bool applySnapshot(ByteReader& reader) {
+        return applySnapshot(reader, renderClockMillis());
+    }
+    /// `arrivedMillis` is when its bytes landed, on renderClockMillis().
+    bool applySnapshot(ByteReader& reader, double arrivedMillis);
 
     /// Advances every drawn position and facing by one frame. Call once per
     /// rendered frame, not once per snapshot: this is what decouples a 144 Hz
-    /// display from a 20 Hz snapshot stream.
+    /// display from the snapshot stream.
     ///
     /// `nowMillis` is the client render clock, which is also the clock mob
     /// playback runs behind. `dtSeconds` is the step the eases take -- the
@@ -334,6 +340,7 @@ public:
         RemoteEntity& seeded = entities_[entity.netId] = entity;
         seeded.healthBar.snap(entity.healthFraction, entity.shieldFraction);
         seeded.plate.snap(entity.healthFraction, entity.shieldFraction, plateShows(seeded));
+        seeded.selfBarOpacity = seeded.isSelf() && selfBarShows(seeded) ? 1.0 : 0.0;
     }
 
     /// Names the viewer's own flower, which a snapshot otherwise does from
@@ -398,8 +405,7 @@ public:
     /// Interpolation slider; see easeTimeConstant().
     double easeTimeConstantSeconds = easeTimeConstant(kDefaultInterpolationAmount);
 
-    /// How far behind the render clock buffered mobs are played back THIS
-    /// frame. interpolate() slews it toward the delay the recent stream asks
+    /// How far behind the render clock the world is played back THIS frame. interpolate() slews it toward the delay the recent stream asks
     /// for (delayTargetMillis_, which noteLateness() derives), so anything
     /// written here holds only until the stream disagrees with it.
     double interpolationDelayMillis = kMobRenderDelayMillis;
@@ -430,6 +436,9 @@ private:
     /// That is the registry's label flag (+0xa4), clear in florr for exactly
     /// the centipede and leech bodies. Without content every mob is labelled.
     bool plateShows(const RemoteEntity&) const;
+    /// Whether the viewer's own flower has a bar under it: while it is short
+    /// of full health, or carries a shield.
+    bool selfBarShows(const RemoteEntity& self) const;
 
     std::unordered_map<std::uint32_t, RemoteEntity> entities_;
     const ContentRegistry* content_ = nullptr;
@@ -446,6 +455,8 @@ private:
     /// spawn record arrives, and the camera needs an answer before then.
     Vec2 selfDrawnPosition_;
     bool selfSnapPending_ = true;
+    /// The viewer's flower's own RemoteEntity::samples.
+    std::vector<RemoteEntity::Sample> selfSamples_;
     HealthBarEase selfHealthBar_;
     double clockOffsetMillis_ = 0;
     bool clockAnchored_ = false;

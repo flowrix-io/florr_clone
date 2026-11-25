@@ -87,6 +87,8 @@ struct ScratchFiles {
         for (const std::string& path : paths) {
             std::remove(path.c_str());
             std::remove((path + ".tmp").c_str());
+            std::remove((path + ".journal").c_str());
+            std::remove((path + ".journal.tmp").c_str());
         }
     }
 };

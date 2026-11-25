@@ -131,7 +131,11 @@ EM_JS(void, flix_update_start, (const char* urlPtr), {
       const overlay = (from, to, depth) => {
         let copied = 0;
         for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-          if (depth === 0 && preserved.has(entry.name)) continue;
+          // The database's own files too -- its journal above all, which the
+          // running server is appending to: one copied over it would be
+          // the journal of another snapshot, and every line since the last save would be
+          // set aside unread at the restart this update ends in.
+          if (depth === 0 && (preserved.has(entry.name) || entry.name.startsWith('inventory.json'))) continue;
           const source = path.join(from, entry.name);
           const target = path.join(to, entry.name);
           if (entry.isDirectory()) {

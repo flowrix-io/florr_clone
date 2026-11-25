@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "server/game_server_internal.h"
+#include "server/systems/combat.h"
 #include "server/systems/spawning.h"
 
 namespace flix {
@@ -132,7 +133,10 @@ int GameServer::unlockedTrialFloor(Session& session) {
 
 bool GameServer::trialGroundsUnlocked(Session& session) {
     if (!session.authenticated()) return false;
-    return database_.progress(session.userId).extra["trialGrounds"]["unlocked"].asBool(false);
+    // Read-only: a non-const extra[...] would add the keys it looks for, and
+    // the row would be marked changed by every look.
+    const PlayerRecord* record = database_.findProgress(session.userId);
+    return record != nullptr && record->extra["trialGrounds"]["unlocked"].asBool(false);
 }
 
 void GameServer::stepTrialSecretDiscovery() {
@@ -521,8 +525,36 @@ void GameServer::handleClaimTrialReward(Session& session, net::Connection& conne
                 fullBonus = true;
             }
             record.stars += stars;
-            record.totalXp += xp;
             record.addItem(trialRewardRarity(floor), std::string("petal_") + petal, petals);
+            // A flower in the world holds the live XP and stars, and its
+            // record is brought into line with IT every tick: paid only onto
+            // the record, the reward was overwritten by the flower's older
+            // figures at the next sync. Paid where crafting pays its XP.
+            const bool hasBody = !session.eventKit && session.playing() &&
+                                 world_.isAlive(session.entity) &&
+                                 world_.has<PlayerProgress>(session.entity);
+            if (hasBody) {
+                for (const Entity body : bodiesOf(session)) {
+                    if (body == NULL_ENTITY || !world_.isAlive(body)) continue;
+                    if (PlayerProgress* live = world_.tryGet<PlayerProgress>(body)) live->stars = record.stars;
+                }
+                // A flower in the maze is on the maze's own track; this XP
+                // belongs to the outside one, which no body is holding.
+                if (xp > 0.0 && session.realm == Realm::Maze) {
+                    record.totalXp += xp;
+                } else if (xp > 0.0) {
+                    if (!world_.has<Dead>(session.entity)) {
+                        CombatSystem::grantXp(world_, session.entity, xp);
+                    } else {
+                        PlayerProgress& live = world_.get<PlayerProgress>(session.entity);
+                        live.totalXp += xp;
+                        live.level = levelFromTotalXp(live.totalXp).level;
+                    }
+                }
+                persistPlayer(session);
+            } else {
+                record.totalXp += xp;
+            }
             progress.claimed[slot] = static_cast<std::uint8_t>(earned);
             writeProgress(record, progress);
             database_.markDirty();

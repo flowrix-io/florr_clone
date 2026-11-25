@@ -114,9 +114,12 @@ public:
     static bool parseFile(const std::string& path, Json& out, std::string& error);
     bool writeFile(const std::string& path, int indent = 0) const;
 
+    /// dump(), appended to `out`: what a writer assembling a larger document
+    /// uses, so the pieces are not each built as a string of their own first.
+    void dumpTo(std::string& out, int indent, int depth) const;
+
 private:
     static const Json& nullValue();
-    void dumpTo(std::string& out, int indent, int depth) const;
 
     Type type_ = Type::Null;
     bool bool_ = false;
@@ -129,5 +132,7 @@ private:
 
 /// Escapes `in` as a JSON string body, including the surrounding quotes.
 std::string jsonEscape(const std::string& in);
+/// jsonEscape, appended to `out` instead of returned.
+void jsonEscapeTo(std::string& out, const std::string& in);
 
 } // namespace flix

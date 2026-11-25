@@ -387,6 +387,50 @@ TEST(the_guild_roster_places_members_in_their_biome_and_drops_them_on_disconnect
     }, 200));
 }
 
+TEST(a_guild_tag_follows_its_members_bodies_on_everyones_screen) {
+    Harness h("guild-tag", [](const std::string& path) {
+        seedUser(path, "leader", "password7");
+        seedUser(path, "member", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient member;
+    CHECK(loginAs(h, boss, "leader", "password7"));
+    CHECK(loginAs(h, member, "member", "password7"));
+    boss.joinGame(1920, 1080);
+    member.joinGame(1920, 1080);
+
+    // The tag each client reads under its own flower; "?" before it has one.
+    const auto ownTag = [](const NetClient& client) {
+        const auto found = client.view().entities().find(client.view().self().netId);
+        return found == client.view().entities().end() ? std::string("?")
+                                                       : found->second.guildName;
+    };
+    CHECK(h.stepUntil({&boss, &member}, [&] {
+        return ownTag(boss).empty() && ownTag(member).empty();
+    }, 400));
+
+    // Both were already in the world: the guild reaches bodies that are out.
+    CHECK(foundAndJoin(h, boss, member));
+    CHECK(h.stepUntil({&boss, &member}, [&] {
+        return ownTag(boss) == "ALPHA" && ownTag(member) == "ALPHA";
+    }, 200));
+    // Guildmates are streamed from any distance, so this is the other's plate.
+    CHECK(h.stepUntil({&boss, &member}, [&] {
+        const auto seen = boss.view().entities().find(member.view().self().netId);
+        return seen != boss.view().entities().end() && seen->second.guildName == "ALPHA";
+    }, 200));
+
+    // A kick takes it off the kicked body, and the last member's leaving off
+    // the one whose guild stops existing.
+    boss.requestGuildKick("member");
+    CHECK(h.stepUntil({&boss, &member}, [&] { return ownTag(member).empty(); }, 200));
+    CHECK_EQ(ownTag(boss), std::string("ALPHA"));
+    boss.requestGuildLeave();
+    CHECK(h.stepUntil({&boss, &member}, [&] { return ownTag(boss).empty(); }, 200));
+}
+
 TEST(guild_chat_commands_take_a_display_name_and_a_description) {
     Harness h("guild-chat-name", [](const std::string& path) {
         seedUser(path, "leader", "password7");

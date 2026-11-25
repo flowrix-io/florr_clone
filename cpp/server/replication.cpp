@@ -19,14 +19,14 @@ Vec2 wirePosition(Vec2 p) {
             static_cast<double>(static_cast<float>(p.y))};
 }
 
-/// FNV-1a over a skin id, for Tracked's change detection only.
+/// FNV-1a over a skin id or a guild tag, for Tracked's change detection only.
 ///
 /// A collision would cost one player one missed skin change until anything
 /// else about their visuals moved, which for server-minted ids (a millisecond
 /// clock plus a random tail) is not a case that occurs. The alternative --
 /// keeping the id itself beside every tracked entity in every view -- costs
 /// memory on every mob on the map, for all of them.
-std::uint32_t skinIdHash(const std::string& id) {
+std::uint32_t stringHash(const std::string& id) {
     std::uint32_t h = 2166136261u;
     for (const char c : id) {
         h ^= static_cast<std::uint8_t>(c);
@@ -160,11 +160,13 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
         out.renderFlags = visuals->renderFlags;
         // Borrowed, not copied; see PlayerVisualState::equippedSkinId.
         if (!visuals->equippedSkinId.empty()) out.equippedSkinId = &visuals->equippedSkinId;
+        if (!visuals->guildTag.empty()) out.guildTag = &visuals->guildTag;
         if (visuals->glitched) out.renderFlags |= PlayerRenderGlitch;
         // Corruption is a FACE, not a skin: the flower that cracked a Flower
         // petal open turns on everyone, and the face is the only warning the
         // players around it get before its ring starts biting them.
         if (visuals->corrupted) out.faceFlags |= FaceHasCorruption;
+        if (visuals->corruptionHarmless) out.equipFlags |= EquipCorruptionHarmless;
     }
     if (const Afflictions* afflictions = world.tryGet<Afflictions>(e)) {
         if (afflictions->poisoned(nowMillis)) out.faceFlags |= FacePoisoned;
@@ -276,7 +278,8 @@ const Replicator::Facts& Replicator::factsOf(World& world, std::uint32_t at) {
     }
     facts.state = computeEntityState(world, e, nowMillis);
     facts.visuals = computePlayerVisuals(world, e, nowMillis);
-    facts.skinHash = skinIdHash(skinIdOf(facts.visuals));
+    facts.skinHash = stringHash(skinIdOf(facts.visuals));
+    facts.guildTagHash = stringHash(guildTagOf(facts.visuals));
     return facts;
 }
 
@@ -416,7 +419,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // --- header -----------------------------------------------------------
     out.u8(static_cast<std::uint8_t>(net::ServerMessage::Snapshot));
     out.u32(frame.tick);
-    out.f64(frame.nowMillis);
+    out.f64(frame.nowMillis + frame.motionLeadMillis);
 
     // The viewer's own position, always: the camera eases toward it every
     // frame, so it never goes through the change-mask path.
@@ -624,6 +627,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u32(visuals.arenaScore);
             out.u8(visuals.shield);
             out.str(skinIdOf(visuals));
+            out.str(guildTagOf(visuals));
         }
         if (info.kind == net::EntityKind::Petal) {
             // Petals are placed on an absolute ring around the owner's SERVER
@@ -667,6 +671,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         tracked.arenaScore = visuals.arenaScore;
         tracked.shield = visuals.shield;
         tracked.skinIdHash = facts.skinHash;
+        tracked.guildTagHash = facts.guildTagHash;
         nextTracked_.push_back({candidate.netId, tracked});
     }
     for (; held != heldEnd; ++held) removals_.push_back(held->netId);
@@ -739,7 +744,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
              visuals.level != tracked.level ||
              static_cast<std::uint8_t>(visuals.bestRarity) != tracked.bestRarity ||
              visuals.arenaScore != tracked.arenaScore || visuals.shield != tracked.shield ||
-             facts.skinHash != tracked.skinIdHash)) {
+             facts.skinHash != tracked.skinIdHash ||
+             facts.guildTagHash != tracked.guildTagHash)) {
             mask |= net::FieldPlayerVisuals;
         }
         // The move as FieldPositionDelta would carry it, rounded to its step.
@@ -792,6 +798,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u32(visuals.arenaScore);
             out.u8(visuals.shield);
             out.str(skinIdOf(visuals));
+            out.str(guildTagOf(visuals));
             tracked.faceFlags = visuals.faceFlags;
             tracked.equipFlags = visuals.equipFlags;
             tracked.renderFlags = visuals.renderFlags;
@@ -800,6 +807,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tracked.arenaScore = visuals.arenaScore;
             tracked.shield = visuals.shield;
             tracked.skinIdHash = facts.skinHash;
+            tracked.guildTagHash = facts.guildTagHash;
         }
         ++updateCount;
     }

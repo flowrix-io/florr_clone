@@ -61,9 +61,9 @@ constexpr double kHudXpHeight = 12.0;
 /// Centred under the health bar rather than sharing its left edge.
 constexpr double kHudXpX = kHudBarX + (kHudBarWidth - kHudXpWidth) * 0.5;
 constexpr double kHudXpY = kHudHealthY + kHudBarHeight + 12.0;   // 134
-/// The mana bar is NOT here. It stands in the slot the viewer's own health
-/// bar used to occupy, under the flower itself -- WorldRenderer::drawSelfManaBar
-/// -- which is why this block goes straight from the XP bar to the avatar.
+/// The mana bar is NOT here. It stands under the flower itself --
+/// WorldRenderer::drawSelfManaBar -- which is why this block goes straight from
+/// the XP bar to the avatar.
 /// How far the health bar's black plate stands out past its fill.
 constexpr double kHudPlatePad = 6.0;
 /// The plate runs back to the flower's CENTRE, so its rounded left cap is
@@ -293,7 +293,10 @@ void App::drawHud(Canvas& canvas, double time) {
     wasInvulnerable_ = invulnerable;
 
     std::uint32_t healthColour = kHealth;
-    if (invulnerable) {
+    if (selfEntity != net_.view().entities().end() &&
+        (selfEntity->second.equipFlags & EquipCorruptionHarmless) != 0) {
+        healthColour = kCorruptionHarmlessHealth;
+    } else if (invulnerable) {
         healthColour = kInvulnerableHealth;
     } else if (invulEndedAt_ >= 0 && time - invulEndedAt_ < kInvulnerableFadeSeconds) {
         // Linear, per channel, and the in-world plate's own fade rather than a
@@ -460,8 +463,12 @@ void App::drawSquadHud(Canvas& canvas, double time) {
 
         const double barY = centreY - barHeight * 0.5;
         const bool invulnerable = (body.state & net::StateInvulnerable) != 0;
+        const bool harmless = (body.equipFlags & EquipCorruptionHarmless) != 0;
         flowerBar(canvas, barX, barY, barWidth, barHeight, body.healthBar,
-                  invulnerable ? kInvulnerableHealth : kHealth, kScale);
+                  harmless       ? kCorruptionHarmlessHealth
+                  : invulnerable ? kInvulnerableHealth
+                                 : kHealth,
+                  kScale);
         text(canvas, member.name.empty() ? std::string("Squadmate") : member.name,
              barX + barWidth * 0.5, centreY, label);
 

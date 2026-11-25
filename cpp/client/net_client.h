@@ -885,6 +885,11 @@ public:
     /// wearer's id through it; the Browse tab lists skinBrowse() instead.
     const std::vector<CustomSkin>& skinCatalog() const { return skinCatalog_; }
     const CustomSkin* findSkin(const std::string& id) const;
+    /// Whether the skin `id` exists, for a caller that needs it and may be
+    /// without it: Unknown asks the server (FetchSkins), so call it every
+    /// frame until it says one of the others. Gone is the server's word.
+    enum class SkinPresence : std::uint8_t { Unknown, Held, Gone };
+    SkinPresence requireSkin(const std::string& id);
     const std::string& equippedSkinId() const { return equippedSkinId_; }
     bool isSkinAdmin() const { return skinAdmin_; }
     /// Whether the server says this account is a chat moderator, from the same
@@ -1241,8 +1246,11 @@ private:
     void rememberSkins(std::vector<CustomSkin> skins);
     /// Asks for the skins on flowers in view that skinCatalog_ lacks. Run
     /// after every snapshot; an id is asked again only after
-    /// kSkinFetchRetryMillis, and never once the server said it is gone.
+    /// kSkinRetryMillis, and never once the server said it is gone.
     void requestMissingSkins();
+    /// Whether `id` may be asked for at `now`, on those terms.
+    bool skinFetchDue(const std::string& id, double now) const;
+    void sendSkinFetch(const std::vector<std::string>& ids, double now);
     /// Drops the Browse listing and every skin asked for: a new connection
     /// answers none of the old one's requests.
     void forgetSkinRequests();

@@ -2558,6 +2558,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         // on the live flower every hit, and replication folds it into the face
         // flags, so a ring strung before this still turns hostile.
         visuals->corrupted = mode == "toggle" ? !visuals->corrupted : mode == "on";
+        // The harmless opening belongs to the corruption, so it goes with it.
+        if (!visuals->corrupted) visuals->corruptionHarmless = false;
         out((visuals->corrupted ? std::string("Corrupted ") : std::string("Cleansed ")) +
             target.name + " (" +
             std::to_string(target.session != nullptr

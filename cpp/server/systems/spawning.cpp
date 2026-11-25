@@ -1318,6 +1318,7 @@ void SpawnSystem::run(World& world, const Terrain& terrain, const ContentRegistr
         // difference between this and a spawner that follows the players
         // around.
         stockSpawnZones(world, terrain, content, viewers_, rng, nowMillis);
+        spawnOverdueApexes(world, terrain, content, viewers_, rng, nowMillis);
         promoteLatent(world, terrain, content, viewers_, viewers_, rng, nowMillis);
         wokenFrom_ = viewers_;
     } else {
@@ -2042,11 +2043,12 @@ std::uint16_t SpawnSystem::bossClockFor(const std::string& biome) {
 }
 
 void SpawnSystem::restoreBossClock(const std::string& biome, double uniqueReadyMillis,
-                                   double apexReadyMillis) {
+                                   double apexReadyMillis, double apexDueMillis) {
     BiomeBossClock restored;
     restored.biome = biome;
     restored.uniqueReadyMillis = uniqueReadyMillis;
     restored.apexReadyMillis = apexReadyMillis;
+    restored.apexDueMillis = apexDueMillis;
     restored.scattered = true;
     for (BiomeBossClock& clock : bossClocks_) {
         if (clock.biome == biome) {
@@ -2134,13 +2136,67 @@ void SpawnSystem::restartBossClock(std::uint16_t slot, Rarity rarity, double now
     if (slot >= bossClocks_.size()) return;
     BiomeBossClock& clock = bossClocks_[slot];
     if (rarity == Rarity::Apex) {
-        clock.apexReadyMillis = nowMillis + kApexSpawnCooldownMinMillis +
-                                (kApexSpawnCooldownMaxMillis - kApexSpawnCooldownMinMillis) *
-                                    bossRng_.unit();
-        clock.apexSpentMillis = nowMillis;
+        clock.apexReadyMillis =
+            nowMillis + bossRng_.range(kApexSpawnCooldownMinMillis, kApexSpawnCooldownMaxMillis);
+        clock.apexDueMillis = 0;
     } else if (rarity == Rarity::Unique) {
         clock.uniqueReadyMillis = nowMillis + kUniqueSpawnCooldownMillis;
     }
+}
+
+void SpawnSystem::spawnOverdueApexes(World& world, const Terrain& terrain,
+                                     const ContentRegistry& content,
+                                     const std::vector<Viewer>& viewers, Rng& rng,
+                                     double nowMillis) {
+    for (std::size_t slot = 0; slot < bossClocks_.size(); ++slot) {
+        BiomeBossClock& clock = bossClocks_[slot];
+        // The standing flag is this pass's own (cullExtraTopBosses), and a
+        // band's upgrade since then has restarted the clock.
+        if (nowMillis < clock.apexReadyMillis || clock.apexStanding) {
+            clock.apexDueMillis = 0;
+            continue;
+        }
+        if (clock.apexDueMillis <= 0) {
+            clock.apexDueMillis =
+                nowMillis + bossRng_.range(kApexOverdueMinMillis, kApexOverdueMaxMillis);
+            continue;
+        }
+        if (nowMillis < clock.apexDueMillis) continue;
+        // A few goes, the band drawn afresh each time: a crowded one, or a
+        // fixture rolled off its table, is not a reason to wait.
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            const std::uint16_t band = overdueApexBand(static_cast<std::uint16_t>(slot));
+            if (band == kInvalidIndex) break;
+            if (stockZone(world, terrain, content, zones_[band], band, viewers, rng, nowMillis,
+                          Slot::OverdueApex)) {
+                break;
+            }
+        }
+    }
+}
+
+std::uint16_t SpawnSystem::overdueApexBand(std::uint16_t slot) {
+    for (int tier = rarityIndex(Rarity::Super); tier >= 0; --tier) {
+        const auto weight = [&](const SpawnZone& zone) {
+            if (zone.biome != slot) return 0.0;
+            return spawnChanceAtLeast(zone.difficulty, static_cast<Rarity>(tier)) *
+                   static_cast<double>(zone.targetMobs);
+        };
+        double total = 0.0;
+        for (const SpawnZone& zone : zones_) total += weight(zone);
+        if (!(total > 0.0)) continue;
+        double roll = bossRng_.unit() * total;
+        std::uint16_t last = kInvalidIndex;
+        for (std::size_t i = 0; i < zones_.size(); ++i) {
+            const double share = weight(zones_[i]);
+            if (!(share > 0.0)) continue;
+            last = static_cast<std::uint16_t>(i);
+            roll -= share;
+            if (roll < 0.0) break;
+        }
+        return last;
+    }
+    return kInvalidIndex;
 }
 
 std::uint32_t SpawnSystem::biomeKey(Realm realm) const {
@@ -2438,7 +2494,8 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // evenness to keep; handing the slot back where it fell would put the next
     // queen in the room the last one was killed in, every time, which turns a
     // hunt across the map into a farm at one coordinate.
-    const double scatter = slot != Slot::TopUp && !zone.singular ? kRespawnScatter : 0.0;
+    const bool handedBack = slot == Slot::Killed || slot == Slot::Vanished;
+    const double scatter = handedBack && !zone.singular ? kRespawnScatter : 0.0;
     Vec2 at;
     bool placed = false;
     for (int attempt = 0; attempt < kZonePlacementAttempts; ++attempt) {
@@ -2491,7 +2548,10 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // Stopped at super. Everything above it belongs to the biome's clocks
     // (below): a band steep enough to roll uniques on its own would spawn them
     // far faster than kUniqueSpawnCooldownMillis allows.
-    Rarity rarity = rollSpawnRarity(zone.difficulty, luck, rng);
+    //
+    // An overdue apex is the super its biome never rolled.
+    const bool overdue = slot == Slot::OverdueApex;
+    Rarity rarity = overdue ? Rarity::Super : rollSpawnRarity(zone.difficulty, luck, rng);
     if (rarityIndex(rarity) > rarityIndex(Rarity::Super)) rarity = Rarity::Super;
     // A prestige twin's band grows what the plain band would, a tier up --
     // and still never past super (shared/game/prestige.h).
@@ -2521,9 +2581,11 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // in a prestige twin, which has no clocks.
     bool upgraded = false;
     if (rarity == Rarity::Super && !zone.prestige && !content.mob(type).neverAmbient) {
-        rarity = rollBossUpgrade(world, zone, nowMillis);
+        rarity = overdue ? Rarity::Apex : rollBossUpgrade(world, zone, nowMillis);
         upgraded = rarity != Rarity::Super;
     }
+    // A fixture, or a mob whose own floor is above super: not an apex.
+    if (overdue && !upgraded) return false;
 
     if (!alwaysAwake(content, type, rarity, zone.prestige)) {
         // The ordinary case, and the whole reason the map can be full: a
@@ -2565,17 +2627,19 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
         permanentFixtureExists(world, type, rarity, zone.realm, section)) {
         return false;
     }
-    if (census_.mobs >= mobCap) return false;
+    if (census_.mobs >= mobCap && !overdue) return false;
 
-    const Entity spawned = spawnMobAt(world, terrain, content, type, rarity, at, zone.realm,
-                                      nowMillis, rng, 0, zoneIndex, facing);
+    const Entity spawned =
+        spawnMobAt(world, terrain, content, type, rarity, at, zone.realm, nowMillis, rng, 0,
+                   overdue ? kInvalidIndex : zoneIndex, facing);
     if (spawned == NULL_ENTITY) return false;
-    ++zone.liveMobs;
     // Charged only now that the boss is standing. Every refusal above hands
     // the slot back to the band and rolls it afresh on a later pass, and a
     // clock spent on a spawn that never happened would be a whole cooldown
     // with no boss in it.
     if (upgraded) restartBossClock(zone.biome, rarity, nowMillis);
+    if (overdue) return true;
+    ++zone.liveMobs;
     // Counted straight away, so the rest of this pass spaces itself against
     // what it has just placed rather than against the last census alone --
     // in the band's realm, or crowdedAt() would never see it.

@@ -210,7 +210,8 @@ int main(int argc, char** argv) {
     // the online client does. The database is restored by path (see above)
     // and lands in the directory the server is then pointed at.
     const bool stored = flix::web::mountStorage(
-        {kSessionName, std::string(kSessionName) + "-settings", flix::web::kBootPathName,
+        {kSessionName, std::string(kSessionName) + "-settings",
+         std::string(kSessionName) + "-skin-draft", flix::web::kBootPathName,
          flix::web::kBootScriptName},
         kStoragePrefix);
     ::mkdir(kStateDirectory, 0777);

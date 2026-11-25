@@ -468,6 +468,10 @@ struct MenuContext {
     /// system's business, so the panel only names the one it wants.
     MenuId openMenu = MenuId::None;
 
+    /// Set by a panel that answered this frame's right press itself, so the
+    /// app does not raise its Copy menu on top of what that opened.
+    bool rightPressTaken = false;
+
     bool pointerBlocked = false;
     Vec2 mouse() const { return {window.mouseX(), window.mouseY()}; }
     bool over(Rect r) const { return r.contains(mouse()); }
@@ -1347,6 +1351,13 @@ class SkinsPanel {
 public:
     bool render(MenuContext&);
     void reset();
+    /// Puts back the skin being made when the last page went away, and names
+    /// the file it is kept in from here on. Before the first frame.
+    static void loadDraft(const std::string& path);
+    /// Writes that file if the skin has changed since it was last written or
+    /// read -- never otherwise, so a tab that left the editor alone does not
+    /// write over what another tab drew.
+    static void saveDraft();
     static double preferredWidth();
     /// Taller than the other corner overlays: this is the only one that has to
     /// show a drawing board, a shape list and that shape's properties at once.
@@ -1732,6 +1743,9 @@ public:
     /// while it is focused, and this reports it.
     bool wantsText() const { return wantsText_; }
 
+    /// Whether the open panel answered this frame's right press itself.
+    bool rightPressTaken() const { return rightPressTaken_; }
+
     /// Drawing calls the menu layer made since this was last called, split by
     /// which of its three unrelated jobs made them. One figure for the lot
     /// cannot say which to make quieter, and the bar is redrawn every frame
@@ -1756,6 +1770,10 @@ public:
     void setFilePaths(const std::string& dataDirectory, const std::string& settingsFile) {
         AssetsPanel::setPaths(dataDirectory, settingsFile);
     }
+
+    /// See SkinsPanel::loadDraft and saveDraft.
+    void loadSkinDraft(const std::string& path) { SkinsPanel::loadDraft(path); }
+    void saveSkinDraft() { SkinsPanel::saveDraft(); }
 
 private:
     const ProfilingStats* profiling_ = nullptr;
@@ -1854,6 +1872,7 @@ private:
     ClientSettings settings_;
     DragState drag_;
     bool wantsText_ = false;
+    bool rightPressTaken_ = false;
 
     bool inGame_ = false;
     bool exitRequested_ = false;

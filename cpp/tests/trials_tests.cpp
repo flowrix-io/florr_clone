@@ -327,3 +327,58 @@ TEST(the_secret_passage_opens_the_trial_room_only_at_the_map_edge) {
     CHECK(distance(world.get<Transform>(session->entity).position,
                    Vec2{1.5 * kTileSize, 1.5 * kTileSize}) < 50.0);
 }
+
+TEST(a_trial_reward_claimed_in_the_world_is_still_on_the_account_after_the_next_tick) {
+    using namespace flix::testsupport;
+    // The flower holds the live XP and stars, and the record is brought into
+    // line with it every tick. A reward paid only onto the record was wiped by
+    // the next sync -- or, before the sync ran every tick, by the next save.
+    Harness h("trial-reward-in-world",
+              [](const std::string& path) {
+                  seedUser(path, "claimer", "password7");
+                  Database db;
+                  std::string error;
+                  db.load(path, error);
+                  const Account* account = db.findUser("claimer");
+                  if (account == nullptr) return;
+                  Json root = Json::object();
+                  root["season"] = 0;
+                  root["unlocked"] = true;
+                  root["cleared"] = 0b1;
+                  root["claimedReward"] = 0;
+                  root["fullReward"] = 0;
+                  Json best = Json::array();
+                  for (int i = 0; i < kTrialFloorCount; ++i) best.push(i < 1 ? 9 : 0);
+                  root["bestStars"] = std::move(best);
+                  db.progress(account->id).extra["trialGrounds"] = std::move(root);
+                  db.progress(account->id).totalXp = 1000;
+                  db.markDirty();
+                  db.save();
+              },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "claimer", "password7"));
+    client.joinGame(1920, 1080);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    Session* session = GameServerPeer::sessionOf(h.server, "claimer");
+    if (session == nullptr) { CHECK(false); return; }
+    const PlayerRecord* before = h.server.database().findProgress(session->userId);
+    if (before == nullptr) { CHECK(false); return; }
+    const double starsBefore = before->stars;  // the login's daily star included
+
+    client.claimTrialReward(1);
+    CHECK(h.stepUntil({&client}, [&] { return client.trialReward().known; }, 200));
+    CHECK(client.trialReward().ok);
+    const double xp = client.trialReward().xp;
+    const double stars = client.trialReward().stars;
+    CHECK(xp > 0);
+    h.step(10, {&client});
+
+    const PlayerRecord* record = h.server.database().findProgress(session->userId);
+    if (record == nullptr) { CHECK(false); return; }
+    CHECK_NEAR(record->totalXp, 1000.0 + xp, 1e-6);
+    CHECK_NEAR(record->stars, starsBefore + stars, 1e-6);
+    CHECK_NEAR(client.view().self().totalXp, 1000.0 + xp, 1e-6);
+}

@@ -39,6 +39,9 @@ constexpr double kChatBubbleExitScale = 0.5;
 
 constexpr double kPetalHitSize = 10.0;
 
+/// The least room between a flower's guild tag and its level label.
+constexpr double kGuildTagGap = 4.0;
+
 /// A mob's plate, as florr draws it (~/florr_images/client: descriptor
 /// 0x10078c0e0, painter 0x10078cb60), in world units. The bar is a line
 /// 80 + 10 x tier long whatever the mob's size, stroked with round caps: a
@@ -77,12 +80,21 @@ constexpr double kMobDpsDrop = kMobTierDrop + 1.4 * kMobTierSize;
 /// What a summon's plate says it is, at the left of the tier row.
 constexpr const char* kPetLabel = "Summon";
 
+/// How far the viewer's mana bar moves down for their health bar: its plate's
+/// ten units and a gap of three.
+constexpr double kSelfManaDrop = 13.0;
+/// Where gardn runs a flower's bar (Client/Render/RenderHealth.cc): the line
+/// along its middle is this many radii and this many units below the centre.
+constexpr double kSelfBarRadii = 1.33;
+constexpr double kSelfBarGap = 15.0;
+/// The opacity below which the viewer's own health bar is not drawn at all.
+constexpr double kSelfBarGone = 0.01;
+
 /// Where a flower's bar goes: the one slot under the body, in screen pixels.
 ///
-/// Shared by the plate every other flower wears and by the viewer's own mana
-/// bar, which stands in that exact slot now that the local plate is gone. Two
-/// copies of these numbers is how the two would end up a pixel apart at one
-/// zoom level and nowhere near each other at another.
+/// Shared by the plate every other flower wears and by the viewer's own health
+/// and mana bars. Two copies of these numbers is how the two would end up a
+/// pixel apart at one zoom level and nowhere near each other at another.
 struct PlateBar {
     double zoom = 1;
     double centreX = 0;
@@ -95,7 +107,10 @@ struct PlateBar {
 
 /// `size` is the flower's drawn size multiplier, passed in because the slot
 /// hangs off the BODY: a grown flower's bar sits lower.
-PlateBar plateBar(double size, const Camera& camera, Vec2 at) {
+///
+/// `own` is the viewer's flower. Nothing is written between it and its bars,
+/// so they hang where gardn hangs a flower's, a little closer in.
+PlateBar plateBar(double size, const Camera& camera, Vec2 at, bool own) {
     PlateBar bar;
     bar.zoom = camera.zoom();
     const Vec2 screen = camera.worldToScreen(at);
@@ -108,6 +123,10 @@ PlateBar plateBar(double size, const Camera& camera, Vec2 at) {
     bar.right = screen.x + 30.0 * bar.zoom;
     bar.width = 60.0 * bar.zoom;
     bar.height = 8.0 * bar.zoom;
+    if (own) {
+        const double middle = kPlayerBaseRadius * size * kSelfBarRadii + kSelfBarGap;
+        bar.top = screen.y + middle * bar.zoom - bar.height * 0.5;
+    }
     return bar;
 }
 
@@ -137,6 +156,41 @@ void plateBarBack(Path2D& path, const PlateBar& bar) {
 
 } // namespace
 
+void WorldRenderer::drawFlowerHealthBar(Canvas& canvas, const RemoteEntity& entity,
+                                        const Camera& camera, Vec2 at, double timeSeconds,
+                                        double opacity) const {
+    // Asked even when nothing is drawn: it is also what keeps the shield's
+    // fade in step.
+    const std::uint32_t tint = healthBarColor(entity, timeSeconds);
+    if (opacity <= 0.0) return;
+
+    // rysteria's bar in the black plate this slot has always had: the red
+    // of what was just lost, the green -- tinted while spawn protection
+    // lasts -- and the white shield line. A MOB's is the same bar with no
+    // shield in it. Under one alpha, like everything in this slot.
+    ui::HealthBar health = plateHealthBar(
+        plateBar(playerSizeMultiplier(entity), camera, at, entity.isSelf()));
+    health.health = entity.healthBar.health;
+    health.lag = entity.healthBar.lag;
+    health.shield = entity.healthBar.shield;
+    health.fill = (entity.equipFlags & EquipCorruptionHarmless) ? kCorruptionHarmlessHealth : tint;
+    canvas.save();
+    canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha * opacity));
+    ui::healthBar(canvas, health);
+    canvas.restore();
+}
+
+double WorldRenderer::selfHealthBarOpacity(const RemoteEntity& entity) const {
+    // An ease never quite lands, and its tail would be a bar nobody can see.
+    if (!options.healthBars || entity.selfBarOpacity < kSelfBarGone) return 0.0;
+    return entity.selfBarOpacity;
+}
+
+void WorldRenderer::drawSelfHealthBar(Canvas& canvas, const RemoteEntity& entity,
+                                      const Camera& camera, Vec2 at, double timeSeconds) const {
+    drawFlowerHealthBar(canvas, entity, camera, at, timeSeconds, selfHealthBarOpacity(entity));
+}
+
 void WorldRenderer::drawSelfManaBar(Canvas& canvas, const RemoteEntity& entity,
                                     const Camera& camera, Vec2 at) const {
     // No pool, no bar. Most flowers wear nothing that grants one, and an empty
@@ -144,11 +198,11 @@ void WorldRenderer::drawSelfManaBar(Canvas& canvas, const RemoteEntity& entity,
     // "this game has mana in it".
     if (selfState_ == nullptr || !(selfState_->maxMana > 0.0)) return;
 
-    // NOT gated on options.healthBars. That option is about reading OTHER
-    // bodies -- a stranger's flower, a mob's -- and this is the viewer's own
-    // resource readout, the one thing in this slot they cannot get anywhere
-    // else now that it is off the HUD.
-    const PlateBar bar = plateBar(playerSizeMultiplier(entity), camera, at);
+    // NOT gated on options.healthBars, as everything else in this slot is:
+    // health can also be read off the HUD, and this cannot be read anywhere
+    // else now that it is off it.
+    PlateBar bar = plateBar(playerSizeMultiplier(entity), camera, at, true);
+    bar.top += kSelfManaDrop * selfHealthBarOpacity(entity) * bar.zoom;
     const double fraction = clamp(selfState_->mana / selfState_->maxMana, 0.0, 1.0);
     const double fillWidth = bar.width * fraction;
 
@@ -183,7 +237,7 @@ void WorldRenderer::drawSelfManaBar(Canvas& canvas, const RemoteEntity& entity,
 
 void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
                                     const Camera& camera, Vec2 at, double timeSeconds) const {
-    const PlateBar bar = plateBar(playerSizeMultiplier(entity), camera, at);
+    const PlateBar bar = plateBar(playerSizeMultiplier(entity), camera, at, false);
     const double zoom = bar.zoom;
     const double barY = bar.top;
     const double left = bar.left;
@@ -201,22 +255,10 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
     }
 
     if (options.healthBars) {
-        // Always drawn, even at full health: the bar is part of how a flower
-        // reads, not a warning that appears once you are hurt.
-        //
-        // rysteria's bar in the black plate this slot has always had: the red
-        // of what was just lost, the green -- tinted while spawn protection
-        // lasts -- and the white shield line. A MOB's is the same bar with no
-        // shield in it. Under one alpha, like everything in this slot.
-        ui::HealthBar health = plateHealthBar(bar);
-        health.health = entity.healthBar.health;
-        health.lag = entity.healthBar.lag;
-        health.shield = entity.healthBar.shield;
-        health.fill = healthBarColor(entity, timeSeconds);
-        canvas.save();
-        canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
-        ui::healthBar(canvas, health);
-        canvas.restore();
+        // Always drawn, even at full health: the bar is part of how a stranger
+        // reads, not a warning. Only the viewer's own comes and goes
+        // (drawSelfHealthBar).
+        drawFlowerHealthBar(canvas, entity, camera, at, timeSeconds, 1.0);
     }
 
     if (options.names) {
@@ -227,19 +269,25 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         // Tinted with the best rarity anywhere in that flower's loadout, which
         // is how a passing flower advertises what it is carrying.
         level.fill = rarityColor(entity.bestRarity);
-        ui::text(canvas, "Lv. " + std::to_string(entity.level), right, barY + 20.0 * zoom,
-                 level);
+        const std::string levelLabel = "Lv. " + std::to_string(entity.level);
+        ui::text(canvas, levelLabel, right, barY + 20.0 * zoom, level);
 
         // The guild tag mirrors the level label on the other side of the bar,
-        // one point smaller so a five-character id and its brackets cannot
-        // collide with it.
+        // two points smaller. A five-character tag beside a three-digit level
+        // is still wider than the bar, so there it starts further left rather
+        // than running into the level.
         if (!entity.guildName.empty()) {
             ui::TextStyle tag;
             tag.size = 8.0 * zoom;
             tag.align = ui::Align::Left;
             tag.baseline = ui::Baseline::Alphabetic;
             tag.fill = 0x27DADEu;
-            ui::text(canvas, "[" + entity.guildName + "]", left, barY + 20.0 * zoom, tag);
+            const std::string tagLabel = "[" + entity.guildName + "]";
+            const double tagRight =
+                right - ui::textWidth(canvas, levelLabel, level.size) - kGuildTagGap * zoom;
+            const double tagLeft =
+                std::min(left, tagRight - ui::textWidth(canvas, tagLabel, tag.size));
+            ui::text(canvas, tagLabel, tagLeft, barY + 20.0 * zoom, tag);
         }
     }
 }

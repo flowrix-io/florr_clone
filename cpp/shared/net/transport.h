@@ -206,6 +206,14 @@ public:
     std::string certPath;
     std::string keyPath;
 
+    /// Called before any queued byte is handed to the transport -- in poll()
+    /// and in flush() alike -- so the owner can make durable whatever those
+    /// bytes are about to tell a peer. The game server writes its database
+    /// journal here: a reply announcing a drop must never reach a client ahead
+    /// of the record of that drop reaching the disk. Must be cheap when there
+    /// is nothing to do; it runs once per connection with bytes to send.
+    std::function<void()> beforeWrite;
+
     /// Address to bind, or empty for every interface. A localhost development
     /// server sets this to 127.0.0.1; production keeps the empty default.
     std::string bindHost;

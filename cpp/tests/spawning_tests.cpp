@@ -106,6 +106,10 @@ const WorldMaps& authoredMaps();
 void makeBandedWorld(WorldMaps& out, const std::vector<Rect>& bands, const std::string& mobs,
                      double difficulty = 0.0);
 
+/// The same, with two bee bands of their own difficulty.
+void makeTwoBandWorld(WorldMaps& out, const Rect& first, double firstDifficulty,
+                      const Rect& second, double secondDifficulty);
+
 /// The difficulty at which `chance` (0..1, exclusive) of a band's spawns come
 /// out a boss: the ultra/super blend, read off the curve rather than written
 /// down, so retuning the anchors moves it too. spawnTierWeight leans the blend
@@ -2509,8 +2513,85 @@ TEST(both_clocks_ready_gives_one_apex_and_one_unique) {
     CHECK_EQ(world.announced[rarityIndex(Rarity::Unique)], 1);
     const SpawnSystem::BiomeBossClock& after = onlyClock(world.sim);
     CHECK(after.apexReadyMillis > world.sim.now + kApexSpawnCooldownMinMillis - 20000.0);
-    CHECK(after.apexReadyMillis <= world.sim.now + kApexSpawnCooldownMaxMillis);
     CHECK(after.uniqueReadyMillis > world.sim.now + kUniqueSpawnCooldownMillis - 20000.0);
+}
+
+TEST(an_apex_nobody_rolled_is_placed_when_its_window_runs_out) {
+    // Two bands too gentle for a super, so no clock could ever upgrade one.
+    const Rect gentle{kCentre.x - 6000.0, kCentre.y - 2000.0, 4000.0, 4000.0};
+    const Rect harder{kCentre.x + 2000.0, kCentre.y - 2000.0, 4000.0, 4000.0};
+    WorldMaps maps;
+    makeTwoBandWorld(maps, gentle, 0.0, harder, 67.0);
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{Vec2{5000.0, 5000.0}};
+    sim.tick(players);
+    SpawnSystem::BiomeBossClock& clock = onlyClock(sim);
+    CHECK_EQ(clock.apexDueMillis, 0.0);
+
+    // The window opens on the first pass past the cooldown, three to six
+    // hours long.
+    sim.jump(kApexSpawnCooldownMaxMillis, players);
+    CHECK(clock.apexDueMillis >= sim.now + kApexOverdueMinMillis);
+    CHECK(clock.apexDueMillis < sim.now + kApexOverdueMaxMillis);
+    CHECK_NEAR(kApexOverdueMinMillis, 3.0 * 3600000.0, 1e-6);
+    CHECK_NEAR(kApexOverdueMaxMillis, 6.0 * 3600000.0, 1e-6);
+    const double due = clock.apexDueMillis;
+    const int population = sim.populationIn(harder);
+    const int others = sim.populationIn(gentle);
+
+    sim.jump(due - 1000.0 - sim.now, players);
+    CHECK_EQ(clock.apexDueMillis, due);
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 0);
+
+    sim.spawner.bossSpawns.clear();
+    sim.jump(1500.0, players);
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 1);
+    Entity apex = NULL_ENTITY;
+    Query<MobTag, MobType> mobs{sim.world};
+    mobs.each([&](Entity e, MobTag&, MobType& type) {
+        if (type.rarity == Rarity::Apex) apex = e;
+    });
+    CHECK(apex != NULL_ENTITY);
+    if (apex == NULL_ENTITY) return;
+    // In the harder band, over and above what it holds, announced, and the
+    // cooldown starts over.
+    CHECK(harder.contains(sim.world.get<Transform>(apex).position));
+    CHECK_EQ(sim.populationIn(harder), population + 1);
+    CHECK_EQ(sim.populationIn(gentle), others);
+    CHECK_EQ(sim.spawner.bossSpawns.size(), std::size_t(1));
+    CHECK_EQ(clock.apexDueMillis, 0.0);
+    CHECK(clock.apexReadyMillis >= sim.now + kApexSpawnCooldownMinMillis);
+    CHECK(clock.apexReadyMillis < sim.now + kApexSpawnCooldownMaxMillis);
+
+    // It stands past its cooldown and every window after: never a second.
+    sim.jump(kApexSpawnCooldownMaxMillis, players);
+    sim.jump(kApexOverdueMaxMillis, players);
+    sim.jump(kApexOverdueMaxMillis, players);
+    CHECK(sim.world.isAlive(apex));
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 1);
+    CHECK_EQ(clock.apexDueMillis, 0.0);
+
+    // Dead, it is not replaced at once: a fresh window opens, and its band is
+    // not handed a slot it never gave.
+    sim.world.destroy(apex);
+    sim.jump(kPopulationIntervalMillis, players);
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 0);
+    CHECK(clock.apexDueMillis >= sim.now + kApexOverdueMinMillis);
+    CHECK_EQ(sim.populationIn(harder), population);
+    sim.jump(kApexOverdueMaxMillis, players);
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 1);
+}
+
+TEST(an_apex_that_comes_by_itself_closes_the_window) {
+    SuperBand world;
+    world.deal();
+    SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
+    clock.apexReadyMillis = 0.0;
+    clock.apexDueMillis = world.sim.now + kApexOverdueMinMillis;
+    world.fill();
+    CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 1);
+    CHECK_EQ(clock.apexDueMillis, 0.0);
 }
 
 namespace {
@@ -2861,29 +2942,26 @@ TEST(charging_a_clock_restarts_only_that_tier_in_that_biome) {
     CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Overworld, now) > 0.0);
 
     world.sim.spawner.chargeBossClock(Rarity::Apex, Realm::Overworld, now);
-    CHECK(onlyClock(world.sim).apexReadyMillis >= now + kApexSpawnCooldownMinMillis);
-    CHECK(onlyClock(world.sim).apexReadyMillis <= now + kApexSpawnCooldownMaxMillis);
-    CHECK_EQ(onlyClock(world.sim).apexSpentMillis, now);
-}
-
-TEST(an_apex_clock_draws_its_wait_between_two_and_three_hours) {
-    // Every restart draws a fresh wait over the whole window, so an apex
-    // cannot be timed to the minute: across many restarts the waits reach
-    // both ends and never leave the window.
-    SuperBand world;
-    world.deal();
-    const double now = world.sim.now;
-    double shortest = 1e300, longest = 0.0;
-    for (int i = 0; i < 400; ++i) {
+    // An apex's cooldown is drawn afresh every time, anywhere from 1.5 to 2.5
+    // hours: never outside the two, and spread across the whole of them.
+    CHECK_NEAR(kApexSpawnCooldownMinMillis, 1.5 * 3600000.0, 1e-6);
+    CHECK_NEAR(kApexSpawnCooldownMaxMillis, 2.5 * 3600000.0, 1e-6);
+    double shortest = 1e300;
+    double longest = 0.0;
+    double total = 0.0;
+    constexpr int kCharges = 2000;
+    for (int i = 0; i < kCharges; ++i) {
         world.sim.spawner.chargeBossClock(Rarity::Apex, Realm::Overworld, now);
         const double wait = onlyClock(world.sim).apexReadyMillis - now;
-        CHECK(wait >= kApexSpawnCooldownMinMillis && wait <= kApexSpawnCooldownMaxMillis);
         shortest = std::min(shortest, wait);
         longest = std::max(longest, wait);
+        total += wait;
     }
-    const double span = kApexSpawnCooldownMaxMillis - kApexSpawnCooldownMinMillis;
-    CHECK(shortest < kApexSpawnCooldownMinMillis + span * 0.05);
-    CHECK(longest > kApexSpawnCooldownMaxMillis - span * 0.05);
+    CHECK(shortest >= kApexSpawnCooldownMinMillis);
+    CHECK(longest < kApexSpawnCooldownMaxMillis);
+    CHECK_NEAR(shortest, kApexSpawnCooldownMinMillis, 60000.0);
+    CHECK_NEAR(longest, kApexSpawnCooldownMaxMillis, 60000.0);
+    CHECK_NEAR(total / kCharges, 2.0 * 3600000.0, 120000.0);
 }
 
 TEST(a_biome_with_no_clock_refuses_no_unique) {
@@ -2917,7 +2995,7 @@ TEST(a_sacrifice_summons_a_mob_of_its_band_at_its_tier_past_a_cooling_clock) {
     SuperBand world;
     world.deal();
     SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
-    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMinMillis * 0.5;
+    clock.apexReadyMillis = world.sim.now + kApexSpawnCooldownMaxMillis * 0.5;
     world.sim.spawner.bossSpawns.clear();
 
     const Vec2 at{world.band.x + world.band.w * 0.5, world.band.y + world.band.h * 0.5};
@@ -2933,7 +3011,7 @@ TEST(a_sacrifice_summons_a_mob_of_its_band_at_its_tier_past_a_cooling_clock) {
     // Announced like every boss, and the biome's apex clock starts over.
     CHECK_EQ(world.sim.spawner.bossSpawns.size(), std::size_t(1));
     CHECK(onlyClock(world.sim).apexReadyMillis >= world.sim.now + kApexSpawnCooldownMinMillis);
-    CHECK(onlyClock(world.sim).apexReadyMillis <= world.sim.now + kApexSpawnCooldownMaxMillis);
+    CHECK(onlyClock(world.sim).apexReadyMillis < world.sim.now + kApexSpawnCooldownMaxMillis);
 
     // A universal sacrifice summons at the top of the ladder.
     SuperBand other;
@@ -4197,9 +4275,9 @@ TEST(drop_rarity_applies_mob_floors_and_the_apex_item_cap) {
     }
 }
 
-TEST(an_apex_grades_its_fixed_eternal_and_ultra_shares) {
-    // Each copy of an apex's graded drop reads its own table: eternal at
-    // kApexEternalDropChance, ultra at kApexUltraDropChance, the rest super.
+TEST(an_apex_grades_thirty_percent_eternal_and_twenty_percent_ultra) {
+    // Of an apex's graded drops 30% come out eternal and a fifth ultra; the
+    // rest are super.
     Rng rng(909);
     constexpr int kRuns = 200000;
     std::array<int, kRarityCount> counts{};
@@ -4213,6 +4291,8 @@ TEST(an_apex_grades_its_fixed_eternal_and_ultra_shares) {
     CHECK_NEAR(share(Rarity::Unique), kApexEternalDropChance, 0.005);
     CHECK_NEAR(share(Rarity::Ultra), kApexUltraDropChance, 0.005);
     CHECK_NEAR(share(Rarity::Super), 1.0 - kApexEternalDropChance - kApexUltraDropChance, 0.005);
+    CHECK_NEAR(kApexEternalDropChance, 0.30, 1e-12);
+    CHECK_NEAR(kApexUltraDropChance, 0.20, 1e-12);
 }
 
 TEST(an_apex_copy_never_quotes_less_eternal_than_an_eternal_mob) {
@@ -6004,6 +6084,23 @@ void makeSingularBandWorld(WorldMaps& out, const Rect& band, const std::string& 
     std::string error;
     if (!map.loadTiled(path, error)) {
         std::fprintf(stderr, "[test] the singular fixture world did not load: %s\n",
+                     error.c_str());
+    }
+    std::remove(path.c_str());
+    out.adoptSingle(map);
+}
+
+void makeTwoBandWorld(WorldMaps& out, const Rect& first, double firstDifficulty,
+                      const Rect& second, double secondDifficulty) {
+    const std::string objects =
+        bandObject(1, first.x, first.y, first.w, first.h, firstDifficulty, "bee 100%") + "," +
+        bandObject(2, second.x, second.y, second.w, second.h, secondDifficulty, "bee 100%");
+    const std::string path = writeTiledFixture("flix_two_band_world.tmj", fixtureMapBody(objects));
+    MapData map;
+    map.setId("two_bands");
+    std::string error;
+    if (!map.loadTiled(path, error)) {
+        std::fprintf(stderr, "[test] the two-band fixture world did not load: %s\n",
                      error.c_str());
     }
     std::remove(path.c_str());

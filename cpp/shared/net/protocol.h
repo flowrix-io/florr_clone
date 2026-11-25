@@ -55,14 +55,19 @@ inline constexpr double kTickMillis = 1000.0 / kTicksPerSecond;
 
 /// How often each client is sent a snapshot.
 ///
-/// Deliberately BELOW the tick rate. Physics and combat want 30 Hz resolution;
-/// the wire does not, and the reference server says so in as many words -- the
-/// snapshot broadcast runs on its own 20 Hz timer so the per-recipient
-/// encode/cull/delta pass and its socket writes are not charged to the tick's
-/// 33 ms budget. A client interpolating between snapshots needs its delay
-/// window to cover this interval, not the tick.
-inline constexpr int kSnapshotsPerSecond = 20;
+/// Every tick. It was 20, which a 30 Hz tick can only send one tick and then
+/// two apart: 33 and 67 ms, a 10 Hz beat under everything that moved, and a
+/// client has to run behind by the LONGER gap to glide across it. At the tick
+/// rate the gaps are even and half as long, which is what lets the motion be
+/// both steady and current (gardn sends every one of its ticks too).
+inline constexpr int kSnapshotsPerSecond = kTicksPerSecond;
 inline constexpr double kSnapshotMillis = 1000.0 / kSnapshotsPerSecond;
+
+/// The most inputs a client sends a second. Twice the tick rate: the server
+/// steers by the newest one each tick finds, so sent AT the tick rate on an
+/// unrelated clock one could be a whole tick old and the next not, and a turn
+/// answered unevenly.
+inline constexpr int kInputsPerSecond = 60;
 
 // ---------------------------------------------------------------------------
 // Message ids
@@ -828,9 +833,9 @@ enum class EntityKind : std::uint8_t {
 /// A Player record additionally carries u8 face flags, u16 equipment flags,
 /// u32 render flags, u16 level, u8 best-loadout rarity, u32 arena score
 /// (zero outside the PVP ring, where nothing keeps one), u8 shield in 255ths
-/// of max health and the str id of the custom skin that flower is wearing,
-/// "" for none; a Petal record
-/// carries the u32 net id of the flower it orbits, which is what lets the
+/// of max health, the str id of the custom skin that flower is wearing, "" for
+/// none, and the str tag of its player's guild, "" for none (version 97); a
+/// Petal record carries the u32 net id of the flower it orbits, which is what lets the
 /// client anchor a ring to the DRAWN owner rather than to a snapshot-old one;
 /// an Npc record carries u8 recipe, the index into its mob's `npc.recipes` of
 /// the one recipe an assembler makes (0 for any other NPC). (Version 55.)
@@ -957,7 +962,8 @@ enum UpdateFields : std::uint8_t {
     /// u8 face flags, u16 equipment flags, u32 render/skin flags, u16 level,
     /// u8 best loadout rarity, u32 arena score, u8 shield (255ths of MAX
     /// health; the white pill rides the health bar, so that is the scale it
-    /// has to be measured in), str equipped custom-skin id ("" for none).
+    /// has to be measured in), str equipped custom-skin id ("" for none), str
+    /// guild tag ("" for none).
     /// Set only for players; the payload remains self-contained for decoding.
     FieldPlayerVisuals = 1 << 5,
     /// Modifies FieldHealth: the fraction is an f32, not a u16. Meaningless

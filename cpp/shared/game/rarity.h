@@ -456,14 +456,12 @@ inline double dropUpgradeMultiplier(Rarity mobRarity) {
 }
 
 /// An apex's graded drop does not run the upgrade/downgrade split: it is this
-/// table, per copy. Eternal is never below what an eternal mob's own graded
-/// drop gives (about 27%, see dropUpgradeMultiplier) -- the user's rule: an
-/// apex must not quote a worse eternal rate than the tier under it. 40%, a
-/// little over the ~30% the old split gave an apex, because the apex clock
-/// is slower than it was (kApexSpawnCooldownMinMillis) and each kill has to
-/// carry more (user); across the ten copies that is about four eternals a kill.
-/// Ultra comes out of the rest.
-inline constexpr double kApexEternalDropChance = 0.40;
+/// table, per copy: eternal, then ultra, and super for the rest. Across the ten
+/// copies of a row that always drops, that is about three eternals a kill.
+/// Never below the eternal share of an eternal mob's own graded drop (about
+/// 27%, see dropUpgradeMultiplier): an apex must not quote a worse eternal rate
+/// than the tier under it (user).
+inline constexpr double kApexEternalDropChance = 0.30;
 inline constexpr double kApexUltraDropChance = 0.20;
 
 /// What a mob's tier multiplies dropDowngradeChance by. A super's graded drop

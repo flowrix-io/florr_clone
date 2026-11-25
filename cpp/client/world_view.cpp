@@ -31,6 +31,10 @@ constexpr double kPlateLagWait = 0.001;
 /// A chain bead's bar shows while a shield over this is up, at full health.
 constexpr double kPlateShieldShows = 0.001;
 
+/// How full the eased green has to be before the viewer's own bar fades out.
+/// An ease never quite lands on 1.
+constexpr double kSelfBarFull = 0.99;
+
 } // namespace
 
 void MobPlateEase::snap(double targetHealth, double targetShield, bool visible) {
@@ -54,6 +58,15 @@ bool WorldView::plateShows(const RemoteEntity& e) const {
     const bool labelled = content_ == nullptr || e.kind != net::EntityKind::Mob ||
                           !content_->mob(e.typeIndex).chainBody;
     return labelled || e.healthFraction < 1.0 || e.shieldFraction > kPlateShieldShows;
+}
+
+bool WorldView::selfBarShows(const RemoteEntity& self) const {
+    if (self.healthFraction <= 0.0) return false;
+    // The body's fraction is a byte, which reads full from a scratch; the
+    // viewer's own health is also sent exactly. The eased green is asked too,
+    // so a big heal is seen to fill the bar before the bar goes away.
+    return self.healthFraction < 1.0 || self_.health < self_.maxHealth ||
+           self.healthBar.health < kSelfBarFull || self.shieldFraction > kPlateShieldShows;
 }
 
 void HealthBarEase::snap(double targetHealth, double targetShield) {
@@ -91,6 +104,7 @@ void WorldView::clear() {
     tick_ = 0;
     selfDrawnPosition_ = {};
     selfSnapPending_ = true;
+    selfSamples_.clear();
     selfHealthBar_ = HealthBarEase{};
     clockAnchored_ = false;
     clockOffsetMillis_ = 0;
@@ -105,6 +119,7 @@ void WorldView::snapAll() {
         entry.second.samples.clear();
     }
     selfSnapPending_ = true;
+    selfSamples_.clear();
 }
 
 Vec2 WorldView::selfDrawnPosition() const {
@@ -125,7 +140,8 @@ double WorldView::toRenderClock(double serverMillis, double localMillis) {
         // Slow, because this is correcting drift between two crystals, not
         // tracking the network. A fast gain would let one late packet drag the
         // whole playback timeline and undo the de-jitter it exists for.
-        clockOffsetMillis_ += (observed - clockOffsetMillis_) * 0.02;
+        // About two and a half seconds at 30 snapshots a second.
+        clockOffsetMillis_ += (observed - clockOffsetMillis_) * 0.0133;
     }
     return serverMillis - clockOffsetMillis_;
 }
@@ -145,16 +161,39 @@ bool isBuffered(net::EntityKind kind) {
     return kind == net::EntityKind::Mob || kind == net::EntityKind::Npc;
 }
 
-void pushSample(RemoteEntity& e, double timeMillis) {
-    if (e.samples.size() >= static_cast<std::size_t>(kMobSampleCapacity)) {
-        e.samples.erase(e.samples.begin());
+void pushSample(std::vector<RemoteEntity::Sample>& samples, double timeMillis, Vec2 position,
+                double angle) {
+    if (samples.size() >= static_cast<std::size_t>(kMobSampleCapacity)) {
+        samples.erase(samples.begin());
     }
-    e.samples.push_back({timeMillis, e.targetPosition});
+    samples.push_back({timeMillis, position, angle});
+}
+
+/// The sample of anything that eases after its history. A history that cannot be glided along is dropped first:
+/// one from before the clock was re-anchored, or the far side of a teleport,
+/// which easePosition cuts across rather than glides.
+void pushChasedSample(std::vector<RemoteEntity::Sample>& samples, double timeMillis,
+                      Vec2 position, double angle) {
+    if (!samples.empty() &&
+        (samples.back().timeMillis >= timeMillis ||
+         (position - samples.back().position).lengthSq() >
+             kTeleportSnapDistance * kTeleportSnapDistance)) {
+        samples.clear();
+    }
+    pushSample(samples, timeMillis, position, angle);
+}
+
+void pushSample(RemoteEntity& e, double timeMillis) {
+    if (isBuffered(e.kind)) {
+        pushSample(e.samples, timeMillis, e.targetPosition, e.targetAngle);
+    } else {
+        pushChasedSample(e.samples, timeMillis, e.targetPosition, e.targetAngle);
+    }
 }
 
 } // namespace
 
-bool WorldView::applySnapshot(ByteReader& reader) {
+bool WorldView::applySnapshot(ByteReader& reader, double arrivedMillis) {
     const std::uint32_t tick = reader.u32();
     const double serverTime = reader.f64();
     const Vec2 selfPosition = reader.position();
@@ -229,6 +268,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint32_t arenaScore;
         double shieldFraction;
         std::string equippedSkinId;
+        std::string guildName;
         std::uint32_t ownerNetId;
         std::uint8_t npcRecipe;
         std::string name;
@@ -261,6 +301,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             s.arenaScore = reader.u32();
             s.shieldFraction = reader.u8() / 255.0;
             s.equippedSkinId = reader.str();
+            s.guildName = reader.str();
         }
         if (s.kind == net::EntityKind::Petal) s.ownerNetId = reader.u32();
         if (s.kind == net::EntityKind::Npc) s.npcRecipe = reader.u8();
@@ -289,6 +330,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint32_t arenaScore;
         double shieldFraction;
         std::string equippedSkinId;
+        std::string guildName;
     };
     std::vector<Update> updates;
     updates.reserve(updateCount);
@@ -319,6 +361,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             u.arenaScore = reader.u32();
             u.shieldFraction = reader.u8() / 255.0;
             u.equippedSkinId = reader.str();
+            u.guildName = reader.str();
         }
         updates.push_back(std::move(u));
         if (!reader.ok()) return false;
@@ -361,9 +404,10 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     tick_ = tick;
     // Mob samples are stamped on the server's own timeline, mapped onto this
     // client's render clock. See toRenderClock().
-    const double sampleMillis = toRenderClock(serverTime, renderClockMillis());
+    const double sampleMillis = toRenderClock(serverTime, arrivedMillis);
 
     self_.position = selfPosition;
+    pushChasedSample(selfSamples_, sampleMillis, selfPosition, 0.0);
     self_.health = health;
     self_.maxHealth = maxHealth;
     self_.mana = mana;
@@ -388,10 +432,8 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.targetPosition = e.position = s.position;
         e.targetAngle = e.angle = s.angle;
         e.needsSnap = true;
-        if (isBuffered(s.kind)) {
-            e.samples.reserve(kMobSampleCapacity);
-            pushSample(e, sampleMillis);
-        }
+        e.samples.reserve(kMobSampleCapacity);
+        pushSample(e, sampleMillis);
         e.radius = s.radius;
         e.healthFraction = s.healthFraction;
         e.state = s.state;
@@ -404,6 +446,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.shieldFraction = s.shieldFraction;
         e.healthBar.snap(e.healthFraction, e.shieldFraction);
         e.equippedSkinId = std::move(s.equippedSkinId);
+        e.guildName = std::move(s.guildName);
         e.ownerNetId = s.ownerNetId;
         e.npcRecipe = s.npcRecipe;
         if (s.flags & net::SpawnIsSelf) {
@@ -434,7 +477,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             e.targetPosition = u.position;
         }
         if (u.mask & net::FieldAngle) e.targetAngle = u.angle;
-        if (isBuffered(e.kind)) pushSample(e, sampleMillis);
+        pushSample(e, sampleMillis);
         if (u.mask & net::FieldHealth) e.healthFraction = u.healthFraction;
         if (u.mask & net::FieldState) e.state = u.state;
         if (u.mask & net::FieldSize) e.radius = u.radius;
@@ -447,6 +490,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             e.arenaScore = u.arenaScore;
             e.shieldFraction = u.shieldFraction;
             e.equippedSkinId = u.equippedSkinId;
+            e.guildName = u.guildName;
         }
     }
 
@@ -464,7 +508,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         entities_.erase(it);
     }
 
-    // One sample per snapshot for every buffered entity, the ones this
+    // One sample per snapshot for every entity, the ones this
     // snapshot did not mention included. The server leaves out anything that
     // has not moved past its tolerance, so a standing mob is simply absent --
     // and without a sample its timeline stops at the last move it made.
@@ -474,14 +518,13 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     // drawn in a single frame. Absent means "where you last had it", which is
     // exactly what the server's diff believes the client holds.
     //
-    // The far band (Replicator::farSnapshotStride) is absent three snapshots
-    // in four too, and is held the same way, so it is drawn stepping. That
+    // The far band (Replicator::farSnapshotStride) is absent five snapshots
+    // in six too, and is held the same way, so it is drawn stepping. That
     // band starts a quarter screen past the drawn edge, measured from the
     // body's edge, so a mob crossing into the near box is at full rate long
     // before any of it is seen.
     for (auto& entry : entities_) {
         RemoteEntity& e = entry.second;
-        if (!isBuffered(e.kind)) continue;
         if (e.samples.empty() || e.samples.back().timeMillis < sampleMillis) {
             pushSample(e, sampleMillis);
         }
@@ -531,6 +574,29 @@ bool playBack(const std::vector<RemoteEntity::Sample>& samples, double renderMil
     return true;
 }
 
+/// Where a history has its entity at `renderMillis`, which is what it eases
+/// toward. Held at the newest sample when starved, never extrapolated: a
+/// flower stops and turns on a keypress, and an overshoot would be drawn as
+/// the whole world springing back.
+RemoteEntity::Sample chasePoint(const std::vector<RemoteEntity::Sample>& samples,
+                                double renderMillis, Vec2 newest, double newestAngle) {
+    if (samples.empty() || samples.back().timeMillis <= renderMillis) {
+        return {renderMillis, newest, newestAngle};
+    }
+    std::size_t b = samples.size() - 1;
+    while (b > 0 && samples[b - 1].timeMillis > renderMillis) --b;
+    if (b == 0) return samples.front();
+    const RemoteEntity::Sample& before = samples[b - 1];
+    const RemoteEntity::Sample& after = samples[b];
+    const double f = (renderMillis - before.timeMillis) / (after.timeMillis - before.timeMillis);
+    return {renderMillis, before.position + (after.position - before.position) * f,
+            lerpAngle(before.angle, after.angle, f)};
+}
+
+RemoteEntity::Sample chasePoint(const RemoteEntity& e, double renderMillis) {
+    return chasePoint(e.samples, renderMillis, e.targetPosition, e.targetAngle);
+}
+
 /// Eases `position` a fraction `t` of the way to `target`.
 ///
 /// `cut` asks for the flower rules: a gap wider than a teleport is a portal, a
@@ -562,6 +628,10 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
         interpolationDelayMillis += clamp(gap, -reach, reach);
     }
     const double renderMillis = nowMillis - interpolationDelayMillis;
+
+    const FlowerChase chase = flowerChase(easeTimeConstantSeconds, interpolationDelayMillis);
+    const double chaseMillis = nowMillis - chase.delayMillis;
+    const double chaseT = easeFraction(chase.tauSeconds, dtSeconds);
 
     // Reload runs on the frame clock between snapshots. Twenty corrections a
     // second are enough to keep it honest and nowhere near enough to sweep a
@@ -596,7 +666,9 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
         selfDrawnPosition_ = self_.position;
         selfSnapPending_ = false;
     } else {
-        easePosition(selfDrawnPosition_, self_.position, t, true);
+        easePosition(selfDrawnPosition_,
+                     chasePoint(selfSamples_, chaseMillis, self_.position, 0.0).position, chaseT,
+                     true);
     }
 
     // --- everything that is not a petal -----------------------------------
@@ -611,6 +683,8 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
             e.needsSnap = false;
         } else if (isBuffered(e.kind) && playBack(e.samples, renderMillis, e.position)) {
             // Position came from the sample history; facing is handled below.
+        } else if (!isBuffered(e.kind) && !e.samples.empty()) {
+            easePosition(e.position, chasePoint(e, chaseMillis).position, chaseT, isFlower);
         } else {
             easePosition(e.position, e.targetPosition, t, isFlower);
         }
@@ -650,6 +724,8 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
     const auto self = entities_.find(self_.netId);
     if (self != entities_.end() && self->second.isSelf()) {
         self->second.position = selfDrawnPosition_;
+        easeToward(self->second.selfBarOpacity, selfBarShows(self->second) ? 1.0 : 0.0,
+                   kPlateEaseSeconds, dtSeconds);
     }
 
     // The HUD's bar reads SelfState's exact figures rather than the body's
@@ -696,7 +772,8 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
             e.position = e.targetPosition;
             e.needsSnap = false;
         } else {
-            easePosition(e.position, e.targetPosition, t, false);
+            easePosition(e.position, chasePoint(e, chaseMillis).position,
+                         e.samples.empty() ? t : chaseT, false);
         }
         e.angle = e.targetAngle;
     }
@@ -734,14 +811,24 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
         // drawn pointing at its clump's centre turns with the ring, and taken
         // straight off the wire it would hold still for a snapshot and then
         // jump, while the grain it is painted on glides.
-        const Vec2 targetOffset = e.targetPosition - frame->targetPosition;
+        //
+        // Both ends are read off their histories at the SAME instant, or the
+        // difference is the frame's own travel between the two. So never before
+        // either history starts: a petal just grown has only the newest sample,
+        // and its flower's are a delay older.
+        double at = chaseMillis;
+        if (!e.samples.empty()) at = std::max(at, e.samples.front().timeMillis);
+        if (!frame->samples.empty()) at = std::max(at, frame->samples.front().timeMillis);
+        const RemoteEntity::Sample target = chasePoint(e, at);
+        const Vec2 targetOffset = target.position - chasePoint(*frame, at).position;
         if (e.needsSnap) {
             e.ownerOffset = targetOffset;
-            e.angle = e.targetAngle;
+            e.angle = target.angle;
             e.needsSnap = false;
         } else {
-            e.ownerOffset += (targetOffset - e.ownerOffset) * t;
-            e.angle = lerpAngle(e.angle, e.targetAngle, t);
+            const double ringT = e.samples.empty() ? t : chaseT;
+            e.ownerOffset += (targetOffset - e.ownerOffset) * ringT;
+            e.angle = lerpAngle(e.angle, target.angle, ringT);
         }
         e.position = frame->position + e.ownerOffset;
     }

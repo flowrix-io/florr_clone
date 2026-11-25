@@ -4,17 +4,17 @@
 //
 // Everything the client reads at startup -- the fonts, the SVGs, mobs.json,
 // petals.json -- is embedded in the wasm and never changes, so MEMFS is the
-// right home for it. Two files are not like that: the settings the player
-// chose and the session token that keeps them logged in. Those are written by
-// the client and have to still be there after a reload, and MEMFS is gone the
-// moment the tab is.
+// right home for it. A few files are not like that: the settings the player
+// chose, the session token that keeps them logged in and the skin they are
+// drawing. Those are written by the client and have to still be there after a
+// reload, and MEMFS is gone the moment the tab is.
 //
-// So those two are moved into their own directory, and that directory is
+// So those are moved into their own directory, and that directory is
 // backed by browser storage rather than memory. The file API above this does
 // not change: ClientSettings still writes with an ofstream and App still reads
 // with an ifstream. Only where the bytes end up is different.
 //
-// The single-file offline build has a third file with the same need: the
+// The single-file offline build has another file with the same need: the
 // server's account database, which lives in the page too. It cannot use the
 // mount, because the mount pairs a storage key with the file object it
 // created and the database is written atomically -- a temp file renamed over
