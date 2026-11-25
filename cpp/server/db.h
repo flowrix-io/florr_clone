@@ -20,12 +20,14 @@
 // against the one it was loaded from instead of reshuffling every account.
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "server/admin_tiers.h"
@@ -294,13 +296,18 @@ public:
         T* find(const std::string& key) {
             auto it = byKey_.find(key);
             if (it == byKey_.end()) return nullptr;
+            thaw(it->first, it->second);
             it->second.cached = false;
+            ++it->second.version;
+            ++edits_;
             touch(it->first, it->second);
             return &it->second.value;
         }
         const T* find(const std::string& key) const {
             auto it = byKey_.find(key);
-            return it == byKey_.end() ? nullptr : &it->second.value;
+            if (it == byKey_.end()) return nullptr;
+            thaw(it->first, it->second);
+            return &it->second.value;
         }
         T& insert(const std::string& key) {
             auto it = byKey_.find(key);
@@ -308,9 +315,66 @@ public:
                 order_.push_back(key);
                 it = byKey_.try_emplace(key).first;
             }
+            thaw(it->first, it->second);
             it->second.cached = false;
+            ++it->second.version;
+            ++edits_;
             touch(it->first, it->second);
             return it->second.value;
+        }
+        /// Files `text` -- a row as text() writes one -- under `key`. Parsed
+        /// when something first asks for the row and not before: a sharded
+        /// game's gateway is sent a playing flower's row many times between
+        /// two reads of it, and only ever writes most of them to the journal.
+        /// `touched` false leaves the journal unaware of it.
+        void insertText(const std::string& key, std::string text, bool touched = true) {
+            auto it = byKey_.find(key);
+            if (it == byKey_.end()) {
+                order_.push_back(key);
+                it = byKey_.try_emplace(key).first;
+            }
+            it->second.text = std::move(text);
+            it->second.cached = true;
+            it->second.frozen = true;
+            if (touched) touch(it->first, it->second);
+        }
+        /// How insertText's rows are read back. Set before the first one.
+        void parseWith(std::function<T(const std::string& text, const std::string& key)> parse) {
+            parse_ = std::move(parse);
+        }
+        /// Counts the times the row was handed out mutably: two equal readings
+        /// are a row nobody here could have changed between them.
+        std::uint64_t version(const std::string& key) const {
+            auto it = byKey_.find(key);
+            return it == byKey_.end() ? 0 : it->second.version;
+        }
+        /// Every row's version, summed: unchanged, no row's has moved.
+        std::uint64_t edits() const { return edits_; }
+        /// Every row changed since the last call, once each, as its text --
+        /// takeTouched without the assembling, for the rows that still exist.
+        template <class ToText, class Fn>
+        void drainTouched(const ToText& toText, const Fn& fn) {
+            std::vector<std::string> keys;
+            keys.swap(touched_);
+            for (const std::string& key : keys) {
+                auto it = byKey_.find(key);
+                if (it == byKey_.end() || !it->second.touched) continue;
+                it->second.touched = false;
+                fn(key, text(key, toText));
+            }
+        }
+        bool contains(const std::string& key) const { return byKey_.count(key) != 0; }
+        /// The keys takeTouched will write; one may repeat.
+        const std::vector<std::string>& touchedKeys() const { return touched_; }
+        /// Removes the row without the journal hearing of it.
+        void forget(const std::string& key) {
+            if (byKey_.erase(key) == 0) return;
+            for (std::size_t i = 0; i < order_.size(); ++i) {
+                if (order_[i] != key) continue;
+                order_.erase(order_.begin() + static_cast<long>(i));
+                if (cursor_ != nullptr && i < *cursor_) --*cursor_;
+                break;
+            }
         }
         /// The row as compact JSON, re-serialised with `toText` only when it
         /// was handed out mutably since the last call. `key` must exist.
@@ -407,12 +471,20 @@ public:
 
     private:
         struct Row {
-            T value{};
+            mutable T value{};
             mutable std::string text;
             mutable bool cached = false;
+            /// `text` is the row and `value` is stale: see insertText.
+            mutable bool frozen = false;
+            std::uint64_t version = 0;
             /// Listed in touched_ and not yet written to the journal.
             bool touched = false;
         };
+        void thaw(const std::string& key, const Row& row) const {
+            if (!row.frozen) return;
+            row.value = parse_(row.text, key);
+            row.frozen = false;
+        }
         void touch(const std::string& key, Row& row) {
             if (row.touched) return;
             row.touched = true;
@@ -421,6 +493,8 @@ public:
         std::vector<std::string> order_;
         std::unordered_map<std::string, Row> byKey_;
         std::size_t* cursor_ = nullptr;
+        std::uint64_t edits_ = 0;
+        std::function<T(const std::string&, const std::string&)> parse_;
         /// Keys changed since the journal last wrote this table, in the order
         /// they were first changed; a key may repeat (see takeTouched).
         std::vector<std::string> touched_;
@@ -557,6 +631,58 @@ public:
     /// True when the file on disk could not be understood. Every save is
     /// refused while this holds.
     bool loadFailed() const { return loadFailed_; }
+
+    // -- sharding (cpp/docs/ARCHITECTURE.md, "Sharding") ---------------------
+    //
+    // The gateway holds the one database. A server that simulates biomes holds
+    // none: only the rows lent to it, in memory, and everything it changes
+    // goes back over the link (openReplica) ahead of any byte that shows it.
+
+    /// Opens an empty in-memory database that never touches a disk.
+    void openReplica();
+    bool replica() const { return replica_; }
+    /// Files a progress row as its text. `touched` is whether the journal --
+    /// on a replica, the link -- is to hear of it.
+    void putProgressText(const std::string& userId, std::string text, bool touched);
+    /// The row's text, or empty when there is none.
+    std::string progressText(const std::string& userId) const;
+    std::uint64_t progressVersion(const std::string& userId) const { return players_.version(userId); }
+    std::uint64_t progressEdits() const { return players_.edits(); }
+    void forgetProgress(const std::string& userId) { players_.forget(userId); }
+    /// Files an account row, or replaces the one it has. Replicas only: the
+    /// password hash is not sent to one.
+    void putAccount(const Account& account);
+    void forgetAccount(const std::string& userId);
+    /// A whole unmodelled table, from its text.
+    void putTable(const std::string& key, Json value, bool touched);
+    /// What changed since the last call, on a replica: every progress row,
+    /// then every unmodelled table. Nothing else a replica holds is its own.
+    void drainReplica(const std::function<void(const std::string& userId, const std::string& text)>& row,
+                      const std::function<void(const std::string& key, const std::string& text)>& table);
+    /// The four places a row can be, as copied to another server.
+    enum class Part : std::uint8_t { Players = 0, Users, Sessions, Tables };
+    /// Called whenever a journal line is taken, for each row in it.
+    std::function<void(Part part, const std::string& key)> onRowWritten;
+    /// Every row there is, unmodelled tables included, in file order.
+    std::vector<std::pair<Part, std::string>> everyRow() const;
+    /// A row's text as a save would write it. False when there is no such row.
+    bool rowText(Part part, const std::string& key, std::string& out) const;
+
+    /// A COPY of another server's database, kept as text and never parsed:
+    /// rows go in with putRow, and once copyComplete has been called it is
+    /// saved to `path` and journalled exactly as any database is, so the file
+    /// is one load() reads. Until then nothing at `path` is touched, and the
+    /// last copy kept there stays good.
+    void openCopy();
+    void putRow(Part part, const std::string& key, std::string text);
+    void eraseRow(Part part, const std::string& key);
+    void copyComplete(const std::string& path);
+
+    /// Called whenever a journal line is taken, with each unmodelled table in
+    /// it and its text: how the gateway passes a changed table on.
+    std::function<void(const std::string& key, const std::string& text)> onTableWritten;
+    /// The same for an account row: its key and whether it still exists.
+    std::function<void(const std::string& key)> onAccountWritten;
 
     // -- accounts ----------------------------------------------------------
 
@@ -886,6 +1012,7 @@ public:
 
 private:
     void reset();
+    bool replica_ = false;
     bool parseRoot(Json& root, std::string& errorOut);
     /// Applies the journal at journalPath() to `root` (the parsed snapshot),
     /// and leaves the journal open for appending -- truncated after its last

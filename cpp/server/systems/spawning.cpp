@@ -1598,6 +1598,20 @@ bool SpawnSystem::seenBy(const std::vector<Viewer>& viewers, Realm realm, Vec2 p
     return false;
 }
 
+void SpawnSystem::forgetRealm(Realm realm) {
+    const auto inRealm = [&](const CensusMob& tracked) {
+        return tracked.zone < zones_.size() && zones_[tracked.zone].realm == realm;
+    };
+    censusMobs_.erase(std::remove_if(censusMobs_.begin(), censusMobs_.end(), inRealm),
+                      censusMobs_.end());
+    vanished_.erase(std::remove_if(vanished_.begin(), vanished_.end(), inRealm), vanished_.end());
+    for (SpawnZone& zone : zones_) {
+        if (zone.realm != realm) continue;
+        zone.latent.clear();
+        zone.liveMobs = 0;
+    }
+}
+
 void SpawnSystem::runWandRings(World& world, const Terrain& terrain,
                                const ContentRegistry& content, Rng& rng, double nowMillis,
                                CommandBuffer& commands) {
@@ -2179,6 +2193,7 @@ std::uint16_t SpawnSystem::overdueApexBand(std::uint16_t slot) {
     for (int tier = rarityIndex(Rarity::Super); tier >= 0; --tier) {
         const auto weight = [&](const SpawnZone& zone) {
             if (zone.biome != slot) return 0.0;
+            if (hosted != nullptr && !hosted->hosts(zone.realm)) return 0.0;
             return spawnChanceAtLeast(zone.difficulty, static_cast<Rarity>(tier)) *
                    static_cast<double>(zone.targetMobs);
         };
@@ -2458,6 +2473,7 @@ void SpawnSystem::stockSpawnZones(World& world, const Terrain& terrain,
 
     for (std::size_t index = 0; index < zones_.size(); ++index) {
         SpawnZone& zone = zones_[index];
+        if (hosted != nullptr && !hosted->hosts(zone.realm)) continue;
         // The band's whole population, awake and asleep. Nothing about a
         // viewport appears in this test: a band on the far side of the map is
         // stocked to exactly the same number as the one under the player's
@@ -2485,6 +2501,7 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
                             SpawnZone& zone, std::uint16_t zoneIndex,
                             const std::vector<Viewer>& viewers, Rng& rng, double nowMillis,
                             Slot slot, Vec2 lostAt) {
+    if (hosted != nullptr && !hosted->hosts(zone.realm)) return false;
     // Everything about this happens in the band's OWN realm: the map it is
     // drawn on has its own size, its own walls and its own population, and the
     // same numbers on the overworld describe somewhere else entirely.

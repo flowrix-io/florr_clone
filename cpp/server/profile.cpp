@@ -290,6 +290,9 @@ void GameServer::gatherProfile(Session& session, ProfileParts& parts) {
 }
 
 void GameServer::sendProfile(Session& session, net::Connection& connection) {
+    // Told by whichever server has its row: here, for a client whose flower
+    // is elsewhere, the row is a copy behind the one it is playing on.
+    if (!profileIsOurs(session)) return;
     // A Profile is the whole account -- 8 KB at the 90th percentile of the
     // live database, 14 KB at the top, nearly all of it the bag and the kill
     // ledger -- and every equip, swap, craft, absorb, trade and talent used to
@@ -374,6 +377,9 @@ void GameServer::sendProfile(Session& session) {
 }
 
 void GameServer::sendFullProfile(Session& session, net::Connection& connection) {
+    // Told by whichever server has its row: here, for a client whose flower
+    // is elsewhere, the row is a copy behind the one it is playing on.
+    if (!profileIsOurs(session)) return;
     ProfileParts parts;
     gatherProfile(session, parts);
     writeFullProfile(session, connection, parts);
@@ -479,6 +485,10 @@ void GameServer::sendDueProfiles() {
     for (auto& entry : sessions_) {
         Session& session = entry.second;
         if (!session.profileDue) continue;
+        if (!profileIsOurs(session)) {
+            clearProfileDue(session);
+            continue;
+        }
         if (net::Connection* connection = listener_.find(entry.first)) {
             sendProfileDelta(session, *connection);
         } else {

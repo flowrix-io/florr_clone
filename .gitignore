@@ -19,6 +19,15 @@ dist/inventory.json.retired-*
 /inventory.json.tmp
 /inventory.json.journal*
 /inventory.json.retired-*
+# A linked server's key and part, its copy of the cluster's database, and the
+# database moved aside rather than overwritten (cpp/server/cluster/membership.h).
+dist/inventory.json.cluster*
+dist/inventory.json.replica*
+dist/database_independent*.json*
+dist/replica-*.json*
+/inventory.json.cluster*
+/inventory.json.replica*
+/database_independent*.json*
 # The database editor's key, which the server keeps beside the database.
 dist/admin_db_key.txt
 /admin_db_key.txt

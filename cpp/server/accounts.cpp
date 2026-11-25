@@ -55,6 +55,8 @@ void GameServer::signInAs(Session& session, const std::string& userId, const std
     // A socket still in the world leaves it first, its body saved into the
     // account it belonged to -- this one again, or another (see leaveWorld).
     leaveWorld(session);
+    // As leaveWorld does, when the world is on other servers.
+    if (gateway_) gwRelease(session);
     releaseOnAccountChange(session, userId);
     replaceOtherSessions(session, userId);
     session.userId = userId;
@@ -516,6 +518,7 @@ void GameServer::signOut(Session& session) {
     // control needs a body on both sides, and despawnPlayer lets go of it
     // through the back-references.
     dropBody(session);
+    if (gateway_) gwRelease(session);
     revokeTempAdmin(session.connection);
     session.token.clear();
     session.userId.clear();

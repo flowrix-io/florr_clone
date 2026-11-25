@@ -206,6 +206,15 @@ add_library(flix_server STATIC
   server/splitter.cpp
   server/squads.cpp
   server/waves.cpp
+  server/cluster/copy.cpp
+  server/cluster/gateway.cpp
+  server/cluster/host.cpp
+  server/cluster/link.cpp
+  server/cluster/linking.cpp
+  server/cluster/membership.cpp
+  server/cluster/placement.cpp
+  server/cluster/row_merge.cpp
+  server/cluster/shard.cpp
   server/trials.cpp
   server/db.cpp
   server/crypto.cpp

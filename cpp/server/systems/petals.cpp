@@ -1,4 +1,6 @@
 #include "server/systems/petals.h"
+
+#include "server/cluster/link.h"
 #include "server/systems/shot_range.h"
 
 #include <algorithm>
@@ -731,6 +733,83 @@ Entity PetalSystem::attractor(World& world, Vec2 orbit, Realm realm, double radi
 // ---------------------------------------------------------------------------
 // Slots: spawning, breaking, reloading
 // ---------------------------------------------------------------------------
+
+std::vector<cluster::RingSlot> PetalSystem::captureRing(World& world,
+                                                        const ContentRegistry& registry,
+                                                        Entity player, double nowMillis) {
+    std::vector<cluster::RingSlot> ring;
+    const Loadout* worn = world.tryGet<Loadout>(player);
+    const PetalSlotState* state = world.tryGet<PetalSlotState>(player);
+    if (worn == nullptr || state == nullptr) return ring;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const LoadoutSlot& slot = worn->slots[static_cast<std::size_t>(i)];
+        const PetalSlotState::Slot& held = state->slots[static_cast<std::size_t>(i)];
+        cluster::RingSlot carried;
+        carried.petal = slot.configIndex;
+        carried.rarity = static_cast<std::uint8_t>(slot.rarity);
+        carried.broken = slot.broken;
+        carried.reloadLeft = std::max(0.0, slot.reloadReadyAtMillis - nowMillis);
+        // The pool as the last fold left it, less what has landed since: the
+        // instances hold the newer figure.
+        double taken = 0.0;
+        if (!held.independent && held.populated && !slot.broken) {
+            for (const Entity petal : worn->spawned) {
+                const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+                if (instance == nullptr || instance->slot != i) continue;
+                taken += std::max(0.0, held.syncedHealth - instanceHealth(world, petal));
+            }
+        }
+        carried.health = held.poolMax > 0.0
+                             ? clamp((held.poolHealth - taken) / held.poolMax, 0.0, 1.0)
+                             : 1.0;
+        if (held.independent) {
+            for (const double ready : held.instanceReadyAtMillis) {
+                carried.grainsLeft.push_back(
+                    static_cast<float>(std::max(0.0, ready - nowMillis)));
+            }
+        }
+        ring.push_back(std::move(carried));
+    }
+    (void)registry;
+    return ring;
+}
+
+void PetalSystem::restoreRing(World& world, const ContentRegistry& registry, Entity player,
+                              const std::vector<cluster::RingSlot>& ring, double nowMillis) {
+    bindTo(world);
+    // Every slot built, each owing its whole reload; then the ones that came
+    // across as they were.
+    reconcileSlots(world, registry, player, nowMillis);
+    Loadout* worn = world.tryGet<Loadout>(player);
+    PetalSlotState* state = world.tryGet<PetalSlotState>(player);
+    if (worn == nullptr || state == nullptr) return;
+    for (std::size_t i = 0; i < ring.size() && i < kLoadoutActiveSlots; ++i) {
+        const cluster::RingSlot& carried = ring[i];
+        LoadoutSlot& slot = worn->slots[i];
+        PetalSlotState::Slot& held = state->slots[i];
+        if (slot.empty() || slot.configIndex != carried.petal ||
+            static_cast<std::uint8_t>(slot.rarity) != carried.rarity) {
+            continue;
+        }
+        if (held.independent) {
+            for (std::size_t k = 0; k < held.instanceReadyAtMillis.size(); ++k) {
+                const double left = k < carried.grainsLeft.size() ? carried.grainsLeft[k] : 0.0;
+                // Due now rather than zero: zero is a grain already out, and
+                // none of these is until the next fold spawns it.
+                held.instanceReadyAtMillis[k] = nowMillis + left;
+            }
+            continue;
+        }
+        slot.broken = carried.broken;
+        slot.reloadReadyAtMillis = carried.broken ? nowMillis + carried.reloadLeft : 0.0;
+        if (!carried.broken) {
+            // Never to nothing: a slot that arrives standing arrives with a
+            // petal on it, and the next hit takes it as it would have.
+            held.poolHealth = std::max(held.poolMax * carried.health, std::min(held.poolMax, 0.01));
+            held.syncedHealth = held.poolHealth;
+        }
+    }
+}
 
 void PetalSystem::clearRing(World& world, Entity player) {
     // The field only. A corpse's LOADOUT is left exactly as it was -- which
@@ -2106,7 +2185,7 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
             const double spacing = (body ? body->radius : 0.0) * config.clumpSpacing;
             // gardn's grains: their first one points along the ring's clump
             // heading, the same bearing for every clump on the ring, which
-            // turns a tenth faster than the ring does (kPetalClumpSpinShare).
+            // turns at a fifth of the ring's own rate (kPetalClumpSpinShare).
             //
             // A clump that hangs off the ring is ours, not gardn's: it moves
             // its centre one spacing out and turns its first grain back toward
@@ -2160,8 +2239,7 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
                                     extended, nowMillis, dt))) {
             stepPetalPhysics(world, registry, *instance, *transform, wornCentre, orbit,
                              petalAttraction,
-                             centre, ring->radius, kPetalSpinRate * aggregate.spinScale,
-                             nowMillis, dt);
+                             kPetalSpinRate * aggregate.spinScale * ring->radius, nowMillis, dt);
         }
 
         // A petal that collides with the world is pushed back out of it, in
@@ -2185,15 +2263,14 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
 
 void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry,
                                    PetalInstance& instance, Transform& transform, Vec2 home,
-                                   Vec2 orbit, double attractionRadius, Vec2 ringCentre,
-                                   double ringRadius, double spin, double nowMillis,
-                                   double dt) {
+                                   Vec2 orbit, double attractionRadius, double spinSpeed,
+                                   double nowMillis, double dt) {
     Vec2 target = orbit;
 
     if (instance.homing) {
         // Rose, shell and orb fly home to deliver their burst, as gardn's burst
         // heal and shield do: aimed at the flower instead of the ring, and
-        // pushed there flat-out rather than pulled (kPetalHomingSpeed), fast
+        // pushed there flat-out rather than pulled (kPetalHomingPush), fast
         // enough to catch a running flower. The landing window in runActions
         // still pays out a dive that a wall holds off.
         target = home;
@@ -2233,55 +2310,33 @@ void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry
             instance.attractedBearing = std::atan2(from.y, from.x);
         } else {
             instance.attractedBearing = wrapAngle(
-                instance.attractedBearing - spin * ringRadius / edge * std::max(0.0, dt));
+                instance.attractedBearing - spinSpeed / edge * std::max(0.0, dt));
         }
         target = centre + Vec2::fromAngle(instance.attractedBearing, edge);
     }
     instance.attractedTo = mob;
 
-    // What the ring turns faster than the pull can carry a petal round it, as a
-    // turn of the petal and its velocity with it. gardn's pull has a ceiling no
-    // ring of gardn's reaches; one as wide as the titan's or spun by an admin's
-    // petals outruns it, and its petals would fall in to the middle.
-    if (!instance.homing && mob == NULL_ENTITY) {
-        const double excess = std::fabs(spin) - petalCarriedSpin(ringRadius);
-        if (excess > 0.0) {
-            const double turn = std::copysign(excess, spin) * std::max(0.0, dt);
-            const double c = std::cos(turn), s = std::sin(turn);
-            const auto turned = [c, s](Vec2 v) { return Vec2{v.x * c - v.y * s, v.x * s + v.y * c}; };
-            transform.position = ringCentre + turned(transform.position - ringCentre);
-            instance.ringVelocity = turned(instance.ringVelocity);
-        }
-    }
-
-    // gardn's step, at gardn's rate (see kPetalFriction): keep a share of the
-    // velocity, take the rest of it from the speed the pull -- or, homing, the
-    // flat push -- would settle to, and move. Run as whole steps rather than
-    // stretched to the tick, because stretching it is not stable: a 0.1 s
-    // catch-up tick scaled up in one go flings the petal off.
-    const double stepSeconds = 1.0 / kPetalStepsPerSecond;
-    const int perTick = static_cast<int>(std::lround(net::kTickSeconds * kPetalStepsPerSecond));
-    const int steps = dt > 0.0 ? std::clamp(static_cast<int>(std::lround(dt / stepSeconds)),
-                                            perTick, perTick * 4)
-                               : 0;
-    Vec2 velocity = instance.ringVelocity;
+    // gardn's step, once per tick that has passed: keep a share of the
+    // velocity, add a share of the gap -- or, homing, the flat push -- and move
+    // by the velocity. In gardn's units, distance per tick, and run as whole
+    // ticks rather than stretched to a long one, because stretching it is not
+    // stable: a 0.1 s catch-up tick scaled up in one go flings the petal off.
+    // The ordinary tick is one step.
+    const double elapsedTicks = std::max(0.0, dt) / net::kTickSeconds;
+    const int steps =
+        dt > 0.0 ? std::clamp(static_cast<int>(std::lround(elapsedTicks)), 1, 4) : 0;
+    Vec2 perTick = instance.ringVelocity * net::kTickSeconds;
     for (int step = 0; step < steps; ++step) {
         const Vec2 gap = target - transform.position;
-        const double distance = gap.length();
-        double speed = 0.0;
+        Vec2 acceleration = gap * kPetalPull;
         if (instance.homing) {
-            speed = kPetalHomingSpeed;
-        } else {
-            const double least = kPetalPullLeast * std::min(1.0, distance / kPetalPullRestGap);
-            speed = kPetalPullSpeed *
-                    clamp(distance * distance / (kPetalPullGap * kPetalPullGap), least,
-                          kPetalPullMost);
+            const double distance = gap.length();
+            acceleration = distance > 0.0 ? gap * (kPetalHomingPush / distance) : Vec2{};
         }
-        const Vec2 pull = distance > 0.0 ? gap * (speed / distance) : Vec2{};
-        velocity = velocity * kPetalFriction + pull * (1.0 - kPetalFriction);
-        transform.position += velocity * stepSeconds;
+        perTick = perTick * kPetalFriction + acceleration;
+        transform.position += perTick;
     }
-    instance.ringVelocity = velocity;
+    instance.ringVelocity = perTick / net::kTickSeconds;
 
     // Defence in depth. If the integrator ever does go non-finite, a petal
     // stranded at NaN is invisible and unkillable forever; snapping it back on

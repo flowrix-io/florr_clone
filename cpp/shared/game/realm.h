@@ -17,6 +17,7 @@
 // everything outside the map. Separate spaces make all of that structurally
 // impossible rather than individually guarded against.
 
+#include <array>
 #include <cstdint>
 
 #include "shared/core/types.h"
@@ -102,6 +103,19 @@ inline constexpr int worldMapSlot(Realm realm) {
 /// True when a realm is one of the authored maps, i.e. has a tile grid and an
 /// annotation layer of its own.
 inline constexpr bool isWorldRealm(Realm realm) { return worldMapSlot(realm) >= 0; }
+
+/// Which realms this process simulates.
+///
+/// Every one of them, unless the game is sharded (cpp/docs/ARCHITECTURE.md,
+/// "Sharding"): then each server is given some biomes and stocks, moves and
+/// fights in only those. Read by whatever would otherwise populate a realm
+/// nobody here can stand in -- the spawn bands, the maps' NPCs, the bots.
+struct HostedRealms {
+    bool all = true;
+    std::array<bool, kMaxRealms> realm{};
+
+    bool hosts(Realm r) const { return all || realm[realmIndex(r)]; }
+};
 
 /// A position that knows which space it is in. What the per-tick player lists
 /// carry, so a distance test between a mob and "the players" can never pair a

@@ -93,6 +93,7 @@ Connection::Connection(int fd, ConnectionId id, std::string peer)
 Connection::~Connection() { shutdownNow(); }
 
 void Connection::shutdownNow() {
+    sink_ = nullptr;
     if (fd_ < 0) return;
 #ifdef __EMSCRIPTEN__
     web::close(fd_);
@@ -126,12 +127,29 @@ void Connection::markFailed(const std::string& reason) {
 }
 
 void Connection::send(const std::byte* data, std::size_t size) {
-    if (fd_ < 0 || closing_) return;
+    if (!open() || closing_) return;
     const std::uint32_t length = static_cast<std::uint32_t>(size);
     const std::size_t at = outbound_.size();
     outbound_.resize(at + kFrameHeaderBytes + size);
     std::memcpy(outbound_.data() + at, &length, sizeof length);
     if (size) std::memcpy(outbound_.data() + at + kFrameHeaderBytes, data, size);
+}
+
+void Connection::drainToSink() {
+    // Taken out first: the sink hands the frame on to another connection, and
+    // nothing it does may find these bytes still queued.
+    std::vector<std::byte> queued;
+    queued.swap(outbound_);
+    outboundSent_ = 0;
+    std::size_t at = 0;
+    while (at + kFrameHeaderBytes <= queued.size()) {
+        std::uint32_t length = 0;
+        std::memcpy(&length, queued.data() + at, sizeof length);
+        at += kFrameHeaderBytes;
+        sink_(queued.data() + at, length);
+        at += length;
+    }
+    streamWritten_ += queued.size();
 }
 
 void Connection::send(const ByteWriter& message) { send(message.data(), message.size()); }
@@ -266,7 +284,7 @@ bool Connection::nextFrame(std::vector<std::byte>& out) {
 
     std::uint32_t length = 0;
     std::memcpy(&length, inbound_.data() + inboundConsumed_, sizeof length);
-    if (length > kMaxFrameBytes) {
+    if (length > maxFrameBytes) {
         // Refuse before allocating: a corrupt or hostile prefix must cost a
         // dropped connection, not a gigabyte. Failed rather than closed
         // gracefully: a graceful close waits for the outbound queue, and
@@ -340,6 +358,7 @@ void Listener::acceptPending(TransportHandler& handler) {
         auto connection =
             std::make_unique<Connection>(channel, nextId_++, web::peer(channel));
         connection->forwarded_ = web::forwarded(channel);
+        connection->maxFrameBytes = maxFrameBytes;
         Connection& ref = *connection;
         connections_.push_back(std::move(connection));
         handler.onConnect(ref);
@@ -410,6 +429,7 @@ void Listener::acceptPending(TransportHandler& handler) {
         setNoDelay(fd);
 
         auto connection = std::make_unique<Connection>(fd, nextId_++, describePeer(addr));
+        connection->maxFrameBytes = maxFrameBytes;
         Connection& ref = *connection;
         connections_.push_back(std::move(connection));
         handler.onConnect(ref);
@@ -417,6 +437,50 @@ void Listener::acceptPending(TransportHandler& handler) {
 }
 
 #endif  // __EMSCRIPTEN__
+
+std::string Listener::lateError() const {
+    return listenFd_ >= 0 && web::state(listenFd_) == web::State::Closed ? web::error(listenFd_)
+                                                                         : std::string();
+}
+
+Connection& Listener::adopt(ConnectionId id, std::string peer,
+                            std::function<void(const std::byte*, std::size_t)> sink) {
+    abandon(id);
+    auto connection = std::make_unique<Connection>(-1, id, std::move(peer));
+    connection->sink_ = std::move(sink);
+    Connection& ref = *connection;
+    connections_.push_back(std::move(connection));
+    return ref;
+}
+
+void Listener::abandon(ConnectionId id) {
+    for (auto& c : connections_) {
+        if (c->id() == id && c->adopted()) c->shutdownNow();
+    }
+    sweepClosed();
+}
+
+void Listener::sweepClosed() {
+    connections_.erase(
+        std::remove_if(connections_.begin(), connections_.end(),
+                       [](const std::unique_ptr<Connection>& c) { return !c->open(); }),
+        connections_.end());
+}
+
+void Listener::pollAdopted(TransportHandler& handler) {
+    bool any = false;
+    for (std::size_t i = 0; i < connections_.size(); ++i) {
+        Connection& c = *connections_[i];
+        if (!c.adopted()) continue;
+        any = true;
+        if (c.wantsWrite()) {
+            if (beforeWrite) beforeWrite();
+            c.drainToSink();
+        }
+        if (c.closing()) drop(c, handler, "closed by server");
+    }
+    if (any) sweepClosed();
+}
 
 Connection* Listener::find(ConnectionId id) {
     for (auto& c : connections_) {
@@ -502,6 +566,7 @@ bool Listener::service(Connection& c, bool readable, bool writable, TransportHan
 #ifdef __EMSCRIPTEN__
 
 int Listener::poll(TransportHandler& handler, int timeoutMillis) {
+    pollAdopted(handler);
     if (listenFd_ < 0) return 0;
     // The timeout is deliberately ignored. Bytes reach a channel from the
     // JavaScript event loop, which only runs when this stack has returned to
@@ -515,7 +580,7 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     int delivered = 0;
     for (std::size_t i = 0; i < connections_.size(); ++i) {
         Connection& c = *connections_[i];
-        if (!c.open()) continue;
+        if (!c.open() || c.adopted()) continue;
         std::string error;
         // Both directions every pass: a channel has no readiness to report,
         // only a queue that is empty or is not, and both calls handle empty.
@@ -524,10 +589,7 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
         }
     }
 
-    connections_.erase(
-        std::remove_if(connections_.begin(), connections_.end(),
-                       [](const std::unique_ptr<Connection>& c) { return !c->open(); }),
-        connections_.end());
+    sweepClosed();
 
     return delivered;
 }
@@ -535,6 +597,7 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 #else
 
 int Listener::poll(TransportHandler& handler, int timeoutMillis) {
+    pollAdopted(handler);
     if (listenFd_ < 0) return 0;
 
     // Before the poll set is built: see Listener::flush. A failed connection
@@ -546,7 +609,7 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     fds.reserve(connections_.size() + 1);
     fds.push_back(pollfd{listenFd_, POLLIN, 0});
     for (auto& c : connections_) {
-        if (!c->open()) continue;
+        if (!c->open() || c->adopted()) continue;
         short events = POLLIN;
         if (c->wantsWrite()) events |= POLLOUT;
         fds.push_back(pollfd{c->fd(), events, 0});
@@ -564,7 +627,7 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     std::size_t slot = 1;
     for (std::size_t i = 0; i < connections_.size() && slot < fds.size(); ++i) {
         Connection& c = *connections_[i];
-        if (!c.open() || fds[slot].fd != c.fd()) continue;
+        if (!c.open() || c.adopted() || fds[slot].fd != c.fd()) continue;
         const short revents = fds[slot].revents;
         ++slot;
         // A closing connection is serviced with nothing to do, so its drain
@@ -578,10 +641,7 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
         }
     }
 
-    connections_.erase(
-        std::remove_if(connections_.begin(), connections_.end(),
-                       [](const std::unique_ptr<Connection>& c) { return !c->open(); }),
-        connections_.end());
+    sweepClosed();
 
     return delivered;
 }
@@ -612,6 +672,10 @@ void Listener::flush() {
     for (auto& c : connections_) {
         if (!c->open() || c->failed() || !c->wantsWrite()) continue;
         if (beforeWrite) beforeWrite();
+        if (c->adopted()) {
+            c->drainToSink();
+            continue;
+        }
         std::string error;
         if (!c->writeAvailable(error)) c->markFailed(error);
     }
@@ -640,6 +704,7 @@ bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& e
     // which transport the channel settles on is decided after this returns,
     // and nothing records it on the Connection.
     connection_ = std::make_unique<Connection>(channel, 1, host + ":" + std::to_string(port));
+    connection_->maxFrameBytes = maxFrameBytes;
     state_ = State::Connecting;
     announced_ = false;
     error_.clear();
@@ -691,6 +756,7 @@ int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
         return delivered;
     }
 
+    if (connection_->wantsWrite() && beforeWrite) beforeWrite();
     if (!connection_->writeAvailable(error)) {
         fail(error.empty() ? "write failed" : error, &handler);
     }
@@ -740,6 +806,7 @@ bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& e
     }
 
     connection_ = std::make_unique<Connection>(fd, 1, host + ":" + service);
+    connection_->maxFrameBytes = maxFrameBytes;
     state_ = State::Connecting;
     announced_ = false;
     error_.clear();
@@ -773,6 +840,7 @@ int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
     }
 
     std::string error;
+    if ((fd.revents & POLLOUT) && connection_->wantsWrite() && beforeWrite) beforeWrite();
     if ((fd.revents & POLLOUT) && !connection_->writeAvailable(error)) {
         fail(error.empty() ? "write failed" : error, &handler);
         return 0;
@@ -816,6 +884,7 @@ void Dialer::fail(const std::string& reason, TransportHandler* handler) {
 void Dialer::flush() {
     if (!connection_ || !connection_->open() || state_ != State::Connected) return;
     if (connection_->failed()) return;
+    if (connection_->wantsWrite() && beforeWrite) beforeWrite();
     std::string error;
     // Marked, not failed on the spot, for Listener::flush's reason: fail()
     // with no handler took the connection away without onDisconnect, so the

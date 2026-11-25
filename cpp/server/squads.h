@@ -77,6 +77,12 @@ public:
     /// which is the reference's "You are already in a squad."
     Squad* create(SquadMemberId leader, bool isPublic, Rng& rng);
 
+    /// Files a squad made on another server of a sharded game, under the id it
+    /// already has. Null when that id, or a member, is taken here.
+    Squad* adopt(Squad squad);
+    /// Drops a squad and its invitations without a word to anybody in it.
+    void disband(const std::string& id);
+
     Squad* find(const std::string& id);
     Squad* forMember(SquadMemberId who);
 

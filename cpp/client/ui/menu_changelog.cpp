@@ -687,15 +687,15 @@ constexpr ChangelogEntry kChangelog[] = {
     },
     {"November 25, 2026",
       {
-        "Buffed Bone: 3x damage, much more health, and its armor keeps growing past Ultra",
-        "Buffed Carrot: twice as fast, and it now bounces off mobs too",
-        "The server can now hold twice as many mobs at once, so busy zones stop looking empty",
+        "Made bone much stronger",
+        "Carrot is now much faster and bounces off mobs too",
+        "Increased server mob cap",
         "Mobs now spawn 3x as fast",
-        "Magnet now leaves fresh drops on the ground for half a second before pulling them in",
-        "Shot petals now fly straight out of your orbit instead of fading away",
-        "Fixed squadmates who were dead or respawning not getting their share of a kill's loot"
+        "Magnet attracts petals slower now",
+        "Projectile petal changes",
+        "Fixed squad members not getting loot"
       }
-    }
+    },
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

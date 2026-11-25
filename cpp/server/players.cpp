@@ -112,8 +112,10 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
             sendNotice(connection, net::NoticeSeverity::Bad, "That Trial Grounds floor does not exist.");
             return;
         }
-        int available = -1;
-        for (int i = 0; i < kTrialRealmCount; ++i) {
+        // The gateway holds no chambers; the server the run is sent to finds
+        // it one of its own.
+        int available = gateway_ ? 0 : -1;
+        for (int i = 0; available < 0 && i < kTrialRealmCount; ++i) {
             if (trials_[static_cast<std::size_t>(i)].phase == TrialPhase::Idle) {
                 available = i;
                 break;
@@ -175,6 +177,13 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
         }
     }
 
+    // The gateway of a sharded game has checked all of the above and has
+    // nowhere to put a body: some server does.
+    if (gateway_) {
+        gwJoin(session, width, height);
+        return;
+    }
+
     const Entity entity = spawnPlayer(session);
     if (entity == NULL_ENTITY) {
         sendNotice(connection, net::NoticeSeverity::Bad, "Could not find a spawn point.");
@@ -185,7 +194,11 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     world_.get<PlayerLocation>(entity).viewport = viewport;
 
     views_[session.connection].reset();
+    welcomeIntoWorld(session, connection);
+}
 
+void GameServer::welcomeIntoWorld(Session& session, net::Connection& connection) {
+    const Entity entity = session.entity;
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::JoinAccepted));
     w.u32(world_.get<NetId>(entity).value);
@@ -301,8 +314,10 @@ void GameServer::handleRespawn(Session& session) {
             corpseRealmKnown = true;
             corpseRealm = corpse->realm;
         }
+        if (respawnElsewhere(session)) return;
         despawnPlayer(session, false);
     }
+    if (respawnElsewhere(session)) return;
     const Entity reborn = spawnPlayer(session);
     // A flower that died in a map it teleported into comes back where its
     // spawn choice says -- usually another map. The snapshot stream restates

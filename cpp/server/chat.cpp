@@ -75,6 +75,10 @@ ByteWriter chatMessage(net::ChatChannel channel, const std::string& author, cons
 
 void GameServer::broadcastChat(net::ChatChannel channel, const std::string& author,
                                const std::string& text, std::uint32_t speakerNetId) {
+    if (shard_) {
+        shBroadcastChat(channel, author, text, speakerNetId);
+        return;
+    }
     broadcastToAuthenticated(chatMessage(channel, author, text, speakerNetId));
 
     chatHistory_.push_back({channel, author, text, database_.nowMillis()});
@@ -143,6 +147,8 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
     std::uint32_t speakerNetId = 0;
     if (session.playing()) {
         if (const NetId* id = world_.tryGet<NetId>(session.entity)) speakerNetId = id->value;
+    } else if (playingElsewhere(session)) {
+        speakerNetId = session.elsewhere.state.netId;
     }
     // Local is measured from the flower, and there is none to measure from.
     // Refused before anything is billed: nothing was said.
@@ -174,7 +180,10 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
     // in the world, exactly as the reference's chat handler does. Only those
     // two words: an ultra is a high-tier mob to fight, never a raid to call.
     // No-ops when no qualifying boss exists.
-    if (mentionsRaidTier(said)) triggerBotRaid(clockMillis_);
+    if (mentionsRaidTier(said)) {
+        if (gateway_) gwBotRaid(session);
+        else triggerBotRaid(clockMillis_);
+    }
 }
 
 bool GameServer::screenChatLine(Session& session, net::Connection& speaker,

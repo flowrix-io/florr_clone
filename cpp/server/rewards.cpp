@@ -67,13 +67,9 @@ void GameServer::announceBossSpawns() {
         // the one boss line in the game with no tier colour on it.
         const std::string opening = rarityBoldTag(boss.rarity);
 
-        for (auto& entry : sessions_) {
-            Session& session = entry.second;
-            // Everyone signed in, flower or not: the title screen draws the same
-            // chat box the game does, and a boss's defeat already reaches it.
-            if (!session.authenticated()) continue;
-            net::Connection* connection = listener_.find(session.connection);
-            if (connection == nullptr) continue;
+        // Everyone signed in, flower or not: the title screen draws the same
+        // chat box the game does, and a boss's defeat already reaches it.
+        const auto isHere = [&](const Session& session) {
             // Personalised: a player standing in the boss's own section is told
             // it spawned, everyone else that it spawned "somewhere". A band on
             // ANY staged world map can fill with supers now -- difficulty is
@@ -83,14 +79,12 @@ void GameServer::announceBossSpawns() {
             const Transform* transform =
                 session.playing() ? world_.tryGet<Transform>(session.entity) : nullptr;
             // The waves disc is one place: a flower on it is where the boss is.
-            const bool here = transform != nullptr && transform->realm == boss.realm &&
-                              (boss.realm == kWavesRealm ||
-                               (transform->realm == Realm::Overworld &&
-                                sectionAt(transform->position) == section));
-            sendChatTo(*connection, net::ChatChannel::System, "",
-                       opening + "A " + tier +
-                           " " + name + " has spawned" + (here ? "" : " somewhere") + "!</b>");
-        }
+            return transform != nullptr && transform->realm == boss.realm &&
+                   (boss.realm == kWavesRealm || (transform->realm == Realm::Overworld &&
+                                                  sectionAt(transform->position) == section));
+        };
+        const std::string line = opening + "A " + tier + " " + name + " has spawned";
+        announceByPlace(line + "!</b>", line + " somewhere!</b>", isHere);
     }
     spawning_->bossSpawns.clear();
 }
@@ -190,6 +184,12 @@ void GameServer::bankKills() {
             }
             paidAccounts.push_back(session->connection);
 
+            if (shard_ && session->lease == 0) {
+                // Their row is home, or lent to another server they have
+                // walked to since: the gateway puts this on it, wherever it is.
+                shCreditKill(session->userId, mobId, type->rarity, stars);
+                continue;
+            }
             PlayerRecord& record = session->eventKit ? *session->eventKit : database_.progress(session->userId);
             record.recordKill(mobId, type->rarity);
 

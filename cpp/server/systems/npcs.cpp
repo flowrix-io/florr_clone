@@ -206,6 +206,7 @@ void NpcSystem::placeMissing(World& world, const Terrain& terrain, const Content
         if (site.entity != NULL_ENTITY && world.isAlive(site.entity) && world.has<NpcTag>(site.entity)) {
             continue;
         }
+        if (hosted != nullptr && !hosted->hosts(site.realm)) continue;
         if (site.roams) site.position = pickRoamingSpot(terrain, content, site);
         site.entity = spawnNpc(world, terrain, content, site.mobIndex, site.rarity, site.position,
                                site.realm, nowMillis);

@@ -28,6 +28,20 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
         }
     }
     const bool sameRealm = from == realm;
+    if (!sameRealm && !hosted_.hosts(realm)) {
+        // Another server's ground. Only a flower its player is steering can
+        // be sent there: a parked half has no client to take along, and bots
+        // take no pads.
+        Session* owner = sessionForEntity(entity);
+        if (shard_ && owner != nullptr && owner->entity == entity) {
+            crossToServer(*owner, realm, position);
+        } else if (TeleporterState* pads = world_.tryGet<TeleporterState>(entity)) {
+            pads->pad = -1;
+            pads->enteredAtMillis = 0;
+            pads->cooldownUntilMillis = clockMillis_ + kTeleporterCooldownMillis;
+        }
+        return;
+    }
     transform->realm = realm;
     transform->position = position;
     // Velocity and knockback describe where the body WAS going, in a space it

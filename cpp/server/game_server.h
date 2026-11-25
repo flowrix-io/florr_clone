@@ -22,6 +22,7 @@
 #include "server/account_limits.h"
 #include "server/admin_tiers.h"
 #include "server/bot_ai.h"
+#include "server/cluster/membership.h"
 #include "server/db.h"
 #include "server/replication.h"
 #include "server/session.h"
@@ -144,6 +145,37 @@ struct ServerConfig {
     /// second of CPU, which is the point in production and nothing but a wait
     /// in a test.
     int passwordCost = 0;
+    /// Sharding (cpp/docs/ARCHITECTURE.md). Alone is the whole game in one
+    /// process. The Gateway holds the sockets and the accounts and simulates
+    /// nothing; each Shard dials it and simulates the biomes it is given.
+    enum class Role : std::uint8_t { Alone, Gateway, Shard };
+    Role role = Role::Alone;
+    /// The gateway: where its servers dial in. Loopback unless told otherwise.
+    std::string clusterHost = "127.0.0.1";
+    std::uint16_t clusterPort = 3100;
+    /// A shard: the gateway's clusterHost and clusterPort, and a name for logs.
+    std::string gatewayHost = "127.0.0.1";
+    std::uint16_t gatewayPort = 3100;
+    std::string shardName;
+    /// What proves either end to the other. Both refuse an empty one.
+    std::string clusterSecret;
+    /// The gateway: how many servers to wait for before the biomes are first
+    /// dealt out. Two at least, since no server is ever given all of them.
+    int expectedShards = 2;
+    /// The gateway: simulates a share of the biomes itself, as well (ServerHost).
+    bool simulates = false;
+    /// A shard: the file its copy of the database is kept in, or empty to be
+    /// sent none.
+    std::string copyPath;
+    /// A shard: the gateway's own simulation, in its process (ServerHost).
+    bool localShard = false;
+    /// What `/admin cluster` made of this server, and the file that says so.
+    /// An empty path is a server no command links: one whose part was given on
+    /// its command line, or that has no file to keep it in.
+    cluster::Membership membership;
+    std::string membershipPath;
+    /// The longest one pass of the loop waits on its sockets.
+    int maxPollMillis = 5;
     /// Whether the hourly rift rolls (server/waves.cpp): on the hour, by the
     /// wall clock, a one-in-five chance of a garden rift when no game of waves
     /// is open. Only the test harness turns it off, so that a test which
@@ -239,6 +271,9 @@ public:
     /// The code a restart exits with. Any non-zero value does the job; 1 is
     /// the one the browser build's memory restart already used.
     static constexpr int kRestartExit = 1;
+    /// Stopped to be started again in this process, as the membership file now
+    /// says (ServerHost). Never what a process exits with.
+    static constexpr int kRelinkExit = 2;
 
     /// One fixed simulation step. Deliberately does NOT touch the network, so
     /// a test can drive the simulation deterministically without a clock.
@@ -264,6 +299,26 @@ public:
     std::string adminDbKey() const;
     /// That key file, or empty where the key is fixed.
     const std::string& adminDbKeyPath() const { return adminDbKeyPath_; }
+    /// Whether this server simulates `realm`.
+    bool hostsRealm(Realm realm) const { return hosted_.hosts(realm); }
+    /// The gateway: the name of the server simulating `biome`, or empty.
+    std::string serverOfBiome(const std::string& biome) const;
+    /// The gateway: hands `biome` to the server called `server`. False, with
+    /// the reason in `why`, when it cannot.
+    bool moveBiome(const std::string& biome, const std::string& server, std::string& why);
+    /// The gateway: keeps `biomes` ("all" is every one) on the server called
+    /// `server` whenever it is up, or with no server named, wherever the
+    /// balance puts them. All of them or, with the reason in `why`, none.
+    bool assignBiomes(const std::vector<std::string>& biomes, const std::string& server,
+                      std::string& why);
+    /// The gateway: every server connected, by name.
+    std::vector<std::string> serverNames() const;
+    ServerConfig::Role role() const { return config_.role; }
+    /// The gateway: every biome the maps make, and how many rows are on loan.
+    std::vector<std::string> biomeNames() const;
+    std::size_t leaseCount() const;
+    /// A shard: whether the gateway has taken it.
+    bool linked() const;
     const Terrain& terrain() const { return *terrain_; }
     /// Every staged map's annotation layer, and which realm each one is.
     const WorldMaps& worldMaps() const { return worldMaps_; }
@@ -281,6 +336,192 @@ public:
     void onDisconnect(net::Connection& c, const std::string& reason) override;
 
 private:
+    // -- sharding: the gateway (server/cluster/gateway.cpp) ------------------
+
+    struct Gateway;
+    std::unique_ptr<Gateway> gateway_;
+    bool startGateway(std::string& errorOut);
+    /// Reads the links, and drains them.
+    void gwService();
+    void gwFlush();
+    /// Once per tick: heartbeats, what each server knows of each client,
+    /// arrivals that were waiting, and the balance.
+    void gwTick(double nowMillis);
+    /// The clients asked home and the loans called in before the gateway
+    /// stops. True while there is anything still to wait for.
+    bool gwDraining();
+    void gwLinkOpened(net::Connection&);
+    void gwLinkMessage(net::Connection&, ByteReader&);
+    void gwLinkClosed(net::ConnectionId, const std::string& reason);
+    bool gwHandshake(net::Connection&, ByteReader&, std::uint8_t message);
+    void gwSend(int slot, const ByteWriter&);
+    void gwReadDistribution();
+    void gwWriteDistribution();
+    /// The database's copies, kept going (server/cluster/copy.cpp).
+    void gwBeginCopy(int slot);
+    void gwServiceCopies(double nowMillis, bool everything = false);
+    std::string gwCopyState(int slot) const;
+    /// A client that dialled another server's port, opened and gone.
+    void gwEdgeOpened(int slot, std::uint32_t edge, const std::string& address);
+    void gwEdgeGone(net::ConnectionId);
+    /// The last of `/admin cluster disconnect`: a server of one, once every
+    /// other has gone.
+    void gwServiceDisband(double nowMillis);
+    void gwServerLost(int slot, const std::string& name);
+    /// Whether the frame was another server's business. False means it is
+    /// handled here, by the handler a single server would run.
+    bool gwRoute(Session&, net::Connection&, net::ClientMessage, ByteReader frame);
+    bool gwRouteChat(Session&, net::Connection&, ByteReader frame);
+    /// Which server runs an admin command, for a session allowed to run one:
+    /// 0 here, -1 every server.
+    int gwServerForCommand(Session&, const std::vector<std::string>& words);
+    void gwForward(Session&, int slot, ByteReader frame);
+    void gwDrainHeld(net::ConnectionId);
+    /// Makes sure `slot` knows this client.
+    void gwAttach(Session&, int slot);
+    void gwJoin(Session&, double viewWidth, double viewHeight);
+    /// Takes a waiting flower to its server, if that server can take it now.
+    void gwDispatch(Session&);
+    void gwArrivalFailed(Session&, const std::string& why);
+    /// Everything other servers hold of this client, called in: it has signed
+    /// out, or gone.
+    void gwRelease(Session&);
+    /// Passes on what this side has changed of any row that is out on loan.
+    void gwPassEdits();
+    void gwTakeRow(const std::string& userId, std::uint32_t lease, int slot, std::uint32_t ack,
+                   std::string row);
+    void gwLeaseReturned(int slot, ByteReader&);
+    void gwTable(int slot, const std::string& key, const std::string& text);
+    void gwBuildBiomes();
+    int gwSlotOfRealm(Realm) const;
+    int gwQuietestSlot() const;
+    void gwPlace(double nowMillis);
+    void gwHost(std::size_t biome, int slot);
+    void gwHandOver(std::size_t biome, int toSlot);
+    void gwTellReachable();
+    /// Has every server stop to be started again, as this one is about to: an
+    /// update on the box is all of theirs.
+    void gwRestartServers();
+    int gwSquadSlot(Session&);
+    /// Opens every guildmate or named player a squad message is about on the
+    /// server that will handle it, when they have no body anywhere else.
+    void gwAttachForSquad(const std::string& username, int slot);
+    void gwBotRaid(const Session&);
+    cluster::ClientInfo gwClientInfo(const Session&, int slot) const;
+    /// True for a session whose flower another server has.
+    static bool playingElsewhere(const Session& s) { return s.elsewhere.slot != 0; }
+    void runShardsCommand(Session&, net::Connection&, const std::vector<std::string>& words);
+    std::string biomeBreakdownFromServers() const;
+    std::string bossTimersFromServers() const;
+
+    // -- linking servers from the game (server/cluster/linking.cpp) ----------
+
+    struct Door;
+    struct Probe;
+    /// Where other servers dial a server that has a key and is on its own.
+    std::unique_ptr<Door> door_;
+    /// Finding out whether another server would have this one.
+    std::unique_ptr<Probe> probe_;
+    void openDoor();
+    void doorMessage(net::Connection&, ByteReader&);
+    void probeOpened();
+    void probeMessage(ByteReader&);
+    void probeEnded(std::string why);
+    void serviceLinking();
+    cluster::Greeting linkGreeting() const;
+    /// Writes `membership` down and stops to be started again as it says.
+    bool relink(cluster::Membership membership, std::string& errorOut);
+    void runClusterCommand(Session&, net::Connection&, const std::vector<std::string>& words);
+    /// Has every linked server install the build this one is installing.
+    void gwUpdateServers(double restartDelayMillis);
+
+    // -- sharding: a simulation server (server/cluster/shard.cpp) ------------
+
+    struct Shard;
+    std::unique_ptr<Shard> shard_;
+    /// The realms simulated here: all of them, unless the game is sharded.
+    HostedRealms hosted_;
+    /// Everything queued, to wherever this process's bytes go.
+    void flushNetwork();
+    /// Whether this server simulates the map whose boss clock is `biome`'s.
+    bool hostsBiome(const std::string& biome) const;
+    bool startShard(std::string& errorOut);
+    void shService(int timeoutMillis);
+    void shFlush();
+    void shTick(double nowMillis);
+    bool shDraining();
+    void shLinkOpened(net::Connection&);
+    void shLinkMessage(ByteReader&);
+    void shLinkLost(const std::string& reason);
+    void shCopyMessage(std::uint8_t message, ByteReader&);
+    void shServiceCopy(double nowMillis);
+    void shEdgeOpened(net::Connection&);
+    void shEdgeFrame(net::Connection&, ByteReader&);
+    void shEdgeClosed(net::Connection&);
+    /// Told by the gateway to be a server of one again.
+    void shLeave();
+    void shSend(const ByteWriter&);
+    /// Every row and table changed since the last call, onto the link. Run
+    /// before anything else leaves on it.
+    void shSendRows();
+    void shClient(net::ConnectionId, ByteReader&);
+    void shGrant(ByteReader&);
+    void shPatch(ByteReader&);
+    void shHost(ByteReader&);
+    void shRelease(const std::string& biome);
+    /// Puts an arriving flower into the world, or sends it back where the
+    /// gateway can find it a server.
+    void shEnter(Session&, net::Connection&, const cluster::FlowerState&);
+    /// Gives a row back: the flower has left, or -- with `onward` -- is on its
+    /// way to another server.
+    void shReturnLease(Session&, const cluster::FlowerState* onward);
+    /// Loans whose flower has left the world since the last look.
+    void shReturnIdle();
+    /// The flower as another server will need it. Reads only.
+    cluster::FlowerState shCapture(Session&, cluster::FlowerState::How);
+    /// Carries a flower out to whichever server has `realm`.
+    void crossToServer(Session&, Realm, Vec2 position);
+    /// A respawn whose door another server has.
+    bool respawnElsewhere(Session&);
+    /// Empties a realm this server no longer simulates.
+    void shClearRealm(Realm);
+    std::string shTakeDrops(const std::vector<Realm>&);
+    void shPlaceDrops(const std::string&);
+    void shHostedChanged();
+    void shBroadcastChat(net::ChatChannel, const std::string& author, const std::string& text,
+                         std::uint32_t speakerNetId);
+    void shNotify(const std::string& type, const std::string& message);
+    void shTitanForged(const Session&, std::uint16_t petalIndex);
+    void shAskTitanHolder(const Session&, std::uint16_t petalIndex);
+    /// A kill earned here by somebody whose row is not on loan here any more.
+    void shCreditKill(const std::string& userId, const std::string& mob, Rarity, double stars);
+    void shTempAdminEnded(net::ConnectionId);
+    void shClientClosed(net::ConnectionId);
+    void shSquadLeaving(net::ConnectionId, const std::string& toBiome);
+    void shSquadArrived(const cluster::SquadState&);
+    void restoreBossClock(const std::string& biome, double nowMillis);
+    /// Whether a line meant for everyone here goes to this session. On a
+    /// server of a sharded game only a flower in the world here hears it: the
+    /// rest of the game hears from the gateway.
+    bool hearsHere(const Session& s) const { return s.authenticated() && (!shard_ || s.lease != 0); }
+    /// `here` to the flowers `isHere` picks out, `elsewhere` to everyone else
+    /// signed in, on whatever server they are.
+    void announceByPlace(const std::string& here, const std::string& elsewhere,
+                         const std::function<bool(const Session&)>& isHere);
+    /// Whether this process is the one to tell the session's client about its
+    /// account: not a gateway whose client is playing on a server, nor a
+    /// server holding no loan for it.
+    bool profileIsOurs(const Session& s) const {
+        return gateway_ ? s.elsewhere.slot == 0 : !shard_ || s.lease != 0;
+    }
+    bool ubiquitousRealm(Realm) const;
+    /// The bot population as this server's share of the game's.
+    int botShareOf(int total) const;
+    int botPopulationTarget() const;
+    int botOverrideShare() const;
+    /// JoinAccepted and what goes with it, for a body just made by a join.
+    void welcomeIntoWorld(Session&, net::Connection&);
+
     /// The test suite's one way past the interface above. A test otherwise
     /// reaches a server only through what is public -- its socket, its world,
     /// the database it reads back -- and this is for the few that must put a

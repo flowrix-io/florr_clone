@@ -37,6 +37,10 @@ namespace flix {
 class NetIdAllocator {
 public:
     std::uint32_t next() { return ++counter_; }
+    /// Counts on from `base`. Two servers of a sharded game must never hand
+    /// out one id between them: a client's chat bubbles name a flower by it
+    /// whichever server that flower is on.
+    void startFrom(std::uint32_t base) { counter_ = base; }
 
 private:
     std::uint32_t counter_ = 0;

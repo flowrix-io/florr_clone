@@ -329,15 +329,22 @@ void GameServer::maintainBots(double nowMillis) {
     }
 
     const int humans = static_cast<int>(playerCount());
+    // A server of a sharded game keeps its share of the population: what the
+    // whole game wants, by how many of the bots' biomes are its own.
+    const int population = botPopulationTarget();
     // An override from `/admin set_bot_count` is an exact target, not a
     // correction to the formula: an operator asking for twelve bots wants
     // twelve, not twelve minus however many people are online.
     const bool overridden = botCountOverride_ >= 0;
+    // Nowhere here for one to live: not even the jitter's one.
+    const bool nowhere = !hosted_.all && botBiomes().empty();
     const int desired =
-        overridden
-            ? std::min(kMaxBots, botCountOverride_)
+        nowhere
+            ? 0
+        : overridden
+            ? std::min(kMaxBots, botOverrideShare())
             : std::min(kMaxBots,
-                       std::max(0, kBotTargetTotalPlayers - humans + botCountJitter_));
+                       std::max(0, population - humans + botCountJitter_));
     const int current = static_cast<int>(bots_.size());
 
     if (current < desired) {
@@ -473,6 +480,8 @@ const std::vector<GameServer::BotBiome>& GameServer::botBiomes() const {
     for (const SpawnChoice& choice : worldMaps_.spawnChoices()) {
         const std::string biome = biomeOfRealm(choice.realm);
         if (biome.empty()) continue;
+        // On a sharded game, only the ones this server simulates.
+        if (!hosted_.hosts(choice.realm)) continue;
         // ...and that somebody could live in. See realmHoldsBots().
         if (!realmHoldsBots(choice.realm)) continue;
         auto found = std::find_if(botBiomes_.begin(), botBiomes_.end(),
@@ -488,6 +497,25 @@ const std::vector<GameServer::BotBiome>& GameServer::botBiomes() const {
     }
     return botBiomes_;
 }
+
+int GameServer::botShareOf(int total) const {
+    if (hosted_.all) return total;
+    // Counted over the maps, as the biomes themselves are, so every server
+    // works out the same whole and the shares add up to it.
+    std::vector<std::string> all;
+    for (const SpawnChoice& choice : worldMaps_.spawnChoices()) {
+        const std::string biome = biomeOfRealm(choice.realm);
+        if (biome.empty() || !realmHoldsBots(choice.realm)) continue;
+        if (std::find(all.begin(), all.end(), biome) == all.end()) all.push_back(biome);
+    }
+    if (all.empty() || botBiomes().empty()) return 0;
+    const double share = static_cast<double>(botBiomes().size()) / static_cast<double>(all.size());
+    return static_cast<int>(std::lround(total * share));
+}
+
+int GameServer::botPopulationTarget() const { return botShareOf(kBotTargetTotalPlayers); }
+
+int GameServer::botOverrideShare() const { return botShareOf(botCountOverride_); }
 
 std::vector<std::string> GameServer::botBiomeNames() const {
     std::vector<std::string> out;

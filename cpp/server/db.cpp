@@ -712,11 +712,168 @@ void Database::reset() {
     topKeyOrder_.clear();
     lastSaveBytes_ = 0;
     chatTerms_ = ChatTerms::builtIn();
+    replica_ = false;
+    players_.parseWith([](const std::string& text, const std::string&) {
+        return playerFromJson(Json::parseOrNull(text));
+    });
     path_.clear();
     loadFailed_ = false;
     dirty_ = false;
     everWrote_ = false;
     lastWriteMillis_ = 0;
+}
+
+static std::string accountToText(const Account& account);
+static std::string sessionToText(const Database::Session& session);
+
+void Database::openReplica() {
+    reset();
+    replica_ = true;
+}
+
+void Database::putProgressText(const std::string& userId, std::string text, bool touched) {
+    players_.insertText(userId, std::move(text), touched);
+    if (touched) markDirty();
+}
+
+std::string Database::progressText(const std::string& userId) const {
+    if (!players_.contains(userId)) return {};
+    return players_.text(userId, playerToText);
+}
+
+void Database::putAccount(const Account& account) {
+    if (const auto had = usersById_.find(account.id);
+        had != usersById_.end() && had->second != account.username) {
+        forgetAccount(account.id);
+    }
+    users_.insert(account.username) = account;
+    usersByLowerName_[lowerCase(account.username)] = account.username;
+    usersById_[account.id] = account.username;
+}
+
+void Database::forgetAccount(const std::string& userId) {
+    const auto found = usersById_.find(userId);
+    if (found == usersById_.end()) return;
+    const std::string name = found->second;
+    usersById_.erase(found);
+    if (const auto lower = usersByLowerName_.find(lowerCase(name));
+        lower != usersByLowerName_.end() && lower->second == name) {
+        usersByLowerName_.erase(lower);
+    }
+    users_.forget(name);
+}
+
+void Database::putTable(const std::string& key, Json value, bool touched) {
+    otherTopText_.erase(key);
+    if (touched) {
+        touchTop(key);
+        markDirty();
+    }
+    otherTop_[key] = std::move(value);
+    if (std::find(topKeyOrder_.begin(), topKeyOrder_.end(), key) == topKeyOrder_.end()) {
+        topKeyOrder_.push_back(key);
+    }
+    if (key == "chatTerms") reloadChatTerms();
+}
+
+void Database::drainReplica(
+    const std::function<void(const std::string&, const std::string&)>& row,
+    const std::function<void(const std::string&, const std::string&)>& table) {
+    players_.drainTouched(playerToText, row);
+    users_.forgetTouched();
+    sessions_.forgetTouched();
+    std::vector<std::string> keys;
+    keys.swap(touchedTop_);
+    for (const std::string& key : keys) {
+        if (std::as_const(otherTop_).contains(key)) {
+            table(key, std::as_const(otherTop_)[key].dump(0));
+        }
+    }
+}
+
+std::vector<std::pair<Database::Part, std::string>> Database::everyRow() const {
+    std::vector<std::pair<Part, std::string>> rows;
+    rows.reserve(users_.size() + players_.size() + sessions_.size() + otherTop_.size());
+    // Who before what: a copy cut off part way is at least people's accounts.
+    for (const std::string& key : users_.keys()) rows.emplace_back(Part::Users, key);
+    for (const std::string& key : players_.keys()) rows.emplace_back(Part::Players, key);
+    for (const std::string& key : sessions_.keys()) rows.emplace_back(Part::Sessions, key);
+    for (const std::string& key : otherTop_.keys()) rows.emplace_back(Part::Tables, key);
+    return rows;
+}
+
+bool Database::rowText(Part part, const std::string& key, std::string& out) const {
+    switch (part) {
+        case Part::Players:
+            if (!players_.contains(key)) return false;
+            out = players_.text(key, playerToText);
+            return true;
+        case Part::Users:
+            if (!users_.contains(key)) return false;
+            out = users_.text(key, accountToText);
+            return true;
+        case Part::Sessions:
+            if (!sessions_.contains(key)) return false;
+            out = sessions_.text(key, sessionToText);
+            return true;
+        case Part::Tables: {
+            if (!otherTop_.contains(key)) return false;
+            auto it = otherTopText_.find(key);
+            if (it == otherTopText_.end()) {
+                it = otherTopText_.emplace(key, otherTop_[key].dump(0)).first;
+            }
+            out = it->second;
+            return true;
+        }
+    }
+    return false;
+}
+
+void Database::openCopy() { reset(); }
+
+void Database::putRow(Part part, const std::string& key, std::string text) {
+    // Touched only once there is a file for the journal to follow.
+    const bool kept = !path_.empty();
+    switch (part) {
+        case Part::Players: players_.insertText(key, std::move(text), kept); break;
+        case Part::Users: users_.insertText(key, std::move(text), kept); break;
+        case Part::Sessions: sessions_.insertText(key, std::move(text), kept); break;
+        case Part::Tables:
+            // Only ever its text: the value is there to say it exists.
+            otherTop_[key] = Json(true);
+            otherTopText_[key] = std::move(text);
+            if (std::find(topKeyOrder_.begin(), topKeyOrder_.end(), key) == topKeyOrder_.end()) {
+                topKeyOrder_.push_back(key);
+            }
+            if (kept) touchTop(key);
+            break;
+    }
+    if (kept) markDirty();
+}
+
+void Database::eraseRow(Part part, const std::string& key) {
+    const bool kept = !path_.empty();
+    switch (part) {
+        case Part::Players: if (kept) players_.erase(key); else players_.forget(key); break;
+        case Part::Users: if (kept) users_.erase(key); else users_.forget(key); break;
+        case Part::Sessions: if (kept) sessions_.erase(key); else sessions_.forget(key); break;
+        case Part::Tables:
+            otherTop_.erase(key);
+            otherTopText_.erase(key);
+            topKeyOrder_.erase(std::remove(topKeyOrder_.begin(), topKeyOrder_.end(), key),
+                               topKeyOrder_.end());
+            if (kept) touchTop(key);
+            break;
+    }
+    if (kept) markDirty();
+}
+
+void Database::copyComplete(const std::string& path) {
+    path_ = path;
+    dirty_ = true;
+    // No journal until the file it follows is there: changes wait in the
+    // backlog, and go into the new journal behind the save that makes it.
+    beginBackgroundSave();
 }
 
 bool Database::load(const std::string& path, std::string& errorOut) {
@@ -1030,6 +1187,8 @@ std::string Database::serialiseWith(const std::string& journalId) const {
 }
 
 bool Database::save() {
+    // Nothing of a replica's is its own to save: the link has it, or will.
+    if (replica_) return true;
     // The whole point of the flag. The in-memory database is the empty
     // default when a load fails, and writing that out turns a file an operator
     // can still repair into total, permanent account loss.
@@ -1484,6 +1643,8 @@ bool Database::journalPending() const {
 }
 
 bool Database::flushJournal() {
+    // A replica's changes are the link's to take (drainReplica).
+    if (replica_) return true;
     if (loadFailed_ || path_.empty()) {
         // Nothing will ever be written: just do not let the lists grow.
         players_.forgetTouched();
@@ -1508,7 +1669,16 @@ bool Database::flushJournal() {
         table.takeTouched(line, toJson);
         line += '}';
     };
+    if (onRowWritten) {
+        for (const std::string& key : players_.touchedKeys()) onRowWritten(Part::Players, key);
+        for (const std::string& key : users_.touchedKeys()) onRowWritten(Part::Users, key);
+        for (const std::string& key : sessions_.touchedKeys()) onRowWritten(Part::Sessions, key);
+        for (const std::string& key : touchedTop_) onRowWritten(Part::Tables, key);
+    }
     section("players", players_, playerToText);
+    if (onAccountWritten && users_.anyTouched()) {
+        for (const std::string& key : users_.touchedKeys()) onAccountWritten(key);
+    }
     section("users", users_, accountToText);
     section("sessions", sessions_, sessionToText);
     if (!touchedTop_.empty()) {
@@ -1530,6 +1700,7 @@ bool Database::flushJournal() {
                 it = otherTopText_.emplace(key, std::as_const(otherTop_)[key].dump(0)).first;
             }
             line += it->second;
+            if (onTableWritten) onTableWritten(key, it->second);
         }
         line += '}';
         touchedTop_.clear();

@@ -122,6 +122,9 @@ void GameServer::stepHourlyRift() {
     // stalled over two of them is not owed two rifts.
     riftHour_ = hour;
     if (waves_.phase != WavePhase::Idle) return;
+    bool found = false;
+    const Realm garden = worldMaps_.realmOfId(kHourlyRiftMapId, found);
+    if (found && !hosted_.hosts(garden)) return;
     if (!(rng_.unit() < kHourlyRiftChance)) return;
     if (!openHourlyRift()) {
         std::printf("[waves] the hourly rift found no common ground in %s\n", kHourlyRiftMapId);
@@ -626,7 +629,7 @@ void GameServer::sendRiftState(net::Connection& connection) {
 void GameServer::broadcastRiftState() {
     listener_.each([&](net::Connection& connection) {
         const Session* session = sessionFor(connection.id());
-        if (session != nullptr && session->authenticated()) sendRiftState(connection);
+        if (session != nullptr && hearsHere(*session)) sendRiftState(connection);
     });
 }
 

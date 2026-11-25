@@ -53,7 +53,8 @@ data/           mobs.json, petals.json, mob_drops.json -- the content
 maps/           the Tiled world maps, their tileset and art (maps/README.md)
 dist/           the committed web build: what deploys (dist/ and shipping)
 scripts/        the Node scripts behind the npm scripts: build-web.js,
-                gen-dev-cert.js, ws-conformance.js, svg-to-skin.js; and
+                gen-dev-cert.js, ws-conformance.js, svg-to-skin.js,
+                run-cluster.js (Sharding); and
                 ctx_capture.js, a canvas recorder pasted into a page's console
 tools/          arduino-cpu-matrix -- the test board's CPU-load display
 maps_old/       an archive of the retired map format; nothing reads it
@@ -339,6 +340,185 @@ construction:
   (orbiting slots still above mythic are benched), locked for the run, and its
   XP and talents are `PlayerRecord::mazeTotalXp` / `mazeSkills`, never the
   outside level.
+
+## Sharding
+
+The game runs as one process or as several. `--role alone`, the default, is
+everything above: one process, every biome, its own database. Sharded, it is a
+**gateway** and two or more **simulation servers** (`server/cluster/`):
+
+| | `--role gateway` | `--role shard` |
+|---|---|---|
+| clients' sockets | all of them | none: adopted, by connection id |
+| database | the one that counts | rows on loan, and a whole copy on disk |
+| simulates | nothing, or a share of its own (`--simulate`, and when linked) | the biomes it was given |
+| run by | one process | any number, on any machine |
+
+Each is a `GameServer`, running the same handlers and the same systems. What
+differs is which realms it hosts (`HostedRealms`) and who is on the other end
+of `net::Connection`.
+
+**Biomes are the unit.** Realms are separate coordinate spaces that nothing
+reaches across (Realms), so a biome is already a world that can be simulated
+on its own. Each biome -- a map's, its prestige twin's, the maze, the arena, the hosted
+arena -- is on exactly one server, and **no server is ever given all of them**
+(`cluster::placeOrphans`): with only one server connected, one biome stays shut.
+Realms that are generated per run or copied per party -- Trial Grounds chambers,
+the waves disc, dungeon copies -- belong to whichever server the flower was
+on when it went in; every server has its own (`ubiquitousRealm`).
+
+**Linking servers from the game.** Two servers that each run on their own are
+made one game by their admins, with neither restarted by hand
+(`cluster/linking.cpp`):
+
+```
+on A:  /admin cluster key <key>              (or "new", which makes one up)
+on B:  /admin cluster key <the same key>
+on B:  /admin cluster connect <A's host>[:3100] [name]
+```
+
+A server with a key listens for others on its link port (`Door`; 3100 unless
+the `key` command names another -- the one port to open in a firewall). B asks
+first (`Probe`), and nothing changes on either side until the key has been
+proven both ways. Then A becomes the gateway **and** a simulation server, two
+`GameServer`s in one process, and B becomes a simulation server: each writes its
+part to `<db>.cluster`, mode 0600, and `ServerHost` (`cluster/host.h`) starts it
+again in place as that says. So everyone reconnects once, and a process
+restarted later comes back as what it was. `/admin cluster disconnect
+<server|all>`, on the gateway, undoes it.
+
+* Both must be the same build, and a linked server is told to update when the
+  gateway is (`ToServer::Update`).
+* There is one set of accounts: the gateway's. B's own database is not merged
+  and not touched; it is B's again when B is disconnected.
+* B's own port stays open. A client that dials it is carried over the link to
+  the gateway, which is who it is playing on (`Shard::Edge`, `EdgeFrame`).
+* The commands need an admin ACCOUNT with the power to update the server, not a
+  console granted for a life: whoever holds the key is sent every account. The
+  key is kept out of the chat echo and the audit line.
+* `--role` on the command line overrides all of it, and turns the commands off.
+
+Or by hand, with the parts on the command line:
+
+```sh
+npm run start_cluster -- --shards 3      # a gateway and three servers, kept up
+
+export FLIX_CLUSTER_SECRET=...           # the same on every one of them
+node dist/server.js --role gateway --shards 3 --cluster-host 10.0.0.1 --db dist/inventory.json --web-root dist
+node dist/server.js --role shard --gateway 10.0.0.1:3100 --shard-name east --copy dist/copy.json
+```
+
+The link is authenticated both ways (`cluster::linkProof`, an HMAC challenge
+over the whole greeting) and everything after that is sealed with
+ChaCha20-Poly1305 under keys of that connection (`cluster::LinkCipher`). Its
+secrecy is the key's: a guessable one can be guessed offline by anyone who can
+reach the port, so prefer `cluster key new`.
+
+**The database is on every server** (`cluster/copy.cpp`). A server that keeps a
+copy is sent every row, then every row written since, twice a second, and saves
+and journals them as the gateway does its own: `<db>.replica`, an ordinary
+database file. It is **behind by up to that half second**, and it is a copy:
+reads and writes are the gateway's. Nothing promotes one by itself, because a
+server that cannot hear the gateway cannot tell a dead one from a cut cable,
+and two gateways are two histories. For a gateway that is not coming back, stop
+a linked server and start it once with `--promote`: its copy becomes its
+database, its own is moved to `database_independent.json`, and it is the
+gateway. Any other server of the lost one is started once with `--unlink`, and
+told to `cluster connect` to the new one. With nobody left to
+link, `/admin cluster disconnect all` makes it a server of one, with that
+database and every biome. Never start the old gateway again as a gateway.
+
+**No database is written over.** Where a copy or a promotion would put one
+database on top of another, the one that was there is first moved, journal and
+all, to `database_independent.json` beside it (`cluster::setAside`;
+`database_independent-2.json` and so on when that is taken, since it is a
+database too). If it cannot be moved, nothing is written. A copy is saved only
+over an earlier state of the same database, which `<copy>.of` is the record of.
+
+**Which server has which biome** is the balance's to say (below) except where
+an admin has:
+
+```
+/admin shards                               what is where, and how loaded
+/admin shards assign <server> <biome...>    keep these on that server
+/admin shards unassign <biome...|all>       leave them to the balance again
+/admin shards move <biome> <server>         move one, now, and no more than that
+/admin shards balance on|off                let nothing unassigned be moved
+```
+
+An assignment is kept in the database (table `cluster`), so it outlives a
+restart and is in every copy. An assigned biome goes to its server whenever
+that is up, is never rebalanced away, and is somebody else's only while it is
+down. Assigning every biome to one server is refused.
+
+**One ordered link per server** (`cluster/link.h`) carries everything, and the
+design rests on the order. A server puts the rows a tick changed on the link
+ahead of the frames that show the change (`Listener::beforeWrite`,
+`GameServer::shSendRows`), so the gateway holds the record before it holds the
+byte; and the gateway's own journal rule then makes it durable before the byte
+leaves. A server that dies takes with it nothing any player was shown.
+
+**Rows are lent.** While a flower is in the world its `PlayerRecord` is the
+server's, under a lease the gateway granted (`Gateway::Lease`), and a row comes
+home with the flower's last word on it (`LeaseReturned`) before it is lent
+again: two servers never hold one row. The gateway refuses a row from anybody
+without its lease. It still has things of its own to change in a lent row -- a
+market sale, a star code, an admin's `give` -- and does, with the handlers it
+always had; the DIFFERENCE is what crosses (`cluster/row_merge.h`): XP, stars
+and stacks as amounts, the rest as values. Amounts commute, so a sale and a
+pickup that cross on the wire both land. Edits the server has not acknowledged
+are put back on top of any row that arrives without them (`gwTakeRow`).
+
+**A request that spends is fenced.** A craft is the server's and a purchase the
+gateway's, over one bag. So the gateway holds a purchase, and whatever the
+client sends behind it, until the server has carried out everything sent before
+it (`Fence`, `FenceAck`) and the rows are level. `whereHandled` says which
+request is whose; steering and pings never wait.
+
+**Moving between biomes** (`crossToServer`) is a lease home and a lease out with
+a `FlowerState` between: position, health, shield, mana, the ring with its
+reloads, the way back out of a hosted game. The client keeps its socket and is
+sent the same `RealmChange` any pad sends. Pets hatch again; a split ends. A pad
+into a biome no server has says so and does nothing.
+
+**Balance** (`cluster/placement.h`, plain arithmetic, tested as such). Every
+server reports its tick time and what is in each realm once a second; a biome's
+cost is its share of its server's tick. New and orphaned biomes go heaviest
+first to the quietest server. Every fifteen seconds one move may be made: an
+empty biome whenever that closes a real gap, one with people in it only off a
+server past two thirds of its tick, and never one with a unique or an apex
+standing. A handed-over biome takes its players, the drops on its ground and
+its boss clocks along, and is stocked with mobs afresh. `/admin shards` shows
+the deal; `/admin shards move <biome> <server>` makes one by hand.
+
+**When something dies.** A server: its biomes are dealt to the others, its
+players come back at their doors. The gateway: every server drops what it was
+holding and redials. A server that is told to stop hands everything back first;
+a gateway calls every lease in first. `/admin update` restarts the servers with
+the gateway, and a server of another build is refused at the link and exits to
+be restarted.
+
+**What is whose.** Accounts, guilds, the market, shop, skins, polls, global
+chat, whispers, the leaderboard and the database editor are the gateway's.
+Squads live on the server their biome is on (a squad cannot span biomes) and a
+squad whose only body walks to another server goes along (`SquadMoved`). An
+admin command runs where what it acts on is (`gwServerForCommand`): `give` at
+the gateway, `teleport bob` on bob's server, `killall` on all of them. Bots are
+kept by each server in proportion to the bot biomes it has (`botShareOf`). Net
+ids carry the server's slot in their top six bits, so none is ever used twice.
+
+Rules for new code:
+
+* A handler that changes an account's row from the gateway goes through
+  `Database::progress`, as anywhere; `gwPassEdits` finds it. If it SPENDS, its
+  message goes in `whereHandled` as fenced.
+* Something said to everyone goes through `broadcastChat`, `addNotification`,
+  `announceByPlace` or `broadcastToAuthenticated`, which know who hears what;
+  never a bare walk of the sessions.
+* Anything that populates a realm asks `HostedRealms` first.
+* Any change to what crosses the link bumps `cluster::kLinkVersion`.
+* A player on another server is `session.elsewhere`, not `session.entity`:
+  on the gateway nobody is ever `playing()`.
 
 ## NPCs
 
