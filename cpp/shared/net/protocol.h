@@ -55,14 +55,19 @@ inline constexpr double kTickMillis = 1000.0 / kTicksPerSecond;
 
 /// How often each client is sent a snapshot.
 ///
-/// Deliberately BELOW the tick rate. Physics and combat want 30 Hz resolution;
-/// the wire does not, and the reference server says so in as many words -- the
-/// snapshot broadcast runs on its own 20 Hz timer so the per-recipient
-/// encode/cull/delta pass and its socket writes are not charged to the tick's
-/// 33 ms budget. A client interpolating between snapshots needs its delay
-/// window to cover this interval, not the tick.
-inline constexpr int kSnapshotsPerSecond = 20;
+/// Every tick. It was 20, which a 30 Hz tick can only send one tick and then
+/// two apart: 33 and 67 ms, a 10 Hz beat under everything that moved, and a
+/// client has to run behind by the LONGER gap to glide across it. At the tick
+/// rate the gaps are even and half as long, which is what lets the motion be
+/// both steady and current (gardn sends every one of its ticks too).
+inline constexpr int kSnapshotsPerSecond = kTicksPerSecond;
 inline constexpr double kSnapshotMillis = 1000.0 / kSnapshotsPerSecond;
+
+/// The most inputs a client sends a second. Twice the tick rate: the server
+/// steers by the newest one each tick finds, so sent AT the tick rate on an
+/// unrelated clock one could be a whole tick old and the next not, and a turn
+/// answered unevenly.
+inline constexpr int kInputsPerSecond = 60;
 
 // ---------------------------------------------------------------------------
 // Message ids

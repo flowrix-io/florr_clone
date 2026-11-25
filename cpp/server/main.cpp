@@ -6,6 +6,7 @@
 // timer, because blocking the Node event loop is exactly what would stop every
 // message from ever being delivered.
 
+#include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -29,6 +30,29 @@ flix::GameServer* g_wasmServer = nullptr;
 extern "C" EMSCRIPTEN_KEEPALIVE void flix_server_wake() {
     if (g_wasmServer) g_wasmServer->serviceArrivals();
 }
+
+namespace {
+bool g_tickArmed = false;
+
+/// Ticks the moment one is due rather than on the main loop's next pass.
+///
+/// Those passes come every 16 to 17 ms and a tick is due every 33, so whether
+/// a tick lands two passes after the last or one, or three, is decided by a
+/// millisecond of timer noise: ticks measured 12 to 60 ms apart.
+void armTickTimer() {
+    if (g_tickArmed || !g_wasmServer) return;
+    const double wait = g_wasmServer->millisUntilTick();
+    g_tickArmed = true;
+    emscripten_async_call(
+        [](void*) {
+            g_tickArmed = false;
+            // False only once the server has been stopped; the main loop's own
+            // pass sees the same answer and does the shutting down.
+            if (g_wasmServer && g_wasmServer->step()) armTickTimer();
+        },
+        nullptr, static_cast<int>(std::ceil(wait)));
+}
+}  // namespace
 #endif
 
 namespace {
@@ -298,7 +322,10 @@ int main(int argc, char** argv) {
             // shutdown is the ordinary one, exit code 0 included. A scheduled
             // restart reaches the same place having set its own code first.
             if (flix_stop_signalled()) running->stop();
-            if (running->step()) return;
+            if (running->step()) {
+                armTickTimer();
+                return;
+            }
             flix_wake_on_arrival(0);
             g_wasmServer = nullptr;
             running->shutdown();

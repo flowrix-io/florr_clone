@@ -349,6 +349,9 @@ public:
         /// would land unevenly on the frames that actually go out.
         std::uint32_t snapshotIndex = 0;
         double nowMillis = 0;
+        /// Added to nowMillis for the stamp on the wire, which is when the bodies
+        /// were moved to rather than when that was: GameServer::motionLeadMillis_.
+        double motionLeadMillis = 0;
         const EventQueue* events = nullptr;
         /// Bodies streamed to this client however far away they are.
         ///
@@ -425,8 +428,8 @@ public:
 
     /// One snapshot in this many carries the far band. Staggered by net id, so
     /// the band's cost is spread evenly over the snapshots rather than landing
-    /// on every fourth one as a spike.
-    int farSnapshotStride = 4;
+    /// on every sixth one as a spike.
+    int farSnapshotStride = 6;
 
     /// Ceiling on entities in one snapshot.
     ///

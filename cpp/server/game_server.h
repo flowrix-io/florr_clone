@@ -171,6 +171,9 @@ public:
     /// and drives this from a timer callback instead.
     bool step();
 
+    /// How long until step() will tick.
+    double millisUntilTick() const;
+
     /// step()'s network half alone, with nothing ticked: every message that
     /// has arrived is handled and whatever that answered leaves now. The
     /// emscripten build calls it the moment bytes land, so a request is not
@@ -2030,6 +2033,13 @@ private:
     /// exactly fixed step.
     double smoothedDeltaSeconds_ = net::kTickSeconds;
     double lastTickWallMillis_ = 0;
+
+    /// How far the time the world has been MOVED by (the smoothed deltas) runs
+    /// ahead of the wall clock. Snapshots are stamped with the first: a tick
+    /// that lands late moves everything by the smoothed step and not by its
+    /// lateness, so stamped with the wall clock a steady walk is played back
+    /// slow across a long gap and fast across the short one after it.
+    double motionLeadMillis_ = 0;
 
     /// How long tick() itself took, drained once a second into a DebugStats
     /// broadcast. The mean says what the server costs at rest; the worst

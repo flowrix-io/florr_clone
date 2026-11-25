@@ -715,9 +715,12 @@ TEST(the_drawn_flower_tracks_the_server_without_ever_stepping_backwards) {
         client.sendInput(input);
         h.step(1, {&client});
         // Two rendered frames per server tick, as a 60 Hz client gets.
-        view.interpolate(1000.0 + i * net::kTickMillis, net::kTickSeconds / 2.0);
-        view.interpolate(1000.0 + i * net::kTickMillis + net::kTickMillis / 2.0,
-                         net::kTickSeconds / 2.0);
+        // The harness runs its server clock faster than the real one the samples
+        // are stamped on, so drawn past the newest of them: this is about the
+        // ease, and the glide between samples has its own tests.
+        const double drawnAt = renderClockMillis() + 60'000.0;
+        view.interpolate(drawnAt, net::kTickSeconds / 2.0);
+        view.interpolate(drawnAt + net::kTickMillis / 2.0, net::kTickSeconds / 2.0);
 
         const double now = along(view.selfDrawnPosition());
         worstBackwards = std::max(worstBackwards, previousAlong - now);

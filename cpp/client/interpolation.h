@@ -1,12 +1,14 @@
 #pragma once
-// How the client turns a 20 Hz snapshot stream into display-rate motion.
+// How the client turns the snapshot stream into display-rate motion.
 //
 // This is a port of the browser build's model (src/ecs/client/interpolation.ts),
 // which is itself gardn's. The two rules that matter, and why:
 //
 //  * FLOWERS ARE NEVER PREDICTED. Every flower -- the viewer's included --
-//    eases toward the authoritative position with one fixed time constant
-//    (client/ease.h). The client runs no movement simulation of its own, so
+//    eases with one fixed time constant (client/ease.h) toward the position
+//    the server had it at a moment ago, read off the line between two
+//    snapshots (see FlowerChase). Petals, shots and drops ease the same way,
+//    a ring's petals in their flower's frame. The client runs no movement simulation of its own, so
 //    there is nothing to reconcile and nothing to snap back.
 //
 //    This client used to predict locally and reconcile on every snapshot, and
@@ -25,9 +27,9 @@
 //    gap the snapshot cadence produces plus the worst lateness the connection
 //    has shown lately, see WorldView::noteLateness -- which absorbs jitter and
 //    packet loss. Every snapshot adds a sample to every buffered mob, the ones
-//    it did not mention included. Flowers get no buffer,
-//    because a buffered remote flower visibly lags the local one and the whole
-//    point of the shared ease is that every flower moves alike.
+//    it did not mention included. Flowers are played back on the same delay,
+//    the viewer's own as well, and then eased: the delay is taken OUT of the
+//    ease, so on a good connection none is drawn later than it would be.
 //
 // Facing follows the same split. A flower's angle comes straight off the wire
 // -- it drives the eyes, and easing it makes the pupils swim. A mob's angle is
@@ -35,6 +37,7 @@
 // degrees in one server step, and interpolating that whips the mob through the
 // whole turn inside a single sample interval.
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -76,11 +79,14 @@ inline std::int64_t wallClockMillis() {
         .count();
 }
 
-/// The fraction of the remaining gap an ease closes per frame at 60 fps. The
-/// browser build's default (`localStorage.interpolationAmount`), and the
-/// settings panel's slider is the same number. Only ever turned into a time
+/// The fraction of the remaining gap an ease closes per frame at 60 fps:
+/// gardn's 0.25 (`Ui::lerp_amount`), by the user's rule that motion is as
+/// smooth as gardn's. It was the browser build's 0.15. The settings panel's
+/// slider is the same number. Only ever turned into a time
 /// constant, by easeTimeConstant() (client/ease.h).
-inline constexpr double kDefaultInterpolationAmount = 0.15;
+inline constexpr double kDefaultInterpolationAmount = 0.25;
+/// What it was, for telling a settings file that never moved the slider.
+inline constexpr double kOldDefaultInterpolationAmount = 0.15;
 
 /// Beyond this gap an ease is a glide across the map rather than a smoothing.
 /// Respawns, portals and a maze rotation all produce it.
@@ -91,7 +97,7 @@ inline constexpr double kSettleEpsilon = 0.01;
 
 /// The least a buffered mob is played back behind the render clock, and where
 /// the delay starts before any snapshot has said how the connection behaves.
-inline constexpr double kMobRenderDelayMillis = 80.0;
+inline constexpr double kMobRenderDelayMillis = 50.0;
 
 /// The most it is ever played back behind. Past this a mob is drawn so far
 /// behind where it is being hit that the fight stops reading.
@@ -99,11 +105,9 @@ inline constexpr double kMaxMobRenderDelayMillis = 200.0;
 
 /// The longest gap between two snapshots on a connection that is perfect.
 ///
-/// Snapshots go out on the first TICK at or after each 20 Hz deadline, so the
-/// gaps alternate one tick and two -- 33 and 67 ms, never 50. The buffer has
-/// to cover the long one before it covers any network lateness at all, which
-/// is why a flat 80 ms left a mob 13 ms of slack and extrapolating on any
-/// connection that was not loopback.
+/// Snapshots go out on a TICK, so a rate below the tick's is sent in uneven
+/// gaps (20 Hz of a 30 Hz tick alternates 33 and 67 ms). The buffer has to
+/// cover the long one before it covers any network lateness at all.
 inline constexpr double kSnapshotGapMillis =
     ((net::kTicksPerSecond + net::kSnapshotsPerSecond - 1) / net::kSnapshotsPerSecond) *
     net::kTickMillis;
@@ -112,9 +116,9 @@ inline constexpr double kSnapshotGapMillis =
 inline constexpr double kPlaybackMarginMillis = 15.0;
 
 /// Per snapshot, how much of the worst recent lateness is remembered: about a
-/// three-second half-life at 20 Hz. A connection that hiccupped once keeps the
+/// three-second half-life. A connection that hiccupped once keeps the
 /// deeper buffer for a while rather than starving on the next hiccup.
-inline constexpr double kLatenessMemory = 0.99;
+inline constexpr double kLatenessMemory = 0.993;
 
 /// How fast the playback delay may move, in ms of delay per ms of frame time.
 /// Changing the delay IS changing playback speed -- raising it 0.15 runs every
@@ -123,8 +127,47 @@ inline constexpr double kLatenessMemory = 0.99;
 inline constexpr double kDelayGrowRate = 0.15;
 inline constexpr double kDelayShrinkRate = 0.03;
 
-/// Samples kept per mob. At 20 Hz this is half a second of history -- more
+/// How a flower chases its sample history.
+///
+/// Easing straight at the newest position chases a staircase: the target
+/// stands still for a whole snapshot gap and then jumps, so a flower walking
+/// at a constant speed was drawn between 0.6 and 1.3 times it, on a 10 Hz beat
+/// (the gaps alternate 33 and 67 ms) -- and the camera with it. Chasing a point
+/// that glides along the line between snapshots has no beat at all.
+///
+/// Gliding costs a delay, and that delay comes out of the ease rather than on
+/// top of it: `delay + tau` here is the plain ease's own time constant plus the
+/// lag its snapshots' age added to that. Only a connection too uneven to leave
+/// the ease anything is drawn later, which is what keeps it steady.
+struct FlowerChase {
+    double delayMillis = 0;
+    double tauSeconds = 0;
+};
+
+/// What the age of the newest snapshot adds to a plain ease's lag: measured
+/// against the real server, a little under half the gap.
+inline constexpr double kSnapshotAgeLagMillis = 8.0;
+
+/// The least of the slider's own ease that is always left, so that turning it
+/// still does something once the delay has used the rest.
+inline constexpr double kFlowerEaseFloorShare = 0.25;
+
+/// The latest a flower is ever played back, short of kMaxMobRenderDelayMillis:
+/// this one is felt in the controls.
+inline constexpr double kMaxFlowerDelayMillis = 120.0;
+
+/// `playbackDelayMillis` is the delay mobs are on this frame, so that flowers
+/// and mobs are drawn from the same moment of the server's.
+inline FlowerChase flowerChase(double easeTauSeconds, double playbackDelayMillis) {
+    if (!(easeTauSeconds > 0.0)) return {};
+    const double delay = std::min(playbackDelayMillis, kMaxFlowerDelayMillis);
+    const double lag = easeTauSeconds * 1000.0 + kSnapshotAgeLagMillis;
+    const double tau = std::max(easeTauSeconds * 1000.0 * kFlowerEaseFloorShare, lag - delay);
+    return {delay, tau / 1000.0};
+}
+
+/// Samples kept per entity. At 30 Hz this is half a second of history -- more
 /// than the playback delay needs, enough to ride out a burst of late packets.
-inline constexpr int kMobSampleCapacity = 10;
+inline constexpr int kMobSampleCapacity = 15;
 
 } // namespace flix

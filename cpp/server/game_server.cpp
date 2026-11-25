@@ -474,6 +474,10 @@ void GameServer::persistBossClocks() {
     }
 }
 
+double GameServer::millisUntilTick() const {
+    return std::max(0.0, nextTickMillis_ - monotonicMillis());
+}
+
 bool GameServer::step() {
     if (!running_.load()) return false;
 
@@ -499,9 +503,11 @@ bool GameServer::step() {
         double raw = lastTickWallMillis_ > 0
                          ? (tickNow - lastTickWallMillis_) / 1000.0
                          : net::kTickSeconds;
+        const double wallMillis = raw * 1000.0;
         lastTickWallMillis_ = tickNow;
         if (raw > kMaxDeltaSeconds) raw = kMaxDeltaSeconds;
         smoothedDeltaSeconds_ += (raw - smoothedDeltaSeconds_) * kDeltaSmoothing;
+        motionLeadMillis_ += smoothedDeltaSeconds_ * 1000.0 - wallMillis;
 
         // The REAL clock, not the scheduled slot. Every absolute deadline
         // in the world -- poison, slows, reloads, hit cooldowns, despawn --
@@ -759,12 +765,11 @@ void GameServer::tick(double nowMillis) {
     commands_.flush();
     markTickPhase("reap");
 
-    // The wire runs slower than the simulation and on its own clock: physics
-    // and combat want 30 Hz, clients do not, and the per-recipient encode/cull/
-    // delta pass is the largest thing in the tick that nothing simulated
-    // depends on. Nothing about WHAT happens changes -- one-shot events are
-    // queued for the frame either way -- only how often it is described.
-    if (nowMillis >= nextSnapshotMillis_) {
+    // At the tick rate (net::kSnapshotsPerSecond) every tick is described, with
+    // no deadline of its own for a tick's jitter to miss. Below it the wire
+    // would run on its own clock; nothing about WHAT happens changes, as
+    // one-shot events are queued for the frame either way.
+    if (net::kSnapshotsPerSecond >= net::kTicksPerSecond || nowMillis >= nextSnapshotMillis_) {
         // Stepped from the deadline, not from now, so the send rate does not
         // slew with tick jitter; resynced when it falls a whole interval behind
         // rather than firing a burst of catch-up frames.
@@ -1044,6 +1049,7 @@ void GameServer::replicate(double nowMillis) {
     frame.tick = tick_;
     frame.snapshotIndex = ++snapshotIndex_;
     frame.nowMillis = nowMillis;
+    frame.motionLeadMillis = motionLeadMillis_;
     frame.events = &events_;
 
     // Reused across recipients rather than allocated per session: it is at

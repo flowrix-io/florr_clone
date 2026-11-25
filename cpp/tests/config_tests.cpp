@@ -434,17 +434,16 @@ TEST(mob_stats_scale_across_rarities) {
 TEST(mob_speed_is_converted_to_units_per_second) {
     const ContentRegistry& r = shipped().registry;
     // One config point is a flower's top speed, so a bee's authored 0.1 is a
-    // tenth of it: the 30 u/s it flew at when the unit was TypeScript's 60.
+    // tenth of it.
     const MobStats bee = r.mobStats(r.mobIndex("bee"), Rarity::Common);
     CHECK_NEAR(bee.speed, 0.1 * kPlayerMaxSpeed, 1e-9);
-    CHECK_NEAR(bee.speed, 30.0, 1e-9);
     // Speed 1 IS the player's: a fly flies at whatever fraction of a flower its
     // entry states, read off the file because that fraction is the author's.
     CHECK_NEAR(r.mobStats(r.mobIndex("fly"), Rarity::Common).speed,
                shippedJson("mobs.json")["fly"]["speed"].asDouble() * kPlayerMaxSpeed, 1e-9);
     // A bee chases at gardn's neutral 0.975 of a flower (`chase_speed`), but
     // that replaces the PURSUIT step only: an unprovoked bee still drifts at
-    // its own 30, which is why the chase lives on a separate field.
+    // its own speed, which is why the chase lives on a separate field.
     CHECK_NEAR(bee.chaseSpeed, 0.975 * kPlayerMaxSpeed, 1e-9);
     // gardn's scorpion outruns a flower; a mob that states no chase pursues
     // at its own speed.

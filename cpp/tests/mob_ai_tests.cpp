@@ -1452,19 +1452,19 @@ TEST(a_big_nests_escorts_are_leashed_from_its_rim_not_its_centre) {
 TEST(a_slow_reduces_the_speed_the_mob_asks_for) {
     CHECK(contentReady());
     Sim sim;
-    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);    // gardn's 0.95: 285 u/s
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);    // gardn's 0.95
     sim.spawnPlayer(kOrigin + Vec2{280, 0});
 
     sim.tickIntent(30);
     const double full = sim.velocityOf(mob).length();
-    CHECK_NEAR(full, 285.0, 1.0);
+    CHECK_NEAR(full, 0.95 * kPlayerMaxSpeed, 1.0);
 
     Afflictions slow;
     slow.slowFactor = 0.5;
     slow.slowUntilMillis = sim.now + 60000.0;
     sim.world.add<Afflictions>(mob, slow);
     sim.tickIntent(30);
-    CHECK_NEAR(sim.velocityOf(mob).length(), 142.5, 1.0);
+    CHECK_NEAR(sim.velocityOf(mob).length(), 0.95 * kPlayerMaxSpeed * 0.5, 1.0);
 }
 
 TEST(a_mob_type_outside_the_content_tables_is_inert_rather_than_undefined) {
@@ -2566,7 +2566,8 @@ TEST(a_volley_carries_the_shooters_own_travel) {
     // Something was inherited, and it is a mob's speed rather than a second
     // copy of the gun's.
     CHECK(inherited.length() > 1e-6);
-    CHECK(inherited.length() < muzzle);
+    CHECK(inherited.length() <
+          content().mobStats(content().mobIndex("hornet"), Rarity::Mythic).chaseSpeed * 1.05);
 }
 
 TEST(a_firing_mob_rocks_back_a_little_and_no_further) {

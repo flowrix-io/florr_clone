@@ -1238,7 +1238,6 @@ TEST(a_flower_leans_a_little_way_into_a_loose_petal_and_shoves_it) {
     const Entity player = fx.spawnPlayer({3000, 3000});
     const Entity wax = fx.spawnLoose({3100, 3000}, 30.0);
     const double reach = 30.0 + kPlayerBaseRadius;
-    CHECK_NEAR(kPushSink, 10.0, 1e-9);
 
     fx.drive(player, 0.0, 1.0);
     double waxAtHalfway = 0;

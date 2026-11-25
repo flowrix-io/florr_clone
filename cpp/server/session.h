@@ -268,7 +268,7 @@ struct Session {
     /// back to its sender, so the flood the chat budget is guarding against is
     /// not the one a command can cause -- see session.cpp.
     double commandAllowance = 12;
-    double inputAllowance = 60;
+    double inputAllowance = net::kInputsPerSecond * 2.0;
     /// Inventory, loadout and talent mutations share a budget: alternating
     /// opcodes must not bypass the limit or spend the movement budget.
     double inventoryAllowance = 20;

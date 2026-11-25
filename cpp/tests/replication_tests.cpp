@@ -899,12 +899,27 @@ TEST(the_ease_step_follows_a_new_refresh_rate_but_not_a_hitch) {
     FramePeriod period;
     for (int i = 0; i < 200; ++i) period.advance(1.0 / 60.0);
 
-    // One dropped frame is not a new refresh rate.
-    CHECK(period.advance(0.25) < 1.0 / 60.0 * 1.06);
+    // Dropped frames are not a new refresh rate, but they are time that passed:
+    // the frame after them steps over all of it.
+    CHECK_NEAR(period.advance(2.0 / 60.0), 2.0 / 60.0, 0.001);
+    CHECK_NEAR(period.seconds(), 1.0 / 60.0, 0.0002);
+    // Up to a stall, which is cut short rather than snapped across.
+    CHECK(period.advance(0.25) <= kMaxEaseStepSeconds);
+    CHECK_NEAR(period.seconds(), 1.0 / 60.0, 0.001);
 
     // A window dragged onto a 144 Hz monitor is, within a second.
     for (int i = 0; i < 144; ++i) period.advance(1.0 / 144.0);
     CHECK_NEAR(period.seconds(), 1.0 / 144.0, 0.0002);
+
+    // And back onto a slower one, which every frame looks like a drop on.
+    for (int i = 0; i < 60; ++i) period.advance(1.0 / 60.0);
+    CHECK_NEAR(period.seconds(), 1.0 / 60.0, 0.0002);
+
+    // A first delta of next to nothing is not the refresh rate either.
+    FramePeriod seeded;
+    seeded.advance(1e-6);
+    for (int i = 0; i < 60; ++i) seeded.advance(1.0 / 60.0);
+    CHECK_NEAR(seeded.seconds(), 1.0 / 60.0, 0.0002);
 }
 
 TEST(a_flower_eases_toward_the_server_and_never_past_it) {
@@ -921,6 +936,75 @@ TEST(a_flower_eases_toward_the_server_and_never_past_it) {
     for (int i = 0; i < 600; ++i) view.interpolate(1000, 1.0 / 60.0);
     CHECK(view.entities().at(1).position.x <= 100.0);
     CHECK_NEAR(view.entities().at(1).position.x, 100.0, 0.01);
+}
+
+TEST(a_flower_walking_at_a_constant_speed_is_drawn_at_one) {
+    // Easing straight at the newest snapshot draws a steady walk as a pulse at
+    // the snapshot rate; chasing the line between them draws it steady, and
+    // with uneven gaps too.
+    const double tau = easeTimeConstant(kDefaultInterpolationAmount);
+    const FlowerChase chase = flowerChase(tau, kMobRenderDelayMillis);
+    CHECK_NEAR(chase.delayMillis + chase.tauSeconds * 1000.0,
+               tau * 1000.0 + kSnapshotAgeLagMillis, 1e-9);
+    // A connection that needs a deeper buffer gets it, up to what is felt in
+    // the controls, and the slider never runs out of ease to turn.
+    CHECK_NEAR(flowerChase(tau, 1000.0).delayMillis, kMaxFlowerDelayMillis, 1e-9);
+    CHECK_NEAR(flowerChase(tau, 1000.0).tauSeconds, tau * kFlowerEaseFloorShare, 1e-9);
+
+    WorldView view;
+    RemoteEntity e = easedFlower({0, 0}, {300, 0});
+    double at = 0;
+    for (int i = 0; at <= 1000.0; ++i) {
+        e.samples.push_back({at, {at * 0.3, 0}});
+        at += i % 2 ? 45.0 : 20.0;
+    }
+    view.seedForTest(e);
+    const double frame = 1000.0 / 60.0;
+    double previous = 0, slowest = 1e9, fastest = 0;
+    for (int i = 0; i < 55; ++i) {
+        view.interpolate(chase.delayMillis + i * frame, 1.0 / 60.0);
+        const double x = view.entities().at(1).position.x;
+        if (i > 30) {
+            slowest = std::min(slowest, x - previous);
+            fastest = std::max(fastest, x - previous);
+        }
+        previous = x;
+    }
+    CHECK_NEAR(slowest, 0.3 * frame, 0.05);
+    CHECK_NEAR(fastest, 0.3 * frame, 0.05);
+}
+
+TEST(a_petal_grown_on_a_walking_flower_starts_in_its_place_on_the_ring) {
+    // The flower has a history and the petal only its newest sample. Read at
+    // two different instants the petal would start out by the flower's travel
+    // between them.
+    WorldView view;
+    RemoteEntity flower = easedFlower({100, 0}, {100, 0});
+    flower.samples = {{900, {70, 0}}, {950, {85, 0}}, {1000, {100, 0}}};
+    view.seedForTest(flower);
+    RemoteEntity petal;
+    petal.netId = 2;
+    petal.kind = net::EntityKind::Petal;
+    petal.ownerNetId = 1;
+    petal.position = petal.targetPosition = {160, 0};
+    petal.samples = {{1000, {160, 0}}};
+    petal.needsSnap = true;
+    view.seedForTest(petal);
+    view.interpolate(1000, 1.0 / 60.0);
+    CHECK_NEAR(view.entities().at(2).position.x - view.entities().at(1).position.x, 60.0, 1e-9);
+}
+
+TEST(a_flower_that_stops_is_never_drawn_past_where_it_stopped) {
+    WorldView view;
+    RemoteEntity e = easedFlower({0, 0}, {100, 0});
+    e.samples.push_back({1000, {0, 0}});
+    e.samples.push_back({1050, {100, 0}});
+    view.seedForTest(e);
+    for (int i = 0; i < 300; ++i) {
+        view.interpolate(1000 + i * 16.7, 1.0 / 60.0);
+        CHECK(view.entities().at(1).position.x <= 100.0);
+    }
+    CHECK_NEAR(view.entities().at(1).position.x, 100.0, 1e-9);
 }
 
 TEST(a_flower_cuts_rather_than_glides_across_a_teleport) {
@@ -1060,7 +1144,8 @@ TEST(the_viewers_flower_eases_and_the_camera_gets_one_answer) {
 
     f.world.get<Transform>(f.viewer).position.x += 100;
     f.tick(client, 2, 1040);
-    client.interpolate(1040, 1.0 / 60.0);
+    // On the clock the samples are stamped with, and past the last of them.
+    client.interpolate(renderClockMillis() + 1000, 1.0 / 60.0);
 
     // Eased, not cut: the camera is pinned to this, so anything that jumped
     // here would jolt the whole world.
