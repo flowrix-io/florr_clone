@@ -518,6 +518,14 @@ bool GameServer::setLocalAdmin(const std::string& sessionToken, bool enabled) {
 void GameServer::revokeTempAdmin(net::ConnectionId id) {
     if (tempAdmins_.erase(id) == 0) return;
     Session* session = sessionFor(id);
+    // The grant is the gateway's, and so is telling its holder.
+    if (shard_) {
+        shTempAdminEnded(id);
+        if (session != nullptr && session->controlling != 0) {
+            endControl(*session, "Control ended: your temporary admin access ended.", true);
+        }
+        return;
+    }
     if (session == nullptr) return;
     // A flower steered on the strength of the grant goes back to its player
     // with it, now rather than at the next tick's check: the grant is what the
@@ -569,6 +577,14 @@ bool GameServer::resolveCommandTarget(const std::string& identifier, CommandTarg
         if (!session.playing()) continue;
         if (lowerCase(session.username) != key) continue;
         out = {session.entity, &session, session.username};
+        return true;
+    }
+    // On the gateway of a sharded game everybody in the world is on some
+    // server; a command run here reaches the session and the account.
+    for (auto& entry : sessions_) {
+        Session& session = entry.second;
+        if (!playingElsewhere(session) || lowerCase(session.username) != key) continue;
+        out = {NULL_ENTITY, &session, session.username};
         return true;
     }
 
@@ -891,6 +907,10 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     // -- account and world questions ---------------------------------------
 
     if (verb == "/biome") {
+        if (gateway_) {
+            out(biomeBreakdownFromServers());
+            return true;
+        }
         // Every flower counts, bots included: the question is where the world
         // is busy, and a biome full of bots is a biome full of fights.
         //
@@ -963,6 +983,10 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     }
 
     if (verb == "/boss-timers") {
+        if (gateway_) {
+            out(bossTimersFromServers());
+            return true;
+        }
         // A wild unique or apex is a super its biome's clock upgraded, so
         // "when is the next unique" is a question about these clocks.
         // "ready" means the next super spawned there rolls for the upgrade;
@@ -1158,6 +1182,11 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             command("guild_info &lt;guild name&gt;");
             command("guild_force_join &lt;guild name&gt; &lt;username&gt;");
             command("fixnpc");
+            if (gateway_) {
+                command("shards - Which server simulates which biome, and how busy each is");
+                command("shards move &lt;biome&gt; &lt;server&gt; - Hand a biome to another server "
+                        "(tier 1 only)");
+            }
             command("restart [&lt;biome&gt; ...|&lt;N&gt;(s|m|h)|cancel|status|list]");
             command("backup_db [list]");
             command("db [username] - Open the database editor (full admins only, tiers 1-2)");
@@ -1623,10 +1652,14 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     const std::string verb = lowerCase(words[0]);
     const std::string rest = argumentOf(trimmed(command));
 
-    // The database editor's key is blanked out of the echo: the line sits in
-    // the chat log for anyone looking over the admin's shoulder.
+    // The database editor's key is blanked out of the echo, and a cluster's:
+    // the line sits in the chat log for anyone looking over the admin's shoulder.
     const bool databaseEditor = verb == "db" || verb == "database" || verb == "db_editor";
-    if (databaseEditor && words.size() >= 2) {
+    const bool clusterKey = verb == "cluster" && words.size() >= 3 && lowerCase(words[1]) == "key" &&
+                            lowerCase(words[2]) != "new" && lowerCase(words[2]) != "off";
+    if (clusterKey) {
+        out("[ADMIN] " + session.username + " executed: " + words[0] + " " + words[1] + " ****");
+    } else if (databaseEditor && words.size() >= 2) {
         std::string echoed = words[0] + " ****";
         for (std::size_t i = 2; i < words.size(); ++i) echoed += " " + words[i];
         out("[ADMIN] " + session.username + " executed: " + echoed);
@@ -1779,6 +1812,20 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
     // -- accounts and sessions ---------------------------------------------
 
+    if (verb == "shards") {
+        if (words.size() > 1 && lacks(AdminPower::UpdateServer)) return;
+        runShardsCommand(session, connection, words);
+        if (words.size() > 1) audit("ran " + command);
+        return;
+    }
+
+    if (verb == "cluster") {
+        if (lacks(AdminPower::UpdateServer)) return;
+        runClusterCommand(session, connection, words);
+        if (words.size() > 1) audit("ran " + words[0] + " " + words[1]);
+        return;
+    }
+
     if (verb == "save") {
         if (words.size() >= 2) {
             CommandTarget target;
@@ -1802,10 +1849,12 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         std::vector<std::string> rows;
         for (auto& entry : sessions_) {
             const Session& other = entry.second;
-            if (!other.playing()) continue;
+            if (!other.playing() && !playingElsewhere(other)) continue;
             const PlayerProgress* progress = world_.tryGet<PlayerProgress>(other.entity);
             rows.push_back("Player ID: " + std::to_string(entry.first) + ", Username: " +
-                           other.username + ", Nickname: " + other.nameplate() + ", Level: " + std::to_string(progress != nullptr ? progress->level : 0));
+                           other.username + ", Nickname: " + other.nameplate() + ", Level: " +
+                           std::to_string(progress != nullptr ? progress->level
+                                                              : other.elsewhere.state.level));
         }
         // Bots are players to every system in the world; hiding them here
         // would make the count disagree with what the console can teleport.
@@ -2694,11 +2743,14 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("Only a higher-ranked admin can remove XP from another admin.");
             return;
         }
-        if (target && (target->arena || target->eventKit)) {
+        if (target && (target->arena || target->eventKit || target->elsewhere.state.arena ||
+                       target->elsewhere.state.eventKit)) {
             out("XP cannot be granted during an arena run. Leave the arena first.");
             return;
         }
-        const bool maze = target && target->playingIn(Realm::Maze);
+        const bool maze = target && (target->playingIn(Realm::Maze) ||
+                                     (playingElsewhere(*target) &&
+                                      target->elsewhere.state.realm == Realm::Maze));
         PlayerRecord& record = database_.progress(account->id);
         const PlayerProgress* live = target && target->playing()
             ? world_.tryGet<PlayerProgress>(target->entity) : nullptr;
@@ -3821,6 +3873,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         updateRequester_ = session.connection;
         if (!autoupdate::start(autoupdate::defaultUrl())) {
             out("An update is already in progress. Use \"update status\" to check on it.");
+        } else if (gateway_) {
+            // Linked servers are on boxes of their own, and one left on the
+            // old build could not join again.
+            gwUpdateServers(delayMillis);
         }
         return;
     }

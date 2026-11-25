@@ -193,6 +193,8 @@ std::string GameServer::squadMemberBiome(SquadMemberId member) const {
         const std::string biome = biomeOfEntity(session.entity);
         if (!biome.empty()) return biome;
     }
+    // On another server of a sharded game, which said where.
+    if (!session.elsewhereBiome.empty()) return session.elsewhereBiome;
     // Nobody home: where their spawn choice is about to put them, which is
     // what the squad will have to live with the moment they press play.
     //

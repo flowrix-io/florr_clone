@@ -56,6 +56,22 @@ Squad* SquadRoster::create(SquadMemberId leader, bool isPublic, Rng& rng) {
     return &squads_[id];
 }
 
+Squad* SquadRoster::adopt(Squad squad) {
+    if (squad.id.empty() || squad.members.empty() || squads_.count(squad.id) != 0) return nullptr;
+    for (const SquadMemberId& member : squad.members) {
+        if (forMember(member) != nullptr) return nullptr;
+    }
+    const std::string id = squad.id;
+    return &(squads_[id] = std::move(squad));
+}
+
+void SquadRoster::disband(const std::string& id) {
+    squads_.erase(id);
+    for (auto it = invites_.begin(); it != invites_.end();) {
+        it = it->second.squadId == id ? invites_.erase(it) : std::next(it);
+    }
+}
+
 std::string SquadRoster::joinPublic(const std::string& squadId, SquadMemberId who) {
     Squad* squad = find(squadId);
     if (squad == nullptr) return "Squad not found.";

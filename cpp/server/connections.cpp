@@ -66,6 +66,9 @@ void GameServer::onConnect(net::Connection& connection) {
 }
 
 void GameServer::onDisconnect(net::Connection& connection, const std::string&) {
+    // This server is done with the client, and the socket is the gateway's.
+    if (shard_) shClientClosed(connection.id());
+    if (gateway_) gwEdgeGone(connection.id());
     endSession(connection.id());
 }
 
@@ -76,6 +79,8 @@ void GameServer::endSession(net::ConnectionId id) {
         departSquad(*session, nullptr, squadDisplayName(squadIdOf(*session)));
         // The session is erased below: its body goes first.
         dropBody(*session);
+        if (shard_ && session->lease != 0) shReturnLease(*session, nullptr);
+        if (gateway_) gwRelease(*session);
     }
     revokeTempAdmin(id);
     sessions_.erase(id);
@@ -127,6 +132,10 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         connection.closeGracefully();
         return;
     }
+
+    // In a sharded game most of what a playing client asks for is asked of the
+    // server its flower is on, whose bill it is.
+    if (gateway_ && gwRoute(*session, connection, id, reader)) return;
 
     // Bill before dispatch, including invalid requests. These handlers can
     // reapply a whole ring, scan the bag and send a full Profile; without a
@@ -185,7 +194,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         default: break;
     }
 
-    if (session->eventKit) {
+    if (session->eventKit || session->elsewhere.state.eventKit) {
         switch(id) {
             case net::ClientMessage::Craft: case net::ClientMessage::OracleCraft:
             case net::ClientMessage::Trade: case net::ClientMessage::TitanForge:
@@ -362,7 +371,7 @@ void GameServer::sendShopResult(net::Connection& connection, net::ShopResultKind
 void GameServer::broadcastToAuthenticated(const ByteWriter& message) {
     listener_.each([&](net::Connection& connection) {
         const Session* session = sessionFor(connection.id());
-        if (session && session->authenticated()) connection.send(message);
+        if (session && hearsHere(*session)) connection.send(message);
     });
 }
 

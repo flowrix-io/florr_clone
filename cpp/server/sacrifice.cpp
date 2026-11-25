@@ -56,8 +56,8 @@ void GameServer::serviceSacrificeSpawn(double nowMillis) {
     const std::uint16_t petal = content().petalIndex(kSacrificePetalId);
     if (petal == kInvalidIndex) return;
     bool found = false;
-    worldMaps_.realmOfId(kSacrificeMapId, found);
-    if (!found) return;
+    const Realm hel = worldMaps_.realmOfId(kSacrificeMapId, found);
+    if (!found || !hosted_.hosts(hel)) return;
 
     // The wall clock is the only one two runs share; this run's clock is
     // whatever tick() is handed.
@@ -259,18 +259,11 @@ void GameServer::announceSacrificeSummon(Entity mob, Realm realm) {
     // Worded per recipient, as a boss spawn is: a player in the summon's own
     // biome is told it was summoned, everyone else -- the title screen included
     // -- that it was summoned "somewhere".
-    for (auto& entry : sessions_) {
-        Session& session = entry.second;
-        if (!session.authenticated()) continue;
-        net::Connection* connection = listener_.find(session.connection);
-        if (connection == nullptr) continue;
-        const bool here =
-            session.playing() && !biome.empty() && biomeOfEntity(session.entity) == biome;
-        sendChatTo(*connection, net::ChatChannel::System, "",
-                   rarityBoldTag(type.rarity) + "A " +
-                       rarityLabel(type.rarity) + " " + name + " has been summoned" +
-                       (here ? "" : " somewhere") + "!</b>");
-    }
+    const std::string line = rarityBoldTag(type.rarity) + "A " + rarityLabel(type.rarity) + " " +
+                             name + " has been summoned";
+    announceByPlace(line + "!</b>", line + " somewhere!</b>", [&](const Session& session) {
+        return session.playing() && !biome.empty() && biomeOfEntity(session.entity) == biome;
+    });
 }
 
 void GameServer::markSacrificed(Entity mob) {

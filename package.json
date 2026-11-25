@@ -14,6 +14,7 @@
     "start": "npm run build && npm run start_nobuild",
     "build:dev": "FLIX_BUILD=dev node scripts/build-web.js all",
     "start_nobuild": "node dist/server.js --port ${PORT:-3000} --db dist/inventory.json --web-root dist",
+    "start_cluster": "node scripts/run-cluster.js",
     "test:ws": "node scripts/ws-conformance.js"
   },
   "keywords": [],

@@ -51,7 +51,12 @@ public:
     /// see clientAddress() (server/account_limits.h) for which parts count.
     const ForwardedHeaders& forwarded() const { return forwarded_; }
     int fd() const { return fd_; }
-    bool open() const { return fd_ >= 0; }
+    bool open() const { return fd_ >= 0 || sink_ != nullptr; }
+    /// True for a connection with no transport of its own: see Listener::adopt.
+    bool adopted() const { return sink_ != nullptr; }
+    /// The largest frame this end accepts. kMaxFrameBytes for a client; the
+    /// link between two servers of a sharded game raises it.
+    std::uint32_t maxFrameBytes = kMaxFrameBytes;
 
     /// Queues a frame. Never blocks; the bytes leave in later drains.
     void send(const ByteWriter& message);
@@ -108,6 +113,8 @@ private:
     /// without limit.
     void discardInbound();
     void shutdownNow();
+    /// An adopted connection's write drain: every queued frame to the sink.
+    void drainToSink();
     /// Records that the connection is dead: a write outside poll() -- a flush
     /// -- found the socket gone, or the peer broke the framing contract. The
     /// descriptor stays open and nothing more is queued or sent; the owner's
@@ -119,6 +126,8 @@ private:
     int fd_;
     ConnectionId id_;
     std::string peer_;
+    /// Where an adopted connection's frames go; null for a real one.
+    std::function<void(const std::byte*, std::size_t)> sink_;
     ForwardedHeaders forwarded_;
     bool closing_ = false;
     /// When closeGracefully() was first called, on the transport's steady clock.
@@ -185,6 +194,25 @@ public:
     /// here: it is reported, and closed, by the next poll().
     void flush();
 
+    /// Adds a connection that has no transport: each frame sent on it is
+    /// handed to `sink`, whole, when the listener drains (poll and flush, after
+    /// beforeWrite, exactly when a socket's bytes would have left). What the
+    /// peer says is delivered by the owner calling its own onMessage. Replaces
+    /// any connection already holding `id`, and is announced to nobody:
+    /// closing one still reports onDisconnect from poll(). How a server of a
+    /// sharded game holds the players whose sockets are the gateway's.
+    Connection& adopt(ConnectionId id, std::string peer,
+                      std::function<void(const std::byte*, std::size_t)> sink);
+    /// An id no accepted connection will have, for adopt().
+    ConnectionId reserveId() { return nextId_++; }
+    /// Forgets an adopted connection now, undelivered frames and all, without
+    /// reporting it: the owner is the one letting go.
+    void abandon(ConnectionId id);
+
+    /// Why the port could not be listened on, where that is only known after
+    /// start() has returned: Node says so from its event loop. Else empty.
+    std::string lateError() const;
+
     Connection* find(ConnectionId id);
     std::size_t connectionCount() const { return connections_.size(); }
 
@@ -197,6 +225,9 @@ public:
     /// A connection queuing more than this is dropped: it has stopped reading,
     /// and buffering a snapshot stream for it costs the server unbounded memory.
     std::size_t maxPendingBytes = 4u << 20;   // 4 MiB
+
+    /// Connection::maxFrameBytes of every connection accepted from here on.
+    std::uint32_t maxFrameBytes = kMaxFrameBytes;
 
     /// TLS material for the web backend, set before start(). Both empty means
     /// the conventional pair names are looked for in the working directory;
@@ -232,6 +263,10 @@ private:
     /// last poll, so the handler hears of each one. Run first thing in both
     /// backends' poll().
     void dropFailed(TransportHandler& handler);
+    /// The adopted connections' half of a poll: drained, and dropped once
+    /// closing. They have no descriptor for poll() to wait on.
+    void pollAdopted(TransportHandler& handler);
+    void sweepClosed();
     /// Everything that happens to one connection once the transport says it
     /// may read and/or write: the write drain, the read, the frame loop, and
     /// the three conditions that end a connection. Returns false when the
@@ -266,6 +301,12 @@ public:
     State state() const { return state_; }
     bool connected() const { return state_ == State::Connected; }
     const std::string& error() const { return error_; }
+    /// Connection::maxFrameBytes of the next connect().
+    std::uint32_t maxFrameBytes = kMaxFrameBytes;
+    /// As Listener::beforeWrite.
+    std::function<void()> beforeWrite;
+    /// Bytes queued and not yet handed over.
+    std::size_t pendingBytes() const { return connection_ ? connection_->pendingBytes() : 0; }
     /// The socket, while there is one: from connect() until a failure or a
     /// disconnect() lets go of it.
     const Connection* connection() const { return connection_.get(); }

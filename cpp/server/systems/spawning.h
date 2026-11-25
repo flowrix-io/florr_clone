@@ -513,6 +513,13 @@ public:
     /// Anything that wants mobs hands this a map with a band on it, or places
     /// them itself through spawnMob().
     const WorldMaps* worldMaps = nullptr;
+    /// Which realms are stocked. Null stocks every one; a server of a sharded
+    /// game stocks only the biomes it was given.
+    const HostedRealms* hosted = nullptr;
+    /// Forgets every record a realm's bands hold -- what sleeps in them, what
+    /// the last census counted, what is owed back. The realm has just gone to
+    /// another server, which stocks it from nothing.
+    void forgetRealm(Realm realm);
 
     /// A boss the last pass admitted, for whoever owns the chat channel.
     ///

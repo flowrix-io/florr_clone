@@ -448,16 +448,26 @@ std::string bcryptRaw(const std::string& password, const Setting& setting,
 
 inline std::uint32_t rotl32(std::uint32_t x, int n) { return (x << n) | (x >> (32 - n)); }
 
-void chachaBlock(const std::uint8_t key[32], std::uint64_t counter, std::uint8_t out[64]) {
-    auto word = [](const std::uint8_t* p) {
-        return std::uint32_t(p[0]) | (std::uint32_t(p[1]) << 8) |
-               (std::uint32_t(p[2]) << 16) | (std::uint32_t(p[3]) << 24);
-    };
+inline std::uint32_t littleWord(const std::uint8_t* p) {
+    return std::uint32_t(p[0]) | (std::uint32_t(p[1]) << 8) | (std::uint32_t(p[2]) << 16) |
+           (std::uint32_t(p[3]) << 24);
+}
+
+inline void putLittleWord(std::uint8_t* p, std::uint32_t v) {
+    p[0] = static_cast<std::uint8_t>(v);
+    p[1] = static_cast<std::uint8_t>(v >> 8);
+    p[2] = static_cast<std::uint8_t>(v >> 16);
+    p[3] = static_cast<std::uint8_t>(v >> 24);
+}
+
+/// `tail` is the block's last four words: the counter, and the nonce.
+void chachaBlock(const std::uint8_t key[32], const std::uint32_t tail[4], std::uint8_t out[64]) {
+    const auto word = littleWord;
     std::uint32_t v[16] = {
         0x61707865u, 0x3320646eu, 0x79622d32u, 0x6b206574u,
         word(key), word(key + 4), word(key + 8), word(key + 12),
         word(key + 16), word(key + 20), word(key + 24), word(key + 28),
-        static_cast<std::uint32_t>(counter), static_cast<std::uint32_t>(counter >> 32), 0, 0,
+        tail[0], tail[1], tail[2], tail[3],
     };
     std::uint32_t x[16];
     std::memcpy(x, v, sizeof(x));
@@ -471,13 +481,137 @@ void chachaBlock(const std::uint8_t key[32], std::uint64_t counter, std::uint8_t
         quarter(0, 4, 8, 12); quarter(1, 5, 9, 13); quarter(2, 6, 10, 14); quarter(3, 7, 11, 15);
         quarter(0, 5, 10, 15); quarter(1, 6, 11, 12); quarter(2, 7, 8, 13); quarter(3, 4, 9, 14);
     }
-    for (int i = 0; i < 16; ++i) {
-        const std::uint32_t sum = x[i] + v[i];
-        out[4 * i + 0] = static_cast<std::uint8_t>(sum);
-        out[4 * i + 1] = static_cast<std::uint8_t>(sum >> 8);
-        out[4 * i + 2] = static_cast<std::uint8_t>(sum >> 16);
-        out[4 * i + 3] = static_cast<std::uint8_t>(sum >> 24);
+    for (int i = 0; i < 16; ++i) putLittleWord(out + 4 * i, x[i] + v[i]);
+}
+
+// ---------------------------------------------------------------------------
+// Poly1305, over 26-bit limbs so every product fits a u64
+// ---------------------------------------------------------------------------
+
+class Poly1305 {
+public:
+    explicit Poly1305(const std::uint8_t key[32]) {
+        r_[0] = littleWord(key) & 0x3ffffff;
+        r_[1] = (littleWord(key + 3) >> 2) & 0x3ffff03;
+        r_[2] = (littleWord(key + 6) >> 4) & 0x3ffc0ff;
+        r_[3] = (littleWord(key + 9) >> 6) & 0x3f03fff;
+        r_[4] = (littleWord(key + 12) >> 8) & 0x00fffff;
+        for (int i = 0; i < 4; ++i) pad_[i] = littleWord(key + 16 + 4 * i);
     }
+
+    /// Whole message pieces, each zero-padded to sixteen bytes, as RFC 8439's
+    /// construction pads everything it is given.
+    void updatePadded(const std::uint8_t* data, std::size_t size) {
+        for (; size >= 16; data += 16, size -= 16) block(data);
+        if (size == 0) return;
+        std::uint8_t last[16] = {};
+        std::memcpy(last, data, size);
+        block(last);
+    }
+
+    void finish(std::uint8_t tag[16]) {
+        std::uint32_t c = h_[1] >> 26;
+        h_[1] &= 0x3ffffff;
+        for (int i = 2; i < 5; ++i) {
+            h_[i] += c;
+            c = h_[i] >> 26;
+            h_[i] &= 0x3ffffff;
+        }
+        h_[0] += c * 5;
+        c = h_[0] >> 26;
+        h_[0] &= 0x3ffffff;
+        h_[1] += c;
+
+        // h - p, kept only when it did not go below zero.
+        std::uint32_t g[5];
+        c = 5;
+        for (int i = 0; i < 4; ++i) {
+            g[i] = h_[i] + c;
+            c = g[i] >> 26;
+            g[i] &= 0x3ffffff;
+        }
+        g[4] = h_[4] + c - (1u << 26);
+        const std::uint32_t keep = (g[4] >> 31) - 1;
+        for (int i = 0; i < 5; ++i) h_[i] = (h_[i] & ~keep) | (g[i] & keep);
+
+        const std::uint32_t words[4] = {
+            h_[0] | (h_[1] << 26), (h_[1] >> 6) | (h_[2] << 20),
+            (h_[2] >> 12) | (h_[3] << 14), (h_[3] >> 18) | (h_[4] << 8)};
+        std::uint64_t f = 0;
+        for (int i = 0; i < 4; ++i) {
+            f = static_cast<std::uint64_t>(words[i]) + pad_[i] + (f >> 32);
+            putLittleWord(tag + 4 * i, static_cast<std::uint32_t>(f));
+        }
+    }
+
+private:
+    void block(const std::uint8_t* m) {
+        h_[0] += littleWord(m) & 0x3ffffff;
+        h_[1] += (littleWord(m + 3) >> 2) & 0x3ffffff;
+        h_[2] += (littleWord(m + 6) >> 4) & 0x3ffffff;
+        h_[3] += (littleWord(m + 9) >> 6) & 0x3ffffff;
+        h_[4] += (littleWord(m + 12) >> 8) | (1u << 24);
+        const auto wide = [](std::uint32_t a, std::uint32_t b) {
+            return static_cast<std::uint64_t>(a) * b;
+        };
+        const std::uint32_t s[5] = {0, r_[1] * 5, r_[2] * 5, r_[3] * 5, r_[4] * 5};
+        std::uint64_t d[5] = {
+            wide(h_[0], r_[0]) + wide(h_[1], s[4]) + wide(h_[2], s[3]) + wide(h_[3], s[2]) + wide(h_[4], s[1]),
+            wide(h_[0], r_[1]) + wide(h_[1], r_[0]) + wide(h_[2], s[4]) + wide(h_[3], s[3]) + wide(h_[4], s[2]),
+            wide(h_[0], r_[2]) + wide(h_[1], r_[1]) + wide(h_[2], r_[0]) + wide(h_[3], s[4]) + wide(h_[4], s[3]),
+            wide(h_[0], r_[3]) + wide(h_[1], r_[2]) + wide(h_[2], r_[1]) + wide(h_[3], r_[0]) + wide(h_[4], s[4]),
+            wide(h_[0], r_[4]) + wide(h_[1], r_[3]) + wide(h_[2], r_[2]) + wide(h_[3], r_[1]) + wide(h_[4], r_[0])};
+        std::uint64_t carry = 0;
+        for (int i = 0; i < 5; ++i) {
+            d[i] += carry;
+            carry = d[i] >> 26;
+            h_[i] = static_cast<std::uint32_t>(d[i]) & 0x3ffffff;
+        }
+        h_[0] += static_cast<std::uint32_t>(carry) * 5;
+        h_[1] += h_[0] >> 26;
+        h_[0] &= 0x3ffffff;
+    }
+
+    std::uint32_t r_[5];
+    std::uint32_t h_[5] = {};
+    std::uint32_t pad_[4];
+};
+
+void aeadTail(const std::uint8_t nonce[12], std::uint32_t counter, std::uint32_t tail[4]) {
+    tail[0] = counter;
+    for (int i = 0; i < 3; ++i) tail[1 + i] = littleWord(nonce + 4 * i);
+}
+
+/// Blocks from counter 1 over `in`; block 0 keys the tag.
+void aeadStream(const std::uint8_t key[32], const std::uint8_t nonce[12], const std::uint8_t* in,
+                std::size_t size, std::uint8_t* out) {
+    std::uint32_t tail[4];
+    aeadTail(nonce, 1, tail);
+    std::uint8_t stream[64];
+    for (std::size_t at = 0; at < size; at += 64, ++tail[0]) {
+        chachaBlock(key, tail, stream);
+        const std::size_t n = std::min<std::size_t>(64, size - at);
+        for (std::size_t i = 0; i < n; ++i) out[at + i] = in[at + i] ^ stream[i];
+    }
+}
+
+void aeadTag(const std::uint8_t key[32], const std::uint8_t nonce[12], const void* aad,
+             std::size_t aadSize, const std::uint8_t* sealed, std::size_t size,
+             std::uint8_t tag[16]) {
+    std::uint32_t tail[4];
+    aeadTail(nonce, 0, tail);
+    std::uint8_t stream[64];
+    chachaBlock(key, tail, stream);
+    Poly1305 mac(stream);
+    if (aadSize > 0) mac.updatePadded(static_cast<const std::uint8_t*>(aad), aadSize);
+    mac.updatePadded(sealed, size);
+    std::uint8_t lengths[16];
+    for (int i = 0; i < 8; ++i) {
+        lengths[i] = static_cast<std::uint8_t>(static_cast<std::uint64_t>(aadSize) >> (8 * i));
+        lengths[8 + i] = static_cast<std::uint8_t>(static_cast<std::uint64_t>(size) >> (8 * i));
+    }
+    mac.updatePadded(lengths, sizeof lengths);
+    mac.finish(tag);
 }
 
 bool readUrandom(std::uint8_t* out, std::size_t length) {
@@ -622,6 +756,29 @@ bool bcryptVerify(const std::string& password, const std::string& stored) {
 }
 
 // ---------------------------------------------------------------------------
+// ChaCha20-Poly1305
+// ---------------------------------------------------------------------------
+
+void aeadSeal(const std::uint8_t key[32], const std::uint8_t nonce[12], const void* aad,
+              std::size_t aadSize, const std::uint8_t* in, std::size_t size, std::uint8_t* out) {
+    aeadStream(key, nonce, in, size, out);
+    aeadTag(key, nonce, aad, aadSize, out, size, out + size);
+}
+
+bool aeadOpen(const std::uint8_t key[32], const std::uint8_t nonce[12], const void* aad,
+              std::size_t aadSize, const std::uint8_t* in, std::size_t size, std::uint8_t* out) {
+    if (size < kAeadTagBytes) return false;
+    const std::size_t body = size - kAeadTagBytes;
+    std::uint8_t tag[kAeadTagBytes];
+    aeadTag(key, nonce, aad, aadSize, in, body, tag);
+    unsigned int diff = 0;
+    for (std::size_t i = 0; i < kAeadTagBytes; ++i) diff |= tag[i] ^ in[body + i];
+    if (diff != 0) return false;
+    aeadStream(key, nonce, in, body, out);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Randomness
 // ---------------------------------------------------------------------------
 
@@ -640,7 +797,11 @@ SecureRandom::SecureRandom() {
 
 void SecureRandom::refill() {
     std::uint8_t block[256];
-    for (int i = 0; i < 4; ++i) chachaBlock(key_, counter_++, block + 64 * i);
+    for (int i = 0; i < 4; ++i, ++counter_) {
+        const std::uint32_t tail[4] = {static_cast<std::uint32_t>(counter_),
+                                       static_cast<std::uint32_t>(counter_ >> 32), 0, 0};
+        chachaBlock(key_, tail, block + 64 * i);
+    }
     // Fast key erasure: the first 32 bytes become the next key and are never
     // handed out, so a state capture cannot rewind to earlier tokens.
     std::memcpy(key_, block, 32);

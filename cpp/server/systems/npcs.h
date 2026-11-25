@@ -66,6 +66,9 @@ public:
     /// still answer findService() -- they are simply never sent, which is what
     /// a headless test wants and what production must not be.
     NetIdAllocator* netIds = nullptr;
+    /// Which realms' sites are filled. Null fills every one (see
+    /// SpawnSystem::hosted).
+    const HostedRealms* hosted = nullptr;
 
     /// One NPC the maps asked for.
     struct Site {

@@ -30,6 +30,10 @@ net::NotificationKind notificationKind(const std::string& type) {
 }
 
 void GameServer::addNotification(const std::string& type, const std::string& message) {
+    if (shard_) {
+        shNotify(type, message);
+        return;
+    }
     // rawArrayTable, never rawTable: this is the one unmodelled table stored
     // as an ARRAY, the shape the browser build gave it, and coercing it would
     // replace the whole feed with an empty object.

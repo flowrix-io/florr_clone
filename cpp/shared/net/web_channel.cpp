@@ -351,7 +351,12 @@ EM_JS(int, flix_ch_listen,
   const certPath = UTF8ToString(certPtr);
   const keyPath = UTF8ToString(keyPtr);
   let credentials = null;
-  if (certPath && keyPath) {
+  // "none" is a listener that is never TLS: the link between the servers of a
+  // sharded game, which no browser dials.
+  const wantsNone = certPath === "none" && keyPath === "none";
+  if (wantsNone) {
+    credentials = null;
+  } else if (certPath && keyPath) {
     credentials = readPair(certPath, keyPath);
     if (!credentials) {
       console.warn("[net] cannot read " + certPath + "/" + keyPath + "; http only");
@@ -854,6 +859,13 @@ EM_JS(int, flix_ch_listen,
     if (held.length) { try { consume(null); } catch (e) { drop(e, 1011); } }
   });
 
+  // EADDRINUSE and its kind arrive here, after listen() has returned. Fatal on
+  // the game's own port, as it always was; the link between servers is an
+  // addition to a running game, and its owner is told (Listener::lateError).
+  server.on("error", (e) => {
+    net.fail(listener, e && e.message ? e.message : e);
+    if (!wantsNone) throw e;
+  });
   server.listen(port, bindHost || undefined);
   listener.closer = () => {
     for (const socket of open) { try { socket.destroy(); } catch (e) { } }

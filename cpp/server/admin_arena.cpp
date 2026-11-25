@@ -147,6 +147,13 @@ bool GameServer::transferHostedArena(Session& player, bool entering) {
     if (!entering) player.adminArenaHasReturn = false;
     if (destination == Realm::Arena) player.arena = startArenaRun(database_.progress(player.userId));
     moveEntityToRealm(player.entity, destination, point);
+    if (!player.playing()) {
+        // Gone to the server that has that ground, which dresses it there.
+        if (auto* peer = listener_.find(player.connection)) {
+            sendSystem(*peer, entering ? "An admin brought you into a hosted game." : "The host returned you from the arena.");
+        }
+        return true;
+    }
     const PlayerRecord& account = liveRecord(player);
     auto& progress = world_.get<PlayerProgress>(player.entity);
     progress.totalXp = destination == Realm::Maze ? account.mazeTotalXp : account.totalXp;

@@ -86,6 +86,23 @@ bool isBcryptHash(const std::string& stored);
 int bcryptCost(const std::string& stored);
 
 // ---------------------------------------------------------------------------
+// ChaCha20-Poly1305 (RFC 8439)
+// ---------------------------------------------------------------------------
+
+inline constexpr std::size_t kAeadTagBytes = 16;
+
+/// Encrypts `size` bytes of `in` into `out`, which takes `size + kAeadTagBytes`
+/// and may be `in`. A nonce must never be used twice under one key.
+void aeadSeal(const std::uint8_t key[32], const std::uint8_t nonce[12], const void* aad,
+              std::size_t aadSize, const std::uint8_t* in, std::size_t size, std::uint8_t* out);
+
+/// Undoes aeadSeal: `size` counts the tag, and `out` takes `size -
+/// kAeadTagBytes`. False, with `out` untouched, for anything the key's holder
+/// did not write.
+bool aeadOpen(const std::uint8_t key[32], const std::uint8_t nonce[12], const void* aad,
+              std::size_t aadSize, const std::uint8_t* in, std::size_t size, std::uint8_t* out);
+
+// ---------------------------------------------------------------------------
 // Randomness
 // ---------------------------------------------------------------------------
 
