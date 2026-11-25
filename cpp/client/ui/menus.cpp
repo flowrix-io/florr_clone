@@ -3238,6 +3238,14 @@ bool MenuSystem::capturesMouse(Vec2 mouse) const {
     return false;
 }
 
+void MenuSystem::forgetHitAreas() {
+    pollRect_ = Rect{};
+    panelRect_ = Rect{};
+    releaseRect_ = Rect{};
+    loadoutGrabbable_.fill(false);
+    stripRects_.fill(Rect{});
+}
+
 double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry) {
     // Per petal, the shared rule: the server bounds the viewport this client
     // may report by the very same figure, so the two cannot disagree about

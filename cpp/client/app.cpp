@@ -777,6 +777,13 @@ void App::frame(double dt) {
         else easeToward(lowHealthVignette_, dark, kLowHealthVignetteEaseSeconds);
     }
 
+    // F10 hides the whole HUD for filming, and shows it again.
+    if (screen_ == Screen::Playing || screen_ == Screen::Dead) {
+        if (window_.keyPressed(Key::F10)) hudHidden_ = !hudHidden_;
+    } else {
+        hudHidden_ = false;
+    }
+
     switch (screen_) {
         case Screen::Connecting:   updateConnecting(); break;
         case Screen::Login:        updateLogin(dt); break;
@@ -962,14 +969,17 @@ void App::frame(double dt) {
         // near black, which they could not be with a grey wash on top.
         drawLowHealthVignette(canvas);
         markPhaseOps(OpPhase::World);
-        drawHud(canvas, timeSeconds_);
+        if (!hudHidden_) drawHud(canvas, timeSeconds_);
+        else trialStartButton_ = Rect{};
         markPhaseOps(OpPhase::Hud);
         // The reference hides the whole chat box while one of the two
         // petal-handling panels -- the inventory, the crafting card -- is up,
         // rather than letting it poke out beside the card.
         const MenuId open = menus_.open();
         const bool panelHidesChat = open == MenuId::Inventory || open == MenuId::Crafting;
-        if (menus_.settings().showChat && !panelHidesChat) drawChat(canvas, timeSeconds_);
+        if (menus_.settings().showChat && !panelHidesChat && !hudHidden_) {
+            drawChat(canvas, timeSeconds_);
+        }
         // Panels and the icon strip keep drawing while dead, undimmed, with
         // the card over both -- but UNDER the loadout bar, which the reference paints
         // after the death screen: the card is the first child of its game UI
@@ -977,24 +987,32 @@ void App::frame(double dt) {
         // their between-strip-and-bar slot is the only way to land it there.
         // Only the paint moves: the card's button is still answered by
         // updateDead, before any of this.
-        menus_.render(canvas, window_, net_, sprites_, renderer_, timeSeconds_, dt, [&] {
+        const auto deathCard = [&] {
             // The slide, not the flag: the card keeps painting on its way back
             // down after a yggdrasil has put the body on its feet.
             if (deathCardSlide_ > 0.01) {
                 drawDeathCard(canvas, timeSeconds_);
                 drawRunLoot(canvas, timeSeconds_);
             }
-        });
+        };
+        if (hudHidden_) {
+            // Nothing painted, so nothing left to click either. The death card
+            // stays: Continue is the only way on from it.
+            menus_.forgetHitAreas();
+            deathCard();
+        } else {
+            menus_.render(canvas, window_, net_, sprites_, renderer_, timeSeconds_, dt, deathCard);
+        }
         if (connectionLost()) drawDisconnectBanner(canvas);
         // Ping and the rest live here and nowhere else: the reference has no
         // always-on latency readout, only this opt-in corner.
-        if (statsVisible()) drawStatsCounters(canvas, false);
+        if (statsVisible() && !hudHidden_) drawStatsCounters(canvas, false);
         // Over every other layer but the wipe: the tutorial box is z-index
         // 9999, above the panels, the strip, the loadout bar and the death
         // card. Its one anchored step rings the crafting panel, which is the
         // only element in the reference that `.tutorial-highlight` can ever
         // find -- see the note in Tutorial::draw.
-        tutorial_.draw(canvas,
+        if (!hudHidden_) tutorial_.draw(canvas,
                        menus_.open() != MenuId::Crafting
                            ? Rect{}
                            : menus_.craftPanelBounds(window_.width(), window_.height()));

@@ -1686,6 +1686,10 @@ public:
     /// True when the cursor is over menu furniture, so the game must not treat
     /// the click as aiming or the wheel as a zoom.
     bool capturesMouse(Vec2 mouse) const;
+    /// Drops every hit area the last paint left behind, for a frame the menus
+    /// are not painted at all (App's hidden HUD): nothing on screen may still
+    /// take a click.
+    void forgetHitAreas();
     /// Set by the app for the frame when the pointer is over something drawn
     /// above every panel -- the right-click menu -- so a click on one of its
     /// rows does not also land on the inventory cell underneath it.

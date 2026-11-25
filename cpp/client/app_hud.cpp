@@ -516,7 +516,7 @@ App::SquadInviteLayout App::squadInviteLayout() const {
 bool App::squadInviteShown() const {
     const SquadInvite& invite = net_.squadInvite();
     return invite.waiting && wallClockMillis() < invite.expiresAtMillis &&
-           !net_.squad().inSquad;
+           !net_.squad().inSquad && !hudHidden_;
 }
 
 void App::drawSquadInvite(Canvas& canvas) {
