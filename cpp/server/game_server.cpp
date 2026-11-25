@@ -421,8 +421,16 @@ void GameServer::restoreBossClocks(double nowMillis) {
                                        nowMillis + kUniqueSpawnCooldownMillis);
         const double apex = std::min(entry["apexReadyAt"].asDouble() + offset,
                                      nowMillis + kApexSpawnCooldownMaxMillis);
-        spawning_->restoreBossClock(biome, unique, apex);
-        savedBossClocks_.push_back(SavedBossClock{biome, unique, apex});
+        // Absent while no window was open, and held to one window likewise.
+        // One that ran out while the server was down is due at once: never
+        // below 1, because zero means no window and this run's clock may be
+        // younger than the downtime.
+        const double due = entry["apexDueAt"].isNumber()
+                               ? std::max(1.0, std::min(entry["apexDueAt"].asDouble() + offset,
+                                                        nowMillis + kApexOverdueMaxMillis))
+                               : 0.0;
+        spawning_->restoreBossClock(biome, unique, apex, due);
+        savedBossClocks_.push_back(SavedBossClock{biome, unique, apex, due});
     }
 }
 
@@ -447,7 +455,7 @@ void GameServer::persistBossClocks() {
             if (candidate.biome == clock.biome) saved = &candidate;
         }
         if (saved != nullptr && saved->uniqueReadyMillis == unique &&
-            saved->apexReadyMillis == apex) {
+            saved->apexReadyMillis == apex && saved->apexDueMillis == clock.apexDueMillis) {
             continue;
         }
         if (saved == nullptr) {
@@ -456,9 +464,11 @@ void GameServer::persistBossClocks() {
         }
         saved->uniqueReadyMillis = unique;
         saved->apexReadyMillis = apex;
+        saved->apexDueMillis = clock.apexDueMillis;
         Json entry = Json::object();
         entry["uniqueReadyAt"] = std::round(unique + offset);
         entry["apexReadyAt"] = std::round(apex + offset);
+        if (clock.apexDueMillis > 0) entry["apexDueAt"] = std::round(clock.apexDueMillis + offset);
         database_.rawTable("bossClocks")[clock.biome] = std::move(entry);
         database_.markDirty();
     }

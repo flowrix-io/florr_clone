@@ -106,6 +106,10 @@ const WorldMaps& authoredMaps();
 void makeBandedWorld(WorldMaps& out, const std::vector<Rect>& bands, const std::string& mobs,
                      double difficulty = 0.0);
 
+/// The same, with two bee bands of their own difficulty.
+void makeTwoBandWorld(WorldMaps& out, const Rect& first, double firstDifficulty,
+                      const Rect& second, double secondDifficulty);
+
 /// The difficulty at which `chance` (0..1, exclusive) of a band's spawns come
 /// out a boss: the ultra/super blend, read off the curve rather than written
 /// down, so retuning the anchors moves it too. spawnTierWeight leans the blend
@@ -2510,6 +2514,84 @@ TEST(both_clocks_ready_gives_one_apex_and_one_unique) {
     const SpawnSystem::BiomeBossClock& after = onlyClock(world.sim);
     CHECK(after.apexReadyMillis > world.sim.now + kApexSpawnCooldownMinMillis - 20000.0);
     CHECK(after.uniqueReadyMillis > world.sim.now + kUniqueSpawnCooldownMillis - 20000.0);
+}
+
+TEST(an_apex_nobody_rolled_is_placed_when_its_window_runs_out) {
+    // Two bands too gentle for a super, so no clock could ever upgrade one.
+    const Rect gentle{kCentre.x - 6000.0, kCentre.y - 2000.0, 4000.0, 4000.0};
+    const Rect harder{kCentre.x + 2000.0, kCentre.y - 2000.0, 4000.0, 4000.0};
+    WorldMaps maps;
+    makeTwoBandWorld(maps, gentle, 0.0, harder, 67.0);
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{Vec2{5000.0, 5000.0}};
+    sim.tick(players);
+    SpawnSystem::BiomeBossClock& clock = onlyClock(sim);
+    CHECK_EQ(clock.apexDueMillis, 0.0);
+
+    // The window opens on the first pass past the cooldown, three to six
+    // hours long.
+    sim.jump(kApexSpawnCooldownMaxMillis, players);
+    CHECK(clock.apexDueMillis >= sim.now + kApexOverdueMinMillis);
+    CHECK(clock.apexDueMillis < sim.now + kApexOverdueMaxMillis);
+    CHECK_NEAR(kApexOverdueMinMillis, 3.0 * 3600000.0, 1e-6);
+    CHECK_NEAR(kApexOverdueMaxMillis, 6.0 * 3600000.0, 1e-6);
+    const double due = clock.apexDueMillis;
+    const int population = sim.populationIn(harder);
+    const int others = sim.populationIn(gentle);
+
+    sim.jump(due - 1000.0 - sim.now, players);
+    CHECK_EQ(clock.apexDueMillis, due);
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 0);
+
+    sim.spawner.bossSpawns.clear();
+    sim.jump(1500.0, players);
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 1);
+    Entity apex = NULL_ENTITY;
+    Query<MobTag, MobType> mobs{sim.world};
+    mobs.each([&](Entity e, MobTag&, MobType& type) {
+        if (type.rarity == Rarity::Apex) apex = e;
+    });
+    CHECK(apex != NULL_ENTITY);
+    if (apex == NULL_ENTITY) return;
+    // In the harder band, over and above what it holds, announced, and the
+    // cooldown starts over.
+    CHECK(harder.contains(sim.world.get<Transform>(apex).position));
+    CHECK_EQ(sim.populationIn(harder), population + 1);
+    CHECK_EQ(sim.populationIn(gentle), others);
+    CHECK_EQ(sim.spawner.bossSpawns.size(), std::size_t(1));
+    CHECK_EQ(clock.apexDueMillis, 0.0);
+    CHECK(clock.apexReadyMillis >= sim.now + kApexSpawnCooldownMinMillis);
+    CHECK(clock.apexReadyMillis < sim.now + kApexSpawnCooldownMaxMillis);
+
+    // It stands past its cooldown and every window after: never a second.
+    sim.jump(kApexSpawnCooldownMaxMillis, players);
+    sim.jump(kApexOverdueMaxMillis, players);
+    sim.jump(kApexOverdueMaxMillis, players);
+    CHECK(sim.world.isAlive(apex));
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 1);
+    CHECK_EQ(clock.apexDueMillis, 0.0);
+
+    // Dead, it is not replaced at once: a fresh window opens, and its band is
+    // not handed a slot it never gave.
+    sim.world.destroy(apex);
+    sim.jump(kPopulationIntervalMillis, players);
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 0);
+    CHECK(clock.apexDueMillis >= sim.now + kApexOverdueMinMillis);
+    CHECK_EQ(sim.populationIn(harder), population);
+    sim.jump(kApexOverdueMaxMillis, players);
+    CHECK_EQ(mobsOfRarity(sim.world, Rarity::Apex), 1);
+}
+
+TEST(an_apex_that_comes_by_itself_closes_the_window) {
+    SuperBand world;
+    world.deal();
+    SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
+    clock.apexReadyMillis = 0.0;
+    clock.apexDueMillis = world.sim.now + kApexOverdueMinMillis;
+    world.fill();
+    CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 1);
+    CHECK_EQ(clock.apexDueMillis, 0.0);
 }
 
 namespace {
@@ -5865,6 +5947,23 @@ void makeSingularBandWorld(WorldMaps& out, const Rect& band, const std::string& 
     std::string error;
     if (!map.loadTiled(path, error)) {
         std::fprintf(stderr, "[test] the singular fixture world did not load: %s\n",
+                     error.c_str());
+    }
+    std::remove(path.c_str());
+    out.adoptSingle(map);
+}
+
+void makeTwoBandWorld(WorldMaps& out, const Rect& first, double firstDifficulty,
+                      const Rect& second, double secondDifficulty) {
+    const std::string objects =
+        bandObject(1, first.x, first.y, first.w, first.h, firstDifficulty, "bee 100%") + "," +
+        bandObject(2, second.x, second.y, second.w, second.h, secondDifficulty, "bee 100%");
+    const std::string path = writeTiledFixture("flix_two_band_world.tmj", fixtureMapBody(objects));
+    MapData map;
+    map.setId("two_bands");
+    std::string error;
+    if (!map.loadTiled(path, error)) {
+        std::fprintf(stderr, "[test] the two-band fixture world did not load: %s\n",
                      error.c_str());
     }
     std::remove(path.c_str());

@@ -1219,7 +1219,8 @@ private:
     /// a scatter, an upgrade, a console spawn charging a clock. While a unique
     /// or apex stands in a biome its clock is written as of the moment that
     /// boss spent it, so a restart that takes the boss away unkilled hands the
-    /// cooldown back and the clock comes up ready.
+    /// cooldown back and the clock comes up ready. An open apex window
+    /// (kApexOverdueMinMillis) is kept beside them, as `apexDueAt`.
     void restoreBossClocks(double nowMillis);
     void persistBossClocks();
     /// database_.save() behind a fresh look at which bosses stand, so the
@@ -2111,6 +2112,7 @@ private:
         std::string biome;
         double uniqueReadyMillis = 0;
         double apexReadyMillis = 0;
+        double apexDueMillis = 0;
     };
     std::vector<SavedBossClock> savedBossClocks_;
     bool bossClocksRestored_ = false;
