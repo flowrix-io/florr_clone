@@ -25,18 +25,4 @@ inline double petalShotRange(const ProjectileSpec& spec, Rarity rarity) {
     return spec.distance * adminReachScale(rarity) * kPlayerShotRangeScale;
 }
 
-/// Gives a carrot its whole flight back: what one does each time it comes off
-/// a wall or passes through a mob, so a carrot that keeps finding things to
-/// hit keeps flying. False when the shot names no petal to read the range off.
-inline bool refillShotFlight(Projectile& projectile, Lifetime* lifetime) {
-    if (projectile.petalConfigIndex >= content().petalCount()) return false;
-    const ProjectileSpec& spec = content().petal(projectile.petalConfigIndex).projectile;
-    const double range = petalShotRange(spec, projectile.rarity);
-    const double speed = petalShotSpeed(spec, projectile.rarity);
-    if (!(range > 0.0) || !(speed > 0.0)) return false;
-    projectile.remainingDistance = range;
-    if (lifetime != nullptr) lifetime->remainingSeconds = range / speed;
-    return true;
-}
-
 } // namespace flix
