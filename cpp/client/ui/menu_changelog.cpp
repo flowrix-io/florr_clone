@@ -689,8 +689,8 @@ constexpr ChangelogEntry kChangelog[] = {
       {
         "Buffed Bone: 3x damage, much more health, and its armor keeps growing past Ultra",
         "Buffed Carrot: twice as fast, and it now bounces off mobs too",
-        "The server can hold twice as many mobs at once, so busy zones stop looking empty",
-        "Mobs you kill come back twice as fast",
+        "The server can now hold twice as many mobs at once, so busy zones stop looking empty",
+        "Mobs now spawn 3x as fast",
         "Magnet now leaves fresh drops on the ground for half a second before pulling them in"
       }
     }
