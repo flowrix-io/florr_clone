@@ -644,11 +644,21 @@ private:
     /// so a grown flower paints over its own plate rather than under it.
     void drawPlayerPlate(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
                          double timeSeconds) const;
-    /// The mana bar, in the slot the viewer's own health bar used to occupy.
+    /// A flower's health bar alone, at `opacity` of its usual strength: the
+    /// plate's, and the one under the viewer's own flower.
+    void drawFlowerHealthBar(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
+                             double timeSeconds, double opacity) const;
+    /// The viewer's own health bar, as far under the body as gardn hangs a
+    /// flower's. Faded out while the flower is whole and unshielded.
+    void drawSelfHealthBar(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
+                           double timeSeconds) const;
+    /// How much of the viewer's own health bar is showing, 0 to 1.
+    double selfHealthBarOpacity(const RemoteEntity&) const;
+    /// The mana bar, in that same slot, sliding down to make room while the
+    /// health bar is in it.
     ///
     /// Only the viewer's own flower has one, because mana is not replicated
-    /// for anybody else, and only that flower has the slot free: every other
-    /// flower still wears its plate there.
+    /// for anybody else.
     void drawSelfManaBar(Canvas&, const RemoteEntity&, const Camera&, Vec2 at) const;
     void drawCorpse(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     /// Every live bubble, over the flower that said it. Drawn last of all, on

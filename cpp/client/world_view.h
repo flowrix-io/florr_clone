@@ -121,6 +121,11 @@ struct RemoteEntity {
     /// What the health bar draws: `healthFraction` and `shieldFraction`,
     /// eased, and the red trail behind them. Stepped by interpolate().
     HealthBarEase healthBar;
+    /// How far the bar under the VIEWER'S OWN flower is faded in: 1 while it
+    /// is hurt or shielded, 0 while it has nothing to say (see
+    /// WorldView::selfBarShows). Nothing else moves it, and no other body
+    /// reads it: every other flower's bar is always there.
+    double selfBarOpacity = 0;
     /// Mob and NPC only: what the plate under the body draws, eased as florr
     /// eases it. Stepped by interpolate().
     MobPlateEase plate;
@@ -334,6 +339,7 @@ public:
         RemoteEntity& seeded = entities_[entity.netId] = entity;
         seeded.healthBar.snap(entity.healthFraction, entity.shieldFraction);
         seeded.plate.snap(entity.healthFraction, entity.shieldFraction, plateShows(seeded));
+        seeded.selfBarOpacity = seeded.isSelf() && selfBarShows(seeded) ? 1.0 : 0.0;
     }
 
     /// Names the viewer's own flower, which a snapshot otherwise does from
@@ -430,6 +436,9 @@ private:
     /// That is the registry's label flag (+0xa4), clear in florr for exactly
     /// the centipede and leech bodies. Without content every mob is labelled.
     bool plateShows(const RemoteEntity&) const;
+    /// Whether the viewer's own flower has a bar under it: while it is short
+    /// of full health, or carries a shield.
+    bool selfBarShows(const RemoteEntity& self) const;
 
     std::unordered_map<std::uint32_t, RemoteEntity> entities_;
     const ContentRegistry* content_ = nullptr;

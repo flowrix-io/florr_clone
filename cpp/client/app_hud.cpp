@@ -59,9 +59,9 @@ constexpr double kHudXpHeight = 12.0;
 /// Centred under the health bar rather than sharing its left edge.
 constexpr double kHudXpX = kHudBarX + (kHudBarWidth - kHudXpWidth) * 0.5;
 constexpr double kHudXpY = kHudHealthY + kHudBarHeight + 12.0;   // 134
-/// The mana bar is NOT here. It stands in the slot the viewer's own health
-/// bar used to occupy, under the flower itself -- WorldRenderer::drawSelfManaBar
-/// -- which is why this block goes straight from the XP bar to the avatar.
+/// The mana bar is NOT here. It stands under the flower itself --
+/// WorldRenderer::drawSelfManaBar -- which is why this block goes straight from
+/// the XP bar to the avatar.
 /// How far the health bar's black plate stands out past its fill.
 constexpr double kHudPlatePad = 6.0;
 /// The plate runs back to the flower's CENTRE, so its rounded left cap is

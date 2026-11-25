@@ -31,6 +31,10 @@ constexpr double kPlateLagWait = 0.001;
 /// A chain bead's bar shows while a shield over this is up, at full health.
 constexpr double kPlateShieldShows = 0.001;
 
+/// How full the eased green has to be before the viewer's own bar fades out.
+/// An ease never quite lands on 1.
+constexpr double kSelfBarFull = 0.99;
+
 } // namespace
 
 void MobPlateEase::snap(double targetHealth, double targetShield, bool visible) {
@@ -54,6 +58,15 @@ bool WorldView::plateShows(const RemoteEntity& e) const {
     const bool labelled = content_ == nullptr || e.kind != net::EntityKind::Mob ||
                           !content_->mob(e.typeIndex).chainBody;
     return labelled || e.healthFraction < 1.0 || e.shieldFraction > kPlateShieldShows;
+}
+
+bool WorldView::selfBarShows(const RemoteEntity& self) const {
+    if (self.healthFraction <= 0.0) return false;
+    // The body's fraction is a byte, which reads full from a scratch; the
+    // viewer's own health is also sent exactly. The eased green is asked too,
+    // so a big heal is seen to fill the bar before the bar goes away.
+    return self.healthFraction < 1.0 || self_.health < self_.maxHealth ||
+           self.healthBar.health < kSelfBarFull || self.shieldFraction > kPlateShieldShows;
 }
 
 void HealthBarEase::snap(double targetHealth, double targetShield) {
@@ -650,6 +663,8 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
     const auto self = entities_.find(self_.netId);
     if (self != entities_.end() && self->second.isSelf()) {
         self->second.position = selfDrawnPosition_;
+        easeToward(self->second.selfBarOpacity, selfBarShows(self->second) ? 1.0 : 0.0,
+                   kPlateEaseSeconds, dtSeconds);
     }
 
     // The HUD's bar reads SelfState's exact figures rather than the body's
