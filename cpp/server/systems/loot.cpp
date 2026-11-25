@@ -411,8 +411,13 @@ Entity LootSystem::spawnDrop(World& world, std::uint16_t petalIndex, Rarity rari
     item.eligible.reserve(eligible.size());
     for (const Entity claimant : eligible) {
         const PlayerAccount* account = world.tryGet<PlayerAccount>(claimant);
-        item.eligible.push_back(
-            LootClaim{claimant, account != nullptr ? account->connection : 0});
+        net::ConnectionId owner = account != nullptr ? account->connection : 0;
+        // Between lives: claimed by who it was, so the body they come back in
+        // can see it and pick it up (ownerOfGoneBody).
+        if (account == nullptr && !world.isAlive(claimant) && ownerOfGoneBody) {
+            owner = ownerOfGoneBody(claimant);
+        }
+        item.eligible.push_back(LootClaim{claimant, owner});
     }
     world.add<DropItem>(e, std::move(item));
 

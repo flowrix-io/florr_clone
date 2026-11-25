@@ -4502,6 +4502,66 @@ TEST(which_row_is_graded_is_drawn_by_probability) {
 // Loot: drops, eligibility, pickup, expiry
 // ---------------------------------------------------------------------------
 
+TEST(a_squadmate_between_lives_still_gets_their_share) {
+    // The bug report: two squadmates kill an apex, one of them died to it and
+    // is on the title screen (or loading back in) when it falls. That member
+    // used to be dropped from the squad -- the survivor was paid alone, and
+    // the fallen member's own drops went to a body nobody could claim them
+    // as. Now they are filed by their last body and paid by their connection,
+    // so the body they come back in can see and pick the drops up. A member
+    // who was away before the fight and never hit the mob is still not paid.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(4343);
+
+    const std::uint16_t starfish = shipped().mobIndex("starfish");
+    const Entity fighter = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity fallen = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity idle = makePlayer(world, kCentre + Vec2{5000, 0});
+    constexpr net::ConnectionId kFallen = 2;
+    constexpr net::ConnectionId kIdle = 3;
+
+    // Both bodies are gone by the time the mob dies.
+    const Entity corpse =
+        makeCorpse(world, starfish, Rarity::Uncommon, kCentre, fighter, {fighter, fallen});
+    (void)corpse;
+    world.destroy(fallen);
+    world.destroy(idle);
+
+    SquadEntityIndex squads;
+    squads.group[fighter] = 0;
+    squads.group[fallen] = 0;
+    squads.group[idle] = 0;
+    squads.groups.push_back(
+        {SquadBody{fighter, 1}, SquadBody{fallen, kFallen, true}, SquadBody{idle, kIdle, true}});
+    loot.squads = &squads;
+    loot.ownerOfGoneBody = [&](Entity body) -> net::ConnectionId {
+        if (body == fallen) return kFallen;
+        if (body == idle) return kIdle;
+        return 0;
+    };
+
+    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    const std::vector<Entity> drops = liveDrops(world);
+    CHECK(!drops.empty());
+    if (drops.empty()) return;
+    // Claimed by CONNECTION: the body they come back in is a new entity.
+    const Entity newBody = world.create();
+    const auto paidConnection = [&](net::ConnectionId connection) {
+        for (const Entity drop : drops) {
+            if (claimed(world.get<DropItem>(drop).eligible, newBody, connection)) return true;
+        }
+        return false;
+    };
+    CHECK(paidConnection(kFallen));
+    CHECK(!paidConnection(kIdle));
+}
+
 TEST(a_squads_drops_are_reserved_for_every_member) {
     // What a party is FOR. One member kills a starfish; every member of the
     // squad is paid, including the one who never touched it. Each paid

@@ -221,6 +221,15 @@ public:
     /// is enough; the callback exists for a runtime that would rather not walk
     /// the list, the list for one that would rather not own a closure.
     std::function<void(const Pickup&)> onPickup;
+    /// The connection a body that is no longer in the world played for, or 0.
+    ///
+    /// A drop is reserved for its claimants' CONNECTIONS as well as their
+    /// bodies, read off each body's PlayerAccount -- which a body between
+    /// lives no longer has. A flower that died to the boss and is on the
+    /// title screen when it falls is still owed its share; reserved for the
+    /// gone body alone, that share could never be seen or picked up by the
+    /// body they come back in. The server answers this from Session::lastBody.
+    std::function<net::ConnectionId(Entity)> ownerOfGoneBody;
 
     /// Loads the shared JSON table during server startup. A missing or invalid
     /// file is fatal there instead of silently leaving every mob lootless.
