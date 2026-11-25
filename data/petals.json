@@ -1375,7 +1375,7 @@
         "description": "Creates mana.",
         "color": "#90EE90",
         "count": 1,
-        "burstMana": 8.25,
+        "burstMana": 16.5,
         "burstManaChargeMs": 1500,
         "baseMaxMana": 57.75,
         "defendOnly": true,
@@ -1391,7 +1391,7 @@
         "description": "Gathers mana from the environment passively.",
         "color": "#000000",
         "count": 1,
-        "passiveMana": 2.55,
+        "passiveMana": 5.1,
         "baseMaxMana": 57.75,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-21.5 -10.5 38 21\" xmlns=\"http://www.w3.org/2000/svg\">   <path d=\"M -20 0 L -15 0 C -10 -12, 5 -12, 15 0 C 5 12, -10 12, -15 0\" fill=\"#42E3F5\"  stroke=\"#35B8C6\"  stroke-width=\"3\"  stroke-linecap=\"round\"  stroke-linejoin=\"round\"/>   <path d=\"M -9 0 Q 0 -1.5, 7.5 0\"  fill=\"none\"  stroke=\"#35B8C6\"  stroke-width=\"3\"  stroke-linecap=\"round\"  stroke-linejoin=\"round\"/></svg>",
         "isAdminPetal": false
@@ -2221,6 +2221,39 @@
             "speed": 5000,
             "spreadAngle": 360
         }
+    },
+    "concentrated_spray": {
+        "name": "Spray",
+        "damage": 1000,
+        "health": 100,
+        "size": 2,
+        "cooldown": 30,
+        "price": 21,
+        "description": "You can actually shoot this one... but its too destructive.",
+        "color": "#222222",
+        "count": 10,
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#222222\" stroke=\"#222222\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</svg>",
+        "isAdminPetal": true,
+        "projectile": {
+            "count": 300,
+            "distance": 2000,
+            "speed": 5000,
+            "spreadAngle": 25
+        }
+    },
+    "compressed_light": {
+        "name": "Light",
+        "damage": 5,
+        "health": 5,
+        "size": 1,
+        "cooldown": 800,
+        "price": 12,
+        "description": "Weaker than most petals, but recharges very quickly. There are a lot of them...",
+        "color": "#90EE90",
+        "count": 50,
+        "independentHealth": true,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"white\" stroke-width=\"4\" stroke=\"#cfcfcf\"/>\n</svg>",
+        "isAdminPetal": true
     },
     "file": {
         "name": "File",

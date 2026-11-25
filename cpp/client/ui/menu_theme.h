@@ -92,6 +92,9 @@ inline constexpr PanelSkin kAssetsSkin{0x3E7C74u, 0x63A89Eu};
 /// which is the one way in. Its Refreshing page a deeper violet, so the two
 /// pages read as two rooms of the same card.
 inline constexpr PanelSkin kTrialsSkin{0x8A63D2u};
+/// The squad invite card under the HUD: a rose pink, which no panel the card
+/// could sit beside wears, so it reads as news rather than as a menu.
+inline constexpr PanelSkin kSquadInviteSkin{0xD47A93u};
 inline constexpr PanelSkin kRefreshingTrialsSkin{0x6A4AAEu};
 
 // --- shared panel metrics ---------------------------------------------------

@@ -4640,3 +4640,42 @@ TEST(a_flower_inside_a_folder_counts_toward_the_computer_in_biome) {
     CHECK(!sawText(client, "folder"));
     CHECK(!sawText(client, "Folder"));
 }
+
+TEST(a_squad_invite_raises_the_card_and_joining_takes_it_down) {
+    Harness h("cmd-squad-card", [](const std::string& path) {
+        seedUser(path, "lead", "password7");
+        seedUser(path, "mate", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient lead;
+    NetClient mate;
+    CHECK(loginAs(h, lead, "lead", "password7"));
+    CHECK(loginAs(h, mate, "mate", "password7"));
+
+    CHECK(say(h, lead, "/squad-create"));
+    CHECK(say(h, lead, "/squad-invite mate"));
+    CHECK(h.stepUntil({&lead, &mate}, [&] { return mate.squadInvite().waiting; }));
+    CHECK(mate.squadInvite().fromUsername == "lead");
+    CHECK(mate.squadInvite().expiresAtMillis > 0);
+
+    // The card's Join button sends exactly this.
+    CHECK(say(h, mate, "/squad-accept"));
+    CHECK(h.stepUntil({&lead, &mate}, [&] { return mate.squad().inSquad; }));
+    CHECK(!mate.squadInvite().waiting);
+}
+
+TEST(players_online_counts_signed_in_people) {
+    Harness h("cmd-players-online", [](const std::string& path) {
+        seedUser(path, "one", "password7");
+        seedUser(path, "two", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient one;
+    NetClient two;
+    CHECK(loginAs(h, one, "one", "password7"));
+    CHECK(loginAs(h, two, "two", "password7"));
+    CHECK(say(h, one, "/players-online"));
+    CHECK(h.stepUntil({&one, &two}, [&] { return sawText(one, "Players online: <b>2</b>"); }));
+}

@@ -1518,7 +1518,15 @@ void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, doub
     // spends (shoveSpeed), a mob's is spent over about a third of a second
     // (kKnockbackSpendDecay). Worn rubbers scale it (knockbackTakenScale,
     // above), and no second mass division is involved.
-    world.ensure<Knockback>(victim).impulse = direction * (strength / mass);
+    //
+    // Replaced only by a STRONGER shove within the tick. Every petal carries
+    // knockback 5 by default, and a lentil pulls a whole ring onto the same mob
+    // at once: a plain replace let whichever petal landed last in the tick
+    // overwrite a jelly's shove with its own nudge, so the jelly hit and the
+    // mob did not move. Not summed either, or a ring of jellies would stack.
+    Knockback& knockback = world.ensure<Knockback>(victim);
+    const Vec2 impulse = direction * (strength / mass);
+    if (impulse.lengthSq() >= knockback.impulse.lengthSq()) knockback.impulse = impulse;
 }
 
 namespace {

@@ -419,7 +419,7 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
     // Server-side floor on the graded drop: a rare mob never grades below one
     // tier under it, an epic or better below two. Chaff passes floorTier 0 --
     // it is the one thing the floor must not lift.
-    const int minTier = tier >= 3 ? tier - 2 : (tier == 2 ? 1 : 0);
+    const int minTier = gradedDropFloor(mobRarity);
 
     const auto push = [&](const DropDef& drop, Rarity rarity, double probability,
                           int floorTier = 0) {
@@ -465,7 +465,8 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         const double up =
             std::min(kMaxDropUpgradeChance * 100.0, upgradePercent(base) * upgradeMultiplier);
         // The server only rolls the downgrade when the upgrade missed.
-        const double down = downgradePercent(base) * (100.0 - up) / 100.0;
+        const double down = downgradePercent(base) * dropDowngradeMultiplier(mobRarity) *
+                            (100.0 - up) / 100.0;
         const double same = std::max(0.0, 100.0 - up - down);
         std::array<double, kDropTiers> perCopy{};
         const auto land = [&](Rarity rarity, double percent) {
@@ -536,8 +537,11 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         outcomes(lower, share * 0.9, *drop);
         outcomes(drop->rarity, share * 0.1, *drop);
         // Every kill this row is NOT the graded drop, it still drops -- as
-        // chaff, which the floor above deliberately does not reach.
-        push(*drop, chaff, (1.0 - share) * 100.0);
+        // chaff, which the floor above deliberately does not reach. A super's
+        // climbs a tier at chaffUpgradeChance.
+        const double chaffUp = chaffUpgradeChance(mobRarity);
+        push(*drop, chaff, (1.0 - share) * 100.0 * (1.0 - chaffUp));
+        if (chaffUp > 0.0) push(*drop, lower, (1.0 - share) * 100.0 * chaffUp);
     }
     return rows;
 }

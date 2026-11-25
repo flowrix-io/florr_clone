@@ -656,7 +656,33 @@ constexpr ChangelogEntry kChangelog[] = {
         "New petal: Paperclip",
         "New petal: File",
         "Increased Super to Eternal craft chance",
+        "Apexes have twice the health and damage and now spawn every 2 to 3 hours",
+        "Apexes drop Eternals more often and can now drop Ultras",
+        "Mythics and Ultras spawn more often",
+        "Mythic, Ultra, Super and Eternal mobs drop their own rarity much more often",
+        "Mob gallery now shows apex drops per petal, with an x10 badge",
+        "New settings: Invert Attack and Invert Defend in Controls",
+        "Buffed Triangle: 1s reload, and each other Triangle equipped adds damage to every Triangle",
+        "Buffed Wing: twice the damage and health",
+        "Fixed Gas not doing anything; it now poisons every mob it drifts through",
+        "Target dummies now show the real damage of pets like Stick's sandstorms",
+        "Fixed Splitter counting you twice in /biome",
         "Improvements and bugfixes"
+      }
+    },
+    {"November 24, 2026",
+      {
+        "Squad invites now pop up under your name with Join and Ignore buttons",
+        "New command: /players-online",
+        "New setting: Show Super Spawn/Kill Messages in Graphics",
+        "Invert Attack and Invert Defend now work on both Splitter copies",
+        "Fixed Jelly sometimes not knocking mobs back, especially with Lentil",
+        "Nerfed Jelly: 30% less knockback",
+        "Apexes deal much less damage but have twice the health",
+        "Doubled Eternal to Apex craft chance",
+        "Super mobs drop more Ultras and fewer Mythics",
+        "Doubled Magic Leaf and Magic Orb mana regen",
+        "Antennae zoom animation is twice as fast"
       }
     }
 };

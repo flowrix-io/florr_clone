@@ -870,6 +870,9 @@ private:
     /// The roster as this client should see it. A null squad is the browser's
     /// `squadUpdate null` and carries nothing after its flag.
     void sendSquadUpdate(net::Connection&, const Squad*);
+    /// Raises the invite card on `connection`'s client: `inviter` asked them
+    /// into a squad, and the invite stands for kSquadInviteMillis.
+    void sendSquadInvite(net::Connection&, const std::string& inviter);
     /// Sends the roster to every human in it. Called after every membership,
     /// leadership or visibility change -- and after a member spawns or
     /// despawns, because the wire ids in it belong to bodies.

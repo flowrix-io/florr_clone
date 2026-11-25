@@ -114,6 +114,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::SkinPage:            return "skinPage";
         case net::ServerMessage::SkinsFetched:        return "skinsFetched";
         case net::ServerMessage::GuildMapUpdate:      return "guildMapUpdate";
+        case net::ServerMessage::SquadInviteReceived: return "squadInvite";
         case net::ServerMessage::SkinPublished:       return "skinPublished";
         case net::ServerMessage::SkinDeleted:         return "skinDeleted";
         case net::ServerMessage::Notifications:       return "notifications";
@@ -349,6 +350,7 @@ void NetClient::forgetAccount() {
     squad_ = SquadState{};
     guild_ = GuildState{};
     guildInvite_ = GuildInvite{};
+    squadInvite_ = SquadInvite{};
     trialProgress_ = TrialProgressView{};
     trial_ = TrialView{};
     trialReward_ = TrialRewardReceipt{};
@@ -1238,6 +1240,7 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::SkinPage:      handleSkinPage(reader); break;
         case net::ServerMessage::SkinsFetched:  handleSkinsFetched(reader); break;
         case net::ServerMessage::GuildMapUpdate: handleGuildMapUpdate(reader); break;
+        case net::ServerMessage::SquadInviteReceived: handleSquadInviteReceived(reader); break;
         case net::ServerMessage::SkinPublished: handleSkinPublished(reader); break;
         case net::ServerMessage::SkinDeleted:   handleSkinDeleted(reader); break;
         case net::ServerMessage::SkinVotes:     handleSkinVotes(reader); break;
@@ -1889,7 +1892,19 @@ void NetClient::handleSquadUpdate(ByteReader& reader) {
         }
     }
     if (!reader.ok()) return;
+    // In a squad, by whatever road: an invite still up is spent or moot.
+    if (next.inSquad) squadInvite_ = SquadInvite{};
     squad_ = std::move(next);
+}
+
+void NetClient::handleSquadInviteReceived(ByteReader& reader) {
+    SquadInvite invite;
+    invite.fromUsername = reader.str();
+    const std::uint32_t lifetimeMillis = reader.u32();
+    if (!reader.ok()) return;
+    invite.waiting = true;
+    invite.expiresAtMillis = wallClockMillis() + static_cast<std::int64_t>(lifetimeMillis);
+    squadInvite_ = std::move(invite);
 }
 
 void NetClient::handleGuildUpdate(ByteReader& reader) {

@@ -67,9 +67,9 @@ constexpr double kDeathWashAlpha = 0.54;
 const double kDeathCardEaseSeconds = easeTimeConstant(0.2);
 const double kLowHealthVignetteEaseSeconds = easeTimeConstant(0.1);
 /// How the view follows antennae going on or coming off: a time constant of
-/// 0.3 s, so the zoom is mostly there in half a second and settled in about
-/// one. Slow enough to read as a zoom rather than a cut.
-constexpr double kLoadoutZoomEaseSeconds = 0.3;
+/// 0.15 s, so the zoom is mostly there in a quarter of a second and settled in
+/// about half of one. Still slow enough to read as a zoom rather than a cut.
+constexpr double kLoadoutZoomEaseSeconds = 0.15;
 
 /// The on-screen keyboard's lift (see the base transform in frame()): the air
 /// left between the focused field and the top of the keyboard, and how fast the

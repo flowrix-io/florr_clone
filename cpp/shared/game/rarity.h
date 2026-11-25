@@ -145,13 +145,13 @@ inline constexpr Rarity minionRarity(Rarity asked) {
 /// wall, not a gentle step, so a common-tier loadout cannot chip down a
 /// legendary by patience alone.
 inline constexpr std::array<double, kLadderRarityCount> kMobHealthScale = {
-    1.0, 3.75, 13.5, 54.0, 324.0, 3159.0, 126830.0, 2374000.0, 1e7, 4e8,
+    1.0, 3.75, 13.5, 54.0, 324.0, 3159.0, 126830.0, 2374000.0, 1e7, 8e8,
 };
 
 /// Mob damage per tier -- a clean 3x ladder, so a tier above you roughly
-/// triples what one touch costs.
+/// triples what one touch costs. Apex is the one jump past it: 50x eternal's.
 inline constexpr std::array<double, kLadderRarityCount> kMobDamageScale = {
-    1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0, 3936600.0,
+    1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0, 328050.0,
 };
 
 /// kMobDamageScale for any rarity: universal and Admin read apex's, as a mob
@@ -369,11 +369,11 @@ inline double dropLadderChance(Rarity tier) {
 /// Probability that a craft from `from` to the next tier succeeds. Halves each
 /// tier from a base of 64% up to ultra -> super's 1%, so common->uncommon is
 /// routine; past ultra it stops halving: super -> eternal is 0.9%, and
-/// eternal -> apex is pinned at 0.25%, so apex crafts stay rare.
+/// eternal -> apex is pinned at 0.5%, so apex crafts stay rare.
 inline double craftSuccessChance(Rarity from) {
     const int i = rarityIndex(from);
     const int ultra = rarityIndex(Rarity::Ultra);
-    if (from == Rarity::Unique) return 0.0025;
+    if (from == Rarity::Unique) return 0.005;
     if (i > ultra) return std::max(0.0, dropLadderChance(Rarity::Ultra) - 0.001 * (i - ultra));
     return dropLadderChance(from);
 }
@@ -463,6 +463,32 @@ inline double dropUpgradeMultiplier(Rarity mobRarity) {
 /// than the tier under it (user).
 inline constexpr double kApexEternalDropChance = 0.30;
 inline constexpr double kApexUltraDropChance = 0.20;
+
+/// What a mob's tier multiplies dropDowngradeChance by. A super's graded drop
+/// never slips a tier, so it is a super or an ultra. Shared so the gallery
+/// tooltip quotes what the server rolls.
+inline double dropDowngradeMultiplier(Rarity mobRarity) {
+    return mobRarity == Rarity::Super ? 0.0 : 1.0;
+}
+
+/// The lowest tier a mob's ONE graded drop may land at, as a rarity index:
+/// a rare mob's one tier under it, an epic or better two -- except a super,
+/// whose graded drop is held to ultra, one tier under it.
+inline int gradedDropFloor(Rarity mobRarity) {
+    const int tier = rarityIndex(mobRarity);
+    if (mobRarity == Rarity::Super) return tier - 1;
+    if (tier >= rarityIndex(Rarity::Epic)) return tier - 2;
+    if (tier >= rarityIndex(Rarity::Rare)) return tier - 1;
+    return 0;
+}
+
+/// The chance a mob's chaff -- every drop that is not its graded one, flat two
+/// tiers under it -- comes out one tier higher instead. Only a super's: its
+/// chaff is an ultra 60% of the time and a mythic otherwise, so a super kill
+/// leaves more ultras than mythics.
+inline double chaffUpgradeChance(Rarity mobRarity) {
+    return mobRarity == Rarity::Super ? 0.6 : 0.0;
+}
 
 /// Chance a drop rolls one tier below the mob that dropped it.
 inline double dropDowngradeChance(Rarity mobRarity) {

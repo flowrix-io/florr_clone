@@ -540,6 +540,13 @@ enum class ServerMessage : std::uint8_t {
     GuildMapUpdate,     ///< u16 count, { u32 netId }* -- the wire ids of the bodies
                         ///< of the viewer's online guildmates, for the minimap.
                         ///< (Version 95.)
+    SquadInviteReceived, ///< str fromUsername, u32 lifetimeMillis -- somebody
+                        ///< invited this player into their squad. Raises the
+                        ///< Join / Ignore card under the HUD, which answers
+                        ///< with the /squad-accept or /squad-decline chat
+                        ///< command; `lifetimeMillis` is how long the invite
+                        ///< stands before the server lets it lapse.
+                        ///< (Version 97.)
 };
 
 // ---------------------------------------------------------------------------
@@ -668,6 +675,13 @@ enum InputFlags : std::uint8_t {
     // Bit 3 was an admin remove request; retired and ignored.
     InputAdminKill = 1 << 4,
     InputAdminTeleport = 1 << 5,
+    /// The player's Invert Attack / Invert Defend settings, which the client
+    /// otherwise applies on its own side. Carried so the half of a split
+    /// flower nobody is steering can stand the way an idle player's flower
+    /// does: petals out with Invert Attack on, in with Invert Defend on.
+    /// (Version 97.)
+    InputInvertAttack = 1 << 6,
+    InputInvertDefend = 1 << 7,
 };
 
 /// One tick of intent from a client.
