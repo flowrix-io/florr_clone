@@ -403,6 +403,7 @@ Entity LootSystem::spawnDrop(World& world, std::uint16_t petalIndex, Rarity rari
     DropItem item;
     item.configIndex = petalIndex;
     item.rarity = rarity;
+    item.magnetReadyAtMillis = nowMillis_ + kMagnetPickupDelayMillis;
     // Resolved to CLAIMS here, where the world is in hand: the ranking that
     // produced this list deals in bodies, and a body is not who a drop
     // belongs to.
@@ -410,8 +411,13 @@ Entity LootSystem::spawnDrop(World& world, std::uint16_t petalIndex, Rarity rari
     item.eligible.reserve(eligible.size());
     for (const Entity claimant : eligible) {
         const PlayerAccount* account = world.tryGet<PlayerAccount>(claimant);
-        item.eligible.push_back(
-            LootClaim{claimant, account != nullptr ? account->connection : 0});
+        net::ConnectionId owner = account != nullptr ? account->connection : 0;
+        // Between lives: claimed by who it was, so the body they come back in
+        // can see it and pick it up (ownerOfGoneBody).
+        if (account == nullptr && !world.isAlive(claimant) && ownerOfGoneBody) {
+            owner = ownerOfGoneBody(claimant);
+        }
+        item.eligible.push_back(LootClaim{claimant, owner});
     }
     world.add<DropItem>(e, std::move(item));
 
@@ -427,14 +433,18 @@ Entity LootSystem::spawnDrop(World& world, std::uint16_t petalIndex, Rarity rari
 
 namespace {
 
+/// How far a flower reaches for loot without a magnet.
+double basePickupReach(const World& world, Entity player) {
+    const Body* body = world.tryGet<Body>(player);
+    return body != nullptr ? body->radius * 2.0 : kDropPickupRadius;
+}
+
 /// How far a flower reaches for loot.
 ///
 /// Magnetism widens the reach and nothing else. Pulling the drop in would
 /// consume it before a snapshot ever carried it.
 double pickupReach(const World& world, Entity player, const PlayerModifiers& mods) {
-    const Body* body = world.tryGet<Body>(player);
-    const double base = body != nullptr ? body->radius * 2.0 : kDropPickupRadius;
-    return base + std::max(0.0, mods.magnetism);
+    return basePickupReach(world, player) + std::max(0.0, mods.magnetism);
 }
 
 } // namespace
@@ -457,14 +467,14 @@ void LootSystem::run(World& world, const SpatialGrid& grid, const ContentRegistr
     bind(world);
     tables_.link(content);
     pickups_.clear();
+    nowMillis_ = nowMillis;
 
     maintainDrops(dt, commands);
     collectPickups(world, grid, commands, events);
     awardDeaths(world, content, rng);
     // Deaths pay out after the broadphase pass, but their loot is still
-    // collectable this tick: the reference rolls a mob's drops inside the very
-    // player step that then tests pickups, so a magnet flower standing on its
-    // own kill takes the item before any snapshot could have carried it. The
+    // collectable this tick by a flower standing on it -- its own reach, not
+    // a magnet's, which waits half a second (kMagnetPickupDelayMillis). The
     // client is not left with nothing to animate -- the pickup cue carries the
     // drop's position and look for exactly this case.
     collectFresh(world, commands, events);
@@ -503,10 +513,11 @@ void LootSystem::collectPickups(World& world, const SpatialGrid& grid, CommandBu
         if (health != nullptr && !health->alive()) return;
 
         const double reach = pickupReach(world, player, mods);
+        const double base = basePickupReach(world, player);
         grid.query(transform.realm, transform.position, reach, candidates_);
         for (const Entity candidate : candidates_) {
             tryCollect(world, player, transform.position, transform.realm, reach * reach,
-                       candidate, commands, events);
+                       base * base, candidate, commands, events);
         }
     });
 }
@@ -518,16 +529,17 @@ void LootSystem::collectFresh(World& world, CommandBuffer& commands, EventQueue&
         if (health != nullptr && !health->alive()) return;
 
         const double reach = pickupReach(world, player, mods);
+        const double base = basePickupReach(world, player);
         for (const Entity candidate : fresh_) {
             tryCollect(world, player, transform.position, transform.realm, reach * reach,
-                       candidate, commands, events);
+                       base * base, candidate, commands, events);
         }
     });
 }
 
 void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, Realm playerRealm,
-                            double reachSq, Entity candidate, CommandBuffer& commands,
-                            EventQueue& events) {
+                            double reachSq, double baseReachSq, Entity candidate,
+                            CommandBuffer& commands, EventQueue& events) {
     DropItem* drop = world.tryGet<DropItem>(candidate);
     if (drop == nullptr) return;
     const Transform* at = world.tryGet<Transform>(candidate);
@@ -538,7 +550,11 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, Re
     // a flower standing at the same coordinates on another map, a contributor
     // who changed map on the tick of the kill, took its copy from there.
     if (at->realm != playerRealm) return;
-    if (distanceSq(at->position, playerPosition) > reachSq) return;
+    // A magnet reaches only for loot that has lain half a second: a fresh kill's
+    // drops are seen on the ground first. Loot already lying there when the
+    // magnet goes on is old enough, and comes in at once.
+    const double reach = nowMillis_ >= drop->magnetReadyAtMillis ? reachSq : baseReachSq;
+    if (distanceSq(at->position, playerPosition) > reach) return;
     const PlayerAccount* taker = world.tryGet<PlayerAccount>(player);
     const net::ConnectionId owner = taker != nullptr ? taker->connection : 0;
     // A bot's body carries no connection; see DropItem::humansOnly.

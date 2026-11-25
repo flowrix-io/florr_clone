@@ -25,6 +25,10 @@
 
 namespace flix {
 
+namespace cluster {
+struct RingSlot;
+}
+
 class Terrain;
 class EventQueue;
 class CombatSystem;
@@ -337,6 +341,17 @@ public:
     /// flag that stops a second death being announced. Left unset the flower
     /// still stands up; its own client simply is not told.
     std::function<void(Entity revived, Entity reviver)> onPlayerRevived;
+
+    /// How `player`'s active row stands: which slots are broken and for how
+    /// long, and the health of the rest. What a flower takes with it to
+    /// another server of a sharded game, where its petals are built anew.
+    std::vector<cluster::RingSlot> captureRing(World& world, const ContentRegistry& registry,
+                                               Entity player, double nowMillis);
+    /// Stands a freshly built body's ring up as captureRing found it, in place
+    /// of the full reload every slot of a new body owes. A slot that no longer
+    /// holds the petal it was captured with serves that reload.
+    void restoreRing(World& world, const ContentRegistry& registry, Entity player,
+                     const std::vector<cluster::RingSlot>& ring, double nowMillis);
 
 private:
     /// The tick's summed passive bonuses. PlayerModifiers has no field for the

@@ -674,7 +674,16 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "adminsOnBoard") showAdminsOnLeaderboard = number != 0;
         else if (key == "changelogSeen") changelogSeen = number;
         else if (key == "zoom") zoom = clamp(std::atof(value.c_str()), kMinZoom, kMaxZoom);
-        else if (key == "interp") interpolation = clamp(std::atof(value.c_str()), 0.05, 0.5);
+        else if (key == "smoothing") interpolation = clamp(std::atof(value.c_str()), 0.05, 0.5);
+        // What `smoothing` was called while the default was the browser build's.
+        // The file always wrote it, so the old default here is a slider nobody
+        // moved and takes the new one. Never written again.
+        else if (key == "interp") {
+            const double saved = std::atof(value.c_str());
+            if (std::fabs(saved - kOldDefaultInterpolationAmount) > 1e-6) {
+                interpolation = clamp(saved, 0.05, 0.5);
+            }
+        }
         else if (key == "renderScale") renderScale = clamp(std::atof(value.c_str()), 0.25, 1.0);
         else if (key == "desynchronized") desynchronizedCanvas = number != 0;
         else if (key == "spawn") spawnChoice = (value == "-" ? std::string() : value);
@@ -738,7 +747,7 @@ bool ClientSettings::save(const std::string& path) const {
          << "adminsOnBoard " << (showAdminsOnLeaderboard ? 1 : 0) << '\n'
          << "changelogSeen " << changelogSeen << '\n'
          << "zoom " << zoom << '\n'
-         << "interp " << interpolation << '\n'
+         << "smoothing " << interpolation << '\n'
          << "renderScale " << renderScale << '\n'
          << "desynchronized " << (desynchronizedCanvas ? 1 : 0) << '\n'
          // A dash rather than an empty field: the reader splits on whitespace,

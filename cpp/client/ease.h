@@ -12,12 +12,15 @@
 // the timestamp is read whenever requestAnimationFrame got round to calling,
 // a few ms either side of the vblank -- and a constant-rate ease fed that
 // noise takes uneven steps across evenly spaced presents, which reads as a
-// shimmer on anything moving. App::frame advances the period once a frame and
-// every ease reads it.
+// shimmer on anything moving. A frame that took two or more refreshes is not
+// noise, though: the display really did hold the last picture that long, so it
+// steps by that many whole periods. App::frame advances the period once a frame
+// and every ease reads it.
 //
 // Do not ease anything with a bare `value += (target - value) * k`. That is a
 // fraction per FRAME and tracks twice as fast at 120 Hz as at 60.
 
+#include <algorithm>
 #include <cmath>
 
 #include "shared/core/types.h"
@@ -36,6 +39,10 @@ inline constexpr double kDefaultEaseStepSeconds = 1.0 / 60.0;
 /// twenty frames to settle on a new refresh rate when a window moves between
 /// monitors, while one frame's timing noise moves it by a twentieth.
 inline constexpr double kFramePeriodSmoothing = 0.05;
+
+/// How many frames in a row may each be several refreshes before that many
+/// refreshes is taken to be the period.
+inline constexpr int kRelearnFrames = 30;
 
 /// The time constant of an ease that closes `fraction` of the gap per frame
 /// at 60 fps. The browser build and gardn state every ease that way, and the
@@ -60,26 +67,63 @@ inline constexpr double easeTimeConstantFromRatePerMs(double ratePerMs) {
 /// other.
 class FramePeriod {
 public:
-    /// Takes in one frame's measured delta and returns the period to step by.
+    /// Takes in one frame's measured delta and returns the time to step by: a
+    /// whole number of refresh periods, nudged so that the steps add up to the
+    /// time that really passed.
     ///
-    /// A delta more than twice the period, or under half of it, is clipped
-    /// before it is averaged in: a hitch is a dropped frame, not a new refresh
-    /// rate, and must not drag every ease after it.
+    /// Only the delta's share per refresh is averaged into the period, clipped
+    /// to within half and twice of it: a hitch is dropped frames, not a new
+    /// refresh rate, and must not drag every ease after it. Stepping a dropped
+    /// frame by a single period instead draws everything moving at half speed
+    /// for the length of it.
     double advance(double measuredSeconds) {
         const double measured = clamp(measuredSeconds, 0.0, kMaxEaseStepSeconds);
         if (!(seconds_ > 0.0)) {
             seconds_ = measured > 0.0 ? measured : kDefaultEaseStepSeconds;
         } else {
-            const double clipped = clamp(measured, seconds_ * 0.5, seconds_ * 2.0);
-            seconds_ += (clipped - seconds_) * kFramePeriodSmoothing;
+            const double refreshes = std::max(1.0, std::round(measured / seconds_));
+            // Off the period as it stood, so the count and the step agree.
+            const double whole = refreshes * seconds_;
+            // What rounding to whole refreshes left over, paid back a little
+            // a frame: without it the steps drift from the clock, and paid at
+            // once it would be the timing noise again.
+            drift_ = clamp(drift_ + measured - whole, -seconds_, seconds_);
+            const double nudge = clamp(drift_ * kFramePeriodSmoothing, -seconds_ * 0.02,
+                                       seconds_ * 0.02);
+            drift_ -= nudge;
+            step_ = std::min(whole + nudge, kMaxEaseStepSeconds);
+            // Never once a single refresh for this long: the period itself is
+            // wrong -- a first delta of nothing, a window moved from a 120 Hz
+            // monitor to a 60 Hz one -- and the share below cannot say so,
+            // being a fraction of every frame. Taken from the frames instead.
+            manyTotal_ = refreshes > 1.0 ? manyTotal_ + measured : 0.0;
+            manyFrames_ = refreshes > 1.0 ? manyFrames_ + 1 : 0;
+            if (manyFrames_ >= kRelearnFrames) {
+                seconds_ = manyTotal_ / manyFrames_;
+                manyTotal_ = 0.0;
+                manyFrames_ = 0;
+                drift_ = 0.0;
+                return step_;
+            }
+            const double share = clamp(measured / refreshes, seconds_ * 0.5, seconds_ * 2.0);
+            seconds_ += (share - seconds_) * kFramePeriodSmoothing;
+            return step_;
         }
-        return seconds_;
+        step_ = seconds_;
+        return step_;
     }
 
+    /// The smoothed time between two refreshes.
     double seconds() const { return seconds_ > 0.0 ? seconds_ : kDefaultEaseStepSeconds; }
+    /// What the last advance() returned.
+    double step() const { return step_ > 0.0 ? step_ : kDefaultEaseStepSeconds; }
 
 private:
     double seconds_ = 0.0;
+    double step_ = 0.0;
+    double drift_ = 0.0;
+    double manyTotal_ = 0.0;
+    int manyFrames_ = 0;
 };
 
 inline FramePeriod& framePeriod() {
@@ -88,7 +132,7 @@ inline FramePeriod& framePeriod() {
 }
 
 /// This frame's ease step. Advanced once per frame by App::frame.
-inline double easeStepSeconds() { return framePeriod().seconds(); }
+inline double easeStepSeconds() { return framePeriod().step(); }
 
 /// The fraction of the remaining gap an ease with time constant `tau` closes
 /// over `stepSeconds`.

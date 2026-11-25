@@ -193,6 +193,8 @@ std::string GameServer::squadMemberBiome(SquadMemberId member) const {
         const std::string biome = biomeOfEntity(session.entity);
         if (!biome.empty()) return biome;
     }
+    // On another server of a sharded game, which said where.
+    if (!session.elsewhereBiome.empty()) return session.elsewhereBiome;
     // Nobody home: where their spawn choice is about to put them, which is
     // what the squad will have to live with the moment they press play.
     //
@@ -293,7 +295,26 @@ void GameServer::rebuildSquadIndex() {
     for (const auto& entry : squads_.all()) {
         std::vector<SquadBody> bodies;
         for (const SquadMemberId& member : entry.second.members) {
-            const Entity body = squadEntityOf(member);
+            Entity body = squadEntityOf(member);
+            // BETWEEN LIVES is still in the squad. A member who died to the
+            // boss and is on the title screen, or loading back in, when it
+            // falls is filed by the body they last played -- the one their
+            // damage is still credited to (Session::lastBody) -- so the squad
+            // still shares, and their share is reserved for their connection
+            // (LootSystem::ownerOfGoneBody). Skipping them broke the squad up
+            // at the worst moment: the survivor was paid alone and the dead
+            // member's drops went to a body nobody could ever claim them as.
+            if (body == NULL_ENTITY && !member.bot()) {
+                const auto found = sessions_.find(member.connection);
+                if (found != sessions_.end()) {
+                    const Session& session = found->second;
+                    if (session.lastBody != NULL_ENTITY && !session.userId.empty() &&
+                        session.lastBodyUserId == session.userId) {
+                        bodies.push_back(SquadBody{session.lastBody, member.connection, true});
+                    }
+                }
+                continue;
+            }
             if (body == NULL_ENTITY) continue;
             // A split member brings BOTH its flowers. They are one person --
             // contenderSize() in loot_eligibility.h counts them as one and

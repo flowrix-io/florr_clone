@@ -233,7 +233,9 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     // buy, but a flower in the arena is playing out of the run's own bag --
     // so the petal would be bought, charged for, and invisible until the run
     // ended. Refused for the same reason talents are.
-    if (session.playing() && (session.realm == Realm::Arena || session.eventKit)) {
+    const cluster::ClientState& there = session.elsewhere.state;
+    if ((session.playing() && (session.realm == Realm::Arena || session.eventKit)) ||
+        (there.playing && (there.arena || there.eventKit))) {
         sendShopResult(connection, net::ShopResultKind::Purchase, false,
                        database_.progress(session.userId).stars,
                        "The shop is closed in the arena.");

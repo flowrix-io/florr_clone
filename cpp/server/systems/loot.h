@@ -170,6 +170,10 @@ private:
 // LootSystem
 // ---------------------------------------------------------------------------
 
+/// How long a fresh drop lies on the ground before a magnet may pull it in.
+/// A flower walking over it still takes it at once.
+inline constexpr double kMagnetPickupDelayMillis = 500.0;
+
 class LootSystem {
 public:
     /// The tier of the best orb of each kind a flower wears, kRarityCount for
@@ -217,6 +221,15 @@ public:
     /// is enough; the callback exists for a runtime that would rather not walk
     /// the list, the list for one that would rather not own a closure.
     std::function<void(const Pickup&)> onPickup;
+    /// The connection a body that is no longer in the world played for, or 0.
+    ///
+    /// A drop is reserved for its claimants' CONNECTIONS as well as their
+    /// bodies, read off each body's PlayerAccount -- which a body between
+    /// lives no longer has. A flower that died to the boss and is on the
+    /// title screen when it falls is still owed its share; reserved for the
+    /// gone body alone, that share could never be seen or picked up by the
+    /// body they come back in. The server answers this from Session::lastBody.
+    std::function<net::ConnectionId(Entity)> ownerOfGoneBody;
 
     /// Loads the shared JSON table during server startup. A missing or invalid
     /// file is fatal there instead of silently leaving every mob lootless.
@@ -279,9 +292,12 @@ private:
     void collectFresh(World& world, CommandBuffer& commands, EventQueue& events);
     /// One flower against one drop: the shared body of both pickup passes.
     /// `playerRealm` is the flower's map, which the drop must be on too.
+    /// `reachSq` is the flower's whole reach, magnet included; `baseReachSq`
+    /// what it reaches without one, which is all a drop younger than its
+    /// magnetReadyAtMillis answers to.
     void tryCollect(World& world, Entity player, Vec2 playerPosition, Realm playerRealm,
-                    double reachSq, Entity candidate, CommandBuffer& commands,
-                    EventQueue& events);
+                    double reachSq, double baseReachSq, Entity candidate,
+                    CommandBuffer& commands, EventQueue& events);
     /// Per-tick item maintenance, in the reference's order: wall push, bounds,
     /// expiry. The push is not a nicety -- nothing resolves the spawn scatter.
     void maintainDrops(double dt, CommandBuffer& commands);
@@ -297,6 +313,9 @@ private:
     std::size_t pickFeatured(Rng& rng) const;
 
     World* boundWorld_ = nullptr;
+    /// The clock run() was last handed: what a drop's magnetReadyAtMillis is
+    /// stamped from and checked against.
+    double nowMillis_ = 0.0;
     std::optional<Query<PlayerTag, Transform, PlayerModifiers>> collectors_;
     std::optional<Query<DropTag, Transform, Lifetime>> drops_;
     std::optional<Query<MobTag, Dead, MobType, Transform>> corpses_;

@@ -448,6 +448,15 @@ TEST(a_flower_doing_nothing_writes_nothing_to_the_journal) {
             input.moveStrength = 1.0;
             input.flags = static_cast<std::uint8_t>(t % 2);
             client.sendInput(input);
+            // A mob its petals killed would be XP, and a row rightly written.
+            World& world = h.server.world();
+            std::vector<Entity> near;
+            const Vec2 at = client.view().self().position;
+            Query<MobTag, Transform> mobs{world};
+            mobs.each([&](Entity e, MobTag&, Transform& transform) {
+                if (distance(transform.position, at) < 2000.0) near.push_back(e);
+            });
+            for (const Entity e : near) world.destroy(e);
             h.step(1, {&client});
         }
     }

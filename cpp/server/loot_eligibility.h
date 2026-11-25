@@ -85,6 +85,18 @@ inline int contenderSize(const std::vector<SquadBody>& group) {
     return people;
 }
 
+/// contenderSize over only the members `counts` accepts -- for one corpse,
+/// the members it is paying (SquadBody::away).
+template <class Counts>
+inline int contenderSize(const std::vector<SquadBody>& group, Counts counts) {
+    std::vector<SquadBody> counted;
+    counted.reserve(group.size());
+    for (const SquadBody& member : group) {
+        if (counts(member)) counted.push_back(member);
+    }
+    return contenderSize(counted);
+}
+
 /// Ranks `contributors` and fills `out` with the players who may be paid.
 ///
 /// `contributors` is the corpse's damage tally, already filtered to positive
@@ -142,7 +154,12 @@ inline void selectLootRecipients(const std::vector<Bounty::Share>& contributors,
             // hitters instead would make a four-flower squad with one idle
             // member rank higher than the same squad with that member
             // helping, which is the wrong way round.
-            ranked.push_back({group, NULL_ENTITY, share.damage, contenderSize(*squad), true});
+            // A member between lives counts only if their last body hit this
+            // mob (SquadBody::away).
+            const int size = contenderSize(*squad, [&](const SquadBody& member) {
+                return !member.away || damageOf(member.body) > 0.0;
+            });
+            ranked.push_back({group, NULL_ENTITY, share.damage, std::max(1, size), true});
         } else {
             existing->score += share.damage;
         }
@@ -188,6 +205,8 @@ inline void selectLootRecipients(const std::vector<Bounty::Share>& contributors,
             // cuts, it cuts the passengers first.
             for (const SquadBody& member : squads->groups[contender.group]) {
                 if (!member.banks() && damageOf(member.body) <= 0.0) continue;
+                // Between lives, and gone before this fight: not paid for it.
+                if (member.away && damageOf(member.body) <= 0.0) continue;
                 members.push_back(member);
             }
             std::stable_sort(members.begin(), members.end(),

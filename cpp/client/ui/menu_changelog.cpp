@@ -684,7 +684,18 @@ constexpr ChangelogEntry kChangelog[] = {
         "Doubled Magic Leaf and Magic Orb mana regen",
         "Antennae zoom animation is twice as fast",
       }
-    }
+    },
+    {"November 25, 2026",
+      {
+        "Made bone much stronger",
+        "Carrot is now much faster and bounces off mobs too",
+        "Increased server mob cap",
+        "Mobs now spawn 3x as fast",
+        "Magnet attracts petals slower now",
+        "Projectile petal changes",
+        "Fixed squad members not getting loot"
+      }
+    },
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

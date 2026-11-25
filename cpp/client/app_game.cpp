@@ -412,18 +412,18 @@ void App::updatePlaying(double dt) {
         }
     }
 
-    // Input is produced at the simulation rate rather than per rendered frame:
-    // a 144 Hz client must not get six times the inputs of a 30 Hz one.
+    // Every frame, as far as net::kInputsPerSecond: a 144 Hz client must not get
+    // more than twice the inputs of a 60 Hz one. A frame a little short of the
+    // step still sends, and owes the difference, so that a 60 Hz display's
+    // timing noise does not have it skip a frame and send twice on the next.
+    // Never more than one: the server steers by the newest, so a stalled frame
+    // has nothing to catch up on.
     inputAccumulator_ += dt;
-    const double step = net::kTickSeconds;
-    int produced = 0;
-    while (inputAccumulator_ >= step && produced < 4) {
-        inputAccumulator_ -= step;
+    const double step = 1.0 / net::kInputsPerSecond;
+    if (inputAccumulator_ >= step * 0.75) {
+        inputAccumulator_ = std::min(inputAccumulator_ - step, step);
         sendInputFrame(step);
-        ++produced;
     }
-    // A long stall must not queue a burst of catch-up input.
-    if (inputAccumulator_ > step * 4) inputAccumulator_ = 0;
 
     // The wheel zooms the camera unless a panel -- or the tutorial box, which
     // is a DOM element and eats the event before the canvas -- is over it, and

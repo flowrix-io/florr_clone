@@ -576,8 +576,13 @@ void GameServer::handleTitanForge(Session& session, net::Connection& connection,
     // player who holds the real one keeps it, the titan still names them,
     // and nobody is told "The Universal" changed hands.
     if (tracked) {
-        takeUniversals(petalIndex, session.userId);
-        universalHolders_[petalIndex] = HolderMemo{session.username, clockMillis_};
+        if (shard_) {
+            // Every other account's is the gateway's to take.
+            shTitanForged(session, petalIndex);
+        } else {
+            takeUniversals(petalIndex, session.userId);
+            universalHolders_[petalIndex] = HolderMemo{session.username, clockMillis_};
+        }
         announceRareCraft(session, petalIndex, Rarity::Universal);
     }
 
@@ -599,6 +604,10 @@ void GameServer::handleTitanHolder(Session& session, net::Connection& connection
         return;
     }
     session.nextTitanQueryMillis = clockMillis_ + kTitanHolderQueryMillis;
+    if (shard_) {
+        shAskTitanHolder(session, petalIndex);
+        return;
+    }
 
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::TitanHolder));

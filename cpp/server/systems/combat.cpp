@@ -1499,6 +1499,15 @@ double collisionDamageTakenScale(const World& world, Entity e) {
 
 } // namespace
 
+Vec2 bounceOffBody(Vec2 velocity, Vec2 toBody) {
+    // The surface normal points from the body back toward the shot.
+    const Vec2 normal = (toBody * -1.0).normalized();
+    if (normal.lengthSq() < 1e-12) return velocity * -1.0;   // dead centre: straight back
+    const double into = velocity.x * normal.x + velocity.y * normal.y;
+    if (into >= 0.0) return velocity;                        // already leaving it
+    return velocity - normal * (2.0 * into);
+}
+
 void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, double strength) {
     if (!std::isfinite(strength) || strength <= 0.0) return;
     if (!world.isAlive(victim)) return;
@@ -3575,6 +3584,9 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             const double cost = bodyDamageOf(world, content, impact.victim);
             const bool victimIsShot = world.has<Projectile>(impact.victim);
             const bool victimIsMob = world.has<MobTag>(impact.victim);
+            // A body a carrot bounces off: a mob, or an NPC such as a target
+            // dummy. Read now, before the hit can retire the victim.
+            const bool victimIsBody = victimIsMob || world.has<NpcTag>(impact.victim);
 
             const double swing =
                 hitKind == DamageKind::Glitch ? rollGlitchDamage(damage) : damage;
@@ -3634,6 +3646,29 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                 applyNoHeal(world, impact.victim, stats.noHealDurationMillis, nowMillis);
             }
 
+            // A carrot BOUNCES off a mob or a dummy, the way it comes off a
+            // wall: the part of its velocity into the body is turned round,
+            // the part along it kept, about the line from the body's centre to
+            // the point the shot met it. Head-on, it comes straight back. A
+            // bounce costs it nothing -- mob body damage would otherwise
+            // out-hit its whole pool and end it on the first touch -- and gives
+            // it no flight back either: it bounces on the range it has left,
+            // which is what ends it, so it cannot ricochet between two mobs
+            // forever. Its own ledger keeps it from hitting the same body again
+            // on the way out. Only values written: the loop may not change the
+            // world's shape, and this does not.
+            if (victimIsBody) {
+                const Projectile* flight = world.tryGet<Projectile>(shot.entity);
+                if (flight != nullptr && flight->bouncesOffWalls) {
+                    if (Motion* motion = world.tryGet<Motion>(shot.entity)) {
+                        motion->velocity = bounceOffBody(motion->velocity, impact.offset);
+                    }
+                    // One bounce a tick: what it was heading for behind this
+                    // body is no longer where it is heading.
+                    break;
+                }
+            }
+
             // What the hit cost the shot. Its own health pool is the whole of
             // penetration: nothing counts victims, the pool simply runs out.
             // A shot whose ammunition declares no pool was born with one point
@@ -3657,16 +3692,6 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // Through it and still flying: the hit cost it, so it flashes.
             const double share = health->max > 0.0 ? cost / health->max : 0.0;
             flashStruck(world, shot.entity, cost, share, false);
-            // A carrot that passes through a mob gets its whole flight back.
-            // A wall does NOT refill it (movement.cpp): that let one carrot
-            // ricochet round a room forever. Only a value written: the loop
-            // may not change the world's shape, and this does not.
-            if (victimIsMob) {
-                if (Projectile* flight = world.tryGet<Projectile>(shot.entity);
-                    flight != nullptr && flight->bouncesOffWalls) {
-                    refillShotFlight(*flight, world.tryGet<Lifetime>(shot.entity));
-                }
-            }
         }
     }
 }

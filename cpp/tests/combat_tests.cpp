@@ -971,6 +971,24 @@ TEST(a_weaker_hit_in_the_same_tick_does_not_erase_a_jellys_shove) {
     CHECK_NEAR(a.world.get<Knockback>(mob).impulse.y, 700.0, 1e-9);
 }
 
+TEST(a_carrot_bounces_off_a_mob_like_off_a_wall) {
+    // Head-on into a mob to its right: straight back.
+    Vec2 v = bounceOffBody(Vec2{600, 0}, Vec2{20, 0});
+    CHECK_NEAR(v.x, -600.0, 1e-9);
+    CHECK_NEAR(v.y, 0.0, 1e-9);
+    // A glancing hit on a mob below the path: the part into it turns round,
+    // the part along it is kept.
+    v = bounceOffBody(Vec2{400, 300}, Vec2{0, 20});
+    CHECK_NEAR(v.x, 400.0, 1e-9);
+    CHECK_NEAR(v.y, -300.0, 1e-9);
+    // Already moving away: untouched.
+    v = bounceOffBody(Vec2{-100, 0}, Vec2{20, 0});
+    CHECK_NEAR(v.x, -100.0, 1e-9);
+    // Dead centre: straight back.
+    v = bounceOffBody(Vec2{0, 500}, Vec2{0, 0});
+    CHECK_NEAR(v.y, -500.0, 1e-9);
+}
+
 TEST(knockback_preserves_the_typescript_magnitude_and_skips_static_entities) {
     Arena a;
     const Entity mover = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 0.001);
@@ -4151,20 +4169,18 @@ TEST(a_hit_books_a_seed_against_a_mobs_ammunition_ring) {
 // Bone: armour the petal itself wears
 // ---------------------------------------------------------------------------
 
-TEST(a_bones_armor_rides_the_mob_armor_ladder) {
+TEST(a_bones_armor_climbs_the_full_ladder_with_no_cap) {
     const Fixture& f = fixture();
     CHECK(f.ok);
     if (f.boney == kInvalidIndex) return;
 
-    // "Just like regular entity armour": the same 3x steps a mob's climbs, and
-    // the same flattening above ultra.
+    // 3x a tier all the way up: no flattening above ultra any more.
     static const double kExpected[kLadderRarityCount] = {
-        10.0, 30.0, 90.0, 270.0, 810.0, 2430.0, 7290.0, 7290.0, 7290.0, 7290.0,
+        10.0, 30.0, 90.0, 270.0, 810.0, 2430.0, 7290.0, 21870.0, 65610.0, 196830.0,
     };
     for (int t = 0; t < kLadderRarityCount; ++t) {
         const PetalStats s = f.registry.petalStats(f.boney, clampRarity(t));
         CHECK_NEAR(s.petalArmor, kExpected[t], 1e-9);
-        CHECK_NEAR(s.petalArmor, 10.0 * kMobArmorScale[static_cast<std::size_t>(t)], 1e-9);
     }
     CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Mythic).petalArmor, 0.0, 1e-12);
 }

@@ -54,6 +54,13 @@ public:
         raw(v.data(), n);
     }
 
+    /// Length-prefixed bytes with no 64KB cap: for the link between two
+    /// servers of a sharded game, never for a client.
+    void blob(const std::string& v) {
+        u32(static_cast<std::uint32_t>(v.size()));
+        raw(v.data(), v.size());
+    }
+
     /// World position. f32 resolves to ~0.004 units at the far edge of a 60k
     /// world, well under a pixel once drawn, so positions never need eight
     /// bytes on the wire even though the simulation keeps them as doubles.
@@ -148,6 +155,14 @@ public:
         return out;
     }
 
+    std::string blob() {
+        const std::uint32_t n = u32();
+        if (!want(n)) return {};
+        std::string out(reinterpret_cast<const char*>(data_ + pos_), n);
+        pos_ += n;
+        return out;
+    }
+
     Vec2 position() {
         const float x = f32();
         const float y = f32();
@@ -157,6 +172,12 @@ public:
     double angle() { return (static_cast<double>(u16()) / 65536.0 - 0.5) * kTau; }
     double unitByte() { return static_cast<double>(u8()) / 255.0; }
     double unitShort() { return static_cast<double>(u16()) / 65535.0; }
+
+    /// What is left unread, as bytes: a frame passed on rather than decoded.
+    const std::byte* rest() const { return data_ + pos_; }
+    /// The whole frame, whatever has been read of it.
+    const std::byte* begin() const { return data_; }
+    std::size_t size() const { return size_; }
 
     std::size_t remaining() const { return failed_ ? 0 : size_ - pos_; }
 

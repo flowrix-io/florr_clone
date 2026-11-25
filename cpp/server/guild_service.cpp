@@ -113,6 +113,7 @@ ByteWriter GameServer::guildRosterMessage(const Json& guild) {
 }
 
 std::string GameServer::guildLocation(const Session& session) const {
+    if (playingElsewhere(session)) return biomeLabel(biomeOfRealm(session.elsewhere.state.realm));
     return biomeLabel(biomeOfEntity(session.entity));
 }
 

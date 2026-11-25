@@ -1207,7 +1207,9 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ServerMessage::ProfileDelta: handleProfileDelta(reader); break;
         case net::ServerMessage::JoinAccepted: handleJoinAccepted(reader); break;
         case net::ServerMessage::Snapshot:
-            view_.applySnapshot(reader);
+            // Stamped from when the bytes arrived, as a Pong is: the wait for
+            // this frame's read is the client's own and not lateness.
+            view_.applySnapshot(reader, renderClockMillis() - connection.frameAgeMillis());
             requestMissingSkins();
             break;
         case net::ServerMessage::Chat:         handleChat(reader); break;

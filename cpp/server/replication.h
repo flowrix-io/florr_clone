@@ -37,6 +37,10 @@ namespace flix {
 class NetIdAllocator {
 public:
     std::uint32_t next() { return ++counter_; }
+    /// Counts on from `base`. Two servers of a sharded game must never hand
+    /// out one id between them: a client's chat bubbles name a flower by it
+    /// whichever server that flower is on.
+    void startFrom(std::uint32_t base) { counter_ = base; }
 
 private:
     std::uint32_t counter_ = 0;
@@ -349,6 +353,9 @@ public:
         /// would land unevenly on the frames that actually go out.
         std::uint32_t snapshotIndex = 0;
         double nowMillis = 0;
+        /// Added to nowMillis for the stamp on the wire, which is when the bodies
+        /// were moved to rather than when that was: GameServer::motionLeadMillis_.
+        double motionLeadMillis = 0;
         const EventQueue* events = nullptr;
         /// Bodies streamed to this client however far away they are.
         ///
@@ -425,8 +432,8 @@ public:
 
     /// One snapshot in this many carries the far band. Staggered by net id, so
     /// the band's cost is spread evenly over the snapshots rather than landing
-    /// on every fourth one as a spike.
-    int farSnapshotStride = 4;
+    /// on every sixth one as a spike.
+    int farSnapshotStride = 6;
 
     /// Ceiling on entities in one snapshot.
     ///

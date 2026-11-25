@@ -77,6 +77,12 @@ public:
     /// which is the reference's "You are already in a squad."
     Squad* create(SquadMemberId leader, bool isPublic, Rng& rng);
 
+    /// Files a squad made on another server of a sharded game, under the id it
+    /// already has. Null when that id, or a member, is taken here.
+    Squad* adopt(Squad squad);
+    /// Drops a squad and its invitations without a word to anybody in it.
+    void disband(const std::string& id);
+
     Squad* find(const std::string& id);
     Squad* forMember(SquadMemberId who);
 
@@ -157,6 +163,11 @@ struct SquadBody {
     Entity body = NULL_ENTITY;
     /// The connection behind it, or 0 for a bot.
     net::ConnectionId owner = 0;
+    /// A member between lives -- dead, on the title screen, loading back in
+    /// -- filed by the body they last played (Session::lastBody). Counted for
+    /// a mob only if that body actually hit it: a member who left before the
+    /// fight is not paid for it, and does not dilute the squad's score.
+    bool away = false;
 
     /// Whether a free share given to this member goes anywhere.
     bool banks() const { return owner != 0; }

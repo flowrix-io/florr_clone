@@ -419,7 +419,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // --- header -----------------------------------------------------------
     out.u8(static_cast<std::uint8_t>(net::ServerMessage::Snapshot));
     out.u32(frame.tick);
-    out.f64(frame.nowMillis);
+    out.f64(frame.nowMillis + frame.motionLeadMillis);
 
     // The viewer's own position, always: the camera eases toward it every
     // frame, so it never goes through the change-mask path.

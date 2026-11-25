@@ -32,6 +32,8 @@
 //   bot_ai.cpp           the bots
 //   splitter.cpp, sacrifice.cpp, waves.cpp
 //                        the splitter, the sacrifice petal, waves mode
+//   cluster/             sharding: the gateway, the servers it deals biomes to,
+//                        and the link between them
 //   inventory.cpp        the bag and the worn ring as the database keeps them
 // and game_server_internal.h holds the helpers more than one of them uses.
 
@@ -45,6 +47,9 @@
 
 #include "shared/core/process_stats.h"
 #include "server/admin_db_key.h"
+#include "server/cluster/gateway.h"
+#include "server/cluster/linking.h"
+#include "server/cluster/shard.h"
 #include "server/systems/combat.h"
 #include "server/systems/dungeons.h"
 #include "server/systems/loot.h"
@@ -158,7 +163,10 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // A database that exists but will not parse is fatal at startup. Coming up
     // with an empty one would serve every returning player a blank account and,
     // worse, save that over the file they still had.
-    if (!database_.load(config.databasePath, errorOut)) return false;
+    // A server of a sharded game has no database to load: its rows are lent.
+    const bool shard = config.role == ServerConfig::Role::Shard;
+    if (shard) database_.openReplica();
+    else if (!database_.load(config.databasePath, errorOut)) return false;
     if (database_.journalLinesReplayed() > 0) {
         std::printf("[db] journal: replayed %d change batch(es) written after the last save\n",
                     database_.journalLinesReplayed());
@@ -170,16 +178,22 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // The journal is written before ANY byte leaves for a client, so nothing a
     // player has been shown -- a drop, a craft, a level, a new account -- can
     // be lost to this process dying, however it dies. See Database's journal.
-    listener_.beforeWrite = [this] { database_.flushJournal(); };
+    listener_.beforeWrite = [this] {
+        if (gateway_) gwPassEdits();
+        database_.flushJournal();
+    };
     if (config.passwordCost > 0) database_.setPasswordCost(config.passwordCost);
-    foldLookAlikeSkins();
+    if (!shard) foldLookAlikeSkins();
 
     // Kept in a file beside the database, never anywhere a client can reach:
     // reading it is what proves an admin also has the machine. A first start
     // writes one; after that the file is the operator's, and only they change
     // it. Its key is not printed here -- the log is read by more than the
     // file is.
-    if (!config.fixedAdminDbKey.empty()) {
+    if (shard) {
+        // No accounts here to edit: the editor is the gateway's.
+        adminDbKeyPath_.clear();
+    } else if (!config.fixedAdminDbKey.empty()) {
         adminDbKeyPath_.clear();
         std::printf("[admin] database editor key: %s (fixed)\n", config.fixedAdminDbKey.c_str());
     } else {
@@ -222,6 +236,8 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     }
     initHostedArena();
     expireMarketListings();
+    if (config.role == ServerConfig::Role::Gateway && !startGateway(errorOut)) return false;
+    if (shard && !startShard(errorOut)) return false;
 
     movement_ = std::make_unique<MovementSystem>();
     // The AI caches queries against one world and wanders from its own
@@ -258,6 +274,8 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     petals_->allocateNetId = [this] { return netIds_.next(); };
     mobAi_->allocateNetId = [this] { return netIds_.next(); };
     spawning_->netIds = &netIds_;
+    spawning_->hosted = &hosted_;
+    npcs_->hosted = &hosted_;
     loot_->netIds = &netIds_;
     npcs_->netIds = &netIds_;
     // One table, two readers: what a corpse pays XP for and what it reserves
@@ -265,6 +283,10 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // once a tick; the pointer never moves.
     loot_->squads = &squadIndex_;
     combat_->squads = &squadIndex_;
+    loot_->ownerOfGoneBody = [this](Entity body) -> net::ConnectionId {
+        const Session* session = creditedSession(body);
+        return session != nullptr ? session->connection : 0;
+    };
 
     // The annotation layer is a read-only service, so the systems that need it
     // hold a pointer rather than being handed it per call. Left null they fall
@@ -320,7 +342,8 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     listener_.keyPath = config.keyPath;
     listener_.webRoot = config.webRoot;
     listener_.bindHost = config.bindHost;
-    if (!listener_.start(config.port, errorOut)) return false;
+    // A server of a sharded game is reached through the gateway alone.
+    if (!shard && !listener_.start(config.port, errorOut)) return false;
 
     // Seeded before the first tick can set it: a message may be serviced ahead
     // of the first tick, and a deadline stamped from a zero clock is one that
@@ -329,6 +352,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // The maps' NPCs are part of the maps, so they stand from boot rather than
     // from whenever the first player happens to arrive.
     npcs_->placeMissing(world_, *terrain_, content(), clockMillis_);
+    if (config.role == ServerConfig::Role::Alone && !config.membershipPath.empty()) openDoor();
     running_ = true;
     return true;
 }
@@ -350,7 +374,36 @@ void GameServer::shutdown() {
         if (entry.second.entity != NULL_ENTITY) dropBody(entry.second);
     }
     persistAll();
+    if (gateway_) {
+        // The copies' last word: what the stop itself wrote.
+        database_.flushJournal();
+        gwServiceCopies(monotonicMillis(), true);
+        gwFlush();
+    }
     listener_.stop();
+    if (door_) door_->listener.stop();
+    if (gateway_) gateway_->listener.stop();
+    if (shard_) {
+        shard_->dialer.disconnect();
+        if (shard_->edge) shard_->edge->listener.stop();
+    }
+}
+
+void GameServer::flushNetwork() {
+    if (shard_) {
+        shFlush();
+        return;
+    }
+    if (gateway_) gwFlush();
+    listener_.flush();
+}
+
+bool GameServer::hostsBiome(const std::string& biome) const {
+    if (hosted_.all) return true;
+    for (const MapData& map : worldMaps_.maps()) {
+        if (!map.prestige() && map.biome() == biome && hosted_.hosts(map.realm())) return true;
+    }
+    return false;
 }
 
 void GameServer::syncLiveProgress() {
@@ -437,7 +490,7 @@ void GameServer::restoreBossClocks(double nowMillis) {
 void GameServer::persistBossClocks() {
     const double offset = static_cast<double>(database_.nowMillis()) - clockMillis_;
     for (const SpawnSystem::BiomeBossClock& clock : spawning_->bossClocks()) {
-        if (!clock.scattered) continue;
+        if (!clock.scattered || !hostsBiome(clock.biome)) continue;
         // A boss still standing is one a restart would take away unkilled, so
         // the cooldown it started is handed back: its clock is saved a whole
         // cooldown earlier, which the next run reads as ready. An apex's is
@@ -474,8 +527,21 @@ void GameServer::persistBossClocks() {
     }
 }
 
+double GameServer::millisUntilTick() const {
+    return std::max(0.0, nextTickMillis_ - monotonicMillis());
+}
+
 bool GameServer::step() {
-    if (!running_.load()) return false;
+    if (!running_.load()) {
+        // A sharded game stops in step: the gateway once the rows it lent are
+        // home, a server once it has sent them.
+        if (gateway_ && gwDraining()) {
+            serviceNetwork(1);
+            flushNetwork();
+            return true;
+        }
+        return shard_ && shDraining();
+    }
 
     const double now = monotonicMillis();
 
@@ -483,12 +549,12 @@ bool GameServer::step() {
     // arriving mid-frame is picked up immediately instead of waiting out
     // the remainder of the tick.
     const int waitMillis = static_cast<int>(std::max(0.0, nextTickMillis_ - now));
-    serviceNetwork(std::min(waitMillis, 5));
+    serviceNetwork(std::min(waitMillis, config_.maxPollMillis));
     // What the handlers just answered -- a Pong, an AuthResult, a CraftResult
     // -- leaves now, not at the next drain. Under Node that drain is the next
     // step, a whole 60 Hz timer away, or the end of a tick: on loopback it was
     // half of every round trip (median 21 ms without this flush, 10 with it).
-    listener_.flush();
+    flushNetwork();
 
     const double tickNow = monotonicMillis();
     if (tickNow >= nextTickMillis_) {
@@ -499,9 +565,11 @@ bool GameServer::step() {
         double raw = lastTickWallMillis_ > 0
                          ? (tickNow - lastTickWallMillis_) / 1000.0
                          : net::kTickSeconds;
+        const double wallMillis = raw * 1000.0;
         lastTickWallMillis_ = tickNow;
         if (raw > kMaxDeltaSeconds) raw = kMaxDeltaSeconds;
         smoothedDeltaSeconds_ += (raw - smoothedDeltaSeconds_) * kDeltaSmoothing;
+        motionLeadMillis_ += smoothedDeltaSeconds_ * 1000.0 - wallMillis;
 
         // The REAL clock, not the scheduled slot. Every absolute deadline
         // in the world -- poison, slows, reloads, hit cooldowns, despawn --
@@ -514,6 +582,7 @@ bool GameServer::step() {
         if (tookMillis > debugTickMaxMillis_) debugTickMaxMillis_ = tookMillis;
         ++debugTickSamples_;
         foldTickPhases(tookMillis);
+        if (shard_) shard_->tickMillis += (tookMillis - shard_->tickMillis) * 0.05;
         if (tookMillis >= kSlowTickLogMillis && tookMillis > slowTickWorstMillis_) {
             slowTickWorstMillis_ = tookMillis;
             slowTickLine_ = describeTickPhases(tookMillis);
@@ -539,17 +608,29 @@ bool GameServer::step() {
         }
     }
 
-    return running_.load();
+    return running_.load() || gateway_ || shard_;
 }
 
 void GameServer::serviceNetwork(int timeoutMillis) {
+    if (shard_) {
+        // The one socket there is.
+        shService(timeoutMillis);
+        return;
+    }
+    if (gateway_) {
+        // Two sets of sockets and one wait: a short one on the clients', so a
+        // server's snapshot is never left sitting behind it for long.
+        gwService();
+        timeoutMillis = std::min(timeoutMillis, 1);
+    }
     listener_.poll(*this, timeoutMillis);
+    if (gateway_) gwService();
 }
 
 void GameServer::serviceArrivals() {
     if (!running_.load()) return;
     serviceNetwork(0);
-    listener_.flush();
+    flushNetwork();
 }
 
 std::size_t GameServer::playerCount() const {
@@ -667,6 +748,9 @@ void GameServer::tick(double nowMillis) {
     // Above the idle gate too: a member logging out of the title screen
     // changes every guildmate's roster whether or not anybody is playing.
     serviceGuildPresence(nowMillis);
+    if (gateway_) gwTick(nowMillis);
+    if (shard_) shTick(nowMillis);
+    if (door_ || probe_) serviceLinking();
     markTickPhase("sessions");
 
     // Housekeeping, ABOVE the idle gate: an account registered by somebody
@@ -728,7 +812,7 @@ void GameServer::tick(double nowMillis) {
     if (playerCount() == 0) {
         events_.clear();
         commands_.flush();
-        listener_.flush();
+        flushNetwork();
         // Changes nobody is told about still belong on disk: a pruned session,
         // a guest account made from the title screen with nothing yet sent.
         database_.flushJournal();
@@ -759,12 +843,11 @@ void GameServer::tick(double nowMillis) {
     commands_.flush();
     markTickPhase("reap");
 
-    // The wire runs slower than the simulation and on its own clock: physics
-    // and combat want 30 Hz, clients do not, and the per-recipient encode/cull/
-    // delta pass is the largest thing in the tick that nothing simulated
-    // depends on. Nothing about WHAT happens changes -- one-shot events are
-    // queued for the frame either way -- only how often it is described.
-    if (nowMillis >= nextSnapshotMillis_) {
+    // At the tick rate (net::kSnapshotsPerSecond) every tick is described, with
+    // no deadline of its own for a tick's jitter to miss. Below it the wire
+    // would run on its own clock; nothing about WHAT happens changes, as
+    // one-shot events are queued for the frame either way.
+    if (net::kSnapshotsPerSecond >= net::kTicksPerSecond || nowMillis >= nextSnapshotMillis_) {
         // Stepped from the deadline, not from now, so the send rate does not
         // slew with tick jitter; resynced when it falls a whole interval behind
         // rather than firing a burst of catch-up frames.
@@ -784,7 +867,7 @@ void GameServer::tick(double nowMillis) {
     // XP the snapshot just told everybody about goes with it.
     syncLiveProgress();
     markTickPhase("progress");
-    listener_.flush();
+    flushNetwork();
     // Whatever changed this tick with nothing sent about it: see above.
     database_.flushJournal();
     markTickPhase("send");
@@ -995,7 +1078,10 @@ void GameServer::reapDead() {
             if (session != nullptr ? session->deathReported : bot->deathAnnounced) continue;
         }
 
-        if (world_.has<NetId>(e)) {
+        // A fired petal became its shot (PetalInstance::launched): no death
+        // for the client to fade out on the ring.
+        const PetalInstance* fired = world_.tryGet<PetalInstance>(e);
+        if (world_.has<NetId>(e) && (fired == nullptr || !fired->launched)) {
             const Transform* transform = world_.tryGet<Transform>(e);
             events_.killed(world_.get<NetId>(e).value, transform ? transform->position : Vec2{},
                            transform ? transform->realm : Realm::Overworld);
@@ -1044,6 +1130,7 @@ void GameServer::replicate(double nowMillis) {
     frame.tick = tick_;
     frame.snapshotIndex = ++snapshotIndex_;
     frame.nowMillis = nowMillis;
+    frame.motionLeadMillis = motionLeadMillis_;
     frame.events = &events_;
 
     // Reused across recipients rather than allocated per session: it is at
@@ -1143,7 +1230,12 @@ void GameServer::broadcastDebugStats() {
     }
     for (TickPhaseTotal& phase : tickPhaseTotals_) phase = TickPhaseTotal{phase.name};
     tickOtherTotal_ = TickPhaseTotal{tickOtherTotal_.name};
-    if (anyone) broadcastToAuthenticated(w);
+    if (!anyone) return;
+    listener_.each([&](net::Connection& connection) {
+        // A client whose flower is on another server hears of that one.
+        const Session* session = sessionFor(connection.id());
+        if (session && hearsHere(*session) && !playingElsewhere(*session)) connection.send(w);
+    });
 }
 
 } // namespace flix

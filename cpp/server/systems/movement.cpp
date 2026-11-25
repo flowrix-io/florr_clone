@@ -868,8 +868,9 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
                     // A wall gives a carrot no flight back: it bounces on the
                     // range it has left. Refilling here let a carrot ricochet
                     // round a room for as long as the player liked, and a few
-                    // of those at once lagged the server. A mob hit still
-                    // refills it (combat.cpp).
+                    // of those at once lagged the server. A mob does not
+                    // refill it either (combat.cpp): it bounces off one the
+                    // same way, on the same remaining range.
                 }
             }
         } else if (out.blocked) {

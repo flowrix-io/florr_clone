@@ -6,12 +6,13 @@
 // timer, because blocking the Node event loop is exactly what would stop every
 // message from ever being delivered.
 
+#include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
-#include "server/game_server.h"
+#include "server/cluster/host.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -21,7 +22,7 @@
 namespace {
 /// The running server, for flix_server_wake. Null before start() and again
 /// once shutdown() has run.
-flix::GameServer* g_wasmServer = nullptr;
+flix::ServerHost* g_wasmServer = nullptr;
 }  // namespace
 
 /// Handles what has just arrived, between two passes of the main loop. Called
@@ -29,12 +30,35 @@ flix::GameServer* g_wasmServer = nullptr;
 extern "C" EMSCRIPTEN_KEEPALIVE void flix_server_wake() {
     if (g_wasmServer) g_wasmServer->serviceArrivals();
 }
+
+namespace {
+bool g_tickArmed = false;
+
+/// Ticks the moment one is due rather than on the main loop's next pass.
+///
+/// Those passes come every 16 to 17 ms and a tick is due every 33, so whether
+/// a tick lands two passes after the last or one, or three, is decided by a
+/// millisecond of timer noise: ticks measured 12 to 60 ms apart.
+void armTickTimer() {
+    if (g_tickArmed || !g_wasmServer) return;
+    const double wait = g_wasmServer->millisUntilTick();
+    g_tickArmed = true;
+    emscripten_async_call(
+        [](void*) {
+            g_tickArmed = false;
+            // False only once the server has been stopped; the main loop's own
+            // pass sees the same answer and does the shutting down.
+            if (g_wasmServer && g_wasmServer->step()) armTickTimer();
+        },
+        nullptr, static_cast<int>(std::ceil(wait)));
+}
+}  // namespace
 #endif
 
 namespace {
 
 #ifndef __EMSCRIPTEN__
-flix::GameServer* g_server = nullptr;
+flix::ServerHost* g_server = nullptr;
 
 void onSignal(int) {
     // Only an atomic flag is stored here; flushing the database and telling
@@ -42,6 +66,20 @@ void onSignal(int) {
     if (g_server) g_server->stop();
 }
 #endif
+
+/// An environment variable, or empty. Node's under emscripten, whose own
+/// environment is made up.
+std::string environmentValue(const char* name) {
+#ifdef __EMSCRIPTEN__
+    char value[512] = {0};
+    EM_ASM({ stringToUTF8(process.env[UTF8ToString($0)] || "", $1, $2); }, name, value,
+           static_cast<int>(sizeof value));
+    return value;
+#else
+    const char* value = std::getenv(name);
+    return value != nullptr ? value : "";
+#endif
+}
 
 /// The last line the process prints, and the code it leaves behind. A restart
 /// exits non-zero deliberately, because that is the one code every supervisor
@@ -61,6 +99,41 @@ int reportExit(int code) {
     return code;
 }
 
+void reportStart(flix::ServerHost& host, const flix::ServerConfig& config) {
+    switch (host.server()->role()) {
+        case flix::ServerConfig::Role::Shard:
+            std::printf("serving a gateway's game\n");
+            break;
+        case flix::ServerConfig::Role::Gateway:
+            std::printf("listening on port %u, as a cluster's gateway\n",
+                        static_cast<unsigned>(config.port));
+            break;
+        case flix::ServerConfig::Role::Alone:
+            std::printf("listening on port %u\n", static_cast<unsigned>(config.port));
+            break;
+    }
+}
+
+bool promoteCopy(const flix::ServerConfig& config) {
+    std::string note;
+    if (!flix::cluster::promote(config.databasePath, note)) {
+        std::fprintf(stderr, "could not promote: %s\n", note.c_str());
+        return false;
+    }
+    std::printf("[cluster] this server is the gateway now; %s\n", note.c_str());
+    return true;
+}
+
+bool unlinkServer(const flix::ServerConfig& config) {
+    std::string note;
+    if (!flix::cluster::unlink(config.databasePath, note)) {
+        std::fprintf(stderr, "could not unlink: %s\n", note.c_str());
+        return false;
+    }
+    std::printf("[cluster] this server is on its own again\n");
+    return true;
+}
+
 void usage(const char* program) {
     std::printf(
         "usage: %s [options]\n"
@@ -70,6 +143,26 @@ void usage(const char* program) {
         "                     mob_drops.json and the maps (default data)\n"
         "  --db <path>        account database (default inventory.json)\n"
         "  --seed <number>    simulation random seed\n"
+        "\n"
+        "sharding (cpp/docs/ARCHITECTURE.md):\n"
+        "  (with no --role, as `/admin cluster` left it: see <db>.cluster)\n"
+        "  --promote          make this linked server the gateway, out of its copy of\n"
+        "                     the database: for a gateway that is not coming back\n"
+        "  --unlink           make this linked server a server of one, its own\n"
+        "                     database back: for one whose gateway is gone\n"
+        "  --role <role>      alone, gateway or shard, whatever was linked\n"
+        "  --cluster-secret <text>\n"
+        "                     what proves the servers to each other; or put it in\n"
+        "                     FLIX_CLUSTER_SECRET, where `ps` does not show it\n"
+        "  --cluster-port <n> gateway: where its servers dial in (default 3100)\n"
+        "  --cluster-host <a> gateway: the address to take them on (default 127.0.0.1)\n"
+        "  --shards <n>       gateway: how many servers to wait for before dealing the\n"
+        "                     biomes out (default and least 2)\n"
+        "  --gateway <host:port>\n"
+        "                     shard: the gateway to dial (default 127.0.0.1:3100)\n"
+        "  --shard-name <n>   shard: what logs and /admin shards call it\n"
+        "  --copy <path>      shard: where to keep its copy of the database\n"
+        "  --simulate         gateway: simulate a share of the biomes as well\n"
 #ifdef __EMSCRIPTEN__
         "  --cert <path>      TLS certificate. Without it, cert.crt then\n"
         "                     dev-cert.crt are looked for in the working\n"
@@ -234,6 +327,9 @@ int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
 
     flix::ServerConfig config;
+    bool pinned = false;
+    bool promote = false;
+    bool unlink = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -252,6 +348,32 @@ int main(int argc, char** argv) {
         else if (arg == "--cert") config.certPath = next("--cert");
         else if (arg == "--key") config.keyPath = next("--key");
         else if (arg == "--web-root") config.webRoot = next("--web-root");
+        else if (arg == "--role") {
+            const std::string role = next("--role");
+            pinned = true;
+            if (role == "gateway") config.role = flix::ServerConfig::Role::Gateway;
+            else if (role == "shard") config.role = flix::ServerConfig::Role::Shard;
+            else if (role != "alone") {
+                std::fprintf(stderr, "--role is alone, gateway or shard\n");
+                return 2;
+            }
+        }
+        else if (arg == "--cluster-secret") config.clusterSecret = next("--cluster-secret");
+        else if (arg == "--cluster-port") config.clusterPort = static_cast<std::uint16_t>(std::atoi(next("--cluster-port")));
+        else if (arg == "--cluster-host") config.clusterHost = next("--cluster-host");
+        else if (arg == "--shards") config.expectedShards = std::atoi(next("--shards"));
+        else if (arg == "--shard-name") config.shardName = next("--shard-name");
+        else if (arg == "--copy") config.copyPath = next("--copy");
+        else if (arg == "--simulate") config.simulates = true;
+        else if (arg == "--promote") promote = true;
+        else if (arg == "--unlink") unlink = true;
+        else if (arg == "--gateway") {
+            const std::string where = next("--gateway");
+            if (!flix::cluster::parseAddress(where, config.gatewayHost, config.gatewayPort)) {
+                std::fprintf(stderr, "--gateway is host:port, not %s\n", where.c_str());
+                return 2;
+            }
+        }
         else if (arg == "--help" || arg == "-h") { usage(argv[0]); return 0; }
         else {
             std::fprintf(stderr, "unknown option: %s\n", arg.c_str());
@@ -260,7 +382,20 @@ int main(int argc, char** argv) {
         }
     }
 
+    if ((promote || unlink) && (pinned || (promote && unlink))) {
+        std::fprintf(stderr, "--promote or --unlink is for a server linked by /admin cluster, with no --role\n");
+        return 2;
+    }
+    if (config.role != flix::ServerConfig::Role::Alone && config.clusterSecret.empty()) {
+        config.clusterSecret = environmentValue("FLIX_CLUSTER_SECRET");
+        if (config.clusterSecret.empty()) {
+            std::fprintf(stderr, "a sharded game needs --cluster-secret or FLIX_CLUSTER_SECRET\n");
+            return 2;
+        }
+    }
+
 #ifdef __EMSCRIPTEN__
+    const bool shard = config.role == flix::ServerConfig::Role::Shard;
     // The embedded content is in memory and read-only, which is right for it.
     // The database is neither: it has to survive a restart, so the directory
     // it lives in is the real filesystem, mounted at the path the config
@@ -270,38 +405,50 @@ int main(int argc, char** argv) {
     // Fatal, where it used to be a warning. Every account on this server is in
     // that one file; starting without it would serve an empty world and then
     // persist nothing, and both halves of that are silent.
-    if (!mountDatabaseDirectory(config.databasePath, error)) {
+    if (!shard && !mountDatabaseDirectory(config.databasePath, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());
         return 1;
     }
-    mountBackupDirectory(config.databasePath);
+    if (!shard) mountBackupDirectory(config.databasePath);
+    // A shard has no database but the copy it is sent, where it keeps one.
+    if (shard && !config.copyPath.empty() && !mountDatabaseDirectory(config.copyPath, error)) {
+        std::fprintf(stderr, "could not start: %s\n", error.c_str());
+        return 1;
+    }
+    if (promote && !promoteCopy(config)) return 1;
+    if (unlink && !unlinkServer(config)) return 1;
 
     // Leaked deliberately: main() returns as soon as the timer is armed and
     // the server has to outlive it. Node exiting is this process's exit.
-    auto* server = new flix::GameServer();
-    if (!server->start(config, error)) {
+    auto* server = new flix::ServerHost();
+    if (!server->start(config, pinned, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());
         return 1;
     }
-    std::printf("listening on port %u\n", static_cast<unsigned>(config.port));
+    reportStart(*server, config);
     // Once the server is up, and before its first pass: a signal before this
     // point has nothing to save, and may end the process the way it always
     // has.
     flix_catch_stop_signals();
     g_wasmServer = server;
+    // A shard's one socket is dialled here, so there is a socket layer for the
+    // hook below to be put on.
+    server->serviceArrivals();
     flix_wake_on_arrival(1);
     emscripten_set_main_loop_arg(
         [](void* handle) {
-            auto* running = static_cast<flix::GameServer*>(handle);
+            auto* running = static_cast<flix::ServerHost*>(handle);
             // A signal becomes the stop() onSignal makes natively, here on the
             // loop's own turn; the step below then returns false and the
             // shutdown is the ordinary one, exit code 0 included. A scheduled
             // restart reaches the same place having set its own code first.
             if (flix_stop_signalled()) running->stop();
-            if (running->step()) return;
+            if (running->step()) {
+                armTickTimer();
+                return;
+            }
             flix_wake_on_arrival(0);
             g_wasmServer = nullptr;
-            running->shutdown();
             emscripten_cancel_main_loop();
             const int code = reportExit(running->exitCode());
             // Node's own exit is this process's exit, reached directly for
@@ -328,9 +475,11 @@ int main(int argc, char** argv) {
         0, 0);
     return 0;
 #else
-    flix::GameServer server;
+    flix::ServerHost server;
     std::string error;
-    if (!server.start(config, error)) {
+    if (promote && !promoteCopy(config)) return 1;
+    if (unlink && !unlinkServer(config)) return 1;
+    if (!server.start(config, pinned, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());
         return 1;
     }
@@ -343,7 +492,7 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
 
-    std::printf("listening on port %u\n", static_cast<unsigned>(config.port));
+    reportStart(server, config);
     server.run();
     return reportExit(server.exitCode());
 #endif

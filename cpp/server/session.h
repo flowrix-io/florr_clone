@@ -10,11 +10,13 @@
 
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "server/admin_tiers.h"
+#include "server/cluster/link.h"
 #include "server/db.h"
 #include "shared/core/entity.h"
 #include "shared/game/realm.h"
@@ -268,7 +270,7 @@ struct Session {
     /// back to its sender, so the flood the chat budget is guarding against is
     /// not the one a command can cause -- see session.cpp.
     double commandAllowance = 12;
-    double inputAllowance = 60;
+    double inputAllowance = net::kInputsPerSecond * 2.0;
     /// Inventory, loadout and talent mutations share a budget: alternating
     /// opcodes must not bypass the limit or spend the movement budget.
     double inventoryAllowance = 20;
@@ -291,6 +293,51 @@ struct Session {
     /// The guildmate wire ids last sent to this client (GuildMapUpdate),
     /// sorted, so an unchanged set is not sent again.
     std::vector<std::uint32_t> guildMapIds;
+
+    // -- sharding (cpp/docs/ARCHITECTURE.md, "Sharding") ---------------------
+
+    /// On the gateway: where this client's flower is, when it has one. The
+    /// gateway simulates nothing, so its own `entity` is always null and its
+    /// `stage` never Playing; whoever is in the world is in it over there.
+    struct Elsewhere {
+        /// The server its body is on, or 0.
+        int slot = 0;
+        std::uint32_t lease = 0;
+        /// What that server last said of the body.
+        cluster::ClientState state;
+        /// A flower on its way to a server that cannot take it yet.
+        std::unique_ptr<cluster::FlowerState> entering;
+        double enteringSinceMillis = 0;
+        /// Messages that came while an earlier one was still being carried
+        /// out, in order: behind a fence, a leave, or an arrival.
+        std::deque<std::vector<std::byte>> held;
+        std::uint32_t fenceSeq = 0;
+        bool fenced = false;
+        bool leaving = false;
+        /// The held message now being run is the fenced one.
+        bool pastFence = false;
+        /// The last fence found the body standing at Mr. Bee.
+        bool atMarket = false;
+        /// The server whose squads this client is in, or was last invited by.
+        int squadSlot = 0;
+        bool inSquad = false;
+        /// Every server that knows this client, and the ClientInfo it has.
+        std::map<int, std::vector<std::byte>> told;
+
+        bool busy() const { return fenced || leaving || entering != nullptr; }
+    };
+    Elsewhere elsewhere;
+
+    /// On a simulation server: the loan this client's row is here on, or 0
+    /// for a client with no body here -- one that is in a squad here, or that
+    /// was here earlier and whose boss damage still counts.
+    std::uint32_t lease = 0;
+    /// The last of the gateway's edits to that row taken.
+    std::uint32_t patchAck = 0;
+    /// The biome this client's body is in, when another server has it.
+    std::string elsewhereBiome;
+    /// The ClientState the gateway was last told.
+    std::vector<std::byte> toldState;
 
     bool authenticated() const {
         return stage == SessionStage::Authenticated || stage == SessionStage::Playing;

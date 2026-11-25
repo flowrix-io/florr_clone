@@ -116,15 +116,18 @@ inline constexpr double kPlayerBaseRadius = 25.0;
 inline constexpr double kPlayerBaseHealth = 100.0;
 inline constexpr double kPlayerBaseDamage = 5.0;
 
-/// Top speed in units per second.
-inline constexpr double kPlayerMaxSpeed = 300.0;
+/// Top speed in units per second: gardn's PLAYER_ACCELERATION of 2.5 against
+/// its damping, where one unit of velocity travels 125 (Motion.cc). Mob speeds
+/// are stated as a share of it, so they keep their ratio to a flower's.
+inline constexpr double kPlayerMaxSpeed = 312.5;
 
-/// Velocity friction per 1/20s of simulated time.
+/// Velocity friction per 1/20s of simulated time: gardn's damping of 0.992 a
+/// millisecond over those 50 of them, 1 - 0.992^50.
 ///
 /// Movement converges to `target * (1/friction)` rather than snapping to it,
 /// which is what gives the flower its weight -- it drifts a little when you
 /// let go, and it takes a moment to reverse.
-inline constexpr double kMoveFriction = 1.0 / 3.0;
+inline constexpr double kMoveFriction = 0.330756;
 inline constexpr double kFrictionReferenceRate = 20.0;
 
 /// Cursor distance at which movement reaches full speed. Short, so a small
@@ -289,10 +292,11 @@ inline constexpr double kPetalOrbitAttackGap = 100.0;
 inline constexpr double kPetalOrbitDefendGap = 15.0;
 
 /// How fast a clump's grains turn round its centre, as a share of the ring's
-/// own spin: gardn lays grain j of n at `2 pi j / n + heading * 0.2`
-/// (Flower.cc), a bearing in the WORLD shared by every clump on the ring
-/// rather than one measured from each clump's place on it. Oranges keep their
-/// own hang off the ring (clumpOutsideRing), which gardn has no petal for.
+/// own spin: grain j of n is laid at `2 pi j / n + heading * 0.2`, as gardn's
+/// was (Flower.cc has 1.1 now), a bearing in the WORLD shared by every clump
+/// on the ring rather than one measured from each clump's place on it. Oranges
+/// keep their own hang off the ring (clumpOutsideRing), which gardn has no
+/// petal for.
 inline constexpr double kPetalClumpSpinShare = 0.2;
 
 /// Ring spin, radians per second.
@@ -385,7 +389,9 @@ inline constexpr double kPetalHitIntervalMillis = 0.0;
 
 // -- ring physics ------------------------------------------------------------
 //
-// gardn's petal movement, and nothing else (the user's call): every tick a
+// gardn's original petal movement, and nothing else (the user's call; its later
+// 60 Hz pull, quadratic in the gap, was tried and taken back out for swinging
+// twice as far and bending the ring out of round on the move): every tick a
 // petal's velocity loses a share to friction and gains a pull toward where it
 // should be, and the petal moves by its velocity. gardn writes it, per 20 Hz
 // tick (Server/Process/Flower.cc sets the acceleration, Motion.cc applies it

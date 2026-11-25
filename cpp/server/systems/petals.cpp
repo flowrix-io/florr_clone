@@ -1,4 +1,6 @@
 #include "server/systems/petals.h"
+
+#include "server/cluster/link.h"
 #include "server/systems/shot_range.h"
 
 #include <algorithm>
@@ -732,6 +734,83 @@ Entity PetalSystem::attractor(World& world, Vec2 orbit, Realm realm, double radi
 // Slots: spawning, breaking, reloading
 // ---------------------------------------------------------------------------
 
+std::vector<cluster::RingSlot> PetalSystem::captureRing(World& world,
+                                                        const ContentRegistry& registry,
+                                                        Entity player, double nowMillis) {
+    std::vector<cluster::RingSlot> ring;
+    const Loadout* worn = world.tryGet<Loadout>(player);
+    const PetalSlotState* state = world.tryGet<PetalSlotState>(player);
+    if (worn == nullptr || state == nullptr) return ring;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const LoadoutSlot& slot = worn->slots[static_cast<std::size_t>(i)];
+        const PetalSlotState::Slot& held = state->slots[static_cast<std::size_t>(i)];
+        cluster::RingSlot carried;
+        carried.petal = slot.configIndex;
+        carried.rarity = static_cast<std::uint8_t>(slot.rarity);
+        carried.broken = slot.broken;
+        carried.reloadLeft = std::max(0.0, slot.reloadReadyAtMillis - nowMillis);
+        // The pool as the last fold left it, less what has landed since: the
+        // instances hold the newer figure.
+        double taken = 0.0;
+        if (!held.independent && held.populated && !slot.broken) {
+            for (const Entity petal : worn->spawned) {
+                const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+                if (instance == nullptr || instance->slot != i) continue;
+                taken += std::max(0.0, held.syncedHealth - instanceHealth(world, petal));
+            }
+        }
+        carried.health = held.poolMax > 0.0
+                             ? clamp((held.poolHealth - taken) / held.poolMax, 0.0, 1.0)
+                             : 1.0;
+        if (held.independent) {
+            for (const double ready : held.instanceReadyAtMillis) {
+                carried.grainsLeft.push_back(
+                    static_cast<float>(std::max(0.0, ready - nowMillis)));
+            }
+        }
+        ring.push_back(std::move(carried));
+    }
+    (void)registry;
+    return ring;
+}
+
+void PetalSystem::restoreRing(World& world, const ContentRegistry& registry, Entity player,
+                              const std::vector<cluster::RingSlot>& ring, double nowMillis) {
+    bindTo(world);
+    // Every slot built, each owing its whole reload; then the ones that came
+    // across as they were.
+    reconcileSlots(world, registry, player, nowMillis);
+    Loadout* worn = world.tryGet<Loadout>(player);
+    PetalSlotState* state = world.tryGet<PetalSlotState>(player);
+    if (worn == nullptr || state == nullptr) return;
+    for (std::size_t i = 0; i < ring.size() && i < kLoadoutActiveSlots; ++i) {
+        const cluster::RingSlot& carried = ring[i];
+        LoadoutSlot& slot = worn->slots[i];
+        PetalSlotState::Slot& held = state->slots[i];
+        if (slot.empty() || slot.configIndex != carried.petal ||
+            static_cast<std::uint8_t>(slot.rarity) != carried.rarity) {
+            continue;
+        }
+        if (held.independent) {
+            for (std::size_t k = 0; k < held.instanceReadyAtMillis.size(); ++k) {
+                const double left = k < carried.grainsLeft.size() ? carried.grainsLeft[k] : 0.0;
+                // Due now rather than zero: zero is a grain already out, and
+                // none of these is until the next fold spawns it.
+                held.instanceReadyAtMillis[k] = nowMillis + left;
+            }
+            continue;
+        }
+        slot.broken = carried.broken;
+        slot.reloadReadyAtMillis = carried.broken ? nowMillis + carried.reloadLeft : 0.0;
+        if (!carried.broken) {
+            // Never to nothing: a slot that arrives standing arrives with a
+            // petal on it, and the next hit takes it as it would have.
+            held.poolHealth = std::max(held.poolMax * carried.health, std::min(held.poolMax, 0.01));
+            held.syncedHealth = held.poolHealth;
+        }
+    }
+}
+
 void PetalSystem::clearRing(World& world, Entity player) {
     // The field only. A corpse's LOADOUT is left exactly as it was -- which
     // petal is in which slot, what health it had, how much of its reload is
@@ -1447,7 +1526,11 @@ void PetalSystem::removePetal(World& world, Entity petal) {
     // Outside a tick there is no queue to cue it on, and it simply goes.
     const NetId* id = world.tryGet<NetId>(petal);
     const Transform* transform = world.tryGet<Transform>(petal);
-    if (events_ != nullptr && id != nullptr && transform != nullptr) {
+    // A petal that was fired became its shot: it simply goes, with no death
+    // for the client to fade out on the ring.
+    const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+    const bool launched = instance != nullptr && instance->launched;
+    if (events_ != nullptr && id != nullptr && transform != nullptr && !launched) {
         events_->killed(id->value, transform->position, transform->realm);
     }
     world.destroy(petal);
@@ -2588,7 +2671,11 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                                 instance->rarity)) {
                 // The shot IS the petal leaving the ring: firing spends it, the
                 // same way being thrown spends web and pollen, and the
-                // reference launches the petal ITSELF as the missile.
+                // reference launches the petal ITSELF as the missile. So it
+                // leaves without a death fade (PetalInstance::launched).
+                if (PetalInstance* launched = world.tryGet<PetalInstance>(petal)) {
+                    launched->launched = true;
+                }
                 spendPetal(world, registry, player, petal, firedSlot, firedSub, stats, nowMillis);
                 continue;
             }

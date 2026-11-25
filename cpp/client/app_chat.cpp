@@ -232,6 +232,8 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin save", "Save player progress", kForAdmins},
     {"/admin list-players", "List online players", kForAdmins},
     {"/admin list-sockets", "List connected sockets", kForAdmins},
+    {"/admin cluster", "Link this server to another: /admin cluster help", kForAdmins},
+    {"/admin shards", "Which server has which biome: /admin shards [assign|unassign|move|balance]", kForAdmins},
     {"/admin set_max_enemies", "Set max enemy count", kForAdmins},
     {"/admin set_bot_count", "Set bot count (0-100, or \"default\")", kForAdmins},
     {"/admin spawn", "Spawn a mob: /admin spawn <mob> <rarity> [x y] [amount] [stack]", kForAdmins},

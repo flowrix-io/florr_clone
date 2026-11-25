@@ -88,6 +88,10 @@ struct HarnessFiles {
         std::remove((dbPath + ".journal").c_str());
         std::remove((dbPath + ".journal.tmp").c_str());
         std::remove(admin_db::keyFileFor(dbPath).c_str());
+        std::remove((dbPath + ".cluster").c_str());
+        std::remove((dbPath + ".replica").c_str());
+        std::remove((dbPath + ".replica.journal").c_str());
+        std::remove((dbPath + ".replica.of").c_str());
         ::rmdir((home + "/db").c_str());
         ::rmdir((home + "/db_backups").c_str());
         ::rmdir(home.c_str());
@@ -913,6 +917,39 @@ struct GameServerPeer {
     /// The Trial Grounds runs, one per trial realm, and the clock they run on.
     static auto& trials(GameServer& server) { return server.trials_; }
     static double clockMillis(const GameServer& server) { return server.clockMillis_; }
+    /// Carries `username`'s flower to `realm`, as a pad would. False when this
+    /// server has no such flower.
+    static bool carry(GameServer& server, const std::string& username, Realm realm, Vec2 to) {
+        for (auto& entry : server.sessions_) {
+            Session& session = entry.second;
+            if (session.username != username || !session.playing()) continue;
+            server.moveEntityToRealm(session.entity, realm, to);
+            return true;
+        }
+        return false;
+    }
+    static Entity bodyOf(GameServer& server, const std::string& username) {
+        for (auto& entry : server.sessions_) {
+            if (entry.second.username == username && entry.second.playing()) return entry.second.entity;
+        }
+        return NULL_ENTITY;
+    }
+    static PlayerRecord& record(GameServer& server, const std::string& username) {
+        const Account* account = std::as_const(server.database_).findUser(username);
+        return server.database_.progress(account->id);
+    }
+    static void chat(GameServer& server, const std::string& username, const std::string& line) {
+        for (auto& entry : server.sessions_) {
+            if (entry.second.username != username) continue;
+            if (net::Connection* c = server.listener_.find(entry.first)) {
+                server.handleChatCommand(entry.second, *c, line);
+                return;
+            }
+        }
+    }
+    static LootSystem& loot(GameServer& server) { return *server.loot_; }
+    /// Cuts a server of a sharded game off, as a crash does.
+    static void cutLink(GameServer& server) { server.shLinkLost("cut by a test"); }
     /// Whether this account has found the secret Trial Grounds room.
     static bool trialGroundsUnlocked(GameServer& server, Session& session) {
         return server.trialGroundsUnlocked(session);

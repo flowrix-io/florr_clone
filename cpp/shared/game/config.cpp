@@ -1958,14 +1958,10 @@ PetalStats buildPetalStats(const PetalConfig& c, Rarity r) {
     // reason: what a stack absorbs has to keep pace with what a mob of the
     // same tier hits for, and mob damage is the 3x ladder all the way up.
     s.armorPerStack = c.armorPerStack * stat;
-    // Bone's own armour climbs the ladder a MOB's armour climbs, flattening
-    // above ultra with it: it is the same kind of number doing the same job
-    // -- a flat amount off each hit the wearer takes -- so a bone and a mob
-    // of one tier are as hard to scratch as each other.
-    // Icosahedron keeps growing on the full 3x ladder; other armored petals
-    // retain the existing mob-armor curve, which flattens after ultra.
-    s.petalArmor = c.petalArmor * (c.id == "icosahedron" ? petalStatScale(tier)
-        : kMobArmorScale[static_cast<std::size_t>(rarityIndex(tier))]);
+    // Petal armour -- bone's, icosahedron's -- climbs the full 3x ladder at
+    // every tier. It used to follow the mob armour ladder, which stops at
+    // ultra, so an ultra, super, eternal and apex bone all had the same 7290.
+    s.petalArmor = c.petalArmor * petalStatScale(tier);
     // A claw's bonus is damage, so it is on the damage ladder beside `damage`.
     s.critDamage = c.clawCritDamage * strength;
     // A fraction of the damage dealt, and that damage already climbs.

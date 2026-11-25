@@ -101,14 +101,15 @@ struct RemoteEntity {
     Vec2 position;
     double angle = 0;
 
-    /// Mob-only position history, stamped on the shared server timeline (see
-    /// WorldView::clockOffsetMillis_), one sample per snapshot whether or not
-    /// the snapshot mentioned it. Flowers deliberately have none: they
-    /// all ease at one rate so the viewer's flower and everyone else's move
-    /// alike, and a buffer on one side of that breaks it.
+    /// Where this entity has been, stamped on the shared
+    /// server timeline (see WorldView::clockOffsetMillis_), one sample per
+    /// snapshot whether or not the snapshot mentioned it. A mob is drawn on
+    /// it; everything else eases after it (flowerChase()), the viewer's own
+    /// flower the same way off WorldView::selfSamples_.
     struct Sample {
         double timeMillis = 0;
         Vec2 position;
+        double angle = 0;
     };
     std::vector<Sample> samples;
 
@@ -295,11 +296,15 @@ public:
     /// Consumes a Snapshot payload. The message id must already be read.
     /// Returns false when the frame was truncated, in which case nothing is
     /// applied -- a half-read snapshot is worse than a skipped one.
-    bool applySnapshot(ByteReader& reader);
+    bool applySnapshot(ByteReader& reader) {
+        return applySnapshot(reader, renderClockMillis());
+    }
+    /// `arrivedMillis` is when its bytes landed, on renderClockMillis().
+    bool applySnapshot(ByteReader& reader, double arrivedMillis);
 
     /// Advances every drawn position and facing by one frame. Call once per
     /// rendered frame, not once per snapshot: this is what decouples a 144 Hz
-    /// display from a 20 Hz snapshot stream.
+    /// display from the snapshot stream.
     ///
     /// `nowMillis` is the client render clock, which is also the clock mob
     /// playback runs behind. `dtSeconds` is the step the eases take -- the
@@ -400,8 +405,7 @@ public:
     /// Interpolation slider; see easeTimeConstant().
     double easeTimeConstantSeconds = easeTimeConstant(kDefaultInterpolationAmount);
 
-    /// How far behind the render clock buffered mobs are played back THIS
-    /// frame. interpolate() slews it toward the delay the recent stream asks
+    /// How far behind the render clock the world is played back THIS frame. interpolate() slews it toward the delay the recent stream asks
     /// for (delayTargetMillis_, which noteLateness() derives), so anything
     /// written here holds only until the stream disagrees with it.
     double interpolationDelayMillis = kMobRenderDelayMillis;
@@ -451,6 +455,8 @@ private:
     /// spawn record arrives, and the camera needs an answer before then.
     Vec2 selfDrawnPosition_;
     bool selfSnapPending_ = true;
+    /// The viewer's flower's own RemoteEntity::samples.
+    std::vector<RemoteEntity::Sample> selfSamples_;
     HealthBarEase selfHealthBar_;
     double clockOffsetMillis_ = 0;
     bool clockAnchored_ = false;

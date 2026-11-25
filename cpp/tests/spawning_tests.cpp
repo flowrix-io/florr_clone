@@ -3138,14 +3138,18 @@ TEST(a_crowd_of_players_cannot_exceed_the_global_cap) {
     makeBandedWorld(maps, bands, "garden 100%");
     Sim sim;
     sim.spawner.worldMaps = &maps;
-    // Between them the bands want several times what the server will allow.
-    CHECK(static_cast<int>(bands.size()) * bandTarget(bands.front()) > kMaxLiveMobs);
+    // The cap the spawner holds to, set the way `/admin set_max_enemies` sets
+    // it: what is under test is that the cap binds, not kMaxLiveMobs' value.
+    constexpr int kCap = 3000;
+    sim.spawner.mobCap = kCap;
+    // Between them the bands want more than the server will allow.
+    CHECK(static_cast<int>(bands.size()) * bandTarget(bands.front()) > kCap);
 
     for (int i = 0; i < 600; ++i) sim.tick(players);
 
-    CHECK(sim.mobCount() <= kMaxLiveMobs + kMaxNestChildren);
+    CHECK(sim.mobCount() <= kCap + kMaxNestChildren);
     // And the cap is what stopped it, not an empty world.
-    CHECK(sim.spawner.census().mobs > kMaxLiveMobs / 2);
+    CHECK(sim.spawner.census().mobs > kCap / 2);
 }
 
 TEST(mobs_nobody_has_been_near_stop_being_entities) {
@@ -4578,6 +4582,66 @@ TEST(which_row_is_graded_is_drawn_by_probability) {
 // Loot: drops, eligibility, pickup, expiry
 // ---------------------------------------------------------------------------
 
+TEST(a_squadmate_between_lives_still_gets_their_share) {
+    // The bug report: two squadmates kill an apex, one of them died to it and
+    // is on the title screen (or loading back in) when it falls. That member
+    // used to be dropped from the squad -- the survivor was paid alone, and
+    // the fallen member's own drops went to a body nobody could claim them
+    // as. Now they are filed by their last body and paid by their connection,
+    // so the body they come back in can see and pick the drops up. A member
+    // who was away before the fight and never hit the mob is still not paid.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(4343);
+
+    const std::uint16_t starfish = shipped().mobIndex("starfish");
+    const Entity fighter = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity fallen = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity idle = makePlayer(world, kCentre + Vec2{5000, 0});
+    constexpr net::ConnectionId kFallen = 2;
+    constexpr net::ConnectionId kIdle = 3;
+
+    // Both bodies are gone by the time the mob dies.
+    const Entity corpse =
+        makeCorpse(world, starfish, Rarity::Uncommon, kCentre, fighter, {fighter, fallen});
+    (void)corpse;
+    world.destroy(fallen);
+    world.destroy(idle);
+
+    SquadEntityIndex squads;
+    squads.group[fighter] = 0;
+    squads.group[fallen] = 0;
+    squads.group[idle] = 0;
+    squads.groups.push_back(
+        {SquadBody{fighter, 1}, SquadBody{fallen, kFallen, true}, SquadBody{idle, kIdle, true}});
+    loot.squads = &squads;
+    loot.ownerOfGoneBody = [&](Entity body) -> net::ConnectionId {
+        if (body == fallen) return kFallen;
+        if (body == idle) return kIdle;
+        return 0;
+    };
+
+    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    const std::vector<Entity> drops = liveDrops(world);
+    CHECK(!drops.empty());
+    if (drops.empty()) return;
+    // Claimed by CONNECTION: the body they come back in is a new entity.
+    const Entity newBody = world.create();
+    const auto paidConnection = [&](net::ConnectionId connection) {
+        for (const Entity drop : drops) {
+            if (claimed(world.get<DropItem>(drop).eligible, newBody, connection)) return true;
+        }
+        return false;
+    };
+    CHECK(paidConnection(kFallen));
+    CHECK(!paidConnection(kIdle));
+}
+
 TEST(a_squads_drops_are_reserved_for_every_member) {
     // What a party is FOR. One member kills a starfish; every member of the
     // squad is paid, including the one who never touched it. Each paid
@@ -5621,11 +5685,41 @@ TEST(magnetism_widens_the_pickup_radius_without_moving_the_drop) {
     CHECK(world.get<Transform>(drop).position == dropAt);
 
     world.get<PlayerModifiers>(player).magnetism = 400.0;
+    // A magnet waits a second after the drop landed before it reaches for it:
+    // a kill's loot is seen on the ground first.
     rebuildGrid(world, grid);
-    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    loot.run(world, grid, shipped(), rng, kMagnetPickupDelayMillis - 1.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+    CHECK(world.isAlive(drop));
+
+    // Then it comes in -- and loot that was already lying there when the
+    // magnet went on comes in at once, with no second wait of its own.
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, kMagnetPickupDelayMillis, 0.0, commands, events);
     // Still where it was dropped at the moment it was claimed -- the destroy is
     // deferred, so this reads the drop as the pickup left it.
     CHECK(world.get<Transform>(drop).position == dropAt);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK(!world.isAlive(drop));
+}
+
+TEST(a_fresh_drop_under_the_flower_is_taken_at_once_magnet_or_not) {
+    // The magnet's wait is about REACH: walking over a drop takes it at once.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    ShippedLoot loot;
+    EventQueue events;
+    Rng rng(21);
+
+    const Entity player = makePlayer(world, kCentre, 0.0);
+    world.get<PlayerModifiers>(player).magnetism = 400.0;
+    const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common,
+                                       kCentre + Vec2{5.0, 0.0}, Realm::Overworld, {player});
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
     commands.flush();
     CHECK_EQ(loot.pickups().size(), std::size_t(1));
     CHECK(!world.isAlive(drop));
