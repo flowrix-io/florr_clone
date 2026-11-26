@@ -1,4 +1,5 @@
 #include "server/db.h"
+#include "server/durable_file.h"
 
 #include "server/chat_moderation.h"
 
@@ -1442,6 +1443,16 @@ std::string journalHeader(const std::string& id) {
 }
 
 }  // namespace
+
+namespace durable {
+
+bool appendWhole(int& fd, std::uint64_t& length, const std::string& text) {
+    return flix::appendWhole(fd, length, text);
+}
+int beginSync(const std::string& path) { return startPathSync(path); }
+int syncState(int ticket) { return pollPathSync(ticket); }
+
+} // namespace durable
 
 /// The size of `path` as this process's filesystem sees it, or -1.
 static double journalFileSize(const std::string& path) {

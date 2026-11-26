@@ -209,6 +209,7 @@ add_library(flix_server STATIC
   server/cluster/copy.cpp
   server/cluster/gateway.cpp
   server/cluster/host.cpp
+  server/cluster/lease_journal.cpp
   server/cluster/link.cpp
   server/cluster/linking.cpp
   server/cluster/membership.cpp

@@ -342,8 +342,9 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     listener_.keyPath = config.keyPath;
     listener_.webRoot = config.webRoot;
     listener_.bindHost = config.bindHost;
-    // A server of a sharded game is reached through the gateway alone.
-    if (!shard && !listener_.start(config.port, errorOut)) return false;
+    // In a sharded game the port is a door the sessions' sockets come in by,
+    // and the sessions are adopted (Gateway::door, Shard::Door).
+    if (!shard && !gateway_ && !listener_.start(config.port, errorOut)) return false;
 
     // Seeded before the first tick can set it: a message may be serviced ahead
     // of the first tick, and a deadline stamped from a zero clock is one that
@@ -382,10 +383,14 @@ void GameServer::shutdown() {
     }
     listener_.stop();
     if (door_) door_->listener.stop();
-    if (gateway_) gateway_->listener.stop();
+    if (gateway_) {
+        gateway_->listener.stop();
+        gateway_->door.stop();
+    }
     if (shard_) {
         shard_->dialer.disconnect();
-        if (shard_->edge) shard_->edge->listener.stop();
+        if (shard_->door) shard_->door->listener.stop();
+        shard_->journal.close();
     }
 }
 
@@ -619,12 +624,15 @@ void GameServer::serviceNetwork(int timeoutMillis) {
     }
     if (gateway_) {
         // Two sets of sockets and one wait: a short one on the clients', so a
-        // server's snapshot is never left sitting behind it for long.
+        // server's word for one of them is never left sitting behind it.
         gwService();
-        timeoutMillis = std::min(timeoutMillis, 1);
+        gateway_->door.poll(gateway_->doorHandler, std::min(timeoutMillis, 1));
+        // The sessions: only a close to report, they have no sockets.
+        listener_.poll(*this, 0);
+        gwService();
+        return;
     }
     listener_.poll(*this, timeoutMillis);
-    if (gateway_) gwService();
 }
 
 void GameServer::serviceArrivals() {

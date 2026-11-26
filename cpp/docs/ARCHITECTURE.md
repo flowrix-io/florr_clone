@@ -349,7 +349,7 @@ everything above: one process, every biome, its own database. Sharded, it is a
 
 | | `--role gateway` | `--role shard` |
 |---|---|---|
-| clients' sockets | all of them | none: adopted, by connection id |
+| clients' sockets | those not in the world (signing in, title screen) | its own players', on its own port |
 | database | the one that counts | rows on loan, and a whole copy on disk |
 | simulates | nothing, or a share of its own (`--simulate`, and when linked) | the biomes it was given |
 | run by | one process | any number, on any machine |
@@ -357,6 +357,31 @@ everything above: one process, every biome, its own database. Sharded, it is a
 Each is a `GameServer`, running the same handlers and the same systems. What
 differs is which realms it hosts (`HostedRealms`) and who is on the other end
 of `net::Connection`.
+
+**No server relays a client's traffic.** A client signs in at the gateway's
+port. When its flower is put on a server, the gateway sends it a `Redirect`
+(host, port, ticket): it dials that server's own port, says `Hello` with its
+attaching flag set and then `Attach` with the ticket (`ClientMessage::Attach`,
+`ServerMessage::Attached`), and from then on that socket is the session. The
+gateway told the server to expect the ticket (`ToServer::Expect`), and what
+the server says to the client in between is held and sent after `Attached`
+(`kAttachPatienceMillis`, `kMaxTransitBytes`). Leaving the world, signing out
+or a server losing the biome redirects it home the same way. A session is an
+ADOPTED connection on both sides (`net::Listener::adopt`), under one
+gateway-assigned connection id; its sink sends where the socket is: the
+gateway's own client port (`Gateway::door`), a server's (`Shard::Door`), or
+the link (`ToServer::Deliver`, `ToGateway::ClientFrame`) for the few frames the
+other side has to say. A server forwards the gateway's requests -- chat, the
+market, guilds, the shop, skins, accounts -- as `ToGateway::FromClient` and
+holds what the client sends behind one that spends until the gateway says
+`Handled`.
+
+Every port a player can be sent to has to be reachable by players. A server
+says where it is (`--public-host`, `--public-port`; by default the address the
+gateway sees its link come from, or the host the client dialled for a server
+on the gateway's machine), and a page served over https needs that host to
+have a certificate (`--cert`, `--key`) as the gateway's does. The gateway's own
+simulation takes players on `--simulation-port`, its port + 1 by default.
 
 **Biomes are the unit.** Realms are separate coordinate spaces that nothing
 reaches across (Realms), so a biome is already a world that can be simulated
@@ -391,8 +416,9 @@ restarted later comes back as what it was. `/admin cluster disconnect
   gateway is (`ToServer::Update`).
 * There is one set of accounts: the gateway's. B's own database is not merged
   and not touched; it is B's again when B is disconnected.
-* B's own port stays open. A client that dials it is carried over the link to
-  the gateway, which is who it is playing on (`Shard::Edge`, `EdgeFrame`).
+* B's own port stays open, for the players whose flowers are on B. A client
+  that dials it fresh is sent to the gateway to sign in (a `Redirect` with no
+  ticket), and then back to B if that is where its flower goes.
 * The commands need an admin ACCOUNT with the power to update the server, not a
   console granted for a life: whoever holds the key is sent every account. The
   key is kept out of the chat echo and the audit line.
@@ -405,7 +431,7 @@ npm run start_cluster -- --shards 3      # a gateway and three servers, kept up
 
 export FLIX_CLUSTER_SECRET=...           # the same on every one of them
 node dist/server.js --role gateway --shards 3 --cluster-host 10.0.0.1 --db dist/inventory.json --web-root dist
-node dist/server.js --role shard --gateway 10.0.0.1:3100 --shard-name east --copy dist/copy.json
+node dist/server.js --role shard --gateway 10.0.0.1:3100 --shard-name east --copy dist/copy.json --port 3001
 ```
 
 The link is authenticated both ways (`cluster::linkProof`, an HMAC challenge
@@ -451,12 +477,24 @@ restart and is in every copy. An assigned biome goes to its server whenever
 that is up, is never rebalanced away, and is somebody else's only while it is
 down. Assigning every biome to one server is refused.
 
-**One ordered link per server** (`cluster/link.h`) carries everything, and the
-design rests on the order. A server puts the rows a tick changed on the link
-ahead of the frames that show the change (`Listener::beforeWrite`,
-`GameServer::shSendRows`), so the gateway holds the record before it holds the
-byte; and the gateway's own journal rule then makes it durable before the byte
-leaves. A server that dies takes with it nothing any player was shown.
+**One ordered link per server** (`cluster/link.h`) carries everything between
+it and the gateway, and the design rests on the order. A server puts the rows a
+tick changed on the link ahead of anything that follows from them
+(`GameServer::shSendRows`), so whatever the gateway does next it does on the
+new rows.
+
+**Rows are journalled where they are shown.** The bytes a player sees leave
+from the server it is on, not the gateway, so the gateway cannot promise to
+hold a row before the byte that shows it leaves. The server's lease journal
+(`cluster/lease_journal.h`; `<db>.leases`, or `--lease-journal`) does: every row
+it lends, changes or hands back is appended there before any byte leaves for a
+client (`Listener::beforeWrite`), and kept until the gateway says it has the
+row in its own journal (`ToServer::RowsTaken`, a sequence number the gateway
+keeps in table `leaseJournals`). A server that crashed, or lost the gateway,
+sends what was never taken when it is linked again (`ToGateway::Recovered`), as
+a difference from the row the gateway last took, which lands on whatever the
+gateway holds now. A server whose disk is lost with it loses what its players
+saw since the last row the gateway took: well under a second.
 
 **Rows are lent.** While a flower is in the world its `PlayerRecord` is the
 server's, under a lease the gateway granted (`Gateway::Lease`), and a row comes
@@ -470,15 +508,18 @@ pickup that cross on the wire both land. Edits the server has not acknowledged
 are put back on top of any row that arrives without them (`gwTakeRow`).
 
 **A request that spends is fenced.** A craft is the server's and a purchase the
-gateway's, over one bag. So the gateway holds a purchase, and whatever the
-client sends behind it, until the server has carried out everything sent before
-it (`Fence`, `FenceAck`) and the rows are level. `whereHandled` says which
-request is whose; steering and pings never wait.
+gateway's, over one bag. A purchase sent to the server the flower is on reaches
+the gateway behind every row the server changed before it, and the server holds
+what the client sends after it until the gateway says `Handled`; one that
+reaches the gateway any other way waits until the server has carried out
+everything before it (`Fence`, `FenceAck`) and the rows are level.
+`whereHandled` (`cluster/link.h`) says which request is whose; steering and
+pings never wait.
 
 **Moving between biomes** (`crossToServer`) is a lease home and a lease out with
 a `FlowerState` between: position, health, shield, mana, the ring with its
-reloads, the way back out of a hosted game. The client keeps its socket and is
-sent the same `RealmChange` any pad sends. Pets hatch again; a split ends. A pad
+reloads, the way back out of a hosted game. The client is redirected to the
+other server's port, and there sent the same `RealmChange` any pad sends. Pets hatch again; a split ends. A pad
 into a biome no server has says so and does nothing.
 
 **Balance** (`cluster/placement.h`, plain arithmetic, tested as such). Every
@@ -491,8 +532,9 @@ standing. A handed-over biome takes its players, the drops on its ground and
 its boss clocks along, and is stocked with mobs afresh. `/admin shards` shows
 the deal; `/admin shards move <biome> <server>` makes one by hand.
 
-**When something dies.** A server: its biomes are dealt to the others, its
-players come back at their doors. The gateway: every server drops what it was
+**When something dies.** A server: its biomes are dealt to the others, and its
+players, whose sockets went with it, reconnect to the gateway and sign in
+again. The gateway: every server drops what it was
 holding and redials. A server that is told to stop hands everything back first;
 a gateway calls every lease in first. `/admin update` restarts the servers with
 the gateway, and a server of another build is refused at the link and exits to
@@ -517,6 +559,8 @@ Rules for new code:
   never a bare walk of the sessions.
 * Anything that populates a realm asks `HostedRealms` first.
 * Any change to what crosses the link bumps `cluster::kLinkVersion`.
+* Never send a client's bytes over the link to be passed on: what is the
+  client's goes from wherever its socket is (`gwDeliver`, `shDeliver`).
 * A player on another server is `session.elsewhere`, not `session.entity`:
   on the gateway nobody is ever `playing()`.
 

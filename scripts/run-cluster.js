@@ -6,11 +6,15 @@
 //
 // Each is a process of its own -- which is the point: a Node process
 // simulates on one core, and a biome no longer shares it with every other
-// biome. Any that exits is started again (a server of a sharded game exits to
+// biome. Each simulation server takes its own players on a port of its own,
+// P+2, P+3, ... (P+1 is the gateway's own, should it be given `--simulate`):
+// the gateway signs them in and sends them there, and relays none of their
+// traffic. Any that exits is started again (a server of a sharded game exits to
 // be restarted whenever the gateway is updated), with a growing wait if it
 // will not stay up. Servers on OTHER machines are not this script's: start
-// them there with `--role shard --gateway host:port` and the same secret, and
-// give the gateway `--cluster-host`.
+// them there with `--role shard --gateway host:port` and the same secret (and
+// `--public-host` if their clients dial them by a name), and give the gateway
+// `--cluster-host`.
 //
 // The secret is FLIX_CLUSTER_SECRET, or one made up for this run; it reaches
 // the children by environment, where `ps` does not show it.
@@ -88,8 +92,9 @@ start("gateway", ["--role", "gateway", "--port", String(options.port),
   "--db", path.join(path.dirname(options.server), "inventory.json"), ...web, ...extra], 1000);
 for (let i = 1; i <= shards; ++i) {
   start(`shard-${i}`, ["--role", "shard", "--shard-name", `shard-${i}`,
+    "--port", String(Number(options.port) + 1 + i),
     "--copy", path.join(path.dirname(options.server), `replica-shard-${i}.json`),
-    "--gateway", `127.0.0.1:${options["cluster-port"]}`], 1000);
+    "--gateway", `127.0.0.1:${options["cluster-port"]}`, ...web], 1000);
 }
 
 // The gateway is told first and the servers with it: it calls the rows in,

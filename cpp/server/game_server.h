@@ -146,8 +146,9 @@ struct ServerConfig {
     /// in a test.
     int passwordCost = 0;
     /// Sharding (cpp/docs/ARCHITECTURE.md). Alone is the whole game in one
-    /// process. The Gateway holds the sockets and the accounts and simulates
-    /// nothing; each Shard dials it and simulates the biomes it is given.
+    /// process. The Gateway holds the accounts and the sockets of clients with
+    /// no flower out, and simulates nothing; each Shard dials it, simulates the
+    /// biomes it is given, and is dialled by the clients playing there.
     enum class Role : std::uint8_t { Alone, Gateway, Shard };
     Role role = Role::Alone;
     /// The gateway: where its servers dial in. Loopback unless told otherwise.
@@ -169,6 +170,19 @@ struct ServerConfig {
     std::string copyPath;
     /// A shard: the gateway's own simulation, in its process (ServerHost).
     bool localShard = false;
+    /// Where clients are sent to reach this server's port. For a shard, an
+    /// empty host is the address the gateway sees the server's link come from
+    /// -- or, for the gateway's own simulation, the host the client dialled
+    /// the gateway at; for a gateway, the address its servers dial. A port of
+    /// 0 is `port`.
+    std::string publicHost;
+    std::uint16_t publicPort = 0;
+    /// The gateway, when it simulates: the port its own simulation takes
+    /// clients on, or 0 for `port` + 1.
+    std::uint16_t simulationPort = 0;
+    /// A shard: its record of the rows lent to it (cluster/lease_journal.h),
+    /// or empty to keep it in memory only.
+    std::string leaseJournalPath;
     /// What `/admin cluster` made of this server, and the file that says so.
     /// An empty path is a server no command links: one whose part was given on
     /// its command line, or that has no file to keep it in.
@@ -361,9 +375,28 @@ private:
     void gwBeginCopy(int slot);
     void gwServiceCopies(double nowMillis, bool everything = false);
     std::string gwCopyState(int slot) const;
-    /// A client that dialled another server's port, opened and gone.
-    void gwEdgeOpened(int slot, std::uint32_t edge, const std::string& address);
-    void gwEdgeGone(net::ConnectionId);
+    /// The answer to a Hello: whether this build and content are the client's.
+    bool writeWelcome(ByteWriter&, std::uint16_t version, std::uint32_t clientContent) const;
+    /// The sockets at the gateway's own port.
+    void gwDoorOpened(net::Connection&);
+    void gwDoorFrame(net::Connection&, ByteReader&);
+    void gwDoorClosed(net::Connection&);
+    /// Where a session's frames go: the client's socket, wherever it is.
+    void gwDeliver(net::ConnectionId client, const std::byte* data, std::size_t size);
+    /// Sends the client's socket to `slot`'s port, or home to this one for 0.
+    void gwRedirect(Session&, int slot);
+    /// A client back at this port with the ticket it was sent with.
+    void gwAttachHome(net::Connection& socket, Session& greeted, const std::string& ticket);
+    /// The session's own connection closed: so does its socket, wherever.
+    void gwClientClosed(net::ConnectionId);
+    /// Ends a session whose socket is gone.
+    void gwDropClient(net::ConnectionId);
+    /// The gateway's journal has a server's lease journal up to `seq`.
+    void gwNoteTaken(int slot, std::uint64_t seq);
+    void gwRecovered(int slot, ByteReader&);
+    /// A SquadUpdate or squad invitation `slot` sent the client: where its
+    /// squad is.
+    void gwNoteSquad(Session&, int slot, std::uint8_t message, std::uint8_t first);
     /// The last of `/admin cluster disconnect`: a server of one, once every
     /// other has gone.
     void gwServiceDisband(double nowMillis);
@@ -455,9 +488,22 @@ private:
     void shLinkLost(const std::string& reason);
     void shCopyMessage(std::uint8_t message, ByteReader&);
     void shServiceCopy(double nowMillis);
-    void shEdgeOpened(net::Connection&);
-    void shEdgeFrame(net::Connection&, ByteReader&);
-    void shEdgeClosed(net::Connection&);
+    /// The sockets at this server's own port: clients the gateway sent here.
+    void shDoorOpened(net::Connection&);
+    void shDoorFrame(net::Connection&, ByteReader&);
+    void shDoorClosed(net::Connection&);
+    void shAttach(net::Connection& socket, const std::string& ticket);
+    /// A frame from a client at this port: carried out here, or asked of the
+    /// gateway.
+    void shClientFrame(net::ConnectionId client, ByteReader&);
+    /// Where a session's frames go: its socket here, or the gateway's to place.
+    void shDeliver(net::ConnectionId client, const std::byte* data, std::size_t size);
+    /// Closes the client's socket at this port, if it has one, saying nothing.
+    void shCloseDoor(Session&);
+    /// Whether the body stands where the market can be used, as a fence finds.
+    bool shAtMarket(Session&);
+    /// The rows the lease journal holds that the gateway never took.
+    void shRecover(std::uint64_t taken);
     /// Told by the gateway to be a server of one again.
     void shLeave();
     void shSend(const ByteWriter&);

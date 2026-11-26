@@ -1,5 +1,5 @@
-// The gateway of a sharded game: the sockets, the accounts, and which server
-// has which biome. See server/cluster/gateway.h and cpp/docs/ARCHITECTURE.md,
+// The gateway of a sharded game: the accounts, the sockets of clients with no
+// flower out, and which server has which biome. See server/cluster/gateway.h and cpp/docs/ARCHITECTURE.md,
 // "Sharding".
 
 #include "server/cluster/gateway.h"
@@ -21,6 +21,8 @@ using cluster::ClientInfo;
 using cluster::FlowerState;
 using cluster::ToGateway;
 using cluster::ToServer;
+using cluster::Where;
+using cluster::whereHandled;
 
 namespace {
 
@@ -66,49 +68,22 @@ bool sharedTable(const std::string& key) { return key == "guilds" || key == "cha
 /// whoever has it.
 constexpr const char* kBiomeTables[] = {"bossClocks", "sacrificeSpawn", "adminArena", "adminEvents"};
 
-/// Where a frame from a client whose flower is on another server is handled.
-enum class Where { Here, There, Fenced };
+/// The host part of a peer address ("1.2.3.4:5678", "::ffff:1.2.3.4:5678"),
+/// as a URL would have it.
+std::string hostOfPeer(const std::string& peer) {
+    std::string host = peer;
+    const std::size_t colon = host.rfind(':');
+    if (colon != std::string::npos) host = host.substr(0, colon);
+    if (host.rfind("::ffff:", 0) == 0 && host.find('.') != std::string::npos) host = host.substr(7);
+    if (host.find(':') != std::string::npos && host.front() != '[') host = "[" + host + "]";
+    return host;
+}
 
-Where whereHandled(net::ClientMessage id) {
-    switch (id) {
-        case net::ClientMessage::Input:
-        case net::ClientMessage::Ping:
-        case net::ClientMessage::UsePetal:
-        case net::ClientMessage::SetLoadout:
-        case net::ClientMessage::SwapLoadout:
-        case net::ClientMessage::SwapLoadoutRows:
-        case net::ClientMessage::SaveLoadoutPreset:
-        case net::ClientMessage::LoadLoadoutPreset:
-        case net::ClientMessage::ProfileCheck:
-        case net::ClientMessage::Craft:
-        case net::ClientMessage::OracleCraft:
-        case net::ClientMessage::Trade:
-        case net::ClientMessage::TitanForge:
-        case net::ClientMessage::TitanHolder:
-        case net::ClientMessage::Assemble:
-        case net::ClientMessage::Absorb:
-        case net::ClientMessage::UpgradeSkill:
-        case net::ClientMessage::ResetSkills:
-        case net::ClientMessage::ClaimTrialReward:
-        case net::ClientMessage::StartTrialChamber:
-        case net::ClientMessage::Respawn:
-        case net::ClientMessage::AdminDashboard:
-            return Where::There;
-        // The handlers here that spend from the account, or change what the
-        // body wears: run on this side's copy of the row, once everything the
-        // client sent before them has been carried out on the other's.
-        case net::ClientMessage::BuyPetal:
-        case net::ClientMessage::RedeemCode:
-        case net::ClientMessage::PublishSkin:
-        case net::ClientMessage::EditSkin:
-        case net::ClientMessage::EquipSkin:
-        case net::ClientMessage::DeleteSkin:
-        case net::ClientMessage::VoteSkin:
-        case net::ClientMessage::FavoriteSkin:
-            return Where::Fenced;
-        default:
-            return Where::Here;
-    }
+ByteWriter attachedAnswer(bool ok) {
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::Attached));
+    w.boolean(ok);
+    return w;
 }
 
 } // namespace
@@ -142,10 +117,21 @@ bool GameServer::startGateway(std::string& errorOut) {
             return;
         }
     };
+    // An acknowledgement of a server's rows goes out on the link only behind
+    // the journal line that holds them.
+    g.listener.beforeWrite = [this] { database_.flushJournal(); };
     if (!g.listener.start(config_.clusterPort, errorOut)) {
         errorOut = "cluster port " + std::to_string(config_.clusterPort) + ": " + errorOut;
         return false;
     }
+    // The game's own port. The sessions are adopted connections whose frames
+    // go wherever their client's socket is (gwDeliver); what a socket here
+    // says is handed to the session it is (gwDoorFrame).
+    g.door.certPath = config_.certPath;
+    g.door.keyPath = config_.keyPath;
+    g.door.webRoot = config_.webRoot;
+    g.door.bindHost = config_.bindHost;
+    if (!g.door.start(config_.port, errorOut)) return false;
     database_.onTableWritten = [this](const std::string& key, const std::string& text) {
         if (!sharedTable(key)) return;
         ByteWriter w = begin(ToServer::Table);
@@ -235,6 +221,10 @@ void GameServer::gwService() {
 
 void GameServer::gwFlush() {
     gwPassEdits();
+    // What the sessions queued, into the sockets and links it goes out on:
+    // after beforeWrite, so behind the journal.
+    listener_.flush();
+    gateway_->door.flush();
     gateway_->listener.flush();
 }
 
@@ -321,10 +311,30 @@ bool GameServer::gwHandshake(net::Connection& link, ByteReader& reader, std::uin
         // A stranger gets the frames a client does; only a server, the ones a
         // whole table takes.
         link.maxFrameBytes = cluster::kLinkMaxFrame;
-        std::printf("[cluster] %s joined from %s\n", server.name.c_str(), link.peer().c_str());
+        server.journalKey = server.greeting.id.empty() ? "name:" + sanitizePlayerName(server.greeting.name)
+                                                       : server.greeting.id;
+        server.publicHost = server.greeting.publicHost;
+        server.publicPort = server.greeting.publicPort;
+        // Where the link came from is where its clients dial, unless it said
+        // otherwise. Not for a server on this machine -- the gateway's own
+        // simulation, or one dialling over loopback -- which is wherever the
+        // client found the gateway.
+        if (server.publicHost.empty() && !server.greeting.local) {
+            const std::string host = hostOfPeer(link.peer());
+            const bool loopback = host.rfind("127.", 0) == 0 || host == "[::1]" || host == "localhost";
+            if (!loopback) server.publicHost = host;
+        }
+        std::printf("[cluster] %s joined from %s; clients dial it at %s:%u\n", server.name.c_str(),
+                    link.peer().c_str(), server.publicHost.empty() ? "(this host)" : server.publicHost.c_str(),
+                    static_cast<unsigned>(server.publicPort));
+        const Json& taken = std::as_const(database_).storedTable("leaseJournals")[server.journalKey];
         ByteWriter w = begin(ToServer::Welcome);
         w.u8(static_cast<std::uint8_t>(slot));
         w.i64(activeMaze().day());
+        w.u64(static_cast<std::uint64_t>(taken.asDouble()));
+        // Where a client that dials that server's own port is sent instead.
+        w.str(config_.publicHost);
+        w.u16(config_.publicPort != 0 ? config_.publicPort : config_.port);
         gwSend(slot, w);
         for (const char* key : {"guilds", "chatTerms"}) {
             const Json& table = std::as_const(database_).storedTable(key);
@@ -375,29 +385,69 @@ void GameServer::gwLinkMessage(net::Connection& link, ByteReader& frame) {
             if (session == nullptr || reader.remaining() == 0) break;
             // Two of the frames passing through say where this client's
             // squad is, which is where its squad commands have to go.
-            const auto kind = static_cast<net::ServerMessage>(reader.rest()[0]);
-            if (kind == net::ServerMessage::SquadUpdate && reader.remaining() > 1) {
-                const bool in = reader.rest()[1] != std::byte{0};
-                if (in || session->elsewhere.squadSlot == slot) {
-                    session->elsewhere.inSquad = in;
-                    session->elsewhere.squadSlot = in ? slot : 0;
-                }
-            } else if (kind == net::ServerMessage::SquadInviteReceived &&
-                       !session->elsewhere.inSquad) {
-                session->elsewhere.squadSlot = slot;
-            }
+            gwNoteSquad(*session, slot, static_cast<std::uint8_t>(reader.rest()[0]),
+                        reader.remaining() > 1 ? static_cast<std::uint8_t>(reader.rest()[1]) : 0);
+            // Wherever its socket is.
             if (net::Connection* client = listener_.find(id)) {
                 client->send(reader.rest(), reader.remaining());
             }
             break;
         }
         case ToGateway::ClientClose: {
+            // Its socket at that server's port closed, or that server closed
+            // it: the session goes as any whose socket went.
             const net::ConnectionId id = reader.u32();
             if (clientOf(id) == nullptr) break;
             if (net::Connection* client = listener_.find(id)) client->closeGracefully();
             break;
         }
+        case ToGateway::FromClient: {
+            const net::ConnectionId id = reader.u32();
+            const bool atMarket = reader.boolean();
+            Session* session = clientOf(id);
+            net::Connection* client = listener_.find(id);
+            // From where it is, or from where it was: what it sent there
+            // before it was redirected is still its own, in order.
+            if (!reader.ok() || session == nullptr || client == nullptr || client->closing() ||
+                (session->elsewhere.carrier != slot && session->elsewhere.lastCarrier != slot) ||
+                reader.remaining() == 0) {
+                break;
+            }
+            const auto kind = static_cast<net::ClientMessage>(reader.rest()[0]);
+            ByteReader frame(reader.rest(), reader.remaining());
+            session->elsewhere.viaCarrier = true;
+            session->elsewhere.carrierAtMarket = atMarket;
+            onMessage(*client, frame);
+            if (Session* still = sessionFor(id)) still->elsewhere.viaCarrier = false;
+            if (cluster::awaitsGateway(kind)) {
+                // The answer and the edits it made go ahead of the word that
+                // the server may carry on with what the client sent next.
+                gwPassEdits();
+                listener_.flush();
+                ByteWriter w = begin(ToServer::Handled);
+                w.u32(id);
+                gwSend(slot, w);
+            }
+            break;
+        }
+        case ToGateway::Attached: {
+            const net::ConnectionId id = reader.u32();
+            Session* session = clientOf(id);
+            if (reader.ok() && session != nullptr && session->elsewhere.carrier == slot) {
+                session->elsewhere.transitSinceMillis = 0;
+            }
+            break;
+        }
+        case ToGateway::Recovered: gwRecovered(slot, reader); break;
+        case ToGateway::SquadNote: {
+            const net::ConnectionId id = reader.u32();
+            const std::uint8_t kind = reader.u8();
+            const std::uint8_t first = reader.u8();
+            if (Session* session = reader.ok() ? clientOf(id) : nullptr) gwNoteSquad(*session, slot, kind, first);
+            break;
+        }
         case ToGateway::Rows: {
+            const std::uint64_t seq = reader.u64();
             const int n = reader.u16();
             for (int i = 0; i < n && reader.ok(); ++i) {
                 const std::string user = reader.str();
@@ -406,6 +456,7 @@ void GameServer::gwLinkMessage(net::Connection& link, ByteReader& frame) {
                 std::string row = reader.blob();
                 if (reader.ok()) gwTakeRow(user, lease, slot, ack, std::move(row));
             }
+            if (reader.ok()) gwNoteTaken(slot, seq);
             break;
         }
         case ToGateway::Table: {
@@ -567,30 +618,6 @@ void GameServer::gwLinkMessage(net::Connection& link, ByteReader& frame) {
             if (reader.ok() && clientOf(id) != nullptr) revokeTempAdmin(id);
             break;
         }
-        case ToGateway::EdgeOpen: {
-            const std::uint32_t edge = reader.u32();
-            const std::string address = reader.str();
-            if (reader.ok()) gwEdgeOpened(slot, edge, address);
-            break;
-        }
-        case ToGateway::EdgeFrame: {
-            const auto at = found->second.edges.find(reader.u32());
-            if (!reader.ok() || at == found->second.edges.end()) break;
-            net::Connection* client = listener_.find(at->second);
-            if (client == nullptr || client->closing() || reader.remaining() == 0) break;
-            ByteReader said(reader.rest(), reader.remaining());
-            onMessage(*client, said);
-            break;
-        }
-        case ToGateway::EdgeClosed: {
-            const auto at = found->second.edges.find(reader.u32());
-            if (!reader.ok() || at == found->second.edges.end()) break;
-            const net::ConnectionId id = at->second;
-            gwEdgeGone(id);
-            endSession(id);
-            listener_.abandon(id);
-            break;
-        }
         case ToGateway::CopyAck: {
             const std::uint64_t seq = reader.u64();
             if (reader.ok()) found->second.copyOnDisk = seq;
@@ -619,6 +646,20 @@ void GameServer::gwLinkMessage(net::Connection& link, ByteReader& frame) {
             break;
         }
         default: break;
+    }
+}
+
+void GameServer::gwNoteSquad(Session& session, int slot, std::uint8_t message, std::uint8_t first) {
+    Session::Elsewhere& e = session.elsewhere;
+    const auto kind = static_cast<net::ServerMessage>(message);
+    if (kind == net::ServerMessage::SquadUpdate) {
+        const bool in = first != 0;
+        if (in || e.squadSlot == slot) {
+            e.inSquad = in;
+            e.squadSlot = in ? slot : 0;
+        }
+    } else if (kind == net::ServerMessage::SquadInviteReceived && !e.inSquad) {
+        e.squadSlot = slot;
     }
 }
 
@@ -655,20 +696,30 @@ void GameServer::gwServerLost(int slot, const std::string& name) {
         // Off the books before anything below looks for somewhere to go.
         server->slot = 0;
         server->copying = false;
-        // Whoever dialled its own port went with it, and will dial again.
-        const auto edges = std::move(server->edges);
-        server->edges.clear();
-        for (const auto& [edge, id] : edges) {
-            g.edgeOf.erase(id);
-            endSession(id);
-            listener_.abandon(id);
-        }
     }
 
-    // Every row it had is as it last sent it, and every client has been shown
-    // nothing newer: the rows travel ahead of the frames.
+    // Every row it had is as it last sent it. What its players were shown
+    // after that is in its lease journal, and is handed over when it is
+    // linked again (gwRecovered).
     for (auto it = g.leases.begin(); it != g.leases.end();) {
         it = it->second.slot == slot ? g.leases.erase(it) : std::next(it);
+    }
+    // Whoever was at its port, or on the way there, lost the socket with it,
+    // and dials the gateway again to sign back in.
+    std::vector<net::ConnectionId> stranded;
+    for (const auto& entry : sessions_) {
+        if (entry.second.elsewhere.carrier == slot) stranded.push_back(entry.first);
+    }
+    for (const net::ConnectionId id : stranded) {
+        if (Session* session = sessionFor(id)) {
+            // Nothing of it is that server's to be told any more.
+            session->elsewhere.told.erase(slot);
+            if (session->elsewhere.slot == slot) {
+                session->elsewhere.slot = 0;
+                session->elsewhere.lease = 0;
+            }
+        }
+        gwDropClient(id);
     }
     for (auto& entry : sessions_) {
         Session& session = entry.second;
@@ -851,6 +902,13 @@ bool GameServer::gwRoute(Session& session, net::Connection& connection, net::Cli
             case Where::Here: return false;
             case Where::There: gwForward(session, e.slot, frame); return true;
             case Where::Fenced: break;
+        }
+        if (e.viaCarrier && e.carrier == e.slot) {
+            // Sent by the server the flower is on, which carried out
+            // everything before it and put the rows ahead of it on the link:
+            // the fence is already behind it.
+            e.atMarket = e.carrierAtMarket;
+            return false;
         }
         e.held.emplace_front(frame.begin(), frame.begin() + frame.size());
         e.fenced = true;
@@ -1084,6 +1142,9 @@ void GameServer::gwDispatch(Session& session) {
     e.state.playing = true;
     e.state.realm = state.realm;
     gwAttach(session, slot);
+    // The client goes to the flower: its socket is sent to that server's
+    // port, ahead of the grant, so the server is expecting it by then.
+    gwRedirect(session, slot);
 
     ByteWriter w = begin(ToServer::Grant);
     w.u32(session.connection);
@@ -1114,6 +1175,8 @@ void GameServer::gwArrivalFailed(Session& session, const std::string& why) {
         sendNotice(*client, net::NoticeSeverity::Bad, why);
         sendFullProfile(session, *client);
     }
+    // Nothing in the world for it to be anywhere else for.
+    if (e.slot == 0) gwRedirect(session, 0);
     gwDrainHeld(session.connection);
 }
 
@@ -1129,45 +1192,295 @@ void GameServer::gwRelease(Session& session) {
         // word on it is on the way.
         lease->second.client = 0;
     }
-    e = Session::Elsewhere{};
+    // Where the socket is outlives the account on it: a sign-out or a sign-in
+    // happens on a live socket.
+    Session::Elsewhere fresh;
+    fresh.carrier = e.carrier;
+    fresh.lastCarrier = e.lastCarrier;
+    fresh.pendingCarrier = e.pendingCarrier;
+    fresh.door = e.door;
+    fresh.transitSinceMillis = e.transitSinceMillis;
+    fresh.ticket = std::move(e.ticket);
+    fresh.outbox = std::move(e.outbox);
+    fresh.outboxBytes = e.outboxBytes;
+    e = std::move(fresh);
 }
 
 // ---------------------------------------------------------------------------
-// Clients at another server's port
+// Where a client's socket is
 // ---------------------------------------------------------------------------
 //
-// Ours like any other: the socket is that server's and everything said on it
-// is said here, through a connection with no transport of its own.
+// A session here is an adopted connection, numbered by this server for as long
+// as the client is signed in, whichever port its socket is at. A socket at this
+// server's own port is the door's; one at another server's port is that
+// server's, and what is said here to its session is delivered there. Nothing a
+// client sends or is sent is ever passed on by a server that is not the one it
+// is connected to.
 
-void GameServer::gwEdgeOpened(int slot, std::uint32_t edge, const std::string& address) {
+void GameServer::gwDoorOpened(net::Connection& socket) {
     Gateway& g = *gateway_;
-    Gateway::Server* server = g.bySlot(slot);
-    if (server == nullptr || server->edges.count(edge) != 0) return;
     const net::ConnectionId id = listener_.reserveId();
-    net::Connection& client =
-        listener_.adopt(id, address, [this, slot, edge](const std::byte* data, std::size_t size) {
-            ByteWriter w(size + 8);
-            w.u8(static_cast<std::uint8_t>(ToServer::EdgeFrame));
-            w.u32(edge);
-            w.raw(data, size);
-            gwSend(slot, w);
-        });
-    server->edges[edge] = id;
-    g.edgeOf[id] = {slot, edge};
+    const std::string address = clientAddress(socket.peer(), socket.forwarded());
+    net::Connection& client = listener_.adopt(
+        id, socket.peer(), [this, id](const std::byte* data, std::size_t size) { gwDeliver(id, data, size); });
+    g.doorOf[socket.id()] = id;
     onConnect(client);
-    if (Session* session = sessionFor(id)) session->clientAddress = address;
+    if (Session* session = sessionFor(id)) {
+        session->clientAddress = address;
+        session->elsewhere.door = socket.id();
+    }
 }
 
-void GameServer::gwEdgeGone(net::ConnectionId id) {
+void GameServer::gwDoorFrame(net::Connection& socket, ByteReader& reader) {
     Gateway& g = *gateway_;
-    const auto at = g.edgeOf.find(id);
-    if (at == g.edgeOf.end()) return;
-    const auto [slot, edge] = at->second;
-    g.edgeOf.erase(at);
-    if (Gateway::Server* server = g.bySlot(slot)) server->edges.erase(edge);
-    ByteWriter w = begin(ToServer::EdgeClose);
-    w.u32(edge);
+    const auto at = g.doorOf.find(socket.id());
+    if (at == g.doorOf.end() || reader.remaining() == 0) return;
+    Session* session = sessionFor(at->second);
+    net::Connection* client = listener_.find(at->second);
+    if (session == nullptr || client == nullptr || client->closing()) return;
+    if (static_cast<net::ClientMessage>(reader.rest()[0]) == net::ClientMessage::Attach) {
+        reader.u8();
+        const std::string ticket = reader.str();
+        if (!reader.ok() || session->stage != SessionStage::Anonymous) {
+            socket.closeGracefully();
+            return;
+        }
+        gwAttachHome(socket, *session, ticket);
+        return;
+    }
+    onMessage(*client, reader);
+}
+
+void GameServer::gwDoorClosed(net::Connection& socket) {
+    Gateway& g = *gateway_;
+    const auto at = g.doorOf.find(socket.id());
+    if (at == g.doorOf.end()) return;
+    const net::ConnectionId id = at->second;
+    g.doorOf.erase(at);
+    Session* session = sessionFor(id);
+    if (session == nullptr || session->elsewhere.door != socket.id()) return;
+    session->elsewhere.door = 0;
+    // As a socket closing always ended a session.
+    gwDropClient(id);
+}
+
+void GameServer::gwDeliver(net::ConnectionId id, const std::byte* data, std::size_t size) {
+    Gateway& g = *gateway_;
+    Session* session = sessionFor(id);
+    if (session == nullptr) return;
+    Session::Elsewhere& e = session->elsewhere;
+    const int at = e.carrier != 0 ? e.carrier : e.pendingCarrier;
+    if (at != 0) {
+        ByteWriter w(size + 8);
+        w.u8(static_cast<std::uint8_t>(ToServer::Deliver));
+        w.u32(id);
+        w.raw(data, size);
+        gwSend(at, w);
+        return;
+    }
+    if (e.door != 0) {
+        if (net::Connection* socket = g.door.find(e.door)) socket->send(data, size);
+        return;
+    }
+    if (e.transitSinceMillis <= 0) return;
+    if (e.outboxBytes + size > cluster::kMaxTransitBytes) {
+        // Not reading, wherever it is: given up on at the next tick.
+        e.outbox.clear();
+        e.outboxBytes = 0;
+        e.transitSinceMillis = 1;
+        return;
+    }
+    e.outbox.emplace_back(data, data + size);
+    e.outboxBytes += size;
+}
+
+void GameServer::gwRedirect(Session& session, int slot) {
+    Gateway& g = *gateway_;
+    Session::Elsewhere& e = session.elsewhere;
+    if (slot == 0 && e.pendingCarrier != 0) {
+        // Called home again before it got home: it stays.
+        e.pendingCarrier = 0;
+        e.outbox.clear();
+        e.outboxBytes = 0;
+        return;
+    }
+    if (e.carrier == slot || (slot != 0 && e.pendingCarrier == slot)) return;
+    const Gateway::Server* server = slot != 0 ? g.bySlot(slot) : nullptr;
+    if (slot != 0 && server == nullptr) return;
+    // Everything said to it so far leaves the way it is connected now.
+    listener_.flush();
+
+    const std::string ticket = crypto::secureRandom().hex(16);
+    ByteWriter redirect;
+    redirect.u8(static_cast<std::uint8_t>(net::ServerMessage::Redirect));
+    if (server != nullptr) {
+        ByteWriter expect = begin(ToServer::Expect);
+        expect.u32(session.connection);
+        expect.str(ticket);
+        gwSend(slot, expect);
+        redirect.str(server->publicHost);
+        redirect.u16(server->publicPort);
+    } else {
+        // Home: wherever the client first found this server.
+        redirect.str("");
+        redirect.u16(0);
+        e.ticket = ticket;
+    }
+    redirect.str(ticket);
+
+    if (e.carrier == 0 && e.door == 0 && e.transitSinceMillis > 0 && server != nullptr) {
+        // Still on its way home: told the moment it arrives, and everything
+        // after that goes where it is going.
+        e.outbox.emplace_back(redirect.data(), redirect.data() + redirect.size());
+        e.outboxBytes += redirect.size();
+        e.pendingCarrier = slot;
+        return;
+    }
+    if (e.carrier == 0) {
+        if (net::Connection* socket = e.door != 0 ? g.door.find(e.door) : nullptr) {
+            socket->send(redirect);
+            socket->closeGracefully();
+        }
+        g.doorOf.erase(e.door);
+        e.door = 0;
+    } else {
+        // The server it is at sends it on, and lets the socket go.
+        ByteWriter w(redirect.size() + 8);
+        w.u8(static_cast<std::uint8_t>(ToServer::Deliver));
+        w.u32(session.connection);
+        w.raw(redirect.data(), redirect.size());
+        gwSend(e.carrier, w);
+    }
+    e.lastCarrier = e.carrier;
+    e.carrier = slot;
+    e.transitSinceMillis = monotonicMillis();
+    e.outbox.clear();
+    e.outboxBytes = 0;
+}
+
+void GameServer::gwAttachHome(net::Connection& socket, Session& greeted, const std::string& ticket) {
+    Gateway& g = *gateway_;
+    Session* home = nullptr;
+    for (auto& entry : sessions_) {
+        Session::Elsewhere& e = entry.second.elsewhere;
+        if (e.carrier != 0 || e.door != 0 || e.ticket.empty()) continue;
+        if (crypto::constantTimeEquals(e.ticket, ticket)) {
+            home = &entry.second;
+            break;
+        }
+    }
+    if (home == nullptr) {
+        // A ticket from before a restart, or used: the client signs in again
+        // on the session the socket already has.
+        socket.send(attachedAnswer(false));
+        return;
+    }
+    // The session the socket opened was only ever its handshake.
+    const net::ConnectionId handshake = greeted.connection;
+    greeted.elsewhere.door = 0;
+    endSession(handshake);
+    listener_.abandon(handshake);
+
+    Session::Elsewhere& e = home->elsewhere;
+    g.doorOf[socket.id()] = home->connection;
+    e.door = socket.id();
+    e.ticket.clear();
+    e.transitSinceMillis = 0;
+    socket.send(attachedAnswer(true));
+    for (const std::vector<std::byte>& frame : e.outbox) socket.send(frame.data(), frame.size());
+    e.outbox.clear();
+    e.outboxBytes = 0;
+    if (e.pendingCarrier != 0) {
+        // Already sent on: the last of what it was just given says where.
+        socket.closeGracefully();
+        g.doorOf.erase(socket.id());
+        e.door = 0;
+        e.lastCarrier = 0;
+        e.carrier = e.pendingCarrier;
+        e.pendingCarrier = 0;
+        e.transitSinceMillis = monotonicMillis();
+    }
+}
+
+void GameServer::gwClientClosed(net::ConnectionId id) {
+    Gateway& g = *gateway_;
+    Session* session = sessionFor(id);
+    if (session == nullptr) return;
+    Session::Elsewhere& e = session->elsewhere;
+    if (e.door == 0) return;
+    // Behind whatever it was still to be told.
+    if (net::Connection* socket = g.door.find(e.door)) socket->closeGracefully();
+    g.doorOf.erase(e.door);
+    e.door = 0;
+}
+
+void GameServer::gwDropClient(net::ConnectionId id) {
+    gwClientClosed(id);
+    endSession(id);
+    listener_.abandon(id);
+}
+
+// ---------------------------------------------------------------------------
+// The servers' lease journals
+// ---------------------------------------------------------------------------
+//
+// What each server's players were shown is in its lease journal before they
+// are shown it (cluster/lease_journal.h). Every row taken from a server moves
+// the mark of how much of that journal is safe here; the mark is kept in the
+// database, in the same journal line as the rows, so a gateway that restarts
+// tells the server exactly what it still holds.
+
+void GameServer::gwNoteTaken(int slot, std::uint64_t seq) {
+    Gateway::Server* server = gateway_->bySlot(slot);
+    if (server == nullptr || server->journalKey.empty()) return;
+    const Json& known = std::as_const(database_).storedTable("leaseJournals")[server->journalKey];
+    if (known.isNumber() && static_cast<std::uint64_t>(known.asDouble()) >= seq) return;
+    Json& table = database_.rawTable("leaseJournals");
+    if (!table.isObject()) table = Json::object();
+    table[server->journalKey] = Json(static_cast<double>(seq));
+    database_.markDirty();
+    // Out on the link only behind the journal line (the link's beforeWrite).
+    ByteWriter w = begin(ToServer::RowsTaken);
+    w.u64(seq);
     gwSend(slot, w);
+}
+
+void GameServer::gwRecovered(int slot, ByteReader& reader) {
+    const std::uint64_t seq = reader.u64();
+    const int n = reader.u16();
+    std::vector<std::string> users;
+    for (int i = 0; i < n && reader.ok(); ++i) {
+        const std::string user = reader.str();
+        const std::string base = reader.blob();
+        const std::string row = reader.blob();
+        if (!reader.ok()) break;
+        // An account deleted since has nothing to put it on.
+        if (std::as_const(database_).findUserById(user) == nullptr) continue;
+        const Json change = rowDifference(Json::parseOrNull(base), Json::parseOrNull(row));
+        if (change.isNull()) continue;
+        // On whatever the row is now -- lent out again, perhaps, in which case
+        // the server holding it hears of it as of any edit made here.
+        PlayerRecord& record = database_.progress(user);
+        Json value = playerRecordJson(record);
+        applyRowDifference(value, change);
+        record = parsePlayerRecord(value);
+        users.push_back(user);
+    }
+    if (!reader.ok()) return;
+    if (!users.empty()) {
+        database_.markDirty();
+        gwPassEdits();
+        const Gateway::Server* server = gateway_->bySlot(slot);
+        std::printf("[cluster] %s handed over %zu row%s its players were shown before it was lost\n",
+                    server != nullptr ? server->name.c_str() : "a server", users.size(),
+                    users.size() == 1 ? "" : "s");
+        for (auto& entry : sessions_) {
+            Session& session = entry.second;
+            if (!session.authenticated() || session.elsewhere.slot != 0) continue;
+            if (std::find(users.begin(), users.end(), session.userId) != users.end()) sendProfile(session);
+        }
+    }
+    gwNoteTaken(slot, seq);
 }
 
 // ---------------------------------------------------------------------------
@@ -1226,6 +1539,7 @@ void GameServer::gwTakeRow(const std::string& userId, std::uint32_t id, int slot
 
 void GameServer::gwLeaseReturned(int slot, ByteReader& reader) {
     Gateway& g = *gateway_;
+    const std::uint64_t seq = reader.u64();
     const net::ConnectionId client = reader.u32();
     const std::string userId = reader.str();
     const std::uint32_t id = reader.u32();
@@ -1243,6 +1557,7 @@ void GameServer::gwLeaseReturned(int slot, ByteReader& reader) {
         return;
     }
     gwTakeRow(userId, id, slot, ack, std::move(row));
+    gwNoteTaken(slot, seq);
     const net::ConnectionId holder = found->second.client;
     g.leases.erase(found);
     oracleReadyAt_[userId] = clockMillis_ + oracle;
@@ -1260,6 +1575,10 @@ void GameServer::gwLeaseReturned(int slot, ByteReader& reader) {
         if (onward) {
             e.entering = std::make_unique<FlowerState>(std::move(state));
             e.enteringSinceMillis = monotonicMillis();
+        } else {
+            // Out of the world: back to the title screen, which is this
+            // server's to show.
+            gwRedirect(*session, 0);
         }
     }
     // Whoever of this account was waiting for the row to come home.
@@ -1427,6 +1746,13 @@ void GameServer::gwTick(double) {
     gwPlace(now);
     gwTellReachable();
     gwServiceCopies(now);
+    // A client sent somewhere that never turned up there.
+    std::vector<net::ConnectionId> lost;
+    for (const auto& entry : sessions_) {
+        const double since = entry.second.elsewhere.transitSinceMillis;
+        if (since > 0 && now - since > cluster::kAttachPatienceMillis) lost.push_back(entry.first);
+    }
+    for (const net::ConnectionId id : lost) gwDropClient(id);
     std::vector<net::ConnectionId> waiting;
     for (auto& entry : sessions_) {
         Session& session = entry.second;

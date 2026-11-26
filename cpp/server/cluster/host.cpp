@@ -48,6 +48,7 @@ bool ServerHost::boot(std::string& errorOut) {
             config.gatewayPort = m.gatewayPort;
             config.shardName = m.name;
             config.copyPath = cluster::copyPathFor(config.databasePath);
+            config.leaseJournalPath = config.databasePath + ".leases";
         }
     }
     const bool simulates = config.simulates && config.role == ServerConfig::Role::Gateway;
@@ -66,6 +67,15 @@ bool ServerHost::boot(std::string& errorOut) {
         own.membership = Membership{};
         own.membershipPath.clear();
         own.copyPath.clear();
+        // Its own port: the gateway relays no client's traffic, its own
+        // simulation's included. Clients are sent to the host they found the
+        // gateway at (an empty public host), on this port.
+        own.port = config.simulationPort != 0 ? config.simulationPort
+                                              : static_cast<std::uint16_t>(config.port + 1);
+        own.publicHost.clear();
+        // (The gateway's own public address is its own; this one is this port.)
+        own.publicPort = own.port;
+        own.leaseJournalPath = config.databasePath.empty() ? std::string() : config.databasePath + ".simulation.leases";
         // Both wait in their sockets; one after the other, so neither for long.
         own.maxPollMillis = 0;
         own.worldSeed = config.worldSeed ^ 0x5171;

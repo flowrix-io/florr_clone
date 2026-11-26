@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 97;
+inline constexpr std::uint16_t kProtocolVersion = 98;
 
 /// SkinCatalog's leading byte: what the server says this account may do, so the
 /// client shows the matching chat-autocomplete rows and panels. Advisory only:
@@ -74,7 +74,10 @@ inline constexpr int kInputsPerSecond = 60;
 // ---------------------------------------------------------------------------
 
 enum class ClientMessage : std::uint8_t {
-    Hello = 1,          ///< u16 protocolVersion, u32 contentHash
+    Hello = 1,          ///< u16 protocolVersion, u32 contentHash, u8 attaching --
+                        ///< 1 on a socket a Redirect opened, which says Attach
+                        ///< next. A sharded game's simulation server sends any
+                        ///< other socket to the gateway to sign in. (Version 98.)
     Register,           ///< str username, str password
     Login,              ///< str username, str password
     ResumeSession,      ///< str token
@@ -273,6 +276,11 @@ enum class ClientMessage : std::uint8_t {
                         ///< this session's private Trial Grounds run.
     GuildSetOfficer,    ///< str username, u8 officer -- 1 makes the member an
                         ///< officer, 0 takes it away. Leader only. (Version 95.)
+    Attach,             ///< str ticket -- sent after Hello (whose trailing u8 is 1 on
+                        ///< such a socket, 0 or absent otherwise) on a socket a Redirect
+                        ///< opened: carry on the session that ticket was issued
+                        ///< for here, instead of signing in. Answered with
+                        ///< Attached. (Version 98.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -552,6 +560,21 @@ enum class ServerMessage : std::uint8_t {
                         ///< command; `lifetimeMillis` is how long the invite
                         ///< stands before the server lets it lapse.
                         ///< (Version 97.)
+    Redirect,           ///< str host, u16 port, str ticket -- a sharded game's
+                        ///< servers never relay a client's traffic: this one is
+                        ///< done with the socket, and the session goes on at
+                        ///< host:port. An empty host is the host this client
+                        ///< first dialled, and port 0 its port. The client
+                        ///< dials there, sends Hello and then Attach with the
+                        ///< ticket; the old socket is closed after this. An
+                        ///< empty ticket is no session at all: host:port is the
+                        ///< game's gateway, where this client is to sign in,
+                        ///< and it dials there as it would have in the first
+                        ///< place. (Version 98.)
+    Attached,           ///< u8 ok -- the answer to Attach. Refused, the ticket
+                        ///< was stale: the client goes back to the server it
+                        ///< first dialled and resumes its session there.
+                        ///< (Version 98.)
 };
 
 // ---------------------------------------------------------------------------

@@ -1,12 +1,18 @@
 #pragma once
 // The gateway's own state: GameServer::Gateway.
 //
-// The gateway is a GameServer that simulates nothing. It owns the sockets, the
-// database and everything that is the whole game's rather than a biome's --
-// accounts, guilds, the market, global chat -- and it runs those with the same
-// handlers a single server does. What it does instead of simulating is here:
-// which server has which biome, who is playing where, and whose account row is
-// lent out. The methods are GameServer's (server/cluster/gateway.cpp).
+// The gateway is a GameServer that simulates nothing. It owns the database and
+// everything that is the whole game's rather than a biome's -- accounts,
+// guilds, the market, global chat -- and it runs those with the same handlers
+// a single server does. It holds a client's socket only while that client has
+// no flower in the world: a flower's client is sent to the port of the server
+// the flower is on (gwRedirect), which plays it directly and asks the gateway
+// only what is the gateway's to answer. Its sessions are therefore adopted
+// connections (net::Listener::adopt) whose frames go wherever the client is
+// now -- this server's own port (`door`) or another server's (Deliver). What
+// it does instead of simulating is here: which server has which biome, who is
+// playing where, and whose account row is lent out. The methods are
+// GameServer's (server/cluster/gateway.cpp).
 
 #include <cstdint>
 #include <deque>
@@ -34,6 +40,15 @@ struct GameServer::Gateway : net::TransportHandler {
         owner.gwLinkClosed(c.id(), reason);
     }
 
+    /// The game's own port: the sockets of the clients that are here.
+    struct Door : net::TransportHandler {
+        explicit Door(GameServer& server) : owner(server) {}
+        void onConnect(net::Connection& c) override { owner.gwDoorOpened(c); }
+        void onMessage(net::Connection& c, ByteReader& reader) override { owner.gwDoorFrame(c, reader); }
+        void onDisconnect(net::Connection& c, const std::string&) override { owner.gwDoorClosed(c); }
+        GameServer& owner;
+    };
+
     /// One simulation server on the other end of a link.
     struct Server {
         net::ConnectionId link = 0;
@@ -51,10 +66,13 @@ struct GameServer::Gateway : net::TransportHandler {
         bool leaving = false;
         cluster::ServerStats stats;
         bool reported = false;
-
-        /// The clients that dialled this server's own port: its number for
-        /// each, and ours.
-        std::unordered_map<std::uint32_t, net::ConnectionId> edges;
+        /// Where clients are sent to reach it. An empty host is the one the
+        /// client dialled this gateway at.
+        std::string publicHost;
+        std::uint16_t publicPort = 0;
+        /// What its lease journal is known by across restarts: its id, or its
+        /// name for a server started by hand without one.
+        std::string journalKey;
 
         /// The database as it is being copied to this server
         /// (server/cluster/copy.cpp): what of the first pass is still to send.
@@ -101,6 +119,10 @@ struct GameServer::Gateway : net::TransportHandler {
 
     GameServer& owner;
     net::Listener listener;
+    Door doorHandler{owner};
+    net::Listener door;
+    /// Each socket at the door, and the session it is.
+    std::unordered_map<net::ConnectionId, net::ConnectionId> doorOf;
     std::map<net::ConnectionId, Server> servers;
     std::vector<Biome> biomes;
     /// Biome index by realm, or -1 for a realm every server has its own of.
@@ -119,8 +141,6 @@ struct GameServer::Gateway : net::TransportHandler {
     /// Every other server was told to leave: a server of one again once they
     /// have, or once this is past.
     double disbandAtMillis = -1;
-    /// Whose edge each adopted client is: the server's slot, and its number.
-    std::unordered_map<net::ConnectionId, std::pair<int, std::uint32_t>> edgeOf;
     /// Rows changed since they were last copied out, by part.
     std::array<std::unordered_set<std::string>, 4> changed;
     double nextCopyMillis = 0;

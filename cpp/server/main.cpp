@@ -162,7 +162,19 @@ void usage(const char* program) {
         "                     shard: the gateway to dial (default 127.0.0.1:3100)\n"
         "  --shard-name <n>   shard: what logs and /admin shards call it\n"
         "  --copy <path>      shard: where to keep its copy of the database\n"
+        "  --public-host <a>  the host clients are sent to dial this server at. A\n"
+        "                     shard's default is the address the gateway sees its\n"
+        "                     link come from; a gateway's, the one its servers dial.\n"
+        "                     The gateway relays no client's traffic, so a page\n"
+        "                     served over https needs a name with a certificate\n"
+        "  --public-port <n>  the port clients are sent to dial it at (default --port)\n"
+        "  --lease-journal <path>\n"
+        "                     shard: where it records the rows lent to it before\n"
+        "                     its players see them (default <copy>.leases)\n"
         "  --simulate         gateway: simulate a share of the biomes as well\n"
+        "  --simulation-port <n>\n"
+        "                     gateway: the port its own simulation takes clients\n"
+        "                     on (default --port + 1)\n"
 #ifdef __EMSCRIPTEN__
         "  --cert <path>      TLS certificate. Without it, cert.crt then\n"
         "                     dev-cert.crt are looked for in the working\n"
@@ -203,7 +215,10 @@ bool mountDatabaseDirectory(std::string& databasePath, std::string& errorOut) {
             // exist yet, which is an ordinary first run.
             fs.mkdirSync(directory, { recursive: true });
             FS.mkdirTree(directory);
-            FS.mount(NODEFS, { root: directory }, directory);
+            // Mounted already: a shard's lease journal beside its copy.
+            if (!FS.isMountpoint(FS.lookupPath(directory, { follow: true }).node)) {
+                FS.mount(NODEFS, { root: directory }, directory);
+            }
         } catch (e) {
             stringToUTF8(directory + ": " + e, $1, $2);
             return 1;
@@ -365,6 +380,10 @@ int main(int argc, char** argv) {
         else if (arg == "--shard-name") config.shardName = next("--shard-name");
         else if (arg == "--copy") config.copyPath = next("--copy");
         else if (arg == "--simulate") config.simulates = true;
+        else if (arg == "--public-host") config.publicHost = next("--public-host");
+        else if (arg == "--public-port") config.publicPort = static_cast<std::uint16_t>(std::atoi(next("--public-port")));
+        else if (arg == "--lease-journal") config.leaseJournalPath = next("--lease-journal");
+        else if (arg == "--simulation-port") config.simulationPort = static_cast<std::uint16_t>(std::atoi(next("--simulation-port")));
         else if (arg == "--promote") promote = true;
         else if (arg == "--unlink") unlink = true;
         else if (arg == "--gateway") {
@@ -414,6 +433,19 @@ int main(int argc, char** argv) {
     if (shard && !config.copyPath.empty() && !mountDatabaseDirectory(config.copyPath, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());
         return 1;
+    }
+    // Beside the copy, which is on the real disk; one named on its own is put
+    // on it too.
+    if (shard && !config.leaseJournalPath.empty() && !mountDatabaseDirectory(config.leaseJournalPath, error)) {
+        std::fprintf(stderr, "could not start: %s\n", error.c_str());
+        return 1;
+    }
+    if (shard && config.leaseJournalPath.empty() && !config.copyPath.empty()) {
+        config.leaseJournalPath = config.copyPath + ".leases";
+    }
+    if (shard && config.leaseJournalPath.empty()) {
+        std::fprintf(stderr, "[cluster] no --lease-journal or --copy: what this server's players are "
+                             "shown and the gateway has not yet taken dies with this process\n");
     }
     if (promote && !promoteCopy(config)) return 1;
     if (unlink && !unlinkServer(config)) return 1;
@@ -477,6 +509,10 @@ int main(int argc, char** argv) {
 #else
     flix::ServerHost server;
     std::string error;
+    if (config.role == flix::ServerConfig::Role::Shard && config.leaseJournalPath.empty() &&
+        !config.copyPath.empty()) {
+        config.leaseJournalPath = config.copyPath + ".leases";
+    }
     if (promote && !promoteCopy(config)) return 1;
     if (unlink && !unlinkServer(config)) return 1;
     if (!server.start(config, pinned, error)) {

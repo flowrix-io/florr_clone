@@ -90,9 +90,18 @@ struct Cluster {
         config.clusterSecret = secret;
         config.gatewayPort = linkPort;
         config.shardName = name;
+        // Its own port, which its players are sent to: the gateway relays
+        // none of their traffic.
         servers.push_back(std::make_unique<GameServer>());
         std::string error;
-        CHECK(servers.back()->start(config, error));
+        bool up = false;
+        for (std::uint16_t candidate = static_cast<std::uint16_t>(port + 200); !up && candidate < port + 260;
+             ++candidate) {
+            config.port = candidate;
+            up = servers.back()->start(config, error);
+            if (!up) servers.back() = std::make_unique<GameServer>();
+        }
+        CHECK(up);
         return *servers.back();
     }
 
@@ -133,6 +142,16 @@ struct Cluster {
         if (!stepUntil({&client}, [&] { return client.status() == NetClient::Status::Ready; })) return false;
         client.requestLogin(name, kPassword);
         return stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
+    }
+
+    /// A client whose socket went with its server: back at the gateway, it
+    /// signs in again, as the app does on a reconnection.
+    bool signInAgain(NetClient& client, const char* name, std::vector<NetClient*> all = {}) {
+        all.push_back(&client);
+        if (!stepUntil(all, [&] { return client.reconnected; }, 3000)) return false;
+        client.reconnected = false;
+        client.requestLogin(name, kPassword);
+        return stepUntil(all, [&] { return client.status() == NetClient::Status::LoggedIn; });
     }
 
     bool join(NetClient& client, std::vector<NetClient*> all, const std::string& door = "") {
@@ -598,6 +617,10 @@ TEST(a_lost_servers_players_come_back_on_another) {
         const std::string now = c.gateway.serverOfBiome("garden");
         return !now.empty() && now != was;
     }));
+    // Its socket was that server's, and went with it: the client is back at
+    // the gateway, signs in, and plays on whoever has the garden now.
+    CHECK(c.signInAgain(alice, "alice"));
+    CHECK(c.join(alice, {}));
     CHECK(c.stepUntil({&alice}, [&] {
         return GameServerPeer::bodyOf(*c.serverFor("garden"), "alice") != NULL_ENTITY;
     }));
@@ -729,6 +752,8 @@ TEST(an_admin_assigns_biomes_and_the_assignment_outlives_the_server) {
     c.servers.erase(c.servers.begin() + 1);
     c.addServer("B");
     CHECK(c.stepUntil({&admin}, [&] { return all("B"); }));
+    // The admin's flower was on B, and so was the socket.
+    CHECK(c.signInAgain(admin, "admin1"));
 
     c.step(40, {&admin});
     admin.sendChat("/admin shards unassign all");

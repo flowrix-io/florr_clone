@@ -1,14 +1,17 @@
 #pragma once
 // What the gateway and the servers of a sharded game say to each other.
 //
-// One connection per server, dialled by the server, carrying everything: the
-// frames of every client playing there, both ways, and the account rows those
-// frames are about. It being ONE ordered stream is what the design rests on.
-// A server puts the rows a tick changed on the link ahead of the frames that
-// show the change, so by the time the gateway holds a byte a player will see,
-// it already holds the record behind it -- and its own journal rule (nothing
-// leaves before it is on disk) makes the pair durable without either side
-// waiting for the other. cpp/docs/ARCHITECTURE.md, "Sharding".
+// One connection per server, dialled by the server, carrying the account rows
+// lent to it and what the gateway has to answer for its players. Never the
+// players' own traffic: a client is connected to the server its flower is on
+// (ServerMessage::Redirect), and that server sends it its frames itself. What
+// a client asks of the gateway -- a purchase, a guild, global chat -- is put
+// on the link as a request (FromClient), behind the rows it may be about, and
+// the gateway's answer comes back to be delivered (Deliver). It being ONE
+// ordered stream is what that rests on: the gateway holds the record before
+// it reads a request about it. What a player was shown and the gateway has not
+// yet taken is in the server's lease journal (cluster/lease_journal.h).
+// cpp/docs/ARCHITECTURE.md, "Sharding".
 //
 // The same framing and byte order as the client protocol, in a namespace of
 // its own: neither end of this ever talks to a client with it.
@@ -27,7 +30,7 @@ namespace flix::cluster {
 /// Bump whenever anything below changes shape. Checked with the client
 /// protocol's version and the content hash: a gateway takes no server built
 /// from another tree.
-inline constexpr std::uint32_t kLinkVersion = 2;
+inline constexpr std::uint32_t kLinkVersion = 3;
 
 /// A frame between servers carries a whole guild table or a whole account.
 inline constexpr std::uint32_t kLinkMaxFrame = 64u << 20;
@@ -38,6 +41,11 @@ inline constexpr std::size_t kLinkMaxPending = 256u << 20;
 /// quiet for seconds.
 inline constexpr double kLinkSilenceMillis = 15000.0;
 inline constexpr double kLinkHeartbeatMillis = 1000.0;
+/// How long a redirected client has to turn up where it was sent before its
+/// session is given up on.
+inline constexpr double kAttachPatienceMillis = 15000.0;
+/// What a server keeps for a client on its way to it, before it gives up.
+inline constexpr std::size_t kMaxTransitBytes = 8u << 20;
 
 /// How many servers a game can have, and how the wire ids are shared out: the
 /// top six bits of a net id are the server's slot, and slot 0 is nobody's.
@@ -47,11 +55,13 @@ inline constexpr std::uint32_t netIdBase(int slot) { return static_cast<std::uin
 enum class ToGateway : std::uint8_t {
     Hello = 1,       ///< Greeting -- in the clear, as Challenge and Proof are
     Proof,           ///< str proof. Everything after it, both ways, is sealed
-    ClientFrame,     ///< u32 client, bytes
-    ClientClose,     ///< u32 client
-    Rows,            ///< u16 n, { str user, u32 lease, u32 patchAck, blob row }*
+    ClientFrame,     ///< u32 client, bytes -- for a client whose socket is not at this
+                     ///< server's port (a squad here, an admin command run here):
+                     ///< the gateway delivers it wherever the client is
+    ClientClose,     ///< u32 client -- its socket at this server's port closed
+    Rows,            ///< u64 seq, u16 n, { str user, u32 lease, u32 patchAck, blob row }*
     Table,           ///< str key, blob json
-    LeaseReturned,   ///< u32 client, str user, u32 lease, u32 patchAck, blob row,
+    LeaseReturned,   ///< u64 seq, u32 client, str user, u32 lease, u32 patchAck, blob row,
                      ///< u32 profileRevision, f64 oracleWait, f64 traderWait, u8 onward,
                      ///< FlowerState -- when onward, for the gateway to find a server
     ClientState,     ///< u32 client, ClientState
@@ -67,20 +77,31 @@ enum class ToGateway : std::uint8_t {
     TempAdminEnded,  ///< u32 client
     SquadMoved,      ///< u32 client, SquadState -- the squad left with that client
     Heartbeat,
-    EdgeOpen,        ///< u32 edge, str address -- a client dialled this server's own port
-    EdgeFrame,       ///< u32 edge, bytes
-    EdgeClosed,      ///< u32 edge
+    FromClient,      ///< u32 client, u8 atMarket, bytes -- what a client at this
+                     ///< server's port asked that is the gateway's to answer, behind
+                     ///< everything it asked before; `atMarket` as FenceAck's
+    Attached,        ///< u32 client -- a redirected client has arrived at this port
     CopyAck,         ///< u64 seq -- that much of the database copy is on disk here
+    Recovered,       ///< u64 seq, u16 n, { str user, blob base, blob row }* -- rows
+                     ///< from the lease journal that the gateway never took
+    SquadNote,       ///< u32 client, u8 message, u8 first byte -- a SquadUpdate or
+                     ///< SquadInviteReceived sent straight to a client here, which
+                     ///< says where its squad is, which is where its squad
+                     ///< commands have to go
 };
 
 enum class ToServer : std::uint8_t {
     Challenge = 1,   ///< str nonce, str proof
     Refused,         ///< str reason
     Ready,           ///< to a probe: the key is right and a server may join
-    Welcome,         ///< u8 slot, i64 mazeDay
+    Welcome,         ///< u8 slot, i64 mazeDay, u64 taken, str host, u16 port --
+                     ///< `taken` the last lease journal entry of this server's
+                     ///< that the gateway has; host:port where clients sign in
+                     ///< (an empty host: the one the server dials)
     Client,          ///< u32 client, ClientInfo -- opens it, or restates it
     ClientGone,      ///< u32 client
-    ClientFrame,     ///< u32 client, bytes
+    ClientFrame,     ///< u32 client, bytes -- a frame of that client's for this server
+                     ///< to carry out
     Grant,           ///< u32 client, u32 lease, blob row, u32 profileRevision,
                      ///< f64 oracleWait, f64 traderWait, FlowerState
     RowPatch,        ///< str user, u32 lease, u32 seq, blob difference
@@ -97,8 +118,11 @@ enum class ToServer : std::uint8_t {
     Restart,         ///< stop, handing everything back, and exit to be started again
     Update,          ///< f64 delay -- install the latest build, if it is this server's own to install
     Leave,           ///< be a server of one again, as it was before it was linked
-    EdgeFrame,       ///< u32 edge, bytes
-    EdgeClose,       ///< u32 edge
+    Deliver,         ///< u32 client, bytes -- the gateway's word to a client at this port
+    Expect,          ///< u32 client, str ticket -- that client is being sent here
+    Handled,         ///< u32 client -- the gateway has carried out the request of its
+                     ///< that this server was holding the client's next ones behind
+    RowsTaken,       ///< u64 seq -- the gateway's journal has this server's rows up to it
     CopyBegin,       ///< the whole database follows
     CopyRows,        ///< u64 seq, u16 n, { u8 table, str key, u8 exists, blob text }*
     CopyComplete,    ///< u64 seq -- all of it has been sent
@@ -122,6 +146,11 @@ struct Greeting {
     bool copy = false;
     /// The gateway's own simulation, in the gateway's own process.
     bool local = false;
+    /// Where clients dial this server: a host, or empty for the one the
+    /// gateway saw the link come from (a server in the gateway's own process:
+    /// the host the client dialled the gateway at), and a port.
+    std::string publicHost;
+    std::uint16_t publicPort = 0;
 
     void write(ByteWriter& w) const;
     static Greeting read(ByteReader& r);
@@ -201,6 +230,18 @@ struct FlowerState {
     void write(ByteWriter& w) const;
     static FlowerState read(ByteReader& r);
 };
+
+/// Who carries out a client's frame while its flower is on a simulation server.
+enum class Where : std::uint8_t {
+    Here,    ///< the gateway
+    There,   ///< the server the flower is on
+    Fenced,  ///< the gateway, once the server has carried out everything before it
+};
+Where whereHandled(net::ClientMessage id);
+/// What a server sends the gateway and then holds the client's next frames
+/// behind until it is told the request was carried out (ToServer::Handled):
+/// the requests that spend, whose answer the next frame may need.
+bool awaitsGateway(net::ClientMessage id);
 
 /// What the gateway's own handlers have to know about a body elsewhere.
 struct ClientState {
