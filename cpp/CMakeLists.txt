@@ -933,6 +933,14 @@ target_link_libraries(projectile_bench PRIVATE flix_server flix_client)
 target_compile_definitions(projectile_bench PRIVATE FLIX_TEST_DATA_DIR="${FLIX_DATA_DIR}")
 add_dependencies(projectile_bench flix_data)
 
+# What a crowded fight costs the server, phase by phase, combat's steps
+# included: dozens of flowers on shooters in one biome with a field of mobs
+# around them. See the file's own header.
+add_executable(combat_bench tools/combat_bench.cpp)
+target_link_libraries(combat_bench PRIVATE flix_server flix_client)
+target_compile_definitions(combat_bench PRIVATE FLIX_TEST_DATA_DIR="${FLIX_DATA_DIR}")
+add_dependencies(combat_bench flix_data)
+
 # What one mob type costs the mob layer, in milliseconds -- the figure that
 # says whether a mob is drawing something expensive every frame. See the
 # file's own header.
