@@ -253,7 +253,7 @@ bool GameServer::gwHandshake(net::Connection& link, ByteReader& reader, std::uin
     if (message == static_cast<std::uint8_t>(ToGateway::Hello) && !server.greeted) {
         server.greeting = cluster::Greeting::read(reader);
         server.greetingDigest = server.greeting.digest();
-        server.name = sanitizePlayerName(server.greeting.name);
+        server.name = cluster::serverName(server.greeting.name);
         std::string why = server.greeting.refusal();
         if (why.empty() && !reader.ok()) why = "malformed greeting";
         if (why.empty() && server.greeting.probe && server.greeting.id == config_.membership.id) {
@@ -297,7 +297,7 @@ bool GameServer::gwHandshake(net::Connection& link, ByteReader& reader, std::uin
         // A name is how an admin says which: one each.
         // ("gateway" is the gateway's own, in `/admin shards domain`.)
         for (int n = 2; g.byName(server.name) != nullptr || lowerCase(server.name) == "gateway"; ++n) {
-            server.name = sanitizePlayerName(server.greeting.name) + "-" + std::to_string(n);
+            server.name = cluster::serverName(server.greeting.name) + "-" + std::to_string(n);
         }
         int slot = 1;
         while (slot <= cluster::kMaxServers && g.bySlot(slot) != nullptr) ++slot;
@@ -1283,7 +1283,11 @@ bool GameServer::gwRedirectTarget(const Session& session, int slot, std::string&
     if (gwDomainOf(slot, viaHost, viaPort) &&
         (server->reach != Gateway::Reach::Silent || !session.elsewhere.viaProxy)) {
         host = viaHost;
-        port = viaPort;
+        // Always the port itself, never 0 ("the one you are on"): a player who
+        // reached the gateway straight, on its own port, would take that port
+        // to the domain, where nothing answers. A domain with none is 443 --
+        // what the check dialled -- and the client speaks TLS to it.
+        port = viaPort != 0 ? viaPort : 443;
         return true;
     }
     // A server's own port is reachable only straight: a client that came
@@ -2286,6 +2290,12 @@ std::string GameServer::serverOfBiome(const std::string& biome) const {
         return server != nullptr ? server->name : std::string();
     }
     return {};
+}
+
+int GameServer::slotOf(const std::string& name) const {
+    if (!gateway_) return 0;
+    const Gateway::Server* server = const_cast<Gateway&>(*gateway_).byName(name);
+    return server != nullptr ? server->slot : 0;
 }
 
 std::vector<std::string> GameServer::biomeNames() const {

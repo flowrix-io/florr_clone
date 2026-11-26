@@ -1189,6 +1189,9 @@ private:
     void followRedirect();
     /// Gives up on a redirect: dials the server connect() was pointed at, and
     /// signs in again there.
+    /// A Redirect that did not land: the player is told where it was sent and
+    /// why it is back.
+    void noteRedirectFailed(const std::string& reason);
     void returnHome();
     void handleAuthResult(ByteReader&);
     void handleProfile(ByteReader&);

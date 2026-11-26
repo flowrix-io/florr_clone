@@ -1061,6 +1061,11 @@ struct GameServerPeer {
     }
     /// The once-a-second DebugStats, now.
     static void broadcastDebugStats(GameServer& server) { server.broadcastDebugStats(); }
+    /// The gateway: where `session` would be sent to reach the server in `slot`.
+    static bool redirectTarget(GameServer& gateway, const Session& session, int slot, std::string& host,
+                               std::uint16_t& port) {
+        return gateway.gwRedirectTarget(session, slot, host, port);
+    }
 };
 
 } // namespace flix::testsupport

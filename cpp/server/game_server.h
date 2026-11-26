@@ -323,6 +323,8 @@ public:
                       std::string& why);
     /// The gateway: every server connected, by name.
     std::vector<std::string> serverNames() const;
+    /// The gateway: the slot of the server called `name`, or 0.
+    int slotOf(const std::string& name) const;
     ServerConfig::Role role() const { return config_.role; }
     /// The gateway: every biome the maps make, and how many rows are on loan.
     std::vector<std::string> biomeNames() const;
