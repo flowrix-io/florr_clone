@@ -696,6 +696,13 @@ constexpr ChangelogEntry kChangelog[] = {
         "Fixed squad members not getting loot"
       }
     },
+    {"November 26, 2026",
+      {
+        "Fixed keyboard lag in busy areas",
+        "Press F10 to hide the HUD",
+        "/players-online now shows how many players are in game and on the title screen"
+      }
+    },
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
