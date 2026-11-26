@@ -252,6 +252,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // to the default world until they are told what shape each realm really is.
     sizeBroadphases();
     combat_ = std::make_unique<CombatSystem>();
+    combat_->onPhase = [this](const char* name) { markTickPhase(name); };
     spawning_ = std::make_unique<SpawnSystem>();
     spawning_->seedBossClocks(config.worldSeed ^ 0xB055C10C5ull);
     modes_ = std::make_unique<ModeSpawner>();
@@ -1003,6 +1004,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // A summoning shot -- the spaceship's -- is only SEEN landing by combat;
     // the summon is the ring's, made once combat has stopped walking the world.
     petals_->landShots(world_, content(), combat_->shotLandings(), terrain_.get());
+    markTickPhase("combat: shot landings");
     // So is a C++ a yin yang landed on; the C-- it becomes is the spawner's.
     for (const MobConversion& conversion : combat_->conversions()) {
         spawning_->convertMob(world_, *terrain_, content(), conversion.mob, conversion.into,
@@ -1018,7 +1020,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
                                events_);
         }
     }
-    markTickPhase("combat");
+    markTickPhase("combat: conversions");
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,
                    net::kTickSeconds, commands_);
     // What this tick's dead leave behind -- a tomb's mummy, its opened shell

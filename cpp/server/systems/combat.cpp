@@ -2084,7 +2084,11 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
     // Refiled after movement for the reason the server rebuilds its main grid
     // there: the shots have flown, and the mobs' own shots were fired, since
     // the contact phase filed them.
+    const auto phase = [this](const char* name) {
+        if (onPhase) onPhase(name);
+    };
     fileShots(world);
+    phase("combat: filing shots");
 
     // TypeScript advances projectiles and then world fields after mobs move.
     // Damage fields are commutative within this phase, while projectile impact
@@ -2095,11 +2099,15 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
     // carries. The other trigger -- a firefly's touch -- fires in the contact
     // phase above, where the collision it needs is resolved.
     tickMobLightning(world, grid, content, nowMillis);
+    phase("combat: mob lightning");
     tickProjectiles(world, grid, content, nowMillis);
+    phase("combat: projectiles");
     tickGroundEffects(world, grid, content, nowMillis, dt);
+    phase("combat: ground effects");
     // Last, so a bubble that went down to poison, a petal or a shot this tick
     // -- in any phase -- pops all the same.
     popBubbles(world, grid, content);
+    phase("combat: bubbles");
 
     if (tick_ % kCooldownPruneTicks == 0) {
         queries_->cooldowns.each([&](Entity, HitCooldowns& cooldowns) { cooldowns.prune(nowMillis); });
@@ -2112,6 +2120,7 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
             cooldowns.hits.prune(nowMillis);
         });
     }
+    phase("combat: cooldown prune");
 
     // Not left dangling between ticks: a stray applyDamage() from a test or a
     // later system must not write into an EventQueue that has been cleared.

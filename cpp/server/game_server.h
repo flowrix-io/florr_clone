@@ -2401,7 +2401,7 @@ private:
     std::string describeTickPhases(double tookMillis) const;
     /// Room for every stamp tick() makes (23 today) with some to spare: a stamp
     /// past the end is dropped, and its time is reported as `other`.
-    std::array<TickPhase, 32> tickPhases_{};
+    std::array<TickPhase, 48> tickPhases_{};
     std::size_t tickPhaseCount_ = 0;
     double tickStartedMillis_ = 0;
     double slowTickWorstMillis_ = 0;
