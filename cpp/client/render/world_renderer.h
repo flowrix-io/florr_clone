@@ -403,15 +403,19 @@ public:
     /// switch it on natively to hold the cache to the direct path's picture.
     void setTerrainCache(bool on) {
         terrainCache_ = on;
-        if (!on) {
-            terrainChunks_ = TerrainChunks{};
-            terrainStale_ = TerrainChunks{};
-        }
+        if (!on) dropTerrainChunks();
     }
     /// The camera zoom an ease is heading for while one runs (antennae going
-    /// on or off), or 0 when the zoom is still. Lets the terrain cache keep
-    /// one bake across the ease instead of a new one per frame.
+    /// on or off), or 0 when the zoom is still. While it runs the terrain is
+    /// baked at that zoom and nowhere in between, so nothing baked during the
+    /// ease is thrown away and nothing is baked again when it ends.
     void setZoomEasingTarget(double zoom) { zoomEasingTarget_ = zoom; }
+    /// The camera zoom the player can switch to in one key press -- the other
+    /// loadout row's, when it holds antennae this one does not (or the other
+    /// way round) -- or 0 when that row would not change the zoom. The terrain
+    /// at that zoom is baked ahead, a chunk at a time, so the switch finds it
+    /// already there instead of baking a whole screen of it during the ease.
+    void setAnticipatedZoom(double zoom) { anticipatedZoom_ = zoom; }
     /// Forgets every picture it keeps on a canvas -- the terrain chunks and the
     /// glitch surfaces -- and they are made again as they are next drawn. For
     /// when the page has lost their pixels: see App::dropCanvasCaches.
@@ -972,14 +976,26 @@ private:
         std::size_t bytes = 0;
     };
     mutable TerrainChunks terrainChunks_;
+    /// The generation baked ahead at the anticipated zoom (setAnticipatedZoom).
+    /// When the zoom changes to it, it and terrainChunks_ trade places, so
+    /// toggling antennae back and forth swaps two ready generations.
+    mutable TerrainChunks terrainAhead_;
     /// The generation before terrainChunks_, kept when the scale changes so a
     /// chunk of the new one not baked yet is drawn from it, rescaled, rather
     /// than painted straight -- which at the antennae's zoom is tens of
     /// thousands of fills, the hitch every zoom change used to be. Evicted
     /// first when the budget is reached.
     mutable TerrainChunks terrainStale_;
+    /// Empties all three generations.
+    void dropTerrainChunks() const {
+        terrainChunks_ = TerrainChunks{};
+        terrainAhead_ = TerrainChunks{};
+        terrainStale_ = TerrainChunks{};
+    }
     /// See setZoomEasingTarget.
     double zoomEasingTarget_ = 0.0;
+    /// See setAnticipatedZoom.
+    double anticipatedZoom_ = 0.0;
 
     /// Every web's strands at radius one, built on first use. Geometry only,
     /// so a lost GPU context does not take it with it.

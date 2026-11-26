@@ -705,7 +705,8 @@ constexpr ChangelogEntry kChangelog[] = {
         "Fixed Common talents doing nothing",
         "Looting a mob now takes at least 3% of its health",
         "Magic Wand now costs mana for each pet it summons",
-        "Magic Stick now costs 3x less mana"
+        "Magic Stick now costs 3x less mana",
+        "Made the antennae zoom animation smooth"
       }
     },
 };

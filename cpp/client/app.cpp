@@ -942,6 +942,8 @@ void App::frame(double dt) {
             const double target = loadoutCameraZoom(net_.profile(), content());
             const bool easing = target > 0.0 && camera_.loadoutZoom != target;
             renderer_.setZoomEasingTarget(easing ? camera_.userZoom * target : 0.0);
+            const double swapped = swappedRowCameraZoom(net_.profile(), content());
+            renderer_.setAnticipatedZoom(swapped != target ? camera_.userZoom * swapped : 0.0);
             setArtCacheZoomEasing(easing);
         }
         renderer_.draw(canvas, net_.view(), camera_, selfDrawn, timeSeconds_);

@@ -199,6 +199,11 @@ inline constexpr double kZoomKeyStep = 0.1;
 /// grants nothing, the same rule the server applies to the equipment bits.
 double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry);
 
+/// loadoutCameraZoom for the loadout the row-swap key would wear: the second
+/// row moved up into the active slots. What the terrain bakes ahead for, so
+/// swapping antennae in finds the zoomed-out view already drawn.
+double swappedRowCameraZoom(const Profile& profile, const ContentRegistry& registry);
+
 /// How far the loadout bar reaches up from the bottom edge of an in-game
 /// viewport. What anything else anchored to the bottom hangs above -- the bar
 /// is centred and already nearly touches the edge, so there is no room under
