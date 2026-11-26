@@ -97,7 +97,7 @@ void GameServer::gwServiceCopies(double now, bool everything) {
     for (auto& entry : g.servers) {
         Gateway::Server& server = entry.second;
         if (!server.copying || server.copied >= server.copy.size()) continue;
-        net::Connection* link = g.listener.find(entry.first);
+        net::Connection* link = g.door.find(entry.first);
         if (link == nullptr || (link->pendingBytes() > kCopyBacklogBytes && !everything)) continue;
         ByteWriter rows;
         std::uint16_t count = 0;

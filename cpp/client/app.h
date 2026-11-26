@@ -767,6 +767,10 @@ private:
     /// The trial HUD's "Start Room" button as last drawn, empty when the run
     /// is not waiting in Preparing. The click is tested against the same box.
     Rect trialStartButton_{};
+    /// F10 in the game: draw the world alone -- no HUD, minimap, chat, strip,
+    /// loadout bar or panels -- for filming. Only the death card and the
+    /// disconnect banner still show. Cleared on leaving the game.
+    bool hudHidden_ = false;
     /// Everything the flower has picked up since it joined, one entry per
     /// petal and tier, for the death card's "Collected this run" panel.
     /// Counted off the PickedUp cues -- each of the viewer's own is one item

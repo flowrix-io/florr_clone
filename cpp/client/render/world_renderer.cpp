@@ -424,7 +424,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         realm_ == kWavesRealm || isTrialRealm(realm_)) {
         // Neither has a map for the chunk cache to hold, and the one it holds
         // is a realm the player has left: tens of megabytes of bitmaps.
-        if (!terrainChunks_.chunks.empty()) terrainChunks_ = TerrainChunks{};
+        dropTerrainChunks();
     }
     if (realm_ == Realm::Maze) {
         drawMaze(canvas, camera);

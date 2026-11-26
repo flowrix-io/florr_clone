@@ -87,6 +87,10 @@ constexpr double kDeltaSmoothing = 0.1;
 /// A tick this long gets its phase split logged. Three nominal ticks: a
 /// healthy tick is a few milliseconds, and one this long is a visible hitch.
 constexpr double kSlowTickLogMillis = net::kTickMillis * 3.0;
+/// The most a connection may still be holding -- queued here plus what the
+/// socket has not taken -- and be sent another snapshot. A couple of busy
+/// snapshots: past it the player is already behind, and more only queue.
+constexpr std::size_t kSnapshotBacklogBytes = 48u * 1024u;
 
 /// "Legendary Soldier Ant": the killer's tier and its display name.
 ///
@@ -248,6 +252,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // to the default world until they are told what shape each realm really is.
     sizeBroadphases();
     combat_ = std::make_unique<CombatSystem>();
+    combat_->onPhase = [this](const char* name) { markTickPhase(name); };
     spawning_ = std::make_unique<SpawnSystem>();
     spawning_->seedBossClocks(config.worldSeed ^ 0xB055C10C5ull);
     modes_ = std::make_unique<ModeSpawner>();
@@ -339,11 +344,15 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     setActiveMazeDay(currentMazeDay());
 
     listener_.certPath = config.certPath;
+    // Another server may dial it to join (`/admin cluster connect`), as a
+    // WebSocket at /link.
+    listener_.webSockets = true;
     listener_.keyPath = config.keyPath;
     listener_.webRoot = config.webRoot;
     listener_.bindHost = config.bindHost;
-    // A server of a sharded game is reached through the gateway alone.
-    if (!shard && !listener_.start(config.port, errorOut)) return false;
+    // In a sharded game the port is a door the sessions' sockets come in by,
+    // and the sessions are adopted (Gateway::door, Shard::Door).
+    if (!shard && !gateway_ && !listener_.start(config.port, errorOut)) return false;
 
     // Seeded before the first tick can set it: a message may be serviced ahead
     // of the first tick, and a deadline stamped from a zero clock is one that
@@ -381,11 +390,11 @@ void GameServer::shutdown() {
         gwFlush();
     }
     listener_.stop();
-    if (door_) door_->listener.stop();
-    if (gateway_) gateway_->listener.stop();
+    if (gateway_) gateway_->door.stop();
     if (shard_) {
         shard_->dialer.disconnect();
-        if (shard_->edge) shard_->edge->listener.stop();
+        if (shard_->door) shard_->door->listener.stop();
+        shard_->journal.close();
     }
 }
 
@@ -604,6 +613,14 @@ bool GameServer::step() {
                 std::fflush(stdout);
                 slowTickLine_.clear();
             }
+            if (skippedSnapshots_ > 0 && tickNow >= nextSkipLogMillis_) {
+                std::printf("[net] %llu snapshots held back from connections behind on their "
+                            "download\n",
+                            static_cast<unsigned long long>(skippedSnapshots_));
+                std::fflush(stdout);
+                skippedSnapshots_ = 0;
+                nextSkipLogMillis_ = tickNow + 60000.0;
+            }
             slowTickWorstMillis_ = 0;
         }
     }
@@ -618,13 +635,17 @@ void GameServer::serviceNetwork(int timeoutMillis) {
         return;
     }
     if (gateway_) {
-        // Two sets of sockets and one wait: a short one on the clients', so a
-        // server's snapshot is never left sitting behind it for long.
-        gwService();
-        timeoutMillis = std::min(timeoutMillis, 1);
+        // The game's port, clients and links alike: a short wait, so that a
+        // server's word for a client is never left sitting behind it.
+        gateway_->door.poll(gateway_->doorHandler, std::min(timeoutMillis, 1));
+        gwHandOver();
+        // The sessions: only a close to report, they have no sockets.
+        listener_.poll(*this, 0);
+        gateway_->door.poll(gateway_->doorHandler, 0);
+        gwHandOver();
+        return;
     }
     listener_.poll(*this, timeoutMillis);
-    if (gateway_) gwService();
 }
 
 void GameServer::serviceArrivals() {
@@ -867,6 +888,11 @@ void GameServer::tick(double nowMillis) {
     // XP the snapshot just told everybody about goes with it.
     syncLiveProgress();
     markTickPhase("progress");
+    // What the listener's beforeWrite would do on the first socket it writes
+    // to, done here so the profile tells the journal and the sockets apart.
+    // Same order: on disk before any byte leaves.
+    database_.flushJournal();
+    markTickPhase("journal");
     flushNetwork();
     // Whatever changed this tick with nothing sent about it: see above.
     database_.flushJournal();
@@ -978,6 +1004,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // A summoning shot -- the spaceship's -- is only SEEN landing by combat;
     // the summon is the ring's, made once combat has stopped walking the world.
     petals_->landShots(world_, content(), combat_->shotLandings(), terrain_.get());
+    markTickPhase("combat: shot landings");
     // So is a C++ a yin yang landed on; the C-- it becomes is the spawner's.
     for (const MobConversion& conversion : combat_->conversions()) {
         spawning_->convertMob(world_, *terrain_, content(), conversion.mob, conversion.into,
@@ -993,7 +1020,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
                                events_);
         }
     }
-    markTickPhase("combat");
+    markTickPhase("combat: conversions");
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,
                    net::kTickSeconds, commands_);
     // What this tick's dead leave behind -- a tomb's mummy, its opened shell
@@ -1146,6 +1173,21 @@ void GameServer::replicate(double nowMillis) {
         if (!session.playing()) continue;
         net::Connection* connection = listener_.find(session.connection);
         if (!connection) continue;
+        // A connection still holding what it was sent is not handed more. Sent
+        // anyway, every snapshot waits behind the ones before it: a player on
+        // a slow line sees -- and steers -- a world seconds old, and the queue
+        // only grows until the backlog cap drops them. Skipped, the view is
+        // untouched, so the next snapshot that does go is a delta against the
+        // last one that went and carries everything this one would have.
+        // On a shard the session is an adopted connection that hands each
+        // frame straight on to the player's socket at this server's door, so
+        // the backlog that counts is that socket's.
+        std::size_t backlog = connection->backlogBytes();
+        if (shard_) backlog += shDoorBacklogBytes(session);
+        if (backlog > kSnapshotBacklogBytes) {
+            ++skippedSnapshots_;
+            continue;
+        }
 
         // Revalidate even when a modified client stops reporting its window.
         // Removing camera equipment must revoke the previously granted view.

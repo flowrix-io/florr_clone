@@ -154,15 +154,32 @@ void usage(const char* program) {
         "  --cluster-secret <text>\n"
         "                     what proves the servers to each other; or put it in\n"
         "                     FLIX_CLUSTER_SECRET, where `ps` does not show it\n"
-        "  --cluster-port <n> gateway: where its servers dial in (default 3100)\n"
-        "  --cluster-host <a> gateway: the address to take them on (default 127.0.0.1)\n"
+
         "  --shards <n>       gateway: how many servers to wait for before dealing the\n"
         "                     biomes out (default and least 2)\n"
         "  --gateway <host:port>\n"
-        "                     shard: the gateway to dial (default 127.0.0.1:3100)\n"
+        "                     shard: the gateway to dial, at its game port, which\n"
+        "                     takes servers as well as players (default\n"
+        "                     127.0.0.1:3000)\n"
         "  --shard-name <n>   shard: what logs and /admin shards call it\n"
         "  --copy <path>      shard: where to keep its copy of the database\n"
-        "  --simulate         gateway: simulate a share of the biomes as well\n"
+        "  --public-host <host[:port]>\n"
+        "                     the hostname players who come through the game's\n"
+        "                     proxy (Cloudflare) reach this server at, e.g. a\n"
+        "                     proxied DNS name or tunnel for this machine. The\n"
+        "                     gateway relays no client's traffic and never sends\n"
+        "                     such a player to a server's own port, so behind\n"
+        "                     Cloudflare every shard needs a domain. Usually set\n"
+        "                     on the gateway instead, which wins: /admin shards\n"
+        "                     domain <server> <host>\n"
+        "  --public-port <n>  the port with it (default: the one the player already\n"
+        "                     uses, 443 behind Cloudflare)\n"
+        "  --lease-journal <path>\n"
+        "                     shard: where it records the rows lent to it before\n"
+        "                     its players see them (default <copy>.leases)\n"
+        "  --simulate         gateway: simulate a share of the biomes as well, its\n"
+        "                     players on the gateway's own port. Started anyway\n"
+        "                     when a server's domain does not reach it\n"
 #ifdef __EMSCRIPTEN__
         "  --cert <path>      TLS certificate. Without it, cert.crt then\n"
         "                     dev-cert.crt are looked for in the working\n"
@@ -203,7 +220,10 @@ bool mountDatabaseDirectory(std::string& databasePath, std::string& errorOut) {
             // exist yet, which is an ordinary first run.
             fs.mkdirSync(directory, { recursive: true });
             FS.mkdirTree(directory);
-            FS.mount(NODEFS, { root: directory }, directory);
+            // Mounted already: a shard's lease journal beside its copy.
+            if (!FS.isMountpoint(FS.lookupPath(directory, { follow: true }).node)) {
+                FS.mount(NODEFS, { root: directory }, directory);
+            }
         } catch (e) {
             stringToUTF8(directory + ": " + e, $1, $2);
             return 1;
@@ -359,12 +379,44 @@ int main(int argc, char** argv) {
             }
         }
         else if (arg == "--cluster-secret") config.clusterSecret = next("--cluster-secret");
-        else if (arg == "--cluster-port") config.clusterPort = static_cast<std::uint16_t>(std::atoi(next("--cluster-port")));
-        else if (arg == "--cluster-host") config.clusterHost = next("--cluster-host");
+        else if (arg == "--cluster-port" || arg == "--cluster-host") {
+            // The servers link on the game's own port now: there is no other.
+            const std::string flag = arg;
+            next(flag.c_str());
+            std::fprintf(stderr, "%s is gone: servers dial the gateway's game port (--port)\n", flag.c_str());
+        }
         else if (arg == "--shards") config.expectedShards = std::atoi(next("--shards"));
         else if (arg == "--shard-name") config.shardName = next("--shard-name");
         else if (arg == "--copy") config.copyPath = next("--copy");
         else if (arg == "--simulate") config.simulates = true;
+        else if (arg == "--simulation-port" || arg == "--simulation-public-host") {
+            // The gateway's own simulation takes its players on the gateway's port.
+            const std::string flag = arg;
+            next(flag.c_str());
+            std::fprintf(stderr, "%s is gone: the gateway's own simulation takes its players on --port\n",
+                         flag.c_str());
+        }
+        else if (arg == "--public-host") {
+            const std::string flag = arg;
+            std::string host = next(flag.c_str());
+            std::uint16_t port = 0;
+            // host:port, or a bare host (an IPv6 one in brackets for a port).
+            const std::size_t colon = host.rfind(':');
+            const bool bareIpv6 = host.find(':') != colon && host.front() != '[';
+            if (colon != std::string::npos && !bareIpv6 && host.find(']', colon) == std::string::npos) {
+                const int parsed = std::atoi(host.c_str() + colon + 1);
+                if (parsed <= 0 || parsed > 65535) {
+                    std::fprintf(stderr, "%s is host[:port], not %s\n", flag.c_str(), host.c_str());
+                    return 1;
+                }
+                port = static_cast<std::uint16_t>(parsed);
+                host.erase(colon);
+            }
+            config.publicHost = host;
+            if (port != 0) config.publicPort = port;
+        }
+        else if (arg == "--public-port") config.publicPort = static_cast<std::uint16_t>(std::atoi(next("--public-port")));
+        else if (arg == "--lease-journal") config.leaseJournalPath = next("--lease-journal");
         else if (arg == "--promote") promote = true;
         else if (arg == "--unlink") unlink = true;
         else if (arg == "--gateway") {
@@ -414,6 +466,19 @@ int main(int argc, char** argv) {
     if (shard && !config.copyPath.empty() && !mountDatabaseDirectory(config.copyPath, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());
         return 1;
+    }
+    // Beside the copy, which is on the real disk; one named on its own is put
+    // on it too.
+    if (shard && !config.leaseJournalPath.empty() && !mountDatabaseDirectory(config.leaseJournalPath, error)) {
+        std::fprintf(stderr, "could not start: %s\n", error.c_str());
+        return 1;
+    }
+    if (shard && config.leaseJournalPath.empty() && !config.copyPath.empty()) {
+        config.leaseJournalPath = config.copyPath + ".leases";
+    }
+    if (shard && config.leaseJournalPath.empty()) {
+        std::fprintf(stderr, "[cluster] no --lease-journal or --copy: what this server's players are "
+                             "shown and the gateway has not yet taken dies with this process\n");
     }
     if (promote && !promoteCopy(config)) return 1;
     if (unlink && !unlinkServer(config)) return 1;
@@ -477,6 +542,10 @@ int main(int argc, char** argv) {
 #else
     flix::ServerHost server;
     std::string error;
+    if (config.role == flix::ServerConfig::Role::Shard && config.leaseJournalPath.empty() &&
+        !config.copyPath.empty()) {
+        config.leaseJournalPath = config.copyPath + ".leases";
+    }
     if (promote && !promoteCopy(config)) return 1;
     if (unlink && !unlinkServer(config)) return 1;
     if (!server.start(config, pinned, error)) {

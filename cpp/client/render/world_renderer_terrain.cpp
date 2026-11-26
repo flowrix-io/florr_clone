@@ -739,8 +739,7 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
 }
 
 void WorldRenderer::dropCanvasCaches() {
-    terrainChunks_ = TerrainChunks{};
-    terrainStale_ = TerrainChunks{};
+    dropTerrainChunks();
     radiationSprite_.reset();
     radiationLayer_.reset();
 #ifdef __EMSCRIPTEN__
@@ -752,6 +751,30 @@ void WorldRenderer::dropCanvasCaches() {
     glitchSide_ = 0;
 #endif
 }
+
+namespace {
+
+/// Two device scales that are the same zoom: the ease's target and the frame's
+/// zoom it lands on are the same product of the same factors, but a scale
+/// worked out by a different route may differ in the last bit.
+bool sameScale(double a, double b) { return a > 0.0 && b > 0.0 && std::abs(a / b - 1.0) < 1e-9; }
+
+/// Cells along a chunk's side at `bakeScale` device pixels per world unit:
+/// the most, by powers of two, that keep a chunk within kChunkPixels.
+int chunkCellsAt(double bakeScale) {
+    int cells = 1;
+    while (cells < kMaxChunkCells && kTileSize * bakeScale * cells * 2.0 <= kChunkPixels) {
+        cells *= 2;
+    }
+    return cells;
+}
+
+std::uint64_t chunkKey(int kx, int ky) {
+    return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(ky)) << 32) |
+           static_cast<std::uint32_t>(kx);
+}
+
+} // namespace
 
 bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, const MapData& map,
                                       const std::vector<const SvgDocument*>& art, int x0,
@@ -771,48 +794,80 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     const double scale = zoom * toPixels;
     if (!(scale > 0.0) || !std::isfinite(scale)) return false;
 
-    // What the chunks are BAKED at. The frame's own scale when the zoom is
-    // still, so a chunk is blitted texel for pixel. While it eases, a bake at
-    // or above the frame's scale is kept for as long as it is within twice
-    // it, and drawn down onto the screen -- downscaled, never magnified, so
-    // the ease neither pixelates nor bakes the map again every frame. A new
-    // one, when needed, is baked at twice the frame's scale when zooming in
-    // (capped at where the ease ends, so the last bake is the final one) and
-    // at the frame's own when zooming out, so it lasts a whole octave.
-    TerrainChunks& cache = terrainChunks_;
-    double bakeScale = scale;
-    if (zoomEasingTarget_ > 0.0) {
-        const double targetScale = zoomEasingTarget_ * toPixels;
-        if (cache.map == &map && cache.scale >= scale * (1.0 - 1e-9) &&
-            cache.scale <= scale * 2.0) {
-            bakeScale = cache.scale;
-        } else if (targetScale > scale) {
-            bakeScale = std::min(scale * 2.0, targetScale);
+    // Three generations of chunks, each baked for this map at one scale:
+    //
+    //  * terrainChunks_, the one this frame is drawn from. At the frame's own
+    //    scale when the zoom is still, so a chunk is blitted texel for pixel;
+    //    at the ease's TARGET while antennae ease the zoom, and at nothing in
+    //    between. Every frame of an ease is a new scale, and a generation per
+    //    octave on the way (what this did before) baked a whole screen of
+    //    chunks three or four times over in under a second -- on a weak GPU
+    //    that was the lag of the animation -- and then once more at the exact
+    //    scale when it ended. Baked at the target, nothing baked during the
+    //    ease is thrown away, and the last frame of it is already exact.
+    //  * terrainAhead_, baked ahead at the zoom the other loadout row would
+    //    give, a chunk a frame while nothing else is baking. Pressing the
+    //    row-swap key finds it ready, and the two trade places.
+    //  * terrainStale_, the generation before the current one, kept to stand
+    //    in for chunks not baked yet.
+    //
+    // While the target generation is drawn larger than it was baked -- the
+    // first frames of zooming out, before the frame has shrunk to it -- the
+    // generations finer than it are drawn over it wherever they have chunks,
+    // so the middle of the screen, where the view was, stays sharp and only
+    // the edges the ease is uncovering are softer, for a moment.
+    const bool easing = zoomEasingTarget_ > 0.0;
+    const double want = easing ? zoomEasingTarget_ * toPixels : scale;
+    double aheadWant = anticipatedZoom_ > 0.0 ? anticipatedZoom_ * toPixels : 0.0;
+    if (sameScale(aheadWant, want)) aheadWant = 0.0;
+
+    // Another map's chunks are no use to this one.
+    for (TerrainChunks* gen : {&terrainChunks_, &terrainAhead_, &terrainStale_}) {
+        if (gen->map != nullptr && gen->map != &map) *gen = TerrainChunks{};
+    }
+    const auto holds = [&](const TerrainChunks& gen, double at) {
+        return gen.map == &map && sameScale(gen.scale, at);
+    };
+    const auto fresh = [&](double at) {
+        TerrainChunks gen;
+        gen.map = &map;
+        gen.scale = at;
+        gen.cells = chunkCellsAt(at);
+        return gen;
+    };
+    if (!holds(terrainChunks_, want)) {
+        if (holds(terrainAhead_, want)) {
+            std::swap(terrainChunks_, terrainAhead_);
+        } else if (holds(terrainStale_, want)) {
+            std::swap(terrainChunks_, terrainStale_);
+        } else {
+            // A new scale: the generation being left stands in for the new
+            // one's chunks until they are baked.
+            if (terrainChunks_.map == &map && !terrainChunks_.chunks.empty()) {
+                terrainStale_ = std::move(terrainChunks_);
+            }
+            terrainChunks_ = fresh(want);
         }
     }
-    // Each chunk is drawn this much smaller than it was baked.
-    const double shrink = scale / bakeScale;
-    const double side = tileBakePixels(kTileSize * bakeScale);
-    int cells = 1;
-    while (cells < kMaxChunkCells && kTileSize * bakeScale * cells * 2.0 <= kChunkPixels) {
-        cells *= 2;
+    if (aheadWant > 0.0 && !holds(terrainAhead_, aheadWant)) {
+        if (holds(terrainStale_, aheadWant)) {
+            std::swap(terrainAhead_, terrainStale_);
+        } else {
+            // What the ahead slot held is a stand-in at best; it keeps that
+            // job if the stale slot has nothing better.
+            if (terrainAhead_.map == &map && terrainAhead_.chunks.size() > terrainStale_.chunks.size()) {
+                terrainStale_ = std::move(terrainAhead_);
+            }
+            terrainAhead_ = fresh(aheadWant);
+        }
     }
 
-    // A new map, scale or display scale makes every chunk the wrong picture.
-    // The old set is kept as the stale generation (same map only) to stand
-    // in for chunks of the new one until they are baked.
-    if (cache.map != &map || cache.scale != bakeScale || cache.cells != cells) {
-        if (cache.map == &map && !cache.chunks.empty()) {
-            terrainStale_ = std::move(cache);
-        } else if (terrainStale_.map != &map) {
-            terrainStale_ = TerrainChunks{};
-        }
-        cache = TerrainChunks{};
-        cache.map = &map;
-        cache.scale = bakeScale;
-        cache.cells = cells;
-    }
-    TerrainChunks& stale = terrainStale_;
+    TerrainChunks& cache = terrainChunks_;
+    const double bakeScale = cache.scale;
+    const int cells = cache.cells;
+    // Each chunk of the current generation is drawn this much smaller than
+    // it was baked (above 1 while an ease zooming out draws it larger).
+    const double shrink = scale / bakeScale;
 
     // Everything below is in device pixels, on one grid fixed to the WORLD
     // rather than to the camera: cell t's box runs from cornerAt(t) to
@@ -821,210 +876,333 @@ bool WorldRenderer::drawTerrainChunks(Canvas& canvas, const Camera& camera, cons
     // chunks meet exactly on a cell boundary, each chunk is blitted texel for
     // pixel, and moving the camera moves only `ox`/`oy` -- the world origin's
     // place on the screen, itself snapped to a whole pixel, which is how far
-    // the direct path's per-tile snapping moved the map anyway. A shrunk
+    // the direct path's per-tile snapping moved the map anyway. A rescaled
     // chunk (an ease) lands on whole pixels too, each edge rounded once and
     // shared with the neighbour, so the set still meets without a gap.
-    const auto cornerAt = [&](int t) { return std::round(t * kTileSize * bakeScale); };
-    const auto grid = [&](int k) { return cornerAt(k * cells); };
+    const auto cornerFor = [](const TerrainChunks& gen, int t) {
+        return std::round(t * kTileSize * gen.scale);
+    };
     const auto screenCorner = [&](int t) { return std::round(t * kTileSize * scale); };
     const Vec2 origin = camera.worldToScreen({0.0, 0.0});
     const double ox = std::round(toPixels * origin.x + m[4]);
     const double oy = std::round(toPixels * origin.y + m[5]);
 
-    // The stale generation goes first, any chunk of it; then the current
-    // one's least recently drawn, and never one drawn this frame: the set on
-    // screen is what the cache is for, and evicting part of it to bake the
-    // rest would bake it all again next frame.
-    const auto makeRoom = [&](std::size_t bytes) {
-        while (cache.bytes + stale.bytes + bytes > kMaxChunkBytes) {
-            if (!stale.chunks.empty()) {
-                auto first = stale.chunks.begin();
-                stale.bytes -= first->second.bytes;
-                stale.chunks.erase(first);
-                continue;
+    const int cols = map.width();
+    const int rows = map.height();
+    TerrainChunks* const gens[] = {&terrainChunks_, &terrainAhead_, &terrainStale_};
+
+    // Room for `bytes` more for `gen`: the stale generation goes first, any
+    // chunk of it; then the ahead one's, least recently kept first -- any of
+    // them for the current generation, which the frame needs and the ahead
+    // one only might, but only ones not kept this frame for the ahead one
+    // itself; then, for the current generation alone, its own least recently
+    // drawn, and never one drawn this frame -- the set on screen is what the
+    // cache is for, and evicting part of it to bake the rest would bake it
+    // all again next frame. Baking ahead never takes the current generation's
+    // room: on a screen too big for both, the view on screen keeps its chunks
+    // and the ease paints what the ahead one could not hold.
+    const auto heldBytes = [&] {
+        std::size_t total = 0;
+        for (const TerrainChunks* gen : gens) total += gen->bytes;
+        return total;
+    };
+    const auto evictOldest = [&](TerrainChunks& gen, bool sparingThisFrame) {
+        auto oldest = gen.chunks.end();
+        for (auto it = gen.chunks.begin(); it != gen.chunks.end(); ++it) {
+            if (sparingThisFrame && it->second.usedFrame == frame_) continue;
+            if (oldest == gen.chunks.end() || it->second.usedFrame < oldest->second.usedFrame) {
+                oldest = it;
             }
-            auto oldest = cache.chunks.end();
-            for (auto it = cache.chunks.begin(); it != cache.chunks.end(); ++it) {
-                if (it->second.usedFrame == frame_) continue;
-                if (oldest == cache.chunks.end() ||
-                    it->second.usedFrame < oldest->second.usedFrame) {
-                    oldest = it;
-                }
-            }
-            if (oldest == cache.chunks.end()) return false;
-            cache.bytes -= oldest->second.bytes;
-            cache.chunks.erase(oldest);
+        }
+        if (oldest == gen.chunks.end()) return false;
+        gen.bytes -= oldest->second.bytes;
+        gen.chunks.erase(oldest);
+        return true;
+    };
+    const auto makeRoom = [&](const TerrainChunks& gen, std::size_t bytes) {
+        const bool forAhead = &gen == &terrainAhead_;
+        while (heldBytes() + bytes > kMaxChunkBytes) {
+            if (evictOldest(terrainStale_, false)) continue;
+            if (evictOldest(terrainAhead_, forAhead)) continue;
+            if (!forAhead && evictOldest(terrainChunks_, true)) continue;
+            return false;
         }
         return true;
     };
 
-    const int cols = map.width();
-    const int rows = map.height();
-    canvas.save();
-    canvas.setTransform(1, 0, 0, 1, 0, 0);
+    // Bakes chunk (kx, ky) of `gen`. Its own cells and the ring round them
+    // are painted: a cell's box ends on its boundary, but a little art does
+    // not -- renderFitted only clips a picture that spills its viewBox by
+    // more than 1%, and the foliage and hut edges reach a couple of pixels
+    // past theirs. Painting the ring as well puts those pixels in the
+    // chunk's edges, as the direct path does; without it each chunk boundary
+    // would cut them off.
     int bakes = 0;
     int bakedCells = 0;
-    // The chunks with no bitmap this frame, and the cells that reach them.
-    thread_local std::vector<Rect> holes;
-    holes.clear();
-    // The chunks with no bitmap that the stale generation covers, and the
-    // cells they span.
-    struct StaleHole {
+    const auto bake = [&](TerrainChunks& gen, int kx, int ky) {
+        const int n = gen.cells;
+        const double left = cornerFor(gen, kx * n);
+        const double top = cornerFor(gen, ky * n);
+        const int width = static_cast<int>(cornerFor(gen, (kx + 1) * n) - left);
+        const int height = static_cast<int>(cornerFor(gen, (ky + 1) * n) - top);
+        if (width <= 0 || height <= 0 || width > kMaxChunkSide || height > kMaxChunkSide) {
+            return false;
+        }
+        const CellSpan region{std::max(0, kx * n - 1), std::max(0, ky * n - 1),
+                              std::min(cols - 1, (kx + 1) * n), std::min(rows - 1, (ky + 1) * n)};
+        const int area = (region.x1 - region.x0 + 1) * (region.y1 - region.y0 + 1);
+        const bool inBudget = bakes == 0 || (bakes < kMaxChunkBakesPerFrame &&
+                                             bakedCells + area <= kChunkBakeCellsPerFrame);
+        const std::size_t bytes = static_cast<std::size_t>(width) * height * 4;
+        if (!inBudget || !makeRoom(gen, bytes)) return false;
+        Canvas bitmap = Canvas::createVirtual(width, height);
+        const double side = tileBakePixels(kTileSize * gen.scale);
+        paintTerrainCells(bitmap, map, art, region, side, [&](int tx, int ty) {
+            return Vec2{cornerFor(gen, tx) - left, cornerFor(gen, ty) - top};
+        });
+        gen.chunks.emplace(chunkKey(kx, ky), TerrainChunk{std::move(bitmap), bytes, frame_});
+        gen.bytes += bytes;
+        ++bakes;
+        bakedCells += area;
+        return true;
+    };
+
+    // Blits chunk (kx, ky) of `gen` into its place on the frame: texel for
+    // pixel on its own grid when it was baked at the frame's scale, into the
+    // frame's grid rescaled otherwise.
+    const auto blit = [&](const TerrainChunks& gen, int kx, int ky, const TerrainChunk& chunk) {
+        const int n = gen.cells;
+        if (gen.scale == scale) {
+            canvas.drawCanvas(chunk.bitmap, static_cast<float>(ox + cornerFor(gen, kx * n)),
+                              static_cast<float>(oy + cornerFor(gen, ky * n)));
+            return;
+        }
+        const double sx0 = screenCorner(kx * n);
+        const double sy0 = screenCorner(ky * n);
+        const double sx1 = screenCorner((kx + 1) * n);
+        const double sy1 = screenCorner((ky + 1) * n);
+        if (!(sx1 > sx0) || !(sy1 > sy0)) return;
+        canvas.drawCanvas(chunk.bitmap, static_cast<float>(ox + sx0), static_cast<float>(oy + sy0),
+                          static_cast<float>(sx1 - sx0), static_cast<float>(sy1 - sy0));
+    };
+
+    // The chunks of the current generation on screen without a bitmap yet,
+    // nearest the camera first. While an ease runs, only those inside the
+    // view it ends at: zooming in, the rest of the screen is about to leave
+    // it, and is drawn from the generation before meanwhile.
+    const Vec2 centreTiles = camera.centre() * (1.0 / kTileSize);
+    Rect endView{-1e300, -1e300, 2e300, 2e300};
+    if (easing) {
+        const double halfW = camera.viewportWidth() * 0.5 / zoomEasingTarget_;
+        const double halfH = camera.viewportHeight() * 0.5 / zoomEasingTarget_;
+        endView = Rect{camera.centre().x - halfW, camera.centre().y - halfH, halfW * 2, halfH * 2};
+    }
+    struct Missing {
+        int kx, ky;
+        double distance;
+    };
+    thread_local std::vector<Missing> missing;
+    missing.clear();
+    for (int ky = y0 / cells; ky <= y1 / cells; ++ky) {
+        for (int kx = x0 / cells; kx <= x1 / cells; ++kx) {
+            const auto found = cache.chunks.find(chunkKey(kx, ky));
+            if (found != cache.chunks.end()) {
+                found->second.usedFrame = frame_;
+                continue;
+            }
+            const double wx0 = kx * cells * kTileSize, wy0 = ky * cells * kTileSize;
+            const double wide = cells * kTileSize;
+            if (wx0 > endView.right() || wx0 + wide < endView.left() || wy0 > endView.bottom() ||
+                wy0 + wide < endView.top()) {
+                continue;
+            }
+            const double dx = (kx + 0.5) * cells - centreTiles.x;
+            const double dy = (ky + 0.5) * cells - centreTiles.y;
+            missing.push_back(Missing{kx, ky, dx * dx + dy * dy});
+        }
+    }
+    std::sort(missing.begin(), missing.end(),
+              [](const Missing& a, const Missing& b) { return a.distance < b.distance; });
+    for (const Missing& chunk : missing) {
+        if (!bake(cache, chunk.kx, chunk.ky)) break;
+    }
+
+    canvas.save();
+    canvas.setTransform(1, 0, 0, 1, 0, 0);
+    // The chunks with no bitmap this frame, and the cells they span.
+    struct Hole {
         Rect box;
         int c0, r0, c1, r1;
     };
-    thread_local std::vector<StaleHole> staleHoles;
-    staleHoles.clear();
-    CellSpan straight{cols, rows, -1, -1};
+    thread_local std::vector<Hole> holes;
+    holes.clear();
     for (int ky = y0 / cells; ky <= y1 / cells; ++ky) {
-        const double top = grid(ky);
-        const int height = static_cast<int>(grid(ky + 1) - top);
         for (int kx = x0 / cells; kx <= x1 / cells; ++kx) {
-            const double left = grid(kx);
-            const int width = static_cast<int>(grid(kx + 1) - left);
-            if (width <= 0 || height <= 0) continue;
-            // The chunk's own cells and the ring round them. A cell's box
-            // ends on its boundary, but a little art does not: renderFitted
-            // only clips a picture that spills its viewBox by more than 1%,
-            // and the foliage and hut edges reach a couple of pixels past
-            // theirs. Painting the ring here as well puts those pixels in
-            // the chunk's edges, as the direct path does; without it each
-            // chunk boundary would cut them off.
-            const CellSpan region{std::max(0, kx * cells - 1), std::max(0, ky * cells - 1),
-                                  std::min(cols - 1, (kx + 1) * cells),
-                                  std::min(rows - 1, (ky + 1) * cells)};
-            const std::uint64_t key =
-                (static_cast<std::uint64_t>(ky) << 32) | static_cast<std::uint32_t>(kx);
-            auto found = cache.chunks.find(key);
-            if (found == cache.chunks.end()) {
-                const int area = (region.x1 - region.x0 + 1) * (region.y1 - region.y0 + 1);
-                const std::size_t bytes = static_cast<std::size_t>(width) * height * 4;
-                const bool inBudget =
-                    bakes == 0 ||
-                    (bakes < kMaxChunkBakesPerFrame && bakedCells + area <= kChunkBakeCellsPerFrame);
-                if (inBudget && width <= kMaxChunkSide && height <= kMaxChunkSide &&
-                    makeRoom(bytes)) {
-                    Canvas bitmap = Canvas::createVirtual(width, height);
-                    paintTerrainCells(bitmap, map, art, region, side, [&](int tx, int ty) {
-                        return Vec2{cornerAt(tx) - left, cornerAt(ty) - top};
-                    });
-                    found = cache.chunks.emplace(key, TerrainChunk{std::move(bitmap), bytes, 0})
-                                .first;
-                    cache.bytes += bytes;
-                    ++bakes;
-                    bakedCells += area;
-                }
-            }
-            // The chunk's box on the screen: its own grid when it is drawn
-            // texel for pixel, the frame's when it is shrunk.
-            const double sx0 = shrink == 1.0 ? left : screenCorner(kx * cells);
-            const double sy0 = shrink == 1.0 ? top : screenCorner(ky * cells);
-            const double sx1 = shrink == 1.0 ? left + width : screenCorner((kx + 1) * cells);
-            const double sy1 = shrink == 1.0 ? top + height : screenCorner((ky + 1) * cells);
+            const auto found = cache.chunks.find(chunkKey(kx, ky));
             if (found != cache.chunks.end()) {
                 found->second.usedFrame = frame_;
-                if (shrink == 1.0) {
-                    canvas.drawCanvas(found->second.bitmap, static_cast<float>(ox + left),
-                                      static_cast<float>(oy + top));
-                } else if (sx1 > sx0 && sy1 > sy0) {
-                    canvas.drawCanvas(found->second.bitmap, static_cast<float>(ox + sx0),
-                                      static_cast<float>(oy + sy0),
-                                      static_cast<float>(sx1 - sx0),
-                                      static_cast<float>(sy1 - sy0));
-                }
+                blit(cache, kx, ky, found->second);
                 continue;
             }
+            const double sx0 = screenCorner(kx * cells);
+            const double sy0 = screenCorner(ky * cells);
+            const double sx1 = screenCorner((kx + 1) * cells);
+            const double sy1 = screenCorner((ky + 1) * cells);
             if (!(sx1 > sx0) || !(sy1 > sy0)) continue;
-            // Not baked yet: from the stale generation when every chunk of it
-            // under this one is there, rescaled to the frame.
-            if (stale.map == &map && stale.cells > 0 && stale.scale > 0.0) {
-                const int c0 = kx * cells, r0 = ky * cells;
-                const int c1 = std::min(cols, (kx + 1) * cells) - 1;
-                const int r1 = std::min(rows, (ky + 1) * cells) - 1;
-                bool covered = c1 >= c0 && r1 >= r0;
-                for (int sy = r0 / stale.cells; covered && sy <= r1 / stale.cells; ++sy) {
-                    for (int sx = c0 / stale.cells; covered && sx <= c1 / stale.cells; ++sx) {
-                        const std::uint64_t staleKey =
-                            (static_cast<std::uint64_t>(sy) << 32) | static_cast<std::uint32_t>(sx);
-                        if (stale.chunks.find(staleKey) == stale.chunks.end()) covered = false;
-                    }
-                }
-                if (covered) {
-                    staleHoles.push_back(StaleHole{
-                        Rect{ox + sx0, oy + sy0, sx1 - sx0, sy1 - sy0}, c0, r0, c1, r1});
-                    continue;
-                }
-            }
-            holes.push_back(Rect{ox + sx0, oy + sy0, sx1 - sx0, sy1 - sy0});
-            straight.x0 = std::min(straight.x0, region.x0);
-            straight.y0 = std::min(straight.y0, region.y0);
-            straight.x1 = std::max(straight.x1, region.x1);
-            straight.y1 = std::max(straight.y1, region.y1);
+            const int c0 = kx * cells, r0 = ky * cells;
+            const int c1 = std::min(cols, (kx + 1) * cells) - 1;
+            const int r1 = std::min(rows, (ky + 1) * cells) - 1;
+            if (c1 < c0 || r1 < r0) continue;
+            holes.push_back(Hole{Rect{ox + sx0, oy + sy0, sx1 - sx0, sy1 - sy0}, c0, r0, c1, r1});
         }
     }
-    // Stale stand-ins, each chunk of the old generation drawn rescaled into
-    // the frame's grid under a clip to the holes it fills.
-    if (!staleHoles.empty()) {
-        const int staleCells = stale.cells;
-        canvas.save();
-        canvas.beginPath();
-        for (const StaleHole& hole : staleHoles) {
-            canvas.rect(static_cast<float>(hole.box.x), static_cast<float>(hole.box.y),
-                        static_cast<float>(hole.box.w), static_cast<float>(hole.box.h));
-        }
-        canvas.clip();
-        thread_local std::vector<std::uint64_t> drawnStale;
-        drawnStale.clear();
-        for (const StaleHole& hole : staleHoles) {
-            for (int sy = hole.r0 / staleCells; sy <= hole.r1 / staleCells; ++sy) {
-                for (int sx = hole.c0 / staleCells; sx <= hole.c1 / staleCells; ++sx) {
-                    const std::uint64_t staleKey =
-                        (static_cast<std::uint64_t>(sy) << 32) | static_cast<std::uint32_t>(sx);
-                    if (std::find(drawnStale.begin(), drawnStale.end(), staleKey) !=
-                        drawnStale.end()) {
-                        continue;
-                    }
-                    drawnStale.push_back(staleKey);
-                    const auto it = stale.chunks.find(staleKey);
-                    if (it == stale.chunks.end()) continue;
-                    // The stale bitmap spans its own cells; laid over those
-                    // same cells on the frame's grid.
-                    const double x0 = screenCorner(sx * staleCells);
-                    const double y0 = screenCorner(sy * staleCells);
-                    const double x1 = screenCorner((sx + 1) * staleCells);
-                    const double y1 = screenCorner((sy + 1) * staleCells);
-                    if (!(x1 > x0) || !(y1 > y0)) continue;
-                    canvas.drawCanvas(it->second.bitmap, static_cast<float>(ox + x0),
-                                      static_cast<float>(oy + y0),
-                                      static_cast<float>(x1 - x0),
-                                      static_cast<float>(y1 - y0));
-                }
-            }
-        }
-        canvas.restore();
+
+    // The other generations, coarsest first, for standing in and drawing over.
+    thread_local std::vector<const TerrainChunks*> others;
+    others.clear();
+    for (const TerrainChunks* gen : {&terrainAhead_, &terrainStale_}) {
+        if (gen->map == &map && gen->cells > 0 && !gen->chunks.empty()) others.push_back(gen);
     }
-    // The chunks still waiting for a bake, in one straight paint clipped to
-    // them. On the same grid and through the same painter as a bake, so a
-    // chunk looks the same the frame before its bitmap arrives as after.
+    std::sort(others.begin(), others.end(),
+              [](const TerrainChunks* a, const TerrainChunks* b) { return a->scale < b->scale; });
+
     if (!holes.empty()) {
-        canvas.beginPath();
-        for (const Rect& hole : holes) {
-            canvas.rect(static_cast<float>(hole.x), static_cast<float>(hole.y),
-                        static_cast<float>(hole.w), static_cast<float>(hole.h));
+        // A hole another generation has every chunk under is drawn from it,
+        // rescaled; the rest are painted straight, clipped to them, on the
+        // same grid and through the same painter as a bake, so a chunk looks
+        // the same the frame before its bitmap arrives as after.
+        const auto covers = [&](const TerrainChunks& gen, const Hole& hole) {
+            for (int sy = hole.r0 / gen.cells; sy <= hole.r1 / gen.cells; ++sy) {
+                for (int sx = hole.c0 / gen.cells; sx <= hole.c1 / gen.cells; ++sx) {
+                    if (gen.chunks.find(chunkKey(sx, sy)) == gen.chunks.end()) return false;
+                }
+            }
+            return true;
+        };
+        // Which generation stands in for each hole: the finest that covers it.
+        thread_local std::vector<const TerrainChunks*> standIn;
+        standIn.assign(holes.size(), nullptr);
+        CellSpan straight{cols, rows, -1, -1};
+        bool anyStraight = false;
+        for (std::size_t h = 0; h < holes.size(); ++h) {
+            for (const TerrainChunks* gen : others) {
+                if (covers(*gen, holes[h])) standIn[h] = gen;
+            }
+            if (standIn[h] != nullptr) continue;
+            anyStraight = true;
+            straight.x0 = std::min(straight.x0, std::max(0, holes[h].c0 - 1));
+            straight.y0 = std::min(straight.y0, std::max(0, holes[h].r0 - 1));
+            straight.x1 = std::max(straight.x1, std::min(cols - 1, holes[h].c1 + 1));
+            straight.y1 = std::max(straight.y1, std::min(rows - 1, holes[h].r1 + 1));
         }
-        canvas.clip();
-        const double straightSide = shrink == 1.0 ? side : tileBakePixels(kTileSize * scale);
-        paintTerrainCells(canvas, map, art, straight, straightSide, [&](int tx, int ty) {
-            return Vec2{ox + screenCorner(tx), oy + screenCorner(ty)};
-        });
+        for (const TerrainChunks* gen : others) {
+            bool any = false;
+            for (std::size_t h = 0; h < holes.size() && !any; ++h) any = standIn[h] == gen;
+            if (!any) continue;
+            canvas.save();
+            canvas.beginPath();
+            for (std::size_t h = 0; h < holes.size(); ++h) {
+                if (standIn[h] != gen) continue;
+                const Rect& box = holes[h].box;
+                canvas.rect(static_cast<float>(box.x), static_cast<float>(box.y),
+                            static_cast<float>(box.w), static_cast<float>(box.h));
+            }
+            canvas.clip();
+            thread_local std::vector<std::uint64_t> drawn;
+            drawn.clear();
+            for (std::size_t h = 0; h < holes.size(); ++h) {
+                if (standIn[h] != gen) continue;
+                const Hole& hole = holes[h];
+                for (int sy = hole.r0 / gen->cells; sy <= hole.r1 / gen->cells; ++sy) {
+                    for (int sx = hole.c0 / gen->cells; sx <= hole.c1 / gen->cells; ++sx) {
+                        const std::uint64_t key = chunkKey(sx, sy);
+                        if (std::find(drawn.begin(), drawn.end(), key) != drawn.end()) continue;
+                        drawn.push_back(key);
+                        const auto it = gen->chunks.find(key);
+                        if (it != gen->chunks.end()) blit(*gen, sx, sy, it->second);
+                    }
+                }
+            }
+            canvas.restore();
+        }
+        if (anyStraight) {
+            canvas.save();
+            canvas.beginPath();
+            for (std::size_t h = 0; h < holes.size(); ++h) {
+                if (standIn[h] != nullptr) continue;
+                const Rect& box = holes[h].box;
+                canvas.rect(static_cast<float>(box.x), static_cast<float>(box.y),
+                            static_cast<float>(box.w), static_cast<float>(box.h));
+            }
+            canvas.clip();
+            const double straightSide = tileBakePixels(kTileSize * scale);
+            paintTerrainCells(canvas, map, art, straight, straightSide, [&](int tx, int ty) {
+                return Vec2{ox + screenCorner(tx), oy + screenCorner(ty)};
+            });
+            canvas.restore();
+        }
+    }
+
+    // Zooming out, the target generation is drawn larger than it was baked
+    // until the frame shrinks to it. A finer generation -- the one the ease
+    // set out from -- still holds the middle of the screen at no more than
+    // its own resolution, and goes over it there.
+    if (shrink > 1.0 + 1e-9) {
+        for (const TerrainChunks* gen : others) {
+            if (!(gen->scale > bakeScale) || gen->scale < scale * (1.0 - 1e-9)) continue;
+            const int n = gen->cells;
+            for (int ky = y0 / n; ky <= y1 / n; ++ky) {
+                for (int kx = x0 / n; kx <= x1 / n; ++kx) {
+                    const auto it = gen->chunks.find(chunkKey(kx, ky));
+                    if (it != gen->chunks.end()) blit(*gen, kx, ky, it->second);
+                }
+            }
+        }
     }
     canvas.restore();
+
+    // The generation ahead covers the view the other loadout row would give.
+    // Its chunks there are kept, as the ones on screen are; and when the
+    // frame baked nothing of its own, one more is baked, nearest the camera
+    // first, so swapping to it finds it ready.
+    TerrainChunks& ahead = terrainAhead_;
+    if (aheadWant > 0.0 && holds(ahead, aheadWant)) {
+        const double halfW = camera.viewportWidth() * 0.5 / anticipatedZoom_;
+        const double halfH = camera.viewportHeight() * 0.5 / anticipatedZoom_;
+        const Vec2 c = camera.centre();
+        const int ax0 = std::max(0, static_cast<int>(std::floor((c.x - halfW) / kTileSize)));
+        const int ay0 = std::max(0, static_cast<int>(std::floor((c.y - halfH) / kTileSize)));
+        const int ax1 = std::min(cols - 1, static_cast<int>(std::floor((c.x + halfW) / kTileSize)));
+        const int ay1 = std::min(rows - 1, static_cast<int>(std::floor((c.y + halfH) / kTileSize)));
+        const int n = ahead.cells;
+        int bestX = 0, bestY = 0;
+        double best = -1.0;
+        for (int ky = ay0 / n; ay1 >= ay0 && ky <= ay1 / n; ++ky) {
+            for (int kx = ax0 / n; ax1 >= ax0 && kx <= ax1 / n; ++kx) {
+                const auto it = ahead.chunks.find(chunkKey(kx, ky));
+                if (it != ahead.chunks.end()) {
+                    it->second.usedFrame = frame_;
+                    continue;
+                }
+                const double dx = (kx + 0.5) * n - centreTiles.x;
+                const double dy = (ky + 0.5) * n - centreTiles.y;
+                const double d = dx * dx + dy * dy;
+                if (best < 0.0 || d < best) {
+                    best = d;
+                    bestX = kx;
+                    bestY = ky;
+                }
+            }
+        }
+        if (best >= 0.0 && !easing && bakes == 0) bake(ahead, bestX, bestY);
+    }
     return true;
 }
 
 void WorldRenderer::terrainCacheStats(std::size_t& chunks, std::size_t& bytes) const {
-    chunks = terrainChunks_.chunks.size();
-    bytes = terrainChunks_.bytes;
+    chunks = terrainChunks_.chunks.size() + terrainAhead_.chunks.size() +
+             terrainStale_.chunks.size();
+    bytes = terrainChunks_.bytes + terrainAhead_.bytes + terrainStale_.bytes;
 }
 
 } // namespace flix

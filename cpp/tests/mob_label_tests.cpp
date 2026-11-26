@@ -326,3 +326,28 @@ TEST(an_ant_standing_on_its_hole_is_drawn_over_it) {
         CHECK_EQ(centreOf({ant, hole}), antAlone);
     }
 }
+
+TEST(a_mobs_name_and_tier_are_left_off_when_too_small_to_read) {
+    // Super antennae and up draw the world a fifth of its size or less, where
+    // a name is a pixel or two tall: hundreds of mobs' worth of it was
+    // thousands of text draws a frame for nothing anyone could read. Out
+    // there the plate is its bar alone -- the same frame as with names turned
+    // off -- while at the default zoom the names are there as ever.
+    CHECK(testsupport::fontsReady());
+    const auto frameAt = [](double zoom, bool names) {
+        Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+        WorldView view;
+        view.setRealm(Realm::Overworld);
+        view.seedForTest(mobOfType("hornet", Rarity::Legendary));
+        WorldRenderer renderer;
+        renderer.setContent(&shipped());
+        renderer.options.names = names;
+        Camera camera = frameCamera();
+        camera.loadoutZoom = zoom;
+        renderer.draw(canvas, view, camera, kMobAt, 0.0);
+        return canvas.getImageData(0, 0, kFrameSize, kFrameSize);
+    };
+    CHECK(testsupport::differingPixels(frameAt(1.0, true), frameAt(1.0, false)) > 0);
+    CHECK(testsupport::differingPixels(frameAt(0.2, true), frameAt(0.2, false)) == 0);
+    CHECK(testsupport::differingPixels(frameAt(0.1, true), frameAt(0.1, false)) == 0);
+}

@@ -36,18 +36,30 @@ bool ServerHost::boot(std::string& errorOut) {
         if (m.role == Membership::Role::Gateway) {
             config.role = ServerConfig::Role::Gateway;
             config.clusterSecret = m.key;
-            config.clusterPort = m.port;
-            // Where the door was: wherever the game itself is served.
-            config.clusterHost = config.bindHost;
             config.expectedShards = 2;
             config.simulates = true;
         } else if (m.role == Membership::Role::Shard) {
+            if (m.oldLinkPort) {
+                // Linked when servers dialled a port of their own: the gateway
+                // takes them on its game port now, which is this server's own
+                // in any cluster set up the usual way. `/admin cluster connect`
+                // again, on its own, if not.
+                std::printf("[cluster] this server dialled the gateway at %s:%u, a port of its own; servers "
+                            "link on the game's port now, so it dials %s:%u\n",
+                            m.gatewayHost.c_str(), static_cast<unsigned>(m.gatewayPort), m.gatewayHost.c_str(),
+                            static_cast<unsigned>(config.port));
+                m.gatewayPort = config.port;
+                m.oldLinkPort = false;
+                std::string error;
+                if (!m.save(config.membershipPath, error)) std::fprintf(stderr, "[cluster] %s\n", error.c_str());
+            }
             config.role = ServerConfig::Role::Shard;
             config.clusterSecret = m.key;
             config.gatewayHost = m.gatewayHost;
             config.gatewayPort = m.gatewayPort;
             config.shardName = m.name;
             config.copyPath = cluster::copyPathFor(config.databasePath);
+            config.leaseJournalPath = config.databasePath + ".leases";
         }
     }
     const bool simulates = config.simulates && config.role == ServerConfig::Role::Gateway;
@@ -55,27 +67,48 @@ bool ServerHost::boot(std::string& errorOut) {
 
     auto server = std::make_unique<GameServer>();
     if (!server->start(config, errorOut)) return false;
+    gatewayConfig_ = config;
     std::unique_ptr<GameServer> simulation;
-    if (simulates) {
+    if (simulates && !startSimulation(simulation, errorOut)) return false;
+    server_ = std::move(server);
+    simulation_ = std::move(simulation);
+    if (simulation_) server_->setLocalSimulation(simulation_.get());
+    // Told to stop while there was nothing running to be told.
+    if (stopping_) server_->stop();
+    return true;
+}
+
+bool ServerHost::startSimulation(std::unique_ptr<GameServer>& simulation, std::string& errorOut) {
+    const ServerConfig& config = gatewayConfig_;
+    {
         ServerConfig own = config;
         own.role = ServerConfig::Role::Shard;
         own.localShard = true;
-        own.gatewayHost = config.clusterHost.empty() ? "127.0.0.1" : config.clusterHost;
-        own.gatewayPort = config.clusterPort;
+        // This process's own game port, which takes its servers' links too.
+        own.gatewayHost = config.bindHost.empty() || config.bindHost == "0.0.0.0" || config.bindHost == "::"
+                              ? "127.0.0.1"
+                              : config.bindHost;
+        own.gatewayPort = config.port;
         own.shardName = config.membership.name.empty() ? "main" : config.membership.name;
         own.membership = Membership{};
         own.membershipPath.clear();
         own.copyPath.clear();
+        // No port of its own: its clients come back to the gateway's, the
+        // one its proxied hostname reaches, and the gateway hands it their
+        // sockets in this process (setLocalSimulation). Nothing it is sent
+        // is relayed.
+        own.publicHost.clear();
+        own.publicPort = 0;
+        own.leaseJournalPath = config.databasePath.empty() ? std::string() : config.databasePath + ".simulation.leases";
         // Both wait in their sockets; one after the other, so neither for long.
         own.maxPollMillis = 0;
         own.worldSeed = config.worldSeed ^ 0x5171;
         simulation = std::make_unique<GameServer>();
-        if (!simulation->start(own, errorOut)) return false;
+        if (!simulation->start(own, errorOut)) {
+            simulation.reset();
+            return false;
+        }
     }
-    server_ = std::move(server);
-    simulation_ = std::move(simulation);
-    // Told to stop while there was nothing running to be told.
-    if (stopping_) server_->stop();
     return true;
 }
 
@@ -85,6 +118,7 @@ bool ServerHost::restart(std::string& errorOut) {
         if (simulation_) simulation_->shutdown();
         // The database's last save is in its destructor, and the next server
         // reads the file: gone before anything starts.
+        server_->setLocalSimulation(nullptr);
         simulation_.reset();
         server_.reset();
     }
@@ -111,9 +145,27 @@ bool ServerHost::step() {
     }
 
     if (server_->step()) {
+        if (!simulation_ && server_->wantsLocalSimulation() && monotonicMillis() >= nextSimulationMillis_) {
+            // A server it would have given biomes to cannot be reached by the
+            // players who would be sent there: they are simulated here, in a
+            // simulation of this process's own, started for it.
+            std::string error;
+            std::unique_ptr<GameServer> simulation;
+            if (startSimulation(simulation, error)) {
+                std::printf("[cluster] simulating here as well, for the biomes no reachable server has\n");
+                server_->setMaxPollMillis(1);
+                simulation_ = std::move(simulation);
+                server_->setLocalSimulation(simulation_.get());
+            } else {
+                std::fprintf(stderr, "[cluster] could not start this server's own simulation: %s\n",
+                             error.c_str());
+                nextSimulationMillis_ = monotonicMillis() + 30000.0;
+            }
+        }
         if (simulation_ && !simulation_->step()) {
             // Told to stop, or refused: never for good while the gateway is up.
             std::fprintf(stderr, "[cluster] this server's own simulation stopped\n");
+            server_->setLocalSimulation(nullptr);
             simulation_.reset();
             exitCode_ = GameServer::kRestartExit;
             server_->stop();

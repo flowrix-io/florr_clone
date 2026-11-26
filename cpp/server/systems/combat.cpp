@@ -268,13 +268,13 @@ void summarisePoison(Afflictions& afflictions, double nowMillis) {
 /// that rolled a big body is no easier to dust than one that rolled a small
 /// one. A web and a uranium cloud test the body that is actually there.
 double fieldTargetRadius(const World& world, const ContentRegistry& content, Entity victim,
-                         GroundEffectKind kind, const Body* body) {
+                         GroundEffectKind kind, double bodyRadius) {
     if (kind == GroundEffectKind::Poison) {
         if (const MobType* type = world.tryGet<MobType>(victim)) {
             return content.mobStats(type->configIndex, type->rarity).radius;
         }
     }
-    return body != nullptr ? body->radius : 0.0;
+    return bodyRadius;
 }
 
 /// What a petal pays to land a hit: the mob's own `damage` stat, which is
@@ -347,7 +347,7 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
     // A swing on an ambush nest's brood is a swing on the nest: the nest itself
     // cannot be hit, and its ledger is what decides who it pays out to when it
     // falls with the last of them. Scaled so the whole brood is worth the
-    // nest's full health -- the ledger's 1% loot floor is a share of THAT, and
+    // nest's full health -- the ledger's 3% loot floor is a share of THAT, and
     // a super hole's ultra-capped ants would otherwise never reach it.
     //
     // A nest that fell earlier this tick still takes the credit, as any corpse
@@ -2084,7 +2084,11 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
     // Refiled after movement for the reason the server rebuilds its main grid
     // there: the shots have flown, and the mobs' own shots were fired, since
     // the contact phase filed them.
+    const auto phase = [this](const char* name) {
+        if (onPhase) onPhase(name);
+    };
     fileShots(world);
+    phase("combat: filing shots");
 
     // TypeScript advances projectiles and then world fields after mobs move.
     // Damage fields are commutative within this phase, while projectile impact
@@ -2095,11 +2099,15 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
     // carries. The other trigger -- a firefly's touch -- fires in the contact
     // phase above, where the collision it needs is resolved.
     tickMobLightning(world, grid, content, nowMillis);
+    phase("combat: mob lightning");
     tickProjectiles(world, grid, content, nowMillis);
+    phase("combat: projectiles");
     tickGroundEffects(world, grid, content, nowMillis, dt);
+    phase("combat: ground effects");
     // Last, so a bubble that went down to poison, a petal or a shot this tick
     // -- in any phase -- pops all the same.
     popBubbles(world, grid, content);
+    phase("combat: bubbles");
 
     if (tick_ % kCooldownPruneTicks == 0) {
         queries_->cooldowns.each([&](Entity, HitCooldowns& cooldowns) { cooldowns.prune(nowMillis); });
@@ -2112,6 +2120,7 @@ void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
             cooldowns.hits.prune(nowMillis);
         });
     }
+    phase("combat: cooldown prune");
 
     // Not left dangling between ticks: a stray applyDamage() from a test or a
     // later system must not write into an EventQueue that has been cleared.
@@ -2315,18 +2324,40 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
             field.slowFactor >= 1.0) continue;
         queryBodies(grid, field.realm, field.position, field.radius + kBroadphasePad, candidates_);
         for (const Entity victim : candidates_) {
-            const Transform* transform = world.tryGet<Transform>(victim);
-            if (transform == nullptr) continue;
+            // A field laid among its own side -- a web under a crowd, with
+            // every flower's ring and shots in it -- finds that side in nearly
+            // every candidate, and canHit() below turns each one away after
+            // the lookups in between. Nothing this loop does to a victim comes
+            // before canHit(), so a pair the phase's memo already knows
+            // canDamage() refuses is skipped here instead: the same answer,
+            // read off the memo rather than walked.
+            if (phaseSidesRefuse(world, field.effect, victim)) continue;
+            // Where the victim is and how wide: off the circle the grid filed
+            // it as when nothing in this phase has moved it since -- exactly
+            // its Transform and Body, in one dense load -- and off the
+            // components otherwise (a shot, which the grid does not file, or a
+            // body a hit has pushed).
+            Vec2 victimAt;
+            double victimRadius = 0.0;
+            if (const SpatialGrid::FiledCircle* circle = grid.filedCircle(victim);
+                circle != nullptr && !movedThisPhase(victim)) {
+                victimAt = circle->position;
+                victimRadius = circle->radius;
+            } else {
+                const Transform* transform = world.tryGet<Transform>(victim);
+                if (transform == nullptr) continue;
+                victimAt = transform->position;
+                if (const Body* body = world.tryGet<Body>(victim)) victimRadius = body->radius;
+            }
             // Circle overlap, not centre-in-radius: every one of the three
             // reference fields adds the victim's own radius to its reach, so a
             // boss whose body edge is in the cloud is irradiated even though
             // its centre is 200 units outside it. A centre test shrinks the
             // effective area against a big mob by (r/(r+R))^2, which is most of
             // a web's or a puff's job.
-            const Body* body = world.tryGet<Body>(victim);
             const double reach =
-                field.radius + fieldTargetRadius(world, content, victim, field.kind, body);
-            const double gapSq = distanceSq(transform->position, field.position);
+                field.radius + fieldTargetRadius(world, content, victim, field.kind, victimRadius);
+            const double gapSq = distanceSq(victimAt, field.position);
             // The uranium pulse excludes on a strict `>` (playerState.ts:2686)
             // where pollen and web exclude on `>=` (groundEffects.ts:163, :231),
             // so a victim touching at exactly the rim is irradiated but is
@@ -3503,11 +3534,22 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                 radius = filed->radius;
             } else {
                 if (shooter != NULL_ENTITY && phaseCredit(world, victim) == shooter) continue;
-                const Transform* transform = world.tryGet<Transform>(victim);
-                const Body* body = world.tryGet<Body>(victim);
-                if (transform == nullptr || body == nullptr) continue;
-                position = transform->position;
-                radius = body->radius;
+                // The circle the grid filed this body as, when nothing in this
+                // phase has moved it since: exactly its Transform and Body --
+                // fileBodies() files every body at its own radius, right
+                // before this phase -- read in one dense load instead of two
+                // component lookups. resolveMelee reads it the same way.
+                if (const SpatialGrid::FiledCircle* circle = grid.filedCircle(victim);
+                    circle != nullptr && !movedThisPhase(victim)) {
+                    position = circle->position;
+                    radius = circle->radius;
+                } else {
+                    const Transform* transform = world.tryGet<Transform>(victim);
+                    const Body* body = world.tryGet<Body>(victim);
+                    if (transform == nullptr || body == nullptr) continue;
+                    position = transform->position;
+                    radius = body->radius;
+                }
             }
 
             // Against the SEGMENT the shot just flew, not its endpoint. A
@@ -3998,7 +4040,12 @@ void CombatSystem::prepareShotTrades(World& world, std::size_t realm) {
                     if (shotSides_[x].group != a) continue;
                     for (std::size_t y = filed.sidesBegin; y < filed.sidesEnd && !trades; ++y) {
                         if (shotSides_[y].group != b) continue;
-                        trades = canDamage(world, shotSides_[x].example, shotSides_[y].example);
+                        // Two flowers on one side, the usual pair in a crowd,
+                        // are refused off the phase's memo; only the pairs it
+                        // cannot settle walk canDamage()'s every rule.
+                        const Entity from = shotSides_[x].example;
+                        const Entity to = shotSides_[y].example;
+                        trades = !phaseSidesRefuse(world, from, to) && canDamage(world, from, to);
                     }
                 }
                 at(a, b) = trades ? 0 : 1;

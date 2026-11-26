@@ -80,6 +80,14 @@ constexpr double kMobDpsDrop = kMobTierDrop + 1.4 * kMobTierSize;
 /// What a summon's plate says it is, at the left of the tier row.
 constexpr const char* kPetLabel = "Summon";
 
+/// The screen height, in design units, below which a mob's plate text is
+/// not drawn, and the one it is fully drawn from, fading in between. Far
+/// enough out -- super antennae and up -- a name is a pixel or two tall and
+/// says nothing, but hundreds of them are thousands of text draws a frame,
+/// more than every mob's body put together.
+constexpr double kMobTextHiddenBelow = 4.0;
+constexpr double kMobTextShownFrom = 6.0;
+
 /// How far the viewer's mana bar moves down for their health bar: its plate's
 /// ten units and a gap of three.
 constexpr double kSelfManaDrop = 13.0;
@@ -482,6 +490,16 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         }
     }
 
+    // Too small to read, the text goes (the bar stays): the name is the
+    // biggest of it, so when that is gone so is the rest.
+    const auto textShown = [&](double size) {
+        return clamp((size * zoom - kMobTextHiddenBelow) / (kMobTextShownFrom - kMobTextHiddenBelow),
+                     0.0, 1.0);
+    };
+    if (textShown(kMobNameSize) <= 0.0) {
+        canvas.restore();
+        return;
+    }
     canvas.setGlobalAlpha(static_cast<float>(base * opacity));
     // florr's Text pads a run by its outline -- 2 x int(2 x size x 0.12) --
     // and lays the padded box out, with the glyphs centred in it. Measured at
@@ -490,6 +508,9 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
     // One label whose padded box starts at `boxLeft`.
     const auto label = [&](const std::string& text, double size, std::uint32_t fill,
                            double boxLeft, double y) {
+        const double shown = textShown(size);
+        if (shown <= 0.0) return;
+        canvas.setGlobalAlpha(static_cast<float>(base * opacity * shown));
         ui::TextStyle style;
         style.size = size * zoom;
         style.fill = fill;

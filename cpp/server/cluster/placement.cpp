@@ -48,8 +48,8 @@ std::vector<Move> placeOrphans(const std::vector<BiomeLoad>& biomes,
     Tally t = tally(biomes, servers);
     std::vector<Move> moves;
     const auto full = [&](std::size_t s) {
-        // Never all of them.
-        return t.count[s] + 1 >= static_cast<int>(biomes.size());
+        // Never all of them, but where nowhere else will do.
+        return !servers[s].takesAll && t.count[s] + 1 >= static_cast<int>(biomes.size());
     };
     // Those with a home first, so that what is dealt to the quietest server is
     // dealt around them.

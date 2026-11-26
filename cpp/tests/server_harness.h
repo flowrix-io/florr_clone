@@ -917,6 +917,17 @@ struct GameServerPeer {
     /// The Trial Grounds runs, one per trial realm, and the clock they run on.
     static auto& trials(GameServer& server) { return server.trials_; }
     static double clockMillis(const GameServer& server) { return server.clockMillis_; }
+    /// What each phase of the last tick() took, in the order it ran: the
+    /// stamps the slow-tick log and the debug panel are built from.
+    static std::vector<std::pair<const char*, double>> lastTickPhases(const GameServer& server) {
+        std::vector<std::pair<const char*, double>> out;
+        double from = server.tickStartedMillis_;
+        for (std::size_t i = 0; i < server.tickPhaseCount_; ++i) {
+            out.emplace_back(server.tickPhases_[i].name, server.tickPhases_[i].endedMillis - from);
+            from = server.tickPhases_[i].endedMillis;
+        }
+        return out;
+    }
     /// Carries `username`'s flower to `realm`, as a pad would. False when this
     /// server has no such flower.
     static bool carry(GameServer& server, const std::string& username, Realm realm, Vec2 to) {

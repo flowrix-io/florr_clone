@@ -199,6 +199,11 @@ inline constexpr double kZoomKeyStep = 0.1;
 /// grants nothing, the same rule the server applies to the equipment bits.
 double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry);
 
+/// loadoutCameraZoom for the loadout the row-swap key would wear: the second
+/// row moved up into the active slots. What the terrain bakes ahead for, so
+/// swapping antennae in finds the zoomed-out view already drawn.
+double swappedRowCameraZoom(const Profile& profile, const ContentRegistry& registry);
+
 /// How far the loadout bar reaches up from the bottom edge of an in-game
 /// viewport. What anything else anchored to the bottom hangs above -- the bar
 /// is centred and already nearly touches the edge, so there is no room under
@@ -1686,6 +1691,10 @@ public:
     /// True when the cursor is over menu furniture, so the game must not treat
     /// the click as aiming or the wheel as a zoom.
     bool capturesMouse(Vec2 mouse) const;
+    /// Drops every hit area the last paint left behind, for a frame the menus
+    /// are not painted at all (App's hidden HUD): nothing on screen may still
+    /// take a click.
+    void forgetHitAreas();
     /// Set by the app for the frame when the pointer is over something drawn
     /// above every panel -- the right-click menu -- so a click on one of its
     /// rows does not also land on the inventory cell underneath it.

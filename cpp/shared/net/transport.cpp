@@ -1,5 +1,6 @@
 #include "shared/net/transport.h"
 #include "shared/net/protocol.h"
+#include "shared/net/websocket.h"
 
 #include <cerrno>
 #include <cstring>
@@ -35,6 +36,11 @@ constexpr std::size_t kCompactThreshold = 64 * 1024;
 /// SessionReplaced; a peer still holding bytes after this has stopped reading,
 /// and would otherwise keep the connection open for as long as it liked.
 constexpr double kCloseDrainMillis = 10000.0;
+/// How long an accepted socket, or a dialled link, has to finish saying what
+/// it is -- its first bytes, or the WebSocket handshake -- before it is let go.
+constexpr double kHandshakeMillis = 15000.0;
+/// The most of the byte stream one WebSocket frame carries.
+constexpr std::size_t kWireChunk = 64 * 1024;
 
 /// The clock arrivals are stamped on. Only ever compared with itself.
 double steadyMillis() {
@@ -109,7 +115,156 @@ void Connection::closeGracefully() {
     closingSinceMillis_ = steadyMillis();
 }
 
+bool Connection::wantsWrite() const {
+    if (wireOutSent_ < wireOut_.size()) return true;
+    // Framing queued during a handshake waits for the WebSocket to open.
+    return ready() && outboundSent_ < outbound_.size();
+}
+
+bool Connection::ready() const { return wire_ == Wire::Raw || wire_ == Wire::WebSocket; }
+
+void Connection::beginClientHandshake(const std::string& path) {
+    wsClient_ = true;
+    wsKey_ = ws::newKey();
+    wire_ = Wire::ClientHandshake;
+    const std::string request = ws::request(peer_, path, wsKey_);
+    const auto* bytes = reinterpret_cast<const std::byte*>(request.data());
+    wireOut_.insert(wireOut_.end(), bytes, bytes + request.size());
+}
+
+bool Connection::unwrap(std::string& errorOut) {
+    const auto put = [this](const std::string& text) {
+        const auto* bytes = reinterpret_cast<const std::byte*>(text.data());
+        wireOut_.insert(wireOut_.end(), bytes, bytes + text.size());
+    };
+    const auto lower = [](std::string s) {
+        for (char& c : s) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+        return s;
+    };
+    for (;;) {
+        switch (wire_) {
+        case Wire::Raw:
+            return true;
+        case Wire::Sniffing: {
+            // An HTTP upgrade starts with GET; the transport's own framing
+            // starts with a little-endian length, which never spells it.
+            static const char kGet[] = "GET ";
+            const std::size_t n = std::min<std::size_t>(wireIn_.size(), 4);
+            if (n == 0) return true;
+            if (std::memcmp(wireIn_.data(), kGet, n) != 0) {
+                wire_ = Wire::Raw;
+                inbound_.insert(inbound_.end(), wireIn_.begin(), wireIn_.end());
+                noteArrival(wireIn_.size(), steadyMillis());
+                wireIn_.clear();
+                return true;
+            }
+            if (n < 4) return true;
+            wire_ = Wire::ServerHandshake;
+            continue;
+        }
+        case Wire::ServerHandshake:
+        case Wire::ClientHandshake: {
+            const std::size_t end = ws::headEnd(wireIn_.data(), wireIn_.size());
+            if (end == 0) {
+                if (wireIn_.size() <= ws::kMaxHeadBytes) return true;
+                errorOut = "websocket handshake too long";
+                return false;
+            }
+            const std::string text(reinterpret_cast<const char*>(wireIn_.data()), end);
+            wireIn_.erase(wireIn_.begin(), wireIn_.begin() + static_cast<std::ptrdiff_t>(end));
+            ws::Head head;
+            const bool parsed = ws::parseHead(text, head);
+            if (wire_ == Wire::ClientHandshake) {
+                if (!parsed || head.first.rfind("HTTP/1.1 101", 0) != 0 ||
+                    head.header("sec-websocket-accept") != ws::acceptFor(wsKey_)) {
+                    errorOut = "websocket refused: " + (parsed ? head.first : std::string("no answer"));
+                    return false;
+                }
+                wire_ = Wire::WebSocket;
+                continue;
+            }
+            // "GET <path> HTTP/1.1"
+            const std::size_t space = head.first.find(' ');
+            const std::size_t space2 = space == std::string::npos ? space : head.first.find(' ', space + 1);
+            const std::string key = head.header("sec-websocket-key");
+            if (!parsed || space == std::string::npos || space2 == std::string::npos ||
+                head.first.compare(0, space, "GET") != 0 || lower(head.header("upgrade")) != "websocket" ||
+                head.header("sec-websocket-version") != "13" || key.empty()) {
+                put(ws::badRequest());
+                wireIn_.clear();
+                closeGracefully();
+                return true;
+            }
+            std::string target = head.first.substr(space + 1, space2 - space - 1);
+            target = target.substr(0, target.find('?'));
+            path_ = target.substr(0, 200);
+            // Verbatim, and believed by nobody here, as the web backend keeps
+            // them: see clientAddress (server/account_limits.h).
+            std::string hops = head.header("x-forwarded-for");
+            if (hops.size() > 400) hops = hops.substr(hops.size() - 400);
+            forwarded_.forwardedFor = hops;
+            forwarded_.realIp = head.header("x-real-ip").substr(0, 200);
+            forwarded_.cfConnectingIp = head.header("cf-connecting-ip").substr(0, 200);
+            put(ws::switching(key));
+            wire_ = Wire::WebSocket;
+            continue;
+        }
+        case Wire::WebSocket: {
+            std::size_t at = 0;
+            bool ok = true;
+            while (at < wireIn_.size()) {
+                ws::Frame frame;
+                std::size_t used = 0;
+                const ws::Decoded got = ws::decode(wireIn_.data() + at, wireIn_.size() - at, !wsClient_, frame,
+                                                   used, errorOut);
+                if (got == ws::Decoded::NeedMore) break;
+                if (got == ws::Decoded::Error) {
+                    ok = false;
+                    break;
+                }
+                at += used;
+                if (frame.opcode <= 0x2) {
+                    // Text, binary and continuation alike: the stream's own
+                    // length prefixes are what find its frames.
+                    if (!frame.payload.empty()) {
+                        inbound_.insert(inbound_.end(), frame.payload.begin(), frame.payload.end());
+                        noteArrival(frame.payload.size(), steadyMillis());
+                    }
+                } else if (frame.opcode == 0x8) {
+                    ws::encode(wireOut_, 0x8, frame.payload.data(), std::min<std::size_t>(frame.payload.size(), 2),
+                               wsClient_);
+                    errorOut = "peer closed";
+                    ok = false;
+                    break;
+                } else if (frame.opcode == 0x9) {
+                    ws::encode(wireOut_, 0xA, frame.payload.data(), frame.payload.size(), wsClient_);
+                } else if (frame.opcode != 0xA) {
+                    errorOut = "websocket opcode unknown";
+                    ok = false;
+                    break;
+                }
+            }
+            wireIn_.erase(wireIn_.begin(), wireIn_.begin() + static_cast<std::ptrdiff_t>(at));
+            return ok;
+        }
+        }
+        return true;
+    }
+}
+
+void Connection::wrap() {
+    if (wire_ != Wire::WebSocket) return;
+    while (outboundSent_ < outbound_.size()) {
+        const std::size_t chunk = std::min(outbound_.size() - outboundSent_, kWireChunk);
+        ws::encode(wireOut_, 0x2, outbound_.data() + outboundSent_, chunk, wsClient_);
+        outboundSent_ += chunk;
+        streamWritten_ += chunk;
+    }
+    compactOutbound();
+}
+
 void Connection::discardInbound() {
+    wireIn_.clear();
     inbound_.clear();
     inboundConsumed_ = 0;
     arrivals_.clear();
@@ -210,27 +365,66 @@ std::size_t Connection::transportBuffered() const {
 #else
 
 bool Connection::readAvailable(std::string& errorOut) {
+    // Plain framing straight in; anything else is unwrapped first.
+    const bool raw = wire_ == Wire::Raw;
+    std::vector<std::byte>& into = raw ? inbound_ : wireIn_;
+    bool alive = true;
     while (true) {
-        const std::size_t at = inbound_.size();
-        inbound_.resize(at + kReadChunk);
-        const ssize_t n = ::recv(fd_, inbound_.data() + at, kReadChunk, 0);
+        const std::size_t at = into.size();
+        into.resize(at + kReadChunk);
+        const ssize_t n = ::recv(fd_, into.data() + at, kReadChunk, 0);
         if (n > 0) {
-            inbound_.resize(at + static_cast<std::size_t>(n));
-            noteArrival(static_cast<std::size_t>(n), steadyMillis());
+            into.resize(at + static_cast<std::size_t>(n));
+            if (raw) noteArrival(static_cast<std::size_t>(n), steadyMillis());
             // A short read means the socket is drained; going round again
             // would only earn an EAGAIN.
-            if (static_cast<std::size_t>(n) < kReadChunk) return true;
+            if (static_cast<std::size_t>(n) < kReadChunk) break;
             continue;
         }
-        inbound_.resize(at);
-        if (n == 0) { errorOut = "peer closed"; return false; }
-        if (wouldBlock()) return true;
+        into.resize(at);
+        if (n == 0) { errorOut = "peer closed"; alive = false; break; }
+        if (wouldBlock()) break;
+        errorOut = std::strerror(errno);
+        alive = false;
+        break;
+    }
+    // What arrived ahead of a close is still delivered.
+    if (!raw && !unwrap(errorOut)) return false;
+    return alive;
+}
+
+bool Connection::writeWire(std::string& errorOut) {
+    while (wireOutSent_ < wireOut_.size()) {
+        const ssize_t n = ::send(fd_, wireOut_.data() + wireOutSent_, wireOut_.size() - wireOutSent_,
+#ifdef MSG_NOSIGNAL
+                                 MSG_NOSIGNAL
+#else
+                                 0
+#endif
+        );
+        if (n > 0) {
+            wireOutSent_ += static_cast<std::size_t>(n);
+            continue;
+        }
+        if (wouldBlock()) break;
         errorOut = std::strerror(errno);
         return false;
     }
+    if (wireOutSent_ == wireOut_.size()) {
+        wireOut_.clear();
+        wireOutSent_ = 0;
+    } else if (wireOutSent_ > kCompactThreshold) {
+        wireOut_.erase(wireOut_.begin(), wireOut_.begin() + static_cast<std::ptrdiff_t>(wireOutSent_));
+        wireOutSent_ = 0;
+    }
+    return true;
 }
 
 bool Connection::writeAvailable(std::string& errorOut) {
+    if (wire_ != Wire::Raw) {
+        wrap();
+        return writeWire(errorOut);
+    }
     while (outboundSent_ < outbound_.size()) {
         const std::size_t remaining = outbound_.size() - outboundSent_;
         const ssize_t n = ::send(fd_, outbound_.data() + outboundSent_, remaining,
@@ -254,7 +448,9 @@ bool Connection::writeAvailable(std::string& errorOut) {
     return true;
 }
 
-std::size_t Connection::transportBuffered() const { return 0; }
+/// What is wrapped for a WebSocket and not yet taken by the kernel: the
+/// backlog cap counts it, as the web backend's counts what Node holds.
+std::size_t Connection::transportBuffered() const { return wireOut_.size() - wireOutSent_; }
 
 #endif  // __EMSCRIPTEN__
 
@@ -358,7 +554,10 @@ void Listener::acceptPending(TransportHandler& handler) {
         auto connection =
             std::make_unique<Connection>(channel, nextId_++, web::peer(channel));
         connection->forwarded_ = web::forwarded(channel);
+        connection->path_ = web::path(channel);
         connection->maxFrameBytes = maxFrameBytes;
+        // The page or Node finished whatever handshake there was.
+        connection->announced_ = true;
         Connection& ref = *connection;
         connections_.push_back(std::move(connection));
         handler.onConnect(ref);
@@ -430,6 +629,15 @@ void Listener::acceptPending(TransportHandler& handler) {
 
         auto connection = std::make_unique<Connection>(fd, nextId_++, describePeer(addr));
         connection->maxFrameBytes = maxFrameBytes;
+        connection->acceptedMillis_ = steadyMillis();
+        if (webSockets) {
+            // Plain framing or a WebSocket: its first bytes say, and it is
+            // announced once they have (service()), with its path if any.
+            connection->wire_ = Connection::Wire::Sniffing;
+            connections_.push_back(std::move(connection));
+            continue;
+        }
+        connection->announced_ = true;
         Connection& ref = *connection;
         connections_.push_back(std::move(connection));
         handler.onConnect(ref);
@@ -448,6 +656,8 @@ Connection& Listener::adopt(ConnectionId id, std::string peer,
     abandon(id);
     auto connection = std::make_unique<Connection>(-1, id, std::move(peer));
     connection->sink_ = std::move(sink);
+    // Announced to nobody, but its close is reported like any other's.
+    connection->announced_ = true;
     Connection& ref = *connection;
     connections_.push_back(std::move(connection));
     return ref;
@@ -458,6 +668,24 @@ void Listener::abandon(ConnectionId id) {
         if (c->id() == id && c->adopted()) c->shutdownNow();
     }
     sweepClosed();
+}
+
+std::unique_ptr<Connection> Listener::release(ConnectionId id) {
+    for (auto it = connections_.begin(); it != connections_.end(); ++it) {
+        if ((*it)->id() != id || (*it)->adopted()) continue;
+        std::unique_ptr<Connection> out = std::move(*it);
+        connections_.erase(it);
+        return out;
+    }
+    return nullptr;
+}
+
+Connection& Listener::take(std::unique_ptr<Connection> connection) {
+    connection->id_ = nextId_++;
+    connection->announced_ = true;
+    Connection& ref = *connection;
+    connections_.push_back(std::move(connection));
+    return ref;
 }
 
 void Listener::sweepClosed() {
@@ -501,7 +729,8 @@ void Listener::close(ConnectionId id) {
 }
 
 void Listener::drop(Connection& c, TransportHandler& handler, const std::string& reason) {
-    handler.onDisconnect(c, reason);
+    // One the handler never heard of is not its to hear the end of.
+    if (c.announced_) handler.onDisconnect(c, reason);
     c.shutdownNow();
 }
 
@@ -521,6 +750,11 @@ bool Listener::service(Connection& c, bool readable, bool writable, TransportHan
 
     if (readable) {
         const bool alive = c.readAvailable(error);
+        if (!c.announced_ && c.ready() && !c.closing()) {
+            c.announced_ = true;
+            handler.onConnect(c);
+            if (!c.open()) return false;
+        }
         // A connection the server is done with is not listened to while its
         // last bytes drain: a replaced session, a refused handshake. What it
         // sends is discarded unread -- acting on it would let a socket go on
@@ -545,10 +779,14 @@ bool Listener::service(Connection& c, bool readable, bool writable, TransportHan
         error = c.failure_;
         return false;
     }
+    if (!c.announced_ && !c.closing() && steadyMillis() - c.acceptedMillis_ > kHandshakeMillis) {
+        error = "said nothing";
+        return false;
+    }
     // Counted with what the transport is still holding: on the web backend
     // most of a slow peer's backlog lives there, and a cap that only saw this
     // object's half would never fire.
-    if (c.pendingBytes() + c.transportBuffered() > maxPendingBytes) {
+    if (c.pendingBytes() + c.transportBuffered() > (c.maxPendingBytes != 0 ? c.maxPendingBytes : maxPendingBytes)) {
         error = "outbound backlog exceeded";
         return false;
     }
@@ -567,7 +805,8 @@ bool Listener::service(Connection& c, bool readable, bool writable, TransportHan
 
 int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     pollAdopted(handler);
-    if (listenFd_ < 0) return 0;
+    // A listener that was never started may still hold connections it took.
+    if (listenFd_ < 0 && connections_.empty()) return 0;
     // The timeout is deliberately ignored. Bytes reach a channel from the
     // JavaScript event loop, which only runs when this stack has returned to
     // it, so sleeping here would not wait for data -- it would prevent it.
@@ -575,7 +814,7 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 
     // Before anything is serviced: see Listener::flush.
     dropFailed(handler);
-    acceptPending(handler);
+    if (listenFd_ >= 0) acceptPending(handler);
 
     int delivered = 0;
     for (std::size_t i = 0; i < connections_.size(); ++i) {
@@ -598,7 +837,8 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 
 int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     pollAdopted(handler);
-    if (listenFd_ < 0) return 0;
+    // A listener that was never started may still hold connections it took.
+    if (listenFd_ < 0 && connections_.empty()) return 0;
 
     // Before the poll set is built: see Listener::flush. A failed connection
     // has nothing to wait for, and this is also what keeps a socket that is
@@ -607,7 +847,8 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 
     std::vector<pollfd> fds;
     fds.reserve(connections_.size() + 1);
-    fds.push_back(pollfd{listenFd_, POLLIN, 0});
+    const std::size_t first = listenFd_ >= 0 ? 1 : 0;
+    if (listenFd_ >= 0) fds.push_back(pollfd{listenFd_, POLLIN, 0});
     for (auto& c : connections_) {
         if (!c->open() || c->adopted()) continue;
         short events = POLLIN;
@@ -618,13 +859,13 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     const int ready = ::poll(fds.data(), static_cast<nfds_t>(fds.size()), timeoutMillis);
     if (ready < 0 && !wouldBlock()) return 0;
 
-    if (ready > 0 && (fds[0].revents & POLLIN)) acceptPending(handler);
+    if (ready > 0 && first == 1 && (fds[0].revents & POLLIN)) acceptPending(handler);
 
     int delivered = 0;
 
     // Walk connections by fd so the poll results line up even though
     // acceptPending() may have appended new entries since fds was built.
-    std::size_t slot = 1;
+    std::size_t slot = first;
     for (std::size_t i = 0; i < connections_.size() && slot < fds.size(); ++i) {
         Connection& c = *connections_[i];
         if (!c.open() || c.adopted() || fds[slot].fd != c.fd()) continue;
@@ -632,7 +873,8 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
         ++slot;
         // A closing connection is serviced with nothing to do, so its drain
         // deadline is checked: a peer that stopped reading raises no event.
-        if (revents == 0 && !c.closing()) continue;
+        // So is one still saying what it is, whose deadline is checked too.
+        if (revents == 0 && !c.closing() && c.announced_) continue;
 
         std::string error;
         if (!service(c, (revents & (POLLIN | POLLHUP | POLLERR)) != 0, (revents & POLLOUT) != 0,
@@ -688,12 +930,14 @@ void Listener::flush() {
 Dialer::Dialer() = default;
 Dialer::~Dialer() { disconnect(); }
 
+std::string Dialer::wsPath() const { return serverLink ? std::string(ws::kLinkPath) : webSocketPath; }
+
 #ifdef __EMSCRIPTEN__
 
 bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& errorOut) {
     disconnect();
 
-    const int channel = web::connect(host, port);
+    const int channel = web::connect(host, port, wsPath(), secure && !serverLink);
     if (channel < 0) {
         errorOut = "no transport available for " + host + ":" + std::to_string(port);
         state_ = State::Failed;
@@ -768,6 +1012,13 @@ int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
 bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& errorOut) {
     disconnect();
 
+    if (secure && !serverLink) {
+        errorOut = "this build speaks no TLS";
+        state_ = State::Failed;
+        error_ = errorOut;
+        return false;
+    }
+
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -816,15 +1067,19 @@ bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& e
 int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
     if (!connection_ || !connection_->open()) return 0;
     if (failReported(handler)) return 0;
+    if (upgrading_ && steadyMillis() - upgradeSinceMillis_ > kHandshakeMillis) {
+        fail("websocket upgrade timed out", &handler);
+        return 0;
+    }
 
     short events = POLLIN;
-    if (state_ == State::Connecting || connection_->wantsWrite()) events |= POLLOUT;
+    if ((state_ == State::Connecting && !upgrading_) || connection_->wantsWrite()) events |= POLLOUT;
 
     pollfd fd{connection_->fd(), events, 0};
     const int ready = ::poll(&fd, 1, timeoutMillis);
     if (ready <= 0) return 0;
 
-    if (state_ == State::Connecting) {
+    if (state_ == State::Connecting && !upgrading_) {
         int soError = 0;
         socklen_t len = sizeof soError;
         ::getsockopt(connection_->fd(), SOL_SOCKET, SO_ERROR, &soError, &len);
@@ -833,9 +1088,17 @@ int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
             return 0;
         }
         if (fd.revents & (POLLOUT | POLLIN)) {
-            state_ = State::Connected;
-            announced_ = true;
-            handler.onConnect(*connection_);
+            if (!wsPath().empty()) {
+                // A link is a WebSocket: the upgrade first, and the handler
+                // hears of it once that is answered (below).
+                connection_->beginClientHandshake(wsPath());
+                upgrading_ = true;
+                upgradeSinceMillis_ = steadyMillis();
+            } else {
+                state_ = State::Connected;
+                announced_ = true;
+                handler.onConnect(*connection_);
+            }
         }
     }
 
@@ -849,6 +1112,13 @@ int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
     int delivered = 0;
     if (fd.revents & (POLLIN | POLLHUP | POLLERR)) {
         const bool alive = connection_->readAvailable(error);
+        if (alive && upgrading_ && connection_->ready()) {
+            upgrading_ = false;
+            state_ = State::Connected;
+            announced_ = true;
+            handler.onConnect(*connection_);
+            if (!connection_) return 0;
+        }
         while (connection_ && connection_->nextFrame(frameScratch_)) {
             ByteReader reader(frameScratch_.data(), frameScratch_.size());
             handler.onMessage(*connection_, reader);
@@ -868,6 +1138,7 @@ void Dialer::disconnect() {
     connection_.reset();
     state_ = State::Idle;
     announced_ = false;
+    upgrading_ = false;
 }
 
 void Dialer::send(const ByteWriter& message) {
@@ -876,6 +1147,7 @@ void Dialer::send(const ByteWriter& message) {
 
 void Dialer::fail(const std::string& reason, TransportHandler* handler) {
     if (handler && connection_ && announced_) handler->onDisconnect(*connection_, reason);
+    upgrading_ = false;
     connection_.reset();
     state_ = State::Failed;
     error_ = reason;

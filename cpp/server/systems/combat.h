@@ -286,6 +286,11 @@ public:
                          const ContentRegistry& content, double nowMillis);
 
     /// Resolves post-movement projectiles/ground fields and closes the tick.
+    /// Called with a name after each step of runWorldPhase, so the server's
+    /// per-phase tick timing (the debug panel's rows) can split the world
+    /// phase -- projectiles, clouds, lightning -- instead of one "combat".
+    /// The name must be a string literal: it is kept by pointer.
+    std::function<void(const char*)> onPhase;
     void runWorldPhase(World& world, const SpatialGrid& grid,
                        const ContentRegistry& content, double nowMillis, double dt);
 
@@ -1043,7 +1048,11 @@ private:
     std::array<ShotRealm, kMaxRealms> shotRealms_{};
     /// Past this many groups a realm gets no table: the pairs to settle grow
     /// as its square, and a hit test there skips only its own flower's shots.
-    static constexpr std::uint32_t kMaxShotGroups = 16;
+    /// It was 16, which a busy biome passes with seventeen flowers shooting:
+    /// with no table every shot then tests every shot near it -- a cloud of
+    /// mob shots against each other included -- and the projectile pass goes
+    /// quadratic in the crowd. 64 settles about 4k pairs a tick at worst.
+    static constexpr std::uint32_t kMaxShotGroups = 64;
     static constexpr std::uint32_t kNoShotGroup = 0xFFFFFFFFu;
     struct FiledShot {
         Entity entity = NULL_ENTITY;

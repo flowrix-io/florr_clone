@@ -682,7 +682,7 @@ constexpr ChangelogEntry kChangelog[] = {
         "Doubled Eternal to Apex craft chance",
         "Super mobs drop more Ultras and fewer Mythics",
         "Doubled Magic Leaf and Magic Orb mana regen",
-        "Antennae zoom animation is twice as fast"
+        "Antennae zoom animation is twice as fast",
       }
     },
     {"November 25, 2026",
@@ -694,6 +694,19 @@ constexpr ChangelogEntry kChangelog[] = {
         "Magnet attracts petals slower now",
         "Projectile petal changes",
         "Fixed squad members not getting loot"
+      }
+    },
+    {"November 26, 2026",
+      {
+        "Fixed keyboard lag in busy areas (hopefully)",
+        "Press F10 to hide the HUD",
+        "/players-online now shows how many players are in game and on the title screen",
+        "Doubled Magic Leaf and Magic Orb mana regen again",
+        "Fixed Common talents doing nothing",
+        "Looting a mob now takes at least 3% of its health",
+        "Magic Wand now costs mana for each pet it summons",
+        "Magic Stick now costs 3x less mana",
+        "Made the antennae zoom animation smooth"
       }
     },
 };

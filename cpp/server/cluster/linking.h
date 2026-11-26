@@ -1,6 +1,7 @@
 #pragma once
 // A server on its own, being linked to another: GameServer::Door, where it is
-// dialled, and GameServer::Probe, where it dials. The methods are GameServer's
+// dialled (its own game port, by a server's WebSocket at /link), and
+// GameServer::Probe, where it dials. The methods are GameServer's
 // (server/cluster/linking.cpp).
 
 #include <map>
@@ -13,17 +14,11 @@
 
 namespace flix {
 
-struct GameServer::Door : net::TransportHandler {
+/// The servers dialling this one's game port to join it: sockets of the game's
+/// own listener opened as a WebSocket at /link. They have no session.
+struct GameServer::Door {
     explicit Door(GameServer& server) : owner(server) {}
-    void onConnect(net::Connection& c) override {
-        if (diallers.size() >= 32) {
-            c.closeGracefully();
-            return;
-        }
-        diallers[c.id()].sinceMillis = monotonicMillis();
-    }
-    void onMessage(net::Connection& c, ByteReader& reader) override { owner.doorMessage(c, reader); }
-    void onDisconnect(net::Connection& c, const std::string&) override { diallers.erase(c.id()); }
+    static constexpr std::size_t kMaxDiallers = 32;
 
     struct Dialler {
         cluster::Greeting greeting;
@@ -34,16 +29,18 @@ struct GameServer::Door : net::TransportHandler {
     };
 
     GameServer& owner;
-    net::Listener listener;
     std::map<net::ConnectionId, Dialler> diallers;
-    std::string error;
     /// Somebody is joining: when to become a gateway, a moment after they were
     /// told they may, or -1.
     double openingAtMillis = -1;
 };
 
 struct GameServer::Probe : net::TransportHandler {
-    explicit Probe(GameServer& server) : owner(server) {}
+    explicit Probe(GameServer& server) : owner(server) {
+        // A WebSocket at /link on the other server's game port, plainly
+        // whatever certificate it has.
+        dialer.serverLink = true;
+    }
     void onConnect(net::Connection&) override { owner.probeOpened(); }
     void onMessage(net::Connection&, ByteReader& reader) override { owner.probeMessage(reader); }
     void onDisconnect(net::Connection&, const std::string& reason) override {

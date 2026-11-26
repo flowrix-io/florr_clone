@@ -99,6 +99,54 @@ bool LinkCipher::open(const std::byte* data, std::size_t size, std::vector<std::
     return true;
 }
 
+Where whereHandled(net::ClientMessage id) {
+    switch (id) {
+        case net::ClientMessage::Input:
+        case net::ClientMessage::Ping:
+        case net::ClientMessage::UsePetal:
+        case net::ClientMessage::SetLoadout:
+        case net::ClientMessage::SwapLoadout:
+        case net::ClientMessage::SwapLoadoutRows:
+        case net::ClientMessage::SaveLoadoutPreset:
+        case net::ClientMessage::LoadLoadoutPreset:
+        case net::ClientMessage::ProfileCheck:
+        case net::ClientMessage::Craft:
+        case net::ClientMessage::OracleCraft:
+        case net::ClientMessage::Trade:
+        case net::ClientMessage::TitanForge:
+        case net::ClientMessage::TitanHolder:
+        case net::ClientMessage::Assemble:
+        case net::ClientMessage::Absorb:
+        case net::ClientMessage::UpgradeSkill:
+        case net::ClientMessage::ResetSkills:
+        case net::ClientMessage::ClaimTrialReward:
+        case net::ClientMessage::StartTrialChamber:
+        case net::ClientMessage::Respawn:
+        case net::ClientMessage::AdminDashboard:
+            return Where::There;
+        // The handlers on the gateway that spend from the account, or change
+        // what the body wears: run on the gateway's copy of the row, once
+        // everything the client sent before them has been carried out on the
+        // other's.
+        case net::ClientMessage::BuyPetal:
+        case net::ClientMessage::RedeemCode:
+        case net::ClientMessage::PublishSkin:
+        case net::ClientMessage::EditSkin:
+        case net::ClientMessage::EquipSkin:
+        case net::ClientMessage::DeleteSkin:
+        case net::ClientMessage::VoteSkin:
+        case net::ClientMessage::FavoriteSkin:
+            return Where::Fenced;
+        default:
+            return Where::Here;
+    }
+}
+
+bool awaitsGateway(net::ClientMessage id) {
+    // The market's admin tools sell from the bag too.
+    return whereHandled(id) == Where::Fenced || id == net::ClientMessage::AdminTools;
+}
+
 void Greeting::write(ByteWriter& w) const {
     w.u32(linkVersion);
     w.u16(protocol);
@@ -109,6 +157,9 @@ void Greeting::write(ByteWriter& w) const {
     w.boolean(probe);
     w.boolean(copy);
     w.boolean(local);
+    w.str(publicHost);
+    w.u16(publicPort);
+    w.u16(port);
 }
 
 Greeting Greeting::read(ByteReader& r) {
@@ -124,6 +175,9 @@ Greeting Greeting::read(ByteReader& r) {
     g.probe = r.boolean();
     g.copy = r.boolean();
     g.local = r.boolean();
+    g.publicHost = r.str();
+    g.publicPort = r.u16();
+    g.port = r.u16();
     return g;
 }
 

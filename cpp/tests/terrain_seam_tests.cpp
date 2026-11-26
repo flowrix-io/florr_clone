@@ -150,16 +150,11 @@ TEST(terrain_chunks_leave_no_seam_when_antennae_zoom_the_camera_far_out) {
     }
 }
 
-TEST(terrain_chunks_keep_one_bake_per_octave_while_antennae_ease_the_zoom) {
+TEST(terrain_chunks_ease_the_antennae_zoom_without_a_seam_and_end_exact) {
     // Antennae going on or off ease the zoom over most of a second, so every
-    // frame of it is a new scale. The cache is told the zoom is moving and
-    // keeps a bake for as long as it is within twice the frame's scale,
-    // drawn down onto it -- never magnified, which is what pixelated the
-    // screen -- and stands the last bake in for chunks not baked yet rather
-    // than painting them straight, which was the lag. Checked both ways: no
-    // seam on any frame, a handful of bakes for the whole tenfold ease, every
-    // frame close to the exact picture at its zoom, and the exact picture
-    // itself once the ease ends.
+    // frame of it is a new scale. The cache bakes at the ease's target and
+    // nowhere in between, standing older generations in for chunks not baked
+    // yet: no seam on any frame, and the exact picture once it has settled.
     TerrainScene scene;
     CHECK(scene.load());
     scene.renderer.setTerrainCache(true);
@@ -167,28 +162,12 @@ TEST(terrain_chunks_keep_one_bake_per_octave_while_antennae_ease_the_zoom) {
     constexpr int kEaseFrames = 50;
     for (const auto& [from, to] : {std::pair{1.0, 0.1}, std::pair{0.1, 1.0}}) {
         for (int i = 0; i < kFramesToBakeAll; ++i) scene.frame(walls, from);
-        int generations = 0;
-        std::size_t lastChunks = 0, bytes = 0;
-        scene.renderer.terrainCacheStats(lastChunks, bytes);
-        int worstFrameDiff = 0;
         for (int f = 1; f <= kEaseFrames; ++f) {
             const double zoom = from * std::pow(to / from, static_cast<double>(f) / kEaseFrames);
             scene.renderer.setZoomEasingTarget(f < kEaseFrames ? to : 0.0);
             const std::vector<std::uint8_t> eased = scene.frame(walls, zoom);
-            std::size_t chunks = 0;
-            scene.renderer.terrainCacheStats(chunks, bytes);
-            if (chunks < lastChunks) ++generations;
-            lastChunks = chunks;
             CHECK(blackLines(eased, true) == 0);
             CHECK(blackLines(eased, false) == 0);
-            if (f % 10 == 5) {
-                // The same zoom drawn exactly, on a scene of its own.
-                TerrainScene exact;
-                CHECK(exact.load());
-                exact.renderer.setTerrainCache(true);
-                const std::vector<std::uint8_t> sharp = exact.frame(walls, zoom);
-                worstFrameDiff = std::max(worstFrameDiff, differingPixels(eased, sharp, 48));
-            }
         }
         scene.renderer.setZoomEasingTarget(0.0);
         std::vector<std::uint8_t> settled;
@@ -198,13 +177,70 @@ TEST(terrain_chunks_keep_one_bake_per_octave_while_antennae_ease_the_zoom) {
         exact.renderer.setTerrainCache(true);
         std::vector<std::uint8_t> sharp;
         for (int i = 0; i < kFramesToBakeAll; ++i) sharp = exact.frame(walls, to);
-        // Four octaves' worth of rotation at most, against one per frame.
-        std::printf("ease %.1f -> %.1f: %d generations, worst frame %d px off\n", from, to,
-                    generations, worstFrameDiff);
-        CHECK(generations <= 6);
-        // Blurred by a downscale, not displaced: a few percent of the frame.
-        CHECK(worstFrameDiff < kPixelWidth * kPixelHeight / 20);
         CHECK(differingPixels(settled, sharp, 1) == 0);
+    }
+}
+
+TEST(terrain_baked_ahead_for_the_other_row_makes_the_antennae_ease_bake_nothing) {
+    // With antennae in the other loadout row the terrain at their zoom is
+    // baked ahead, a chunk a frame, while the player is at the zoom they
+    // have. The ease to it then has nothing left to bake -- which on a weak
+    // GPU was the lag of the animation -- and its last frame is already the
+    // exact picture, with no second round of baking when it settles. Both
+    // ways, as the app does it: during and after the ease the row just left
+    // is the one anticipated.
+    const Vec2 walls{22272.3, 13440.7};
+    constexpr int kEaseFrames = 30;
+    for (const auto& [from, to] : {std::pair{1.0, 0.1}, std::pair{0.1, 1.0}}) {
+        TerrainScene scene;
+        CHECK(scene.load());
+        scene.renderer.setTerrainCache(true);
+        scene.renderer.setAnticipatedZoom(to);
+        // Enough frames for one chunk a frame to cover the anticipated view.
+        for (int i = 0; i < 4 * kFramesToBakeAll; ++i) scene.frame(walls, from);
+        std::size_t before = 0, bytes = 0;
+        scene.renderer.terrainCacheStats(before, bytes);
+
+        scene.renderer.setAnticipatedZoom(from);
+        std::vector<std::uint8_t> last;
+        for (int f = 1; f <= kEaseFrames; ++f) {
+            const double zoom = from * std::pow(to / from, static_cast<double>(f) / kEaseFrames);
+            scene.renderer.setZoomEasingTarget(f < kEaseFrames ? to : 0.0);
+            last = scene.frame(walls, zoom);
+            CHECK(blackLines(last, true) == 0);
+            CHECK(blackLines(last, false) == 0);
+        }
+        scene.renderer.setZoomEasingTarget(0.0);
+        std::size_t after = 0;
+        scene.renderer.terrainCacheStats(after, bytes);
+        std::printf("ease %.1f -> %.1f baked ahead: %zu chunks before, %zu after\n", from, to,
+                    before, after);
+        // Nothing new was needed: the target generation was already whole.
+        CHECK(after <= before);
+
+        TerrainScene exact;
+        CHECK(exact.load());
+        exact.renderer.setTerrainCache(true);
+        std::vector<std::uint8_t> sharp;
+        for (int i = 0; i < kFramesToBakeAll; ++i) sharp = exact.frame(walls, to);
+        CHECK(differingPixels(last, sharp, 1) == 0);
+    }
+}
+
+TEST(terrain_baked_ahead_does_not_change_the_picture_on_screen) {
+    // Baking ahead fills a generation the frame does not draw from: the view
+    // at the zoom the player has is the same picture with it as without.
+    const Vec2 walls{22272.3, 13440.7};
+    TerrainScene plain, ahead;
+    CHECK(plain.load());
+    CHECK(ahead.load());
+    plain.renderer.setTerrainCache(true);
+    ahead.renderer.setTerrainCache(true);
+    ahead.renderer.setAnticipatedZoom(0.1);
+    for (int i = 0; i < kFramesToBakeAll; ++i) {
+        const std::vector<std::uint8_t> a = plain.frame(walls, 1.0);
+        const std::vector<std::uint8_t> b = ahead.frame(walls, 1.0);
+        CHECK(differingPixels(a, b, 0) == 0);
     }
 }
 

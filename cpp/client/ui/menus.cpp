@@ -3238,6 +3238,14 @@ bool MenuSystem::capturesMouse(Vec2 mouse) const {
     return false;
 }
 
+void MenuSystem::forgetHitAreas() {
+    pollRect_ = Rect{};
+    panelRect_ = Rect{};
+    releaseRect_ = Rect{};
+    loadoutGrabbable_.fill(false);
+    stripRects_.fill(Rect{});
+}
+
 double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry) {
     // Per petal, the shared rule: the server bounds the viewport this client
     // may report by the very same figure, so the two cannot disagree about
@@ -3248,6 +3256,26 @@ double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry
     for (std::size_t i = 0; i < worn; ++i) {
         // Resolved, as the server resolves it when it bounds the viewport.
         const EquippedPetal slot = profile.equipped(registry, static_cast<int>(i));
+        if (slot.empty()) continue;
+        zoom = std::min(zoom, petalCameraZoom(registry, slot.configIndex, slot.rarity));
+    }
+    return zoom;
+}
+
+double swappedRowCameraZoom(const Profile& profile, const ContentRegistry& registry) {
+    double zoom = 1.0;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        // Resolved as if the row already sat in the active slots, the place
+        // a mimic copies its neighbour from.
+        const EquippedPetal slot = resolveEquippedPetal(registry, i, [&](int j) {
+            const std::size_t at = static_cast<std::size_t>(j) + kLoadoutActiveSlots;
+            if (j < 0 || j >= kLoadoutActiveSlots || at >= profile.loadout.size()) {
+                return EquippedPetal{};
+            }
+            const Profile::Slot& held = profile.loadout[at];
+            return held.empty() ? EquippedPetal{}
+                                : EquippedPetal{held.petalIndex, held.rarity, held.rarity};
+        });
         if (slot.empty()) continue;
         zoom = std::min(zoom, petalCameraZoom(registry, slot.configIndex, slot.rarity));
     }
