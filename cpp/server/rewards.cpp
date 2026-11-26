@@ -135,7 +135,7 @@ void GameServer::bankKills() {
         // LOOT rights on the corpse, not to the finisher alone: five flowers
         // that bring down an apex are five apex kills and five lots of 250
         // stars. Same ledger and the same selectLootRecipients() the XP and
-        // drop paths call -- squads, per-tier slot cap and 1% damage floor
+        // drop paths call -- squads, per-tier slot cap and 3% damage floor
         // included -- so the three cannot disagree about who was in on a kill.
         ranked.clear();
         if (const Bounty* bounty = world_.tryGet<Bounty>(death.entity)) {

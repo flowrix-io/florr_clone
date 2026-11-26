@@ -702,7 +702,8 @@ constexpr ChangelogEntry kChangelog[] = {
         "Press F10 to hide the HUD",
         "/players-online now shows how many players are in game and on the title screen",
         "Doubled Magic Leaf and Magic Orb mana regen again",
-        "Fixed Common talents doing nothing"
+        "Fixed Common talents doing nothing",
+        "Looting a mob now takes at least 3% of its health"
       }
     },
 };

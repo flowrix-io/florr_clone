@@ -541,6 +541,9 @@ private:
     void shDeliver(net::ConnectionId client, const std::byte* data, std::size_t size);
     /// Closes the client's socket at this port, if it has one, saying nothing.
     void shCloseDoor(Session&);
+    /// What the player's socket at this server's door is still holding, or 0
+    /// for a session with no socket here.
+    std::size_t shDoorBacklogBytes(const Session&) const;
     /// Whether the body stands where the market can be used, as a fence finds.
     bool shAtMarket(Session&);
     /// The rows the lease journal holds that the gateway never took.

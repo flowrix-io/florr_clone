@@ -347,7 +347,7 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
     // A swing on an ambush nest's brood is a swing on the nest: the nest itself
     // cannot be hit, and its ledger is what decides who it pays out to when it
     // falls with the last of them. Scaled so the whole brood is worth the
-    // nest's full health -- the ledger's 1% loot floor is a share of THAT, and
+    // nest's full health -- the ledger's 3% loot floor is a share of THAT, and
     // a super hole's ultra-capped ants would otherwise never reach it.
     //
     // A nest that fell earlier this tick still takes the credit, as any corpse

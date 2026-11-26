@@ -1177,7 +1177,12 @@ void GameServer::replicate(double nowMillis) {
         // only grows until the backlog cap drops them. Skipped, the view is
         // untouched, so the next snapshot that does go is a delta against the
         // last one that went and carries everything this one would have.
-        if (connection->backlogBytes() > kSnapshotBacklogBytes) {
+        // On a shard the session is an adopted connection that hands each
+        // frame straight on to the player's socket at this server's door, so
+        // the backlog that counts is that socket's.
+        std::size_t backlog = connection->backlogBytes();
+        if (shard_) backlog += shDoorBacklogBytes(session);
+        if (backlog > kSnapshotBacklogBytes) {
             ++skippedSnapshots_;
             continue;
         }

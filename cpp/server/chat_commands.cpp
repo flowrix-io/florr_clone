@@ -974,12 +974,15 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // title screen. A bot has no session, and a split flower is one
         // session however many halves it walks around as.
         // In the game is anyone with a body in a world, dead or alive; the rest
-        // are signed in and on the title screen.
+        // are signed in and on the title screen. Sharded, this is the gateway
+        // answering (chat is its), and it holds no bodies: a flower in the
+        // world is one on a server, `elsewhere.slot`.
         int inGame = 0;
         int onTitle = 0;
         for (const auto& entry : sessions_) {
-            if (entry.second.playing()) ++inGame;
-            else if (entry.second.authenticated()) ++onTitle;
+            const Session& session = entry.second;
+            if (session.playing() || session.elsewhere.slot != 0) ++inGame;
+            else if (session.authenticated()) ++onTitle;
         }
         out(std::string("<span style=\"color: #4fc3f7;\">Players online: <b>") +
             std::to_string(inGame + onTitle) + "</b> (in game: <b>" + std::to_string(inGame) +

@@ -2490,7 +2490,10 @@ TEST(a_squadmate_is_sent_the_drop_their_squad_earned) {
     // Killed by the fighter's own body, which is the ordinary kill path --
     // contact damage, a real Bounty, a real death. Stacked the odds so it
     // takes one touch rather than a minute of shoving: what is under test is
-    // who gets paid, not how long a starfish lasts.
+    // who gets paid, not how long a starfish lasts. The MAX comes down with
+    // it: the body hit the flower lands is its own stat, not the 500 below,
+    // and a kill is only paid to a flower that did 3% of the mob's health.
+    world.get<Health>(mob).max = 1.0;
     world.get<Health>(mob).current = 1.0;
     world.get<ContactDamage>(fighterBody).amount = 500.0;
     world.get<Transform>(mob).position = at;

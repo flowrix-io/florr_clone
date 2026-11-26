@@ -1331,6 +1331,12 @@ void GameServer::shClientFrame(net::ConnectionId id, ByteReader& reader) {
     if (awaits) session->awaitingGateway = true;
 }
 
+std::size_t GameServer::shDoorBacklogBytes(const Session& session) const {
+    if (session.door == 0 || !shard_ || !shard_->door) return 0;
+    const net::Connection* socket = shard_->door->listener.find(session.door);
+    return socket != nullptr ? socket->backlogBytes() : 0;
+}
+
 void GameServer::shDeliver(net::ConnectionId id, const std::byte* data, std::size_t size) {
     Session* session = sessionFor(id);
     if (session == nullptr || size == 0) return;

@@ -533,6 +533,46 @@ TEST(global_chat_reaches_every_server_and_local_chat_stays_put) {
     CHECK(c.stepUntil({&alice, &bobby}, [&] { return heard(bobby, "psst"); }));
 }
 
+TEST(players_online_counts_a_sharded_game_and_lets_go_of_who_left) {
+    Cluster c("cluster-online", 2, seedTwo);
+    CHECK(apart(c));
+    NetClient alice, bobby, admin;
+    CHECK(c.signIn(alice, "alice"));
+    CHECK(c.signIn(bobby, "bobby"));
+    CHECK(c.signIn(admin, "admin1"));
+    CHECK(c.join(alice, {&bobby, &admin}));
+    CHECK(c.join(bobby, {&alice, &admin}, "desert"));
+    // Two flowers on two servers, one person on the title screen.
+    admin.sendChat("/players-online");
+    CHECK(c.stepUntil({&alice, &bobby, &admin}, [&] {
+        return heard(admin, "Players online: <b>3</b> (in game: <b>2</b>, on title screen: <b>1</b>)");
+    }));
+    c.step(30, {&alice, &bobby, &admin});
+
+    // One closes the tab while in the world: the socket at that server's own
+    // port goes, and the gateway must stop counting them.
+    alice.disconnect();
+    CHECK(c.stepUntil({&bobby, &admin}, [&] {
+        return GameServerPeer::bodyOf(*c.serverFor("garden"), "alice") == NULL_ENTITY;
+    }));
+    c.step(30, {&bobby, &admin});
+    admin.sendChat("/players-online");
+    CHECK(c.stepUntil({&bobby, &admin}, [&] {
+        return heard(admin, "Players online: <b>2</b> (in game: <b>1</b>, on title screen: <b>1</b>)");
+    }));
+
+    // And one who leaves from the title screen.
+    c.step(30, {&bobby, &admin});
+    bobby.leaveGame();
+    CHECK(c.stepUntil({&bobby, &admin}, [&] { return c.gateway.leaseCount() == 0; }));
+    bobby.disconnect();
+    c.step(30, {&admin});
+    admin.sendChat("/players-online");
+    CHECK(c.stepUntil({&admin}, [&] {
+        return heard(admin, "Players online: <b>1</b> (in game: <b>0</b>, on title screen: <b>1</b>)");
+    }));
+}
+
 TEST(an_admins_give_reaches_a_flower_on_any_server) {
     Cluster c("cluster-give", 2, seedTwo);
     CHECK(apart(c));
