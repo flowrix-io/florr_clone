@@ -513,6 +513,30 @@ TEST(a_pad_to_another_servers_biome_carries_the_flower_across) {
              std::size_t{3});
 }
 
+TEST(a_flower_that_crosses_servers_starts_its_ping_and_server_stats_over) {
+    Cluster c("cluster-cross-stats", 2, seedTwo);
+    CHECK(apart(c));
+    NetClient alice;
+    CHECK(c.signIn(alice, "alice"));
+    CHECK(c.join(alice, {}));
+    alice.sendPing();
+    CHECK(c.stepUntil({&alice}, [&] { return alice.averagePingMillis() > 0; }));
+    const std::uint32_t epoch = alice.serverEpoch();
+
+    GameServer& garden = *c.serverFor("garden");
+    GameServer& desert = *c.serverFor("desert");
+    const Realm to = c.realm("desert");
+    CHECK(GameServerPeer::carry(garden, "alice", to, c.gateway.terrain().spawnPoint(to)));
+    CHECK(c.stepUntil({&alice}, [&] { return alice.view().realm() == to && alice.view().self().netId != 0; }));
+    CHECK(GameServerPeer::bodyOf(desert, "alice") != NULL_ENTITY);
+    // Another server: what the debug panel averaged over the last one goes,
+    // and the round trips are timed against the new one alone.
+    CHECK(alice.serverEpoch() != epoch);
+    CHECK_EQ(alice.averagePingMillis(), 0.0);
+    alice.sendPing();
+    CHECK(c.stepUntil({&alice}, [&] { return alice.averagePingMillis() > 0; }));
+}
+
 TEST(global_chat_reaches_every_server_and_local_chat_stays_put) {
     Cluster c("cluster-chat", 2, seedTwo);
     CHECK(apart(c));
@@ -701,6 +725,22 @@ TEST(an_admin_gives_a_server_the_domain_proxied_players_reach_it_at) {
     CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, "Looking at whether " + domain); }));
     // The gateway goes round by it, and finds that server there.
     CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, domain + " reaches " + garden); }));
+    // Without a port, a domain is 443, said outright: a player who came to the
+    // gateway's own port straight would otherwise take that port there.
+    {
+        std::string host;
+        std::uint16_t port = 1;
+        session->elsewhere.viaProxy = false;
+        admin.sendChat("/admin shards domain " + garden + " shard.example.com");
+        CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, "whether shard.example.com"); }));
+        CHECK(GameServerPeer::redirectTarget(c.gateway, *session, c.gateway.slotOf(garden), host, port));
+        CHECK_EQ(host, std::string("shard.example.com"));
+        CHECK_EQ(port, std::uint16_t{443});
+        session->elsewhere.viaProxy = true;
+        c.step(20, {&alice, &admin});
+        admin.sendChat("/admin shards domain " + garden + " " + domain);
+        CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, domain + " reaches " + garden); }));
+    }
     // Kept with the game, not with the server.
     CHECK_EQ(c.gateway.database().storedTable("cluster")["domains"][std::string(1, static_cast<char>('a' + at))].asString(), domain);
     CHECK(c.join(alice, {&admin}));
@@ -1263,6 +1303,28 @@ TEST(two_servers_are_linked_by_a_key_and_a_command_and_unlinked_by_another) {
     CHECK(p.until({&boss}, [&] { return heard(boss, "on its own, has a key"); }, 5.0));
 }
 
+TEST(a_server_keeps_a_long_name_and_its_domain_by_it) {
+    Pair p("longname-a", "longname-b");
+    CHECK(p.a.up && p.b.up);
+    NetClient admin, boss;
+    CHECK(p.signIn(admin, p.a.port, "admin1"));
+    CHECK(p.signIn(boss, p.b.port, "boss2"));
+    CHECK(p.say(admin, "/admin cluster key " + std::string(kKey), "can connect here"));
+    CHECK(p.say(boss, "/admin cluster key " + std::string(kKey), "Key set"));
+    // Longer than a player's name may be, as a hostname-like name is.
+    const std::string name = "us-east-shard-number-one";
+    boss.sendChat("/admin cluster connect 127.0.0.1:" + std::to_string(p.a.port) + " " + name);
+    CHECK(p.until({&admin, &boss}, [&] {
+        return p.sa() != nullptr && p.sa()->role() == ServerConfig::Role::Gateway && p.sa()->slotOf(name) != 0;
+    }, 30.0));
+    NetClient again;
+    CHECK(p.signIn(again, p.a.port, "admin1"));
+    // Its domain is set by the name it is listed under, and found by it.
+    const std::string domain = "127.0.0.1:" + std::to_string(p.b.port);
+    CHECK(p.say(again, "/admin shards domain " + name + " " + domain, "Looking at whether " + domain));
+    CHECK(p.until({&again}, [&] { return heard(again, domain + " reaches " + name); }, 15.0));
+}
+
 TEST(the_gateways_own_simulation_takes_its_players_on_the_gateways_port) {
     Pair p("own-a", "own-b");
     CHECK(p.a.up && p.b.up);
@@ -1489,4 +1551,25 @@ TEST(a_copy_never_overwrites_a_database_that_is_not_its_own) {
             std::remove((file + suffix).c_str());
         }
     }
+}
+
+// A browser reads a Redirect and the gateway's hang-up in the same poll: the
+// close is already visible when the frame is. That close is the gateway
+// letting go of a session it has sent on, and must not be taken for a lost
+// connection -- which raised the reconnect banner, never dialled the server
+// the Redirect named, and a second later signed the player in again at the
+// gateway instead.
+TEST(a_hang_up_right_behind_a_redirect_is_not_a_lost_connection) {
+    NetClient client;
+    net::Connection gateway(-1, 1, "gateway:3000");
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::Redirect));
+    w.str("shard.example");
+    w.u16(443);
+    w.str("0123456789abcdef0123456789abcdef");
+    ByteReader redirect(w.buffer());
+    client.onMessage(gateway, redirect);
+    client.onDisconnect(gateway, "peer closed");
+    CHECK(client.status() != NetClient::Status::Failed);
+    CHECK(client.lastError().empty());
 }

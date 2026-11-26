@@ -399,7 +399,7 @@ void GameServer::runClusterCommand(Session& session, net::Connection& connection
             out("Usage: cluster connect <host[:port]> [name]");
             return;
         }
-        if (words.size() == 4) m.name = sanitizePlayerName(words[3]);
+        if (words.size() == 4) m.name = cluster::serverName(words[3]);
         probe_ = std::make_unique<Probe>(*this);
         probe_->wanted = m;
         probe_->admin = connection.id();

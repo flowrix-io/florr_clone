@@ -32,6 +32,21 @@ bool move(const std::string& from, const std::string& to) {
 std::string membershipPathFor(const std::string& databasePath) { return databasePath + ".cluster"; }
 std::string copyPathFor(const std::string& databasePath) { return databasePath + ".replica"; }
 
+std::string serverName(const std::string& name) {
+    std::string out;
+    for (const char c : name) {
+        if (out.size() >= kMaxServerName) break;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+            c == '-') {
+            out += c;
+        } else if (c == ' ' && !out.empty() && out.back() != '-') {
+            out += '-';
+        }
+    }
+    while (!out.empty() && out.back() == '-') out.pop_back();
+    return out.empty() ? std::string("server") : out;
+}
+
 bool parseAddress(const std::string& text, std::string& host, std::uint16_t& port) {
     const std::size_t colon = text.rfind(':');
     host = text.substr(0, colon);

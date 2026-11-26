@@ -159,7 +159,14 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port, const char* pathPtr,
   // cluster key, not by TLS, and needs no certificate anybody vouches for.
   // The gateway's check of a server's domain (`wss`) goes the way a player's
   // page would: over TLS, through Cloudflare.
-  const secure = link ? !!wss : typeof location !== "undefined" && location.protocol === "https:";
+  // A player sent to a domain on an https port (443, or another of
+  // Cloudflare's) speaks TLS there whatever this page was served over: a page
+  // from a gateway's own plain port is sent on to a proxied hostname, and
+  // Cloudflare answers only TLS on those ports. A plain page may open wss.
+  const httpsPorts = [443, 2053, 2083, 2087, 2096, 8443];
+  const secure = link ? !!wss
+                      : (typeof location !== "undefined" && location.protocol === "https:") ||
+                        httpsPorts.indexOf(port) >= 0;
   const origin = (secure ? "https://" : "http://") + host + ":" + port;
   const channel = net.channel();
   const id = net.alloc(channel);

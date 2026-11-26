@@ -45,6 +45,11 @@ std::string copyPathFor(const std::string& databasePath);
 
 /// "host", "host:port" into its parts. False for neither.
 bool parseAddress(const std::string& text, std::string& host, std::uint16_t& port);
+/// A server's name as an admin types it in `/admin shards`: letters, digits,
+/// '.', '_' and '-', a space made a '-', at most kMaxServerName bytes. A
+/// player's name is cut at 20, which no hostname-like server name fits.
+inline constexpr std::size_t kMaxServerName = 48;
+std::string serverName(const std::string& name);
 
 /// Makes this server the cluster's gateway out of the copy it was sent: its
 /// own database is moved aside (the new name in `note`), the copy and its

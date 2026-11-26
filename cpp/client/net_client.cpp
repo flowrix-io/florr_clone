@@ -170,6 +170,7 @@ bool NetClient::connect(const std::string& host, std::uint16_t port) {
     // this attempt is the one that failed.
     host_ = host;
     port_ = port;
+    beginServerSession();
     std::string error;
     if (!dialer_.connect(host, port, error)) {
         status_ = Status::Failed;
@@ -250,7 +251,9 @@ void NetClient::poll(int timeoutMillis) {
     dialer_.flush();
     if (attaching_ && dialer_.state() == net::Dialer::State::Failed) {
         // The server it was sent to cannot be reached: back to the one the
-        // session started on, which signs it in again.
+        // session started on, which signs it in again -- and the player is
+        // told why the world went away, not left with a reconnect banner.
+        noteRedirectFailed(dialer_.error());
         returnHome();
         return;
     }
@@ -445,6 +448,11 @@ void NetClient::forgetAccount() {
 
 void NetClient::joinGame(int viewportWidth, int viewportHeight, const std::string& spawnChoice,
                          const std::string& playerName, bool prestige) {
+    // Only from a session that is signed in. Sent while reconnecting it was
+    // queued ahead of the new socket's Hello, which the server takes as a
+    // client that does not speak the protocol and hangs up on -- again on
+    // every redial, for a join retried each frame.
+    if (status_ != Status::LoggedIn && status_ != Status::Playing) return;
     ByteWriter w;
     beginMessage(w, net::ClientMessage::JoinGame);
     w.u16(static_cast<std::uint16_t>(viewportWidth));
@@ -1340,6 +1348,7 @@ void NetClient::onMessage(net::Connection& connection, ByteReader& reader) {
 void NetClient::onDisconnect(net::Connection&, const std::string& reason) {
     if (attaching_) {
         // Refused at the door it was sent to, or the door went: home.
+        noteRedirectFailed(reason);
         redirectPending_ = false;
         attaching_ = false;
         heldWhileAttaching_.clear();
@@ -1349,6 +1358,16 @@ void NetClient::onDisconnect(net::Connection&, const std::string& reason) {
         resetAdminDashboard();
         retryDelayMillis_ = 0;
         retryAtMillis_ = renderClockMillis();
+        return;
+    }
+    if (redirectPending_ || moveHomePending_) {
+        // Sent on, and hung up on in the same breath -- which in a browser is
+        // one poll: the Redirect is read, then the close. That close is the
+        // server letting go, not the connection lost. Failing here raised the
+        // reconnect banner, stopped this client polling the socket the
+        // redirect opens (so it never said Hello there), and a second later
+        // redialled the gateway over it: every player sent to another server
+        // of a sharded game came straight back.
         return;
     }
     status_ = Status::Failed;
@@ -1395,8 +1414,16 @@ void NetClient::followRedirect() {
     dialer_.disconnect();
     attaching_ = true;
     heldWhileAttaching_.clear();
+    beginServerSession();
     std::string error;
     if (!dialer_.connect(host, port, error)) returnHome();
+}
+
+void NetClient::noteRedirectFailed(const std::string& reason) {
+    const std::string host = redirectHost_.empty() ? host_ : redirectHost_;
+    const std::uint16_t port = redirectPort_ == 0 ? port_ : redirectPort_;
+    addSystemMessage("Could not reach the server for that biome at " + host + ":" + std::to_string(port) +
+                     (reason.empty() ? std::string() : " (" + reason + ")") + ". Back on the main server.");
 }
 
 void NetClient::returnHome() {
@@ -2774,6 +2801,16 @@ void NetClient::handlePong(ByteReader& reader, double arrivedMillis) {
     double total = 0;
     for (const double sample : pingHistory_) total += sample;
     averagePingMillis_ = total / static_cast<double>(pingHistory_.size());
+}
+
+void NetClient::beginServerSession() {
+    ++serverEpoch_;
+    // The last host's round trips say nothing about this one's: a shard on
+    // another machine can be 20 ms or 200 ms away. "--" until the first Pong,
+    // as at sign-in, rather than ten stale samples averaged in.
+    pingHistory_.clear();
+    averagePingMillis_ = 0;
+    serverDebugStatsFresh_ = false;
 }
 
 const char* NetClient::connectionQuality() const {
