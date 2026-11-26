@@ -698,7 +698,7 @@ constexpr ChangelogEntry kChangelog[] = {
     },
     {"November 26, 2026",
       {
-        "Fixed keyboard lag in busy areas",
+        "Fixed keyboard lag in busy areas (hopefully)",
         "Press F10 to hide the HUD",
         "/players-online now shows how many players are in game and on the title screen"
       }
