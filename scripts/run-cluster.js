@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A sharded game on one machine: a gateway and N simulation servers, kept up.
 //
-//   node scripts/run-cluster.js [--shards N] [--port P] [--cluster-port P]
+//   node scripts/run-cluster.js [--shards N] [--port P] [--shard-hosts h1,h2,...]
 //                               [--server dist/server.js] [-- gateway options]
 //
 // Each is a process of its own -- which is the point: a Node process
@@ -9,12 +9,17 @@
 // biome. Each simulation server takes its own players on a port of its own,
 // P+2, P+3, ... (P+1 is the gateway's own, should it be given `--simulate`):
 // the gateway signs them in and sends them there, and relays none of their
-// traffic. Any that exits is started again (a server of a sharded game exits to
+// traffic. Behind Cloudflare, players are never sent to those ports: give
+// each shard a proxied hostname of its own that reaches its port (a DNS
+// record with an origin rule for the port, or a tunnel), and list them in
+// order with --shard-hosts; they are sent there on the port they already use
+// (443). Without them, only players who dial the ports straight can play.
+// Any that exits is started again (a server of a sharded game exits to
 // be restarted whenever the gateway is updated), with a growing wait if it
 // will not stay up. Servers on OTHER machines are not this script's: start
-// them there with `--role shard --gateway host:port` and the same secret (and
-// `--public-host` if their clients dial them by a name), and give the gateway
-// `--cluster-host`.
+// them there with `--role shard --gateway host:P` (the gateway's game port,
+// which takes servers as well as players) and the same secret, and
+// `--public-host` with their proxied hostname.
 //
 // The secret is FLIX_CLUSTER_SECRET, or one made up for this run; it reaches
 // the children by environment, where `ps` does not show it.
@@ -27,7 +32,7 @@ const root = path.resolve(__dirname, "..");
 const options = {
   shards: 2,
   port: process.env.PORT || "3000",
-  "cluster-port": "3100",
+  "shard-hosts": "",
   server: path.join(root, "dist", "server.js"),
 };
 let extra = [];
@@ -39,7 +44,8 @@ for (let i = 2; i < process.argv.length; ++i) {
   }
   const name = arg.replace(/^--/, "");
   if (!(name in options) || i + 1 >= process.argv.length) {
-    console.error("usage: run-cluster.js [--shards N] [--port P] [--cluster-port P] [--server file] [-- gateway options]");
+    console.error("usage: run-cluster.js [--shards N] [--port P] [--shard-hosts h1,h2,...] " +
+      "[--server file] [-- gateway options]");
     process.exit(2);
   }
   options[name] = process.argv[++i];
@@ -48,6 +54,12 @@ const shards = Number(options.shards);
 // No server is ever given every biome, so one alone could never run them all.
 if (!Number.isInteger(shards) || shards < 2) {
   console.error("--shards takes a whole number, 2 or more");
+  process.exit(2);
+}
+
+const shardHosts = options["shard-hosts"] ? options["shard-hosts"].split(",").map((h) => h.trim()) : [];
+if (shardHosts.length !== 0 && shardHosts.length !== shards) {
+  console.error(`--shard-hosts names ${shardHosts.length} hosts for ${shards} shards`);
   process.exit(2);
 }
 
@@ -87,14 +99,14 @@ function start(name, args, wait) {
 }
 
 const web = native ? [] : ["--web-root", path.dirname(options.server)];
-start("gateway", ["--role", "gateway", "--port", String(options.port),
-  "--cluster-port", String(options["cluster-port"]), "--shards", String(shards),
+start("gateway", ["--role", "gateway", "--port", String(options.port), "--shards", String(shards),
   "--db", path.join(path.dirname(options.server), "inventory.json"), ...web, ...extra], 1000);
 for (let i = 1; i <= shards; ++i) {
   start(`shard-${i}`, ["--role", "shard", "--shard-name", `shard-${i}`,
     "--port", String(Number(options.port) + 1 + i),
     "--copy", path.join(path.dirname(options.server), `replica-shard-${i}.json`),
-    "--gateway", `127.0.0.1:${options["cluster-port"]}`, ...web], 1000);
+    "--gateway", `127.0.0.1:${options.port}`, ...web,
+    ...(shardHosts.length ? ["--public-host", shardHosts[i - 1]] : [])], 1000);
 }
 
 // The gateway is told first and the servers with it: it calls the rows in,

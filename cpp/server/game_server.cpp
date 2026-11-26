@@ -339,6 +339,9 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     setActiveMazeDay(currentMazeDay());
 
     listener_.certPath = config.certPath;
+    // Another server may dial it to join (`/admin cluster connect`), as a
+    // WebSocket at /link.
+    listener_.webSockets = true;
     listener_.keyPath = config.keyPath;
     listener_.webRoot = config.webRoot;
     listener_.bindHost = config.bindHost;
@@ -382,11 +385,7 @@ void GameServer::shutdown() {
         gwFlush();
     }
     listener_.stop();
-    if (door_) door_->listener.stop();
-    if (gateway_) {
-        gateway_->listener.stop();
-        gateway_->door.stop();
-    }
+    if (gateway_) gateway_->door.stop();
     if (shard_) {
         shard_->dialer.disconnect();
         if (shard_->door) shard_->door->listener.stop();
@@ -623,13 +622,12 @@ void GameServer::serviceNetwork(int timeoutMillis) {
         return;
     }
     if (gateway_) {
-        // Two sets of sockets and one wait: a short one on the clients', so a
-        // server's word for one of them is never left sitting behind it.
-        gwService();
+        // The game's port, clients and links alike: a short wait, so that a
+        // server's word for a client is never left sitting behind it.
         gateway_->door.poll(gateway_->doorHandler, std::min(timeoutMillis, 1));
         // The sessions: only a close to report, they have no sockets.
         listener_.poll(*this, 0);
-        gwService();
+        gateway_->door.poll(gateway_->doorHandler, 0);
         return;
     }
     listener_.poll(*this, timeoutMillis);

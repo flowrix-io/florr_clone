@@ -148,6 +148,7 @@ add_library(flix_shared STATIC
   shared/core/process_stats.cpp
   shared/net/transport.cpp
   shared/net/web_channel.cpp
+  shared/net/websocket.cpp
   shared/net/admin_db.cpp
   shared/net/admin_dashboard.cpp
   shared/game/rarity.cpp

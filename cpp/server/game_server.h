@@ -151,12 +151,10 @@ struct ServerConfig {
     /// biomes it is given, and is dialled by the clients playing there.
     enum class Role : std::uint8_t { Alone, Gateway, Shard };
     Role role = Role::Alone;
-    /// The gateway: where its servers dial in. Loopback unless told otherwise.
-    std::string clusterHost = "127.0.0.1";
-    std::uint16_t clusterPort = 3100;
-    /// A shard: the gateway's clusterHost and clusterPort, and a name for logs.
+    /// A shard: the gateway it dials -- its game port, `port` there, which
+    /// takes its servers' links as well as its players -- and a name for logs.
     std::string gatewayHost = "127.0.0.1";
-    std::uint16_t gatewayPort = 3100;
+    std::uint16_t gatewayPort = 3000;
     std::string shardName;
     /// What proves either end to the other. Both refuse an empty one.
     std::string clusterSecret;
@@ -170,16 +168,20 @@ struct ServerConfig {
     std::string copyPath;
     /// A shard: the gateway's own simulation, in its process (ServerHost).
     bool localShard = false;
-    /// Where clients are sent to reach this server's port. For a shard, an
-    /// empty host is the address the gateway sees the server's link come from
-    /// -- or, for the gateway's own simulation, the host the client dialled
-    /// the gateway at; for a gateway, the address its servers dial. A port of
-    /// 0 is `port`.
+    /// Where clients that come through the game's proxy (Cloudflare) reach
+    /// this server: its own hostname there. A port of 0 is whichever port the
+    /// client already uses (443 behind Cloudflare). With no host, only clients
+    /// that dial straight to the ports can be sent to it: a shard is reached at
+    /// the address its link comes from on `port`, a gateway at the one its
+    /// servers dial. Behind Cloudflare, every server needs one.
     std::string publicHost;
     std::uint16_t publicPort = 0;
     /// The gateway, when it simulates: the port its own simulation takes
-    /// clients on, or 0 for `port` + 1.
+    /// clients on, or 0 for `port` + 1, and its proxied hostname and port as
+    /// `publicHost` and `publicPort` are for a shard.
     std::uint16_t simulationPort = 0;
+    std::string simulationPublicHost;
+    std::uint16_t simulationPublicPort = 0;
     /// A shard: its record of the rows lent to it (cluster/lease_journal.h),
     /// or empty to keep it in memory only.
     std::string leaseJournalPath;
@@ -355,8 +357,6 @@ private:
     struct Gateway;
     std::unique_ptr<Gateway> gateway_;
     bool startGateway(std::string& errorOut);
-    /// Reads the links, and drains them.
-    void gwService();
     void gwFlush();
     /// Once per tick: heartbeats, what each server knows of each client,
     /// arrivals that were waiting, and the balance.
@@ -380,11 +380,15 @@ private:
     /// The sockets at the gateway's own port.
     void gwDoorOpened(net::Connection&);
     void gwDoorFrame(net::Connection&, ByteReader&);
-    void gwDoorClosed(net::Connection&);
+    void gwDoorClosed(net::Connection&, const std::string& reason);
     /// Where a session's frames go: the client's socket, wherever it is.
     void gwDeliver(net::ConnectionId client, const std::byte* data, std::size_t size);
     /// Sends the client's socket to `slot`'s port, or home to this one for 0.
     void gwRedirect(Session&, int slot);
+    /// Where a client is sent to reach the server in `slot`: its proxied
+    /// hostname, or its own port for a client that dialled straight. False
+    /// when it cannot be reached from where this client is connected.
+    bool gwRedirectTarget(const Session&, int slot, std::string& host, std::uint16_t& port);
     /// A client back at this port with the ticket it was sent with.
     void gwAttachHome(net::Connection& socket, Session& greeted, const std::string& ticket);
     /// The session's own connection closed: so does its socket, wherever.
@@ -457,6 +461,10 @@ private:
     std::unique_ptr<Probe> probe_;
     void openDoor();
     void doorMessage(net::Connection&, ByteReader&);
+    /// A socket of the game's port opened at /link, by a server dialling to
+    /// join this one: a dialler of the door, if there is one, and closed
+    /// otherwise.
+    bool doorTakes(net::Connection&);
     void probeOpened();
     void probeMessage(ByteReader&);
     void probeEnded(std::string why);

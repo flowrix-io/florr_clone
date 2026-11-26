@@ -11,7 +11,9 @@
 
 #include "server/auto_update.h"
 #include "server/cluster/row_merge.h"
+#include "server/account_limits.h"
 #include "server/crypto.h"
+#include "shared/net/websocket.h"
 #include "server/game_server_internal.h"
 #include "server/systems/dungeons.h"
 #include "server/systems/loot.h"
@@ -77,6 +79,9 @@ bool GameServer::startShard(std::string& errorOut) {
     }
     if (!shard_->journal.open(config_.leaseJournalPath, errorOut)) return false;
     shard_->dialer.maxFrameBytes = cluster::kLinkMaxFrame;
+    // The gateway's game port, as a WebSocket at /link, plainly whatever
+    // certificate the port has.
+    shard_->dialer.serverLink = true;
     shard_->dialer.beforeWrite = [this] { shSendRows(); };
     // The rows go into the lease journal, and onto the link, before any byte
     // that shows them leaves for a client: the sessions' frames are drained
@@ -139,7 +144,8 @@ void GameServer::shLinkOpened(net::Connection&) {
     s.greeting.copy = !config_.copyPath.empty();
     s.greeting.local = config_.localShard;
     s.greeting.publicHost = config_.publicHost;
-    s.greeting.publicPort = config_.publicPort != 0 ? config_.publicPort : config_.port;
+    s.greeting.publicPort = config_.publicPort;
+    s.greeting.port = config_.port;
     ByteWriter w = begin(ToGateway::Hello);
     s.greeting.write(w);
     s.dialer.send(w);
@@ -242,17 +248,15 @@ void GameServer::shLinkMessage(ByteReader& frame) {
                 s.slot = reader.u8();
                 const std::int64_t mazeDay = reader.i64();
                 const std::uint64_t taken = reader.u64();
-                std::string host = reader.str();
-                const std::uint16_t port = reader.u16();
+                s.gatewayPublicHost = reader.str();
+                s.gatewayPublicPort = reader.u16();
+                s.gatewayDirectPort = reader.u16();
                 if (!reader.ok()) return;
-                // Unnamed, it is wherever this server dials it -- unless that
+                // Straight, it is wherever this server dials it -- unless that
                 // is this machine, which the client knows by its own name.
-                if (host.empty() && config_.gatewayHost != "127.0.0.1" && config_.gatewayHost != "localhost" &&
-                    config_.gatewayHost != "::1") {
-                    host = config_.gatewayHost;
-                }
-                s.gatewayPublicHost = host;
-                s.gatewayPublicPort = port;
+                const std::string& dialled = config_.gatewayHost;
+                const bool loopback = dialled.rfind("127.", 0) == 0 || dialled == "localhost" || dialled == "::1";
+                s.gatewayDirectHost = loopback ? std::string() : dialled;
                 s.welcomed = true;
                 s.dialDelayMillis = 250;
                 netIds_.startFrom(cluster::netIdBase(s.slot));
@@ -1086,7 +1090,8 @@ void GameServer::restoreBossClock(const std::string& biome, double nowMillis) {
 // numbered, and nothing between the two passes through anyone else.
 
 void GameServer::shDoorOpened(net::Connection& socket) {
-    if (!shard_->welcomed) {
+    // Servers link to the gateway, never to one of its servers.
+    if (!shard_->welcomed || socket.path() == net::ws::kLinkPath) {
         // Nobody signed in can have been sent here yet: it goes back to the
         // gateway.
         socket.closeGracefully();
@@ -1124,13 +1129,21 @@ void GameServer::shDoorFrame(net::Connection& socket, ByteReader& reader) {
         if (!attaching) {
             // Not sent here: signing in is the gateway's, and it is there --
             // a page served from this port, or a bookmark from before this
-            // server was linked. Nothing it says is passed on.
-            ByteWriter there;
-            there.u8(static_cast<std::uint8_t>(net::ServerMessage::Redirect));
-            there.str(s.gatewayPublicHost);
-            there.u16(s.gatewayPublicPort);
-            there.str("");
-            socket.send(there);
+            // server was linked. Nothing it says is passed on. Through the
+            // proxy to the gateway's proxied hostname; straight to its port
+            // only from straight here.
+            const bool viaProxy = cameThroughProxy(socket.peer(), socket.forwarded());
+            if (s.gatewayPublicHost.empty() && viaProxy) {
+                sendNotice(socket, net::NoticeSeverity::Bad,
+                           "This server is part of a larger game, and the game's address is not set up yet.");
+            } else {
+                ByteWriter there;
+                there.u8(static_cast<std::uint8_t>(net::ServerMessage::Redirect));
+                there.str(s.gatewayPublicHost.empty() ? s.gatewayDirectHost : s.gatewayPublicHost);
+                there.u16(s.gatewayPublicHost.empty() ? s.gatewayDirectPort : s.gatewayPublicPort);
+                there.str("");
+                socket.send(there);
+            }
             socket.closeGracefully();
         }
         return;

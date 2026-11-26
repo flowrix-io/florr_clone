@@ -14,7 +14,10 @@
 // cpp/docs/ARCHITECTURE.md, "Sharding".
 //
 // The same framing and byte order as the client protocol, in a namespace of
-// its own: neither end of this ever talks to a client with it.
+// its own: neither end of this ever talks to a client with it. It is always a
+// WebSocket, at /link (net::ws::kLinkPath), on the game's own port, the one
+// players dial: the path is how the port tells a server from a client, in
+// either build (net::Dialer::serverLink).
 
 #include <cstdint>
 #include <string>
@@ -30,7 +33,7 @@ namespace flix::cluster {
 /// Bump whenever anything below changes shape. Checked with the client
 /// protocol's version and the content hash: a gateway takes no server built
 /// from another tree.
-inline constexpr std::uint32_t kLinkVersion = 3;
+inline constexpr std::uint32_t kLinkVersion = 4;
 
 /// A frame between servers carries a whole guild table or a whole account.
 inline constexpr std::uint32_t kLinkMaxFrame = 64u << 20;
@@ -146,11 +149,14 @@ struct Greeting {
     bool copy = false;
     /// The gateway's own simulation, in the gateway's own process.
     bool local = false;
-    /// Where clients dial this server: a host, or empty for the one the
-    /// gateway saw the link come from (a server in the gateway's own process:
-    /// the host the client dialled the gateway at), and a port.
+    /// Where clients that come through the game's proxy (Cloudflare) reach
+    /// this server: its own hostname there, or empty for none. A port of 0 is
+    /// whichever the client reached the gateway on (443, behind Cloudflare).
     std::string publicHost;
     std::uint16_t publicPort = 0;
+    /// The port it takes clients on itself. Only a client that dialled the
+    /// gateway straight, not through a proxy, is ever sent to it.
+    std::uint16_t port = 0;
 
     void write(ByteWriter& w) const;
     static Greeting read(ByteReader& r);

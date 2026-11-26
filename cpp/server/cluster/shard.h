@@ -62,10 +62,13 @@ struct GameServer::Shard : net::TransportHandler {
     net::Dialer dialer;
     std::unique_ptr<Door> door;
     std::unordered_map<std::string, Ticket> expected;
-    /// Where clients sign in: the gateway's own port. An empty host is the one
-    /// the client dialled here.
+    /// Where clients sign in: the gateway's proxied hostname (empty for none;
+    /// port 0, the client's own), and its own address for a client that
+    /// dialled straight (an empty host: the one the client dialled here).
     std::string gatewayPublicHost;
     std::uint16_t gatewayPublicPort = 0;
+    std::string gatewayDirectHost;
+    std::uint16_t gatewayDirectPort = 0;
     cluster::LeaseJournal journal;
     cluster::Greeting greeting;
     cluster::LinkCipher cipher;

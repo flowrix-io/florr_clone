@@ -9,7 +9,9 @@
 #include <cstdio>
 
 #include "server/cluster/row_merge.h"
+#include "server/account_limits.h"
 #include "server/crypto.h"
+#include "shared/net/websocket.h"
 #include "server/game_server_internal.h"
 #include "server/routine_log_policy.h"
 #include "server/text.h"
@@ -102,12 +104,6 @@ bool GameServer::startGateway(std::string& errorOut) {
     gateway_ = std::make_unique<Gateway>(*this);
     Gateway& g = *gateway_;
     g.startedMillis = monotonicMillis();
-    g.listener.bindHost = config_.clusterHost;
-    g.listener.maxPendingBytes = cluster::kLinkMaxPending;
-    // Never TLS, whatever certificate the game's own port found: the servers
-    // dial it plain (see ServerConfig::clusterHost).
-    g.listener.certPath = "none";
-    g.listener.keyPath = "none";
     gwBuildBiomes();
     gwReadDistribution();
     database_.onRowWritten = [this](Database::Part part, const std::string& key) {
@@ -119,18 +115,18 @@ bool GameServer::startGateway(std::string& errorOut) {
     };
     // An acknowledgement of a server's rows goes out on the link only behind
     // the journal line that holds them.
-    g.listener.beforeWrite = [this] { database_.flushJournal(); };
-    if (!g.listener.start(config_.clusterPort, errorOut)) {
-        errorOut = "cluster port " + std::to_string(config_.clusterPort) + ": " + errorOut;
-        return false;
-    }
-    // The game's own port. The sessions are adopted connections whose frames
-    // go wherever their client's socket is (gwDeliver); what a socket here
-    // says is handed to the session it is (gwDoorFrame).
+    g.door.beforeWrite = [this] { database_.flushJournal(); };
+    // The game's own port, for clients and servers both. The sessions are
+    // adopted connections whose frames go wherever their client's socket is
+    // (gwDeliver); what a socket here says is handed to the session it is, or
+    // to the link it is (gwDoorFrame): a link is a WebSocket at /link, which a
+    // server dials plain whatever certificate the port has.
     g.door.certPath = config_.certPath;
     g.door.keyPath = config_.keyPath;
     g.door.webRoot = config_.webRoot;
     g.door.bindHost = config_.bindHost;
+    // Its servers' links are WebSockets at /link.
+    g.door.webSockets = true;
     if (!g.door.start(config_.port, errorOut)) return false;
     database_.onTableWritten = [this](const std::string& key, const std::string& text) {
         if (!sharedTable(key)) return;
@@ -156,9 +152,8 @@ bool GameServer::startGateway(std::string& errorOut) {
             for (const auto& told : session.elsewhere.told) gwSend(told.first, w);
         }
     };
-    std::printf("[cluster] gateway: %zu biomes to place, servers dial %s:%u\n", g.biomes.size(),
-                config_.clusterHost.empty() ? "*" : config_.clusterHost.c_str(),
-                static_cast<unsigned>(config_.clusterPort));
+    std::printf("[cluster] gateway: %zu biomes to place, servers dial the game's port, %u\n",
+                g.biomes.size(), static_cast<unsigned>(config_.port));
     return true;
 }
 
@@ -215,28 +210,25 @@ bool GameServer::gwDraining() {
 // The links
 // ---------------------------------------------------------------------------
 
-void GameServer::gwService() {
-    gateway_->listener.poll(*gateway_, 0);
-}
-
 void GameServer::gwFlush() {
     gwPassEdits();
     // What the sessions queued, into the sockets and links it goes out on:
     // after beforeWrite, so behind the journal.
     listener_.flush();
     gateway_->door.flush();
-    gateway_->listener.flush();
 }
 
 void GameServer::gwSend(int slot, const ByteWriter& message) {
     Gateway::Server* server = gateway_->bySlot(slot);
     if (server == nullptr) return;
-    if (net::Connection* link = gateway_->listener.find(server->link)) {
+    if (net::Connection* link = gateway_->door.find(server->link)) {
         link->send(server->cipher.seal(message));
     }
 }
 
 void GameServer::gwLinkOpened(net::Connection& link) {
+    // A whole table's rows may be queued for one server at once.
+    link.maxPendingBytes = cluster::kLinkMaxPending;
     Gateway::Server server;
     server.link = link.id();
     server.openedAtMillis = monotonicMillis();
@@ -295,7 +287,7 @@ bool GameServer::gwHandshake(net::Connection& link, ByteReader& reader, std::uin
             const bool same = server.greeting.id.empty() ? entry.second.name == server.name
                                                          : entry.second.greeting.id == server.greeting.id;
             if (!same) continue;
-            if (net::Connection* stale = g.listener.find(entry.first)) stale->closeGracefully();
+            if (net::Connection* stale = g.door.find(entry.first)) stale->closeGracefully();
             const int slot = entry.second.slot;
             gwServerLost(slot, entry.second.name);
             break;
@@ -315,26 +307,38 @@ bool GameServer::gwHandshake(net::Connection& link, ByteReader& reader, std::uin
                                                        : server.greeting.id;
         server.publicHost = server.greeting.publicHost;
         server.publicPort = server.greeting.publicPort;
-        // Where the link came from is where its clients dial, unless it said
-        // otherwise. Not for a server on this machine -- the gateway's own
-        // simulation, or one dialling over loopback -- which is wherever the
-        // client found the gateway.
-        if (server.publicHost.empty() && !server.greeting.local) {
+        // Straight, it is where its link came from -- unless that is this
+        // machine (the gateway's own simulation, or a server dialling over
+        // loopback), which the client knows by the name it found the gateway at.
+        server.directPort = server.greeting.port;
+        if (!server.greeting.local) {
             const std::string host = hostOfPeer(link.peer());
             const bool loopback = host.rfind("127.", 0) == 0 || host == "[::1]" || host == "localhost";
-            if (!loopback) server.publicHost = host;
+            if (!loopback) server.directHost = host;
         }
-        std::printf("[cluster] %s joined from %s; clients dial it at %s:%u\n", server.name.c_str(),
-                    link.peer().c_str(), server.publicHost.empty() ? "(this host)" : server.publicHost.c_str(),
-                    static_cast<unsigned>(server.publicPort));
+        const std::string straight =
+            (server.directHost.empty() ? std::string("(this host)") : server.directHost) + ":" +
+            std::to_string(server.directPort);
+        if (server.publicHost.empty()) {
+            std::printf("[cluster] %s joined from %s; clients that dial straight are sent to %s, and it has no "
+                        "--public-host for clients that come through a proxy\n",
+                        server.name.c_str(), link.peer().c_str(), straight.c_str());
+        } else {
+            std::printf("[cluster] %s joined from %s; clients are sent to %s:%s (straight: %s)\n",
+                        server.name.c_str(), link.peer().c_str(), server.publicHost.c_str(),
+                        server.publicPort != 0 ? std::to_string(server.publicPort).c_str() : "(their port)",
+                        straight.c_str());
+        }
         const Json& taken = std::as_const(database_).storedTable("leaseJournals")[server.journalKey];
         ByteWriter w = begin(ToServer::Welcome);
         w.u8(static_cast<std::uint8_t>(slot));
         w.i64(activeMaze().day());
         w.u64(static_cast<std::uint64_t>(taken.asDouble()));
-        // Where a client that dials that server's own port is sent instead.
+        // Where a client that dials that server's own port is sent instead:
+        // through the proxy, and straight.
         w.str(config_.publicHost);
-        w.u16(config_.publicPort != 0 ? config_.publicPort : config_.port);
+        w.u16(config_.publicPort);
+        w.u16(config_.port);
         gwSend(slot, w);
         for (const char* key : {"guilds", "chatTerms"}) {
             const Json& table = std::as_const(database_).storedTable(key);
@@ -1101,6 +1105,12 @@ void GameServer::gwDispatch(Session& session) {
     const int slot = isTrialRealm(state.realm) ? gwQuietestSlot() : gwSlotOfRealm(state.realm);
     // The account's last flower has to be home before the next goes out: two
     // servers holding one row is the one thing this never does.
+    std::string targetHost;
+    std::uint16_t targetPort = 0;
+    if (slot != 0 && !gwRedirectTarget(session, slot, targetHost, targetPort)) {
+        gwArrivalFailed(session, "That biome's server cannot be reached from where you are connected yet.");
+        return;
+    }
     if (slot == 0 || g.leases.count(session.userId) != 0) {
         if (waited > kArrivalPatienceMillis) {
             gwArrivalFailed(session, slot == 0
@@ -1199,6 +1209,7 @@ void GameServer::gwRelease(Session& session) {
     fresh.lastCarrier = e.lastCarrier;
     fresh.pendingCarrier = e.pendingCarrier;
     fresh.door = e.door;
+    fresh.viaProxy = e.viaProxy;
     fresh.transitSinceMillis = e.transitSinceMillis;
     fresh.ticket = std::move(e.ticket);
     fresh.outbox = std::move(e.outbox);
@@ -1219,6 +1230,11 @@ void GameServer::gwRelease(Session& session) {
 
 void GameServer::gwDoorOpened(net::Connection& socket) {
     Gateway& g = *gateway_;
+    // Another server of the game, for its link: not a client.
+    if (socket.path() == net::ws::kLinkPath) {
+        gwLinkOpened(socket);
+        return;
+    }
     const net::ConnectionId id = listener_.reserveId();
     const std::string address = clientAddress(socket.peer(), socket.forwarded());
     net::Connection& client = listener_.adopt(
@@ -1228,11 +1244,42 @@ void GameServer::gwDoorOpened(net::Connection& socket) {
     if (Session* session = sessionFor(id)) {
         session->clientAddress = address;
         session->elsewhere.door = socket.id();
+        session->elsewhere.viaProxy = cameThroughProxy(socket.peer(), socket.forwarded());
     }
+}
+
+bool GameServer::gwRedirectTarget(const Session& session, int slot, std::string& host, std::uint16_t& port) {
+    Gateway::Server* server = gateway_->bySlot(slot);
+    if (server == nullptr) return false;
+    if (!server->publicHost.empty()) {
+        host = server->publicHost;
+        port = server->publicPort;
+        return true;
+    }
+    // A server's own port is reachable only straight: a client that came
+    // through Cloudflare is never sent round it, to an address it was not
+    // given and over a connection nobody vouches for.
+    if (session.elsewhere.viaProxy) {
+        if (!server->warnedUnreachable) {
+            server->warnedUnreachable = true;
+            std::fprintf(stderr,
+                         "[cluster] %s has no --public-host, so players who come through a proxy cannot be "
+                         "sent to it: give it its own proxied hostname\n",
+                         server->name.c_str());
+        }
+        return false;
+    }
+    host = server->directHost;
+    port = server->directPort;
+    return true;
 }
 
 void GameServer::gwDoorFrame(net::Connection& socket, ByteReader& reader) {
     Gateway& g = *gateway_;
+    if (g.servers.count(socket.id()) != 0) {
+        gwLinkMessage(socket, reader);
+        return;
+    }
     const auto at = g.doorOf.find(socket.id());
     if (at == g.doorOf.end() || reader.remaining() == 0) return;
     Session* session = sessionFor(at->second);
@@ -1251,8 +1298,12 @@ void GameServer::gwDoorFrame(net::Connection& socket, ByteReader& reader) {
     onMessage(*client, reader);
 }
 
-void GameServer::gwDoorClosed(net::Connection& socket) {
+void GameServer::gwDoorClosed(net::Connection& socket, const std::string& reason) {
     Gateway& g = *gateway_;
+    if (g.servers.count(socket.id()) != 0) {
+        gwLinkClosed(socket.id(), reason);
+        return;
+    }
     const auto at = g.doorOf.find(socket.id());
     if (at == g.doorOf.end()) return;
     const net::ConnectionId id = at->second;
@@ -1307,6 +1358,10 @@ void GameServer::gwRedirect(Session& session, int slot) {
     if (e.carrier == slot || (slot != 0 && e.pendingCarrier == slot)) return;
     const Gateway::Server* server = slot != 0 ? g.bySlot(slot) : nullptr;
     if (slot != 0 && server == nullptr) return;
+    std::string host;
+    std::uint16_t port = 0;
+    // (gwDispatch refuses a flower a server its client cannot reach.)
+    if (server != nullptr && !gwRedirectTarget(session, slot, host, port)) return;
     // Everything said to it so far leaves the way it is connected now.
     listener_.flush();
 
@@ -1318,8 +1373,8 @@ void GameServer::gwRedirect(Session& session, int slot) {
         expect.u32(session.connection);
         expect.str(ticket);
         gwSend(slot, expect);
-        redirect.str(server->publicHost);
-        redirect.u16(server->publicPort);
+        redirect.str(host);
+        redirect.u16(port);
     } else {
         // Home: wherever the client first found this server.
         redirect.str("");
@@ -1384,6 +1439,7 @@ void GameServer::gwAttachHome(net::Connection& socket, Session& greeted, const s
     Session::Elsewhere& e = home->elsewhere;
     g.doorOf[socket.id()] = home->connection;
     e.door = socket.id();
+    e.viaProxy = cameThroughProxy(socket.peer(), socket.forwarded());
     e.ticket.clear();
     e.transitSinceMillis = 0;
     socket.send(attachedAnswer(true));
@@ -1734,7 +1790,7 @@ void GameServer::gwTick(double) {
         g.nextHeartbeatMillis = now + cluster::kLinkHeartbeatMillis;
         ByteWriter beat = begin(ToServer::Heartbeat);
         for (auto& entry : g.servers) {
-            net::Connection* link = g.listener.find(entry.first);
+            net::Connection* link = g.door.find(entry.first);
             if (link == nullptr) continue;
             if (entry.second.slot != 0) gwSend(entry.second.slot, beat);
             if (now - entry.second.lastHeardMillis > cluster::kLinkSilenceMillis) {

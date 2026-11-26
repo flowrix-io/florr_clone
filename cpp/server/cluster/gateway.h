@@ -31,21 +31,18 @@
 
 namespace flix {
 
-struct GameServer::Gateway : net::TransportHandler {
+struct GameServer::Gateway {
     explicit Gateway(GameServer& server) : owner(server) {}
 
-    void onConnect(net::Connection& c) override { owner.gwLinkOpened(c); }
-    void onMessage(net::Connection& c, ByteReader& reader) override { owner.gwLinkMessage(c, reader); }
-    void onDisconnect(net::Connection& c, const std::string& reason) override {
-        owner.gwLinkClosed(c.id(), reason);
-    }
-
-    /// The game's own port: the sockets of the clients that are here.
+    /// The game's own port: the sockets of the clients that are here, and the
+    /// links of the servers, which dial the same port as a WebSocket at /link.
     struct Door : net::TransportHandler {
         explicit Door(GameServer& server) : owner(server) {}
         void onConnect(net::Connection& c) override { owner.gwDoorOpened(c); }
         void onMessage(net::Connection& c, ByteReader& reader) override { owner.gwDoorFrame(c, reader); }
-        void onDisconnect(net::Connection& c, const std::string&) override { owner.gwDoorClosed(c); }
+        void onDisconnect(net::Connection& c, const std::string& reason) override {
+            owner.gwDoorClosed(c, reason);
+        }
         GameServer& owner;
     };
 
@@ -66,10 +63,18 @@ struct GameServer::Gateway : net::TransportHandler {
         bool leaving = false;
         cluster::ServerStats stats;
         bool reported = false;
-        /// Where clients are sent to reach it. An empty host is the one the
-        /// client dialled this gateway at.
+        /// Where clients that came through the proxy are sent to reach it
+        /// (Greeting::publicHost): empty for nowhere, and port 0 for the one
+        /// the client is on.
         std::string publicHost;
         std::uint16_t publicPort = 0;
+        /// Where clients that dialled the gateway straight are sent: the host
+        /// its link came from (empty: the client's own, for a server on this
+        /// machine) and its own port.
+        std::string directHost;
+        std::uint16_t directPort = 0;
+        /// Has been said to have no public host, once.
+        bool warnedUnreachable = false;
         /// What its lease journal is known by across restarts: its id, or its
         /// name for a server started by hand without one.
         std::string journalKey;
@@ -118,11 +123,11 @@ struct GameServer::Gateway : net::TransportHandler {
     };
 
     GameServer& owner;
-    net::Listener listener;
     Door doorHandler{owner};
     net::Listener door;
-    /// Each socket at the door, and the session it is.
+    /// Each client's socket at the door, and the session it is.
     std::unordered_map<net::ConnectionId, net::ConnectionId> doorOf;
+    /// The links, by their socket at the door.
     std::map<net::ConnectionId, Server> servers;
     std::vector<Biome> biomes;
     /// Biome index by realm, or -1 for a realm every server has its own of.

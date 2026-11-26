@@ -348,6 +348,9 @@ struct Session {
         /// fence is already behind it, and this is what it found.
         bool viaCarrier = false;
         bool carrierAtMarket = false;
+        /// Its socket here came through a proxy (Cloudflare): it is only ever
+        /// sent to a server's proxied hostname, never to its own port.
+        bool viaProxy = false;
 
         bool busy() const { return fenced || leaving || entering != nullptr; }
     };

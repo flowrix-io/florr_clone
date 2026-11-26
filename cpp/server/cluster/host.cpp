@@ -36,12 +36,23 @@ bool ServerHost::boot(std::string& errorOut) {
         if (m.role == Membership::Role::Gateway) {
             config.role = ServerConfig::Role::Gateway;
             config.clusterSecret = m.key;
-            config.clusterPort = m.port;
-            // Where the door was: wherever the game itself is served.
-            config.clusterHost = config.bindHost;
             config.expectedShards = 2;
             config.simulates = true;
         } else if (m.role == Membership::Role::Shard) {
+            if (m.oldLinkPort) {
+                // Linked when servers dialled a port of their own: the gateway
+                // takes them on its game port now, which is this server's own
+                // in any cluster set up the usual way. `/admin cluster connect`
+                // again, on its own, if not.
+                std::printf("[cluster] this server dialled the gateway at %s:%u, a port of its own; servers "
+                            "link on the game's port now, so it dials %s:%u\n",
+                            m.gatewayHost.c_str(), static_cast<unsigned>(m.gatewayPort), m.gatewayHost.c_str(),
+                            static_cast<unsigned>(config.port));
+                m.gatewayPort = config.port;
+                m.oldLinkPort = false;
+                std::string error;
+                if (!m.save(config.membershipPath, error)) std::fprintf(stderr, "[cluster] %s\n", error.c_str());
+            }
             config.role = ServerConfig::Role::Shard;
             config.clusterSecret = m.key;
             config.gatewayHost = m.gatewayHost;
@@ -61,20 +72,23 @@ bool ServerHost::boot(std::string& errorOut) {
         ServerConfig own = config;
         own.role = ServerConfig::Role::Shard;
         own.localShard = true;
-        own.gatewayHost = config.clusterHost.empty() ? "127.0.0.1" : config.clusterHost;
-        own.gatewayPort = config.clusterPort;
+        // This process's own game port, which takes its servers' links too.
+        own.gatewayHost = config.bindHost.empty() || config.bindHost == "0.0.0.0" || config.bindHost == "::"
+                              ? "127.0.0.1"
+                              : config.bindHost;
+        own.gatewayPort = config.port;
         own.shardName = config.membership.name.empty() ? "main" : config.membership.name;
         own.membership = Membership{};
         own.membershipPath.clear();
         own.copyPath.clear();
         // Its own port: the gateway relays no client's traffic, its own
-        // simulation's included. Clients are sent to the host they found the
-        // gateway at (an empty public host), on this port.
+        // simulation's included. A client that dialled straight is sent to
+        // the host it found the gateway at, on this port; one that came
+        // through the proxy, to the simulation's own proxied hostname.
         own.port = config.simulationPort != 0 ? config.simulationPort
                                               : static_cast<std::uint16_t>(config.port + 1);
-        own.publicHost.clear();
-        // (The gateway's own public address is its own; this one is this port.)
-        own.publicPort = own.port;
+        own.publicHost = config.simulationPublicHost;
+        own.publicPort = config.simulationPublicPort;
         own.leaseJournalPath = config.databasePath.empty() ? std::string() : config.databasePath + ".simulation.leases";
         // Both wait in their sockets; one after the other, so neither for long.
         own.maxPollMillis = 0;

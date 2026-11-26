@@ -159,6 +159,7 @@ void Greeting::write(ByteWriter& w) const {
     w.boolean(local);
     w.str(publicHost);
     w.u16(publicPort);
+    w.u16(port);
 }
 
 Greeting Greeting::read(ByteReader& r) {
@@ -176,6 +177,7 @@ Greeting Greeting::read(ByteReader& r) {
     g.local = r.boolean();
     g.publicHost = r.str();
     g.publicPort = r.u16();
+    g.port = r.u16();
     return g;
 }
 

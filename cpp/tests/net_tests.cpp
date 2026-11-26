@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -601,4 +602,116 @@ TEST(dialer_reports_a_connection_whose_flush_found_it_dead) {
     CHECK_EQ(clientSide.disconnects.size(), std::size_t(1));
     CHECK(client.state() == Dialer::State::Failed);
     ::close(listenFd);
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket: the link between two servers of a sharded game
+// ---------------------------------------------------------------------------
+
+#include "shared/net/websocket.h"
+
+TEST(websocket_sha1_base64_and_accept_are_the_rfcs) {
+    CHECK_EQ(ws::base64(ws::sha1("abc")), std::string("qZk+NkcGgWq6PiVxeFDCbJzQ2J0="));
+    CHECK_EQ(ws::base64(ws::sha1("")), std::string("2jmj7l5rSw0yVb/vlWAYkK/YBwk="));
+    CHECK_EQ(ws::base64("f"), std::string("Zg=="));
+    CHECK_EQ(ws::base64("fo"), std::string("Zm8="));
+    CHECK_EQ(ws::base64("foo"), std::string("Zm9v"));
+    // RFC 6455 section 1.3.
+    CHECK_EQ(ws::acceptFor("dGhlIHNhbXBsZSBub25jZQ=="), std::string("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="));
+}
+
+TEST(websocket_frames_round_trip_masked_and_not_at_every_length_form) {
+    for (const std::size_t size : {std::size_t{0}, std::size_t{5}, std::size_t{125}, std::size_t{126},
+                                   std::size_t{65535}, std::size_t{65536}, std::size_t{200000}}) {
+        for (const bool mask : {false, true}) {
+            std::vector<std::byte> payload(size);
+            for (std::size_t i = 0; i < size; ++i) payload[i] = static_cast<std::byte>(i * 7);
+            std::vector<std::byte> wire;
+            ws::encode(wire, 0x2, payload.data(), payload.size(), mask);
+            ws::Frame frame;
+            std::size_t used = 0;
+            std::string error;
+            // Short of the whole frame, it waits.
+            CHECK(ws::decode(wire.data(), wire.size() - 1, mask, frame, used, error) == ws::Decoded::NeedMore);
+            CHECK(ws::decode(wire.data(), wire.size(), mask, frame, used, error) == ws::Decoded::Frame);
+            CHECK_EQ(used, wire.size());
+            CHECK(frame.payload == payload);
+            // A server takes only masked frames, and a client only unmasked.
+            CHECK(ws::decode(wire.data(), wire.size(), !mask, frame, used, error) == ws::Decoded::Error);
+        }
+    }
+}
+
+TEST(a_game_port_takes_a_plain_client_and_a_link_websocket_side_by_side) {
+    Listener server;
+    server.webSockets = true;
+    std::uint16_t port = 0;
+    if (!startOnFreePort(server, port)) { CHECK(false); return; }
+
+    struct Paths : Recorder {
+        std::vector<std::string> paths;
+        void onConnect(Connection& c) override {
+            Recorder::onConnect(c);
+            paths.push_back(c.path());
+        }
+        void onMessage(Connection& c, ByteReader& r) override {
+            const std::string text = r.str();
+            messages.push_back(text);
+            c.send(textFrame("echo " + text));
+        }
+    } serverSide;
+    Recorder plainSide, linkSide;
+    Dialer plain, link;
+    link.serverLink = true;
+    std::string error;
+    CHECK(plain.connect("127.0.0.1", port, error));
+    CHECK(link.connect("127.0.0.1", port, error));
+    plain.send(textFrame("from a client"));
+    const auto pumpAll = [&](auto done) {
+        for (int i = 0; i < 400; ++i) {
+            server.poll(serverSide, 2);
+            plain.poll(plainSide, 2);
+            link.poll(linkSide, 2);
+            server.flush();
+            plain.flush();
+            link.flush();
+            if (done()) return true;
+        }
+        return false;
+    };
+    // The link is announced to its own end only once the upgrade is answered.
+    CHECK(pumpAll([&] { return link.connected() && linkSide.connects.size() == 1; }));
+    // More than one WebSocket frame carries, so the stream crosses in several
+    // and its frames straddle them.
+    const std::string big(60000, 'y');
+    link.send(textFrame("from a server"));
+    for (int i = 0; i < 3; ++i) link.send(textFrame(big));
+    CHECK(pumpAll([&] { return plainSide.messages.size() == 1 && linkSide.messages.size() == 4; }));
+    CHECK_EQ(serverSide.paths.size(), std::size_t{2});
+    CHECK(std::find(serverSide.paths.begin(), serverSide.paths.end(), std::string("/link")) !=
+          serverSide.paths.end());
+    CHECK(std::find(serverSide.paths.begin(), serverSide.paths.end(), std::string()) != serverSide.paths.end());
+    if (plainSide.messages.size() == 1) CHECK_EQ(plainSide.messages[0], std::string("echo from a client"));
+    if (linkSide.messages.size() == 4) {
+        CHECK_EQ(linkSide.messages[0], std::string("echo from a server"));
+        for (int i = 1; i < 4; ++i) CHECK_EQ(linkSide.messages[static_cast<std::size_t>(i)], "echo " + big);
+    }
+    // Its end is reported like any other's.
+    link.disconnect();
+    CHECK(pumpAll([&] { return serverSide.disconnects.size() == 1; }));
+}
+
+TEST(a_link_dialled_at_a_port_that_is_no_websocket_fails) {
+    // A listener that takes only the plain framing reads the upgrade as a
+    // length prefix, and refuses it.
+    Listener server;
+    std::uint16_t port = 0;
+    if (!startOnFreePort(server, port)) { CHECK(false); return; }
+    Recorder serverSide, clientSide;
+    Dialer link;
+    link.serverLink = true;
+    std::string error;
+    CHECK(link.connect("127.0.0.1", port, error));
+    CHECK(pump(server, serverSide, link, clientSide, [&] { return link.state() == Dialer::State::Failed; }));
+    CHECK(clientSide.connects.empty());
 }
