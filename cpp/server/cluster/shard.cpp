@@ -73,6 +73,9 @@ bool GameServer::startShard(std::string& errorOut) {
     door.keyPath = config_.keyPath;
     door.webRoot = config_.webRoot;
     door.bindHost = config_.bindHost;
+    // A client in plain framing, or the gateway checking this server's domain
+    // with a WebSocket at /reach.
+    door.webSockets = true;
     // The gateway's own simulation has no port: its clients come to the
     // gateway's, the only one its proxied hostname reaches, and the gateway
     // hands their sockets over in this process (takeClient).
@@ -1102,6 +1105,14 @@ void GameServer::restoreBossClock(const std::string& biome, double nowMillis) {
 // numbered, and nothing between the two passes through anyone else.
 
 void GameServer::shDoorOpened(net::Connection& socket) {
+    if (shard_->welcomed && socket.path() == net::ws::kReachPath) {
+        // The gateway, come round through this server's domain to see that
+        // it leads here.
+        Shard::Door::Socket reach;
+        reach.reach = true;
+        shard_->door->sockets[socket.id()] = reach;
+        return;
+    }
     // Servers link to the gateway, never to one of its servers.
     if (!shard_->welcomed || socket.path() == net::ws::kLinkPath) {
         // Nobody signed in can have been sent here yet: it goes back to the
@@ -1118,6 +1129,19 @@ void GameServer::shDoorFrame(net::Connection& socket, ByteReader& reader) {
     if (at == s.door->sockets.end() || socket.closing()) return;
     if (at->second.client != 0) {
         shClientFrame(at->second.client, reader);
+        return;
+    }
+    if (at->second.reach) {
+        // One nonce of the gateway's, answered with the key over this link's
+        // greeting: this server, the one linked now, and nobody without the
+        // key. Then nothing more.
+        const std::string nonce = reader.str();
+        if (reader.ok() && nonce.size() == 32) {
+            ByteWriter w;
+            w.str(cluster::linkProof(config_.clusterSecret, "reach", nonce, s.greeting.digest()));
+            socket.send(w);
+        }
+        socket.closeGracefully();
         return;
     }
     const auto kind = static_cast<net::ClientMessage>(reader.u8());

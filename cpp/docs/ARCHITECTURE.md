@@ -399,10 +399,33 @@ same). Which way a player came is the socket's to say (`cameThroughProxy`: a
 Cloudflare edge, or nginx or a tunnel on the box, carrying forwarding headers),
 and `gwRedirectTarget` picks by it:
 
+**A domain is looked at before anybody is sent there.** The gateway dials it
+itself, as a player's page would -- a WebSocket at `/reach`, over TLS on 443
+(port 0) and Cloudflare's other https ports, plain on any other -- and sends a
+nonce the server at the other end must answer with the cluster key over its
+own link's greeting (`Gateway::ReachCheck`, `gwServiceReach`; the server's
+side is `shDoorFrame`). So it learns not just that something answers there
+but that it is *that* server, and the admin who set the domain is told which.
+It looks again every 5 minutes after an answer and every 30 s after none.
+
+A server is given biomes only where players can reach it (`gwPlaceable`): its
+domain, if it has one, must not be one found not to lead to it; without one,
+only where nobody comes through a proxy (the gateway has no domain of its own
+and has seen no proxied client). A biome on a server that stops being
+reachable is handed over to one that is (`gwPlace`), and **those biomes run on
+the gateway, in a simulation of its own**: the one `--simulate` (or
+`/admin cluster connect`) starts, or, for a gateway started without one, one
+`ServerHost` starts the moment it is needed (`wantsLocalSimulation`). When it
+is the only server players can reach it is given every biome -- the one
+exception to the rule below. A domain that then answers gets biomes back from
+the balance, or from an assignment. A native gateway speaks no TLS: it cannot
+look at a domain on an https port, and believes it.
+
 * the gateway's own simulation: back to the gateway's port, whichever way the
   player came (below);
-* through the proxy: the server's domain, or, if it has none, nowhere -- the
-  flower is not put there, the player is told, and the gateway logs it once;
+* through the proxy: the server's domain, or, if it has none or it does not
+  reach it, nowhere -- the flower is not put there, the player is told, and the
+  gateway logs it once;
 * straight to the gateway's port (development, a LAN): the address the server's
   link came from (or the player's own host, for a server on the gateway's
   machine) and the server's own port.
@@ -425,7 +448,9 @@ a page served over https anywhere else needs one on every server it is sent to
 reaches across (Realms), so a biome is already a world that can be simulated
 on its own. Each biome -- a map's, its prestige twin's, the maze, the arena, the hosted
 arena -- is on exactly one server, and **no server is ever given all of them**
-(`cluster::placeOrphans`): with only one server connected, one biome stays shut.
+(`cluster::placeOrphans`): with only one server connected, one biome stays shut
+-- unless that server is the gateway's own simulation and the others are
+connected but unreachable (`ServerLoad::takesAll`, above).
 Realms that are generated per run or copied per party -- Trial Grounds chambers,
 the waves disc, dungeon copies -- belong to whichever server the flower was
 on when it went in; every server has its own (`ubiquitousRealm`).

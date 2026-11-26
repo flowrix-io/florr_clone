@@ -67,6 +67,12 @@ void GameServer::onConnect(net::Connection& connection) {
         else connection.closeGracefully();
         return;
     }
+    // A gateway checking a domain that leads here, to a server that is none of
+    // its: nothing to answer.
+    if (connection.path() == net::ws::kReachPath) {
+        connection.closeGracefully();
+        return;
+    }
     Session session;
     session.connection = connection.id();
     session.connectedAtMillis = monotonicMillis();

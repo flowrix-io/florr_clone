@@ -110,9 +110,13 @@ EM_JS(void, flix_net_init, (), {
 
 // --- client ----------------------------------------------------------------
 
-EM_JS(int, flix_ch_connect, (const char* hostPtr, int port, int link), {
+EM_JS(int, flix_ch_connect, (const char* hostPtr, int port, const char* pathPtr, int wss), {
   const net = Module.flixNet;
   const host = UTF8ToString(hostPtr);
+  // A WebSocket at this path and nothing else: /link, or /reach. Empty for a
+  // player's connection, which finds out what the server offers.
+  const path = UTF8ToString(pathPtr);
+  const link = path !== "";
 
   // A listener in this very page takes precedence over the network, exactly
   // as a native connect() to 127.0.0.1 reaches whatever is bound on that port
@@ -153,7 +157,9 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port, int link), {
   // between them (`link`) always asks for plain WebSocket at /link, which the
   // port answers whatever certificate it has: the link is sealed by the
   // cluster key, not by TLS, and needs no certificate anybody vouches for.
-  const secure = !link && typeof location !== "undefined" && location.protocol === "https:";
+  // The gateway's check of a server's domain (`wss`) goes the way a player's
+  // page would: over TLS, through Cloudflare.
+  const secure = link ? !!wss : typeof location !== "undefined" && location.protocol === "https:";
   const origin = (secure ? "https://" : "http://") + host + ":" + port;
   const channel = net.channel();
   const id = net.alloc(channel);
@@ -165,7 +171,7 @@ EM_JS(int, flix_ch_connect, (const char* hostPtr, int port, int link), {
   ]);
 
   const openWebSocket = () => {
-    const url = origin.replace(/^http/, "ws") + (link ? "/link" : "/ws");
+    const url = origin.replace(/^http/, "ws") + (link ? path : "/ws");
     // The page has always had WebSocket; Node has had it as a global since
     // 22, which is the floor the deployment already sets for other reasons.
     // There is deliberately no npm fallback -- see the server half below.
@@ -1107,9 +1113,9 @@ std::string text(int channel, int which) {
 
 } // namespace
 
-int connect(const std::string& host, std::uint16_t port, bool link) {
+int connect(const std::string& host, std::uint16_t port, const std::string& path, bool secure) {
     ensureInit();
-    return flix_ch_connect(host.c_str(), static_cast<int>(port), link ? 1 : 0);
+    return flix_ch_connect(host.c_str(), static_cast<int>(port), path.c_str(), secure ? 1 : 0);
 }
 
 int listen(std::uint16_t port, const std::string& bindHost, const std::string& certPath,
@@ -1160,7 +1166,7 @@ namespace flix::net::web {
 // Natively there is no JavaScript runtime and transport.cpp uses real sockets;
 // these exist so the API links on both builds and a caller can use it without
 // an #ifdef of its own. Every one of them fails.
-int connect(const std::string&, std::uint16_t, bool) { return kInvalid; }
+int connect(const std::string&, std::uint16_t, const std::string&, bool) { return kInvalid; }
 int listen(std::uint16_t, const std::string&, const std::string&, const std::string&,
            const std::string&) {
     return kInvalid;

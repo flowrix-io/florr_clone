@@ -19,6 +19,9 @@ namespace flix::net::ws {
 
 /// The path a server of a sharded game dials another's game port at.
 inline constexpr const char* kLinkPath = "/link";
+/// The path the gateway dials a server's domain at, through Cloudflare, to
+/// learn whether that domain reaches that server.
+inline constexpr const char* kReachPath = "/reach";
 /// Largest HTTP head either end reads before giving up on the handshake.
 inline constexpr std::size_t kMaxHeadBytes = 8192;
 /// Largest single WebSocket frame accepted. The transport sends at most

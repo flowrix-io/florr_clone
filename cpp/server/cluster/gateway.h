@@ -46,6 +46,31 @@ struct GameServer::Gateway {
         GameServer& owner;
     };
 
+    /// Whether a server's domain reaches it, as the gateway last found.
+    enum class Reach : std::uint8_t {
+        None,        ///< it has no domain
+        Checking,    ///< not yet known: being found out
+        Answers,     ///< a WebSocket there, through the proxy, reached this very server
+        Silent,      ///< nothing there answered as it
+        Unchecked,   ///< this build cannot dial it (TLS, natively): believed
+    };
+
+    /// One look at a domain: a WebSocket to it at /reach, as a player's page
+    /// would open one, and a nonce the server at the other end has to answer
+    /// with the key over its own link's greeting (gwServiceReach).
+    struct ReachCheck : net::TransportHandler {
+        net::Dialer dialer;
+        std::string nonce;
+        std::string expected;
+        double startedMillis = 0;
+        /// 0 while waiting, 1 for the right answer, -1 for anything else.
+        int outcome = 0;
+        std::string why;
+        void onConnect(net::Connection& c) override;
+        void onMessage(net::Connection& c, ByteReader& reader) override;
+        void onDisconnect(net::Connection& c, const std::string& reason) override;
+    };
+
     /// One simulation server on the other end of a link.
     struct Server {
         net::ConnectionId link = 0;
@@ -75,6 +100,15 @@ struct GameServer::Gateway {
         std::uint16_t directPort = 0;
         /// Has been said to have no domain, once.
         bool warnedUnreachable = false;
+        /// Whether its domain leads to it, and which domain that was found of
+        /// (host[:port]); the next look, and the one under way.
+        Reach reach = Reach::None;
+        std::string reachWhy;
+        std::string reachDomain;
+        double nextReachMillis = 0;
+        std::shared_ptr<ReachCheck> check;
+        /// The session of the admin who set its domain, told how the look went.
+        net::ConnectionId reachAskedBy = 0;
         /// What its lease journal is known by across restarts: its id, or its
         /// name for a server started by hand without one.
         std::string journalKey;
@@ -152,6 +186,9 @@ struct GameServer::Gateway {
     /// The same for the gateway itself, where shards send a client that came
     /// to one of them to sign in.
     Domain address;
+    /// A client has come to this port through the proxy since it started: the
+    /// game is behind one, so a server with no domain is no use to anybody.
+    bool sawProxy = false;
     /// Each client's socket at the door, and the session it is.
     std::unordered_map<net::ConnectionId, net::ConnectionId> doorOf;
     /// The links, by their socket at the door.
@@ -196,6 +233,7 @@ struct GameServer::Gateway {
         }
         return nullptr;
     }
+    const Server* bySlot(int slot) const { return const_cast<Gateway*>(this)->bySlot(slot); }
 };
 
 } // namespace flix

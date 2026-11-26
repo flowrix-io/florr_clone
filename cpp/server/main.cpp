@@ -178,7 +178,8 @@ void usage(const char* program) {
         "                     shard: where it records the rows lent to it before\n"
         "                     its players see them (default <copy>.leases)\n"
         "  --simulate         gateway: simulate a share of the biomes as well, its\n"
-        "                     players on the gateway's own port\n"
+        "                     players on the gateway's own port. Started anyway\n"
+        "                     when a server's domain does not reach it\n"
 #ifdef __EMSCRIPTEN__
         "  --cert <path>      TLS certificate. Without it, cert.crt then\n"
         "                     dev-cert.crt are looked for in the working\n"

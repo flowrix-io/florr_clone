@@ -1099,7 +1099,7 @@ int GameServer::gwQuietestSlot() const {
     double bestTick = 0.0;
     for (const auto& entry : gateway_->servers) {
         const Gateway::Server& server = entry.second;
-        if (server.slot == 0 || server.leaving) continue;
+        if (server.slot == 0 || server.leaving || !gwPlaceable(server.slot)) continue;
         if (best == 0 || server.stats.tickMillis < bestTick) {
             best = server.slot;
             bestTick = server.stats.tickMillis;
@@ -1247,6 +1247,12 @@ void GameServer::gwDoorOpened(net::Connection& socket) {
         gwLinkOpened(socket);
         return;
     }
+    // Its own domain checked: the gateway checks only its servers'.
+    if (socket.path() == net::ws::kReachPath) {
+        socket.closeGracefully();
+        return;
+    }
+    if (cameThroughProxy(socket.peer(), socket.forwarded())) g.sawProxy = true;
     const net::ConnectionId id = listener_.reserveId();
     const std::string address = clientAddress(socket.peer(), socket.forwarded());
     net::Connection& client = listener_.adopt(
@@ -1272,22 +1278,19 @@ bool GameServer::gwRedirectTarget(const Session& session, int slot, std::string&
         return true;
     }
     // A domain an admin gave it, or the one it was started with.
-    const auto domain = g.domains.find(lowerCase(server->name));
-    if (domain != g.domains.end()) {
-        host = domain->second.host;
-        port = domain->second.port;
-        return true;
-    }
-    if (!server->publicHost.empty()) {
-        host = server->publicHost;
-        port = server->publicPort;
+    std::string viaHost;
+    std::uint16_t viaPort = 0;
+    if (gwDomainOf(slot, viaHost, viaPort) &&
+        (server->reach != Gateway::Reach::Silent || !session.elsewhere.viaProxy)) {
+        host = viaHost;
+        port = viaPort;
         return true;
     }
     // A server's own port is reachable only straight: a client that came
     // through Cloudflare is never sent round it, to an address it was not
     // given and over a connection nobody vouches for.
     if (session.elsewhere.viaProxy) {
-        if (!server->warnedUnreachable) {
+        if (!server->warnedUnreachable && server->reach != Gateway::Reach::Silent) {
             server->warnedUnreachable = true;
             std::fprintf(stderr,
                          "[cluster] %s has no domain, so players who come through a proxy cannot be sent to "
@@ -1570,6 +1573,183 @@ bool parseDomain(std::string text, std::string& host, std::uint16_t& port) {
 
 } // namespace
 
+bool GameServer::gwDomainOf(int slot, std::string& host, std::uint16_t& port) const {
+    const Gateway& g = *gateway_;
+    const Gateway::Server* server = g.bySlot(slot);
+    if (server == nullptr) return false;
+    const auto domain = g.domains.find(lowerCase(server->name));
+    if (domain != g.domains.end()) {
+        host = domain->second.host;
+        port = domain->second.port;
+        return true;
+    }
+    host = server->publicHost;
+    port = server->publicPort;
+    return !host.empty();
+}
+
+bool GameServer::gwPlaceable(int slot) const {
+    const Gateway& g = *gateway_;
+    const Gateway::Server* server = g.bySlot(slot);
+    if (server == nullptr) return false;
+    if (g.simulation != nullptr && g.simulation->shardSlot() == slot) return true;
+    std::string host;
+    std::uint16_t port = 0;
+    if (gwDomainOf(slot, host, port)) return server->reach != Gateway::Reach::Silent;
+    // No domain: only players who dial its port straight can get there, which
+    // is every player only where nobody comes through a proxy.
+    gwOwnAddress(host, port);
+    return host.empty() && !g.sawProxy;
+}
+
+bool GameServer::wantsLocalSimulation() const {
+    if (!gateway_ || gateway_->simulation != nullptr) return false;
+    for (const auto& entry : gateway_->servers) {
+        const Gateway::Server& server = entry.second;
+        if (server.slot != 0 && !server.leaving && !gwPlaceable(server.slot)) return true;
+    }
+    return false;
+}
+
+void GameServer::Gateway::ReachCheck::onConnect(net::Connection& c) {
+    ByteWriter w;
+    w.str(nonce);
+    c.send(w);
+}
+
+void GameServer::Gateway::ReachCheck::onMessage(net::Connection&, ByteReader& reader) {
+    if (outcome != 0) return;
+    const std::string proof = reader.str();
+    if (reader.ok() && crypto::constantTimeEquals(proof, expected)) {
+        outcome = 1;
+    } else {
+        outcome = -1;
+        why = "a server answers there, but not this one";
+    }
+}
+
+void GameServer::Gateway::ReachCheck::onDisconnect(net::Connection&, const std::string& reason) {
+    if (outcome != 0) return;
+    outcome = -1;
+    why = reason;
+}
+
+namespace {
+
+/// How long a look at a domain may take, and how often one is looked at again
+/// after it answered and after it did not.
+constexpr double kReachPatienceMillis = 10000.0;
+constexpr double kReachAgainMillis = 5.0 * 60.0 * 1000.0;
+constexpr double kReachRetryMillis = 30000.0;
+
+/// Whether a player's page reaches host:port over TLS: Cloudflare's own
+/// https ports, and 443 (port 0 is the one the player is on, 443 through
+/// Cloudflare). Any other port is plain.
+bool tlsPort(std::uint16_t port) {
+    for (const std::uint16_t p : {0, 443, 2053, 2083, 2087, 2096, 8443}) {
+        if (port == p) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+void GameServer::gwServiceReach(double now) {
+    Gateway& g = *gateway_;
+    for (auto& entry : g.servers) {
+        Gateway::Server& server = entry.second;
+        if (server.slot == 0 || server.greeting.local) continue;
+        std::string host;
+        std::uint16_t port = 0;
+        if (!gwDomainOf(server.slot, host, port)) {
+            server.reach = Gateway::Reach::None;
+            server.reachDomain.clear();
+            server.check.reset();
+            continue;
+        }
+        const std::string key = domainText(host, port);
+        if (key != server.reachDomain) {
+            // A new domain: whatever was found of the last one is not of this.
+            server.reachDomain = key;
+            server.check.reset();
+            server.reach = Gateway::Reach::Checking;
+            server.nextReachMillis = 0;
+        }
+        if (!server.check && now >= server.nextReachMillis) gwStartReach(server.slot, host, port, now);
+        if (!server.check) continue;
+        Gateway::ReachCheck& check = *server.check;
+        check.dialer.poll(check, 0);
+        check.dialer.flush();
+        if (check.outcome == 0 && check.dialer.state() == net::Dialer::State::Failed) {
+            // Refused, or no WebSocket there: it never opened.
+            check.outcome = -1;
+            check.why = check.dialer.error().empty() ? "nothing answers" : check.dialer.error();
+        }
+        if (check.outcome == 0 && now - check.startedMillis > kReachPatienceMillis) {
+            check.outcome = -1;
+            check.why = "no answer in " + std::to_string(static_cast<int>(kReachPatienceMillis / 1000)) + " s";
+        }
+        // A copy: settling lets go of the check, and the reason with it.
+        const std::string why = check.why;
+        if (check.outcome != 0) gwSettleReach(server.slot, check.outcome, why, now);
+    }
+}
+
+void GameServer::gwStartReach(int slot, const std::string& host, std::uint16_t port, double now) {
+    Gateway::Server& server = *gateway_->bySlot(slot);
+    const bool tls = tlsPort(port);
+#ifndef __EMSCRIPTEN__
+    if (tls) {
+        gwSettleReach(slot, 0, "this build speaks no TLS, so it cannot look", now);
+        return;
+    }
+#endif
+    auto check = std::make_shared<Gateway::ReachCheck>();
+    check->nonce = crypto::secureRandom().hex(16);
+    check->expected = cluster::linkProof(config_.clusterSecret, "reach", check->nonce, server.greetingDigest);
+    check->startedMillis = now;
+    check->dialer.webSocketPath = net::ws::kReachPath;
+    check->dialer.secure = tls;
+    std::string error;
+    if (!check->dialer.connect(host, port == 0 ? 443 : port, error)) {
+        gwSettleReach(slot, -1, error, now);
+        return;
+    }
+    server.check = std::move(check);
+}
+
+void GameServer::gwSettleReach(int slot, int answered, const std::string& why, double now) {
+    Gateway::Server& server = *gateway_->bySlot(slot);
+    const Gateway::Reach was = server.reach;
+    const Gateway::Reach is = answered > 0   ? Gateway::Reach::Answers
+                              : answered < 0 ? Gateway::Reach::Silent
+                                             : Gateway::Reach::Unchecked;
+    server.check.reset();
+    server.reach = is;
+    server.reachWhy = why;
+    server.nextReachMillis = now + (is == Gateway::Reach::Answers  ? kReachAgainMillis
+                                    : is == Gateway::Reach::Silent ? kReachRetryMillis
+                                                                   : 1e15);
+    const net::ConnectionId asked = server.reachAskedBy;
+    server.reachAskedBy = 0;
+    if (was == is && asked == 0) return;
+    std::string line;
+    if (is == Gateway::Reach::Answers) {
+        line = server.reachDomain + " reaches " + server.name + ": players who come through the proxy are sent "
+               "there.";
+    } else if (is == Gateway::Reach::Silent) {
+        line = server.reachDomain + " does not reach " + server.name + " (" + why + "): the biomes it would "
+               "have are simulated on the gateway meanwhile, and it is looked at again every " +
+               std::to_string(static_cast<int>(kReachRetryMillis / 1000)) + " s.";
+    } else {
+        line = server.reachDomain + " for " + server.name + " is believed, not looked at: " + why + ".";
+    }
+    std::printf("[cluster] %s\n", line.c_str());
+    if (asked != 0) {
+        if (net::Connection* admin = listener_.find(asked)) sendSystem(*admin, escapedMarkup(line));
+    }
+}
+
 void GameServer::gwOwnAddress(std::string& host, std::uint16_t& port) const {
     const Gateway& g = *gateway_;
     host = g.address.host.empty() ? config_.publicHost : g.address.host;
@@ -1623,6 +1803,14 @@ void GameServer::runDomainCommand(net::Connection& connection, const std::vector
             else if (!server.publicHost.empty())
                 where = domainText(server.publicHost, server.publicPort) + " (its --public-host)";
             else where = "no domain: players who come through the proxy cannot be sent to it";
+            switch (server.reach) {
+                case Gateway::Reach::None: break;
+                case Gateway::Reach::Checking: where += ", being looked at"; break;
+                case Gateway::Reach::Answers: where += ", reaches it"; break;
+                case Gateway::Reach::Silent: where += ", does not reach it (" + server.reachWhy + ")"; break;
+                case Gateway::Reach::Unchecked: where += ", not looked at (" + server.reachWhy + ")"; break;
+            }
+            if (!server.greeting.local && !gwPlaceable(server.slot)) where += "; its biomes are on the gateway";
             out(server.name + ": " + where);
         }
         for (const auto& [name, d] : g.domains) {
@@ -1669,14 +1857,22 @@ void GameServer::runDomainCommand(net::Connection& connection, const std::vector
     if (clear) g.domains.erase(name);
     else g.domains[name] = d;
     gwWriteDomains();
-    if (server != nullptr) server->warnedUnreachable = false;
     const std::string label = server != nullptr ? server->name : words[2];
+    if (server != nullptr) {
+        server->warnedUnreachable = false;
+        // Looked at again now, even if it is the domain it had; and the admin
+        // is told how that went.
+        server->reachDomain.clear();
+        if (!clear) server->reachAskedBy = connection.id();
+    }
     if (clear) {
         out(label + " has no domain now" +
             (server != nullptr && !server->publicHost.empty() ? "; its --public-host is used." : "."));
+    } else if (server == nullptr) {
+        out(label + " is " + domainText(d.host, d.port) + "; it is looked at when it connects.");
     } else {
-        out("Players who come through the proxy are sent to " + label + " at " + domainText(d.host, d.port) +
-            (server == nullptr ? " (it is not connected now)." : "."));
+        out("Looking at whether " + domainText(d.host, d.port) + " reaches " + label +
+            ". Until it does, its biomes stay on the gateway.");
     }
 }
 
@@ -1932,20 +2128,47 @@ void GameServer::gwPlace(double nowMillis) {
     Gateway& g = *gateway_;
     std::vector<int> slots;
     std::vector<cluster::ServerLoad> servers;
+    int connected = 0;
+    bool settling = false;
     for (const auto& entry : g.servers) {
         const Gateway::Server& server = entry.second;
         if (server.slot == 0 || server.leaving) continue;
+        ++connected;
+        // Only a server the players sent there can reach: one whose domain is
+        // still being looked at is given nothing in the first deal.
+        if (!gwPlaceable(server.slot)) continue;
+        if (!g.placedOnce && server.reach == Gateway::Reach::Checking) {
+            settling = true;
+            continue;
+        }
         slots.push_back(server.slot);
         servers.push_back({true, server.stats.tickMillis});
     }
     if (slots.empty()) return;
+    // The gateway's own simulation, alone where players can reach: every
+    // biome goes on there rather than one staying shut.
+    if (slots.size() == 1 && g.simulation != nullptr && g.simulation->shardSlot() == slots[0] && connected > 1) {
+        servers[0].takesAll = true;
+    }
     if (!g.placedOnce) {
         // The first deal waits for the hands it was told to expect: dealt to
         // the first server to connect, the rest would have to be moved off it
         // again a second later.
-        const bool enough = static_cast<int>(slots.size()) >= std::max(2, config_.expectedShards);
+        const bool enough = connected >= std::max(2, config_.expectedShards) && !settling;
         if (!enough && nowMillis - g.startedMillis < kPlacementPatienceMillis) return;
         g.placedOnce = true;
+    }
+    // A biome on a server players can no longer reach goes to one they can:
+    // the gateway's own simulation, if it is the only one.
+    for (std::size_t i = 0; i < g.biomes.size(); ++i) {
+        Gateway::Biome& biome = g.biomes[i];
+        if (biome.slot == 0 || biome.handingOver) continue;
+        if (std::find(slots.begin(), slots.end(), biome.slot) != slots.end()) continue;
+        const Gateway::Server* holder = g.bySlot(biome.slot);
+        if (holder == nullptr || holder->leaving) continue;
+        std::printf("[cluster] %s leaves %s, which players cannot reach\n", biome.name.c_str(),
+                    holder->name.c_str());
+        gwHandOver(i, 0);
     }
     const auto indexOf = [&](int slot) {
         const auto at = std::find(slots.begin(), slots.end(), slot);
@@ -2021,6 +2244,7 @@ void GameServer::gwTick(double) {
         }
     }
     gwServiceDisband(now);
+    gwServiceReach(now);
     gwPlace(now);
     gwTellReachable();
     gwServiceCopies(now);

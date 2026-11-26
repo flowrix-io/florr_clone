@@ -366,6 +366,14 @@ public:
     /// net/websocket.h; on the web, web::connect's `link`). It is Connected,
     /// and announced, once the upgrade has been answered.
     bool serverLink = false;
+    /// A WebSocket at this path instead, plain the same way (`serverLink` wins
+    /// over it): the gateway's check that a server's domain reaches it
+    /// (/reach). Empty for a player's connection.
+    std::string webSocketPath;
+    /// That WebSocket over TLS (wss): through Cloudflare, as a player's page
+    /// reaches a domain. The web backend only; natively connect() refuses it,
+    /// since this build speaks no TLS.
+    bool secure = false;
     /// As Listener::beforeWrite.
     std::function<void()> beforeWrite;
     /// Bytes queued and not yet handed over.
@@ -396,6 +404,8 @@ private:
     std::string error_;
     std::vector<std::byte> frameScratch_;
     bool announced_ = false;
+    /// The path of the WebSocket this dials, or empty for plain framing.
+    std::string wsPath() const;
     /// Natively: connected, and waiting on the WebSocket upgrade (serverLink).
     bool upgrading_ = false;
     double upgradeSinceMillis_ = 0;

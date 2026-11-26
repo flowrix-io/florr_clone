@@ -930,12 +930,14 @@ void Listener::flush() {
 Dialer::Dialer() = default;
 Dialer::~Dialer() { disconnect(); }
 
+std::string Dialer::wsPath() const { return serverLink ? std::string(ws::kLinkPath) : webSocketPath; }
+
 #ifdef __EMSCRIPTEN__
 
 bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& errorOut) {
     disconnect();
 
-    const int channel = web::connect(host, port, serverLink);
+    const int channel = web::connect(host, port, wsPath(), secure && !serverLink);
     if (channel < 0) {
         errorOut = "no transport available for " + host + ":" + std::to_string(port);
         state_ = State::Failed;
@@ -1010,6 +1012,13 @@ int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
 bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& errorOut) {
     disconnect();
 
+    if (secure && !serverLink) {
+        errorOut = "this build speaks no TLS";
+        state_ = State::Failed;
+        error_ = errorOut;
+        return false;
+    }
+
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -1079,10 +1088,10 @@ int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
             return 0;
         }
         if (fd.revents & (POLLOUT | POLLIN)) {
-            if (serverLink) {
+            if (!wsPath().empty()) {
                 // A link is a WebSocket: the upgrade first, and the handler
                 // hears of it once that is answered (below).
-                connection_->beginClientHandshake(ws::kLinkPath);
+                connection_->beginClientHandshake(wsPath());
                 upgrading_ = true;
                 upgradeSinceMillis_ = steadyMillis();
             } else {

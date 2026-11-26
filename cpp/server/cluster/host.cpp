@@ -67,8 +67,20 @@ bool ServerHost::boot(std::string& errorOut) {
 
     auto server = std::make_unique<GameServer>();
     if (!server->start(config, errorOut)) return false;
+    gatewayConfig_ = config;
     std::unique_ptr<GameServer> simulation;
-    if (simulates) {
+    if (simulates && !startSimulation(simulation, errorOut)) return false;
+    server_ = std::move(server);
+    simulation_ = std::move(simulation);
+    if (simulation_) server_->setLocalSimulation(simulation_.get());
+    // Told to stop while there was nothing running to be told.
+    if (stopping_) server_->stop();
+    return true;
+}
+
+bool ServerHost::startSimulation(std::unique_ptr<GameServer>& simulation, std::string& errorOut) {
+    const ServerConfig& config = gatewayConfig_;
+    {
         ServerConfig own = config;
         own.role = ServerConfig::Role::Shard;
         own.localShard = true;
@@ -92,13 +104,11 @@ bool ServerHost::boot(std::string& errorOut) {
         own.maxPollMillis = 0;
         own.worldSeed = config.worldSeed ^ 0x5171;
         simulation = std::make_unique<GameServer>();
-        if (!simulation->start(own, errorOut)) return false;
+        if (!simulation->start(own, errorOut)) {
+            simulation.reset();
+            return false;
+        }
     }
-    server_ = std::move(server);
-    simulation_ = std::move(simulation);
-    if (simulation_) server_->setLocalSimulation(simulation_.get());
-    // Told to stop while there was nothing running to be told.
-    if (stopping_) server_->stop();
     return true;
 }
 
@@ -135,6 +145,23 @@ bool ServerHost::step() {
     }
 
     if (server_->step()) {
+        if (!simulation_ && server_->wantsLocalSimulation() && monotonicMillis() >= nextSimulationMillis_) {
+            // A server it would have given biomes to cannot be reached by the
+            // players who would be sent there: they are simulated here, in a
+            // simulation of this process's own, started for it.
+            std::string error;
+            std::unique_ptr<GameServer> simulation;
+            if (startSimulation(simulation, error)) {
+                std::printf("[cluster] simulating here as well, for the biomes no reachable server has\n");
+                server_->setMaxPollMillis(1);
+                simulation_ = std::move(simulation);
+                server_->setLocalSimulation(simulation_.get());
+            } else {
+                std::fprintf(stderr, "[cluster] could not start this server's own simulation: %s\n",
+                             error.c_str());
+                nextSimulationMillis_ = monotonicMillis() + 30000.0;
+            }
+        }
         if (simulation_ && !simulation_->step()) {
             // Told to stop, or refused: never for good while the gateway is up.
             std::fprintf(stderr, "[cluster] this server's own simulation stopped\n");

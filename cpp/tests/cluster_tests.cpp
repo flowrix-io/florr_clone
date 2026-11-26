@@ -658,7 +658,9 @@ TEST(an_admin_gives_a_server_the_domain_proxied_players_reach_it_at) {
     // proxied hostname is reached on.
     const std::string domain = "127.0.0.1:" + std::to_string(c.serverPorts[at]);
     admin.sendChat("/admin shards domain " + garden + " https://" + domain + "/");
-    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, "are sent to " + garden + " at " + domain); }));
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, "Looking at whether " + domain); }));
+    // The gateway goes round by it, and finds that server there.
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, domain + " reaches " + garden); }));
     // Kept with the game, not with the server.
     CHECK_EQ(c.gateway.database().storedTable("cluster")["domains"][std::string(1, static_cast<char>('a' + at))].asString(), domain);
     CHECK(c.join(alice, {&admin}));
@@ -667,12 +669,42 @@ TEST(an_admin_gives_a_server_the_domain_proxied_players_reach_it_at) {
 
     c.step(20, {&alice, &admin});
     admin.sendChat("/admin shards domain");
-    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, garden + ": " + domain); }));
+    CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, garden + ": " + domain + ", reaches it"); }));
     c.step(20, {&alice, &admin});
     // The gateway's own, which every server is told of.
     admin.sendChat("/admin shards domain gateway play.example.com");
     CHECK(c.stepUntil({&alice, &admin}, [&] { return heard(admin, "The gateway is play.example.com"); }));
     CHECK_EQ(c.gateway.database().storedTable("cluster")["address"].asString(), std::string("play.example.com"));
+}
+
+TEST(a_domain_that_leads_elsewhere_or_nowhere_takes_no_biomes) {
+    Cluster c("cluster-reach", 2, seedTwo);
+    CHECK(apart(c));
+    NetClient admin;
+    CHECK(c.signIn(admin, "admin1"));
+    const std::string garden = c.gateway.serverOfBiome("garden");
+    std::size_t at = 0;
+    while (at < c.servers.size() && std::string(1, static_cast<char>('A' + at)) != garden) ++at;
+    CHECK(at < c.servers.size());
+    if (at >= c.servers.size()) return;
+    const std::size_t other = 1 - at;
+    // Pointed at the other server's port: somebody answers, and it is not it.
+    const std::string wrong = "127.0.0.1:" + std::to_string(c.serverPorts[other]);
+    admin.sendChat("/admin shards domain " + garden + " " + wrong);
+    CHECK(c.stepUntil({&admin}, [&] { return heard(admin, wrong + " does not reach " + garden); }));
+    CHECK(heard(admin, "not this one"));
+    // So its biomes go to a server players can reach.
+    CHECK(c.stepUntil({&admin}, [&] {
+        const std::string now = c.gateway.serverOfBiome("garden");
+        return !now.empty() && now != garden;
+    }, 600));
+    for (const std::string& biome : c.gateway.biomeNames()) CHECK(c.gateway.serverOfBiome(biome) != garden);
+    c.step(20, {&admin});
+    // Nobody there at all: the same.
+    admin.sendChat("/admin shards domain " + garden + " 127.0.0.1:1");
+    CHECK(c.stepUntil({&admin}, [&] { return heard(admin, "127.0.0.1:1 does not reach " + garden); }));
+    admin.sendChat("/admin shards domain");
+    CHECK(c.stepUntil({&admin}, [&] { return heard(admin, "its biomes are on the gateway"); }));
 }
 
 TEST(a_lost_servers_players_come_back_on_another) {
@@ -1225,6 +1257,80 @@ TEST(the_gateways_own_simulation_takes_its_players_on_the_gateways_port) {
     // Chat is the gateway's, asked of it over the link.
     alice.sendChat("hello from the gateway's own garden");
     CHECK(p.until({&alice, &admin}, [&] { return heard(admin, "hello from the gateway's own garden"); }, 5.0));
+}
+
+TEST(a_gateway_simulates_what_no_server_players_can_reach_would_have) {
+    // A gateway started without a simulation, behind a proxy (it has a
+    // domain), and a server nobody has given one.
+    HarnessFiles files("reach-own");
+    seedTwo(files.dbPath);
+    ServerConfig config;
+    config.dataDir = flix::testsupport::dataDir();
+    config.databasePath = files.dbPath;
+    config.botCount = 0;
+    config.passwordCost = crypto::kBcryptMinCost;
+    config.hourlyRifts = false;
+    config.role = ServerConfig::Role::Gateway;
+    config.clusterSecret = "a secret between servers";
+    config.expectedShards = 1;
+    config.publicHost = "play.example.com";
+    ServerHost host;
+    bool up = false;
+    for (std::uint16_t candidate = 47460; candidate < 47480 && !up; ++candidate) {
+        config.port = candidate;
+        std::string error;
+        up = host.start(config, true, error);
+    }
+    CHECK(up);
+    if (!up) return;
+    CHECK(host.simulation() == nullptr);
+    GameServer shard;
+    ServerConfig own;
+    own.dataDir = flix::testsupport::dataDir();
+    own.botCount = 0;
+    own.hourlyRifts = false;
+    own.role = ServerConfig::Role::Shard;
+    own.clusterSecret = config.clusterSecret;
+    own.gatewayPort = config.port;
+    own.shardName = "east";
+    bool shardUp = false;
+    for (std::uint16_t candidate = 47480; candidate < 47500 && !shardUp; ++candidate) {
+        own.port = candidate;
+        std::string error;
+        shardUp = shard.start(own, error);
+    }
+    CHECK(shardUp);
+    const auto until = [&](std::vector<NetClient*> clients, auto done, double seconds) {
+        const double end = monotonicMillis() + seconds * 1000.0;
+        while (monotonicMillis() < end) {
+            for (NetClient* c : clients) c->poll(0);
+            host.step();
+            shard.step();
+            if (done()) return true;
+        }
+        return false;
+    };
+    // It starts one of its own, and every biome is there, none on east.
+    CHECK(until({}, [&] { return host.simulation() != nullptr; }, 20.0));
+    CHECK(until({}, [&] {
+        const std::vector<std::string> biomes = host.server()->biomeNames();
+        return std::all_of(biomes.begin(), biomes.end(), [&](const std::string& b) {
+            const std::string at = host.server()->serverOfBiome(b);
+            return !at.empty() && at != "east";
+        });
+    }, 30.0));
+    // Given a domain that leads to it, east is fit to have biomes again.
+    NetClient admin;
+    admin.contentHash = content().contentHash();
+    CHECK(admin.connect("127.0.0.1", config.port));
+    CHECK(until({&admin}, [&] { return admin.status() == NetClient::Status::Ready; }, 5.0));
+    admin.requestLogin("admin1", kPassword);
+    CHECK(until({&admin}, [&] { return admin.status() == NetClient::Status::LoggedIn; }, 5.0));
+    const std::string domain = "127.0.0.1:" + std::to_string(own.port);
+    admin.sendChat("/admin shards domain east " + domain);
+    CHECK(until({&admin}, [&] { return heard(admin, domain + " reaches east"); }, 15.0));
+    admin.sendChat("/admin shards assign east garden");
+    CHECK(until({&admin}, [&] { return host.server()->serverOfBiome("garden") == "east"; }, 20.0));
 }
 
 TEST(a_server_with_another_key_is_not_linked_and_goes_on_as_it_was) {

@@ -331,6 +331,11 @@ public:
     bool linked() const;
     /// A shard: the slot the gateway gave it, or 0 until it has.
     int shardSlot() const;
+    /// The gateway: wants a simulation of its own in this process, for biomes
+    /// no server players can reach is fit to have (ServerHost starts it).
+    bool wantsLocalSimulation() const;
+    /// ServerConfig::maxPollMillis, from now on.
+    void setMaxPollMillis(int millis) { config_.maxPollMillis = millis; }
     /// The gateway: the simulation in this same process (ServerHost), whose
     /// clients it hands their sockets over to on its own port; null for none.
     void setLocalSimulation(GameServer* simulation);
@@ -403,6 +408,20 @@ private:
     void gwOwnAddress(std::string& host, std::uint16_t& port) const;
     /// `/admin shards domain`.
     void runDomainCommand(net::Connection&, const std::vector<std::string>& words);
+    /// The domain players who come through the proxy are sent to a server at:
+    /// an admin's, else its own --public-host. False for none.
+    bool gwDomainOf(int slot, std::string& host, std::uint16_t& port) const;
+    /// Whether a server may be given biomes: the players sent to it can get
+    /// there. Its domain, if it has one, must not be one found not to reach
+    /// it; without one it is reachable only where nobody comes through a
+    /// proxy. The gateway's own simulation always is.
+    bool gwPlaceable(int slot) const;
+    /// Looks at each server's domain: when it changes, and again now and then
+    /// (ReachCheck).
+    void gwServiceReach(double nowMillis);
+    void gwStartReach(int slot, const std::string& host, std::uint16_t port, double nowMillis);
+    /// `answered`: 1 it answers, -1 it does not, 0 it cannot be looked at.
+    void gwSettleReach(int slot, int answered, const std::string& why, double nowMillis);
     void gwReadDomains();
     void gwWriteDomains();
     /// The session's own connection closed: so does its socket, wherever.

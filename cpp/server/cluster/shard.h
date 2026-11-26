@@ -47,6 +47,8 @@ struct GameServer::Shard : net::TransportHandler {
         /// Each socket at it: whether it has said Hello, and the session it
         /// was let in as, or 0 until its ticket.
         struct Socket {
+            /// The gateway's check of this server's domain (/reach), not a client.
+            bool reach = false;
             bool greeted = false;
             net::ConnectionId client = 0;
         };
