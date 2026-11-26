@@ -1375,7 +1375,7 @@
         "description": "Creates mana.",
         "color": "#90EE90",
         "count": 1,
-        "burstMana": 16.5,
+        "burstMana": 33,
         "burstManaChargeMs": 1500,
         "baseMaxMana": 57.75,
         "defendOnly": true,
@@ -1391,7 +1391,7 @@
         "description": "Gathers mana from the environment passively.",
         "color": "#000000",
         "count": 1,
-        "passiveMana": 5.1,
+        "passiveMana": 10.2,
         "baseMaxMana": 57.75,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-21.5 -10.5 38 21\" xmlns=\"http://www.w3.org/2000/svg\">   <path d=\"M -20 0 L -15 0 C -10 -12, 5 -12, 15 0 C 5 12, -10 12, -15 0\" fill=\"#42E3F5\"  stroke=\"#35B8C6\"  stroke-width=\"3\"  stroke-linecap=\"round\"  stroke-linejoin=\"round\"/>   <path d=\"M -9 0 Q 0 -1.5, 7.5 0\"  fill=\"none\"  stroke=\"#35B8C6\"  stroke-width=\"3\"  stroke-linecap=\"round\"  stroke-linejoin=\"round\"/></svg>",
         "isAdminPetal": false

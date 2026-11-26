@@ -700,7 +700,8 @@ constexpr ChangelogEntry kChangelog[] = {
       {
         "Fixed keyboard lag in busy areas (hopefully)",
         "Press F10 to hide the HUD",
-        "/players-online now shows how many players are in game and on the title screen"
+        "/players-online now shows how many players are in game and on the title screen",
+        "Doubled Magic Leaf and Magic Orb mana regen again"
       }
     },
 };
