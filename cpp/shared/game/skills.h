@@ -177,15 +177,19 @@ inline std::array<double, 2> secondChanceEffect(int tier) {
     return {kSecondChanceDurationMillis[t], kSecondChanceCooldownMillis[t]};
 }
 
+// Index 0 of every table below is the COMMON tier -- the first one bought, not
+// "no talent" (an untouched branch is -1, which scaleAt reads as 1.0). Common
+// is half of the step to uncommon: at 1.0 it cost points and did nothing.
+
 /// Applied to the player's own numbers: max health and body damage.
 /// A gentle curve -- these compound with level and with petal modifiers.
 inline constexpr std::array<double, kLadderRarityCount> kStatSkillScale = {
-    1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
+    1.05, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
 };
 
 /// Applied to petal EFFECTS: healing output. Steeper than the stat curve.
 inline constexpr std::array<double, kLadderRarityCount> kEffectSkillScale = {
-    1.0, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.8,
+    1.05, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.8,
 };
 
 /// Applied to the health of what the flower fields: its petals (Petal Health)
@@ -193,12 +197,12 @@ inline constexpr std::array<double, kLadderRarityCount> kEffectSkillScale = {
 /// the percentage a tier advertises is the percentage it grants. The effect
 /// curve's shape through unique, and 4.5x at apex.
 inline constexpr std::array<double, kLadderRarityCount> kHealthSkillScale = {
-    1.0, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.5,
+    1.05, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.5,
 };
 
 /// Applied to absorbed-petal XP. Geometric, so apex lands on exactly 8x.
 inline constexpr std::array<double, kLadderRarityCount> kAbsorbSkillScale = {
-    1.0, 1.26, 1.59, 2.0, 2.52, 3.17, 4.0, 5.04, 6.35, 8.0,
+    1.12, 1.26, 1.59, 2.0, 2.52, 3.17, 4.0, 5.04, 6.35, 8.0,
 };
 
 /// Applied to petal COOLDOWNS, and the only table that shrinks its input: a
@@ -207,7 +211,7 @@ inline constexpr std::array<double, kLadderRarityCount> kAbsorbSkillScale = {
 /// of the last. The branch stops at unique (0.292); the apex entry is there
 /// only because every table spans the ladder, and no tree can reach it.
 inline constexpr std::array<double, kLadderRarityCount> kReloadSkillScale = {
-    1.0, 0.857, 0.735, 0.630, 0.540, 0.463, 0.397, 0.340, 0.292, 0.25,
+    0.93, 0.857, 0.735, 0.630, 0.540, 0.463, 0.397, 0.340, 0.292, 0.25,
 };
 
 /// `tier` is a rarity index, or -1 for a branch never touched. Out-of-range

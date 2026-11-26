@@ -156,6 +156,21 @@ TEST(a_talent_multiplier_is_neutral_until_a_tier_is_bought) {
     CHECK_NEAR(skills.effectScale(SkillId::Healing), 1.0, 1e-9);
 }
 
+TEST(a_common_talent_tier_is_worth_something) {
+    // Common is the first tier bought (index 0), so it has to move the number.
+    CHECK(kStatSkillScale[0] > 1.0);
+    CHECK(kEffectSkillScale[0] > 1.0);
+    CHECK(kHealthSkillScale[0] > 1.0);
+    CHECK(kAbsorbSkillScale[0] > 1.0);
+    CHECK(kReloadSkillScale[0] < 1.0);
+    SkillSet skills;
+    skills.set(SkillId::PlayerHealth, rarityIndex(Rarity::Common));
+    CHECK(skills.statScale(SkillId::PlayerHealth) > 1.0);
+    // And still less than the tier above it.
+    CHECK(kStatSkillScale[0] < kStatSkillScale[1]);
+    CHECK(kReloadSkillScale[0] > kReloadSkillScale[1]);
+}
+
 TEST(talents_are_bought_one_tier_at_a_time) {
     Harness h("talent-order");
     if (!h.ready) { CHECK(false); return; }
