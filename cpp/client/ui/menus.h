@@ -1514,6 +1514,11 @@ private:
     /// Until the first packet the server graphs say so rather than drawing a
     /// flat zero, which would read as a server that costs nothing.
     bool haveServerStats_ = false;
+    /// NetClient::serverEpoch() the server series were taken under. When it
+    /// moves -- a Redirect to another shard, a redial -- they are cleared: two
+    /// servers' ticks and memory on one line, under one auto-scale, read as a
+    /// spike or a cliff that never happened on either.
+    std::uint32_t serverEpoch_ = 0;
 
     Tab tab_ = Tab::Graphs;
     /// Which column the op-type table is ordered by. Count is the useful one

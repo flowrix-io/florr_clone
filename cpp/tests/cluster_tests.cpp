@@ -513,6 +513,30 @@ TEST(a_pad_to_another_servers_biome_carries_the_flower_across) {
              std::size_t{3});
 }
 
+TEST(a_flower_that_crosses_servers_starts_its_ping_and_server_stats_over) {
+    Cluster c("cluster-cross-stats", 2, seedTwo);
+    CHECK(apart(c));
+    NetClient alice;
+    CHECK(c.signIn(alice, "alice"));
+    CHECK(c.join(alice, {}));
+    alice.sendPing();
+    CHECK(c.stepUntil({&alice}, [&] { return alice.averagePingMillis() > 0; }));
+    const std::uint32_t epoch = alice.serverEpoch();
+
+    GameServer& garden = *c.serverFor("garden");
+    GameServer& desert = *c.serverFor("desert");
+    const Realm to = c.realm("desert");
+    CHECK(GameServerPeer::carry(garden, "alice", to, c.gateway.terrain().spawnPoint(to)));
+    CHECK(c.stepUntil({&alice}, [&] { return alice.view().realm() == to && alice.view().self().netId != 0; }));
+    CHECK(GameServerPeer::bodyOf(desert, "alice") != NULL_ENTITY);
+    // Another server: what the debug panel averaged over the last one goes,
+    // and the round trips are timed against the new one alone.
+    CHECK(alice.serverEpoch() != epoch);
+    CHECK_EQ(alice.averagePingMillis(), 0.0);
+    alice.sendPing();
+    CHECK(c.stepUntil({&alice}, [&] { return alice.averagePingMillis() > 0; }));
+}
+
 TEST(global_chat_reaches_every_server_and_local_chat_stays_put) {
     Cluster c("cluster-chat", 2, seedTwo);
     CHECK(apart(c));

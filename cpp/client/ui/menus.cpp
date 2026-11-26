@@ -2279,6 +2279,19 @@ void DebugPanel::recordFrame(double dtSeconds, NetClient& net) {
         sampleCount_ = 0;
     }
 
+    if (net.serverEpoch() != serverEpoch_) {
+        // Another server from here on. Its history starts empty and the panel
+        // says "no data" until its first packet, rather than showing the
+        // last server's phases as this one's.
+        serverEpoch_ = net.serverEpoch();
+        haveServerStats_ = false;
+        serverStats_ = NetClient::ServerDebugStats{};
+        serverHeapMB_.clear();
+        serverResidentMB_.clear();
+        serverTickAvgMillis_.clear();
+        serverTickMaxMillis_.clear();
+    }
+
     // One graph sample per packet, not per frame: the server sends these once
     // a second, and resampling the last one between packets would draw a
     // plateau that says the server was steady when nothing was measured.

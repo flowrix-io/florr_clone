@@ -936,6 +936,11 @@ public:
     /// a single sample jitters too much to read, and the quality band below is
     /// derived from the same average so the two never disagree.
     double averagePingMillis() const { return averagePingMillis_; }
+    /// Moves every time this client dials a server: a connect, a redial, and
+    /// a Redirect to another server of a sharded game. Whatever is averaged
+    /// over one server's figures -- the debug panel's server graphs -- starts
+    /// over when it moves rather than splicing two servers into one line.
+    std::uint32_t serverEpoch() const { return serverEpoch_; }
     /// "good", "medium" or "slow", at the reference's 100 ms / 200 ms bands.
     const char* connectionQuality() const;
 
@@ -1193,6 +1198,10 @@ private:
     /// why it is back.
     void noteRedirectFailed(const std::string& reason);
     void returnHome();
+    /// A new socket is about to be dialled: bumps serverEpoch() and drops what
+    /// was measured against the last one -- its round trips and any stats
+    /// packet the panel has not taken yet.
+    void beginServerSession();
     void handleAuthResult(ByteReader&);
     void handleProfile(ByteReader&);
     void handleProfileDelta(ByteReader&);
@@ -1420,6 +1429,7 @@ private:
 
     ServerDebugStats serverDebugStats_;
     bool serverDebugStatsFresh_ = false;
+    std::uint32_t serverEpoch_ = 0;
 
     bool dead_ = false;
     std::string killerName_;

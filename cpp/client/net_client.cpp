@@ -170,6 +170,7 @@ bool NetClient::connect(const std::string& host, std::uint16_t port) {
     // this attempt is the one that failed.
     host_ = host;
     port_ = port;
+    beginServerSession();
     std::string error;
     if (!dialer_.connect(host, port, error)) {
         status_ = Status::Failed;
@@ -1413,6 +1414,7 @@ void NetClient::followRedirect() {
     dialer_.disconnect();
     attaching_ = true;
     heldWhileAttaching_.clear();
+    beginServerSession();
     std::string error;
     if (!dialer_.connect(host, port, error)) returnHome();
 }
@@ -2799,6 +2801,16 @@ void NetClient::handlePong(ByteReader& reader, double arrivedMillis) {
     double total = 0;
     for (const double sample : pingHistory_) total += sample;
     averagePingMillis_ = total / static_cast<double>(pingHistory_.size());
+}
+
+void NetClient::beginServerSession() {
+    ++serverEpoch_;
+    // The last host's round trips say nothing about this one's: a shard on
+    // another machine can be 20 ms or 200 ms away. "--" until the first Pong,
+    // as at sign-in, rather than ten stale samples averaged in.
+    pingHistory_.clear();
+    averagePingMillis_ = 0;
+    serverDebugStatsFresh_ = false;
 }
 
 const char* NetClient::connectionQuality() const {
