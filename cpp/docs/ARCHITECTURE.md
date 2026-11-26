@@ -386,8 +386,10 @@ Cloudflare's. An admin gives it on the gateway, which keeps it in the database
 (`cluster.domains`, by server name) and pushes nothing to the server:
 
     /admin shards domain                          every server's, and the gateway's
-    /admin shards domain east east.example.com    `[:port]`; with no port the
-                                                  player keeps its own, 443
+    /admin shards domain east east.example.com    `[:port]`, 443 when none:
+                                                  a player is sent there over
+                                                  TLS whatever port and scheme
+                                                  it reached the gateway by
     /admin shards domain east none                forget it
     /admin shards domain gateway example.com      the gateway's own (`cluster.address`)
 
