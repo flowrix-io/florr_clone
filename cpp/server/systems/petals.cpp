@@ -2736,7 +2736,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 summonTimedPets(world, registry, player, slot, config, stats, rarity,
                                 world.get<PetalSlotState>(player), nowMillis);
             } else {
-                maintainPets(world, registry, player, slot, config, rarity,
+                maintainPets(world, registry, player, slot, config, stats, rarity,
                              world.get<PetalSlotState>(player));
             }
         }
@@ -3818,8 +3818,8 @@ void PetalSystem::reloadEggForPet(World& world, const ContentRegistry& registry,
 }
 
 void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, Entity player,
-                               std::uint8_t slot, const PetalConfig& config, Rarity rarity,
-                               PetalSlotState& state) {
+                               std::uint8_t slot, const PetalConfig& config,
+                               const PetalStats& stats, Rarity rarity, PetalSlotState& state) {
     PetalSlotState::Slot& slotState = state.slots[static_cast<std::size_t>(slot)];
     std::size_t kept = 0;
     for (const Entity pet : slotState.pets) {
@@ -3845,9 +3845,22 @@ void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, En
         }
         const Transform* owner = world.tryGet<Transform>(player);
         if (owner == nullptr) return;
-        summonRandomPets(world, registry, player, slot, petRarity,
-                         config.rollPetCount(rng_) * multiple, owner->position, state,
-                         strengthBoost(rarity));
+        // At the cap the roll would land nothing, so it is not paid for.
+        if (countOwnedPets(world, state) >= kMaxPetEntitiesPerPlayer) return;
+        // Paid per pet rolled -- the magic wand's petManaCost is the magic
+        // stick's, for each one -- and the same roll is kept until it can be
+        // paid. The apex trio and the admin triple ride on the one payment,
+        // as a timed summon's do.
+        const int roll = slotState.pendingPetRoll > 0 ? slotState.pendingPetRoll
+                                                      : config.rollPetCount(rng_);
+        if (roll <= 0) return;
+        if (!spendMana(world, player, stats.petManaCost * roll)) {
+            slotState.pendingPetRoll = roll;
+            return;
+        }
+        slotState.pendingPetRoll = 0;
+        summonRandomPets(world, registry, player, slot, petRarity, roll * multiple,
+                         owner->position, state, strengthBoost(rarity));
         return;
     }
 

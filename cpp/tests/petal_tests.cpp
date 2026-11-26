@@ -59,6 +59,7 @@ const char* const kPetalsJson = R"JSON({
   "summoner": {"name":"Summoner","damage":1,"health":4,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petMobRarity":"common","petCount":2,"color":"#AA00AA"},
   "stormcaller":{"name":"Stormcaller","damage":1,"health":10,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petCount":1,"petLifetimeMs":20000,"petManaCost":20,"color":"#42E3F5"},
   "wand":     {"name":"Wand","damage":0,"health":null,"size":1,"cooldown":1000,"count":1,"petMobRandom":true,"petCount":1,"petCountMax":3,"ignoresMobs":true,"color":"#FF00FF"},
+  "manawand": {"name":"Manawand","damage":0,"health":null,"size":1,"cooldown":1000,"count":1,"petMobRandom":true,"petCount":1,"petCountMax":3,"petManaCost":20,"ignoresMobs":true,"color":"#FF00FF"},
   "stormwand":{"name":"Stormwand","damage":0,"health":null,"size":1,"cooldown":1000,"count":1,"petMobRandom":true,"petCount":1,"petCountMax":3,"petLifetimeMs":20000,"petManaCost":20,"color":"#FF00FF"},
   "toxic":    {"name":"Toxic","damage":2,"health":5,"size":1,"cooldown":1000,"count":1,"poison":0.05,"poisonDuration":3000,"color":"#00AA00"},
   "blade":    {"name":"Blade","damage":0,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#111111"},
@@ -4592,6 +4593,39 @@ TEST(a_rolled_pet_that_gets_lost_charges_its_petal_and_is_rolled_again) {
     CHECK(rig.slot(0).broken);
     CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }));
     CHECK(!rig.slot(0).broken);
+}
+
+TEST(a_rolled_squad_pays_for_every_pet_it_rolls_and_waits_when_it_cannot) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    // 100 mana and nothing refilling it.
+    rig.equip(0, "vessel");
+    rig.equip(1, "manawand");
+    rig.settleEquips();
+    const auto mana = [&] { return rig.world.get<ManaPool>(rig.player).current; };
+    double spent = 0.0;
+    int squads = 0;
+    // Each squad costs 20 a pet: what left the pool is 20 times what came out.
+    while (mana() >= 60.0 && squads < 10) {
+        const double before = mana();
+        CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }));
+        const std::vector<Entity> squad = rolledSquad(rig);
+        CHECK(squad.size() >= 1 && squad.size() <= 3);
+        CHECK_NEAR(before - mana(), 20.0 * static_cast<double>(squad.size()), 1e-6);
+        spent += before - mana();
+        ++squads;
+        for (const Entity pet : squad) rig.world.destroy(pet);
+    }
+    CHECK(squads >= 1);
+    // Drained: below one pet's price, nothing is summoned and nothing taken.
+    rig.world.get<ManaPool>(rig.player).current = 10.0;
+    rig.tick(90);
+    CHECK(rolledSquad(rig).empty());
+    CHECK_NEAR(mana(), 10.0, 1e-6);
+    // Paid up, the roll it was waiting on comes out.
+    rig.world.get<ManaPool>(rig.player).current = 100.0;
+    CHECK(rig.tickUntil([&] { return !rolledSquad(rig).empty(); }, 40));
+    CHECK_NEAR(100.0 - mana(), 20.0 * static_cast<double>(rolledSquad(rig).size()), 1e-6);
 }
 
 TEST(a_timed_rolled_summon_stacks_a_roll_per_reload_and_pays_for_each) {

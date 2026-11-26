@@ -712,7 +712,10 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     // and the storm's span is what the payment buys. florr's
     // Petal/Attribute/SpawnManaCost, "Spawn Cost: X mana".
     if (stats.petManaCost > 0.0) {
-        const std::string label = colourMarkup("Spawn Cost:", kStatGeneric) + " ";
+        // A rolled squad (the magic wand) pays for each pet it rolls.
+        const bool perPet = config.petMobRandom && !(config.petLifetimeMillis > 0.0);
+        const std::string label =
+            colourMarkup(perPet ? "Spawn Cost (per pet):" : "Spawn Cost:", kStatGeneric) + " ";
         const std::string unit = " " + colourMarkup("mana", kStatMana);
         TooltipLine summon{label + abbreviate(stats.petManaCost) + unit, 12.0};
         summon.alpha = 0.56;

@@ -110,6 +110,9 @@ struct PetalSlotState {
         /// Mobs this slot has summoned. Handles are generation-checked, so a
         /// pet killed in the field simply stops being alive and is re-summoned.
         std::vector<Entity> pets;
+        /// A rolled squad's next roll, kept while the flower cannot pay for
+        /// it: waiting for mana must not re-roll a three into a cheaper one.
+        int pendingPetRoll = 0;
     };
     std::array<Slot, kLoadoutSlots> slots{};
 
@@ -636,8 +639,8 @@ private:
     /// replaced per SLOT, so eggs of one type stack -- two sticks keep a pair
     /// of sandstorms each -- but capped per PLAYER (kMaxPetEntitiesPerPlayer).
     void maintainPets(World& world, const ContentRegistry& registry, Entity player,
-                      std::uint8_t slot, const PetalConfig& config, Rarity rarity,
-                      PetalSlotState& state);
+                      std::uint8_t slot, const PetalConfig& config, const PetalStats& stats,
+                      Rarity rarity, PetalSlotState& state);
     /// One action of a TIMED summoner (PetalConfig::petLifetimeMillis): pays
     /// `stats.petManaCost` and hatches `petCount` more -- or a roll, on a
     /// rolled petal -- however many it already has out. Nothing is hatched,

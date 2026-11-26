@@ -703,7 +703,9 @@ constexpr ChangelogEntry kChangelog[] = {
         "/players-online now shows how many players are in game and on the title screen",
         "Doubled Magic Leaf and Magic Orb mana regen again",
         "Fixed Common talents doing nothing",
-        "Looting a mob now takes at least 3% of its health"
+        "Looting a mob now takes at least 3% of its health",
+        "Magic Wand now costs mana for each pet it summons",
+        "Magic Stick now costs 3x less mana"
       }
     },
 };
